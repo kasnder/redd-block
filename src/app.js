@@ -299,25 +299,23 @@ function setupModalListeners() {
             window.renderModalTags();
         }
     });
-
-    // Mode toggle
-    document.getElementById('mode-blocklist').addEventListener('click', () => {
-        document.getElementById('mode-blocklist').classList.add('active');
-        document.getElementById('mode-allowlist').classList.remove('active');
-    });
-
-    document.getElementById('mode-allowlist').addEventListener('click', () => {
-        document.getElementById('mode-allowlist').classList.add('active');
-        document.getElementById('mode-blocklist').classList.remove('active');
-    });
-
     // Override type
     document.getElementById('override-type').addEventListener('change', (e) => {
         const customTextArea = document.getElementById('custom-override-text');
+        const overrideCountInput = document.getElementById('override-count');
         if (e.target.value === 'custom') {
             customTextArea.classList.remove('hidden');
+            overrideCountInput.classList.add('hidden');
         } else {
             customTextArea.classList.add('hidden');
+            overrideCountInput.classList.remove('hidden');
+        }
+    });
+
+    // Override count blur on enter
+    document.getElementById('override-count').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.target.blur();
         }
     });
 
@@ -397,7 +395,7 @@ function setupModalListeners() {
             return;
         }
 
-        const mode = document.getElementById('mode-blocklist').classList.contains('active') ? 'blocklist' : 'allowlist';
+        const mode = 'blocklist'; // Allowlist mode not yet implemented
         const overrideType = document.getElementById('override-type').value;
         const overrideCount = parseInt(document.getElementById('override-count').value) || 10;
         const customText = document.getElementById('custom-override-text').value;
@@ -1230,14 +1228,6 @@ function openBlocklistModal(blocklist = null) {
 
     document.getElementById('modal-title').textContent = blocklist ? 'Edit Blocklist' : 'Create Blocklist';
     document.getElementById('blocklist-name').value = blocklist?.name || '';
-
-    if (blocklist?.mode === 'allowlist') {
-        document.getElementById('mode-allowlist').classList.add('active');
-        document.getElementById('mode-blocklist').classList.remove('active');
-    } else {
-        document.getElementById('mode-blocklist').classList.add('active');
-        document.getElementById('mode-allowlist').classList.remove('active');
-    }
 
     document.getElementById('override-type').value = blocklist?.overrideDifficulty?.type || 'random-words';
     document.getElementById('override-count').value = blocklist?.overrideDifficulty?.count || 10;

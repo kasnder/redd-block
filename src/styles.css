@@ -30,6 +30,7 @@
     --scrollbar-thumb: hsl(214, 32%, 85%);
     --scrollbar-thumb-hover: hsl(214, 32%, 75%);
     --border-active: hsl(214, 32%, 85%);
+    --toggle-bg: hsl(214, 32%, 93%);
 }
 
 body.dark-mode {
@@ -57,6 +58,7 @@ body.dark-mode {
     --timeline-message: #64748b;
     --separator-color: rgba(255, 255, 255, 0.15);
     --popover-bg: #1e293b;
+    --toggle-bg: rgba(15, 23, 42, 0.6);
     --popover-border: rgba(255, 255, 255, 0.1);
     --button-bg: var(--accent-color);
     --button-hover: var(--accent-hover);
@@ -1492,7 +1494,7 @@ body {
 .mode-toggle {
     display: flex;
     gap: 4px;
-    background: var(--input-bg);
+    background: var(--toggle-bg);
     padding: 4px;
     border-radius: 8px;
 }
@@ -1513,7 +1515,25 @@ body {
 .mode-btn.active {
     background: var(--popover-bg);
     color: var(--text-secondary);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.mode-btn.disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.coming-soon-badge {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 2px 6px;
+    background: #f59e0b;
+    color: white;
+    font-size: 9px;
+    font-weight: 600;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 /* Primary Button */
