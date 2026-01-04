@@ -1365,7 +1365,15 @@ function openOverrideModal(blockId) {
 
     document.getElementById('challenge-text').textContent = challengeText;
     document.getElementById('challenge-input').value = '';
-    document.getElementById('challenge-progress-bar').style.width = '0%';
+
+    const progressBar = document.getElementById('challenge-progress-bar');
+    progressBar.style.width = '0%';
+    // Use the blocklist's color for the progress bar
+    if (blocklist.color) {
+        progressBar.style.background = blocklist.color;
+    } else {
+        progressBar.style.background = 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)';
+    }
 
     // Reset wiggle state
     document.querySelector('#override-modal .modal-content').classList.remove('wiggle');
