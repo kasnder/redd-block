@@ -339,11 +339,11 @@
                     <label>Override Difficulty</label>
                     <select id="override-type" class="form-select">
                         <option value="random-words">Random Words</option>
-                        <option value="gibberish">Random Characters</option>
+                        <option value="gibberish">Random Gibberish</option>
                         <option value="custom">Custom Text</option>
                     </select>
                     <input type="number" id="override-count" class="form-input small" value="50" min="5" max="5000">
-                    <span class="form-hint">Number of characters to type to override</span>
+                    <span id="override-count-hint" class="form-hint">Number of characters to type to override</span>
                     <textarea id="custom-override-text" class="form-textarea hidden"
                         placeholder="Enter your custom text (e.g., a motivational statement)"></textarea>
                 </div>
@@ -449,6 +449,30 @@
                 <div class="modal-buttons">
                     <button id="cancel-helper-install-btn" class="modal-btn cancel-btn">Cancel</button>
                     <button id="proceed-helper-install-btn" class="modal-btn primary-btn">Proceed</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Start Block Confirmation Modal -->
+        <div id="start-block-confirm-modal" class="modal-overlay hidden">
+            <div class="modal-content start-confirm-modal">
+                <h3>Start this block?</h3>
+                <p id="start-confirm-summary"></p>
+                <div id="start-confirm-override-info" class="override-info-box">
+                    <div class="override-info-header">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <line x1="12" y1="8" x2="12" y2="12"></line>
+                            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        </svg>
+                        <span>To cancel this block early, you'll need to:</span>
+                    </div>
+                    <p id="start-confirm-override-text"></p>
+                </div>
+                <div class="modal-buttons">
+                    <button id="cancel-start-confirm-btn" class="modal-btn cancel-btn">Cancel</button>
+                    <button id="proceed-start-confirm-btn" class="modal-btn primary-btn">Start Block</button>
                 </div>
             </div>
         </div>

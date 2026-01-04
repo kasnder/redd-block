@@ -1660,6 +1660,54 @@ body {
     color: hsl(220, 70%, 50%);
 }
 
+/* Start block confirmation modal */
+.start-confirm-modal {
+    max-width: 420px;
+}
+
+.start-confirm-modal h3 {
+    margin: 0 0 12px 0;
+    font-size: 18px;
+    color: var(--text-secondary);
+}
+
+.start-confirm-modal>p {
+    margin: 0 0 16px 0;
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.override-info-box {
+    background: hsl(45, 93%, 94%);
+    border: 1px solid hsl(45, 80%, 70%);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+}
+
+.override-info-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: hsl(30, 60%, 35%);
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
+.override-info-header svg {
+    flex-shrink: 0;
+    color: hsl(30, 70%, 45%);
+}
+
+.override-info-box p {
+    margin: 0;
+    color: hsl(30, 50%, 30%);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
 .modal-btn.primary-btn {
     background: hsl(222.2, 47.4%, 11.2%);
     border: none;
