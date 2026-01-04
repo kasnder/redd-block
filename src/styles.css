@@ -1858,6 +1858,7 @@ body {
 
 .override-challenge .challenge-text {
     background: hsl(214, 32%, 96%);
+    color: #000;
     padding: 16px;
     border-radius: 8px;
     font-family: monospace;
@@ -1866,7 +1867,7 @@ body {
     margin: 16px 0;
     max-height: 120px;
     overflow-y: auto;
-    word-break: break-all;
+    overflow-wrap: break-word;
     user-select: none;
     -webkit-user-select: none;
 }
