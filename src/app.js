@@ -967,17 +967,47 @@ function handleBlocklistSelect(e) {
     selectedBlocklistId = e.target.value || null;
     const timePicker = document.getElementById('time-picker-container');
     const passwordHint = document.getElementById('password-hint');
+    const selectionPrompt = document.getElementById('selection-prompt');
+    const startBlockBtn = document.getElementById('start-block-btn');
 
     if (selectedBlocklistId) {
-        // Show time picker and hint, reinitialize with current time
+        // Hide selection prompt, show time picker, hint, and start button
+        if (selectionPrompt) selectionPrompt.classList.add('hidden');
         timePicker.classList.remove('hidden');
         if (passwordHint) passwordHint.classList.remove('hidden');
+        if (startBlockBtn) {
+            startBlockBtn.classList.remove('hidden');
+            // Update button text with blocklist name
+            const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+            if (blocklist) {
+                const btnName = startBlockBtn.querySelector('.btn-name');
+                if (btnName) {
+                    btnName.textContent = blocklist.name;
+                }
+            }
+        }
         initializeTimeInputs();
     } else {
-        // Hide time picker and hint
+        // Show selection prompt, hide time picker, hint, and start button
+        if (selectionPrompt) selectionPrompt.classList.remove('hidden');
         timePicker.classList.add('hidden');
         if (passwordHint) passwordHint.classList.add('hidden');
+        if (startBlockBtn) startBlockBtn.classList.add('hidden');
     }
+
+    // Update visual selection state on blocklist cards
+    const selectedBlocklist = selectedBlocklistId ? appData.blocklists.find(bl => bl.id === selectedBlocklistId) : null;
+    document.querySelectorAll('.blocklist-card').forEach(card => {
+        if (card.dataset.id === selectedBlocklistId && selectedBlocklist) {
+            card.classList.add('selected');
+            // Apply the blocklist's color as the selection border
+            const color = selectedBlocklist.color || '#667eea';
+            card.style.boxShadow = `0 0 0 2px ${color}, 0 4px 8px rgba(0, 0, 0, 0.1)`;
+        } else {
+            card.classList.remove('selected');
+            card.style.boxShadow = '';
+        }
+    });
 
     handleTimeChange(); // Update button state and preview
 
@@ -1015,20 +1045,63 @@ function startBlock() {
         durationText = `${mins} minute${mins > 1 ? 's' : ''}`;
     }
 
-    // Build summary text
-    const websiteCount = blocklist.websites?.length || 0;
-    const appCount = blocklist.apps?.length || 0;
-    let itemsText = '';
-    if (websiteCount > 0 && appCount > 0) {
-        itemsText = `${websiteCount} website${websiteCount > 1 ? 's' : ''} and ${appCount} app${appCount > 1 ? 's' : ''}`;
-    } else if (websiteCount > 0) {
-        itemsText = `${websiteCount} website${websiteCount > 1 ? 's' : ''}`;
-    } else if (appCount > 0) {
-        itemsText = `${appCount} app${appCount > 1 ? 's' : ''}`;
-    }
+    // Populate blocklist name
+    document.getElementById('start-confirm-name').textContent = blocklist.name;
 
-    document.getElementById('start-confirm-summary').textContent =
-        `Block ${itemsText} for ${durationText} using "${blocklist.name}".`;
+    // Populate duration
+    document.getElementById('start-confirm-duration').textContent = durationText;
+
+    // Helper to format list with show all
+    const formatListWithShowAll = (items, elementId, showAllBtnId, rowId) => {
+        const valueEl = document.getElementById(elementId);
+        const showAllBtn = document.getElementById(showAllBtnId);
+        const rowEl = document.getElementById(rowId);
+
+        if (!items || items.length === 0) {
+            rowEl.classList.add('hidden');
+            return;
+        }
+
+        rowEl.classList.remove('hidden');
+
+        if (items.length <= 3) {
+            valueEl.textContent = items.map(cleanUrlForDisplay).join(', ');
+            showAllBtn.classList.add('hidden');
+        } else {
+            const displayItems = items.slice(0, 3).map(cleanUrlForDisplay);
+            valueEl.textContent = displayItems.join(', ') + ', ...';
+            showAllBtn.classList.remove('hidden');
+            showAllBtn.onclick = () => {
+                valueEl.textContent = items.map(cleanUrlForDisplay).join(', ');
+                showAllBtn.classList.add('hidden');
+            };
+        }
+    };
+
+    // Populate websites
+    formatListWithShowAll(blocklist.websites, 'start-confirm-websites', 'show-all-websites', 'websites-row');
+
+    // Populate apps (apps don't need URL cleaning)
+    const appsValueEl = document.getElementById('start-confirm-apps');
+    const showAllAppsBtn = document.getElementById('show-all-apps');
+    const appsRowEl = document.getElementById('apps-row');
+
+    if (!blocklist.apps || blocklist.apps.length === 0) {
+        appsRowEl.classList.add('hidden');
+    } else {
+        appsRowEl.classList.remove('hidden');
+        if (blocklist.apps.length <= 3) {
+            appsValueEl.textContent = blocklist.apps.join(', ');
+            showAllAppsBtn.classList.add('hidden');
+        } else {
+            appsValueEl.textContent = blocklist.apps.slice(0, 3).join(', ') + ', ...';
+            showAllAppsBtn.classList.remove('hidden');
+            showAllAppsBtn.onclick = () => {
+                appsValueEl.textContent = blocklist.apps.join(', ');
+                showAllAppsBtn.classList.add('hidden');
+            };
+        }
+    }
 
     // Build override difficulty text with time estimate
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
@@ -1046,10 +1119,12 @@ function startBlock() {
     } else if (difficulty.type === 'gibberish') {
         charsPerMinute = 15; // Gibberish is the hardest
         const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
-        overrideText = `Type ${charCount} random characters (letters and numbers) exactly as shown (~${estimatedMinutes} min).`;
+        const charWord = charCount === 1 ? 'character' : 'characters';
+        overrideText = `Type ${charCount} random ${charWord} (letters and numbers) exactly as shown (~${estimatedMinutes} min).`;
     } else {
         const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
-        overrideText = `Type ${charCount} characters of random words exactly as shown (~${estimatedMinutes} min).`;
+        const charWord = charCount === 1 ? 'character' : 'characters';
+        overrideText = `Type ${charCount} ${charWord} (displayed as random words) exactly as shown (~${estimatedMinutes} min).`;
     }
 
     document.getElementById('start-confirm-override-text').textContent = overrideText;
@@ -1938,8 +2013,12 @@ function renderBlocklists() {
         const activeClass = isActive ? ' blocklist-card-active' : '';
         const activeBadge = isActive ? '<span class="active-badge">Active</span>' : '';
 
+        // Check if this blocklist is selected for starting a block
+        const isSelected = bl.id === selectedBlocklistId && !isActive;
+        const selectedClass = isSelected ? ' selected' : '';
+
         return `
-      <div class="blocklist-card${activeClass}" data-id="${bl.id}" data-active="${isActive}" draggable="true">
+      <div class="blocklist-card${activeClass}${selectedClass}" data-id="${bl.id}" data-active="${isActive}" draggable="true">
         <div class="blocklist-stripe" style="background: ${borderColor}"></div>
         <div class="blocklist-info">
           <div class="blocklist-name"><span class="blocklist-emoji">${bl.emoji || '🚫'}</span>${escapeHtml(bl.name)}${activeBadge}</div>

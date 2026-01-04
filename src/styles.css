@@ -580,12 +580,7 @@ body {
     /* Move to right column */
 }
 
-.scheduler-content {
-    background: var(--panel-bg);
-    border-radius: 12px;
-    padding: 16px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-}
+
 
 /* Blocklist Selector */
 .blocklist-selector {
@@ -643,6 +638,10 @@ body {
     flex-direction: column;
     gap: 16px;
     margin-bottom: 8px;
+    background: var(--panel-bg);
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 /* Duration Picker */
@@ -1034,6 +1033,10 @@ body {
     cursor: not-allowed;
 }
 
+.start-block-btn .btn-name {
+    font-weight: 400;
+}
+
 .password-hint {
     display: block;
     font-size: 11px;
@@ -1071,8 +1074,8 @@ body {
     max-height: 320px;
     /* ~4.5 cards */
     overflow-y: auto;
-    padding-right: 4px;
-    /* Space for scrollbar */
+    padding: 4px 4px 4px 0;
+    /* top, right (scrollbar), bottom, left */
 }
 
 .blocklists-container::-webkit-scrollbar {
@@ -1120,6 +1123,30 @@ body {
 .blocklist-card-active:hover {
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     transform: none;
+}
+
+/* Selected blocklist card (when preparing to start a block) */
+/* Box-shadow is applied inline via JS using the blocklist's color */
+.blocklist-card.selected:hover {
+    transform: translateY(-1px);
+}
+
+/* Selection Prompt */
+.selection-prompt {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 32px 16px;
+    color: var(--text-muted);
+    font-size: 13px;
+    border: 1px dashed var(--border-color);
+    border-radius: 8px;
+    background: transparent;
+}
+
+.selection-prompt svg {
+    opacity: 0.5;
 }
 
 .blocklist-card.dragging {
@@ -1671,11 +1698,48 @@ body {
     color: var(--text-secondary);
 }
 
-.start-confirm-modal>p {
-    margin: 0 0 16px 0;
-    color: var(--text-primary);
-    font-size: 14px;
+.block-details {
+    margin-bottom: 16px;
+}
+
+.block-detail-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+}
+
+.block-detail-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px;
+    margin-bottom: 6px;
+    font-size: 13px;
     line-height: 1.5;
+}
+
+.block-detail-row .detail-label {
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.block-detail-row .detail-value {
+    color: var(--text-primary);
+}
+
+.show-all-btn {
+    background: none;
+    border: none;
+    color: var(--accent-color);
+    font-size: 12px;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
+}
+
+.show-all-btn:hover {
+    color: var(--accent-hover);
 }
 
 .override-info-box {
