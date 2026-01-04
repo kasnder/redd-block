@@ -43,7 +43,7 @@ let macTargets = [
 
 builder.build({
   targets: (buildWin && targets.length === 1 && targets[0] === Platform.WINDOWS)
-    ? Platform.WINDOWS.createTarget(['nsis', 'zip'], Arch.x64)
+    ? Platform.WINDOWS.createTarget(['nsis', 'zip', 'appx'], Arch.x64)
     : (targets.length > 0 ? builder.createTargets(targets) : undefined),
   config: {
     appId: 'com.redd.block',
@@ -127,10 +127,9 @@ builder.build({
     },
     appx: {
       applicationId: 'ReDDBlock',
-      displayName: 'ReDD Block',
-      identityName: 'ReDDBlock',
-      publisher: 'CN=ReddFocus',
-      publisherDisplayName: 'Reduce Digital Distraction Project'
+      identityName: process.env.WINDOWS_IDENTITY_NAME,
+      publisher: process.env.WINDOWS_PUBLISHER,
+      publisherDisplayName: process.env.WINDOWS_PUBLISHER_DISPLAY_NAME
     },
     linux: {
       target: [
