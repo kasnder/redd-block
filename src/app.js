@@ -898,6 +898,8 @@ function handleTimeChange() {
     const dynamicHeight = 60 + runningBlocks.length * 18;
     track.style.minHeight = `${dynamicHeight}px`;
 
+    updateWindowHeight(); // Adjust window height for new track size
+
     // Get timeline range for positioning
     const { startTime: timelineStart, timelineSpan } = getTimelineRange();
 
@@ -1500,6 +1502,9 @@ function render() {
     renderActiveBlocks();
     renderBlocklistSelector();
     renderBlocklists();
+
+    // Adjust window height to fit content
+    updateWindowHeight();
 }
 
 // Get timeline range: 7 hours ago → 7am tomorrow
@@ -2051,4 +2056,39 @@ function cleanUrlForDisplay(url) {
         .replace(/^https?:\/\//, '')  // Remove http:// or https://
         .replace(/^www\./, '')         // Remove www.
         .replace(/\/$/, '');           // Remove trailing slash
+}
+
+// Calculate and set window height based on content
+function updateWindowHeight() {
+    const titleBar = document.querySelector('.title-bar');
+    const topRow = document.querySelector('.grid-top-row');
+    const timeline = document.querySelector('.timeline-section');
+
+    if (!titleBar || !topRow || !timeline) return;
+
+    // Measure content heights
+    const topRowHeight = topRow.offsetHeight;
+    const timelineHeight = timeline.offsetHeight;
+
+    // CSS values (hardcoded based on styles.css)
+    const gap = 20;               // .main-content gap
+    const timelineMarginTop = 6;  // .timeline-section margin-top
+    const mainPadTop = 12;        // .main-content padding-top
+    const mainPadBottom = 20;     // .main-content padding-bottom
+    const appPadBottom = 42;      // .app-container padding-bottom
+    const titleHeight = titleBar.offsetHeight;
+
+    // Calculate total required height
+    const totalHeight = Math.ceil(
+        titleHeight +
+        mainPadTop +
+        topRowHeight +
+        gap +
+        timelineMarginTop +
+        timelineHeight +
+        mainPadBottom +
+        appPadBottom
+    );
+
+    ipcRenderer.send('set-window-height', totalHeight);
 }

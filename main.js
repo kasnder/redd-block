@@ -212,6 +212,17 @@ ipcMain.handle('save-data', (event, data) => {
     return true;
 });
 
+// Resize window height
+ipcMain.on('set-window-height', (event, height) => {
+    if (mainWindow) {
+        const [width] = mainWindow.getSize();
+        // Add some buffer for borders/shadows if needed, but usually content size is enough
+        // Minimum height to ensure usability
+        const newHeight = Math.max(height, 500);
+        mainWindow.setSize(width, newHeight, true); // true = animate on macOS
+    }
+});
+
 // Open app picker dialog (cross-platform)
 ipcMain.handle('open-app-picker', async () => {
     let defaultPath = '/Applications';
