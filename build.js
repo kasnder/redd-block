@@ -53,10 +53,52 @@ builder.build({
       output: 'dist',
       buildResources: 'assets'
     },
+    afterSign: 'scripts/notarize.js',
+    dmg: {
+      background: 'assets/dmg-background.png',
+      iconSize: 100,
+      window: {
+        width: 600,
+        height: 400
+      },
+      contents: [
+        {
+          x: 150,
+          y: 200,
+          type: 'file'
+        },
+        {
+          x: 450,
+          y: 200,
+          type: 'link',
+          path: '/Applications'
+        }
+      ],
+      title: 'Install ReDD Block'
+    },
     mac: {
       identity: process.env.APPLE_IDENTITY,
       category: 'public.app-category.productivity',
-      target: macTargets,
+      target: [
+        {
+          target: 'dmg',
+          arch: ['universal']
+        },
+        {
+          target: 'zip',
+          arch: ['universal']
+        }
+      ],
+      target: [
+        {
+          target: 'dmg',
+          arch: ['universal']
+        },
+        {
+          target: 'zip',
+          arch: ['universal']
+        }
+      ],
       icon: 'assets/icon.icns',
       hardenedRuntime: true,
       gatekeeperAssess: false,
