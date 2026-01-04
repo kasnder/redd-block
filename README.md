@@ -4,9 +4,9 @@ Block distracting websites and apps to stay focused on what matters.
 
 ## Features
 
-- **Website Blocking**: Block distracting websites across all browsers using system-level hosts file modification and firewall rules
+- **Website Blocking**: Block distracting websites across all browsers using system-level hosts file modification
 - **App Blocking**: Automatically minimize distracting macOS apps every 500ms while a block is running
-- **Flexible Blocklists**: Create multiple blocklists for different scenarios (work, study, etc.) with custom emojis and colors
+- **Flexible Blocklists**: Create multiple blocklists with custom emojis and colors
 - **Visual Timeline**: See your blocks on an interactive 24-hour timeline with smooth scrolling
 - **Slider-Based Scheduling**: Intuitive duration selection (15 min to 12 hours) with visual preview
 - **Override Protection**: Configurable difficulty to cancel blocks (random words, gibberish, or custom text)
@@ -14,6 +14,7 @@ Block distracting websites and apps to stay focused on what matters.
 - **Background Operation**: Blocks continue running even when the app is closed via a privileged helper daemon
 - **Drag & Drop Reordering**: Rearrange blocklists by dragging them
 - **One-Time Password**: Only requires your password once on first setup - all subsequent blocks start instantly
+- **Dark Mode**: Toggle between light and dark themes with persistent preference
 
 ## Installation
 
@@ -30,14 +31,10 @@ npm run dev
 ### Building
 
 ```bash
-# Build the helper daemon (required before packaging)
-cd helper && npx pkg . --targets node18-macos-arm64 --output dist/redd-block-helper && cd ..
-
-# Build for current platform
-npm run build
-
-# Build for specific platforms
+# Build for macOS (includes signing and notarization if configured)
 npm run build:mac
+
+# Build for other platforms
 npm run build:win
 npm run build:linux
 ```
@@ -45,21 +42,19 @@ npm run build:linux
 ## How It Works
 
 ### Website Blocking
-ReDD Block uses a dual approach for robust website blocking:
-1. **Hosts File**: Modifies `/etc/hosts` to redirect blocked domains to `127.0.0.1`
-2. **Firewall Rules (macOS)**: Uses `pf` (packet filter) to block IP addresses, preventing bypass via direct IP access
+ReDD Block modifies `/etc/hosts` to redirect blocked domains to `127.0.0.1`. The helper daemon ensures blocks persist across app restarts and are tamper-resistant.
 
 ### App Blocking
-On macOS, blocked applications are automatically hidden every 500ms while a block is active. The app uses System Events to detect running apps and hide blocked ones, providing a consistent reminder to stay focused.
+On macOS, blocked applications are automatically hidden every 500ms while a block is active.
 
 ### Privileged Helper Daemon
-To avoid repeated password prompts, ReDD Block installs a privileged helper daemon on first use. This daemon runs in the background with root privileges and handles all hosts file and firewall modifications. After initial setup (which requires your password once), all blocks start instantly without any prompts.
+A privileged helper daemon runs in the background with root privileges and handles all hosts file modifications. After initial setup (which requires your password once), all blocks start instantly without any prompts.
 
 The helper is:
 - **Open source**: See the code in `/helper`
 - **Secure**: Communicates via Unix domain socket with the app
 - **Persistent**: Runs as a launchd daemon, survives app restarts and reboots
-- **Tamper-resistant**: Blocks cannot be easily overridden while active
+- **Tamper-resistant**: Re-applies rules if the hosts file is modified
 
 ## Architecture
 
@@ -73,16 +68,15 @@ redd-block/
 ├── helper/
 │   ├── redd-block-helper.js  # Privileged daemon (runs as root)
 │   ├── installer.js          # Helper installation logic
-│   ├── ipc-client.js         # IPC communication with daemon
-│   └── dist/                 # Compiled standalone binary
+│   └── ipc-client.js         # IPC communication with daemon
 └── build/               # Build configuration
 ```
 
 ## Requirements
 
 - **macOS**: 10.15+ (Catalina or later)
-- **Linux**: systemd-based distributions (Ubuntu, Debian, Fedora, etc.)
-- **Windows**: 10+ (experimental - uses Scheduled Tasks and PowerShell)
+- **Linux**: systemd-based distributions (experimental)
+- **Windows**: 10+ (experimental)
 
 ## License
 
