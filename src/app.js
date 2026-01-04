@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadData();
     await checkHelperStatus();
     setupEventListeners();
+    setupTheme();
     render();
     scrollToNow(false); // Initial scroll (instant, no animation)
     startTickInterval();
@@ -958,6 +959,11 @@ function handleBlocklistSelect(e) {
     }
 
     handleTimeChange(); // Update button state and preview
+
+    // Wait for DOM reflow to capture the correct height after showing/hiding elements
+    setTimeout(() => {
+        updateWindowHeight();
+    }, 50);
 }
 
 // Start a block
@@ -1766,6 +1772,7 @@ function renderBlocklists() {
         const metaText = `${mode} · ${itemsText}`;
 
         // Get color for left border
+        // Get color for left border
         const borderColor = bl.color || 'linear-gradient(135deg, #4a00e0 0%, #8e2de2 100%)';
 
         // Check if this blocklist has an active block
@@ -1775,7 +1782,8 @@ function renderBlocklists() {
         const activeBadge = isActive ? '<span class="active-badge">Active</span>' : '';
 
         return `
-      <div class="blocklist-card${activeClass}" data-id="${bl.id}" data-active="${isActive}" draggable="true" style="border-left: 4px solid; border-image: ${borderColor} 1;">
+      <div class="blocklist-card${activeClass}" data-id="${bl.id}" data-active="${isActive}" draggable="true">
+        <div class="blocklist-stripe" style="background: ${borderColor}"></div>
         <div class="blocklist-info">
           <div class="blocklist-name"><span class="blocklist-emoji">${bl.emoji || '🚫'}</span>${escapeHtml(bl.name)}${activeBadge}</div>
           <div class="blocklist-meta">${escapeHtml(metaText)}</div>
@@ -2091,4 +2099,45 @@ function updateWindowHeight() {
     );
 
     ipcRenderer.send('set-window-height', totalHeight);
+}
+
+// Theme Handling
+function setupTheme() {
+    // Apply initial theme from saved settings
+    applyTheme();
+
+    // Toggle button listener
+    const toggleBtn = document.getElementById('theme-toggle-btn');
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', () => {
+            // Initialize settings object if it doesn't exist (safety check)
+            if (!appData.settings) appData.settings = {};
+
+            // Toggle boolean
+            appData.settings.darkMode = !appData.settings.darkMode;
+
+            // Apply and save
+            applyTheme();
+            saveData();
+        });
+    }
+}
+
+function applyTheme() {
+    const isDark = appData.settings?.darkMode === true;
+    const body = document.body;
+    const sunIcon = document.querySelector('.sun-icon');
+    const moonIcon = document.querySelector('.moon-icon');
+
+    if (isDark) {
+        body.classList.add('dark-mode');
+        // Show Moon icon in Dark Mode
+        sunIcon?.classList.add('hidden');
+        moonIcon?.classList.remove('hidden');
+    } else {
+        body.classList.remove('dark-mode');
+        // Show Sun icon in Light Mode
+        sunIcon?.classList.remove('hidden');
+        moonIcon?.classList.add('hidden');
+    }
 }
