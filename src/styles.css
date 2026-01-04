@@ -1755,6 +1755,8 @@ body {
     max-height: 120px;
     overflow-y: auto;
     word-break: break-all;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 .override-challenge .challenge-input {

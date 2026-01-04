@@ -239,7 +239,7 @@ function setupOnboardingListeners() {
             apps: onboardingApps,
             overrideDifficulty: {
                 type: 'random-words',
-                count: 10
+                count: 50
             }
         };
 
@@ -489,6 +489,11 @@ function setupOverrideModalListeners() {
             challengeTextEl.innerHTML = `${before}<span class="error-char">${errorChar}</span>${after}`;
         }
     }
+
+    // Prevent paste - users must type manually
+    challengeInput.addEventListener('paste', (e) => {
+        e.preventDefault();
+    });
 
     challengeInput.addEventListener('input', () => {
         const typed = challengeInput.value;
@@ -1344,7 +1349,7 @@ function openOverrideModal(blockId) {
     const itemsText = metaParts.length > 0 ? metaParts.join(' and ') : 'nothing';
     document.getElementById('override-summary').textContent = `${mode} ${itemsText}`;
 
-    const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 10 };
+    const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
 
     // Generate challenge text
     if (difficulty.type === 'custom' && difficulty.customText) {
@@ -1375,12 +1380,18 @@ function closeOverrideModal() {
     challengeText = '';
 }
 
-// Generate random words
-function generateRandomWords(count) {
+// Generate random words to reach target character count
+function generateRandomWords(targetChars) {
     const words = [];
-    for (let i = 0; i < count; i++) {
-        words.push(wordList[Math.floor(Math.random() * wordList.length)]);
+    let currentLength = 0;
+
+    while (currentLength < targetChars) {
+        const word = wordList[Math.floor(Math.random() * wordList.length)];
+        words.push(word);
+        // +1 for the space between words (except first word)
+        currentLength += word.length + (words.length > 1 ? 1 : 0);
     }
+
     return words.join(' ');
 }
 
