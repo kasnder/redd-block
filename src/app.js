@@ -1907,8 +1907,6 @@ function renderBlocklists() {
         // Build detailed meta text
         const websiteCount = bl.websites?.length || 0;
         const appCount = bl.apps?.length || 0;
-        const mode = bl.mode === 'allowlist' ? 'Allow' : 'Block';
-
         let metaParts = [];
 
         if (websiteCount > 0) {
@@ -1928,8 +1926,7 @@ function renderBlocklists() {
             }
         }
 
-        const itemsText = metaParts.length > 0 ? metaParts.join(' and ') : 'No items';
-        const metaText = `${mode} · ${itemsText}`;
+        const metaText = metaParts.length > 0 ? metaParts.join(' and ') : 'No items';
 
         // Get color for left border
         // Get color for left border
