@@ -9,12 +9,18 @@ Block distracting websites and apps to stay focused on what matters.
 - **Flexible Blocklists**: Create multiple blocklists with custom emojis and colors
 - **Visual Timeline**: See your blocks on an interactive 24-hour timeline with smooth scrolling
 - **Slider-Based Scheduling**: Intuitive duration selection (15 min to 12 hours) with visual preview
-- **Override Protection**: Configurable difficulty to cancel blocks (random words, gibberish, or custom text)
+- **Override Protection**: Configurable difficulty to cancel blocks:
+  - **Random Words**: Type random words to reach an exact character count (5-5000 chars)
+  - **Random Gibberish**: Type random alphanumeric characters exactly as shown
+  - **Custom Text**: Define your own phrase to type (e.g., a motivational statement)
+  - **Anti-Circumvention**: Copy/paste disabled, text selection blocked
+- **Start Confirmation**: Before starting a block, you'll see a clear warning showing what you'll need to type to override, with an estimated time to complete
 - **Multiple Concurrent Blocks**: Run multiple blocklists simultaneously
 - **Background Operation**: Blocks continue running even when the app is closed via a privileged helper daemon
 - **Drag & Drop Reordering**: Rearrange blocklists by dragging them
 - **One-Time Password**: Only requires your password once on first setup - all subsequent blocks start instantly
 - **Dark Mode**: Toggle between light and dark themes with persistent preference
+- **Themed UI**: Override challenge progress bar matches your blocklist's color theme
 
 ## Installation
 
