@@ -5,7 +5,7 @@ Block distracting websites and apps to stay focused on what matters.
 ## Features
 
 - **Website Blocking**: Block distracting websites across all browsers using system-level hosts file modification
-- **App Blocking**: Automatically minimize distracting macOS apps every 500ms while a block is running
+- **App Blocking**: Automatically minimize distracting apps (macOS and Windows) every 500ms while a block is running
 - **Flexible Blocklists**: Create multiple blocklists with custom emojis and colors
 - **Visual Timeline**: See your blocks on an interactive 24-hour timeline with smooth scrolling
 - **Slider-Based Scheduling**: Intuitive duration selection (15 min to 12 hours) with visual preview
@@ -48,18 +48,18 @@ npm run build:linux
 ## How It Works
 
 ### Website Blocking
-ReDD Block modifies `/etc/hosts` to redirect blocked domains to `127.0.0.1`. The helper daemon ensures blocks persist across app restarts and are tamper-resistant.
+ReDD Block modifies the system hosts file (`/etc/hosts` on macOS/Linux, `C:\Windows\System32\drivers\etc\hosts` on Windows) to redirect blocked domains to `127.0.0.1`. The helper daemon ensures blocks persist across app restarts and are tamper-resistant.
 
 ### App Blocking
-On macOS, blocked applications are automatically hidden every 500ms while a block is active.
+Blocked applications are automatically hidden/minimized every 500ms while a block is active. On macOS, they are hidden; on Windows, they are minimized.
 
 ### Privileged Helper Daemon
 A privileged helper daemon runs in the background with root privileges and handles all hosts file modifications. After initial setup (which requires your password once), all blocks start instantly without any prompts.
 
 The helper is:
 - **Open source**: See the code in `/helper`
-- **Secure**: Communicates via Unix domain socket with the app
-- **Persistent**: Runs as a launchd daemon, survives app restarts and reboots
+- **Secure**: Communicates via IPC (Unix socket on macOS/Linux, TCP port 62222 on Windows) with the app
+- **Persistent**: Runs as a background service (launchd on macOS), survives app restarts and reboots
 - **Tamper-resistant**: Re-applies rules if the hosts file is modified
 
 ## Architecture
@@ -82,7 +82,7 @@ redd-block/
 
 - **macOS**: 10.15+ (Catalina or later)
 - **Linux**: systemd-based distributions (experimental)
-- **Windows**: 10+ (experimental)
+- **Windows**: 10+ (64-bit)
 
 ## License
 
