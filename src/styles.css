@@ -874,6 +874,12 @@ body {
     background: hsl(214, 32%, 98%);
 }
 
+body.dark-mode .time-part:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.3);
+    color: var(--text-primary);
+}
+
 .time-part:focus {
     outline: none;
     border-color: #667eea;
@@ -883,6 +889,11 @@ body {
 .time-part.active {
     border-color: #667eea;
     background: hsl(220, 70%, 98%);
+}
+
+body.dark-mode .time-part.active {
+    background: rgba(129, 140, 248, 0.15);
+    color: var(--accent-color);
 }
 
 .time-colon {
