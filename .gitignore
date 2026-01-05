@@ -32,3 +32,6 @@ Thumbs.db
 
 # Helper compiled binary (should be rebuilt locally)
 helper/dist/
+
+# Store assets are generated automatically
+assets/store
