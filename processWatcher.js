@@ -137,26 +137,31 @@ async function getRunningProcesses() {
 
 /**
  * macOS: Use NSWorkspace notifications via AppleScript
+ * Listens for both app launches AND app activations (when user clicks to bring app forward)
  */
 function startMacOSWatcher() {
     if (watcherProcess) {
         watcherProcess.kill();
     }
 
-    // AppleScript that monitors for app launches using NSWorkspace notifications
-    // This is event-driven - only fires when an app actually launches
+    // AppleScript that monitors for app launches AND activations using NSWorkspace notifications
     const script = `
 use framework "Foundation"
 use framework "AppKit"
 
-on appLaunched_(theNotification)
+on appEvent_(theNotification)
     set appName to (theNotification's userInfo()'s objectForKey:(current application's NSWorkspaceApplicationKey))'s localizedName() as text
     log appName
-end appLaunched_
+end appEvent_
 
 set theWorkspace to current application's NSWorkspace's sharedWorkspace()
 set notifCenter to theWorkspace's notificationCenter()
-notifCenter's addObserver:me selector:"appLaunched:" |name|:(current application's NSWorkspaceDidLaunchApplicationNotification) object:(missing value)
+
+-- Listen for app launches
+notifCenter's addObserver:me selector:"appEvent:" |name|:(current application's NSWorkspaceDidLaunchApplicationNotification) object:(missing value)
+
+-- Listen for app activations (when user clicks to bring app forward)
+notifCenter's addObserver:me selector:"appEvent:" |name|:(current application's NSWorkspaceDidActivateApplicationNotification) object:(missing value)
 
 repeat
     delay 60
@@ -176,8 +181,8 @@ end repeat
         const lines = data.toString().trim().split('\n');
         for (const line of lines) {
             const appName = line.trim();
-            if (appName && blockedApps.has(appName)) {
-                log.info(`Process watcher: Detected blocked app launch: ${appName}`);
+            if (appName && blockedApps.has(appName.toLowerCase())) {
+                log.info(`Process watcher: Blocked app activated/launched: ${appName}`);
                 if (onAppBlocked) {
                     onAppBlocked(appName);
                 }
@@ -187,7 +192,6 @@ end repeat
 
     watcherProcess.on('close', (code) => {
         log.info(`macOS app watcher exited with code ${code}`);
-        // Clean up temp file
         try {
             if (fs.existsSync(tempScriptPath)) {
                 fs.unlinkSync(tempScriptPath);
@@ -200,6 +204,34 @@ end repeat
     });
 
     log.info('macOS app watcher started');
+}
+
+/**
+ * Hide all currently blocked apps (call this when a block starts)
+ */
+function hideAllBlockedApps() {
+    if (process.platform === 'darwin' && blockedApps.size > 0) {
+        const appList = Array.from(blockedApps);
+        log.info('Hiding all blocked apps:', appList);
+
+        // Hide each blocked app
+        appList.forEach(appNameLower => {
+            // Try with the lowercase name, AppleScript will match case-insensitively
+            const script = `
+                tell application "System Events"
+                    set allProcs to every application process whose visible is true
+                    repeat with proc in allProcs
+                        if (name of proc as text) is "${appNameLower}" or (name of proc as text) is "${appNameLower.charAt(0).toUpperCase() + appNameLower.slice(1)}" then
+                            set visible of proc to false
+                        end if
+                    end repeat
+                end tell
+            `;
+            exec(`osascript -e '${script}'`, (err) => {
+                if (err) log.error('Error hiding app:', err);
+            });
+        });
+    }
 }
 
 /**
@@ -243,11 +275,9 @@ foreach ($proc in $processes) {
             }
         });
     } else if (process.platform === 'darwin') {
-        const script = `
-tell application "System Events"
-    set visible of process "${appName}" to false
-end tell
-`;
+        // Use 'application process' - this is the correct System Events syntax
+        const escapedName = appName.replace(/"/g, '\\"');
+        const script = `tell application "System Events" to set visible of application process "${escapedName}" to false`;
         exec(`osascript -e '${script}'`, (err) => {
             if (err) log.error('Error hiding app:', err);
         });
@@ -259,5 +289,6 @@ module.exports = {
     stopWatching,
     setBlockedApps,
     hasBlockedApps,
-    minimizeApp
+    minimizeApp,
+    hideAllBlockedApps
 };

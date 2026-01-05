@@ -737,8 +737,12 @@ async function blockWebsitesViaHosts(domains) {
 function startBlockingInterval() {
     // Start process watcher with callback when blocked app is detected
     processWatcher.startWatching((appName) => {
-        log.info(`Blocked app detected: ${appName} - minimizing immediately`);
+        log.info(`Blocked app detected: ${appName} - hiding with retries`);
+        // Hide immediately
         processWatcher.minimizeApp(appName);
+        // Retry after delays to ensure it's hidden (app window may not be fully ready)
+        setTimeout(() => processWatcher.minimizeApp(appName), 200);
+        setTimeout(() => processWatcher.minimizeApp(appName), 500);
     });
 
     // Update blocked apps list from current active blocks
@@ -791,6 +795,11 @@ function updateBlockedAppsList() {
 
     // Update the process watcher
     processWatcher.setBlockedApps(blockedApps);
+
+    // Immediately hide any blocked apps that are currently visible
+    if (blockedApps.size > 0) {
+        processWatcher.hideAllBlockedApps();
+    }
 
     // If no apps to block, could stop the watcher to save resources
     // But we keep it running so it's ready when blocks are added
