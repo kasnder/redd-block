@@ -1029,6 +1029,17 @@ body {
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
+.blocklist-card.dimmed {
+    opacity: 0.5;
+    transition: opacity 0.3s ease;
+}
+
+.blocklist-card.dimmed:hover {
+    opacity: 0.9;
+    transform: none;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
 .start-block-btn:disabled {
     background: var(--button-disabled-bg);
     cursor: not-allowed;
@@ -1687,6 +1698,29 @@ body {
 
 .helper-install-modal .modal-note a {
     color: hsl(220, 70%, 50%);
+}
+
+/* Spinner animation for buttons */
+@keyframes btn-spinner {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+.btn-spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: btn-spinner 0.8s linear infinite;
+    margin-right: 8px;
+    vertical-align: middle;
 }
 
 /* Start block confirmation modal */

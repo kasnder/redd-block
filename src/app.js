@@ -1015,18 +1015,7 @@ function handleBlocklistSelect(e) {
     }
 
     // Update visual selection state on blocklist cards
-    const selectedBlocklist = selectedBlocklistId ? appData.blocklists.find(bl => bl.id === selectedBlocklistId) : null;
-    document.querySelectorAll('.blocklist-card').forEach(card => {
-        if (card.dataset.id === selectedBlocklistId && selectedBlocklist) {
-            card.classList.add('selected');
-            // Apply the blocklist's color as the selection border
-            const color = selectedBlocklist.color || '#667eea';
-            card.style.boxShadow = `0 0 0 2px ${color}, 0 4px 8px rgba(0, 0, 0, 0.1)`;
-        } else {
-            card.classList.remove('selected');
-            card.style.boxShadow = '';
-        }
-    });
+    renderBlocklists();
 
     handleTimeChange(); // Update button state and preview
 
@@ -1452,7 +1441,28 @@ function openBlocklistModal(blocklist = null) {
 
     // Restore color swatch selection
     document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
-    const colorToSelect = blocklist?.color || 'linear-gradient(135deg, #4a00e0 0%, #8e2de2 100%)';
+
+    let colorToSelect = blocklist?.color;
+
+    // If creating a new blocklist (or no color set), find the first unused color
+    if (!colorToSelect) {
+        const usedColors = new Set(appData.blocklists.map(bl => bl.color));
+        const swatches = Array.from(document.querySelectorAll('.color-swatch:not(.custom-swatch)'));
+
+        // Find first color from the palette that isn't used
+        const firstUnused = swatches.find(s => !usedColors.has(s.dataset.color));
+
+        if (firstUnused) {
+            colorToSelect = firstUnused.dataset.color;
+        } else if (swatches.length > 0) {
+            // If all are used, wrap around to the first one
+            colorToSelect = swatches[0].dataset.color;
+        } else {
+            // Fallback default
+            colorToSelect = 'linear-gradient(135deg, #4a00e0 0%, #8e2de2 100%)';
+        }
+    }
+
     const matchingSwatch = document.querySelector(`.color-swatch[data-color="${colorToSelect}"]:not(.custom-swatch)`);
     if (matchingSwatch) {
         matchingSwatch.classList.add('selected');
@@ -1468,7 +1478,28 @@ function openBlocklistModal(blocklist = null) {
 
     // Restore emoji swatch selection
     document.querySelectorAll('.emoji-swatch').forEach(s => s.classList.remove('selected'));
-    const emojiToSelect = blocklist?.emoji || '🚫';
+
+    let emojiToSelect = blocklist?.emoji;
+
+    // If creating a new blocklist (or no emoji set), find the first unused emoji
+    if (!emojiToSelect) {
+        const usedEmojis = new Set(appData.blocklists.map(bl => bl.emoji));
+        const emojiSwatches = Array.from(document.querySelectorAll('.emoji-swatch:not(.custom-emoji-swatch)'));
+
+        // Find first emoji from the palette that isn't used
+        const firstUnused = emojiSwatches.find(s => !usedEmojis.has(s.dataset.emoji));
+
+        if (firstUnused) {
+            emojiToSelect = firstUnused.dataset.emoji;
+        } else if (emojiSwatches.length > 0) {
+            // If all are used, wrap around to the first one
+            emojiToSelect = emojiSwatches[0].dataset.emoji;
+        } else {
+            // Fallback default
+            emojiToSelect = '🚫';
+        }
+    }
+
     const matchingEmoji = document.querySelector(`.emoji-swatch[data-emoji="${emojiToSelect}"]:not(.custom-emoji-swatch)`);
     if (matchingEmoji) {
         matchingEmoji.classList.add('selected');
@@ -1761,6 +1792,18 @@ function render() {
     updateTimelineAxis();
     renderActiveBlocks();
     renderBlocklistSelector();
+
+    // Auto-select if there's only one available (non-active) blocklist
+    if (!selectedBlocklistId) {
+        const activeIds = appData.activeBlocks.map(b => b.blocklistId);
+        const availableBlocklists = appData.blocklists.filter(bl => !activeIds.includes(bl.id));
+        if (availableBlocklists.length === 1) {
+            const dropdown = document.getElementById('blocklist-select');
+            dropdown.value = availableBlocklists[0].id;
+            handleBlocklistSelect({ target: dropdown });
+        }
+    }
+
     renderBlocklists();
 
     // Adjust window height to fit content
@@ -2035,9 +2078,14 @@ function renderBlocklists() {
         // Check if this blocklist is selected for starting a block
         const isSelected = bl.id === selectedBlocklistId && !isActive;
         const selectedClass = isSelected ? ' selected' : '';
+        const selectedStyle = isSelected ? `style="box-shadow: 0 0 0 2px ${bl.color || '#667eea'}, 0 4px 8px rgba(0, 0, 0, 0.1);"` : '';
+
+        // Dim if something is selected but this one isn't (and it's not active)
+        const isDimmed = selectedBlocklistId && !isSelected && !isActive;
+        const dimmedClass = isDimmed ? ' dimmed' : '';
 
         return `
-      <div class="blocklist-card${activeClass}${selectedClass}" data-id="${bl.id}" data-active="${isActive}" draggable="true">
+      <div class="blocklist-card${activeClass}${selectedClass}${dimmedClass}" data-id="${bl.id}" data-active="${isActive}" ${selectedStyle} draggable="true">
         <div class="blocklist-stripe" style="background: ${borderColor}"></div>
         <div class="blocklist-info">
           <div class="blocklist-name"><span class="blocklist-emoji">${bl.emoji || '🚫'}</span>${escapeHtml(bl.name)}${activeBadge}</div>
