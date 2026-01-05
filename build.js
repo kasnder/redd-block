@@ -129,7 +129,8 @@ builder.build({
       applicationId: 'ReDDBlock',
       identityName: process.env.WINDOWS_IDENTITY_NAME,
       publisher: process.env.WINDOWS_PUBLISHER,
-      publisherDisplayName: process.env.WINDOWS_PUBLISHER_DISPLAY_NAME
+      publisherDisplayName: process.env.WINDOWS_PUBLISHER_DISPLAY_NAME,
+      assets: 'assets/store'
     },
     linux: {
       target: [
