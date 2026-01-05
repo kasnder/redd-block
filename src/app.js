@@ -602,6 +602,9 @@ function setupOverrideModalListeners() {
                 await updateHostsFile();
             }
 
+            // Notify main process to refresh blocked apps list (stops app blocking)
+            ipcRenderer.send('refresh-blocked-apps');
+
             render();
             closeOverrideModal();
         } else {
@@ -1373,6 +1376,8 @@ async function updateHostsFile(silent = false) {
                 const result = await ipcRenderer.invoke('clear-block-via-helper');
                 if (result && result.success) {
                     lastBlockedDomains = allDomains;
+                    // Also notify main process to refresh blocked apps list
+                    ipcRenderer.send('refresh-blocked-apps');
                 }
                 return result || { success: true };
             } else {
