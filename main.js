@@ -140,9 +140,17 @@ function createMenu() {
 }
 
 function createMainWindow() {
+    // Check if onboarding is complete to determine initial window size
+    const data = loadData();
+    const onboardingComplete = data.settings && data.settings.onboardingComplete;
+
+    // Use different dimensions for onboarding vs main app
+    const windowWidth = onboardingComplete ? 840 : 600;
+    const windowHeight = onboardingComplete ? 650 : 1000;
+
     mainWindow = new BrowserWindow({
-        width: 840,
-        height: 650,
+        width: windowWidth,
+        height: windowHeight,
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: false,
@@ -220,6 +228,33 @@ ipcMain.on('set-window-height', (event, height) => {
         // Minimum height to ensure usability
         const newHeight = Math.max(height, 500);
         mainWindow.setSize(width, newHeight, true); // true = animate on macOS
+    }
+});
+
+// Window control IPC handlers (for custom title bar on Windows)
+ipcMain.on('window-minimize', () => {
+    if (mainWindow) mainWindow.minimize();
+});
+
+ipcMain.on('window-maximize', () => {
+    if (mainWindow) {
+        if (mainWindow.isMaximized()) {
+            mainWindow.unmaximize();
+        } else {
+            mainWindow.maximize();
+        }
+    }
+});
+
+ipcMain.on('window-close', () => {
+    if (mainWindow) mainWindow.close();
+});
+
+// Resize window to specific dimensions (e.g., after onboarding)
+ipcMain.on('set-window-size', (event, { width, height }) => {
+    if (mainWindow) {
+        mainWindow.setSize(width, height, true);
+        mainWindow.center(); // Re-center after resize
     }
 });
 

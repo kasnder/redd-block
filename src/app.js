@@ -85,6 +85,21 @@ function detectPlatform() {
     }
 }
 
+// Update window height to fit content
+function updateWindowHeight() {
+    // Use requestAnimationFrame to ensure layout is complete
+    requestAnimationFrame(() => {
+        const appContainer = document.querySelector('.app-container');
+        if (appContainer) {
+            // Get the actual height needed for the content
+            const contentHeight = appContainer.scrollHeight;
+            // Add a small buffer for window chrome/borders
+            const targetHeight = Math.max(contentHeight + 20, 500);
+            ipcRenderer.send('set-window-height', targetHeight);
+        }
+    });
+}
+
 // Setup event listeners
 function setupEventListeners() {
     // Window controls
@@ -253,6 +268,10 @@ function setupOnboardingListeners() {
         appData.blocklists.push(blocklist);
         appData.settings.onboardingComplete = true;
         saveData();
+
+        // Resize window from onboarding size to main app size
+        ipcRenderer.send('set-window-size', { width: 840, height: 650 });
+
         render();
     });
 }
@@ -1263,9 +1282,9 @@ async function proceedWithHelperInstall() {
     const modal = document.getElementById('helper-install-modal');
     const proceedBtn = document.getElementById('proceed-helper-install-btn');
 
-    // Disable button while installing
+    // Disable button while installing with spinner
     proceedBtn.disabled = true;
-    proceedBtn.textContent = 'Installing...';
+    proceedBtn.innerHTML = '<span class="btn-spinner"></span>Installing...';
 
     // Try to install the helper
     const installResult = await ipcRenderer.invoke('install-helper');
@@ -1729,7 +1748,7 @@ function undoDelete() {
 
 // Main render function
 function render() {
-    // Show onboarding if not complete
+    // Show onboarding if not complete - window size is set in main.js
     if (!appData.settings.onboardingComplete) {
         document.getElementById('onboarding-screen').classList.remove('hidden');
         document.getElementById('main-content').classList.add('hidden');

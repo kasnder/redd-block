@@ -125,6 +125,7 @@ body {
     align-items: center;
     gap: 6px;
     -webkit-app-region: no-drag;
+    z-index: 200;
 }
 
 .win-btn {
@@ -1245,6 +1246,7 @@ body {
     justify-content: center;
     z-index: 100;
     padding: 24px;
+    overflow-y: auto;
 }
 
 .onboarding-screen.hidden {
