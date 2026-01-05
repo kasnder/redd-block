@@ -72,13 +72,20 @@ function hasBlockedApps() {
  * - Track which processes we've seen before
  * - Only trigger for NEW processes that match blocked apps
  * - This is efficient because we only check for differences, not all processes
+ * 
+ * Also poll every 500ms for foreground window to detect when user activates a blocked app
  */
 let windowsPollInterval = null;
+let windowsForegroundInterval = null;
 let knownProcesses = new Set();
+let lastBlockTime = 0;
 
 function startWindowsWatcher() {
     if (windowsPollInterval) {
         clearInterval(windowsPollInterval);
+    }
+    if (windowsForegroundInterval) {
+        clearInterval(windowsForegroundInterval);
     }
 
     // Initialize with current processes
@@ -109,7 +116,28 @@ function startWindowsWatcher() {
         knownProcesses = currentSet;
     }, 2000);
 
-    log.info('Windows process watcher started (polling mode)');
+    // Poll every 500ms for foreground window - block if it's a blocked app
+    windowsForegroundInterval = setInterval(async () => {
+        if (blockedApps.size === 0) return; // Skip if nothing to block
+
+        const foregroundApp = await getForegroundApp();
+        if (foregroundApp) {
+            const appLower = foregroundApp.toLowerCase();
+            if (blockedApps.has(appLower)) {
+                // Debounce: don't trigger more than once per second for same app
+                const now = Date.now();
+                if (now - lastBlockTime > 1000) {
+                    log.info(`Process watcher: Blocked app in foreground: ${foregroundApp}`);
+                    lastBlockTime = now;
+                    if (onAppBlocked) {
+                        onAppBlocked(foregroundApp);
+                    }
+                }
+            }
+        }
+    }, 500);
+
+    log.info('Windows process watcher started (polling mode with foreground detection)');
 }
 
 function stopWindowsWatcher() {
@@ -117,6 +145,49 @@ function stopWindowsWatcher() {
         clearInterval(windowsPollInterval);
         windowsPollInterval = null;
     }
+    if (windowsForegroundInterval) {
+        clearInterval(windowsForegroundInterval);
+        windowsForegroundInterval = null;
+    }
+}
+
+/**
+ * Get the foreground (active) window's process name on Windows
+ */
+async function getForegroundApp() {
+    return new Promise((resolve) => {
+        // Use temp file to avoid PowerShell escaping issues
+        const tempScriptPath = path.join(require('electron').app.getPath('temp'), 'foreground-check.ps1');
+        const psScript = `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class FGWindow {
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+}
+"@
+$hwnd = [FGWindow]::GetForegroundWindow()
+$procId = 0
+[void][FGWindow]::GetWindowThreadProcessId($hwnd, [ref]$procId)
+if ($procId -gt 0) {
+    $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
+    if ($proc) { $proc.ProcessName }
+}
+`;
+        fs.writeFileSync(tempScriptPath, psScript);
+        exec(`powershell -NoProfile -ExecutionPolicy Bypass -File "${tempScriptPath}"`, (error, stdout) => {
+            // Don't delete temp file - reuse it for performance
+            if (error) {
+                resolve(null);
+                return;
+            }
+            const appName = stdout.trim();
+            resolve(appName || null);
+        });
+    });
 }
 
 async function getRunningProcesses() {
