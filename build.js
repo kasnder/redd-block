@@ -53,6 +53,15 @@ builder.build({
       output: 'dist',
       buildResources: 'assets'
     },
+    // Include the helper folder in the packaged app
+    // This copies helper/ to resources/helper/ so the installer can find the binaries
+    extraResources: [
+      {
+        from: 'helper',
+        to: 'helper',
+        filter: ['**/*', '!node_modules/**']
+      }
+    ],
     afterSign: 'scripts/notarize.js',
     dmg: {
       background: 'assets/dmg-background.png',
