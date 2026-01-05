@@ -1412,6 +1412,7 @@ function openBlocklistModal(blocklist = null) {
     editingBlocklistId = blocklist?.id || null;
 
     document.getElementById('modal-title').textContent = blocklist ? 'Edit Blocklist' : 'Create Blocklist';
+
     document.getElementById('blocklist-name').value = blocklist?.name || '';
 
     document.getElementById('override-type').value = blocklist?.overrideDifficulty?.type || 'random-words';
@@ -1537,6 +1538,10 @@ function openBlocklistModal(blocklist = null) {
     }
 
     document.getElementById('blocklist-modal').classList.remove('hidden');
+
+    // Reset scroll position after modal is shown
+    const modalContent = document.querySelector('#blocklist-modal .modal-content');
+    if (modalContent) modalContent.scrollTop = 0;
 }
 
 // Close blocklist modal
