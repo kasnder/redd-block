@@ -64,7 +64,7 @@ builder.build({
     ],
     afterSign: 'scripts/notarize.js',
     dmg: {
-      background: 'assets/dmg-background.png',
+      backgroundColor: '#ffffff',
       iconSize: 100,
       window: {
         width: 600,
