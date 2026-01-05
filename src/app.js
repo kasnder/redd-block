@@ -1240,6 +1240,9 @@ async function proceedWithBlock() {
     // Save data and reset UI
     await saveData();
 
+    // Notify main process to refresh blocked apps list
+    ipcRenderer.send('refresh-blocked-apps');
+
     // Reset dropdown and let handleBlocklistSelect handle the UI hiding/reset
     const blocklistSelect = document.getElementById('blocklist-select');
     blocklistSelect.value = '';

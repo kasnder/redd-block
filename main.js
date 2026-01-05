@@ -9,9 +9,12 @@ const sudo = require('sudo-prompt');
 const helperClient = require('./helper/ipc-client');
 const helperInstaller = require('./helper/installer');
 
+// Event-driven process monitoring (replaces polling)
+const processWatcher = require('./processWatcher');
+
 let mainWindow;
 let tray;
-let blockingInterval;
+let blockExpirationInterval;
 
 // Data file path for persistent storage
 const dataPath = path.join(app.getPath('userData'), 'redd-block-data.json');
@@ -730,11 +733,21 @@ async function blockWebsitesViaHosts(domains) {
 }
 
 
-// Start blocking interval
+// Start blocking - uses event-driven process monitoring instead of polling
 function startBlockingInterval() {
-    if (blockingInterval) return;
+    // Start process watcher with callback when blocked app is detected
+    processWatcher.startWatching((appName) => {
+        log.info(`Blocked app detected: ${appName} - minimizing immediately`);
+        processWatcher.minimizeApp(appName);
+    });
 
-    blockingInterval = setInterval(async () => {
+    // Update blocked apps list from current active blocks
+    updateBlockedAppsList();
+
+    // Check for expired blocks every 5 seconds (lightweight, just data check)
+    if (blockExpirationInterval) return;
+
+    blockExpirationInterval = setInterval(() => {
         const data = loadData();
         const now = Date.now();
 
@@ -750,115 +763,43 @@ function startBlockingInterval() {
 
         if (hasChanges) {
             saveData(data);
-            // Update hosts file to remove expired blocks
-            const allBlockedDomains = [];
-            data.activeBlocks.forEach(block => {
-                const blocklist = data.blocklists.find(bl => bl.id === block.blocklistId);
-                if (blocklist) {
-                    allBlockedDomains.push(...blocklist.websites);
-                }
-            });
-
-            // This would need to be called differently since ipcMain.handle is for renderer
-            // For now, we'll trigger a refresh
+            // Update the blocked apps list
+            updateBlockedAppsList();
+            // Notify renderer
             if (mainWindow && mainWindow.webContents) {
                 mainWindow.webContents.send('blocks-updated');
             }
         }
-
-        // Minimize blocked apps
-        if (process.platform === 'darwin' || process.platform === 'win32') {
-            const now = Date.now();
-            const blockedApps = new Set();
-
-            // Only include apps from currently active blocks (within time range)
-            data.activeBlocks
-                .filter(block => block.startTime <= now && block.endTime > now)
-                .forEach(block => {
-                    const blocklist = data.blocklists.find(bl => bl.id === block.blocklistId);
-                    if (blocklist && blocklist.apps && blocklist.apps.length > 0) {
-                        blocklist.apps.forEach(app => blockedApps.add(app));
-                    }
-                });
-
-            if (blockedApps.size > 0) {
-                log.info('Checking for blocked apps:', Array.from(blockedApps));
-
-                if (process.platform === 'darwin') {
-                    // macOS: Use AppleScript to hide apps
-                    const script = `
-              const apps = Application("System Events").processes.whose({backgroundOnly: false}).name();
-              JSON.stringify(apps);
-            `;
-
-                    exec(`osascript -l JavaScript -e '${script}'`, (error, stdout) => {
-                        if (error) {
-                            log.error('Error getting running apps:', error);
-                            return;
-                        }
-                        try {
-                            const runningApps = JSON.parse(stdout);
-                            runningApps.forEach(appName => {
-                                if (blockedApps.has(appName)) {
-                                    log.info('Hiding blocked app:', appName);
-                                    const hideScript = `
-                      tell application "System Events"
-                        set visible of process "${appName}" to false
-                      end tell
-                    `;
-                                    exec(`osascript -e '${hideScript}'`, (err) => {
-                                        if (err) log.error('Error hiding app:', err);
-                                    });
-                                }
-                            });
-                        } catch (e) {
-                            log.error('Error parsing running apps:', e);
-                        }
-                    });
-                } else if (process.platform === 'win32') {
-                    // Windows: Minimize the application using a temp script to avoid escaping issues
-                    const tempScriptPath = path.join(app.getPath('temp'), `minimize-apps-${Date.now()}.ps1`);
-                    const appsArray = Array.from(blockedApps).map(a => `"${a}"`).join(',');
-
-                    const psScript = `
-$blockedApps = @(${appsArray})
-
-$code = @"
-using System;
-using System.Runtime.InteropServices;
-public class Win32 {
-    [DllImport("user32.dll")]
-    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-}
-"@
-
-if (-not ([System.Management.Automation.PSTypeName]'Win32').Type) {
-    Add-Type -TypeDefinition $code -Language CSharp
+    }, 5000); // Check every 5 seconds (was 500ms)
 }
 
-Get-Process | Where-Object { $blockedApps -contains $_.ProcessName } | ForEach-Object {
-    if ($_.MainWindowHandle -ne [IntPtr]::Zero) {
-        [Win32]::ShowWindow($_.MainWindowHandle, 6) # SW_MINIMIZE = 6
-    }
-}
-`;
-                    try {
-                        fs.writeFileSync(tempScriptPath, psScript);
-                        exec(`powershell -ExecutionPolicy Bypass -File "${tempScriptPath}"`, (err, stdout, stderr) => {
-                            // Clean up temp file
-                            try { fs.unlinkSync(tempScriptPath); } catch (e) { }
+// Update the list of apps to block based on active blocks
+function updateBlockedAppsList() {
+    const data = loadData();
+    const now = Date.now();
+    const blockedApps = new Set();
 
-                            if (err) log.error('Error minimizing Windows apps:', err);
-                            if (stderr) log.warn('PowerShell stderr:', stderr);
-                        });
-                    } catch (e) {
-                        log.error('Failed to write minimization script:', e);
-                    }
-                }
+    // Collect apps from currently active blocks
+    data.activeBlocks
+        .filter(block => block.startTime <= now && block.endTime > now)
+        .forEach(block => {
+            const blocklist = data.blocklists.find(bl => bl.id === block.blocklistId);
+            if (blocklist && blocklist.apps && blocklist.apps.length > 0) {
+                blocklist.apps.forEach(appName => blockedApps.add(appName));
             }
-        }
-    }, 500); // Check every 500ms for responsive app blocking
+        });
+
+    // Update the process watcher
+    processWatcher.setBlockedApps(blockedApps);
+
+    // If no apps to block, could stop the watcher to save resources
+    // But we keep it running so it's ready when blocks are added
 }
+
+// IPC handler to refresh blocked apps (called when blocks change)
+ipcMain.on('refresh-blocked-apps', () => {
+    updateBlockedAppsList();
+});
 
 // IPC listeners for window controls
 ipcMain.on('window-minimize', () => {
@@ -910,8 +851,11 @@ app.on('activate', () => {
 });
 
 app.on('before-quit', () => {
-    // Clean up hosts file on quit (optional - could leave blocks in place)
-    if (blockingInterval) {
-        clearInterval(blockingInterval);
+    // Stop process watcher
+    processWatcher.stopWatching();
+
+    // Clear block expiration interval
+    if (blockExpirationInterval) {
+        clearInterval(blockExpirationInterval);
     }
 });
