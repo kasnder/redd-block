@@ -53,13 +53,12 @@ builder.build({
       output: 'dist',
       buildResources: 'assets'
     },
-    // Include the helper folder in the packaged app
-    // This copies helper/ to resources/helper/ so the installer can find the binaries
+    // Only put the helper binary in extraResources (outside ASAR)
+    // The helper JS files stay in the ASAR (default behavior) so require() works
     extraResources: [
       {
-        from: 'helper',
-        to: 'helper',
-        filter: ['**/*', '!node_modules/**']
+        from: 'helper/dist/redd-block-helper-${arch}',
+        to: 'helper/dist/redd-block-helper'
       }
     ],
     afterSign: 'scripts/notarize.js',
