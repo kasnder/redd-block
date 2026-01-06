@@ -121,14 +121,41 @@ function setupEventListeners() {
     // Close popovers on outside click
     document.addEventListener('click', handlePopoverOutsideClick);
 
+    // Click on background to deselect blocklists
+    document.addEventListener('click', (e) => {
+        // Don't deselect if clicking on interactive elements
+        if (e.target.closest('.blocklist-card') ||
+            e.target.closest('.scheduler-section') ||
+            e.target.closest('.modal-overlay') ||
+            e.target.closest('.section-header') ||
+            e.target.closest('.footer') ||
+            e.target.closest('.title-bar')) {
+            return;
+        }
+
+        // Deselect blocklist if one is selected
+        if (selectedBlocklistId) {
+            selectedBlocklistId = null;
+            const blocklistSelect = document.getElementById('blocklist-select');
+            blocklistSelect.value = '';
+            handleBlocklistSelect({ target: blocklistSelect });
+        }
+    });
+
     // Duration picker - input change
     const durationInput = document.getElementById('duration-minutes-input');
     if (durationInput) {
-        durationInput.addEventListener('input', handleDurationInputChange);
+        durationInput.addEventListener('input', (e) => {
+            // Enforce max 5 digits visually
+            if (durationInput.value.length > 5) {
+                durationInput.value = durationInput.value.slice(0, 5);
+            }
+            handleDurationInputChange();
+        });
         durationInput.addEventListener('blur', () => {
             let mins = parseInt(durationInput.value);
             if (isNaN(mins) || mins < 1) mins = 60;
-            if (mins > 1440) mins = 1440;
+            if (mins > 99999) mins = 99999;
             durationInput.value = mins;
             handleDurationInputChange();
         });
@@ -393,28 +420,48 @@ function setupModalListeners() {
         });
     });
 
-    // Custom emoji picker
-    const customEmojiInput = document.getElementById('custom-emoji-input');
+    // Custom emoji picker with emoji-picker-element popover
     const customEmojiSwatch = document.getElementById('custom-emoji-swatch');
-    if (customEmojiInput && customEmojiSwatch) {
-        customEmojiInput.addEventListener('input', (e) => {
-            const val = e.target.value.trim();
-            if (val) {
-                // Take the last character (handles surrogate pairs)
-                const char = Array.from(val).pop();
-                customEmojiSwatch.innerHTML = char;
-                customEmojiSwatch.dataset.emoji = char;
+    const emojiPickerPopover = document.getElementById('emoji-picker-popover');
+    const emojiPicker = emojiPickerPopover?.querySelector('emoji-picker');
 
-                document.querySelectorAll('.emoji-swatch').forEach(s => s.classList.remove('selected'));
-                customEmojiSwatch.classList.add('selected');
+    if (customEmojiSwatch && emojiPickerPopover && emojiPicker) {
+        // Toggle popover on swatch click
+        customEmojiSwatch.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            if (emojiPickerPopover.classList.contains('hidden')) {
+                // Position the popover above the button using fixed positioning
+                const rect = customEmojiSwatch.getBoundingClientRect();
+                emojiPickerPopover.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
+                emojiPickerPopover.style.right = (window.innerWidth - rect.right) + 'px';
+                emojiPickerPopover.classList.remove('hidden');
+            } else {
+                emojiPickerPopover.classList.add('hidden');
             }
         });
 
-        // Ensure swatch is selected when input is focused
-        customEmojiInput.addEventListener('focus', () => {
-            if (customEmojiSwatch.dataset.emoji) {
-                document.querySelectorAll('.emoji-swatch').forEach(s => s.classList.remove('selected'));
-                customEmojiSwatch.classList.add('selected');
+        // Handle emoji selection
+        emojiPicker.addEventListener('emoji-click', (e) => {
+            const emoji = e.detail.unicode;
+            customEmojiSwatch.innerHTML = emoji;
+            customEmojiSwatch.dataset.emoji = emoji;
+
+            // Select the custom swatch
+            document.querySelectorAll('.emoji-swatch').forEach(s => s.classList.remove('selected'));
+            customEmojiSwatch.classList.add('selected');
+
+            // Hide popover
+            emojiPickerPopover.classList.add('hidden');
+        });
+
+        // Close popover when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!emojiPickerPopover.classList.contains('hidden') &&
+                !emojiPickerPopover.contains(e.target) &&
+                !customEmojiSwatch.contains(e.target)) {
+                emojiPickerPopover.classList.add('hidden');
             }
         });
     }
@@ -841,7 +888,7 @@ function handleDurationInputChange() {
     if (isNaN(mins) || mins <= 0) return;
 
     // Track the target duration and reset end time editing flag
-    targetDurationMinutes = Math.min(mins, 1440);
+    targetDurationMinutes = Math.min(mins, 99999);
     userEditedEndTime = false;
 
     // Only update end time if it's a valid positive number
@@ -901,15 +948,38 @@ function handleTimeChange() {
     let blockStart = getStartTimeAsDate();
     let blockEnd = getEndTimeAsDate();
 
-    // Handle overnight: if end <= start, it's next day
-    const isNextDay = blockEnd <= blockStart;
-    if (isNextDay) {
-        blockEnd.setDate(blockEnd.getDate() + 1);
+    // Determine block end time
+    if (!userEditedEndTime && targetDurationMinutes > 0) {
+        // If driving by duration, exact calculation
+        blockEnd = new Date(blockStart.getTime() + targetDurationMinutes * 60 * 1000);
+    } else {
+        // If driving by end time picker, assume nearest future time (handle overnight)
+        if (blockEnd <= blockStart) {
+            blockEnd.setDate(blockEnd.getDate() + 1);
+        }
+
+        // If we previously had a multi-day duration and only changed the time slightly, 
+        // we might want to preserve the day difference, but standard time picker behavior 
+        // usually resets to nearest future time. We'll stick to nearest future for manual time edits.
     }
 
-    // Show/hide +1 day indicator
+    // Calculate how many days in the future the end time is
+    const startDay = new Date(blockStart);
+    startDay.setHours(0, 0, 0, 0);
+    const endDay = new Date(blockEnd);
+    endDay.setHours(0, 0, 0, 0);
+    const daysDiff = Math.round((endDay - startDay) / (24 * 60 * 60 * 1000));
+
+    // Show/hide day indicator with correct count
     if (nextDayIndicator) {
-        if (isNextDay) {
+        if (daysDiff > 0) {
+            if (daysDiff === 1) {
+                nextDayIndicator.textContent = 'tomorrow';
+            } else {
+                // For >1 days, show date like "8 Jan"
+                const dateStr = blockEnd.getDate() + ' ' + blockEnd.toLocaleString('default', { month: 'short' });
+                nextDayIndicator.textContent = dateStr;
+            }
             nextDayIndicator.classList.remove('hidden');
         } else {
             nextDayIndicator.classList.add('hidden');
@@ -979,8 +1049,8 @@ function handleTimeChange() {
         `;
         previewBlock.classList.remove('hidden');
     } else {
-        previewBlock.innerHTML = '<div class="block-content"><span class="block-label">Select a blocklist</span></div>';
-        previewBlock.classList.remove('hidden');
+        // No blocklist selected - hide the preview
+        previewBlock.classList.add('hidden');
     }
 }
 
@@ -1732,6 +1802,14 @@ async function deleteBlocklist(id) {
     appData.blocklists = appData.blocklists.filter(bl => bl.id !== id);
     appData.activeBlocks = appData.activeBlocks.filter(b => b.blocklistId !== id);
 
+    // If the deleted blocklist was the selected one, reset the scheduler UI
+    if (selectedBlocklistId === id) {
+        selectedBlocklistId = null;
+        const blocklistSelect = document.getElementById('blocklist-select');
+        blocklistSelect.value = '';
+        handleBlocklistSelect({ target: blocklistSelect });
+    }
+
     // Re-render immediately
     render();
 
@@ -1818,6 +1896,17 @@ function render() {
     }
 
     renderBlocklists();
+
+    // Hide "Select a blocklist" prompt if there are no blocklists
+    const selectionPrompt = document.getElementById('selection-prompt');
+    if (selectionPrompt) {
+        if (appData.blocklists.length === 0) {
+            selectionPrompt.classList.add('hidden');
+        } else if (!selectedBlocklistId) {
+            // Only show prompt if there are blocklists but none selected
+            selectionPrompt.classList.remove('hidden');
+        }
+    }
 
     // Adjust window height to fit content
     updateWindowHeight();

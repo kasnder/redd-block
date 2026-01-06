@@ -64,7 +64,7 @@
                                     <label class="time-label">Duration</label>
                                     <div class="duration-input-wrapper">
                                         <input type="number" id="duration-minutes-input" class="duration-input" min="1"
-                                            max="1440" value="60">
+                                            max="99999" value="60">
                                         <span class="duration-unit">min</span>
                                     </div>
                                 </div>
@@ -335,23 +335,23 @@
                     <label>Color</label>
                     <div class="color-picker-container">
                         <div class="color-swatches" id="color-swatches">
-                            <!-- Fun yet calming pastel palette -->
-                            <button type="button" class="color-swatch selected" data-color="#FF9E9E"
-                                style="background: #FF9E9E" title="Sunset"></button>
-                            <button type="button" class="color-swatch" data-color="#FFC09F" style="background: #FFC09F"
-                                title="Apricot"></button>
-                            <button type="button" class="color-swatch" data-color="#FFEE93" style="background: #FFEE93"
-                                title="Buttercup"></button>
-                            <button type="button" class="color-swatch" data-color="#ADF7B6" style="background: #ADF7B6"
-                                title="Mint"></button>
+                            <!-- Fun yet calming pastel palette: dark blue → green → yellow → pink → dark red → lavender -->
+                            <button type="button" class="color-swatch selected" data-color="#81B1D1"
+                                style="background: #81B1D1" title="Sky"></button>
                             <button type="button" class="color-swatch" data-color="#A0CED9" style="background: #A0CED9"
                                 title="Ice"></button>
-                            <button type="button" class="color-swatch" data-color="#81B1D1" style="background: #81B1D1"
-                                title="Sky"></button>
-                            <button type="button" class="color-swatch" data-color="#B19CD9" style="background: #B19CD9"
-                                title="Lavender"></button>
+                            <button type="button" class="color-swatch" data-color="#ADF7B6" style="background: #ADF7B6"
+                                title="Mint"></button>
+                            <button type="button" class="color-swatch" data-color="#FFEE93" style="background: #FFEE93"
+                                title="Buttercup"></button>
                             <button type="button" class="color-swatch" data-color="#FFD1DC" style="background: #FFD1DC"
                                 title="Blush"></button>
+                            <button type="button" class="color-swatch" data-color="#FFC09F" style="background: #FFC09F"
+                                title="Apricot"></button>
+                            <button type="button" class="color-swatch" data-color="#FF9E9E" style="background: #FF9E9E"
+                                title="Sunset"></button>
+                            <button type="button" class="color-swatch" data-color="#B19CD9" style="background: #B19CD9"
+                                title="Lavender"></button>
                             <!-- Custom color picker -->
                             <div class="custom-color-wrapper">
                                 <input type="color" id="custom-color-input" class="custom-color-input" value="#667eea">
@@ -368,28 +368,22 @@
                     <label>Emoji</label>
                     <div class="emoji-picker-container">
                         <div class="emoji-swatches" id="emoji-swatches">
-                            <button type="button" class="emoji-swatch selected" data-emoji="🚫">🚫</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🔒">🔒</button>
-                            <button type="button" class="emoji-swatch" data-emoji="⛔">⛔</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🛑">🛑</button>
-                            <button type="button" class="emoji-swatch" data-emoji="📵">📵</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🧘">🧘</button>
+                            <button type="button" class="emoji-swatch selected" data-emoji="🎯">🎯</button>
                             <button type="button" class="emoji-swatch" data-emoji="💪">💪</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🎯">🎯</button>
                             <button type="button" class="emoji-swatch" data-emoji="📚">📚</button>
-                            <button type="button" class="emoji-swatch" data-emoji="💼">💼</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🏃">🏃</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🧠">🧠</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🌊">🌊</button>
+                            <button type="button" class="emoji-swatch" data-emoji="🚫">🚫</button>
                             <button type="button" class="emoji-swatch" data-emoji="🌳">🌳</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🍵">🍵</button>
+                            <button type="button" class="emoji-swatch" data-emoji="🎉">🎉</button>
+                            <button type="button" class="emoji-swatch" data-emoji="🛏️">🛏️</button>
+                            <button type="button" class="emoji-swatch" data-emoji="🎹">🎹</button>
                             <!-- Custom emoji selector -->
                             <div class="custom-emoji-wrapper">
-                                <input type="text" id="custom-emoji-input" class="custom-emoji-input" maxlength="2"
-                                    placeholder="?">
                                 <button type="button" class="emoji-swatch custom-emoji-swatch" id="custom-emoji-swatch">
                                     <span class="custom-icon">+</span>
                                 </button>
+                                <div id="emoji-picker-popover" class="emoji-picker-popover hidden">
+                                    <emoji-picker></emoji-picker>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -507,6 +501,9 @@
         </div>
     </div>
 
+    <script type="module">
+        import '../node_modules/emoji-picker-element/index.js';
+    </script>
     <script src="app.js"></script>
 </body>
 
