@@ -1,6 +1,6 @@
 {
   "name": "redd-block",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "ReDD Block - block distracting websites and apps to stay focused",
   "main": "main.js",
   "scripts": {
@@ -11,7 +11,8 @@
     "build:win": "node build.js --win",
     "build:linux": "node build.js --linux",
     "postinstall": "electron-builder install-app-deps",
-    "compile:helper": "pkg helper/redd-block-helper.js -t node18-win-x64 -o helper/dist/redd-block-helper-win.exe"
+    "compile:helper": "pkg helper/redd-block-helper.js -t node18-win-x64 -o helper/dist/redd-block-helper-win.exe",
+    "generate:assets": "node scripts/generate-appx-assets.js"
   },
   "keywords": [
     "blocker",
