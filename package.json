@@ -11,7 +11,10 @@
     "build:win": "node build.js --win",
     "build:linux": "node build.js --linux",
     "postinstall": "electron-builder install-app-deps",
-    "compile:helper": "pkg helper/redd-block-helper.js -t node18-win-x64 -o helper/dist/redd-block-helper-win.exe",
+    "compile:helper:mac": "pkg helper/redd-block-helper.js -t node18-macos-arm64 -o helper/dist/redd-block-helper-arm64 && pkg helper/redd-block-helper.js -t node18-macos-x64 -o helper/dist/redd-block-helper-x64 && lipo -create -output helper/dist/redd-block-helper helper/dist/redd-block-helper-arm64 helper/dist/redd-block-helper-x64",
+    "compile:helper:win": "pkg helper/redd-block-helper.js -t node18-win-x64 -o helper/dist/redd-block-helper-win.exe",
+    "compile:helper:linux": "pkg helper/redd-block-helper.js -t node18-linux-x64 -o helper/dist/redd-block-helper-linux",
+    "compile:helper": "npm run compile:helper:mac",
     "generate:assets": "node scripts/generate-appx-assets.js"
   },
   "keywords": [

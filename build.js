@@ -55,7 +55,14 @@ builder.build({
     },
     // Only put the helper binary in extraResources (outside ASAR)
     // The helper JS files stay in the ASAR (default behavior) so require() works
-    extraResources: [
+    // For universal Mac builds, use the pre-built universal binary
+    // For single-arch builds, use architecture-specific binary
+    extraResources: buildMac ? [
+      {
+        from: 'helper/dist/redd-block-helper',
+        to: 'helper/dist/redd-block-helper'
+      }
+    ] : [
       {
         from: 'helper/dist/redd-block-helper-${arch}',
         to: 'helper/dist/redd-block-helper'
