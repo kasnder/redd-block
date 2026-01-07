@@ -8,8 +8,41 @@
 const fs = require('fs');
 const path = require('path');
 const { exec, execSync } = require('child_process');
-const sudo = require('sudo-prompt');
 const { app } = require('electron');
+
+/**
+ * Native sudo implementation using osascript (works on ARM64 without Rosetta)
+ * Falls back to sudo-prompt on other platforms
+ */
+const sudoExec = (function () {
+    if (process.platform === 'darwin') {
+        // Use native osascript for macOS - works on all architectures
+        return function (command, options, callback) {
+            const appName = options.name || 'Application';
+            // Escape the command for AppleScript
+            const escapedCommand = command.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+            const osascript = `osascript -e 'do shell script "${escapedCommand}" with administrator privileges with prompt "${appName} needs to install a helper to block websites."'`;
+
+            exec(osascript, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+                if (error) {
+                    // Check for user cancellation
+                    if (error.message && (error.message.includes('User canceled') || error.message.includes('-128'))) {
+                        callback(new Error('User did not grant permission'));
+                    } else {
+                        callback(error, stdout, stderr);
+                    }
+                } else {
+                    callback(null, stdout, stderr);
+                }
+            });
+        };
+    } else {
+        // Use sudo-prompt for other platforms (Windows, Linux)
+        const sudo = require('sudo-prompt');
+        return sudo.exec.bind(sudo);
+    }
+})();
 
 const HELPER_NAME = 'redd-block-helper';
 const INSTALL_PATH = process.platform === 'win32'
@@ -39,7 +72,11 @@ function getSourceHelperPath() {
  */
 function isHelperInstalled() {
     if (process.platform === 'darwin') {
-        return fs.existsSync(PLIST_PATH) && fs.existsSync(path.join(INSTALL_PATH, 'redd-block-helper.js'));
+        // Check for plist and either the binary (production) or JS file (dev mode)
+        const hasPlist = fs.existsSync(PLIST_PATH);
+        const hasBinary = fs.existsSync(path.join(INSTALL_PATH, 'redd-block-helper'));
+        const hasScript = fs.existsSync(path.join(INSTALL_PATH, 'redd-block-helper.js'));
+        return hasPlist && (hasBinary || hasScript);
     } else if (process.platform === 'linux') {
         return fs.existsSync(SYSTEMD_PATH) && fs.existsSync(path.join(INSTALL_PATH, 'redd-block-helper.js'));
     } else if (process.platform === 'win32') {
@@ -167,7 +204,7 @@ function installMacOS() {
             echo "Helper installed successfully${useDevMode ? ' (development mode)' : ''}"
         `;
 
-        sudo.exec(installScript, { name: 'ReDD Block Website Blocker' }, (error, stdout, stderr) => {
+        sudoExec(installScript, { name: 'ReDD Block Website Blocker' }, (error, stdout, stderr) => {
             if (error) {
                 if (error.message && error.message.includes('User did not grant permission')) {
                     reject(new Error('Permission denied'));
@@ -216,7 +253,7 @@ function installLinux() {
             echo "Helper installed successfully"
         `;
 
-        sudo.exec(installScript, { name: 'ReDD Block' }, (error, stdout, stderr) => {
+        sudoExec(installScript, { name: 'ReDD Block' }, (error, stdout, stderr) => {
             if (error) {
                 if (error.message && error.message.includes('User did not grant permission')) {
                     reject(new Error('Permission denied'));
@@ -309,7 +346,7 @@ Write-Host "Helper installed successfully"
 
         // Execute the PowerShell script file with admin privileges
         // Using -File instead of -Command avoids escaping issues
-        sudo.exec('powershell.exe -ExecutionPolicy Bypass -File "' + tempScriptPath + '"',
+        sudoExec('powershell.exe -ExecutionPolicy Bypass -File "' + tempScriptPath + '"',
             { name: 'ReDD Block Website Blocker' },
             (error, stdout, stderr) => {
                 // Clean up temp script
@@ -380,7 +417,7 @@ async function uninstallHelper() {
             return reject(new Error(`Unsupported platform: ${process.platform} `));
         }
 
-        sudo.exec(uninstallScript, { name: 'ReDD Block' }, (error, stdout, stderr) => {
+        sudoExec(uninstallScript, { name: 'ReDD Block' }, (error, stdout, stderr) => {
             if (error) {
                 reject(error);
             } else {

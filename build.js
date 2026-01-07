@@ -55,14 +55,8 @@ builder.build({
     },
     // Only put the helper binary in extraResources (outside ASAR)
     // The helper JS files stay in the ASAR (default behavior) so require() works
-    // For universal Mac builds, use the pre-built universal binary
-    // For single-arch builds, use architecture-specific binary
-    extraResources: buildMac ? [
-      {
-        from: 'helper/dist/redd-block-helper',
-        to: 'helper/dist/redd-block-helper'
-      }
-    ] : [
+    // Use architecture-specific helper binaries (arm64 or x64)
+    extraResources: [
       {
         from: 'helper/dist/redd-block-helper-${arch}',
         to: 'helper/dist/redd-block-helper'
@@ -104,24 +98,15 @@ builder.build({
       artifactName: 'reddblock-${version}-${arch}.${ext}',
       identity: process.env.APPLE_IDENTITY,
       category: 'public.app-category.productivity',
+      // Build separate arm64 and x64 binaries (not universal) to avoid helper merge conflicts
       target: [
         {
           target: 'dmg',
-          arch: ['universal']
+          arch: ['arm64', 'x64']
         },
         {
           target: 'zip',
-          arch: ['universal']
-        }
-      ],
-      target: [
-        {
-          target: 'dmg',
-          arch: ['universal']
-        },
-        {
-          target: 'zip',
-          arch: ['universal']
+          arch: ['arm64', 'x64']
         }
       ],
       icon: 'assets/icon.icns',
