@@ -61,6 +61,15 @@ builder.build({
         to: 'helper/dist/redd-block-helper'
       }
     ],
+    // Exclude helper binaries from app packaging to avoid universal build merge conflicts on Mac
+    // They are included via extraResources instead
+    // On Windows/Linux, we need them in the package
+    files: buildMac ? [
+      '**/*',
+      '!helper/dist/redd-block-helper-*'
+    ] : [
+      '**/*'
+    ],
     afterSign: 'scripts/notarize.js',
     dmg: {
       backgroundColor: '#ffffff',
@@ -85,6 +94,7 @@ builder.build({
       title: 'Install ReDD Block'
     },
     mac: {
+      artifactName: 'reddblock-${version}-${arch}.${ext}',
       identity: process.env.APPLE_IDENTITY,
       category: 'public.app-category.productivity',
       target: [
