@@ -1,11 +1,12 @@
 {
   "name": "redd-block",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "ReDD Block - block distracting websites and apps to stay focused",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --dev",
+    "predev": "node scripts/predev.js",
+    "dev": "npm run predev && electron . --dev",
     "build": "node build.js",
     "build:mac": "node build.js --mac",
     "build:win": "node build.js --win",
