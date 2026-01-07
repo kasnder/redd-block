@@ -67,13 +67,25 @@ function installMacOS() {
 
         // Use the compiled binary (includes Node.js, no dependencies)
         const helperBinary = path.join(sourcePath, 'dist', 'redd-block-helper');
+        const helperScript = path.join(sourcePath, 'redd-block-helper.js');
 
-        // Check if compiled binary exists
-        if (!fs.existsSync(helperBinary)) {
-            return reject(new Error('Helper binary not found. Please rebuild the helper.'));
+        // Check if compiled binary exists, or fall back to running with Node (dev mode)
+        const useDevMode = !fs.existsSync(helperBinary);
+
+        if (useDevMode) {
+            console.log('Helper binary not found, using development mode (running with Node.js)');
+            if (!fs.existsSync(helperScript)) {
+                return reject(new Error('Helper script not found at: ' + helperScript));
+            }
         }
 
-        // Generate plist content - now just runs the binary directly (no Node required)
+        // Generate plist content
+        // In dev mode, run with node; in production, run the binary directly
+        const programArgs = useDevMode
+            ? `<string>/usr/local/bin/node</string>
+        <string>${INSTALL_PATH}/redd-block-helper.js</string>`
+            : `<string>${INSTALL_PATH}/redd-block-helper</string>`;
+
         const plistContent = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -83,7 +95,7 @@ function installMacOS() {
     
     <key>ProgramArguments</key>
     <array>
-        <string>${INSTALL_PATH}/redd-block-helper</string>
+        ${programArgs}
     </array>
     
     <key>RunAtLoad</key>
@@ -106,28 +118,37 @@ function installMacOS() {
         const tempPlistPath = '/tmp/org.reddfocus.redd-block-helper.plist';
         fs.writeFileSync(tempPlistPath, plistContent);
 
-        // Create install script
+        // Create install script - copy either binary or script files
+        const copyCommand = useDevMode
+            ? `cp "${helperScript}" "${INSTALL_PATH}/"
+            cp "${path.join(sourcePath, 'ipc-client.js')}" "${INSTALL_PATH}/" 2>/dev/null || true`
+            : `cp "${helperBinary}" "${INSTALL_PATH}/"`;
+
+        const chmodCommand = useDevMode
+            ? `chmod 755 "${INSTALL_PATH}/redd-block-helper.js"`
+            : `chmod 755 "${INSTALL_PATH}/redd-block-helper"`;
+
         const installScript = `
             # Create install directory
             mkdir -p "${INSTALL_PATH}"
             mkdir -p /var/lib/redd-block
             
-            # Copy the compiled helper binary
-            cp "${helperBinary}" "${INSTALL_PATH}/"
+            # Copy helper files
+            ${copyCommand}
             
             # Copy generated plist
             cp "${tempPlistPath}" "${PLIST_PATH}"
             
             # Set permissions
             chmod 644 "${PLIST_PATH}"
-            chmod 755 "${INSTALL_PATH}/redd-block-helper"
+            ${chmodCommand}
             chown -R root:wheel "${INSTALL_PATH}"
             
             # Load the daemon
             launchctl unload "${PLIST_PATH}" 2>/dev/null || true
             launchctl load -w "${PLIST_PATH}"
             
-            echo "Helper installed successfully"
+            echo "Helper installed successfully${useDevMode ? ' (development mode)' : ''}"
         `;
 
         sudo.exec(installScript, { name: 'ReDD Block Website Blocker' }, (error, stdout, stderr) => {
