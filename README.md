@@ -30,9 +30,15 @@ Block distracting websites and apps to stay focused on what matters.
 # Install dependencies
 npm install
 
+# Compile the privileged helper binary (required for first-time setup)
+# This creates helper/dist/redd-block-helper (universal binary for macOS)
+npm run compile:helper
+
 # Run in development mode
 npm run dev
 ```
+
+> **Note**: The helper binaries in `helper/dist/` are not committed to git and must be compiled locally. If you see "Helper binary not found", run `npm run compile:helper` first.
 
 ### Building
 
