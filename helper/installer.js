@@ -79,10 +79,26 @@ function installMacOS() {
             }
         }
 
+        // Find the Node.js executable path
+        // In dev mode, we need to know where Node is installed
+        let nodePath = '/usr/local/bin/node'; // default
+        try {
+            // Try to get the actual node path
+            nodePath = execSync('which node', { encoding: 'utf8' }).trim();
+        } catch (e) {
+            // Fallback paths for common installations
+            if (fs.existsSync('/opt/homebrew/bin/node')) {
+                nodePath = '/opt/homebrew/bin/node'; // Homebrew on ARM64
+            } else if (fs.existsSync('/usr/local/bin/node')) {
+                nodePath = '/usr/local/bin/node'; // Homebrew on Intel or manual install
+            }
+        }
+        console.log('Using Node.js at:', nodePath);
+
         // Generate plist content
         // In dev mode, run with node; in production, run the binary directly
         const programArgs = useDevMode
-            ? `<string>/usr/local/bin/node</string>
+            ? `<string>${nodePath}</string>
         <string>${INSTALL_PATH}/redd-block-helper.js</string>`
             : `<string>${INSTALL_PATH}/redd-block-helper</string>`;
 
