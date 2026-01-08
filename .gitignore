@@ -34,4 +34,4 @@ Thumbs.db
 helper/dist/
 
 # Store assets are generated automatically
-assets/store
+# assets/store
