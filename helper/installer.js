@@ -8,8 +8,41 @@
 const fs = require('fs');
 const path = require('path');
 const { exec, execSync } = require('child_process');
-const sudo = require('sudo-prompt');
 const { app } = require('electron');
+
+/**
+ * Native sudo implementation using osascript (works on ARM64 without Rosetta)
+ * Falls back to sudo-prompt on other platforms
+ */
+const sudoExec = (function () {
+    if (process.platform === 'darwin') {
+        // Use native osascript for macOS - works on all architectures
+        return function (command, options, callback) {
+            const appName = options.name || 'Application';
+            // Escape the command for AppleScript
+            const escapedCommand = command.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+            const osascript = `osascript -e 'do shell script "${escapedCommand}" with administrator privileges with prompt "${appName} needs to install a helper to block websites."'`;
+
+            exec(osascript, { maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
+                if (error) {
+                    // Check for user cancellation
+                    if (error.message && (error.message.includes('User canceled') || error.message.includes('-128'))) {
+                        callback(new Error('User did not grant permission'));
+                    } else {
+                        callback(error, stdout, stderr);
+                    }
+                } else {
+                    callback(null, stdout, stderr);
+                }
+            });
+        };
+    } else {
+        // Use sudo-prompt for other platforms (Windows, Linux)
+        const sudo = require('sudo-prompt');
+        return sudo.exec.bind(sudo);
+    }
+})();
 
 const HELPER_NAME = 'redd-block-helper';
 const INSTALL_PATH = process.platform === 'win32'
@@ -39,7 +72,11 @@ function getSourceHelperPath() {
  */
 function isHelperInstalled() {
     if (process.platform === 'darwin') {
-        return fs.existsSync(PLIST_PATH) && fs.existsSync(path.join(INSTALL_PATH, 'redd-block-helper.js'));
+        // Check for plist and either the binary (production) or JS file (dev mode)
+        const hasPlist = fs.existsSync(PLIST_PATH);
+        const hasBinary = fs.existsSync(path.join(INSTALL_PATH, 'redd-block-helper'));
+        const hasScript = fs.existsSync(path.join(INSTALL_PATH, 'redd-block-helper.js'));
+        return hasPlist && (hasBinary || hasScript);
     } else if (process.platform === 'linux') {
         return fs.existsSync(SYSTEMD_PATH) && fs.existsSync(path.join(INSTALL_PATH, 'redd-block-helper.js'));
     } else if (process.platform === 'win32') {
@@ -67,13 +104,41 @@ function installMacOS() {
 
         // Use the compiled binary (includes Node.js, no dependencies)
         const helperBinary = path.join(sourcePath, 'dist', 'redd-block-helper');
+        const helperScript = path.join(sourcePath, 'redd-block-helper.js');
 
-        // Check if compiled binary exists
-        if (!fs.existsSync(helperBinary)) {
-            return reject(new Error('Helper binary not found. Please rebuild the helper.'));
+        // Check if compiled binary exists, or fall back to running with Node (dev mode)
+        const useDevMode = !fs.existsSync(helperBinary);
+
+        if (useDevMode) {
+            console.log('Helper binary not found, using development mode (running with Node.js)');
+            if (!fs.existsSync(helperScript)) {
+                return reject(new Error('Helper script not found at: ' + helperScript));
+            }
         }
 
-        // Generate plist content - now just runs the binary directly (no Node required)
+        // Find the Node.js executable path
+        // In dev mode, we need to know where Node is installed
+        let nodePath = '/usr/local/bin/node'; // default
+        try {
+            // Try to get the actual node path
+            nodePath = execSync('which node', { encoding: 'utf8' }).trim();
+        } catch (e) {
+            // Fallback paths for common installations
+            if (fs.existsSync('/opt/homebrew/bin/node')) {
+                nodePath = '/opt/homebrew/bin/node'; // Homebrew on ARM64
+            } else if (fs.existsSync('/usr/local/bin/node')) {
+                nodePath = '/usr/local/bin/node'; // Homebrew on Intel or manual install
+            }
+        }
+        console.log('Using Node.js at:', nodePath);
+
+        // Generate plist content
+        // In dev mode, run with node; in production, run the binary directly
+        const programArgs = useDevMode
+            ? `<string>${nodePath}</string>
+        <string>${INSTALL_PATH}/redd-block-helper.js</string>`
+            : `<string>${INSTALL_PATH}/redd-block-helper</string>`;
+
         const plistContent = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -83,7 +148,7 @@ function installMacOS() {
     
     <key>ProgramArguments</key>
     <array>
-        <string>${INSTALL_PATH}/redd-block-helper</string>
+        ${programArgs}
     </array>
     
     <key>RunAtLoad</key>
@@ -106,31 +171,40 @@ function installMacOS() {
         const tempPlistPath = '/tmp/org.reddfocus.redd-block-helper.plist';
         fs.writeFileSync(tempPlistPath, plistContent);
 
-        // Create install script
+        // Create install script - copy either binary or script files
+        const copyCommand = useDevMode
+            ? `cp "${helperScript}" "${INSTALL_PATH}/"
+            cp "${path.join(sourcePath, 'ipc-client.js')}" "${INSTALL_PATH}/" 2>/dev/null || true`
+            : `cp "${helperBinary}" "${INSTALL_PATH}/"`;
+
+        const chmodCommand = useDevMode
+            ? `chmod 755 "${INSTALL_PATH}/redd-block-helper.js"`
+            : `chmod 755 "${INSTALL_PATH}/redd-block-helper"`;
+
         const installScript = `
             # Create install directory
             mkdir -p "${INSTALL_PATH}"
             mkdir -p /var/lib/redd-block
             
-            # Copy the compiled helper binary
-            cp "${helperBinary}" "${INSTALL_PATH}/"
+            # Copy helper files
+            ${copyCommand}
             
             # Copy generated plist
             cp "${tempPlistPath}" "${PLIST_PATH}"
             
             # Set permissions
             chmod 644 "${PLIST_PATH}"
-            chmod 755 "${INSTALL_PATH}/redd-block-helper"
+            ${chmodCommand}
             chown -R root:wheel "${INSTALL_PATH}"
             
             # Load the daemon
             launchctl unload "${PLIST_PATH}" 2>/dev/null || true
             launchctl load -w "${PLIST_PATH}"
             
-            echo "Helper installed successfully"
+            echo "Helper installed successfully${useDevMode ? ' (development mode)' : ''}"
         `;
 
-        sudo.exec(installScript, { name: 'ReDD Block Website Blocker' }, (error, stdout, stderr) => {
+        sudoExec(installScript, { name: 'ReDD Block Website Blocker' }, (error, stdout, stderr) => {
             if (error) {
                 if (error.message && error.message.includes('User did not grant permission')) {
                     reject(new Error('Permission denied'));
@@ -179,7 +253,7 @@ function installLinux() {
             echo "Helper installed successfully"
         `;
 
-        sudo.exec(installScript, { name: 'ReDD Block' }, (error, stdout, stderr) => {
+        sudoExec(installScript, { name: 'ReDD Block' }, (error, stdout, stderr) => {
             if (error) {
                 if (error.message && error.message.includes('User did not grant permission')) {
                     reject(new Error('Permission denied'));
@@ -272,7 +346,7 @@ Write-Host "Helper installed successfully"
 
         // Execute the PowerShell script file with admin privileges
         // Using -File instead of -Command avoids escaping issues
-        sudo.exec('powershell.exe -ExecutionPolicy Bypass -File "' + tempScriptPath + '"',
+        sudoExec('powershell.exe -ExecutionPolicy Bypass -File "' + tempScriptPath + '"',
             { name: 'ReDD Block Website Blocker' },
             (error, stdout, stderr) => {
                 // Clean up temp script
@@ -343,7 +417,7 @@ async function uninstallHelper() {
             return reject(new Error(`Unsupported platform: ${process.platform} `));
         }
 
-        sudo.exec(uninstallScript, { name: 'ReDD Block' }, (error, stdout, stderr) => {
+        sudoExec(uninstallScript, { name: 'ReDD Block' }, (error, stdout, stderr) => {
             if (error) {
                 reject(error);
             } else {

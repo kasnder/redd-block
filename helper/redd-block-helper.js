@@ -341,7 +341,7 @@ function getStatus() {
     };
 }
 
-// Checkup timer - runs every second
+// Checkup timer - runs every second to check for block expiry
 function startCheckupTimer() {
     if (checkupInterval) return;
 
@@ -355,13 +355,15 @@ function startCheckupTimer() {
             return;
         }
 
-        // If there's an active block, check integrity
-        if (currentBlock) {
-            checkBlockIntegrity();
-        } else {
-            // No active block, stop the timer
+        // No active block? Stop the timer
+        if (!currentBlock) {
             stopCheckupTimer();
         }
+
+        // NOTE: We intentionally DO NOT re-apply blocks if the user manually edits /etc/hosts.
+        // This ensures the override mechanism ALWAYS works, even if the user manually clears
+        // the hosts file. Our philosophy: overrides must never fail. Power users who want
+        // tamper-resistant blocking can use Cold Turkey Blocker instead.
     }, 1000);
 }
 
@@ -373,17 +375,14 @@ function stopCheckupTimer() {
     }
 }
 
+// checkBlockIntegrity is intentionally disabled - we don't re-add blocked domains
+// if the user manually removes them. This ensures overrides always work.
 function checkBlockIntegrity() {
-    if (!currentBlock) return;
-
-    const hostsContent = readHostsFile();
-
-    if (!containsBlock(hostsContent)) {
-        log('Block was removed from hosts file, re-applying...');
-        const newContent = addBlockToHosts(hostsContent, currentBlock.domains);
-        writeHostsFile(newContent);
-        flushDNSCache();
-    }
+    // DISABLED: Previously this would re-add blocked domains if manually removed.
+    // This caused issues where overrides wouldn't work because the helper kept
+    // re-adding the blocks. Now we trust the user: if they manually edit /etc/hosts,
+    // we respect that choice.
+    return;
 }
 
 // IPC Server
@@ -483,11 +482,61 @@ function startServer() {
     });
 }
 
+// Singleton check - ensure only one instance is running
+function checkSingleton() {
+    return new Promise((resolve) => {
+        const client = new net.Socket();
+        const connectArgs = typeof SOCKET_PATH === 'number'
+            ? [SOCKET_PATH, '127.0.0.1']
+            : [SOCKET_PATH];
+
+        client.setTimeout(1000);
+
+        client.on('connect', () => {
+            // Another instance is running - try to ping it
+            client.write(JSON.stringify({ action: 'ping' }) + '\n');
+        });
+
+        client.on('data', (data) => {
+            const response = data.toString().trim();
+            if (response.includes('pong')) {
+                log('ERROR: Another helper instance is already running!');
+                log('Exiting to prevent duplicate daemons.');
+                client.end();
+                process.exit(1);
+            }
+            client.end();
+            resolve(false);
+        });
+
+        client.on('error', () => {
+            // Connection failed - no other instance running
+            client.destroy();
+            resolve(true);
+        });
+
+        client.on('timeout', () => {
+            // Timeout - no responsive instance
+            client.destroy();
+            resolve(true);
+        });
+
+        client.connect(...connectArgs);
+    });
+}
+
 // Main entry point
-function main() {
+async function main() {
     log('ReDD Block Helper Daemon starting...');
     log(`Platform: ${process.platform}`);
     log(`Running as: ${process.getuid ? `UID ${process.getuid()}` : 'N/A'}`);
+
+    // Check if another instance is already running
+    const canStart = await checkSingleton();
+    if (!canStart) {
+        log('Aborting startup - singleton check failed');
+        process.exit(1);
+    }
 
     // Load any persisted state
     loadState();

@@ -55,11 +55,21 @@ builder.build({
     },
     // Only put the helper binary in extraResources (outside ASAR)
     // The helper JS files stay in the ASAR (default behavior) so require() works
+    // Use architecture-specific helper binaries (arm64 or x64)
     extraResources: [
       {
         from: 'helper/dist/redd-block-helper-${arch}',
         to: 'helper/dist/redd-block-helper'
       }
+    ],
+    // Exclude helper binaries from app packaging to avoid universal build merge conflicts on Mac
+    // They are included via extraResources instead
+    // On Windows/Linux, we need them in the package
+    files: buildMac ? [
+      '**/*',
+      '!helper/dist/redd-block-helper-*'
+    ] : [
+      '**/*'
     ],
     afterSign: 'scripts/notarize.js',
     dmg: {
@@ -85,26 +95,18 @@ builder.build({
       title: 'Install ReDD Block'
     },
     mac: {
+      artifactName: 'reddblock-${version}-${arch}.${ext}',
       identity: process.env.APPLE_IDENTITY,
       category: 'public.app-category.productivity',
+      // Build separate arm64 and x64 binaries (not universal) to avoid helper merge conflicts
       target: [
         {
           target: 'dmg',
-          arch: ['universal']
+          arch: ['arm64', 'x64']
         },
         {
           target: 'zip',
-          arch: ['universal']
-        }
-      ],
-      target: [
-        {
-          target: 'dmg',
-          arch: ['universal']
-        },
-        {
-          target: 'zip',
-          arch: ['universal']
+          arch: ['arm64', 'x64']
         }
       ],
       icon: 'assets/icon.icns',

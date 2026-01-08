@@ -1,6 +1,6 @@
 {
     "name": "redd-block-helper",
-    "version": "0.2.3",
+    "version": "0.2.4",
     "description": "Privileged helper daemon for ReDD Block",
     "main": "redd-block-helper.js",
     "bin": "redd-block-helper.js",
