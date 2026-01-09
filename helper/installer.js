@@ -57,10 +57,20 @@ const SYSTEMD_PATH = '/etc/systemd/system/redd-block-helper.service';
  */
 function getSourceHelperPath() {
     // In development, helper is in the project root
-    // In production, it's in the app's resources
+    // In production, it's in the app's resources (outside ASAR)
     const devPath = path.join(__dirname, '..', 'helper');
     const prodPath = path.join(process.resourcesPath, 'helper');
 
+    // Check if we're running from an ASAR archive (production)
+    // When packaged, __dirname will contain 'app.asar'
+    const isAsar = __dirname.includes('app.asar');
+
+    if (isAsar) {
+        // Production mode - use extraResources path
+        return prodPath;
+    }
+
+    // Development mode - use source path
     if (fs.existsSync(devPath)) {
         return devPath;
     }
@@ -84,9 +94,13 @@ function isHelperInstalled() {
         if (fs.existsSync(path.join(INSTALL_PATH, 'redd-block-helper.js'))) {
             return true;
         }
-        // Production mode: Check if Windows Service exists
+        // Production mode: Check if the helper exe is installed OR scheduled task exists
+        if (fs.existsSync(path.join(INSTALL_PATH, 'redd-block-helper.exe'))) {
+            return true;
+        }
         try {
-            execSync('sc query "ReddBlockHelper"', { stdio: 'ignore' });
+            // Check if scheduled task exists
+            execSync('schtasks /Query /TN "ReddBlockHelper"', { stdio: 'ignore' });
             return true;
         } catch {
             return false;
@@ -299,18 +313,88 @@ function installWindows() {
         let installScript;
 
         if (hasWindowsBinary) {
+            // Production mode: use a Scheduled Task to run at startup with SYSTEM privileges
+            // Note: pkg-compiled binaries don't implement Windows SCM, so we use schtasks instead of sc.exe
+            const exePath = path.join(INSTALL_PATH, 'redd-block-helper.exe');
+
             installScript = `
 # Create install directory
 New-Item -ItemType Directory -Force -Path "${INSTALL_PATH}"
 New-Item -ItemType Directory -Force -Path "${dataDir}"
 
-# Copy helper binary
-Copy-Item "${helperBinary}" "${path.join(INSTALL_PATH, 'redd-block-helper.exe')}" -Force
+# Stop any existing helper process
+Get-Process -Name "redd-block-helper" -ErrorAction SilentlyContinue | Stop-Process -Force
 
-# Create Windows Service using sc.exe
-sc.exe create "ReddBlockHelper" binpath= "${path.join(INSTALL_PATH, 'redd-block-helper.exe')}" start= auto displayname= "ReDD Block Helper"
-sc.exe description "ReddBlockHelper" "Background service for ReDD Block website blocker"
-sc.exe start "ReddBlockHelper"
+# Remove old service if it exists (from previous install attempts)
+sc.exe stop "ReddBlockHelper" 2>$null
+sc.exe delete "ReddBlockHelper" 2>$null
+
+# Remove old scheduled task if exists
+schtasks /Delete /TN "ReddBlockHelper" /F 2>$null
+
+# Copy helper binary
+Copy-Item "${helperBinary}" "${exePath}" -Force
+
+# Create a scheduled task to run at system startup with highest privileges
+# Using XML for more control over the task settings
+$taskXml = @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>ReDD Block Helper - runs in background to enforce website blocks</Description>
+  </RegistrationInfo>
+  <Triggers>
+    <BootTrigger>
+      <Enabled>true</Enabled>
+    </BootTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>S-1-5-18</UserId>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <DisallowStartOnRemoteAppSession>false</DisallowStartOnRemoteAppSession>
+    <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>7</Priority>
+    <RestartOnFailure>
+      <Interval>PT1M</Interval>
+      <Count>3</Count>
+    </RestartOnFailure>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>${exePath}</Command>
+      <WorkingDirectory>${INSTALL_PATH}</WorkingDirectory>
+    </Exec>
+  </Actions>
+</Task>
+"@
+
+# Save XML to temp file and register task
+$xmlPath = "$env:TEMP\\redd-block-task.xml"
+$taskXml | Out-File -FilePath $xmlPath -Encoding Unicode
+schtasks /Create /TN "ReddBlockHelper" /XML $xmlPath /F
+Remove-Item $xmlPath -Force
+
+# Start the task immediately
+schtasks /Run /TN "ReddBlockHelper"
+
+# Wait for it to start
+Start-Sleep -Seconds 2
 
 Write-Host "Helper installed successfully"
 `;
