@@ -1355,6 +1355,32 @@ async function proceedWithHelperInstall() {
     const installResult = await ipcRenderer.invoke('install-helper');
 
     if (installResult.success) {
+        // Check if the helper is actually running
+        if (!installResult.running) {
+            // Helper installed but not running yet - this is the bug scenario
+            // Wait a bit more and try again
+            proceedBtn.innerHTML = '<span class="btn-spinner"></span>Starting helper...';
+
+            // Additional wait with status check
+            let helperReady = false;
+            for (let i = 0; i < 5; i++) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                const status = await ipcRenderer.invoke('check-helper-status');
+                if (status.running) {
+                    helperReady = true;
+                    break;
+                }
+            }
+
+            if (!helperReady) {
+                // Still not running - show a helpful error
+                proceedBtn.disabled = false;
+                proceedBtn.textContent = 'Proceed';
+                alert('The helper was installed but is not running yet. Please try again, or restart your computer if the problem persists.');
+                return;
+            }
+        }
+
         helperAvailable = true;
         modal.classList.add('hidden');
 

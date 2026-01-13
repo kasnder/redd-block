@@ -57,14 +57,18 @@ const SYSTEMD_PATH = '/etc/systemd/system/redd-block-helper.service';
  */
 function getSourceHelperPath() {
     // In development, helper is in the project root
-    // In production, it's in the app's resources
-    const devPath = path.join(__dirname, '..', 'helper');
-    const prodPath = path.join(process.resourcesPath, 'helper');
+    // In production, it's in the app's resources (extraResources)
 
-    if (fs.existsSync(devPath)) {
-        return devPath;
+    // Check if we're running from a packaged app (ASAR archive)
+    const isPackaged = __dirname.includes('.asar');
+
+    if (isPackaged) {
+        // Production: binary is in resources/helper (from extraResources)
+        return path.join(process.resourcesPath, 'helper');
+    } else {
+        // Development: helper is in the project root
+        return path.join(__dirname, '..', 'helper');
     }
-    return prodPath;
 }
 
 /**
