@@ -1,6 +1,6 @@
 {
   "name": "redd-block",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "ReDD Block - block distracting websites and apps to stay focused",
   "main": "main.js",
   "scripts": {
