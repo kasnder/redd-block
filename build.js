@@ -139,6 +139,7 @@ builder.build({
       }
     },
     win: {
+      artifactName: 'reddblock-${version}-${arch}.${ext}',
       target: [
         {
           target: 'nsis',
@@ -174,7 +175,7 @@ builder.build({
       ],
       category: 'Utility',
       icon: 'assets/icon.png',
-      artifactName: 'redd-block-${version}-${arch}.${ext}'
+      artifactName: 'reddblock-${version}-${arch}.${ext}'
     },
     defaultArch: 'x64'
   }
