@@ -53,14 +53,34 @@ builder.build({
       output: 'dist',
       buildResources: 'assets'
     },
-    // Only put the helper binary in extraResources (outside ASAR)
-    // The helper JS files stay in the ASAR (default behavior) so require() works
-    // Use architecture-specific helper binaries (arm64 or x64)
-    extraResources: [
+    // Put helper files in extraResources (outside ASAR)
+    // - On macOS: use architecture-specific binaries (arm64 or x64)
+    // - On Windows: use the -win.exe binary
+    // Also include helper JS files for the installer module
+    extraResources: buildMac ? [
       {
         from: 'helper/dist/redd-block-helper-${arch}',
         to: 'helper/dist/redd-block-helper'
-      }
+      },
+      { from: 'helper/redd-block-helper.js', to: 'helper/redd-block-helper.js' },
+      { from: 'helper/ipc-client.js', to: 'helper/ipc-client.js' },
+      { from: 'helper/installer.js', to: 'helper/installer.js' }
+    ] : (buildWin || isImplicitWin) ? [
+      {
+        from: 'helper/dist/redd-block-helper-win.exe',
+        to: 'helper/dist/redd-block-helper-win.exe'
+      },
+      { from: 'helper/redd-block-helper.js', to: 'helper/redd-block-helper.js' },
+      { from: 'helper/ipc-client.js', to: 'helper/ipc-client.js' },
+      { from: 'helper/installer.js', to: 'helper/installer.js' }
+    ] : [
+      {
+        from: 'helper/dist/redd-block-helper-${arch}',
+        to: 'helper/dist/redd-block-helper'
+      },
+      { from: 'helper/redd-block-helper.js', to: 'helper/redd-block-helper.js' },
+      { from: 'helper/ipc-client.js', to: 'helper/ipc-client.js' },
+      { from: 'helper/installer.js', to: 'helper/installer.js' }
     ],
     // Exclude helper binaries from app packaging to avoid universal build merge conflicts on Mac
     // They are included via extraResources instead
