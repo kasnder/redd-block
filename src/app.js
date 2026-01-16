@@ -270,6 +270,27 @@ function setupOnboardingListeners() {
     });
 
     document.getElementById('create-first-blocklist-btn').addEventListener('click', () => {
+        // Auto-confirm any pending input in the website/app fields
+        const pendingWebsite = websiteInput.value.trim().toLowerCase();
+        if (pendingWebsite && !onboardingWebsites.includes(pendingWebsite)) {
+            onboardingWebsites.push(pendingWebsite);
+            websiteInput.value = '';
+            renderTags(websitesTags, onboardingWebsites, (idx) => {
+                onboardingWebsites.splice(idx, 1);
+                renderTags(websitesTags, onboardingWebsites);
+            });
+        }
+
+        const pendingApp = appInput.value.trim();
+        if (pendingApp && !onboardingApps.includes(pendingApp)) {
+            onboardingApps.push(pendingApp);
+            appInput.value = '';
+            renderTags(appsTags, onboardingApps, (idx) => {
+                onboardingApps.splice(idx, 1);
+                renderTags(appsTags, onboardingApps);
+            });
+        }
+
         const name = document.getElementById('first-blocklist-name').value.trim();
         if (!name) {
             alert('Please enter a name for your blocklist');
@@ -473,6 +494,21 @@ function setupModalListeners() {
 
     // Save button
     document.getElementById('save-blocklist-btn').addEventListener('click', () => {
+        // Auto-confirm any pending input in the website/app fields
+        const pendingWebsite = modalWebsiteInput.value.trim().toLowerCase();
+        if (pendingWebsite && !modalWebsites.includes(pendingWebsite)) {
+            modalWebsites.push(pendingWebsite);
+            modalWebsiteInput.value = '';
+            window.renderModalTags();
+        }
+
+        const pendingApp = modalAppInput.value.trim();
+        if (pendingApp && !modalApps.includes(pendingApp)) {
+            modalApps.push(pendingApp);
+            modalAppInput.value = '';
+            window.renderModalTags();
+        }
+
         const name = document.getElementById('blocklist-name').value.trim();
         if (!name) {
             alert('Please enter a name');
