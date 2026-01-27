@@ -598,7 +598,26 @@ function setupModalListeners() {
         // If this blocklist is active, update blocking rules immediately
         const isActive = appData.activeBlocks.some(b => b.blocklistId === blocklist.id);
         if (isActive) {
+            // Update website blocking
             updateHostsFile();
+
+            // Update app blocking - collect all apps from active blocks
+            const now = Date.now();
+            const allBlockedApps = new Set();
+            appData.activeBlocks
+                .filter(block => block.startTime <= now && block.endTime > now)
+                .forEach(block => {
+                    const bl = appData.blocklists.find(b => b.id === block.blocklistId);
+                    if (bl && bl.apps) {
+                        bl.apps.forEach(app => allBlockedApps.add(app));
+                    }
+                });
+
+            // Update the blocked apps list and hide any newly-blocked apps
+            if (allBlockedApps.size > 0) {
+                tauriAPI.setBlockedApps(Array.from(allBlockedApps));
+                tauriAPI.hideAllBlockedApps();
+            }
         }
 
         closeBlocklistModal();
