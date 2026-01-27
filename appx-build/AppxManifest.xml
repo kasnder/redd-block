@@ -1,0 +1,45 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Package 
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+  
+  <Identity 
+    Name="ReduceDigitalDistraction.ReDDBlock" 
+    Publisher="CN=EC16037E-D0B5-446F-9912-F41B3DCCBFB3" 
+    Version="0.3.1.0" 
+    ProcessorArchitecture="x64" />
+  
+  <Properties>
+    <DisplayName>ReDD Block</DisplayName>
+    <PublisherDisplayName>Reduce Digital Distraction</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.scale-100.png</Logo>
+  </Properties>
+  
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.22621.0" />
+  </Dependencies>
+  
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+  
+  <Applications>
+    <Application Id="App" Executable="redd-block.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements 
+        DisplayName="ReDD Block" 
+        Description="Block distracting websites and apps to stay focused"
+        BackgroundColor="transparent" 
+        Square150x150Logo="Assets\Square150x150Logo.scale-100.png"
+        Square44x44Logo="Assets\Square44x44Logo.scale-100.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.scale-100.png" Square71x71Logo="Assets\SmallTile.scale-100.png" Square310x310Logo="Assets\LargeTile.scale-100.png" />
+        <uap:SplashScreen Image="Assets\Square150x150Logo.scale-200.png" />
+      </uap:VisualElements>
+    </Application>
+  </Applications>
+  
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>
