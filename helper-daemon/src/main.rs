@@ -60,6 +60,8 @@ enum IpcCommand {
     ClearBlock,
     #[serde(rename = "get-status")]
     GetStatus,
+    #[serde(rename = "restore-hosts")]
+    RestoreHosts,
     #[serde(rename = "ping")]
     Ping,
 }
@@ -140,11 +142,57 @@ fn save_state(block: &Option<BlockState>) {
 }
 
 // Hosts file management
+const HOSTS_BACKUP_PATH: &str = if cfg!(target_os = "windows") {
+    "C:\\Windows\\System32\\drivers\\etc\\hosts.redd-backup"
+} else {
+    "/etc/hosts.redd-backup"
+};
+
 fn read_hosts_file() -> String {
     fs::read_to_string(HOSTS_PATH).unwrap_or_default()
 }
 
+/// Create a backup of the original hosts file if one doesn't exist
+fn ensure_backup_exists() -> Result<(), String> {
+    let backup_path = std::path::Path::new(HOSTS_BACKUP_PATH);
+    
+    if !backup_path.exists() {
+        log("Creating backup of original hosts file");
+        let content = read_hosts_file();
+        fs::write(HOSTS_BACKUP_PATH, &content)
+            .map_err(|e| format!("Failed to create hosts backup: {}", e))?;
+        log(&format!("Backup created at {}", HOSTS_BACKUP_PATH));
+    }
+    
+    Ok(())
+}
+
+/// Restore hosts file from backup
+fn restore_hosts_from_backup() -> Result<(), String> {
+    let backup_path = std::path::Path::new(HOSTS_BACKUP_PATH);
+    
+    if !backup_path.exists() {
+        return Err("No backup file exists to restore from".to_string());
+    }
+    
+    log("Restoring hosts file from backup");
+    let backup_content = fs::read_to_string(HOSTS_BACKUP_PATH)
+        .map_err(|e| format!("Failed to read backup: {}", e))?;
+    
+    fs::write(HOSTS_PATH, &backup_content)
+        .map_err(|e| format!("Failed to restore hosts file: {}", e))?;
+    
+    flush_dns_cache();
+    log("Hosts file restored successfully");
+    Ok(())
+}
+
 fn write_hosts_file(content: &str) -> bool {
+    // Ensure we have a backup before any modification
+    if let Err(e) = ensure_backup_exists() {
+        log(&format!("Warning: {}", e));
+    }
+    
     fs::write(HOSTS_PATH, content).is_ok()
 }
 
@@ -314,6 +362,24 @@ fn handle_command(state: &Arc<Mutex<Option<BlockState>>>, cmd: IpcCommand) -> Ip
         }
         IpcCommand::ClearBlock => clear_block(state),
         IpcCommand::GetStatus => get_status(state),
+        IpcCommand::RestoreHosts => {
+            // Clear any active block state first
+            *state.lock().unwrap() = None;
+            save_state(&None);
+            
+            match restore_hosts_from_backup() {
+                Ok(()) => IpcResponse {
+                    success: true,
+                    message: Some("Hosts file restored from backup".to_string()),
+                    ..Default::default()
+                },
+                Err(e) => IpcResponse {
+                    success: false,
+                    error: Some(e),
+                    ..Default::default()
+                },
+            }
+        }
         IpcCommand::Ping => IpcResponse {
             success: true,
             message: Some("pong".to_string()),
