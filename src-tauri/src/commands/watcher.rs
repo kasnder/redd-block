@@ -388,7 +388,7 @@ try {
                     
                     let is_blocked = {
                         let w = watcher_clone.lock().unwrap();
-                        w.blocked_apps.contains(&process_name.to_lowercase())
+                        w.blocked_apps.contains_key(&process_name.to_lowercase())
                     };
                     
                     if is_blocked {

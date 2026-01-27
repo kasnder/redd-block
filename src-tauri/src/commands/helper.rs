@@ -6,7 +6,14 @@ use tauri::Manager;
 #[cfg(target_os = "macos")]
 use std::os::unix::net::UnixStream;
 
+#[cfg(target_os = "windows")]
+use std::net::TcpStream;
+
+#[cfg(target_os = "macos")]
 const SOCKET_PATH: &str = "/tmp/redd-block-helper.sock";
+
+#[cfg(target_os = "windows")]
+const HELPER_TCP_ADDR: &str = "127.0.0.1:62222";
 
 /// Helper daemon status
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -66,7 +73,27 @@ fn send_command(command: &IpcCommand) -> Result<IpcResponse, String> {
         .map_err(|e| format!("Failed to parse response: {}", e))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+fn send_command(command: &IpcCommand) -> Result<IpcResponse, String> {
+    let mut stream = TcpStream::connect(HELPER_TCP_ADDR)
+        .map_err(|e| format!("Failed to connect to helper: {}", e))?;
+    
+    let json = serde_json::to_string(command)
+        .map_err(|e| format!("Failed to serialize command: {}", e))?;
+    
+    writeln!(stream, "{}", json)
+        .map_err(|e| format!("Failed to send command: {}", e))?;
+    
+    let mut reader = BufReader::new(stream);
+    let mut response_line = String::new();
+    reader.read_line(&mut response_line)
+        .map_err(|e| format!("Failed to read response: {}", e))?;
+    
+    serde_json::from_str(&response_line)
+        .map_err(|e| format!("Failed to parse response: {}", e))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn send_command(_command: &IpcCommand) -> Result<IpcResponse, String> {
     Err("Helper communication not yet implemented for this platform".to_string())
 }
@@ -89,20 +116,30 @@ fn get_helper_path(app: &tauri::AppHandle) -> Option<PathBuf> {
 /// Check helper daemon status
 #[tauri::command]
 pub fn check_helper_status() -> HelperStatus {
-    // Check if socket exists and try to ping
-    let installed = std::path::Path::new(SOCKET_PATH).exists();
-    
-    let running = if installed {
-        let cmd = IpcCommand {
-            action: "ping".to_string(),
-            domains: None,
-            end_time: None,
-            blocklist_id: None,
-        };
-        send_command(&cmd).map(|r| r.success).unwrap_or(false)
-    } else {
-        false
+    // Try to ping the helper - this works for both platforms
+    let cmd = IpcCommand {
+        action: "ping".to_string(),
+        domains: None,
+        end_time: None,
+        blocklist_id: None,
     };
+    
+    let running = send_command(&cmd).map(|r| r.success).unwrap_or(false);
+    
+    // On Windows, check if the helper exe exists in the install location
+    #[cfg(target_os = "windows")]
+    let installed = {
+        let program_data = std::env::var("PROGRAMDATA").unwrap_or_else(|_| "C:\\ProgramData".to_string());
+        let install_path = PathBuf::from(&program_data).join("ReDD Block").join("redd-block-helper.exe");
+        install_path.exists() || running
+    };
+    
+    // On macOS, check if socket exists
+    #[cfg(target_os = "macos")]
+    let installed = std::path::Path::new(SOCKET_PATH).exists() || running;
+    
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let installed = running;
     
     HelperStatus { installed, running }
 }
@@ -206,7 +243,126 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
         }
     }
     
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        
+        // Get the bundled helper binary path
+        let helper_path = match get_helper_path(&app) {
+            Some(p) if p.exists() => p,
+            _ => {
+                // Fallback: check next to the exe
+                let exe_dir = std::env::current_exe()
+                    .ok()
+                    .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+                
+                match exe_dir {
+                    Some(dir) => {
+                        // Try both ARM64 and x64 variants
+                        let helper_arm = dir.join("redd-block-helper-aarch64-pc-windows-msvc.exe");
+                        let helper_x64 = dir.join("redd-block-helper-x86_64-pc-windows-msvc.exe");
+                        if helper_arm.exists() {
+                            helper_arm
+                        } else if helper_x64.exists() {
+                            helper_x64
+                        } else {
+                            return HelperResult {
+                                success: false,
+                                error: Some(format!("Helper binary not found. Checked: {:?} and {:?}", helper_arm, helper_x64)),
+                            };
+                        }
+                    }
+                    None => {
+                        return HelperResult {
+                            success: false,
+                            error: Some("Could not determine app directory".to_string()),
+                        };
+                    }
+                }
+            }
+        };
+        
+        // Install to ProgramData (accessible by scheduled tasks running as SYSTEM)
+        let program_data = std::env::var("PROGRAMDATA").unwrap_or_else(|_| "C:\\ProgramData".to_string());
+        let install_dir = PathBuf::from(&program_data).join("ReDD Block");
+        let install_path = install_dir.join("redd-block-helper.exe");
+        
+        // Create install directory
+        if let Err(e) = std::fs::create_dir_all(&install_dir) {
+            return HelperResult {
+                success: false,
+                error: Some(format!("Failed to create install directory: {}", e)),
+            };
+        }
+        
+        // Copy the helper binary
+        if let Err(e) = std::fs::copy(&helper_path, &install_path) {
+            return HelperResult {
+                success: false,
+                error: Some(format!("Failed to copy helper binary: {}", e)),
+            };
+        }
+        
+        // Create a Scheduled Task that runs at startup with highest privileges (admin)
+        // This allows the helper to modify the hosts file
+        let task_name = "ReDD Block Helper";
+        
+        // Delete existing task if any (ignore errors)
+        let _ = Command::new("schtasks")
+            .args(["/Delete", "/TN", task_name, "/F"])
+            .output();
+        
+        // Create new scheduled task that runs at logon with highest privileges
+        let create_result = Command::new("schtasks")
+            .args([
+                "/Create",
+                "/TN", task_name,
+                "/TR", &format!("\"{}\"", install_path.display()),
+                "/SC", "ONLOGON",
+                "/RL", "HIGHEST",
+                "/F",
+            ])
+            .output();
+        
+        match create_result {
+            Ok(output) if output.status.success() => {
+                // Start the helper now
+                let run_result = Command::new("schtasks")
+                    .args(["/Run", "/TN", task_name])
+                    .output();
+                
+                // Give it a moment to start
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                
+                match run_result {
+                    Ok(r) if r.status.success() => HelperResult {
+                        success: true,
+                        error: None,
+                    },
+                    Ok(r) => HelperResult {
+                        success: false,
+                        error: Some(format!("Task created but failed to run: {}", 
+                            String::from_utf8_lossy(&r.stderr))),
+                    },
+                    Err(e) => HelperResult {
+                        success: false,
+                        error: Some(format!("Task created but failed to run: {}", e)),
+                    },
+                }
+            },
+            Ok(output) => HelperResult {
+                success: false,
+                error: Some(format!("Failed to create scheduled task: {}", 
+                    String::from_utf8_lossy(&output.stderr))),
+            },
+            Err(e) => HelperResult {
+                success: false,
+                error: Some(format!("Failed to run schtasks: {}", e)),
+            },
+        }
+    }
+    
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = app; // Suppress unused warning
         HelperResult {

@@ -83,7 +83,7 @@ html {
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
     font-size: 15px;
-    background: var(--app-bg);
+    background: var(--container-bg);
     color: var(--text-primary);
     overflow: hidden;
 }
