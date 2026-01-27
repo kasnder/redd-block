@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "ReDD Block",
-  "version": "0.2.6",
+  "version": "0.3.0",
   "identifier": "com.redd.block",
   "build": {
     "frontendDist": "../dist",
@@ -35,7 +35,7 @@
     "longDescription": "ReDD Block helps you stay focused by blocking distracting websites and apps. Create blocklists, schedule blocks, and use override challenges to stay committed.",
     "macOS": {
       "entitlements": null,
-      "signingIdentity": null,
+      "signingIdentity": "Developer ID Application: ULRIK LYNGS (7YEYWQKK25)",
       "hardenedRuntime": true,
       "minimumSystemVersion": "10.15"
     },
