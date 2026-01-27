@@ -19,7 +19,14 @@
     "compile:helper:win": "pkg helper/redd-block-helper.js -t node18-win-x64 -o helper/dist/redd-block-helper-win.exe",
     "compile:helper:linux": "pkg helper/redd-block-helper.js -t node18-linux-x64 -o helper/dist/redd-block-helper-linux",
     "compile:helper": "npm run compile:helper:mac",
-    "generate:assets": "node scripts/generate-appx-assets.js"
+    "generate:assets": "node scripts/generate-appx-assets.js",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "build:helper": "cd helper-daemon && cargo build --release && cp target/release/redd-block-helper target/release/redd-block-helper-aarch64-apple-darwin",
+    "vite:dev": "vite",
+    "vite:build": "vite build",
+    "vite:preview": "vite preview"
   },
   "keywords": [
     "blocker",
@@ -35,6 +42,10 @@
   },
   "license": "CC-BY-NC-ND-3.0",
   "dependencies": {
+    "@tauri-apps/api": "^2.9.1",
+    "@tauri-apps/plugin-dialog": "^2.6.0",
+    "@tauri-apps/plugin-fs": "^2.4.5",
+    "@tauri-apps/plugin-shell": "^2.3.4",
     "electron-log": "^5.4.3",
     "electron-updater": "^6.6.2",
     "emoji-picker-element": "^1.28.1",
@@ -42,12 +53,14 @@
   },
   "devDependencies": {
     "@electron/notarize": "^3.1.1",
+    "@tauri-apps/cli": "^2.9.6",
     "dotenv": "^17.2.3",
     "electron": "^25.9.8",
     "electron-builder": "^26.0.12",
     "electron-icon-builder": "^2.0.1",
     "pkg": "^5.8.1",
     "png-to-ico": "^3.0.1",
-    "sharp": "^0.34.5"
+    "sharp": "^0.34.5",
+    "vite": "^7.3.1"
   }
 }

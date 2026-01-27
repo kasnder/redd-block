@@ -35,3 +35,7 @@ helper/dist/
 
 # Store assets are generated automatically
 # assets/store
+
+# Tauri build artifacts
+src-tauri/target/
+helper-daemon/target/

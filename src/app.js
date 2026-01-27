@@ -1,4 +1,47 @@
-const { ipcRenderer } = require('electron');
+// Tauri API imports - proper ES modules from @tauri-apps/api
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+
+// Compatibility layer wrapping Tauri APIs
+const tauriAPI = {
+    // Core data operations
+    loadData: () => invoke('load_data'),
+    saveData: (data) => invoke('save_data', { data }),
+    getAppVersion: () => invoke('get_app_version'),
+
+    // Window operations
+    setWindowSize: (width, height) => invoke('set_window_size', { width, height }),
+    minimizeWindow: () => getCurrentWindow().minimize(),
+    maximizeWindow: async () => {
+        const win = getCurrentWindow();
+        if (await win.isMaximized()) {
+            return win.unmaximize();
+        }
+        return win.maximize();
+    },
+    closeWindow: () => getCurrentWindow().hide(),
+
+    // Helper daemon operations
+    checkHelperStatus: () => invoke('check_helper_status').catch(() => ({ installed: false, running: false })),
+    installHelper: () => invoke('install_helper'),
+    startBlockViaHelper: (data) => invoke('start_block_via_helper', { ...data }),
+    clearBlockViaHelper: () => invoke('clear_block_via_helper'),
+
+    // App operations
+    openAppPicker: () => invoke('open_app_picker'),
+    blockWebsites: (domains) => invoke('block_websites', { domains }),
+    refreshBlockedApps: () => invoke('refresh_blocked_apps').catch(() => { }),
+
+    // Process watcher for app blocking
+    setBlockedApps: (apps) => invoke('set_blocked_apps', { apps }),
+    startProcessWatcher: () => invoke('start_process_watcher'),
+    stopProcessWatcher: () => invoke('stop_process_watcher'),
+    hideAllBlockedApps: () => invoke('hide_all_blocked_apps'),
+
+    // Event listening
+    onBlocksUpdated: (callback) => listen('blocks-updated', callback),
+};
 
 // State
 let appData = {
@@ -46,7 +89,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 // Check if the helper daemon is available
 async function checkHelperStatus() {
     try {
-        const status = await ipcRenderer.invoke('check-helper-status');
+        const status = await tauriAPI.checkHelperStatus();
         helperAvailable = status.running;
         console.log('Helper status:', status);
 
@@ -62,7 +105,7 @@ async function checkHelperStatus() {
 
 // Load data from main process
 async function loadData() {
-    appData = await ipcRenderer.invoke('load-data');
+    appData = await tauriAPI.loadData();
     if (!appData || !appData.blocklists) {
         appData = {
             blocklists: [],
@@ -74,7 +117,7 @@ async function loadData() {
 
 // Save data to main process
 async function saveData() {
-    await ipcRenderer.invoke('save-data', appData);
+    await tauriAPI.saveData(appData);
 }
 
 // Detect platform for window controls
@@ -95,7 +138,8 @@ function updateWindowHeight() {
             const contentHeight = appContainer.scrollHeight;
             // Add a small buffer for window chrome/borders
             const targetHeight = Math.max(contentHeight + 20, 500);
-            ipcRenderer.send('set-window-height', targetHeight);
+            // Window height adjustment handled by Tauri
+            // tauriAPI.setWindowHeight(targetHeight);
         }
     });
 }
@@ -104,13 +148,13 @@ function updateWindowHeight() {
 function setupEventListeners() {
     // Window controls
     document.getElementById('min-btn')?.addEventListener('click', () => {
-        ipcRenderer.send('window-minimize');
+        tauriAPI.minimizeWindow();
     });
     document.getElementById('max-btn')?.addEventListener('click', () => {
-        ipcRenderer.send('window-maximize');
+        tauriAPI.maximizeWindow();
     });
     document.getElementById('close-btn')?.addEventListener('click', () => {
-        ipcRenderer.send('window-close');
+        tauriAPI.closeWindow();
     });
 
     // Time pickers - custom popover handlers
@@ -211,7 +255,7 @@ function setupEventListeners() {
     });
 
     // Listen for blocks updated from main process
-    ipcRenderer.on('blocks-updated', async () => {
+    tauriAPI.onBlocksUpdated(async () => {
         await loadData();
         render();
     });
@@ -259,7 +303,7 @@ function setupOnboardingListeners() {
 
     // Browse button for onboarding
     document.getElementById('browse-apps-btn')?.addEventListener('click', async () => {
-        const appName = await ipcRenderer.invoke('open-app-picker');
+        const appName = await tauriAPI.openAppPicker();
         if (appName && !onboardingApps.includes(appName)) {
             onboardingApps.push(appName);
             renderTags(appsTags, onboardingApps, (idx) => {
@@ -318,7 +362,7 @@ function setupOnboardingListeners() {
         saveData();
 
         // Resize window from onboarding size to main app size
-        ipcRenderer.send('set-window-size', { width: 840, height: 650 });
+        tauriAPI.setWindowSize(840, 650);
 
         render();
     });
@@ -367,7 +411,7 @@ function setupModalListeners() {
 
     // Browse button for modal
     document.getElementById('modal-browse-apps-btn')?.addEventListener('click', async () => {
-        const appName = await ipcRenderer.invoke('open-app-picker');
+        const appName = await tauriAPI.openAppPicker();
         if (appName && !modalApps.includes(appName)) {
             modalApps.push(appName);
             window.renderModalTags();
@@ -377,22 +421,22 @@ function setupModalListeners() {
     document.getElementById('override-type').addEventListener('change', (e) => {
         const type = e.target.value;
         const customTextArea = document.getElementById('custom-override-text');
-        const overrideCountInput = document.getElementById('override-count');
+        const overrideCountWrapper = document.getElementById('override-count-wrapper');
         const hintEl = document.getElementById('override-count-hint');
 
         if (type === 'custom') {
             customTextArea.classList.remove('hidden');
-            overrideCountInput.classList.add('hidden');
+            overrideCountWrapper.classList.add('hidden');
             hintEl.classList.add('hidden');
         } else {
             customTextArea.classList.add('hidden');
-            overrideCountInput.classList.remove('hidden');
+            overrideCountWrapper.classList.remove('hidden');
             hintEl.classList.remove('hidden');
 
             if (type === 'random-words') {
-                hintEl.innerHTML = "Total number of characters in the words to write.<br>E.g. 10 characters -> 'shine great'";
+                hintEl.innerHTML = "E.g. 10 chars → 'shine great'";
             } else {
-                hintEl.innerHTML = "Number of characters to type to override<br>E.g. 10 -> a982j3+fd";
+                hintEl.innerHTML = "E.g. 10 chars → 'a982j3+fd'";
             }
         }
     });
@@ -676,17 +720,20 @@ function setupOverrideModalListeners() {
 
             // Always try the helper first (it should be running after initial block was started)
             // Re-check helper status in case it was installed this session
-            const status = await ipcRenderer.invoke('check-helper-status');
+            const status = await tauriAPI.checkHelperStatus();
             if (status.running) {
                 helperAvailable = true;
-                await ipcRenderer.invoke('clear-block-via-helper');
+                await tauriAPI.clearBlockViaHelper();
             } else {
                 // Fallback to direct update only if helper truly not running
                 await updateHostsFile();
             }
 
             // Notify main process to refresh blocked apps list (stops app blocking)
-            ipcRenderer.send('refresh-blocked-apps');
+            tauriAPI.refreshBlockedApps();
+
+            // Stop the process watcher since we're clearing blocks
+            await tauriAPI.stopProcessWatcher();
 
             render();
             closeOverrideModal();
@@ -1226,15 +1273,15 @@ function startBlock() {
 
     // Estimate typing time: ~20 chars/min for random/gibberish (it's slow!), ~30 for custom text
     let charCount = difficulty.count;
-    let charsPerMinute = 20; // Conservative for random text
+    let charsPerMinute = 150; // Conservative for random words (average typing is ~200 chars/min)
 
     if (difficulty.type === 'custom' && difficulty.customText) {
         charCount = difficulty.customText.length;
-        charsPerMinute = 30; // Custom text is slightly easier (you can see the pattern)
+        charsPerMinute = 200; // Custom text is slightly easier (you can see the pattern)
         const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
         overrideText = `Type a specific ${charCount}-character phrase exactly as shown (~${estimatedMinutes} min).`;
     } else if (difficulty.type === 'gibberish') {
-        charsPerMinute = 15; // Gibberish is the hardest
+        charsPerMinute = 100; // Gibberish is the hardest
         const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
         const charWord = charCount === 1 ? 'character' : 'characters';
         overrideText = `Type ${charCount} random ${charWord} (letters and numbers) exactly as shown (~${estimatedMinutes} min).`;
@@ -1295,19 +1342,19 @@ async function proceedWithBlock() {
 
     // Try to use the helper daemon (no password required!)
     if (helperAvailable) {
-        result = await ipcRenderer.invoke('start-block-via-helper', {
+        result = await tauriAPI.startBlockViaHelper({
             domains: blocklist.websites || [],
             endTime: blockEnd.getTime(),
             blocklistId: selectedBlocklistId
         });
     } else {
         // Helper not available - check if it's installed but just not detected
-        const status = await ipcRenderer.invoke('check-helper-status');
+        const status = await tauriAPI.checkHelperStatus();
 
         if (status.running) {
             // It's running, use it
             helperAvailable = true;
-            result = await ipcRenderer.invoke('start-block-via-helper', {
+            result = await tauriAPI.startBlockViaHelper({
                 domains: blocklist.websites || [],
                 endTime: blockEnd.getTime(),
                 blocklistId: selectedBlocklistId
@@ -1350,7 +1397,16 @@ async function proceedWithBlock() {
     await saveData();
 
     // Notify main process to refresh blocked apps list
-    ipcRenderer.send('refresh-blocked-apps');
+    tauriAPI.refreshBlockedApps();
+
+    // Start app blocking if this blocklist has apps
+    if (blocklist.apps && blocklist.apps.length > 0) {
+        console.log('Starting process watcher for apps:', blocklist.apps);
+        await tauriAPI.setBlockedApps(blocklist.apps);
+        await tauriAPI.startProcessWatcher();
+        // Initial sweep: hide any already-open blocked apps
+        await tauriAPI.hideAllBlockedApps();
+    }
 
     // Reset dropdown and let handleBlocklistSelect handle the UI hiding/reset
     const blocklistSelect = document.getElementById('blocklist-select');
@@ -1388,7 +1444,7 @@ async function proceedWithHelperInstall() {
     proceedBtn.innerHTML = '<span class="btn-spinner"></span>Installing...';
 
     // Try to install the helper
-    const installResult = await ipcRenderer.invoke('install-helper');
+    const installResult = await tauriAPI.installHelper();
 
     if (installResult.success) {
         // Check if the helper is actually running
@@ -1401,7 +1457,7 @@ async function proceedWithHelperInstall() {
             let helperReady = false;
             for (let i = 0; i < 5; i++) {
                 await new Promise(resolve => setTimeout(resolve, 1000));
-                const status = await ipcRenderer.invoke('check-helper-status');
+                const status = await tauriAPI.checkHelperStatus();
                 if (status.running) {
                     helperReady = true;
                     break;
@@ -1424,7 +1480,7 @@ async function proceedWithHelperInstall() {
         if (pendingBlockData) {
             const { block, blocklist, blockEnd } = pendingBlockData;
 
-            const result = await ipcRenderer.invoke('start-block-via-helper', {
+            const result = await tauriAPI.startBlockViaHelper({
                 domains: blocklist.websites || [],
                 endTime: blockEnd.getTime(),
                 blocklistId: blocklist.id
@@ -1496,7 +1552,7 @@ async function updateHostsFile(silent = false) {
     // Try to use helper daemon first (works on all platforms)
     try {
         console.log('[updateHostsFile] Checking helper status...');
-        const status = await ipcRenderer.invoke('check-helper-status');
+        const status = await tauriAPI.checkHelperStatus();
         console.log('[updateHostsFile] Helper status:', status);
 
         if (status.running) {
@@ -1505,11 +1561,13 @@ async function updateHostsFile(silent = false) {
 
             if (domainsArray.length === 0) {
                 // Clear all blocks via helper
-                const result = await ipcRenderer.invoke('clear-block-via-helper');
+                const result = await tauriAPI.clearBlockViaHelper();
                 if (result && result.success) {
                     lastBlockedDomains = allDomains;
                     // Also notify main process to refresh blocked apps list
-                    ipcRenderer.send('refresh-blocked-apps');
+                    tauriAPI.refreshBlockedApps();
+                    // Stop the process watcher since all blocks are cleared
+                    await tauriAPI.stopProcessWatcher();
                 }
                 return result || { success: true };
             } else {
@@ -1518,7 +1576,7 @@ async function updateHostsFile(silent = false) {
                     .filter(b => b.startTime <= now && b.endTime > now)
                     .map(b => b.endTime));
 
-                const result = await ipcRenderer.invoke('start-block-via-helper', {
+                const result = await tauriAPI.startBlockViaHelper({
                     domains: domainsArray,
                     endTime: latestEndTime,
                     blocklistId: 'combined' // Multiple blocklists combined
@@ -1537,7 +1595,7 @@ async function updateHostsFile(silent = false) {
 
     // Fallback to direct hosts file modification (macOS)
     console.log('[updateHostsFile] Calling fallback block-websites');
-    const result = await ipcRenderer.invoke('block-websites', domainsArray);
+    const result = await tauriAPI.blockWebsites(domainsArray);
 
     if (result && result.success) {
         lastBlockedDomains = allDomains;
@@ -1561,22 +1619,22 @@ function openBlocklistModal(blocklist = null) {
 
     const type = blocklist?.overrideDifficulty?.type || 'random-words';
     const customTextArea = document.getElementById('custom-override-text');
-    const overrideCountInput = document.getElementById('override-count');
+    const overrideCountWrapper = document.getElementById('override-count-wrapper');
     const hintEl = document.getElementById('override-count-hint');
 
     if (type === 'custom') {
         customTextArea.classList.remove('hidden');
-        overrideCountInput.classList.add('hidden');
+        overrideCountWrapper.classList.add('hidden');
         hintEl.classList.add('hidden');
     } else {
         customTextArea.classList.add('hidden');
-        overrideCountInput.classList.remove('hidden');
+        overrideCountWrapper.classList.remove('hidden');
         hintEl.classList.remove('hidden');
 
         if (type === 'random-words') {
-            hintEl.innerHTML = "Total number of characters in the words to write.<br>E.g. 10 characters -> 'shine great'";
+            hintEl.innerHTML = "E.g. 10 chars → 'shine great'";
         } else {
-            hintEl.innerHTML = "Number of characters to type to override<br>E.g. 10 -> a982j3+fd";
+            hintEl.innerHTML = "E.g. 10 chars → 'a982j3+fd'";
         }
     }
 
@@ -2235,9 +2293,18 @@ function renderBlocklists() {
 
         // Check if this blocklist has an active block
         const now = Date.now();
-        const isActive = appData.activeBlocks.some(b => b.blocklistId === bl.id && b.startTime <= now && b.endTime > now);
+        const activeBlock = appData.activeBlocks.find(b => b.blocklistId === bl.id && b.startTime <= now && b.endTime > now);
+        const isActive = !!activeBlock;
         const activeClass = isActive ? ' blocklist-card-active' : '';
-        const activeBadge = isActive ? '<span class="active-badge">Active</span>' : '';
+
+        // Calculate time remaining for active badge
+        let activeBadge = '';
+        if (isActive && activeBlock) {
+            const remaining = activeBlock.endTime - now;
+            const mins = Math.ceil(remaining / 60000);
+            const timeText = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
+            activeBadge = `<span class="active-badge">Active</span><span class="time-remaining">${timeText} left</span>`;
+        }
 
         // Check if this blocklist is selected for starting a block
         const isSelected = bl.id === selectedBlocklistId && !isActive;
@@ -2476,6 +2543,13 @@ function startTickInterval() {
             // Don't update hosts in tick - it causes password prompts
             // Just re-render the UI
             render();
+
+            // If no more active blocks, stop the process watcher
+            if (appData.activeBlocks.length === 0) {
+                console.log('All blocks expired, stopping process watcher');
+                tauriAPI.stopProcessWatcher();
+                tauriAPI.setBlockedApps([]);
+            }
         }
 
         // Update remaining times in UI
@@ -2533,40 +2607,6 @@ function cleanUrlForDisplay(url) {
         .replace(/\/$/, '');           // Remove trailing slash
 }
 
-// Calculate and set window height based on content
-function updateWindowHeight() {
-    const titleBar = document.querySelector('.title-bar');
-    const topRow = document.querySelector('.grid-top-row');
-    const timeline = document.querySelector('.timeline-section');
-
-    if (!titleBar || !topRow || !timeline) return;
-
-    // Measure content heights
-    const topRowHeight = topRow.offsetHeight;
-    const timelineHeight = timeline.offsetHeight;
-
-    // CSS values (hardcoded based on styles.css)
-    const gap = 20;               // .main-content gap
-    const timelineMarginTop = 6;  // .timeline-section margin-top
-    const mainPadTop = 12;        // .main-content padding-top
-    const mainPadBottom = 20;     // .main-content padding-bottom
-    const appPadBottom = 42;      // .app-container padding-bottom
-    const titleHeight = titleBar.offsetHeight;
-
-    // Calculate total required height
-    const totalHeight = Math.ceil(
-        titleHeight +
-        mainPadTop +
-        topRowHeight +
-        gap +
-        timelineMarginTop +
-        timelineHeight +
-        mainPadBottom +
-        appPadBottom
-    );
-
-    ipcRenderer.send('set-window-height', totalHeight);
-}
 
 // Theme Handling
 function setupTheme() {
