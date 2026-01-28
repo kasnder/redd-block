@@ -7,6 +7,9 @@ use tauri::{
 #[cfg(target_os = "macos")]
 use tauri::{TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
 
+#[cfg(target_os = "windows")]
+use tauri::{WebviewUrl, WebviewWindowBuilder};
+
 mod commands;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -54,6 +57,20 @@ pub fn run() {
                     );
                     ns_window.setBackgroundColor_(bg_color);
                 }
+            }
+
+            // Create main window on Windows
+            #[cfg(target_os = "windows")]
+            {
+                let win_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+                    .title("ReDD Block")
+                    .inner_size(840.0, 750.0)
+                    .min_inner_size(600.0, 500.0)
+                    .resizable(true)
+                    .decorations(false) // Hide native title bar, use custom controls
+                    .center();
+
+                win_builder.build()?;
             }
 
             // Create system tray menu
