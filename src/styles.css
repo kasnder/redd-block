@@ -485,6 +485,12 @@ body.dark-mode .day-column.weekend {
     pointer-events: none;
 }
 
+/* Schedule mode interaction on day-track */
+.day-track.schedule-mode {
+    pointer-events: auto;
+    z-index: 5;
+}
+
 .day-track>* {
     pointer-events: auto;
 }
@@ -536,6 +542,24 @@ body.dark-mode .day-column.weekend {
     cursor: default;
 }
 
+.calendar-block.scheduled {
+    opacity: 0.7;
+    border: 1px dashed rgba(255, 255, 255, 0.4);
+}
+
+.schedule-icon {
+    position: absolute;
+    bottom: 2px;
+    right: 4px;
+    opacity: 0.8;
+    display: flex;
+    align-items: center;
+}
+
+.schedule-icon svg {
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3));
+}
+
 /* Preview Block - Non-interactive by default (one-off mode) */
 .calendar-block.preview {
     opacity: 0.5;
@@ -576,18 +600,17 @@ body.dark-mode .day-column.weekend {
     left: 0;
     right: 0;
     height: 12px;
-    cursor: ns-resize;
-    z-index: 10;
+    cursor: ns-resize !important;
+    z-index: 100;
+    pointer-events: auto;
 }
 
 .calendar-block.preview.interactive .resize-handle-top {
-    top: -4px;
-    border-radius: 6px 6px 0 0;
+    top: 0;
 }
 
 .calendar-block.preview.interactive .resize-handle-bottom {
-    bottom: -4px;
-    border-radius: 0 0 6px 6px;
+    bottom: 0;
 }
 
 .calendar-block.preview.interactive .resize-handle:hover {
@@ -1263,6 +1286,27 @@ body.dark-mode .time-part.active {
     font-weight: 400;
 }
 
+/* Stop Block Button (shadcn secondary style) */
+.start-block-btn.stop-block {
+    background: hsl(0, 0%, 96%);
+    color: hsl(0, 0%, 20%);
+    border: 1px solid hsl(0, 0%, 88%);
+}
+
+.start-block-btn.stop-block:hover {
+    background: hsl(0, 0%, 90%);
+}
+
+body.dark-mode .start-block-btn.stop-block {
+    background: hsl(0, 0%, 15%);
+    color: hsl(0, 0%, 90%);
+    border-color: hsl(0, 0%, 25%);
+}
+
+body.dark-mode .start-block-btn.stop-block:hover {
+    background: hsl(0, 0%, 20%);
+}
+
 /* Scheduler Mode Tabs */
 .scheduler-mode-tabs {
     display: flex;
@@ -1371,12 +1415,12 @@ body.dark-mode .mode-tab.active {
     align-items: center;
     justify-content: center;
     gap: 6px;
-    padding: 8px 12px;
+    padding: 10px 14px;
     border: 1px dashed var(--border-color);
     border-radius: 8px;
     background: transparent;
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: 14px;
     cursor: pointer;
     transition: all 0.15s ease;
     /* Match the width of the time-pickers-row (start + arrow + end) */
@@ -1600,8 +1644,8 @@ body.dark-mode .mode-tab.active {
 }
 
 .day-toggle {
-    width: 32px;
-    height: 32px;
+    width: 36px;
+    height: 36px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1609,7 +1653,7 @@ body.dark-mode .mode-tab.active {
     border-radius: 8px;
     background: var(--element-bg);
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.15s ease;
@@ -1809,6 +1853,42 @@ body.dark-mode .mode-tab.active {
     display: none;
 }
 
+/* Stop Schedule Button (shadcn secondary style) */
+.start-schedule-btn.stop-schedule {
+    background: hsl(0, 0%, 96%);
+    color: hsl(0, 0%, 20%);
+    border: 1px solid hsl(0, 0%, 88%);
+}
+
+.start-schedule-btn.stop-schedule:hover {
+    background: hsl(0, 0%, 90%);
+}
+
+body.dark-mode .start-schedule-btn.stop-schedule {
+    background: hsl(0, 0%, 15%);
+    color: hsl(0, 0%, 90%);
+    border-color: hsl(0, 0%, 25%);
+}
+
+body.dark-mode .start-schedule-btn.stop-schedule:hover {
+    background: hsl(0, 0%, 20%);
+}
+
+/* Locked segment (part of active schedule) */
+.schedule-segment.segment-locked {
+    opacity: 0.7;
+    position: relative;
+}
+
+.schedule-segment.segment-locked::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(128, 128, 128, 0.05);
+    border-radius: 8px;
+    pointer-events: none;
+}
+
 .password-hint {
     display: block;
     font-size: 11px;
@@ -1940,7 +2020,9 @@ body.dark-mode .mode-tab.active {
 }
 
 .active-badge {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     margin-left: 8px;
     padding: 2px 8px;
     font-size: 10px;
@@ -1950,6 +2032,33 @@ body.dark-mode .mode-tab.active {
     color: white;
     border-radius: 4px;
     vertical-align: middle;
+}
+
+.active-badge svg {
+    flex-shrink: 0;
+}
+
+.schedule-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 8px;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    background: var(--accent-color);
+    color: white;
+    border-radius: 4px;
+    vertical-align: middle;
+}
+
+.schedule-badge svg {
+    flex-shrink: 0;
+}
+
+.blocklist-card-scheduled {
+    border-left: 3px solid var(--accent-color);
 }
 
 .time-remaining {
@@ -1968,13 +2077,13 @@ body.dark-mode .mode-tab.active {
 
 .blocklist-name {
     font-weight: 600;
-    font-size: 14px;
+    font-size: 16px;
     color: var(--text-secondary);
     margin-bottom: 2px;
 }
 
 .blocklist-meta {
-    font-size: 11px;
+    font-size: 13px;
     color: var(--text-muted);
 }
 
@@ -1990,10 +2099,10 @@ body.dark-mode .mode-tab.active {
 }
 
 .blocklist-action-btn {
-    width: 28px;
-    height: 28px;
+    width: 36px;
+    height: 36px;
     border: none;
-    border-radius: 6px;
+    border-radius: 10px;
     background: transparent;
     color: #999;
     cursor: pointer;
@@ -2001,6 +2110,11 @@ body.dark-mode .mode-tab.active {
     align-items: center;
     justify-content: center;
     transition: all 0.2s ease;
+}
+
+.blocklist-action-btn svg {
+    width: 16px;
+    height: 16px;
 }
 
 .blocklist-action-btn:hover {
@@ -2581,6 +2695,39 @@ body.dark-mode .mode-tab.active {
     color: var(--accent-hover);
 }
 
+/* Schedule Summary in Confirmation Modal */
+.schedule-summary {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
+}
+
+.schedule-summary-header {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+}
+
+.schedule-segment-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.schedule-segment-row .segment-time {
+    font-weight: 500;
+    color: var(--text-secondary);
+    min-width: 100px;
+}
+
+.schedule-segment-row .segment-days {
+    color: var(--text-muted);
+}
+
 .override-info-box {
     background: hsl(45, 93%, 94%);
     border: 1px solid hsl(45, 80%, 70%);
@@ -2735,6 +2882,36 @@ body.dark-mode .mode-tab.active {
     background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
     width: 0%;
     transition: width 0.2s ease;
+}
+
+/* Schedule override options */
+.schedule-override-options {
+    display: flex;
+    gap: 16px;
+    margin-top: 16px;
+    padding: 12px;
+    background: hsl(214, 32%, 97%);
+    border-radius: 8px;
+}
+
+.schedule-override-options.hidden {
+    display: none;
+}
+
+.schedule-override-options .radio-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--text-primary);
+}
+
+.schedule-override-options .radio-option input[type="radio"] {
+    width: 16px;
+    height: 16px;
+    accent-color: hsl(214, 84%, 56%);
+    cursor: pointer;
 }
 
 /* Footer */

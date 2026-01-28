@@ -47,6 +47,7 @@ const tauriAPI = {
 let appData = {
     blocklists: [],
     activeBlocks: [],
+    schedules: [],
     settings: {
         onboardingComplete: false
     }
@@ -70,6 +71,7 @@ let isScheduleMode = false; // false = instant mode, true = schedule mode
 let scheduleSegments = getDefaultScheduleSegments(); // Array of time segments with per-segment days
 let scheduleRepeatType = 'no'; // 'no', 'forever', or 'date'
 let scheduleRepeatDate = null; // Date object when repeatType is 'date'
+let activeScheduleSegmentCount = 0; // Number of segments locked in the active schedule (new segments can be added)
 
 // Word list for random word challenges
 const wordList = [
@@ -119,8 +121,13 @@ async function loadData() {
         appData = {
             blocklists: [],
             activeBlocks: [],
+            schedules: [],
             settings: { onboardingComplete: false }
         };
+    }
+    // Ensure schedules array exists for older data
+    if (!appData.schedules) {
+        appData.schedules = [];
     }
 }
 
@@ -257,6 +264,10 @@ function setupEventListeners() {
     // Start block confirmation modal buttons
     document.getElementById('cancel-start-confirm-btn')?.addEventListener('click', closeStartBlockConfirmModal);
     document.getElementById('proceed-start-confirm-btn')?.addEventListener('click', proceedWithBlock);
+
+    // Schedule confirmation modal buttons
+    document.getElementById('cancel-schedule-confirm-btn')?.addEventListener('click', closeScheduleConfirmModal);
+    document.getElementById('proceed-schedule-confirm-btn')?.addEventListener('click', proceedWithSchedule);
 
     // Week calendar navigation buttons
     document.getElementById('prev-week-btn')?.addEventListener('click', () => navigateWeek(-1));
@@ -787,29 +798,85 @@ function setupOverrideModalListeners() {
             }
         }
 
-        if (typed === target && overrideBlockId) {
-            // Correct! Remove the block
-            appData.activeBlocks = appData.activeBlocks.filter(b => b.id !== overrideBlockId);
-            await saveData();
+        if (typed === target && (overrideBlockId || window.overrideScheduleId)) {
+            if (overrideBlockId) {
+                // Block override - remove the block
+                appData.activeBlocks = appData.activeBlocks.filter(b => b.id !== overrideBlockId);
+                await saveData();
 
-            // Always try the helper first (it should be running after initial block was started)
-            // Re-check helper status in case it was installed this session
-            const status = await tauriAPI.checkHelperStatus();
-            if (status.running) {
-                helperAvailable = true;
-                await tauriAPI.clearBlockViaHelper();
-            } else {
-                // Fallback to direct update only if helper truly not running
+                // Always try the helper first (it should be running after initial block was started)
+                // Re-check helper status in case it was installed this session
+                const status = await tauriAPI.checkHelperStatus();
+                if (status.running) {
+                    helperAvailable = true;
+                    await tauriAPI.clearBlockViaHelper();
+                } else {
+                    // Fallback to direct update only if helper truly not running
+                    await updateHostsFile();
+                }
+
+                // Notify main process to refresh blocked apps list (stops app blocking)
+                tauriAPI.refreshBlockedApps();
+
+                // Stop the process watcher since we're clearing blocks
+                await tauriAPI.stopProcessWatcher();
+            } else if (window.overrideScheduleId) {
+                // Check which radio button is selected
+                const overrideType = document.querySelector('input[name="schedule-override-type"]:checked')?.value || 'stop-schedule';
+                const scheduleId = window.overrideScheduleId;
+                const segmentIndex = window.overrideSegmentIndex;
+                const segmentDay = window.overrideSegmentDay;
+
+                if (overrideType === 'just-this' && segmentIndex !== undefined && segmentDay !== undefined) {
+                    // "Just this block" - remove only the specific day from the segment
+                    const schedule = appData.schedules.find(s => s.id === scheduleId);
+                    if (schedule && schedule.segments[segmentIndex]) {
+                        const segment = schedule.segments[segmentIndex];
+                        // Remove this day from the segment
+                        segment.days = segment.days.filter(d => d !== segmentDay);
+
+                        // If segment has no more days, remove the entire segment
+                        if (segment.days.length === 0) {
+                            schedule.segments.splice(segmentIndex, 1);
+                        }
+
+                        // If schedule has no more segments, remove the entire schedule
+                        if (schedule.segments.length === 0) {
+                            appData.schedules = appData.schedules.filter(s => s.id !== scheduleId);
+                            activeScheduleSegmentCount = 0;
+                        }
+                    }
+                } else {
+                    // "Stop schedule" - remove the entire schedule
+                    appData.schedules = appData.schedules.filter(s =>
+                        s.id !== scheduleId && s.blocklistId !== scheduleId
+                    );
+                    activeScheduleSegmentCount = 0;
+                }
+
+                await saveData();
                 await updateHostsFile();
+
+                // Reset modal title
+                const titleEl = document.getElementById('override-modal-title');
+                if (titleEl) {
+                    titleEl.textContent = 'Override Block?';
+                }
+
+                // Hide radio options and reset for next use
+                document.getElementById('schedule-override-options').classList.add('hidden');
+
+                delete window.overrideScheduleId;
+                delete window.overrideSegmentIndex;
+                delete window.overrideSegmentDay;
             }
 
-            // Notify main process to refresh blocked apps list (stops app blocking)
-            tauriAPI.refreshBlockedApps();
-
-            // Stop the process watcher since we're clearing blocks
-            await tauriAPI.stopProcessWatcher();
-
             render();
+
+            // Refresh the blocklist selection UI to update button and controls
+            const blocklistSelect = document.getElementById('blocklist-select');
+            handleBlocklistSelect({ target: blocklistSelect });
+
             closeOverrideModal();
         } else {
             // Wrong! Wiggle and highlight error
@@ -864,6 +931,87 @@ let userEditedEndTime = false; // Track if user manually changed end time
 // Pad number with leading zero
 function pad(num) {
     return num.toString().padStart(2, '0');
+}
+
+// Disable or enable time controls (when a block is active, controls should be disabled)
+function disableTimeControls(disabled) {
+    const durationInput = document.getElementById('duration-minutes-input');
+    const endHourBtn = document.getElementById('end-hour-btn');
+    const endMinuteBtn = document.getElementById('end-minute-btn');
+    const endTimeDisplay = document.getElementById('end-time-display');
+    const quickSelectBtns = document.querySelectorAll('.duration-quick-btn');
+    const timePickerContainer = document.getElementById('time-picker-container');
+
+    if (durationInput) {
+        durationInput.disabled = disabled;
+        durationInput.style.opacity = disabled ? '0.5' : '1';
+        durationInput.style.pointerEvents = disabled ? 'none' : 'auto';
+    }
+
+    if (endHourBtn) {
+        endHourBtn.disabled = disabled;
+        endHourBtn.style.opacity = disabled ? '0.5' : '1';
+        endHourBtn.style.pointerEvents = disabled ? 'none' : 'auto';
+    }
+
+    if (endMinuteBtn) {
+        endMinuteBtn.disabled = disabled;
+        endMinuteBtn.style.opacity = disabled ? '0.5' : '1';
+        endMinuteBtn.style.pointerEvents = disabled ? 'none' : 'auto';
+    }
+
+    if (endTimeDisplay) {
+        endTimeDisplay.style.pointerEvents = disabled ? 'none' : 'auto';
+    }
+
+    quickSelectBtns.forEach(function (btn) {
+        btn.disabled = disabled;
+        btn.style.opacity = disabled ? '0.5' : '1';
+        btn.style.pointerEvents = disabled ? 'none' : 'auto';
+    });
+
+    // Add a visual indicator to the whole container
+    if (timePickerContainer) {
+        timePickerContainer.classList.toggle('controls-disabled', disabled);
+    }
+}
+
+// Disable or enable schedule controls (when a schedule is active)
+function disableScheduleControls(disabled) {
+    const repeatDropdown = document.getElementById('schedule-repeat-select');
+    const addSegmentBtn = document.getElementById('add-segment-btn');
+
+    // Disable repeat dropdown
+    if (repeatDropdown) {
+        repeatDropdown.disabled = disabled;
+        repeatDropdown.style.opacity = disabled ? '0.5' : '1';
+    }
+
+    // Keep Add button always enabled (can add new segments to running schedule)
+    // addSegmentBtn remains untouched
+
+    // Disable controls on EXISTING segments (those within activeScheduleSegmentCount)
+    document.querySelectorAll('.schedule-segment').forEach((segment, index) => {
+        const isExistingSegment = index < activeScheduleSegmentCount;
+
+        if (disabled && isExistingSegment) {
+            // Disable this segment's controls
+            segment.querySelectorAll('.time-part, .day-toggle, .remove-segment-btn').forEach(el => {
+                el.disabled = true;
+                el.style.opacity = '0.5';
+                el.style.pointerEvents = 'none';
+            });
+            segment.classList.add('segment-locked');
+        } else {
+            // Enable this segment's controls
+            segment.querySelectorAll('.time-part, .day-toggle, .remove-segment-btn').forEach(el => {
+                el.disabled = false;
+                el.style.opacity = '1';
+                el.style.pointerEvents = 'auto';
+            });
+            segment.classList.remove('segment-locked');
+        }
+    });
 }
 
 // Initialize time picker with popover options (end time only)
@@ -1138,8 +1286,22 @@ function setScheduleMode(isSchedule) {
     const startScheduleBtn = document.getElementById('start-schedule-btn');
 
     if (isSchedule) {
-        // Reset schedule segments to fresh default times
-        scheduleSegments = getDefaultScheduleSegments();
+        // Check if selected blocklist has an existing schedule
+        const existingSchedule = selectedBlocklistId && appData.schedules
+            ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
+            : null;
+
+        if (existingSchedule && existingSchedule.segments) {
+            // Load existing schedule segments (locked)
+            scheduleSegments = existingSchedule.segments.map(seg => ({ ...seg }));
+            activeScheduleSegmentCount = scheduleSegments.length;
+            scheduleRepeatType = existingSchedule.repeatType || 'no';
+            scheduleRepeatDate = existingSchedule.repeatDate;
+        } else {
+            // Reset schedule segments to fresh default times
+            scheduleSegments = getDefaultScheduleSegments();
+            activeScheduleSegmentCount = 0;
+        }
         rebuildScheduleSegments();
 
         instantPanel.classList.add('hidden');
@@ -1158,6 +1320,11 @@ function setScheduleMode(isSchedule) {
         }
     }
 
+    // Toggle schedule-mode class on day-tracks for click-to-create
+    document.querySelectorAll('.day-track').forEach(track => {
+        track.classList.toggle('schedule-mode', isSchedule);
+    });
+
     // Update calendar preview
     handleTimeChange();
 }
@@ -1165,6 +1332,10 @@ function setScheduleMode(isSchedule) {
 // Toggle Repeat dropdown visibility
 function toggleRepeatDropdown(e) {
     e.stopPropagation();
+
+    // Don't allow opening dropdown when schedule is active
+    if (activeScheduleSegmentCount > 0) return;
+
     const menu = document.getElementById('repeat-dropdown-menu');
     if (!menu) return;
 
@@ -1186,6 +1357,14 @@ function toggleRepeatDropdown(e) {
 
 // Handle Repeat option selection
 function handleRepeatOptionClick(e) {
+    // Don't allow changing repeat options when schedule is active
+    if (activeScheduleSegmentCount > 0) {
+        // Close dropdown silently
+        const menu = document.getElementById('repeat-dropdown-menu');
+        if (menu) menu.classList.add('hidden');
+        return;
+    }
+
     const value = e.target.dataset.value;
     const menu = document.getElementById('repeat-dropdown-menu');
     const btnText = document.getElementById('repeat-dropdown-text');
@@ -1276,25 +1455,91 @@ function updateScheduleButtonState() {
     const startScheduleBtn = document.getElementById('start-schedule-btn');
     if (!startScheduleBtn) return;
 
-    // Enable if blocklist is selected (days are optional - no days = today only)
+    // Check if selected blocklist has an active schedule
+    const activeSchedule = selectedBlocklistId && appData.schedules
+        ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
+        : null;
+
+    const blocklist = selectedBlocklistId
+        ? appData.blocklists.find(bl => bl.id === selectedBlocklistId)
+        : null;
+
+    const btnLabel = startScheduleBtn.querySelector('.btn-label');
+    const btnName = startScheduleBtn.querySelector('.btn-name');
+    const btnIcon = startScheduleBtn.querySelector('svg');
+
+    // Check if there are new segments (beyond the locked count)
+    const hasNewSegments = activeSchedule && scheduleSegments.length > activeScheduleSegmentCount;
+
+    if (activeSchedule && !hasNewSegments) {
+        // Active schedule with no pending changes - show Stop button (grey/secondary style)
+        if (btnLabel) btnLabel.textContent = 'Stop schedule:';
+        if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
+        startScheduleBtn.classList.add('stop-schedule');
+        startScheduleBtn.classList.remove('edit-schedule');
+        startScheduleBtn.disabled = false;
+        startScheduleBtn.dataset.activeScheduleId = activeSchedule.id || activeSchedule.blocklistId;
+
+        // Change to unlock icon
+        if (btnIcon) {
+            btnIcon.innerHTML = `
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+            `;
+        }
+
+        // Disable controls for existing segments
+        disableScheduleControls(true);
+    } else if (activeSchedule && hasNewSegments) {
+        // Active schedule with pending new segments - show Edit button (dark/primary style)
+        if (btnLabel) btnLabel.textContent = 'Edit schedule:';
+        if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
+        startScheduleBtn.classList.remove('stop-schedule');
+        startScheduleBtn.classList.add('edit-schedule');
+        startScheduleBtn.disabled = false;
+        startScheduleBtn.dataset.activeScheduleId = activeSchedule.id || activeSchedule.blocklistId;
+
+        // Calendar icon for edit mode
+        if (btnIcon) {
+            btnIcon.innerHTML = `
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="16" y1="2" x2="16" y2="6"></line>
+                <line x1="8" y1="2" x2="8" y2="6"></line>
+                <line x1="3" y1="10" x2="21" y2="10"></line>
+            `;
+        }
+
+        // Controls are mixed - existing segments disabled, new segments enabled
+        disableScheduleControls(true);
+    } else {
+        // No active schedule - show Start button (normal)
+        if (btnLabel) btnLabel.textContent = 'Start schedule:';
+        if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
+        startScheduleBtn.classList.remove('stop-schedule');
+        startScheduleBtn.classList.remove('edit-schedule');
+        delete startScheduleBtn.dataset.activeScheduleId;
+
+        // Lock icon
+        if (btnIcon) {
+            btnIcon.innerHTML = `
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            `;
+        }
+
+        // Enable all controls
+        disableScheduleControls(false);
+    }
+
+    // Enable button if blocklist is selected
     const isValid = selectedBlocklistId;
     startScheduleBtn.disabled = !isValid;
-
-    // Update button name
-    if (selectedBlocklistId) {
-        const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
-        if (blocklist) {
-            startScheduleBtn.querySelector('.btn-name').textContent = blocklist.name;
-        }
-    }
 }
 
 // Add a new time segment
 function addScheduleSegment() {
-    const segmentIndex = scheduleSegments.length;
-
     // Get the previous segment's end time, round up to next full hour for new start
-    const prevSegment = scheduleSegments[segmentIndex - 1];
+    const prevSegment = scheduleSegments[scheduleSegments.length - 1];
     let newStartHour;
     if (prevSegment) {
         // Start 1 hour after previous end, round up if minutes present
@@ -1322,95 +1567,24 @@ function addScheduleSegment() {
         days: [currentDay]
     });
 
-    // Create DOM element
-    const container = document.getElementById('schedule-segments');
-    const segment = document.createElement('div');
-    segment.className = 'schedule-segment';
-    segment.dataset.segmentIndex = segmentIndex;
+    // Rebuild all segments to ensure consistent rendering
+    rebuildScheduleSegments();
 
-    // Generate day toggle HTML with current day active
-    const dayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-    const dayTogglesHtml = dayLabels.map((label, i) =>
-        `<button type="button" class="segment-day-toggle${i === currentDay ? ' active' : ''}" data-day="${i}">${label}</button>`
-    ).join('');
-
-    segment.innerHTML = `
-        <div class="segment-row">
-            <div class="time-pickers-row">
-                <div class="time-picker-group">
-                    <div class="time-picker-row">
-                        <div class="time-display schedule-start-display">
-                            <div class="time-part-wrapper">
-                                <button class="time-part schedule-hour-btn" data-type="hour" data-target="schedule-start-${segmentIndex}">${String(newStartHour).padStart(2, '0')}</button>
-                            </div>
-                            <span class="time-colon">:</span>
-                            <div class="time-part-wrapper">
-                                <button class="time-part schedule-minute-btn" data-type="minute" data-target="schedule-start-${segmentIndex}">${String(newStartMinute).padStart(2, '0')}</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <span class="time-separator">→</span>
-                <div class="time-picker-group">
-                    <div class="time-picker-row">
-                        <div class="time-display schedule-end-display">
-                            <div class="time-part-wrapper">
-                                <button class="time-part schedule-hour-btn" data-type="hour" data-target="schedule-end-${segmentIndex}">${String(newEndHour).padStart(2, '0')}</button>
-                            </div>
-                            <span class="time-colon">:</span>
-                            <div class="time-part-wrapper">
-                                <button class="time-part schedule-minute-btn" data-type="minute" data-target="schedule-end-${segmentIndex}">${String(newEndMinute).padStart(2, '0')}</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="segment-days-group">
-                <div class="segment-days" data-segment-index="${segmentIndex}">
-                    ${dayTogglesHtml}
-                </div>
-            </div>
-        </div>
-        <button type="button" class="remove-segment-btn" data-segment-index="${segmentIndex}">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
-        </button>
-    `;
-
-    container.appendChild(segment);
-
-    // Add click handlers for the new time buttons
-    segment.querySelectorAll('.time-part').forEach(btn => {
-        btn.addEventListener('click', handleScheduleTimeClick);
-    });
-
-    // Add click handlers for day toggles
-    segment.querySelectorAll('.segment-day-toggle').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            const dayIndex = parseInt(btn.dataset.day);
-            handleSegmentDayToggle(segmentIndex, dayIndex, btn);
-        });
-    });
-
-    // Add click handler for remove button
-    const removeBtn = segment.querySelector('.remove-segment-btn');
-    if (removeBtn) {
-        removeBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const idx = parseInt(removeBtn.dataset.segmentIndex);
-            removeScheduleSegment(idx);
-        });
+    // Re-apply disabled state to locked segments (if schedule is active)
+    if (activeScheduleSegmentCount > 0) {
+        disableScheduleControls(true);
     }
 
-    // Update calendar preview
+    // Update calendar preview and button state
     handleTimeChange();
+    updateScheduleButtonState();
 }
 
 // Handle clicking a day toggle within a segment
 function handleSegmentDayToggle(segmentIndex, dayIndex, btn) {
+    // Don't allow toggling days on locked segments (part of active schedule)
+    if (segmentIndex < activeScheduleSegmentCount) return;
+
     const segment = scheduleSegments[segmentIndex];
     if (!segment) return;
 
@@ -1435,6 +1609,9 @@ function handleSegmentDayToggle(segmentIndex, dayIndex, btn) {
 
 // Remove a time segment
 function removeScheduleSegment(index) {
+    // Don't allow removing locked segments (part of active schedule)
+    if (index < activeScheduleSegmentCount) return;
+
     if (scheduleSegments.length <= 1) return; // Always keep at least one
 
     // Remove from state
@@ -1442,10 +1619,26 @@ function removeScheduleSegment(index) {
 
     // Rebuild DOM (simpler than updating indices)
     rebuildScheduleSegments();
+
+    // Update calendar preview
+    handleTimeChange();
+}
+
+// Sort schedule segments chronologically by start time
+function sortScheduleSegments() {
+    scheduleSegments.sort((a, b) => {
+        // Compare by start hour first, then by start minute
+        const aMinutes = a.startHour * 60 + a.startMinute;
+        const bMinutes = b.startHour * 60 + b.startMinute;
+        return aMinutes - bMinutes;
+    });
 }
 
 // Rebuild schedule segments DOM from state
 function rebuildScheduleSegments() {
+    // Sort chronologically before rebuilding
+    sortScheduleSegments();
+
     const container = document.getElementById('schedule-segments');
     container.innerHTML = '';
 
@@ -1506,16 +1699,16 @@ function rebuildScheduleSegments() {
                         ${dayTogglesHtml}
                     </div>
                 </div>
+                ${showRemove ? `
+                    <button type="button" class="remove-segment-btn" data-segment-index="${index}">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                    </button>
+                ` : ''}
             </div>
-            ${showRemove ? `
-                <button type="button" class="remove-segment-btn" data-segment-index="${index}">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="18" y1="6" x2="6" y2="18"></line>
-                        <line x1="6" y1="6" x2="18" y2="18"></line>
-                    </svg>
-                </button>
-            ` : ''}
         `;
 
         container.appendChild(segment);
@@ -1628,32 +1821,405 @@ function showScheduleTimePopover(btn, type, isStart, segmentIndex) {
     }, 10);
 }
 
-// Start a schedule (placeholder - will be expanded)
+// Start a schedule - show confirmation modal first
 async function startSchedule() {
     if (!selectedBlocklistId) return;
 
     const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
     if (!blocklist) return;
 
-    // Check that at least one segment has days
+    // Check if this blocklist already has an active schedule
+    const activeSchedule = appData.schedules
+        ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
+        : null;
+
+    // Check if there are new segments beyond the locked count
+    const hasNewSegments = activeSchedule && scheduleSegments.length > activeScheduleSegmentCount;
+
+    if (activeSchedule && !hasNewSegments) {
+        // Stop mode - open override dialog for the schedule
+        openScheduleOverrideModal(activeSchedule);
+        return;
+    }
+
+    if (activeSchedule && hasNewSegments) {
+        // Edit mode - show confirmation for adding new segments only
+        const newSegments = scheduleSegments.slice(activeScheduleSegmentCount);
+        showScheduleEditConfirmModal(blocklist, activeSchedule, newSegments);
+        return;
+    }
+
+    // Normal start mode - check that at least one segment has days
     const hasAnyDays = scheduleSegments.some(seg => seg.days && seg.days.length > 0);
     if (!hasAnyDays) return;
 
-    // Collect all unique days from all segments
-    const allDays = [...new Set(scheduleSegments.flatMap(seg => seg.days || []))].sort((a, b) => a - b);
+    // Show confirmation modal for new schedule
+    showScheduleConfirmModal(blocklist);
+}
 
-    // TODO: Implement schedule storage and activation
-    // For now, just log the schedule
-    console.log('Starting schedule:', {
-        blocklistId: selectedBlocklistId,
-        blocklistName: blocklist.name,
-        segments: scheduleSegments,
-        repeatType: scheduleRepeatType,
-        repeatDate: scheduleRepeatDate
+// Show schedule confirmation modal
+function showScheduleConfirmModal(blocklist) {
+    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+    // Blocklist name
+    document.getElementById('schedule-confirm-name').textContent = blocklist.name;
+
+    // Websites
+    const websites = blocklist.websites || [];
+    const websitesRow = document.getElementById('schedule-websites-row');
+    const websitesEl = document.getElementById('schedule-confirm-websites');
+    const showAllWebsitesBtn = document.getElementById('show-all-schedule-websites');
+
+    if (websites.length === 0) {
+        websitesRow.classList.add('hidden');
+    } else {
+        websitesRow.classList.remove('hidden');
+        const maxShow = 3;
+        if (websites.length <= maxShow) {
+            websitesEl.textContent = websites.join(', ');
+            showAllWebsitesBtn.classList.add('hidden');
+        } else {
+            websitesEl.textContent = websites.slice(0, maxShow).join(', ') + '...';
+            websitesEl.dataset.fullList = websites.join(', ');
+            showAllWebsitesBtn.classList.remove('hidden');
+            showAllWebsitesBtn.onclick = () => {
+                websitesEl.textContent = websites.join(', ');
+                showAllWebsitesBtn.classList.add('hidden');
+            };
+        }
+    }
+
+    // Apps
+    const apps = blocklist.apps || [];
+    const appsRow = document.getElementById('schedule-apps-row');
+    const appsEl = document.getElementById('schedule-confirm-apps');
+    const showAllAppsBtn = document.getElementById('show-all-schedule-apps');
+
+    if (apps.length === 0) {
+        appsRow.classList.add('hidden');
+    } else {
+        appsRow.classList.remove('hidden');
+        const appNames = apps.map(a => a.name);
+        const maxShow = 3;
+        if (appNames.length <= maxShow) {
+            appsEl.textContent = appNames.join(', ');
+            showAllAppsBtn.classList.add('hidden');
+        } else {
+            appsEl.textContent = appNames.slice(0, maxShow).join(', ') + '...';
+            showAllAppsBtn.classList.remove('hidden');
+            showAllAppsBtn.onclick = () => {
+                appsEl.textContent = appNames.join(', ');
+                showAllAppsBtn.classList.add('hidden');
+            };
+        }
+    }
+
+    // Schedule segments
+    const segmentsEl = document.getElementById('schedule-confirm-segments');
+    segmentsEl.innerHTML = '';
+
+    scheduleSegments.forEach((seg, index) => {
+        const segDays = (seg.days || []).map(d => dayNames[d]).join(', ');
+        const startTime = `${String(seg.startHour).padStart(2, '0')}:${String(seg.startMinute).padStart(2, '0')}`;
+        const endTime = `${String(seg.endHour).padStart(2, '0')}:${String(seg.endMinute).padStart(2, '0')}`;
+
+        const row = document.createElement('div');
+        row.className = 'schedule-segment-row';
+        row.innerHTML = `
+            <span class="segment-time">${startTime} → ${endTime}</span>
+            <span class="segment-days">${segDays || 'No days selected'}</span>
+        `;
+        segmentsEl.appendChild(row);
     });
 
-    // Show feedback
-    alert(`Schedule created for "${blocklist.name}"!\n\nDays: ${allDays.map(d => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d]).join(', ')}\nSegments: ${scheduleSegments.length}\nRepeat: ${scheduleRepeatType}`);
+    // Repeat info
+    const repeatEl = document.getElementById('schedule-confirm-repeat');
+    if (scheduleRepeatType === 'forever') {
+        repeatEl.textContent = 'Forever';
+    } else if (scheduleRepeatType === 'date' && scheduleRepeatDate) {
+        repeatEl.textContent = `Until ${scheduleRepeatDate.toLocaleDateString()}`;
+    } else {
+        repeatEl.textContent = 'No';
+    }
+
+    // Override info
+    const charCount = blocklist.overrideCharCount || 60;
+    const charsPerMinute = 30;
+    const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
+    const charWord = charCount === 1 ? 'character' : 'characters';
+
+    let overrideText;
+    if (blocklist.overrideType === 'random') {
+        overrideText = `Type ${charCount} random ${charWord} (letters and numbers) exactly as shown (~${estimatedMinutes} min).`;
+    } else {
+        overrideText = `Type ${charCount} ${charWord} (displayed as random words) exactly as shown (~${estimatedMinutes} min).`;
+    }
+
+    document.getElementById('schedule-confirm-override-text').textContent = overrideText;
+
+    // Show modal
+    document.getElementById('start-schedule-confirm-modal').classList.remove('hidden');
+}
+
+// Close schedule confirmation modal
+function closeScheduleConfirmModal() {
+    document.getElementById('start-schedule-confirm-modal').classList.add('hidden');
+}
+
+// Open override modal for stopping a schedule (uses same override modal as blocks)
+function openScheduleOverrideModal(schedule) {
+    // Store the schedule ID for the override process
+    window.overrideScheduleId = schedule.id || schedule.blocklistId;
+
+    // Get the blocklist name
+    const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+    const blocklistName = blocklist ? blocklist.name : 'Schedule';
+
+    // Set the challenge text for the override modal using blocklist settings
+    const difficulty = blocklist?.overrideDifficulty || { type: 'random-words', count: 50 };
+    const charCount = difficulty.count || 50;
+    const isRandom = difficulty.type === 'gibberish';
+
+    // Use the existing override modal - set up challenge
+    challengeText = isRandom ? generateGibberish(charCount) : generateRandomWords(charCount);
+    overrideBlockId = null; // Not a block, it's a schedule
+
+    // Update modal title to indicate it's a schedule
+    const titleEl = document.getElementById('override-title');
+    if (titleEl) {
+        titleEl.textContent = `Stop Schedule: ${blocklistName}`;
+    }
+
+    // Render challenge text directly (renderChallengeText is scoped inside setupOverrideModalListeners)
+    const challengeTextEl = document.getElementById('challenge-text');
+    if (challengeTextEl) {
+        challengeTextEl.textContent = challengeText;
+    }
+
+    // Clear input and progress
+    const challengeInput = document.getElementById('challenge-input');
+    if (challengeInput) challengeInput.value = '';
+    const progressBar = document.getElementById('challenge-progress-bar');
+    if (progressBar) progressBar.style.width = '0%';
+
+    document.getElementById('override-modal').classList.remove('hidden');
+}
+
+// Open schedule override modal when clicking on a scheduled block in the calendar
+function openScheduledBlockOverrideModal(schedule, segmentIndex, day) {
+    // Store the schedule info for the override process
+    window.overrideScheduleId = schedule.id;
+    window.overrideSegmentIndex = segmentIndex;
+    window.overrideSegmentDay = day;
+
+    // Get the blocklist
+    const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+    const blocklistName = blocklist ? blocklist.name : 'Schedule';
+
+    // Calculate if this schedule has multiple occurrences
+    const segment = schedule.segments[segmentIndex];
+    const totalDaysInSegment = segment ? segment.days.length : 1;
+    const totalSegments = schedule.segments.length;
+    const hasMultipleOccurrences = totalSegments > 1 || totalDaysInSegment > 1 ||
+        (schedule.repeatType === 'forever' || schedule.repeatType === 'date');
+
+    // Show/hide the radio options based on multiple occurrences
+    const optionsDiv = document.getElementById('schedule-override-options');
+    if (hasMultipleOccurrences) {
+        optionsDiv.classList.remove('hidden');
+        // Reset to default "Just this block"
+        document.querySelector('input[name="schedule-override-type"][value="just-this"]').checked = true;
+    } else {
+        optionsDiv.classList.add('hidden');
+    }
+
+    // Set up the challenge text using blocklist settings
+    const difficulty = blocklist?.overrideDifficulty || { type: 'random-words', count: 50 };
+    const charCount = difficulty.count || 50;
+    const isRandom = difficulty.type === 'gibberish';
+    challengeText = isRandom ? generateGibberish(charCount) : generateRandomWords(charCount);
+    overrideBlockId = null; // Not a one-off block
+
+    // Update modal title
+    const titleEl = document.getElementById('override-modal-title');
+    if (titleEl) {
+        titleEl.textContent = `Override Scheduled Block?`;
+    }
+
+    // Update summary
+    const summaryEl = document.getElementById('override-summary');
+    if (summaryEl && blocklist) {
+        summaryEl.innerHTML = `<span class="block-name">${blocklist.emoji || ''} ${blocklistName}</span>`;
+    }
+
+    // Render challenge text
+    const challengeTextEl = document.getElementById('challenge-text');
+    if (challengeTextEl) {
+        challengeTextEl.textContent = challengeText;
+    }
+
+    // Clear input and progress
+    const challengeInput = document.getElementById('challenge-input');
+    if (challengeInput) challengeInput.value = '';
+    const progressBar = document.getElementById('challenge-progress-bar');
+    if (progressBar) progressBar.style.width = '0%';
+
+    document.getElementById('override-modal').classList.remove('hidden');
+}
+
+// Show confirmation modal for editing (adding segments to) an existing schedule
+function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) {
+    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+    // Store references for the proceed function
+    window.editScheduleData = {
+        scheduleId: existingSchedule.id || existingSchedule.blocklistId,
+        newSegments: newSegments
+    };
+
+    // Blocklist name
+    document.getElementById('schedule-confirm-name').textContent = `Add to: ${blocklist.name}`;
+
+    // Hide websites and apps rows (not changing those)
+    document.getElementById('schedule-websites-row').classList.add('hidden');
+    document.getElementById('schedule-apps-row').classList.add('hidden');
+
+    // Show NEW segments only
+    const segmentsEl = document.getElementById('schedule-confirm-segments');
+    segmentsEl.innerHTML = '<div class="edit-schedule-notice">Adding these time segments:</div>';
+
+    newSegments.forEach((seg, index) => {
+        const segDays = (seg.days || []).map(d => dayNames[d]).join(', ');
+        const startTime = `${String(seg.startHour).padStart(2, '0')}:${String(seg.startMinute).padStart(2, '0')}`;
+        const endTime = `${String(seg.endHour).padStart(2, '0')}:${String(seg.endMinute).padStart(2, '0')}`;
+
+        const row = document.createElement('div');
+        row.className = 'schedule-segment-row new-segment';
+        row.innerHTML = `
+            <span class="segment-time">${startTime} → ${endTime}</span>
+            <span class="segment-days">${segDays || 'No days selected'}</span>
+        `;
+        segmentsEl.appendChild(row);
+    });
+
+    // Hide repeat info (not changing)
+    document.getElementById('schedule-confirm-repeat').parentElement.classList.add('hidden');
+
+    // Update modal button to say "Add Segments"
+    const confirmBtn = document.querySelector('#start-schedule-confirm-modal .confirm-btn');
+    if (confirmBtn) {
+        confirmBtn.textContent = 'Add Segments';
+        confirmBtn.onclick = proceedWithScheduleEdit;
+    }
+
+    // Show modal
+    document.getElementById('start-schedule-confirm-modal').classList.remove('hidden');
+}
+
+// Add new segments to existing schedule
+async function proceedWithScheduleEdit() {
+    closeScheduleConfirmModal();
+
+    const editData = window.editScheduleData;
+    if (!editData) return;
+
+    // Find the existing schedule
+    const schedule = appData.schedules.find(s =>
+        s.id === editData.scheduleId || s.blocklistId === editData.scheduleId
+    );
+    if (!schedule) return;
+
+    // Add the new segments
+    editData.newSegments.forEach(seg => {
+        schedule.segments.push({
+            startHour: seg.startHour,
+            startMinute: seg.startMinute,
+            endHour: seg.endHour,
+            endMinute: seg.endMinute,
+            days: [...seg.days]
+        });
+    });
+
+    // Update activeScheduleSegmentCount to include the new segments
+    activeScheduleSegmentCount = schedule.segments.length;
+    scheduleSegments = schedule.segments.map(seg => ({ ...seg }));
+
+    // Save
+    await saveData();
+
+    console.log('Schedule updated with new segments:', schedule);
+
+    // Restore the confirm button to normal
+    const confirmBtn = document.querySelector('#start-schedule-confirm-modal .confirm-btn');
+    if (confirmBtn) {
+        confirmBtn.textContent = 'Start Schedule';
+        confirmBtn.onclick = proceedWithSchedule;
+    }
+
+    // Restore hidden rows
+    document.getElementById('schedule-confirm-repeat').parentElement.classList.remove('hidden');
+
+    // Update UI
+    updateScheduleButtonState();
+    renderBlocklists();
+    updateWeekCalendar();
+
+    // Clean up
+    delete window.editScheduleData;
+}
+
+// Actually create the schedule (called after confirmation)
+async function proceedWithSchedule() {
+    closeScheduleConfirmModal();
+
+    const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+    if (!blocklist) return;
+
+    // Create schedule object
+    const schedule = {
+        id: crypto.randomUUID(),
+        blocklistId: selectedBlocklistId,
+        segments: scheduleSegments.map(seg => ({
+            startHour: seg.startHour,
+            startMinute: seg.startMinute,
+            endHour: seg.endHour,
+            endMinute: seg.endMinute,
+            days: [...seg.days]
+        })),
+        repeatType: scheduleRepeatType,
+        repeatDate: scheduleRepeatType === 'date' ? scheduleRepeatDate : null,
+        createdAt: Date.now()
+    };
+
+    // Save to appData
+    appData.schedules.push(schedule);
+    await saveData();
+
+    console.log('Schedule created:', schedule);
+
+    // Update the active segment count to lock the created segments
+    activeScheduleSegmentCount = scheduleSegments.length;
+
+    // Reset schedule repeat options for next use
+    scheduleRepeatType = 'forever';
+    scheduleRepeatDate = null;
+
+    // Rebuild segments UI to show them as locked
+    rebuildScheduleSegments();
+    disableScheduleControls(true);
+    updateScheduleButtonState();
+
+    // Re-render blocklists to show schedule badge
+    renderBlocklists();
+
+    // Update calendar to show scheduled blocks
+    updateWeekCalendar();
+
+    // Clear preview blocks
+    document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
+
+    // Trigger hosts file update to start blocking if schedule is currently active
+    await updateHostsFile();
 }
 // Handle time picker change
 function handleTimeChange() {
@@ -1661,8 +2227,8 @@ function handleTimeChange() {
     const startBtn = document.getElementById('start-block-btn');
     const nextDayIndicator = document.getElementById('next-day-indicator');
 
-    // Remove any existing preview blocks
-    document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
+    // Remove any existing preview blocks and active-schedule blocks (for schedule mode)
+    document.querySelectorAll('.calendar-block.preview, .calendar-block.active-schedule').forEach(el => el.remove());
 
     // Handle schedule mode separately
     if (isScheduleMode) {
@@ -1730,9 +2296,12 @@ function handleTimeChange() {
         noBlocksMsg.classList.add('hidden');
     }
 
-    // Create preview block in week calendar
+    // Create preview block in week calendar (only if no active block for this blocklist)
     const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
-    if (blocklist && currentWeekStart) {
+    const now = Date.now();
+    const hasActiveBlock = blocklist && appData.activeBlocks.some(b => b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now);
+
+    if (blocklist && currentWeekStart && !hasActiveBlock) {
         renderPreviewBlock(blockStart, blockEnd, blocklist);
     }
 
@@ -1748,6 +2317,9 @@ function renderSchedulePreview() {
 
     // For each segment, render blocks on its specific days
     scheduleSegments.forEach((segment, segmentIndex) => {
+        // Determine if this is a locked (active) segment or a new preview segment
+        const isLockedSegment = segmentIndex < activeScheduleSegmentCount;
+
         // Get the days for this segment
         const segmentDays = segment.days || [];
 
@@ -1772,9 +2344,70 @@ function renderSchedulePreview() {
                 blockEnd.setDate(blockEnd.getDate() + 1);
             }
 
-            renderPreviewBlock(blockStart, blockEnd, blocklist, true, segmentIndex);
+            // Render as active block if locked, otherwise as preview
+            if (isLockedSegment) {
+                renderActiveScheduleBlock(blockStart, blockEnd, blocklist, segmentIndex);
+            } else {
+                renderPreviewBlock(blockStart, blockEnd, blocklist, true, segmentIndex);
+            }
         });
     });
+}
+
+// Render an active (locked) schedule block on the calendar (not a preview)
+function renderActiveScheduleBlock(blockStart, blockEnd, blocklist, segmentIndex) {
+    const startDay = new Date(blockStart);
+    startDay.setHours(0, 0, 0, 0);
+
+    const endDay = new Date(blockEnd);
+    endDay.setHours(0, 0, 0, 0);
+
+    let currentDay = new Date(startDay);
+
+    while (currentDay <= endDay) {
+        const dateStr = currentDay.toISOString().split('T')[0];
+        const track = document.querySelector(`.day-track[data-date="${dateStr}"]`);
+
+        if (track) {
+            const dayStart = new Date(currentDay);
+            dayStart.setHours(0, 0, 0, 0);
+            const dayEnd = new Date(currentDay);
+            dayEnd.setHours(23, 59, 59, 999);
+
+            const segmentStart = Math.max(blockStart.getTime(), dayStart.getTime());
+            const segmentEnd = Math.min(blockEnd.getTime(), dayEnd.getTime());
+
+            const startMinutes = new Date(segmentStart).getHours() * 60 + new Date(segmentStart).getMinutes();
+            const endMinutes = new Date(segmentEnd).getHours() * 60 + new Date(segmentEnd).getMinutes();
+
+            const topPosition = (startMinutes / 60) * 40;
+            const height = Math.max(20, ((endMinutes - startMinutes) / 60) * 40);
+
+            const startTimeStr = formatTime(new Date(segmentStart));
+            const endTimeStr = formatTime(new Date(segmentEnd));
+
+            const blockEl = document.createElement('div');
+            blockEl.className = 'calendar-block active-schedule';
+            blockEl.dataset.segmentIndex = segmentIndex;
+            blockEl.style.top = `${topPosition}px`;
+            blockEl.style.height = `${height}px`;
+
+            if (blocklist.color) {
+                blockEl.style.background = blocklist.color;
+            }
+
+            blockEl.innerHTML = `
+                <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
+                <span class="block-label">${escapeHtml(blocklist.name)}</span>
+                <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
+                <span class="schedule-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></span>
+            `;
+
+            track.appendChild(blockEl);
+        }
+
+        currentDay.setDate(currentDay.getDate() + 1);
+    }
 }
 
 // Render preview block on week calendar
@@ -1830,8 +2463,8 @@ function renderPreviewBlock(blockStart, blockEnd, blocklist, skipClear = false, 
 
             // Add resize handles for schedule mode
             const resizeHandles = segmentIndex !== null ? `
-                <div class="resize-handle resize-handle-top" data-handle="top"></div>
-                <div class="resize-handle resize-handle-bottom" data-handle="bottom"></div>
+                <div class="resize-handle resize-handle-top" data-handle="top" style="cursor: ns-resize;"></div>
+                <div class="resize-handle resize-handle-bottom" data-handle="bottom" style="cursor: ns-resize;"></div>
             ` : '';
 
             previewEl.innerHTML = `
@@ -1853,6 +2486,7 @@ function renderPreviewBlock(blockStart, blockEnd, blocklist, skipClear = false, 
         currentDay.setDate(currentDay.getDate() + 1);
     }
 }
+
 // Attach drag and resize handlers to a preview block
 function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
     let isDragging = false;
@@ -1864,6 +2498,7 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
     let startHeight = 0;
     let startDayIndex = null;
     let currentHoverTrack = track;
+    let clickOffsetX = 0; // Offset from track center where user clicked
     const pixelsPerHour = 40;
     const snapMinutes = 15; // Snap to 15-minute intervals
 
@@ -2002,6 +2637,11 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
         startHeight = parseFloat(previewEl.style.height) || 40;
         currentHoverTrack = track;
 
+        // Calculate offset from track center where user clicked (for accurate day boundary detection)
+        const trackRect = track.getBoundingClientRect();
+        const trackCenterX = trackRect.left + trackRect.width / 2;
+        clickOffsetX = e.clientX - trackCenterX;
+
         e.preventDefault();
 
         // Add mouse move and up handlers to document
@@ -2030,9 +2670,15 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
             const allTracks = Array.from(document.querySelectorAll('.day-track'));
             let targetTrackIndex = -1;
 
+            // Use offset-corrected position to detect which day we're over
+            // This ensures the block moves when cursor crosses the day boundary, not before/after
+            const effectiveX = e.clientX - clickOffsetX;
+
             for (let i = 0; i < allTracks.length; i++) {
                 const rect = allTracks[i].getBoundingClientRect();
-                if (e.clientX >= rect.left && e.clientX <= rect.right) {
+                const trackCenterX = rect.left + rect.width / 2;
+                // Check if the effective center is within this track
+                if (effectiveX >= rect.left && effectiveX <= rect.right) {
                     targetTrackIndex = i;
                     currentHoverTrack = allTracks[i];
                     break;
@@ -2154,12 +2800,51 @@ function handleBlocklistSelect(e) {
             if (startScheduleBtn) startScheduleBtn.classList.add('hidden');
             if (startBlockBtn) {
                 startBlockBtn.classList.remove('hidden');
-                // Update button text with blocklist name
+
                 const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+                const now = Date.now();
+                const activeBlock = appData.activeBlocks.find(b => b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now);
+
                 if (blocklist) {
+                    const btnLabel = startBlockBtn.querySelector('.btn-label');
                     const btnName = startBlockBtn.querySelector('.btn-name');
-                    if (btnName) {
-                        btnName.textContent = blocklist.name;
+                    const btnIcon = startBlockBtn.querySelector('svg');
+
+                    if (activeBlock) {
+                        // Active block - show Stop Block button (grey) with unlock icon
+                        if (btnLabel) btnLabel.textContent = 'Stop Block:';
+                        if (btnName) btnName.textContent = blocklist.name;
+                        startBlockBtn.classList.add('stop-block');
+                        startBlockBtn.disabled = false;
+                        startBlockBtn.dataset.activeBlockId = activeBlock.id;
+
+                        // Change to unlock icon
+                        if (btnIcon) {
+                            btnIcon.innerHTML = `
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+                            `;
+                        }
+
+                        // Disable time controls
+                        disableTimeControls(true);
+                    } else {
+                        // No active block - show Start Block button (normal) with lock icon
+                        if (btnLabel) btnLabel.textContent = 'Start Block:';
+                        if (btnName) btnName.textContent = blocklist.name;
+                        startBlockBtn.classList.remove('stop-block');
+                        delete startBlockBtn.dataset.activeBlockId;
+
+                        // Change to lock icon
+                        if (btnIcon) {
+                            btnIcon.innerHTML = `
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                            `;
+                        }
+
+                        // Enable time controls
+                        disableTimeControls(false);
                     }
                 }
             }
@@ -2192,6 +2877,14 @@ function startBlock() {
 
     const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
     if (!blocklist) return;
+
+    // Check if this is a "Stop Block" action (button is in stop mode)
+    const startBlockBtn = document.getElementById('start-block-btn');
+    if (startBlockBtn && startBlockBtn.dataset.activeBlockId) {
+        // Open override dialog instead of starting a new block
+        openOverrideModal(startBlockBtn.dataset.activeBlockId);
+        return;
+    }
 
     // Get times for display
     let blockStart = getStartTimeAsDate();
@@ -2413,26 +3106,29 @@ async function proceedWithBlock() {
         await tauriAPI.hideAllBlockedApps();
     }
 
-    // Reset dropdown and let handleBlocklistSelect handle the UI hiding/reset
-    const blocklistSelect = document.getElementById('blocklist-select');
-    blocklistSelect.value = '';
-    handleBlocklistSelect({ target: blocklistSelect });
-
-    // Button state is already Reset by handleTimeChange called inside handleBlocklistSelect
-    // but let's ensure text is back to original
-    startBtn.innerHTML = getStartBlockButtonHTML();
-
+    // Render UI to update blocklist cards (show ACTIVE badge)
     render();
+
+    // Restore button HTML structure first (textContent = 'Starting...' wiped it)
+    const startBtn2 = document.getElementById('start-block-btn');
+    startBtn2.innerHTML = getStartBlockButtonHTML();
+    startBtn2.disabled = false;
+
+    // Ensure the blocklist stays selected in dropdown and update UI to show Stop Block button
+    const blocklistSelect = document.getElementById('blocklist-select');
+    blocklistSelect.value = selectedBlocklistId; // Make sure it's still set
+    handleBlocklistSelect({ target: blocklistSelect });
 }
 
-// Helper function for start block button HTML
+// Helper function for start block button HTML (includes .btn-label and .btn-name for updateability)
 function getStartBlockButtonHTML() {
     return `
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
             <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
         </svg>
-        Start Block
+        <span class="btn-label">Start Block:</span>
+        <span class="btn-name"></span>
     `;
 }
 
@@ -2535,6 +3231,31 @@ async function updateHostsFile(silent = false) {
             }
         });
 
+    // Also check scheduled blocks - add domains if a schedule segment is currently active
+    const nowDate = new Date();
+    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1; // Convert to Mon=0 format
+    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
+
+    if (appData.schedules) {
+        appData.schedules.forEach(schedule => {
+            if (!schedule.segments) return;
+
+            // Check if any segment is active right now
+            const isActive = schedule.segments.some(seg =>
+                seg.days.includes(currentDay) &&
+                currentMins >= (seg.startHour * 60 + seg.startMinute) &&
+                currentMins < (seg.endHour * 60 + seg.endMinute)
+            );
+
+            if (isActive) {
+                const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+                if (blocklist && blocklist.websites) {
+                    blocklist.websites.forEach(domain => allDomains.add(domain));
+                }
+            }
+        });
+    }
+
     // Check if domains actually changed
     const domainsArray = Array.from(allDomains).sort();
     const lastDomainsArray = Array.from(lastBlockedDomains).sort();
@@ -2573,10 +3294,31 @@ async function updateHostsFile(silent = false) {
                 }
                 return result || { success: true };
             } else {
-                // Find the latest end time among active blocks
-                const latestEndTime = Math.max(...appData.activeBlocks
+                // Calculate end time - need to consider both activeBlocks and schedules
+                let latestEndTime = null;
+
+                // Check active blocks
+                const activeBlockEndTimes = appData.activeBlocks
                     .filter(b => b.startTime <= now && b.endTime > now)
-                    .map(b => b.endTime));
+                    .map(b => b.endTime);
+
+                if (activeBlockEndTimes.length > 0) {
+                    latestEndTime = Math.max(...activeBlockEndTimes);
+                }
+
+                // For schedules, we don't have a fixed end time, so use end-of-day
+                // or a reasonable default (if only schedules are blocking)
+                if (latestEndTime === null && appData.schedules && appData.schedules.length > 0) {
+                    // Use end of today as the endTime for schedule-only blocks
+                    const endOfDay = new Date();
+                    endOfDay.setHours(23, 59, 59, 999);
+                    latestEndTime = endOfDay.getTime();
+                }
+
+                // Fallback if somehow still null
+                if (latestEndTime === null) {
+                    latestEndTime = now + (24 * 60 * 60 * 1000); // 24 hours from now
+                }
 
                 const result = await tauriAPI.startBlockViaHelper({
                     domains: domainsArray,
@@ -3204,6 +3946,9 @@ function updateWeekCalendar() {
         // Day track for blocks
         const track = document.createElement('div');
         track.className = 'day-track';
+        if (isScheduleMode) {
+            track.classList.add('schedule-mode');
+        }
         track.dataset.date = dayDate.toISOString().split('T')[0];
         column.appendChild(track);
 
@@ -3223,6 +3968,9 @@ function updateWeekCalendar() {
 
     // Update visible range display after render
     updateVisibleRangeDisplay();
+
+    // Render active blocks and scheduled blocks on the calendar
+    renderWeekBlocks();
 }
 
 // Update the displayed date range based on visible columns
@@ -3278,7 +4026,10 @@ function renderWeekBlocks() {
         block.endTime > weekStart && block.startTime < weekEndMs
     );
 
-    if (visibleBlocks.length === 0) {
+    // Check if there are any schedules
+    const hasSchedules = appData.schedules && appData.schedules.length > 0;
+
+    if (visibleBlocks.length === 0 && !hasSchedules) {
         noBlocksMsg?.classList.remove('hidden');
     } else {
         noBlocksMsg?.classList.add('hidden');
@@ -3354,6 +4105,92 @@ function renderWeekBlocks() {
             // Move to next day
             currentDay.setDate(currentDay.getDate() + 1);
         }
+    });
+
+    // Render scheduled blocks
+    renderScheduledCalendarBlocks();
+}
+
+// Render scheduled blocks on the calendar (from saved schedules)
+function renderScheduledCalendarBlocks() {
+    console.log('renderScheduledCalendarBlocks called, schedules:', appData.schedules);
+    if (!appData.schedules || appData.schedules.length === 0) return;
+
+    const now = new Date();
+    const today = now.getDay(); // 0=Sun, 1=Mon, etc.
+    const todayIndex = today === 0 ? 6 : today - 1; // Convert to 0=Mon format
+
+    // Days of the current week being displayed
+    const weekDays = [];
+    for (let i = 0; i < 7; i++) {
+        const day = new Date(currentWeekStart);
+        day.setDate(day.getDate() + i);
+        weekDays.push({
+            date: day,
+            dateStr: day.toISOString().split('T')[0],
+            dayIndex: (day.getDay() === 0 ? 6 : day.getDay() - 1) // Convert to 0=Mon format
+        });
+    }
+
+    appData.schedules.forEach(schedule => {
+        const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+        if (!blocklist) return;
+
+        // Check if schedule has expired (for date-limited schedules)
+        if (schedule.repeatType === 'date' && schedule.repeatDate) {
+            const endDate = new Date(schedule.repeatDate);
+            if (now > endDate) return;
+        }
+
+        // Render each segment on its applicable days
+        schedule.segments.forEach((segment, segmentIdx) => {
+            const segmentDays = segment.days || [];
+
+            weekDays.forEach(weekDay => {
+                if (!segmentDays.includes(weekDay.dayIndex)) return;
+
+                const track = document.querySelector(`.day-track[data-date="${weekDay.dateStr}"]`);
+                if (!track) return;
+
+                // Calculate position
+                const startMinutes = segment.startHour * 60 + segment.startMinute;
+                const endMinutes = segment.endHour * 60 + segment.endMinute;
+                const topPosition = (startMinutes / 60) * 40;
+                const height = Math.max(20, ((endMinutes - startMinutes) / 60) * 40);
+
+                const blockEl = document.createElement('div');
+                blockEl.className = 'calendar-block scheduled';
+                blockEl.dataset.scheduleId = schedule.id;
+                blockEl.dataset.segmentIndex = segmentIdx;
+                blockEl.dataset.day = weekDay.dayIndex;
+                blockEl.style.top = `${topPosition}px`;
+                blockEl.style.height = `${height}px`;
+
+                if (blocklist.color) {
+                    blockEl.style.background = blocklist.color;
+                    blockEl.style.opacity = '0.7';
+                }
+
+                // Format times
+                const startTimeStr = `${String(segment.startHour).padStart(2, '0')}:${String(segment.startMinute).padStart(2, '0')}`;
+                const endTimeStr = `${String(segment.endHour).padStart(2, '0')}:${String(segment.endMinute).padStart(2, '0')}`;
+
+                blockEl.innerHTML = `
+                    <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
+                    <span class="block-label">${escapeHtml(blocklist.name)}</span>
+                    <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
+                    <span class="schedule-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></span>
+                `;
+
+                // Add click handler to open schedule override modal
+                blockEl.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openScheduledBlockOverrideModal(schedule, segmentIdx, weekDay.dayIndex);
+                });
+
+                track.appendChild(blockEl);
+            });
+        });
     });
 }
 
@@ -3431,24 +4268,93 @@ function renderBlocklists() {
         const now = Date.now();
         const activeBlock = appData.activeBlocks.find(b => b.blocklistId === bl.id && b.startTime <= now && b.endTime > now);
         const isActive = !!activeBlock;
-        const activeClass = isActive ? ' blocklist-card-active' : '';
 
-        // Calculate time remaining for active badge
-        let activeBadge = '';
+        // Check if this blocklist has a schedule
+        const hasSchedule = appData.schedules && appData.schedules.some(s => s.blocklistId === bl.id);
+
+        const activeClass = isActive ? ' blocklist-card-active' : (hasSchedule ? ' blocklist-card-scheduled' : '');
+
+        // Calculate badges - show BOTH if applicable
+        let oneOffBadge = '';
+        let scheduleBadge = '';
+
+        // One-off block badge (green with hourglass)
         if (isActive && activeBlock) {
             const remaining = activeBlock.endTime - now;
             const mins = Math.ceil(remaining / 60000);
             const timeText = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
-            activeBadge = `<span class="active-badge">Active</span><span class="time-remaining">${timeText} left</span>`;
+            // Hourglass icon
+            oneOffBadge = `<span class="active-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg> ${timeText} left</span>`;
         }
 
-        // Check if this blocklist is selected for starting a block
-        const isSelected = bl.id === selectedBlocklistId && !isActive;
+        // Schedule badge (blue with calendar-sync)
+        if (hasSchedule) {
+            const schedule = appData.schedules.find(s => s.blocklistId === bl.id);
+            let scheduleTimeText = '';
+            if (schedule && schedule.segments) {
+                // Check if any segment is currently active
+                const nowDate = new Date();
+                const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1; // Mon=0
+                const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
+
+                // Find active segment
+                const activeSegment = schedule.segments.find(seg =>
+                    seg.days.includes(currentDay) &&
+                    currentMins >= (seg.startHour * 60 + seg.startMinute) &&
+                    currentMins < (seg.endHour * 60 + seg.endMinute)
+                );
+
+                if (activeSegment) {
+                    // Currently blocking - show time left
+                    const endMins = activeSegment.endHour * 60 + activeSegment.endMinute;
+                    const minsLeft = endMins - currentMins;
+                    scheduleTimeText = minsLeft >= 60 ? `${Math.floor(minsLeft / 60)}h ${minsLeft % 60}m left` : `${minsLeft}m left`;
+                } else {
+                    // Find next upcoming segment
+                    let nextStart = null;
+                    for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+                        const checkDay = (currentDay + dayOffset) % 7;
+                        const segsForDay = schedule.segments.filter(seg => seg.days.includes(checkDay))
+                            .sort((a, b) => (a.startHour * 60 + a.startMinute) - (b.startHour * 60 + b.startMinute));
+
+                        for (const seg of segsForDay) {
+                            const segStartMins = seg.startHour * 60 + seg.startMinute;
+                            if (dayOffset === 0 && segStartMins <= currentMins) continue; // Already passed today
+
+                            // Found next segment
+                            const minsUntil = dayOffset === 0
+                                ? segStartMins - currentMins
+                                : (dayOffset * 24 * 60) + segStartMins - currentMins + (24 * 60 - currentMins) - (24 * 60 - segStartMins);
+
+                            if (minsUntil < 60) {
+                                scheduleTimeText = `in ${minsUntil}m`;
+                            } else if (minsUntil < 24 * 60) {
+                                scheduleTimeText = `in ${Math.floor(minsUntil / 60)}h`;
+                            } else {
+                                const days = Math.floor(minsUntil / (24 * 60));
+                                scheduleTimeText = `in ${days}d`;
+                            }
+                            nextStart = true;
+                            break;
+                        }
+                        if (nextStart) break;
+                    }
+                    if (!scheduleTimeText) scheduleTimeText = 'scheduled';
+                }
+            }
+            // Calendar icon for scheduled blocklists
+            scheduleBadge = `<span class="schedule-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg> ${scheduleTimeText}</span>`;
+        }
+
+        const activeBadge = oneOffBadge + scheduleBadge;
+
+        // Check if this blocklist is selected
+        const isSelected = bl.id === selectedBlocklistId;
         const selectedClass = isSelected ? ' selected' : '';
         const selectedStyle = isSelected ? `style="box-shadow: 0 0 0 2px ${bl.color || '#667eea'}, 0 4px 8px rgba(0, 0, 0, 0.1);"` : '';
 
-        // Dim if something is selected but this one isn't (and it's not active)
-        const isDimmed = selectedBlocklistId && !isSelected && !isActive;
+        // Dim if something is selected but this one isn't
+        const isDimmed = selectedBlocklistId && !isSelected;
         const dimmedClass = isDimmed ? ' dimmed' : '';
 
         return `
@@ -3459,15 +4365,6 @@ function renderBlocklists() {
           <div class="blocklist-meta">${escapeHtml(metaText)}</div>
         </div>
         <div class="blocklist-actions">
-          ${isActive ? `
-          <button class="blocklist-action-btn override-btn" title="Override Block">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="10" y1="15" x2="10" y2="9"></line>
-              <line x1="14" y1="15" x2="14" y2="9"></line>
-            </svg>
-          </button>
-          ` : ''}
           <button class="blocklist-action-btn edit-btn" title="Edit">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
@@ -3490,9 +4387,8 @@ function renderBlocklists() {
         const id = card.dataset.id;
         const isActive = card.dataset.active === 'true';
 
-        // Click card to select it in the dropdown (only if not active)
+        // Click card to select it in the dropdown
         card.addEventListener('click', () => {
-            if (isActive) return; // Don't select active blocklists
             const dropdown = document.getElementById('blocklist-select');
             dropdown.value = id;
             handleBlocklistSelect({ target: dropdown });
@@ -3503,22 +4399,6 @@ function renderBlocklists() {
             const blocklist = appData.blocklists.find(bl => bl.id === id);
             openBlocklistModal(blocklist);
         });
-
-        // Override button (only exists when block is active)
-        const overrideBtn = card.querySelector('.override-btn');
-        if (overrideBtn) {
-            overrideBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                // Find the active block for this blocklist
-                const now = Date.now();
-                const activeBlock = appData.activeBlocks.find(
-                    b => b.blocklistId === id && b.startTime <= now && b.endTime > now
-                );
-                if (activeBlock) {
-                    openOverrideModal(activeBlock.id);
-                }
-            });
-        }
 
         card.querySelector('.delete').addEventListener('click', (e) => {
             e.stopPropagation();
@@ -3660,6 +4540,13 @@ function startTickInterval() {
             // Update hosts to apply the blocking rules
             await updateHostsFile();
             render();
+        }
+
+        // Check for schedule segment transitions (every minute is fine since schedules are minute-granular)
+        // updateHostsFile already handles checking which schedules are currently active
+        // We call it periodically to catch schedule segments starting/ending
+        if (appData.schedules && appData.schedules.length > 0) {
+            await updateHostsFile();
         }
 
         // Check for expired blocks

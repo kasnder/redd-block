@@ -9,6 +9,8 @@ use tauri::{AppHandle, Manager, WebviewWindow};
 pub struct AppData {
     pub blocklists: Vec<Blocklist>,
     pub active_blocks: Vec<ActiveBlock>,
+    #[serde(default)]
+    pub schedules: Vec<Schedule>,
     pub settings: Settings,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub migration_version: Option<u32>,
@@ -52,6 +54,29 @@ pub struct ActiveBlock {
     pub end_time: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Schedule {
+    pub id: String,
+    pub blocklist_id: String,
+    pub segments: Vec<ScheduleSegment>,
+    pub repeat_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repeat_date: Option<String>,
+    #[serde(default)]
+    pub created_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleSegment {
+    pub start_hour: u32,
+    pub start_minute: u32,
+    pub end_hour: u32,
+    pub end_minute: u32,
+    pub days: Vec<u32>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
@@ -64,6 +89,7 @@ impl Default for AppData {
         Self {
             blocklists: Vec::new(),
             active_blocks: Vec::new(),
+            schedules: Vec::new(),
             settings: Settings::default(),
             migration_version: None,
         }
