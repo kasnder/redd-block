@@ -1,6 +1,6 @@
 # ReDD Block
 
-Block distracting websites and apps to stay focused on what matters.
+Block distracting websites and apps with scheduled or one-off blocks. Stay focused on what matters.
 
 Built with [Tauri 2](https://tauri.app/) for a lightweight, native experience.
 
@@ -9,55 +9,72 @@ Built with [Tauri 2](https://tauri.app/) for a lightweight, native experience.
 - **Website Blocking** — System-level hosts file blocking works across all browsers
 - **App Blocking** — Automatically hides distracting apps when launched (macOS)
 - **Flexible Blocklists** — Create multiple lists with custom names, colors, and emojis
-- **Visual Timeline** — See your blocks on an interactive 24-hour timeline
-- **Override Protection** — Configurable typing challenges (random words, gibberish, or custom text) to prevent impulsive unblocking
+- **Scheduled Blocks** — Set recurring blocks on specific days/times (e.g., block social media Mon-Fri 9am-5pm)
+- **One-Off Blocks** — Quick blocks for immediate focus sessions
+- **Visual Calendar** — See all your scheduled and active blocks on an interactive weekly timeline
+- **Override Protection** — Configurable typing challenges prevent impulsive unblocking
 - **Background Operation** — Blocks continue even when the app is closed
 - **Dark Mode** — Toggle between light and dark themes
 
-## Quick Start
+## Local Development
 
-### Development
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (v18+)
+- [Rust](https://www.rust-lang.org/tools/install) (latest stable)
+- [Tauri CLI](https://tauri.app/start/prerequisites/)
+
+### Getting Started
 
 ```bash
+# Clone the repository
+git clone https://github.com/ulyngs/redd-block.git
+cd redd-block
+
 # Install dependencies
 npm install
 
 # Run in development mode
-npm run tauri:dev
+npm run dev
 ```
+
+The app will open automatically. Hot-reloading is enabled for both frontend (Vite) and backend (Tauri).
 
 ### Building
 
 ```bash
-# Build for macOS (DMG)
+# Build for macOS (DMG + App bundle)
 npm run tauri build
 
-# See all build options
-npm run tauri build -- --help
+# Build universal binary (Intel + Apple Silicon)
+npm run tauri build -- --target universal-apple-darwin
 ```
 
 ## How It Works
 
 ### Website Blocking
-A privileged helper daemon modifies the system hosts file (`/etc/hosts` on macOS/Linux) to redirect blocked domains to `0.0.0.0`. A backup is created before the first modification.
+A privileged helper daemon modifies `/etc/hosts` to redirect blocked domains to `0.0.0.0`. Blocks persist across app restarts and work in all browsers.
 
-### App Blocking  
-Uses AppleScript to monitor for blocked apps and hide them when launched or activated.
+### App Blocking (macOS)
+Uses AppleScript to monitor running apps and hide blocked ones when launched.
+
+### Scheduling
+Schedules are stored with segments (time ranges) and days. A background interval checks if any schedule segment is currently active and updates the hosts file accordingly.
 
 ### Helper Daemon
-The helper runs with root privileges and handles hosts file modifications. After initial setup (password required once), blocks start instantly.
+Runs with root privileges to manage hosts file changes. After initial setup (one-time password), blocks start instantly without prompts.
 
-## Architecture
+## Project Structure
 
 ```
 redd-block/
 ├── src/                      # Frontend (HTML/JS/CSS)
-│   ├── index.html
-│   ├── app.js
-│   └── styles.css
+│   ├── index.html            # Main app layout
+│   ├── app.js                # App logic & UI
+│   └── styles.css            # Styling
 ├── src-tauri/                # Tauri backend (Rust)
 │   ├── src/
-│   │   ├── lib.rs            # App setup & window creation
+│   │   ├── lib.rs            # App setup & window config
 │   │   └── commands/         # IPC commands
 │   │       ├── helper.rs     # Helper daemon communication
 │   │       ├── watcher.rs    # App blocking process watcher
@@ -69,37 +86,26 @@ redd-block/
 
 ## Data Storage
 
-ReddBlock stores your data in two locations:
-
-### User Settings & Blocklists
+### User Data
 - **macOS**: `~/Library/Application Support/ReddBlock/redd-block-data.json`
 - **Windows**: `%AppData%/ReddBlock/redd-block-data.json`
 
-This file contains your blocklists, active blocks, and settings (including onboarding status).
+Contains blocklists, schedules, active blocks, and settings.
 
-### Helper Daemon State
+### Helper State
 - **macOS**: `/var/lib/redd-block/helper-state.json`
 - **Windows**: `C:\ProgramData\ReDD Block\helper-state.json`
 
-This file tracks the current blocking state so blocks persist even if the app restarts.
+Tracks blocking state so blocks persist across app restarts.
 
-### Uninstall & Reinstall Behavior
-
-When you uninstall ReddBlock:
-- **Your blocklists and settings are preserved** in the Application Support folder (unless you manually delete it or use a cleaning tool like AppCleaner)
-- **The helper daemon state is preserved** at the system level
-
-When you reinstall:
-- If the data files were preserved, your blocklists and settings will be restored automatically
-- You won't need to redo onboarding
-
-To completely reset ReddBlock, delete the data folders listed above before reinstalling.
+### Uninstall Behavior
+User data is preserved unless manually deleted. Reinstalling restores your blocklists and settings automatically.
 
 ## Requirements
 
 - **macOS**: 11+ (Big Sur or later)
-- **Linux**: Coming soon
 - **Windows**: Coming soon
+- **Linux**: Coming soon
 
 ## License
 
