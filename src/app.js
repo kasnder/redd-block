@@ -2783,6 +2783,15 @@ function handleBlocklistSelect(e) {
     const modeTabs = document.querySelector('.scheduler-mode-tabs');
 
     if (selectedBlocklistId) {
+        // Check if this blocklist has an active schedule - if so, auto-switch to schedule mode
+        const existingSchedule = appData.schedules
+            ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
+            : null;
+        if (existingSchedule && existingSchedule.segments && existingSchedule.segments.length > 0) {
+            // Auto-switch to schedule mode for blocklists with active schedules
+            setScheduleMode(true);
+        }
+
         // Hide selection prompt, show time picker, hint, tabs, and appropriate button
         if (selectionPrompt) selectionPrompt.classList.add('hidden');
         timePicker.classList.remove('hidden');
