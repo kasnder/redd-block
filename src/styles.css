@@ -108,7 +108,7 @@ body {
     justify-content: center;
     align-items: center;
     padding: 8px 24px;
-    padding-top: 28px;
+    padding-top: 20px;
     /* Extra space for macOS traffic lights in overlay mode */
     background: transparent;
     -webkit-app-region: drag;
@@ -536,11 +536,67 @@ body.dark-mode .day-column.weekend {
     cursor: default;
 }
 
-/* Preview Block */
+/* Preview Block - Non-interactive by default (one-off mode) */
 .calendar-block.preview {
     opacity: 0.5;
     border: 2px dashed rgba(255, 255, 255, 0.5);
     pointer-events: none;
+}
+
+/* Interactive preview blocks (schedule mode) */
+.calendar-block.preview.interactive {
+    opacity: 0.7;
+    pointer-events: auto;
+    cursor: grab;
+    overflow: visible;
+}
+
+.calendar-block.preview.interactive:hover {
+    opacity: 0.85;
+}
+
+.calendar-block.preview.interactive:active {
+    cursor: grabbing;
+}
+
+.calendar-block.preview.interactive.dragging {
+    opacity: 0.9;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+    z-index: 100;
+    cursor: grabbing;
+}
+
+.calendar-block.preview.interactive.resizing {
+    cursor: ns-resize !important;
+}
+
+/* Resize handles for preview blocks */
+.calendar-block.preview.interactive .resize-handle {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 12px;
+    cursor: ns-resize;
+    z-index: 10;
+}
+
+.calendar-block.preview.interactive .resize-handle-top {
+    top: -4px;
+    border-radius: 6px 6px 0 0;
+}
+
+.calendar-block.preview.interactive .resize-handle-bottom {
+    bottom: -4px;
+    border-radius: 0 0 6px 6px;
+}
+
+.calendar-block.preview.interactive .resize-handle:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+/* Cursor change when hovering resize handles (controlled by JS) */
+.calendar-block.preview.interactive.resize-hover {
+    cursor: ns-resize !important;
 }
 
 .calendar-block.preview.hidden {
@@ -862,7 +918,7 @@ body.dark-mode .day-column.weekend {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    margin-top: 0;
+    margin-top: 12px;
 }
 
 .time-picker-group {
@@ -1003,7 +1059,7 @@ body.dark-mode .day-column.weekend {
 }
 
 .time-part {
-    padding: 6px 10px;
+    padding: 4px 4px;
     font-size: 16px;
     font-weight: 600;
     background: var(--input-bg);
@@ -1011,7 +1067,7 @@ body.dark-mode .day-column.weekend {
     border-radius: 6px;
     cursor: pointer;
     transition: all 0.15s ease;
-    min-width: 44px;
+    min-width: 36px;
     text-align: center;
     color: var(--text-secondary);
 }
@@ -1205,6 +1261,552 @@ body.dark-mode .time-part.active {
 
 .start-block-btn .btn-name {
     font-weight: 400;
+}
+
+/* Scheduler Mode Tabs */
+.scheduler-mode-tabs {
+    display: flex;
+    gap: 2px;
+    background: hsl(0, 0%, 93%);
+    padding: 4px;
+    border-radius: 10px;
+}
+
+body.dark-mode .scheduler-mode-tabs {
+    background: hsl(222, 47%, 15%);
+}
+
+.mode-tab {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 10px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.mode-tab:hover {
+    color: var(--text-secondary);
+}
+
+.mode-tab.active {
+    background: white;
+    color: var(--text-primary);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+body.dark-mode .mode-tab.active {
+    background: hsl(222, 47%, 25%);
+    color: white;
+}
+
+/* Schedule Block Panel */
+.schedule-block-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.schedule-block-panel.hidden {
+    display: none;
+}
+
+/* Schedule Segments */
+.schedule-segments {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.schedule-segment {
+    position: relative;
+    display: inline-flex;
+    align-items: flex-end;
+    margin-bottom: 4px;
+}
+
+.schedule-segment .time-pickers-row {
+    gap: 12px;
+}
+
+/* Remove Segment Button */
+.remove-segment-btn {
+    margin-left: 10px;
+    margin-bottom: 6px;
+    /* Center vertically with time inputs */
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    opacity: 0;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+}
+
+.schedule-segment:hover .remove-segment-btn {
+    opacity: 1;
+}
+
+.remove-segment-btn:hover {
+    background: hsl(0, 80%, 95%);
+    color: hsl(0, 70%, 50%);
+}
+
+/* Add Segment Button */
+.add-segment-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border: 1px dashed var(--border-color);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    /* Match the width of the time-pickers-row (start + arrow + end) */
+    width: fit-content;
+    min-width: 242px;
+}
+
+.add-segment-btn:hover {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+    background: rgba(102, 126, 234, 0.05);
+}
+
+/* Segment Row - contains time pickers and day toggles inline */
+.segment-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+}
+
+/* Segment Days Group - contains label and day toggles */
+.segment-days-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* Segment Days - inline day toggles for each segment */
+.segment-days {
+    display: flex;
+    gap: 4px;
+}
+
+.segment-day-toggle {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--element-bg);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.segment-day-toggle:hover {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+}
+
+.segment-day-toggle.active {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: white;
+}
+
+/* Schedule Repeat Section */
+.schedule-repeat-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.repeat-label {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.repeat-dropdown-wrapper {
+    position: relative;
+}
+
+.repeat-dropdown-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--element-bg);
+    color: var(--accent-color);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.repeat-dropdown-btn:hover {
+    border-color: var(--accent-color);
+    background: rgba(102, 126, 234, 0.05);
+}
+
+.repeat-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    min-width: 120px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 100;
+    overflow: hidden;
+}
+
+.repeat-dropdown-menu.hidden {
+    display: none;
+}
+
+.repeat-option {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    transition: all 0.1s ease;
+}
+
+.repeat-option:hover {
+    background: rgba(102, 126, 234, 0.1);
+    color: var(--accent-color);
+}
+
+.repeat-option.active {
+    background: rgba(102, 126, 234, 0.15);
+    color: var(--accent-color);
+    font-weight: 500;
+}
+
+.repeat-date-wrapper {
+    position: relative;
+    display: inline-block;
+}
+
+.repeat-date-wrapper.hidden {
+    display: none;
+}
+
+.repeat-date-input {
+    padding: 6px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--element-bg);
+    color: transparent;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-family: inherit;
+    min-width: 110px;
+    -webkit-user-select: none;
+    user-select: none;
+    caret-color: transparent;
+}
+
+.repeat-date-input:hover {
+    border-color: var(--accent-color);
+}
+
+.repeat-date-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.15);
+}
+
+.repeat-date-input::-webkit-calendar-picker-indicator {
+    opacity: 0;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+}
+
+.repeat-date-input::selection {
+    background: transparent;
+}
+
+.repeat-date-input::-webkit-datetime-edit,
+.repeat-date-input::-webkit-datetime-edit-fields-wrapper,
+.repeat-date-input::-webkit-datetime-edit-text,
+.repeat-date-input::-webkit-datetime-edit-month-field,
+.repeat-date-input::-webkit-datetime-edit-day-field,
+.repeat-date-input::-webkit-datetime-edit-year-field {
+    color: transparent;
+    background: transparent;
+}
+
+.repeat-date-overlay {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    pointer-events: none;
+}
+
+/* Legacy - Schedule Days Section (can be removed if not used) */
+.schedule-days-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.schedule-days-row {
+    display: flex;
+    gap: 6px;
+}
+
+.day-toggle {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--element-bg);
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.day-toggle:hover {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+}
+
+.day-toggle.active {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: white;
+}
+
+.schedule-feedback {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Schedule Until Section */
+.schedule-until-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.schedule-until-section.hidden {
+    display: none;
+}
+
+.until-label {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.until-dropdown-wrapper {
+    position: relative;
+}
+
+.until-dropdown-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--element-bg);
+    color: var(--accent-color);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.until-dropdown-btn:hover {
+    border-color: var(--accent-color);
+    background: rgba(102, 126, 234, 0.05);
+}
+
+.until-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    min-width: 100px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    z-index: 100;
+    overflow: hidden;
+}
+
+.until-dropdown-menu.hidden {
+    display: none;
+}
+
+.until-option {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.1s ease;
+}
+
+.until-option:hover {
+    background: var(--element-hover-bg);
+}
+
+.until-option.active {
+    color: var(--accent-color);
+    font-weight: 500;
+}
+
+.until-date-wrapper {
+    position: relative;
+    display: inline-block;
+}
+
+.until-date-wrapper.hidden {
+    display: none;
+}
+
+.until-date-input {
+    padding: 6px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--element-bg);
+    color: transparent;
+    /* Hide native text, overlay shows formatted date */
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-family: inherit;
+    min-width: 110px;
+    -webkit-user-select: none;
+    user-select: none;
+    caret-color: transparent;
+    /* Hide text cursor */
+}
+
+.until-date-input:hover {
+    border-color: var(--accent-color);
+}
+
+.until-date-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.15);
+}
+
+/* Hide the native calendar icon */
+.until-date-input::-webkit-calendar-picker-indicator {
+    opacity: 0;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+}
+
+/* Hide selection highlight on date input */
+.until-date-input::selection {
+    background: transparent;
+}
+
+.until-date-input::-webkit-datetime-edit {
+    color: transparent;
+    background: transparent;
+}
+
+.until-date-input::-webkit-datetime-edit-fields-wrapper {
+    background: transparent;
+}
+
+.until-date-input::-webkit-datetime-edit-text,
+.until-date-input::-webkit-datetime-edit-month-field,
+.until-date-input::-webkit-datetime-edit-day-field,
+.until-date-input::-webkit-datetime-edit-year-field {
+    color: transparent;
+    background: transparent;
+    -webkit-appearance: none;
+}
+
+.until-date-input::-webkit-datetime-edit-month-field:focus,
+.until-date-input::-webkit-datetime-edit-day-field:focus,
+.until-date-input::-webkit-datetime-edit-year-field:focus {
+    background: transparent;
+    color: transparent;
+}
+
+.until-date-overlay {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    pointer-events: none;
+    /* Clicks pass through to input */
+}
+
+/* Start Schedule Button */
+.start-schedule-btn.hidden {
+    display: none;
 }
 
 .password-hint {

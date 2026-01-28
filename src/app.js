@@ -65,6 +65,12 @@ let draggedBlocklistId = null; // Track which blocklist is being dragged
 // Week calendar state
 let currentWeekStart = null; // Date object for Monday of the displayed week
 
+// Schedule mode state
+let isScheduleMode = false; // false = instant mode, true = schedule mode
+let scheduleSegments = getDefaultScheduleSegments(); // Array of time segments with per-segment days
+let scheduleRepeatType = 'no'; // 'no', 'forever', or 'date'
+let scheduleRepeatDate = null; // Date object when repeatType is 'date'
+
 // Word list for random word challenges
 const wordList = [
     // 1-2 chars
@@ -177,7 +183,9 @@ function setupEventListeners() {
             e.target.closest('.section-header') ||
             e.target.closest('.footer') ||
             e.target.closest('.title-bar') ||
-            e.target.closest('.week-calendar-section')) {
+            e.target.closest('.week-calendar-section') ||
+            e.target.closest('.time-popover') ||
+            e.target.closest('.time-part')) {
             return;
         }
 
@@ -254,6 +262,32 @@ function setupEventListeners() {
     document.getElementById('prev-week-btn')?.addEventListener('click', () => navigateWeek(-1));
     document.getElementById('next-week-btn')?.addEventListener('click', () => navigateWeek(1));
     document.getElementById('today-btn')?.addEventListener('click', () => scrollToToday());
+
+    // Schedule mode tabs
+    document.getElementById('instant-mode-tab')?.addEventListener('click', () => setScheduleMode(false));
+    document.getElementById('schedule-mode-tab')?.addEventListener('click', () => setScheduleMode(true));
+
+    // Add segment button
+    document.getElementById('add-segment-btn')?.addEventListener('click', addScheduleSegment);
+
+    // Start schedule button
+    document.getElementById('start-schedule-btn')?.addEventListener('click', startSchedule);
+
+    // Repeat dropdown (renamed from Until)
+    document.getElementById('repeat-dropdown-btn')?.addEventListener('click', toggleRepeatDropdown);
+    document.querySelectorAll('.repeat-option').forEach(opt => {
+        opt.addEventListener('click', handleRepeatOptionClick);
+    });
+    document.getElementById('repeat-date-input')?.addEventListener('change', handleRepeatDateChange);
+
+    // Initialize first segment day toggles
+    document.querySelectorAll('.segment-day-toggle').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const segmentIndex = parseInt(btn.closest('.segment-days').dataset.segmentIndex);
+            const dayIndex = parseInt(btn.dataset.day);
+            handleSegmentDayToggle(segmentIndex, dayIndex, btn);
+        });
+    });
 
     // Week calendar scroll handling with day snap
     const calendarScroll = document.querySelector('.week-calendar-scroll');
@@ -880,6 +914,11 @@ function initializeTimeInputs() {
     // Update displays
     updateTimeDisplay();
     handleTimeChange();
+
+    // Initialize click handlers for schedule segment time buttons
+    document.querySelectorAll('.schedule-block-panel .time-part').forEach(btn => {
+        btn.addEventListener('click', handleScheduleTimeClick);
+    });
 }
 
 // Update the time display buttons (end time only)
@@ -1060,12 +1099,578 @@ function updateDurationQuickBtns(durationMinutes) {
     });
 }
 
+// ========================================
+// SCHEDULE MODE FUNCTIONS
+// ========================================
+
+// Get default schedule segments based on current time
+// Start at the current hour (floor), end 2 hours later
+function getDefaultScheduleSegments() {
+    const now = new Date();
+    const startHour = now.getHours();
+    const endHour = (startHour + 2) % 24;
+    // Get current day (0=Sun...6=Sat in JS, convert to 0=Mon...6=Sun)
+    const jsDay = now.getDay();
+    const currentDay = jsDay === 0 ? 6 : jsDay - 1; // Convert: Sun=6, Mon=0, Tue=1, etc.
+    return [
+        { startHour, startMinute: 0, endHour, endMinute: 0, days: [currentDay] }
+    ];
+}
+
+// Switch between instant and schedule modes
+function setScheduleMode(isSchedule) {
+    isScheduleMode = isSchedule;
+
+    // Update tab active states
+    document.getElementById('instant-mode-tab').classList.toggle('active', !isSchedule);
+    document.getElementById('schedule-mode-tab').classList.toggle('active', isSchedule);
+
+    // Update section heading
+    const heading = document.querySelector('#scheduler-section .section-header h2');
+    if (heading) {
+        heading.textContent = isSchedule ? 'Schedule a Block' : 'Start a Block';
+    }
+
+    // Toggle panels
+    const instantPanel = document.getElementById('instant-block-panel');
+    const schedulePanel = document.getElementById('schedule-block-panel');
+    const startBlockBtn = document.getElementById('start-block-btn');
+    const startScheduleBtn = document.getElementById('start-schedule-btn');
+
+    if (isSchedule) {
+        // Reset schedule segments to fresh default times
+        scheduleSegments = getDefaultScheduleSegments();
+        rebuildScheduleSegments();
+
+        instantPanel.classList.add('hidden');
+        schedulePanel.classList.remove('hidden');
+        startBlockBtn.classList.add('hidden');
+        if (selectedBlocklistId) {
+            startScheduleBtn.classList.remove('hidden');
+            updateScheduleButtonState();
+        }
+    } else {
+        instantPanel.classList.remove('hidden');
+        schedulePanel.classList.add('hidden');
+        startScheduleBtn.classList.add('hidden');
+        if (selectedBlocklistId) {
+            startBlockBtn.classList.remove('hidden');
+        }
+    }
+
+    // Update calendar preview
+    handleTimeChange();
+}
+
+// Toggle Repeat dropdown visibility
+function toggleRepeatDropdown(e) {
+    e.stopPropagation();
+    const menu = document.getElementById('repeat-dropdown-menu');
+    if (!menu) return;
+
+    const isHidden = menu.classList.contains('hidden');
+    menu.classList.toggle('hidden');
+
+    if (isHidden) {
+        // Close on outside click
+        setTimeout(() => {
+            document.addEventListener('click', function closeMenu(evt) {
+                if (!menu.contains(evt.target)) {
+                    menu.classList.add('hidden');
+                    document.removeEventListener('click', closeMenu);
+                }
+            });
+        }, 10);
+    }
+}
+
+// Handle Repeat option selection
+function handleRepeatOptionClick(e) {
+    const value = e.target.dataset.value;
+    const menu = document.getElementById('repeat-dropdown-menu');
+    const btnText = document.getElementById('repeat-dropdown-text');
+    const dateInput = document.getElementById('repeat-date-input');
+
+    scheduleRepeatType = value;
+
+    // Update dropdown text
+    if (btnText) {
+        if (value === 'no') {
+            btnText.textContent = 'No';
+        } else if (value === 'forever') {
+            btnText.textContent = 'Forever';
+        } else {
+            btnText.textContent = 'Until date';
+        }
+    }
+
+    // Update active state
+    document.querySelectorAll('.repeat-option').forEach(opt => {
+        opt.classList.toggle('active', opt.dataset.value === value);
+    });
+
+    // Show/hide date input wrapper
+    const dateWrapper = document.getElementById('repeat-date-wrapper');
+    const dateOverlay = document.getElementById('repeat-date-overlay');
+    if (dateInput && dateWrapper) {
+        if (value === 'date') {
+            dateWrapper.classList.remove('hidden');
+            // Set default date to 6 days from now (completing a full week including today)
+            if (!scheduleRepeatDate) {
+                const defaultDate = new Date();
+                defaultDate.setDate(defaultDate.getDate() + 6);
+                scheduleRepeatDate = defaultDate;
+                dateInput.value = formatDateForInput(defaultDate);
+            }
+            // Update overlay with formatted date
+            if (dateOverlay) {
+                dateOverlay.textContent = formatDateForDisplay(scheduleRepeatDate);
+            }
+        } else {
+            dateWrapper.classList.add('hidden');
+            scheduleRepeatDate = null;
+        }
+    }
+
+    // Close menu
+    if (menu) menu.classList.add('hidden');
+
+    // Update preview
+    handleTimeChange();
+}
+
+// Handle Repeat date change
+function handleRepeatDateChange(e) {
+    const dateStr = e.target.value;
+    if (dateStr) {
+        scheduleRepeatDate = new Date(dateStr + 'T23:59:59');
+        // Update the overlay with formatted date
+        const dateOverlay = document.getElementById('repeat-date-overlay');
+        if (dateOverlay) {
+            dateOverlay.textContent = formatDateForDisplay(scheduleRepeatDate);
+        }
+        // Update preview
+        handleTimeChange();
+    }
+}
+
+// Format date for input element (YYYY-MM-DD)
+function formatDateForInput(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+// Format date for display (e.g., "3 Feb 2026")
+function formatDateForDisplay(date) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const day = date.getDate();
+    const month = months[date.getMonth()];
+    const year = date.getFullYear();
+    return `${day} ${month} ${year}`;
+}
+
+// Update schedule button enabled state
+function updateScheduleButtonState() {
+    const startScheduleBtn = document.getElementById('start-schedule-btn');
+    if (!startScheduleBtn) return;
+
+    // Enable if blocklist is selected (days are optional - no days = today only)
+    const isValid = selectedBlocklistId;
+    startScheduleBtn.disabled = !isValid;
+
+    // Update button name
+    if (selectedBlocklistId) {
+        const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+        if (blocklist) {
+            startScheduleBtn.querySelector('.btn-name').textContent = blocklist.name;
+        }
+    }
+}
+
+// Add a new time segment
+function addScheduleSegment() {
+    const segmentIndex = scheduleSegments.length;
+
+    // Get the previous segment's end time, round up to next full hour for new start
+    const prevSegment = scheduleSegments[segmentIndex - 1];
+    let newStartHour;
+    if (prevSegment) {
+        // Start 1 hour after previous end, round up if minutes present
+        newStartHour = prevSegment.endMinute > 0
+            ? (prevSegment.endHour + 2) % 24
+            : (prevSegment.endHour + 1) % 24;
+    } else {
+        newStartHour = 14;
+    }
+    const newStartMinute = 0; // Always start on the hour
+    // Default to 2 hours after start
+    const newEndHour = (newStartHour + 2) % 24;
+    const newEndMinute = 0;
+
+    // Default to current day (0=Mon...6=Sun)
+    const jsDay = new Date().getDay();
+    const currentDay = jsDay === 0 ? 6 : jsDay - 1;
+
+    // Add to state
+    scheduleSegments.push({
+        startHour: newStartHour,
+        startMinute: newStartMinute,
+        endHour: newEndHour,
+        endMinute: newEndMinute,
+        days: [currentDay]
+    });
+
+    // Create DOM element
+    const container = document.getElementById('schedule-segments');
+    const segment = document.createElement('div');
+    segment.className = 'schedule-segment';
+    segment.dataset.segmentIndex = segmentIndex;
+
+    // Generate day toggle HTML with current day active
+    const dayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    const dayTogglesHtml = dayLabels.map((label, i) =>
+        `<button type="button" class="segment-day-toggle${i === currentDay ? ' active' : ''}" data-day="${i}">${label}</button>`
+    ).join('');
+
+    segment.innerHTML = `
+        <div class="segment-row">
+            <div class="time-pickers-row">
+                <div class="time-picker-group">
+                    <div class="time-picker-row">
+                        <div class="time-display schedule-start-display">
+                            <div class="time-part-wrapper">
+                                <button class="time-part schedule-hour-btn" data-type="hour" data-target="schedule-start-${segmentIndex}">${String(newStartHour).padStart(2, '0')}</button>
+                            </div>
+                            <span class="time-colon">:</span>
+                            <div class="time-part-wrapper">
+                                <button class="time-part schedule-minute-btn" data-type="minute" data-target="schedule-start-${segmentIndex}">${String(newStartMinute).padStart(2, '0')}</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <span class="time-separator">→</span>
+                <div class="time-picker-group">
+                    <div class="time-picker-row">
+                        <div class="time-display schedule-end-display">
+                            <div class="time-part-wrapper">
+                                <button class="time-part schedule-hour-btn" data-type="hour" data-target="schedule-end-${segmentIndex}">${String(newEndHour).padStart(2, '0')}</button>
+                            </div>
+                            <span class="time-colon">:</span>
+                            <div class="time-part-wrapper">
+                                <button class="time-part schedule-minute-btn" data-type="minute" data-target="schedule-end-${segmentIndex}">${String(newEndMinute).padStart(2, '0')}</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="segment-days-group">
+                <div class="segment-days" data-segment-index="${segmentIndex}">
+                    ${dayTogglesHtml}
+                </div>
+            </div>
+        </div>
+        <button type="button" class="remove-segment-btn" data-segment-index="${segmentIndex}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+        </button>
+    `;
+
+    container.appendChild(segment);
+
+    // Add click handlers for the new time buttons
+    segment.querySelectorAll('.time-part').forEach(btn => {
+        btn.addEventListener('click', handleScheduleTimeClick);
+    });
+
+    // Add click handlers for day toggles
+    segment.querySelectorAll('.segment-day-toggle').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const dayIndex = parseInt(btn.dataset.day);
+            handleSegmentDayToggle(segmentIndex, dayIndex, btn);
+        });
+    });
+
+    // Add click handler for remove button
+    const removeBtn = segment.querySelector('.remove-segment-btn');
+    if (removeBtn) {
+        removeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = parseInt(removeBtn.dataset.segmentIndex);
+            removeScheduleSegment(idx);
+        });
+    }
+
+    // Update calendar preview
+    handleTimeChange();
+}
+
+// Handle clicking a day toggle within a segment
+function handleSegmentDayToggle(segmentIndex, dayIndex, btn) {
+    const segment = scheduleSegments[segmentIndex];
+    if (!segment) return;
+
+    // Toggle the day in the segment's days array
+    const dayIdx = segment.days.indexOf(dayIndex);
+    if (dayIdx === -1) {
+        segment.days.push(dayIndex);
+        segment.days.sort((a, b) => a - b);
+        btn.classList.add('active');
+    } else {
+        // Don't allow removing the last day
+        if (segment.days.length > 1) {
+            segment.days.splice(dayIdx, 1);
+            btn.classList.remove('active');
+        }
+    }
+
+    // Update preview and button state
+    handleTimeChange();
+    updateScheduleButtonState();
+}
+
+// Remove a time segment
+function removeScheduleSegment(index) {
+    if (scheduleSegments.length <= 1) return; // Always keep at least one
+
+    // Remove from state
+    scheduleSegments.splice(index, 1);
+
+    // Rebuild DOM (simpler than updating indices)
+    rebuildScheduleSegments();
+}
+
+// Rebuild schedule segments DOM from state
+function rebuildScheduleSegments() {
+    const container = document.getElementById('schedule-segments');
+    container.innerHTML = '';
+
+    const dayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+    scheduleSegments.forEach((seg, index) => {
+        const segment = document.createElement('div');
+        segment.className = 'schedule-segment';
+        segment.dataset.segmentIndex = index;
+
+        const showRemove = scheduleSegments.length > 1;
+        const segmentDays = seg.days || [];
+
+        // Generate day toggles HTML
+        const dayTogglesHtml = dayLabels.map((label, i) =>
+            `<button type="button" class="segment-day-toggle${segmentDays.includes(i) ? ' active' : ''}" data-day="${i}">${label}</button>`
+        ).join('');
+
+        // Only show labels on the first segment
+        const showLabels = index === 0;
+
+        segment.innerHTML = `
+            <div class="segment-row">
+                <div class="time-pickers-row">
+                    <div class="time-picker-group">
+                        ${showLabels ? '<label class="time-label">Start</label>' : ''}
+                        <div class="time-picker-row">
+                            <div class="time-display schedule-start-display">
+                                <div class="time-part-wrapper">
+                                    <button class="time-part schedule-hour-btn" data-type="hour" data-target="schedule-start-${index}">${String(seg.startHour).padStart(2, '0')}</button>
+                                </div>
+                                <span class="time-colon">:</span>
+                                <div class="time-part-wrapper">
+                                    <button class="time-part schedule-minute-btn" data-type="minute" data-target="schedule-start-${index}">${String(seg.startMinute).padStart(2, '0')}</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <span class="time-separator">→</span>
+                    <div class="time-picker-group">
+                        ${showLabels ? '<label class="time-label">End</label>' : ''}
+                        <div class="time-picker-row">
+                            <div class="time-display schedule-end-display">
+                                <div class="time-part-wrapper">
+                                    <button class="time-part schedule-hour-btn" data-type="hour" data-target="schedule-end-${index}">${String(seg.endHour).padStart(2, '0')}</button>
+                                </div>
+                                <span class="time-colon">:</span>
+                                <div class="time-part-wrapper">
+                                    <button class="time-part schedule-minute-btn" data-type="minute" data-target="schedule-end-${index}">${String(seg.endMinute).padStart(2, '0')}</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="segment-days-group">
+                    ${showLabels ? '<label class="time-label">Days</label>' : ''}
+                    <div class="segment-days" data-segment-index="${index}">
+                        ${dayTogglesHtml}
+                    </div>
+                </div>
+            </div>
+            ${showRemove ? `
+                <button type="button" class="remove-segment-btn" data-segment-index="${index}">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
+            ` : ''}
+        `;
+
+        container.appendChild(segment);
+
+        // Add click handlers for time parts
+        segment.querySelectorAll('.time-part').forEach(btn => {
+            btn.addEventListener('click', handleScheduleTimeClick);
+        });
+
+        // Add click handlers for day toggles
+        segment.querySelectorAll('.segment-day-toggle').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const dayIndex = parseInt(btn.dataset.day);
+                handleSegmentDayToggle(index, dayIndex, btn);
+            });
+        });
+
+        // Add click handler for remove button
+        const removeBtn = segment.querySelector('.remove-segment-btn');
+        if (removeBtn) {
+            removeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const idx = parseInt(removeBtn.dataset.segmentIndex);
+                removeScheduleSegment(idx);
+            });
+        }
+    });
+}
+
+// Handle schedule time button click (show popover)
+function handleScheduleTimeClick(e) {
+    e.stopPropagation();
+    const btn = e.target;
+    const type = btn.dataset.type; // 'hour' or 'minute'
+    const target = btn.dataset.target; // e.g., 'schedule-start-0' or 'schedule-end-1'
+
+    // Parse target
+    const parts = target.split('-');
+    const isStart = parts[1] === 'start';
+    const segmentIndex = parseInt(parts[2]);
+
+    // Create and show popover for time selection
+    showScheduleTimePopover(btn, type, isStart, segmentIndex);
+}
+
+// Show time popover for schedule time selection
+function showScheduleTimePopover(btn, type, isStart, segmentIndex) {
+    // Remove any existing schedule popovers
+    document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
+
+    const popover = document.createElement('div');
+    popover.className = 'time-popover schedule-time-popover';
+
+    const scroll = document.createElement('div');
+    scroll.className = 'popover-scroll';
+
+    const segment = scheduleSegments[segmentIndex];
+    const currentValue = type === 'hour'
+        ? (isStart ? segment.startHour : segment.endHour)
+        : (isStart ? segment.startMinute : segment.endMinute);
+
+    const max = type === 'hour' ? 24 : 60;
+    const step = type === 'hour' ? 1 : 5;
+
+    for (let i = 0; i < max; i += step) {
+        const option = document.createElement('button');
+        option.className = 'popover-option' + (i === currentValue ? ' selected' : '');
+        option.textContent = String(i).padStart(2, '0');
+        option.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent blocklist deselection
+
+            // Update state
+            if (type === 'hour') {
+                if (isStart) segment.startHour = i;
+                else segment.endHour = i;
+            } else {
+                if (isStart) segment.startMinute = i;
+                else segment.endMinute = i;
+            }
+
+            // Update button text
+            btn.textContent = String(i).padStart(2, '0');
+
+            // Close popover
+            popover.remove();
+
+            // Update calendar preview
+            handleTimeChange();
+        });
+        scroll.appendChild(option);
+    }
+
+    popover.appendChild(scroll);
+    btn.parentElement.appendChild(popover);
+
+    // Scroll to current value
+    const activeOption = scroll.querySelector('.selected');
+    if (activeOption) {
+        activeOption.scrollIntoView({ block: 'center' });
+    }
+
+    // Close on outside click
+    setTimeout(() => {
+        document.addEventListener('click', function closePopover(e) {
+            if (!popover.contains(e.target) && e.target !== btn) {
+                popover.remove();
+                document.removeEventListener('click', closePopover);
+            }
+        });
+    }, 10);
+}
+
+// Start a schedule (placeholder - will be expanded)
+async function startSchedule() {
+    if (!selectedBlocklistId) return;
+
+    const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+    if (!blocklist) return;
+
+    // Check that at least one segment has days
+    const hasAnyDays = scheduleSegments.some(seg => seg.days && seg.days.length > 0);
+    if (!hasAnyDays) return;
+
+    // Collect all unique days from all segments
+    const allDays = [...new Set(scheduleSegments.flatMap(seg => seg.days || []))].sort((a, b) => a - b);
+
+    // TODO: Implement schedule storage and activation
+    // For now, just log the schedule
+    console.log('Starting schedule:', {
+        blocklistId: selectedBlocklistId,
+        blocklistName: blocklist.name,
+        segments: scheduleSegments,
+        repeatType: scheduleRepeatType,
+        repeatDate: scheduleRepeatDate
+    });
+
+    // Show feedback
+    alert(`Schedule created for "${blocklist.name}"!\n\nDays: ${allDays.map(d => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d]).join(', ')}\nSegments: ${scheduleSegments.length}\nRepeat: ${scheduleRepeatType}`);
+}
 // Handle time picker change
 function handleTimeChange() {
     const noBlocksMsg = document.getElementById('no-blocks-message');
     const startBtn = document.getElementById('start-block-btn');
     const nextDayIndicator = document.getElementById('next-day-indicator');
 
+    // Remove any existing preview blocks
+    document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
+
+    // Handle schedule mode separately
+    if (isScheduleMode) {
+        renderSchedulePreview();
+        return;
+    }
+
+    // --- Instant mode logic ---
     // Get times (start is always now)
     let blockStart = getStartTimeAsDate();
     let blockEnd = getEndTimeAsDate();
@@ -1108,9 +1713,6 @@ function handleTimeChange() {
     const durationMs = blockEnd.getTime() - blockStart.getTime();
     const durationMinutes = Math.round(durationMs / 60000);
 
-    // Remove any existing preview blocks
-    document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
-
     if (durationMinutes <= 0) {
         startBtn.disabled = true;
         return;
@@ -1137,10 +1739,50 @@ function handleTimeChange() {
     updateWindowHeight();
 }
 
+// Render schedule preview blocks on the calendar
+function renderSchedulePreview() {
+    if (!selectedBlocklistId || !currentWeekStart) return;
+
+    const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+    if (!blocklist) return;
+
+    // For each segment, render blocks on its specific days
+    scheduleSegments.forEach((segment, segmentIndex) => {
+        // Get the days for this segment
+        const segmentDays = segment.days || [];
+
+        segmentDays.forEach(dayIndex => {
+            // Calculate the date for this day in the current week
+            const dayDate = new Date(currentWeekStart);
+            dayDate.setDate(dayDate.getDate() + dayIndex);
+
+            // For repeating schedules, check if outside the "until" date
+            if (scheduleRepeatType === 'date' && scheduleRepeatDate && dayDate > scheduleRepeatDate) {
+                return;
+            }
+
+            const blockStart = new Date(dayDate);
+            blockStart.setHours(segment.startHour, segment.startMinute, 0, 0);
+
+            const blockEnd = new Date(dayDate);
+            blockEnd.setHours(segment.endHour, segment.endMinute, 0, 0);
+
+            // Handle overnight blocks
+            if (blockEnd <= blockStart) {
+                blockEnd.setDate(blockEnd.getDate() + 1);
+            }
+
+            renderPreviewBlock(blockStart, blockEnd, blocklist, true, segmentIndex);
+        });
+    });
+}
+
 // Render preview block on week calendar
-function renderPreviewBlock(blockStart, blockEnd, blocklist) {
-    // Clear any existing preview blocks first
-    document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
+function renderPreviewBlock(blockStart, blockEnd, blocklist, skipClear = false, segmentIndex = null) {
+    // Clear any existing preview blocks first (unless rendering multiple schedule blocks)
+    if (!skipClear) {
+        document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
+    }
 
     const startDay = new Date(blockStart);
     startDay.setHours(0, 0, 0, 0);
@@ -1177,21 +1819,310 @@ function renderPreviewBlock(blockStart, blockEnd, blocklist) {
             previewEl.style.top = `${topPosition}px`;
             previewEl.style.height = `${height}px`;
 
+            if (segmentIndex !== null) {
+                previewEl.dataset.segmentIndex = segmentIndex;
+                previewEl.classList.add('interactive');
+            }
+
             if (blocklist.color) {
                 previewEl.style.background = blocklist.color;
             }
 
+            // Add resize handles for schedule mode
+            const resizeHandles = segmentIndex !== null ? `
+                <div class="resize-handle resize-handle-top" data-handle="top"></div>
+                <div class="resize-handle resize-handle-bottom" data-handle="bottom"></div>
+            ` : '';
+
             previewEl.innerHTML = `
+                ${resizeHandles}
                 <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
                 <span class="block-label">${escapeHtml(blocklist.name)}</span>
                 <span class="block-time">${formatTime(new Date(segmentStart))} - ${formatTime(new Date(segmentEnd))}</span>
             `;
+
+            // Attach drag/resize event handlers for schedule mode
+            if (segmentIndex !== null && isScheduleMode) {
+                attachPreviewBlockDragHandlers(previewEl, segmentIndex, track);
+            }
 
             track.appendChild(previewEl);
         }
 
         // Move to next day
         currentDay.setDate(currentDay.getDate() + 1);
+    }
+}
+// Attach drag and resize handlers to a preview block
+function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
+    let isDragging = false;
+    let isResizing = false;
+    let resizeHandle = null;
+    let startY = 0;
+    let startX = 0;
+    let startTop = 0;
+    let startHeight = 0;
+    let startDayIndex = null;
+    let currentHoverTrack = track;
+    const pixelsPerHour = 40;
+    const snapMinutes = 15; // Snap to 15-minute intervals
+
+    // Get the day index from the track's date
+    function getDayIndexFromTrack(trackEl) {
+        const dateStr = trackEl.dataset.date;
+        if (!dateStr) return null;
+        const date = new Date(dateStr);
+        // Convert JS day (0=Sun) to our format (0=Mon)
+        const jsDay = date.getDay();
+        return jsDay === 0 ? 6 : jsDay - 1;
+    }
+
+    // Get the original day this block represents
+    startDayIndex = getDayIndexFromTrack(track);
+
+    // Convert pixels to minutes
+    function pixelsToMinutes(px) {
+        return (px / pixelsPerHour) * 60;
+    }
+
+    // Snap minutes to nearest interval
+    function snapToInterval(minutes) {
+        return Math.round(minutes / snapMinutes) * snapMinutes;
+    }
+
+    // Convert minutes to hours/minutes object
+    function minutesToTime(totalMinutes) {
+        totalMinutes = Math.max(0, Math.min(1440, totalMinutes)); // Clamp to 0-24 hours
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+        return { hours: Math.min(23, hours), minutes };
+    }
+
+    // Update segment times and optionally days, then refresh UI
+    function updateSegmentTimesAndDays(newStartMinutes, newEndMinutes, dayShift = 0) {
+        const startTime = minutesToTime(newStartMinutes);
+        const endTime = minutesToTime(newEndMinutes);
+
+        // Ensure minimum duration of 15 minutes
+        if (newEndMinutes - newStartMinutes < 15) {
+            return;
+        }
+
+        scheduleSegments[segmentIndex].startHour = startTime.hours;
+        scheduleSegments[segmentIndex].startMinute = startTime.minutes;
+        scheduleSegments[segmentIndex].endHour = endTime.hours;
+        scheduleSegments[segmentIndex].endMinute = endTime.minutes;
+
+        // If there's a day shift, update the days array
+        if (dayShift !== 0) {
+            const segment = scheduleSegments[segmentIndex];
+            const oldDays = segment.days || [];
+            const newDays = oldDays.map(d => {
+                let newDay = d + dayShift;
+                // Wrap around the week (0-6)
+                if (newDay < 0) newDay += 7;
+                if (newDay > 6) newDay -= 7;
+                return newDay;
+            });
+            segment.days = newDays;
+
+            // Update the day toggle buttons in the UI
+            updateDayToggleUI(segmentIndex);
+        }
+
+        // Update the time picker UI
+        updateTimePickerUI(segmentIndex);
+
+        // Re-render preview blocks
+        document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
+        renderSchedulePreview();
+    }
+
+    // Update time picker buttons to reflect new times
+    function updateTimePickerUI(index) {
+        const segment = scheduleSegments[index];
+        const startHourBtn = document.querySelector(`[data-target="schedule-start-${index}"][data-type="hour"]`);
+        const startMinBtn = document.querySelector(`[data-target="schedule-start-${index}"][data-type="minute"]`);
+        const endHourBtn = document.querySelector(`[data-target="schedule-end-${index}"][data-type="hour"]`);
+        const endMinBtn = document.querySelector(`[data-target="schedule-end-${index}"][data-type="minute"]`);
+
+        if (startHourBtn) startHourBtn.textContent = String(segment.startHour).padStart(2, '0');
+        if (startMinBtn) startMinBtn.textContent = String(segment.startMinute).padStart(2, '0');
+        if (endHourBtn) endHourBtn.textContent = String(segment.endHour).padStart(2, '0');
+        if (endMinBtn) endMinBtn.textContent = String(segment.endMinute).padStart(2, '0');
+    }
+
+    // Update day toggle buttons in the schedule segment UI
+    function updateDayToggleUI(index) {
+        const segment = scheduleSegments[index];
+        const days = segment.days || [];
+        const segmentContainer = document.querySelector(`.schedule-segment[data-segment-index="${index}"]`);
+        if (!segmentContainer) return;
+
+        const dayButtons = segmentContainer.querySelectorAll('.segment-day-toggle');
+        dayButtons.forEach(btn => {
+            const dayIndex = parseInt(btn.dataset.day);
+            if (days.includes(dayIndex)) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+    }
+
+    // Add hover listeners to resize handles to change cursor
+    const resizeHandles = previewEl.querySelectorAll('.resize-handle');
+    resizeHandles.forEach(handle => {
+        handle.addEventListener('mouseenter', () => {
+            previewEl.classList.add('resize-hover');
+        });
+        handle.addEventListener('mouseleave', () => {
+            previewEl.classList.remove('resize-hover');
+        });
+    });
+
+    // Mouse down handler
+    previewEl.addEventListener('mousedown', (e) => {
+        // Check if clicking on a resize handle
+        const handle = e.target.closest('.resize-handle');
+        if (handle) {
+            isResizing = true;
+            resizeHandle = handle.dataset.handle;
+            previewEl.classList.add('resizing');
+            document.body.style.cursor = 'ns-resize';
+        } else {
+            isDragging = true;
+            previewEl.classList.add('dragging');
+            document.body.style.cursor = 'grabbing';
+        }
+
+        startY = e.clientY;
+        startX = e.clientX;
+        startTop = parseFloat(previewEl.style.top) || 0;
+        startHeight = parseFloat(previewEl.style.height) || 40;
+        currentHoverTrack = track;
+
+        e.preventDefault();
+
+        // Add mouse move and up handlers to document
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+    });
+
+    function handleMouseMove(e) {
+        const deltaY = e.clientY - startY;
+
+        if (isDragging) {
+            // Find all preview blocks for this segment
+            const allSegmentBlocks = document.querySelectorAll(`.calendar-block.preview[data-segment-index="${segmentIndex}"]`);
+
+            // Move all blocks vertically together
+            const newTop = Math.max(0, startTop + deltaY);
+            const maxTop = (24 * pixelsPerHour) - parseFloat(previewEl.style.height);
+            const finalTop = Math.min(newTop, maxTop);
+
+            allSegmentBlocks.forEach(block => {
+                block.style.top = `${finalTop}px`;
+                block.classList.add('dragging');
+            });
+
+            // Check if mouse is over a different day track - move all blocks together horizontally
+            const allTracks = Array.from(document.querySelectorAll('.day-track'));
+            let targetTrackIndex = -1;
+
+            for (let i = 0; i < allTracks.length; i++) {
+                const rect = allTracks[i].getBoundingClientRect();
+                if (e.clientX >= rect.left && e.clientX <= rect.right) {
+                    targetTrackIndex = i;
+                    currentHoverTrack = allTracks[i];
+                    break;
+                }
+            }
+
+            if (targetTrackIndex >= 0) {
+                // Calculate day shift from original track position
+                const originalTrackIndex = allTracks.indexOf(track);
+                const dayShiftDuringDrag = targetTrackIndex - originalTrackIndex;
+
+                // Move all segment blocks to their shifted day positions
+                allSegmentBlocks.forEach(block => {
+                    // Get this block's original track (stored as data attribute or calculate from current position)
+                    if (!block.dataset.originalTrackIndex) {
+                        block.dataset.originalTrackIndex = allTracks.indexOf(block.parentElement);
+                    }
+                    const blockOriginalIndex = parseInt(block.dataset.originalTrackIndex);
+                    const newTrackIndex = blockOriginalIndex + dayShiftDuringDrag;
+
+                    // Move block to new track if in valid range
+                    if (newTrackIndex >= 0 && newTrackIndex < allTracks.length) {
+                        if (allTracks[newTrackIndex] !== block.parentElement) {
+                            allTracks[newTrackIndex].appendChild(block);
+                        }
+                    }
+                });
+            }
+        } else if (isResizing) {
+            // Find all preview blocks for this segment
+            const allSegmentBlocks = document.querySelectorAll(`.calendar-block.preview[data-segment-index="${segmentIndex}"]`);
+
+            if (resizeHandle === 'top') {
+                // Resize from top - adjust start time
+                const newTop = Math.max(0, startTop + deltaY);
+                const newHeight = startHeight - deltaY;
+                if (newHeight >= 10) { // Minimum height
+                    allSegmentBlocks.forEach(block => {
+                        block.style.top = `${newTop}px`;
+                        block.style.height = `${newHeight}px`;
+                    });
+                }
+            } else if (resizeHandle === 'bottom') {
+                // Resize from bottom - adjust end time
+                const newHeight = Math.max(10, startHeight + deltaY);
+                const maxHeight = (24 * pixelsPerHour) - startTop;
+                const finalHeight = Math.min(newHeight, maxHeight);
+                allSegmentBlocks.forEach(block => {
+                    block.style.height = `${finalHeight}px`;
+                });
+            }
+        }
+    }
+
+    function handleMouseUp(e) {
+        document.removeEventListener('mousemove', handleMouseMove);
+        document.removeEventListener('mouseup', handleMouseUp);
+
+        // Remove classes and data from all blocks in this segment
+        const allSegmentBlocks = document.querySelectorAll(`.calendar-block.preview[data-segment-index="${segmentIndex}"]`);
+        allSegmentBlocks.forEach(block => {
+            block.classList.remove('dragging');
+            block.classList.remove('resizing');
+            delete block.dataset.originalTrackIndex;
+        });
+        document.body.style.cursor = '';
+
+        if (isDragging || isResizing) {
+            // Calculate new times based on final position
+            const finalTop = parseFloat(previewEl.style.top) || 0;
+            const finalHeight = parseFloat(previewEl.style.height) || 40;
+
+            const newStartMinutes = snapToInterval(pixelsToMinutes(finalTop));
+            const newEndMinutes = snapToInterval(pixelsToMinutes(finalTop + finalHeight));
+
+            // Calculate day shift if block was moved to different day
+            let dayShift = 0;
+            if (isDragging && currentHoverTrack !== track) {
+                const newDayIndex = getDayIndexFromTrack(currentHoverTrack);
+                if (newDayIndex !== null && startDayIndex !== null) {
+                    dayShift = newDayIndex - startDayIndex;
+                }
+            }
+
+            updateSegmentTimesAndDays(newStartMinutes, newEndMinutes, dayShift);
+        }
+
+        isDragging = false;
+        isResizing = false;
+        resizeHandle = null;
     }
 }
 
@@ -1202,30 +2133,46 @@ function handleBlocklistSelect(e) {
     const passwordHint = document.getElementById('password-hint');
     const selectionPrompt = document.getElementById('selection-prompt');
     const startBlockBtn = document.getElementById('start-block-btn');
+    const startScheduleBtn = document.getElementById('start-schedule-btn');
+    const modeTabs = document.querySelector('.scheduler-mode-tabs');
 
     if (selectedBlocklistId) {
-        // Hide selection prompt, show time picker, hint, and start button
+        // Hide selection prompt, show time picker, hint, tabs, and appropriate button
         if (selectionPrompt) selectionPrompt.classList.add('hidden');
         timePicker.classList.remove('hidden');
         if (passwordHint) passwordHint.classList.remove('hidden');
-        if (startBlockBtn) {
-            startBlockBtn.classList.remove('hidden');
-            // Update button text with blocklist name
-            const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
-            if (blocklist) {
-                const btnName = startBlockBtn.querySelector('.btn-name');
-                if (btnName) {
-                    btnName.textContent = blocklist.name;
+        if (modeTabs) modeTabs.classList.remove('hidden');
+
+        // Show the appropriate button based on mode
+        if (isScheduleMode) {
+            if (startBlockBtn) startBlockBtn.classList.add('hidden');
+            if (startScheduleBtn) {
+                startScheduleBtn.classList.remove('hidden');
+                updateScheduleButtonState();
+            }
+        } else {
+            if (startScheduleBtn) startScheduleBtn.classList.add('hidden');
+            if (startBlockBtn) {
+                startBlockBtn.classList.remove('hidden');
+                // Update button text with blocklist name
+                const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+                if (blocklist) {
+                    const btnName = startBlockBtn.querySelector('.btn-name');
+                    if (btnName) {
+                        btnName.textContent = blocklist.name;
+                    }
                 }
             }
         }
         initializeTimeInputs();
     } else {
-        // Show selection prompt, hide time picker, hint, and start button
+        // Show selection prompt, hide time picker, hint, tabs, and both buttons
         if (selectionPrompt) selectionPrompt.classList.remove('hidden');
         timePicker.classList.add('hidden');
         if (passwordHint) passwordHint.classList.add('hidden');
+        if (modeTabs) modeTabs.classList.add('hidden');
         if (startBlockBtn) startBlockBtn.classList.add('hidden');
+        if (startScheduleBtn) startScheduleBtn.classList.add('hidden');
     }
 
     // Update visual selection state on blocklist cards
