@@ -166,8 +166,8 @@ body {
     display: flex;
     flex-direction: column;
     overflow-y: auto;
-    padding: 12px 24px 20px 24px;
-    gap: 20px;
+    padding: 12px 24px 2px 24px;
+    gap: 12px;
 }
 
 /* Grid Top Row - two columns */
@@ -216,244 +216,372 @@ body {
     color: var(--icon-btn-hover-color);
 }
 
-/* Timeline Section */
-.timeline-section {
-    flex-shrink: 0;
-    margin-top: 6px;
-}
-
-.timeline-container {
-    background: var(--timeline-container-bg);
-    border-radius: 12px;
-    padding: 12px;
-    position: relative;
-    overflow-x: auto;
-    overflow-y: hidden;
-}
-
-/* Inner wrapper for scrollable content */
-.timeline-axis,
-.timeline-track {
-    min-width: 100%;
-}
-
-/* Timeline Axis */
-.timeline-axis {
-    display: block;
-    /* Remove flex */
-    height: 24px;
-    margin-bottom: 8px;
-    position: relative;
-    width: 100%;
-}
-
-.timeline-content-wrapper {
-    min-width: 2700px;
-    /* Wide enough for ~31-hour timeline, zoomed for ~8 hours visible */
-    padding: 0 25px;
-    /* Space for first/last labels */
-    box-sizing: border-box;
-}
-
-.time-marker {
+.week-calendar-section {
+    flex: 1;
     display: flex;
     flex-direction: column;
+    margin-top: 6px;
+    min-height: 0;
+}
+
+.week-calendar-section .section-header {
+    margin-bottom: 8px;
+}
+
+/* Week Navigation - Apple Calendar style */
+.week-nav {
+    display: flex;
     align-items: center;
+    justify-content: center;
+    position: relative;
+    margin-bottom: 8px;
+}
+
+.week-nav-buttons {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.week-display {
     position: absolute;
-    top: 0;
-    transform: translateX(-50%);
-    width: 50px;
-    /* Fixed width for centering */
-}
-
-/* Markers are now positioned dynamically by JS with inline styles */
-
-.time-marker span {
-    font-size: 10px;
-    color: var(--timeline-axis-text);
-    font-weight: 500;
-}
-
-.time-marker.now-marker span {
-    color: var(--timeline-now-text);
+    left: 0;
+    font-size: 18px;
     font-weight: 600;
+    color: var(--text-primary);
 }
 
-.marker-line {
-    width: 1px;
-    height: 10px;
-    background: var(--separator-color);
-    margin-bottom: 4px;
+.week-nav-btn {
+    width: 36px;
+    height: 32px;
+    border: none;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
 }
 
-/* Half-hour markers: shorter, fainter tick */
-.time-marker.half-hour {
-    width: 20px;
+.week-nav-btn:hover {
+    background: rgba(0, 0, 0, 0.1);
+    color: var(--text-primary);
 }
 
-.time-marker.half-hour .marker-line {
-    height: 5px;
+.week-nav-today-btn {
+    height: 32px;
+    padding: 0 14px;
+    border: none;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.05);
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.week-nav-today-btn:hover {
     background: rgba(0, 0, 0, 0.1);
 }
 
-/* Timeline Track */
-.timeline-track {
-    position: relative;
-    height: 60px;
-    background: var(--timeline-track);
-    border-radius: 8px;
-    overflow: hidden;
+body.dark-mode .week-nav-btn,
+body.dark-mode .week-nav-today-btn {
+    background: rgba(255, 255, 255, 0.1);
 }
 
-/* Now Indicator - vertical blue line showing current time */
-.now-indicator {
+body.dark-mode .week-nav-btn:hover,
+body.dark-mode .week-nav-today-btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+}
+
+/* Week Calendar Container */
+.week-calendar-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: var(--panel-bg);
+    border-radius: 12px;
+    position: relative;
+    min-height: 0;
+}
+
+.week-calendar-scroll {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: var(--text-muted) transparent;
+}
+
+/* Sticky header row - contains time spacer + day headers */
+.calendar-header-row {
+    display: flex;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: var(--panel-bg);
+    min-width: max-content;
+}
+
+.header-time-spacer {
+    flex-shrink: 0;
+    width: 50px;
+    height: 28px;
+    background: var(--panel-bg);
+    position: sticky;
+    left: 0;
+    z-index: 25;
+}
+
+.header-days {
+    display: flex;
+    min-width: max-content;
+}
+
+.day-header-cell {
+    flex-shrink: 0;
+    width: 120px;
+    min-width: 120px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: var(--element-bg);
+    border-bottom: 1px solid var(--border-color);
+    border-right: 1px solid var(--border-color);
+}
+
+.day-header-cell:last-child {
+    border-right: none;
+}
+
+.day-header-cell.today {
+    color: var(--accent-color);
+    font-weight: 700;
+}
+
+.day-header-cell.weekend {
+    background: rgba(0, 0, 0, 0.02);
+}
+
+body.dark-mode .day-header-cell.weekend {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* Content row - contains time-axis and days-container */
+.calendar-content-row {
+    display: flex;
+    flex: 1;
+    min-width: max-content;
+}
+
+.week-calendar-scroll::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.week-calendar-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.week-calendar-scroll::-webkit-scrollbar-thumb {
+    background: var(--text-muted);
+    border-radius: 4px;
+}
+
+/* Time Axis (left side) - Apple Calendar style */
+.time-axis {
+    flex-shrink: 0;
+    width: 50px;
+    background: var(--panel-bg);
+    position: sticky;
+    left: 0;
+    z-index: 10;
+}
+
+.time-marker {
+    height: 40px;
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    padding-right: 8px;
+    font-size: 10px;
+    color: var(--text-muted);
+    font-weight: 500;
+    position: relative;
+    transform: translateY(-6px);
+    background: var(--panel-bg);
+}
+
+.time-marker:first-child {
+    transform: none;
+}
+
+.time-marker.current-hour {
+    color: var(--accent-color);
+    font-weight: 600;
+}
+
+/* Days Container - needs explicit width for horizontal scroll */
+.days-container {
+    display: flex;
+    min-width: max-content;
+}
+
+/* Day Column */
+.day-column {
+    flex-shrink: 0;
+    width: 120px;
+    min-width: 120px;
+    position: relative;
+}
+
+.day-column.today {
+    background: rgba(102, 126, 234, 0.05);
+}
+
+body.dark-mode .day-column.today {
+    background: rgba(129, 140, 248, 0.1);
+}
+
+.day-column.weekend {
+    background: rgba(0, 0, 0, 0.02);
+}
+
+body.dark-mode .day-column.weekend {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* Hour Cells */
+.hour-cell {
+    height: 40px;
+    border-bottom: 1px solid var(--border-color);
+    border-right: 1px solid var(--border-color);
+}
+
+.hour-cell:last-child {
+    border-bottom: none;
+}
+
+.day-column:last-child .hour-cell {
+    border-right: none;
+}
+
+/* Day Track (for blocks) - positioned at top of day column */
+.day-track {
     position: absolute;
     top: 0;
+    left: 0;
+    right: 0;
     bottom: 0;
-    width: 2px;
-    background: var(--accent-color);
+    pointer-events: none;
+}
+
+.day-track>* {
+    pointer-events: auto;
+}
+
+/* Calendar Blocks */
+.calendar-block {
+    position: absolute;
+    left: 4px;
+    right: 4px;
+    min-height: 20px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #4a00e0 0%, #8e2de2 100%);
+    color: white;
+    padding: 4px 6px;
+    font-size: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    z-index: 1;
+}
+
+.calendar-block:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     z-index: 10;
+}
+
+.calendar-block .block-emoji {
+    font-size: 12px;
+    line-height: 1;
+}
+
+.calendar-block .block-label {
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.calendar-block .block-time {
+    font-size: 9px;
+    opacity: 0.9;
+}
+
+.calendar-block.expired {
+    opacity: 0.4;
+    filter: grayscale(30%);
+    cursor: default;
+}
+
+/* Preview Block */
+.calendar-block.preview {
+    opacity: 0.5;
+    border: 2px dashed rgba(255, 255, 255, 0.5);
+    pointer-events: none;
+}
+
+.calendar-block.preview.hidden {
+    display: none;
+}
+
+/* Now Indicator (horizontal line) */
+.now-indicator {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--accent-color);
+    z-index: 5;
     box-shadow: 0 0 4px rgba(102, 126, 234, 0.5);
 }
 
 .now-indicator::before {
     content: '';
     position: absolute;
-    top: -4px;
-    left: 50%;
-    transform: translateX(-50%);
+    left: -4px;
+    top: 50%;
+    transform: translateY(-50%);
     width: 8px;
     height: 8px;
     background: var(--accent-color);
     border-radius: 50%;
 }
 
-/* Timeline Blocks */
-.timeline-block {
-    position: absolute;
-    top: 4px;
-    height: 48px;
-    /* No min-width - true proportional width */
-    min-width: 4px;
-    /* Just enough to be clickable */
-    border-radius: 6px;
-    background: linear-gradient(135deg, #4a00e0 0%, #8e2de2 100%);
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
-    overflow: hidden;
-    cursor: pointer;
-    transition: transform 0.15s ease, box-shadow 0.15s ease, min-width 0.2s ease, padding 0.2s ease;
-    z-index: 1;
-}
-
-.timeline-block:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-    min-width: 70px;
-    /* Expand on hover to show content */
-    padding: 4px 8px;
-    z-index: 50;
-    /* Bring to front on hover */
-}
-
-.timeline-block .block-content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    gap: 0;
-    line-height: 1.1;
-}
-
-.timeline-block .block-emoji {
-    font-size: 16px;
-    line-height: 1;
-    display: none;
-    /* Hidden when block has enough space for text */
-}
-
-/* Show only emoji on very narrow blocks (when not hovered) */
-.timeline-block:not(:hover) .block-emoji {
-    display: block;
-}
-
-.timeline-block:not(:hover) .block-label,
-.timeline-block:not(:hover) .block-time,
-.timeline-block:not(:hover) .block-time-sep {
-    display: none;
-}
-
-/* On hover, show all content and hide emoji */
-.timeline-block:hover .block-emoji {
-    display: none;
-}
-
-.timeline-block:hover .block-label,
-.timeline-block:hover .block-time,
-.timeline-block:hover .block-time-sep {
-    display: block;
-}
-
-.timeline-block .block-label {
-    font-size: 10px;
-    font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
-}
-
-.timeline-block .block-time {
-    font-size: 9px;
-    opacity: 0.9;
-}
-
-.timeline-block .block-time-sep {
-    font-size: 8px;
-    opacity: 0.7;
-    line-height: 0.8;
-}
-
-/* Preview block (very faint, clearly not active yet) */
-.timeline-block.preview {
-    opacity: 0.35;
-    background: linear-gradient(135deg, #4a00e0 0%, #8e2de2 100%);
-    box-shadow: none;
-    pointer-events: none;
-    z-index: 100;
-    /* Always on top of active blocks */
-    top: 22px;
-    /* Offset down (4px base + 18px) */
-    border: 2px dashed rgba(255, 255, 255, 0.5);
-}
-
-.timeline-block.preview.hidden {
-    display: none;
-}
-
-/* Expired blocks (finished) - faint appearance */
-.timeline-block.expired {
-    opacity: 0.4;
-    filter: grayscale(30%);
-    cursor: default;
-    box-shadow: none;
-}
-
 /* No blocks message */
 .no-blocks-message {
     position: absolute;
     top: 50%;
-    /* left position set dynamically in JS relative to "now" */
-    text-align: left;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
     pointer-events: none;
 }
 
 .no-blocks-message p {
-    color: var(--timeline-message);
+    color: var(--text-muted);
     font-size: 12px;
 }
 

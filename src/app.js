@@ -62,6 +62,9 @@ let helperAvailable = false; // Track if the privileged helper daemon is running
 let pendingBlockData = null; // Store block data when waiting for helper installation
 let draggedBlocklistId = null; // Track which blocklist is being dragged
 
+// Week calendar state
+let currentWeekStart = null; // Date object for Monday of the displayed week
+
 // Word list for random word challenges
 const wordList = [
     // 1-2 chars
@@ -173,7 +176,8 @@ function setupEventListeners() {
             e.target.closest('.modal-overlay') ||
             e.target.closest('.section-header') ||
             e.target.closest('.footer') ||
-            e.target.closest('.title-bar')) {
+            e.target.closest('.title-bar') ||
+            e.target.closest('.week-calendar-section')) {
             return;
         }
 
@@ -246,13 +250,30 @@ function setupEventListeners() {
     document.getElementById('cancel-start-confirm-btn')?.addEventListener('click', closeStartBlockConfirmModal);
     document.getElementById('proceed-start-confirm-btn')?.addEventListener('click', proceedWithBlock);
 
-    // Click on timeline container (not on block) scrolls back to "now"
-    document.querySelector('.timeline-container').addEventListener('click', (e) => {
-        // Don't trigger if clicking on a block (they have their own handlers)
-        if (!e.target.closest('.timeline-block')) {
-            scrollToNow();
-        }
-    });
+    // Week calendar navigation buttons
+    document.getElementById('prev-week-btn')?.addEventListener('click', () => navigateWeek(-1));
+    document.getElementById('next-week-btn')?.addEventListener('click', () => navigateWeek(1));
+    document.getElementById('today-btn')?.addEventListener('click', () => scrollToToday());
+
+    // Week calendar scroll handling with day snap
+    const calendarScroll = document.querySelector('.week-calendar-scroll');
+    if (calendarScroll) {
+        let scrollTimeout;
+        calendarScroll.addEventListener('scroll', () => {
+            clearTimeout(scrollTimeout);
+            scrollTimeout = setTimeout(() => {
+                // Update the visible date range display
+                updateVisibleRangeDisplay();
+            }, 150);
+        });
+
+        // Click on calendar (not on block) scrolls to today
+        calendarScroll.addEventListener('click', (e) => {
+            if (!e.target.closest('.calendar-block')) {
+                scrollToToday();
+            }
+        });
+    }
 
     // Listen for blocks updated from main process
     tauriAPI.onBlocksUpdated(async () => {
@@ -1041,7 +1062,6 @@ function updateDurationQuickBtns(durationMinutes) {
 
 // Handle time picker change
 function handleTimeChange() {
-    const previewBlock = document.getElementById('preview-timeline-block');
     const noBlocksMsg = document.getElementById('no-blocks-message');
     const startBtn = document.getElementById('start-block-btn');
     const nextDayIndicator = document.getElementById('next-day-indicator');
@@ -1059,10 +1079,6 @@ function handleTimeChange() {
         if (blockEnd <= blockStart) {
             blockEnd.setDate(blockEnd.getDate() + 1);
         }
-
-        // If we previously had a multi-day duration and only changed the time slightly, 
-        // we might want to preserve the day difference, but standard time picker behavior 
-        // usually resets to nearest future time. We'll stick to nearest future for manual time edits.
     }
 
     // Calculate how many days in the future the end time is
@@ -1092,8 +1108,10 @@ function handleTimeChange() {
     const durationMs = blockEnd.getTime() - blockStart.getTime();
     const durationMinutes = Math.round(durationMs / 60000);
 
+    // Remove any existing preview blocks
+    document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
+
     if (durationMinutes <= 0) {
-        previewBlock.classList.add('hidden');
         startBtn.disabled = true;
         return;
     }
@@ -1106,53 +1124,74 @@ function handleTimeChange() {
     updateDurationQuickBtns(durationMinutes);
 
     startBtn.disabled = !selectedBlocklistId;
-    noBlocksMsg.classList.add('hidden');
+    if (noBlocksMsg) {
+        noBlocksMsg.classList.add('hidden');
+    }
 
-    // Expand track height to accommodate preview
-    const track = document.getElementById('timeline-track');
-    const runningBlocks = appData.activeBlocks.filter(b => b.endTime > Date.now());
-    const dynamicHeight = 60 + runningBlocks.length * 18;
-    track.style.minHeight = `${dynamicHeight}px`;
-
-    updateWindowHeight(); // Adjust window height for new track size
-
-    // Get timeline range for positioning
-    const { startTime: timelineStart, timelineSpan } = getTimelineRange();
-
-    // Update preview block on timeline
+    // Create preview block in week calendar
     const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
-    if (blocklist) {
-        // Calculate position
-        const blockStartOffset = blockStart.getTime() - timelineStart.getTime();
-        const leftPercent = (blockStartOffset / timelineSpan) * 100;
-        const widthPercent = Math.min(100 - leftPercent, (durationMs / timelineSpan) * 100);
+    if (blocklist && currentWeekStart) {
+        renderPreviewBlock(blockStart, blockEnd, blocklist);
+    }
 
-        previewBlock.style.left = `${Math.max(0, leftPercent)}%`;
-        previewBlock.style.width = `${Math.max(0, widthPercent)}%`;
+    updateWindowHeight();
+}
 
-        // Position preview below running blocks
-        previewBlock.style.top = `${4 + runningBlocks.length * 18}px`;
+// Render preview block on week calendar
+function renderPreviewBlock(blockStart, blockEnd, blocklist) {
+    // Clear any existing preview blocks first
+    document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
 
-        // Apply blocklist color if available
-        if (blocklist.color) {
-            previewBlock.style.background = blocklist.color;
-        } else {
-            previewBlock.style.background = 'linear-gradient(135deg, #4a00e0 0%, #8e2de2 100%)';
-        }
+    const startDay = new Date(blockStart);
+    startDay.setHours(0, 0, 0, 0);
 
-        previewBlock.innerHTML = `
-            <div class="block-content">
+    const endDay = new Date(blockEnd);
+    endDay.setHours(0, 0, 0, 0);
+
+    // Render preview in each day it spans
+    let currentDay = new Date(startDay);
+
+    while (currentDay <= endDay) {
+        const dateStr = currentDay.toISOString().split('T')[0];
+        const track = document.querySelector(`.day-track[data-date="${dateStr}"]`);
+
+        if (track) {
+            // Calculate start time for this day segment
+            const dayStart = new Date(currentDay);
+            dayStart.setHours(0, 0, 0, 0);
+            const dayEnd = new Date(currentDay);
+            dayEnd.setHours(23, 59, 59, 999);
+
+            const segmentStart = Math.max(blockStart.getTime(), dayStart.getTime());
+            const segmentEnd = Math.min(blockEnd.getTime(), dayEnd.getTime());
+
+            const startMinutes = new Date(segmentStart).getHours() * 60 + new Date(segmentStart).getMinutes();
+            const endMinutes = new Date(segmentEnd).getHours() * 60 + new Date(segmentEnd).getMinutes();
+
+            // Calculate position (40px per hour)
+            const topPosition = (startMinutes / 60) * 40;
+            const height = Math.max(20, ((endMinutes - startMinutes) / 60) * 40);
+
+            const previewEl = document.createElement('div');
+            previewEl.className = 'calendar-block preview';
+            previewEl.style.top = `${topPosition}px`;
+            previewEl.style.height = `${height}px`;
+
+            if (blocklist.color) {
+                previewEl.style.background = blocklist.color;
+            }
+
+            previewEl.innerHTML = `
                 <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
                 <span class="block-label">${escapeHtml(blocklist.name)}</span>
-                <span class="block-time">${formatTime(blockStart)}</span>
-                <span class="block-time-sep">–</span>
-                <span class="block-time">${formatTime(blockEnd)}</span>
-            </div>
-        `;
-        previewBlock.classList.remove('hidden');
-    } else {
-        // No blocklist selected - hide the preview
-        previewBlock.classList.add('hidden');
+                <span class="block-time">${formatTime(new Date(segmentStart))} - ${formatTime(new Date(segmentEnd))}</span>
+            `;
+
+            track.appendChild(previewEl);
+        }
+
+        // Move to next day
+        currentDay.setDate(currentDay.getDate() + 1);
     }
 }
 
@@ -1432,9 +1471,6 @@ async function proceedWithBlock() {
     blocklistSelect.value = '';
     handleBlocklistSelect({ target: blocklistSelect });
 
-    // Hide preview
-    document.getElementById('preview-timeline-block').classList.add('hidden');
-
     // Button state is already Reset by handleTimeChange called inside handleBlocklistSelect
     // but let's ensure text is back to original
     startBtn.innerHTML = getStartBlockButtonHTML();
@@ -1515,7 +1551,7 @@ async function proceedWithHelperInstall() {
                 const blocklistSelect = document.getElementById('blocklist-select');
                 blocklistSelect.value = '';
                 handleBlocklistSelect({ target: blocklistSelect });
-                document.getElementById('preview-timeline-block').classList.add('hidden');
+
 
                 render();
             } else {
@@ -2019,8 +2055,13 @@ function render() {
     document.getElementById('onboarding-screen').classList.add('hidden');
     document.getElementById('main-content').classList.remove('hidden');
 
-    updateTimelineAxis();
-    renderActiveBlocks();
+    // Initialize currentWeekStart if not set
+    if (!currentWeekStart) {
+        currentWeekStart = getWeekStart(new Date());
+    }
+
+    updateWeekCalendar();
+    renderWeekBlocks();
     renderBlocklistSelector();
 
     // Auto-select if there's only one available (non-active) blocklist
@@ -2051,192 +2092,321 @@ function render() {
     updateWindowHeight();
 }
 
-// Get timeline range: 7 hours ago → 7am tomorrow
-function getTimelineRange() {
-    const now = new Date();
-
-    // Start: 7 hours ago (rounded down to nearest hour)
-    const startTime = new Date(now);
-    startTime.setHours(startTime.getHours() - 7, 0, 0, 0);
-
-    // End: 7am tomorrow
-    const endTime = new Date(now);
-    endTime.setDate(endTime.getDate() + 1);
-    endTime.setHours(7, 0, 0, 0);
-
-    const timelineSpan = endTime.getTime() - startTime.getTime();
-
-    return { startTime, endTime, timelineSpan, now };
+// Get the Monday of the week containing the given date
+function getWeekStart(date) {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
+    d.setDate(diff);
+    d.setHours(0, 0, 0, 0);
+    return d;
 }
 
-// Update timeline axis with actual clock times and position the now indicator
-function updateTimelineAxis() {
-    const { startTime, endTime, timelineSpan, now } = getTimelineRange();
-    const axisEl = document.getElementById('timeline-axis');
+// Format week display string like "Mon 26 Jan - Sun 1 Feb"
+function formatWeekDisplay(start, end) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-    // Generate markers every 30 minutes (hourly get label, half-hour just tick)
-    const markerInterval = 30 * 60 * 1000; // 30 minutes in ms
-    const numMarkers = Math.floor(timelineSpan / markerInterval) + 1;
+    const startDay = days[start.getDay()];
+    const startDate = start.getDate();
+    const startMonth = months[start.getMonth()];
 
-    // Clear existing markers and regenerate
-    axisEl.innerHTML = '';
+    const endDay = days[end.getDay()];
+    const endDate = end.getDate();
+    const endMonth = months[end.getMonth()];
 
-    for (let i = 0; i < numMarkers; i++) {
-        const markerTime = new Date(startTime.getTime() + i * markerInterval);
-        const percent = (i * markerInterval / timelineSpan) * 100;
-        const isHour = markerTime.getMinutes() === 0;
+    // Include year if different from current
+    const currentYear = new Date().getFullYear();
+    const startYear = start.getFullYear();
+    const endYear = end.getFullYear();
 
-        const marker = document.createElement('div');
-        marker.className = isHour ? 'time-marker hour' : 'time-marker half-hour';
-        marker.style.left = `${percent}%`;
+    if (startMonth === endMonth && startYear === endYear) {
+        const yearSuffix = startYear !== currentYear ? ` ${startYear}` : '';
+        return `${startDay} ${startDate} - ${endDay} ${endDate} ${startMonth}${yearSuffix}`;
+    } else if (startYear === endYear) {
+        const yearSuffix = startYear !== currentYear ? ` ${startYear}` : '';
+        return `${startDay} ${startDate} ${startMonth} - ${endDay} ${endDate} ${endMonth}${yearSuffix}`;
+    } else {
+        return `${startDay} ${startDate} ${startMonth} ${startYear} - ${endDay} ${endDate} ${endMonth} ${endYear}`;
+    }
+}
 
-        if (isHour) {
-            marker.innerHTML = `<span>${formatTime(markerTime)}</span><div class="marker-line"></div>`;
+// Navigate to previous/next week
+function navigateWeek(direction) {
+    if (!currentWeekStart) {
+        currentWeekStart = getWeekStart(new Date());
+    }
+
+    currentWeekStart.setDate(currentWeekStart.getDate() + (direction * 7));
+    updateWeekCalendar();
+    renderWeekBlocks();
+    handleTimeChange(); // Re-render preview block after navigation
+}
+
+// Scroll to today's column and current time
+function scrollToToday(smooth = true) {
+    const today = new Date();
+    const todayStart = getWeekStart(today);
+
+    // If today is not in the current week, navigate to it first
+    if (currentWeekStart.getTime() !== todayStart.getTime()) {
+        currentWeekStart = todayStart;
+        updateWeekCalendar();
+        renderWeekBlocks();
+        handleTimeChange(); // Re-render preview block after navigation
+    }
+
+    const scrollContainer = document.querySelector('.week-calendar-scroll');
+    if (!scrollContainer) return;
+
+    // Scroll to today's column (horizontal)
+    const todayColumn = document.querySelector('.day-column.today');
+    const headerTimeSpacerWidth = 50; // width of time spacer in header
+
+    if (todayColumn) {
+        // Calculate horizontal scroll: offset from left of content area
+        const scrollTargetX = todayColumn.offsetLeft + headerTimeSpacerWidth - scrollContainer.offsetWidth / 2 + todayColumn.offsetWidth / 2;
+
+        // Scroll vertically to 2 hours before current time
+        // Header row is sticky at 28px, content starts below it
+        const currentHour = today.getHours();
+        const targetHour = Math.max(0, currentHour - 2); // 2 hours before, min 0
+        const headerRowHeight = 28; // sticky header height
+        const scrollTargetY = headerRowHeight + (targetHour * 40); // 40px per hour
+
+        if (smooth) {
+            scrollContainer.scrollTo({ left: scrollTargetX, top: scrollTargetY, behavior: 'smooth' });
         } else {
-            marker.innerHTML = `<div class="marker-line"></div>`;
+            scrollContainer.scrollLeft = scrollTargetX;
+            scrollContainer.scrollTop = scrollTargetY;
+        }
+    }
+}
+
+// Legacy function name for compatibility
+function scrollToNow(smooth = true) {
+    scrollToToday(smooth);
+}
+
+// Update week calendar display
+function updateWeekCalendar() {
+    const timeAxis = document.getElementById('time-axis');
+    const daysContainer = document.getElementById('days-container');
+    const headerDays = document.getElementById('header-days');
+
+    if (!timeAxis || !daysContainer) return;
+
+    // Generate time axis (no header spacer - it's in the header row now)
+    timeAxis.innerHTML = '';
+
+    const now = new Date();
+    const currentHour = now.getHours();
+
+    for (let h = 0; h < 24; h++) {
+        const marker = document.createElement('div');
+        marker.className = h === currentHour ? 'time-marker current-hour' : 'time-marker';
+        marker.textContent = `${String(h).padStart(2, '0')}:00`;
+        timeAxis.appendChild(marker);
+    }
+
+    // Generate day columns - render 21 days (3 weeks) for open-ended scrolling
+    // currentWeekStart represents the "anchor" week, we show 1 week before and 1 week after
+    if (headerDays) headerDays.innerHTML = '';
+    daysContainer.innerHTML = '';
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Start 7 days before currentWeekStart
+    const renderStart = new Date(currentWeekStart);
+    renderStart.setDate(renderStart.getDate() - 7);
+
+    for (let d = 0; d < 21; d++) {
+        const dayDate = new Date(renderStart);
+        dayDate.setDate(dayDate.getDate() + d);
+
+        const isToday = dayDate.getTime() === today.getTime();
+        const dayOfWeek = dayDate.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+        // Day header cell (in sticky header row)
+        if (headerDays) {
+            const headerCell = document.createElement('div');
+            headerCell.className = 'day-header-cell';
+            if (isToday) headerCell.classList.add('today');
+            if (isWeekend) headerCell.classList.add('weekend');
+            headerCell.textContent = `${dayNames[dayOfWeek]} ${dayDate.getDate()}`;
+            headerDays.appendChild(headerCell);
         }
 
-        axisEl.appendChild(marker);
+        // Day column (no header - headers are in separate row)
+        const column = document.createElement('div');
+        column.className = 'day-column';
+        if (isToday) column.classList.add('today');
+        if (isWeekend) column.classList.add('weekend');
+        column.dataset.date = dayDate.toISOString().split('T')[0];
+
+        // Hour cells
+        for (let h = 0; h < 24; h++) {
+            const cell = document.createElement('div');
+            cell.className = 'hour-cell';
+            cell.dataset.hour = h;
+            column.appendChild(cell);
+        }
+
+        // Day track for blocks
+        const track = document.createElement('div');
+        track.className = 'day-track';
+        track.dataset.date = dayDate.toISOString().split('T')[0];
+        column.appendChild(track);
+
+        // Now indicator for today (no header offset - starts at top of column)
+        if (isToday) {
+            const nowIndicator = document.createElement('div');
+            nowIndicator.className = 'now-indicator';
+            nowIndicator.id = 'now-indicator';
+            const nowMinutes = now.getHours() * 60 + now.getMinutes();
+            const topPosition = (nowMinutes / 60) * 40; // hours * 40px per hour
+            nowIndicator.style.top = `${topPosition}px`;
+            column.appendChild(nowIndicator);
+        }
+
+        daysContainer.appendChild(column);
     }
 
-    // Position the "now" indicator (but don't scroll)
-    const nowIndicator = document.getElementById('now-indicator');
-    if (nowIndicator) {
-        const nowOffset = now.getTime() - startTime.getTime();
-        const nowPercent = (nowOffset / timelineSpan) * 100;
-        nowIndicator.style.left = `${Math.max(0, Math.min(100, nowPercent))}%`;
-    }
+    // Update visible range display after render
+    updateVisibleRangeDisplay();
 }
 
-// Scroll timeline so "now" is at 25% of visible width
-function scrollToNow(smooth = true) {
-    const { startTime, timelineSpan, now } = getTimelineRange();
-    const container = document.querySelector('.timeline-container');
-    if (!container) return;
+// Update the displayed date range based on visible columns
+function updateVisibleRangeDisplay() {
+    const scrollContainer = document.querySelector('.week-calendar-scroll');
+    const weekDisplay = document.getElementById('week-display');
+    const dayColumns = document.querySelectorAll('.day-column');
 
-    const wrapper = container.querySelector('.timeline-content-wrapper');
-    if (!wrapper) return;
+    if (!scrollContainer || !weekDisplay || dayColumns.length === 0) return;
 
-    const nowOffset = now.getTime() - startTime.getTime();
-    const nowPercent = (nowOffset / timelineSpan) * 100;
+    const scrollLeft = scrollContainer.scrollLeft;
+    const containerWidth = scrollContainer.clientWidth;
+    const timeAxisWidth = 50; // Width of time axis
 
-    const wrapperWidth = wrapper.offsetWidth;
-    const containerWidth = container.offsetWidth;
-    const nowPosition = (nowPercent / 100) * wrapperWidth;
+    // Find first and last visible columns
+    let firstVisible = null;
+    let lastVisible = null;
 
-    // Position "now" at 25% from left of visible area
-    const scrollTarget = Math.max(0, nowPosition - (containerWidth * 0.25));
+    dayColumns.forEach(column => {
+        const columnLeft = column.offsetLeft - timeAxisWidth;
+        const columnRight = columnLeft + column.offsetWidth;
 
-    if (smooth) {
-        container.scrollTo({
-            left: scrollTarget,
-            behavior: 'smooth'
-        });
-    } else {
-        container.scrollLeft = scrollTarget;
+        // Column is visible if it overlaps the viewport
+        if (columnRight > scrollLeft && columnLeft < scrollLeft + containerWidth) {
+            if (!firstVisible) firstVisible = column;
+            lastVisible = column;
+        }
+    });
+
+    if (firstVisible && lastVisible) {
+        const startDate = new Date(firstVisible.dataset.date);
+        const endDate = new Date(lastVisible.dataset.date);
+        weekDisplay.textContent = formatWeekDisplay(startDate, endDate);
     }
 }
-
-// Render active blocks on timeline
-function renderActiveBlocks() {
-    const track = document.getElementById('timeline-track');
+// Render active blocks on week calendar
+function renderWeekBlocks() {
     const noBlocksMsg = document.getElementById('no-blocks-message');
+    const now = Date.now();
 
-    // Use the same timeline range as the axis
-    const { startTime, timelineSpan, now } = getTimelineRange();
-    const nowMs = now.getTime();
-    const startMs = startTime.getTime();
-    const endMs = startMs + timelineSpan;
+    // Clear existing blocks from all day tracks
+    document.querySelectorAll('.day-track').forEach(track => {
+        track.innerHTML = '';
+    });
 
-    // Get all blocks that are within the timeline range (don't filter expired for display)
+    // Filter blocks within the week range
+    const weekStart = currentWeekStart.getTime();
+    const weekEnd = new Date(currentWeekStart);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+    const weekEndMs = weekEnd.getTime();
+
     const visibleBlocks = appData.activeBlocks.filter(block =>
-        block.endTime > startMs && block.startTime < endMs
+        block.endTime > weekStart && block.startTime < weekEndMs
     );
 
-    // Active (still running) blocks for stacking calculations
-    const runningBlocks = visibleBlocks.filter(block => block.endTime > nowMs);
-
-    // Clear existing blocks (except preview and now-indicator)
-    track.querySelectorAll('.timeline-block:not(.preview)').forEach(el => el.remove());
-
-    if (visibleBlocks.length === 0 && document.getElementById('preview-timeline-block').classList.contains('hidden')) {
-        noBlocksMsg.classList.remove('hidden');
-        // Position message to the right of "now" indicator
-        const nowOffset = nowMs - startMs;
-        const nowPercent = (nowOffset / timelineSpan) * 100;
-        noBlocksMsg.style.left = `${nowPercent + 2}%`; // Slightly to the right of now
-        noBlocksMsg.style.transform = 'translateY(-50%)'; // Only center vertically
-        track.style.minHeight = '60px'; // Default height
+    if (visibleBlocks.length === 0) {
+        noBlocksMsg?.classList.remove('hidden');
     } else {
-        noBlocksMsg.classList.add('hidden');
-        // Dynamic height: base 60px + 18px per additional running block
-        const dynamicHeight = 60 + Math.max(0, runningBlocks.length - 1) * 18;
-        track.style.minHeight = `${dynamicHeight}px`;
+        noBlocksMsg?.classList.add('hidden');
     }
 
-    // Track running block index for stacking offset
-    let runningIdx = 0;
-
-    // Render each visible block on the timeline
-    visibleBlocks.forEach((block) => {
+    // Render each block
+    visibleBlocks.forEach(block => {
         const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
         if (!blocklist) return;
 
-        const blockStartTime = new Date(block.startTime);
-        const blockEndTime = new Date(block.endTime);
-        const isExpired = block.endTime <= nowMs;
+        const blockStart = new Date(block.startTime);
+        const blockEnd = new Date(block.endTime);
+        const isExpired = block.endTime <= now;
 
-        // Calculate position relative to timeline start
-        const blockStart = Math.max(startMs, block.startTime);
-        const leftOffset = blockStart - startMs;
-        const leftPercent = (leftOffset / timelineSpan) * 100;
+        // Determine which day(s) the block spans
+        const startDay = new Date(blockStart);
+        startDay.setHours(0, 0, 0, 0);
 
-        // Width: from effective start to end
-        const duration = block.endTime - blockStart;
-        const widthPercent = Math.min(100 - leftPercent, (duration / timelineSpan) * 100);
+        const endDay = new Date(blockEnd);
+        endDay.setHours(0, 0, 0, 0);
 
-        // Don't render if block is entirely past the timeline window
-        if (leftPercent >= 100) return;
+        // For simplicity, render block in each day it spans
+        let currentDay = new Date(startDay);
 
-        const blockEl = document.createElement('div');
-        blockEl.className = isExpired ? 'timeline-block expired' : 'timeline-block';
-        blockEl.dataset.blockId = block.id;
-        blockEl.style.left = `${leftPercent}%`;
-        blockEl.style.width = `${widthPercent}%`; // True proportional width
+        while (currentDay <= endDay) {
+            const dateStr = currentDay.toISOString().split('T')[0];
+            const track = document.querySelector(`.day-track[data-date="${dateStr}"]`);
 
-        // Only offset running blocks (expired blocks stay at top)
-        if (!isExpired) {
-            blockEl.style.top = `${4 + runningIdx * 18}px`;
-            blockEl.style.zIndex = runningIdx + 1;
-            runningIdx++;
-        } else {
-            blockEl.style.top = '4px';
-            blockEl.style.zIndex = 0;
+            if (track) {
+                // Calculate start time for this day segment
+                const dayStart = new Date(currentDay);
+                dayStart.setHours(0, 0, 0, 0);
+                const dayEnd = new Date(currentDay);
+                dayEnd.setHours(23, 59, 59, 999);
+
+                const segmentStart = Math.max(block.startTime, dayStart.getTime());
+                const segmentEnd = Math.min(block.endTime, dayEnd.getTime());
+
+                const startMinutes = new Date(segmentStart).getHours() * 60 + new Date(segmentStart).getMinutes();
+                const endMinutes = new Date(segmentEnd).getHours() * 60 + new Date(segmentEnd).getMinutes();
+
+                // Calculate position (40px per hour, offset by nothing since track starts at hour 0)
+                const topPosition = (startMinutes / 60) * 40;
+                const height = Math.max(20, ((endMinutes - startMinutes) / 60) * 40);
+
+                const blockEl = document.createElement('div');
+                blockEl.className = isExpired ? 'calendar-block expired' : 'calendar-block';
+                blockEl.dataset.blockId = block.id;
+                blockEl.style.top = `${topPosition}px`;
+                blockEl.style.height = `${height}px`;
+
+                if (blocklist.color) {
+                    blockEl.style.background = blocklist.color;
+                }
+
+                blockEl.innerHTML = `
+                    <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
+                    <span class="block-label">${escapeHtml(blocklist.name)}</span>
+                    <span class="block-time">${formatTime(new Date(segmentStart))} - ${formatTime(new Date(segmentEnd))}</span>
+                `;
+
+                // Add click handler for override (only for running blocks)
+                if (!isExpired) {
+                    blockEl.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        openOverrideModal(block.id);
+                    });
+                }
+
+                track.appendChild(blockEl);
+            }
+
+            // Move to next day
+            currentDay.setDate(currentDay.getDate() + 1);
         }
-
-        // Apply blocklist color if available
-        if (blocklist.color) {
-            blockEl.style.background = blocklist.color;
-        }
-
-        blockEl.innerHTML = `
-            <div class="block-content">
-                <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
-                <span class="block-label">${escapeHtml(blocklist.name)}</span>
-                <span class="block-time">${formatTime(blockStartTime)}</span>
-                <span class="block-time-sep">–</span>
-                <span class="block-time">${formatTime(blockEndTime)}</span>
-            </div>
-        `;
-
-        // Add click handler for override (only for running blocks)
-        if (!isExpired) {
-            blockEl.addEventListener('click', () => {
-                openOverrideModal(block.id);
-            });
-        }
-
-        track.appendChild(blockEl);
     });
 }
 
