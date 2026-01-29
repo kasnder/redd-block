@@ -2394,6 +2394,7 @@ function renderActiveScheduleBlock(blockStart, blockEnd, blocklist, segmentIndex
 
             if (blocklist.color) {
                 blockEl.style.background = blocklist.color;
+                blockEl.style.color = getContrastTextColor(blocklist.color);
             }
 
             blockEl.innerHTML = `
@@ -2459,6 +2460,7 @@ function renderPreviewBlock(blockStart, blockEnd, blocklist, skipClear = false, 
 
             if (blocklist.color) {
                 previewEl.style.background = blocklist.color;
+                previewEl.style.color = getContrastTextColor(blocklist.color);
             }
 
             // Add resize handles for schedule mode
@@ -4092,6 +4094,7 @@ function renderWeekBlocks() {
 
                 if (blocklist.color) {
                     blockEl.style.background = blocklist.color;
+                    blockEl.style.color = getContrastTextColor(blocklist.color);
                 }
 
                 blockEl.innerHTML = `
@@ -4178,6 +4181,7 @@ function renderScheduledCalendarBlocks() {
                 if (blocklist.color) {
                     blockEl.style.background = blocklist.color;
                     blockEl.style.opacity = '0.7';
+                    blockEl.style.color = getContrastTextColor(blocklist.color);
                 }
 
                 // Format times
@@ -4702,6 +4706,47 @@ function cleanUrlForDisplay(url) {
         .replace(/^https?:\/\//, '')  // Remove http:// or https://
         .replace(/^www\./, '')         // Remove www.
         .replace(/\/$/, '');           // Remove trailing slash
+}
+
+// Get contrasting text color (black or white) based on background color
+function getContrastTextColor(backgroundColor) {
+    if (!backgroundColor) return '#ffffff';
+
+    // Parse color - handle hex, rgb, rgba, and named colors
+    let r, g, b;
+
+    if (backgroundColor.startsWith('#')) {
+        // Hex color
+        const hex = backgroundColor.slice(1);
+        if (hex.length === 3) {
+            r = parseInt(hex[0] + hex[0], 16);
+            g = parseInt(hex[1] + hex[1], 16);
+            b = parseInt(hex[2] + hex[2], 16);
+        } else if (hex.length >= 6) {
+            r = parseInt(hex.slice(0, 2), 16);
+            g = parseInt(hex.slice(2, 4), 16);
+            b = parseInt(hex.slice(4, 6), 16);
+        }
+    } else if (backgroundColor.startsWith('rgb')) {
+        // RGB or RGBA
+        const match = backgroundColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        if (match) {
+            r = parseInt(match[1]);
+            g = parseInt(match[2]);
+            b = parseInt(match[3]);
+        }
+    }
+
+    // If we couldn't parse, default to white text
+    if (r === undefined || g === undefined || b === undefined) {
+        return '#ffffff';
+    }
+
+    // Calculate relative luminance using WCAG formula
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+
+    // Return black for light backgrounds, white for dark backgrounds
+    return luminance > 0.5 ? '#000000' : '#ffffff';
 }
 
 
