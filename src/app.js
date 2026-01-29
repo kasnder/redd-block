@@ -4556,6 +4556,71 @@ function startTickInterval() {
         // We call it periodically to catch schedule segments starting/ending
         if (appData.schedules && appData.schedules.length > 0) {
             await updateHostsFile();
+
+            // Check for expired non-repeating schedules and auto-stop them
+            const expiredScheduleIds = [];
+            const nowDate = new Date(now);
+
+            for (const schedule of appData.schedules) {
+                // Only check non-repeating schedules (repeatType === 'no' or undefined)
+                if (schedule.repeatType === 'forever') continue;
+
+                // For date-limited schedules, check if past the repeat date
+                if (schedule.repeatType === 'date' && schedule.repeatDate) {
+                    const endDate = new Date(schedule.repeatDate);
+                    endDate.setHours(23, 59, 59, 999); // End of day
+                    if (nowDate > endDate) {
+                        expiredScheduleIds.push(schedule.id);
+                        console.log('Schedule expired (past repeat date):', schedule.id);
+                    }
+                    continue;
+                }
+
+                // For non-repeating schedules (repeatType === 'no' or undefined)
+                // Calculate when each segment was supposed to occur based on createdAt
+                const createdAt = new Date(schedule.createdAt);
+                const createdDayOfWeek = createdAt.getDay() === 0 ? 6 : createdAt.getDay() - 1; // Convert to Mon=0 format
+
+                let allSegmentsExpired = true;
+
+                for (const segment of schedule.segments) {
+                    for (const segmentDay of segment.days) {
+                        // Calculate the actual date this segment occurs on
+                        // It should be the first occurrence of this day on or after createdAt
+                        let daysUntilSegment = segmentDay - createdDayOfWeek;
+                        if (daysUntilSegment < 0) daysUntilSegment += 7;
+
+                        const segmentDate = new Date(createdAt);
+                        segmentDate.setDate(segmentDate.getDate() + daysUntilSegment);
+                        segmentDate.setHours(segment.endHour, segment.endMinute, 0, 0);
+
+                        // If this segment's end time is still in the future, the schedule is not expired
+                        if (segmentDate > nowDate) {
+                            allSegmentsExpired = false;
+                            break;
+                        }
+                    }
+                    if (!allSegmentsExpired) break;
+                }
+
+                if (allSegmentsExpired) {
+                    expiredScheduleIds.push(schedule.id);
+                    console.log('Non-repeating schedule expired (all segments passed):', schedule.id);
+                }
+            }
+
+            // Remove expired schedules
+            if (expiredScheduleIds.length > 0) {
+                const previousScheduleCount = appData.schedules.length;
+                appData.schedules = appData.schedules.filter(s => !expiredScheduleIds.includes(s.id));
+
+                if (appData.schedules.length < previousScheduleCount) {
+                    console.log('Auto-stopped expired schedule(s):', expiredScheduleIds);
+                    activeScheduleSegmentCount = 0;
+                    await saveData();
+                    render();
+                }
+            }
         }
 
         // Check for expired blocks
