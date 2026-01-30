@@ -21,8 +21,8 @@ if ($Architecture -eq "x64") {
   $HelperDir = Join-Path $ProjectRoot "helper-daemon\target\x86_64-pc-windows-msvc\release"
 }
 else {
-  $ReleaseDir = Join-Path $ProjectRoot "src-tauri\target\release"
-  $HelperDir = Join-Path $ProjectRoot "helper-daemon\target\release"
+  $ReleaseDir = Join-Path $ProjectRoot "src-tauri\target\aarch64-pc-windows-msvc\release"
+  $HelperDir = Join-Path $ProjectRoot "helper-daemon\target\aarch64-pc-windows-msvc\release"
 }
 
 $AppxDir = Join-Path $ProjectRoot "appx-build"
