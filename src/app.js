@@ -1084,7 +1084,7 @@ function disableScheduleControls(disabled) {
 
         if (disabled && isExistingSegment) {
             // Disable this segment's controls
-            segment.querySelectorAll('.time-part, .day-toggle, .remove-segment-btn').forEach(el => {
+            segment.querySelectorAll('.time-part, .segment-day-toggle, .remove-segment-btn').forEach(el => {
                 el.disabled = true;
                 el.style.opacity = '0.5';
                 el.style.pointerEvents = 'none';
@@ -1092,7 +1092,7 @@ function disableScheduleControls(disabled) {
             segment.classList.add('segment-locked');
         } else {
             // Enable this segment's controls
-            segment.querySelectorAll('.time-part, .day-toggle, .remove-segment-btn').forEach(el => {
+            segment.querySelectorAll('.time-part, .segment-day-toggle, .remove-segment-btn').forEach(el => {
                 el.disabled = false;
                 el.style.opacity = '1';
                 el.style.pointerEvents = 'auto';

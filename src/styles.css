@@ -1485,7 +1485,20 @@ body.dark-mode .mode-tab.active {
     transition: all 0.15s ease;
 }
 
-.segment-day-toggle:hover {
+.segment-day-toggle:disabled,
+.segment-day-toggle[disabled] {
+    pointer-events: none !important;
+    cursor: default !important;
+}
+
+.segment-day-toggle:disabled:hover,
+.segment-day-toggle[disabled]:hover {
+    border-color: var(--border-color) !important;
+    color: var(--text-muted) !important;
+    background: var(--element-bg) !important;
+}
+
+.segment-day-toggle:hover:not(:disabled):not([disabled]) {
     border-color: var(--accent-color);
     color: var(--accent-color);
 }
