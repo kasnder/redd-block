@@ -1025,8 +1025,14 @@ function disableScheduleControls(disabled) {
         repeatDropdown.style.opacity = disabled ? '0.5' : '1';
     }
 
-    // Keep Add button always enabled (can add new segments to running schedule)
-    // addSegmentBtn remains untouched
+    // Disable Add button when schedule is active (activeScheduleSegmentCount > 0)
+    if (addSegmentBtn) {
+        const isScheduleActive = activeScheduleSegmentCount > 0;
+        addSegmentBtn.disabled = isScheduleActive;
+        addSegmentBtn.style.opacity = isScheduleActive ? '0.5' : '1';
+        addSegmentBtn.style.pointerEvents = isScheduleActive ? 'none' : 'auto';
+        addSegmentBtn.style.cursor = isScheduleActive ? 'not-allowed' : 'pointer';
+    }
 
     // Disable controls on EXISTING segments (those within activeScheduleSegmentCount)
     document.querySelectorAll('.schedule-segment').forEach((segment, index) => {
@@ -1594,6 +1600,11 @@ function updateScheduleButtonState() {
 
 // Add a new time segment
 function addScheduleSegment() {
+    // Don't allow adding segments when schedule is active
+    if (activeScheduleSegmentCount > 0) {
+        return;
+    }
+    
     // Get the previous segment's end time, round up to next full hour for new start
     const prevSegment = scheduleSegments[scheduleSegments.length - 1];
     let newStartHour;
