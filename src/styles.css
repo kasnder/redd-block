@@ -1310,13 +1310,13 @@ body.dark-mode .start-block-btn.stop-block:hover {
 .scheduler-mode-tabs {
     display: flex;
     gap: 2px;
-    background: hsl(0, 0%, 93%);
+    background: rgba(0, 0, 0, 0.05);
     padding: 4px;
     border-radius: 10px;
 }
 
 body.dark-mode .scheduler-mode-tabs {
-    background: hsl(222, 47%, 15%);
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .mode-tab {
