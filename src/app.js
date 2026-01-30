@@ -887,11 +887,35 @@ function setupOverrideModalListeners() {
                         }
                     }
                 } else {
-                    // "Stop schedule" - remove the entire schedule
-                    appData.schedules = appData.schedules.filter(s =>
-                        s.id !== scheduleId && s.blocklistId !== scheduleId
+                    // "Stop schedule" - remove the entire schedule but preserve segments
+                    const scheduleToStop = appData.schedules.find(s =>
+                        s.id === scheduleId || s.blocklistId === scheduleId
                     );
-                    activeScheduleSegmentCount = 0;
+                    
+                    if (scheduleToStop) {
+                        // Load all segments from the stopped schedule into scheduleSegments
+                        // so they become editable (not greyed out)
+                        scheduleSegments = scheduleToStop.segments.map(seg => ({ ...seg }));
+                        activeScheduleSegmentCount = 0; // No segments are locked anymore
+                        
+                        // Save these segments as pending so they persist when clicking off/on
+                        if (!appData.settings) appData.settings = {};
+                        if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
+                        appData.settings.pendingScheduleSegments[scheduleToStop.blocklistId] = scheduleSegments.map(seg => ({ ...seg }));
+                        
+                        // Remove the schedule from active schedules
+                        appData.schedules = appData.schedules.filter(s =>
+                            s.id !== scheduleId && s.blocklistId !== scheduleId
+                        );
+                        
+                        // Rebuild UI to show all segments as editable if we're viewing this blocklist
+                        if (selectedBlocklistId === scheduleToStop.blocklistId && isScheduleMode) {
+                            rebuildScheduleSegments();
+                            disableScheduleControls(false); // Enable all controls
+                        }
+                    } else {
+                        activeScheduleSegmentCount = 0;
+                    }
                 }
 
                 await saveData();
