@@ -1019,9 +1019,9 @@ function disableScheduleControls(disabled) {
 function initializeTimeInputs() {
     const now = new Date();
 
-    // Reset editing flag and set default duration
+    // Reset editing flag and load saved duration (or default to 60)
     userEditedEndTime = false;
-    targetDurationMinutes = 60;
+    targetDurationMinutes = appData.settings?.instantBlockDuration || 60;
 
     // End time = now + target duration
     const endTime = new Date(now.getTime() + targetDurationMinutes * 60 * 1000);
@@ -1138,6 +1138,7 @@ function selectTimeOption(e) {
     closeAllPopovers();
     handleTimeChange();
 }
+
 
 // Close all popovers
 function closeAllPopovers() {
@@ -2291,6 +2292,13 @@ function handleTimeChange() {
         durationInput.value = durationMinutes;
     }
     updateDurationQuickBtns(durationMinutes);
+
+    // Save duration to settings so it persists across blocklist selections
+    if (!appData.settings) appData.settings = {};
+    if (appData.settings.instantBlockDuration !== durationMinutes) {
+        appData.settings.instantBlockDuration = durationMinutes;
+        saveData();
+    }
 
     startBtn.disabled = !selectedBlocklistId;
     if (noBlocksMsg) {
