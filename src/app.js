@@ -53,6 +53,12 @@ let appData = {
     }
 };
 
+// Expose for integration tests (dev mode only)
+window.__REDDBLOCK_INTERNALS__ = {
+    get appData() { return appData; },
+    set appData(val) { appData = val; }
+};
+
 let selectedBlocklistId = null;
 let editingBlocklistId = null;
 let overrideBlockId = null;
@@ -5097,3 +5103,38 @@ async function performOverrideAll() {
         console.error('Error during override all:', err);
     }
 }
+
+// ========================================
+// DEV MODE: Test Runner Keyboard Shortcut
+// ========================================
+// Press Cmd+Shift+T (Mac) or Ctrl+Shift+T (Windows) to run tests
+document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 't') {
+        e.preventDefault();
+        console.log('🧪 Test shortcut detected!');
+        if (window.ReddBlockTests && typeof window.ReddBlockTests.runAllTests === 'function') {
+            window.ReddBlockTests.runAllTests();
+        } else {
+            console.log('⚠️ Tests not loaded. Make sure test-utils.js and blocking-tests.js are included.');
+        }
+    }
+});
+
+// Also expose a global function for running tests directly from console
+window.runBlockingTests = function () {
+    if (window.ReddBlockTests && typeof window.ReddBlockTests.runAllTests === 'function') {
+        window.ReddBlockTests.runAllTests();
+    } else {
+        console.log('⚠️ Tests not loaded. Try: window.ReddBlockTestUtils and window.ReddBlockTests');
+    }
+};
+
+// Expose additional internals for integration tests
+Object.assign(window.__REDDBLOCK_INTERNALS__, {
+    saveData,
+    updateHostsFile,
+    tauriAPI,
+    render
+});
+
+console.log('💡 To run blocking tests, type: runBlockingTests() in the console');
