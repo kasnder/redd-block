@@ -1408,7 +1408,7 @@ body.dark-mode .mode-tab.active {
     color: hsl(0, 70%, 50%);
 }
 
-/* Add Segment Button */
+/* Add Segment Button - align from start hour left edge to end minute right edge */
 .add-segment-btn {
     display: flex;
     align-items: center;
@@ -1422,9 +1422,15 @@ body.dark-mode .mode-tab.active {
     font-size: 14px;
     cursor: pointer;
     transition: all 0.15s ease;
-    /* Match the width of the time-pickers-row (start + arrow + end) */
-    width: fit-content;
-    min-width: 242px;
+    /* Match width from left edge of start hour to right edge of end minute */
+    /* Each time-part: min-width 36px + padding 4px each side = 44px */
+    /* Start group: 2 time-parts (88px) + colon (~10px) = ~98px */
+    /* Separator: ~20px */
+    /* Gap: 12px */
+    /* End group: ~98px */
+    /* Total: 98 + 20 + 12 + 98 = 228px */
+    width: 209px;
+    box-sizing: border-box;
 }
 
 .add-segment-btn:hover {
