@@ -902,6 +902,7 @@ body.dark-mode .day-column.weekend {
 }
 
 .duration-input[type=number] {
+    appearance: textfield;
     -moz-appearance: textfield;
 }
 
