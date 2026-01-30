@@ -1509,6 +1509,11 @@ body.dark-mode .mode-tab.active {
     color: var(--text-muted);
 }
 
+.repeat-label.repeat-label-disabled {
+    color: hsl(215, 20%, 50%);
+    opacity: 0.7;
+}
+
 .repeat-dropdown-wrapper {
     position: relative;
 }
@@ -1531,6 +1536,24 @@ body.dark-mode .mode-tab.active {
 .repeat-dropdown-btn:hover {
     border-color: var(--accent-color);
     background: rgba(102, 126, 234, 0.05);
+}
+
+.repeat-dropdown-btn.repeat-dropdown-disabled {
+    border: none;
+    background: rgba(128, 128, 128, 0.05);
+    color: var(--text-muted);
+    cursor: default;
+    opacity: 0.7;
+}
+
+.repeat-dropdown-btn.repeat-dropdown-disabled:hover {
+    border: none;
+    background: rgba(128, 128, 128, 0.05);
+    color: var(--text-muted);
+}
+
+.repeat-dropdown-btn.repeat-dropdown-disabled svg {
+    color: var(--text-muted);
 }
 
 .repeat-dropdown-menu {

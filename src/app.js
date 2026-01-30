@@ -205,7 +205,7 @@ function setupEventListeners() {
                 const existingSchedule = appData.schedules?.find(s => s.blocklistId === currentBlocklistId);
                 if (!appData.settings) appData.settings = {};
                 if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
-                
+
                 if (!existingSchedule) {
                     // No active schedule - save all segments
                     if (scheduleSegments.length > 0) {
@@ -235,7 +235,7 @@ function setupEventListeners() {
                     saveData();
                 }
             }
-            
+
             selectedBlocklistId = null;
             const blocklistSelect = document.getElementById('blocklist-select');
             blocklistSelect.value = '';
@@ -891,23 +891,23 @@ function setupOverrideModalListeners() {
                     const scheduleToStop = appData.schedules.find(s =>
                         s.id === scheduleId || s.blocklistId === scheduleId
                     );
-                    
+
                     if (scheduleToStop) {
                         // Load all segments from the stopped schedule into scheduleSegments
                         // so they become editable (not greyed out)
                         scheduleSegments = scheduleToStop.segments.map(seg => ({ ...seg }));
                         activeScheduleSegmentCount = 0; // No segments are locked anymore
-                        
+
                         // Save these segments as pending so they persist when clicking off/on
                         if (!appData.settings) appData.settings = {};
                         if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
                         appData.settings.pendingScheduleSegments[scheduleToStop.blocklistId] = scheduleSegments.map(seg => ({ ...seg }));
-                        
+
                         // Remove the schedule from active schedules
                         appData.schedules = appData.schedules.filter(s =>
                             s.id !== scheduleId && s.blocklistId !== scheduleId
                         );
-                        
+
                         // Rebuild UI to show all segments as editable if we're viewing this blocklist
                         if (selectedBlocklistId === scheduleToStop.blocklistId && isScheduleMode) {
                             rebuildScheduleSegments();
@@ -1044,11 +1044,29 @@ function disableTimeControls(disabled) {
 function disableScheduleControls(disabled) {
     const repeatDropdown = document.getElementById('schedule-repeat-select');
     const addSegmentBtn = document.getElementById('add-segment-btn');
+    const repeatDropdownBtn = document.getElementById('repeat-dropdown-btn');
+    const repeatLabel = document.querySelector('.repeat-label');
+    const repeatSection = document.getElementById('schedule-repeat-section');
 
-    // Disable repeat dropdown
-    if (repeatDropdown) {
-        repeatDropdown.disabled = disabled;
-        repeatDropdown.style.opacity = disabled ? '0.5' : '1';
+    // Disable repeat dropdown button and label
+    if (repeatDropdownBtn) {
+        repeatDropdownBtn.disabled = disabled;
+        repeatDropdownBtn.style.pointerEvents = disabled ? 'none' : 'auto';
+        repeatDropdownBtn.style.cursor = disabled ? 'default' : 'pointer';
+        if (disabled) {
+            repeatDropdownBtn.classList.add('repeat-dropdown-disabled');
+        } else {
+            repeatDropdownBtn.classList.remove('repeat-dropdown-disabled');
+        }
+    }
+
+    // Style repeat label
+    if (repeatLabel) {
+        if (disabled) {
+            repeatLabel.classList.add('repeat-label-disabled');
+        } else {
+            repeatLabel.classList.remove('repeat-label-disabled');
+        }
     }
 
     // Disable Add button when schedule is active (activeScheduleSegmentCount > 0)
@@ -1372,7 +1390,7 @@ function setScheduleMode(isSchedule) {
             activeScheduleSegmentCount = scheduleSegments.length;
             scheduleRepeatType = existingSchedule.repeatType || 'no';
             scheduleRepeatDate = existingSchedule.repeatDate;
-            
+
             // Also load any pending (new) segments that were added but not yet committed
             const pendingSegments = appData.settings?.pendingScheduleSegments?.[selectedBlocklistId];
             if (pendingSegments && pendingSegments.length > 0) {
@@ -1423,6 +1441,12 @@ function toggleRepeatDropdown(e) {
 
     // Don't allow opening dropdown when schedule is active
     if (activeScheduleSegmentCount > 0) return;
+    
+    // Also check if button is disabled
+    const repeatDropdownBtn = document.getElementById('repeat-dropdown-btn');
+    if (repeatDropdownBtn && repeatDropdownBtn.disabled) {
+        return;
+    }
 
     const menu = document.getElementById('repeat-dropdown-menu');
     if (!menu) return;
@@ -1630,7 +1654,7 @@ function addScheduleSegment() {
     if (activeScheduleSegmentCount > 0) {
         return;
     }
-    
+
     // Get the previous segment's end time, round up to next full hour for new start
     const prevSegment = scheduleSegments[scheduleSegments.length - 1];
     let newStartHour;
@@ -2064,7 +2088,7 @@ function closeScheduleConfirmModal() {
 function openScheduleOverrideModal(schedule) {
     // Store the schedule ID for the override process
     window.overrideScheduleId = schedule.id || schedule.blocklistId;
-    
+
     // Clear segment index/day - this ensures we can ONLY stop the entire schedule
     window.overrideSegmentIndex = undefined;
     window.overrideSegmentDay = undefined;
@@ -2093,7 +2117,7 @@ function openScheduleOverrideModal(schedule) {
     if (optionsDiv) {
         optionsDiv.classList.add('hidden');
     }
-    
+
     // Set override type to stop-schedule (even though options are hidden)
     const stopScheduleRadio = document.querySelector('input[name="schedule-override-type"][value="stop-schedule"]');
     if (stopScheduleRadio) {
@@ -2359,9 +2383,9 @@ function handleTimeChange() {
         if (selectedBlocklistId) {
             if (!appData.settings) appData.settings = {};
             if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
-            
+
             const existingSchedule = appData.schedules?.find(s => s.blocklistId === selectedBlocklistId);
-            
+
             if (!existingSchedule) {
                 // No active schedule - save all pending segments
                 const currentPending = JSON.stringify(appData.settings.pendingScheduleSegments[selectedBlocklistId] || []);
@@ -2951,7 +2975,7 @@ function handleBlocklistSelect(e) {
             const existingSchedule = appData.schedules?.find(s => s.blocklistId === selectedBlocklistId);
             if (!appData.settings) appData.settings = {};
             if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
-            
+
             if (!existingSchedule) {
                 // No active schedule - save all segments
                 if (scheduleSegments.length > 0) {
@@ -2996,18 +3020,18 @@ function handleBlocklistSelect(e) {
         // Determine which mode to show based on active blocks/schedules
         const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
         const now = Date.now();
-        
+
         // Check if there's an active block (one-off)
-        const hasActiveBlock = blocklist && appData.activeBlocks.some(b => 
+        const hasActiveBlock = blocklist && appData.activeBlocks.some(b =>
             b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now
         );
-        
+
         // Check if there's an active schedule
         const existingSchedule = appData.schedules
             ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
             : null;
         const hasActiveSchedule = existingSchedule && existingSchedule.segments && existingSchedule.segments.length > 0;
-        
+
         // Determine default mode:
         if (hasActiveBlock && !hasActiveSchedule) {
             setScheduleMode(false);
@@ -3040,9 +3064,9 @@ function handleBlocklistSelect(e) {
                 const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
                 const now = Date.now();
                 // IMPORTANT: Only find active block for THIS specific blocklist
-                const activeBlock = appData.activeBlocks.find(b => 
-                    b.blocklistId === selectedBlocklistId && 
-                    b.startTime <= now && 
+                const activeBlock = appData.activeBlocks.find(b =>
+                    b.blocklistId === selectedBlocklistId &&
+                    b.startTime <= now &&
                     b.endTime > now
                 );
 
@@ -3126,11 +3150,11 @@ function startBlock() {
     const startBlockBtn = document.getElementById('start-block-btn');
     if (startBlockBtn && startBlockBtn.dataset.activeBlockId) {
         // Verify the activeBlockId belongs to the currently selected blocklist
-        const activeBlock = appData.activeBlocks.find(b => 
-            b.id === startBlockBtn.dataset.activeBlockId && 
+        const activeBlock = appData.activeBlocks.find(b =>
+            b.id === startBlockBtn.dataset.activeBlockId &&
             b.blocklistId === selectedBlocklistId
         );
-        
+
         if (activeBlock) {
             // Open override dialog instead of starting a new block
             openOverrideModal(startBlockBtn.dataset.activeBlockId);
