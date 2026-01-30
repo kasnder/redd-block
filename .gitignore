@@ -39,3 +39,6 @@ helper/dist/
 # Tauri build artifacts
 src-tauri/target/
 helper-daemon/target/
+
+# Distribution builds
+for-distribution/
