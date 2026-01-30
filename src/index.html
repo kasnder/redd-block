@@ -710,26 +710,83 @@
             <button id="undo-toast-btn" class="undo-btn">Undo</button>
         </div>
 
+        <!-- Settings Modal -->
+        <div id="settings-modal" class="modal-overlay hidden">
+            <div class="modal-content">
+                <h3>Settings</h3>
+
+                <div class="settings-section">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <span style="font-size: 13px;">Light/dark mode</span>
+                        <select id="theme-select"
+                            style="padding: 6px 10px; border: 1px solid var(--border-color-medium); border-radius: 4px; background: var(--modal-bg); color: var(--text-primary); font-size: 13px; cursor: pointer;">
+                            <option value="system">Auto</option>
+                            <option value="light">Light</option>
+                            <option value="dark">Dark</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Advanced Options (Expandable) -->
+                <div class="settings-advanced-toggle" id="advanced-options-toggle">
+                    <span>Advanced options</span>
+                    <svg class="chevron-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                </div>
+                <div class="settings-advanced-content hidden" id="advanced-options-content">
+                    <button id="override-all-btn" class="override-all-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path>
+                            <path d="M12 9v4"></path>
+                            <path d="M12 17h.01"></path>
+                        </svg>
+                        <span>Override all blocks</span>
+                    </button>
+                </div>
+
+                <div class="modal-buttons">
+                    <button id="close-settings-btn" class="modal-btn cancel-btn">Close</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Override All Blocks Modal -->
+        <div id="override-all-modal" class="modal-overlay hidden">
+            <div class="modal-content override-challenge">
+                <h3>Override All Blocks?</h3>
+                <div class="override-all-warning">
+                    <p><strong>Are you sure you want to stop all running blocks?</strong></p>
+                    <p>This will stop ANY currently running blocks for any website and app. It will also stop any future
+                        scheduled blocking.</p>
+                </div>
+                <p class="override-all-subline">To do this, type the following:</p>
+                <div id="override-all-challenge-text" class="challenge-text"></div>
+                <textarea id="override-all-challenge-input" class="challenge-input" placeholder="Type here..."
+                    autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+                <div class="challenge-progress">
+                    <div id="override-all-progress-bar" class="challenge-progress-bar"></div>
+                </div>
+                <div class="modal-buttons">
+                    <button id="cancel-override-all-btn" class="modal-btn cancel-btn">Cancel</button>
+                    <button id="confirm-override-all-btn" class="modal-btn danger-btn">Override All</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Footer -->
         <div class="footer">
             <span class="footer-text">Made with <span class="heart">♥</span> by <a href="https://reddfocus.org"
                     target="_blank">reddfocus.org</a></span>
-            <button id="theme-toggle-btn" class="icon-btn theme-toggle-footer" title="Toggle Dark Mode">
-                <svg class="sun-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="5"></circle>
-                    <line x1="12" y1="1" x2="12" y2="3"></line>
-                    <line x1="12" y1="21" x2="12" y2="23"></line>
-                    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-                    <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-                    <line x1="1" y1="12" x2="3" y2="12"></line>
-                    <line x1="21" y1="12" x2="23" y2="12"></line>
-                    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-                    <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-                </svg>
-                <svg class="moon-icon hidden" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+            <button id="settings-btn" class="icon-btn settings-footer" title="Settings">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <path
+                        d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.16.1a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.2a2 2 0 0 1-1 1.73l-.15.08a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.16.09a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.16-.09a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.73v-.2a2 2 0 0 1 1-1.72l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.16-.1a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z">
+                    </path>
+                    <circle cx="12" cy="12" r="3"></circle>
                 </svg>
             </button>
         </div>

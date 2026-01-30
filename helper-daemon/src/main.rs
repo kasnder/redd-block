@@ -23,8 +23,8 @@ const SOCKET_PATH: &str = "127.0.0.1:62222";
 #[cfg(not(target_os = "windows"))]
 const SOCKET_PATH: &str = "/tmp/redd-block-helper.sock";
 
-const BLOCK_MARKER_START: &str = "# BEGIN REDD BLOCK";
-const BLOCK_MARKER_END: &str = "# END REDD BLOCK";
+const BLOCK_MARKER_START: &str = "# === BEGIN REDD BLOCK (reddfocus.org) ===";
+const BLOCK_MARKER_END: &str = "# === END REDD BLOCK (reddfocus.org) ===";
 
 #[cfg(target_os = "windows")]
 const HOSTS_PATH: &str = "C:\\Windows\\System32\\drivers\\etc\\hosts";

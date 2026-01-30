@@ -2933,8 +2933,97 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
     font-size: 11px;
 }
 
-.theme-toggle-footer {
+.settings-footer {
     flex-shrink: 0;
+}
+
+/* Settings Modal Section */
+.settings-section {
+    padding: 12px 0;
+}
+
+/* Advanced Options Toggle */
+.settings-advanced-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-muted);
+    transition: color 0.2s ease;
+}
+
+.settings-advanced-toggle:hover {
+    color: var(--text-primary);
+}
+
+.settings-advanced-toggle .chevron-icon {
+    transition: transform 0.2s ease;
+}
+
+.settings-advanced-toggle.expanded .chevron-icon {
+    transform: rotate(180deg);
+}
+
+.settings-advanced-content {
+    padding-bottom: 12px;
+}
+
+.settings-advanced-content.hidden {
+    display: none;
+}
+
+/* Override All Button */
+.override-all-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 16px;
+    background: hsl(215, 20%, 65%);
+    border: none;
+    border-radius: 8px;
+    color: white;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.override-all-btn:hover {
+    background: hsl(0, 65%, 50%);
+}
+
+.override-all-btn svg {
+    flex-shrink: 0;
+}
+
+/* Override All Modal Styles */
+.override-all-warning {
+    background: hsl(0, 80%, 97%);
+    border: 1px solid hsl(0, 60%, 85%);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+}
+
+.override-all-warning p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: hsl(0, 50%, 30%);
+}
+
+.override-all-warning p:first-child {
+    margin-bottom: 8px;
+}
+
+.override-all-subline {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
 }
 
 .footer a {

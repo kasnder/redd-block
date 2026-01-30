@@ -91,6 +91,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await checkHelperStatus();
     setupEventListeners();
     setupTheme();
+    setupOverrideAll();
     render();
     scrollToNow(false); // Initial scroll (instant, no animation)
     startTickInterval();
@@ -4749,44 +4750,307 @@ function getContrastTextColor(backgroundColor) {
     return luminance > 0.5 ? '#000000' : '#ffffff';
 }
 
-
 // Theme Handling
 function setupTheme() {
     // Apply initial theme from saved settings
     applyTheme();
 
-    // Toggle button listener
-    const toggleBtn = document.getElementById('theme-toggle-btn');
-    if (toggleBtn) {
-        toggleBtn.addEventListener('click', () => {
-            // Initialize settings object if it doesn't exist (safety check)
+    // Setup settings modal
+    const settingsBtn = document.getElementById('settings-btn');
+    const settingsModal = document.getElementById('settings-modal');
+    const closeSettingsBtn = document.getElementById('close-settings-btn');
+    const themeSelect = document.getElementById('theme-select');
+
+    if (settingsBtn && settingsModal) {
+        settingsBtn.addEventListener('click', () => {
+            settingsModal.classList.remove('hidden');
+            // Set current theme selection
+            if (themeSelect) {
+                const currentTheme = appData.settings?.themeMode || 'system';
+                themeSelect.value = currentTheme;
+            }
+        });
+    }
+
+    if (closeSettingsBtn && settingsModal) {
+        closeSettingsBtn.addEventListener('click', () => {
+            settingsModal.classList.add('hidden');
+        });
+    }
+
+    // Close modal when clicking outside
+    if (settingsModal) {
+        settingsModal.addEventListener('click', (e) => {
+            if (e.target === settingsModal) {
+                settingsModal.classList.add('hidden');
+            }
+        });
+    }
+
+    // Theme selection change
+    if (themeSelect) {
+        themeSelect.addEventListener('change', (e) => {
             if (!appData.settings) appData.settings = {};
+            appData.settings.themeMode = e.target.value;
 
-            // Toggle boolean
-            appData.settings.darkMode = !appData.settings.darkMode;
+            // Update legacy darkMode for backwards compatibility
+            if (e.target.value === 'dark') {
+                appData.settings.darkMode = true;
+            } else if (e.target.value === 'light') {
+                appData.settings.darkMode = false;
+            } else {
+                // Auto/system mode - use system preference
+                delete appData.settings.darkMode;
+            }
 
-            // Apply and save
             applyTheme();
             saveData();
+        });
+    }
+
+    // Listen for system theme changes when in auto mode
+    if (window.matchMedia) {
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+            if (appData.settings?.themeMode === 'system' || !appData.settings?.themeMode) {
+                applyTheme();
+            }
         });
     }
 }
 
 function applyTheme() {
-    const isDark = appData.settings?.darkMode === true;
     const body = document.body;
-    const sunIcon = document.querySelector('.sun-icon');
-    const moonIcon = document.querySelector('.moon-icon');
+    const themeMode = appData.settings?.themeMode || 'system';
+
+    let isDark;
+    if (themeMode === 'dark') {
+        isDark = true;
+    } else if (themeMode === 'light') {
+        isDark = false;
+    } else {
+        // Auto/system mode - detect system preference
+        isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
 
     if (isDark) {
         body.classList.add('dark-mode');
-        // Show Moon icon in Dark Mode
-        sunIcon?.classList.add('hidden');
-        moonIcon?.classList.remove('hidden');
     } else {
         body.classList.remove('dark-mode');
-        // Show Sun icon in Light Mode
-        sunIcon?.classList.remove('hidden');
-        moonIcon?.classList.add('hidden');
+    }
+}
+
+// Variable to track override-all challenge text
+let overrideAllChallengeText = '';
+
+// Setup Override All functionality in settings
+function setupOverrideAll() {
+    const advancedToggle = document.getElementById('advanced-options-toggle');
+    const advancedContent = document.getElementById('advanced-options-content');
+    const overrideAllBtn = document.getElementById('override-all-btn');
+    const overrideAllModal = document.getElementById('override-all-modal');
+    const cancelOverrideAllBtn = document.getElementById('cancel-override-all-btn');
+    const confirmOverrideAllBtn = document.getElementById('confirm-override-all-btn');
+    const overrideAllChallengeInput = document.getElementById('override-all-challenge-input');
+    const overrideAllProgressBar = document.getElementById('override-all-progress-bar');
+
+    // Toggle advanced options
+    if (advancedToggle && advancedContent) {
+        advancedToggle.addEventListener('click', () => {
+            advancedToggle.classList.toggle('expanded');
+            advancedContent.classList.toggle('hidden');
+        });
+    }
+
+    // Open override all modal
+    if (overrideAllBtn && overrideAllModal) {
+        overrideAllBtn.addEventListener('click', () => {
+            // Close settings modal first
+            document.getElementById('settings-modal').classList.add('hidden');
+
+            // Find the hardest challenge among active blocks and schedules
+            const hardestDifficulty = findHardestChallenge();
+
+            // Generate challenge text based on hardest difficulty
+            if (hardestDifficulty.type === 'custom' && hardestDifficulty.customText) {
+                overrideAllChallengeText = hardestDifficulty.customText;
+            } else if (hardestDifficulty.type === 'gibberish') {
+                overrideAllChallengeText = generateGibberish(hardestDifficulty.count);
+            } else {
+                overrideAllChallengeText = generateRandomWords(hardestDifficulty.count);
+            }
+
+            // Sanitize: remove linebreaks and collapse multiple spaces
+            overrideAllChallengeText = overrideAllChallengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+
+            // Display challenge
+            document.getElementById('override-all-challenge-text').textContent = overrideAllChallengeText;
+            overrideAllChallengeInput.value = '';
+            overrideAllProgressBar.style.width = '0%';
+
+            overrideAllModal.classList.remove('hidden');
+        });
+    }
+
+    // Cancel override all
+    if (cancelOverrideAllBtn && overrideAllModal) {
+        cancelOverrideAllBtn.addEventListener('click', () => {
+            overrideAllModal.classList.add('hidden');
+            overrideAllChallengeText = '';
+        });
+    }
+
+    // Click outside to close
+    if (overrideAllModal) {
+        overrideAllModal.addEventListener('click', (e) => {
+            if (e.target === overrideAllModal) {
+                overrideAllModal.classList.add('hidden');
+                overrideAllChallengeText = '';
+            }
+        });
+    }
+
+    // Prevent paste
+    if (overrideAllChallengeInput) {
+        overrideAllChallengeInput.addEventListener('paste', (e) => {
+            e.preventDefault();
+        });
+
+        // Update progress as user types
+        overrideAllChallengeInput.addEventListener('input', () => {
+            const typed = overrideAllChallengeInput.value;
+            const target = overrideAllChallengeText;
+
+            let correctChars = 0;
+            for (let i = 0; i < typed.length && i < target.length; i++) {
+                if (typed[i] === target[i]) {
+                    correctChars++;
+                } else {
+                    break;
+                }
+            }
+
+            const progress = (correctChars / target.length) * 100;
+            overrideAllProgressBar.style.width = `${progress}%`;
+        });
+
+        // Enter key submits
+        overrideAllChallengeInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                confirmOverrideAllBtn.click();
+            }
+        });
+    }
+
+    // Confirm override all
+    if (confirmOverrideAllBtn) {
+        confirmOverrideAllBtn.addEventListener('click', async () => {
+            const typed = overrideAllChallengeInput.value;
+            const target = overrideAllChallengeText;
+
+            if (typed === target) {
+                // Success! Clear everything
+                await performOverrideAll();
+                overrideAllModal.classList.add('hidden');
+                overrideAllChallengeText = '';
+            } else {
+                // Wrong - wiggle modal
+                const modalContent = overrideAllModal.querySelector('.modal-content');
+                modalContent.classList.remove('wiggle');
+                void modalContent.offsetWidth; // Trigger reflow
+                modalContent.classList.add('wiggle');
+            }
+        });
+    }
+}
+
+// Find the hardest challenge among all active blocks and schedules
+function findHardestChallenge() {
+    const now = Date.now();
+    let hardestDifficulty = { type: 'random-words', count: 50 }; // Default
+
+    // Check active one-off blocks
+    for (const block of appData.activeBlocks) {
+        if (block.startTime <= now && block.endTime > now) {
+            const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+            if (blocklist?.overrideDifficulty) {
+                hardestDifficulty = compareDifficulties(hardestDifficulty, blocklist.overrideDifficulty);
+            }
+        }
+    }
+
+    // Check active schedules
+    for (const schedule of appData.schedules || []) {
+        const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+        if (blocklist?.overrideDifficulty) {
+            hardestDifficulty = compareDifficulties(hardestDifficulty, blocklist.overrideDifficulty);
+        }
+    }
+
+    return hardestDifficulty;
+}
+
+// Compare two difficulties and return the harder one
+function compareDifficulties(a, b) {
+    // Custom text is considered hardest (user defined)
+    if (b.type === 'custom' && b.customText) {
+        const bLen = b.customText.length;
+        const aLen = a.type === 'custom' && a.customText ? a.customText.length : (a.count || 50);
+        return bLen >= aLen ? b : a;
+    }
+    if (a.type === 'custom' && a.customText) {
+        return a;
+    }
+
+    // Gibberish is harder than random words at same count
+    const aCount = a.count || 50;
+    const bCount = b.count || 50;
+
+    // If b has more characters, it's harder
+    if (bCount > aCount) return b;
+    if (aCount > bCount) return a;
+
+    // Same count: gibberish is harder than random-words
+    if (b.type === 'gibberish' && a.type !== 'gibberish') return b;
+    if (a.type === 'gibberish' && b.type !== 'gibberish') return a;
+
+    // Equal, return a
+    return a;
+}
+
+// Perform the actual override-all operation
+async function performOverrideAll() {
+    try {
+        // Clear all active blocks
+        appData.activeBlocks = [];
+
+        // Clear all schedules
+        appData.schedules = [];
+
+        // Save the data
+        await saveData();
+
+        // Clear website blocking via helper (this surgically removes our hosts entries)
+        const status = await tauriAPI.checkHelperStatus();
+        if (status.running) {
+            await tauriAPI.clearBlockViaHelper();
+        }
+
+        // Stop app blocking
+        tauriAPI.refreshBlockedApps();
+        await tauriAPI.stopProcessWatcher();
+
+        // Re-render the UI
+        render();
+
+        // Reset the blocklist selection UI
+        const blocklistSelect = document.getElementById('blocklist-select');
+        if (blocklistSelect) {
+            handleBlocklistSelect({ target: blocklistSelect });
+        }
+
+        console.log('Override all completed successfully');
+    } catch (err) {
+        console.error('Error during override all:', err);
     }
 }
