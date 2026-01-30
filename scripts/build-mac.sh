@@ -36,9 +36,14 @@ DMG_TARGET="src-tauri/target/universal-apple-darwin/release/bundle/dmg/reddblock
 
 if [ -f "$DMG_SOURCE" ]; then
   mv "$DMG_SOURCE" "$DMG_TARGET"
+  
+  # Copy to for-distribution folder in project root
+  mkdir -p for-distribution
+  cp "$DMG_TARGET" "for-distribution/reddblock-${VERSION}-universal.dmg"
+  
   echo ""
   echo "✅ Build complete!"
-  echo "   DMG: $DMG_TARGET"
+  echo "   DMG: for-distribution/reddblock-${VERSION}-universal.dmg"
 else
   echo "⚠️  DMG not found at expected location: $DMG_SOURCE"
   echo "   Looking for DMG files..."
