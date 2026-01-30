@@ -1300,8 +1300,14 @@ function setScheduleMode(isSchedule) {
             scheduleRepeatType = existingSchedule.repeatType || 'no';
             scheduleRepeatDate = existingSchedule.repeatDate;
         } else {
-            // Reset schedule segments to fresh default times
-            scheduleSegments = getDefaultScheduleSegments();
+            // Check for pending (unsaved) segments for this blocklist
+            const pendingSegments = appData.settings?.pendingScheduleSegments?.[selectedBlocklistId];
+            if (pendingSegments && pendingSegments.length > 0) {
+                scheduleSegments = pendingSegments.map(seg => ({ ...seg }));
+            } else {
+                // Reset schedule segments to fresh default times
+                scheduleSegments = getDefaultScheduleSegments();
+            }
             activeScheduleSegmentCount = 0;
         }
         rebuildScheduleSegments();
@@ -2146,6 +2152,11 @@ async function proceedWithScheduleEdit() {
     activeScheduleSegmentCount = schedule.segments.length;
     scheduleSegments = schedule.segments.map(seg => ({ ...seg }));
 
+    // Clear pending segments for this blocklist (they're now committed)
+    if (appData.settings?.pendingScheduleSegments?.[selectedBlocklistId]) {
+        delete appData.settings.pendingScheduleSegments[selectedBlocklistId];
+    }
+
     // Save
     await saveData();
 
@@ -2195,6 +2206,12 @@ async function proceedWithSchedule() {
 
     // Save to appData
     appData.schedules.push(schedule);
+
+    // Clear pending segments for this blocklist (they're now committed)
+    if (appData.settings?.pendingScheduleSegments?.[selectedBlocklistId]) {
+        delete appData.settings.pendingScheduleSegments[selectedBlocklistId];
+    }
+
     await saveData();
 
     console.log('Schedule created:', schedule);
@@ -2235,6 +2252,24 @@ function handleTimeChange() {
     // Handle schedule mode separately
     if (isScheduleMode) {
         renderSchedulePreview();
+
+        // Save pending schedule segments for this blocklist
+        if (selectedBlocklistId) {
+            if (!appData.settings) appData.settings = {};
+            if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
+            // Only save segments beyond the locked count (new/pending segments)
+            // But if no active schedule, save all segments
+            const existingSchedule = appData.schedules?.find(s => s.blocklistId === selectedBlocklistId);
+            if (!existingSchedule) {
+                // No active schedule - save all pending segments
+                const currentPending = JSON.stringify(appData.settings.pendingScheduleSegments[selectedBlocklistId] || []);
+                const newPending = JSON.stringify(scheduleSegments);
+                if (currentPending !== newPending) {
+                    appData.settings.pendingScheduleSegments[selectedBlocklistId] = scheduleSegments.map(seg => ({ ...seg }));
+                    saveData();
+                }
+            }
+        }
         return;
     }
 
@@ -2785,7 +2820,21 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
 
 // Handle blocklist selection
 function handleBlocklistSelect(e) {
-    selectedBlocklistId = e.target.value || null;
+    const newBlocklistId = e.target.value || null;
+
+    // Before switching, save pending schedule segments for the current blocklist
+    if (selectedBlocklistId && isScheduleMode) {
+        const existingSchedule = appData.schedules?.find(s => s.blocklistId === selectedBlocklistId);
+        if (!existingSchedule && scheduleSegments.length > 0) {
+            if (!appData.settings) appData.settings = {};
+            if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
+            appData.settings.pendingScheduleSegments[selectedBlocklistId] = scheduleSegments.map(seg => ({ ...seg }));
+            saveData();
+        }
+    }
+
+    selectedBlocklistId = newBlocklistId;
+
     const timePicker = document.getElementById('time-picker-container');
     const passwordHint = document.getElementById('password-hint');
     const selectionPrompt = document.getElementById('selection-prompt');
