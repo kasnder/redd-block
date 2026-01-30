@@ -9,6 +9,7 @@
     "build:helper": "cd helper-daemon && cargo build --release",
     "build:helper:mac": "cd helper-daemon && cargo build --release && cp target/release/redd-block-helper target/release/redd-block-helper-aarch64-apple-darwin",
     "build:helper:win": "cd helper-daemon && cargo build --release && copy target\\release\\redd-block-helper.exe target\\release\\redd-block-helper-aarch64-pc-windows-msvc.exe",
+    "build:win": "powershell -ExecutionPolicy Bypass -File ./scripts/build-win-store.ps1",
     "tauri": "tauri",
     "vite:dev": "vite",
     "vite:build": "vite build",
