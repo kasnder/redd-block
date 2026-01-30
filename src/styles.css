@@ -77,7 +77,6 @@ body.dark-mode {
 
 html {
     background: var(--container-bg);
-    zoom: 1.1;
 }
 
 body {
@@ -88,10 +87,10 @@ body {
     overflow: hidden;
 }
 
-/* App Container - dimensions adjusted to compensate for zoom: 1.1 (100/1.1 ≈ 90.9%) */
+/* App Container */
 .app-container {
-    width: calc(100vw / 1.1);
-    height: calc(100vh / 1.1);
+    width: 100vw;
+    height: 100vh;
     display: flex;
     flex-direction: column;
     background: var(--container-bg);
