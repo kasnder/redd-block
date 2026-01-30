@@ -199,6 +199,43 @@ function setupEventListeners() {
 
         // Deselect blocklist if one is selected
         if (selectedBlocklistId) {
+            // Save pending changes before deselecting
+            const currentBlocklistId = selectedBlocklistId;
+            if (isScheduleMode) {
+                const existingSchedule = appData.schedules?.find(s => s.blocklistId === currentBlocklistId);
+                if (!appData.settings) appData.settings = {};
+                if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
+                
+                if (!existingSchedule) {
+                    // No active schedule - save all segments
+                    if (scheduleSegments.length > 0) {
+                        appData.settings.pendingScheduleSegments[currentBlocklistId] = scheduleSegments.map(seg => ({ ...seg }));
+                        saveData();
+                    }
+                } else {
+                    // Active schedule exists - save only NEW segments (those beyond activeScheduleSegmentCount)
+                    if (scheduleSegments.length > activeScheduleSegmentCount) {
+                        const newSegments = scheduleSegments.slice(activeScheduleSegmentCount);
+                        appData.settings.pendingScheduleSegments[currentBlocklistId] = newSegments.map(seg => ({ ...seg }));
+                        saveData();
+                    } else {
+                        // No new segments - clear any pending segments
+                        if (appData.settings.pendingScheduleSegments[currentBlocklistId]) {
+                            delete appData.settings.pendingScheduleSegments[currentBlocklistId];
+                            saveData();
+                        }
+                    }
+                }
+            } else {
+                // Save pending instant block duration if different from default
+                if (!appData.settings) appData.settings = {};
+                if (!appData.settings.instantBlockDuration) appData.settings.instantBlockDuration = {};
+                if (targetDurationMinutes !== 60) {
+                    appData.settings.instantBlockDuration[currentBlocklistId] = targetDurationMinutes;
+                    saveData();
+                }
+            }
+            
             selectedBlocklistId = null;
             const blocklistSelect = document.getElementById('blocklist-select');
             blocklistSelect.value = '';
@@ -1019,9 +1056,13 @@ function disableScheduleControls(disabled) {
 function initializeTimeInputs() {
     const now = new Date();
 
-    // Reset editing flag and load saved duration (or default to 60)
+    // Reset editing flag and load saved duration for this blocklist (or default to 60)
     userEditedEndTime = false;
-    targetDurationMinutes = appData.settings?.instantBlockDuration || 60;
+    if (selectedBlocklistId && appData.settings?.instantBlockDuration?.[selectedBlocklistId] !== undefined) {
+        targetDurationMinutes = appData.settings.instantBlockDuration[selectedBlocklistId];
+    } else {
+        targetDurationMinutes = 60;
+    }
 
     // End time = now + target duration
     const endTime = new Date(now.getTime() + targetDurationMinutes * 60 * 1000);
@@ -1299,6 +1340,13 @@ function setScheduleMode(isSchedule) {
             activeScheduleSegmentCount = scheduleSegments.length;
             scheduleRepeatType = existingSchedule.repeatType || 'no';
             scheduleRepeatDate = existingSchedule.repeatDate;
+            
+            // Also load any pending (new) segments that were added but not yet committed
+            const pendingSegments = appData.settings?.pendingScheduleSegments?.[selectedBlocklistId];
+            if (pendingSegments && pendingSegments.length > 0) {
+                // Append pending segments to the existing locked segments
+                scheduleSegments.push(...pendingSegments.map(seg => ({ ...seg })));
+            }
         } else {
             // Check for pending (unsaved) segments for this blocklist
             const pendingSegments = appData.settings?.pendingScheduleSegments?.[selectedBlocklistId];
@@ -2257,9 +2305,9 @@ function handleTimeChange() {
         if (selectedBlocklistId) {
             if (!appData.settings) appData.settings = {};
             if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
-            // Only save segments beyond the locked count (new/pending segments)
-            // But if no active schedule, save all segments
+            
             const existingSchedule = appData.schedules?.find(s => s.blocklistId === selectedBlocklistId);
+            
             if (!existingSchedule) {
                 // No active schedule - save all pending segments
                 const currentPending = JSON.stringify(appData.settings.pendingScheduleSegments[selectedBlocklistId] || []);
@@ -2267,6 +2315,23 @@ function handleTimeChange() {
                 if (currentPending !== newPending) {
                     appData.settings.pendingScheduleSegments[selectedBlocklistId] = scheduleSegments.map(seg => ({ ...seg }));
                     saveData();
+                }
+            } else {
+                // Active schedule exists - save only NEW segments (those beyond activeScheduleSegmentCount)
+                if (scheduleSegments.length > activeScheduleSegmentCount) {
+                    const newSegments = scheduleSegments.slice(activeScheduleSegmentCount);
+                    const currentPending = JSON.stringify(appData.settings.pendingScheduleSegments[selectedBlocklistId] || []);
+                    const newPending = JSON.stringify(newSegments);
+                    if (currentPending !== newPending) {
+                        appData.settings.pendingScheduleSegments[selectedBlocklistId] = newSegments.map(seg => ({ ...seg }));
+                        saveData();
+                    }
+                } else {
+                    // No new segments - clear any pending segments
+                    if (appData.settings.pendingScheduleSegments[selectedBlocklistId]) {
+                        delete appData.settings.pendingScheduleSegments[selectedBlocklistId];
+                        saveData();
+                    }
                 }
             }
         }
@@ -2328,11 +2393,14 @@ function handleTimeChange() {
     }
     updateDurationQuickBtns(durationMinutes);
 
-    // Save duration to settings so it persists across blocklist selections
-    if (!appData.settings) appData.settings = {};
-    if (appData.settings.instantBlockDuration !== durationMinutes) {
-        appData.settings.instantBlockDuration = durationMinutes;
-        saveData();
+    // Save duration to settings per-blocklist so it persists across blocklist selections
+    if (selectedBlocklistId) {
+        if (!appData.settings) appData.settings = {};
+        if (!appData.settings.instantBlockDuration) appData.settings.instantBlockDuration = {};
+        if (appData.settings.instantBlockDuration[selectedBlocklistId] !== durationMinutes) {
+            appData.settings.instantBlockDuration[selectedBlocklistId] = durationMinutes;
+            saveData();
+        }
     }
 
     startBtn.disabled = !selectedBlocklistId;
@@ -2822,14 +2890,42 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
 function handleBlocklistSelect(e) {
     const newBlocklistId = e.target.value || null;
 
-    // Before switching, save pending schedule segments for the current blocklist
-    if (selectedBlocklistId && isScheduleMode) {
-        const existingSchedule = appData.schedules?.find(s => s.blocklistId === selectedBlocklistId);
-        if (!existingSchedule && scheduleSegments.length > 0) {
+    // Before switching, save pending changes for the current blocklist
+    if (selectedBlocklistId) {
+        // Save pending schedule segments if in schedule mode
+        if (isScheduleMode) {
+            const existingSchedule = appData.schedules?.find(s => s.blocklistId === selectedBlocklistId);
             if (!appData.settings) appData.settings = {};
             if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
-            appData.settings.pendingScheduleSegments[selectedBlocklistId] = scheduleSegments.map(seg => ({ ...seg }));
-            saveData();
+            
+            if (!existingSchedule) {
+                // No active schedule - save all segments
+                if (scheduleSegments.length > 0) {
+                    appData.settings.pendingScheduleSegments[selectedBlocklistId] = scheduleSegments.map(seg => ({ ...seg }));
+                    saveData();
+                }
+            } else {
+                // Active schedule exists - save only NEW segments (those beyond activeScheduleSegmentCount)
+                if (scheduleSegments.length > activeScheduleSegmentCount) {
+                    const newSegments = scheduleSegments.slice(activeScheduleSegmentCount);
+                    appData.settings.pendingScheduleSegments[selectedBlocklistId] = newSegments.map(seg => ({ ...seg }));
+                    saveData();
+                } else {
+                    // No new segments - clear any pending segments
+                    if (appData.settings.pendingScheduleSegments[selectedBlocklistId]) {
+                        delete appData.settings.pendingScheduleSegments[selectedBlocklistId];
+                        saveData();
+                    }
+                }
+            }
+        } else {
+            // Save pending instant block duration if in instant mode
+            if (!appData.settings) appData.settings = {};
+            if (!appData.settings.instantBlockDuration) appData.settings.instantBlockDuration = {};
+            if (targetDurationMinutes !== 60) { // Only save if different from default
+                appData.settings.instantBlockDuration[selectedBlocklistId] = targetDurationMinutes;
+                saveData();
+            }
         }
     }
 
@@ -2849,6 +2945,10 @@ function handleBlocklistSelect(e) {
             : null;
         if (existingSchedule && existingSchedule.segments && existingSchedule.segments.length > 0) {
             // Auto-switch to schedule mode for blocklists with active schedules
+            setScheduleMode(true);
+        } else if (isScheduleMode) {
+            // Already in schedule mode but new blocklist doesn't have active schedule
+            // Reload schedule segments for this blocklist (will load pending or defaults)
             setScheduleMode(true);
         }
 
@@ -3158,6 +3258,11 @@ async function proceedWithBlock() {
     if (helperAvailable) {
         appData.activeBlocks.push(block);
         activatedBlockIds.add(block.id);
+    }
+
+    // Clear pending duration for this blocklist (it's now committed)
+    if (appData.settings?.instantBlockDuration?.[selectedBlocklistId]) {
+        delete appData.settings.instantBlockDuration[selectedBlocklistId];
     }
 
     // Save data and reset UI
