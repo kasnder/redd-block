@@ -865,6 +865,8 @@ function setupOverrideModalListeners() {
                 const segmentIndex = window.overrideSegmentIndex;
                 const segmentDay = window.overrideSegmentDay;
 
+                // Only allow "just this block" if segmentIndex and segmentDay are defined
+                // (i.e., only when clicking a specific block in the timeline, not from stop schedule button)
                 if (overrideType === 'just-this' && segmentIndex !== undefined && segmentDay !== undefined) {
                     // "Just this block" - remove only the specific day from the segment
                     const schedule = appData.schedules.find(s => s.id === scheduleId);
@@ -2034,9 +2036,14 @@ function closeScheduleConfirmModal() {
 }
 
 // Open override modal for stopping a schedule (uses same override modal as blocks)
+// This is ONLY called from the stop schedule button - always stops entire schedule
 function openScheduleOverrideModal(schedule) {
     // Store the schedule ID for the override process
     window.overrideScheduleId = schedule.id || schedule.blocklistId;
+    
+    // Clear segment index/day - this ensures we can ONLY stop the entire schedule
+    window.overrideSegmentIndex = undefined;
+    window.overrideSegmentDay = undefined;
 
     // Get the blocklist name
     const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
@@ -2052,9 +2059,21 @@ function openScheduleOverrideModal(schedule) {
     overrideBlockId = null; // Not a block, it's a schedule
 
     // Update modal title to indicate it's a schedule
-    const titleEl = document.getElementById('override-title');
+    const titleEl = document.getElementById('override-modal-title');
     if (titleEl) {
         titleEl.textContent = `Stop Schedule: ${blocklistName}`;
+    }
+
+    // Hide the radio options - stop schedule button ONLY stops entire schedule
+    const optionsDiv = document.getElementById('schedule-override-options');
+    if (optionsDiv) {
+        optionsDiv.classList.add('hidden');
+    }
+    
+    // Set override type to stop-schedule (even though options are hidden)
+    const stopScheduleRadio = document.querySelector('input[name="schedule-override-type"][value="stop-schedule"]');
+    if (stopScheduleRadio) {
+        stopScheduleRadio.checked = true;
     }
 
     // Render challenge text directly (renderChallengeText is scoped inside setupOverrideModalListeners)
