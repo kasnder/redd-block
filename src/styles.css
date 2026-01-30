@@ -1,7 +1,7 @@
 /* Theme Variables */
 :root {
     --app-bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    --container-bg: rgba(255, 255, 255, 0.95);
+    --container-bg: #f0f4f8;
     --panel-bg: rgba(255, 255, 255, 0.8);
     --text-primary: #333;
     --text-secondary: hsl(222.2, 84%, 4.9%);
