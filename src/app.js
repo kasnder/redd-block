@@ -699,14 +699,20 @@ function setupModalListeners() {
 
         saveData();
 
-        // If this blocklist is active, update blocking rules immediately
-        const isActive = appData.activeBlocks.some(b => b.blocklistId === blocklist.id);
-        if (isActive) {
+        // If this blocklist is active (block or schedule), update blocking rules immediately
+        const now = Date.now();
+        const hasActiveBlock = appData.activeBlocks.some(
+            b => b.blocklistId === blocklist.id && b.startTime <= now && b.endTime > now
+        );
+        const hasActiveSchedule = appData.schedules?.some(
+            s => s.blocklistId === blocklist.id && s.segments && s.segments.length > 0
+        );
+        
+        if (hasActiveBlock || hasActiveSchedule) {
             // Update website blocking
             updateHostsFile();
 
-            // Update app blocking - collect all apps from active blocks
-            const now = Date.now();
+            // Update app blocking - collect all apps from active blocks and schedules
             const allBlockedApps = new Set();
             appData.activeBlocks
                 .filter(block => block.startTime <= now && block.endTime > now)
@@ -3757,8 +3763,16 @@ function openBlocklistModal(blocklist = null) {
         }
     }
 
-    // Check if active
-    const isActive = blocklist?.id && appData.activeBlocks.some(b => b.blocklistId === blocklist.id);
+    // Check if active (block or schedule)
+    const now = Date.now();
+    const hasActiveBlock = blocklist?.id && appData.activeBlocks.some(
+        b => b.blocklistId === blocklist.id && b.startTime <= now && b.endTime > now
+    );
+    const hasActiveSchedule = blocklist?.id && appData.schedules?.some(
+        s => s.blocklistId === blocklist.id && s.segments && s.segments.length > 0
+    );
+    const isActive = hasActiveBlock || hasActiveSchedule;
+    
     const warningEl = document.getElementById('active-blocklist-warning');
     const modeInputs = document.getElementById('blocklist-modal').querySelectorAll('.radio-option');
     const overrideInputs = [
@@ -3944,14 +3958,22 @@ async function deleteBlocklist(id) {
     const blocklist = appData.blocklists.find(bl => bl.id === id);
     if (!blocklist) return;
 
-    // Check if this blocklist has an active block running
+    // Check if this blocklist has an active block or schedule running
     const now = Date.now();
     const hasActiveBlock = appData.activeBlocks.some(
         block => block.blocklistId === id && block.startTime <= now && block.endTime > now
     );
+    const hasActiveSchedule = appData.schedules?.some(
+        s => s.blocklistId === id && s.segments && s.segments.length > 0
+    );
 
     if (hasActiveBlock) {
         alert(`Cannot delete "${blocklist.name}" while a block is running. Override the block first.`);
+        return;
+    }
+
+    if (hasActiveSchedule) {
+        alert(`Cannot delete "${blocklist.name}" while a schedule is active. Stop the schedule first.`);
         return;
     }
 
