@@ -315,6 +315,8 @@ body.dark-mode .week-nav-today-btn:hover {
     -webkit-overflow-scrolling: touch;
     scrollbar-width: thin;
     scrollbar-color: var(--text-muted) transparent;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
 }
 
 /* Sticky header row - contains time spacer + day headers */
@@ -325,6 +327,8 @@ body.dark-mode .week-nav-today-btn:hover {
     z-index: 20;
     background: var(--panel-bg);
     min-width: max-content;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
 }
 
 .header-time-spacer {
@@ -335,6 +339,7 @@ body.dark-mode .week-nav-today-btn:hover {
     position: sticky;
     left: 0;
     z-index: 25;
+    border-top-left-radius: 12px;
 }
 
 .header-days {
@@ -358,8 +363,13 @@ body.dark-mode .week-nav-today-btn:hover {
     border-right: 1px solid var(--border-color);
 }
 
+.day-header-cell:first-child {
+    border-top-left-radius: 12px;
+}
+
 .day-header-cell:last-child {
     border-right: none;
+    border-top-right-radius: 12px;
 }
 
 .day-header-cell.today {
