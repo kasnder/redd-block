@@ -2993,17 +2993,30 @@ function handleBlocklistSelect(e) {
     const modeTabs = document.querySelector('.scheduler-mode-tabs');
 
     if (selectedBlocklistId) {
-        // Check if this blocklist has an active schedule - if so, auto-switch to schedule mode
+        // Determine which mode to show based on active blocks/schedules
+        const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+        const now = Date.now();
+        
+        // Check if there's an active block (one-off)
+        const hasActiveBlock = blocklist && appData.activeBlocks.some(b => 
+            b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now
+        );
+        
+        // Check if there's an active schedule
         const existingSchedule = appData.schedules
             ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
             : null;
-        if (existingSchedule && existingSchedule.segments && existingSchedule.segments.length > 0) {
-            // Auto-switch to schedule mode for blocklists with active schedules
+        const hasActiveSchedule = existingSchedule && existingSchedule.segments && existingSchedule.segments.length > 0;
+        
+        // Determine default mode:
+        if (hasActiveBlock && !hasActiveSchedule) {
+            setScheduleMode(false);
+        } else if (hasActiveSchedule && !hasActiveBlock) {
             setScheduleMode(true);
-        } else if (isScheduleMode) {
-            // Already in schedule mode but new blocklist doesn't have active schedule
-            // Reload schedule segments for this blocklist (will load pending or defaults)
-            setScheduleMode(true);
+        } else if (hasActiveBlock && hasActiveSchedule) {
+            setScheduleMode(false);
+        } else {
+            setScheduleMode(false);
         }
 
         // Hide selection prompt, show time picker, hint, tabs, and appropriate button
