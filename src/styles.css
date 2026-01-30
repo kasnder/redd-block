@@ -2315,6 +2315,42 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
+.form-select.form-select-disabled {
+    border: none;
+    background: rgba(128, 128, 128, 0.05);
+    color: var(--text-muted);
+    cursor: default;
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+.form-select.form-select-disabled:hover,
+.form-select.form-select-disabled:focus {
+    border: none;
+    background: rgba(128, 128, 128, 0.05);
+    box-shadow: none;
+}
+
+.form-input.form-input-disabled {
+    border: none;
+    background: rgba(128, 128, 128, 0.05);
+    color: var(--text-muted);
+    cursor: default;
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+.form-input.form-input-disabled:hover,
+.form-input.form-input-disabled:focus {
+    border: none;
+    background: rgba(128, 128, 128, 0.05);
+    box-shadow: none;
+}
+
+.input-suffix.input-suffix-disabled {
+    color: hsl(215, 20%, 50%);
+}
+
 .form-textarea {
     width: 100%;
     padding: 10px 12px;

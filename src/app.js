@@ -3781,16 +3781,50 @@ function openBlocklistModal(blocklist = null) {
         document.getElementById('custom-override-text')
     ];
 
+    // Get override elements for styling
+    const overrideTypeSelect = document.getElementById('override-type');
+    const overrideCountInput = document.getElementById('override-count');
+    const overrideCountWrapperEl = document.getElementById('override-count-wrapper');
+    const inputSuffix = overrideCountWrapperEl?.querySelector('.input-suffix');
+
     if (isActive) {
         warningEl.classList.remove('hidden');
         modeInputs.forEach(el => el.classList.add('disabled'));
         overrideInputs.forEach(el => el.disabled = true);
+        
+        // Style override type dropdown (like repeat dropdown)
+        if (overrideTypeSelect) {
+            overrideTypeSelect.classList.add('form-select-disabled');
+        }
+        
+        // Style override count input (like repeat dropdown)
+        if (overrideCountInput) {
+            overrideCountInput.classList.add('form-input-disabled');
+        }
+        
+        // Style the "total characters" text (same color as Start/End labels)
+        if (inputSuffix) {
+            inputSuffix.classList.add('input-suffix-disabled');
+        }
+        
         // Pass existing items as locked
         window.setModalData(blocklist.websites || [], blocklist.apps || [], blocklist.websites || [], blocklist.apps || []);
     } else {
         warningEl.classList.add('hidden');
         modeInputs.forEach(el => el.classList.remove('disabled'));
         overrideInputs.forEach(el => el.disabled = false);
+        
+        // Remove disabled styling
+        if (overrideTypeSelect) {
+            overrideTypeSelect.classList.remove('form-select-disabled');
+        }
+        if (overrideCountInput) {
+            overrideCountInput.classList.remove('form-input-disabled');
+        }
+        if (inputSuffix) {
+            inputSuffix.classList.remove('input-suffix-disabled');
+        }
+        
         window.setModalData(blocklist?.websites || [], blocklist?.apps || [], [], []);
     }
 
