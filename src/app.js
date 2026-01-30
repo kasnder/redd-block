@@ -3039,12 +3039,21 @@ function handleBlocklistSelect(e) {
 
                 const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
                 const now = Date.now();
-                const activeBlock = appData.activeBlocks.find(b => b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now);
+                // IMPORTANT: Only find active block for THIS specific blocklist
+                const activeBlock = appData.activeBlocks.find(b => 
+                    b.blocklistId === selectedBlocklistId && 
+                    b.startTime <= now && 
+                    b.endTime > now
+                );
 
                 if (blocklist) {
                     const btnLabel = startBlockBtn.querySelector('.btn-label');
                     const btnName = startBlockBtn.querySelector('.btn-name');
                     const btnIcon = startBlockBtn.querySelector('svg');
+
+                    // Always clear the activeBlockId first to prevent cross-blocklist issues
+                    delete startBlockBtn.dataset.activeBlockId;
+                    startBlockBtn.classList.remove('stop-block');
 
                     if (activeBlock) {
                         // Active block - show Stop Block button (grey) with unlock icon
@@ -3066,10 +3075,9 @@ function handleBlocklistSelect(e) {
                         disableTimeControls(true);
                     } else {
                         // No active block - show Start Block button (normal) with lock icon
+                        // Ensure we've already cleared the activeBlockId above
                         if (btnLabel) btnLabel.textContent = 'Start Block:';
                         if (btnName) btnName.textContent = blocklist.name;
-                        startBlockBtn.classList.remove('stop-block');
-                        delete startBlockBtn.dataset.activeBlockId;
 
                         // Change to lock icon
                         if (btnIcon) {
@@ -3117,9 +3125,21 @@ function startBlock() {
     // Check if this is a "Stop Block" action (button is in stop mode)
     const startBlockBtn = document.getElementById('start-block-btn');
     if (startBlockBtn && startBlockBtn.dataset.activeBlockId) {
-        // Open override dialog instead of starting a new block
-        openOverrideModal(startBlockBtn.dataset.activeBlockId);
-        return;
+        // Verify the activeBlockId belongs to the currently selected blocklist
+        const activeBlock = appData.activeBlocks.find(b => 
+            b.id === startBlockBtn.dataset.activeBlockId && 
+            b.blocklistId === selectedBlocklistId
+        );
+        
+        if (activeBlock) {
+            // Open override dialog instead of starting a new block
+            openOverrideModal(startBlockBtn.dataset.activeBlockId);
+            return;
+        } else {
+            // ActiveBlockId doesn't match selected blocklist - clear it and continue
+            delete startBlockBtn.dataset.activeBlockId;
+            startBlockBtn.classList.remove('stop-block');
+        }
     }
 
     // Get times for display
