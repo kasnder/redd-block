@@ -3253,11 +3253,27 @@ async function updateHostsFile(silent = false) {
             if (!schedule.segments) return;
 
             // Check if any segment is active right now
-            const isActive = schedule.segments.some(seg =>
-                seg.days.includes(currentDay) &&
-                currentMins >= (seg.startHour * 60 + seg.startMinute) &&
-                currentMins < (seg.endHour * 60 + seg.endMinute)
-            );
+            const isActive = schedule.segments.some(seg => {
+                const startMins = seg.startHour * 60 + seg.startMinute;
+                const endMins = seg.endHour * 60 + seg.endMinute;
+
+                if (endMins > startMins) {
+                    // Same-day segment (e.g., 09:00 - 17:00)
+                    return seg.days.includes(currentDay) &&
+                        currentMins >= startMins &&
+                        currentMins < endMins;
+                } else {
+                    // Cross-midnight segment (e.g., 22:00 - 04:00)
+                    // Active if: (today is in days AND currentMins >= start)
+                    //         OR (yesterday is in days AND currentMins < end)
+                    const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
+
+                    const inEveningPortion = seg.days.includes(currentDay) && currentMins >= startMins;
+                    const inMorningPortion = seg.days.includes(yesterdayDay) && currentMins < endMins;
+
+                    return inEveningPortion || inMorningPortion;
+                }
+            });
 
             if (isActive) {
                 const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
@@ -4311,17 +4327,44 @@ function renderBlocklists() {
                 const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1; // Mon=0
                 const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
 
-                // Find active segment
-                const activeSegment = schedule.segments.find(seg =>
-                    seg.days.includes(currentDay) &&
-                    currentMins >= (seg.startHour * 60 + seg.startMinute) &&
-                    currentMins < (seg.endHour * 60 + seg.endMinute)
-                );
+                // Find active segment (handling cross-midnight segments)
+                const activeSegment = schedule.segments.find(seg => {
+                    const startMins = seg.startHour * 60 + seg.startMinute;
+                    const endMins = seg.endHour * 60 + seg.endMinute;
+
+                    if (endMins > startMins) {
+                        // Same-day segment (e.g., 09:00 - 17:00)
+                        return seg.days.includes(currentDay) &&
+                            currentMins >= startMins &&
+                            currentMins < endMins;
+                    } else {
+                        // Cross-midnight segment (e.g., 22:00 - 04:00)
+                        const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
+                        const inEveningPortion = seg.days.includes(currentDay) && currentMins >= startMins;
+                        const inMorningPortion = seg.days.includes(yesterdayDay) && currentMins < endMins;
+                        return inEveningPortion || inMorningPortion;
+                    }
+                });
 
                 if (activeSegment) {
                     // Currently blocking - show time left
+                    const startMins = activeSegment.startHour * 60 + activeSegment.startMinute;
                     const endMins = activeSegment.endHour * 60 + activeSegment.endMinute;
-                    const minsLeft = endMins - currentMins;
+                    let minsLeft;
+
+                    if (endMins > startMins) {
+                        // Same-day segment
+                        minsLeft = endMins - currentMins;
+                    } else {
+                        // Cross-midnight segment
+                        if (currentMins >= startMins) {
+                            // In evening portion: time until midnight + morning end
+                            minsLeft = (24 * 60 - currentMins) + endMins;
+                        } else {
+                            // In morning portion: time until end
+                            minsLeft = endMins - currentMins;
+                        }
+                    }
                     scheduleTimeText = minsLeft >= 60 ? `${Math.floor(minsLeft / 60)}h ${minsLeft % 60}m left` : `${minsLeft}m left`;
                 } else {
                     // Find next upcoming segment
