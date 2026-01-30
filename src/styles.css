@@ -1,7 +1,7 @@
 /* Theme Variables */
 :root {
     --app-bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    --container-bg: rgba(255, 255, 255, 0.95);
+    --container-bg: #f0f4f8;
     --panel-bg: rgba(255, 255, 255, 0.8);
     --text-primary: #333;
     --text-secondary: hsl(222.2, 84%, 4.9%);
@@ -315,6 +315,8 @@ body.dark-mode .week-nav-today-btn:hover {
     -webkit-overflow-scrolling: touch;
     scrollbar-width: thin;
     scrollbar-color: var(--text-muted) transparent;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
 }
 
 /* Sticky header row - contains time spacer + day headers */
@@ -325,6 +327,8 @@ body.dark-mode .week-nav-today-btn:hover {
     z-index: 20;
     background: var(--panel-bg);
     min-width: max-content;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
 }
 
 .header-time-spacer {
@@ -335,6 +339,7 @@ body.dark-mode .week-nav-today-btn:hover {
     position: sticky;
     left: 0;
     z-index: 25;
+    border-top-left-radius: 12px;
 }
 
 .header-days {
@@ -358,8 +363,13 @@ body.dark-mode .week-nav-today-btn:hover {
     border-right: 1px solid var(--border-color);
 }
 
+.day-header-cell:first-child {
+    border-top-left-radius: 12px;
+}
+
 .day-header-cell:last-child {
     border-right: none;
+    border-top-right-radius: 12px;
 }
 
 .day-header-cell.today {
@@ -892,6 +902,7 @@ body.dark-mode .day-column.weekend {
 }
 
 .duration-input[type=number] {
+    appearance: textfield;
     -moz-appearance: textfield;
 }
 
@@ -1310,13 +1321,13 @@ body.dark-mode .start-block-btn.stop-block:hover {
 .scheduler-mode-tabs {
     display: flex;
     gap: 2px;
-    background: hsl(0, 0%, 93%);
+    background: rgba(0, 0, 0, 0.05);
     padding: 4px;
     border-radius: 10px;
 }
 
 body.dark-mode .scheduler-mode-tabs {
-    background: hsl(222, 47%, 15%);
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .mode-tab {
@@ -1408,7 +1419,7 @@ body.dark-mode .mode-tab.active {
     color: hsl(0, 70%, 50%);
 }
 
-/* Add Segment Button */
+/* Add Segment Button - align from start hour left edge to end minute right edge */
 .add-segment-btn {
     display: flex;
     align-items: center;
@@ -1422,9 +1433,15 @@ body.dark-mode .mode-tab.active {
     font-size: 14px;
     cursor: pointer;
     transition: all 0.15s ease;
-    /* Match the width of the time-pickers-row (start + arrow + end) */
-    width: fit-content;
-    min-width: 242px;
+    /* Match width from left edge of start hour to right edge of end minute */
+    /* Each time-part: min-width 36px + padding 4px each side = 44px */
+    /* Start group: 2 time-parts (88px) + colon (~10px) = ~98px */
+    /* Separator: ~20px */
+    /* Gap: 12px */
+    /* End group: ~98px */
+    /* Total: 98 + 20 + 12 + 98 = 228px */
+    width: 209px;
+    box-sizing: border-box;
 }
 
 .add-segment-btn:hover {
@@ -1469,7 +1486,20 @@ body.dark-mode .mode-tab.active {
     transition: all 0.15s ease;
 }
 
-.segment-day-toggle:hover {
+.segment-day-toggle:disabled,
+.segment-day-toggle[disabled] {
+    pointer-events: none !important;
+    cursor: default !important;
+}
+
+.segment-day-toggle:disabled:hover,
+.segment-day-toggle[disabled]:hover {
+    border-color: var(--border-color) !important;
+    color: var(--text-muted) !important;
+    background: var(--element-bg) !important;
+}
+
+.segment-day-toggle:hover:not(:disabled):not([disabled]) {
     border-color: var(--accent-color);
     color: var(--accent-color);
 }
@@ -1491,6 +1521,11 @@ body.dark-mode .mode-tab.active {
 .repeat-label {
     font-size: 13px;
     color: var(--text-muted);
+}
+
+.repeat-label.repeat-label-disabled {
+    color: hsl(215, 20%, 50%);
+    opacity: 0.7;
 }
 
 .repeat-dropdown-wrapper {
@@ -1515,6 +1550,24 @@ body.dark-mode .mode-tab.active {
 .repeat-dropdown-btn:hover {
     border-color: var(--accent-color);
     background: rgba(102, 126, 234, 0.05);
+}
+
+.repeat-dropdown-btn.repeat-dropdown-disabled {
+    border: none;
+    background: rgba(128, 128, 128, 0.05);
+    color: var(--text-muted);
+    cursor: default;
+    opacity: 0.7;
+}
+
+.repeat-dropdown-btn.repeat-dropdown-disabled:hover {
+    border: none;
+    background: rgba(128, 128, 128, 0.05);
+    color: var(--text-muted);
+}
+
+.repeat-dropdown-btn.repeat-dropdown-disabled svg {
+    color: var(--text-muted);
 }
 
 .repeat-dropdown-menu {
@@ -2261,6 +2314,42 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
     outline: none;
     border-color: #667eea;
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.form-select.form-select-disabled {
+    border: none;
+    background: rgba(128, 128, 128, 0.05);
+    color: var(--text-muted);
+    cursor: default;
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+.form-select.form-select-disabled:hover,
+.form-select.form-select-disabled:focus {
+    border: none;
+    background: rgba(128, 128, 128, 0.05);
+    box-shadow: none;
+}
+
+.form-input.form-input-disabled {
+    border: none;
+    background: rgba(128, 128, 128, 0.05);
+    color: var(--text-muted);
+    cursor: default;
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+.form-input.form-input-disabled:hover,
+.form-input.form-input-disabled:focus {
+    border: none;
+    background: rgba(128, 128, 128, 0.05);
+    box-shadow: none;
+}
+
+.input-suffix.input-suffix-disabled {
+    color: hsl(215, 20%, 50%);
 }
 
 .form-textarea {
