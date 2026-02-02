@@ -15,6 +15,90 @@ const SOCKET_PATH: &str = "/tmp/redd-block-helper.sock";
 #[cfg(target_os = "windows")]
 const HELPER_TCP_ADDR: &str = "127.0.0.1:62222";
 
+#[cfg(target_os = "windows")]
+fn is_msix_package() -> bool {
+    // MSIX apps have PACKAGE_FAMILY_NAME environment variable set
+    std::env::var("PACKAGE_FAMILY_NAME").is_ok() ||
+    // Also check if executable path contains WindowsApps (MSIX install location)
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.to_str().map(|s| s.contains("WindowsApps")))
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "windows")]
+fn create_task_direct(task_name: &str, install_path: &PathBuf) -> Result<(), String> {
+    use std::process::Command;
+    
+    // Delete existing task if any (ignore errors)
+    let _ = Command::new("schtasks")
+        .args(["/Delete", "/TN", task_name, "/F"])
+        .output();
+    
+    // Create new scheduled task that runs at logon with highest privileges
+    let create_result = Command::new("schtasks")
+        .args([
+            "/Create",
+            "/TN", task_name,
+            "/TR", &format!("\"{}\"", install_path.display()),
+            "/SC", "ONLOGON",
+            "/RL", "HIGHEST",
+            "/F",
+        ])
+        .output();
+    
+    match create_result {
+        Ok(output) if output.status.success() => Ok(()),
+        Ok(output) => {
+            let error_msg = String::from_utf8_lossy(&output.stderr);
+            Err(format!("Failed to create scheduled task: {}", error_msg))
+        },
+        Err(e) => Err(format!("Failed to run schtasks: {}", e)),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn create_task_elevated(task_name: &str, install_path: &PathBuf) -> Result<(), String> {
+    use std::process::Command;
+    
+    // Escape single quotes for PowerShell
+    let escaped_task_name = task_name.replace("'", "''");
+    let escaped_path = install_path.display().to_string().replace("'", "''");
+    
+    // Delete existing task with elevation
+    let delete_script = format!(
+        r#"Start-Process -FilePath 'schtasks' -ArgumentList '/Delete', '/TN', '{}', '/F' -Verb RunAs -Wait -WindowStyle Hidden -ErrorAction SilentlyContinue"#,
+        escaped_task_name
+    );
+    let _ = Command::new("powershell.exe")
+        .args(["-Command", &delete_script])
+        .output();
+    
+    // Create task with elevation (UAC prompt)
+    let create_script = format!(
+        r#"$proc = Start-Process -FilePath 'schtasks' -ArgumentList '/Create', '/TN', '{}', '/TR', '{}', '/SC', 'ONLOGON', '/RL', 'HIGHEST', '/F' -Verb RunAs -Wait -WindowStyle Hidden -PassThru; exit $proc.ExitCode"#,
+        escaped_task_name,
+        escaped_path
+    );
+    
+    let result = Command::new("powershell.exe")
+        .args(["-Command", &create_script])
+        .output();
+    
+    match result {
+        Ok(output) if output.status.success() || output.status.code() == Some(0) => Ok(()),
+        Ok(output) => {
+            let error_msg = String::from_utf8_lossy(&output.stderr);
+            if error_msg.contains("canceled") || error_msg.contains("denied") || error_msg.contains("Access is denied") {
+                Err("User cancelled or denied elevation. Administrator privileges are required to install the helper.".to_string())
+            } else {
+                Err(format!("Failed to create scheduled task: {}", error_msg))
+            }
+        },
+        Err(e) => Err(format!("Failed to run PowerShell: {}", e)),
+    }
+}
+
 /// Helper daemon status
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HelperStatus {
@@ -303,35 +387,25 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
             };
         }
         
-        // Create a Scheduled Task that runs at startup with highest privileges (admin)
-        // This allows the helper to modify the hosts file
+        // Check if running in MSIX (Microsoft Store) context
+        let is_msix = is_msix_package();
+        
         let task_name = "ReDD Block Helper";
         
-        // Delete existing task if any (ignore errors)
-        let _ = Command::new("schtasks")
-            .args(["/Delete", "/TN", task_name, "/F"])
-            .output();
-        
-        // Create new scheduled task that runs at logon with highest privileges
-        let create_result = Command::new("schtasks")
-            .args([
-                "/Create",
-                "/TN", task_name,
-                "/TR", &format!("\"{}\"", install_path.display()),
-                "/SC", "ONLOGON",
-                "/RL", "HIGHEST",
-                "/F",
-            ])
-            .output();
+        // Create scheduled task - use elevation for MSIX, direct for standalone
+        let create_result = if is_msix {
+            create_task_elevated(task_name, &install_path)
+        } else {
+            create_task_direct(task_name, &install_path)
+        };
         
         match create_result {
-            Ok(output) if output.status.success() => {
+            Ok(()) => {
                 // Start the helper now
                 let run_result = Command::new("schtasks")
                     .args(["/Run", "/TN", task_name])
                     .output();
                 
-                // Give it a moment to start
                 std::thread::sleep(std::time::Duration::from_millis(500));
                 
                 match run_result {
@@ -350,14 +424,9 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
                     },
                 }
             },
-            Ok(output) => HelperResult {
-                success: false,
-                error: Some(format!("Failed to create scheduled task: {}", 
-                    String::from_utf8_lossy(&output.stderr))),
-            },
             Err(e) => HelperResult {
                 success: false,
-                error: Some(format!("Failed to run schtasks: {}", e)),
+                error: Some(e),
             },
         }
     }
