@@ -718,22 +718,8 @@ function setupModalListeners() {
             // Update website blocking
             updateHostsFile();
 
-            // Update app blocking - collect all apps from active blocks and schedules
-            const allBlockedApps = new Set();
-            appData.activeBlocks
-                .filter(block => block.startTime <= now && block.endTime > now)
-                .forEach(block => {
-                    const bl = appData.blocklists.find(b => b.id === block.blocklistId);
-                    if (bl && bl.apps) {
-                        bl.apps.forEach(app => allBlockedApps.add(app));
-                    }
-                });
-
-            // Update the blocked apps list and hide any newly-blocked apps
-            if (allBlockedApps.size > 0) {
-                tauriAPI.setBlockedApps(Array.from(allBlockedApps));
-                tauriAPI.hideAllBlockedApps();
-            }
+            // Update app blocking - this handles both active blocks and schedules
+            updateBlockedApps();
         }
 
         closeBlocklistModal();
@@ -865,11 +851,8 @@ function setupOverrideModalListeners() {
                     await updateHostsFile();
                 }
 
-                // Notify main process to refresh blocked apps list (stops app blocking)
-                tauriAPI.refreshBlockedApps();
-
-                // Stop the process watcher since we're clearing blocks
-                await tauriAPI.stopProcessWatcher();
+                // Update blocked apps (will stop watcher if no apps to block, including schedules)
+                await updateBlockedApps();
             } else if (window.overrideScheduleId) {
                 // Check which radio button is selected
                 const overrideType = document.querySelector('input[name="schedule-override-type"]:checked')?.value || 'stop-schedule';
@@ -932,6 +915,8 @@ function setupOverrideModalListeners() {
 
                 await saveData();
                 await updateHostsFile();
+                // Update blocked apps after schedule changes
+                await updateBlockedApps();
 
                 // Reset modal title
                 const titleEl = document.getElementById('override-modal-title');
@@ -2354,6 +2339,9 @@ async function proceedWithSchedule() {
 
     console.log('Schedule created:', schedule);
 
+    // Update blocked apps if schedule is currently active
+    await updateBlockedApps();
+
     // Update the active segment count to lock the created segments
     activeScheduleSegmentCount = scheduleSegments.length;
 
@@ -3391,17 +3379,8 @@ async function proceedWithBlock() {
     // Save data and reset UI
     await saveData();
 
-    // Notify main process to refresh blocked apps list
-    tauriAPI.refreshBlockedApps();
-
-    // Start app blocking if this blocklist has apps
-    if (blocklist.apps && blocklist.apps.length > 0) {
-        console.log('Starting process watcher for apps:', blocklist.apps);
-        await tauriAPI.setBlockedApps(blocklist.apps);
-        await tauriAPI.startProcessWatcher();
-        // Initial sweep: hide any already-open blocked apps
-        await tauriAPI.hideAllBlockedApps();
-    }
+    // Update blocked apps (handles both active blocks and schedules)
+    await updateBlockedApps();
 
     // Render UI to update blocklist cards (show ACTIVE badge)
     render();
@@ -3600,10 +3579,8 @@ async function updateHostsFile(silent = false) {
                 const result = await tauriAPI.clearBlockViaHelper();
                 if (result && result.success) {
                     lastBlockedDomains = allDomains;
-                    // Also notify main process to refresh blocked apps list
-                    tauriAPI.refreshBlockedApps();
-                    // Stop the process watcher since all blocks are cleared
-                    await tauriAPI.stopProcessWatcher();
+                    // Update blocked apps (will stop watcher if no apps to block)
+                    await updateBlockedApps();
                 }
                 return result || { success: true };
             } else {
@@ -3640,6 +3617,8 @@ async function updateHostsFile(silent = false) {
                 });
                 if (result && result.success) {
                     lastBlockedDomains = allDomains;
+                    // Update blocked apps based on active blocks and schedules
+                    await updateBlockedApps();
                 }
                 return result || { success: true };
             }
@@ -3656,11 +3635,84 @@ async function updateHostsFile(silent = false) {
 
     if (result && result.success) {
         lastBlockedDomains = allDomains;
+        // Update blocked apps based on active blocks and schedules
+        await updateBlockedApps();
     }
 
     return result || { success: true };
 }
 
+// Update blocked apps list based on active blocks and schedules
+async function updateBlockedApps() {
+    const allBlockedApps = new Set();
+    const now = Date.now();
+    const nowDate = new Date();
+    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1; // Convert to Mon=0 format
+    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
+
+    // Collect apps from active one-off blocks
+    appData.activeBlocks
+        .filter(block => block.startTime <= now && block.endTime > now)
+        .forEach(block => {
+            const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+            if (blocklist && blocklist.apps) {
+                blocklist.apps.forEach(app => allBlockedApps.add(app));
+            }
+        });
+
+    // Collect apps from active schedules
+    if (appData.schedules) {
+        appData.schedules.forEach(schedule => {
+            if (!schedule.segments) return;
+
+            // Check if any segment is active right now
+            const isActive = schedule.segments.some(seg => {
+                const startMins = seg.startHour * 60 + seg.startMinute;
+                const endMins = seg.endHour * 60 + seg.endMinute;
+
+                if (endMins > startMins) {
+                    // Same-day segment (e.g., 09:00 - 17:00)
+                    return seg.days.includes(currentDay) &&
+                        currentMins >= startMins &&
+                        currentMins < endMins;
+                } else {
+                    // Cross-midnight segment (e.g., 22:00 - 04:00)
+                    const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
+                    const inEveningPortion = seg.days.includes(currentDay) && currentMins >= startMins;
+                    const inMorningPortion = seg.days.includes(yesterdayDay) && currentMins < endMins;
+                    return inEveningPortion || inMorningPortion;
+                }
+            });
+
+            if (isActive) {
+                const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+                if (blocklist && blocklist.apps) {
+                    blocklist.apps.forEach(app => allBlockedApps.add(app));
+                }
+            }
+        });
+    }
+
+    const appsArray = Array.from(allBlockedApps);
+
+    // Update the blocked apps list
+    if (appsArray.length > 0) {
+        console.log('[updateBlockedApps] Setting blocked apps:', appsArray);
+        await tauriAPI.setBlockedApps(appsArray);
+        
+        // Start process watcher if not already running
+        // Note: We don't check if it's running, but starting it multiple times should be safe
+        await tauriAPI.startProcessWatcher();
+        
+        // Hide any currently open blocked apps
+        await tauriAPI.hideAllBlockedApps();
+    } else {
+        // No apps to block - stop the process watcher and clear the list
+        console.log('[updateBlockedApps] No apps to block, clearing');
+        await tauriAPI.stopProcessWatcher();
+        await tauriAPI.setBlockedApps([]);
+    }
+}
 
 // Open blocklist modal
 function openBlocklistModal(blocklist = null) {
@@ -4939,6 +4991,8 @@ function startTickInterval() {
         // We call it periodically to catch schedule segments starting/ending
         if (appData.schedules && appData.schedules.length > 0) {
             await updateHostsFile();
+            // Also update blocked apps when schedules activate/deactivate
+            await updateBlockedApps();
 
             // Check for expired non-repeating schedules and auto-stop them
             const expiredScheduleIds = [];
@@ -5001,6 +5055,8 @@ function startTickInterval() {
                     console.log('Auto-stopped expired schedule(s):', expiredScheduleIds);
                     activeScheduleSegmentCount = 0;
                     await saveData();
+                    // Update blocked apps after schedule expiration
+                    await updateBlockedApps();
                     render();
                 }
             }
@@ -5024,12 +5080,9 @@ function startTickInterval() {
             // Just re-render the UI
             render();
 
-            // If no more active blocks, stop the process watcher
-            if (appData.activeBlocks.length === 0) {
-                console.log('All blocks expired, stopping process watcher');
-                tauriAPI.stopProcessWatcher();
-                tauriAPI.setBlockedApps([]);
-            }
+            // Update blocked apps (will stop watcher if no active blocks or schedules)
+            // This ensures schedules are still respected even if one-off blocks expired
+            await updateBlockedApps();
         }
 
         // Update remaining times in UI
@@ -5414,9 +5467,8 @@ async function performOverrideAll() {
             await tauriAPI.clearBlockViaHelper();
         }
 
-        // Stop app blocking
-        tauriAPI.refreshBlockedApps();
-        await tauriAPI.stopProcessWatcher();
+        // Update blocked apps (will stop watcher if no apps to block)
+        await updateBlockedApps();
 
         // Re-render the UI
         render();
