@@ -146,9 +146,14 @@ async function saveData() {
 // Detect platform for window controls
 function detectPlatform() {
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-    if (!isMac) {
-        // ## commented out for now
-        // document.getElementById('window-controls').classList.remove('hidden');
+    if (isMac) {
+        document.body.classList.add('mac');
+        // Hide controls on macOS - native traffic lights are used
+        document.getElementById('window-controls')?.classList.add('hidden');
+    } else {
+        document.body.classList.add('windows');
+        // Show controls on Windows
+        document.getElementById('window-controls')?.classList.remove('hidden');
     }
 }
 
@@ -168,18 +173,51 @@ function updateWindowHeight() {
     });
 }
 
+// Update maximize button icon based on window state
+async function updateMaximizeButton() {
+    const maximizeBtn = document.getElementById('titlebar-maximize');
+    const maximizeIcon = document.getElementById('maximize-icon');
+    const restoreIcon = document.getElementById('restore-icon');
+    
+    if (!maximizeBtn || !maximizeIcon || !restoreIcon) return;
+    
+    const win = getCurrentWindow();
+    const isMaximized = await win.isMaximized();
+    
+    if (isMaximized) {
+        maximizeIcon.style.display = 'none';
+        restoreIcon.style.display = 'block';
+        maximizeBtn.title = 'Restore';
+    } else {
+        maximizeIcon.style.display = 'block';
+        restoreIcon.style.display = 'none';
+        maximizeBtn.title = 'Maximize';
+    }
+}
+
 // Setup event listeners
 function setupEventListeners() {
-    // Window controls
-    document.getElementById('min-btn')?.addEventListener('click', () => {
+    // Window controls (using Tauri docs naming)
+    document.getElementById('titlebar-minimize')?.addEventListener('click', () => {
         tauriAPI.minimizeWindow();
     });
-    document.getElementById('max-btn')?.addEventListener('click', () => {
-        tauriAPI.maximizeWindow();
+    
+    document.getElementById('titlebar-maximize')?.addEventListener('click', async () => {
+        await tauriAPI.maximizeWindow();
+        // Update icon after state changes
+        setTimeout(updateMaximizeButton, 100);
     });
-    document.getElementById('close-btn')?.addEventListener('click', () => {
+    
+    document.getElementById('titlebar-close')?.addEventListener('click', () => {
         tauriAPI.closeWindow();
     });
+    
+    // Initial check for maximize state
+    updateMaximizeButton();
+    
+    // Check periodically to catch state changes (double-click title bar, etc.)
+    // This ensures the icon updates even if window is maximized/restored via other means
+    setInterval(updateMaximizeButton, 300);
 
     // Time pickers - custom popover handlers
     document.querySelectorAll('.time-part').forEach(btn => {
