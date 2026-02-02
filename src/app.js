@@ -147,7 +147,8 @@ async function saveData() {
 function detectPlatform() {
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
     if (!isMac) {
-        document.getElementById('window-controls').classList.remove('hidden');
+        // ## commented out for now
+        // document.getElementById('window-controls').classList.remove('hidden');
     }
 }
 
