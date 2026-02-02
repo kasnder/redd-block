@@ -72,10 +72,10 @@ if ($buildArm64) {
 
 Write-Host "=== Build Summary ===" -ForegroundColor Cyan
 if ($buildX64) {
-    Write-Host "  x64:   ReDD-Block_0.4.0.0_x64.appx" -ForegroundColor White
+    Write-Host "  x64:   ReDD-Block_0.4.1.0_x64.appx" -ForegroundColor White
 }
 if ($buildArm64) {
-    Write-Host "  ARM64: ReDD-Block_0.4.0.0_arm64.appx" -ForegroundColor White
+    Write-Host "  ARM64: ReDD-Block_0.4.1.0_arm64.appx" -ForegroundColor White
 }
 Write-Host ""
 Write-Host "Upload both to Partner Center: https://partner.microsoft.com/dashboard" -ForegroundColor Yellow

@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 
 # Configuration
 $AppName = "ReDD Block"
-$AppVersion = "0.4.0.0"  # APPX requires 4-part version
+$AppVersion = "0.4.1.0"  # APPX requires 4-part version
 $Publisher = "CN=EC16037E-D0B5-446F-9912-F41B3DCCBFB3"
 $IdentityName = "ReduceDigitalDistraction.ReDDBlock"
 $DisplayName = "ReDD Block"
@@ -28,6 +28,31 @@ else {
 $AppxDir = Join-Path $ProjectRoot "appx-build"
 $AssetsSource = Join-Path $ProjectRoot "assets\appx"
 $OutputAppx = Join-Path $ProjectRoot "ReDD-Block_$($AppVersion)_$($Architecture).appx"
+
+# Auto-generate APPX assets if missing
+if (-not (Test-Path $AssetsSource)) {
+  Write-Host "APPX assets not found. Generating..." -ForegroundColor Yellow
+  
+  # Check if base icons exist first
+  $IconsDir = Join-Path $ProjectRoot "assets\icons\1024x1024.png"
+  if (-not (Test-Path $IconsDir)) {
+    Write-Host "Generating base icons from SVG..." -ForegroundColor Yellow
+    Push-Location $ProjectRoot
+    node scripts/generate-icons-from-svg.js
+    Pop-Location
+  }
+  
+  # Generate APPX assets
+  Push-Location $ProjectRoot
+  node scripts/generate-appx-assets.js
+  Pop-Location
+  
+  if (-not (Test-Path $AssetsSource)) {
+    Write-Error "Failed to generate APPX assets. Make sure Node.js and sharp are installed."
+    exit 1
+  }
+  Write-Host "APPX assets generated successfully." -ForegroundColor Green
+}
 
 # Find makeappx.exe
 $WindowsKitsPath = "C:\Program Files (x86)\Windows Kits\10\bin"
