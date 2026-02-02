@@ -54,10 +54,16 @@ if (-not (Test-Path $AssetsSource)) {
   Write-Host "APPX assets generated successfully." -ForegroundColor Green
 }
 
-# Find makeappx.exe
+# Find makeappx.exe - use host machine architecture, not target architecture
 $WindowsKitsPath = "C:\Program Files (x86)\Windows Kits\10\bin"
+# Detect host architecture (the machine running this script)
+$HostArch = if ([Environment]::Is64BitOperatingSystem) {
+  if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" } else { "x64" }
+}
+else { "x86" }
+
 $MakeAppx = Get-ChildItem -Path $WindowsKitsPath -Recurse -Filter "makeappx.exe" | 
-Where-Object { $_.FullName -match "arm64|x64" } | 
+Where-Object { $_.FullName -match "\\$HostArch\\" } | 
 Sort-Object LastWriteTime -Descending | 
 Select-Object -First 1
 
