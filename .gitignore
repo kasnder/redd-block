@@ -3,6 +3,8 @@ node_modules/
 
 # Build outputs
 dist/
+appx-build/
+*.appx
 *.dmg
 *.exe
 *.AppImage
@@ -33,7 +35,8 @@ Thumbs.db
 # Helper compiled binary (should be rebuilt locally)
 helper/dist/
 
-# Store assets are generated automatically
+# Generated assets (run scripts/generate-*.js to create)
+assets/appx/
 # assets/store
 
 # Tauri build artifacts
