@@ -4,6 +4,9 @@
 //! It communicates with the main Tauri app via Unix socket (macOS/Linux)
 //! or TCP port (Windows).
 
+// Hide the console window on Windows
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
