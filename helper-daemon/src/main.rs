@@ -99,7 +99,25 @@ fn log(message: &str) {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs();
-    println!("[{}] {}", now, message);
+    let line = format!("[{}] {}", now, message);
+    println!("{}", line);
+    
+    // On Windows, also write to a log file since the console window is hidden
+    #[cfg(target_os = "windows")]
+    {
+        use std::io::Write;
+        let program_data = std::env::var("PROGRAMDATA").unwrap_or_else(|_| "C:\\ProgramData".to_string());
+        let log_dir = PathBuf::from(&program_data).join("ReDD Block");
+        let _ = fs::create_dir_all(&log_dir);
+        let log_path = log_dir.join("helper.log");
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+        {
+            let _ = writeln!(file, "{}", line);
+        }
+    }
 }
 
 fn get_data_path() -> PathBuf {
@@ -711,7 +729,31 @@ fn main() {
     
     #[cfg(target_os = "windows")]
     {
-        let listener = TcpListener::bind(SOCKET_PATH).expect("Failed to bind TCP port");
+        // Try binding to TCP port with retries (handles TIME_WAIT from previous process)
+        let mut listener = None;
+        for attempt in 1..=5 {
+            match TcpListener::bind(SOCKET_PATH) {
+                Ok(l) => {
+                    log(&format!("Successfully bound to TCP port on attempt {}", attempt));
+                    listener = Some(l);
+                    break;
+                }
+                Err(e) => {
+                    log(&format!("Failed to bind TCP port (attempt {}): {}", attempt, e));
+                    if attempt < 5 {
+                        thread::sleep(Duration::from_secs(1));
+                    }
+                }
+            }
+        }
+        
+        let listener = match listener {
+            Some(l) => l,
+            None => {
+                log("Failed to bind TCP port after 5 attempts, exiting");
+                std::process::exit(1);
+            }
+        };
         
         log(&format!("Listening on {}", SOCKET_PATH));
         
