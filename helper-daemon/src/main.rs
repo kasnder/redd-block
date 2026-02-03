@@ -68,6 +68,8 @@ enum IpcCommand {
     RestoreHosts,
     #[serde(rename = "ping")]
     Ping,
+    #[serde(rename = "uninstall")]
+    Uninstall,
 }
 
 #[derive(Debug, Serialize)]
@@ -401,6 +403,31 @@ fn handle_command(state: &Arc<Mutex<Option<BlockState>>>, cmd: IpcCommand) -> Ip
             message: Some("pong".to_string()),
             ..Default::default()
         },
+        IpcCommand::Uninstall => {
+            log("Received uninstall command - cleaning up...");
+            
+            // Clear any active block and restore hosts
+            *state.lock().unwrap() = None;
+            save_state(&None);
+            let _ = restore_hosts_from_backup();
+            
+            // Delete state file
+            let state_path = get_data_path();
+            let _ = fs::remove_file(&state_path);
+            
+            // Spawn a thread to remove ourselves after responding
+            thread::spawn(|| {
+                // Give time for response to be sent
+                thread::sleep(std::time::Duration::from_millis(500));
+                perform_self_cleanup();
+            });
+            
+            IpcResponse {
+                success: true,
+                message: Some("Helper uninstalling...".to_string()),
+                ..Default::default()
+            }
+        },
     }
 }
 
@@ -415,6 +442,147 @@ impl Default for IpcResponse {
             end_time: None,
             blocklist_id: None,
             remaining_ms: None,
+        }
+    }
+}
+
+/// Perform self-cleanup - remove the daemon/scheduled task and exit
+fn perform_self_cleanup() {
+    log("Performing self-cleanup...");
+    
+    #[cfg(target_os = "macos")]
+    {
+        // Remove launchd daemon and exit
+        log("Removing launchd daemon...");
+        let _ = std::process::Command::new("launchctl")
+            .args(["remove", "org.reddfocus.block.helper"])
+            .output();
+        
+        // Delete the plist file
+        let plist_path = "/Library/LaunchDaemons/org.reddfocus.block.helper.plist";
+        let _ = fs::remove_file(plist_path);
+        
+        // Delete the socket
+        let _ = fs::remove_file(SOCKET_PATH);
+    }
+    
+    #[cfg(target_os = "windows")]
+    {
+        // Remove scheduled task
+        log("Removing scheduled task...");
+        let _ = std::process::Command::new("schtasks")
+            .args(["/Delete", "/TN", "ReDD Block Helper", "/F"])
+            .output();
+    }
+    
+    log("Cleanup complete, exiting...");
+    std::process::exit(0);
+}
+
+/// Check if the main application still exists
+fn check_app_exists() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        // Check if the app bundle exists
+        let app_paths = [
+            "/Applications/ReDD Block.app",
+            // Also check user Applications folder
+            &format!("{}/Applications/ReDD Block.app", 
+                std::env::var("HOME").unwrap_or_else(|_| "/".to_string())),
+        ];
+        app_paths.iter().any(|p| std::path::Path::new(p).exists())
+    }
+    
+    #[cfg(target_os = "windows")]
+    {
+        // Check for MSIX installation (WindowsApps folder)
+        let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| "".to_string());
+        let program_files = std::env::var("PROGRAMFILES").unwrap_or_else(|_| "C:\\Program Files".to_string());
+        
+        // Check common install locations
+        let paths = [
+            format!("{}\\Programs\\redd-block\\ReDD Block.exe", local_app_data),
+            format!("{}\\ReDD Block\\ReDD Block.exe", program_files),
+        ];
+        
+        // Also check if there's a WindowsApps package
+        let windows_apps = format!("{}\\Microsoft\\WindowsApps\\ReDD Block.exe", local_app_data);
+        
+        paths.iter().any(|p| std::path::Path::new(p).exists()) 
+            || std::path::Path::new(&windows_apps).exists()
+    }
+    
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        true // Assume app exists on other platforms
+    }
+}
+
+/// Read user settings to check keepBlockingOnUninstall preference
+fn read_user_setting_keep_blocking() -> bool {
+    // The user data file location (same as Tauri app data)
+    #[cfg(target_os = "macos")]
+    let data_path = {
+        let home = std::env::var("HOME").unwrap_or_else(|_| "/".to_string());
+        format!("{}/Library/Application Support/com.redd-focus.block/data.json", home)
+    };
+    
+    #[cfg(target_os = "windows")]
+    let data_path = {
+        let app_data = std::env::var("APPDATA").unwrap_or_else(|_| "".to_string());
+        format!("{}\\com.redd-focus.block\\data.json", app_data)
+    };
+    
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let data_path = String::new();
+    
+    if let Ok(content) = fs::read_to_string(&data_path) {
+        // Parse JSON and look for settings.keepBlockingOnUninstall
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(settings) = json.get("settings") {
+                if let Some(keep_blocking) = settings.get("keepBlockingOnUninstall") {
+                    return keep_blocking.as_bool().unwrap_or(true);
+                }
+            }
+        }
+    }
+    
+    // Default to true (keep blocking running)
+    true
+}
+
+/// Thread that periodically checks if the main app still exists
+fn app_existence_checker(state: Arc<Mutex<Option<BlockState>>>) {
+    loop {
+        // Check every 5 minutes
+        thread::sleep(std::time::Duration::from_secs(300));
+        
+        if !check_app_exists() {
+            log("Main application no longer detected");
+            
+            let keep_blocking = read_user_setting_keep_blocking();
+            let has_active_block = state.lock().unwrap().is_some();
+            
+            if keep_blocking && has_active_block {
+                // Setting says to keep blocking - wait for block to finish
+                log("Keep blocking enabled and block is active - waiting for block to finish");
+                continue;
+            }
+            
+            // Either setting is off, or no active blocks - clean up
+            log("Performing cleanup...");
+            
+            // Clear state and restore hosts
+            *state.lock().unwrap() = None;
+            save_state(&None);
+            let _ = restore_hosts_from_backup();
+            
+            // Delete state file
+            let state_path = get_data_path();
+            let _ = fs::remove_file(&state_path);
+            
+            // Self-cleanup
+            perform_self_cleanup();
         }
     }
 }
@@ -514,6 +682,10 @@ fn main() {
     // Start expiry checker thread
     let state_clone = Arc::clone(&state);
     thread::spawn(move || expiry_checker(state_clone));
+    
+    // Start app existence checker thread (for self-cleanup when app is uninstalled)
+    let state_clone = Arc::clone(&state);
+    thread::spawn(move || app_existence_checker(state_clone));
     
     // Start IPC server
     #[cfg(not(target_os = "windows"))]

@@ -3,7 +3,8 @@
   "version": "0.4.1",
   "description": "ReDD Block - block distracting websites and apps to stay focused",
   "scripts": {
-    "dev": "tauri dev",
+    "dev": "npm run sync:helper && tauri dev",
+    "sync:helper": "powershell -ExecutionPolicy Bypass -File ./scripts/sync-helper.ps1",
     "build": "tauri build",
     "build:mac": "./scripts/build-mac.sh",
     "build:helper": "cd helper-daemon && cargo build --release",

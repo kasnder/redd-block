@@ -117,7 +117,7 @@ body {
 }
 
 /* Drag region - takes up available space */
-.title-bar > div[data-tauri-drag-region] {
+.title-bar>div[data-tauri-drag-region] {
     -webkit-app-region: drag;
     cursor: move;
 }
@@ -135,7 +135,7 @@ body.mac .title-bar {
 }
 
 /* Window Controls */
-.title-bar > .window-controls {
+.title-bar>.window-controls {
     display: flex;
     -webkit-app-region: no-drag;
 }
@@ -177,7 +177,8 @@ body.dark-mode .title-bar button:hover {
     flex-direction: column;
     overflow-y: auto;
     padding: 12px 24px 2px 24px;
-    margin-top: 30px; /* Account for fixed title bar */
+    margin-top: 30px;
+    /* Account for fixed title bar */
     gap: 12px;
 }
 
@@ -3127,6 +3128,150 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
     margin-bottom: 8px;
 }
 
+/* Helper Settings Section */
+.helper-settings-section {
+    border-top: 1px solid var(--border-color);
+    margin-top: 4px;
+}
+
+.helper-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.helper-status-label {
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.helper-status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+}
+
+.helper-status-indicator .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #94a3b8;
+}
+
+.helper-status-indicator.running .status-dot {
+    background: #22c55e;
+}
+
+.helper-status-indicator.stopped .status-dot {
+    background: #ef4444;
+}
+
+.helper-status-indicator .status-text {
+    color: var(--text-muted);
+}
+
+.helper-option-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.toggle-label {
+    font-size: 13px;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+/* Toggle Switch */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 22px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--toggle-bg);
+    transition: 0.3s;
+    border-radius: 22px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-switch input:checked+.toggle-slider {
+    background-color: #667eea;
+}
+
+.toggle-switch input:checked+.toggle-slider:before {
+    transform: translateX(18px);
+}
+
+.toggle-switch input:disabled+.toggle-slider {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Remove Helper Button */
+.remove-helper-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 16px;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.remove-helper-btn:hover {
+    border-color: #ef4444;
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.05);
+}
+
+.remove-helper-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.remove-helper-btn:disabled:hover {
+    border-color: var(--border-color);
+    color: var(--text-muted);
+    background: transparent;
+}
+
 .footer a {
     color: inherit;
     text-decoration: none;
@@ -3358,4 +3503,83 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
 
 .undo-btn:hover {
     background: hsl(210, 40%, 96%);
+}
+
+/* Helper Settings in Advanced Options */
+.settings-advanced-content .override-all-btn {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.helper-settings-section {
+    border: none;
+    border-top: none;
+    margin-top: 8px;
+    padding-top: 0;
+}
+
+.helper-option-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+}
+
+.helper-status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.helper-status-label {
+    color: var(--text-secondary);
+}
+
+.helper-status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.helper-status-indicator .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+}
+
+.helper-status-indicator .status-dot.inactive {
+    background: #94a3b8;
+}
+
+.remove-helper-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 16px;
+    margin-top: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--element-bg);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.remove-helper-btn:hover {
+    background: var(--element-hover-bg);
+    border-color: #dc2626;
+    color: #dc2626;
+}
+
+.remove-helper-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }

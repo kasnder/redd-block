@@ -2,6 +2,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { ask, message } from '@tauri-apps/plugin-dialog';
 
 // Compatibility layer wrapping Tauri APIs
 const tauriAPI = {
@@ -24,7 +25,12 @@ const tauriAPI = {
 
     // Helper daemon operations
     checkHelperStatus: () => invoke('check_helper_status').catch(() => ({ installed: false, running: false })),
+    checkHelper: async () => {
+        const status = await invoke('check_helper_status').catch(() => ({ installed: false, running: false }));
+        return status.running === true;
+    },
     installHelper: () => invoke('install_helper'),
+    uninstallHelper: () => invoke('uninstall_helper'),
     startBlockViaHelper: (data) => invoke('start_block_via_helper', { ...data }),
     clearBlockViaHelper: () => invoke('clear_block_via_helper'),
 
@@ -98,6 +104,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await checkHelperStatus();
     setupEventListeners();
     setupTheme();
+    setupHelperSettings();
     setupOverrideAll();
     render();
     scrollToNow(false); // Initial scroll (instant, no animation)
@@ -852,6 +859,11 @@ function setupOverrideModalListeners() {
     });
 
     document.getElementById('cancel-override-btn').addEventListener('click', () => {
+        // Check for helper removal special case
+        if (overrideBlockId === 'helper-removal' && window.helperRemovalCancelCallback) {
+            window.helperRemovalCancelCallback();
+            return;
+        }
         closeOverrideModal();
     });
 
@@ -875,7 +887,13 @@ function setupOverrideModalListeners() {
         }
 
         if (typed === target && (overrideBlockId || window.overrideScheduleId)) {
-            if (overrideBlockId) {
+            // Check for helper removal special case
+            if (overrideBlockId === 'helper-removal' && window.helperRemovalConfirmCallback) {
+                window.helperRemovalConfirmCallback();
+                return;
+            }
+
+            if (overrideBlockId && overrideBlockId !== 'helper-removal') {
                 // Block override - remove the block
                 appData.activeBlocks = appData.activeBlocks.filter(b => b.id !== overrideBlockId);
                 await saveData();
@@ -5318,6 +5336,311 @@ function applyTheme() {
         body.classList.remove('dark-mode');
     }
 }
+
+// Setup Helper Settings in the settings modal
+function setupHelperSettings() {
+    const statusIndicator = document.getElementById('helper-status-indicator');
+    const keepBlockingToggle = document.getElementById('keep-blocking-toggle');
+    const removeHelperNowBtn = document.getElementById('remove-helper-now-btn');
+
+    // Initialize toggle from saved settings
+    // When checked (default): blocks continue running after uninstall until complete
+    // When unchecked: helper immediately cleans up when app is uninstalled
+    if (keepBlockingToggle) {
+        const keepBlocking = appData.settings?.keepBlockingOnUninstall !== false; // default true
+        keepBlockingToggle.checked = keepBlocking;
+
+        keepBlockingToggle.addEventListener('change', (e) => {
+            if (!appData.settings) appData.settings = {};
+            appData.settings.keepBlockingOnUninstall = e.target.checked;
+            saveData();
+        });
+    }
+
+    // Update helper status when settings modal opens
+    const settingsBtn = document.getElementById('settings-btn');
+    if (settingsBtn) {
+        settingsBtn.addEventListener('click', updateHelperStatusIndicator);
+    }
+
+    // Remove Helper Now button - use named function to avoid duplicates
+    if (removeHelperNowBtn && !removeHelperNowBtn._helperRemoveListenerAdded) {
+        removeHelperNowBtn._helperRemoveListenerAdded = true;
+
+        removeHelperNowBtn.addEventListener('click', async () => {
+            // Guard against double execution using global flag
+            if (window._isRemovingHelper) {
+                console.log('Helper removal already in progress (global flag), ignoring click');
+                return;
+            }
+            window._isRemovingHelper = true;
+            console.log('Remove helper clicked, setting global guard flag');
+
+            try {
+                // Check if there are active blocks
+                const hasActiveBlocks = hasAnyActiveBlocks();
+                console.log('Has active blocks:', hasActiveBlocks);
+
+                let confirmed = false;
+                if (hasActiveBlocks) {
+                    // Need challenge first - show override modal
+                    confirmed = await showRemoveHelperChallenge();
+                } else {
+                    // No active blocks - use Tauri's async dialog (native confirm() doesn't block in webview)
+                    confirmed = await ask('Are you sure you want to remove the helper service? Website blocking will stop working until you reinstall it.', {
+                        title: 'Remove Helper?',
+                        kind: 'warning'
+                    });
+                }
+
+                console.log('User confirmed:', confirmed);
+                if (!confirmed) {
+                    window._isRemovingHelper = false;
+                    return;
+                }
+
+                // Proceed with removal
+                removeHelperNowBtn.disabled = true;
+                removeHelperNowBtn.innerHTML = '<span class="btn-spinner"></span>Removing...';
+
+                const result = await tauriAPI.uninstallHelper();
+                if (result.success) {
+                    helperAvailable = false;
+                    // Immediately update UI - don't wait for async check
+                    const statusIndicator = document.getElementById('helper-status-indicator');
+                    if (statusIndicator) {
+                        statusIndicator.classList.remove('running');
+                        statusIndicator.classList.add('stopped');
+                        const statusText = statusIndicator.querySelector('.status-text');
+                        if (statusText) statusText.textContent = 'Not installed';
+                    }
+                    alert('Helper service removed successfully.');
+                } else {
+                    alert('Failed to remove helper: ' + (result.error || 'Unknown error'));
+                }
+            } catch (e) {
+                console.error('Error removing helper:', e);
+                alert('Error removing helper: ' + e.message);
+            } finally {
+                window._isRemovingHelper = false;
+                console.log('Remove helper complete, cleared global guard flag');
+                removeHelperNowBtn.disabled = false;
+                removeHelperNowBtn.innerHTML = `
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 6h18"></path>
+                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                    </svg>
+                    <span>Remove Helper Now</span>
+                `;
+            }
+        });
+    }
+}
+
+// Update helper status indicator in settings modal
+async function updateHelperStatusIndicator() {
+    const statusIndicator = document.getElementById('helper-status-indicator');
+    if (!statusIndicator) return;
+
+    const statusText = statusIndicator.querySelector('.status-text');
+
+    try {
+        const isRunning = await tauriAPI.checkHelper();
+        helperAvailable = isRunning;
+
+        statusIndicator.classList.remove('running', 'stopped');
+        statusIndicator.classList.add(isRunning ? 'running' : 'stopped');
+        statusText.textContent = isRunning ? 'Running' : 'Not installed';
+
+        // Show/hide the Remove Helper Now button based on status
+        const removeHelperBtn = document.getElementById('remove-helper-now-btn');
+        if (removeHelperBtn) {
+            removeHelperBtn.style.display = isRunning ? '' : 'none';
+        }
+    } catch (e) {
+        statusIndicator.classList.remove('running', 'stopped');
+        statusIndicator.classList.add('stopped');
+        statusText.textContent = 'Unknown';
+
+        // Hide remove button on error too
+        const removeHelperBtn = document.getElementById('remove-helper-now-btn');
+        if (removeHelperBtn) {
+            removeHelperBtn.style.display = 'none';
+        }
+    }
+
+    // Also update Override All button visibility
+    updateOverrideAllButtonVisibility();
+}
+
+// Check if there are any active blocks or schedules
+function hasAnyActiveBlocks() {
+    const now = Date.now();
+    const nowDate = new Date();
+    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
+    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
+
+    // Check one-off blocks
+    const hasActiveOneOff = appData.activeBlocks.some(block =>
+        block.startTime <= now && block.endTime > now
+    );
+    if (hasActiveOneOff) return true;
+
+    // Check schedules
+    if (appData.schedules) {
+        for (const schedule of appData.schedules) {
+            if (!schedule.segments) continue;
+            const isActive = schedule.segments.some(seg => {
+                const startMins = seg.startHour * 60 + seg.startMinute;
+                const endMins = seg.endHour * 60 + seg.endMinute;
+                if (endMins > startMins) {
+                    return seg.days.includes(currentDay) &&
+                        currentMins >= startMins &&
+                        currentMins < endMins;
+                } else {
+                    const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
+                    return (seg.days.includes(currentDay) && currentMins >= startMins) ||
+                        (seg.days.includes(yesterdayDay) && currentMins < endMins);
+                }
+            });
+            if (isActive) return true;
+        }
+    }
+
+    return false;
+}
+
+// Update visibility of the Override All button based on active blocks
+function updateOverrideAllButtonVisibility() {
+    const overrideAllBtn = document.getElementById('override-all-btn');
+    if (overrideAllBtn) {
+        overrideAllBtn.style.display = hasAnyActiveBlocks() ? '' : 'none';
+    }
+}
+
+// Show challenge for removing helper when blocks are active
+async function showRemoveHelperChallenge() {
+    return new Promise((resolve) => {
+        // Find the hardest challenge from active blocks' blocklists
+        const now = Date.now();
+        let hardestDifficulty = { type: 'random-words', count: 50 }; // default
+        let maxCount = 50;
+
+        // Check active one-off blocks
+        for (const block of appData.activeBlocks) {
+            if (block.startTime <= now && block.endTime > now) {
+                const bl = appData.blocklists.find(b => b.id === block.blocklistId);
+                if (bl?.overrideDifficulty) {
+                    const diff = bl.overrideDifficulty;
+                    // Custom text is always hardest
+                    if (diff.type === 'custom' && diff.customText) {
+                        hardestDifficulty = diff;
+                        break; // Custom is always hardest
+                    }
+                    // For gibberish/random-words, higher count = harder
+                    if (diff.count > maxCount) {
+                        maxCount = diff.count;
+                        hardestDifficulty = diff;
+                    }
+                }
+            }
+        }
+
+        // Check scheduled blocks too
+        if (hardestDifficulty.type !== 'custom' && appData.schedules) {
+            const nowDate = new Date();
+            const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
+            const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
+
+            for (const schedule of appData.schedules) {
+                if (!schedule.segments) continue;
+                const isActive = schedule.segments.some(seg => {
+                    const startMins = seg.startHour * 60 + seg.startMinute;
+                    const endMins = seg.endHour * 60 + seg.endMinute;
+                    if (endMins > startMins) {
+                        return seg.days.includes(currentDay) &&
+                            currentMins >= startMins && currentMins < endMins;
+                    } else {
+                        const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
+                        return (seg.days.includes(currentDay) && currentMins >= startMins) ||
+                            (seg.days.includes(yesterdayDay) && currentMins < endMins);
+                    }
+                });
+                if (isActive) {
+                    const bl = appData.blocklists.find(b => b.id === schedule.blocklistId);
+                    if (bl?.overrideDifficulty) {
+                        const diff = bl.overrideDifficulty;
+                        if (diff.type === 'custom' && diff.customText) {
+                            hardestDifficulty = diff;
+                            break;
+                        }
+                        if (diff.count > maxCount) {
+                            maxCount = diff.count;
+                            hardestDifficulty = diff;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Generate challenge text based on difficulty - use global challengeText so existing handlers work
+        if (hardestDifficulty.type === 'custom' && hardestDifficulty.customText) {
+            challengeText = hardestDifficulty.customText;
+        } else if (hardestDifficulty.type === 'gibberish') {
+            challengeText = generateGibberish(hardestDifficulty.count);
+        } else {
+            challengeText = generateRandomWords(hardestDifficulty.count);
+        }
+        challengeText = challengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+
+        // Close settings modal first so challenge modal appears on top
+        document.getElementById('settings-modal').classList.add('hidden');
+
+        // Use the existing override modal
+        const modal = document.getElementById('override-modal');
+        const titleEl = document.getElementById('override-modal-title');
+        const summaryEl = document.getElementById('override-summary');
+        const challengeTextEl = document.getElementById('challenge-text');
+        const challengeInput = document.getElementById('challenge-input');
+        const progressBar = document.getElementById('challenge-progress-bar');
+        const confirmBtn = document.getElementById('confirm-override-btn');
+        const cancelBtn = document.getElementById('cancel-override-btn');
+        const scheduleOptions = document.getElementById('schedule-override-options');
+
+        titleEl.textContent = 'Remove Helper?';
+        summaryEl.innerHTML = '<strong>Warning:</strong> This will stop all website blocking. You have active blocks that will be cleared.';
+        challengeTextEl.textContent = challengeText;
+        challengeInput.value = '';
+        progressBar.style.width = '0%';
+        progressBar.style.background = 'linear-gradient(90deg, #dc2626 0%, #ef4444 100%)'; // Red for danger
+        scheduleOptions.classList.add('hidden');
+
+        // Store callback to be called by the existing confirm handler
+        window.helperRemovalConfirmCallback = () => {
+            modal.classList.add('hidden');
+            overrideBlockId = null;
+            window.helperRemovalConfirmCallback = null;
+            window.helperRemovalCancelCallback = null;
+            resolve(true);
+        };
+
+        window.helperRemovalCancelCallback = () => {
+            modal.classList.add('hidden');
+            overrideBlockId = null;
+            window.helperRemovalConfirmCallback = null;
+            window.helperRemovalCancelCallback = null;
+            resolve(false);
+        };
+
+        // Set special block ID so existing handlers know this is helper removal
+        overrideBlockId = 'helper-removal';
+
+        modal.classList.remove('hidden');
+        challengeInput.focus();
+    });
+}
+
 
 // Variable to track override-all challenge text
 let overrideAllChallengeText = '';

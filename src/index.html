@@ -17,24 +17,27 @@
                 <button id="titlebar-minimize" class="win-btn" title="Minimize">
                     <!-- Windows minimize icon: horizontal line -->
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="0" y="5" width="12" height="1" fill="currentColor"/>
+                        <rect x="0" y="5" width="12" height="1" fill="currentColor" />
                     </svg>
                 </button>
                 <button id="titlebar-maximize" class="win-btn" title="Maximize">
                     <!-- Windows maximize icon: single square (will switch to restore icon when maximized) -->
-                    <svg id="maximize-icon" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="1" y="1" width="10" height="10" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                    <svg id="maximize-icon" width="12" height="12" viewBox="0 0 12 12" fill="none"
+                        xmlns="http://www.w3.org/2000/svg">
+                        <rect x="1" y="1" width="10" height="10" stroke="currentColor" stroke-width="1.2" fill="none" />
                     </svg>
                     <!-- Windows restore icon: two overlapping squares (shown when maximized) -->
-                    <svg id="restore-icon" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" style="display: none;">
-                        <rect x="2" y="2" width="8" height="8" stroke="currentColor" stroke-width="1.2" fill="none"/>
-                        <rect x="0" y="0" width="8" height="8" stroke="currentColor" stroke-width="1.2" fill="none"/>
+                    <svg id="restore-icon" width="12" height="12" viewBox="0 0 12 12" fill="none"
+                        xmlns="http://www.w3.org/2000/svg" style="display: none;">
+                        <rect x="2" y="2" width="8" height="8" stroke="currentColor" stroke-width="1.2" fill="none" />
+                        <rect x="0" y="0" width="8" height="8" stroke="currentColor" stroke-width="1.2" fill="none" />
                     </svg>
                 </button>
                 <button id="titlebar-close" class="win-btn close-btn" title="Close">
                     <!-- Windows close icon: X -->
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M1 1L11 11M11 1L1 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                        <path d="M1 1L11 11M11 1L1 11" stroke="currentColor" stroke-width="1.5"
+                            stroke-linecap="round" />
                     </svg>
                 </button>
             </div>
@@ -745,6 +748,7 @@
                     </svg>
                 </div>
                 <div class="settings-advanced-content hidden" id="advanced-options-content">
+                    <!-- Override All Button -->
                     <button id="override-all-btn" class="override-all-btn">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -754,6 +758,35 @@
                         </svg>
                         <span>Override all blocks</span>
                     </button>
+
+                    <!-- Helper Settings -->
+                    <div class="helper-settings-section">
+                        <div class="helper-option-row">
+                            <label class="toggle-label" for="keep-blocking-toggle">
+                                <span>Keep blocking running if app is uninstalled</span>
+                            </label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="keep-blocking-toggle" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                        <div class="helper-status-row">
+                            <span class="helper-status-label">Helper service</span>
+                            <span id="helper-status-indicator" class="helper-status-indicator">
+                                <span class="status-dot"></span>
+                                <span class="status-text">Checking...</span>
+                            </span>
+                        </div>
+                        <button id="remove-helper-now-btn" class="remove-helper-btn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 6h18"></path>
+                                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                            </svg>
+                            <span>Remove Helper Now</span>
+                        </button>
+                    </div>
                 </div>
 
                 <div class="modal-buttons">

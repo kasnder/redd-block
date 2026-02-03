@@ -401,12 +401,35 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
                     .args(["/Run", "/TN", task_name])
                     .output();
                 
-                std::thread::sleep(std::time::Duration::from_millis(500));
-                
                 match run_result {
-                    Ok(r) if r.status.success() => HelperResult {
-                        success: true,
-                        error: None,
+                    Ok(r) if r.status.success() => {
+                        // Wait for helper to actually start (up to 5 seconds)
+                        for attempt in 0..10 {
+                            std::thread::sleep(std::time::Duration::from_millis(500));
+                            
+                            // Try to ping the helper
+                            let ping_result = send_command(&IpcCommand {
+                                action: "ping".to_string(),
+                                domains: None,
+                                end_time: None,
+                                blocklist_id: None,
+                            });
+                            
+                            if ping_result.is_ok() {
+                                log::info!("Helper started successfully after {} attempts", attempt + 1);
+                                return HelperResult {
+                                    success: true,
+                                    error: None,
+                                };
+                            }
+                            log::debug!("Waiting for helper to start, attempt {}", attempt + 1);
+                        }
+                        
+                        // Helper didn't start in time
+                        HelperResult {
+                            success: false,
+                            error: Some("Task created and started, but helper is not responding. Please try again or restart your computer.".to_string()),
+                        }
                     },
                     Ok(r) => HelperResult {
                         success: false,
@@ -489,6 +512,53 @@ pub async fn clear_block_via_helper() -> HelperResult {
         Err(e) => HelperResult {
             success: false,
             error: Some(e),
+        },
+    }
+}
+
+/// Uninstall helper daemon - restores hosts file and removes itself
+#[tauri::command]
+pub async fn uninstall_helper() -> HelperResult {
+    log::info!("uninstall_helper called");
+    
+    // Send uninstall command to helper daemon
+    let cmd = IpcCommand {
+        action: "uninstall".to_string(),
+        domains: None,
+        end_time: None,
+        blocklist_id: None,
+    };
+    
+    match send_command(&cmd) {
+        Ok(response) => HelperResult {
+            success: response.success,
+            error: response.error,
+        },
+        Err(e) => {
+            // If we can't connect, the helper might already be gone
+            // Try to clean up the scheduled task/launchd daemon manually
+            log::warn!("Could not connect to helper for uninstall: {}", e);
+            
+            #[cfg(target_os = "windows")]
+            {
+                // Try to remove the scheduled task
+                let _ = std::process::Command::new("schtasks")
+                    .args(["/Delete", "/TN", "ReDD Block Helper", "/F"])
+                    .output();
+            }
+            
+            #[cfg(target_os = "macos")]
+            {
+                // Try to unload the launchd daemon
+                let _ = std::process::Command::new("launchctl")
+                    .args(["remove", "org.reddfocus.block.helper"])
+                    .output();
+            }
+            
+            HelperResult {
+                success: true,
+                error: Some(format!("Helper cleaned up (was not running: {})", e)),
+            }
         },
     }
 }
