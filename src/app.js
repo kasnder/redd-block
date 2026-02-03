@@ -3524,9 +3524,9 @@ async function proceedWithHelperInstall() {
                 activatedBlockIds.add(block.id);
                 await saveData();
 
-                // Reset UI
+                // Reset UI - keep the blocklist selected
                 const blocklistSelect = document.getElementById('blocklist-select');
-                blocklistSelect.value = '';
+                blocklistSelect.value = blocklist.id; // Keep the blocklist selected
                 handleBlocklistSelect({ target: blocklistSelect });
 
 
