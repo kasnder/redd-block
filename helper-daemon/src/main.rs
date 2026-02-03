@@ -253,6 +253,8 @@ fn add_block_to_hosts(content: &str, domains: &[String]) -> String {
 }
 
 fn flush_dns_cache() {
+    log("Flushing DNS cache...");
+    
     #[cfg(target_os = "macos")]
     {
         let _ = Command::new("dscacheutil").arg("-flushcache").output();
@@ -260,7 +262,17 @@ fn flush_dns_cache() {
     }
     #[cfg(target_os = "windows")]
     {
-        let _ = Command::new("ipconfig").arg("/flushdns").output();
+        // Flush Windows DNS cache
+        match Command::new("ipconfig").arg("/flushdns").output() {
+            Ok(output) => {
+                if output.status.success() {
+                    log("DNS cache flushed successfully");
+                } else {
+                    log(&format!("DNS flush warning: {}", String::from_utf8_lossy(&output.stderr)));
+                }
+            }
+            Err(e) => log(&format!("Failed to flush DNS: {}", e)),
+        }
     }
     #[cfg(target_os = "linux")]
     {

@@ -64,6 +64,7 @@ let editingBlocklistId = null;
 let overrideBlockId = null;
 let challengeText = '';
 let lastBlockedDomains = new Set(); // Track what's currently blocked to avoid re-prompting
+let lastBlockedApps = new Set(); // Track blocked apps to avoid redundant updates
 let activatedBlockIds = new Set(); // Track blocks that have already triggered host updates
 let helperAvailable = false; // Track if the privileged helper daemon is running
 let pendingBlockData = null; // Store block data when waiting for helper installation
@@ -178,12 +179,12 @@ async function updateMaximizeButton() {
     const maximizeBtn = document.getElementById('titlebar-maximize');
     const maximizeIcon = document.getElementById('maximize-icon');
     const restoreIcon = document.getElementById('restore-icon');
-    
+
     if (!maximizeBtn || !maximizeIcon || !restoreIcon) return;
-    
+
     const win = getCurrentWindow();
     const isMaximized = await win.isMaximized();
-    
+
     if (isMaximized) {
         maximizeIcon.style.display = 'none';
         restoreIcon.style.display = 'block';
@@ -201,20 +202,20 @@ function setupEventListeners() {
     document.getElementById('titlebar-minimize')?.addEventListener('click', () => {
         tauriAPI.minimizeWindow();
     });
-    
+
     document.getElementById('titlebar-maximize')?.addEventListener('click', async () => {
         await tauriAPI.maximizeWindow();
         // Update icon after state changes
         setTimeout(updateMaximizeButton, 100);
     });
-    
+
     document.getElementById('titlebar-close')?.addEventListener('click', () => {
         tauriAPI.closeWindow();
     });
-    
+
     // Initial check for maximize state
     updateMaximizeButton();
-    
+
     // Check periodically to catch state changes (double-click title bar, etc.)
     // This ensures the icon updates even if window is maximized/restored via other means
     setInterval(updateMaximizeButton, 300);
@@ -752,7 +753,7 @@ function setupModalListeners() {
         const hasActiveSchedule = appData.schedules?.some(
             s => s.blocklistId === blocklist.id && s.segments && s.segments.length > 0
         );
-        
+
         if (hasActiveBlock || hasActiveSchedule) {
             // Update website blocking
             updateHostsFile();
@@ -1477,7 +1478,7 @@ function toggleRepeatDropdown(e) {
 
     // Don't allow opening dropdown when schedule is active
     if (activeScheduleSegmentCount > 0) return;
-    
+
     // Also check if button is disabled
     const repeatDropdownBtn = document.getElementById('repeat-dropdown-btn');
     if (repeatDropdownBtn && repeatDropdownBtn.disabled) {
@@ -3732,18 +3733,27 @@ async function updateBlockedApps() {
         });
     }
 
-    const appsArray = Array.from(allBlockedApps);
+    const appsArray = Array.from(allBlockedApps).sort();
+    const lastAppsArray = Array.from(lastBlockedApps).sort();
+    const appsChanged = JSON.stringify(appsArray) !== JSON.stringify(lastAppsArray);
+
+    // Skip if nothing changed (avoid redundant PowerShell calls every tick)
+    if (!appsChanged) {
+        return;
+    }
+
+    // Update cache
+    lastBlockedApps = allBlockedApps;
 
     // Update the blocked apps list
     if (appsArray.length > 0) {
         console.log('[updateBlockedApps] Setting blocked apps:', appsArray);
         await tauriAPI.setBlockedApps(appsArray);
-        
+
         // Start process watcher if not already running
-        // Note: We don't check if it's running, but starting it multiple times should be safe
         await tauriAPI.startProcessWatcher();
-        
-        // Hide any currently open blocked apps
+
+        // Hide any currently open blocked apps (only on change)
         await tauriAPI.hideAllBlockedApps();
     } else {
         // No apps to block - stop the process watcher and clear the list
@@ -3869,7 +3879,7 @@ function openBlocklistModal(blocklist = null) {
         s => s.blocklistId === blocklist.id && s.segments && s.segments.length > 0
     );
     const isActive = hasActiveBlock || hasActiveSchedule;
-    
+
     const warningEl = document.getElementById('active-blocklist-warning');
     const modeInputs = document.getElementById('blocklist-modal').querySelectorAll('.radio-option');
     const overrideInputs = [
@@ -3888,29 +3898,29 @@ function openBlocklistModal(blocklist = null) {
         warningEl.classList.remove('hidden');
         modeInputs.forEach(el => el.classList.add('disabled'));
         overrideInputs.forEach(el => el.disabled = true);
-        
+
         // Style override type dropdown (like repeat dropdown)
         if (overrideTypeSelect) {
             overrideTypeSelect.classList.add('form-select-disabled');
         }
-        
+
         // Style override count input (like repeat dropdown)
         if (overrideCountInput) {
             overrideCountInput.classList.add('form-input-disabled');
         }
-        
+
         // Style the "total characters" text (same color as Start/End labels)
         if (inputSuffix) {
             inputSuffix.classList.add('input-suffix-disabled');
         }
-        
+
         // Pass existing items as locked
         window.setModalData(blocklist.websites || [], blocklist.apps || [], blocklist.websites || [], blocklist.apps || []);
     } else {
         warningEl.classList.add('hidden');
         modeInputs.forEach(el => el.classList.remove('disabled'));
         overrideInputs.forEach(el => el.disabled = false);
-        
+
         // Remove disabled styling
         if (overrideTypeSelect) {
             overrideTypeSelect.classList.remove('form-select-disabled');
@@ -3921,7 +3931,7 @@ function openBlocklistModal(blocklist = null) {
         if (inputSuffix) {
             inputSuffix.classList.remove('input-suffix-disabled');
         }
-        
+
         window.setModalData(blocklist?.websites || [], blocklist?.apps || [], [], []);
     }
 

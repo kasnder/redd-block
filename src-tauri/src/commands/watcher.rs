@@ -85,7 +85,7 @@ pub fn set_blocked_apps(apps: Vec<String>) {
     watcher.blocked_apps = apps.iter()
         .map(|a| (a.to_lowercase(), a.clone()))
         .collect();
-    log::info!("Process watcher: blocking apps: {:?}", watcher.blocked_apps.keys().collect::<Vec<_>>());
+    log::debug!("Process watcher: blocking apps: {:?}", watcher.blocked_apps.keys().collect::<Vec<_>>());
 }
 
 /// Check if any apps are currently being blocked
@@ -139,7 +139,7 @@ foreach ($proc in $processes) {{
             .spawn();
     }
     
-    log::info!("Minimized app: {}", app_name);
+    log::debug!("Minimized app: {}", app_name);
 }
 
 /// Hide all currently blocked apps
@@ -151,7 +151,7 @@ pub fn hide_all_blocked_apps() {
         watcher.blocked_apps.values().cloned().collect()
     };
     
-    log::info!("hide_all_blocked_apps: hiding {} apps", apps.len());
+    log::debug!("hide_all_blocked_apps: hiding {} apps", apps.len());
     for app in apps {
         internal_minimize_app(&app);
     }
