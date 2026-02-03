@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 
 # Configuration
 $AppName = "ReDD Block"
-$AppVersion = "0.4.1.0"  # APPX requires 4-part version
+$AppVersion = "0.4.2.0"  # APPX requires 4-part version
 $Publisher = "CN=EC16037E-D0B5-446F-9912-F41B3DCCBFB3"
 $IdentityName = "ReduceDigitalDistraction.ReDDBlock"
 $DisplayName = "ReDD Block"
