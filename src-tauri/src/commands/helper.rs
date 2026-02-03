@@ -368,6 +368,15 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
             }
         };
         
+        // Kill any existing helper process to free up the port
+        log::info!("Killing any existing helper process...");
+        let _ = Command::new("taskkill")
+            .args(["/F", "/IM", "redd-block-helper.exe"])
+            .output();
+        
+        // Give the OS time to release the TCP port (handles TIME_WAIT state)
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        
         // Install to ProgramData (accessible by scheduled tasks running as SYSTEM)
         let program_data = std::env::var("PROGRAMDATA").unwrap_or_else(|_| "C:\\ProgramData".to_string());
         let install_dir = PathBuf::from(&program_data).join("ReDD Block");
@@ -396,50 +405,70 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
         
         match create_result {
             Ok(()) => {
-                // Start the helper now
-                let run_result = Command::new("schtasks")
-                    .args(["/Run", "/TN", task_name])
-                    .output();
+                // Start the helper with elevation using ShellExecuteEx with runas verb
+                // The scheduled task is for auto-start on logon, but for immediate start we need elevation
+                log::info!("Starting helper process with elevation: {:?}", install_path);
                 
-                match run_result {
-                    Ok(r) if r.status.success() => {
-                        // Wait for helper to actually start (up to 5 seconds)
-                        for attempt in 0..10 {
-                            std::thread::sleep(std::time::Duration::from_millis(500));
-                            
-                            // Try to ping the helper
-                            let ping_result = send_command(&IpcCommand {
-                                action: "ping".to_string(),
-                                domains: None,
-                                end_time: None,
-                                blocklist_id: None,
-                            });
-                            
-                            if ping_result.is_ok() {
-                                log::info!("Helper started successfully after {} attempts", attempt + 1);
-                                return HelperResult {
-                                    success: true,
-                                    error: None,
-                                };
-                            }
-                            log::debug!("Waiting for helper to start, attempt {}", attempt + 1);
-                        }
+                use windows::core::{HSTRING, PCWSTR};
+                use windows::Win32::UI::Shell::{ShellExecuteExW, SHELLEXECUTEINFOW, SEE_MASK_NOCLOSEPROCESS};
+                use std::mem::size_of;
+                
+                let verb = HSTRING::from("runas");
+                let file = HSTRING::from(install_path.to_string_lossy().as_ref());
+                
+                let mut sei = SHELLEXECUTEINFOW {
+                    cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
+                    fMask: SEE_MASK_NOCLOSEPROCESS,
+                    hwnd: windows::Win32::Foundation::HWND::default(),
+                    lpVerb: PCWSTR(verb.as_ptr()),
+                    lpFile: PCWSTR(file.as_ptr()),
+                    lpParameters: PCWSTR::null(),
+                    lpDirectory: PCWSTR::null(),
+                    nShow: 0, // SW_HIDE
+                    hInstApp: windows::Win32::Foundation::HINSTANCE::default(),
+                    lpIDList: std::ptr::null_mut(),
+                    lpClass: PCWSTR::null(),
+                    hkeyClass: windows::Win32::System::Registry::HKEY::default(),
+                    dwHotKey: 0,
+                    Anonymous: Default::default(),
+                    hProcess: windows::Win32::Foundation::HANDLE::default(),
+                };
+                
+                let spawn_success = unsafe { ShellExecuteExW(&mut sei).is_ok() };
+                
+                if spawn_success {
+                    // Wait for helper to actually start (up to 5 seconds)
+                    for attempt in 0..10 {
+                        std::thread::sleep(std::time::Duration::from_millis(500));
                         
-                        // Helper didn't start in time
-                        HelperResult {
-                            success: false,
-                            error: Some("Task created and started, but helper is not responding. Please try again or restart your computer.".to_string()),
+                        // Try to ping the helper
+                        let ping_result = send_command(&IpcCommand {
+                            action: "ping".to_string(),
+                            domains: None,
+                            end_time: None,
+                            blocklist_id: None,
+                        });
+                        
+                        if ping_result.is_ok() {
+                            log::info!("Helper started successfully after {} attempts", attempt + 1);
+                            return HelperResult {
+                                success: true,
+                                error: None,
+                            };
                         }
-                    },
-                    Ok(r) => HelperResult {
+                        log::debug!("Waiting for helper to start, attempt {}", attempt + 1);
+                    }
+                    
+                    // Helper didn't start in time
+                    HelperResult {
                         success: false,
-                        error: Some(format!("Task created but failed to run: {}", 
-                            String::from_utf8_lossy(&r.stderr))),
-                    },
-                    Err(e) => HelperResult {
+                        error: Some("Helper process spawned with elevation, but not responding. Please try again or restart your computer.".to_string()),
+                    }
+                } else {
+                    HelperResult {
                         success: false,
-                        error: Some(format!("Task created but failed to run: {}", e)),
-                    },
+                        error: Some("User cancelled UAC prompt or failed to start helper with elevation".to_string()),
+                    }
                 }
             },
             Err(e) => HelperResult {
