@@ -16,17 +16,6 @@ const SOCKET_PATH: &str = "/tmp/redd-block-helper.sock";
 const HELPER_TCP_ADDR: &str = "127.0.0.1:62222";
 
 #[cfg(target_os = "windows")]
-fn is_msix_package() -> bool {
-    // MSIX apps have PACKAGE_FAMILY_NAME environment variable set
-    std::env::var("PACKAGE_FAMILY_NAME").is_ok() ||
-    // Also check if executable path contains WindowsApps (MSIX install location)
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.to_str().map(|s| s.contains("WindowsApps")))
-        .unwrap_or(false)
-}
-
-#[cfg(target_os = "windows")]
 fn create_task_direct(task_name: &str, install_path: &PathBuf) -> Result<(), String> {
     use std::process::Command;
     
@@ -57,47 +46,101 @@ fn create_task_direct(task_name: &str, install_path: &PathBuf) -> Result<(), Str
     }
 }
 
+/// Uses Windows ShellExecuteEx with "runas" verb to trigger native UAC prompt.
+/// This works in MSIX/Store apps unlike Start-Process -Verb RunAs in PowerShell.
 #[cfg(target_os = "windows")]
-fn create_task_elevated(task_name: &str, install_path: &PathBuf) -> Result<(), String> {
-    use std::process::Command;
+fn create_task_elevated_native(task_name: &str, install_path: &PathBuf) -> Result<(), String> {
+    use windows::core::{HSTRING, PCWSTR};
+    use windows::Win32::Foundation::WAIT_OBJECT_0;
+    use windows::Win32::UI::Shell::{ShellExecuteExW, SHELLEXECUTEINFOW, SEE_MASK_NOCLOSEPROCESS};
+    use windows::Win32::System::Threading::WaitForSingleObject;
+    use std::mem::size_of;
     
-    // Escape single quotes for PowerShell
-    let escaped_task_name = task_name.replace("'", "''");
-    let escaped_path = install_path.display().to_string().replace("'", "''");
-    
-    // Delete existing task with elevation
-    let delete_script = format!(
-        r#"Start-Process -FilePath 'schtasks' -ArgumentList '/Delete', '/TN', '{}', '/F' -Verb RunAs -Wait -WindowStyle Hidden -ErrorAction SilentlyContinue"#,
-        escaped_task_name
-    );
-    let _ = Command::new("powershell.exe")
-        .args(["-Command", &delete_script])
-        .output();
-    
-    // Create task with elevation (UAC prompt)
-    let create_script = format!(
-        r#"$proc = Start-Process -FilePath 'schtasks' -ArgumentList '/Create', '/TN', '{}', '/TR', '{}', '/SC', 'ONLOGON', '/RL', 'HIGHEST', '/F' -Verb RunAs -Wait -WindowStyle Hidden -PassThru; exit $proc.ExitCode"#,
-        escaped_task_name,
-        escaped_path
+    // Build the schtasks arguments for task creation
+    let args = format!(
+        "/Create /TN \"{}\" /TR \"\\\"{}\\\"\" /SC ONLOGON /RL HIGHEST /F",
+        task_name,
+        install_path.display()
     );
     
-    let result = Command::new("powershell.exe")
-        .args(["-Command", &create_script])
-        .output();
+    let verb = HSTRING::from("runas");
+    let file = HSTRING::from("schtasks");
+    let params = HSTRING::from(&args);
     
-    match result {
-        Ok(output) if output.status.success() || output.status.code() == Some(0) => Ok(()),
-        Ok(output) => {
-            let error_msg = String::from_utf8_lossy(&output.stderr);
-            if error_msg.contains("canceled") || error_msg.contains("denied") || error_msg.contains("Access is denied") {
-                Err("User cancelled or denied elevation. Administrator privileges are required to install the helper.".to_string())
-            } else {
-                Err(format!("Failed to create scheduled task: {}", error_msg))
+    let mut sei = SHELLEXECUTEINFOW {
+        cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
+        fMask: SEE_MASK_NOCLOSEPROCESS,
+        hwnd: windows::Win32::Foundation::HWND::default(),
+        lpVerb: PCWSTR(verb.as_ptr()),
+        lpFile: PCWSTR(file.as_ptr()),
+        lpParameters: PCWSTR(params.as_ptr()),
+        lpDirectory: PCWSTR::null(),
+        nShow: 0, // SW_HIDE
+        hInstApp: windows::Win32::Foundation::HINSTANCE::default(),
+        lpIDList: std::ptr::null_mut(),
+        lpClass: PCWSTR::null(),
+        hkeyClass: windows::Win32::System::Registry::HKEY::default(),
+        dwHotKey: 0,
+        Anonymous: Default::default(),
+        hProcess: windows::Win32::Foundation::HANDLE::default(),
+    };
+    
+    // First delete any existing task (ignore errors)
+    let delete_args = format!("/Delete /TN \"{}\" /F", task_name);
+    let delete_params = HSTRING::from(&delete_args);
+    let mut delete_sei = SHELLEXECUTEINFOW {
+        cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
+        fMask: SEE_MASK_NOCLOSEPROCESS,
+        hwnd: windows::Win32::Foundation::HWND::default(),
+        lpVerb: PCWSTR(verb.as_ptr()),
+        lpFile: PCWSTR(file.as_ptr()),
+        lpParameters: PCWSTR(delete_params.as_ptr()),
+        lpDirectory: PCWSTR::null(),
+        nShow: 0,
+        hInstApp: windows::Win32::Foundation::HINSTANCE::default(),
+        lpIDList: std::ptr::null_mut(),
+        lpClass: PCWSTR::null(),
+        hkeyClass: windows::Win32::System::Registry::HKEY::default(),
+        dwHotKey: 0,
+        Anonymous: Default::default(),
+        hProcess: windows::Win32::Foundation::HANDLE::default(),
+    };
+    
+    unsafe {
+        // Delete existing task first (ignore result)
+        let _ = ShellExecuteExW(&mut delete_sei);
+        if !delete_sei.hProcess.is_invalid() {
+            WaitForSingleObject(delete_sei.hProcess, 5000);
+        }
+        
+        // Now create the new task
+        if ShellExecuteExW(&mut sei).is_ok() {
+            if !sei.hProcess.is_invalid() {
+                // Wait for the process to complete
+                let wait_result = WaitForSingleObject(sei.hProcess, 30000);
+                if wait_result == WAIT_OBJECT_0 {
+                    return Ok(());
+                } else {
+                    return Err("Timed out waiting for schtasks to complete".to_string());
+                }
             }
-        },
-        Err(e) => Err(format!("Failed to run PowerShell: {}", e)),
+            Ok(())
+        } else {
+            Err("User cancelled UAC prompt or elevation failed".to_string())
+        }
     }
 }
+
+/// Check if running in MSIX (Microsoft Store) context
+#[cfg(target_os = "windows")]
+fn is_msix_package() -> bool {
+    std::env::var("PACKAGE_FAMILY_NAME").is_ok() ||
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.to_str().map(|s| s.contains("WindowsApps")))
+        .unwrap_or(false)
+}
+
 
 /// Helper daemon status
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -387,16 +430,19 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
             };
         }
         
-        // Check if running in MSIX (Microsoft Store) context
-        let is_msix = is_msix_package();
-        
         let task_name = "ReDD Block Helper";
         
-        // Create scheduled task - use elevation for MSIX, direct for standalone
-        let create_result = if is_msix {
-            create_task_elevated(task_name, &install_path)
+        // For MSIX (Store) apps, use native Windows UAC elevation via ShellExecuteEx
+        // For standalone installs, try direct schtasks first (may work if user has admin rights)
+        let create_result = if is_msix_package() {
+            // Use ShellExecuteEx with "runas" verb - triggers native UAC password prompt
+            create_task_elevated_native(task_name, &install_path)
         } else {
-            create_task_direct(task_name, &install_path)
+            // For standalone, try direct first, fall back to elevated if needed
+            match create_task_direct(task_name, &install_path) {
+                Ok(()) => Ok(()),
+                Err(_) => create_task_elevated_native(task_name, &install_path),
+            }
         };
         
         match create_result {
