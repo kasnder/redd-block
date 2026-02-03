@@ -5414,6 +5414,8 @@ function setupHelperSettings() {
                         const statusText = statusIndicator.querySelector('.status-text');
                         if (statusText) statusText.textContent = 'Not installed';
                     }
+                    // Hide the Remove Helper Now button
+                    removeHelperNowBtn.style.display = 'none';
                     alert('Helper service removed successfully.');
                 } else {
                     alert('Failed to remove helper: ' + (result.error || 'Unknown error'));
@@ -5456,7 +5458,23 @@ async function updateHelperStatusIndicator() {
         // Show/hide the Remove Helper Now button based on status
         const removeHelperBtn = document.getElementById('remove-helper-now-btn');
         if (removeHelperBtn) {
-            removeHelperBtn.style.display = isRunning ? '' : 'none';
+            if (isRunning) {
+                removeHelperBtn.style.display = '';
+
+                // Check if there are active blocks - if so, disable the button
+                const hasActiveBlocks = hasAnyActiveBlocks();
+                if (hasActiveBlocks) {
+                    removeHelperBtn.disabled = true;
+                    removeHelperBtn.title = 'Override all running blocks first before removing the helper';
+                    removeHelperBtn.classList.add('disabled-with-reason');
+                } else {
+                    removeHelperBtn.disabled = false;
+                    removeHelperBtn.title = '';
+                    removeHelperBtn.classList.remove('disabled-with-reason');
+                }
+            } else {
+                removeHelperBtn.style.display = 'none';
+            }
         }
     } catch (e) {
         statusIndicator.classList.remove('running', 'stopped');

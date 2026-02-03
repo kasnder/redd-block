@@ -3582,4 +3582,12 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
 .remove-helper-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+    pointer-events: auto;
+    /* Allow hover for tooltip */
+}
+
+.remove-helper-btn:disabled:hover {
+    background: var(--element-bg);
+    border-color: var(--border-color);
+    color: var(--text-secondary);
 }
