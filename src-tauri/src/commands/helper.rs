@@ -15,37 +15,6 @@ const SOCKET_PATH: &str = "/tmp/redd-block-helper.sock";
 #[cfg(target_os = "windows")]
 const HELPER_TCP_ADDR: &str = "127.0.0.1:62222";
 
-#[cfg(target_os = "windows")]
-fn create_task_direct(task_name: &str, install_path: &PathBuf) -> Result<(), String> {
-    use std::process::Command;
-    
-    // Delete existing task if any (ignore errors)
-    let _ = Command::new("schtasks")
-        .args(["/Delete", "/TN", task_name, "/F"])
-        .output();
-    
-    // Create new scheduled task that runs at logon with highest privileges
-    let create_result = Command::new("schtasks")
-        .args([
-            "/Create",
-            "/TN", task_name,
-            "/TR", &format!("\"{}\"", install_path.display()),
-            "/SC", "ONLOGON",
-            "/RL", "HIGHEST",
-            "/F",
-        ])
-        .output();
-    
-    match create_result {
-        Ok(output) if output.status.success() => Ok(()),
-        Ok(output) => {
-            let error_msg = String::from_utf8_lossy(&output.stderr);
-            Err(format!("Failed to create scheduled task: {}", error_msg))
-        },
-        Err(e) => Err(format!("Failed to run schtasks: {}", e)),
-    }
-}
-
 /// Uses Windows ShellExecuteEx with "runas" verb to trigger native UAC prompt.
 /// This works in MSIX/Store apps unlike Start-Process -Verb RunAs in PowerShell.
 #[cfg(target_os = "windows")]
@@ -129,16 +98,6 @@ fn create_task_elevated_native(task_name: &str, install_path: &PathBuf) -> Resul
             Err("User cancelled UAC prompt or elevation failed".to_string())
         }
     }
-}
-
-/// Check if running in MSIX (Microsoft Store) context
-#[cfg(target_os = "windows")]
-fn is_msix_package() -> bool {
-    std::env::var("PACKAGE_FAMILY_NAME").is_ok() ||
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.to_str().map(|s| s.contains("WindowsApps")))
-        .unwrap_or(false)
 }
 
 
@@ -432,18 +391,8 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
         
         let task_name = "ReDD Block Helper";
         
-        // For MSIX (Store) apps, use native Windows UAC elevation via ShellExecuteEx
-        // For standalone installs, try direct schtasks first (may work if user has admin rights)
-        let create_result = if is_msix_package() {
-            // Use ShellExecuteEx with "runas" verb - triggers native UAC password prompt
-            create_task_elevated_native(task_name, &install_path)
-        } else {
-            // For standalone, try direct first, fall back to elevated if needed
-            match create_task_direct(task_name, &install_path) {
-                Ok(()) => Ok(()),
-                Err(_) => create_task_elevated_native(task_name, &install_path),
-            }
-        };
+        // Always use native UAC elevation - requires admin to create task with HIGHEST privileges
+        let create_result = create_task_elevated_native(task_name, &install_path);
         
         match create_result {
             Ok(()) => {

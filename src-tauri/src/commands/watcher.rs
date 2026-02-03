@@ -43,6 +43,17 @@ lazy_static::lazy_static! {
 /// Start watching for blocked app launches
 #[tauri::command]
 pub fn start_process_watcher(app: AppHandle) {
+    // Check if already running and set flag atomically to prevent race condition
+    {
+        let mut watcher = WATCHER.lock().unwrap();
+        if watcher.running {
+            log::debug!("Process watcher already running, skipping");
+            return;
+        }
+        // Set running flag now, before spawning, to prevent multiple spawns
+        watcher.running = true;
+    }
+    
     let watcher = WATCHER.clone();
     
     thread::spawn(move || {
@@ -187,16 +198,12 @@ end repeat
         Ok(p) => p,
         Err(e) => {
             log::error!("Failed to start macOS watcher: {}", e);
+            // Reset running flag since we failed to start
+            let mut w = watcher.lock().unwrap();
+            w.running = false;
             return;
         }
     };
-
-    // Mark as running
-    {
-        let mut w = watcher.lock().unwrap();
-        w.running = true;
-        w.watcher_process = None; // We'll manage it in this thread
-    }
 
     log::info!("macOS app watcher started");
 
@@ -356,14 +363,12 @@ try {
         Ok(p) => p,
         Err(e) => {
             log::error!("Failed to start Windows watcher: {}", e);
+            // Reset running flag since we failed to start
+            let mut w = watcher.lock().unwrap();
+            w.running = false;
             return;
         }
     };
-
-    {
-        let mut w = watcher.lock().unwrap();
-        w.running = true;
-    }
 
     log::info!("Windows foreground watcher started");
 
