@@ -301,7 +301,6 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
     
     #[cfg(target_os = "windows")]
     {
-        use std::process::Command;
         use std::io::Write;
         
         // First, check if helper is already running with correct version
@@ -312,16 +311,6 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
                 success: true,
                 error: None,
             };
-        }
-        
-        // If helper is running but outdated, we need to kill it first
-        if current_status.running && !current_status.version_ok {
-            log::info!("Killing outdated helper process...");
-            let _ = Command::new("taskkill")
-                .args(["/F", "/IM", "redd-block-helper.exe"])
-                .output();
-            // Give the OS time to release the TCP port
-            std::thread::sleep(std::time::Duration::from_millis(1500));
         }
         
         // Get the bundled helper binary path
@@ -364,7 +353,7 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
         let install_dir = PathBuf::from(&program_data).join("ReDD Block");
         let install_path = install_dir.join("redd-block-helper.exe");
         
-        // Create install directory
+        // Create install directory (this doesn't need admin)
         if let Err(e) = std::fs::create_dir_all(&install_dir) {
             return HelperResult {
                 success: false,
@@ -372,41 +361,27 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
             };
         }
         
-        // Copy the helper binary (with retry if file is locked)
-        let mut copy_attempts = 0;
-        let max_attempts = 3;
-        loop {
-            match std::fs::copy(&helper_path, &install_path) {
-                Ok(_) => break,
-                Err(e) => {
-                    copy_attempts += 1;
-                    if copy_attempts >= max_attempts {
-                        return HelperResult {
-                            success: false,
-                            error: Some(format!("Failed to copy helper binary after {} attempts: {}", max_attempts, e)),
-                        };
-                    }
-                    log::warn!("Copy attempt {} failed ({}), killing helper and retrying...", copy_attempts, e);
-                    // Kill any lingering helper process
-                    let _ = Command::new("taskkill")
-                        .args(["/F", "/IM", "redd-block-helper.exe"])
-                        .output();
-                    // Wait for file handle to be released
-                    std::thread::sleep(std::time::Duration::from_millis(2000));
-                }
-            }
-        }
-        
-        // Create a PowerShell script that:
-        // 1. Creates scheduled task for persistence (runs at logon)
-        // 2. Starts the helper directly (for immediate use)
+        // Create a PowerShell script that does EVERYTHING with elevation:
+        // 1. Kill existing helper process (if running)
+        // 2. Copy the new binary
+        // 3. Create scheduled task for persistence
+        // 4. Start the helper
         let script_path = install_dir.join("install-helper.ps1");
         let task_name = "ReDD Block Helper";
+        let helper_path_str = helper_path.to_string_lossy();
         let install_path_str = install_path.to_string_lossy();
         
         let script_content = format!(r#"
 $taskName = "{}"
+$sourcePath = "{}"
 $helperPath = "{}"
+
+# Kill any existing helper process
+taskkill /F /IM redd-block-helper.exe 2>$null
+Start-Sleep -Seconds 1
+
+# Copy the helper binary
+Copy-Item -Path $sourcePath -Destination $helperPath -Force
 
 # Remove existing task if any
 schtasks /Delete /TN "$taskName" /F 2>$null
@@ -418,7 +393,7 @@ schtasks /Create /TN "$taskName" /TR "`"$helperPath`"" /SC ONLOGON /RL HIGHEST /
 Start-Process -FilePath $helperPath -WindowStyle Hidden
 
 exit 0
-"#, task_name, install_path_str);
+"#, task_name, helper_path_str, install_path_str);
 
         // Write the script
         let mut script_file = match std::fs::File::create(&script_path) {
