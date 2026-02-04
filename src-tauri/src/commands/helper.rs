@@ -304,6 +304,26 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
         use std::process::Command;
         use std::io::Write;
         
+        // First, check if helper is already running with correct version
+        let current_status = check_helper_status();
+        if current_status.running && current_status.version_ok {
+            log::info!("Helper already running with correct version, no installation needed");
+            return HelperResult {
+                success: true,
+                error: None,
+            };
+        }
+        
+        // If helper is running but outdated, we need to kill it first
+        if current_status.running && !current_status.version_ok {
+            log::info!("Killing outdated helper process...");
+            let _ = Command::new("taskkill")
+                .args(["/F", "/IM", "redd-block-helper.exe"])
+                .output();
+            // Give the OS time to release the TCP port
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+        }
+        
         // Get the bundled helper binary path
         let helper_path = match get_helper_path(&app) {
             Some(p) if p.exists() => p,
@@ -339,16 +359,7 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
             }
         };
         
-        // Kill any existing helper process to free up the port
-        log::info!("Killing any existing helper process...");
-        let _ = Command::new("taskkill")
-            .args(["/F", "/IM", "redd-block-helper.exe"])
-            .output();
-        
-        // Give the OS time to release the TCP port (handles TIME_WAIT state)
-        std::thread::sleep(std::time::Duration::from_millis(1500));
-        
-        // Install to ProgramData (accessible by scheduled tasks running as SYSTEM)
+        // Install to ProgramData
         let program_data = std::env::var("PROGRAMDATA").unwrap_or_else(|_| "C:\\ProgramData".to_string());
         let install_dir = PathBuf::from(&program_data).join("ReDD Block");
         let install_path = install_dir.join("redd-block-helper.exe");
@@ -369,46 +380,47 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
             };
         }
         
-        // Create a temporary PowerShell script that does everything in one go
+        // Create a PowerShell script that:
+        // 1. Creates scheduled task for persistence (runs at logon)
+        // 2. Starts the helper directly (for immediate use)
         let script_path = install_dir.join("install-helper.ps1");
         let task_name = "ReDD Block Helper";
         let install_path_str = install_path.to_string_lossy();
         
-        // PowerShell script content - handles task creation and starting helper
         let script_content = format!(r#"
 $taskName = "{}"
 $helperPath = "{}"
 
-# Remove existing task (ignore errors if it doesn't exist)
+# Remove existing task if any
 schtasks /Delete /TN "$taskName" /F 2>$null
 
-# Create new task that runs at logon with highest privileges
+# Create scheduled task for persistence (auto-start at logon with admin rights)
 schtasks /Create /TN "$taskName" /TR "`"$helperPath`"" /SC ONLOGON /RL HIGHEST /F
 
-# Start the helper process now
+# Start the helper directly (we're already elevated)
 Start-Process -FilePath $helperPath -WindowStyle Hidden
 
 exit 0
 "#, task_name, install_path_str);
 
-        // Write the script to a temporary file
-        let script_file = std::fs::File::create(&script_path);
-        match script_file {
-            Ok(mut file) => {
-                if let Err(e) = file.write_all(script_content.as_bytes()) {
-                    return HelperResult {
-                        success: false,
-                        error: Some(format!("Failed to write install script: {}", e)),
-                    };
-                }
-            }
+        // Write the script
+        let mut script_file = match std::fs::File::create(&script_path) {
+            Ok(f) => f,
             Err(e) => {
                 return HelperResult {
                     success: false,
                     error: Some(format!("Failed to create install script: {}", e)),
                 };
             }
+        };
+        
+        if let Err(e) = script_file.write_all(script_content.as_bytes()) {
+            return HelperResult {
+                success: false,
+                error: Some(format!("Failed to write install script: {}", e)),
+            };
         }
+        drop(script_file); // Close the file before running
         
         // Run the PowerShell script with elevation (single UAC prompt)
         log::info!("Running install script with elevation: {:?}", script_path);
@@ -449,7 +461,7 @@ exit 0
                     let wait_result = WaitForSingleObject(sei.hProcess, 30000);
                     wait_result == WAIT_OBJECT_0
                 } else {
-                    true // No process handle means it completed quickly
+                    true
                 }
             } else {
                 false
@@ -466,11 +478,10 @@ exit 0
             };
         }
         
-        // Wait for helper to actually start (up to 5 seconds)
+        // Wait for helper to respond (up to 5 seconds)
         for attempt in 0..10 {
             std::thread::sleep(std::time::Duration::from_millis(500));
             
-            // Try to ping the helper
             let ping_result = send_command(&IpcCommand {
                 action: "ping".to_string(),
                 domains: None,
@@ -488,7 +499,6 @@ exit 0
             log::debug!("Waiting for helper to start, attempt {}", attempt + 1);
         }
         
-        // Helper didn't start in time
         HelperResult {
             success: false,
             error: Some("Helper installation completed but helper not responding. Please try again or restart your computer.".to_string()),
@@ -576,36 +586,64 @@ pub async fn uninstall_helper() -> HelperResult {
     };
     
     match send_command(&cmd) {
-        Ok(response) => HelperResult {
-            success: response.success,
-            error: response.error,
+        Ok(response) if response.success => HelperResult {
+            success: true,
+            error: None,
+        },
+        Ok(response) => {
+            // Helper responded but with an error (e.g., old helper doesn't know "uninstall")
+            log::warn!("Helper returned error for uninstall: {:?}", response.error);
+            // Fall through to force cleanup
+            force_cleanup_helper()
         },
         Err(e) => {
-            // If we can't connect, the helper might already be gone
-            // Try to clean up the scheduled task/launchd daemon manually
+            // Can't connect to helper - maybe already gone or not responding
             log::warn!("Could not connect to helper for uninstall: {}", e);
-            
-            #[cfg(target_os = "windows")]
-            {
-                // Try to remove the scheduled task
-                let _ = std::process::Command::new("schtasks")
-                    .args(["/Delete", "/TN", "ReDD Block Helper", "/F"])
-                    .output();
-            }
-            
-            #[cfg(target_os = "macos")]
-            {
-                // Try to unload the launchd daemon
-                let _ = std::process::Command::new("launchctl")
-                    .args(["remove", "org.reddfocus.block.helper"])
-                    .output();
-            }
-            
-            HelperResult {
-                success: true,
-                error: Some(format!("Helper cleaned up (was not running: {})", e)),
-            }
+            force_cleanup_helper()
         },
+    }
+}
+
+/// Force cleanup helper - kills process, removes task, deletes files
+fn force_cleanup_helper() -> HelperResult {
+    log::info!("Performing force cleanup of helper...");
+    
+    #[cfg(target_os = "windows")]
+    {
+        use std::process::Command;
+        
+        // Kill the helper process
+        let _ = Command::new("taskkill")
+            .args(["/F", "/IM", "redd-block-helper.exe"])
+            .output();
+        
+        // Remove the scheduled task
+        let _ = Command::new("schtasks")
+            .args(["/Delete", "/TN", "ReDD Block Helper", "/F"])
+            .output();
+        
+        // Remove the install directory
+        let program_data = std::env::var("PROGRAMDATA").unwrap_or_else(|_| "C:\\ProgramData".to_string());
+        let install_dir = PathBuf::from(&program_data).join("ReDD Block");
+        let _ = std::fs::remove_dir_all(&install_dir);
+        
+        log::info!("Force cleanup completed for Windows");
+    }
+    
+    #[cfg(target_os = "macos")]
+    {
+        // Try to unload the launchd daemon
+        let _ = std::process::Command::new("launchctl")
+            .args(["remove", "org.reddfocus.block.helper"])
+            .output();
+        
+        // Note: On macOS, removing daemon files requires admin
+        log::info!("Force cleanup completed for macOS (launchd unloaded)");
+    }
+    
+    HelperResult {
+        success: true,
+        error: Some("Helper force-removed (used fallback cleanup)".to_string()),
     }
 }
 
