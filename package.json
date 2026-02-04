@@ -4,7 +4,7 @@
   "description": "ReDD Block - block distracting websites and apps to stay focused",
   "scripts": {
     "dev": "npm run sync:helper && tauri dev",
-    "sync:helper": "powershell -ExecutionPolicy Bypass -File ./scripts/sync-helper.ps1",
+    "sync:helper": "node -e \"require('child_process').execSync(process.platform === 'win32' ? 'powershell -ExecutionPolicy Bypass -File ./scripts/sync-helper.ps1' : './scripts/sync-helper.sh', {stdio: 'inherit'})\"",
     "build": "tauri build",
     "build:mac": "./scripts/build-mac.sh",
     "build:helper": "cd helper-daemon && cargo build --release",
