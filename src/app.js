@@ -153,6 +153,20 @@ async function saveData() {
     await tauriAPI.saveData(appData);
 }
 
+// Compare semver versions - returns true if versionA > versionB
+function isVersionHigher(versionA, versionB) {
+    const partsA = versionA.split('.').map(Number);
+    const partsB = versionB.split('.').map(Number);
+
+    for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
+        const a = partsA[i] || 0;
+        const b = partsB[i] || 0;
+        if (a > b) return true;
+        if (a < b) return false;
+    }
+    return false; // Equal versions
+}
+
 // Detect platform for window controls
 function detectPlatform() {
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
@@ -5302,8 +5316,8 @@ function setupTheme() {
                     const platform = isMac ? 'macos' : 'windows';
                     const latestVersion = versions[platform];
 
-                    // Only show if latest version differs from current version
-                    if (latestVersion && currentVersion && latestVersion !== currentVersion) {
+                    // Only show if latest version is higher than current version
+                    if (latestVersion && currentVersion && isVersionHigher(latestVersion, currentVersion)) {
                         latestVersionEl.textContent = `Latest version: ${latestVersion}`;
                         latestVersionEl.style.display = 'block';
                     }
