@@ -23,6 +23,7 @@ $newestSource = ($sourceFiles | Sort-Object LastWriteTime -Descending | Select-O
 
 # Check if sidecar exists and is up-to-date
 $sidecarOutdated = $false
+$needsCopy = $false
 
 if (-not (Test-Path $sidecarExe)) {
     Write-Host "Sidecar binary not found, will build helper-daemon."
@@ -35,6 +36,13 @@ else {
         Write-Host "  Newest source: $newestSource"
         Write-Host "  Sidecar binary: $sidecarTime"
         $sidecarOutdated = $true
+    }
+    # Also check if release binary exists and is newer than sidecar
+    elseif ((Test-Path $releaseExe) -and ((Get-Item $releaseExe).LastWriteTime -gt $sidecarTime)) {
+        Write-Host "Release binary is newer than sidecar, will copy."
+        Write-Host "  Release binary: $((Get-Item $releaseExe).LastWriteTime)"
+        Write-Host "  Sidecar binary: $sidecarTime"
+        $needsCopy = $true
     }
     else {
         Write-Host "Helper-daemon sidecar is up-to-date."
@@ -68,6 +76,16 @@ if ($sidecarOutdated) {
         Write-Host "ERROR: Built binary not found at $releaseExe" -ForegroundColor Red
         exit 1
     }
+}
+
+# If just need to copy (release is newer but no rebuild needed)
+if ($needsCopy -and -not $sidecarOutdated) {
+    $targetDir = Split-Path $sidecarExe -Parent
+    if (-not (Test-Path $targetDir)) {
+        New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+    }
+    Copy-Item $releaseExe $sidecarExe -Force
+    Write-Host "Copied helper binary to sidecar location: $sidecarExe" -ForegroundColor Green
 }
 
 exit 0
