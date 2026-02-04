@@ -1,8 +1,8 @@
-# ReDD Block
+# ReDD Block (Beta)
 
 Block distracting websites and apps with scheduled or one-off blocks. Stay focused on what matters.
 
-Built with [Tauri 2](https://tauri.app/) for a lightweight, native experience.
+Built by reddfocus.org with <3 (and with [Tauri 2](https://tauri.app/) for a lightweight, cross-platform app!).
 
 ## Features
 
