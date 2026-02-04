@@ -21,6 +21,10 @@ lipo -create \
   target/release/redd-block-helper-aarch64-apple-darwin \
   target/release/redd-block-helper-x86_64-apple-darwin \
   -output target/release/redd-block-helper-universal-apple-darwin
+
+# Tauri externalBin expects the binary with target suffix for bundling
+# For universal builds, it looks for -universal-apple-darwin suffix
+echo "Copying universal helper for Tauri bundling..."
 cd ..
 
 # Build Tauri universal binary

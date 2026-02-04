@@ -185,18 +185,47 @@ fn send_command(_command: &IpcCommand) -> Result<IpcResponse, String> {
 }
 
 /// Get path to the bundled helper binary
-fn get_helper_path(app: &tauri::AppHandle) -> Option<PathBuf> {
-    // Tauri sidecars are placed next to the app binary with platform-specific suffix
-    app.path().resource_dir().ok().map(|dir| {
-        #[cfg(target_os = "macos")]
-        let name = "redd-block-helper-aarch64-apple-darwin";
-        #[cfg(target_os = "windows")]
-        let name = "redd-block-helper-x86_64-pc-windows-msvc.exe";
-        #[cfg(target_os = "linux")]
-        let name = "redd-block-helper-x86_64-unknown-linux-gnu";
-        
-        dir.join(name)
-    })
+fn get_helper_path(_app: &tauri::AppHandle) -> Option<PathBuf> {
+    // Tauri externalBin bundles the sidecar next to the main executable
+    // For universal builds, the suffix is stripped; for arch-specific builds, suffix is kept
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))?;
+    
+    #[cfg(target_os = "macos")]
+    let candidates = [
+        "redd-block-helper",  // Universal builds
+        "redd-block-helper-aarch64-apple-darwin",  // ARM64 build
+        "redd-block-helper-x86_64-apple-darwin",   // Intel build
+        "redd-block-helper-universal-apple-darwin", // Universal with explicit suffix
+    ];
+    
+    #[cfg(target_os = "windows")]
+    let candidates = [
+        "redd-block-helper.exe",
+        "redd-block-helper-x86_64-pc-windows-msvc.exe",
+        "redd-block-helper-aarch64-pc-windows-msvc.exe",
+        "redd-block-helper-i686-pc-windows-msvc.exe",
+    ];
+    
+    #[cfg(target_os = "linux")]
+    let candidates = [
+        "redd-block-helper",
+        "redd-block-helper-x86_64-unknown-linux-gnu",
+        "redd-block-helper-aarch64-unknown-linux-gnu",
+        "redd-block-helper-i686-unknown-linux-gnu",
+    ];
+    
+    for name in candidates {
+        let path = exe_dir.join(name);
+        if path.exists() {
+            log::info!("Found helper binary at: {:?}", path);
+            return Some(path);
+        }
+    }
+    
+    log::warn!("Helper binary not found in {:?}, tried: {:?}", exe_dir, candidates);
+    None
 }
 
 /// Check helper daemon status
@@ -248,13 +277,13 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
                 
                 match exe_dir {
                     Some(dir) => {
-                        let helper = dir.join("redd-block-helper-aarch64-apple-darwin");
+                        let helper = dir.join("redd-block-helper");
                         if helper.exists() {
                             helper
                         } else {
                             return HelperResult {
                                 success: false,
-                                error: Some("Helper binary not found in app bundle".to_string()),
+                                error: Some(format!("Helper binary not found at {:?}", helper)),
                             };
                         }
                     }
