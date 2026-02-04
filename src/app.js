@@ -116,11 +116,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function checkHelperStatus() {
     try {
         const status = await tauriAPI.checkHelperStatus();
-        helperAvailable = status.running;
+        // Helper is only considered available if running AND version matches
+        helperAvailable = status.running && status.version_ok;
         console.log('Helper status:', status);
 
-        // If not installed, we'll prompt to install when they try to start a block
-        if (!status.installed) {
+        if (status.running && !status.version_ok) {
+            console.log('Helper is outdated (version:', status.version, ') - will prompt to update on first block');
+        } else if (!status.installed) {
             console.log('Helper not installed - will prompt on first block');
         }
     } catch (err) {
@@ -3387,8 +3389,8 @@ async function proceedWithBlock() {
         // Helper not available - check if it's installed but just not detected
         const status = await tauriAPI.checkHelperStatus();
 
-        if (status.running) {
-            // It's running, use it
+        if (status.running && status.version_ok) {
+            // It's running with correct version, use it
             helperAvailable = true;
             result = await tauriAPI.startBlockViaHelper({
                 domains: blocklist.websites || [],
@@ -3396,7 +3398,11 @@ async function proceedWithBlock() {
                 blocklistId: selectedBlocklistId
             });
         } else {
-            // Helper not running - show the install modal
+            // Helper not running, not installed, or outdated - show the install modal
+            // The install flow will update an outdated helper
+            if (status.running && !status.version_ok) {
+                console.log('Helper is outdated, need to update - showing install modal');
+            }
             pendingBlockData = {
                 block,
                 blocklist,
@@ -3628,8 +3634,8 @@ async function updateHostsFile(silent = false) {
         const status = await tauriAPI.checkHelperStatus();
         console.log('[updateHostsFile] Helper status:', status);
 
-        if (status.running) {
-            console.log('[updateHostsFile] Helper running, using helper to update blocks');
+        if (status.running && status.version_ok) {
+            console.log('[updateHostsFile] Helper running with correct version, using helper to update blocks');
             helperAvailable = true;
 
             if (domainsArray.length === 0) {
