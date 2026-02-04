@@ -5260,12 +5260,51 @@ function setupTheme() {
     const themeSelect = document.getElementById('theme-select');
 
     if (settingsBtn && settingsModal) {
-        settingsBtn.addEventListener('click', () => {
+        settingsBtn.addEventListener('click', async () => {
             settingsModal.classList.remove('hidden');
             // Set current theme selection
             if (themeSelect) {
                 const currentTheme = appData.settings?.themeMode || 'system';
                 themeSelect.value = currentTheme;
+            }
+
+            // Fetch and display version info
+            const currentVersionEl = document.getElementById('current-app-version');
+            const latestVersionEl = document.getElementById('latest-app-version');
+
+            let currentVersion = null;
+
+            if (currentVersionEl) {
+                try {
+                    currentVersion = await tauriAPI.getAppVersion();
+                    currentVersionEl.textContent = `Your version: ${currentVersion || 'Unknown'}`;
+                } catch (e) {
+                    console.error('[Version] Error fetching current version:', e);
+                    currentVersionEl.textContent = 'Your version: Unknown';
+                }
+            }
+
+            if (latestVersionEl) {
+                // Hide by default - only show if there's an update available
+                latestVersionEl.style.display = 'none';
+
+                try {
+                    const response = await fetch('https://ulyngs.github.io/redd-block/latest-versions.json');
+                    const versions = await response.json();
+                    // Detect platform
+                    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+                    const platform = isMac ? 'macos' : 'windows';
+                    const latestVersion = versions[platform];
+
+                    // Only show if latest version differs from current version
+                    if (latestVersion && currentVersion && latestVersion !== currentVersion) {
+                        latestVersionEl.textContent = `Latest version: ${latestVersion}`;
+                        latestVersionEl.style.display = 'block';
+                    }
+                } catch (e) {
+                    // Silently fail if offline - don't show anything
+                    console.log('[Version] Could not check for updates (offline or error):', e.message);
+                }
             }
         });
     }
