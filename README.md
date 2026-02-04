@@ -15,7 +15,7 @@ Built by reddfocus.org with <3 (and with [Tauri 2](https://tauri.app/) for a lig
 - **Override Protection** — Configurable typing challenges prevent impulsive unblocking
 - **Background Operation** — Blocks continue even when the app is closed
 - **Cross-Platform** — Works on macOS and Windows
-- **Dark Mode** — Toggle between light and dark themes
+- **Theme Options** — Auto, light, or dark mode
 
 ## How It Works
 
@@ -65,8 +65,8 @@ cd redd-block
 # Install dependencies
 npm install
 
-# Run in development mode
-npm run tauri dev
+# Run in development mode (syncs helper and starts Tauri)
+npm run dev
 ```
 
 The app will open automatically. Hot-reloading is enabled for both frontend (Vite) and backend (Tauri).
@@ -130,7 +130,7 @@ User data is preserved unless manually deleted. Reinstalling restores your block
 
 ## Requirements
 
-- **macOS**: 11+ (Big Sur or later)
+- **macOS**: 10.15+ (Catalina or later)
 - **Windows**: 10+ (version 1809 or later)
 - **Linux**: Coming soon
 
