@@ -286,8 +286,15 @@ fn flush_dns_cache() {
     }
     #[cfg(target_os = "windows")]
     {
-        // Flush Windows DNS cache
-        match Command::new("ipconfig").arg("/flushdns").output() {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        
+        // Flush Windows DNS cache (hidden, no console window)
+        match Command::new("ipconfig")
+            .arg("/flushdns")
+            .creation_flags(CREATE_NO_WINDOW)
+            .output() 
+        {
             Ok(output) => {
                 if output.status.success() {
                     log("DNS cache flushed successfully");
@@ -497,10 +504,14 @@ fn perform_self_cleanup() {
     
     #[cfg(target_os = "windows")]
     {
-        // Remove scheduled task
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        
+        // Remove scheduled task (hidden)
         log("Removing scheduled task...");
         let _ = std::process::Command::new("schtasks")
             .args(["/Delete", "/TN", "ReDD Block Helper", "/F"])
+            .creation_flags(CREATE_NO_WINDOW)
             .output();
     }
     
