@@ -372,12 +372,29 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
             };
         }
         
-        // Copy the helper binary
-        if let Err(e) = std::fs::copy(&helper_path, &install_path) {
-            return HelperResult {
-                success: false,
-                error: Some(format!("Failed to copy helper binary: {}", e)),
-            };
+        // Copy the helper binary (with retry if file is locked)
+        let mut copy_attempts = 0;
+        let max_attempts = 3;
+        loop {
+            match std::fs::copy(&helper_path, &install_path) {
+                Ok(_) => break,
+                Err(e) => {
+                    copy_attempts += 1;
+                    if copy_attempts >= max_attempts {
+                        return HelperResult {
+                            success: false,
+                            error: Some(format!("Failed to copy helper binary after {} attempts: {}", max_attempts, e)),
+                        };
+                    }
+                    log::warn!("Copy attempt {} failed ({}), killing helper and retrying...", copy_attempts, e);
+                    // Kill any lingering helper process
+                    let _ = Command::new("taskkill")
+                        .args(["/F", "/IM", "redd-block-helper.exe"])
+                        .output();
+                    // Wait for file handle to be released
+                    std::thread::sleep(std::time::Duration::from_millis(2000));
+                }
+            }
         }
         
         // Create a PowerShell script that:
@@ -605,29 +622,66 @@ pub async fn uninstall_helper() -> HelperResult {
 }
 
 /// Force cleanup helper - kills process, removes task, deletes files
+/// Uses elevation on Windows since helper runs with admin privileges
 fn force_cleanup_helper() -> HelperResult {
     log::info!("Performing force cleanup of helper...");
     
     #[cfg(target_os = "windows")]
     {
-        use std::process::Command;
+        use windows::core::{HSTRING, PCWSTR};
+        use windows::Win32::Foundation::WAIT_OBJECT_0;
+        use windows::Win32::UI::Shell::{ShellExecuteExW, SHELLEXECUTEINFOW, SEE_MASK_NOCLOSEPROCESS};
+        use windows::Win32::System::Threading::WaitForSingleObject;
+        use std::mem::size_of;
         
-        // Kill the helper process
-        let _ = Command::new("taskkill")
-            .args(["/F", "/IM", "redd-block-helper.exe"])
-            .output();
-        
-        // Remove the scheduled task
-        let _ = Command::new("schtasks")
-            .args(["/Delete", "/TN", "ReDD Block Helper", "/F"])
-            .output();
-        
-        // Remove the install directory
+        // Create a script that kills the process and cleans up
         let program_data = std::env::var("PROGRAMDATA").unwrap_or_else(|_| "C:\\ProgramData".to_string());
         let install_dir = PathBuf::from(&program_data).join("ReDD Block");
-        let _ = std::fs::remove_dir_all(&install_dir);
         
-        log::info!("Force cleanup completed for Windows");
+        // Run elevated taskkill and cleanup
+        let verb = HSTRING::from("runas");
+        let file = HSTRING::from("powershell");
+        let cleanup_cmd = format!(
+            "-ExecutionPolicy Bypass -WindowStyle Hidden -Command \"taskkill /F /IM redd-block-helper.exe 2>$null; schtasks /Delete /TN 'ReDD Block Helper' /F 2>$null; Remove-Item -Path '{}' -Recurse -Force -ErrorAction SilentlyContinue\"",
+            install_dir.display()
+        );
+        let params = HSTRING::from(&cleanup_cmd);
+        
+        let mut sei = SHELLEXECUTEINFOW {
+            cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
+            fMask: SEE_MASK_NOCLOSEPROCESS,
+            hwnd: windows::Win32::Foundation::HWND::default(),
+            lpVerb: PCWSTR(verb.as_ptr()),
+            lpFile: PCWSTR(file.as_ptr()),
+            lpParameters: PCWSTR(params.as_ptr()),
+            lpDirectory: PCWSTR::null(),
+            nShow: 0,
+            hInstApp: windows::Win32::Foundation::HINSTANCE::default(),
+            lpIDList: std::ptr::null_mut(),
+            lpClass: PCWSTR::null(),
+            hkeyClass: windows::Win32::System::Registry::HKEY::default(),
+            dwHotKey: 0,
+            Anonymous: Default::default(),
+            hProcess: windows::Win32::Foundation::HANDLE::default(),
+        };
+        
+        let success = unsafe {
+            if ShellExecuteExW(&mut sei).is_ok() {
+                if !sei.hProcess.is_invalid() {
+                    WaitForSingleObject(sei.hProcess, 10000) == WAIT_OBJECT_0
+                } else {
+                    true
+                }
+            } else {
+                false
+            }
+        };
+        
+        if success {
+            log::info!("Force cleanup completed for Windows");
+        } else {
+            log::warn!("Force cleanup may have failed - user cancelled UAC or error");
+        }
     }
     
     #[cfg(target_os = "macos")]
