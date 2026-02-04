@@ -106,7 +106,13 @@ fn create_task_elevated_native(task_name: &str, install_path: &PathBuf) -> Resul
 pub struct HelperStatus {
     pub installed: bool,
     pub running: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    pub version_ok: bool,
 }
+
+/// Expected helper version (should match app version)
+const EXPECTED_HELPER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Result from helper operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,6 +143,8 @@ struct IpcResponse {
     #[allow(dead_code)]
     #[serde(default)]
     active: Option<bool>,
+    #[serde(default)]
+    version: Option<String>,
 }
 
 #[cfg(target_os = "macos")]
@@ -232,6 +240,7 @@ fn get_helper_path(_app: &tauri::AppHandle) -> Option<PathBuf> {
 #[tauri::command]
 pub fn check_helper_status() -> HelperStatus {
     // Try to ping the helper - this works for both platforms
+    // The ping response now includes the helper version
     let cmd = IpcCommand {
         action: "ping".to_string(),
         domains: None,
@@ -239,7 +248,24 @@ pub fn check_helper_status() -> HelperStatus {
         blocklist_id: None,
     };
     
-    let running = send_command(&cmd).map(|r| r.success).unwrap_or(false);
+    let ping_result = send_command(&cmd);
+    let (running, helper_version) = match &ping_result {
+        Ok(r) if r.success => (true, r.version.clone()),
+        _ => (false, None),
+    };
+    
+    // Check if version matches expected
+    let version_ok = match &helper_version {
+        Some(v) => v == EXPECTED_HELPER_VERSION,
+        None => false,
+    };
+    
+    if running {
+        log::info!(
+            "Helper running, version: {:?}, expected: {}, version_ok: {}",
+            helper_version, EXPECTED_HELPER_VERSION, version_ok
+        );
+    }
     
     // On Windows, check if the helper exe exists in the install location
     #[cfg(target_os = "windows")]
@@ -256,7 +282,7 @@ pub fn check_helper_status() -> HelperStatus {
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     let installed = running;
     
-    HelperStatus { installed, running }
+    HelperStatus { installed, running, version: helper_version, version_ok }
 }
 
 /// Install helper daemon

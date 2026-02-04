@@ -1,6 +1,6 @@
 [package]
 name = "redd-block-helper"
-version = "0.1.0"
+version = "0.4.2"
 edition = "2021"
 description = "ReDD Block Helper Daemon - manages hosts file blocking"
 

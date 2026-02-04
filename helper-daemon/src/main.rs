@@ -68,6 +68,8 @@ enum IpcCommand {
     RestoreHosts,
     #[serde(rename = "ping")]
     Ping,
+    #[serde(rename = "get-version")]
+    GetVersion,
     #[serde(rename = "uninstall")]
     Uninstall,
 }
@@ -92,6 +94,8 @@ struct IpcResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "remainingMs")]
     remaining_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    version: Option<String>,
 }
 
 fn log(message: &str) {
@@ -419,6 +423,12 @@ fn handle_command(state: &Arc<Mutex<Option<BlockState>>>, cmd: IpcCommand) -> Ip
         IpcCommand::Ping => IpcResponse {
             success: true,
             message: Some("pong".to_string()),
+            version: Some(env!("CARGO_PKG_VERSION").to_string()),
+            ..Default::default()
+        },
+        IpcCommand::GetVersion => IpcResponse {
+            success: true,
+            version: Some(env!("CARGO_PKG_VERSION").to_string()),
             ..Default::default()
         },
         IpcCommand::Uninstall => {
@@ -460,6 +470,7 @@ impl Default for IpcResponse {
             end_time: None,
             blocklist_id: None,
             remaining_ms: None,
+            version: None,
         }
     }
 }
