@@ -1,6 +1,7 @@
 #!/bin/bash
 # Script to ensure helper-daemon sidecar is up-to-date (macOS version)
 # Compares source file timestamps with the sidecar binary and rebuilds if needed
+# Also ensures the installed system helper matches the sidecar version
 
 set -e
 
@@ -9,6 +10,8 @@ SRC_DIR="$HELPER_DIR/src"
 CARGO_TOML="$HELPER_DIR/Cargo.toml"
 RELEASE_BIN="$HELPER_DIR/target/release/redd-block-helper"
 SIDECAR_BIN="src-tauri/target/debug/redd-block-helper-aarch64-apple-darwin"
+INSTALLED_HELPER="/usr/local/bin/redd-block-helper"
+PLIST="/Library/LaunchDaemons/com.redd.block.helper.plist"
 
 # Check if source directory exists
 if [ ! -d "$SRC_DIR" ]; then
@@ -53,6 +56,32 @@ if [ "$SIDECAR_OUTDATED" = true ]; then
     else
         echo "ERROR: Built binary not found at $RELEASE_BIN"
         exit 1
+    fi
+fi
+
+# Always check if the installed system helper needs updating
+# This runs even if we didn't rebuild, to catch cases where the helper was installed
+# from an old sidecar binary
+if [ -f "$INSTALLED_HELPER" ] && [ -f "$SIDECAR_BIN" ]; then
+    # Compare checksums to see if they differ
+    INSTALLED_HASH=$(md5 -q "$INSTALLED_HELPER" 2>/dev/null || echo "none")
+    SIDECAR_HASH=$(md5 -q "$SIDECAR_BIN" 2>/dev/null || echo "different")
+    
+    if [ "$INSTALLED_HASH" != "$SIDECAR_HASH" ]; then
+        echo "Installed helper differs from sidecar, updating system helper..."
+        echo "(requires sudo password)"
+        sudo cp "$SIDECAR_BIN" "$INSTALLED_HELPER"
+        sudo chmod 755 "$INSTALLED_HELPER"
+        
+        # Restart the launchd daemon to pick up the new binary
+        if [ -f "$PLIST" ]; then
+            echo "Restarting helper daemon..."
+            sudo launchctl unload "$PLIST" 2>/dev/null || true
+            sudo launchctl load "$PLIST"
+            echo "Helper daemon restarted with updated binary."
+        fi
+    else
+        echo "Installed system helper is already up-to-date."
     fi
 fi
 
