@@ -4,16 +4,18 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Get project root and read version from tauri.conf.json
+$ProjectRoot = Split-Path -Parent $PSScriptRoot
+$TauriConfig = Get-Content (Join-Path $ProjectRoot "src-tauri\tauri.conf.json") | ConvertFrom-Json
+$BaseVersion = $TauriConfig.version
+
 # Configuration
 $AppName = "ReDD Block"
-$AppVersion = "0.4.2.0"  # APPX requires 4-part version
+$AppVersion = "$BaseVersion.0"  # APPX requires 4-part version
 $Publisher = "CN=EC16037E-D0B5-446F-9912-F41B3DCCBFB3"
 $IdentityName = "ReduceDigitalDistraction.ReDDBlock"
 $DisplayName = "ReDD Block"
 $PublisherDisplayName = "Reduce Digital Distraction"
-
-# Paths
-$ProjectRoot = Split-Path -Parent $PSScriptRoot
 
 # Set release directory based on architecture
 if ($Architecture -eq "x64") {

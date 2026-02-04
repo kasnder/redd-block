@@ -71,11 +71,16 @@ if ($buildArm64) {
 }
 
 Write-Host "=== Build Summary ===" -ForegroundColor Cyan
+
+# Read version from tauri.conf.json for display
+$TauriConfig = Get-Content (Join-Path $ProjectRoot "src-tauri\tauri.conf.json") | ConvertFrom-Json
+$AppVersion = "$($TauriConfig.version).0"
+
 if ($buildX64) {
-    Write-Host "  x64:   ReDD-Block_0.4.2.0_x64.appx" -ForegroundColor White
+    Write-Host "  x64:   ReDD-Block_${AppVersion}_x64.appx" -ForegroundColor White
 }
 if ($buildArm64) {
-    Write-Host "  ARM64: ReDD-Block_0.4.2.0_arm64.appx" -ForegroundColor White
+    Write-Host "  ARM64: ReDD-Block_${AppVersion}_arm64.appx" -ForegroundColor White
 }
 Write-Host ""
 Write-Host "Upload both to Partner Center: https://partner.microsoft.com/dashboard" -ForegroundColor Yellow
