@@ -15,91 +15,6 @@ const SOCKET_PATH: &str = "/tmp/redd-block-helper.sock";
 #[cfg(target_os = "windows")]
 const HELPER_TCP_ADDR: &str = "127.0.0.1:62222";
 
-/// Uses Windows ShellExecuteEx with "runas" verb to trigger native UAC prompt.
-/// This works in MSIX/Store apps unlike Start-Process -Verb RunAs in PowerShell.
-#[cfg(target_os = "windows")]
-fn create_task_elevated_native(task_name: &str, install_path: &PathBuf) -> Result<(), String> {
-    use windows::core::{HSTRING, PCWSTR};
-    use windows::Win32::Foundation::WAIT_OBJECT_0;
-    use windows::Win32::UI::Shell::{ShellExecuteExW, SHELLEXECUTEINFOW, SEE_MASK_NOCLOSEPROCESS};
-    use windows::Win32::System::Threading::WaitForSingleObject;
-    use std::mem::size_of;
-    
-    // Build the schtasks arguments for task creation
-    let args = format!(
-        "/Create /TN \"{}\" /TR \"\\\"{}\\\"\" /SC ONLOGON /RL HIGHEST /F",
-        task_name,
-        install_path.display()
-    );
-    
-    let verb = HSTRING::from("runas");
-    let file = HSTRING::from("schtasks");
-    let params = HSTRING::from(&args);
-    
-    let mut sei = SHELLEXECUTEINFOW {
-        cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
-        fMask: SEE_MASK_NOCLOSEPROCESS,
-        hwnd: windows::Win32::Foundation::HWND::default(),
-        lpVerb: PCWSTR(verb.as_ptr()),
-        lpFile: PCWSTR(file.as_ptr()),
-        lpParameters: PCWSTR(params.as_ptr()),
-        lpDirectory: PCWSTR::null(),
-        nShow: 0, // SW_HIDE
-        hInstApp: windows::Win32::Foundation::HINSTANCE::default(),
-        lpIDList: std::ptr::null_mut(),
-        lpClass: PCWSTR::null(),
-        hkeyClass: windows::Win32::System::Registry::HKEY::default(),
-        dwHotKey: 0,
-        Anonymous: Default::default(),
-        hProcess: windows::Win32::Foundation::HANDLE::default(),
-    };
-    
-    // First delete any existing task (ignore errors)
-    let delete_args = format!("/Delete /TN \"{}\" /F", task_name);
-    let delete_params = HSTRING::from(&delete_args);
-    let mut delete_sei = SHELLEXECUTEINFOW {
-        cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
-        fMask: SEE_MASK_NOCLOSEPROCESS,
-        hwnd: windows::Win32::Foundation::HWND::default(),
-        lpVerb: PCWSTR(verb.as_ptr()),
-        lpFile: PCWSTR(file.as_ptr()),
-        lpParameters: PCWSTR(delete_params.as_ptr()),
-        lpDirectory: PCWSTR::null(),
-        nShow: 0,
-        hInstApp: windows::Win32::Foundation::HINSTANCE::default(),
-        lpIDList: std::ptr::null_mut(),
-        lpClass: PCWSTR::null(),
-        hkeyClass: windows::Win32::System::Registry::HKEY::default(),
-        dwHotKey: 0,
-        Anonymous: Default::default(),
-        hProcess: windows::Win32::Foundation::HANDLE::default(),
-    };
-    
-    unsafe {
-        // Delete existing task first (ignore result)
-        let _ = ShellExecuteExW(&mut delete_sei);
-        if !delete_sei.hProcess.is_invalid() {
-            WaitForSingleObject(delete_sei.hProcess, 5000);
-        }
-        
-        // Now create the new task
-        if ShellExecuteExW(&mut sei).is_ok() {
-            if !sei.hProcess.is_invalid() {
-                // Wait for the process to complete
-                let wait_result = WaitForSingleObject(sei.hProcess, 30000);
-                if wait_result == WAIT_OBJECT_0 {
-                    return Ok(());
-                } else {
-                    return Err("Timed out waiting for schtasks to complete".to_string());
-                }
-            }
-            Ok(())
-        } else {
-            Err("User cancelled UAC prompt or elevation failed".to_string())
-        }
-    }
-}
-
 
 /// Helper daemon status
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -387,6 +302,7 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
     #[cfg(target_os = "windows")]
     {
         use std::process::Command;
+        use std::io::Write;
         
         // Get the bundled helper binary path
         let helper_path = match get_helper_path(&app) {
@@ -453,83 +369,129 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
             };
         }
         
+        // Create a temporary PowerShell script that does everything in one go
+        let script_path = install_dir.join("install-helper.ps1");
         let task_name = "ReDD Block Helper";
+        let install_path_str = install_path.to_string_lossy();
         
-        // Always use native UAC elevation - requires admin to create task with HIGHEST privileges
-        let create_result = create_task_elevated_native(task_name, &install_path);
-        
-        match create_result {
-            Ok(()) => {
-                // Start the helper with elevation using ShellExecuteEx with runas verb
-                // The scheduled task is for auto-start on logon, but for immediate start we need elevation
-                log::info!("Starting helper process with elevation: {:?}", install_path);
-                
-                use windows::core::{HSTRING, PCWSTR};
-                use windows::Win32::UI::Shell::{ShellExecuteExW, SHELLEXECUTEINFOW, SEE_MASK_NOCLOSEPROCESS};
-                use std::mem::size_of;
-                
-                let verb = HSTRING::from("runas");
-                let file = HSTRING::from(install_path.to_string_lossy().as_ref());
-                
-                let mut sei = SHELLEXECUTEINFOW {
-                    cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
-                    fMask: SEE_MASK_NOCLOSEPROCESS,
-                    hwnd: windows::Win32::Foundation::HWND::default(),
-                    lpVerb: PCWSTR(verb.as_ptr()),
-                    lpFile: PCWSTR(file.as_ptr()),
-                    lpParameters: PCWSTR::null(),
-                    lpDirectory: PCWSTR::null(),
-                    nShow: 0, // SW_HIDE
-                    hInstApp: windows::Win32::Foundation::HINSTANCE::default(),
-                    lpIDList: std::ptr::null_mut(),
-                    lpClass: PCWSTR::null(),
-                    hkeyClass: windows::Win32::System::Registry::HKEY::default(),
-                    dwHotKey: 0,
-                    Anonymous: Default::default(),
-                    hProcess: windows::Win32::Foundation::HANDLE::default(),
-                };
-                
-                let spawn_success = unsafe { ShellExecuteExW(&mut sei).is_ok() };
-                
-                if spawn_success {
-                    // Wait for helper to actually start (up to 5 seconds)
-                    for attempt in 0..10 {
-                        std::thread::sleep(std::time::Duration::from_millis(500));
-                        
-                        // Try to ping the helper
-                        let ping_result = send_command(&IpcCommand {
-                            action: "ping".to_string(),
-                            domains: None,
-                            end_time: None,
-                            blocklist_id: None,
-                        });
-                        
-                        if ping_result.is_ok() {
-                            log::info!("Helper started successfully after {} attempts", attempt + 1);
-                            return HelperResult {
-                                success: true,
-                                error: None,
-                            };
-                        }
-                        log::debug!("Waiting for helper to start, attempt {}", attempt + 1);
-                    }
-                    
-                    // Helper didn't start in time
-                    HelperResult {
+        // PowerShell script content - handles task creation and starting helper
+        let script_content = format!(r#"
+$taskName = "{}"
+$helperPath = "{}"
+
+# Remove existing task (ignore errors if it doesn't exist)
+schtasks /Delete /TN "$taskName" /F 2>$null
+
+# Create new task that runs at logon with highest privileges
+schtasks /Create /TN "$taskName" /TR "`"$helperPath`"" /SC ONLOGON /RL HIGHEST /F
+
+# Start the helper process now
+Start-Process -FilePath $helperPath -WindowStyle Hidden
+
+exit 0
+"#, task_name, install_path_str);
+
+        // Write the script to a temporary file
+        let script_file = std::fs::File::create(&script_path);
+        match script_file {
+            Ok(mut file) => {
+                if let Err(e) = file.write_all(script_content.as_bytes()) {
+                    return HelperResult {
                         success: false,
-                        error: Some("Helper process spawned with elevation, but not responding. Please try again or restart your computer.".to_string()),
-                    }
-                } else {
-                    HelperResult {
-                        success: false,
-                        error: Some("User cancelled UAC prompt or failed to start helper with elevation".to_string()),
-                    }
+                        error: Some(format!("Failed to write install script: {}", e)),
+                    };
                 }
-            },
-            Err(e) => HelperResult {
+            }
+            Err(e) => {
+                return HelperResult {
+                    success: false,
+                    error: Some(format!("Failed to create install script: {}", e)),
+                };
+            }
+        }
+        
+        // Run the PowerShell script with elevation (single UAC prompt)
+        log::info!("Running install script with elevation: {:?}", script_path);
+        
+        use windows::core::{HSTRING, PCWSTR};
+        use windows::Win32::Foundation::WAIT_OBJECT_0;
+        use windows::Win32::UI::Shell::{ShellExecuteExW, SHELLEXECUTEINFOW, SEE_MASK_NOCLOSEPROCESS};
+        use windows::Win32::System::Threading::WaitForSingleObject;
+        use std::mem::size_of;
+        
+        let verb = HSTRING::from("runas");
+        let file = HSTRING::from("powershell");
+        let args = format!("-ExecutionPolicy Bypass -WindowStyle Hidden -File \"{}\"", script_path.display());
+        let params = HSTRING::from(&args);
+        
+        let mut sei = SHELLEXECUTEINFOW {
+            cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
+            fMask: SEE_MASK_NOCLOSEPROCESS,
+            hwnd: windows::Win32::Foundation::HWND::default(),
+            lpVerb: PCWSTR(verb.as_ptr()),
+            lpFile: PCWSTR(file.as_ptr()),
+            lpParameters: PCWSTR(params.as_ptr()),
+            lpDirectory: PCWSTR::null(),
+            nShow: 0, // SW_HIDE
+            hInstApp: windows::Win32::Foundation::HINSTANCE::default(),
+            lpIDList: std::ptr::null_mut(),
+            lpClass: PCWSTR::null(),
+            hkeyClass: windows::Win32::System::Registry::HKEY::default(),
+            dwHotKey: 0,
+            Anonymous: Default::default(),
+            hProcess: windows::Win32::Foundation::HANDLE::default(),
+        };
+        
+        let script_success = unsafe { 
+            if ShellExecuteExW(&mut sei).is_ok() {
+                if !sei.hProcess.is_invalid() {
+                    // Wait for the script to complete (up to 30 seconds)
+                    let wait_result = WaitForSingleObject(sei.hProcess, 30000);
+                    wait_result == WAIT_OBJECT_0
+                } else {
+                    true // No process handle means it completed quickly
+                }
+            } else {
+                false
+            }
+        };
+        
+        // Clean up the script file
+        let _ = std::fs::remove_file(&script_path);
+        
+        if !script_success {
+            return HelperResult {
                 success: false,
-                error: Some(e),
-            },
+                error: Some("User cancelled UAC prompt or script failed to run".to_string()),
+            };
+        }
+        
+        // Wait for helper to actually start (up to 5 seconds)
+        for attempt in 0..10 {
+            std::thread::sleep(std::time::Duration::from_millis(500));
+            
+            // Try to ping the helper
+            let ping_result = send_command(&IpcCommand {
+                action: "ping".to_string(),
+                domains: None,
+                end_time: None,
+                blocklist_id: None,
+            });
+            
+            if ping_result.is_ok() {
+                log::info!("Helper started successfully after {} attempts", attempt + 1);
+                return HelperResult {
+                    success: true,
+                    error: None,
+                };
+            }
+            log::debug!("Waiting for helper to start, attempt {}", attempt + 1);
+        }
+        
+        // Helper didn't start in time
+        HelperResult {
+            success: false,
+            error: Some("Helper installation completed but helper not responding. Please try again or restart your computer.".to_string()),
         }
     }
     
