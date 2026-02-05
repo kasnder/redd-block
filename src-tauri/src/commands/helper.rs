@@ -238,8 +238,8 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
             }
         };
         
-        // Copy helper to /usr/local/bin (persistent location)
-        let install_path = "/usr/local/bin/redd-block-helper";
+        // Copy helper to /Library/PrivilegedHelperTools (Apple's recommended location for privileged helpers)
+        let install_path = "/Library/PrivilegedHelperTools/com.redd.block.helper";
         
         // Create launchd plist
         let plist_content = format!(r#"<?xml version="1.0" encoding="UTF-8"?>
