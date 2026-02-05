@@ -10,7 +10,7 @@ SRC_DIR="$HELPER_DIR/src"
 CARGO_TOML="$HELPER_DIR/Cargo.toml"
 RELEASE_BIN="$HELPER_DIR/target/release/redd-block-helper"
 SIDECAR_BIN="src-tauri/target/debug/redd-block-helper-aarch64-apple-darwin"
-INSTALLED_HELPER="/usr/local/bin/redd-block-helper"
+INSTALLED_HELPER="/Library/PrivilegedHelperTools/com.redd.block.helper"
 PLIST="/Library/LaunchDaemons/com.redd.block.helper.plist"
 
 # Check if source directory exists
