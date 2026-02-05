@@ -267,8 +267,14 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
         
         // Script to copy binary, set permissions, write plist, and load daemon
         // Uses osascript to prompt for admin password
+        // Also cleans up old helper location from pre-0.4.4 versions (/usr/local/bin/redd-block-helper)
+        let old_helper_path = "/usr/local/bin/redd-block-helper";
+        let old_plist_path = "/Library/LaunchDaemons/org.reddfocus.redd-block-helper.plist";
         let script = format!(
-            r#"do shell script "cp '{}' '{}' && chmod 755 '{}' && echo '{}' > '{}' && launchctl load '{}'" with administrator privileges"#,
+            r#"do shell script "launchctl unload '{}' 2>/dev/null; rm -f '{}' '{}'; cp '{}' '{}' && chmod 755 '{}' && echo '{}' > '{}' && launchctl load '{}'" with administrator privileges"#,
+            old_plist_path,
+            old_helper_path,
+            old_plist_path,
             helper_path.display(),
             install_path,
             install_path,
