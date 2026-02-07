@@ -4700,7 +4700,7 @@ function renderScheduledCalendarBlocks() {
         schedule.segments.forEach((segment, segmentIdx) => {
             const segmentDays = segment.days || [];
 
-            weekDays.forEach(weekDay => {
+            weekDays.forEach((weekDay, weekDayIdx) => {
                 if (!segmentDays.includes(weekDay.dayIndex)) return;
 
                 const track = document.querySelector(`.day-track[data-date="${weekDay.dateStr}"]`);
@@ -4709,41 +4709,119 @@ function renderScheduledCalendarBlocks() {
                 // Calculate position
                 const startMinutes = segment.startHour * 60 + segment.startMinute;
                 const endMinutes = segment.endHour * 60 + segment.endMinute;
-                const topPosition = (startMinutes / 60) * 40;
-                const height = Math.max(20, ((endMinutes - startMinutes) / 60) * 40);
 
-                const blockEl = document.createElement('div');
-                blockEl.className = 'calendar-block scheduled';
-                blockEl.dataset.scheduleId = schedule.id;
-                blockEl.dataset.segmentIndex = segmentIdx;
-                blockEl.dataset.day = weekDay.dayIndex;
-                blockEl.style.top = `${topPosition}px`;
-                blockEl.style.height = `${height}px`;
+                // Check if this is an overnight block (end time is before start time)
+                const isOvernight = endMinutes <= startMinutes;
 
-                if (blocklist.color) {
-                    blockEl.style.background = blocklist.color;
-                    blockEl.style.opacity = '0.7';
-                    blockEl.style.color = getContrastTextColor(blocklist.color);
+                if (isOvernight) {
+                    // Render first part: from start until midnight (end of day)
+                    const topPosition1 = (startMinutes / 60) * 40;
+                    const height1 = ((1440 - startMinutes) / 60) * 40; // 1440 = 24 * 60 (midnight)
+
+                    const blockEl1 = document.createElement('div');
+                    blockEl1.className = 'calendar-block scheduled';
+                    blockEl1.dataset.scheduleId = schedule.id;
+                    blockEl1.dataset.segmentIndex = segmentIdx;
+                    blockEl1.dataset.day = weekDay.dayIndex;
+                    blockEl1.style.top = `${topPosition1}px`;
+                    blockEl1.style.height = `${height1}px`;
+
+                    if (blocklist.color) {
+                        blockEl1.style.background = blocklist.color;
+                        blockEl1.style.opacity = '0.7';
+                        blockEl1.style.color = getContrastTextColor(blocklist.color);
+                    }
+
+                    const startTimeStr = `${String(segment.startHour).padStart(2, '0')}:${String(segment.startMinute).padStart(2, '0')}`;
+                    const endTimeStr = `${String(segment.endHour).padStart(2, '0')}:${String(segment.endMinute).padStart(2, '0')}`;
+
+                    blockEl1.innerHTML = `
+                        <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
+                        <span class="block-label">${escapeHtml(blocklist.name)}</span>
+                        <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
+                        <span class="schedule-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></span>
+                    `;
+
+                    blockEl1.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        openScheduledBlockOverrideModal(schedule, segmentIdx, weekDay.dayIndex);
+                    });
+
+                    track.appendChild(blockEl1);
+
+                    // Render second part: from midnight until end time on the next day
+                    const nextDay = weekDays[weekDayIdx + 1];
+                    if (nextDay) {
+                        const nextTrack = document.querySelector(`.day-track[data-date="${nextDay.dateStr}"]`);
+                        if (nextTrack) {
+                            const topPosition2 = 0;
+                            const height2 = Math.max(20, (endMinutes / 60) * 40);
+
+                            const blockEl2 = document.createElement('div');
+                            blockEl2.className = 'calendar-block scheduled overnight-continuation';
+                            blockEl2.dataset.scheduleId = schedule.id;
+                            blockEl2.dataset.segmentIndex = segmentIdx;
+                            blockEl2.dataset.day = nextDay.dayIndex;
+                            blockEl2.style.top = `${topPosition2}px`;
+                            blockEl2.style.height = `${height2}px`;
+
+                            if (blocklist.color) {
+                                blockEl2.style.background = blocklist.color;
+                                blockEl2.style.opacity = '0.7';
+                                blockEl2.style.color = getContrastTextColor(blocklist.color);
+                            }
+
+                            blockEl2.innerHTML = `
+                                <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
+                                <span class="block-label">${escapeHtml(blocklist.name)}</span>
+                                <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
+                                <span class="schedule-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></span>
+                            `;
+
+                            blockEl2.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                openScheduledBlockOverrideModal(schedule, segmentIdx, weekDay.dayIndex);
+                            });
+
+                            nextTrack.appendChild(blockEl2);
+                        }
+                    }
+                } else {
+                    // Normal same-day block
+                    const topPosition = (startMinutes / 60) * 40;
+                    const height = Math.max(20, ((endMinutes - startMinutes) / 60) * 40);
+
+                    const blockEl = document.createElement('div');
+                    blockEl.className = 'calendar-block scheduled';
+                    blockEl.dataset.scheduleId = schedule.id;
+                    blockEl.dataset.segmentIndex = segmentIdx;
+                    blockEl.dataset.day = weekDay.dayIndex;
+                    blockEl.style.top = `${topPosition}px`;
+                    blockEl.style.height = `${height}px`;
+
+                    if (blocklist.color) {
+                        blockEl.style.background = blocklist.color;
+                        blockEl.style.opacity = '0.7';
+                        blockEl.style.color = getContrastTextColor(blocklist.color);
+                    }
+
+                    const startTimeStr = `${String(segment.startHour).padStart(2, '0')}:${String(segment.startMinute).padStart(2, '0')}`;
+                    const endTimeStr = `${String(segment.endHour).padStart(2, '0')}:${String(segment.endMinute).padStart(2, '0')}`;
+
+                    blockEl.innerHTML = `
+                        <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
+                        <span class="block-label">${escapeHtml(blocklist.name)}</span>
+                        <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
+                        <span class="schedule-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></span>
+                    `;
+
+                    blockEl.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        openScheduledBlockOverrideModal(schedule, segmentIdx, weekDay.dayIndex);
+                    });
+
+                    track.appendChild(blockEl);
                 }
-
-                // Format times
-                const startTimeStr = `${String(segment.startHour).padStart(2, '0')}:${String(segment.startMinute).padStart(2, '0')}`;
-                const endTimeStr = `${String(segment.endHour).padStart(2, '0')}:${String(segment.endMinute).padStart(2, '0')}`;
-
-                blockEl.innerHTML = `
-                    <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
-                    <span class="block-label">${escapeHtml(blocklist.name)}</span>
-                    <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
-                    <span class="schedule-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></span>
-                `;
-
-                // Add click handler to open schedule override modal
-                blockEl.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    openScheduledBlockOverrideModal(schedule, segmentIdx, weekDay.dayIndex);
-                });
-
-                track.appendChild(blockEl);
             });
         });
     });
