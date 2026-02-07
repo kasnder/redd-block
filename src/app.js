@@ -761,6 +761,7 @@ function setupModalListeners() {
         const emoji = selectedEmoji ? selectedEmoji.dataset.emoji : '🚫';
 
         const showItemDetails = document.getElementById('show-item-details-checkbox').checked;
+        const alwaysShowInSchedule = document.getElementById('always-show-in-schedule-checkbox').checked;
 
         // IMPORTANT: Create copies of the arrays, not references!
         const blocklist = {
@@ -772,6 +773,7 @@ function setupModalListeners() {
             websites: [...modalWebsites],  // Copy the array
             apps: [...modalApps],          // Copy the array
             showItemDetails,
+            alwaysShowInSchedule,
             overrideDifficulty: {
                 type: overrideType,
                 count: overrideCount,
@@ -812,6 +814,7 @@ function setupModalListeners() {
         // Only update blocklist display without resetting schedule segments
         renderBlocklists();
         renderBlocklistSelector();
+        renderWeekBlocks(); // Refresh calendar to apply alwaysShowInSchedule changes
         // Re-render the schedule preview to reflect any blocklist changes
         if (isScheduleMode && selectedBlocklistId) {
             handleTimeChange();
@@ -4021,6 +4024,11 @@ function openBlocklistModal(blocklist = null) {
         showItemDetailsCheckbox.checked = blocklist?.showItemDetails !== false;
     }
 
+    const alwaysShowInScheduleCheckbox = document.getElementById('always-show-in-schedule-checkbox');
+    if (alwaysShowInScheduleCheckbox) {
+        alwaysShowInScheduleCheckbox.checked = blocklist?.alwaysShowInSchedule !== false;
+    }
+
     // Reset advanced options to collapsed state
     const blocklistAdvancedToggle = document.getElementById('blocklist-advanced-toggle');
     const blocklistAdvancedContent = document.getElementById('blocklist-advanced-content');
@@ -4668,6 +4676,102 @@ function renderWeekBlocks() {
 
     // Render scheduled blocks
     renderScheduledCalendarBlocks();
+
+    // Layout overlapping blocks side-by-side (Apple Calendar style)
+    layoutOverlappingBlocks();
+}
+
+// Layout overlapping blocks side-by-side within each day track (Apple Calendar style)
+function layoutOverlappingBlocks() {
+    document.querySelectorAll('.day-track').forEach(track => {
+        const blocks = Array.from(track.querySelectorAll('.calendar-block'));
+        if (blocks.length <= 1) return;
+
+        // Get block positions and group identifier (scheduleId or blockId)
+        const blockData = blocks.map(block => {
+            const top = parseFloat(block.style.top) || 0;
+            const height = parseFloat(block.style.height) || 20;
+            // Use scheduleId if available, fall back to blockId
+            const groupId = block.dataset.scheduleId || block.dataset.blockId || null;
+            return {
+                element: block,
+                top: top,
+                bottom: top + height,
+                groupId: groupId,
+                column: 0,
+                totalColumns: 1
+            };
+        });
+
+        // Sort by top position, then by height (taller blocks first)
+        blockData.sort((a, b) => a.top - b.top || b.bottom - a.bottom);
+
+        // First pass: assign columns to groups (blocks from same schedule get same column)
+        const groupColumns = new Map(); // groupId -> column
+
+        for (let i = 0; i < blockData.length; i++) {
+            const current = blockData[i];
+
+            // If this block's group already has a column, use it
+            if (current.groupId && groupColumns.has(current.groupId)) {
+                current.column = groupColumns.get(current.groupId);
+                continue;
+            }
+
+            // Find all blocks that overlap with current (considering the entire group)
+            const overlappingGroups = new Set();
+            for (let j = 0; j < blockData.length; j++) {
+                const other = blockData[j];
+                // Check if they overlap
+                if (!(current.bottom <= other.top || current.top >= other.bottom)) {
+                    if (other.groupId !== current.groupId) {
+                        overlappingGroups.add(other.groupId);
+                    }
+                }
+            }
+
+            // Find columns used by overlapping groups
+            const usedColumns = new Set();
+            overlappingGroups.forEach(gid => {
+                if (groupColumns.has(gid)) {
+                    usedColumns.add(groupColumns.get(gid));
+                }
+            });
+
+            // Assign the first available column
+            let col = 1;
+            while (usedColumns.has(col)) col++;
+            current.column = col;
+            if (current.groupId) {
+                groupColumns.set(current.groupId, col);
+            }
+        }
+
+        // Second pass: calculate totalColumns for overlapping sets
+        for (let i = 0; i < blockData.length; i++) {
+            const current = blockData[i];
+            let maxCol = current.column;
+
+            for (let j = 0; j < blockData.length; j++) {
+                const other = blockData[j];
+                if (!(current.bottom <= other.top || current.top >= other.bottom)) {
+                    maxCol = Math.max(maxCol, other.column);
+                }
+            }
+            current.totalColumns = maxCol;
+        }
+
+        // Apply positioning
+        blockData.forEach(data => {
+            if (data.totalColumns > 1) {
+                const widthPercent = 100 / data.totalColumns;
+                const leftPercent = (data.column - 1) * widthPercent;
+                data.element.style.left = `calc(${leftPercent}% + 2px)`;
+                data.element.style.width = `calc(${widthPercent}% - 4px)`;
+                data.element.style.right = 'auto';
+            }
+        });
+    });
 }
 
 // Render scheduled blocks on the calendar (from saved schedules)
@@ -4679,12 +4783,16 @@ function renderScheduledCalendarBlocks() {
     const today = now.getDay(); // 0=Sun, 1=Mon, etc.
     const todayIndex = today === 0 ? 6 : today - 1; // Convert to 0=Mon format
 
-    // Days of the current week being displayed
-    const weekDays = [];
-    for (let i = 0; i < 7; i++) {
-        const day = new Date(currentWeekStart);
+    // Generate all 21 visible days (7 before anchor week, anchor week, 7 after anchor week)
+    // This matches the calendar's visible range
+    const renderStart = new Date(currentWeekStart);
+    renderStart.setDate(renderStart.getDate() - 7);
+
+    const allVisibleDays = [];
+    for (let i = 0; i < 21; i++) {
+        const day = new Date(renderStart);
         day.setDate(day.getDate() + i);
-        weekDays.push({
+        allVisibleDays.push({
             date: day,
             dateStr: day.toISOString().split('T')[0],
             dayIndex: (day.getDay() === 0 ? 6 : day.getDay() - 1) // Convert to 0=Mon format
@@ -4694,6 +4802,11 @@ function renderScheduledCalendarBlocks() {
     appData.schedules.forEach(schedule => {
         const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
         if (!blocklist) return;
+
+        // Skip if blocklist has "always show in schedule" unchecked and isn't currently selected
+        if (blocklist.alwaysShowInSchedule === false && schedule.blocklistId !== selectedBlocklistId) {
+            return;
+        }
 
         // Check if schedule has expired (for date-limited schedules)
         if (schedule.repeatType === 'date' && schedule.repeatDate) {
@@ -4705,7 +4818,7 @@ function renderScheduledCalendarBlocks() {
         schedule.segments.forEach((segment, segmentIdx) => {
             const segmentDays = segment.days || [];
 
-            weekDays.forEach((weekDay, weekDayIdx) => {
+            allVisibleDays.forEach((weekDay, weekDayIdx) => {
                 if (!segmentDays.includes(weekDay.dayIndex)) return;
 
                 const track = document.querySelector(`.day-track[data-date="${weekDay.dateStr}"]`);
@@ -4755,7 +4868,7 @@ function renderScheduledCalendarBlocks() {
                     track.appendChild(blockEl1);
 
                     // Render second part: from midnight until end time on the next day
-                    const nextDay = weekDays[weekDayIdx + 1];
+                    const nextDay = allVisibleDays[weekDayIdx + 1];
                     if (nextDay) {
                         const nextTrack = document.querySelector(`.day-track[data-date="${nextDay.dateStr}"]`);
                         if (nextTrack) {
