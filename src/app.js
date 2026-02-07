@@ -5205,14 +5205,12 @@ function renderBlocklists() {
             let isDragging = false;
             const container = document.getElementById('blocklists-container');
 
-            console.log('[DragDrop] mousedown on', id);
 
             const onMouseMove = (moveEvent) => {
                 // Only start dragging after moving 5px
                 if (!isDragging && Math.abs(moveEvent.clientY - startY) > 5) {
                     isDragging = true;
                     card.classList.add('dragging');
-                    console.log('[DragDrop] Started dragging', id);
                 }
 
                 if (!isDragging) return;
@@ -5223,7 +5221,6 @@ function renderBlocklists() {
                     return moveEvent.clientY < rect.top + rect.height / 2;
                 });
 
-                console.log('[DragDrop] Moving, nextSibling:', nextSibling?.dataset.id);
 
                 if (nextSibling) {
                     container.insertBefore(card, nextSibling);
@@ -5233,7 +5230,6 @@ function renderBlocklists() {
             };
 
             const onMouseUp = () => {
-                console.log('[DragDrop] mouseup, isDragging:', isDragging);
                 document.removeEventListener('mousemove', onMouseMove);
                 document.removeEventListener('mouseup', onMouseUp);
                 card.classList.remove('dragging');
