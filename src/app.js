@@ -559,7 +559,8 @@ function setupModalListeners() {
     });
 
     modalWebsiteInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && modalWebsiteInput.value.trim()) {
+        // Enter or Space confirms the website (domains can't have spaces)
+        if ((e.key === 'Enter' || e.key === ' ') && modalWebsiteInput.value.trim()) {
             e.preventDefault();
             const website = modalWebsiteInput.value.trim().toLowerCase();
             if (!modalWebsites.includes(website)) {
