@@ -585,10 +585,18 @@ function setupModalListeners() {
 
     // Browse button for modal
     document.getElementById('modal-browse-apps-btn')?.addEventListener('click', async () => {
-        const appName = await tauriAPI.openAppPicker();
-        if (appName && !modalApps.includes(appName)) {
-            modalApps.push(appName);
-            window.renderModalTags();
+        const appNames = await tauriAPI.openAppPicker();
+        if (appNames && appNames.length > 0) {
+            let added = false;
+            for (const appName of appNames) {
+                if (!modalApps.includes(appName)) {
+                    modalApps.push(appName);
+                    added = true;
+                }
+            }
+            if (added) {
+                window.renderModalTags();
+            }
         }
     });
     // Override type
@@ -2101,16 +2109,15 @@ function showScheduleConfirmModal(blocklist) {
         appsRow.classList.add('hidden');
     } else {
         appsRow.classList.remove('hidden');
-        const appNames = apps.map(a => a.name);
         const maxShow = 3;
-        if (appNames.length <= maxShow) {
-            appsEl.textContent = appNames.join(', ');
+        if (apps.length <= maxShow) {
+            appsEl.textContent = apps.join(', ');
             showAllAppsBtn.classList.add('hidden');
         } else {
-            appsEl.textContent = appNames.slice(0, maxShow).join(', ') + '...';
+            appsEl.textContent = apps.slice(0, maxShow).join(', ') + '...';
             showAllAppsBtn.classList.remove('hidden');
             showAllAppsBtn.onclick = () => {
-                appsEl.textContent = appNames.join(', ');
+                appsEl.textContent = apps.join(', ');
                 showAllAppsBtn.classList.add('hidden');
             };
         }
