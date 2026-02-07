@@ -808,7 +808,14 @@ function setupModalListeners() {
         }
 
         closeBlocklistModal();
-        render();
+
+        // Only update blocklist display without resetting schedule segments
+        renderBlocklists();
+        renderBlocklistSelector();
+        // Re-render the schedule preview to reflect any blocklist changes
+        if (isScheduleMode && selectedBlocklistId) {
+            handleTimeChange();
+        }
     });
 
     // Store references for modal functions
@@ -1805,11 +1812,9 @@ function handleSegmentDayToggle(segmentIndex, dayIndex, btn) {
         segment.days.sort((a, b) => a - b);
         btn.classList.add('active');
     } else {
-        // Don't allow removing the last day
-        if (segment.days.length > 1) {
-            segment.days.splice(dayIdx, 1);
-            btn.classList.remove('active');
-        }
+        // Allow removing the day (segment with no days just won't apply)
+        segment.days.splice(dayIdx, 1);
+        btn.classList.remove('active');
     }
 
     // Update preview and button state
