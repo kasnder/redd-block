@@ -32,6 +32,12 @@ pub struct Blocklist {
     pub emoji: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub override_difficulty: Option<OverrideDifficulty>,
+    #[serde(default = "default_true")]
+    pub show_item_details: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
