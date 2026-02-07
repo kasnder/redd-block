@@ -704,6 +704,16 @@ function setupModalListeners() {
         });
     }
 
+    // Blocklist modal advanced options toggle
+    const blocklistAdvancedToggle = document.getElementById('blocklist-advanced-toggle');
+    const blocklistAdvancedContent = document.getElementById('blocklist-advanced-content');
+    if (blocklistAdvancedToggle && blocklistAdvancedContent) {
+        blocklistAdvancedToggle.addEventListener('click', () => {
+            blocklistAdvancedToggle.classList.toggle('expanded');
+            blocklistAdvancedContent.classList.toggle('hidden');
+        });
+    }
+
     // Cancel button
     document.getElementById('cancel-blocklist-btn').addEventListener('click', () => {
         closeBlocklistModal();
@@ -741,6 +751,8 @@ function setupModalListeners() {
         const selectedEmoji = document.querySelector('.emoji-swatch.selected');
         const emoji = selectedEmoji ? selectedEmoji.dataset.emoji : '🚫';
 
+        const showItemDetails = document.getElementById('show-item-details-checkbox').checked;
+
         // IMPORTANT: Create copies of the arrays, not references!
         const blocklist = {
             id: editingBlocklistId || generateId(),
@@ -750,6 +762,7 @@ function setupModalListeners() {
             emoji,
             websites: [...modalWebsites],  // Copy the array
             apps: [...modalApps],          // Copy the array
+            showItemDetails,
             overrideDifficulty: {
                 type: overrideType,
                 count: overrideCount,
@@ -3973,6 +3986,20 @@ function openBlocklistModal(blocklist = null) {
         window.setModalData(blocklist?.websites || [], blocklist?.apps || [], [], []);
     }
 
+    // Set advanced options - default to checked (true) if not set
+    const showItemDetailsCheckbox = document.getElementById('show-item-details-checkbox');
+    if (showItemDetailsCheckbox) {
+        showItemDetailsCheckbox.checked = blocklist?.showItemDetails !== false;
+    }
+
+    // Reset advanced options to collapsed state
+    const blocklistAdvancedToggle = document.getElementById('blocklist-advanced-toggle');
+    const blocklistAdvancedContent = document.getElementById('blocklist-advanced-content');
+    if (blocklistAdvancedToggle && blocklistAdvancedContent) {
+        blocklistAdvancedToggle.classList.remove('expanded');
+        blocklistAdvancedContent.classList.add('hidden');
+    }
+
     document.getElementById('blocklist-modal').classList.remove('hidden');
 
     // Reset scroll position after modal is shown
@@ -4743,22 +4770,31 @@ function renderBlocklists() {
         // Build detailed meta text
         const websiteCount = bl.websites?.length || 0;
         const appCount = bl.apps?.length || 0;
+        const showDetails = bl.showItemDetails !== false; // Default to true
         let metaParts = [];
 
         if (websiteCount > 0) {
-            const displaySites = bl.websites.map(cleanUrlForDisplay);
-            if (websiteCount <= 2) {
-                metaParts.push(`${websiteCount} ${websiteCount === 1 ? 'website' : 'websites'} (${displaySites.join(', ')})`);
+            if (showDetails) {
+                const displaySites = bl.websites.map(cleanUrlForDisplay);
+                if (websiteCount <= 2) {
+                    metaParts.push(`${websiteCount} ${websiteCount === 1 ? 'website' : 'websites'} (${displaySites.join(', ')})`);
+                } else {
+                    metaParts.push(`${websiteCount} websites (${displaySites.slice(0, 2).join(', ')}, ...)`);
+                }
             } else {
-                metaParts.push(`${websiteCount} websites (${displaySites.slice(0, 2).join(', ')}, ...)`);
+                metaParts.push(`${websiteCount} ${websiteCount === 1 ? 'website' : 'websites'}`);
             }
         }
 
         if (appCount > 0) {
-            if (appCount <= 2) {
-                metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'} (${bl.apps.join(', ')})`);
+            if (showDetails) {
+                if (appCount <= 2) {
+                    metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'} (${bl.apps.join(', ')})`);
+                } else {
+                    metaParts.push(`${appCount} apps (${bl.apps.slice(0, 2).join(', ')}, ...)`);
+                }
             } else {
-                metaParts.push(`${appCount} apps (${bl.apps.slice(0, 2).join(', ')}, ...)`);
+                metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'}`);
             }
         }
 

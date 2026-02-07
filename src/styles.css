@@ -3079,6 +3079,56 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
     display: none;
 }
 
+/* Blocklist Modal Advanced Options Toggle */
+.blocklist-advanced-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-muted);
+    transition: color 0.2s ease;
+    margin-top: 8px;
+    border-top: 1px solid var(--border-color-light);
+}
+
+.blocklist-advanced-toggle:hover {
+    color: var(--text-primary);
+}
+
+.blocklist-advanced-toggle .chevron-icon {
+    transition: transform 0.2s ease;
+}
+
+.blocklist-advanced-toggle.expanded .chevron-icon {
+    transform: rotate(180deg);
+}
+
+.blocklist-advanced-content {
+    padding-bottom: 12px;
+}
+
+.blocklist-advanced-content.hidden {
+    display: none;
+}
+
+.checkbox-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+.checkbox-option input[type="checkbox"] {
+    margin-top: 2px;
+    cursor: pointer;
+    accent-color: var(--accent-color);
+}
+
 /* Override All Button */
 .override-all-btn {
     display: flex;
