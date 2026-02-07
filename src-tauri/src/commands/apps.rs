@@ -1,9 +1,9 @@
 use tauri_plugin_dialog::DialogExt;
 use std::process::Command;
 
-/// Open a file picker dialog to select an application
+/// Open a file picker dialog to select one or more applications
 #[tauri::command]
-pub async fn open_app_picker(app: tauri::AppHandle) -> Result<Option<String>, String> {
+pub async fn open_app_picker(app: tauri::AppHandle) -> Result<Vec<String>, String> {
     #[cfg(target_os = "macos")]
     let default_path = std::path::Path::new("/Applications");
     
@@ -13,25 +13,27 @@ pub async fn open_app_picker(app: tauri::AppHandle) -> Result<Option<String>, St
     #[cfg(target_os = "linux")]
     let default_path = std::path::Path::new("/usr/share/applications");
 
-    let file = app.dialog()
+    let files = app.dialog()
         .file()
-        .set_title("Select Application to Block")
+        .set_title("Select Applications to Block")
         .set_directory(default_path)
-        .blocking_pick_file();
+        .blocking_pick_files();
 
-    match file {
-        Some(file_path) => {
-            // FilePath has into_path() method to get PathBuf
-            if let Some(path) = file_path.into_path().ok() {
-                // Extract app name from path
-                if let Some(name) = path.file_stem() {
-                    return Ok(Some(name.to_string_lossy().to_string()));
+    match files {
+        Some(file_paths) => {
+            let mut app_names = Vec::new();
+            for file_path in file_paths {
+                if let Some(path) = file_path.into_path().ok() {
+                    if let Some(name) = path.file_stem() {
+                        app_names.push(name.to_string_lossy().to_string());
+                    } else {
+                        app_names.push(path.to_string_lossy().to_string());
+                    }
                 }
-                return Ok(Some(path.to_string_lossy().to_string()));
             }
-            Ok(None)
+            Ok(app_names)
         }
-        None => Ok(None),
+        None => Ok(Vec::new()),
     }
 }
 
