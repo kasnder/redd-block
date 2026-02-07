@@ -5145,7 +5145,7 @@ function renderBlocklists() {
         const dimmedClass = isDimmed ? ' dimmed' : '';
 
         return `
-      <div class="blocklist-card${activeClass}${selectedClass}${dimmedClass}" data-id="${bl.id}" data-active="${isActive}" ${selectedStyle} draggable="true">
+      <div class="blocklist-card${activeClass}${selectedClass}${dimmedClass}" data-id="${bl.id}" data-active="${isActive}" ${selectedStyle} style="touch-action: none;">
         <div class="blocklist-stripe" style="background: ${borderColor}"></div>
         <div class="blocklist-info">
           <div class="blocklist-name"><span class="blocklist-emoji">${bl.emoji || '🚫'}</span>${escapeHtml(bl.name)}${activeBadge}</div>
@@ -5192,95 +5192,69 @@ function renderBlocklists() {
             deleteBlocklist(id);
         });
 
-        // Drag and drop event handlers
-        card.addEventListener('dragstart', (e) => {
-            draggedBlocklistId = id;
-            card.classList.add('dragging');
-            e.dataTransfer.effectAllowed = 'move';
-        });
+        // Drag and drop using mouse events on document
+        card.addEventListener('mousedown', (e) => {
+            // Don't start drag if clicking on buttons
+            if (e.target.closest('.edit-btn') || e.target.closest('.delete')) return;
+            if (e.target.closest('.blocklist-actions')) return;
+            if (e.button !== 0) return; // Only left click
 
-        card.addEventListener('dragend', () => {
-            card.classList.remove('dragging');
-            draggedBlocklistId = null;
-            // Remove drag-over styling from all cards
-            document.querySelectorAll('.blocklist-card').forEach(c => {
-                c.classList.remove('drag-over');
-            });
-        });
+            e.preventDefault(); // Prevent text selection
 
-        card.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            if (!draggedBlocklistId || draggedBlocklistId === id) return;
-
-            e.dataTransfer.dropEffect = 'move';
-
-            // Live reordering: move the dragged card in the DOM
+            const startY = e.clientY;
+            let isDragging = false;
             const container = document.getElementById('blocklists-container');
-            const draggingCard = container.querySelector('.blocklist-card.dragging');
-            if (!draggingCard) return;
 
-            // Find where to insert based on mouse Y position
-            const afterElement = getDragAfterElement(container, e.clientY);
-            if (afterElement == null) {
-                container.appendChild(draggingCard);
-            } else if (afterElement !== draggingCard) {
-                container.insertBefore(draggingCard, afterElement);
-            }
+            console.log('[DragDrop] mousedown on', id);
+
+            const onMouseMove = (moveEvent) => {
+                // Only start dragging after moving 5px
+                if (!isDragging && Math.abs(moveEvent.clientY - startY) > 5) {
+                    isDragging = true;
+                    card.classList.add('dragging');
+                    console.log('[DragDrop] Started dragging', id);
+                }
+
+                if (!isDragging) return;
+
+                const siblings = [...container.querySelectorAll('.blocklist-card:not(.dragging)')];
+                const nextSibling = siblings.find(sibling => {
+                    const rect = sibling.getBoundingClientRect();
+                    return moveEvent.clientY < rect.top + rect.height / 2;
+                });
+
+                console.log('[DragDrop] Moving, nextSibling:', nextSibling?.dataset.id);
+
+                if (nextSibling) {
+                    container.insertBefore(card, nextSibling);
+                } else {
+                    container.appendChild(card);
+                }
+            };
+
+            const onMouseUp = () => {
+                console.log('[DragDrop] mouseup, isDragging:', isDragging);
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+                card.classList.remove('dragging');
+
+                if (isDragging) {
+                    saveBlocklistOrderFromDOM();
+                }
+            };
+
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
         });
-
-        card.addEventListener('drop', (e) => {
-            e.preventDefault();
-            if (!draggedBlocklistId) return;
-
-            // Save the new order based on DOM positions
-            saveBlocklistOrderFromDOM();
-        });
     });
-
-    // Also handle dragover on the container for dropping at the end
-    const blocklistsContainer = document.getElementById('blocklists-container');
-    blocklistsContainer.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        if (!draggedBlocklistId) return;
-
-        // Only handle if not over a card
-        if (e.target.closest('.blocklist-card')) return;
-
-        const draggingCard = blocklistsContainer.querySelector('.blocklist-card.dragging');
-        if (draggingCard) {
-            blocklistsContainer.appendChild(draggingCard);
-        }
-    });
-
-    blocklistsContainer.addEventListener('drop', (e) => {
-        e.preventDefault();
-        if (!draggedBlocklistId) return;
-        saveBlocklistOrderFromDOM();
-    });
-}
-
-// Helper to find insertion point for vertical lists
-function getDragAfterElement(container, y) {
-    const draggableElements = [...container.querySelectorAll('.blocklist-card:not(.dragging)')];
-
-    return draggableElements.reduce((closest, child) => {
-        const box = child.getBoundingClientRect();
-        const offset = y - box.top - box.height / 2;
-
-        if (offset < 0 && offset > closest.offset) {
-            return { offset: offset, element: child };
-        } else {
-            return closest;
-        }
-    }, { offset: Number.NEGATIVE_INFINITY }).element;
 }
 
 // Save blocklist order based on DOM position
 function saveBlocklistOrderFromDOM() {
     const container = document.getElementById('blocklists-container');
-    const cardElements = Array.from(container.querySelectorAll('.blocklist-card'));
+    if (!container) return;
 
-    // Build new order from DOM
+    const cardElements = Array.from(container.querySelectorAll('.blocklist-card'));
     const newOrder = cardElements.map(card => card.dataset.id);
 
     // Reorder appData.blocklists to match
@@ -5292,7 +5266,7 @@ function saveBlocklistOrderFromDOM() {
         }
     });
 
-    // Add any blocklists that weren't in the DOM (shouldn't happen, but be safe)
+    // Add any blocklists that weren't in the DOM
     appData.blocklists.forEach(bl => {
         if (!reorderedBlocklists.find(r => r.id === bl.id)) {
             reorderedBlocklists.push(bl);

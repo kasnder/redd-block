@@ -2023,7 +2023,7 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
     border-radius: 10px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     transition: all 0.2s ease;
-    cursor: pointer;
+    cursor: grab;
     position: relative;
     /* overflow: hidden; Removed to keep stripe corners sharp */
 }
@@ -2124,7 +2124,7 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
 }
 
 .blocklist-card-scheduled {
-    border-left: 3px solid var(--accent-color);
+    /* No special border for scheduled cards */
 }
 
 .time-remaining {
