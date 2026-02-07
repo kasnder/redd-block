@@ -2592,22 +2592,38 @@ function renderSchedulePreview() {
     const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
     if (!blocklist) return;
 
+    // Determine the visible date range (21 days: 7 before anchor to 7 after anchor + 7)
+    const renderStart = new Date(currentWeekStart);
+    renderStart.setDate(renderStart.getDate() - 7);
+
     // For each segment, render blocks on its specific days
     scheduleSegments.forEach((segment, segmentIndex) => {
         // Determine if this is a locked (active) segment or a new preview segment
         const isLockedSegment = segmentIndex < activeScheduleSegmentCount;
 
-        // Get the days for this segment
+        // Get the days for this segment (0=Mon, 1=Tue, ..., 6=Sun)
         const segmentDays = segment.days || [];
 
-        segmentDays.forEach(dayIndex => {
-            // Calculate the date for this day in the current week
-            const dayDate = new Date(currentWeekStart);
-            dayDate.setDate(dayDate.getDate() + dayIndex);
+        // For non-repeating schedules, only render on the anchor week
+        // For repeating schedules (forever or date), render on all visible weeks
+        const shouldRepeat = scheduleRepeatType === 'forever' || scheduleRepeatType === 'date';
+        const daysToRender = shouldRepeat ? 21 : 7;
+        const dayOffset = shouldRepeat ? 0 : 7; // Non-repeating starts at anchor week (offset 7)
 
-            // For repeating schedules, check if outside the "until" date
+        for (let d = 0; d < daysToRender; d++) {
+            const dayDate = new Date(renderStart);
+            dayDate.setDate(dayDate.getDate() + d + dayOffset);
+
+            // Convert JS day (0=Sun) to our format (0=Mon)
+            const jsDayOfWeek = dayDate.getDay();
+            const dayIndex = jsDayOfWeek === 0 ? 6 : jsDayOfWeek - 1;
+
+            // Check if this day matches any selected days in the segment
+            if (!segmentDays.includes(dayIndex)) continue;
+
+            // For date-limited schedules, check if outside the "until" date
             if (scheduleRepeatType === 'date' && scheduleRepeatDate && dayDate > scheduleRepeatDate) {
-                return;
+                continue;
             }
 
             const blockStart = new Date(dayDate);
@@ -2627,7 +2643,7 @@ function renderSchedulePreview() {
             } else {
                 renderPreviewBlock(blockStart, blockEnd, blocklist, true, segmentIndex);
             }
-        });
+        }
     });
 }
 
