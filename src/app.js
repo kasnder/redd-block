@@ -5313,6 +5313,10 @@ function startTickInterval() {
             .map(b => b.id)
     );
 
+    // Initialize app blocking immediately at startup
+    // This ensures any active blocks or schedules are enforced right away
+    updateBlockedApps();
+
     setInterval(async () => {
         const now = Date.now();
 

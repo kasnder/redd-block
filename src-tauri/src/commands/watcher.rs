@@ -8,6 +8,7 @@ use std::collections::HashMap;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 use std::io::{BufRead, BufReader};
 use tauri::{AppHandle, Manager, Emitter};
 
@@ -17,6 +18,8 @@ pub struct ProcessWatcher {
     blocked_apps: HashMap<String, String>,
     watcher_process: Option<Child>,
     running: bool,
+    /// Last detection time per app (for debouncing)
+    last_detection: HashMap<String, Instant>,
 }
 
 impl ProcessWatcher {
@@ -25,6 +28,7 @@ impl ProcessWatcher {
             blocked_apps: HashMap::new(),
             watcher_process: None,
             running: false,
+            last_detection: HashMap::new(),
         }
     }
 }
@@ -104,13 +108,34 @@ fn internal_minimize_app(app_name: &str) {
             r#"tell application "System Events" to set visible of application process "{}" to false"#,
             escaped
         );
-        // Spawn without waiting to avoid blocking
-        let _ = Command::new("osascript")
-            .arg("-e")
-            .arg(&script)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
+        
+        // Try up to 3 times with small delays - osascript can fail on first calls
+        for attempt in 1..=3 {
+            let result = Command::new("osascript")
+                .arg("-e")
+                .arg(&script)
+                .output();
+            
+            match result {
+                Ok(output) if output.status.success() => {
+                    log::debug!("Minimized app: {} (attempt {})", app_name, attempt);
+                    return;
+                }
+                Ok(output) => {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    log::warn!("osascript failed for '{}' (attempt {}): {}", app_name, attempt, stderr.trim());
+                }
+                Err(e) => {
+                    log::warn!("Failed to run osascript for '{}' (attempt {}): {}", app_name, attempt, e);
+                }
+            }
+            
+            // Small delay before retry (except on last attempt)
+            if attempt < 3 {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
+        log::error!("Failed to minimize app after 3 attempts: {}", app_name);
     }
     
     #[cfg(target_os = "windows")]
@@ -137,9 +162,9 @@ foreach ($proc in $processes) {{
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn();
+        
+        log::debug!("Minimized app (Windows): {}", app_name);
     }
-    
-    log::debug!("Minimized app: {}", app_name);
 }
 
 /// Hide all currently blocked apps
@@ -235,6 +260,29 @@ end repeat
                 };
                 
                 if is_blocked {
+                    // Debounce: skip if we detected this app within the last 500ms
+                    let should_process = {
+                        let mut w = watcher_clone.lock().unwrap();
+                        let app_lower = app_name.to_lowercase();
+                        let now = Instant::now();
+                        
+                        if let Some(last_time) = w.last_detection.get(&app_lower) {
+                            if now.duration_since(*last_time) < Duration::from_millis(500) {
+                                false
+                            } else {
+                                w.last_detection.insert(app_lower, now);
+                                true
+                            }
+                        } else {
+                            w.last_detection.insert(app_lower, now);
+                            true
+                        }
+                    };
+                    
+                    if !should_process {
+                        continue;
+                    }
+                    
                     log::info!("Blocked app detected: {}", app_name);
                     
                     // Minimize the app
