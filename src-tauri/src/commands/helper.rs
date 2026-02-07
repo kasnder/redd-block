@@ -26,8 +26,9 @@ pub struct HelperStatus {
     pub version_ok: bool,
 }
 
-/// Expected helper version (should match app version)
-const EXPECTED_HELPER_VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Expected helper version - update this when helper-daemon changes
+/// This is separate from the app version to avoid unnecessary reinstalls
+const EXPECTED_HELPER_VERSION: &str = "0.4.4";
 
 /// Result from helper operations
 #[derive(Debug, Clone, Serialize, Deserialize)]

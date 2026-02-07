@@ -104,6 +104,22 @@ redd-block/
     └── src/main.rs           # Hosts file management
 ```
 
+## Version Management
+
+The app and helper daemon are versioned independently:
+
+| Component | Version Location |
+|-----------|------------------|
+| **App** | `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` |
+| **Helper daemon** | `helper-daemon/Cargo.toml` |
+| **Expected helper version** | `src-tauri/src/commands/helper.rs` → `EXPECTED_HELPER_VERSION` |
+
+When updating the helper daemon:
+1. Bump version in `helper-daemon/Cargo.toml`
+2. Update `EXPECTED_HELPER_VERSION` in `helper.rs` to match
+
+This separation avoids prompting users to reinstall the helper when only the app changes.
+
 ## Data Storage
 
 ### User Data
