@@ -17,6 +17,39 @@ Built by reddfocus.org with <3 (and with [Tauri 2](https://tauri.app/) for a lig
 - **Cross-Platform** — Works on macOS and Windows
 - **Theme Options** — Auto, light, or dark mode
 
+## Architecture
+
+```mermaid
+flowchart TB
+    subgraph Frontend["Frontend (HTML/JS/CSS)"]
+        UI[User Interface]
+    end
+
+    subgraph Tauri["Tauri Backend (Rust)"]
+        IPC[IPC Commands]
+        Watcher[App Watcher]
+        Data[Data Store]
+    end
+
+    subgraph Helper["Helper Daemon (Privileged)"]
+        HostsMgr[Hosts Manager]
+        State[Block State]
+    end
+
+    subgraph System["System Resources"]
+        Hosts["/etc/hosts"]
+        Apps[Running Apps]
+    end
+
+    UI <-->|invoke/listen| IPC
+    IPC <-->|TCP localhost| HostsMgr
+    IPC --> Watcher
+    IPC --> Data
+    Watcher -->|hide/minimize| Apps
+    HostsMgr -->|read/write| Hosts
+    HostsMgr --> State
+```
+
 ## How It Works
 
 ### Website Blocking
@@ -25,7 +58,7 @@ A privileged helper daemon modifies the system hosts file to redirect blocked do
 
 | Platform | Hosts File | Helper Location |
 |----------|------------|-----------------|
-| macOS | `/etc/hosts` | launchd daemon |
+| macOS | `/etc/hosts` | `/Library/PrivilegedHelperTools/com.redd.block.helper` (launchd daemon) |
 | Windows | `C:\Windows\System32\drivers\etc\hosts` | Scheduled Task (runs at logon) |
 
 ### App Blocking
@@ -96,6 +129,7 @@ redd-block/
 │   ├── src/
 │   │   ├── lib.rs            # App setup & window config
 │   │   └── commands/         # IPC commands
+│   │       ├── apps.rs       # App picker & running apps
 │   │       ├── helper.rs     # Helper daemon communication
 │   │       ├── watcher.rs    # App blocking process watcher
 │   │       └── data.rs       # Data persistence
