@@ -87,6 +87,20 @@ body {
     overflow: hidden;
 }
 
+/* iOS safe area adjustments */
+body.ios {
+    padding-top: env(safe-area-inset-top, 20px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+body.ios .main-content {
+    margin-top: 0;
+}
+
+body.ios .app-container {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
 /* App Container */
 .app-container {
     width: 100vw;
@@ -201,7 +215,7 @@ body.dark-mode .title-bar button:hover {
 }
 
 .section-header h2 {
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 600;
     color: var(--header-text);
     text-transform: uppercase;
@@ -210,8 +224,8 @@ body.dark-mode .title-bar button:hover {
 
 /* Icon Button */
 .icon-btn {
-    width: 28px;
-    height: 28px;
+    width: 34px;
+    height: 34px;
     border: none;
     border-radius: 6px;
     background: transparent;
@@ -1347,12 +1361,12 @@ body.dark-mode .scheduler-mode-tabs {
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 4px 10px;
+    padding: 6px 14px;
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     background: transparent;
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.15s ease;

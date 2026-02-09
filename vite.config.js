@@ -14,6 +14,8 @@ export default defineConfig({
     server: {
         port: 5173,
         strictPort: true,
+        // Listen on all interfaces when developing for iOS physical devices
+        host: process.env.TAURI_DEV_HOST || false,
     },
 
     // Clear console on hot reload

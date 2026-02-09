@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-block-websites"
+description = "Enables the block_websites command without any pre-configured scope."
+commands.allow = ["block_websites"]
+
+[[permission]]
+identifier = "deny-block-websites"
+description = "Denies the block_websites command without any pre-configured scope."
+commands.deny = ["block_websites"]

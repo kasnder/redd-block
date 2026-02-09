@@ -1,13 +1,19 @@
+#[cfg(not(target_os = "ios"))]
+use tauri::Manager;
+
+#[cfg(feature = "desktop")]
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    Manager,
 };
 
 #[cfg(target_os = "macos")]
 use tauri::{TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
 
 #[cfg(target_os = "windows")]
+use tauri::{WebviewUrl, WebviewWindowBuilder};
+
+#[cfg(target_os = "ios")]
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 
 mod commands;
@@ -18,6 +24,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_screentime::init())
         .setup(|app| {
             // Set up logging in debug mode
             if cfg!(debug_assertions) {
@@ -73,56 +80,84 @@ pub fn run() {
                 win_builder.build()?;
             }
 
-            // Create system tray menu
-            let open_item = MenuItem::with_id(app, "open", "Open ReDD Block", true, None::<&str>)?;
-            let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&open_item, &quit_item])?;
+            // Create main window on iOS — full screen webview
+            #[cfg(target_os = "ios")]
+            {
+                let _window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+                    .build()?;
+            }
 
-            // Build tray icon
-            let _tray = TrayIconBuilder::new()
-                .menu(&menu)
-                .tooltip("ReDD Block")
-                .on_menu_event(|app, event| match event.id.as_ref() {
-                    "open" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
+            // Create system tray menu (desktop only)
+            #[cfg(feature = "desktop")]
+            {
+                let open_item = MenuItem::with_id(app, "open", "Open ReDD Block", true, None::<&str>)?;
+                let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&open_item, &quit_item])?;
+
+                // Build tray icon
+                let _tray = TrayIconBuilder::new()
+                    .menu(&menu)
+                    .tooltip("ReDD Block")
+                    .on_menu_event(|app, event| match event.id.as_ref() {
+                        "open" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
                         }
-                    }
-                    "quit" => {
-                        app.exit(0);
-                    }
-                    _ => {}
-                })
-                .build(app)?;
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    })
+                    .build(app)?;
+            }
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![
-            // Data commands
-            commands::get_app_version,
-            commands::load_data,
-            commands::save_data,
-            commands::set_window_size,
-            // App commands
-            commands::open_app_picker,
-            commands::get_running_apps,
-            commands::minimize_app,
-            // Helper commands
-            commands::check_helper_status,
-            commands::install_helper,
-            commands::uninstall_helper,
-            commands::start_block_via_helper,
-            commands::clear_block_via_helper,
-            commands::block_websites,
-            commands::refresh_blocked_apps,
-            // Process watcher commands
-            commands::start_process_watcher,
-            commands::stop_process_watcher,
-            commands::set_blocked_apps,
-            commands::has_blocked_apps,
-            commands::hide_all_blocked_apps,
-        ])
+        .invoke_handler(all_commands())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// All commands for desktop platforms (includes helper, apps, watcher)
+#[cfg(not(target_os = "ios"))]
+fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
+    tauri::generate_handler![
+        // Data commands (all platforms)
+        commands::get_app_version,
+        commands::load_data,
+        commands::save_data,
+        commands::set_window_size,
+        // App commands (desktop only)
+        commands::open_app_picker,
+        commands::get_running_apps,
+        commands::minimize_app,
+        // Helper commands (desktop only)
+        commands::check_helper_status,
+        commands::install_helper,
+        commands::uninstall_helper,
+        commands::start_block_via_helper,
+        commands::clear_block_via_helper,
+        commands::block_websites,
+        commands::refresh_blocked_apps,
+        // Process watcher commands (desktop only)
+        commands::start_process_watcher,
+        commands::stop_process_watcher,
+        commands::set_blocked_apps,
+        commands::has_blocked_apps,
+        commands::hide_all_blocked_apps,
+    ]
+}
+
+/// Commands for iOS (only shared commands for now; Screen Time plugin will add more)
+#[cfg(target_os = "ios")]
+fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
+    tauri::generate_handler![
+        // Data commands (all platforms)
+        commands::get_app_version,
+        commands::load_data,
+        commands::save_data,
+        commands::set_window_size,
+    ]
 }

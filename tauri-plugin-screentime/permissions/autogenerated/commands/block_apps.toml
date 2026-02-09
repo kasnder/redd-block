@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-block-apps"
+description = "Enables the block_apps command without any pre-configured scope."
+commands.allow = ["block_apps"]
+
+[[permission]]
+identifier = "deny-block-apps"
+description = "Denies the block_apps command without any pre-configured scope."
+commands.deny = ["block_apps"]

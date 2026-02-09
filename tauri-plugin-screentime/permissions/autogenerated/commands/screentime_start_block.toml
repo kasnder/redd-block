@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-screentime-start-block"
+description = "Enables the screentime_start_block command without any pre-configured scope."
+commands.allow = ["screentime_start_block"]
+
+[[permission]]
+identifier = "deny-screentime-start-block"
+description = "Denies the screentime_start_block command without any pre-configured scope."
+commands.deny = ["screentime_start_block"]

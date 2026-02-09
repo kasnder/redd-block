@@ -45,6 +45,15 @@ const tauriAPI = {
     stopProcessWatcher: () => invoke('stop_process_watcher'),
     hideAllBlockedApps: () => invoke('hide_all_blocked_apps'),
 
+    // Screen Time API (iOS only - provided by tauri-plugin-screentime)
+    screentimeRequestAuth: () => invoke('plugin:screentime|request_authorization'),
+    screentimeCheckAuth: () => invoke('plugin:screentime|check_authorization'),
+    screentimeBlockWebsites: (domains) => invoke('plugin:screentime|block_websites', { domains }),
+    screentimeUnblockWebsites: () => invoke('plugin:screentime|unblock_websites'),
+    screentimeStartBlock: (domains) => invoke('plugin:screentime|screentime_start_block', { domains }),
+    screentimeClearBlock: () => invoke('plugin:screentime|screentime_clear_block'),
+    showActivityPicker: () => invoke('plugin:screentime|show_activity_picker'),
+
     // Event listening
     onBlocksUpdated: (callback) => listen('blocks-updated', callback),
 };
@@ -75,6 +84,8 @@ let activatedBlockIds = new Set(); // Track blocks that have already triggered h
 let helperAvailable = false; // Track if the privileged helper daemon is running
 let pendingBlockData = null; // Store block data when waiting for helper installation
 let draggedBlocklistId = null; // Track which blocklist is being dragged
+let isIOS = false; // Track if running on iOS
+let screentimeAuthorized = false; // Track if Screen Time is authorized (iOS)
 
 // Week calendar state
 let currentWeekStart = null; // Date object for Monday of the displayed week
@@ -101,7 +112,12 @@ const wordList = [
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     await loadData();
-    await checkHelperStatus();
+    detectPlatform(); // Must run early so isIOS is set before other setup
+    if (isIOS) {
+        await checkScreentimeAuth();
+    } else {
+        await checkHelperStatus();
+    }
     setupEventListeners();
     setupTheme();
     setupHelperSettings();
@@ -109,11 +125,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     render();
     scrollToNow(false); // Initial scroll (instant, no animation)
     startTickInterval();
-    detectPlatform();
 });
 
-// Check if the helper daemon is available
+// Check if the helper daemon is available (desktop only)
 async function checkHelperStatus() {
+    if (isIOS) return; // iOS uses Screen Time, not helper daemon
     try {
         const status = await tauriAPI.checkHelperStatus();
         // Helper is only considered available if running AND version matches
@@ -128,6 +144,34 @@ async function checkHelperStatus() {
     } catch (err) {
         console.error('Error checking helper status:', err);
         helperAvailable = false;
+    }
+}
+
+// Check Screen Time authorization (iOS only)
+async function checkScreentimeAuth() {
+    try {
+        const result = await tauriAPI.screentimeCheckAuth();
+        screentimeAuthorized = result.granted;
+        console.log('Screen Time auth status:', result.status);
+        if (!screentimeAuthorized) {
+            console.log('Screen Time not authorized - will prompt on first block');
+        }
+    } catch (err) {
+        console.error('Error checking Screen Time auth:', err);
+        screentimeAuthorized = false;
+    }
+}
+
+// Request Screen Time authorization (iOS only)
+async function requestScreentimeAuth() {
+    try {
+        const result = await tauriAPI.screentimeRequestAuth();
+        screentimeAuthorized = result.granted;
+        console.log('Screen Time auth result:', result);
+        return result;
+    } catch (err) {
+        console.error('Error requesting Screen Time auth:', err);
+        return { granted: false, status: 'error', error: err.toString() };
     }
 }
 
@@ -167,17 +211,69 @@ function isVersionHigher(versionA, versionB) {
     return false; // Equal versions
 }
 
-// Detect platform for window controls
+// Detect platform for window controls and iOS
 function detectPlatform() {
-    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-    if (isMac) {
-        document.body.classList.add('mac');
-        // Hide controls on macOS - native traffic lights are used
+    // Check for iOS (Tauri iOS uses a WKWebView with standard iOS user agent)
+    const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+    if (isIOSDevice) {
+        isIOS = true;
+        document.body.classList.add('ios');
+        // Hide desktop-only UI on iOS
         document.getElementById('window-controls')?.classList.add('hidden');
+        document.querySelector('.title-bar')?.classList.add('hidden');
+        // Hide helper-related settings section on iOS
+        document.getElementById('helper-settings-section')?.classList.add('hidden');
+
+        // On iOS, app blocking uses Screen Time tokens (not app names).
+        // Hide the text input for apps and show only the picker button.
+        const appInput = document.getElementById('app-input');
+        if (appInput) appInput.style.display = 'none';
+        const modalAppInput = document.getElementById('modal-app-input');
+        if (modalAppInput) modalAppInput.style.display = 'none';
+
+        // Update hint text for onboarding
+        const onboardingAppHint = document.querySelector('#app-input')?.closest('.form-group')?.querySelector('.form-hint');
+        if (onboardingAppHint) onboardingAppHint.textContent = 'Tap the button to select apps via Screen Time';
+        // Update tooltip for onboarding
+        const onboardingAppTooltip = document.querySelector('#app-input')?.closest('.form-group')?.querySelector('.info-tooltip');
+        if (onboardingAppTooltip) onboardingAppTooltip.textContent = 'On iOS, apps are selected using Apple\'s Screen Time picker. Tap the button to choose which apps to block.';
+
+        // Update hint/tooltip for modal — find via modal-app-input's parent
+        const modalAppGroup = document.querySelector('#modal-app-input')?.closest('.form-group');
+        if (modalAppGroup) {
+            const modalTooltip = modalAppGroup.querySelector('.info-tooltip');
+            if (modalTooltip) modalTooltip.textContent = 'On iOS, apps are selected using Apple\'s Screen Time picker. Tap the button to choose which apps to block.';
+        }
+
+        // Make the browse buttons more prominent (full-width) since they're the only option
+        document.querySelectorAll('.browse-btn').forEach(btn => {
+            btn.style.width = '100%';
+            btn.style.justifyContent = 'center';
+            btn.style.padding = '10px';
+            btn.title = 'Select Apps (Screen Time)';
+            // Add text label next to the icon
+            if (!btn.querySelector('.browse-label')) {
+                const label = document.createElement('span');
+                label.className = 'browse-label';
+                label.textContent = ' Select Apps';
+                label.style.marginLeft = '6px';
+                label.style.fontSize = '13px';
+                btn.appendChild(label);
+            }
+        });
     } else {
-        document.body.classList.add('windows');
-        // Show controls on Windows
-        document.getElementById('window-controls')?.classList.remove('hidden');
+        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+        if (isMac) {
+            document.body.classList.add('mac');
+            // Hide controls on macOS - native traffic lights are used
+            document.getElementById('window-controls')?.classList.add('hidden');
+        } else {
+            document.body.classList.add('windows');
+            // Show controls on Windows
+            document.getElementById('window-controls')?.classList.remove('hidden');
+        }
     }
 }
 
@@ -445,7 +541,7 @@ function setupOnboardingListeners() {
     let onboardingApps = [];
 
     websiteInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && websiteInput.value.trim()) {
+        if ((e.key === 'Enter' || e.key === ' ') && websiteInput.value.trim()) {
             e.preventDefault();
             const website = websiteInput.value.trim().toLowerCase();
             if (!onboardingWebsites.includes(website)) {
@@ -460,7 +556,7 @@ function setupOnboardingListeners() {
     });
 
     appInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && appInput.value.trim()) {
+        if ((e.key === 'Enter' || e.key === ' ') && appInput.value.trim()) {
             e.preventDefault();
             const app = appInput.value.trim();
             if (!onboardingApps.includes(app)) {
@@ -475,16 +571,45 @@ function setupOnboardingListeners() {
     });
 
     // Browse button for onboarding
-    document.getElementById('browse-apps-btn')?.addEventListener('click', async () => {
-        const appName = await tauriAPI.openAppPicker();
-        if (appName && !onboardingApps.includes(appName)) {
-            onboardingApps.push(appName);
-            renderTags(appsTags, onboardingApps, (idx) => {
-                onboardingApps.splice(idx, 1);
-                renderTags(appsTags, onboardingApps);
-            });
-        }
-    });
+    const browseAppsBtn = document.getElementById('browse-apps-btn');
+    if (isIOS && browseAppsBtn) {
+        browseAppsBtn.addEventListener('click', async () => {
+            try {
+                const result = await tauriAPI.showActivityPicker();
+                if (!result.cancelled && (result.applicationCount > 0 || result.categoryCount > 0)) {
+                    const parts = [];
+                    if (result.applicationCount > 0) parts.push(`${result.applicationCount} app${result.applicationCount > 1 ? 's' : ''}`);
+                    if (result.categoryCount > 0) parts.push(`${result.categoryCount} categor${result.categoryCount > 1 ? 'ies' : 'y'}`);
+                    const label = parts.join(', ') + ' selected (Screen Time)';
+                    // Remove any existing Screen Time entries (replace, don't append)
+                    for (let i = onboardingApps.length - 1; i >= 0; i--) {
+                        if (onboardingApps[i].includes('selected (Screen Time)')) {
+                            onboardingApps.splice(i, 1);
+                        }
+                    }
+                    onboardingApps.push(label);
+                    renderTags(appsTags, onboardingApps, (idx) => {
+                        onboardingApps.splice(idx, 1);
+                        renderTags(appsTags, onboardingApps);
+                    });
+                }
+            } catch (err) {
+                console.error('Activity picker error:', err);
+                alert('Failed to open app picker: ' + err);
+            }
+        });
+    } else if (browseAppsBtn) {
+        browseAppsBtn.addEventListener('click', async () => {
+            const appName = await tauriAPI.openAppPicker();
+            if (appName && !onboardingApps.includes(appName)) {
+                onboardingApps.push(appName);
+                renderTags(appsTags, onboardingApps, (idx) => {
+                    onboardingApps.splice(idx, 1);
+                    renderTags(appsTags, onboardingApps);
+                });
+            }
+        });
+    }
 
     document.getElementById('create-first-blocklist-btn').addEventListener('click', () => {
         // Auto-confirm any pending input in the website/app fields
@@ -584,21 +709,47 @@ function setupModalListeners() {
     });
 
     // Browse button for modal
-    document.getElementById('modal-browse-apps-btn')?.addEventListener('click', async () => {
-        const appNames = await tauriAPI.openAppPicker();
-        if (appNames && appNames.length > 0) {
-            let added = false;
-            for (const appName of appNames) {
-                if (!modalApps.includes(appName)) {
-                    modalApps.push(appName);
-                    added = true;
+    const modalBrowseBtn = document.getElementById('modal-browse-apps-btn');
+    if (isIOS && modalBrowseBtn) {
+        modalBrowseBtn.addEventListener('click', async () => {
+            try {
+                const result = await tauriAPI.showActivityPicker();
+                if (!result.cancelled && (result.applicationCount > 0 || result.categoryCount > 0)) {
+                    const parts = [];
+                    if (result.applicationCount > 0) parts.push(`${result.applicationCount} app${result.applicationCount > 1 ? 's' : ''}`);
+                    if (result.categoryCount > 0) parts.push(`${result.categoryCount} categor${result.categoryCount > 1 ? 'ies' : 'y'}`);
+                    const label = parts.join(', ') + ' selected (Screen Time)';
+                    // Remove any existing Screen Time entries (replace, don't append)
+                    for (let i = modalApps.length - 1; i >= 0; i--) {
+                        if (modalApps[i].includes('selected (Screen Time)')) {
+                            modalApps.splice(i, 1);
+                        }
+                    }
+                    modalApps.push(label);
+                    window.renderModalTags();
+                }
+            } catch (err) {
+                console.error('Activity picker error:', err);
+                alert('Failed to open app picker: ' + err);
+            }
+        });
+    } else if (modalBrowseBtn) {
+        modalBrowseBtn.addEventListener('click', async () => {
+            const appNames = await tauriAPI.openAppPicker();
+            if (appNames && appNames.length > 0) {
+                let added = false;
+                for (const appName of appNames) {
+                    if (!modalApps.includes(appName)) {
+                        modalApps.push(appName);
+                        added = true;
+                    }
+                }
+                if (added) {
+                    window.renderModalTags();
                 }
             }
-            if (added) {
-                window.renderModalTags();
-            }
-        }
-    });
+        });
+    }
     // Override type
     document.getElementById('override-type').addEventListener('change', (e) => {
         const type = e.target.value;
@@ -946,15 +1097,19 @@ function setupOverrideModalListeners() {
                 appData.activeBlocks = appData.activeBlocks.filter(b => b.id !== overrideBlockId);
                 await saveData();
 
-                // Always try the helper first (it should be running after initial block was started)
-                // Re-check helper status in case it was installed this session
-                const status = await tauriAPI.checkHelperStatus();
-                if (status.running) {
-                    helperAvailable = true;
-                    await tauriAPI.clearBlockViaHelper();
+                // Clear blocking - use Screen Time on iOS, helper on desktop
+                if (isIOS) {
+                    await tauriAPI.screentimeClearBlock();
                 } else {
-                    // Fallback to direct update only if helper truly not running
-                    await updateHostsFile();
+                    // Re-check helper status in case it was installed this session
+                    const status = await tauriAPI.checkHelperStatus();
+                    if (status.running) {
+                        helperAvailable = true;
+                        await tauriAPI.clearBlockViaHelper();
+                    } else {
+                        // Fallback to direct update only if helper truly not running
+                        await updateHostsFile();
+                    }
                 }
 
                 // Update blocked apps (will stop watcher if no apps to block, including schedules)
@@ -3437,42 +3592,67 @@ async function proceedWithBlock() {
 
     let result;
 
-    // Try to use the helper daemon (no password required!)
-    if (helperAvailable) {
-        result = await tauriAPI.startBlockViaHelper({
-            domains: blocklist.websites || [],
-            endTime: blockEnd.getTime(),
-            blocklistId: selectedBlocklistId
-        });
-    } else {
-        // Helper not available - check if it's installed but just not detected
-        const status = await tauriAPI.checkHelperStatus();
+    if (isIOS) {
+        // iOS: Use Screen Time API via plugin
+        if (!screentimeAuthorized) {
+            const authResult = await requestScreentimeAuth();
+            if (!authResult.granted) {
+                startBtn.disabled = false;
+                startBtn.innerHTML = getStartBlockButtonHTML();
+                if (authResult.status === 'denied') {
+                    alert('Screen Time authorization was denied. Please go to Settings > Screen Time > ReDD Block and enable access.');
+                } else if (authResult.error) {
+                    alert('Screen Time authorization failed: ' + authResult.error);
+                } else {
+                    alert('Screen Time authorization is required to block websites. Please try again.');
+                }
+                return;
+            }
+        }
 
-        if (status.running && status.version_ok) {
-            // It's running with correct version, use it
-            helperAvailable = true;
+        try {
+            result = await tauriAPI.screentimeStartBlock(blocklist.websites || []);
+        } catch (err) {
+            result = { success: false, error: err.toString() };
+        }
+    } else {
+        // Desktop: Try to use the helper daemon (no password required!)
+        if (helperAvailable) {
             result = await tauriAPI.startBlockViaHelper({
                 domains: blocklist.websites || [],
                 endTime: blockEnd.getTime(),
                 blocklistId: selectedBlocklistId
             });
         } else {
-            // Helper not running, not installed, or outdated - show the install modal
-            // The install flow will update an outdated helper
-            if (status.running && !status.version_ok) {
-                console.log('Helper is outdated, need to update - showing install modal');
-            }
-            pendingBlockData = {
-                block,
-                blocklist,
-                blockEnd
-            };
-            document.getElementById('helper-install-modal').classList.remove('hidden');
+            // Helper not available - check if it's installed but just not detected
+            const status = await tauriAPI.checkHelperStatus();
 
-            // Re-enable button and return - modal will handle the rest
-            startBtn.disabled = false;
-            startBtn.innerHTML = getStartBlockButtonHTML();
-            return;
+            if (status.running && status.version_ok) {
+                // It's running with correct version, use it
+                helperAvailable = true;
+                result = await tauriAPI.startBlockViaHelper({
+                    domains: blocklist.websites || [],
+                    endTime: blockEnd.getTime(),
+                    blocklistId: selectedBlocklistId
+                });
+            } else {
+                // Helper not running, not installed, or outdated - show the install modal
+                // The install flow will update an outdated helper
+                if (status.running && !status.version_ok) {
+                    console.log('Helper is outdated, need to update - showing install modal');
+                }
+                pendingBlockData = {
+                    block,
+                    blocklist,
+                    blockEnd
+                };
+                document.getElementById('helper-install-modal').classList.remove('hidden');
+
+                // Re-enable button and return - modal will handle the rest
+                startBtn.disabled = false;
+                startBtn.innerHTML = getStartBlockButtonHTML();
+                return;
+            }
         }
     }
 
@@ -3488,8 +3668,8 @@ async function proceedWithBlock() {
         return;
     }
 
-    // Add block to local data if using helper (which manages its own state)
-    if (helperAvailable) {
+    // Add block to local data (both iOS screen time and desktop helper track blocks locally)
+    if (isIOS || helperAvailable) {
         appData.activeBlocks.push(block);
         activatedBlockIds.add(block.id);
     }
@@ -3767,6 +3947,9 @@ async function updateHostsFile(silent = false) {
 
 // Update blocked apps list based on active blocks and schedules
 async function updateBlockedApps() {
+    // iOS uses Screen Time API for app blocking - skip desktop process watcher
+    if (isIOS) return;
+
     const allBlockedApps = new Set();
     const now = Date.now();
     const nowDate = new Date();
@@ -5007,7 +5190,26 @@ function renderBlocklists() {
         }
 
         if (appCount > 0) {
-            if (showDetails) {
+            // Check if any entries are Screen Time selections (iOS)
+            const screenTimeEntries = bl.apps.filter(a => a.includes('selected (Screen Time)'));
+            const regularApps = bl.apps.filter(a => !a.includes('selected (Screen Time)'));
+
+            if (screenTimeEntries.length > 0) {
+                // Extract the Screen Time summary directly (e.g., "2 apps, 1 category selected (Screen Time)")
+                // Use the embedded text as-is, stripping " selected (Screen Time)"
+                const stParts = [];
+                for (const entry of screenTimeEntries) {
+                    const summary = entry.replace(' selected (Screen Time)', '');
+                    stParts.push(summary);
+                }
+                const stText = stParts.join(', ') + ' via Screen Time';
+
+                if (regularApps.length > 0) {
+                    metaParts.push(`${regularApps.length} ${regularApps.length === 1 ? 'app' : 'apps'} + ${stText}`);
+                } else {
+                    metaParts.push(stText);
+                }
+            } else if (showDetails) {
                 if (appCount <= 2) {
                     metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'} (${bl.apps.join(', ')})`);
                 } else {
@@ -6140,10 +6342,14 @@ async function performOverrideAll() {
         // Save the data
         await saveData();
 
-        // Clear website blocking via helper (this surgically removes our hosts entries)
-        const status = await tauriAPI.checkHelperStatus();
-        if (status.running) {
-            await tauriAPI.clearBlockViaHelper();
+        // Clear website blocking - use Screen Time on iOS, helper on desktop
+        if (isIOS) {
+            await tauriAPI.screentimeClearBlock();
+        } else {
+            const status = await tauriAPI.checkHelperStatus();
+            if (status.running) {
+                await tauriAPI.clearBlockViaHelper();
+            }
         }
 
         // Update blocked apps (will stop watcher if no apps to block)

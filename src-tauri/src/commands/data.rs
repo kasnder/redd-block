@@ -1,7 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri::{AppHandle, Manager};
+#[cfg(not(target_os = "ios"))]
+use tauri::WebviewWindow;
 
 /// App data structure - matches the Electron version exactly
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -148,11 +150,19 @@ pub fn save_data(app: AppHandle, data: AppData) -> Result<(), String> {
     Ok(())
 }
 
-/// Set window size (used after onboarding)
+/// Set window size (used after onboarding) - desktop only
 #[tauri::command]
+#[cfg(not(target_os = "ios"))]
 pub fn set_window_size(window: WebviewWindow, width: f64, height: f64) -> Result<(), String> {
     use tauri::LogicalSize;
     window.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
     window.center().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Set window size - no-op on iOS (always fullscreen)
+#[tauri::command]
+#[cfg(target_os = "ios")]
+pub fn set_window_size(_width: f64, _height: f64) -> Result<(), String> {
     Ok(())
 }

@@ -1,0 +1,15 @@
+[default]
+description = "Default permissions for the screentime plugin"
+permissions = [
+    "allow-request-authorization",
+    "allow-check-authorization",
+    "allow-block-websites",
+    "allow-unblock-websites",
+    "allow-block-apps",
+    "allow-unblock-apps",
+    "allow-screentime-start-block",
+    "allow-screentime-clear-block",
+    "allow-schedule-block",
+    "allow-unschedule-block",
+    "allow-show-activity-picker"
+]

@@ -1,0 +1,15 @@
+{
+    "bundle": {
+        "iOS": {
+            "minimumSystemVersion": "16.0"
+        },
+        "externalBin": [],
+        "resources": []
+    },
+    "build": {
+        "beforeBuildCommand": "npm run vite:build"
+    },
+    "app": {
+        "trayIcon": null
+    }
+}

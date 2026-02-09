@@ -1,0 +1,20 @@
+const COMMANDS: &[&str] = &[
+    "request_authorization",
+    "check_authorization",
+    "block_websites",
+    "unblock_websites",
+    "block_apps",
+    "unblock_apps",
+    "screentime_start_block",
+    "screentime_clear_block",
+    "schedule_block",
+    "unschedule_block",
+    "show_activity_picker",
+];
+
+fn main() {
+  tauri_plugin::Builder::new(COMMANDS)
+    .android_path("android")
+    .ios_path("ios")
+    .build();
+}
