@@ -8,16 +8,19 @@ Built by reddfocus.org with <3 (and with [Tauri 2](https://tauri.app/) for a lig
 
 - **Website Blocking** — System-level hosts file blocking works across all browsers
 - **App Blocking** — Automatically minimizes/hides distracting apps when launched or focused
+- **iOS App Blocking** — Native Screen Time integration with FamilyActivityPicker for selecting apps/categories to block
 - **Flexible Blocklists** — Create multiple lists with custom names, colors, and emojis
 - **Scheduled Blocks** — Set recurring blocks on specific days/times (e.g., block social media Mon-Fri 9am-5pm)
 - **One-Off Blocks** — Quick blocks for immediate focus sessions
 - **Visual Calendar** — See all your scheduled and active blocks on an interactive weekly timeline
 - **Override Protection** — Configurable typing challenges prevent impulsive unblocking
 - **Background Operation** — Blocks continue even when the app is closed
-- **Cross-Platform** — Works on macOS and Windows
+- **Cross-Platform** — Works on macOS, Windows, and iOS (iPad/iPhone)
 - **Theme Options** — Auto, light, or dark mode
 
 ## Architecture
+
+### Desktop (macOS / Windows)
 
 ```mermaid
 flowchart TB
@@ -50,6 +53,38 @@ flowchart TB
     HostsMgr --> State
 ```
 
+### iOS (iPad / iPhone)
+
+```mermaid
+flowchart TB
+    subgraph Frontend["Frontend (HTML/JS/CSS)"]
+        UI[User Interface]
+    end
+
+    subgraph Tauri["Tauri Backend (Rust)"]
+        IPC[IPC Commands]
+        Data[Data Store]
+    end
+
+    subgraph Plugin["Screen Time Plugin (Swift)"]
+        Picker["FamilyActivityPicker (apps)"]
+        WebBlock["WebContentSettings (websites)"]
+        Shield[ManagedSettingsStore]
+    end
+
+    subgraph ScreenTime["iOS Screen Time"]
+        ST[Screen Time API]
+    end
+
+    UI <-->|invoke/listen| IPC
+    IPC <--> Plugin
+    UI -->|typed domains| WebBlock
+    UI -->|selected app tokens| Picker
+    Picker --> Shield
+    WebBlock --> Shield
+    Shield -->|shield apps + block domains| ST
+```
+
 ## How It Works
 
 ### Website Blocking
@@ -60,6 +95,7 @@ A privileged helper daemon modifies the system hosts file to redirect blocked do
 |----------|------------|-----------------|
 | macOS | `/etc/hosts` | `/Library/PrivilegedHelperTools/com.redd.block.helper` (launchd daemon) |
 | Windows | `C:\Windows\System32\drivers\etc\hosts` | Scheduled Task (runs at logon) |
+| iOS | N/A (uses Screen Time) | N/A |
 
 ### App Blocking
 
@@ -69,6 +105,7 @@ Uses event-driven monitoring to detect when blocked apps are launched or brought
 |----------|------------------|-------------|
 | macOS | NSWorkspace notifications (AppleScript) | `set visible of application process to false` |
 | Windows | SetWinEventHook for foreground changes | ShowWindow with SW_MINIMIZE |
+| iOS | Screen Time `ManagedSettingsStore` | Shield overlay via `ShieldSettings` |
 
 ### Helper Daemon
 
@@ -88,6 +125,11 @@ Runs with elevated privileges to manage hosts file changes. On first use, reques
 **Windows additional requirements:**
 - Visual Studio Build Tools with C++ workload
 
+**iOS additional requirements:**
+- Xcode 15+
+- An Apple Developer account
+- A physical iOS device (Screen Time APIs don't work in the simulator)
+
 ### Getting Started
 
 ```bash
@@ -100,6 +142,9 @@ npm install
 
 # Run in development mode (syncs helper and starts Tauri)
 npm run dev
+
+# Run on iOS device (opens Xcode, then press ⌘R to build)
+cargo tauri ios dev --open --host
 ```
 
 The app will open automatically. Hot-reloading is enabled for both frontend (Vite) and backend (Tauri).
@@ -121,21 +166,25 @@ npm run build:win
 
 ```
 redd-block/
-├── src/                      # Frontend (HTML/JS/CSS)
-│   ├── index.html            # Main app layout
-│   ├── app.js                # App logic & UI
-│   └── styles.css            # Styling
-├── src-tauri/                # Tauri backend (Rust)
+├── src/                          # Frontend (HTML/JS/CSS)
+│   ├── index.html                # Main app layout
+│   ├── app.js                    # App logic & UI
+│   └── styles.css                # Styling
+├── src-tauri/                    # Tauri backend (Rust)
 │   ├── src/
-│   │   ├── lib.rs            # App setup & window config
-│   │   └── commands/         # IPC commands
-│   │       ├── apps.rs       # App picker & running apps
-│   │       ├── helper.rs     # Helper daemon communication
-│   │       ├── watcher.rs    # App blocking process watcher
-│   │       └── data.rs       # Data persistence
-│   └── tauri.conf.json       # Tauri configuration
-└── helper-daemon/            # Privileged helper (Rust)
-    └── src/main.rs           # Hosts file management
+│   │   ├── lib.rs                # App setup & window config
+│   │   └── commands/             # IPC commands
+│   ├── gen/apple/                # Generated Xcode project
+│   ├── tauri.conf.json           # Shared Tauri config
+│   ├── tauri.ios.conf.json       # iOS-specific config
+│   ├── tauri.macos.conf.json     # macOS-specific config
+│   └── tauri.windows.conf.json   # Windows-specific config
+├── tauri-plugin-screentime/      # iOS Screen Time plugin
+│   ├── ios/Sources/              # Swift plugin (FamilyActivityPicker, ManagedSettings)
+│   ├── src/                      # Rust bindings (commands, models, mobile/desktop)
+│   └── permissions/              # Plugin permissions
+└── helper-daemon/                # Privileged helper (Rust, desktop only)
+    └── src/main.rs               # Hosts file management
 ```
 
 ## Version Management
@@ -162,6 +211,7 @@ This separation avoids prompting users to reinstall the helper when only the app
 |----------|----------|
 | macOS | `~/Library/Application Support/ReddBlock/redd-block-data.json` |
 | Windows | `%AppData%\ReddBlock\redd-block-data.json` |
+| iOS | App sandbox (managed by Tauri) |
 
 Contains blocklists, schedules, active blocks, and settings.
 
@@ -171,6 +221,7 @@ Contains blocklists, schedules, active blocks, and settings.
 |----------|----------|
 | macOS | `/var/lib/redd-block/helper-state.json` |
 | Windows | `C:\ProgramData\ReDD Block\helper-state.json` |
+| iOS | N/A (uses Screen Time API) |
 
 Tracks blocking state so blocks persist across app restarts.
 
@@ -182,7 +233,9 @@ User data is preserved unless manually deleted. Reinstalling restores your block
 
 - **macOS**: 10.15+ (Catalina or later)
 - **Windows**: 10+ (version 1809 or later)
+- **iOS**: 16.0+ (iPhone and iPad)
 - **Linux**: Coming soon
+- **Android**: Coming soon
 
 ## License
 
