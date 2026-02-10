@@ -2137,6 +2137,10 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
     .selection-prompt svg {
         transform: rotate(90deg);
     }
+
+    .selection-prompt {
+        padding: 10px 0 20px 20px;
+    }
 }
 
 .blocklist-card.dragging {
