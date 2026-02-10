@@ -210,6 +210,16 @@ body.dark-mode .title-bar button:hover {
         grid-template-columns: 1fr;
         gap: 12px;
     }
+
+    #add-blocklist-btn {
+        width: 36px;
+        height: 36px;
+    }
+
+    #add-blocklist-btn svg {
+        width: 22px;
+        height: 22px;
+    }
 }
 
 /* Section Headers */
