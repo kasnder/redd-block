@@ -2236,11 +2236,18 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
 
 .blocklist-actions .delete {
     opacity: 0;
+    pointer-events: none;
     transition: opacity 0.2s ease;
 }
 
 .blocklist-card:hover .blocklist-actions .delete {
     opacity: 1;
+    pointer-events: auto;
+}
+
+body.ios .blocklist-actions .delete {
+    opacity: 1;
+    pointer-events: auto;
 }
 
 .blocklist-action-btn {
