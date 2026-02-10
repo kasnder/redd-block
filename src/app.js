@@ -63,9 +63,7 @@ let appData = {
     blocklists: [],
     activeBlocks: [],
     schedules: [],
-    settings: {
-        onboardingComplete: false
-    }
+    settings: {}
 };
 
 // Expose for integration tests (dev mode only)
@@ -183,12 +181,33 @@ async function loadData() {
             blocklists: [],
             activeBlocks: [],
             schedules: [],
-            settings: { onboardingComplete: false }
+            settings: {}
         };
     }
     // Ensure schedules array exists for older data
     if (!appData.schedules) {
         appData.schedules = [];
+    }
+    // Ensure settings exists
+    if (!appData.settings) {
+        appData.settings = {};
+    }
+    // Create default blocklist on first launch (no blocklists yet)
+    if (appData.blocklists.length === 0) {
+        appData.blocklists.push({
+            id: generateId(),
+            name: 'Distractions',
+            mode: 'blocklist',
+            websites: ['instagram.com', 'facebook.com', 'youtube.com', 'netflix.com'],
+            apps: [],
+            overrideDifficulty: {
+                type: 'random-words',
+                count: 50
+            }
+        });
+        // Mark onboarding as complete for backwards compat
+        appData.settings.onboardingComplete = true;
+        await saveData();
     }
 }
 
@@ -233,12 +252,7 @@ function detectPlatform() {
         const modalAppInput = document.getElementById('modal-app-input');
         if (modalAppInput) modalAppInput.style.display = 'none';
 
-        // Update hint text for onboarding
-        const onboardingAppHint = document.querySelector('#app-input')?.closest('.form-group')?.querySelector('.form-hint');
-        if (onboardingAppHint) onboardingAppHint.textContent = 'Tap the button to select apps via Screen Time';
-        // Update tooltip for onboarding
-        const onboardingAppTooltip = document.querySelector('#app-input')?.closest('.form-group')?.querySelector('.info-tooltip');
-        if (onboardingAppTooltip) onboardingAppTooltip.textContent = 'On iOS, apps are selected using Apple\'s Screen Time picker. Tap the button to choose which apps to block.';
+
 
         // Update hint/tooltip for modal — find via modal-app-input's parent
         const modalAppGroup = document.querySelector('#modal-app-input')?.closest('.form-group');
@@ -445,7 +459,7 @@ function setupEventListeners() {
     document.getElementById('add-blocklist-btn').addEventListener('click', () => openBlocklistModal());
 
     // Onboarding
-    setupOnboardingListeners();
+    // Onboarding removed — default blocklist created in loadData()
 
     // Modal listeners
     setupModalListeners();
@@ -530,141 +544,7 @@ function setupEventListeners() {
     });
 }
 
-// Onboarding listeners
-function setupOnboardingListeners() {
-    const websiteInput = document.getElementById('website-input');
-    const appInput = document.getElementById('app-input');
-    const websitesTags = document.getElementById('websites-tags');
-    const appsTags = document.getElementById('apps-tags');
 
-    let onboardingWebsites = [];
-    let onboardingApps = [];
-
-    websiteInput.addEventListener('keydown', (e) => {
-        if ((e.key === 'Enter' || e.key === ' ') && websiteInput.value.trim()) {
-            e.preventDefault();
-            const website = websiteInput.value.trim().toLowerCase();
-            if (!onboardingWebsites.includes(website)) {
-                onboardingWebsites.push(website);
-                renderTags(websitesTags, onboardingWebsites, (idx) => {
-                    onboardingWebsites.splice(idx, 1);
-                    renderTags(websitesTags, onboardingWebsites);
-                });
-            }
-            websiteInput.value = '';
-        }
-    });
-
-    appInput.addEventListener('keydown', (e) => {
-        if ((e.key === 'Enter' || e.key === ' ') && appInput.value.trim()) {
-            e.preventDefault();
-            const app = appInput.value.trim();
-            if (!onboardingApps.includes(app)) {
-                onboardingApps.push(app);
-                renderTags(appsTags, onboardingApps, (idx) => {
-                    onboardingApps.splice(idx, 1);
-                    renderTags(appsTags, onboardingApps);
-                });
-            }
-            appInput.value = '';
-        }
-    });
-
-    // Browse button for onboarding
-    const browseAppsBtn = document.getElementById('browse-apps-btn');
-    if (isIOS && browseAppsBtn) {
-        browseAppsBtn.addEventListener('click', async () => {
-            try {
-                const result = await tauriAPI.showActivityPicker();
-                if (!result.cancelled && (result.applicationCount > 0 || result.categoryCount > 0)) {
-                    const parts = [];
-                    if (result.applicationCount > 0) parts.push(`${result.applicationCount} app${result.applicationCount > 1 ? 's' : ''}`);
-                    if (result.categoryCount > 0) parts.push(`${result.categoryCount} categor${result.categoryCount > 1 ? 'ies' : 'y'}`);
-                    const label = parts.join(', ') + ' selected (Screen Time)';
-                    // Remove any existing Screen Time entries (replace, don't append)
-                    for (let i = onboardingApps.length - 1; i >= 0; i--) {
-                        if (onboardingApps[i].includes('selected (Screen Time)')) {
-                            onboardingApps.splice(i, 1);
-                        }
-                    }
-                    onboardingApps.push(label);
-                    renderTags(appsTags, onboardingApps, (idx) => {
-                        onboardingApps.splice(idx, 1);
-                        renderTags(appsTags, onboardingApps);
-                    });
-                }
-            } catch (err) {
-                console.error('Activity picker error:', err);
-                alert('Failed to open app picker: ' + err);
-            }
-        });
-    } else if (browseAppsBtn) {
-        browseAppsBtn.addEventListener('click', async () => {
-            const appName = await tauriAPI.openAppPicker();
-            if (appName && !onboardingApps.includes(appName)) {
-                onboardingApps.push(appName);
-                renderTags(appsTags, onboardingApps, (idx) => {
-                    onboardingApps.splice(idx, 1);
-                    renderTags(appsTags, onboardingApps);
-                });
-            }
-        });
-    }
-
-    document.getElementById('create-first-blocklist-btn').addEventListener('click', () => {
-        // Auto-confirm any pending input in the website/app fields
-        const pendingWebsite = websiteInput.value.trim().toLowerCase();
-        if (pendingWebsite && !onboardingWebsites.includes(pendingWebsite)) {
-            onboardingWebsites.push(pendingWebsite);
-            websiteInput.value = '';
-            renderTags(websitesTags, onboardingWebsites, (idx) => {
-                onboardingWebsites.splice(idx, 1);
-                renderTags(websitesTags, onboardingWebsites);
-            });
-        }
-
-        const pendingApp = appInput.value.trim();
-        if (pendingApp && !onboardingApps.includes(pendingApp)) {
-            onboardingApps.push(pendingApp);
-            appInput.value = '';
-            renderTags(appsTags, onboardingApps, (idx) => {
-                onboardingApps.splice(idx, 1);
-                renderTags(appsTags, onboardingApps);
-            });
-        }
-
-        const name = document.getElementById('first-blocklist-name').value.trim();
-        if (!name) {
-            alert('Please enter a name for your blocklist');
-            return;
-        }
-        if (onboardingWebsites.length === 0 && onboardingApps.length === 0) {
-            alert('Please add at least one website or app to block');
-            return;
-        }
-
-        const blocklist = {
-            id: generateId(),
-            name,
-            mode: 'blocklist',
-            websites: onboardingWebsites,
-            apps: onboardingApps,
-            overrideDifficulty: {
-                type: 'random-words',
-                count: 50
-            }
-        };
-
-        appData.blocklists.push(blocklist);
-        appData.settings.onboardingComplete = true;
-        saveData();
-
-        // Resize window from onboarding size to main app size
-        tauriAPI.setWindowSize(840, 650);
-
-        render();
-    });
-}
 
 // Modal listeners
 function setupModalListeners() {
@@ -4483,14 +4363,6 @@ function undoDelete() {
 
 // Main render function
 function render() {
-    // Show onboarding if not complete - window size is set in main.js
-    if (!appData.settings.onboardingComplete) {
-        document.getElementById('onboarding-screen').classList.remove('hidden');
-        document.getElementById('main-content').classList.add('hidden');
-        return;
-    }
-
-    document.getElementById('onboarding-screen').classList.add('hidden');
     document.getElementById('main-content').classList.remove('hidden');
 
     // Initialize currentWeekStart if not set
