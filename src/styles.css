@@ -2709,8 +2709,12 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
 
 body.ios .modal-overlay {
     align-items: flex-start;
-    padding-top: calc(env(safe-area-inset-top, 20px) + 10px);
-    padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 10px);
+    padding-top: 10px;
+    padding-bottom: 20px;
+}
+
+body.ios .modal-content {
+    max-height: 95vh;
 }
 
 .modal-overlay.hidden {
