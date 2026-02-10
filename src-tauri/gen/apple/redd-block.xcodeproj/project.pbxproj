@@ -402,6 +402,8 @@
 					"\".\"",
 				);
 				INFOPLIST_FILE = "redd-block_iOS/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "ReDD Block";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -444,6 +446,8 @@
 					"\".\"",
 				);
 				INFOPLIST_FILE = "redd-block_iOS/Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "ReDD Block";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
