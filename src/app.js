@@ -3740,6 +3740,24 @@ async function updateHostsFile(silent = false) {
         return { success: true, unchanged: true };
     }
 
+    // iOS: Use Screen Time API instead of helper daemon / hosts file
+    if (isIOS) {
+        try {
+            if (domainsArray.length === 0) {
+                console.log('[updateHostsFile] iOS: stopping Screen Time block (no domains)');
+                await tauriAPI.screentimeClearBlock();
+            } else {
+                console.log('[updateHostsFile] iOS: starting Screen Time block for', domainsArray);
+                await tauriAPI.screentimeStartBlock(domainsArray);
+            }
+            lastBlockedDomains = allDomains;
+            return { success: true };
+        } catch (err) {
+            console.error('[updateHostsFile] iOS Screen Time error:', err);
+            return { success: false, error: err.toString() };
+        }
+    }
+
     // For silent updates (cleanup), skip if it would require password
     if (silent && allDomains.size < lastBlockedDomains.size) {
         // Domains are being removed - this still needs sudo unfortunately
