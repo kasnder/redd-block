@@ -5051,10 +5051,11 @@ function renderBlocklists() {
         if (websiteCount > 0) {
             if (showDetails) {
                 const displaySites = bl.websites.map(cleanUrlForDisplay);
-                if (websiteCount <= 2) {
+                const maxDisplay = appCount === 0 ? 3 : 2;
+                if (websiteCount <= maxDisplay) {
                     metaParts.push(`${websiteCount} ${websiteCount === 1 ? 'website' : 'websites'} (${displaySites.join(', ')})`);
                 } else {
-                    metaParts.push(`${websiteCount} websites (${displaySites.slice(0, 2).join(', ')}, ...)`);
+                    metaParts.push(`${websiteCount} websites (${displaySites.slice(0, maxDisplay).join(', ')}, ...)`);
                 }
             } else {
                 metaParts.push(`${websiteCount} ${websiteCount === 1 ? 'website' : 'websites'}`);
