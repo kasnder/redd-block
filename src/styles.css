@@ -3603,6 +3603,10 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
     animation: slideUp 0.3s ease;
 }
 
+body.ios .undo-toast {
+    bottom: calc(20px + env(safe-area-inset-bottom, 20px));
+}
+
 .undo-toast.hidden {
     display: none;
 }
