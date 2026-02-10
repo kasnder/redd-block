@@ -95,6 +95,9 @@ body.ios {
 
 body.ios .main-content {
     margin-top: 0;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    min-height: 0;
 }
 
 body.ios .app-container {
@@ -2128,6 +2131,12 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
 
 .selection-prompt svg {
     opacity: 0.5;
+}
+
+@media (max-width: 600px) {
+    .selection-prompt svg {
+        transform: rotate(90deg);
+    }
 }
 
 .blocklist-card.dragging {
