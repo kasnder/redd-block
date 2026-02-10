@@ -198,7 +198,7 @@ async function loadData() {
             id: generateId(),
             name: 'Distractions',
             mode: 'blocklist',
-            websites: ['instagram.com', 'facebook.com', 'youtube.com', 'netflix.com'],
+            websites: ['instagram.com', 'youtube.com', 'reddit.com'],
             apps: [],
             overrideDifficulty: {
                 type: 'random-words',
