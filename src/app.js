@@ -37,13 +37,15 @@ const tauriAPI = {
     // App operations
     openAppPicker: () => invoke('open_app_picker'),
     blockWebsites: (domains) => invoke('block_websites', { domains }),
-    refreshBlockedApps: () => invoke('refresh_blocked_apps').catch(() => { }),
 
-    // Process watcher for app blocking
+    // Process watcher for app blocking (fallback when helper not available)
     setBlockedApps: (apps) => invoke('set_blocked_apps', { apps }),
     startProcessWatcher: () => invoke('start_process_watcher'),
     stopProcessWatcher: () => invoke('stop_process_watcher'),
     hideAllBlockedApps: () => invoke('hide_all_blocked_apps'),
+
+    // App blocking via helper daemon (persistent, survives app close)
+    setBlockedAppsViaHelper: (apps) => invoke('set_blocked_apps_via_helper', { apps }),
 
     // Screen Time API (iOS only - provided by tauri-plugin-screentime)
     screentimeRequestAuth: () => invoke('plugin:screentime|request_authorization'),
@@ -3912,16 +3914,37 @@ async function updateBlockedApps() {
     // Update the blocked apps list
     if (appsArray.length > 0) {
         console.log('[updateBlockedApps] Setting blocked apps:', appsArray);
+
+        // Try to use helper daemon for persistent app blocking
+        if (helperAvailable) {
+            try {
+                const result = await tauriAPI.setBlockedAppsViaHelper(appsArray);
+                if (result && result.success) {
+                    console.log('[updateBlockedApps] Apps set via helper daemon (persistent)');
+                    return;
+                }
+                console.warn('[updateBlockedApps] Helper failed, falling back to process watcher:', result?.error);
+            } catch (e) {
+                console.warn('[updateBlockedApps] Helper not available for apps, falling back:', e);
+            }
+        }
+
+        // Fallback: use in-process watcher (stops when app closes)
         await tauriAPI.setBlockedApps(appsArray);
-
-        // Start process watcher if not already running
         await tauriAPI.startProcessWatcher();
-
-        // Hide any currently open blocked apps (only on change)
         await tauriAPI.hideAllBlockedApps();
     } else {
-        // No apps to block - stop the process watcher and clear the list
+        // No apps to block - clear both helper and local watcher
         console.log('[updateBlockedApps] No apps to block, clearing');
+
+        if (helperAvailable) {
+            try {
+                await tauriAPI.setBlockedAppsViaHelper([]);
+            } catch (e) {
+                console.warn('[updateBlockedApps] Failed to clear apps via helper:', e);
+            }
+        }
+
         await tauriAPI.stopProcessWatcher();
         await tauriAPI.setBlockedApps([]);
     }

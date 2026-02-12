@@ -28,7 +28,7 @@ pub struct HelperStatus {
 
 /// Expected helper version - update this when helper-daemon changes
 /// This is separate from the app version to avoid unnecessary reinstalls
-const EXPECTED_HELPER_VERSION: &str = "0.4.4";
+const EXPECTED_HELPER_VERSION: &str = "0.5.0";
 
 /// Result from helper operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,6 +49,8 @@ struct IpcCommand {
     #[serde(rename = "blocklistId")]
     #[serde(skip_serializing_if = "Option::is_none")]
     blocklist_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    apps: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -162,6 +164,7 @@ pub fn check_helper_status() -> HelperStatus {
         domains: None,
         end_time: None,
         blocklist_id: None,
+        apps: None,
     };
     
     let ping_result = send_command(&cmd);
@@ -486,6 +489,7 @@ exit 0
                 domains: None,
                 end_time: None,
                 blocklist_id: None,
+                apps: None,
             });
             
             if ping_result.is_ok() {
@@ -533,6 +537,7 @@ pub async fn start_block_via_helper(
         domains: Some(domains),
         end_time: Some(end_time),
         blocklist_id: Some(blocklist_id),
+        apps: None,
     };
     
     match send_command(&cmd) {
@@ -557,6 +562,7 @@ pub async fn clear_block_via_helper() -> HelperResult {
         domains: None,
         end_time: None,
         blocklist_id: None,
+        apps: None,
     };
     
     match send_command(&cmd) {
@@ -582,6 +588,7 @@ pub async fn uninstall_helper() -> HelperResult {
         domains: None,
         end_time: None,
         blocklist_id: None,
+        apps: None,
     };
     
     match send_command(&cmd) {
@@ -694,9 +701,36 @@ pub async fn block_websites(domains: Vec<String>) -> HelperResult {
     }
 }
 
-/// Refresh blocked apps list (notifies process watcher)
+/// Set blocked apps via the helper daemon (for persistent app blocking)
 #[tauri::command]
-pub fn refresh_blocked_apps() {
-    log::info!("refresh_blocked_apps called");
-    // Will be implemented with process watcher
+pub async fn set_blocked_apps_via_helper(apps: Vec<String>) -> HelperResult {
+    log::info!("set_blocked_apps_via_helper called with {} apps", apps.len());
+    
+    let cmd = IpcCommand {
+        action: "set-blocked-apps".to_string(),
+        domains: None,
+        end_time: None,
+        blocklist_id: None,
+        apps: Some(apps),
+    };
+    
+    match send_command(&cmd) {
+        Ok(response) => {
+            if response.success {
+                HelperResult {
+                    success: true,
+                    error: None,
+                }
+            } else {
+                HelperResult {
+                    success: false,
+                    error: response.error,
+                }
+            }
+        }
+        Err(e) => HelperResult {
+            success: false,
+            error: Some(e),
+        },
+    }
 }

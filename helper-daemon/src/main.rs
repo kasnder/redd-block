@@ -1,6 +1,6 @@
 //! ReDD Block Helper Daemon
 //!
-//! This privileged helper runs as root and manages website blocking.
+//! This privileged helper runs as root and manages website and app blocking.
 //! It communicates with the main Tauri app via Unix socket (macOS/Linux)
 //! or TCP port (Windows).
 
@@ -8,16 +8,18 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
+#[cfg(target_os = "windows")]
 use std::net::{TcpListener, TcpStream};
 #[cfg(not(target_os = "windows"))]
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 // Configuration
 #[cfg(target_os = "windows")]
@@ -46,6 +48,8 @@ struct BlockState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct HelperState {
     current_block: Option<BlockState>,
+    #[serde(default)]
+    blocked_apps: Vec<String>,
 }
 
 // IPC messages
@@ -66,6 +70,12 @@ enum IpcCommand {
     GetStatus,
     #[serde(rename = "restore-hosts")]
     RestoreHosts,
+    #[serde(rename = "set-blocked-apps")]
+    SetBlockedApps {
+        apps: Vec<String>,
+    },
+    #[serde(rename = "get-blocked-apps")]
+    GetBlockedApps,
     #[serde(rename = "ping")]
     Ping,
     #[serde(rename = "get-version")]
@@ -96,6 +106,9 @@ struct IpcResponse {
     remaining_ms: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "blockedApps")]
+    blocked_apps: Option<Vec<String>>,
 }
 
 fn log(message: &str) {
@@ -137,32 +150,41 @@ fn get_data_path() -> PathBuf {
     }
 }
 
-fn load_state() -> Option<BlockState> {
+fn load_state() -> (Option<BlockState>, Vec<String>) {
     let path = get_data_path();
     if let Ok(content) = fs::read_to_string(&path) {
         if let Ok(state) = serde_json::from_str::<HelperState>(&content) {
-            if let Some(block) = state.current_block {
+            let block = if let Some(block) = state.current_block {
                 let now = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap()
                     .as_millis() as u64;
                 if block.end_time > now {
                     log(&format!("Restored active block: {} domains", block.domains.len()));
-                    return Some(block);
+                    Some(block)
+                } else {
+                    None
                 }
+            } else {
+                None
+            };
+            if !state.blocked_apps.is_empty() {
+                log(&format!("Restored {} blocked apps", state.blocked_apps.len()));
             }
+            return (block, state.blocked_apps);
         }
     }
-    None
+    (None, Vec::new())
 }
 
-fn save_state(block: &Option<BlockState>) {
+fn save_full_state(block: &Option<BlockState>, apps: &[String]) {
     let path = get_data_path();
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }
     let state = HelperState {
         current_block: block.clone(),
+        blocked_apps: apps.to_vec(),
     };
     if let Ok(json) = serde_json::to_string_pretty(&state) {
         let _ = fs::write(&path, json);
@@ -313,6 +335,7 @@ fn flush_dns_cache() {
 
 fn start_block(
     state: &Arc<Mutex<Option<BlockState>>>,
+    app_state: &Arc<Mutex<Vec<String>>>,
     domains: Vec<String>,
     end_time: u64,
     blocklist_id: String,
@@ -339,7 +362,8 @@ fn start_block(
     };
     
     *state.lock().unwrap() = Some(block.clone());
-    save_state(&Some(block));
+    let apps = app_state.lock().unwrap().clone();
+    save_full_state(&Some(block), &apps);
     
     log("Block started successfully");
     IpcResponse {
@@ -348,7 +372,7 @@ fn start_block(
     }
 }
 
-fn clear_block(state: &Arc<Mutex<Option<BlockState>>>) -> IpcResponse {
+fn clear_block(state: &Arc<Mutex<Option<BlockState>>>, app_state: &Arc<Mutex<Vec<String>>>) -> IpcResponse {
     log("Clearing block...");
     
     let content = read_hosts_file();
@@ -365,7 +389,8 @@ fn clear_block(state: &Arc<Mutex<Option<BlockState>>>) -> IpcResponse {
     flush_dns_cache();
     
     *state.lock().unwrap() = None;
-    save_state(&None);
+    let apps = app_state.lock().unwrap().clone();
+    save_full_state(&None, &apps);
     
     log("Block cleared successfully");
     IpcResponse {
@@ -402,17 +427,493 @@ fn get_status(state: &Arc<Mutex<Option<BlockState>>>) -> IpcResponse {
     }
 }
 
-fn handle_command(state: &Arc<Mutex<Option<BlockState>>>, cmd: IpcCommand) -> IpcResponse {
+// ===== App Blocking =====
+
+/// Handle for the app watcher background thread
+struct AppWatcherHandle {
+    watcher_process: Option<Child>,
+    running: bool,
+    /// Last detection time per app (for debouncing)
+    last_detection: HashMap<String, Instant>,
+}
+
+impl AppWatcherHandle {
+    fn new() -> Self {
+        AppWatcherHandle {
+            watcher_process: None,
+            running: false,
+            last_detection: HashMap::new(),
+        }
+    }
+}
+
+/// Hide a specific app
+fn hide_app(app_name: &str) {
+    #[cfg(target_os = "macos")]
+    {
+        let escaped = app_name.replace('"', "\\\"");
+        let script = format!(
+            r#"tell application "System Events" to set visible of application process "{}" to false"#,
+            escaped
+        );
+        
+        // Try up to 3 times with small delays
+        for attempt in 1..=3 {
+            let result = Command::new("osascript")
+                .arg("-e")
+                .arg(&script)
+                .output();
+            
+            match result {
+                Ok(output) if output.status.success() => {
+                    log(&format!("Hidden app: {} (attempt {})", app_name, attempt));
+                    return;
+                }
+                Ok(_) | Err(_) => {
+                    if attempt < 3 {
+                        thread::sleep(Duration::from_millis(100));
+                    }
+                }
+            }
+        }
+        log(&format!("Failed to hide app after 3 attempts: {}", app_name));
+    }
+    
+    #[cfg(target_os = "windows")]
+    {
+        let ps_script = format!(r#"
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class Win32Minimize {{
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+}}
+"@
+$processes = Get-Process -Name "{}" -ErrorAction SilentlyContinue
+foreach ($proc in $processes) {{
+    if ($proc.MainWindowHandle -ne [IntPtr]::Zero) {{
+        [Win32Minimize]::ShowWindow($proc.MainWindowHandle, 6)
+    }}
+}}
+"#, app_name);
+        
+        let _ = Command::new("powershell")
+            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+        
+        log(&format!("Minimized app (Windows): {}", app_name));
+    }
+}
+
+/// Hide all currently blocked apps
+fn hide_all_blocked_apps(app_state: &Arc<Mutex<Vec<String>>>) {
+    let apps = app_state.lock().unwrap().clone();
+    log(&format!("Hiding {} blocked apps", apps.len()));
+    for app in apps {
+        hide_app(&app);
+    }
+}
+
+/// Start the app watcher background thread
+fn start_app_watcher(
+    app_state: &Arc<Mutex<Vec<String>>>,
+    app_watcher_handle: &Arc<Mutex<Option<AppWatcherHandle>>>,
+) {
+    // Check if already running
+    {
+        let handle = app_watcher_handle.lock().unwrap();
+        if let Some(ref h) = *handle {
+            if h.running {
+                log("App watcher already running, skipping start");
+                return;
+            }
+        }
+    }
+    
+    // Set up handle
+    {
+        let mut handle = app_watcher_handle.lock().unwrap();
+        *handle = Some(AppWatcherHandle::new());
+        if let Some(ref mut h) = *handle {
+            h.running = true;
+        }
+    }
+    
+    let app_state_clone = Arc::clone(app_state);
+    let handle_clone = Arc::clone(app_watcher_handle);
+    
+    thread::spawn(move || {
+        #[cfg(target_os = "macos")]
+        run_macos_app_watcher(app_state_clone, handle_clone);
+        
+        #[cfg(target_os = "windows")]
+        run_windows_app_watcher(app_state_clone, handle_clone);
+    });
+}
+
+/// Stop the app watcher
+fn stop_app_watcher(app_watcher_handle: &Arc<Mutex<Option<AppWatcherHandle>>>) {
+    let mut handle = app_watcher_handle.lock().unwrap();
+    if let Some(ref mut h) = *handle {
+        h.running = false;
+        if let Some(mut process) = h.watcher_process.take() {
+            let _ = process.kill();
+        }
+        log("App watcher stopped");
+    }
+    *handle = None;
+}
+
+/// Set blocked apps, starting/stopping watcher as needed
+fn set_blocked_apps(
+    state: &Arc<Mutex<Option<BlockState>>>,
+    app_state: &Arc<Mutex<Vec<String>>>,
+    app_watcher_handle: &Arc<Mutex<Option<AppWatcherHandle>>>,
+    apps: Vec<String>,
+) -> IpcResponse {
+    log(&format!("Setting blocked apps: {:?}", apps));
+    
+    let had_apps = !app_state.lock().unwrap().is_empty();
+    let has_apps = !apps.is_empty();
+    
+    // Update state
+    *app_state.lock().unwrap() = apps;
+    
+    // Persist
+    let block = state.lock().unwrap().clone();
+    let apps_for_save = app_state.lock().unwrap().clone();
+    save_full_state(&block, &apps_for_save);
+    
+    if has_apps {
+        // Start watcher if not running
+        start_app_watcher(app_state, app_watcher_handle);
+        // Hide any currently open blocked apps
+        hide_all_blocked_apps(app_state);
+    } else if had_apps {
+        // No more apps to block — stop watcher
+        stop_app_watcher(app_watcher_handle);
+    }
+    
+    IpcResponse {
+        success: true,
+        ..Default::default()
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn run_macos_app_watcher(
+    app_state: Arc<Mutex<Vec<String>>>,
+    handle: Arc<Mutex<Option<AppWatcherHandle>>>,
+) {
+    let script = r#"
+use framework "Foundation"
+use framework "AppKit"
+
+on appEvent_(theNotification)
+    set appName to (theNotification's userInfo()'s objectForKey: (current application's NSWorkspaceApplicationKey))'s localizedName() as text
+    log appName
+end appEvent_
+
+set theWorkspace to current application's NSWorkspace's sharedWorkspace()
+set notifCenter to theWorkspace's notificationCenter()
+
+-- Listen for app launches
+notifCenter's addObserver:me selector:"appEvent:" |name|:(current application's NSWorkspaceDidLaunchApplicationNotification) object:(missing value)
+
+-- Listen for app activations (when user clicks to bring app forward)
+notifCenter's addObserver:me selector:"appEvent:" |name|:(current application's NSWorkspaceDidActivateApplicationNotification) object:(missing value)
+
+repeat
+    delay 60
+end repeat
+"#;
+
+    // Write script to temp file
+    let temp_path = std::env::temp_dir().join("redd-helper-app-watcher.applescript");
+    if std::fs::write(&temp_path, script).is_err() {
+        log("Failed to write AppleScript file for app watcher");
+        let mut h = handle.lock().unwrap();
+        *h = None;
+        return;
+    }
+
+    let mut process = match Command::new("osascript")
+        .arg(&temp_path)
+        .stderr(Stdio::piped())
+        .spawn()
+    {
+        Ok(p) => p,
+        Err(e) => {
+            log(&format!("Failed to start macOS app watcher: {}", e));
+            let mut h = handle.lock().unwrap();
+            *h = None;
+            return;
+        }
+    };
+
+    log("macOS app watcher started in helper daemon");
+    
+    // Store the process handle
+    {
+        let mut h = handle.lock().unwrap();
+        if let Some(ref mut _wh) = *h {
+            // We can't store the process directly since we need stderr
+            // The process handle will be managed via the running flag
+        }
+    }
+
+    // Read stderr (AppleScript 'log' outputs to stderr)
+    if let Some(stderr) = process.stderr.take() {
+        let reader = BufReader::new(stderr);
+        
+        for line in reader.lines() {
+            // Check if we should stop
+            {
+                let h = handle.lock().unwrap();
+                match &*h {
+                    Some(wh) if wh.running => {},
+                    _ => break,
+                }
+            }
+            
+            if let Ok(app_name) = line {
+                let app_name = app_name.trim();
+                if app_name.is_empty() {
+                    continue;
+                }
+                
+                // Check if this app is blocked
+                let is_blocked = {
+                    let apps = app_state.lock().unwrap();
+                    apps.iter().any(|a| a.eq_ignore_ascii_case(app_name))
+                };
+                
+                if is_blocked {
+                    // Debounce: skip if we detected this app within the last 500ms
+                    let should_process = {
+                        let mut h = handle.lock().unwrap();
+                        if let Some(ref mut wh) = *h {
+                            let app_lower = app_name.to_lowercase();
+                            let now = Instant::now();
+                            
+                            if let Some(last_time) = wh.last_detection.get(&app_lower) {
+                                if now.duration_since(*last_time) < Duration::from_millis(500) {
+                                    false
+                                } else {
+                                    wh.last_detection.insert(app_lower, now);
+                                    true
+                                }
+                            } else {
+                                wh.last_detection.insert(app_lower, now);
+                                true
+                            }
+                        } else {
+                            false
+                        }
+                    };
+                    
+                    if !should_process {
+                        continue;
+                    }
+                    
+                    log(&format!("Blocked app detected: {}", app_name));
+                    hide_app(app_name);
+                }
+            }
+        }
+    }
+
+    // Clean up
+    let _ = process.kill();
+    let _ = std::fs::remove_file(&temp_path);
+    
+    {
+        let mut h = handle.lock().unwrap();
+        *h = None;
+    }
+    
+    log("macOS app watcher stopped in helper daemon");
+}
+
+#[cfg(target_os = "windows")]
+fn run_windows_app_watcher(
+    app_state: Arc<Mutex<Vec<String>>>,
+    handle: Arc<Mutex<Option<AppWatcherHandle>>>,
+) {
+    let ps_script = r#"
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+using System.Diagnostics;
+
+public class ForegroundWatcher {
+    public delegate void WinEventDelegate(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
+    
+    [DllImport("user32.dll")]
+    public static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmodWinEventProc, WinEventDelegate lpfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
+    
+    [DllImport("user32.dll")]
+    public static extern bool UnhookWinEvent(IntPtr hWinEventHook);
+    
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+    
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+    
+    public const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
+    public const uint WINEVENT_OUTOFCONTEXT = 0x0000;
+    public const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
+    
+    private static WinEventDelegate _delegate;
+    private static IntPtr _hook;
+    
+    public static void Start() {
+        _delegate = new WinEventDelegate(WinEventProc);
+        _hook = SetWinEventHook(
+            EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
+            IntPtr.Zero, _delegate, 0, 0,
+            WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS
+        );
+        Console.WriteLine("READY");
+        Console.Out.Flush();
+        OutputCurrentForeground();
+    }
+    
+    public static void Stop() {
+        if (_hook != IntPtr.Zero) {
+            UnhookWinEvent(_hook);
+            _hook = IntPtr.Zero;
+        }
+    }
+    
+    private static void WinEventProc(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime) {
+        if (hwnd == IntPtr.Zero) return;
+        OutputProcessForWindow(hwnd);
+    }
+    
+    private static void OutputCurrentForeground() {
+        IntPtr hwnd = GetForegroundWindow();
+        if (hwnd != IntPtr.Zero) {
+            OutputProcessForWindow(hwnd);
+        }
+    }
+    
+    private static void OutputProcessForWindow(IntPtr hwnd) {
+        try {
+            uint processId;
+            GetWindowThreadProcessId(hwnd, out processId);
+            if (processId > 0) {
+                Process proc = Process.GetProcessById((int)processId);
+                Console.WriteLine("FG:" + proc.ProcessName);
+                Console.Out.Flush();
+            }
+        } catch { }
+    }
+}
+"@
+
+[ForegroundWatcher]::Start()
+try {
+    Add-Type -AssemblyName System.Windows.Forms
+    while ($true) {
+        [System.Windows.Forms.Application]::DoEvents()
+        Start-Sleep -Milliseconds 100
+    }
+} finally {
+    [ForegroundWatcher]::Stop()
+}
+"#;
+
+    // Write to temp file
+    let temp_path = std::env::temp_dir().join("redd-helper-foreground-watcher.ps1");
+    if std::fs::write(&temp_path, ps_script).is_err() {
+        log("Failed to write PowerShell script for app watcher");
+        let mut h = handle.lock().unwrap();
+        *h = None;
+        return;
+    }
+
+    let mut process = match Command::new("powershell")
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
+        .arg(&temp_path)
+        .stdout(Stdio::piped())
+        .spawn()
+    {
+        Ok(p) => p,
+        Err(e) => {
+            log(&format!("Failed to start Windows app watcher: {}", e));
+            let mut h = handle.lock().unwrap();
+            *h = None;
+            return;
+        }
+    };
+
+    log("Windows app watcher started in helper daemon");
+
+    if let Some(stdout) = process.stdout.take() {
+        let reader = BufReader::new(stdout);
+        
+        for line in reader.lines() {
+            {
+                let h = handle.lock().unwrap();
+                match &*h {
+                    Some(wh) if wh.running => {},
+                    _ => break,
+                }
+            }
+            
+            if let Ok(line) = line {
+                let trimmed = line.trim();
+                
+                if trimmed.starts_with("FG:") {
+                    let process_name = &trimmed[3..];
+                    
+                    let is_blocked = {
+                        let apps = app_state.lock().unwrap();
+                        apps.iter().any(|a| a.eq_ignore_ascii_case(process_name))
+                    };
+                    
+                    if is_blocked {
+                        log(&format!("Blocked app in foreground: {}", process_name));
+                        hide_app(process_name);
+                    }
+                }
+            }
+        }
+    }
+
+    let _ = process.kill();
+    let _ = std::fs::remove_file(&temp_path);
+    
+    {
+        let mut h = handle.lock().unwrap();
+        *h = None;
+    }
+    
+    log("Windows app watcher stopped in helper daemon");
+}
+
+fn handle_command(
+    state: &Arc<Mutex<Option<BlockState>>>,
+    app_state: &Arc<Mutex<Vec<String>>>,
+    app_watcher_handle: &Arc<Mutex<Option<AppWatcherHandle>>>,
+    cmd: IpcCommand,
+) -> IpcResponse {
     match cmd {
         IpcCommand::StartBlock { domains, end_time, blocklist_id } => {
-            start_block(state, domains, end_time, blocklist_id)
+            start_block(state, app_state, domains, end_time, blocklist_id)
         }
-        IpcCommand::ClearBlock => clear_block(state),
+        IpcCommand::ClearBlock => clear_block(state, app_state),
         IpcCommand::GetStatus => get_status(state),
         IpcCommand::RestoreHosts => {
             // Clear any active block state first
             *state.lock().unwrap() = None;
-            save_state(&None);
+            let apps = app_state.lock().unwrap().clone();
+            save_full_state(&None, &apps);
             
             match restore_hosts_from_backup() {
                 Ok(()) => IpcResponse {
@@ -425,6 +926,17 @@ fn handle_command(state: &Arc<Mutex<Option<BlockState>>>, cmd: IpcCommand) -> Ip
                     error: Some(e),
                     ..Default::default()
                 },
+            }
+        }
+        IpcCommand::SetBlockedApps { apps } => {
+            set_blocked_apps(state, app_state, app_watcher_handle, apps)
+        }
+        IpcCommand::GetBlockedApps => {
+            let apps = app_state.lock().unwrap().clone();
+            IpcResponse {
+                success: true,
+                blocked_apps: Some(apps),
+                ..Default::default()
             }
         }
         IpcCommand::Ping => IpcResponse {
@@ -441,9 +953,13 @@ fn handle_command(state: &Arc<Mutex<Option<BlockState>>>, cmd: IpcCommand) -> Ip
         IpcCommand::Uninstall => {
             log("Received uninstall command - cleaning up...");
             
+            // Stop app watcher
+            stop_app_watcher(app_watcher_handle);
+            
             // Clear any active block and restore hosts
             *state.lock().unwrap() = None;
-            save_state(&None);
+            *app_state.lock().unwrap() = Vec::new();
+            save_full_state(&None, &[]);
             let _ = restore_hosts_from_backup();
             
             // Delete state file
@@ -478,6 +994,7 @@ impl Default for IpcResponse {
             blocklist_id: None,
             remaining_ms: None,
             version: None,
+            blocked_apps: None,
         }
     }
 }
@@ -592,7 +1109,7 @@ fn read_user_setting_keep_blocking() -> bool {
 }
 
 /// Thread that periodically checks if the main app still exists
-fn app_existence_checker(state: Arc<Mutex<Option<BlockState>>>) {
+fn app_existence_checker(state: Arc<Mutex<Option<BlockState>>>, app_state: Arc<Mutex<Vec<String>>>) {
     loop {
         // Check every 5 minutes
         thread::sleep(std::time::Duration::from_secs(300));
@@ -602,10 +1119,11 @@ fn app_existence_checker(state: Arc<Mutex<Option<BlockState>>>) {
             
             let keep_blocking = read_user_setting_keep_blocking();
             let has_active_block = state.lock().unwrap().is_some();
+            let has_blocked_apps = !app_state.lock().unwrap().is_empty();
             
-            if keep_blocking && has_active_block {
-                // Setting says to keep blocking - wait for block to finish
-                log("Keep blocking enabled and block is active - waiting for block to finish");
+            if keep_blocking && (has_active_block || has_blocked_apps) {
+                // Setting says to keep blocking - wait for blocks to finish
+                log("Keep blocking enabled and blocks are active - waiting for blocks to finish");
                 continue;
             }
             
@@ -614,7 +1132,8 @@ fn app_existence_checker(state: Arc<Mutex<Option<BlockState>>>) {
             
             // Clear state and restore hosts
             *state.lock().unwrap() = None;
-            save_state(&None);
+            *app_state.lock().unwrap() = Vec::new();
+            save_full_state(&None, &[]);
             let _ = restore_hosts_from_backup();
             
             // Delete state file
@@ -628,7 +1147,12 @@ fn app_existence_checker(state: Arc<Mutex<Option<BlockState>>>) {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn handle_client(state: Arc<Mutex<Option<BlockState>>>, stream: UnixStream) {
+fn handle_client(
+    state: Arc<Mutex<Option<BlockState>>>,
+    app_state: Arc<Mutex<Vec<String>>>,
+    app_watcher_handle: Arc<Mutex<Option<AppWatcherHandle>>>,
+    stream: UnixStream,
+) {
     let reader = BufReader::new(stream.try_clone().unwrap());
     let mut writer = stream;
     
@@ -641,7 +1165,7 @@ fn handle_client(state: Arc<Mutex<Option<BlockState>>>, stream: UnixStream) {
             let response = match serde_json::from_str::<IpcCommand>(&line) {
                 Ok(cmd) => {
                     log(&format!("Received command: {:?}", cmd));
-                    handle_command(&state, cmd)
+                    handle_command(&state, &app_state, &app_watcher_handle, cmd)
                 }
                 Err(e) => IpcResponse {
                     success: false,
@@ -658,7 +1182,12 @@ fn handle_client(state: Arc<Mutex<Option<BlockState>>>, stream: UnixStream) {
 }
 
 #[cfg(target_os = "windows")]
-fn handle_client(state: Arc<Mutex<Option<BlockState>>>, stream: TcpStream) {
+fn handle_client(
+    state: Arc<Mutex<Option<BlockState>>>,
+    app_state: Arc<Mutex<Vec<String>>>,
+    app_watcher_handle: Arc<Mutex<Option<AppWatcherHandle>>>,
+    stream: TcpStream,
+) {
     let reader = BufReader::new(stream.try_clone().unwrap());
     let mut writer = stream;
     
@@ -671,7 +1200,7 @@ fn handle_client(state: Arc<Mutex<Option<BlockState>>>, stream: TcpStream) {
             let response = match serde_json::from_str::<IpcCommand>(&line) {
                 Ok(cmd) => {
                     log(&format!("Received command: {:?}", cmd));
-                    handle_command(&state, cmd)
+                    handle_command(&state, &app_state, &app_watcher_handle, cmd)
                 }
                 Err(e) => IpcResponse {
                     success: false,
@@ -687,7 +1216,7 @@ fn handle_client(state: Arc<Mutex<Option<BlockState>>>, stream: TcpStream) {
     }
 }
 
-fn expiry_checker(state: Arc<Mutex<Option<BlockState>>>) {
+fn expiry_checker(state: Arc<Mutex<Option<BlockState>>>, app_state: Arc<Mutex<Vec<String>>>) {
     loop {
         thread::sleep(Duration::from_secs(1));
         
@@ -706,7 +1235,7 @@ fn expiry_checker(state: Arc<Mutex<Option<BlockState>>>) {
         
         if should_clear {
             log("Block expired, clearing automatically");
-            clear_block(&state);
+            clear_block(&state, &app_state);
         }
     }
 }
@@ -716,16 +1245,28 @@ fn main() {
     log(&format!("Platform: {}", std::env::consts::OS));
     
     // Load persisted state
-    let initial_state = load_state();
-    let state = Arc::new(Mutex::new(initial_state));
+    let (initial_block, initial_apps) = load_state();
+    let state = Arc::new(Mutex::new(initial_block));
+    let app_state = Arc::new(Mutex::new(initial_apps.clone()));
+    let app_watcher_handle: Arc<Mutex<Option<AppWatcherHandle>>> = Arc::new(Mutex::new(None));
+    
+    // If we have persisted blocked apps, start the app watcher
+    if !initial_apps.is_empty() {
+        log(&format!("Starting app watcher for {} persisted blocked apps", initial_apps.len()));
+        start_app_watcher(&app_state, &app_watcher_handle);
+        // Hide any currently open blocked apps
+        hide_all_blocked_apps(&app_state);
+    }
     
     // Start expiry checker thread
     let state_clone = Arc::clone(&state);
-    thread::spawn(move || expiry_checker(state_clone));
+    let app_state_clone = Arc::clone(&app_state);
+    thread::spawn(move || expiry_checker(state_clone, app_state_clone));
     
     // Start app existence checker thread (for self-cleanup when app is uninstalled)
     let state_clone = Arc::clone(&state);
-    thread::spawn(move || app_existence_checker(state_clone));
+    let app_state_clone = Arc::clone(&app_state);
+    thread::spawn(move || app_existence_checker(state_clone, app_state_clone));
     
     // Start IPC server
     #[cfg(not(target_os = "windows"))]
@@ -744,7 +1285,9 @@ fn main() {
             if let Ok(stream) = stream {
                 log("Client connected");
                 let state_clone = Arc::clone(&state);
-                thread::spawn(move || handle_client(state_clone, stream));
+                let app_state_clone = Arc::clone(&app_state);
+                let watcher_clone = Arc::clone(&app_watcher_handle);
+                thread::spawn(move || handle_client(state_clone, app_state_clone, watcher_clone, stream));
             }
         }
     }
@@ -783,7 +1326,9 @@ fn main() {
             if let Ok(stream) = stream {
                 log("Client connected");
                 let state_clone = Arc::clone(&state);
-                thread::spawn(move || handle_client(state_clone, stream));
+                let app_state_clone = Arc::clone(&app_state);
+                let watcher_clone = Arc::clone(&app_watcher_handle);
+                thread::spawn(move || handle_client(state_clone, app_state_clone, watcher_clone, stream));
             }
         }
     }
