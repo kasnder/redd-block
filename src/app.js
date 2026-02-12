@@ -3799,13 +3799,61 @@ async function updateHostsFile(silent = false) {
                     latestEndTime = Math.max(...activeBlockEndTimes);
                 }
 
-                // For schedules, we don't have a fixed end time, so use end-of-day
-                // or a reasonable default (if only schedules are blocking)
+                // For schedules, calculate the actual end time of the earliest-ending
+                // currently-active segment. This ensures the helper daemon clears the
+                // block at the right time even if the app isn't running.
                 if (latestEndTime === null && appData.schedules && appData.schedules.length > 0) {
-                    // Use end of today as the endTime for schedule-only blocks
-                    const endOfDay = new Date();
-                    endOfDay.setHours(23, 59, 59, 999);
-                    latestEndTime = endOfDay.getTime();
+                    let earliestSegmentEnd = null;
+
+                    appData.schedules.forEach(schedule => {
+                        if (!schedule.segments) return;
+                        schedule.segments.forEach(seg => {
+                            const startMins = seg.startHour * 60 + seg.startMinute;
+                            const endMins = seg.endHour * 60 + seg.endMinute;
+
+                            let segmentEndTime = null;
+
+                            if (endMins > startMins) {
+                                // Same-day segment (e.g., 00:00 - 10:00)
+                                if (seg.days.includes(currentDay) && currentMins >= startMins && currentMins < endMins) {
+                                    const endDate = new Date(nowDate);
+                                    endDate.setHours(seg.endHour, seg.endMinute, 0, 0);
+                                    segmentEndTime = endDate.getTime();
+                                }
+                            } else {
+                                // Cross-midnight segment (e.g., 22:00 - 04:00)
+                                const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
+
+                                if (seg.days.includes(currentDay) && currentMins >= startMins) {
+                                    // In the evening portion — ends tomorrow at endMins
+                                    const endDate = new Date(nowDate);
+                                    endDate.setDate(endDate.getDate() + 1);
+                                    endDate.setHours(seg.endHour, seg.endMinute, 0, 0);
+                                    segmentEndTime = endDate.getTime();
+                                } else if (seg.days.includes(yesterdayDay) && currentMins < endMins) {
+                                    // In the morning portion — ends today at endMins
+                                    const endDate = new Date(nowDate);
+                                    endDate.setHours(seg.endHour, seg.endMinute, 0, 0);
+                                    segmentEndTime = endDate.getTime();
+                                }
+                            }
+
+                            if (segmentEndTime !== null) {
+                                if (earliestSegmentEnd === null || segmentEndTime < earliestSegmentEnd) {
+                                    earliestSegmentEnd = segmentEndTime;
+                                }
+                            }
+                        });
+                    });
+
+                    if (earliestSegmentEnd !== null) {
+                        latestEndTime = earliestSegmentEnd;
+                    } else {
+                        // Fallback: end of today (shouldn't happen if domains are from schedules)
+                        const endOfDay = new Date();
+                        endOfDay.setHours(23, 59, 59, 999);
+                        latestEndTime = endOfDay.getTime();
+                    }
                 }
 
                 // Fallback if somehow still null
