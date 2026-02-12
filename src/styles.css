@@ -90,7 +90,8 @@ body {
 /* iOS safe area adjustments */
 body.ios {
     padding-top: env(safe-area-inset-top, 20px);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: 0;
+    overflow: hidden;
 }
 
 body.ios .main-content {
@@ -101,7 +102,9 @@ body.ios .main-content {
 }
 
 body.ios .app-container {
+    height: calc(100vh - env(safe-area-inset-top, 20px));
     padding-bottom: env(safe-area-inset-bottom, 0px);
+    overflow: hidden;
 }
 
 /* App Container */
@@ -274,6 +277,11 @@ body.dark-mode .title-bar button:hover {
     flex-direction: column;
     margin-top: 6px;
     min-height: 0;
+}
+
+body.ios .week-calendar-section {
+    min-height: 400px;
+    flex-shrink: 0;
 }
 
 .week-calendar-section .section-header {
@@ -2716,8 +2724,8 @@ body.ios .blocklist-actions .delete {
 
 body.ios .modal-overlay {
     align-items: flex-start;
-    padding-top: 10px;
-    padding-bottom: 20px;
+    padding-top: env(safe-area-inset-top, 20px);
+    padding-bottom: env(safe-area-inset-bottom, 20px);
 }
 
 body.ios .modal-content {

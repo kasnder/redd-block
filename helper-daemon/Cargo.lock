@@ -310,7 +310,7 @@ dependencies = [
 
 [[package]]
 name = "redd-block-helper"
-version = "0.4.4"
+version = "0.5.0"
 dependencies = [
  "dirs",
  "env_logger",
