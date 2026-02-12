@@ -271,6 +271,20 @@ fn restore_hosts_from_backup() -> Result<(), String> {
 }
 
 fn write_hosts_file(content: &str) -> bool {
+    // Safety check: never write an empty or near-empty hosts file
+    // A valid hosts file must at least contain a localhost entry
+    if !content.contains("localhost") {
+        log("SAFETY: Refusing to write hosts file without localhost entry - would break DNS");
+        // Attempt to restore from backup instead
+        if let Err(e) = restore_hosts_from_backup() {
+            log(&format!("SAFETY: Could not restore from backup either: {}", e));
+            // Last resort: write a minimal valid hosts file
+            let minimal = "##\n# Host Database\n##\n127.0.0.1       localhost\n255.255.255.255 broadcasthost\n::1             localhost\n";
+            return fs::write(HOSTS_PATH, minimal).is_ok();
+        }
+        return true;
+    }
+
     // Ensure we have a backup before any modification
     if let Err(e) = ensure_backup_exists() {
         log(&format!("Warning: {}", e));
@@ -280,21 +294,37 @@ fn write_hosts_file(content: &str) -> bool {
 }
 
 fn remove_block_from_hosts(content: &str) -> String {
-    if let Some(start_idx) = content.find(BLOCK_MARKER_START) {
-        let before = content[..start_idx].trim_end();
-        let after = if let Some(end_idx) = content.find(BLOCK_MARKER_END) {
-            content[end_idx + BLOCK_MARKER_END.len()..].trim_start()
+    let mut result = content.to_string();
+    
+    // Remove current-format markers
+    if let Some(start_idx) = result.find(BLOCK_MARKER_START) {
+        let before = result[..start_idx].trim_end();
+        let after = if let Some(end_idx) = result.find(BLOCK_MARKER_END) {
+            result[end_idx + BLOCK_MARKER_END.len()..].trim_start()
         } else {
             ""
         };
-        if after.is_empty() {
+        result = if after.is_empty() {
             before.to_string()
         } else {
             format!("{}\n{}", before, after)
-        }
-    } else {
-        content.to_string()
+        };
     }
+    
+    // Also clean up old-format markers (from legacy versions)
+    // These used "# ReDD Block Start" / "# ReDD Block End" format
+    let old_markers = [
+        "# ReDD Block Start",
+        "# ReDD Block End",
+    ];
+    for marker in &old_markers {
+        result = result.lines()
+            .filter(|line| line.trim() != *marker)
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
+    
+    result
 }
 
 fn add_block_to_hosts(content: &str, domains: &[String]) -> String {
