@@ -140,6 +140,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::start_block_via_helper,
         commands::clear_block_via_helper,
         commands::set_blocked_apps_via_helper,
+        commands::set_schedules_via_helper,
         commands::block_websites,
         // Process watcher commands (desktop only)
         commands::start_process_watcher,

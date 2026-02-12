@@ -51,6 +51,30 @@ struct IpcCommand {
     blocklist_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     apps: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    schedules: Option<Vec<HelperScheduleData>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HelperScheduleSegment {
+    #[serde(rename = "startHour")]
+    pub start_hour: u8,
+    #[serde(rename = "startMinute")]
+    pub start_minute: u8,
+    #[serde(rename = "endHour")]
+    pub end_hour: u8,
+    #[serde(rename = "endMinute")]
+    pub end_minute: u8,
+    pub days: Vec<u8>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HelperScheduleData {
+    pub id: String,
+    pub domains: Vec<String>,
+    #[serde(default)]
+    pub apps: Vec<String>,
+    pub segments: Vec<HelperScheduleSegment>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -165,6 +189,7 @@ pub fn check_helper_status() -> HelperStatus {
         end_time: None,
         blocklist_id: None,
         apps: None,
+        schedules: None,
     };
     
     let ping_result = send_command(&cmd);
@@ -490,6 +515,7 @@ exit 0
                 end_time: None,
                 blocklist_id: None,
                 apps: None,
+                schedules: None,
             });
             
             if ping_result.is_ok() {
@@ -538,6 +564,7 @@ pub async fn start_block_via_helper(
         end_time: Some(end_time),
         blocklist_id: Some(blocklist_id),
         apps: None,
+        schedules: None,
     };
     
     match send_command(&cmd) {
@@ -563,6 +590,7 @@ pub async fn clear_block_via_helper() -> HelperResult {
         end_time: None,
         blocklist_id: None,
         apps: None,
+        schedules: None,
     };
     
     match send_command(&cmd) {
@@ -589,6 +617,7 @@ pub async fn uninstall_helper() -> HelperResult {
         end_time: None,
         blocklist_id: None,
         apps: None,
+        schedules: None,
     };
     
     match send_command(&cmd) {
@@ -712,6 +741,41 @@ pub async fn set_blocked_apps_via_helper(apps: Vec<String>) -> HelperResult {
         end_time: None,
         blocklist_id: None,
         apps: Some(apps),
+        schedules: None,
+    };
+    
+    match send_command(&cmd) {
+        Ok(response) => {
+            if response.success {
+                HelperResult {
+                    success: true,
+                    error: None,
+                }
+            } else {
+                HelperResult {
+                    success: false,
+                    error: response.error,
+                }
+            }
+        }
+        Err(e) => HelperResult {
+            success: false,
+            error: Some(e),
+        },
+    }
+}
+
+#[tauri::command]
+pub async fn set_schedules_via_helper(schedules: Vec<HelperScheduleData>) -> HelperResult {
+    log::info!("set_schedules_via_helper called with {} schedules", schedules.len());
+    
+    let cmd = IpcCommand {
+        action: "set-schedules".to_string(),
+        domains: None,
+        end_time: None,
+        blocklist_id: None,
+        apps: None,
+        schedules: Some(schedules),
     };
     
     match send_command(&cmd) {

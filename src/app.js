@@ -47,6 +47,9 @@ const tauriAPI = {
     // App blocking via helper daemon (persistent, survives app close)
     setBlockedAppsViaHelper: (apps) => invoke('set_blocked_apps_via_helper', { apps }),
 
+    // Schedule management via helper daemon (persistent, handles transitions autonomously)
+    setSchedulesViaHelper: (schedules) => invoke('set_schedules_via_helper', { schedules }),
+
     // Screen Time API (iOS only - provided by tauri-plugin-screentime)
     screentimeRequestAuth: () => invoke('plugin:screentime|request_authorization'),
     screentimeCheckAuth: () => invoke('plugin:screentime|check_authorization'),
@@ -93,6 +96,43 @@ let currentWeekStart = null; // Date object for Monday of the displayed week
 // Schedule mode state
 let isScheduleMode = false; // false = instant mode, true = schedule mode
 let scheduleSegments = getDefaultScheduleSegments(); // Array of time segments with per-segment days
+
+// Sync all active schedules to helper daemon so it can manage transitions autonomously
+async function syncSchedulesToHelper() {
+    if (isIOS) return;
+    try {
+        const status = await tauriAPI.checkHelperStatus();
+        if (!status.running || !status.version_ok) {
+            console.log('[syncSchedulesToHelper] Helper not available, skipping');
+            return;
+        }
+
+        // Build schedule payloads with pre-resolved domains and apps
+        const helperSchedules = (appData.schedules || []).map(schedule => {
+            const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+            return {
+                id: schedule.id,
+                domains: blocklist?.websites || [],
+                apps: blocklist?.apps || [],
+                segments: (schedule.segments || []).map(seg => ({
+                    startHour: seg.startHour,
+                    startMinute: seg.startMinute,
+                    endHour: seg.endHour,
+                    endMinute: seg.endMinute,
+                    days: [...seg.days]
+                }))
+            };
+        });
+
+        console.log('[syncSchedulesToHelper] Sending', helperSchedules.length, 'schedules to helper');
+        const result = await tauriAPI.setSchedulesViaHelper(helperSchedules);
+        if (!result.success) {
+            console.warn('[syncSchedulesToHelper] Failed:', result.error);
+        }
+    } catch (e) {
+        console.warn('[syncSchedulesToHelper] Error:', e);
+    }
+}
 let scheduleRepeatType = 'no'; // 'no', 'forever', or 'date'
 let scheduleRepeatDate = null; // Date object when repeatType is 'date'
 let activeScheduleSegmentCount = 0; // Number of segments locked in the active schedule (new segments can be added)
@@ -117,6 +157,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         await checkScreentimeAuth();
     } else {
         await checkHelperStatus();
+        // Sync schedules to helper on startup so it has the latest data
+        syncSchedulesToHelper();
     }
     setupEventListeners();
     setupTheme();
@@ -838,6 +880,9 @@ function setupModalListeners() {
             // Update website blocking
             updateHostsFile();
 
+            // Sync schedules to helper (blocklist domains/apps may have changed)
+            syncSchedulesToHelper();
+
             // Update app blocking - this handles both active blocks and schedules
             updateBlockedApps();
         }
@@ -1058,6 +1103,8 @@ function setupOverrideModalListeners() {
 
                 await saveData();
                 await updateHostsFile();
+                // Sync updated schedules to helper daemon
+                await syncSchedulesToHelper();
                 // Update blocked apps after schedule changes
                 await updateBlockedApps();
 
@@ -2439,6 +2486,8 @@ async function proceedWithScheduleEdit() {
     updateScheduleButtonState();
     renderBlocklists();
     updateWeekCalendar();
+    // Sync updated schedule to helper daemon
+    syncSchedulesToHelper();
 
     // Clean up
     delete window.editScheduleData;
@@ -2505,6 +2554,9 @@ async function proceedWithSchedule() {
 
     // Trigger hosts file update to start blocking if schedule is currently active
     await updateHostsFile();
+
+    // Sync all schedules to helper daemon for autonomous transitions
+    await syncSchedulesToHelper();
 }
 // Handle time picker change
 function handleTimeChange() {
@@ -5536,6 +5588,8 @@ function startTickInterval() {
                     console.log('Auto-stopped expired schedule(s):', expiredScheduleIds);
                     activeScheduleSegmentCount = 0;
                     await saveData();
+                    // Sync updated schedules to helper daemon
+                    await syncSchedulesToHelper();
                     // Update blocked apps after schedule expiration
                     await updateBlockedApps();
                     render();
