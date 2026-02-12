@@ -2244,13 +2244,14 @@ function showScheduleConfirmModal(blocklist) {
     }
 
     // Override info
-    const charCount = blocklist.overrideCharCount || 60;
-    const charsPerMinute = 30;
+    const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
+    const charCount = difficulty.count || 50;
+    const charsPerMinute = 100;
     const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
     const charWord = charCount === 1 ? 'character' : 'characters';
 
     let overrideText;
-    if (blocklist.overrideType === 'random') {
+    if (difficulty.type === 'random') {
         overrideText = `Type ${charCount} random ${charWord} (letters and numbers) exactly as shown (~${estimatedMinutes} min).`;
     } else {
         overrideText = `Type ${charCount} ${charWord} (displayed as random words) exactly as shown (~${estimatedMinutes} min).`;
