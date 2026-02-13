@@ -566,34 +566,37 @@ fn chrono_now() -> LocalTimeInfo {
     
     #[cfg(target_os = "windows")]
     {
-        // On Windows, get local time using the date command
-        let output = Command::new("cmd")
-            .args(["/C", "wmic os get localdatetime /value"])
-            .output();
-        if let Ok(output) = output {
-            let s = String::from_utf8_lossy(&output.stdout);
-            // Parse: LocalDateTime=20260212173000.000000+060
-            for line in s.lines() {
-                if let Some(dt) = line.strip_prefix("LocalDateTime=") {
-                    let dt = dt.trim();
-                    if dt.len() >= 12 {
-                        let hour: u32 = dt[8..10].parse().unwrap_or(0);
-                        let minute: u32 = dt[10..12].parse().unwrap_or(0);
-                        // Get day-of-week via another approach
-                        let dow_output = Command::new("powershell")
-                            .args(["-NoProfile", "-Command", "(Get-Date).DayOfWeek.value__"])
-                            .output();
-                        if let Ok(dow_out) = dow_output {
-                            let dow_str = String::from_utf8_lossy(&dow_out.stdout);
-                            // .NET DayOfWeek: Sun=0..Sat=6
-                            let dow: u32 = dow_str.trim().parse().unwrap_or(0);
-                            let weekday_mon0 = if dow == 0 { 6 } else { dow - 1 };
-                            return LocalTimeInfo { hour, minute, weekday_mon0 };
-                        }
-                    }
-                }
-            }
+        // Use GetLocalTime from kernel32.dll directly — zero overhead, no process spawning.
+        // Previously used wmic + powershell which spawned 2 processes every 30 seconds.
+        #[repr(C)]
+        struct SYSTEMTIME {
+            w_year: u16,
+            w_month: u16,
+            w_day_of_week: u16,
+            w_day: u16,
+            w_hour: u16,
+            w_minute: u16,
+            w_second: u16,
+            w_milliseconds: u16,
         }
+        
+        extern "system" {
+            fn GetLocalTime(lp_system_time: *mut SYSTEMTIME);
+        }
+        
+        let mut st = SYSTEMTIME {
+            w_year: 0, w_month: 0, w_day_of_week: 0, w_day: 0,
+            w_hour: 0, w_minute: 0, w_second: 0, w_milliseconds: 0,
+        };
+        unsafe { GetLocalTime(&mut st) };
+        
+        // wDayOfWeek: Sun=0..Sat=6 -> convert to Mon=0..Sun=6
+        let weekday_mon0 = if st.w_day_of_week == 0 { 6 } else { st.w_day_of_week as u32 - 1 };
+        return LocalTimeInfo {
+            hour: st.w_hour as u32,
+            minute: st.w_minute as u32,
+            weekday_mon0,
+        };
     }
     
     // Fallback: use UTC (not ideal but won't crash)
