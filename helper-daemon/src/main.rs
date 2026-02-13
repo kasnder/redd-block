@@ -1454,8 +1454,8 @@ fn app_existence_checker(
             let has_schedules = !schedule_state.lock().unwrap().is_empty();
             
             if keep_blocking && (has_active_block || has_blocked_apps || has_schedules) {
-                // Setting says to keep blocking - wait for blocks/schedules to finish
-                log("Keep blocking enabled and blocks/schedules are active - continuing");
+                // Setting says to keep blocking - schedules are configured (may become active later)
+                log("Keep blocking enabled and blocks/schedules are configured - continuing");
                 continue;
             }
             
