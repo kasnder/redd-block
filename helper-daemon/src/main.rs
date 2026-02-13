@@ -1454,21 +1454,16 @@ fn check_app_exists() -> bool {
     
     #[cfg(target_os = "windows")]
     {
-        // Check for MSIX installation (WindowsApps folder)
+        // Check common direct-distribution install locations
         let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| "".to_string());
         let program_files = std::env::var("PROGRAMFILES").unwrap_or_else(|_| "C:\\Program Files".to_string());
         
-        // Check common install locations
         let paths = [
             format!("{}\\Programs\\redd-block\\ReDD Block.exe", local_app_data),
             format!("{}\\ReDD Block\\ReDD Block.exe", program_files),
         ];
         
-        // Also check if there's a WindowsApps package
-        let windows_apps = format!("{}\\Microsoft\\WindowsApps\\ReDD Block.exe", local_app_data);
-        
-        paths.iter().any(|p| std::path::Path::new(p).exists()) 
-            || std::path::Path::new(&windows_apps).exists()
+        paths.iter().any(|p| std::path::Path::new(p).exists())
     }
     
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
