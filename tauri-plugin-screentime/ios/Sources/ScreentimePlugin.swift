@@ -264,29 +264,39 @@ class ScreentimePlugin: Plugin {
                     
                     // Encode application tokens
                     var encodedAppTokens: [String] = []
+                    var failedAppTokens = 0
                     for token in selection.applicationTokens {
                         if let data = try? JSONEncoder().encode(token) {
                             encodedAppTokens.append(data.base64EncodedString())
+                        } else {
+                            failedAppTokens += 1
                         }
                     }
                     
                     // Encode category tokens
                     var encodedCategoryTokens: [String] = []
+                    var failedCategoryTokens = 0
                     for token in selection.categoryTokens {
                         if let data = try? JSONEncoder().encode(token) {
                             encodedCategoryTokens.append(data.base64EncodedString())
+                        } else {
+                            failedCategoryTokens += 1
                         }
                     }
                     
                     // Dismiss the picker
                     topVC.dismiss(animated: true) {
-                        invoke.resolve([
+                        var response: [String: Any] = [
                             "cancelled": false,
                             "applicationTokens": encodedAppTokens,
                             "categoryTokens": encodedCategoryTokens,
                             "applicationCount": selection.applicationTokens.count,
                             "categoryCount": selection.categoryTokens.count
-                        ])
+                        ]
+                        if failedAppTokens > 0 || failedCategoryTokens > 0 {
+                            response["warning"] = "Failed to encode \(failedAppTokens) app token(s) and \(failedCategoryTokens) category token(s)"
+                        }
+                        invoke.resolve(response)
                     }
                 },
                 onCancel: {
@@ -353,11 +363,16 @@ class ScreentimePlugin: Plugin {
         
         // Decode ApplicationToken from base64-encoded data
         var tokens = Set<ApplicationToken>()
+        var failedDecodes = 0
         for tokenString in args.tokenData {
             if let data = Data(base64Encoded: tokenString) {
                 if let token = try? JSONDecoder().decode(ApplicationToken.self, from: data) {
                     tokens.insert(token)
+                } else {
+                    failedDecodes += 1
                 }
+            } else {
+                failedDecodes += 1
             }
         }
         
@@ -371,10 +386,14 @@ class ScreentimePlugin: Plugin {
         
         store.shield.applications = tokens
         
-        invoke.resolve([
+        var response: [String: Any] = [
             "success": true,
             "blockedCount": tokens.count
-        ])
+        ]
+        if failedDecodes > 0 {
+            response["warning"] = "Failed to decode \(failedDecodes) of \(args.tokenData.count) app token(s)"
+        }
+        invoke.resolve(response)
     }
     
     @objc public func unblockApps(_ invoke: Invoke) throws {
