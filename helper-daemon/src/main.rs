@@ -429,7 +429,10 @@ fn get_active_schedule_domains(schedules: &[HelperSchedule]) -> Vec<String> {
             let start_mins = seg.start_hour as u32 * 60 + seg.start_minute as u32;
             let end_mins = seg.end_hour as u32 * 60 + seg.end_minute as u32;
             
-            if end_mins > start_mins {
+            if start_mins == end_mins {
+                // Same start and end (e.g., 00:00 - 00:00) means "all day"
+                seg.days.contains(&(current_day as u8))
+            } else if end_mins > start_mins {
                 // Same-day segment (e.g., 00:00 - 10:00)
                 seg.days.contains(&(current_day as u8))
                     && current_mins >= start_mins
@@ -466,7 +469,10 @@ fn get_active_schedule_apps(schedules: &[HelperSchedule]) -> Vec<String> {
             let start_mins = seg.start_hour as u32 * 60 + seg.start_minute as u32;
             let end_mins = seg.end_hour as u32 * 60 + seg.end_minute as u32;
             
-            if end_mins > start_mins {
+            if start_mins == end_mins {
+                // Same start and end (e.g., 00:00 - 00:00) means "all day"
+                seg.days.contains(&(current_day as u8))
+            } else if end_mins > start_mins {
                 seg.days.contains(&(current_day as u8))
                     && current_mins >= start_mins
                     && current_mins < end_mins
