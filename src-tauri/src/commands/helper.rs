@@ -704,6 +704,21 @@ fn force_cleanup_helper() -> HelperResult {
     
     #[cfg(target_os = "macos")]
     {
+        // Try to restore hosts file via IPC before killing the daemon
+        // This prevents stale block entries remaining in /etc/hosts
+        let restore_cmd = IpcCommand {
+            action: "restore-hosts".to_string(),
+            domains: None,
+            end_time: None,
+            blocklist_id: None,
+            apps: None,
+            schedules: None,
+        };
+        match send_command(&restore_cmd) {
+            Ok(_) => log::info!("Hosts file restored before force cleanup"),
+            Err(e) => log::warn!("Could not restore hosts before cleanup: {}", e),
+        }
+        
         // Try to unload the launchd daemon
         let _ = std::process::Command::new("launchctl")
             .args(["remove", "org.reddfocus.block.helper"])
