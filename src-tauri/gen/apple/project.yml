@@ -103,7 +103,7 @@ targets:
       path: ReddBlockMonitor/Info.plist
       properties:
         EXAppExtensionAttributes:
-          EXExtensionPointIdentifier: com.apple.deviceactivitymonitor
+          EXExtensionPointIdentifier: com.apple.deviceactivity.monitor-extension
     entitlements:
       path: ReddBlockMonitor/ReddBlockMonitor.entitlements
     settings:
