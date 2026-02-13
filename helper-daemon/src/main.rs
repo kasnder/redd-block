@@ -264,7 +264,15 @@ fn restore_hosts_from_backup() -> Result<(), String> {
     let backup_content = fs::read_to_string(HOSTS_BACKUP_PATH)
         .map_err(|e| format!("Failed to read backup: {}", e))?;
     
-    fs::write(HOSTS_PATH, &backup_content)
+    // Clean any stale block entries from the backup (e.g., old-format markers)
+    let clean = remove_block_from_hosts(&backup_content);
+    
+    // Validate the backup has essential entries
+    if !clean.contains("localhost") {
+        return Err("Backup file is invalid (missing localhost entry)".to_string());
+    }
+    
+    fs::write(HOSTS_PATH, &clean)
         .map_err(|e| format!("Failed to restore hosts file: {}", e))?;
     
     flush_dns_cache();
