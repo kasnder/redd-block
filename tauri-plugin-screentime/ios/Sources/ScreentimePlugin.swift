@@ -308,7 +308,16 @@ class ScreentimePlugin: Plugin {
     
     // MARK: - Website Blocking
     
+    /// Check if Screen Time authorization is granted
+    private func isAuthorized() -> Bool {
+        return AuthorizationCenter.shared.authorizationStatus == .approved
+    }
+    
     @objc public func blockWebsites(_ invoke: Invoke) throws {
+        guard isAuthorized() else {
+            invoke.resolve(["success": false, "error": "Screen Time authorization not granted"])
+            return
+        }
         let args = try invoke.parseArgs(BlockWebsitesArgs.self)
         
         // Convert domain strings to WebDomain objects
@@ -331,6 +340,10 @@ class ScreentimePlugin: Plugin {
     // MARK: - App Blocking
     
     @objc public func blockApps(_ invoke: Invoke) throws {
+        guard isAuthorized() else {
+            invoke.resolve(["success": false, "error": "Screen Time authorization not granted"])
+            return
+        }
         let args = try invoke.parseArgs(BlockAppsForTokensArgs.self)
         
         // Decode ApplicationToken from base64-encoded data
@@ -367,6 +380,10 @@ class ScreentimePlugin: Plugin {
     // MARK: - Combined Block (websites + apps from stored selection)
     
     @objc public func startBlock(_ invoke: Invoke) throws {
+        guard isAuthorized() else {
+            invoke.resolve(["success": false, "error": "Screen Time authorization not granted"])
+            return
+        }
         let args = try invoke.parseArgs(BlockWebsitesArgs.self)
         
         // Block websites
@@ -409,6 +426,10 @@ class ScreentimePlugin: Plugin {
     // MARK: - Scheduling
     
     @objc public func scheduleBlock(_ invoke: Invoke) throws {
+        guard isAuthorized() else {
+            invoke.resolve(["success": false, "error": "Screen Time authorization not granted"])
+            return
+        }
         let args = try invoke.parseArgs(ScheduleBlockArgs.self)
         
         let startComponents = DateComponents(hour: args.startHour, minute: args.startMinute)
