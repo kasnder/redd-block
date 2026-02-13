@@ -299,8 +299,19 @@ fn write_hosts_file(content: &str) -> bool {
     if let Err(e) = ensure_backup_exists() {
         log(&format!("Warning: {}", e));
     }
-    
-    fs::write(HOSTS_PATH, content).is_ok()
+    // Atomic write: write to temp file then rename to avoid truncation on crash
+    let tmp_path = format!("{}.tmp", HOSTS_PATH);
+    if let Err(e) = fs::write(&tmp_path, content) {
+        log(&format!("Failed to write temp hosts file: {}", e));
+        return false;
+    }
+    if let Err(e) = fs::rename(&tmp_path, HOSTS_PATH) {
+        log(&format!("Failed to rename temp hosts file: {}", e));
+        // Fallback: try direct write
+        let _ = fs::remove_file(&tmp_path);
+        return fs::write(HOSTS_PATH, content).is_ok();
+    }
+    true
 }
 
 fn remove_block_from_hosts(content: &str) -> String {
