@@ -242,7 +242,9 @@ fn ensure_backup_exists() -> Result<(), String> {
     if !backup_path.exists() {
         log("Creating backup of original hosts file");
         let content = read_hosts_file();
-        fs::write(HOSTS_BACKUP_PATH, &content)
+        // Strip any existing block entries so the backup is clean
+        let clean = remove_block_from_hosts(&content);
+        fs::write(HOSTS_BACKUP_PATH, &clean)
             .map_err(|e| format!("Failed to create hosts backup: {}", e))?;
         log(&format!("Backup created at {}", HOSTS_BACKUP_PATH));
     }
