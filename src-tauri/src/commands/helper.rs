@@ -401,7 +401,7 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
         // 2. Copy the new binary
         // 3. Create scheduled task for persistence
         // 4. Start the helper
-        let script_path = install_dir.join("install-helper.ps1");
+        let script_path = std::env::temp_dir().join("redd-block-install-helper.ps1");
         let task_name = "ReDD Block Helper";
         let helper_path_str = helper_path.to_string_lossy();
         let install_path_str = install_path.to_string_lossy();
