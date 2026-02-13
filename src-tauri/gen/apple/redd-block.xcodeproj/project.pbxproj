@@ -12,6 +12,7 @@
 		1264A4422D00248B1F63E6A8 /* Security.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = FEEA0B4D5648E6F576835BB9 /* Security.framework */; };
 		21E90ECB2476B56320F704BA /* MetalKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5D52354D5701D21663C48685 /* MetalKit.framework */; };
 		235FA88506FBC073FDF9827F /* main.mm in Sources */ = {isa = PBXBuildFile; fileRef = 6937C8528EFA584D6536FAC9 /* main.mm */; };
+		2949956BA3962CA6CAAC1AF4 /* ReddBlockMonitor.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = 96B1304436C5E5A028057DE4 /* ReddBlockMonitor.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		2DF72A02AF941C6AA73F550C /* DeviceActivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9B0F1D0C7682822B0689B1E3 /* DeviceActivity.framework */; };
 		4831311F324646763DDE08F6 /* FamilyControls.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 744D7F2E51914811C4C6CB0F /* FamilyControls.framework */; };
 		5987133B3C135FEE041B69A3 /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CC7C0149D4E48A40162080AF /* Metal.framework */; };
@@ -22,7 +23,6 @@
 		87CDADBF89F44C7912BEC7E5 /* WebKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A6586E05426FBB51180E7F7B /* WebKit.framework */; };
 		A3BE5EA318939A3F3322E896 /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0D1F4A73AD78DEC74E4C26F7 /* UIKit.framework */; };
 		AE17B7EB2F23F749C595C6B9 /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 594A1ECBC7BC7A3A4238B58D /* LaunchScreen.storyboard */; };
-		D0AAAE953AE9EE0F3B9C1F18 /* ReddBlockMonitor.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 96B1304436C5E5A028057DE4 /* ReddBlockMonitor.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		DA0DC1BC2B3BFEB75542AB8D /* DeviceActivityMonitorExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A3080BBB269E19E378D0F49 /* DeviceActivityMonitorExtension.swift */; };
 		DC96BB5B7CAA440BC4FB1DA7 /* QuartzCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4715E49C9E7020A2DF9CF8D7 /* QuartzCore.framework */; };
 /* End PBXBuildFile section */
@@ -38,15 +38,15 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		3EC5685DE658DC31955715C1 /* Embed Foundation Extensions */ = {
+		7827D5CAB6C48528270077E0 /* Embed ExtensionKit Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
-			dstPath = "";
-			dstSubfolderSpec = 13;
+			dstPath = "$(EXTENSIONS_FOLDER_PATH)";
+			dstSubfolderSpec = 16;
 			files = (
-				D0AAAE953AE9EE0F3B9C1F18 /* ReddBlockMonitor.appex in Embed Foundation Extensions */,
+				2949956BA3962CA6CAAC1AF4 /* ReddBlockMonitor.appex in Embed ExtensionKit Extensions */,
 			);
-			name = "Embed Foundation Extensions";
+			name = "Embed ExtensionKit Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -69,7 +69,7 @@
 		6942A89B110F57A4103A405E /* redd-block_iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "redd-block_iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		744D7F2E51914811C4C6CB0F /* FamilyControls.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = FamilyControls.framework; path = System/Library/Frameworks/FamilyControls.framework; sourceTree = SDKROOT; };
 		8A73DFF4502DFFDFEE61ECA5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
-		96B1304436C5E5A028057DE4 /* ReddBlockMonitor.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = ReddBlockMonitor.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		96B1304436C5E5A028057DE4 /* ReddBlockMonitor.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = ReddBlockMonitor.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		9B0F1D0C7682822B0689B1E3 /* DeviceActivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DeviceActivity.framework; path = System/Library/Frameworks/DeviceActivity.framework; sourceTree = SDKROOT; };
 		A5866FA7626B81A369EEE50F /* assets */ = {isa = PBXFileReference; lastKnownFileType = folder; path = assets; sourceTree = SOURCE_ROOT; };
 		A6586E05426FBB51180E7F7B /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
@@ -237,14 +237,14 @@
 			path = bindings;
 			sourceTree = "<group>";
 		};
-		"TEMP_40AEDBFB-49C9-4DA0-BA61-97712CA779E3" /* x86_64 */ = {
+		"TEMP_5CF3F250-E17F-4082-88D0-0482F55AB94B" /* x86_64 */ = {
 			isa = PBXGroup;
 			children = (
 			);
 			path = x86_64;
 			sourceTree = "<group>";
 		};
-		"TEMP_987560E8-1D84-40B1-AC09-1A139F94D044" /* arm64 */ = {
+		"TEMP_AC251558-8C50-47C9-983C-D528D3C113F8" /* arm64 */ = {
 			isa = PBXGroup;
 			children = (
 			);
@@ -270,7 +270,7 @@
 			);
 			productName = ReddBlockMonitor;
 			productReference = 96B1304436C5E5A028057DE4 /* ReddBlockMonitor.appex */;
-			productType = "com.apple.product-type.app-extension";
+			productType = "com.apple.product-type.extensionkit-extension";
 		};
 		1A8486F1E15C1FC8BB2597C6 /* redd-block_iOS */ = {
 			isa = PBXNativeTarget;
@@ -280,7 +280,7 @@
 				BC5D429B3E15F6C4090E428F /* Sources */,
 				CFF803C032BCF19A41E1FA8E /* Resources */,
 				FE3ADC9DA7CB07FB5C7FA2C5 /* Frameworks */,
-				3EC5685DE658DC31955715C1 /* Embed Foundation Extensions */,
+				7827D5CAB6C48528270077E0 /* Embed ExtensionKit Extensions */,
 			);
 			buildRules = (
 			);
@@ -411,7 +411,6 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.redd.block.monitor;
 				PRODUCT_NAME = ReddBlockMonitor;
@@ -615,7 +614,6 @@
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
-					"@executable_path/../../Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.redd.block.monitor;
 				PRODUCT_NAME = ReddBlockMonitor;

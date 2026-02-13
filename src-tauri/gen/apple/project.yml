@@ -94,7 +94,7 @@ targets:
           - $(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a
           - $(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a
   ReddBlockMonitor:
-    type: app-extension
+    type: extensionkit-extension
     platform: iOS
     sources:
       - path: ReddBlockMonitor
