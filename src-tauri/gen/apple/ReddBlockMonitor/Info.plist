@@ -12,14 +12,18 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>XPC!</string>
 	<key>CFBundleShortVersionString</key>
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>0.5.2</string>
-	<key>EXAppExtensionAttributes</key>
+	<key>NSExtension</key>
 	<dict>
-		<key>EXExtensionPointIdentifier</key>
-		<string>com.apple.deviceactivity.monitor-extension</string>
+		<key>NSExtensionPointIdentifier</key>
+		<string>com.apple.deviceactivity-monitor</string>
+		<key>NSExtensionPrincipalClass</key>
+		<string>$(PRODUCT_MODULE_NAME).ReddBlockMonitor</string>
 	</dict>
 </dict>
 </plist>

@@ -94,7 +94,7 @@ targets:
           - $(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a
           - $(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a
   ReddBlockMonitor:
-    type: extensionkit-extension
+    type: app-extension
     platform: iOS
     sources:
       - path: ReddBlockMonitor
@@ -102,8 +102,9 @@ targets:
     info:
       path: ReddBlockMonitor/Info.plist
       properties:
-        EXAppExtensionAttributes:
-          EXExtensionPointIdentifier: com.apple.deviceactivity.monitor-extension
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.deviceactivity-monitor
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ReddBlockMonitor
     entitlements:
       path: ReddBlockMonitor/ReddBlockMonitor.entitlements
     settings:
