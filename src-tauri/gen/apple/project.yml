@@ -102,8 +102,9 @@ targets:
     info:
       path: ReddBlockMonitor/Info.plist
       properties:
+        CFBundleDisplayName: ReddBlockMonitor
         NSExtension:
-          NSExtensionPointIdentifier: com.apple.deviceactivity-monitor
+          NSExtensionPointIdentifier: com.apple.deviceactivity.monitor-extension
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ReddBlockMonitor
     entitlements:
       path: ReddBlockMonitor/ReddBlockMonitor.entitlements
