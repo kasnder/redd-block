@@ -188,8 +188,25 @@ class ScreentimePlugin: Plugin {
     private let store = ManagedSettingsStore()
     private let center = DeviceActivityCenter()
     
-    // Store the current selection persistently so we can use it when blocking
-    private static var currentSelection = FamilyActivitySelection()
+    // Persist the current selection to UserDefaults so it survives app restarts.
+    // ManagedSettingsStore persists blocks at the OS level, but we need to also
+    // persist the selection so we can re-apply blocks and show the picker state.
+    private static let selectionKey = "redd.activitySelection"
+    
+    private static var currentSelection: FamilyActivitySelection {
+        get {
+            if let data = UserDefaults.standard.data(forKey: selectionKey),
+               let selection = try? JSONDecoder().decode(FamilyActivitySelection.self, from: data) {
+                return selection
+            }
+            return FamilyActivitySelection()
+        }
+        set {
+            if let data = try? JSONEncoder().encode(newValue) {
+                UserDefaults.standard.set(data, forKey: selectionKey)
+            }
+        }
+    }
     
     // MARK: - Authorization
     
