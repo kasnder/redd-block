@@ -32,6 +32,7 @@ targets:
       - path: Assets.xcassets
       - path: Externals
       - path: redd-block_iOS
+      - path: Shared
       - path: assets
         buildPhase: resources
         type: folder
@@ -79,6 +80,7 @@ targets:
       - sdk: Security.framework
       - sdk: UIKit.framework
       - sdk: WebKit.framework
+      - target: ReddBlockMonitor
     preBuildScripts:
       - script: export PATH="$HOME/.cargo/bin:$PATH" && cargo tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths "${FRAMEWORK_SEARCH_PATHS:?}" --header-search-paths "${HEADER_SEARCH_PATHS:?}" --gcc-preprocessor-definitions "${GCC_PREPROCESSOR_DEFINITIONS:-}" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}
         name: Build Rust Code
@@ -86,3 +88,24 @@ targets:
         outputFiles:
           - $(SRCROOT)/Externals/x86_64/${CONFIGURATION}/libapp.a
           - $(SRCROOT)/Externals/arm64/${CONFIGURATION}/libapp.a
+  ReddBlockMonitor:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ReddBlockMonitor
+      - path: Shared
+    info:
+      path: ReddBlockMonitor/Info.plist
+    entitlements:
+      path: ReddBlockMonitor/ReddBlockMonitor.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.redd.block.monitor
+        PRODUCT_NAME: ReddBlockMonitor
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: false
+    dependencies:
+      - sdk: DeviceActivity.framework
+      - sdk: ManagedSettings.framework
+      - sdk: FamilyControls.framework

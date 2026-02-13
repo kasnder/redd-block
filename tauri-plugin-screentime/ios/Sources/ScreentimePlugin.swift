@@ -188,14 +188,19 @@ class ScreentimePlugin: Plugin {
     private let store = ManagedSettingsStore()
     private let center = DeviceActivityCenter()
     
-    // Persist the current selection to UserDefaults so it survives app restarts.
-    // ManagedSettingsStore persists blocks at the OS level, but we need to also
-    // persist the selection so we can re-apply blocks and show the picker state.
+    // Persist the current selection to the App Group's UserDefaults so it survives
+    // app restarts AND is accessible to the DeviceActivityMonitor extension.
+    // ManagedSettingsStore persists blocks at the OS level, but we need the selection
+    // to re-apply blocks and show the picker state.
     private static let selectionKey = "redd.activitySelection"
+    
+    private static var sharedDefaults: UserDefaults? {
+        return UserDefaults(suiteName: appGroupID)
+    }
     
     private static var currentSelection: FamilyActivitySelection {
         get {
-            if let data = UserDefaults.standard.data(forKey: selectionKey),
+            if let data = sharedDefaults?.data(forKey: selectionKey),
                let selection = try? JSONDecoder().decode(FamilyActivitySelection.self, from: data) {
                 return selection
             }
@@ -203,7 +208,7 @@ class ScreentimePlugin: Plugin {
         }
         set {
             if let data = try? JSONEncoder().encode(newValue) {
-                UserDefaults.standard.set(data, forKey: selectionKey)
+                sharedDefaults?.set(data, forKey: selectionKey)
             }
         }
     }
@@ -463,6 +468,33 @@ class ScreentimePlugin: Plugin {
         }
         let args = try invoke.parseArgs(ScheduleBlockArgs.self)
         
+        // Save schedule data to the shared App Group container so the
+        // DeviceActivityMonitor extension can read it when the interval starts.
+        let selection = ScreentimePlugin.currentSelection
+        
+        // Encode category tokens from the current selection
+        var encodedCategoryTokens: [String] = []
+        for token in selection.categoryTokens {
+            if let data = try? JSONEncoder().encode(token) {
+                encodedCategoryTokens.append(data.base64EncodedString())
+            }
+        }
+        
+        // Encode app tokens from the current selection
+        var encodedAppTokens: [String] = []
+        for token in selection.applicationTokens {
+            if let data = try? JSONEncoder().encode(token) {
+                encodedAppTokens.append(data.base64EncodedString())
+            }
+        }
+        
+        let scheduleData = ScheduleBlockData(
+            domains: args.domains ?? [],
+            appTokenData: args.appTokenData ?? encodedAppTokens,
+            categoryTokenData: encodedCategoryTokens
+        )
+        SharedScheduleStore.save(scheduleData)
+        
         let startComponents = DateComponents(hour: args.startHour, minute: args.startMinute)
         let endComponents = DateComponents(hour: args.endHour, minute: args.endMinute)
         let schedule = DeviceActivitySchedule(
@@ -486,6 +518,7 @@ class ScreentimePlugin: Plugin {
     
     @objc public func unscheduleBlock(_ invoke: Invoke) throws {
         center.stopMonitoring([DeviceActivityName("redd-block-schedule")])
+        SharedScheduleStore.clear()
         invoke.resolve(["success": true])
     }
     
