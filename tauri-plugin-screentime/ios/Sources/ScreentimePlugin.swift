@@ -322,14 +322,19 @@ class ScreentimePlugin: Plugin {
         
         // Convert domain strings to WebDomain objects
         // Screen Time API supports up to 50 domains per store
+        let truncated = args.domains.count > 50
         let webDomains = Set(args.domains.prefix(50).map { WebDomain(domain: $0) })
         
         store.webContent.blockedByFilter = .specific(webDomains)
         
-        invoke.resolve([
+        var response: [String: Any] = [
             "success": true,
             "blockedCount": webDomains.count
-        ])
+        ]
+        if truncated {
+            response["warning"] = "Only first 50 of \(args.domains.count) domains blocked (Screen Time API limit)"
+        }
+        invoke.resolve(response)
     }
     
     @objc public func unblockWebsites(_ invoke: Invoke) throws {
@@ -387,6 +392,7 @@ class ScreentimePlugin: Plugin {
         let args = try invoke.parseArgs(BlockWebsitesArgs.self)
         
         // Block websites
+        let truncated = args.domains.count > 50
         let webDomains = Set(args.domains.prefix(50).map { WebDomain(domain: $0) })
         if !webDomains.isEmpty {
             store.webContent.blockedByFilter = .specific(webDomains)
@@ -402,12 +408,16 @@ class ScreentimePlugin: Plugin {
             store.shield.applicationCategories = .specific(categoryTokens)
         }
         
-        invoke.resolve([
+        var response: [String: Any] = [
             "success": true,
             "websitesBlocked": webDomains.count,
             "appsBlocked": appTokens.count,
             "categoriesBlocked": categoryTokens.count
-        ])
+        ]
+        if truncated {
+            response["warning"] = "Only first 50 of \(args.domains.count) domains blocked (Screen Time API limit)"
+        }
+        invoke.resolve(response)
     }
     
     @objc public func clearBlock(_ invoke: Invoke) throws {
