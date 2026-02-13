@@ -691,6 +691,7 @@ fn force_cleanup_helper() -> HelperResult {
             blocklist_id: None,
             apps: None,
             schedules: None,
+            auth_token: None,
         };
         match send_command(&restore_cmd) {
             Ok(_) => log::info!("Hosts file restored before force cleanup"),
