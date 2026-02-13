@@ -212,15 +212,23 @@ fn load_state() -> (Option<BlockState>, Vec<String>, Vec<HelperSchedule>) {
 fn save_full_state(block: &Option<BlockState>, apps: &[String], schedules: &[HelperSchedule]) {
     let path = get_data_path();
     if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
+        if let Err(e) = fs::create_dir_all(parent) {
+            log(&format!("Warning: failed to create state directory: {}", e));
+            return;
+        }
     }
     let state = HelperState {
         current_block: block.clone(),
         blocked_apps: apps.to_vec(),
         schedules: schedules.to_vec(),
     };
-    if let Ok(json) = serde_json::to_string_pretty(&state) {
-        let _ = fs::write(&path, json);
+    match serde_json::to_string_pretty(&state) {
+        Ok(json) => {
+            if let Err(e) = fs::write(&path, json) {
+                log(&format!("Warning: failed to persist state: {}", e));
+            }
+        }
+        Err(e) => log(&format!("Warning: failed to serialize state: {}", e)),
     }
 }
 
