@@ -462,11 +462,17 @@ class ScreentimePlugin: Plugin {
     }
     
     @objc public func clearBlock(_ invoke: Invoke) throws {
-        // Clear all managed settings (stops blocking)
+        // Clear the default store (manual blocks)
         store.webContent.blockedByFilter = nil
         store.shield.applications = nil
         store.shield.applicationCategories = nil
         store.clearAllSettings()
+        
+        // Also clear the named "schedule" store used by DeviceActivityMonitor
+        // Since we use separate stores for manual vs schedule blocks, both
+        // must be cleared for a complete "stop everything" action.
+        let scheduleStore = ManagedSettingsStore(named: .init("schedule"))
+        scheduleStore.clearAllSettings()
         
         // Note: We intentionally do NOT clear currentSelection here.
         // The selection should persist so the user doesn't have to re-pick

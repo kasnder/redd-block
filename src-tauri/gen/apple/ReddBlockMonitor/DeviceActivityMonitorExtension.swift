@@ -8,7 +8,11 @@ import Foundation
 @available(iOS 16.0, *)
 class ReddBlockMonitor: DeviceActivityMonitor {
     
-    private let store = ManagedSettingsStore()
+    /// Use a NAMED store for schedule-based blocks so they don't interfere
+    /// with manual blocks in the default ManagedSettingsStore.
+    /// The ScreentimePlugin uses ManagedSettingsStore() (default) for manual
+    /// blocks — these two stores stack independently at the OS level.
+    private let store = ManagedSettingsStore(named: .init("schedule"))
     
     /// Called by the system when a scheduled DeviceActivity interval starts.
     override func intervalDidStart(for activity: DeviceActivityName) {
