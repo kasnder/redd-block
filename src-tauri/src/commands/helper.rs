@@ -656,6 +656,21 @@ fn force_cleanup_helper() -> HelperResult {
         let program_data = std::env::var("PROGRAMDATA").unwrap_or_else(|_| "C:\\ProgramData".to_string());
         let install_dir = PathBuf::from(&program_data).join("ReDD Block");
         
+        // Try to restore hosts file via IPC before killing the daemon
+        // This prevents stale block entries remaining in the hosts file
+        let restore_cmd = IpcCommand {
+            action: "restore-hosts".to_string(),
+            domains: None,
+            end_time: None,
+            blocklist_id: None,
+            apps: None,
+            schedules: None,
+        };
+        match send_command(&restore_cmd) {
+            Ok(_) => log::info!("Hosts file restored before force cleanup"),
+            Err(e) => log::warn!("Could not restore hosts before cleanup: {}", e),
+        }
+        
         // Run elevated taskkill and cleanup
         let verb = HSTRING::from("runas");
         let file = HSTRING::from("powershell");
