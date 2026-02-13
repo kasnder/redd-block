@@ -772,6 +772,17 @@ fn hide_app(app_name: &str) {
     
     #[cfg(target_os = "windows")]
     {
+        // Sanitize app_name to prevent PowerShell injection.
+        // Strip characters that could escape the string context.
+        let safe_name: String = app_name.chars()
+            .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-' || *c == '_' || *c == '.')
+            .collect();
+        
+        if safe_name.is_empty() {
+            log(&format!("Skipping hide_app: sanitized name is empty (original: {})", app_name));
+            return;
+        }
+        
         let ps_script = format!(r#"
 Add-Type -TypeDefinition @"
 using System;
@@ -787,7 +798,7 @@ foreach ($proc in $processes) {{
         [Win32Minimize]::ShowWindow($proc.MainWindowHandle, 6)
     }}
 }}
-"#, app_name);
+"#, safe_name);
         
         let _ = Command::new("powershell")
             .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
@@ -795,7 +806,7 @@ foreach ($proc in $processes) {{
             .stderr(Stdio::null())
             .spawn();
         
-        log(&format!("Minimized app (Windows): {}", app_name));
+        log(&format!("Minimized app (Windows): {}", safe_name));
     }
 }
 
