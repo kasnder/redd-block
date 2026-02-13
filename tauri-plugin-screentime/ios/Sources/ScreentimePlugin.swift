@@ -421,14 +421,16 @@ class ScreentimePlugin: Plugin {
     }
     
     @objc public func clearBlock(_ invoke: Invoke) throws {
-        // Clear all managed settings
+        // Clear all managed settings (stops blocking)
         store.webContent.blockedByFilter = nil
         store.shield.applications = nil
         store.shield.applicationCategories = nil
         store.clearAllSettings()
         
-        // Clear stored selection
-        ScreentimePlugin.currentSelection = FamilyActivitySelection()
+        // Note: We intentionally do NOT clear currentSelection here.
+        // The selection should persist so the user doesn't have to re-pick
+        // apps for the next block cycle. This matches desktop behavior where
+        // blocklists persist across block cycles.
         
         invoke.resolve(["success": true])
     }
