@@ -52,8 +52,8 @@ targets:
           - UIInterfaceOrientationPortraitUpsideDown
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
-        CFBundleShortVersionString: 0.4.5
-        CFBundleVersion: "0.4.5"
+        CFBundleShortVersionString: 0.5.2
+        CFBundleVersion: "0.5.2"
     entitlements:
       path: redd-block_iOS/redd-block_iOS.entitlements
     scheme:
