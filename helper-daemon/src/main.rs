@@ -31,6 +31,21 @@ const SOCKET_PATH: &str = "/tmp/redd-block-helper.sock";
 const BLOCK_MARKER_START: &str = "# === BEGIN REDD BLOCK (reddfocus.org) ===";
 const BLOCK_MARKER_END: &str = "# === END REDD BLOCK (reddfocus.org) ===";
 
+/// Auth token file path for Windows TCP IPC authentication.
+/// Any process connecting via TCP must include this token to execute commands.
+#[cfg(target_os = "windows")]
+fn get_auth_token_path() -> PathBuf {
+    let program_data = std::env::var("PROGRAMDATA").unwrap_or_else(|_| "C:\\ProgramData".to_string());
+    PathBuf::from(&program_data).join("ReDD Block").join("auth-token")
+}
+
+/// Load the auth token from disk (Windows only)
+#[cfg(target_os = "windows")]
+fn load_auth_token() -> Option<String> {
+    let path = get_auth_token_path();
+    fs::read_to_string(&path).ok().map(|s| s.trim().to_string())
+}
+
 #[cfg(target_os = "windows")]
 const HOSTS_PATH: &str = "C:\\Windows\\System32\\drivers\\etc\\hosts";
 
@@ -1568,6 +1583,7 @@ fn handle_client(
     app_state: Arc<Mutex<Vec<String>>>,
     schedule_state: Arc<Mutex<Vec<HelperSchedule>>>,
     app_watcher_handle: Arc<Mutex<Option<AppWatcherHandle>>>,
+    auth_token: Option<String>,
     stream: TcpStream,
 ) {
     let reader = BufReader::new(stream.try_clone().unwrap());
@@ -1579,10 +1595,66 @@ fn handle_client(
                 continue;
             }
             
-            let response = match serde_json::from_str::<IpcCommand>(&line) {
-                Ok(cmd) => {
-                    log(&format!("Received command: {:?}", cmd));
-                    handle_command(&state, &app_state, &schedule_state, &app_watcher_handle, cmd)
+            let response = match serde_json::from_str::<serde_json::Value>(&line) {
+                Ok(json_val) => {
+                    // Check auth token (exempt ping and get-version for status checks)
+                    let action = json_val.get("action").and_then(|a| a.as_str()).unwrap_or("");
+                    let exempt = action == "ping" || action == "get-version";
+                    
+                    if !exempt {
+                        if let Some(ref expected_token) = auth_token {
+                            let provided_token = json_val.get("auth_token")
+                                .and_then(|t| t.as_str())
+                                .unwrap_or("");
+                            if provided_token != expected_token {
+                                log(&format!("Rejected unauthenticated command: {}", action));
+                                IpcResponse {
+                                    success: false,
+                                    error: Some("Authentication failed: invalid or missing auth_token".to_string()),
+                                    ..Default::default()
+                                }
+                            } else {
+                                // Token valid, parse and execute
+                                match serde_json::from_value::<IpcCommand>(json_val) {
+                                    Ok(cmd) => {
+                                        log(&format!("Received authenticated command: {:?}", cmd));
+                                        handle_command(&state, &app_state, &schedule_state, &app_watcher_handle, cmd)
+                                    }
+                                    Err(e) => IpcResponse {
+                                        success: false,
+                                        error: Some(format!("Invalid command: {}", e)),
+                                        ..Default::default()
+                                    },
+                                }
+                            }
+                        } else {
+                            // No auth token configured — accept all commands (fallback)
+                            match serde_json::from_value::<IpcCommand>(json_val) {
+                                Ok(cmd) => {
+                                    log(&format!("Received command (no auth configured): {:?}", cmd));
+                                    handle_command(&state, &app_state, &schedule_state, &app_watcher_handle, cmd)
+                                }
+                                Err(e) => IpcResponse {
+                                    success: false,
+                                    error: Some(format!("Invalid command: {}", e)),
+                                    ..Default::default()
+                                },
+                            }
+                        }
+                    } else {
+                        // Exempt command — no auth needed
+                        match serde_json::from_value::<IpcCommand>(json_val) {
+                            Ok(cmd) => {
+                                log(&format!("Received command: {:?}", cmd));
+                                handle_command(&state, &app_state, &schedule_state, &app_watcher_handle, cmd)
+                            }
+                            Err(e) => IpcResponse {
+                                success: false,
+                                error: Some(format!("Invalid command: {}", e)),
+                                ..Default::default()
+                            },
+                        }
+                    }
                 }
                 Err(e) => IpcResponse {
                     success: false,
@@ -1781,6 +1853,14 @@ fn main() {
     
     #[cfg(target_os = "windows")]
     {
+        // Load auth token for TCP IPC authentication
+        let auth_token = load_auth_token();
+        if auth_token.is_some() {
+            log("Auth token loaded — TCP IPC authentication enabled");
+        } else {
+            log("Warning: No auth token found — TCP IPC commands will be unauthenticated");
+        }
+        
         // Try binding to TCP port with retries (handles TIME_WAIT from previous process)
         let mut listener = None;
         for attempt in 1..=5 {
@@ -1816,7 +1896,8 @@ fn main() {
                 let app_state_clone = Arc::clone(&app_state);
                 let schedule_state_clone = Arc::clone(&schedule_state);
                 let watcher_clone = Arc::clone(&app_watcher_handle);
-                thread::spawn(move || handle_client(state_clone, app_state_clone, schedule_state_clone, watcher_clone, stream));
+                let token_clone = auth_token.clone();
+                thread::spawn(move || handle_client(state_clone, app_state_clone, schedule_state_clone, watcher_clone, token_clone, stream));
             }
         }
     }
