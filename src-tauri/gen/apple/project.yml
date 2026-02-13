@@ -31,6 +31,8 @@ targets:
       - path: Sources
       - path: Assets.xcassets
       - path: Externals
+        excludes:
+          - "**/*.a"
       - path: redd-block_iOS
       - path: Shared
       - path: assets
@@ -64,15 +66,18 @@ targets:
       base:
         ENABLE_BITCODE: false
         ARCHS: [arm64]
-        VALID_ARCHS: arm64 
+        VALID_ARCHS: arm64
+        MARKETING_VERSION: "0.5.2"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 7YEYWQKK25
         LIBRARY_SEARCH_PATHS[arch=x86_64]: $(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)
         LIBRARY_SEARCH_PATHS[arch=arm64]: $(inherited) $(PROJECT_DIR)/Externals/arm64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)
         ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: true
         EXCLUDED_ARCHS[sdk=iphoneos*]: x86_64
+        OTHER_LDFLAGS: $(inherited) -lapp
       groups: [app]
     dependencies:
-      - framework: libapp.a
-        embed: false
       - sdk: CoreGraphics.framework
       - sdk: Metal.framework
       - sdk: MetalKit.framework
@@ -105,6 +110,8 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_VERSION: "5.0"
         GENERATE_INFOPLIST_FILE: false
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: 7YEYWQKK25
     dependencies:
       - sdk: DeviceActivity.framework
       - sdk: ManagedSettings.framework
