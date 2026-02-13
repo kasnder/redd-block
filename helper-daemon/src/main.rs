@@ -8,7 +8,7 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 #[cfg(target_os = "windows")]
@@ -471,6 +471,7 @@ fn get_active_schedule_domains(schedules: &[HelperSchedule]) -> Vec<String> {
     let current_day = now.weekday_mon0(); // Mon=0..Sun=6
     let current_mins = now.hour() * 60 + now.minute();
     
+    let mut seen = HashSet::new();
     let mut domains = Vec::new();
     for schedule in schedules {
         let is_active = schedule.segments.iter().any(|seg| {
@@ -496,7 +497,7 @@ fn get_active_schedule_domains(schedules: &[HelperSchedule]) -> Vec<String> {
         
         if is_active {
             for d in &schedule.domains {
-                if !domains.contains(d) {
+                if seen.insert(d.clone()) {
                     domains.push(d.clone());
                 }
             }
@@ -511,6 +512,7 @@ fn get_active_schedule_apps(schedules: &[HelperSchedule]) -> Vec<String> {
     let current_day = now.weekday_mon0();
     let current_mins = now.hour() * 60 + now.minute();
     
+    let mut seen = HashSet::new();
     let mut apps = Vec::new();
     for schedule in schedules {
         let is_active = schedule.segments.iter().any(|seg| {
@@ -534,7 +536,7 @@ fn get_active_schedule_apps(schedules: &[HelperSchedule]) -> Vec<String> {
         
         if is_active {
             for a in &schedule.apps {
-                if !apps.contains(a) {
+                if seen.insert(a.clone()) {
                     apps.push(a.clone());
                 }
             }
@@ -634,12 +636,13 @@ fn sync_hosts_file(
     state: &Arc<Mutex<Option<BlockState>>>,
     schedule_state: &Arc<Mutex<Vec<HelperSchedule>>>,
 ) {
+    let mut seen = HashSet::new();
     let mut all_domains: Vec<String> = Vec::new();
     
     // Add domains from current manual block
     if let Some(block) = &*state.lock().unwrap() {
         for d in &block.domains {
-            if !all_domains.contains(d) {
+            if seen.insert(d.clone()) {
                 all_domains.push(d.clone());
             }
         }
@@ -649,7 +652,7 @@ fn sync_hosts_file(
     let schedules = schedule_state.lock().unwrap().clone();
     let schedule_domains = get_active_schedule_domains(&schedules);
     for d in schedule_domains {
-        if !all_domains.contains(&d) {
+        if seen.insert(d.clone()) {
             all_domains.push(d);
         }
     }
@@ -785,10 +788,20 @@ impl AppWatcherHandle {
 fn hide_app(app_name: &str) {
     #[cfg(target_os = "macos")]
     {
-        let escaped = app_name.replace('"', "\\\"");
+        // Sanitize app_name to prevent osascript injection.
+        // Same allowlist approach as the Windows PowerShell fix.
+        let safe_name: String = app_name.chars()
+            .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-' || *c == '_' || *c == '.')
+            .collect();
+        
+        if safe_name.is_empty() {
+            log(&format!("Skipping hide_app: sanitized name is empty (original: {})", app_name));
+            return;
+        }
+        
         let script = format!(
             r#"tell application "System Events" to set visible of application process "{}" to false"#,
-            escaped
+            safe_name
         );
         
         // Try up to 3 times with small delays
@@ -1791,6 +1804,22 @@ fn main() {
     
     log("ReDD Block Helper Daemon starting...");
     log(&format!("Platform: {}", std::env::consts::OS));
+    
+    // Rotate macOS log file on startup if it exceeds 5MB.
+    // On macOS, launchd captures stdout/stderr to this file — we can only
+    // rotate it at startup since we don't control the file handle.
+    #[cfg(target_os = "macos")]
+    {
+        let log_path = "/var/log/redd-block-helper.log";
+        const MAX_LOG_SIZE: u64 = 5 * 1024 * 1024;
+        if let Ok(metadata) = fs::metadata(log_path) {
+            if metadata.len() > MAX_LOG_SIZE {
+                let old_path = format!("{}.old", log_path);
+                let _ = fs::rename(log_path, &old_path);
+                log("Rotated macOS log file (exceeded 5MB)");
+            }
+        }
+    }
     
     // Load persisted state
     let (initial_block, initial_apps, initial_schedules) = load_state();
