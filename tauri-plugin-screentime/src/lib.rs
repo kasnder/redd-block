@@ -45,6 +45,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
       commands::screentime_start_block,
       commands::screentime_clear_block,
       commands::schedule_block,
+      commands::set_schedules,
       commands::unschedule_block,
       commands::show_activity_picker,
     ])

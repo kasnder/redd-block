@@ -76,6 +76,7 @@ pub(crate) async fn screentime_clear_block<R: Runtime>(
 #[command]
 pub(crate) async fn schedule_block<R: Runtime>(
     app: AppHandle<R>,
+    id: Option<String>,
     start_hour: u32,
     start_minute: u32,
     end_hour: u32,
@@ -84,6 +85,7 @@ pub(crate) async fn schedule_block<R: Runtime>(
     app_token_data: Option<Vec<String>>,
 ) -> Result<SuccessResponse> {
     app.screentime().schedule_block(ScheduleBlockRequest {
+        id,
         start_hour,
         start_minute,
         end_hour,
@@ -94,10 +96,21 @@ pub(crate) async fn schedule_block<R: Runtime>(
 }
 
 #[command]
+pub(crate) async fn set_schedules<R: Runtime>(
+    app: AppHandle<R>,
+    schedules: Vec<crate::models::ScheduleEntryRequest>,
+) -> Result<SuccessResponse> {
+    app.screentime().set_schedules(SetSchedulesRequest {
+        schedules,
+    })
+}
+
+#[command]
 pub(crate) async fn unschedule_block<R: Runtime>(
     app: AppHandle<R>,
+    id: Option<String>,
 ) -> Result<SuccessResponse> {
-    app.screentime().unschedule_block()
+    app.screentime().unschedule_block(UnscheduleBlockRequest { id })
 }
 
 // --- Activity Picker ---

@@ -23,6 +23,7 @@ class BlockAppsForTokensArgs: Decodable {
 class UnblockAppsArgs: Decodable {}
 
 class ScheduleBlockArgs: Decodable {
+    let id: String?
     let startHour: Int
     let startMinute: Int
     let endHour: Int
@@ -31,7 +32,23 @@ class ScheduleBlockArgs: Decodable {
     let appTokenData: [String]?  // Base64-encoded ApplicationToken data
 }
 
-class UnscheduleBlockArgs: Decodable {}
+class UnscheduleBlockArgs: Decodable {
+    let id: String?  // If nil, unschedule all
+}
+
+class ScheduleEntry: Decodable {
+    let id: String
+    let startHour: Int
+    let startMinute: Int
+    let endHour: Int
+    let endMinute: Int
+    let domains: [String]?
+    let appTokenData: [String]?
+}
+
+class SetSchedulesArgs: Decodable {
+    let schedules: [ScheduleEntry]
+}
 
 class ShowActivityPickerArgs: Decodable {}
 
@@ -467,9 +484,119 @@ class ScreentimePlugin: Plugin {
             return
         }
         let args = try invoke.parseArgs(ScheduleBlockArgs.self)
+        let scheduleId = args.id ?? "default"
         
-        // Save schedule data to the shared App Group container so the
-        // DeviceActivityMonitor extension can read it when the interval starts.
+        let scheduleData = buildScheduleData(
+            domains: args.domains,
+            appTokenData: args.appTokenData
+        )
+        SharedScheduleStore.save(id: scheduleId, data: scheduleData)
+        
+        let startComponents = DateComponents(hour: args.startHour, minute: args.startMinute)
+        let endComponents = DateComponents(hour: args.endHour, minute: args.endMinute)
+        let schedule = DeviceActivitySchedule(
+            intervalStart: startComponents,
+            intervalEnd: endComponents,
+            repeats: true
+        )
+        
+        let activityName = DeviceActivityName("redd-block-\(scheduleId)")
+        
+        do {
+            try center.startMonitoring(activityName, during: schedule)
+            invoke.resolve(["success": true, "scheduleId": scheduleId])
+        } catch {
+            invoke.resolve([
+                "success": false,
+                "error": error.localizedDescription
+            ])
+        }
+    }
+    
+    /// Set multiple schedules at once (mirrors desktop set-schedules command).
+    /// Replaces all existing schedules with the provided list.
+    @objc public func setSchedules(_ invoke: Invoke) throws {
+        guard isAuthorized() else {
+            invoke.resolve(["success": false, "error": "Screen Time authorization not granted"])
+            return
+        }
+        let args = try invoke.parseArgs(SetSchedulesArgs.self)
+        
+        // Get current schedule IDs to determine which to remove
+        let existingIds = Set(SharedScheduleStore.loadAll().keys)
+        let newIds = Set(args.schedules.map { $0.id })
+        
+        // Remove schedules that are no longer in the list
+        let removedIds = existingIds.subtracting(newIds)
+        for id in removedIds {
+            center.stopMonitoring([DeviceActivityName("redd-block-\(id)")])
+            SharedScheduleStore.remove(id: id)
+        }
+        
+        // Add/update schedules
+        var errors: [String] = []
+        for entry in args.schedules {
+            let scheduleData = buildScheduleData(
+                domains: entry.domains,
+                appTokenData: entry.appTokenData
+            )
+            SharedScheduleStore.save(id: entry.id, data: scheduleData)
+            
+            let startComponents = DateComponents(hour: entry.startHour, minute: entry.startMinute)
+            let endComponents = DateComponents(hour: entry.endHour, minute: entry.endMinute)
+            let schedule = DeviceActivitySchedule(
+                intervalStart: startComponents,
+                intervalEnd: endComponents,
+                repeats: true
+            )
+            
+            let activityName = DeviceActivityName("redd-block-\(entry.id)")
+            
+            do {
+                try center.startMonitoring(activityName, during: schedule)
+            } catch {
+                errors.append("Schedule \(entry.id): \(error.localizedDescription)")
+            }
+        }
+        
+        if errors.isEmpty {
+            invoke.resolve([
+                "success": true,
+                "scheduledCount": args.schedules.count
+            ])
+        } else {
+            invoke.resolve([
+                "success": false,
+                "error": errors.joined(separator: "; ")
+            ])
+        }
+    }
+    
+    @objc public func unscheduleBlock(_ invoke: Invoke) throws {
+        // Try to parse args to check if a specific ID was provided
+        let args = try? invoke.parseArgs(UnscheduleBlockArgs.self)
+        
+        if let specificId = args?.id {
+            // Remove only the specified schedule
+            center.stopMonitoring([DeviceActivityName("redd-block-\(specificId)")])
+            SharedScheduleStore.remove(id: specificId)
+        } else {
+            // Remove all schedules
+            let allIds = SharedScheduleStore.loadAll().keys
+            let activityNames = allIds.map { DeviceActivityName("redd-block-\($0)") }
+            if !activityNames.isEmpty {
+                center.stopMonitoring(activityNames)
+            }
+            // Also stop the legacy name
+            center.stopMonitoring([DeviceActivityName("redd-block-schedule")])
+            SharedScheduleStore.clear()
+        }
+        invoke.resolve(["success": true])
+    }
+    
+    /// Build a ScheduleBlockData from optional domains/appTokenData, encoding
+    /// category tokens from the current stored selection.
+    private func buildScheduleData(domains: [String]?, appTokenData: [String]?) -> ScheduleBlockData {
         let selection = ScreentimePlugin.currentSelection
         
         // Encode category tokens from the current selection
@@ -480,49 +607,26 @@ class ScreentimePlugin: Plugin {
             }
         }
         
-        // Encode app tokens from the current selection
-        var encodedAppTokens: [String] = []
-        for token in selection.applicationTokens {
-            if let data = try? JSONEncoder().encode(token) {
-                encodedAppTokens.append(data.base64EncodedString())
+        // Use provided app tokens, or encode from current selection
+        let finalAppTokenData: [String]
+        if let provided = appTokenData, !provided.isEmpty {
+            finalAppTokenData = provided
+        } else {
+            var encodedAppTokens: [String] = []
+            for token in selection.applicationTokens {
+                if let data = try? JSONEncoder().encode(token) {
+                    encodedAppTokens.append(data.base64EncodedString())
+                }
             }
+            finalAppTokenData = encodedAppTokens
         }
         
-        let scheduleData = ScheduleBlockData(
-            domains: args.domains ?? [],
-            appTokenData: args.appTokenData ?? encodedAppTokens,
+        return ScheduleBlockData(
+            domains: domains ?? [],
+            appTokenData: finalAppTokenData,
             categoryTokenData: encodedCategoryTokens
         )
-        SharedScheduleStore.save(scheduleData)
-        
-        let startComponents = DateComponents(hour: args.startHour, minute: args.startMinute)
-        let endComponents = DateComponents(hour: args.endHour, minute: args.endMinute)
-        let schedule = DeviceActivitySchedule(
-            intervalStart: startComponents,
-            intervalEnd: endComponents,
-            repeats: true
-        )
-        
-        let activityName = DeviceActivityName("redd-block-schedule")
-        
-        do {
-            try center.startMonitoring(activityName, during: schedule)
-            invoke.resolve(["success": true])
-        } catch {
-            invoke.resolve([
-                "success": false,
-                "error": error.localizedDescription
-            ])
-        }
     }
-    
-    @objc public func unscheduleBlock(_ invoke: Invoke) throws {
-        center.stopMonitoring([DeviceActivityName("redd-block-schedule")])
-        SharedScheduleStore.clear()
-        invoke.resolve(["success": true])
-    }
-    
-    // MARK: - Helpers
     
     private func statusString(_ status: AuthorizationStatus) -> String {
         switch status {

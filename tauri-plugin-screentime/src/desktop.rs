@@ -69,7 +69,11 @@ impl<R: Runtime> Screentime<R> {
     Ok(SuccessResponse { success: false, error: Some("Not supported on desktop".to_string()) })
   }
 
-  pub fn unschedule_block(&self) -> crate::Result<SuccessResponse> {
+  pub fn set_schedules(&self, _payload: SetSchedulesRequest) -> crate::Result<SuccessResponse> {
+    Ok(SuccessResponse { success: false, error: Some("Not supported on desktop".to_string()) })
+  }
+
+  pub fn unschedule_block(&self, _payload: UnscheduleBlockRequest) -> crate::Result<SuccessResponse> {
     Ok(SuccessResponse { success: false, error: Some("Not supported on desktop".to_string()) })
   }
 

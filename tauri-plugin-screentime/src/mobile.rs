@@ -89,9 +89,15 @@ impl<R: Runtime> Screentime<R> {
       .map_err(Into::into)
   }
   
-  pub fn unschedule_block(&self) -> crate::Result<SuccessResponse> {
+  pub fn set_schedules(&self, payload: SetSchedulesRequest) -> crate::Result<SuccessResponse> {
     self.0
-      .run_mobile_plugin("unscheduleBlock", UnblockRequest {})
+      .run_mobile_plugin("setSchedules", payload)
+      .map_err(Into::into)
+  }
+  
+  pub fn unschedule_block(&self, payload: UnscheduleBlockRequest) -> crate::Result<SuccessResponse> {
+    self.0
+      .run_mobile_plugin("unscheduleBlock", payload)
       .map_err(Into::into)
   }
   

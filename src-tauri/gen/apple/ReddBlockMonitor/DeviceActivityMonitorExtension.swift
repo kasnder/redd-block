@@ -14,22 +14,93 @@ class ReddBlockMonitor: DeviceActivityMonitor {
     override func intervalDidStart(for activity: DeviceActivityName) {
         super.intervalDidStart(for: activity)
         
-        guard let scheduleData = SharedScheduleStore.load() else {
-            // No schedule data found — nothing to block
+        // Extract schedule ID from the activity name (format: "redd-block-{id}")
+        let scheduleId = extractScheduleId(from: activity)
+        
+        guard let scheduleData = SharedScheduleStore.load(id: scheduleId) else {
+            // Fallback: try loading legacy single-schedule data
+            guard let legacyData = SharedScheduleStore.load() else {
+                return
+            }
+            applyBlocks(from: legacyData)
             return
         }
         
+        applyBlocks(from: scheduleData)
+    }
+    
+    /// Called by the system when a scheduled DeviceActivity interval ends.
+    override func intervalDidEnd(for activity: DeviceActivityName) {
+        super.intervalDidEnd(for: activity)
+        
+        // Instead of clearing everything unconditionally, check if any OTHER
+        // schedules are still active and re-apply their blocks.
+        let endedId = extractScheduleId(from: activity)
+        let allSchedules = SharedScheduleStore.loadAll()
+        
+        // Collect blocks from all schedules EXCEPT the one that just ended
+        var remainingDomains = Set<WebDomain>()
+        var remainingAppTokens = Set<ApplicationToken>()
+        var remainingCategoryTokens = Set<ActivityCategoryToken>()
+        
+        for (id, data) in allSchedules where id != endedId {
+            for domain in data.domains.prefix(50) {
+                remainingDomains.insert(WebDomain(domain: domain))
+            }
+            for tokenString in data.appTokenData {
+                if let tokenData = Data(base64Encoded: tokenString),
+                   let token = try? JSONDecoder().decode(ApplicationToken.self, from: tokenData) {
+                    remainingAppTokens.insert(token)
+                }
+            }
+            for tokenString in data.categoryTokenData {
+                if let tokenData = Data(base64Encoded: tokenString),
+                   let token = try? JSONDecoder().decode(ActivityCategoryToken.self, from: tokenData) {
+                    remainingCategoryTokens.insert(token)
+                }
+            }
+        }
+        
+        // Re-apply remaining blocks, or clear if none
+        if remainingDomains.isEmpty {
+            store.webContent.blockedByFilter = nil
+        } else {
+            store.webContent.blockedByFilter = .specific(remainingDomains)
+        }
+        
+        if remainingAppTokens.isEmpty {
+            store.shield.applications = nil
+        } else {
+            store.shield.applications = remainingAppTokens
+        }
+        
+        if remainingCategoryTokens.isEmpty {
+            store.shield.applicationCategories = nil
+        } else {
+            store.shield.applicationCategories = .specific(remainingCategoryTokens)
+        }
+        
+        // If nothing remains, clear all settings for a clean state
+        if remainingDomains.isEmpty && remainingAppTokens.isEmpty && remainingCategoryTokens.isEmpty {
+            store.clearAllSettings()
+        }
+    }
+    
+    // MARK: - Helpers
+    
+    /// Apply blocks from a schedule data entry.
+    private func applyBlocks(from data: ScheduleBlockData) {
         // Block websites
-        if !scheduleData.domains.isEmpty {
-            let webDomains = Set(scheduleData.domains.prefix(50).map { WebDomain(domain: $0) })
+        if !data.domains.isEmpty {
+            let webDomains = Set(data.domains.prefix(50).map { WebDomain(domain: $0) })
             store.webContent.blockedByFilter = .specific(webDomains)
         }
         
         // Block apps (decode from base64 token data)
         var appTokens = Set<ApplicationToken>()
-        for tokenString in scheduleData.appTokenData {
-            if let data = Data(base64Encoded: tokenString),
-               let token = try? JSONDecoder().decode(ApplicationToken.self, from: data) {
+        for tokenString in data.appTokenData {
+            if let tokenData = Data(base64Encoded: tokenString),
+               let token = try? JSONDecoder().decode(ApplicationToken.self, from: tokenData) {
                 appTokens.insert(token)
             }
         }
@@ -39,9 +110,9 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         
         // Block categories (decode from base64 token data)
         var categoryTokens = Set<ActivityCategoryToken>()
-        for tokenString in scheduleData.categoryTokenData {
-            if let data = Data(base64Encoded: tokenString),
-               let token = try? JSONDecoder().decode(ActivityCategoryToken.self, from: data) {
+        for tokenString in data.categoryTokenData {
+            if let tokenData = Data(base64Encoded: tokenString),
+               let token = try? JSONDecoder().decode(ActivityCategoryToken.self, from: tokenData) {
                 categoryTokens.insert(token)
             }
         }
@@ -50,14 +121,16 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         }
     }
     
-    /// Called by the system when a scheduled DeviceActivity interval ends.
-    override func intervalDidEnd(for activity: DeviceActivityName) {
-        super.intervalDidEnd(for: activity)
-        
-        // Clear all blocks
-        store.webContent.blockedByFilter = nil
-        store.shield.applications = nil
-        store.shield.applicationCategories = nil
-        store.clearAllSettings()
+    /// Extract a schedule ID from a DeviceActivityName.
+    /// Activity names follow the format "redd-block-{id}".
+    /// Falls back to "default" for the legacy "redd-block-schedule" name.
+    private func extractScheduleId(from activity: DeviceActivityName) -> String {
+        let raw = activity.rawValue
+        if raw.hasPrefix("redd-block-") {
+            let id = String(raw.dropFirst("redd-block-".count))
+            return id.isEmpty ? "default" : id
+        }
+        // Legacy name
+        return "default"
     }
 }

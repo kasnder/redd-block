@@ -77,12 +77,37 @@ pub struct StartBlockResponse {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ScheduleBlockRequest {
+    pub id: Option<String>,
     pub start_hour: u32,
     pub start_minute: u32,
     pub end_hour: u32,
     pub end_minute: u32,
     pub domains: Option<Vec<String>>,
     pub app_token_data: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleEntryRequest {
+    pub id: String,
+    pub start_hour: u32,
+    pub start_minute: u32,
+    pub end_hour: u32,
+    pub end_minute: u32,
+    pub domains: Option<Vec<String>>,
+    pub app_token_data: Option<Vec<String>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetSchedulesRequest {
+    pub schedules: Vec<ScheduleEntryRequest>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnscheduleBlockRequest {
+    pub id: Option<String>,
 }
 
 // --- Activity Picker ---
