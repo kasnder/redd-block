@@ -1671,6 +1671,13 @@ fn schedule_evaluator(
 }
 
 fn main() {
+    // Install panic hook so panics are captured to the log file.
+    // This is especially important on Windows where windows_subsystem = "windows"
+    // hides the console, meaning panics would otherwise be invisible.
+    std::panic::set_hook(Box::new(|info| {
+        log(&format!("PANIC: {}", info));
+    }));
+    
     log("ReDD Block Helper Daemon starting...");
     log(&format!("Platform: {}", std::env::consts::OS));
     
