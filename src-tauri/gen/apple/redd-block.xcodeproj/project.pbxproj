@@ -237,14 +237,14 @@
 			path = bindings;
 			sourceTree = "<group>";
 		};
-		"TEMP_5CF3F250-E17F-4082-88D0-0482F55AB94B" /* x86_64 */ = {
+		"TEMP_6EBE0ACD-7974-4E52-8058-4D3ED4F36869" /* x86_64 */ = {
 			isa = PBXGroup;
 			children = (
 			);
 			path = x86_64;
 			sourceTree = "<group>";
 		};
-		"TEMP_AC251558-8C50-47C9-983C-D528D3C113F8" /* arm64 */ = {
+		"TEMP_F4FF8173-5A48-40C4-8FFA-9E093F736511" /* arm64 */ = {
 			isa = PBXGroup;
 			children = (
 			);

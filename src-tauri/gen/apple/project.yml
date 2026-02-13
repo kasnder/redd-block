@@ -101,6 +101,9 @@ targets:
       - path: Shared
     info:
       path: ReddBlockMonitor/Info.plist
+      properties:
+        EXAppExtensionAttributes:
+          EXExtensionPointIdentifier: com.apple.deviceactivitymonitor
     entitlements:
       path: ReddBlockMonitor/ReddBlockMonitor.entitlements
     settings:

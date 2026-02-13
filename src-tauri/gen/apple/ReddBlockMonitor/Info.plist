@@ -16,5 +16,10 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>0.5.2</string>
+	<key>EXAppExtensionAttributes</key>
+	<dict>
+		<key>EXExtensionPointIdentifier</key>
+		<string>com.apple.deviceactivitymonitor</string>
+	</dict>
 </dict>
 </plist>
