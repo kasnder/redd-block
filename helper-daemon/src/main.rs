@@ -509,28 +509,62 @@ impl LocalTimeInfo {
 }
 
 fn chrono_now() -> LocalTimeInfo {
-    // Get local time using platform commands
-    // We need day-of-week (Mon=0) and hour:minute
-    let output = Command::new("date")
-        .arg("+%u %H %M") // %u = day of week (1=Mon..7=Sun), %H = hour, %M = minute
-        .output();
-    
-    if let Ok(output) = output {
-        let s = String::from_utf8_lossy(&output.stdout);
-        let parts: Vec<&str> = s.trim().split_whitespace().collect();
-        if parts.len() == 3 {
-            let dow: u32 = parts[0].parse().unwrap_or(1); // 1=Mon..7=Sun
-            let hour: u32 = parts[1].parse().unwrap_or(0);
-            let minute: u32 = parts[2].parse().unwrap_or(0);
+    // Use libc::localtime_r for zero-overhead local time without shelling out
+    #[cfg(not(target_os = "windows"))]
+    {
+        use std::mem::MaybeUninit;
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as libc::time_t;
+        let mut tm = MaybeUninit::<libc::tm>::uninit();
+        let result = unsafe { libc::localtime_r(&timestamp, tm.as_mut_ptr()) };
+        if !result.is_null() {
+            let tm = unsafe { tm.assume_init() };
+            // tm_wday: Sun=0..Sat=6 -> convert to Mon=0..Sun=6
+            let weekday_mon0 = if tm.tm_wday == 0 { 6 } else { (tm.tm_wday - 1) as u32 };
             return LocalTimeInfo {
-                hour,
-                minute,
-                weekday_mon0: dow - 1, // Convert to Mon=0..Sun=6
+                hour: tm.tm_hour as u32,
+                minute: tm.tm_min as u32,
+                weekday_mon0,
             };
         }
     }
     
+    #[cfg(target_os = "windows")]
+    {
+        // On Windows, get local time using the date command
+        let output = Command::new("cmd")
+            .args(["/C", "wmic os get localdatetime /value"])
+            .output();
+        if let Ok(output) = output {
+            let s = String::from_utf8_lossy(&output.stdout);
+            // Parse: LocalDateTime=20260212173000.000000+060
+            for line in s.lines() {
+                if let Some(dt) = line.strip_prefix("LocalDateTime=") {
+                    let dt = dt.trim();
+                    if dt.len() >= 12 {
+                        let hour: u32 = dt[8..10].parse().unwrap_or(0);
+                        let minute: u32 = dt[10..12].parse().unwrap_or(0);
+                        // Get day-of-week via another approach
+                        let dow_output = Command::new("powershell")
+                            .args(["-NoProfile", "-Command", "(Get-Date).DayOfWeek.value__"])
+                            .output();
+                        if let Ok(dow_out) = dow_output {
+                            let dow_str = String::from_utf8_lossy(&dow_out.stdout);
+                            // .NET DayOfWeek: Sun=0..Sat=6
+                            let dow: u32 = dow_str.trim().parse().unwrap_or(0);
+                            let weekday_mon0 = if dow == 0 { 6 } else { dow - 1 };
+                            return LocalTimeInfo { hour, minute, weekday_mon0 };
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     // Fallback: use UTC (not ideal but won't crash)
+    log("Warning: using UTC fallback for time - schedule evaluation may be incorrect");
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()

@@ -314,6 +314,7 @@ version = "0.5.1"
 dependencies = [
  "dirs",
  "env_logger",
+ "libc",
  "log",
  "serde",
  "serde_json",
