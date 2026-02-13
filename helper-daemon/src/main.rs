@@ -156,6 +156,16 @@ fn log(message: &str) {
         let log_dir = PathBuf::from(&program_data).join("ReDD Block");
         let _ = fs::create_dir_all(&log_dir);
         let log_path = log_dir.join("helper.log");
+        
+        // Rotate log file if it exceeds 5MB
+        const MAX_LOG_SIZE: u64 = 5 * 1024 * 1024;
+        if let Ok(metadata) = fs::metadata(&log_path) {
+            if metadata.len() > MAX_LOG_SIZE {
+                let old_path = log_dir.join("helper.log.old");
+                let _ = fs::rename(&log_path, &old_path);
+            }
+        }
+        
         if let Ok(mut file) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
