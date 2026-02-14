@@ -46,9 +46,7 @@ flowchart TB
 
     UI <-->|invoke/listen| IPC
     IPC <-->|TCP localhost| HostsMgr
-    IPC <-->|TCP localhost| AppMon
     IPC --> Data
-    AppMon -->|hide/minimize| Apps
     HostsMgr -->|read/write| Hosts
     HostsMgr --> State
     AppWatcher -->|hide/minimize| Apps
