@@ -10,6 +10,41 @@ Write-Host ""
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 
+# Load .env file from project root if it exists
+$envFile = Join-Path $ProjectRoot ".env"
+if (Test-Path $envFile) {
+    Write-Host "  Loading environment variables from .env..." -ForegroundColor Gray
+    Get-Content $envFile | ForEach-Object {
+        $line = $_.Trim()
+        # Skip empty lines and comments
+        if ($line -and -not $line.StartsWith("#")) {
+            $parts = $line -split "=", 2
+            if ($parts.Length -eq 2) {
+                $key = $parts[0].Trim()
+                $value = $parts[1].Trim().Trim('"').Trim("'")
+                [System.Environment]::SetEnvironmentVariable($key, $value, "Process")
+            }
+        }
+    }
+    Write-Host ""
+}
+
+# Ensure SignTool.exe is on the PATH (required by Tauri bundler)
+$signtoolInPath = Get-Command signtool.exe -ErrorAction SilentlyContinue
+if (-not $signtoolInPath) {
+    $sdkPaths = @(Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
+        Sort-Object FullName -Descending |
+        Select-Object -First 1)
+    if ($sdkPaths.Count -gt 0) {
+        $sdkDir = Split-Path $sdkPaths[0].FullName
+        $env:PATH = "$sdkDir;$env:PATH"
+        Write-Host "  Added SignTool to PATH from: $sdkDir" -ForegroundColor Gray
+    }
+    else {
+        Write-Host "  WARNING: SignTool.exe not found. Install Windows SDK or add it to PATH." -ForegroundColor Yellow
+    }
+}
+
 # Check for Azure signing environment variables
 $hasSigningVars = $env:AZURE_CLIENT_ID -and $env:AZURE_CLIENT_SECRET -and $env:AZURE_TENANT_ID
 if (-not $hasSigningVars) {
@@ -90,7 +125,8 @@ if ($buildArm64) {
 Write-Host ""
 if ($hasSigningVars) {
     Write-Host "Installers are code-signed with Azure Artifact Signing." -ForegroundColor Green
-} else {
+}
+else {
     Write-Host "Installers are NOT code-signed. Set Azure env vars to enable signing." -ForegroundColor Yellow
 }
 Write-Host ""
