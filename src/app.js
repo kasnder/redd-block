@@ -6275,6 +6275,8 @@ function setupOverrideAll() {
         cancelOverrideAllBtn.addEventListener('click', () => {
             overrideAllModal.classList.add('hidden');
             overrideAllChallengeText = '';
+            // Re-open settings modal so user goes back to settings, not main screen
+            document.getElementById('settings-modal').classList.remove('hidden');
         });
     }
 
@@ -6284,6 +6286,8 @@ function setupOverrideAll() {
             if (e.target === overrideAllModal) {
                 overrideAllModal.classList.add('hidden');
                 overrideAllChallengeText = '';
+                // Re-open settings modal so user goes back to settings, not main screen
+                document.getElementById('settings-modal').classList.remove('hidden');
             }
         });
     }
