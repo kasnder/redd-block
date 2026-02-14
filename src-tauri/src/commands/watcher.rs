@@ -9,7 +9,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 #[cfg(target_os = "macos")]
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::io::{BufRead, BufReader};
 use tauri::{AppHandle, Emitter};
 #[cfg(target_os = "macos")]
@@ -20,6 +20,9 @@ pub struct ProcessWatcher {
     blocked_apps: HashMap<String, String>,
     watcher_process: Option<Child>,
     running: bool,
+    /// Debounce: tracks last detection time per app
+    #[cfg(target_os = "macos")]
+    last_detection: HashMap<String, Instant>,
 }
 
 impl ProcessWatcher {
@@ -28,6 +31,8 @@ impl ProcessWatcher {
             blocked_apps: HashMap::new(),
             watcher_process: None,
             running: false,
+            #[cfg(target_os = "macos")]
+            last_detection: HashMap::new(),
         }
     }
 }
