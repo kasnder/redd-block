@@ -27,7 +27,7 @@ pub struct HelperStatus {
 
 /// Expected helper version - update this when helper-daemon changes
 /// This is separate from the app version to avoid unnecessary reinstalls
-const EXPECTED_HELPER_VERSION: &str = "0.5.2";
+const EXPECTED_HELPER_VERSION: &str = "0.5.5";
 
 /// Result from helper operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -439,8 +439,8 @@ Copy-Item -Path $sourcePath -Destination $helperPath -Force
 $tokenPath = Join-Path $installDir "auth-token"
 $token = -join ((1..32) | ForEach-Object {{{{ '{{0:x2}}' -f (Get-Random -Minimum 0 -Maximum 256) }}}})
 Set-Content -Path $tokenPath -Value $token -NoNewline
-# Restrict token file permissions to SYSTEM and Administrators only
-icacls $tokenPath /inheritance:r /grant:r "SYSTEM:F" /grant:r "BUILTIN\Administrators:F" 2>$null
+# Restrict token file permissions — SYSTEM and Admins get full, Users get read-only
+icacls $tokenPath /inheritance:r /grant:r "SYSTEM:F" /grant:r "BUILTIN\Administrators:F" /grant:r "BUILTIN\Users:R" 2>$null
 
 # Remove existing task if any
 schtasks /Delete /TN "$taskName" /F 2>$null
