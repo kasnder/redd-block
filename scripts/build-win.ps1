@@ -29,20 +29,28 @@ if (Test-Path $envFile) {
     Write-Host ""
 }
 
-# Ensure SignTool.exe is on the PATH (required by Tauri bundler)
-$signtoolInPath = Get-Command signtool.exe -ErrorAction SilentlyContinue
-if (-not $signtoolInPath) {
-    $sdkPaths = @(Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
-        Sort-Object FullName -Descending |
-        Select-Object -First 1)
-    if ($sdkPaths.Count -gt 0) {
-        $sdkDir = Split-Path $sdkPaths[0].FullName
-        $env:PATH = "$sdkDir;$env:PATH"
-        Write-Host "  Added SignTool to PATH from: $sdkDir" -ForegroundColor Gray
+# Ensure Tauri bundler can find SignTool.exe
+# Tauri checks TAURI_WINDOWS_SIGNTOOL_PATH env var first, then uses registry + os_bitness().
+# On ARM64 Windows the registry-based detection can fail, so we set the env var explicitly.
+if (-not $env:TAURI_WINDOWS_SIGNTOOL_PATH) {
+    $sdkSigntool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
+    Sort-Object FullName -Descending |
+    Select-Object -First 1
+    if ($sdkSigntool) {
+        $env:TAURI_WINDOWS_SIGNTOOL_PATH = $sdkSigntool.FullName
+        Write-Host "  SignTool: $($sdkSigntool.FullName)" -ForegroundColor Gray
     }
     else {
         Write-Host "  WARNING: SignTool.exe not found. Install Windows SDK or add it to PATH." -ForegroundColor Yellow
     }
+}
+
+# On ARM64 Windows, set DOTNET_ROOT to the x64 .NET location so the Azure Code Signing
+# DLib (which is x64) can find the .NET 8 runtime under emulation.
+$dotnetX64 = "C:\Program Files\dotnet\x64"
+if ((Test-Path $dotnetX64) -and -not $env:DOTNET_ROOT) {
+    $env:DOTNET_ROOT = $dotnetX64
+    Write-Host "  .NET root: $dotnetX64" -ForegroundColor Gray
 }
 
 # Check for Azure signing environment variables
