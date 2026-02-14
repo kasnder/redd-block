@@ -4,8 +4,6 @@ mod data;
 mod apps;
 #[cfg(not(target_os = "ios"))]
 mod helper;
-#[cfg(not(target_os = "ios"))]
-mod watcher;
 
 pub use data::*;
 
@@ -13,5 +11,3 @@ pub use data::*;
 pub use apps::*;
 #[cfg(not(target_os = "ios"))]
 pub use helper::*;
-#[cfg(not(target_os = "ios"))]
-pub use watcher::*;

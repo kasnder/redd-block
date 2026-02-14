@@ -30,12 +30,12 @@ flowchart TB
 
     subgraph Tauri["Tauri Backend (Rust)"]
         IPC[IPC Commands]
-        Watcher[App Watcher]
         Data[Data Store]
     end
 
     subgraph Helper["Helper Daemon (Privileged)"]
         HostsMgr[Hosts Manager]
+        AppMon[App Monitor]
         State[Block State]
     end
 
@@ -46,9 +46,9 @@ flowchart TB
 
     UI <-->|invoke/listen| IPC
     IPC <-->|TCP localhost| HostsMgr
-    IPC --> Watcher
+    IPC <-->|TCP localhost| AppMon
     IPC --> Data
-    Watcher -->|hide/minimize| Apps
+    AppMon -->|hide/minimize| Apps
     HostsMgr -->|read/write| Hosts
     HostsMgr --> State
 ```
@@ -99,12 +99,12 @@ A privileged helper daemon modifies the system hosts file to redirect blocked do
 
 ### App Blocking
 
-Uses event-driven monitoring to detect when blocked apps are launched or brought to focus, then immediately hides/minimizes them.
+The helper daemon uses event-driven monitoring to detect when blocked apps are launched or brought to focus, then immediately hides/minimizes them. App blocking persists even when the main app is closed.
 
 | Platform | Detection Method | Hide Method |
 |----------|------------------|-------------|
-| macOS | NSWorkspace notifications (AppleScript) | `set visible of application process to false` |
-| Windows | SetWinEventHook for foreground changes | ShowWindow with SW_MINIMIZE |
+| macOS | NSWorkspace notifications (via helper daemon) | `set visible of application process to false` |
+| Windows | SetWinEventHook for foreground changes (via helper daemon) | ShowWindow with SW_MINIMIZE |
 | iOS | Screen Time `ManagedSettingsStore` | Shield overlay via `ShieldSettings` |
 
 ### Helper Daemon

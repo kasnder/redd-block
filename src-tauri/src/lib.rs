@@ -124,7 +124,7 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-/// All commands for desktop platforms (includes helper, apps, watcher)
+/// All commands for desktop platforms (includes helper, apps)
 #[cfg(not(target_os = "ios"))]
 fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
     tauri::generate_handler![
@@ -147,12 +147,6 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::set_schedules_via_helper,
         commands::block_websites,
         commands::clean_hosts_file,
-        // Process watcher commands (desktop only)
-        commands::start_process_watcher,
-        commands::stop_process_watcher,
-        commands::set_blocked_apps,
-        commands::has_blocked_apps,
-        commands::hide_all_blocked_apps,
     ]
 }
 

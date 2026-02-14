@@ -39,12 +39,6 @@ const tauriAPI = {
     openAppPicker: () => invoke('open_app_picker'),
     blockWebsites: (domains) => invoke('block_websites', { domains }),
 
-    // Process watcher for app blocking (fallback when helper not available)
-    setBlockedApps: (apps) => invoke('set_blocked_apps', { apps }),
-    startProcessWatcher: () => invoke('start_process_watcher'),
-    stopProcessWatcher: () => invoke('stop_process_watcher'),
-    hideAllBlockedApps: () => invoke('hide_all_blocked_apps'),
-
     // App blocking via helper daemon (persistent, survives app close)
     setBlockedAppsViaHelper: (apps) => invoke('set_blocked_apps_via_helper', { apps }),
 
@@ -83,7 +77,6 @@ let editingBlocklistId = null;
 let overrideBlockId = null;
 let challengeText = '';
 let lastBlockedDomains = new Set(); // Track what's currently blocked to avoid re-prompting
-let lastBlockedApps = new Set(); // Track blocked apps to avoid redundant updates
 let activatedBlockIds = new Set(); // Track blocks that have already triggered host updates
 let helperAvailable = false; // Track if the privileged helper daemon is running
 let pendingBlockData = null; // Store block data when waiting for helper installation
@@ -4002,53 +3995,21 @@ async function updateBlockedApps() {
     }
 
     const appsArray = Array.from(allBlockedApps).sort();
-    const lastAppsArray = Array.from(lastBlockedApps).sort();
-    const appsChanged = JSON.stringify(appsArray) !== JSON.stringify(lastAppsArray);
 
-    // Skip if nothing changed (avoid redundant PowerShell calls every tick)
-    if (!appsChanged) {
-        return;
-    }
-
-    // Update cache
-    lastBlockedApps = allBlockedApps;
-
-    // Update the blocked apps list
-    if (appsArray.length > 0) {
-        console.log('[updateBlockedApps] Setting blocked apps:', appsArray);
-
-        // Try to use helper daemon for persistent app blocking
-        if (helperAvailable) {
-            try {
-                const result = await tauriAPI.setBlockedAppsViaHelper(appsArray);
-                if (result && result.success) {
-                    console.log('[updateBlockedApps] Apps set via helper daemon (persistent)');
-                    return;
-                }
-                console.warn('[updateBlockedApps] Helper failed, falling back to process watcher:', result?.error);
-            } catch (e) {
-                console.warn('[updateBlockedApps] Helper not available for apps, falling back:', e);
+    // Send blocked apps to helper daemon
+    if (helperAvailable) {
+        try {
+            const result = await tauriAPI.setBlockedAppsViaHelper(appsArray);
+            if (result && result.success) {
+                console.log('[updateBlockedApps] Apps set via helper daemon:', appsArray.length, 'apps');
+            } else {
+                console.warn('[updateBlockedApps] Helper failed to set blocked apps:', result?.error);
             }
+        } catch (e) {
+            console.warn('[updateBlockedApps] Failed to set blocked apps via helper:', e);
         }
-
-        // Fallback: use in-process watcher (stops when app closes)
-        await tauriAPI.setBlockedApps(appsArray);
-        await tauriAPI.startProcessWatcher();
-        await tauriAPI.hideAllBlockedApps();
-    } else {
-        // No apps to block - clear both helper and local watcher
-        console.log('[updateBlockedApps] No apps to block, clearing');
-
-        if (helperAvailable) {
-            try {
-                await tauriAPI.setBlockedAppsViaHelper([]);
-            } catch (e) {
-                console.warn('[updateBlockedApps] Failed to clear apps via helper:', e);
-            }
-        }
-
-        await tauriAPI.stopProcessWatcher();
-        await tauriAPI.setBlockedApps([]);
+    } else if (appsArray.length > 0) {
+        console.warn('[updateBlockedApps] Helper not available - app blocking requires the helper daemon');
     }
 }
 
