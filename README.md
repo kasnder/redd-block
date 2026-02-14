@@ -30,12 +30,12 @@ flowchart TB
 
     subgraph Tauri["Tauri Backend (Rust)"]
         IPC[IPC Commands]
-        Watcher[App Watcher]
         Data[Data Store]
     end
 
     subgraph Helper["Helper Daemon (Privileged)"]
         HostsMgr[Hosts Manager]
+        AppWatcher[App Watcher]
         State[Block State]
     end
 
@@ -46,11 +46,10 @@ flowchart TB
 
     UI <-->|invoke/listen| IPC
     IPC <-->|TCP localhost| HostsMgr
-    IPC --> Watcher
     IPC --> Data
-    Watcher -->|hide/minimize| Apps
     HostsMgr -->|read/write| Hosts
     HostsMgr --> State
+    AppWatcher -->|hide/minimize| Apps
 ```
 
 ### iOS (iPad / iPhone)
