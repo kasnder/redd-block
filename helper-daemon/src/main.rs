@@ -856,10 +856,13 @@ foreach ($proc in $processes) {{
 }}
 "#, safe_name);
         
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
         let _ = Command::new("powershell")
             .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW)
             .spawn();
         
         log(&format!("Minimized app (Windows): {}", safe_name));
@@ -1197,10 +1200,13 @@ try {
         return;
     }
 
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
     let mut process = match Command::new("powershell")
         .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
         .arg(&temp_path)
         .stdout(Stdio::piped())
+        .creation_flags(CREATE_NO_WINDOW)
         .spawn()
     {
         Ok(p) => p,
