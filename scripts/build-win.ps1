@@ -117,17 +117,38 @@ Write-Host "=== Build Summary ===" -ForegroundColor Cyan
 $TauriConfig = Get-Content (Join-Path $ProjectRoot "src-tauri\tauri.conf.json") | ConvertFrom-Json
 $AppVersion = $TauriConfig.version
 
+# Copy installers to for-distribution with clean lowercase filenames
+$distDir = Join-Path $ProjectRoot "for-distribution"
+if (-not (Test-Path $distDir)) { New-Item -ItemType Directory -Path $distDir | Out-Null }
+
+Write-Host ""
+Write-Host "  Copying installers to for-distribution/..." -ForegroundColor White
+
 if ($buildX64) {
-    $bundlePath = Join-Path $ProjectRoot "src-tauri\target\x86_64-pc-windows-msvc\release\bundle"
-    Write-Host "  x64 installers:" -ForegroundColor White
-    Write-Host "    NSIS: $bundlePath\nsis\ReDD Block_${AppVersion}_x64-setup.exe" -ForegroundColor Gray
-    Write-Host "    MSI:  $bundlePath\msi\ReDD Block_${AppVersion}_x64_en-US.msi" -ForegroundColor Gray
+    $x64Bundle = Join-Path $ProjectRoot "src-tauri\target\x86_64-pc-windows-msvc\release\bundle"
+    $nsisSource = Join-Path $x64Bundle "nsis\ReDD Block_${AppVersion}_x64-setup.exe"
+    $msiSource = Join-Path $x64Bundle "msi\ReDD Block_${AppVersion}_x64_en-US.msi"
+    if (Test-Path $nsisSource) {
+        Copy-Item $nsisSource (Join-Path $distDir "redd-block_${AppVersion}_x64-setup.exe")
+        Write-Host "    redd-block_${AppVersion}_x64-setup.exe" -ForegroundColor Gray
+    }
+    if (Test-Path $msiSource) {
+        Copy-Item $msiSource (Join-Path $distDir "redd-block_${AppVersion}_x64.msi")
+        Write-Host "    redd-block_${AppVersion}_x64.msi" -ForegroundColor Gray
+    }
 }
 if ($buildArm64) {
-    $bundlePath = Join-Path $ProjectRoot "src-tauri\target\aarch64-pc-windows-msvc\release\bundle"
-    Write-Host "  ARM64 installers:" -ForegroundColor White
-    Write-Host "    NSIS: $bundlePath\nsis\ReDD Block_${AppVersion}_arm64-setup.exe" -ForegroundColor Gray
-    Write-Host "    MSI:  $bundlePath\msi\ReDD Block_${AppVersion}_arm64_en-US.msi" -ForegroundColor Gray
+    $arm64Bundle = Join-Path $ProjectRoot "src-tauri\target\aarch64-pc-windows-msvc\release\bundle"
+    $nsisSource = Join-Path $arm64Bundle "nsis\ReDD Block_${AppVersion}_arm64-setup.exe"
+    $msiSource = Join-Path $arm64Bundle "msi\ReDD Block_${AppVersion}_arm64_en-US.msi"
+    if (Test-Path $nsisSource) {
+        Copy-Item $nsisSource (Join-Path $distDir "redd-block_${AppVersion}_arm64-setup.exe")
+        Write-Host "    redd-block_${AppVersion}_arm64-setup.exe" -ForegroundColor Gray
+    }
+    if (Test-Path $msiSource) {
+        Copy-Item $msiSource (Join-Path $distDir "redd-block_${AppVersion}_arm64.msi")
+        Write-Host "    redd-block_${AppVersion}_arm64.msi" -ForegroundColor Gray
+    }
 }
 
 Write-Host ""
