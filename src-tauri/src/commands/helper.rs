@@ -856,3 +856,182 @@ pub async fn set_schedules_via_helper(schedules: Vec<HelperScheduleData>) -> Hel
         },
     }
 }
+
+/// Clean hosts file by removing all ReDD Block entries.
+/// Tries the helper daemon first; if unavailable, falls back to an elevated process.
+#[tauri::command]
+pub async fn clean_hosts_file() -> HelperResult {
+    log::info!("clean_hosts_file called");
+
+    // Try the helper daemon first
+    let cmd = IpcCommand {
+        action: "restore-hosts".to_string(),
+        domains: None,
+        end_time: None,
+        blocklist_id: None,
+        apps: None,
+        schedules: None,
+        auth_token: None,
+    };
+    match send_command(&cmd) {
+        Ok(response) if response.success => {
+            log::info!("Hosts file cleaned via helper daemon");
+            return HelperResult {
+                success: true,
+                error: None,
+            };
+        }
+        Ok(response) => {
+            log::warn!("Helper returned error: {:?}", response.error);
+        }
+        Err(e) => {
+            log::warn!("Helper not available ({}), trying elevated fallback", e);
+        }
+    }
+
+    // Fallback: clean hosts file directly via elevated process
+    clean_hosts_elevated().await
+}
+
+/// Platform-specific elevated hosts file cleanup
+#[cfg(target_os = "windows")]
+async fn clean_hosts_elevated() -> HelperResult {
+    use std::mem::size_of;
+    use windows::core::HSTRING;
+    use windows::Win32::UI::Shell::{
+        ShellExecuteExW, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
+    };
+    use windows::Win32::Foundation::WAIT_OBJECT_0;
+    use windows::Win32::System::Threading::WaitForSingleObject;
+
+    log::info!("Attempting elevated hosts file cleanup on Windows");
+
+    // PowerShell script that reads the hosts file, strips ReDD Block markers, and writes it back
+    let ps_script = r#"
+$hostsPath = "$env:SystemRoot\System32\drivers\etc\hosts"
+$content = Get-Content $hostsPath -Raw -ErrorAction Stop
+$startMarker = '# === BEGIN REDD BLOCK (reddfocus.org) ==='
+$endMarker = '# === END REDD BLOCK (reddfocus.org) ==='
+$startIdx = $content.IndexOf($startMarker)
+if ($startIdx -ge 0) {
+    $before = $content.Substring(0, $startIdx).TrimEnd()
+    $endIdx = $content.IndexOf($endMarker)
+    if ($endIdx -ge 0) {
+        $after = $content.Substring($endIdx + $endMarker.Length).TrimStart()
+        if ($after.Length -gt 0) { $content = "$before`n$after" } else { $content = $before }
+    } else {
+        $content = $before
+    }
+}
+# Also clean legacy markers
+$content = ($content -split "`n" | Where-Object { $_.Trim() -ne '# ReDD Block Start' -and $_.Trim() -ne '# ReDD Block End' }) -join "`n"
+Set-Content -Path $hostsPath -Value $content -NoNewline -ErrorAction Stop
+ipconfig /flushdns | Out-Null
+"#;
+
+    let verb = HSTRING::from("runas");
+    let file = HSTRING::from("powershell");
+    let params_str = format!(
+        "-ExecutionPolicy Bypass -WindowStyle Hidden -Command \"{}\"",
+        ps_script.replace('\n', " ").replace('"', "\\\"")
+    );
+    let params = HSTRING::from(&params_str);
+
+    let mut sei = SHELLEXECUTEINFOW {
+        cbSize: size_of::<SHELLEXECUTEINFOW>() as u32,
+        fMask: SEE_MASK_NOCLOSEPROCESS,
+        hwnd: windows::Win32::Foundation::HWND::default(),
+        lpVerb: windows::core::PCWSTR(verb.as_ptr()),
+        lpFile: windows::core::PCWSTR(file.as_ptr()),
+        lpParameters: windows::core::PCWSTR(params.as_ptr()),
+        lpDirectory: windows::core::PCWSTR::null(),
+        nShow: 0, // SW_HIDE
+        hInstApp: windows::Win32::Foundation::HINSTANCE::default(),
+        lpIDList: std::ptr::null_mut(),
+        lpClass: windows::core::PCWSTR::null(),
+        hkeyClass: windows::Win32::System::Registry::HKEY::default(),
+        dwHotKey: 0,
+        Anonymous: Default::default(),
+        hProcess: windows::Win32::Foundation::HANDLE::default(),
+    };
+
+    let result = unsafe { ShellExecuteExW(&mut sei) };
+    if result.is_err() {
+        return HelperResult {
+            success: false,
+            error: Some("User cancelled or UAC prompt failed".to_string()),
+        };
+    }
+
+    // Wait for the elevated process to finish (up to 15 seconds)
+    if !sei.hProcess.is_invalid() {
+        let wait_result = unsafe { WaitForSingleObject(sei.hProcess, 15000) };
+        unsafe { windows::Win32::Foundation::CloseHandle(sei.hProcess).ok() };
+        if wait_result != WAIT_OBJECT_0 {
+            return HelperResult {
+                success: false,
+                error: Some("Elevated cleanup timed out".to_string()),
+            };
+        }
+    }
+
+    log::info!("Elevated hosts file cleanup completed");
+    HelperResult {
+        success: true,
+        error: None,
+    }
+}
+
+#[cfg(target_os = "macos")]
+async fn clean_hosts_elevated() -> HelperResult {
+    use std::process::Command;
+
+    log::info!("Attempting elevated hosts file cleanup on macOS");
+
+    // Use osascript to run a shell command with admin privileges
+    let script = r#"
+do shell script "
+HOSTS=/etc/hosts
+CONTENT=$(cat $HOSTS)
+# Remove current-format markers and everything between them
+echo \"$CONTENT\" | awk '
+    /^# === BEGIN REDD BLOCK/ { skip=1; next }
+    /^# === END REDD BLOCK/ { skip=0; next }
+    !skip { print }
+' | grep -v '# ReDD Block Start' | grep -v '# ReDD Block End' > ${HOSTS}.tmp
+mv ${HOSTS}.tmp $HOSTS
+dscacheutil -flushcache
+killall -HUP mDNSResponder 2>/dev/null
+" with administrator privileges
+"#;
+
+    match Command::new("osascript").arg("-e").arg(script).output() {
+        Ok(output) => {
+            if output.status.success() {
+                log::info!("Elevated hosts file cleanup completed on macOS");
+                HelperResult {
+                    success: true,
+                    error: None,
+                }
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                HelperResult {
+                    success: false,
+                    error: Some(format!("Elevated cleanup failed: {}", stderr)),
+                }
+            }
+        }
+        Err(e) => HelperResult {
+            success: false,
+            error: Some(format!("Failed to run osascript: {}", e)),
+        },
+    }
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+async fn clean_hosts_elevated() -> HelperResult {
+    HelperResult {
+        success: false,
+        error: Some("Elevated hosts cleanup not supported on this platform".to_string()),
+    }
+}

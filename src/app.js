@@ -33,6 +33,7 @@ const tauriAPI = {
     uninstallHelper: () => invoke('uninstall_helper'),
     startBlockViaHelper: (data) => invoke('start_block_via_helper', { ...data }),
     clearBlockViaHelper: () => invoke('clear_block_via_helper'),
+    cleanHostsFile: () => invoke('clean_hosts_file'),
 
     // App operations
     openAppPicker: () => invoke('open_app_picker'),
@@ -5850,6 +5851,7 @@ function setupHelperSettings() {
     const statusIndicator = document.getElementById('helper-status-indicator');
     const keepBlockingToggle = document.getElementById('keep-blocking-toggle');
     const removeHelperNowBtn = document.getElementById('remove-helper-now-btn');
+    const cleanHostsBtn = document.getElementById('clean-hosts-btn');
 
     // Initialize toggle from saved settings
     // When checked (default): blocks continue running after uninstall until complete
@@ -5868,7 +5870,46 @@ function setupHelperSettings() {
     // Update helper status when settings modal opens
     const settingsBtn = document.getElementById('settings-btn');
     if (settingsBtn) {
-        settingsBtn.addEventListener('click', updateHelperStatusIndicator);
+        settingsBtn.addEventListener('click', () => {
+            updateHelperStatusIndicator();
+            updateCleanHostsBtnState();
+        });
+    }
+
+    // Clean hosts file button
+    if (cleanHostsBtn && !cleanHostsBtn._listenerAdded) {
+        cleanHostsBtn._listenerAdded = true;
+        cleanHostsBtn.addEventListener('click', async () => {
+            if (cleanHostsBtn.disabled) return;
+
+            const confirmed = await ask(
+                'This will remove all ReDD Block entries from your system\'s hosts file. ' +
+                'Only use this if websites remain blocked after all blocks have been stopped.\n\n' +
+                'Your computer may ask for your password or show a security prompt.',
+                { title: 'Clean hosts file?', kind: 'warning' }
+            );
+            if (!confirmed) return;
+
+            cleanHostsBtn.disabled = true;
+            const originalHTML = cleanHostsBtn.innerHTML;
+            cleanHostsBtn.innerHTML = '<span class="btn-spinner"></span>Cleaning...';
+
+            try {
+                const result = await tauriAPI.cleanHostsFile();
+                if (result.success) {
+                    await message('Hosts file cleaned successfully. If websites were still blocked, they should now be accessible.', { title: 'Done', kind: 'info' });
+                } else {
+                    await message('Failed to clean hosts file: ' + (result.error || 'Unknown error'), { title: 'Error', kind: 'error' });
+                }
+            } catch (e) {
+                console.error('Error cleaning hosts file:', e);
+                await message('Error cleaning hosts file: ' + e.message, { title: 'Error', kind: 'error' });
+            } finally {
+                cleanHostsBtn.disabled = false;
+                cleanHostsBtn.innerHTML = originalHTML;
+                updateCleanHostsBtnState();
+            }
+        });
     }
 
     // Remove Helper Now button - use named function to avoid duplicates
@@ -5998,6 +6039,15 @@ async function updateHelperStatusIndicator() {
 
     // Also update Override All button visibility
     updateOverrideAllButtonVisibility();
+}
+
+// Update clean hosts button state (disabled when blocks are running)
+function updateCleanHostsBtnState() {
+    const btn = document.getElementById('clean-hosts-btn');
+    if (!btn) return;
+    const active = hasAnyActiveBlocks();
+    btn.disabled = active;
+    btn.title = active ? 'Stop all running blocks first' : '';
 }
 
 // Check if there are any active blocks or schedules
