@@ -39,11 +39,6 @@
       "hardenedRuntime": true,
       "minimumSystemVersion": "10.15"
     },
-    "windows": {
-      "certificateThumbprint": null,
-      "digestAlgorithm": "sha256",
-      "timestampUrl": ""
-    },
     "externalBin": [
       "../helper-daemon/target/release/redd-block-helper"
     ],

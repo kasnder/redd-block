@@ -3,5 +3,10 @@
         "features": [
             "desktop"
         ]
+    },
+    "bundle": {
+        "windows": {
+            "signCommand": "trusted-signing-cli -e https://neu.codesigning.azure.net -a redd-block-signing -c redd-block-signing -d \"ReDD Block\" %1"
+        }
     }
 }
