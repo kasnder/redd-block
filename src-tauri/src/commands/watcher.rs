@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Instant;
 #[cfg(target_os = "macos")]
 use std::time::Duration;
 use std::io::{BufRead, BufReader};
@@ -16,14 +15,11 @@ use tauri::{AppHandle, Emitter};
 #[cfg(target_os = "macos")]
 use tauri::Manager;
 
-/// Process watcher state
 pub struct ProcessWatcher {
     /// Maps lowercase app name -> original case app name
     blocked_apps: HashMap<String, String>,
     watcher_process: Option<Child>,
     running: bool,
-    /// Last detection time per app (for debouncing)
-    last_detection: HashMap<String, Instant>,
 }
 
 impl ProcessWatcher {
@@ -32,7 +28,6 @@ impl ProcessWatcher {
             blocked_apps: HashMap::new(),
             watcher_process: None,
             running: false,
-            last_detection: HashMap::new(),
         }
     }
 }

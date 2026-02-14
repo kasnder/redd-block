@@ -20,15 +20,14 @@ mod commands;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut builder = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init());
 
+    // On iOS, also register the Screen Time plugin
     #[cfg(target_os = "ios")]
-    {
-        builder = builder.plugin(tauri_plugin_screentime::init());
-    }
+    let builder = builder.plugin(tauri_plugin_screentime::init());
 
     builder.setup(|app| {
             // Set up logging in debug mode
