@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use tauri::Manager;
 
 #[cfg(target_os = "macos")]
 use std::os::unix::net::UnixStream;
@@ -438,7 +437,7 @@ Copy-Item -Path $sourcePath -Destination $helperPath -Force
 
 # Generate auth token for IPC authentication
 $tokenPath = Join-Path $installDir "auth-token"
-$token = -join ((1..32) | ForEach-Object {{ '{0:x2}' -f (Get-Random -Minimum 0 -Maximum 256) }})
+$token = -join ((1..32) | ForEach-Object {{{{ '{{0:x2}}' -f (Get-Random -Minimum 0 -Maximum 256) }}}})
 Set-Content -Path $tokenPath -Value $token -NoNewline
 # Restrict token file permissions to SYSTEM and Administrators only
 icacls $tokenPath /inheritance:r /grant:r "SYSTEM:F" /grant:r "BUILTIN\Administrators:F" 2>$null

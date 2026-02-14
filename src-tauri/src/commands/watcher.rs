@@ -8,9 +8,13 @@ use std::collections::HashMap;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Instant;
+#[cfg(target_os = "macos")]
+use std::time::Duration;
 use std::io::{BufRead, BufReader};
-use tauri::{AppHandle, Manager, Emitter};
+use tauri::{AppHandle, Emitter};
+#[cfg(target_os = "macos")]
+use tauri::Manager;
 
 /// Process watcher state
 pub struct ProcessWatcher {
