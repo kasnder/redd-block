@@ -88,4 +88,19 @@ if ($needsCopy -and -not $sidecarOutdated) {
     Write-Host "Copied helper binary to sidecar location: $sidecarExe" -ForegroundColor Green
 }
 
+# Always ensure arch-specific copies exist in the release directory for Tauri externalBin
+if (Test-Path $releaseExe) {
+    $releaseDir = Split-Path $releaseExe -Parent
+    $x64Copy = Join-Path $releaseDir "redd-block-helper-x86_64-pc-windows-msvc.exe"
+    $arm64Copy = Join-Path $releaseDir "redd-block-helper-aarch64-pc-windows-msvc.exe"
+    if (-not (Test-Path $x64Copy)) {
+        Copy-Item $releaseExe $x64Copy -Force
+        Write-Host "Created x64 copy: $x64Copy" -ForegroundColor Green
+    }
+    if (-not (Test-Path $arm64Copy)) {
+        Copy-Item $releaseExe $arm64Copy -Force
+        Write-Host "Created aarch64 copy: $arm64Copy" -ForegroundColor Green
+    }
+}
+
 exit 0
