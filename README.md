@@ -35,7 +35,7 @@ flowchart TB
 
     subgraph Helper["Helper Daemon (Privileged)"]
         HostsMgr[Hosts Manager]
-        AppMon[App Monitor]
+        AppWatcher[App Watcher]
         State[Block State]
     end
 
@@ -51,6 +51,7 @@ flowchart TB
     AppMon -->|hide/minimize| Apps
     HostsMgr -->|read/write| Hosts
     HostsMgr --> State
+    AppWatcher -->|hide/minimize| Apps
 ```
 
 ### iOS (iPad / iPhone)
@@ -113,6 +114,7 @@ Runs with elevated privileges to manage hosts file changes. On first use, reques
 
 - **macOS**: Installed as a launchd daemon, authorized via password prompt
 - **Windows**: Installed as a Scheduled Task with highest privileges, authorized via UAC prompt
+- **Troubleshooting**: If websites remain blocked after all blocks are stopped, use the "Clean hosts file" button in Settings → Advanced Options to remove stale entries
 
 ## Local Development
 
@@ -196,6 +198,7 @@ The app and helper daemon are versioned independently:
 | **App** | `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` |
 | **Helper daemon** | `helper-daemon/Cargo.toml` |
 | **Expected helper version** | `src-tauri/src/commands/helper.rs` → `EXPECTED_HELPER_VERSION` |
+| **Published versions** | `docs/latest-versions.json` (macOS, Windows, iOS) |
 
 When updating the helper daemon:
 1. Bump version in `helper-daemon/Cargo.toml`
