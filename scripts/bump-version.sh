@@ -46,13 +46,22 @@ else
     sed -i "s/^version = \"[^\"]*\"/version = \"$NEW_VERSION\"/" "$PROJECT_ROOT/helper-daemon/Cargo.toml"
 fi
 
+# Update src-tauri/Cargo.toml
+echo "  Updating src-tauri/Cargo.toml..."
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    sed -i '' "s/^version = \"[^\"]*\"/version = \"$NEW_VERSION\"/" "$PROJECT_ROOT/src-tauri/Cargo.toml"
+else
+    sed -i "s/^version = \"[^\"]*\"/version = \"$NEW_VERSION\"/" "$PROJECT_ROOT/src-tauri/Cargo.toml"
+fi
+
 echo ""
 echo "✅ Version bumped to $NEW_VERSION in all files!"
 echo ""
 echo "Files updated:"
 echo "  - package.json"
 echo "  - src-tauri/tauri.conf.json"
+echo "  - src-tauri/Cargo.toml"
 echo "  - helper-daemon/Cargo.toml"
 echo ""
-echo "Note: Build scripts (build-appx.ps1, build-win-store.ps1) read from"
+echo "Note: Build scripts (build-mac.sh, build-win.ps1) read from"
 echo "      tauri.conf.json automatically - no manual update needed."
