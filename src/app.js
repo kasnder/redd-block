@@ -3698,6 +3698,10 @@ async function proceedWithHelperInstall() {
                 activatedBlockIds.add(block.id);
                 await saveData();
 
+                // Send blocked apps and schedules to the newly-installed helper
+                await updateBlockedApps();
+                await syncSchedulesToHelper();
+
                 // Reset UI - keep the blocklist selected
                 const blocklistSelect = document.getElementById('blocklist-select');
                 blocklistSelect.value = blocklist.id; // Keep the blocklist selected
@@ -5956,14 +5960,57 @@ async function updateHelperStatusIndicator() {
     if (!statusIndicator) return;
 
     const statusText = statusIndicator.querySelector('.status-text');
+    const updateBtn = document.getElementById('update-helper-btn');
 
     try {
-        const isRunning = await tauriAPI.checkHelper();
-        helperAvailable = isRunning;
+        const status = await tauriAPI.checkHelperStatus();
+        const isRunning = status.running;
+        const needsUpdate = isRunning && !status.version_ok;
+        helperAvailable = isRunning && status.version_ok;
 
         statusIndicator.classList.remove('running', 'stopped');
-        statusIndicator.classList.add(isRunning ? 'running' : 'stopped');
-        statusText.textContent = isRunning ? 'Running' : 'Not installed';
+        if (isRunning && status.version_ok) {
+            statusIndicator.classList.add('running');
+            statusText.textContent = 'Running';
+        } else if (needsUpdate) {
+            statusIndicator.classList.add('stopped');
+            statusText.textContent = 'Update available';
+        } else {
+            statusIndicator.classList.add('stopped');
+            statusText.textContent = 'Not installed';
+        }
+
+        // Show/hide Update Helper button
+        if (updateBtn) {
+            updateBtn.style.display = needsUpdate ? 'flex' : 'none';
+
+            // Wire up click handler (only once)
+            if (!updateBtn._listenerAdded) {
+                updateBtn._listenerAdded = true;
+                updateBtn.addEventListener('click', async () => {
+                    updateBtn.disabled = true;
+                    const originalHTML = updateBtn.innerHTML;
+                    updateBtn.innerHTML = '<span class="btn-spinner"></span>Updating...';
+                    try {
+                        const result = await tauriAPI.installHelper();
+                        if (result.success) {
+                            // Wait for helper to start up
+                            await new Promise(resolve => setTimeout(resolve, 2000));
+                            await updateHelperStatusIndicator();
+                            await checkHelperStatus();
+                        } else {
+                            await message('Failed to update helper: ' + (result.error || 'Unknown error'), { title: 'Error', kind: 'error' });
+                        }
+                    } catch (e) {
+                        console.error('Error updating helper:', e);
+                        await message('Error updating helper: ' + e.message, { title: 'Error', kind: 'error' });
+                    } finally {
+                        updateBtn.disabled = false;
+                        updateBtn.innerHTML = originalHTML;
+                    }
+                });
+            }
+        }
 
         // Show/hide the Remove Helper Now button based on status
         const removeHelperBtn = document.getElementById('remove-helper-now-btn');
@@ -5991,11 +6038,10 @@ async function updateHelperStatusIndicator() {
         statusIndicator.classList.add('stopped');
         statusText.textContent = 'Unknown';
 
-        // Hide remove button on error too
+        // Hide buttons on error
         const removeHelperBtn = document.getElementById('remove-helper-now-btn');
-        if (removeHelperBtn) {
-            removeHelperBtn.style.display = 'none';
-        }
+        if (removeHelperBtn) removeHelperBtn.style.display = 'none';
+        if (updateBtn) updateBtn.style.display = 'none';
     }
 
     // Also update Override All button visibility

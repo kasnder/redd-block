@@ -18,6 +18,8 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
+#[cfg(target_os = "windows")]
+use std::sync::atomic::{AtomicPtr, Ordering};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -772,6 +774,8 @@ struct AppWatcherHandle {
     running: bool,
     /// Last detection time per app (for debouncing)
     last_detection: HashMap<String, Instant>,
+    /// Thread ID of the watcher thread (Windows: for posting WM_QUIT)
+    thread_id: Option<u32>,
 }
 
 impl AppWatcherHandle {
@@ -780,6 +784,7 @@ impl AppWatcherHandle {
             watcher_process: None,
             running: false,
             last_detection: HashMap::new(),
+            thread_id: None,
         }
     }
 }
@@ -828,8 +833,7 @@ fn hide_app(app_name: &str) {
     
     #[cfg(target_os = "windows")]
     {
-        // Sanitize app_name to prevent PowerShell injection.
-        // Strip characters that could escape the string context.
+        // Sanitize app_name for safety
         let safe_name: String = app_name.chars()
             .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-' || *c == '_' || *c == '.')
             .collect();
@@ -839,33 +843,85 @@ fn hide_app(app_name: &str) {
             return;
         }
         
-        let ps_script = format!(r#"
-Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-public class Win32Minimize {{
-    [DllImport("user32.dll")]
-    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-}}
-"@
-$processes = Get-Process -Name "{}" -ErrorAction SilentlyContinue
-foreach ($proc in $processes) {{
-    if ($proc.MainWindowHandle -ne [IntPtr]::Zero) {{
-        [Win32Minimize]::ShowWindow($proc.MainWindowHandle, 6)
-    }}
-}}
-"#, safe_name);
+        // Native Windows API for near-instant minimization (no PowerShell overhead)
+        struct MinimizeData {
+            target_name: String,
+            minimized_count: u32,
+        }
         
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        let _ = Command::new("powershell")
-            .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps_script])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn();
+        extern "system" fn minimize_callback(hwnd: isize, lparam: isize) -> i32 {
+            unsafe {
+                #[link(name = "user32")]
+                extern "system" {
+                    fn IsWindowVisible(hwnd: isize) -> i32;
+                    fn GetWindowThreadProcessId(hwnd: isize, pid: *mut u32) -> u32;
+                    fn ShowWindow(hwnd: isize, cmd: i32) -> i32;
+                }
+                #[link(name = "kernel32")]
+                extern "system" {
+                    fn OpenProcess(access: u32, inherit: i32, pid: u32) -> isize;
+                    fn CloseHandle(h: isize) -> i32;
+                    fn QueryFullProcessImageNameW(h: isize, flags: u32, buf: *mut u16, size: *mut u32) -> i32;
+                }
+                
+                let data = &mut *(lparam as *mut MinimizeData);
+                
+                // Skip invisible windows
+                if IsWindowVisible(hwnd) == 0 {
+                    return 1;
+                }
+                
+                // Get process ID for this window
+                let mut pid: u32 = 0;
+                GetWindowThreadProcessId(hwnd, &mut pid);
+                if pid == 0 { return 1; }
+                
+                // Open process to query its name
+                let handle = OpenProcess(0x1000, 0, pid); // PROCESS_QUERY_LIMITED_INFORMATION
+                if handle == 0 { return 1; }
+                
+                let mut buf = [0u16; 260];
+                let mut size = 260u32;
+                let matched = if QueryFullProcessImageNameW(handle, 0, buf.as_mut_ptr(), &mut size) != 0 {
+                    let path = String::from_utf16_lossy(&buf[..size as usize]);
+                    if let Some(filename) = path.rsplit('\\').next() {
+                        let name = filename.strip_suffix(".exe").unwrap_or(filename);
+                        name.eq_ignore_ascii_case(&data.target_name)
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+                
+                CloseHandle(handle);
+                
+                if matched {
+                    ShowWindow(hwnd, 6); // SW_MINIMIZE
+                    data.minimized_count += 1;
+                }
+                
+                1 // continue enumeration
+            }
+        }
         
-        log(&format!("Minimized app (Windows): {}", safe_name));
+        #[link(name = "user32")]
+        extern "system" {
+            fn EnumWindows(cb: extern "system" fn(isize, isize) -> i32, lp: isize) -> i32;
+        }
+        
+        let mut data = MinimizeData {
+            target_name: safe_name.clone(),
+            minimized_count: 0,
+        };
+        
+        unsafe {
+            EnumWindows(minimize_callback, &mut data as *mut MinimizeData as isize);
+        }
+        
+        if data.minimized_count > 0 {
+            log(&format!("Minimized {} window(s) for app (native): {}", data.minimized_count, safe_name));
+        }
     }
 }
 
@@ -920,6 +976,15 @@ fn stop_app_watcher(app_watcher_handle: &Arc<Mutex<Option<AppWatcherHandle>>>) {
     let mut handle = app_watcher_handle.lock().unwrap();
     if let Some(ref mut h) = *handle {
         h.running = false;
+        // On Windows, post WM_QUIT to the watcher thread's message loop
+        #[cfg(target_os = "windows")]
+        if let Some(tid) = h.thread_id {
+            #[link(name = "user32")]
+            extern "system" {
+                fn PostThreadMessageW(thread_id: u32, msg: u32, wparam: usize, lparam: isize) -> i32;
+            }
+            unsafe { PostThreadMessageW(tid, 0x0012, 0, 0); } // WM_QUIT
+        }
         if let Some(mut process) = h.watcher_process.take() {
             let _ = process.kill();
         }
@@ -950,13 +1015,27 @@ fn set_blocked_apps(
     let schedules = schedule_state.lock().unwrap().clone();
     save_full_state(&block, &apps_for_save, &schedules);
     
+    // Update the effective blocked-apps list (manual + schedule)
+    #[cfg(target_os = "windows")]
+    update_effective_blocked_apps();
+
     if has_apps {
         // Start watcher if not running
         start_app_watcher(app_state, app_watcher_handle);
         // Hide any currently open blocked apps
         hide_all_blocked_apps(app_state);
     } else if had_apps {
-        // No more apps to block — stop watcher
+        // Check if schedule apps still need the watcher
+        #[cfg(target_os = "windows")]
+        {
+            let still_need = read_effective_blocked_apps()
+                .map(|apps| !apps.is_empty())
+                .unwrap_or(false);
+            if !still_need {
+                stop_app_watcher(app_watcher_handle);
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
         stop_app_watcher(app_watcher_handle);
     }
     
@@ -1101,166 +1180,200 @@ end repeat
     log("macOS app watcher stopped in helper daemon");
 }
 
+// Global effective blocked-apps list for the WinEvent callback.
+// Uses AtomicPtr so it can be updated whenever manual apps or schedules change.
+// The callback reads it lock-free for near-zero latency.
+#[cfg(target_os = "windows")]
+static EFFECTIVE_BLOCKED_APPS: AtomicPtr<Vec<String>> = AtomicPtr::new(std::ptr::null_mut());
+
+// Global references so update_effective_blocked_apps() can recompute the merged list.
+#[cfg(target_os = "windows")]
+static GLOBAL_APP_STATE: std::sync::OnceLock<Arc<Mutex<Vec<String>>>> = std::sync::OnceLock::new();
+#[cfg(target_os = "windows")]
+static GLOBAL_SCHEDULE_STATE: std::sync::OnceLock<Arc<Mutex<Vec<HelperSchedule>>>> = std::sync::OnceLock::new();
+
+/// Recompute the effective blocked-apps list (manual apps ∪ active schedule apps)
+/// and store it in EFFECTIVE_BLOCKED_APPS so the WinEvent callback can read it.
+#[cfg(target_os = "windows")]
+fn update_effective_blocked_apps() {
+    let mut merged = HashSet::new();
+
+    if let Some(app_state) = GLOBAL_APP_STATE.get() {
+        for a in app_state.lock().unwrap().iter() {
+            merged.insert(a.to_lowercase());
+        }
+    }
+    if let Some(sched_state) = GLOBAL_SCHEDULE_STATE.get() {
+        let schedules = sched_state.lock().unwrap().clone();
+        for a in get_active_schedule_apps(&schedules) {
+            merged.insert(a.to_lowercase());
+        }
+    }
+
+    let list: Vec<String> = merged.into_iter().collect();
+    log(&format!("Effective blocked apps updated: {:?}", list));
+    let boxed = Box::new(list);
+    let old = EFFECTIVE_BLOCKED_APPS.swap(Box::into_raw(boxed), Ordering::SeqCst);
+    // Free the previous list
+    if !old.is_null() {
+        unsafe { drop(Box::from_raw(old)); }
+    }
+}
+
+/// Read the current effective blocked-apps list (lock-free, safe from callback).
+#[cfg(target_os = "windows")]
+fn read_effective_blocked_apps() -> Option<&'static Vec<String>> {
+    let ptr = EFFECTIVE_BLOCKED_APPS.load(Ordering::SeqCst);
+    if ptr.is_null() {
+        None
+    } else {
+        // SAFETY: The pointer is only replaced via swap (old one freed after),
+        // and the new one lives until the next swap. The callback runs on the
+        // same thread that pumps messages, so no concurrent free can happen
+        // mid-read.
+        Some(unsafe { &*ptr })
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn run_windows_app_watcher(
     app_state: Arc<Mutex<Vec<String>>>,
     handle: Arc<Mutex<Option<AppWatcherHandle>>>,
 ) {
-    let ps_script = r#"
-Add-Type @"
-using System;
-using System.Runtime.InteropServices;
-using System.Diagnostics;
+    // FFI declarations
+    #[link(name = "user32")]
+    extern "system" {
+        fn SetWinEventHook(
+            event_min: u32, event_max: u32, hmod: isize,
+            callback: extern "system" fn(isize, u32, isize, i32, i32, u32, u32),
+            id_process: u32, id_thread: u32, flags: u32,
+        ) -> isize;
+        fn UnhookWinEvent(hook: isize) -> i32;
+        fn GetMessageW(msg: *mut [u8; 48], hwnd: isize, min: u32, max: u32) -> i32;
+        fn TranslateMessage(msg: *const [u8; 48]) -> i32;
+        fn DispatchMessageW(msg: *const [u8; 48]) -> isize;
+    }
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetCurrentThreadId() -> u32;
+    }
 
-public class ForegroundWatcher {
-    public delegate void WinEventDelegate(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime);
-    
-    [DllImport("user32.dll")]
-    public static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmodWinEventProc, WinEventDelegate lpfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
-    
-    [DllImport("user32.dll")]
-    public static extern bool UnhookWinEvent(IntPtr hWinEventHook);
-    
-    [DllImport("user32.dll")]
-    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
-    
-    [DllImport("user32.dll")]
-    public static extern IntPtr GetForegroundWindow();
-    
-    public const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
-    public const uint WINEVENT_OUTOFCONTEXT = 0x0000;
-    public const uint WINEVENT_SKIPOWNPROCESS = 0x0002;
-    
-    private static WinEventDelegate _delegate;
-    private static IntPtr _hook;
-    
-    public static void Start() {
-        _delegate = new WinEventDelegate(WinEventProc);
-        _hook = SetWinEventHook(
-            EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
-            IntPtr.Zero, _delegate, 0, 0,
-            WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS
-        );
-        Console.WriteLine("READY");
-        Console.Out.Flush();
-        OutputCurrentForeground();
-    }
-    
-    public static void Stop() {
-        if (_hook != IntPtr.Zero) {
-            UnhookWinEvent(_hook);
-            _hook = IntPtr.Zero;
+    // Store global references so update_effective_blocked_apps() can recompute
+    let _ = GLOBAL_APP_STATE.set(app_state);
+    // Note: GLOBAL_SCHEDULE_STATE is set separately via init_global_schedule_state()
+
+    // Build the initial effective blocked-apps list
+    update_effective_blocked_apps();
+
+    // Store our thread ID so stop_app_watcher can post WM_QUIT
+    let thread_id = unsafe { GetCurrentThreadId() };
+    {
+        let mut h = handle.lock().unwrap();
+        if let Some(ref mut wh) = *h {
+            wh.thread_id = Some(thread_id);
         }
     }
-    
-    private static void WinEventProc(IntPtr hWinEventHook, uint eventType, IntPtr hwnd, int idObject, int idChild, uint dwEventThread, uint dwmsEventTime) {
-        if (hwnd == IntPtr.Zero) return;
-        OutputProcessForWindow(hwnd);
-    }
-    
-    private static void OutputCurrentForeground() {
-        IntPtr hwnd = GetForegroundWindow();
-        if (hwnd != IntPtr.Zero) {
-            OutputProcessForWindow(hwnd);
+
+    // WinEvent callback — fires on foreground changes and window restorations
+    extern "system" fn on_foreground(
+        _hook: isize, event: u32, hwnd: isize,
+        _id_object: i32, _id_child: i32, _thread: u32, _time: u32,
+    ) {
+        if hwnd == 0 { return; }
+        // Only act on EVENT_SYSTEM_FOREGROUND (0x0003) and EVENT_SYSTEM_MINIMIZEEND (0x0017)
+        if event != 0x0003 && event != 0x0017 { return; }
+
+        #[link(name = "user32")]
+        extern "system" {
+            fn ShowWindow(hwnd: isize, cmd: i32) -> i32;
+            fn GetWindowThreadProcessId(hwnd: isize, pid: *mut u32) -> u32;
         }
-    }
-    
-    private static void OutputProcessForWindow(IntPtr hwnd) {
-        try {
-            uint processId;
-            GetWindowThreadProcessId(hwnd, out processId);
-            if (processId > 0) {
-                Process proc = Process.GetProcessById((int)processId);
-                Console.WriteLine("FG:" + proc.ProcessName);
-                Console.Out.Flush();
+        #[link(name = "kernel32")]
+        extern "system" {
+            fn OpenProcess(access: u32, inherit: i32, pid: u32) -> isize;
+            fn CloseHandle(h: isize) -> i32;
+            fn QueryFullProcessImageNameW(h: isize, flags: u32, buf: *mut u16, size: *mut u32) -> i32;
+        }
+
+        unsafe {
+            let mut pid: u32 = 0;
+            GetWindowThreadProcessId(hwnd, &mut pid);
+            if pid == 0 { return; }
+
+            let proc_handle = OpenProcess(0x1000, 0, pid); // PROCESS_QUERY_LIMITED_INFORMATION
+            if proc_handle == 0 { return; }
+
+            let mut buf = [0u16; 260];
+            let mut size = 260u32;
+            if QueryFullProcessImageNameW(proc_handle, 0, buf.as_mut_ptr(), &mut size) != 0 {
+                let path = String::from_utf16_lossy(&buf[..size as usize]);
+                if let Some(filename) = path.rsplit('\\').next() {
+                    let name_lower = filename
+                        .strip_suffix(".exe")
+                        .unwrap_or(filename)
+                        .to_lowercase();
+
+                    // Lock-free read of the effective blocked-apps list
+                    let is_blocked = read_effective_blocked_apps()
+                        .map(|apps| apps.iter().any(|a| *a == name_lower))
+                        .unwrap_or(false);
+
+                    if is_blocked {
+                        log(&format!("Blocked app focused, minimizing: {}", name_lower));
+                        ShowWindow(hwnd, 11); // SW_FORCEMINIMIZE
+                    }
+                }
             }
-        } catch { }
-    }
-}
-"@
 
-[ForegroundWatcher]::Start()
-try {
-    Add-Type -AssemblyName System.Windows.Forms
-    while ($true) {
-        [System.Windows.Forms.Application]::DoEvents()
-        Start-Sleep -Milliseconds 100
+            CloseHandle(proc_handle);
+        }
     }
-} finally {
-    [ForegroundWatcher]::Stop()
-}
-"#;
 
-    // Write to temp file
-    let temp_path = std::env::temp_dir().join("redd-helper-foreground-watcher.ps1");
-    if std::fs::write(&temp_path, ps_script).is_err() {
-        log("Failed to write PowerShell script for app watcher");
+    // Install the hook
+    let hook = unsafe {
+        SetWinEventHook(
+            0x0003, 0x0017, // EVENT_SYSTEM_FOREGROUND through EVENT_SYSTEM_MINIMIZEEND
+            0, on_foreground,
+            0, 0,
+            0x0000 | 0x0002, // WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS
+        )
+    };
+
+    if hook == 0 {
+        log("Failed to set WinEvent hook for app watcher");
         let mut h = handle.lock().unwrap();
         *h = None;
         return;
     }
 
-    use std::os::windows::process::CommandExt;
-    const CREATE_NO_WINDOW: u32 = 0x08000000;
-    let mut process = match Command::new("powershell")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-File"])
-        .arg(&temp_path)
-        .stdout(Stdio::piped())
-        .creation_flags(CREATE_NO_WINDOW)
-        .spawn()
-    {
-        Ok(p) => p,
-        Err(e) => {
-            log(&format!("Failed to start Windows app watcher: {}", e));
-            let mut h = handle.lock().unwrap();
-            *h = None;
-            return;
-        }
-    };
+    log("Windows app watcher started (native, event-driven)");
 
-    log("Windows app watcher started in helper daemon");
-
-    if let Some(stdout) = process.stdout.take() {
-        let reader = BufReader::new(stdout);
-        
-        for line in reader.lines() {
-            {
-                let h = handle.lock().unwrap();
-                match &*h {
-                    Some(wh) if wh.running => {},
-                    _ => break,
-                }
-            }
-            
-            if let Ok(line) = line {
-                let trimmed = line.trim();
-                
-                if trimmed.starts_with("FG:") {
-                    let process_name = &trimmed[3..];
-                    
-                    let is_blocked = {
-                        let apps = app_state.lock().unwrap();
-                        apps.iter().any(|a| a.eq_ignore_ascii_case(process_name))
-                    };
-                    
-                    if is_blocked {
-                        log(&format!("Blocked app in foreground: {}", process_name));
-                        hide_app(process_name);
-                    }
-                }
-            }
+    // Minimize any already-open blocked apps right now
+    if let Some(apps) = read_effective_blocked_apps() {
+        for app in apps {
+            hide_app(app);
         }
     }
 
-    let _ = process.kill();
-    let _ = std::fs::remove_file(&temp_path);
-    
+    // Run the Windows message loop — blocks with zero CPU until an event arrives
+    // The loop exits when WM_QUIT is posted (by stop_app_watcher)
+    unsafe {
+        let mut msg = [0u8; 48]; // MSG struct
+        while GetMessageW(&mut msg, 0, 0, 0) > 0 {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+
+    // Cleanup
+    unsafe { UnhookWinEvent(hook); }
+
     {
         let mut h = handle.lock().unwrap();
         *h = None;
     }
-    
-    log("Windows app watcher stopped in helper daemon");
+
+    log("Windows app watcher stopped");
 }
 
 fn handle_command(
@@ -1785,10 +1898,23 @@ fn schedule_evaluator(
             log(&format!("Schedule evaluator: app change detected ({} -> {} apps)",
                 last_schedule_apps.len(), current_apps.len()));
             
+            // Update the effective blocked-apps list (manual + schedule)
+            #[cfg(target_os = "windows")]
+            update_effective_blocked_apps();
+
             if !current_apps.is_empty() {
                 start_app_watcher(&app_state, &app_watcher_handle);
+                // Hide any currently open newly-blocked schedule apps
+                for app in &current_apps {
+                    hide_app(app);
+                }
+            } else {
+                // Check if manual apps still need the watcher
+                let manual_apps = app_state.lock().unwrap().clone();
+                if manual_apps.is_empty() {
+                    stop_app_watcher(&app_watcher_handle);
+                }
             }
-            // Note: we don't stop the watcher here because manual apps might still need it
             
             last_schedule_apps = current_apps;
         }
@@ -1827,6 +1953,12 @@ fn main() {
     let state = Arc::new(Mutex::new(initial_block));
     let app_state = Arc::new(Mutex::new(initial_apps.clone()));
     let schedule_state = Arc::new(Mutex::new(initial_schedules));
+
+    // Store global schedule state reference for update_effective_blocked_apps()
+    #[cfg(target_os = "windows")]
+    {
+        let _ = GLOBAL_SCHEDULE_STATE.set(Arc::clone(&schedule_state));
+    }
     let app_watcher_handle: Arc<Mutex<Option<AppWatcherHandle>>> = Arc::new(Mutex::new(None));
     
     // If we have persisted blocked apps, start the app watcher
