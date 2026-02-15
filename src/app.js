@@ -5526,13 +5526,17 @@ function startTickInterval() {
             render();
         }
 
-        // Check for schedule segment transitions (every minute is fine since schedules are minute-granular)
-        // updateHostsFile already handles checking which schedules are currently active
-        // We call it periodically to catch schedule segments starting/ending
+        // Check for schedule segment transitions every 30s (schedules are minute-granular
+        // and the helper daemon handles transitions autonomously)
         if (appData.schedules && appData.schedules.length > 0) {
-            await updateHostsFile();
-            // Also update blocked apps when schedules activate/deactivate
-            await updateBlockedApps();
+            if (!startTickInterval._scheduleTickCount) startTickInterval._scheduleTickCount = 0;
+            startTickInterval._scheduleTickCount++;
+
+            if (startTickInterval._scheduleTickCount >= 30) {
+                startTickInterval._scheduleTickCount = 0;
+                await updateHostsFile();
+                await updateBlockedApps();
+            }
 
             // Check for expired non-repeating schedules and auto-stop them
             const expiredScheduleIds = [];
