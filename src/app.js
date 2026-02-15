@@ -161,7 +161,47 @@ document.addEventListener('DOMContentLoaded', async () => {
     render();
     scrollToNow(false); // Initial scroll (instant, no animation)
     startTickInterval();
+
+    // Check for app updates (non-blocking, desktop only)
+    if (!isIOS) {
+        checkForAppUpdate();
+    }
 });
+
+// Check if a newer app version is available and show update banner
+async function checkForAppUpdate() {
+    try {
+        const currentVersion = await tauriAPI.getAppVersion();
+        if (!currentVersion) return;
+
+        const response = await fetch('https://ulyngs.github.io/redd-block/latest-versions.json');
+        const versions = await response.json();
+
+        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+        const platform = isMac ? 'macos' : 'windows';
+        const latestVersion = versions[platform];
+
+        if (latestVersion && isVersionHigher(latestVersion, currentVersion)) {
+            const banner = document.getElementById('update-banner');
+            const versionEl = document.getElementById('update-banner-version');
+            const dismissBtn = document.getElementById('update-banner-dismiss');
+
+            if (banner && versionEl) {
+                versionEl.textContent = latestVersion;
+                banner.classList.remove('hidden');
+
+                if (dismissBtn) {
+                    dismissBtn.addEventListener('click', () => {
+                        banner.classList.add('hidden');
+                    });
+                }
+            }
+        }
+    } catch (e) {
+        // Silently fail if offline
+        console.log('[Update] Could not check for updates:', e.message);
+    }
+}
 
 // Check if the helper daemon is available (desktop only)
 async function checkHelperStatus() {
