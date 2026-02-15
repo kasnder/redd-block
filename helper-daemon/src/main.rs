@@ -1484,13 +1484,13 @@ fn read_user_setting_keep_blocking() -> bool {
     #[cfg(target_os = "macos")]
     let data_path = {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/".to_string());
-        format!("{}/Library/Application Support/com.redd-focus.block/data.json", home)
+        format!("{}/Library/Application Support/com.redd.block/redd-block-data.json", home)
     };
     
     #[cfg(target_os = "windows")]
     let data_path = {
         let app_data = std::env::var("APPDATA").unwrap_or_else(|_| "".to_string());
-        format!("{}\\com.redd-focus.block\\data.json", app_data)
+        format!("{}\\com.redd.block\\redd-block-data.json", app_data)
     };
     
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
