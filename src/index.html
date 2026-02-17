@@ -74,25 +74,10 @@
                     <div class="section-header">
                         <h2>Start a Block</h2>
                         <div class="scheduler-mode-tabs">
-                            <button class="mode-tab active" id="instant-mode-tab" data-mode="instant" title="One-off">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M5 22h14" />
-                                    <path d="M5 2h14" />
-                                    <path
-                                        d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22" />
-                                    <path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2" />
-                                </svg>
-                            </button>
-                            <button class="mode-tab" id="schedule-mode-tab" data-mode="schedule" title="Schedule">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <rect width="18" height="18" x="3" y="4" rx="2" ry="2"></rect>
-                                    <path d="M16 2v4"></path>
-                                    <path d="M8 2v4"></path>
-                                    <path d="M3 10h18"></path>
-                                </svg>
-                            </button>
+                            <button class="mode-tab active" id="instant-mode-tab" data-mode="instant"
+                                title="One-off">Now</button>
+                            <button class="mode-tab" id="schedule-mode-tab" data-mode="schedule"
+                                title="Schedule">Schedule</button>
                         </div>
                     </div>
 
@@ -118,7 +103,17 @@
                             <div class="instant-block-panel" id="instant-block-panel">
                                 <!-- Duration Mode Toggle: "for a bit" vs "always" -->
                                 <div class="duration-mode-toggle" id="duration-mode-toggle">
-                                    <button type="button" class="duration-mode-btn active" id="duration-mode-timed"
+                                    <button type="button" class="duration-mode-btn active" id="duration-mode-always"
+                                        data-mode="always">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                            stroke-linejoin="round">
+                                            <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+                                            <line x1="12" y1="2" x2="12" y2="12"></line>
+                                        </svg>
+                                        always
+                                    </button>
+                                    <button type="button" class="duration-mode-btn" id="duration-mode-timed"
                                         data-mode="timed">
                                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
                                             stroke="currentColor" stroke-width="2" stroke-linecap="round"
@@ -132,20 +127,10 @@
                                         </svg>
                                         for some time
                                     </button>
-                                    <button type="button" class="duration-mode-btn" id="duration-mode-always"
-                                        data-mode="always">
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-                                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                            stroke-linejoin="round">
-                                            <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
-                                            <line x1="12" y1="2" x2="12" y2="12"></line>
-                                        </svg>
-                                        always
-                                    </button>
                                 </div>
 
                                 <!-- Always-on message (hidden by default) -->
-                                <div class="always-on-message hidden" id="always-on-message">
+                                <div class="always-on-message" id="always-on-message">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                         <circle cx="12" cy="12" r="10"></circle>
@@ -156,7 +141,7 @@
                                 </div>
 
                                 <!-- Duration & End Row (hidden when always-on) -->
-                                <div class="timed-controls" id="timed-controls">
+                                <div class="timed-controls hidden" id="timed-controls">
                                     <div class="time-pickers-row">
                                         <div class="time-picker-group">
                                             <label class="time-label">Duration</label>
@@ -364,7 +349,7 @@
                     <div class="section-header">
                         <h2>Your Blocklists</h2>
                         <button id="add-blocklist-btn" class="icon-btn" title="Add blocklist">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <line x1="12" y1="5" x2="12" y2="19"></line>
                                 <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -831,9 +816,9 @@
 
                 <div class="settings-section">
                     <div style="display: flex; align-items: center; justify-content: space-between;">
-                        <span style="font-size: 13px;">Light/dark mode</span>
+                        <span style="font-size: 15px;">Light/dark mode</span>
                         <select id="theme-select"
-                            style="padding: 6px 10px; border: 1px solid var(--border-color-medium); border-radius: 4px; background: var(--modal-bg); color: var(--text-primary); font-size: 13px; cursor: pointer;">
+                            style="padding: 6px 10px; border: 1px solid var(--border-color-medium); border-radius: 4px; background: var(--modal-bg); color: var(--text-primary); font-size: 15px; cursor: pointer;">
                             <option value="system">Auto</option>
                             <option value="light">Light</option>
                             <option value="dark">Dark</option>
@@ -880,7 +865,7 @@
                             </span>
                         </div>
                         <button id="update-helper-btn"
-                            style="display: none; margin-bottom: 8px; width: 100%; padding: 10px 16px; background: #4f46e5; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500; align-items: center; justify-content: center; gap: 8px;">
+                            style="display: none; margin-bottom: 8px; width: 100%; padding: 10px 16px; background: #4f46e5; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 500; align-items: center; justify-content: center; gap: 8px;">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M21 2v6h-6"></path>
@@ -909,7 +894,7 @@
                             <span>Clean hosts file</span>
                         </button>
                         <div class="helper-hint"
-                            style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
+                            style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;">
                             Remove all ReDD Block entries from your system's hosts file. Use this if websites remain
                             blocked after all blocks have been stopped.
                         </div>
@@ -918,7 +903,7 @@
 
                 <!-- Version Info -->
                 <div class="version-info"
-                    style="font-size: 12px; color: var(--text-secondary); margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-color-light);">
+                    style="font-size: 13px; color: var(--text-secondary); margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-color-light);">
                     <div id="current-app-version" style="margin-bottom: 4px;">Your version: ...</div>
                     <div id="latest-app-version" style="opacity: 0.7;">Latest version: ...</div>
                 </div>

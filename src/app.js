@@ -93,7 +93,7 @@ let currentWeekStart = null; // Date object for Monday of the displayed week
 
 // Schedule mode state
 let isScheduleMode = false; // false = instant mode, true = schedule mode
-let isAlwaysOnMode = false; // false = timed block, true = always-on (permanent) block
+let isAlwaysOnMode = true; // false = timed block, true = always-on (permanent) block
 let scheduleSegments = getDefaultScheduleSegments(); // Array of time segments with per-segment days
 
 // Far-future timestamp used for "always on" blocks (year 9999)
@@ -1457,7 +1457,7 @@ function initializeTimeInputs() {
 
     // Restore always-on mode preference for this blocklist
     const savedAlwaysOn = selectedBlocklistId && appData.settings?.alwaysOnMode?.[selectedBlocklistId];
-    setAlwaysOnMode(!!savedAlwaysOn);
+    setAlwaysOnMode(savedAlwaysOn !== undefined ? !!savedAlwaysOn : true);
 
     if (selectedBlocklistId && appData.settings?.instantBlockDuration?.[selectedBlocklistId] !== undefined) {
         targetDurationMinutes = appData.settings.instantBlockDuration[selectedBlocklistId];
@@ -1753,7 +1753,7 @@ function setScheduleMode(isSchedule) {
     // Update section heading
     const heading = document.querySelector('#scheduler-section .section-header h2');
     if (heading) {
-        heading.textContent = isSchedule ? 'Schedule a Block' : 'Start a Block';
+        heading.textContent = 'Start a Block';
     }
 
     // Toggle panels

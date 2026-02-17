@@ -81,7 +81,7 @@ html {
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    font-size: 15px;
+    font-size: 17px;
     background: var(--container-bg);
     color: var(--text-primary);
     overflow: hidden;
@@ -148,7 +148,7 @@ body.mac .title-bar {
 }
 
 .app-title {
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 600;
     color: var(--text-secondary);
     letter-spacing: 0.5px;
@@ -200,7 +200,7 @@ body.dark-mode .title-bar button:hover {
     /* Below fixed title bar */
     background: linear-gradient(135deg, var(--accent-color), var(--accent-hover));
     color: white;
-    font-size: 13px;
+    font-size: 15px;
     animation: slideDown 0.3s ease;
     flex-shrink: 0;
 }
@@ -245,7 +245,7 @@ body.dark-mode .title-bar button:hover {
     color: white;
     border: 1px solid rgba(255, 255, 255, 0.3);
     border-radius: 6px;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     text-decoration: none;
     cursor: pointer;
@@ -319,15 +319,16 @@ body.dark-mode .title-bar button:hover {
 /* Section Headers */
 .section-header {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-start;
     align-items: center;
+    gap: 12px;
     margin-bottom: 12px;
     min-height: 28px;
     /* Match icon-btn height to ensure consistent vertical alignment */
 }
 
 .section-header h2 {
-    font-size: 15px;
+    font-size: 17px;
     font-weight: 600;
     color: var(--header-text);
     text-transform: uppercase;
@@ -389,7 +390,7 @@ body.ios .week-calendar-section {
 .week-display {
     position: absolute;
     left: 0;
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 600;
     color: var(--text-primary);
 }
@@ -404,7 +405,7 @@ body.ios .week-calendar-section {
 
     .week-display {
         position: static;
-        font-size: 16px;
+        font-size: 17px;
         flex: 1;
     }
 
@@ -439,7 +440,7 @@ body.ios .week-calendar-section {
     border-radius: 8px;
     background: rgba(0, 0, 0, 0.05);
     color: var(--text-primary);
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -518,7 +519,7 @@ body.dark-mode .week-nav-today-btn:hover {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--text-secondary);
     background: var(--element-bg);
@@ -585,7 +586,7 @@ body.dark-mode .day-header-cell.weekend {
     align-items: flex-start;
     justify-content: flex-end;
     padding-right: 8px;
-    font-size: 10px;
+    font-size: 11px;
     color: var(--text-muted);
     font-weight: 500;
     position: relative;
@@ -677,7 +678,7 @@ body.dark-mode .day-column.weekend {
     background: linear-gradient(135deg, #4a00e0 0%, #8e2de2 100%);
     color: white;
     padding: 4px 6px;
-    font-size: 10px;
+    font-size: 11px;
     overflow: hidden;
     cursor: pointer;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
@@ -692,7 +693,7 @@ body.dark-mode .day-column.weekend {
 }
 
 .calendar-block .block-emoji {
-    font-size: 12px;
+    font-size: 13px;
     line-height: 1;
 }
 
@@ -704,7 +705,7 @@ body.dark-mode .day-column.weekend {
 }
 
 .calendar-block .block-time {
-    font-size: 9px;
+    font-size: 11px;
     opacity: 0.9;
 }
 
@@ -833,7 +834,7 @@ body.dark-mode .day-column.weekend {
 
 .no-blocks-message p {
     color: var(--text-muted);
-    font-size: 12px;
+    font-size: 13px;
 }
 
 .no-blocks-message.hidden {
@@ -861,11 +862,11 @@ body.dark-mode .day-column.weekend {
 
 .no-active-blocks p {
     color: #999;
-    font-size: 14px;
+    font-size: 15px;
 }
 
 .no-active-blocks p.subtle {
-    font-size: 12px;
+    font-size: 13px;
     color: #bbb;
     margin-top: 4px;
 }
@@ -914,7 +915,7 @@ body.dark-mode .day-column.weekend {
 
 .entry-name {
     font-weight: 600;
-    font-size: 14px;
+    font-size: 15px;
     margin-bottom: 2px;
     white-space: nowrap;
     overflow: hidden;
@@ -922,7 +923,7 @@ body.dark-mode .day-column.weekend {
 }
 
 .entry-time {
-    font-size: 12px;
+    font-size: 13px;
     opacity: 0.9;
     display: flex;
     align-items: center;
@@ -934,7 +935,7 @@ body.dark-mode .day-column.weekend {
 }
 
 .entry-remaining {
-    font-size: 11px;
+    font-size: 13px;
     opacity: 0.8;
     margin-top: 4px;
 }
@@ -982,7 +983,7 @@ body.dark-mode .day-column.weekend {
     padding: 10px 12px;
     border: 1px solid var(--input-border);
     border-radius: 8px;
-    font-size: 14px;
+    font-size: 15px;
     background-color: var(--input-bg);
     color: var(--text-secondary);
     cursor: pointer;
@@ -1044,7 +1045,7 @@ body.dark-mode .day-column.weekend {
     padding: 6px 6px;
     border: 1px solid var(--input-border);
     border-radius: 8px;
-    font-size: 16px;
+    font-size: 17px;
     font-weight: 600;
     text-align: center;
     background: var(--input-bg);
@@ -1070,7 +1071,7 @@ body.dark-mode .day-column.weekend {
 }
 
 .duration-unit {
-    font-size: 13px;
+    font-size: 15px;
     color: var(--text-subtle);
 }
 
@@ -1081,7 +1082,7 @@ body.dark-mode .day-column.weekend {
 
 .duration-quick-btn {
     padding: 6px 10px;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 500;
     border: 1px solid var(--input-border);
     border-radius: 6px;
@@ -1105,10 +1106,10 @@ body.dark-mode .day-column.weekend {
 /* Duration Mode Toggle ("for a bit" / "always") */
 .duration-mode-toggle {
     display: flex;
-    background: var(--element-bg, hsl(214, 32%, 96%));
-    border-radius: 8px;
-    padding: 3px;
     gap: 2px;
+    background: rgba(0, 0, 0, 0.05);
+    border-radius: 10px;
+    padding: 4px;
     margin-bottom: 12px;
 }
 
@@ -1118,26 +1119,34 @@ body.dark-mode .day-column.weekend {
     align-items: center;
     justify-content: center;
     gap: 5px;
-    padding: 6px 12px;
+    padding: 6px 14px;
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     background: transparent;
-    color: var(--text-muted, hsl(215, 20%, 50%));
-    font-size: 16px;
+    color: var(--text-muted);
+    font-size: 15px;
     font-weight: 500;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.15s ease;
 }
 
 .duration-mode-btn:hover:not(.active) {
-    color: var(--text-primary);
-    background: rgba(0, 0, 0, 0.04);
+    color: var(--text-secondary);
 }
 
 .duration-mode-btn.active {
-    background: var(--modal-bg, white);
+    background: white;
     color: var(--text-primary);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+body.dark-mode .duration-mode-toggle {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+body.dark-mode .duration-mode-btn.active {
+    background: hsl(222, 47%, 25%);
+    color: white;
 }
 
 .duration-mode-btn svg {
@@ -1154,7 +1163,7 @@ body.dark-mode .day-column.weekend {
     border: 1px solid hsl(214, 60%, 90%);
     border-radius: 8px;
     color: hsl(214, 50%, 40%);
-    font-size: 13px;
+    font-size: 15px;
     line-height: 1.4;
 }
 
@@ -1194,7 +1203,7 @@ body.dark-mode .day-column.weekend {
 }
 
 .time-label {
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 500;
     color: hsl(215, 20%, 50%);
     text-transform: uppercase;
@@ -1216,7 +1225,7 @@ body.dark-mode .day-column.weekend {
 
 .now-btn {
     padding: 8px 16px;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 500;
     border: 1px solid hsl(214, 32%, 85%);
     border-radius: 8px;
@@ -1245,7 +1254,7 @@ body.dark-mode .day-column.weekend {
 
 .time-select {
     padding: 8px 4px;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 500;
     border: 1px solid hsl(214, 32%, 85%);
     border-radius: 6px;
@@ -1270,14 +1279,14 @@ body.dark-mode .day-column.weekend {
 }
 
 .time-colon {
-    font-size: 16px;
+    font-size: 17px;
     font-weight: 600;
     color: hsl(215, 20%, 50%);
 }
 
 .time-input {
     padding: 8px 10px;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 500;
     border: 1px solid hsl(214, 32%, 85%);
     border-radius: 8px;
@@ -1298,7 +1307,7 @@ body.dark-mode .day-column.weekend {
 
 .start-time-badge {
     padding: 4px 8px;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     background: hsl(214, 32%, 91%);
     color: hsl(222.2, 84%, 4.9%);
@@ -1309,7 +1318,7 @@ body.dark-mode .day-column.weekend {
 
 .next-day-badge {
     padding: 4px 8px;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     background: hsl(220, 70%, 95%);
     color: #667eea;
@@ -1326,7 +1335,7 @@ body.dark-mode .day-column.weekend {
 
 .time-part {
     padding: 4px 4px;
-    font-size: 16px;
+    font-size: 17px;
     font-weight: 600;
     background: var(--input-bg);
     border: 1px solid var(--input-border);
@@ -1366,7 +1375,7 @@ body.dark-mode .time-part.active {
 }
 
 .time-colon {
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 600;
     color: hsl(215, 20%, 50%);
     padding: 0 2px;
@@ -1401,7 +1410,7 @@ body.dark-mode .time-part.active {
 
 .popover-option {
     padding: 8px 12px;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 500;
     background: transparent;
     border: none;
@@ -1441,7 +1450,7 @@ body.dark-mode .time-part.active {
 }
 
 .time-separator {
-    font-size: 18px;
+    font-size: 20px;
     color: hsl(215, 20%, 65%);
     padding-bottom: 8px;
 }
@@ -1452,7 +1461,7 @@ body.dark-mode .time-part.active {
 }
 
 .duration-text {
-    font-size: 16px;
+    font-size: 17px;
     font-weight: 600;
     color: var(--text-secondary);
 }
@@ -1463,7 +1472,7 @@ body.dark-mode .time-part.active {
     color: #92400e;
     padding: 8px 12px;
     border-radius: 6px;
-    font-size: 13px;
+    font-size: 15px;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -1493,7 +1502,7 @@ body.dark-mode .time-part.active {
     border-radius: 10px;
     background: var(--button-bg);
     color: white;
-    font-size: 15px;
+    font-size: 17px;
     font-weight: 600;
     cursor: pointer;
     display: flex;
@@ -1569,7 +1578,7 @@ body.dark-mode .start-block-btn.stop-block:hover {
     background: hsl(40, 90%, 95%);
     color: hsl(30, 80%, 30%);
     border: 1px solid hsl(40, 70%, 80%);
-    font-size: 15px;
+    font-size: 17px;
     font-weight: 600;
     cursor: pointer;
     display: flex;
@@ -1602,7 +1611,7 @@ body.dark-mode .pause-block-btn:hover {
 }
 
 .pause-remaining-info {
-    font-size: 13px;
+    font-size: 15px;
     color: var(--text-muted);
     margin-top: -8px;
     margin-bottom: 18px;
@@ -1643,7 +1652,7 @@ body.dark-mode .pause-block-btn:hover {
     border-radius: 8px;
     background: var(--input-bg);
     color: var(--text-primary);
-    font-size: 15px;
+    font-size: 17px;
     font-weight: 600;
     text-align: center;
     -moz-appearance: textfield;
@@ -1657,7 +1666,7 @@ body.dark-mode .pause-block-btn:hover {
 }
 
 .pause-time-unit {
-    font-size: 13px;
+    font-size: 15px;
     color: var(--text-secondary);
 }
 
@@ -1691,7 +1700,7 @@ body.dark-mode .scheduler-mode-tabs {
     border-radius: 8px;
     background: transparent;
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.15s ease;
@@ -1782,7 +1791,7 @@ body.dark-mode .mode-tab.active {
     border-radius: 8px;
     background: transparent;
     color: var(--text-muted);
-    font-size: 14px;
+    font-size: 15px;
     cursor: pointer;
     transition: all 0.15s ease;
     /* Match width from left edge of start hour to right edge of end minute */
@@ -1839,7 +1848,7 @@ body.dark-mode .mode-tab.active {
     border-radius: 6px;
     background: var(--element-bg);
     color: var(--text-muted);
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.15s ease;
@@ -1878,7 +1887,7 @@ body.dark-mode .mode-tab.active {
 }
 
 .repeat-label {
-    font-size: 13px;
+    font-size: 15px;
     color: var(--text-muted);
 }
 
@@ -1900,7 +1909,7 @@ body.dark-mode .mode-tab.active {
     border-radius: 6px;
     background: var(--element-bg);
     color: var(--accent-color);
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.15s ease;
@@ -1955,7 +1964,7 @@ body.dark-mode .mode-tab.active {
     border: none;
     background: transparent;
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: 15px;
     text-align: left;
     cursor: pointer;
     transition: all 0.1s ease;
@@ -1987,7 +1996,7 @@ body.dark-mode .mode-tab.active {
     border-radius: 8px;
     background: var(--element-bg);
     color: transparent;
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.15s ease;
@@ -2037,7 +2046,7 @@ body.dark-mode .mode-tab.active {
     left: 12px;
     top: 50%;
     transform: translateY(-50%);
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 500;
     color: var(--text-secondary);
     pointer-events: none;
@@ -2065,7 +2074,7 @@ body.dark-mode .mode-tab.active {
     border-radius: 8px;
     background: var(--element-bg);
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.15s ease;
@@ -2083,7 +2092,7 @@ body.dark-mode .mode-tab.active {
 }
 
 .schedule-feedback {
-    font-size: 12px;
+    font-size: 13px;
     color: var(--text-muted);
     font-style: italic;
 }
@@ -2101,7 +2110,7 @@ body.dark-mode .mode-tab.active {
 }
 
 .until-label {
-    font-size: 12px;
+    font-size: 13px;
     color: var(--text-muted);
 }
 
@@ -2118,7 +2127,7 @@ body.dark-mode .mode-tab.active {
     border-radius: 6px;
     background: var(--element-bg);
     color: var(--accent-color);
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.15s ease;
@@ -2154,7 +2163,7 @@ body.dark-mode .mode-tab.active {
     border: none;
     background: transparent;
     color: var(--text-secondary);
-    font-size: 12px;
+    font-size: 13px;
     text-align: left;
     cursor: pointer;
     transition: background 0.1s ease;
@@ -2185,7 +2194,7 @@ body.dark-mode .mode-tab.active {
     background: var(--element-bg);
     color: transparent;
     /* Hide native text, overlay shows formatted date */
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.15s ease;
@@ -2253,7 +2262,7 @@ body.dark-mode .mode-tab.active {
     left: 12px;
     top: 50%;
     transform: translateY(-50%);
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 500;
     color: var(--text-secondary);
     pointer-events: none;
@@ -2303,7 +2312,7 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
 
 .password-hint {
     display: block;
-    font-size: 11px;
+    font-size: 13px;
     color: hsl(215, 20%, 55%);
     margin-top: 8px;
     text-align: center;
@@ -2403,7 +2412,7 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
     gap: 10px;
     padding: 24px 0;
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: 15px;
     border: none;
     border-radius: 8px;
     background: transparent;
@@ -2447,7 +2456,7 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
     gap: 4px;
     margin-left: 8px;
     padding: 2px 8px;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     background: hsl(142, 76%, 36%);
@@ -2471,7 +2480,7 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
     gap: 4px;
     margin-left: 8px;
     padding: 2px 8px;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     background: var(--accent-color);
@@ -2491,7 +2500,7 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
 .time-remaining {
     display: inline-block;
     margin-left: 6px;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 500;
     color: var(--text-muted);
     vertical-align: middle;
@@ -2504,13 +2513,13 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
 
 .blocklist-name {
     font-weight: 600;
-    font-size: 16px;
+    font-size: 17px;
     color: var(--text-secondary);
     margin-bottom: 2px;
 }
 
 .blocklist-meta {
-    font-size: 13px;
+    font-size: 15px;
     color: var(--text-muted);
 }
 
@@ -2595,7 +2604,7 @@ body.ios .blocklist-actions .delete {
 }
 
 .onboarding-content h1 {
-    font-size: 22px;
+    font-size: 24px;
     font-weight: 700;
     color: var(--text-secondary);
     margin-bottom: 8px;
@@ -2603,14 +2612,14 @@ body.ios .blocklist-actions .delete {
 
 .onboarding-content p {
     color: var(--text-muted);
-    font-size: 14px;
+    font-size: 15px;
     line-height: 1.5;
     margin-bottom: 4px;
 }
 
 .onboarding-content p.subtle {
     color: #999;
-    font-size: 13px;
+    font-size: 15px;
     margin-bottom: 24px;
 }
 
@@ -2625,7 +2634,7 @@ body.ios .blocklist-actions .delete {
 
 .form-group label {
     display: block;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--text-muted);
     margin-bottom: 6px;
@@ -2638,7 +2647,7 @@ body.ios .blocklist-actions .delete {
     padding: 10px 12px;
     border: 1px solid var(--input-border);
     border-radius: 8px;
-    font-size: 14px;
+    font-size: 15px;
     transition: all 0.2s ease;
     background: var(--input-bg);
     color: var(--text-primary);
@@ -2668,7 +2677,7 @@ body.ios .blocklist-actions .delete {
 }
 
 .input-suffix {
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 500;
     color: var(--text-secondary);
 }
@@ -2678,7 +2687,7 @@ body.ios .blocklist-actions .delete {
     padding: 10px 36px 10px 12px;
     border: 1px solid var(--input-border);
     border-radius: 8px;
-    font-size: 14px;
+    font-size: 15px;
     background: var(--input-bg);
     cursor: pointer;
     color: var(--text-primary);
@@ -2742,7 +2751,7 @@ body.ios .blocklist-actions .delete {
     padding: 10px 12px;
     border: 1px solid hsl(214, 32%, 91%);
     border-radius: 8px;
-    font-size: 14px;
+    font-size: 15px;
     min-height: 80px;
     resize: vertical;
     margin-top: 8px;
@@ -2750,7 +2759,7 @@ body.ios .blocklist-actions .delete {
 
 .form-hint {
     display: block;
-    font-size: 11px;
+    font-size: 13px;
     color: #999;
     margin-top: 4px;
 }
@@ -2784,7 +2793,7 @@ body.ios .blocklist-actions .delete {
     transform: none;
     background: hsl(222, 47%, 11%);
     color: white;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 400;
     padding: 8px 12px;
     border-radius: 6px;
@@ -2849,7 +2858,7 @@ body.ios .blocklist-actions .delete {
     min-width: 120px;
     border: none;
     padding: 4px 6px;
-    font-size: 13px;
+    font-size: 15px;
     background: transparent;
     color: inherit;
 }
@@ -2903,7 +2912,7 @@ body.ios .blocklist-actions .delete {
     background: #667eea;
     color: white;
     border-radius: 4px;
-    font-size: 12px;
+    font-size: 13px;
 }
 
 .tag-remove {
@@ -2912,7 +2921,7 @@ body.ios .blocklist-actions .delete {
     color: rgba(255, 255, 255, 0.7);
     cursor: pointer;
     padding: 0;
-    font-size: 14px;
+    font-size: 15px;
     line-height: 1;
 }
 
@@ -2935,7 +2944,7 @@ body.ios .blocklist-actions .delete {
     border: none;
     border-radius: 6px;
     background: transparent;
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 500;
     color: var(--text-muted);
     cursor: pointer;
@@ -2959,7 +2968,7 @@ body.ios .blocklist-actions .delete {
     padding: 2px 6px;
     background: #f59e0b;
     color: white;
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 600;
     border-radius: 4px;
     text-transform: uppercase;
@@ -2974,7 +2983,7 @@ body.ios .blocklist-actions .delete {
     border-radius: 8px;
     background: var(--button-bg);
     color: white;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -3025,7 +3034,7 @@ body.ios .modal-content {
 }
 
 .modal-content h3 {
-    font-size: 18px;
+    font-size: 20px;
     font-weight: 700;
     color: var(--text-secondary);
     margin-bottom: 12px;
@@ -3042,7 +3051,7 @@ body.ios .modal-content {
     flex: 1;
     padding: 10px 16px;
     border-radius: 8px;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -3080,19 +3089,19 @@ body.ios .modal-content {
 
 .helper-install-modal h3 {
     margin: 0 0 16px 0;
-    font-size: 18px;
+    font-size: 20px;
     color: var(--text-secondary);
 }
 
 .helper-install-modal p {
     margin: 0 0 12px 0;
     color: var(--text-primary);
-    font-size: 14px;
+    font-size: 15px;
     line-height: 1.5;
 }
 
 .helper-install-modal .modal-note {
-    font-size: 13px;
+    font-size: 15px;
     color: #888;
 }
 
@@ -3130,7 +3139,7 @@ body.ios .modal-content {
 
 .start-confirm-modal h3 {
     margin: 0 0 12px 0;
-    font-size: 18px;
+    font-size: 20px;
     color: var(--text-secondary);
 }
 
@@ -3139,7 +3148,7 @@ body.ios .modal-content {
 }
 
 .block-detail-name {
-    font-size: 16px;
+    font-size: 17px;
     font-weight: 600;
     color: var(--text-secondary);
     margin-bottom: 12px;
@@ -3151,7 +3160,7 @@ body.ios .modal-content {
     align-items: baseline;
     gap: 4px;
     margin-bottom: 6px;
-    font-size: 13px;
+    font-size: 15px;
     line-height: 1.5;
 }
 
@@ -3168,7 +3177,7 @@ body.ios .modal-content {
     background: none;
     border: none;
     color: var(--accent-color);
-    font-size: 12px;
+    font-size: 13px;
     cursor: pointer;
     padding: 0;
     text-decoration: underline;
@@ -3186,7 +3195,7 @@ body.ios .modal-content {
 }
 
 .schedule-summary-header {
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 600;
     color: var(--text-secondary);
     margin-bottom: 8px;
@@ -3197,7 +3206,7 @@ body.ios .modal-content {
     align-items: center;
     gap: 8px;
     margin-bottom: 6px;
-    font-size: 13px;
+    font-size: 15px;
     color: var(--text-primary);
 }
 
@@ -3224,7 +3233,7 @@ body.ios .modal-content {
     align-items: center;
     gap: 8px;
     color: hsl(30, 60%, 35%);
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 600;
     margin-bottom: 8px;
 }
@@ -3237,7 +3246,7 @@ body.ios .modal-content {
 .override-info-box p {
     margin: 0;
     color: hsl(30, 50%, 30%);
-    font-size: 13px;
+    font-size: 15px;
     line-height: 1.5;
 }
 
@@ -3319,7 +3328,7 @@ body.ios .modal-content {
 /* Override Challenge */
 /* Override Challenge */
 .override-summary {
-    font-size: 13px;
+    font-size: 15px;
     color: hsl(215, 20%, 50%);
     margin-bottom: 16px;
     line-height: 1.4;
@@ -3331,7 +3340,7 @@ body.ios .modal-content {
     padding: 16px;
     border-radius: 8px;
     font-family: monospace;
-    font-size: 13px;
+    font-size: 15px;
     line-height: 1.6;
     margin: 16px 0;
     max-height: 120px;
@@ -3347,7 +3356,7 @@ body.ios .modal-content {
     border: 1px solid hsl(214, 32%, 91%);
     border-radius: 8px;
     font-family: monospace;
-    font-size: 13px;
+    font-size: 15px;
     min-height: 80px;
     resize: none;
 }
@@ -3386,7 +3395,7 @@ body.ios .modal-content {
     align-items: center;
     gap: 8px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 15px;
     color: var(--text-primary);
 }
 
@@ -3407,14 +3416,14 @@ body.ios .modal-content {
     align-items: center;
     justify-content: space-between;
     padding: 8px 16px 6px;
-    font-size: 12px;
+    font-size: 13px;
     color: var(--text-muted);
 }
 
 .footer-text {
     flex: 1;
     text-align: center;
-    font-size: 11px;
+    font-size: 13px;
 }
 
 .settings-footer {
@@ -3433,7 +3442,7 @@ body.ios .modal-content {
     justify-content: space-between;
     padding: 12px 0;
     cursor: pointer;
-    font-size: 13px;
+    font-size: 15px;
     color: var(--text-muted);
     transition: color 0.2s ease;
 }
@@ -3465,7 +3474,7 @@ body.ios .modal-content {
     justify-content: space-between;
     padding: 12px 0;
     cursor: pointer;
-    font-size: 13px;
+    font-size: 15px;
     color: var(--text-muted);
     transition: color 0.2s ease;
     margin-top: 8px;
@@ -3497,7 +3506,7 @@ body.ios .modal-content {
     align-items: flex-start;
     gap: 10px;
     cursor: pointer;
-    font-size: 13px;
+    font-size: 15px;
     color: var(--text-secondary);
     line-height: 1.4;
 }
@@ -3520,7 +3529,7 @@ body.ios .modal-content {
     border: none;
     border-radius: 8px;
     color: white;
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -3545,7 +3554,7 @@ body.ios .modal-content {
 
 .override-all-warning p {
     margin: 0;
-    font-size: 13px;
+    font-size: 15px;
     line-height: 1.5;
     color: hsl(0, 50%, 30%);
 }
@@ -3555,7 +3564,7 @@ body.ios .modal-content {
 }
 
 .override-all-subline {
-    font-size: 13px;
+    font-size: 15px;
     color: var(--text-muted);
     margin-bottom: 8px;
 }
@@ -3574,7 +3583,7 @@ body.ios .modal-content {
 }
 
 .helper-status-label {
-    font-size: 13px;
+    font-size: 15px;
     color: var(--text-primary);
 }
 
@@ -3582,7 +3591,7 @@ body.ios .modal-content {
     display: flex;
     align-items: center;
     gap: 6px;
-    font-size: 12px;
+    font-size: 13px;
 }
 
 .helper-status-indicator .status-dot {
@@ -3612,7 +3621,7 @@ body.ios .modal-content {
 }
 
 .toggle-label {
-    font-size: 13px;
+    font-size: 15px;
     color: var(--text-primary);
     cursor: pointer;
 }
@@ -3681,7 +3690,7 @@ body.ios .modal-content {
     border: 1px solid var(--border-color);
     border-radius: 8px;
     color: var(--text-muted);
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -3778,7 +3787,7 @@ body.ios .modal-content {
     left: 50%;
     transform: translate(-50%, -50%);
     color: white;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: bold;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
@@ -3800,7 +3809,7 @@ body.ios .modal-content {
 }
 
 .custom-swatch .custom-icon {
-    font-size: 14px;
+    font-size: 15px;
     font-weight: bold;
     color: white;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -3829,7 +3838,7 @@ body.ios .modal-content {
     background: hsl(214, 32%, 96%);
     cursor: pointer;
     transition: all 0.15s ease;
-    font-size: 16px;
+    font-size: 17px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -3876,14 +3885,14 @@ body.ios .modal-content {
 }
 
 .custom-emoji-swatch .custom-icon {
-    font-size: 16px;
+    font-size: 17px;
     font-weight: bold;
     color: hsl(215, 20%, 50%);
 }
 
 /* Blocklist entry emoji */
 .blocklist-emoji {
-    font-size: 16px;
+    font-size: 17px;
     margin-right: 6px;
 }
 
@@ -3932,7 +3941,7 @@ body.ios .undo-toast {
     padding: 6px 14px;
     border-radius: 6px;
     font-weight: 600;
-    font-size: 13px;
+    font-size: 15px;
     cursor: pointer;
     transition: all 0.2s ease;
 }
@@ -3966,7 +3975,7 @@ body.ios .undo-toast {
     justify-content: space-between;
     align-items: center;
     padding: 8px 0;
-    font-size: 13px;
+    font-size: 15px;
     color: var(--text-muted);
 }
 
@@ -4003,7 +4012,7 @@ body.ios .undo-toast {
     border-radius: 8px;
     background: var(--element-bg);
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: 15px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
