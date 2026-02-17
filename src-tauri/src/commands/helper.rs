@@ -27,7 +27,7 @@ pub struct HelperStatus {
 
 /// Expected helper version - update this when helper-daemon changes
 /// This is separate from the app version to avoid unnecessary reinstalls
-const EXPECTED_HELPER_VERSION: &str = "0.6.0";
+const EXPECTED_HELPER_VERSION: &str = "0.6.1";
 
 /// Result from helper operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,18 +52,9 @@ struct IpcCommand {
     apps: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     schedules: Option<Vec<HelperScheduleData>>,
-    /// Auth token for Windows TCP IPC authentication (not needed on macOS/Unix socket)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    auth_token: Option<String>,
 }
 
-/// Read the auth token from the shared token file (Windows only)
-#[cfg(target_os = "windows")]
-fn read_auth_token() -> Option<String> {
-    let program_data = std::env::var("PROGRAMDATA").unwrap_or_else(|_| "C:\\ProgramData".to_string());
-    let token_path = PathBuf::from(&program_data).join("ReDD Block").join("auth-token");
-    std::fs::read_to_string(&token_path).ok().map(|s| s.trim().to_string())
-}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HelperScheduleSegment {
@@ -124,13 +115,7 @@ fn send_command(command: &IpcCommand) -> Result<IpcResponse, String> {
     let mut stream = TcpStream::connect(HELPER_TCP_ADDR)
         .map_err(|e| format!("Failed to connect to helper: {}", e))?;
     
-    // Clone the command and inject the auth token
-    let mut json_val = serde_json::to_value(command)
-        .map_err(|e| format!("Failed to serialize command: {}", e))?;
-    if let Some(token) = read_auth_token() {
-        json_val["auth_token"] = serde_json::Value::String(token);
-    }
-    let json = serde_json::to_string(&json_val)
+    let json = serde_json::to_string(command)
         .map_err(|e| format!("Failed to serialize command: {}", e))?;
     
     writeln!(stream, "{}", json)
@@ -206,7 +191,6 @@ pub fn check_helper_status() -> HelperStatus {
         blocklist_id: None,
         apps: None,
         schedules: None,
-        auth_token: None,
     };
     let ping_result = send_command(&cmd);
     let (running, helper_version) = match &ping_result {
@@ -444,12 +428,7 @@ Start-Sleep -Seconds 1
 # Copy the helper binary
 Copy-Item -Path $sourcePath -Destination $helperPath -Force
 
-# Generate auth token for IPC authentication
-$tokenPath = Join-Path $installDir "auth-token"
-$token = -join ((1..32) | ForEach-Object {{{{ '{{0:x2}}' -f (Get-Random -Minimum 0 -Maximum 256) }}}})
-Set-Content -Path $tokenPath -Value $token -NoNewline
-# Restrict token file permissions — SYSTEM and Admins get full, Users get read-only
-icacls $tokenPath /inheritance:r /grant:r "SYSTEM:F" /grant:r "BUILTIN\Administrators:F" /grant:r "BUILTIN\Users:R" 2>$null
+
 
 # Remove existing task if any
 schtasks /Delete /TN "$taskName" /F 2>$null
@@ -549,8 +528,7 @@ exit 0
                 blocklist_id: None,
                 apps: None,
                 schedules: None,
-                auth_token: None,
-            });
+                    });
             
             if ping_result.is_ok() {
                 log::info!("Helper started successfully after {} attempts", attempt + 1);
@@ -599,7 +577,6 @@ pub async fn start_block_via_helper(
         blocklist_id: Some(blocklist_id),
         apps: None,
         schedules: None,
-        auth_token: None,
     };
     match send_command(&cmd) {
         Ok(response) => HelperResult {
@@ -625,7 +602,6 @@ pub async fn clear_block_via_helper() -> HelperResult {
         blocklist_id: None,
         apps: None,
         schedules: None,
-        auth_token: None,
     };
     match send_command(&cmd) {
         Ok(response) => HelperResult {
@@ -652,7 +628,6 @@ pub async fn uninstall_helper() -> HelperResult {
         blocklist_id: None,
         apps: None,
         schedules: None,
-        auth_token: None,
     };
     match send_command(&cmd) {
         Ok(response) if response.success => HelperResult {
@@ -699,8 +674,7 @@ fn force_cleanup_helper() -> HelperResult {
             blocklist_id: None,
             apps: None,
             schedules: None,
-            auth_token: None,
-        };
+            };
         match send_command(&restore_cmd) {
             Ok(_) => log::info!("Hosts file restored before force cleanup"),
             Err(e) => log::warn!("Could not restore hosts before cleanup: {}", e),
@@ -763,8 +737,7 @@ fn force_cleanup_helper() -> HelperResult {
             blocklist_id: None,
             apps: None,
             schedules: None,
-            auth_token: None,
-        };
+            };
         match send_command(&restore_cmd) {
             Ok(_) => log::info!("Hosts file restored before force cleanup"),
             Err(e) => log::warn!("Could not restore hosts before cleanup: {}", e),
@@ -808,7 +781,6 @@ pub async fn set_blocked_apps_via_helper(apps: Vec<String>) -> HelperResult {
         blocklist_id: None,
         apps: Some(apps),
         schedules: None,
-        auth_token: None,
     };
     match send_command(&cmd) {
         Ok(response) => {
@@ -842,7 +814,6 @@ pub async fn set_schedules_via_helper(schedules: Vec<HelperScheduleData>) -> Hel
         blocklist_id: None,
         apps: None,
         schedules: Some(schedules),
-        auth_token: None,
     };
     
     match send_command(&cmd) {
@@ -880,7 +851,6 @@ pub async fn clean_hosts_file() -> HelperResult {
         blocklist_id: None,
         apps: None,
         schedules: None,
-        auth_token: None,
     };
     match send_command(&cmd) {
         Ok(response) if response.success => {
