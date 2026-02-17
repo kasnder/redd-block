@@ -2890,17 +2890,31 @@ function handleTimeChange() {
         return;
     }
 
-    // --- Always-on mode: skip time calculations, just enable button ---
+    // --- Always-on mode: show a preview block from now to end of visible week ---
     if (isAlwaysOnMode) {
         startBtn.disabled = !selectedBlocklistId;
-
-        // Remove any preview blocks
-        document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
 
         // Hide next-day indicator
         if (nextDayIndicator) nextDayIndicator.classList.add('hidden');
 
         if (noBlocksMsg) noBlocksMsg.classList.add('hidden');
+
+        // Render a preview block from now to the end of the visible week
+        const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+        const now = Date.now();
+        const hasActiveBlock = blocklist && appData.activeBlocks.some(b => b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now);
+
+        if (blocklist && currentWeekStart && !hasActiveBlock) {
+            const blockStart = new Date();
+            const weekEnd = new Date(currentWeekStart);
+            weekEnd.setDate(weekEnd.getDate() + 7);
+            weekEnd.setHours(23, 59, 59, 999);
+            renderPreviewBlock(blockStart, weekEnd, blocklist);
+        } else {
+            // Remove preview if there's an active block or no blocklist
+            document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
+        }
+
         updateWindowHeight();
         return;
     }
