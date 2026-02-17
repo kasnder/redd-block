@@ -76,6 +76,14 @@ if ($buildX64) {
     if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }
     Pop-Location
     
+    # Copy cross-compiled binary to where Tauri's externalBin expects the sidecar.
+    # Without this, beforeBuildCommand rebuilds the helper for the HOST arch (e.g. ARM64)
+    # and Tauri would bundle that instead of the x64 binary.
+    $helperSrc = Join-Path $ProjectRoot "helper-daemon\target\x86_64-pc-windows-msvc\release\redd-block-helper.exe"
+    $helperDst = Join-Path $ProjectRoot "helper-daemon\target\release\redd-block-helper-x86_64-pc-windows-msvc.exe"
+    Copy-Item $helperSrc $helperDst -Force
+    Write-Host "  Copied x64 helper to sidecar location" -ForegroundColor Gray
+    
     # Build Tauri app for x64 (signing happens automatically via signCommand)
     Write-Host "  [2/2] Building Tauri app (x64)..." -ForegroundColor Gray
     Push-Location $ProjectRoot
@@ -98,6 +106,12 @@ if ($buildArm64) {
     cargo build --release --target aarch64-pc-windows-msvc
     if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }
     Pop-Location
+    
+    # Copy cross-compiled binary to where Tauri's externalBin expects the sidecar
+    $helperSrc = Join-Path $ProjectRoot "helper-daemon\target\aarch64-pc-windows-msvc\release\redd-block-helper.exe"
+    $helperDst = Join-Path $ProjectRoot "helper-daemon\target\release\redd-block-helper-aarch64-pc-windows-msvc.exe"
+    Copy-Item $helperSrc $helperDst -Force
+    Write-Host "  Copied ARM64 helper to sidecar location" -ForegroundColor Gray
     
     # Build Tauri app for ARM64 (signing happens automatically via signCommand)
     Write-Host "  [2/2] Building Tauri app (ARM64)..." -ForegroundColor Gray
