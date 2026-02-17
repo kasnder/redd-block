@@ -5704,12 +5704,12 @@ function startTickInterval() {
         // Only re-render if blocks actually expired
         if (appData.activeBlocks.length < previousCount) {
             saveData();
-            // Don't update hosts in tick - it causes password prompts
-            // Just re-render the UI
             render();
 
-            // Update blocked apps (will stop watcher if no active blocks or schedules)
-            // This ensures schedules are still respected even if one-off blocks expired
+            // Sync blocking rules now that blocks have been removed.
+            // On iOS this clears Screen Time settings; on desktop the helper
+            // daemon handles expiry autonomously, but the call is harmless.
+            await updateHostsFile();
             await updateBlockedApps();
         }
 
