@@ -8,3 +8,8 @@ rustflags = ["-C", "target-feature=+crt-static"]
 
 [target.aarch64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]
+
+# Also apply to default (host) target builds, since Tauri's externalBin
+# references helper-daemon/target/release/ which uses the host target.
+[target.'cfg(target_os = "windows")']
+rustflags = ["-C", "target-feature=+crt-static"]
