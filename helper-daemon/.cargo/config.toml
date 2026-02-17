@@ -1,0 +1,10 @@
+# Statically link the C runtime (vcruntime140.dll) so the helper binary
+# runs on Windows machines without the Visual C++ Redistributable installed.
+# This is critical for consumer machines (e.g., ASUS Vivobook) that don't
+# ship with the VC++ runtime pre-installed.
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
