@@ -1123,7 +1123,7 @@ body.dark-mode .day-column.weekend {
     border-radius: 6px;
     background: transparent;
     color: var(--text-muted, hsl(215, 20%, 50%));
-    font-size: 12px;
+    font-size: 16px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -1549,6 +1549,125 @@ body.dark-mode .start-block-btn.stop-block {
 body.dark-mode .start-block-btn.stop-block:hover {
     background: hsl(0, 0%, 20%);
 }
+
+/* Block action buttons wrapper (pause + stop side by side) */
+.block-action-buttons {
+    display: flex;
+    gap: 8px;
+    width: 100%;
+}
+
+.block-action-buttons .start-block-btn {
+    flex: 1;
+}
+
+/* Pause Block Button */
+.pause-block-btn {
+    padding: 14px 16px;
+    border: none;
+    border-radius: 10px;
+    background: hsl(40, 90%, 95%);
+    color: hsl(30, 80%, 30%);
+    border: 1px solid hsl(40, 70%, 80%);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.pause-block-btn:hover {
+    background: hsl(40, 85%, 88%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+body.dark-mode .pause-block-btn {
+    background: hsl(40, 30%, 15%);
+    color: hsl(40, 70%, 70%);
+    border-color: hsl(40, 30%, 25%);
+}
+
+body.dark-mode .pause-block-btn:hover {
+    background: hsl(40, 30%, 20%);
+}
+
+/* Pause Modal */
+.modal-content.pause-modal {
+    max-width: 410px;
+}
+
+.pause-remaining-info {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-top: -8px;
+    margin-bottom: 18px;
+    font-style: italic;
+}
+
+.pause-duration-section {
+    margin-bottom: 16px;
+}
+
+.pause-duration-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.pause-duration-col {
+    flex: 1;
+}
+
+
+
+.pause-duration-inputs {
+    display: flex;
+    gap: 8px;
+}
+
+.pause-time-input-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.pause-time-input {
+    width: 34px;
+    padding: 8px 4px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--input-bg);
+    color: var(--text-primary);
+    font-size: 15px;
+    font-weight: 600;
+    text-align: center;
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+.pause-time-input::-webkit-inner-spin-button,
+.pause-time-input::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.pause-time-unit {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.pause-arrow {
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    padding-top: 20px;
+}
+
+
 
 /* Scheduler Mode Tabs */
 .scheduler-mode-tabs {
@@ -2339,6 +2458,11 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
 
 .active-badge svg {
     flex-shrink: 0;
+}
+
+.paused-badge {
+    background: hsl(40, 90%, 50%);
+    color: hsl(30, 80%, 15%);
 }
 
 .schedule-badge {

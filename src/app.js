@@ -83,6 +83,10 @@ let pendingBlockData = null; // Store block data when waiting for helper install
 let draggedBlocklistId = null; // Track which blocklist is being dragged
 let isIOS = false; // Track if running on iOS
 let screentimeAuthorized = false; // Track if Screen Time is authorized (iOS)
+let pauseBlockId = null; // Track which block is being paused
+let pauseChallengeText = ''; // Challenge text for pause modal
+let pauseMaxMinutes = null; // Maximum pause duration in minutes (null = unlimited)
+let pauseScheduleData = null; // Track schedule-specific pause data { blocklistId, segmentEndTime }
 
 // Week calendar state
 let currentWeekStart = null; // Date object for Monday of the displayed week
@@ -1040,6 +1044,114 @@ function setupOverrideModalListeners() {
         closeOverrideModal();
     });
 
+    // Pause block button
+    document.getElementById('pause-block-btn').addEventListener('click', () => {
+        if (!selectedBlocklistId) return;
+        const now = Date.now();
+
+        // Try one-off block first
+        const activeBlock = appData.activeBlocks.find(b =>
+            b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now
+        );
+        if (activeBlock) {
+            pauseScheduleData = null;
+            openPauseModal(activeBlock.id);
+            return;
+        }
+
+        // Try schedule — find the currently active segment
+        const schedule = appData.schedules?.find(s => s.blocklistId === selectedBlocklistId);
+        if (schedule && schedule.segments) {
+            const nowDate = new Date();
+            const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
+            const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
+
+            const activeSeg = schedule.segments.find(seg => {
+                const startMins = seg.startHour * 60 + seg.startMinute;
+                const endMins = seg.endHour * 60 + seg.endMinute;
+
+                if (endMins > startMins) {
+                    return seg.days.includes(currentDay) &&
+                        currentMins >= startMins && currentMins < endMins;
+                } else {
+                    const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
+                    const inEveningPortion = seg.days.includes(currentDay) && currentMins >= startMins;
+                    const inMorningPortion = seg.days.includes(yesterdayDay) && currentMins < endMins;
+                    return inEveningPortion || inMorningPortion;
+                }
+            });
+
+            if (activeSeg) {
+                // Calculate end time of this segment occurrence
+                const startMins = activeSeg.startHour * 60 + activeSeg.startMinute;
+                const endMins = activeSeg.endHour * 60 + activeSeg.endMinute;
+                const segEnd = new Date(nowDate);
+
+                if (endMins > startMins) {
+                    segEnd.setHours(activeSeg.endHour, activeSeg.endMinute, 0, 0);
+                } else {
+                    // Cross-midnight
+                    if (currentMins >= startMins) {
+                        // Evening portion — ends tomorrow
+                        segEnd.setDate(segEnd.getDate() + 1);
+                    }
+                    segEnd.setHours(activeSeg.endHour, activeSeg.endMinute, 0, 0);
+                }
+
+                // Store schedule pause data and open modal with schedule blocklistId
+                pauseScheduleData = {
+                    blocklistId: selectedBlocklistId,
+                    segmentEndTime: segEnd.getTime()
+                };
+                openPauseModal(null); // null blockId signals schedule pause
+            }
+        }
+    });
+
+    // Pause modal event listeners
+    document.getElementById('cancel-pause-btn').addEventListener('click', closePauseModal);
+    document.getElementById('pause-modal').addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closePauseModal();
+    });
+
+    document.getElementById('confirm-pause-btn').addEventListener('click', async () => {
+        await proceedWithPause();
+    });
+
+    // Pause duration inputs — update restart time display
+    document.getElementById('pause-days').addEventListener('input', updatePauseRestartTime);
+    document.getElementById('pause-hours').addEventListener('input', function () {
+        let val = parseInt(this.value);
+        if (val > 23) { this.value = 23; }
+        if (val < 0) { this.value = 0; }
+        updatePauseRestartTime();
+    });
+    document.getElementById('pause-minutes').addEventListener('input', function () {
+        let val = parseInt(this.value);
+        if (val > 59) { this.value = 59; }
+        if (val < 0) { this.value = 0; }
+        updatePauseRestartTime();
+    });
+
+    // Pause challenge input — track progress
+    const pauseChallengeInput = document.getElementById('pause-challenge-input');
+    pauseChallengeInput.addEventListener('input', () => {
+        const typed = pauseChallengeInput.value;
+        const target = pauseChallengeText;
+        const progress = target.length > 0 ? Math.min(100, (typed.length / target.length) * 100) : 0;
+        document.getElementById('pause-challenge-progress-bar').style.width = `${progress}%`;
+
+        // Enable/disable confirm button
+        document.getElementById('confirm-pause-btn').disabled = (typed !== target);
+    });
+
+    pauseChallengeInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            document.getElementById('confirm-pause-btn').click();
+        }
+    });
+
     document.getElementById('confirm-override-btn').addEventListener('click', async () => {
         const typed = challengeInput.value;
         const target = challengeText;
@@ -1855,6 +1967,39 @@ function updateScheduleButtonState() {
     // Check if there are new segments (beyond the locked count)
     const hasNewSegments = activeSchedule && scheduleSegments.length > activeScheduleSegmentCount;
 
+    // Show/hide pause button based on whether a segment is currently active
+    const pauseBtn = document.getElementById('pause-block-btn');
+    if (pauseBtn) {
+        if (activeSchedule && activeSchedule.segments) {
+            const nowDate = new Date();
+            const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1; // Mon=0
+            const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
+
+            const segmentActive = activeSchedule.segments.some(seg => {
+                const startMins = seg.startHour * 60 + seg.startMinute;
+                const endMins = seg.endHour * 60 + seg.endMinute;
+
+                if (endMins > startMins) {
+                    return seg.days.includes(currentDay) &&
+                        currentMins >= startMins && currentMins < endMins;
+                } else {
+                    const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
+                    const inEveningPortion = seg.days.includes(currentDay) && currentMins >= startMins;
+                    const inMorningPortion = seg.days.includes(yesterdayDay) && currentMins < endMins;
+                    return inEveningPortion || inMorningPortion;
+                }
+            });
+
+            if (segmentActive) {
+                pauseBtn.classList.remove('hidden');
+            } else {
+                pauseBtn.classList.add('hidden');
+            }
+        } else {
+            pauseBtn.classList.add('hidden');
+        }
+    }
+
     if (activeSchedule && !hasNewSegments) {
         // Active schedule with no pending changes - show Stop button (grey/secondary style)
         if (btnLabel) btnLabel.textContent = 'Stop schedule:';
@@ -1863,6 +2008,8 @@ function updateScheduleButtonState() {
         startScheduleBtn.classList.remove('edit-schedule');
         startScheduleBtn.disabled = false;
         startScheduleBtn.dataset.activeScheduleId = activeSchedule.id || activeSchedule.blocklistId;
+
+
 
         // Change to unlock icon
         if (btnIcon) {
@@ -1902,6 +2049,8 @@ function updateScheduleButtonState() {
         startScheduleBtn.classList.remove('stop-schedule');
         startScheduleBtn.classList.remove('edit-schedule');
         delete startScheduleBtn.dataset.activeScheduleId;
+
+
 
         // Lock icon
         if (btnIcon) {
@@ -3388,6 +3537,8 @@ function handleBlocklistSelect(e) {
                     delete startBlockBtn.dataset.activeBlockId;
                     startBlockBtn.classList.remove('stop-block');
 
+                    const pauseBtn = document.getElementById('pause-block-btn');
+
                     if (activeBlock) {
                         // Active block - show Stop Block button (grey) with unlock icon
                         if (btnLabel) btnLabel.textContent = 'Stop Block:';
@@ -3395,6 +3546,9 @@ function handleBlocklistSelect(e) {
                         startBlockBtn.classList.add('stop-block');
                         startBlockBtn.disabled = false;
                         startBlockBtn.dataset.activeBlockId = activeBlock.id;
+
+                        // Show pause button
+                        if (pauseBtn) pauseBtn.classList.remove('hidden');
 
                         // Change to unlock icon
                         if (btnIcon) {
@@ -3422,6 +3576,9 @@ function handleBlocklistSelect(e) {
 
                         // Enable time controls
                         disableTimeControls(false);
+
+                        // Hide pause button
+                        if (pauseBtn) pauseBtn.classList.add('hidden');
                     }
                 }
             }
@@ -3435,6 +3592,8 @@ function handleBlocklistSelect(e) {
         if (modeTabs) modeTabs.classList.add('hidden');
         if (startBlockBtn) startBlockBtn.classList.add('hidden');
         if (startScheduleBtn) startScheduleBtn.classList.add('hidden');
+        const pauseBtn = document.getElementById('pause-block-btn');
+        if (pauseBtn) pauseBtn.classList.add('hidden');
     }
 
     // Update visual selection state on blocklist cards
@@ -3854,9 +4013,9 @@ async function updateHostsFile(silent = false) {
     const allDomains = new Set();
     const now = Date.now();
 
-    // Only block domains for blocks that are currently active (startTime <= now && endTime > now)
+    // Only block domains for blocks that are currently active and not paused
     appData.activeBlocks
-        .filter(block => block.startTime <= now && block.endTime > now)
+        .filter(block => block.startTime <= now && block.endTime > now && !block.isPaused)
         .forEach(block => {
             const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
             if (blocklist && blocklist.websites) {
@@ -3872,6 +4031,9 @@ async function updateHostsFile(silent = false) {
     if (appData.schedules) {
         appData.schedules.forEach(schedule => {
             if (!schedule.segments) return;
+
+            // Skip paused schedules
+            if (schedule.isPaused && schedule.pauseEndTime > Date.now()) return;
 
             // Check if any segment is active right now
             const isActive = schedule.segments.some(seg => {
@@ -4076,9 +4238,9 @@ async function updateBlockedApps() {
     const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1; // Convert to Mon=0 format
     const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
 
-    // Collect apps from active one-off blocks
+    // Collect apps from active one-off blocks (skip paused)
     appData.activeBlocks
-        .filter(block => block.startTime <= now && block.endTime > now)
+        .filter(block => block.startTime <= now && block.endTime > now && !block.isPaused)
         .forEach(block => {
             const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
             if (blocklist && blocklist.apps) {
@@ -4090,6 +4252,9 @@ async function updateBlockedApps() {
     if (appData.schedules) {
         appData.schedules.forEach(schedule => {
             if (!schedule.segments) return;
+
+            // Skip paused schedules
+            if (schedule.isPaused && schedule.pauseEndTime > Date.now()) return;
 
             // Check if any segment is active right now
             const isActive = schedule.segments.some(seg => {
@@ -4420,6 +4585,366 @@ function closeOverrideModal() {
     document.getElementById('override-modal').classList.add('hidden');
     overrideBlockId = null;
     challengeText = '';
+}
+
+// ── Pause Block Modal ──
+
+function openPauseModal(blockId) {
+    pauseBlockId = blockId;
+
+    let block, blocklist;
+
+    if (blockId) {
+        // One-off block pause
+        block = appData.activeBlocks.find(b => b.id === blockId);
+        blocklist = appData.blocklists.find(bl => bl.id === block?.blocklistId);
+    } else if (pauseScheduleData) {
+        // Schedule pause — create a synthetic block object
+        blocklist = appData.blocklists.find(bl => bl.id === pauseScheduleData.blocklistId);
+        block = {
+            id: null,
+            blocklistId: pauseScheduleData.blocklistId,
+            startTime: Date.now(),
+            endTime: pauseScheduleData.segmentEndTime,
+            isScheduleBlock: true
+        };
+    }
+
+    if (!blocklist) return;
+
+    // Set modal title
+    document.getElementById('pause-modal-title').textContent = `Pause ${blocklist.name}`;
+
+    // Set summary (same format as override modal)
+    const websiteCount = blocklist.websites?.length || 0;
+    const appCount = blocklist.apps?.length || 0;
+    const mode = blocklist.mode === 'allowlist' ? 'Allows' : 'Blocks';
+
+    let metaParts = [];
+    if (websiteCount > 0) {
+        const displaySites = blocklist.websites.map(cleanUrlForDisplay);
+        if (websiteCount <= 2) {
+            metaParts.push(`${websiteCount} ${websiteCount === 1 ? 'website' : 'websites'} (${displaySites.join(', ')})`);
+        } else {
+            metaParts.push(`${websiteCount} websites (${displaySites.slice(0, 2).join(', ')}, ...)`);
+        }
+    }
+    if (appCount > 0) {
+        if (appCount <= 2) {
+            metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'} (${blocklist.apps.join(', ')})`);
+        } else {
+            metaParts.push(`${appCount} apps (${blocklist.apps.slice(0, 2).join(', ')}, ...)`);
+        }
+    }
+
+    const itemsText = metaParts.length > 0 ? metaParts.join(' and ') : 'nothing';
+    document.getElementById('pause-summary').textContent = `${mode} ${itemsText}`;
+
+    // Calculate remaining time and max pause duration
+    const remainingInfo = document.getElementById('pause-remaining-info');
+    const daysGroup = document.getElementById('pause-days').closest('.pause-time-input-group');
+    const hoursGroup = document.getElementById('pause-hours').closest('.pause-time-input-group');
+
+    if (!isBlockAlwaysOn(block)) {
+        const remainingMs = block.endTime - Date.now();
+        const remainingMins = Math.floor(remainingMs / 60000);
+        pauseMaxMinutes = Math.max(1, remainingMins - 2); // 2 min buffer
+
+        // Format remaining time and max pause for display
+        const remDays = Math.floor(remainingMins / (24 * 60));
+        const remHours = Math.floor((remainingMins % (24 * 60)) / 60);
+        const remMins = remainingMins % 60;
+        let remParts = [];
+        if (remDays > 0) remParts.push(`${remDays}d`);
+        if (remHours > 0) remParts.push(`${remHours}h`);
+        if (remMins > 0 || remParts.length === 0) remParts.push(`${remMins}m`);
+
+        remainingInfo.textContent = `Block ends in ${remParts.join(' ')}`;
+        remainingInfo.classList.remove('hidden');
+
+        // Show/hide fields based on max pause
+        if (pauseMaxMinutes < 60) {
+            // Less than 1 hour max: hide days and hours
+            daysGroup.style.display = 'none';
+            hoursGroup.style.display = 'none';
+        } else if (pauseMaxMinutes < 24 * 60) {
+            // Less than 1 day max: hide days
+            daysGroup.style.display = 'none';
+            hoursGroup.style.display = '';
+        } else {
+            daysGroup.style.display = '';
+            hoursGroup.style.display = '';
+        }
+    } else {
+        pauseMaxMinutes = null; // No cap for always-on blocks
+        remainingInfo.classList.add('hidden');
+        daysGroup.style.display = '';
+        hoursGroup.style.display = '';
+    }
+
+    // Reset duration inputs
+    const defaultMins = pauseMaxMinutes !== null ? Math.min(15, pauseMaxMinutes) : 15;
+    document.getElementById('pause-days').value = 0;
+    document.getElementById('pause-hours').value = 0;
+    document.getElementById('pause-minutes').value = defaultMins;
+    initPauseRestartPopovers();
+    updatePauseRestartTime();
+
+    // Generate challenge text
+    const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
+    if (difficulty.type === 'custom' && difficulty.customText) {
+        pauseChallengeText = difficulty.customText;
+    } else if (difficulty.type === 'gibberish') {
+        pauseChallengeText = generateGibberish(difficulty.count);
+    } else {
+        pauseChallengeText = generateRandomWords(difficulty.count);
+    }
+
+    pauseChallengeText = pauseChallengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+
+    document.getElementById('pause-challenge-text').textContent = pauseChallengeText;
+    document.getElementById('pause-challenge-input').value = '';
+    document.getElementById('confirm-pause-btn').disabled = true;
+
+    const progressBar = document.getElementById('pause-challenge-progress-bar');
+    progressBar.style.width = '0%';
+    if (blocklist.color) {
+        progressBar.style.background = blocklist.color;
+    } else {
+        progressBar.style.background = 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)';
+    }
+
+    // Reset wiggle
+    document.querySelector('#pause-modal .modal-content').classList.remove('wiggle');
+
+    document.getElementById('pause-modal').classList.remove('hidden');
+}
+
+function closePauseModal() {
+    document.getElementById('pause-modal').classList.add('hidden');
+    pauseBlockId = null;
+    pauseScheduleData = null;
+    pauseChallengeText = '';
+}
+
+function updatePauseRestartTime() {
+    let days = parseInt(document.getElementById('pause-days').value) || 0;
+    let hours = parseInt(document.getElementById('pause-hours').value) || 0;
+    let minutes = parseInt(document.getElementById('pause-minutes').value) || 0;
+
+    let totalMinutes = days * 24 * 60 + hours * 60 + minutes;
+
+    // Clamp to max if set
+    if (pauseMaxMinutes !== null && totalMinutes > pauseMaxMinutes) {
+        totalMinutes = pauseMaxMinutes;
+        days = Math.floor(totalMinutes / (24 * 60));
+        const rem = totalMinutes % (24 * 60);
+        hours = Math.floor(rem / 60);
+        minutes = rem % 60;
+        document.getElementById('pause-days').value = days;
+        document.getElementById('pause-hours').value = hours;
+        document.getElementById('pause-minutes').value = minutes;
+    }
+
+    const restartTime = new Date(Date.now() + totalMinutes * 60 * 1000);
+
+    // Update time-part buttons
+    const hourBtn = document.getElementById('pause-restart-hour-btn');
+    const minuteBtn = document.getElementById('pause-restart-minute-btn');
+    if (hourBtn) hourBtn.textContent = pad(restartTime.getHours());
+    if (minuteBtn) minuteBtn.textContent = pad(restartTime.getMinutes());
+
+    // Show +N days badge if restart is not today
+    const today = new Date();
+    const nextDayBadge = document.getElementById('pause-next-day-indicator');
+    if (nextDayBadge) {
+        // Calculate day difference
+        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+        const restartStart = new Date(restartTime.getFullYear(), restartTime.getMonth(), restartTime.getDate());
+        const dayDiff = Math.round((restartStart - todayStart) / (24 * 60 * 60 * 1000));
+        if (dayDiff > 0) {
+            nextDayBadge.textContent = `+${dayDiff} ${dayDiff === 1 ? 'day' : 'days'}`;
+            nextDayBadge.classList.remove('hidden');
+        } else {
+            nextDayBadge.classList.add('hidden');
+        }
+    }
+
+    // Update selected state in popovers
+    updatePauseRestartPopoverSelection(restartTime.getHours(), restartTime.getMinutes());
+}
+
+function updatePauseRestartPopoverSelection(hour, minute) {
+    document.querySelectorAll('#pause-restart-hour-options .popover-option').forEach(btn => {
+        btn.classList.toggle('selected', parseInt(btn.dataset.value) === hour);
+    });
+    document.querySelectorAll('#pause-restart-minute-options .popover-option').forEach(btn => {
+        btn.classList.toggle('selected', parseInt(btn.dataset.value) === minute);
+    });
+}
+
+// Initialize pause restart time popovers with hour/minute options
+function initPauseRestartPopovers() {
+    const hourContainer = document.getElementById('pause-restart-hour-options');
+    if (hourContainer) {
+        hourContainer.innerHTML = '';
+        for (let h = 0; h < 24; h++) {
+            const btn = document.createElement('button');
+            btn.className = 'popover-option';
+            btn.textContent = pad(h);
+            btn.dataset.value = h;
+            btn.dataset.type = 'hour';
+            btn.dataset.target = 'pause-restart';
+            btn.addEventListener('click', selectPauseRestartTimeOption);
+            hourContainer.appendChild(btn);
+        }
+    }
+
+    const minuteContainer = document.getElementById('pause-restart-minute-options');
+    if (minuteContainer) {
+        minuteContainer.innerHTML = '';
+        for (let m = 0; m < 60; m++) {
+            const btn = document.createElement('button');
+            btn.className = 'popover-option';
+            btn.textContent = pad(m);
+            btn.dataset.value = m;
+            btn.dataset.type = 'minute';
+            btn.dataset.target = 'pause-restart';
+            btn.addEventListener('click', selectPauseRestartTimeOption);
+            minuteContainer.appendChild(btn);
+        }
+    }
+
+    // Attach click handlers to the time-part buttons
+    const hourBtn = document.getElementById('pause-restart-hour-btn');
+    const minuteBtn = document.getElementById('pause-restart-minute-btn');
+    if (hourBtn) hourBtn.addEventListener('click', handleTimePartClick);
+    if (minuteBtn) minuteBtn.addEventListener('click', handleTimePartClick);
+}
+
+// When user selects a restart time, reverse-calculate the duration
+function selectPauseRestartTimeOption(e) {
+    e.stopPropagation();
+    const btn = e.currentTarget;
+    const value = parseInt(btn.dataset.value);
+    const type = btn.dataset.type;
+
+    // Get current restart time from the buttons
+    const hourBtn = document.getElementById('pause-restart-hour-btn');
+    const minuteBtn = document.getElementById('pause-restart-minute-btn');
+    let restartHour = parseInt(hourBtn.textContent);
+    let restartMinute = parseInt(minuteBtn.textContent);
+
+    if (type === 'hour') restartHour = value;
+    else restartMinute = value;
+
+    // Update button display
+    hourBtn.textContent = pad(restartHour);
+    minuteBtn.textContent = pad(restartMinute);
+
+    closeAllPopovers();
+
+    // Calculate duration from now to selected restart time
+    const now = new Date();
+    const restartTime = new Date(now);
+    restartTime.setHours(restartHour, restartMinute, 0, 0);
+
+    // If restart time is in the past or within 1 minute, assume next day
+    if (restartTime.getTime() <= now.getTime() + 60000) {
+        restartTime.setDate(restartTime.getDate() + 1);
+    }
+
+    const diffMs = restartTime.getTime() - now.getTime();
+    let diffMins = Math.round(diffMs / 60000);
+
+    // Clamp to max if set
+    if (pauseMaxMinutes !== null && diffMins > pauseMaxMinutes) {
+        diffMins = pauseMaxMinutes;
+        // Recalculate restart time from clamped duration
+        const clampedRestart = new Date(now.getTime() + diffMins * 60000);
+        restartHour = clampedRestart.getHours();
+        restartMinute = clampedRestart.getMinutes();
+        hourBtn.textContent = pad(restartHour);
+        minuteBtn.textContent = pad(restartMinute);
+    }
+
+    const durationDays = Math.floor(diffMins / (24 * 60));
+    const remainingMins = diffMins % (24 * 60);
+    const durationHours = Math.floor(remainingMins / 60);
+    const durationMins = remainingMins % 60;
+
+    // Update PAUSE FOR inputs
+    document.getElementById('pause-days').value = durationDays;
+    document.getElementById('pause-hours').value = durationHours;
+    document.getElementById('pause-minutes').value = durationMins;
+
+    // Update +N days badge
+    const nextDayBadge = document.getElementById('pause-next-day-indicator');
+    if (nextDayBadge) {
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const restartStart = new Date(restartTime.getFullYear(), restartTime.getMonth(), restartTime.getDate());
+        const dayDiff = Math.round((restartStart - todayStart) / (24 * 60 * 60 * 1000));
+        if (dayDiff > 0) {
+            nextDayBadge.textContent = `+${dayDiff} ${dayDiff === 1 ? 'day' : 'days'}`;
+            nextDayBadge.classList.remove('hidden');
+        } else {
+            nextDayBadge.classList.add('hidden');
+        }
+    }
+
+    updatePauseRestartPopoverSelection(restartHour, restartMinute);
+}
+
+async function proceedWithPause() {
+    if (!pauseBlockId && !pauseScheduleData) return;
+
+    const typed = document.getElementById('pause-challenge-input').value;
+    if (typed !== pauseChallengeText) {
+        // Wiggle on mismatch
+        const modal = document.querySelector('#pause-modal .modal-content');
+        modal.classList.add('wiggle');
+        setTimeout(() => modal.classList.remove('wiggle'), 400);
+        return;
+    }
+
+    const days = parseInt(document.getElementById('pause-days').value) || 0;
+    const hours = parseInt(document.getElementById('pause-hours').value) || 0;
+    const minutes = parseInt(document.getElementById('pause-minutes').value) || 0;
+    const pauseDurationMs = (days * 24 * 60 + hours * 60 + minutes) * 60 * 1000;
+
+    if (pauseDurationMs <= 0) {
+        closePauseModal();
+        return;
+    }
+
+    if (pauseScheduleData) {
+        // Schedule pause — set pause state on the schedule itself
+        const schedule = appData.schedules?.find(s => s.blocklistId === pauseScheduleData.blocklistId);
+        if (schedule) {
+            schedule.isPaused = true;
+            schedule.pauseEndTime = Date.now() + pauseDurationMs;
+        }
+    } else {
+        // One-off block pause
+        const block = appData.activeBlocks.find(b => b.id === pauseBlockId);
+        if (!block) {
+            closePauseModal();
+            return;
+        }
+        block.isPaused = true;
+        block.pauseEndTime = Date.now() + pauseDurationMs;
+    }
+
+    await saveData();
+
+    // Update blocking rules — updateHostsFile skips paused blocks' domains
+    await updateHostsFile();
+    await updateBlockedApps();
+
+    // Re-render UI
+    render();
+
+    closePauseModal();
 }
 
 // Generate random words to reach target character count
@@ -5345,7 +5870,13 @@ function renderBlocklists() {
 
         // One-off block badge (green with hourglass, or power icon for always-on)
         if (isActive && activeBlock) {
-            if (isBlockAlwaysOn(activeBlock)) {
+            if (activeBlock.isPaused) {
+                // Paused badge — show pause icon and resume countdown
+                const pauseRemaining = activeBlock.pauseEndTime - now;
+                const pauseMins = Math.max(1, Math.ceil(pauseRemaining / 60000));
+                const pauseTimeText = pauseMins >= 60 ? `${Math.floor(pauseMins / 60)}h ${pauseMins % 60}m` : `${pauseMins}m`;
+                oneOffBadge = `<span class="active-badge paused-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg> Paused ${pauseTimeText}</span>`;
+            } else if (isBlockAlwaysOn(activeBlock)) {
                 // Power icon for always-on blocks
                 oneOffBadge = `<span class="active-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg> Always</span>`;
             } else {
@@ -5613,6 +6144,43 @@ function startTickInterval() {
             render();
         }
 
+        // Check for paused blocks that should resume
+        const resumedBlocks = appData.activeBlocks.filter(
+            block => block.isPaused && block.pauseEndTime && block.pauseEndTime <= now
+        );
+
+        if (resumedBlocks.length > 0) {
+            // Clear pause state
+            resumedBlocks.forEach(block => {
+                delete block.isPaused;
+                delete block.pauseEndTime;
+            });
+
+            await saveData();
+            await updateHostsFile();
+            await updateBlockedApps();
+            render();
+        }
+
+        // Check for paused schedules that should resume
+        if (appData.schedules) {
+            const resumedSchedules = appData.schedules.filter(
+                s => s.isPaused && s.pauseEndTime && s.pauseEndTime <= now
+            );
+
+            if (resumedSchedules.length > 0) {
+                resumedSchedules.forEach(schedule => {
+                    delete schedule.isPaused;
+                    delete schedule.pauseEndTime;
+                });
+
+                await saveData();
+                await updateHostsFile();
+                await updateBlockedApps();
+                render();
+            }
+        }
+
         // Check for schedule segment transitions every 30s (schedules are minute-granular
         // and the helper daemon handles transitions autonomously)
         if (appData.schedules && appData.schedules.length > 0) {
@@ -5722,7 +6290,10 @@ function startTickInterval() {
         document.querySelectorAll('.entry-remaining').forEach((el, idx) => {
             const block = appData.activeBlocks[idx];
             if (block) {
-                if (isBlockAlwaysOn(block)) {
+                if (block.isPaused) {
+                    const pauseRemaining = Math.max(0, Math.ceil((block.pauseEndTime - now) / 60000));
+                    el.textContent = `Paused — resumes in ${formatDuration(pauseRemaining)}`;
+                } else if (isBlockAlwaysOn(block)) {
                     el.textContent = 'Always';
                 } else {
                     const remaining = Math.max(0, Math.ceil((block.endTime - now) / 60000));
