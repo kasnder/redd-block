@@ -1605,6 +1605,26 @@ body.dark-mode .pause-block-btn:hover {
     background: hsl(40, 30%, 20%);
 }
 
+.pause-block-btn.resume-mode {
+    background: hsl(145, 60%, 93%);
+    color: hsl(145, 60%, 28%);
+    border-color: hsl(145, 45%, 72%);
+}
+
+.pause-block-btn.resume-mode:hover {
+    background: hsl(145, 55%, 86%);
+}
+
+body.dark-mode .pause-block-btn.resume-mode {
+    background: hsl(145, 30%, 15%);
+    color: hsl(145, 50%, 65%);
+    border-color: hsl(145, 25%, 28%);
+}
+
+body.dark-mode .pause-block-btn.resume-mode:hover {
+    background: hsl(145, 30%, 20%);
+}
+
 /* Pause Modal */
 .modal-content.pause-modal {
     max-width: 410px;

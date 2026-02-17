@@ -938,6 +938,12 @@ function setupModalListeners() {
             updateBlockedApps();
         }
 
+        // Clear original values so closeBlocklistModal doesn't revert the saved changes
+        const schedCb = document.getElementById('always-show-in-schedule-checkbox');
+        const detailsCb = document.getElementById('show-item-details-checkbox');
+        if (schedCb) delete schedCb._originalValue;
+        if (detailsCb) delete detailsCb._originalValue;
+
         closeBlocklistModal();
 
         // Only update blocklist display without resetting schedule segments
@@ -1054,56 +1060,70 @@ function setupOverrideModalListeners() {
             b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now
         );
         if (activeBlock) {
-            pauseScheduleData = null;
-            openPauseModal(activeBlock.id);
+            if (activeBlock.isPaused) {
+                // Resume — show confirmation dialog
+                openResumeConfirmation(selectedBlocklistId, 'block', activeBlock.id);
+            } else {
+                // Pause
+                pauseScheduleData = null;
+                openPauseModal(activeBlock.id);
+            }
             return;
         }
 
         // Try schedule — find the currently active segment
         const schedule = appData.schedules?.find(s => s.blocklistId === selectedBlocklistId);
-        if (schedule && schedule.segments) {
-            const nowDate = new Date();
-            const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
-            const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
+        if (schedule) {
+            if (schedule.isPaused && schedule.pauseEndTime > now) {
+                // Resume — show confirmation dialog
+                openResumeConfirmation(selectedBlocklistId, 'schedule', null);
+                return;
+            }
 
-            const activeSeg = schedule.segments.find(seg => {
-                const startMins = seg.startHour * 60 + seg.startMinute;
-                const endMins = seg.endHour * 60 + seg.endMinute;
+            if (schedule.segments) {
+                const nowDate = new Date();
+                const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
+                const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
 
-                if (endMins > startMins) {
-                    return seg.days.includes(currentDay) &&
-                        currentMins >= startMins && currentMins < endMins;
-                } else {
-                    const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
-                    const inEveningPortion = seg.days.includes(currentDay) && currentMins >= startMins;
-                    const inMorningPortion = seg.days.includes(yesterdayDay) && currentMins < endMins;
-                    return inEveningPortion || inMorningPortion;
-                }
-            });
+                const activeSeg = schedule.segments.find(seg => {
+                    const startMins = seg.startHour * 60 + seg.startMinute;
+                    const endMins = seg.endHour * 60 + seg.endMinute;
 
-            if (activeSeg) {
-                // Calculate end time of this segment occurrence
-                const startMins = activeSeg.startHour * 60 + activeSeg.startMinute;
-                const endMins = activeSeg.endHour * 60 + activeSeg.endMinute;
-                const segEnd = new Date(nowDate);
-
-                if (endMins > startMins) {
-                    segEnd.setHours(activeSeg.endHour, activeSeg.endMinute, 0, 0);
-                } else {
-                    // Cross-midnight
-                    if (currentMins >= startMins) {
-                        // Evening portion — ends tomorrow
-                        segEnd.setDate(segEnd.getDate() + 1);
+                    if (endMins > startMins) {
+                        return seg.days.includes(currentDay) &&
+                            currentMins >= startMins && currentMins < endMins;
+                    } else {
+                        const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
+                        const inEveningPortion = seg.days.includes(currentDay) && currentMins >= startMins;
+                        const inMorningPortion = seg.days.includes(yesterdayDay) && currentMins < endMins;
+                        return inEveningPortion || inMorningPortion;
                     }
-                    segEnd.setHours(activeSeg.endHour, activeSeg.endMinute, 0, 0);
-                }
+                });
 
-                // Store schedule pause data and open modal with schedule blocklistId
-                pauseScheduleData = {
-                    blocklistId: selectedBlocklistId,
-                    segmentEndTime: segEnd.getTime()
-                };
-                openPauseModal(null); // null blockId signals schedule pause
+                if (activeSeg) {
+                    // Calculate end time of this segment occurrence
+                    const startMins = activeSeg.startHour * 60 + activeSeg.startMinute;
+                    const endMins = activeSeg.endHour * 60 + activeSeg.endMinute;
+                    const segEnd = new Date(nowDate);
+
+                    if (endMins > startMins) {
+                        segEnd.setHours(activeSeg.endHour, activeSeg.endMinute, 0, 0);
+                    } else {
+                        // Cross-midnight
+                        if (currentMins >= startMins) {
+                            // Evening portion — ends tomorrow
+                            segEnd.setDate(segEnd.getDate() + 1);
+                        }
+                        segEnd.setHours(activeSeg.endHour, activeSeg.endMinute, 0, 0);
+                    }
+
+                    // Store schedule pause data and open modal with schedule blocklistId
+                    pauseScheduleData = {
+                        blocklistId: selectedBlocklistId,
+                        segmentEndTime: segEnd.getTime()
+                    };
+                    openPauseModal(null); // null blockId signals schedule pause
+                }
             }
         }
     });
@@ -1383,6 +1403,13 @@ function disableTimeControls(disabled) {
     // Add a visual indicator to the whole container
     if (timePickerContainer) {
         timePickerContainer.classList.toggle('controls-disabled', disabled);
+    }
+
+    // Disable/enable duration mode toggle (always / for some time)
+    const durationToggle = document.getElementById('duration-mode-toggle');
+    if (durationToggle) {
+        durationToggle.style.opacity = disabled ? '0.5' : '1';
+        durationToggle.style.pointerEvents = disabled ? 'none' : 'auto';
     }
 }
 
@@ -1967,33 +1994,43 @@ function updateScheduleButtonState() {
     // Check if there are new segments (beyond the locked count)
     const hasNewSegments = activeSchedule && scheduleSegments.length > activeScheduleSegmentCount;
 
-    // Show/hide pause button based on whether a segment is currently active
+    // Show/hide pause button based on whether a segment is currently active or schedule is paused
     const pauseBtn = document.getElementById('pause-block-btn');
     if (pauseBtn) {
         if (activeSchedule && activeSchedule.segments) {
-            const nowDate = new Date();
-            const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1; // Mon=0
-            const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
+            const now = Date.now();
+            const isPaused = activeSchedule.isPaused && activeSchedule.pauseEndTime > now;
 
-            const segmentActive = activeSchedule.segments.some(seg => {
-                const startMins = seg.startHour * 60 + seg.startMinute;
-                const endMins = seg.endHour * 60 + seg.endMinute;
-
-                if (endMins > startMins) {
-                    return seg.days.includes(currentDay) &&
-                        currentMins >= startMins && currentMins < endMins;
-                } else {
-                    const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
-                    const inEveningPortion = seg.days.includes(currentDay) && currentMins >= startMins;
-                    const inMorningPortion = seg.days.includes(yesterdayDay) && currentMins < endMins;
-                    return inEveningPortion || inMorningPortion;
-                }
-            });
-
-            if (segmentActive) {
+            if (isPaused) {
+                // Schedule is paused — show Resume button
                 pauseBtn.classList.remove('hidden');
+                updatePauseButtonAppearance(true);
             } else {
-                pauseBtn.classList.add('hidden');
+                const nowDate = new Date();
+                const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1; // Mon=0
+                const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
+
+                const segmentActive = activeSchedule.segments.some(seg => {
+                    const startMins = seg.startHour * 60 + seg.startMinute;
+                    const endMins = seg.endHour * 60 + seg.endMinute;
+
+                    if (endMins > startMins) {
+                        return seg.days.includes(currentDay) &&
+                            currentMins >= startMins && currentMins < endMins;
+                    } else {
+                        const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
+                        const inEveningPortion = seg.days.includes(currentDay) && currentMins >= startMins;
+                        const inMorningPortion = seg.days.includes(yesterdayDay) && currentMins < endMins;
+                        return inEveningPortion || inMorningPortion;
+                    }
+                });
+
+                if (segmentActive) {
+                    pauseBtn.classList.remove('hidden');
+                    updatePauseButtonAppearance(false);
+                } else {
+                    pauseBtn.classList.add('hidden');
+                }
             }
         } else {
             pauseBtn.classList.add('hidden');
@@ -3547,8 +3584,11 @@ function handleBlocklistSelect(e) {
                         startBlockBtn.disabled = false;
                         startBlockBtn.dataset.activeBlockId = activeBlock.id;
 
-                        // Show pause button
-                        if (pauseBtn) pauseBtn.classList.remove('hidden');
+                        // Show pause button with correct appearance
+                        if (pauseBtn) {
+                            pauseBtn.classList.remove('hidden');
+                            updatePauseButtonAppearance(!!activeBlock.isPaused);
+                        }
 
                         // Change to unlock icon
                         if (btnIcon) {
@@ -3750,10 +3790,22 @@ function startBlock() {
 // Close start block confirmation modal
 function closeStartBlockConfirmModal() {
     document.getElementById('start-block-confirm-modal').classList.add('hidden');
+    // Reset resume state and restore default text
+    if (resumeData) {
+        resumeData = null;
+        document.querySelector('#start-block-confirm-modal .modal-content h3').textContent = 'Start this block?';
+        document.getElementById('proceed-start-confirm-btn').textContent = 'Start Block';
+    }
 }
 
 // Actually start a block (called after confirmation)
 async function proceedWithBlock() {
+    // If this is a resume action, delegate to proceedWithResume
+    if (resumeData) {
+        await proceedWithResume();
+        return;
+    }
+
     // Close confirmation modal
     closeStartBlockConfirmModal();
 
@@ -4479,11 +4531,35 @@ function openBlocklistModal(blocklist = null) {
     const showItemDetailsCheckbox = document.getElementById('show-item-details-checkbox');
     if (showItemDetailsCheckbox) {
         showItemDetailsCheckbox.checked = blocklist?.showItemDetails !== false;
+
+        // Live-update blocklist card when checkbox changes
+        showItemDetailsCheckbox._originalValue = blocklist?.showItemDetails !== false;
+        showItemDetailsCheckbox.onchange = () => {
+            if (editingBlocklistId) {
+                const bl = appData.blocklists.find(b => b.id === editingBlocklistId);
+                if (bl) {
+                    bl.showItemDetails = showItemDetailsCheckbox.checked;
+                    renderBlocklists();
+                }
+            }
+        };
     }
 
     const alwaysShowInScheduleCheckbox = document.getElementById('always-show-in-schedule-checkbox');
     if (alwaysShowInScheduleCheckbox) {
         alwaysShowInScheduleCheckbox.checked = blocklist?.alwaysShowInSchedule !== false;
+
+        // Live-update schedule when checkbox changes
+        alwaysShowInScheduleCheckbox._originalValue = blocklist?.alwaysShowInSchedule !== false;
+        alwaysShowInScheduleCheckbox.onchange = () => {
+            if (editingBlocklistId) {
+                const bl = appData.blocklists.find(b => b.id === editingBlocklistId);
+                if (bl) {
+                    bl.alwaysShowInSchedule = alwaysShowInScheduleCheckbox.checked;
+                    renderWeekBlocks();
+                }
+            }
+        };
     }
 
     // Reset advanced options to collapsed state
@@ -4503,6 +4579,24 @@ function openBlocklistModal(blocklist = null) {
 
 // Close blocklist modal
 function closeBlocklistModal() {
+    // Revert live-previewed alwaysShowInSchedule if user didn't save
+    if (editingBlocklistId) {
+        const bl = appData.blocklists.find(b => b.id === editingBlocklistId);
+
+        // Revert live-previewed alwaysShowInSchedule
+        const scheduleCheckbox = document.getElementById('always-show-in-schedule-checkbox');
+        if (bl && scheduleCheckbox && scheduleCheckbox._originalValue !== undefined) {
+            bl.alwaysShowInSchedule = scheduleCheckbox._originalValue;
+            renderWeekBlocks();
+        }
+
+        // Revert live-previewed showItemDetails
+        const detailsCheckbox = document.getElementById('show-item-details-checkbox');
+        if (bl && detailsCheckbox && detailsCheckbox._originalValue !== undefined) {
+            bl.showItemDetails = detailsCheckbox._originalValue;
+            renderBlocklists();
+        }
+    }
     document.getElementById('blocklist-modal').classList.add('hidden');
     editingBlocklistId = null;
     document.getElementById('blocklist-name').value = '';
@@ -4585,6 +4679,171 @@ function closeOverrideModal() {
     document.getElementById('override-modal').classList.add('hidden');
     overrideBlockId = null;
     challengeText = '';
+}
+
+// ── Pause/Resume Block ──
+
+// Update the pause button's icon and text based on whether the block/schedule is paused
+function updatePauseButtonAppearance(isPaused) {
+    const pauseBtn = document.getElementById('pause-block-btn');
+    if (!pauseBtn) return;
+
+    const svg = pauseBtn.querySelector('svg');
+    const span = pauseBtn.querySelector('span');
+
+    if (isPaused) {
+        // Show play icon and "Resume" text
+        if (svg) {
+            svg.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
+        }
+        if (span) span.textContent = 'Resume';
+        pauseBtn.classList.add('resume-mode');
+    } else {
+        // Show pause icon and "Pause" text
+        if (svg) {
+            svg.innerHTML = '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>';
+        }
+        if (span) span.textContent = 'Pause';
+        pauseBtn.classList.remove('resume-mode');
+    }
+}
+
+// Open the resume confirmation dialog (reuses start-block-confirm modal)
+let resumeData = null; // { blocklistId, type: 'block'|'schedule', blockId }
+
+function openResumeConfirmation(blocklistId, type, blockId) {
+    const blocklist = appData.blocklists.find(bl => bl.id === blocklistId);
+    if (!blocklist) return;
+
+    resumeData = { blocklistId, type, blockId };
+
+    // Set heading
+    document.querySelector('#start-block-confirm-modal .modal-content h3').textContent = 'Resume this block?';
+
+    // Set blocklist name
+    document.getElementById('start-confirm-name').textContent = blocklist.name;
+
+    // Set duration text
+    if (type === 'block') {
+        const block = appData.activeBlocks.find(b => b.id === blockId);
+        if (block) {
+            const remainingMs = block.endTime - Date.now();
+            if (isBlockAlwaysOn(block)) {
+                document.getElementById('start-confirm-duration').textContent = 'Always (until turned off)';
+            } else {
+                const remainingMins = Math.max(1, Math.floor(remainingMs / 60000));
+                const hours = Math.floor(remainingMins / 60);
+                const mins = remainingMins % 60;
+                let dText = '';
+                if (hours > 0 && mins > 0) dText = `${hours}h ${mins}m remaining`;
+                else if (hours > 0) dText = `${hours} hour${hours > 1 ? 's' : ''} remaining`;
+                else dText = `${mins} minute${mins > 1 ? 's' : ''} remaining`;
+                document.getElementById('start-confirm-duration').textContent = dText;
+            }
+        }
+    } else {
+        document.getElementById('start-confirm-duration').textContent = 'Schedule (resuming current segment)';
+    }
+
+    // Populate websites
+    const websitesRow = document.getElementById('websites-row');
+    const websitesEl = document.getElementById('start-confirm-websites');
+    const showAllWebsites = document.getElementById('show-all-websites');
+    if (blocklist.websites && blocklist.websites.length > 0) {
+        websitesRow.classList.remove('hidden');
+        if (blocklist.websites.length <= 3) {
+            websitesEl.textContent = blocklist.websites.map(cleanUrlForDisplay).join(', ');
+            showAllWebsites.classList.add('hidden');
+        } else {
+            websitesEl.textContent = blocklist.websites.slice(0, 3).map(cleanUrlForDisplay).join(', ') + ', ...';
+            showAllWebsites.classList.remove('hidden');
+            showAllWebsites.onclick = () => {
+                websitesEl.textContent = blocklist.websites.map(cleanUrlForDisplay).join(', ');
+                showAllWebsites.classList.add('hidden');
+            };
+        }
+    } else {
+        websitesRow.classList.add('hidden');
+    }
+
+    // Populate apps
+    const appsRow = document.getElementById('apps-row');
+    const appsEl = document.getElementById('start-confirm-apps');
+    const showAllApps = document.getElementById('show-all-apps');
+    if (blocklist.apps && blocklist.apps.length > 0) {
+        appsRow.classList.remove('hidden');
+        if (blocklist.apps.length <= 3) {
+            appsEl.textContent = blocklist.apps.join(', ');
+            showAllApps.classList.add('hidden');
+        } else {
+            appsEl.textContent = blocklist.apps.slice(0, 3).join(', ') + ', ...';
+            showAllApps.classList.remove('hidden');
+            showAllApps.onclick = () => {
+                appsEl.textContent = blocklist.apps.join(', ');
+                showAllApps.classList.add('hidden');
+            };
+        }
+    } else {
+        appsRow.classList.add('hidden');
+    }
+
+    // Override info
+    const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
+    let overrideText = '';
+    let charCount = difficulty.count;
+
+    if (difficulty.type === 'custom' && difficulty.customText) {
+        charCount = difficulty.customText.length;
+        const estimatedMinutes = Math.ceil(charCount / 200);
+        overrideText = `Type a specific ${charCount}-character phrase exactly as shown (~${estimatedMinutes} min).`;
+    } else if (difficulty.type === 'gibberish') {
+        const estimatedMinutes = Math.ceil(charCount / 100);
+        overrideText = `Type ${charCount} random characters exactly as shown (~${estimatedMinutes} min).`;
+    } else {
+        const estimatedMinutes = Math.ceil(charCount / 150);
+        overrideText = `Type ${charCount} characters (displayed as random words) exactly as shown (~${estimatedMinutes} min).`;
+    }
+    document.getElementById('start-confirm-override-text').textContent = overrideText;
+
+    // Change confirm button text
+    document.getElementById('proceed-start-confirm-btn').textContent = 'Resume Block';
+
+    // Show modal
+    document.getElementById('start-block-confirm-modal').classList.remove('hidden');
+}
+
+// Actually resume a paused block/schedule
+async function proceedWithResume() {
+    if (!resumeData) return;
+
+    // Save locally before closeStartBlockConfirmModal clears resumeData
+    const { type, blockId, blocklistId } = resumeData;
+
+    closeStartBlockConfirmModal();
+
+    if (type === 'block') {
+        const block = appData.activeBlocks.find(b => b.id === blockId);
+        if (block) {
+            delete block.isPaused;
+            delete block.pauseEndTime;
+        }
+    } else if (type === 'schedule') {
+        const schedule = appData.schedules?.find(s => s.blocklistId === blocklistId);
+        if (schedule) {
+            delete schedule.isPaused;
+            delete schedule.pauseEndTime;
+        }
+    }
+
+    resumeData = null;
+
+    await saveData();
+    await updateHostsFile();
+    await updateBlockedApps();
+    render();
+
+    // Update pause button back to Pause appearance
+    updatePauseButtonAppearance(false);
 }
 
 // ── Pause Block Modal ──
@@ -4943,6 +5202,9 @@ async function proceedWithPause() {
 
     // Re-render UI
     render();
+
+    // Update pause button to show Resume
+    updatePauseButtonAppearance(true);
 
     closePauseModal();
 }
@@ -5414,6 +5676,11 @@ function renderWeekBlocks() {
     visibleBlocks.forEach(block => {
         const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
         if (!blocklist) return;
+
+        // Skip if blocklist has "always show in schedule" unchecked and isn't currently selected
+        if (blocklist.alwaysShowInSchedule === false && block.blocklistId !== selectedBlocklistId) {
+            return;
+        }
 
         const blockStart = new Date(block.startTime);
         // Clamp blockEnd to the displayed week range to avoid infinite loops with always-on blocks
