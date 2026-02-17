@@ -960,9 +960,14 @@ function setupModalListeners() {
         renderBlocklists();
         renderBlocklistSelector();
         renderWeekBlocks(); // Refresh calendar to apply alwaysShowInSchedule changes
-        // Re-render the schedule preview to reflect any blocklist changes
-        if (isScheduleMode && selectedBlocklistId) {
-            handleTimeChange();
+
+        // Re-trigger blocklist selection to update button text (name may have changed)
+        if (selectedBlocklistId) {
+            const dropdown = document.getElementById('blocklist-select');
+            if (dropdown) {
+                dropdown.value = selectedBlocklistId;
+                handleBlocklistSelect({ target: dropdown });
+            }
         }
     });
 
