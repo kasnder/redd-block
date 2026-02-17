@@ -101,10 +101,18 @@ body.ios .main-content {
     min-height: 0;
 }
 
+/* iPhone */
 body.ios .app-container {
     height: calc(100vh - env(safe-area-inset-top, 20px));
-    padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
     overflow: hidden;
+}
+
+/* iPad */
+@media (min-width: 768px) {
+    body.ios .app-container {
+        padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+    }
 }
 
 /* App Container */
@@ -291,6 +299,7 @@ body.dark-mode .title-bar button:hover {
     grid-template-columns: 1fr 1fr;
     gap: 20px;
     align-items: start;
+    position: relative;
 }
 
 /* Stack on small screens (iPhone) */
@@ -2536,6 +2545,9 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
     font-size: 17px;
     color: var(--text-secondary);
     margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .blocklist-meta {
@@ -3030,12 +3042,16 @@ body.ios .blocklist-actions .delete {
 
 body.ios .modal-overlay {
     align-items: flex-start;
-    padding-top: env(safe-area-inset-top, 20px);
-    padding-bottom: env(safe-area-inset-bottom, 20px);
+    padding-top: calc(env(safe-area-inset-top, 20px) + 10px);
+    padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 10px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 body.ios .modal-content {
-    max-height: 95vh;
+    max-height: calc(100vh - env(safe-area-inset-top, 20px) - env(safe-area-inset-bottom, 20px) - 40px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .modal-overlay.hidden {
@@ -3446,8 +3462,29 @@ body.ios .modal-content {
     font-size: 13px;
 }
 
-.settings-footer {
-    flex-shrink: 0;
+.settings-top-btn {
+    position: absolute;
+    top: 2px;
+    right: -4px;
+    z-index: 10;
+    opacity: 0.8;
+    transition: opacity 0.2s ease;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #5f5e5e;
+    padding: 4px;
+}
+
+.settings-top-btn:hover {
+    opacity: 1;
+}
+
+/* Hide desktop-only settings sections on iOS */
+body.ios .helper-settings-section,
+body.ios #advanced-options-toggle,
+body.ios #advanced-options-content {
+    display: none;
 }
 
 /* Settings Modal Section */

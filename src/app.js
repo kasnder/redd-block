@@ -1849,6 +1849,46 @@ function setScheduleMode(isSchedule) {
         startScheduleBtn.classList.add('hidden');
         if (selectedBlocklistId) {
             startBlockBtn.classList.remove('hidden');
+
+            // Re-evaluate pause button visibility for Now mode
+            const pauseBtn = document.getElementById('pause-block-btn');
+            const now = Date.now();
+            const activeBlock = appData.activeBlocks.find(b =>
+                b.blocklistId === selectedBlocklistId &&
+                b.startTime <= now &&
+                b.endTime > now
+            );
+            if (activeBlock) {
+                if (pauseBtn) {
+                    pauseBtn.classList.remove('hidden');
+                    updatePauseButtonAppearance(!!activeBlock.isPaused);
+                }
+
+                // Also update button to show Stop state
+                const btnLabel = startBlockBtn.querySelector('.btn-label');
+                const btnIcon = startBlockBtn.querySelector('svg');
+                if (btnLabel) btnLabel.textContent = 'Stop Block:';
+                startBlockBtn.classList.add('stop-block');
+                startBlockBtn.disabled = false;
+                startBlockBtn.dataset.activeBlockId = activeBlock.id;
+                if (btnIcon) {
+                    btnIcon.innerHTML = `
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                        <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+                    `;
+                }
+                disableTimeControls(true);
+
+                // Hide always-on message and duration toggle while block is running
+                const alwaysOnMsg = document.getElementById('always-on-message');
+                const durationToggle = document.getElementById('duration-mode-toggle');
+                if (alwaysOnMsg) alwaysOnMsg.classList.add('hidden');
+                if (durationToggle) durationToggle.classList.add('hidden');
+            } else {
+                if (pauseBtn) pauseBtn.classList.add('hidden');
+                startBlockBtn.classList.remove('stop-block');
+                delete startBlockBtn.dataset.activeBlockId;
+            }
         }
     }
 
@@ -3629,6 +3669,12 @@ function handleBlocklistSelect(e) {
 
                         // Disable time controls
                         disableTimeControls(true);
+
+                        // Hide always-on message and duration mode toggle (not useful while block is running)
+                        const alwaysOnMsg = document.getElementById('always-on-message');
+                        const durationToggle = document.getElementById('duration-mode-toggle');
+                        if (alwaysOnMsg) alwaysOnMsg.classList.add('hidden');
+                        if (durationToggle) durationToggle.classList.add('hidden');
                     } else {
                         // No active block - show Start Block button (normal) with lock icon
                         // Ensure we've already cleared the activeBlockId above
@@ -3645,6 +3691,12 @@ function handleBlocklistSelect(e) {
 
                         // Enable time controls
                         disableTimeControls(false);
+
+                        // Re-show duration mode toggle and always-on message based on current mode
+                        const alwaysOnMsg = document.getElementById('always-on-message');
+                        const durationToggle = document.getElementById('duration-mode-toggle');
+                        if (durationToggle) durationToggle.classList.remove('hidden');
+                        if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isAlwaysOnMode);
 
                         // Hide pause button
                         if (pauseBtn) pauseBtn.classList.add('hidden');
