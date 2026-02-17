@@ -116,53 +116,95 @@
 
                             <!-- INSTANT BLOCK PANEL (shown by default) -->
                             <div class="instant-block-panel" id="instant-block-panel">
-                                <!-- Duration & End Row -->
-                                <div class="time-pickers-row">
-                                    <div class="time-picker-group">
-                                        <label class="time-label">Duration</label>
-                                        <div class="duration-input-wrapper">
-                                            <input type="number" id="duration-minutes-input" class="duration-input"
-                                                min="1" max="99999" value="60">
-                                            <span class="duration-unit">min</span>
-                                        </div>
-                                    </div>
-                                    <span class="time-separator">→</span>
-                                    <div class="time-picker-group">
-                                        <label class="time-label">End</label>
-                                        <div class="time-picker-row">
-                                            <div class="time-display" id="end-time-display">
-                                                <div class="time-part-wrapper">
-                                                    <button class="time-part" id="end-hour-btn" data-type="hour"
-                                                        data-target="end">20</button>
-                                                    <!-- Hour Popover -->
-                                                    <div class="time-popover hidden" id="end-hour-popover">
-                                                        <div class="popover-scroll" id="end-hour-options"></div>
-                                                    </div>
-                                                </div>
-                                                <span class="time-colon">:</span>
-                                                <div class="time-part-wrapper">
-                                                    <button class="time-part" id="end-minute-btn" data-type="minute"
-                                                        data-target="end">30</button>
-                                                    <!-- Minute Popover -->
-                                                    <div class="time-popover hidden" id="end-minute-popover">
-                                                        <div class="popover-scroll" id="end-minute-options"></div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <span id="next-day-indicator" class="next-day-badge hidden">+1 day</span>
-                                        </div>
-                                    </div>
+                                <!-- Duration Mode Toggle: "for a bit" vs "always" -->
+                                <div class="duration-mode-toggle" id="duration-mode-toggle">
+                                    <button type="button" class="duration-mode-btn active" id="duration-mode-timed"
+                                        data-mode="timed">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                            stroke-linejoin="round">
+                                            <path d="M5 22h14" />
+                                            <path d="M5 2h14" />
+                                            <path
+                                                d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22" />
+                                            <path
+                                                d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2" />
+                                        </svg>
+                                        for a bit
+                                    </button>
+                                    <button type="button" class="duration-mode-btn" id="duration-mode-always"
+                                        data-mode="always">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                            stroke-linejoin="round">
+                                            <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+                                            <line x1="12" y1="2" x2="12" y2="12"></line>
+                                        </svg>
+                                        always
+                                    </button>
                                 </div>
 
-                                <!-- Quick Select Row -->
-                                <div class="quick-select-row">
-                                    <label class="time-label">Quick Select</label>
-                                    <div class="duration-quick-btns">
-                                        <button type="button" class="duration-quick-btn" data-mins="15">15</button>
-                                        <button type="button" class="duration-quick-btn" data-mins="30">30</button>
-                                        <button type="button" class="duration-quick-btn" data-mins="45">45</button>
-                                        <button type="button" class="duration-quick-btn active"
-                                            data-mins="60">60</button>
+                                <!-- Always-on message (hidden by default) -->
+                                <div class="always-on-message hidden" id="always-on-message">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                    </svg>
+                                    <span>This block will stay on until you turn it off</span>
+                                </div>
+
+                                <!-- Duration & End Row (hidden when always-on) -->
+                                <div class="timed-controls" id="timed-controls">
+                                    <div class="time-pickers-row">
+                                        <div class="time-picker-group">
+                                            <label class="time-label">Duration</label>
+                                            <div class="duration-input-wrapper">
+                                                <input type="number" id="duration-minutes-input" class="duration-input"
+                                                    min="1" max="99999" value="60">
+                                                <span class="duration-unit">min</span>
+                                            </div>
+                                        </div>
+                                        <span class="time-separator">→</span>
+                                        <div class="time-picker-group">
+                                            <label class="time-label">End</label>
+                                            <div class="time-picker-row">
+                                                <div class="time-display" id="end-time-display">
+                                                    <div class="time-part-wrapper">
+                                                        <button class="time-part" id="end-hour-btn" data-type="hour"
+                                                            data-target="end">20</button>
+                                                        <!-- Hour Popover -->
+                                                        <div class="time-popover hidden" id="end-hour-popover">
+                                                            <div class="popover-scroll" id="end-hour-options"></div>
+                                                        </div>
+                                                    </div>
+                                                    <span class="time-colon">:</span>
+                                                    <div class="time-part-wrapper">
+                                                        <button class="time-part" id="end-minute-btn" data-type="minute"
+                                                            data-target="end">30</button>
+                                                        <!-- Minute Popover -->
+                                                        <div class="time-popover hidden" id="end-minute-popover">
+                                                            <div class="popover-scroll" id="end-minute-options"></div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <span id="next-day-indicator" class="next-day-badge hidden">+1
+                                                    day</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Quick Select Row -->
+                                    <div class="quick-select-row">
+                                        <label class="time-label">Quick Select</label>
+                                        <div class="duration-quick-btns">
+                                            <button type="button" class="duration-quick-btn" data-mins="15">15</button>
+                                            <button type="button" class="duration-quick-btn" data-mins="30">30</button>
+                                            <button type="button" class="duration-quick-btn" data-mins="45">45</button>
+                                            <button type="button" class="duration-quick-btn active"
+                                                data-mins="60">60</button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

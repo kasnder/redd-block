@@ -89,7 +89,11 @@ let currentWeekStart = null; // Date object for Monday of the displayed week
 
 // Schedule mode state
 let isScheduleMode = false; // false = instant mode, true = schedule mode
+let isAlwaysOnMode = false; // false = timed block, true = always-on (permanent) block
 let scheduleSegments = getDefaultScheduleSegments(); // Array of time segments with per-segment days
+
+// Far-future timestamp used for "always on" blocks (year 9999)
+const ALWAYS_ON_END_TIME = new Date(9999, 11, 31, 23, 59, 59, 999).getTime();
 
 // Sync all active schedules to helper daemon so it can manage transitions autonomously
 async function syncSchedulesToHelper() {
@@ -523,6 +527,10 @@ function setupEventListeners() {
     document.querySelectorAll('.duration-quick-btn').forEach(btn => {
         btn.addEventListener('click', handleDurationQuickBtn);
     });
+
+    // Duration mode toggle ("for a bit" / "always")
+    document.getElementById('duration-mode-timed')?.addEventListener('click', () => setAlwaysOnMode(false));
+    document.getElementById('duration-mode-always')?.addEventListener('click', () => setAlwaysOnMode(true));
 
     // Initialize time picker with defaults
     initializeTimeInputs();
@@ -1329,6 +1337,11 @@ function initializeTimeInputs() {
 
     // Reset editing flag and load saved duration for this blocklist (or default to 60)
     userEditedEndTime = false;
+
+    // Restore always-on mode preference for this blocklist
+    const savedAlwaysOn = selectedBlocklistId && appData.settings?.alwaysOnMode?.[selectedBlocklistId];
+    setAlwaysOnMode(!!savedAlwaysOn);
+
     if (selectedBlocklistId && appData.settings?.instantBlockDuration?.[selectedBlocklistId] !== undefined) {
         targetDurationMinutes = appData.settings.instantBlockDuration[selectedBlocklistId];
     } else {
@@ -1577,6 +1590,39 @@ function getDefaultScheduleSegments() {
     return [
         { startHour, startMinute: 0, endHour, endMinute: 0, days: [currentDay] }
     ];
+}
+
+// Switch between timed and always-on modes for instant blocks
+function setAlwaysOnMode(alwaysOn) {
+    isAlwaysOnMode = alwaysOn;
+
+    // Update toggle button active states
+    const timedBtn = document.getElementById('duration-mode-timed');
+    const alwaysBtn = document.getElementById('duration-mode-always');
+    if (timedBtn) timedBtn.classList.toggle('active', !alwaysOn);
+    if (alwaysBtn) alwaysBtn.classList.toggle('active', alwaysOn);
+
+    // Show/hide timed controls vs always-on message
+    const timedControls = document.getElementById('timed-controls');
+    const alwaysOnMessage = document.getElementById('always-on-message');
+    if (timedControls) timedControls.classList.toggle('hidden', alwaysOn);
+    if (alwaysOnMessage) alwaysOnMessage.classList.toggle('hidden', !alwaysOn);
+
+    // Save preference per blocklist
+    if (selectedBlocklistId) {
+        if (!appData.settings) appData.settings = {};
+        if (!appData.settings.alwaysOnMode) appData.settings.alwaysOnMode = {};
+        if (appData.settings.alwaysOnMode[selectedBlocklistId] !== alwaysOn) {
+            appData.settings.alwaysOnMode[selectedBlocklistId] = alwaysOn;
+            saveData();
+        }
+    }
+
+    // Update calendar preview and button state
+    handleTimeChange();
+
+    // Update window height after layout change
+    setTimeout(() => updateWindowHeight(), 50);
 }
 
 // Switch between instant and schedule modes
@@ -2643,6 +2689,21 @@ function handleTimeChange() {
         return;
     }
 
+    // --- Always-on mode: skip time calculations, just enable button ---
+    if (isAlwaysOnMode) {
+        startBtn.disabled = !selectedBlocklistId;
+
+        // Remove any preview blocks
+        document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
+
+        // Hide next-day indicator
+        if (nextDayIndicator) nextDayIndicator.classList.add('hidden');
+
+        if (noBlocksMsg) noBlocksMsg.classList.add('hidden');
+        updateWindowHeight();
+        return;
+    }
+
     // --- Instant mode logic ---
     // Get times (start is always now)
     let blockStart = getStartTimeAsDate();
@@ -3409,25 +3470,29 @@ function startBlock() {
         }
     }
 
-    // Get times for display
-    let blockStart = getStartTimeAsDate();
-    let blockEnd = getEndTimeAsDate();
-    if (blockEnd <= blockStart) {
-        blockEnd.setDate(blockEnd.getDate() + 1);
-    }
-
     // Calculate duration for display
-    const durationMs = blockEnd.getTime() - blockStart.getTime();
-    const durationMinutes = Math.round(durationMs / 60000);
-    const hours = Math.floor(durationMinutes / 60);
-    const mins = durationMinutes % 60;
     let durationText = '';
-    if (hours > 0 && mins > 0) {
-        durationText = `${hours}h ${mins}m`;
-    } else if (hours > 0) {
-        durationText = `${hours} hour${hours > 1 ? 's' : ''}`;
+    if (isAlwaysOnMode) {
+        durationText = 'Always (until turned off)';
     } else {
-        durationText = `${mins} minute${mins > 1 ? 's' : ''}`;
+        // Get times for display
+        let blockStart = getStartTimeAsDate();
+        let blockEnd = getEndTimeAsDate();
+        if (blockEnd <= blockStart) {
+            blockEnd.setDate(blockEnd.getDate() + 1);
+        }
+
+        const durationMs = blockEnd.getTime() - blockStart.getTime();
+        const durationMinutes = Math.round(durationMs / 60000);
+        const hours = Math.floor(durationMinutes / 60);
+        const mins = durationMinutes % 60;
+        if (hours > 0 && mins > 0) {
+            durationText = `${hours}h ${mins}m`;
+        } else if (hours > 0) {
+            durationText = `${hours} hour${hours > 1 ? 's' : ''}`;
+        } else {
+            durationText = `${mins} minute${mins > 1 ? 's' : ''}`;
+        }
     }
 
     // Populate blocklist name
@@ -3534,11 +3599,17 @@ async function proceedWithBlock() {
 
     // Get times from the custom time picker
     let blockStart = getStartTimeAsDate();
-    let blockEnd = getEndTimeAsDate();
+    let blockEnd;
 
-    // If end is before or equal to start, assume end is next day
-    if (blockEnd <= blockStart) {
-        blockEnd.setDate(blockEnd.getDate() + 1);
+    if (isAlwaysOnMode) {
+        // Always-on: use far-future end time
+        blockEnd = new Date(ALWAYS_ON_END_TIME);
+    } else {
+        blockEnd = getEndTimeAsDate();
+        // If end is before or equal to start, assume end is next day
+        if (blockEnd <= blockStart) {
+            blockEnd.setDate(blockEnd.getDate() + 1);
+        }
     }
 
     // Disable button while processing
@@ -3558,6 +3629,11 @@ async function proceedWithBlock() {
         startTime: blockStart.getTime(),
         endTime: blockEnd.getTime()
     };
+
+    // Mark always-on blocks with a flag for display purposes
+    if (isAlwaysOnMode) {
+        block.isAlwaysOn = true;
+    }
 
     let result;
 
@@ -4810,8 +4886,9 @@ function renderWeekBlocks() {
         if (!blocklist) return;
 
         const blockStart = new Date(block.startTime);
-        const blockEnd = new Date(block.endTime);
-        const isExpired = block.endTime <= now;
+        // Clamp blockEnd to the displayed week range to avoid infinite loops with always-on blocks
+        const blockEnd = new Date(Math.min(block.endTime, weekEndMs));
+        const isExpired = block.endTime <= now && !block.isAlwaysOn;
 
         // Determine which day(s) the block spans
         const startDay = new Date(blockStart);
@@ -5261,13 +5338,18 @@ function renderBlocklists() {
         let oneOffBadge = '';
         let scheduleBadge = '';
 
-        // One-off block badge (green with hourglass)
+        // One-off block badge (green with hourglass, or power icon for always-on)
         if (isActive && activeBlock) {
-            const remaining = activeBlock.endTime - now;
-            const mins = Math.ceil(remaining / 60000);
-            const timeText = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
-            // Hourglass icon
-            oneOffBadge = `<span class="active-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg> ${timeText} left</span>`;
+            if (activeBlock.isAlwaysOn) {
+                // Power icon for always-on blocks
+                oneOffBadge = `<span class="active-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg> Always</span>`;
+            } else {
+                const remaining = activeBlock.endTime - now;
+                const mins = Math.ceil(remaining / 60000);
+                const timeText = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
+                // Hourglass icon
+                oneOffBadge = `<span class="active-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg> ${timeText} left</span>`;
+            }
         }
 
         // Schedule badge (blue with calendar-sync)
@@ -5635,13 +5717,17 @@ function startTickInterval() {
         document.querySelectorAll('.entry-remaining').forEach((el, idx) => {
             const block = appData.activeBlocks[idx];
             if (block) {
-                const remaining = Math.max(0, Math.ceil((block.endTime - now) / 60000));
-                el.textContent = `${formatDuration(remaining)} remaining`;
+                if (block.isAlwaysOn) {
+                    el.textContent = 'Always';
+                } else {
+                    const remaining = Math.max(0, Math.ceil((block.endTime - now) / 60000));
+                    el.textContent = `${formatDuration(remaining)} remaining`;
+                }
             }
         });
 
-        // Auto-update end time if user hasn't manually edited it
-        if (selectedBlocklistId && !userEditedEndTime) {
+        // Auto-update end time if user hasn't manually edited it (skip in always-on mode)
+        if (selectedBlocklistId && !userEditedEndTime && !isAlwaysOnMode) {
             const newEndTime = new Date(now + targetDurationMinutes * 60 * 1000);
             selectedEndHour = newEndTime.getHours();
             selectedEndMinute = newEndTime.getMinutes();
