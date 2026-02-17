@@ -95,6 +95,11 @@ let scheduleSegments = getDefaultScheduleSegments(); // Array of time segments w
 // Far-future timestamp used for "always on" blocks (year 9999)
 const ALWAYS_ON_END_TIME = new Date(9999, 11, 31, 23, 59, 59, 999).getTime();
 
+// Helper: detect always-on blocks by flag OR far-future end time
+function isBlockAlwaysOn(block) {
+    return block.isAlwaysOn === true || block.endTime >= ALWAYS_ON_END_TIME;
+}
+
 // Sync all active schedules to helper daemon so it can manage transitions autonomously
 async function syncSchedulesToHelper() {
     if (isIOS) return;
@@ -4888,7 +4893,7 @@ function renderWeekBlocks() {
         const blockStart = new Date(block.startTime);
         // Clamp blockEnd to the displayed week range to avoid infinite loops with always-on blocks
         const blockEnd = new Date(Math.min(block.endTime, weekEndMs));
-        const isExpired = block.endTime <= now && !block.isAlwaysOn;
+        const isExpired = block.endTime <= now && !isBlockAlwaysOn(block);
 
         // Determine which day(s) the block spans
         const startDay = new Date(blockStart);
@@ -5340,7 +5345,7 @@ function renderBlocklists() {
 
         // One-off block badge (green with hourglass, or power icon for always-on)
         if (isActive && activeBlock) {
-            if (activeBlock.isAlwaysOn) {
+            if (isBlockAlwaysOn(activeBlock)) {
                 // Power icon for always-on blocks
                 oneOffBadge = `<span class="active-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg> Always</span>`;
             } else {
@@ -5717,7 +5722,7 @@ function startTickInterval() {
         document.querySelectorAll('.entry-remaining').forEach((el, idx) => {
             const block = appData.activeBlocks[idx];
             if (block) {
-                if (block.isAlwaysOn) {
+                if (isBlockAlwaysOn(block)) {
                     el.textContent = 'Always';
                 } else {
                     const remaining = Math.max(0, Math.ceil((block.endTime - now) / 60000));
