@@ -651,6 +651,19 @@ function setupEventListeners() {
 
 
 
+// Validate that a string looks like a valid domain (e.g. reddit.com, example.co.uk)
+function isValidDomain(str) {
+    // Strip protocol and path if user pasted a URL
+    let domain = str.replace(/^https?:\/\//i, '').split('/')[0].split('?')[0].split('#')[0];
+    // Must have at least one dot, only valid domain chars, and a TLD of 2+ chars
+    return /^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/i.test(domain);
+}
+
+// Clean a user input string into a domain
+function cleanDomainInput(str) {
+    return str.replace(/^https?:\/\//i, '').split('/')[0].split('?')[0].split('#')[0].toLowerCase().trim();
+}
+
 // Modal listeners
 function setupModalListeners() {
     let modalWebsites = [];
@@ -672,7 +685,19 @@ function setupModalListeners() {
         // Enter or Space confirms the website (domains can't have spaces)
         if ((e.key === 'Enter' || e.key === ' ') && modalWebsiteInput.value.trim()) {
             e.preventDefault();
-            const website = modalWebsiteInput.value.trim().toLowerCase();
+            const raw = modalWebsiteInput.value.trim();
+            const website = cleanDomainInput(raw);
+            const errorMsg = document.getElementById('website-input-error');
+            if (!isValidDomain(website)) {
+                // Show error message, keep input so user can fix it
+                if (errorMsg) {
+                    errorMsg.classList.remove('hidden');
+                    setTimeout(() => errorMsg.classList.add('hidden'), 3000);
+                }
+                return;
+            }
+            // Valid domain — hide any error message
+            if (errorMsg) errorMsg.classList.add('hidden');
             if (!modalWebsites.includes(website)) {
                 modalWebsites.push(website);
                 window.renderModalTags();
@@ -867,11 +892,13 @@ function setupModalListeners() {
     // Save button
     document.getElementById('save-blocklist-btn').addEventListener('click', () => {
         // Auto-confirm any pending input in the website/app fields
-        const pendingWebsite = modalWebsiteInput.value.trim().toLowerCase();
-        if (pendingWebsite && !modalWebsites.includes(pendingWebsite)) {
+        const pendingWebsite = cleanDomainInput(modalWebsiteInput.value);
+        if (pendingWebsite && isValidDomain(pendingWebsite) && !modalWebsites.includes(pendingWebsite)) {
             modalWebsites.push(pendingWebsite);
             modalWebsiteInput.value = '';
             window.renderModalTags();
+        } else {
+            modalWebsiteInput.value = '';
         }
 
         const pendingApp = modalAppInput.value.trim();

@@ -2899,6 +2899,18 @@ body.ios .blocklist-actions .delete {
     box-shadow: none;
 }
 
+.input-error-msg {
+    display: block;
+    font-size: 13px;
+    color: #ef4444;
+    margin-top: 4px;
+    padding-left: 2px;
+}
+
+.input-error-msg.hidden {
+    display: none;
+}
+
 .input-with-button {
     display: flex;
     align-items: center;
