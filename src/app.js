@@ -162,6 +162,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     detectPlatform(); // Must run early so isIOS is set before other setup
     if (isIOS) {
         await checkScreentimeAuth();
+        // Sync lastBlockedDomains from active (non-paused) blocks so pause/resume works after restart
+        const now = Date.now();
+        const activeDomains = new Set();
+        appData.activeBlocks
+            .filter(b => b.startTime <= now && b.endTime > now && !b.isPaused)
+            .forEach(b => {
+                const bl = appData.blocklists.find(bl => bl.id === b.blocklistId);
+                if (bl && bl.websites) bl.websites.forEach(d => activeDomains.add(d));
+            });
+        lastBlockedDomains = activeDomains;
     } else {
         await checkHelperStatus();
         // Sync schedules to helper on startup so it has the latest data
@@ -3873,6 +3883,8 @@ async function proceedWithBlock() {
 
         try {
             result = await tauriAPI.screentimeStartBlock(blocklist.websites || []);
+            // Sync the domain cache so pause/resume correctly detects changes
+            lastBlockedDomains = new Set(blocklist.websites || []);
         } catch (err) {
             result = { success: false, error: err.toString() };
         }

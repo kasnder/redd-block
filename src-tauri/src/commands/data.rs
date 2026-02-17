@@ -36,6 +36,8 @@ pub struct Blocklist {
     pub override_difficulty: Option<OverrideDifficulty>,
     #[serde(default = "default_true")]
     pub show_item_details: bool,
+    #[serde(flatten)]
+    pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
 fn default_true() -> bool {
@@ -51,6 +53,8 @@ pub struct OverrideDifficulty {
     pub count: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub custom_text: Option<String>,
+    #[serde(flatten)]
+    pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,6 +64,14 @@ pub struct ActiveBlock {
     pub blocklist_id: String,
     pub start_time: u64,
     pub end_time: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_paused: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pause_end_time: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_always_on: Option<bool>,
+    #[serde(flatten)]
+    pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,6 +85,12 @@ pub struct Schedule {
     pub repeat_date: Option<String>,
     #[serde(default)]
     pub created_at: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_paused: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pause_end_time: Option<u64>,
+    #[serde(flatten)]
+    pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,6 +108,8 @@ pub struct ScheduleSegment {
 pub struct Settings {
     #[serde(default)]
     pub onboarding_complete: bool,
+    #[serde(flatten)]
+    pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
 impl Default for AppData {
