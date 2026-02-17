@@ -249,6 +249,10 @@ The helper daemon checks every 5 minutes whether the main app is still installed
 - **Linux**: Coming soon
 - **Android**: Coming soon
 
+## Tech Debt
+
+- **Rename `updateHostsFile()`**: This function is misleadingly named. On desktop it updates the hosts file (website blocking only), but on iOS it dispatches to the Screen Time API and handles *both* website and app blocking (`screentimeStartBlock`/`screentimeClearBlock`). Meanwhile, `updateBlockedApps()` returns immediately on iOS (`if (isIOS) return`). Consider renaming `updateHostsFile()` to something like `syncWebsiteBlocking()` or splitting the iOS Screen Time logic into its own function that clearly handles both websites and apps.
+
 ## License
 
 CC-BY-NC-ND-3.0
