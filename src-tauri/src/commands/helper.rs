@@ -27,7 +27,7 @@ pub struct HelperStatus {
 
 /// Expected helper version - update this when helper-daemon changes
 /// This is separate from the app version to avoid unnecessary reinstalls
-const EXPECTED_HELPER_VERSION: &str = "0.6.1";
+const EXPECTED_HELPER_VERSION: &str = "0.6.2";
 
 /// Result from helper operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -416,31 +416,67 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
         let install_path_str = install_path.to_string_lossy();
         
         let script_content = format!(r#"
+$ErrorActionPreference = "Continue"
 $taskName = "{}"
 $sourcePath = "{}"
 $helperPath = "{}"
 $installDir = Split-Path -Parent $helperPath
+$logPath = Join-Path $installDir "install.log"
+
+# Ensure install directory exists
+if (-not (Test-Path $installDir)) {{
+    New-Item -ItemType Directory -Path $installDir -Force | Out-Null
+}}
+
+# Start logging
+"$(Get-Date) - Install script starting" | Out-File -FilePath $logPath -Encoding UTF8
+"Source: $sourcePath" | Out-File -FilePath $logPath -Append -Encoding UTF8
+"Target: $helperPath" | Out-File -FilePath $logPath -Append -Encoding UTF8
+"Running as: $([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)" | Out-File -FilePath $logPath -Append -Encoding UTF8
+"Is Admin: $([bool](([System.Security.Principal.WindowsPrincipal][System.Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)))" | Out-File -FilePath $logPath -Append -Encoding UTF8
 
 # Kill any existing helper process
 taskkill /F /IM redd-block-helper.exe 2>$null
 Start-Sleep -Seconds 1
 
+# Check source exists
+if (-not (Test-Path $sourcePath)) {{
+    "ERROR: Source binary not found at $sourcePath" | Out-File -FilePath $logPath -Append -Encoding UTF8
+    exit 1
+}}
+"Source binary exists: $(Get-Item $sourcePath | Select-Object -ExpandProperty Length) bytes" | Out-File -FilePath $logPath -Append -Encoding UTF8
+
 # Copy the helper binary
-Copy-Item -Path $sourcePath -Destination $helperPath -Force
+try {{
+    Copy-Item -Path $sourcePath -Destination $helperPath -Force
+    "Binary copied successfully" | Out-File -FilePath $logPath -Append -Encoding UTF8
+}} catch {{
+    "ERROR copying binary: $_" | Out-File -FilePath $logPath -Append -Encoding UTF8
+    exit 1
+}}
 
 # Add Windows Firewall rule to allow the helper
 netsh advfirewall firewall delete rule name="ReDD Block Helper" 2>$null
-netsh advfirewall firewall add rule name="ReDD Block Helper" dir=in action=allow program="$helperPath" protocol=TCP localport=62222
+$fwResult = netsh advfirewall firewall add rule name="ReDD Block Helper" dir=in action=allow program="$helperPath" protocol=TCP localport=62222 2>&1
+"Firewall rule: $fwResult" | Out-File -FilePath $logPath -Append -Encoding UTF8
 
 # Remove existing task if any
 schtasks /Delete /TN "$taskName" /F 2>$null
 
 # Create scheduled task for persistence (auto-start at logon with admin rights)
-schtasks /Create /TN "$taskName" /TR "`"$helperPath`"" /SC ONLOGON /RL HIGHEST /F
+$taskResult = schtasks /Create /TN "$taskName" /TR "`"$helperPath`"" /SC ONLOGON /RL HIGHEST /F 2>&1
+"Scheduled task: $taskResult" | Out-File -FilePath $logPath -Append -Encoding UTF8
 
-# Start the helper directly (we're already elevated)
-Start-Process -FilePath $helperPath -WindowStyle Hidden
+# Start the helper directly
+try {{
+    Start-Process -FilePath $helperPath -WindowStyle Hidden
+    "Helper process started" | Out-File -FilePath $logPath -Append -Encoding UTF8
+}} catch {{
+    "ERROR starting helper: $_" | Out-File -FilePath $logPath -Append -Encoding UTF8
+    exit 1
+}}
 
+"$(Get-Date) - Install script completed successfully" | Out-File -FilePath $logPath -Append -Encoding UTF8
 exit 0
 "#, task_name, helper_path_str, install_path_str);
 
@@ -516,10 +552,24 @@ exit 0
         // Clean up the script file
         let _ = std::fs::remove_file(&script_path);
         
+        // Read install log for diagnostics
+        let install_log_path = install_dir.join("install.log");
+        let install_log = std::fs::read_to_string(&install_log_path).unwrap_or_default();
+        if !install_log.is_empty() {
+            log::info!("Install script log:\n{}", install_log);
+        } else {
+            log::warn!("No install log found - script may not have run at all");
+        }
+        
         if !script_success {
+            let detail = if install_log.is_empty() {
+                "Install script did not run. UAC prompt may have been cancelled or blocked.".to_string()
+            } else {
+                format!("Install script failed. Log:\n{}", install_log)
+            };
             return HelperResult {
                 success: false,
-                error: Some("User cancelled UAC prompt or script failed to run".to_string()),
+                error: Some(detail),
             };
         }
         
@@ -558,18 +608,28 @@ exit 0
                 };
                 if !helper_alive {
                     log::warn!("Helper process is not running after install (attempt {})", attempt + 1);
+                    let msg = if install_log.is_empty() {
+                        "Helper was installed but crashed on startup. This may be caused by antivirus software or a missing Visual C++ runtime.".to_string()
+                    } else {
+                        format!("Helper crashed on startup. Install log:\n{}", install_log)
+                    };
                     return HelperResult {
                         success: false,
-                        error: Some("Helper was installed but crashed on startup. This may be caused by antivirus software blocking the helper. Please check your antivirus settings and try again.".to_string()),
+                        error: Some(msg),
                     };
                 }
                 log::debug!("Helper process is alive but not yet responding (attempt {})", attempt + 1);
             }
         }
         
+        let timeout_msg = if install_log.is_empty() {
+            "Helper installation may have failed - no install log found. Please try running as Administrator.".to_string()
+        } else {
+            format!("Helper installed but not responding after 15 seconds. Install log:\n{}", install_log)
+        };
         HelperResult {
             success: false,
-            error: Some("Helper installation completed but helper not responding. Please try again or restart your computer.".to_string()),
+            error: Some(timeout_msg),
         }
     }
     
