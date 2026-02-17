@@ -374,7 +374,7 @@ body.dark-mode .title-bar button:hover {
 
 body.ios .week-calendar-section {
     flex: 1;
-    min-height: 0;
+    min-height: 400px;
 }
 
 .week-calendar-section .section-header {
