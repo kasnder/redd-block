@@ -33,6 +33,9 @@
         getBlockedDomains,
         getHardestChallenge,
         compareDifficulties,
+        hasAnyActiveBlocks,
+        findHardestChallengeAtTime,
+        simulateOverrideAll,
         resetTestResults,
         assert,
         assertEqual,
@@ -640,6 +643,193 @@
     }
 
     // ========================================
+    // CATEGORY 7: hasAnyActiveBlocks
+    // ========================================
+
+    function runHasAnyActiveBlocksTests() {
+        console.log('\n🔍 Category 7: hasAnyActiveBlocks');
+        console.log('----------------------------------');
+
+        // T33: No blocks, no schedules
+        (function T33() {
+            const appData = createMockAppData();
+            const now = Date.now();
+            const result = hasAnyActiveBlocks(appData, now, new Date(now));
+            assert(result === false, 'T33: No blocks/schedules → false');
+        })();
+
+        // T34: Active one-off block
+        (function T34() {
+            const blocklist = createMockBlocklist({ websites: ['facebook.com'] });
+            const now = Date.now();
+            const block = createMockBlock(blocklist.id, now - 60000, now + 60000);
+            const appData = createMockAppData({
+                blocklists: [blocklist],
+                activeBlocks: [block]
+            });
+            const result = hasAnyActiveBlocks(appData, now, new Date(now));
+            assert(result === true, 'T34: Active one-off → true');
+        })();
+
+        // T35: Active schedule on correct day/time
+        (function T35() {
+            const blocklist = createMockBlocklist({ websites: ['youtube.com'] });
+            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]); // All days
+            const schedule = createMockSchedule(blocklist.id, [segment]);
+            const now = Date.now();
+            const appData = createMockAppData({
+                blocklists: [blocklist],
+                schedules: [schedule]
+            });
+            const result = hasAnyActiveBlocks(appData, now, new Date(now));
+            assert(result === true, 'T35: Active schedule → true');
+        })();
+    }
+
+    // ========================================
+    // CATEGORY 8: findHardestChallenge Advanced
+    // ========================================
+
+    function runFindHardestChallengeAdvancedTests() {
+        console.log('\n🏋️ Category 8: findHardestChallenge Advanced');
+        console.log('----------------------------------------------');
+
+        // T36: Only schedule active (no one-off) — should use schedule's blocklist difficulty
+        (function T36() {
+            const blocklist = createMockBlocklist({
+                overrideDifficulty: { type: 'gibberish', count: 80 }
+            });
+            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const schedule = createMockSchedule(blocklist.id, [segment]);
+            const now = Date.now();
+            const appData = createMockAppData({
+                blocklists: [blocklist],
+                schedules: [schedule]
+            });
+            const hardest = findHardestChallengeAtTime(appData, now);
+            assertEqual(hardest.type, 'gibberish', 'T36: Schedule-only → uses schedule difficulty type');
+            assertEqual(hardest.count, 80, 'T36: Schedule-only → uses schedule difficulty count');
+        })();
+
+        // T37: Mixed active: gibberish 50 vs custom text (long) — custom wins
+        (function T37() {
+            const blocklist1 = createMockBlocklist({
+                overrideDifficulty: { type: 'gibberish', count: 50 }
+            });
+            const blocklist2 = createMockBlocklist({
+                overrideDifficulty: { type: 'custom', customText: 'I really need to focus right now and should not be browsing' }
+            });
+            const now = Date.now();
+            const appData = createMockAppData({
+                blocklists: [blocklist1, blocklist2],
+                activeBlocks: [
+                    createMockBlock(blocklist1.id, now - 60000, now + 60000),
+                    createMockBlock(blocklist2.id, now - 60000, now + 60000)
+                ]
+            });
+            const hardest = findHardestChallengeAtTime(appData, now);
+            assertEqual(hardest.type, 'custom', 'T37: Custom text (longer) wins over gibberish');
+        })();
+
+        // T38: No active blocks at all → returns default
+        (function T38() {
+            const now = Date.now();
+            const appData = createMockAppData();
+            const hardest = findHardestChallengeAtTime(appData, now);
+            assertEqual(hardest.type, 'random-words', 'T38: No blocks → default type');
+            assertEqual(hardest.count, 50, 'T38: No blocks → default count 50');
+        })();
+    }
+
+    // ========================================
+    // CATEGORY 9: Override All State Transitions
+    // ========================================
+
+    function runOverrideAllStateTests() {
+        console.log('\n💥 Category 9: Override All State Transitions');
+        console.log('-----------------------------------------------');
+
+        // T39: One-off + schedule → after override all, no domains blocked
+        (function T39() {
+            const blocklist1 = createMockBlocklist({ websites: ['facebook.com'] });
+            const blocklist2 = createMockBlocklist({ websites: ['youtube.com'] });
+            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const now = Date.now();
+
+            const appData = createMockAppData({
+                blocklists: [blocklist1, blocklist2],
+                activeBlocks: [createMockBlock(blocklist1.id, now - 60000, now + 60000)],
+                schedules: [createMockSchedule(blocklist2.id, [segment])]
+            });
+
+            // Verify blocked before
+            let domains = getBlockedDomains(appData, now, new Date(now));
+            assertEqual(domains.size, 2, 'T39: Before override → 2 blocked');
+
+            // Perform override all
+            simulateOverrideAll(appData);
+
+            domains = getBlockedDomains(appData, now, new Date(now));
+            assertSetEmpty(domains, 'T39: After override all → no domains blocked');
+        })();
+
+        // T40: Multiple overlapping one-offs → after override, zero active blocks
+        (function T40() {
+            const bl1 = createMockBlocklist({ websites: ['site1.com'] });
+            const bl2 = createMockBlocklist({ websites: ['site2.com'] });
+            const bl3 = createMockBlocklist({ websites: ['site3.com'] });
+            const now = Date.now();
+
+            const appData = createMockAppData({
+                blocklists: [bl1, bl2, bl3],
+                activeBlocks: [
+                    createMockBlock(bl1.id, now - 60000, now + 60000),
+                    createMockBlock(bl2.id, now - 60000, now + 60000),
+                    createMockBlock(bl3.id, now - 60000, now + 60000)
+                ]
+            });
+
+            simulateOverrideAll(appData);
+            assertEqual(appData.activeBlocks.length, 0, 'T40: Override all → zero active blocks');
+        })();
+
+        // T41: Only schedules → after override, schedules array empty
+        (function T41() {
+            const bl = createMockBlocklist({ websites: ['youtube.com'] });
+            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+
+            const appData = createMockAppData({
+                blocklists: [bl],
+                schedules: [
+                    createMockSchedule(bl.id, [segment]),
+                    createMockSchedule(bl.id, [segment])
+                ]
+            });
+
+            simulateOverrideAll(appData);
+            assertEqual(appData.schedules.length, 0, 'T41: Override all → zero schedules');
+        })();
+
+        // T42: Override all preserves blocklists (doesn't delete user's lists)
+        (function T42() {
+            const bl1 = createMockBlocklist({ name: 'Work Focus' });
+            const bl2 = createMockBlocklist({ name: 'Social Media' });
+            const now = Date.now();
+
+            const appData = createMockAppData({
+                blocklists: [bl1, bl2],
+                activeBlocks: [createMockBlock(bl1.id, now - 60000, now + 60000)],
+                schedules: [createMockSchedule(bl2.id, [createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6])])]
+            });
+
+            simulateOverrideAll(appData);
+            assertEqual(appData.blocklists.length, 2, 'T42: Override all preserves blocklists (2 remain)');
+            assertEqual(appData.blocklists[0].name, 'Work Focus', 'T42: First blocklist intact');
+            assertEqual(appData.blocklists[1].name, 'Social Media', 'T42: Second blocklist intact');
+        })();
+    }
+
+    // ========================================
     // MAIN TEST RUNNER
     // ========================================
 
@@ -658,6 +848,9 @@
             runOverrideTests();
             runAppBlockingTests();
             runOverrideAllTests();
+            runHasAnyActiveBlocksTests();
+            runFindHardestChallengeAdvancedTests();
+            runOverrideAllStateTests();
         } catch (error) {
             console.error('❌ Test suite crashed:', error);
         }
@@ -673,7 +866,10 @@
         runSharedDomainTests,
         runOverrideTests,
         runAppBlockingTests,
-        runOverrideAllTests
+        runOverrideAllTests,
+        runHasAnyActiveBlocksTests,
+        runFindHardestChallengeAdvancedTests,
+        runOverrideAllStateTests
     };
 
     console.log('🧪 ReddBlock Blocking Tests loaded. Press Cmd+Shift+T to run tests.');

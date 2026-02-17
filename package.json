@@ -13,6 +13,7 @@
     "build:helper:win": "cd helper-daemon && cargo build --release && copy target\\release\\redd-block-helper.exe target\\release\\redd-block-helper-aarch64-pc-windows-msvc.exe",
     "build:ios": "tauri ios build && mkdir -p for-distribution && cp 'src-tauri/gen/apple/build/arm64/ReDD Block.ipa' 'for-distribution/ReDD Block.ipa'",
     "build:win": "powershell -ExecutionPolicy Bypass -File ./scripts/build-win.ps1",
+    "test:helper": "node -e \"require('child_process').execSync(process.platform === 'win32' ? 'powershell -ExecutionPolicy Bypass -File ./scripts/test-helper-win.ps1' : 'sudo ./scripts/test-helper-mac.sh', {stdio: 'inherit'})\"",
     "tauri": "tauri",
     "vite:dev": "vite",
     "vite:build": "vite build",

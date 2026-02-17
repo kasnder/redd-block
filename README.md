@@ -168,6 +168,48 @@ npm run build:ios
 
 Built artifacts are copied to `for-distribution/` for upload or direct distribution.
 
+### Testing
+
+Three tiers of testing are available:
+
+**1. Unit Tests (in-app, instant)**
+
+Tests blocking logic — time-based scenarios, overlaps, overrides, override-all state transitions, and challenge difficulty selection. No system modification.
+
+```bash
+npm run dev                   # Start the app
+# Press Cmd+Shift+T (Mac) or Ctrl+Shift+T (Windows)
+# Or type in the dev console: runBlockingTests()
+```
+
+**2. Integration Tests (in-app, ~10 seconds)**
+
+Creates real blocks using a safe `.invalid` domain, verifies hosts file modification, block expiry, and schedule activation. Requires the helper daemon to be running.
+
+```bash
+# In the dev console:
+runIntegrationTests()
+```
+
+**3. Helper Daemon Smoke Test (terminal)**
+
+Talks directly to the helper daemon via IPC — verifies ping, version, start block → hosts file check → clear block → cleanup → localhost safety.
+
+```bash
+# macOS
+sudo ./scripts/test-helper-mac.sh
+
+# Windows (PowerShell as admin)
+.\scripts\test-helper-win.ps1
+
+# Or cross-platform via npm
+npm run test:helper
+```
+
+**4. Manual Checklist**
+
+See `scripts/manual-test-checklist.md` for the full pre-release checklist including advanced settings (override all, clean hosts, keep-blocking-on-uninstall), helper lifecycle (install/upgrade/remove), and iOS-specific tests.
+
 ## Project Structure
 
 ```

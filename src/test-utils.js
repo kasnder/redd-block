@@ -304,6 +304,86 @@ function printTestSummary() {
     }
 }
 
+// ========================================
+// ADVANCED FEATURE LOGIC (extracted for testing)
+// ========================================
+
+/**
+ * Check if there are any active blocks or schedules at the given time
+ * Mirrors hasAnyActiveBlocks() in app.js but is pure and testable
+ */
+function hasAnyActiveBlocks(appData, now, nowDate) {
+    // Check one-off blocks
+    const hasActiveOneOff = appData.activeBlocks.some(block =>
+        block.startTime <= now && block.endTime > now
+    );
+    if (hasActiveOneOff) return true;
+
+    // Check schedules
+    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
+    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
+
+    if (appData.schedules) {
+        for (const schedule of appData.schedules) {
+            if (!schedule.segments) continue;
+            const isActive = schedule.segments.some(seg => {
+                const startMins = seg.startHour * 60 + seg.startMinute;
+                const endMins = seg.endHour * 60 + seg.endMinute;
+                if (endMins > startMins) {
+                    return seg.days.includes(currentDay) &&
+                        currentMins >= startMins &&
+                        currentMins < endMins;
+                } else {
+                    const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
+                    return (seg.days.includes(currentDay) && currentMins >= startMins) ||
+                        (seg.days.includes(yesterdayDay) && currentMins < endMins);
+                }
+            });
+            if (isActive) return true;
+        }
+    }
+
+    return false;
+}
+
+/**
+ * Find the hardest challenge among all active blocks and schedules
+ * Mirrors findHardestChallenge() in app.js but accepts time parameter
+ */
+function findHardestChallengeAtTime(appData, now) {
+    let hardest = { type: 'random-words', count: 50 };
+
+    // Check active one-off blocks
+    for (const block of appData.activeBlocks) {
+        if (block.startTime <= now && block.endTime > now) {
+            const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+            if (blocklist?.overrideDifficulty) {
+                hardest = compareDifficulties(hardest, blocklist.overrideDifficulty);
+            }
+        }
+    }
+
+    // Check active schedules (all schedules, since findHardestChallenge doesn't time-filter)
+    for (const schedule of appData.schedules || []) {
+        const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+        if (blocklist?.overrideDifficulty) {
+            hardest = compareDifficulties(hardest, blocklist.overrideDifficulty);
+        }
+    }
+
+    return hardest;
+}
+
+/**
+ * Simulate performOverrideAll — clears blocks and schedules, leaves blocklists intact
+ * Returns the resulting appData (mutated)
+ */
+function simulateOverrideAll(appData) {
+    appData.activeBlocks = [];
+    appData.schedules = [];
+    return appData;
+}
+
 // Export for use in blocking-tests.js
 window.ReddBlockTestUtils = {
     // Time mocking
@@ -322,6 +402,9 @@ window.ReddBlockTestUtils = {
     getBlockedDomains,
     getHardestChallenge,
     compareDifficulties,
+    hasAnyActiveBlocks,
+    findHardestChallengeAtTime,
+    simulateOverrideAll,
 
     // Assertions
     resetTestResults,
