@@ -72,10 +72,10 @@ function Build-Command {
     param([string]$action, [string]$extraJson = "")
     $token = Get-AuthToken
     if ($token -and $extraJson) {
-        return "{`"action`":`"$action`",`"authToken`":`"$token`",$extraJson}"
+        return "{`"action`":`"$action`",`"auth_token`":`"$token`",$extraJson}"
     }
     elseif ($token) {
-        return "{`"action`":`"$action`",`"authToken`":`"$token`"}"
+        return "{`"action`":`"$action`",`"auth_token`":`"$token`"}"
     }
     elseif ($extraJson) {
         return "{`"action`":`"$action`",$extraJson}"
