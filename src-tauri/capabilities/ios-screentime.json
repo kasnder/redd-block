@@ -1,0 +1,14 @@
+{
+    "$schema": "../gen/schemas/ios-schema.json",
+    "identifier": "ios-screentime",
+    "description": "iOS-specific permissions for Screen Time API",
+    "platforms": [
+        "iOS"
+    ],
+    "windows": [
+        "main"
+    ],
+    "permissions": [
+        "screentime:default"
+    ]
+}
