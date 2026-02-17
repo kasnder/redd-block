@@ -214,9 +214,18 @@ pub fn check_helper_status() -> HelperStatus {
         _ => (false, None),
     };
     
-    // Check if version matches expected
+    // Check if version matches or is newer than expected
     let version_ok = match &helper_version {
-        Some(v) => v == EXPECTED_HELPER_VERSION,
+        Some(v) => {
+            // Parse as semver-like: split on dots and compare numerically
+            let parse = |s: &str| -> Vec<u32> {
+                s.split('.').filter_map(|p| p.parse().ok()).collect()
+            };
+            let helper_parts = parse(v);
+            let expected_parts = parse(EXPECTED_HELPER_VERSION);
+            // Helper is OK if it's >= expected version
+            helper_parts >= expected_parts
+        }
         None => false,
     };
     
