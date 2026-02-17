@@ -14,21 +14,24 @@ $HELPER_PORT = 62222
 $TEST_DOMAIN = "smoke-test-reddblock.invalid"
 $HOSTS_FILE = "C:\Windows\System32\drivers\etc\hosts"
 $AUTH_TOKEN_PATH = "$env:PROGRAMDATA\ReDD Block\auth-token"
-$Passed = 0
-$Failed = 0
+$script:Passed = 0
+$script:Failed = 0
 
-function Write-Pass($msg) {
-    Write-Host "  ✅ PASS: $msg" -ForegroundColor Green
+function Write-Pass {
+    param([string]$msg)
+    Write-Host "  PASS: $msg" -ForegroundColor Green
     $script:Passed++
 }
 
-function Write-Fail($msg) {
-    Write-Host "  ❌ FAIL: $msg" -ForegroundColor Red
+function Write-Fail {
+    param([string]$msg)
+    Write-Host "  FAIL: $msg" -ForegroundColor Red
     $script:Failed++
 }
 
-function Write-Warn($msg) {
-    Write-Host "  ⚠️  WARN: $msg" -ForegroundColor Yellow
+function Write-Warn {
+    param([string]$msg)
+    Write-Host "  WARN: $msg" -ForegroundColor Yellow
 }
 
 # Read auth token (required for Windows TCP IPC)
@@ -40,41 +43,46 @@ function Get-AuthToken {
 }
 
 # Send a JSON command to the helper via TCP
-function Send-Command($jsonCmd) {
+function Send-HelperCommand {
+    param([string]$jsonCmd)
     try {
         $client = New-Object System.Net.Sockets.TcpClient
         $client.Connect($HELPER_ADDR, $HELPER_PORT)
         $stream = $client.GetStream()
         $writer = New-Object System.IO.StreamWriter($stream)
         $reader = New-Object System.IO.StreamReader($stream)
-        
+
         $writer.WriteLine($jsonCmd)
         $writer.Flush()
-        
+
         # Read response (with timeout)
         $stream.ReadTimeout = 5000
         $response = $reader.ReadLine()
-        
+
         $client.Close()
         return $response
-    } catch {
+    }
+    catch {
         return $null
     }
 }
 
 # Add auth token to command if available
-function Build-Command($action, $extraJson = "") {
+function Build-Command {
+    param([string]$action, [string]$extraJson = "")
     $token = Get-AuthToken
-    if ($token) {
-        if ($extraJson) {
-            return "{`"action`":`"$action`",`"authToken`":`"$token`",$extraJson}"
-        }
+    if ($token -and $extraJson) {
+        return "{`"action`":`"$action`",`"authToken`":`"$token`",$extraJson}"
+    }
+    elseif ($token) {
         return "{`"action`":`"$action`",`"authToken`":`"$token`"}"
     }
-    if ($extraJson) {
+    elseif ($extraJson) {
         return "{`"action`":`"$action`",$extraJson}"
     }
-    return "{`"action`":`"$action`"}"
+    else {
+        return "{`"action`":`"$action`"}"
+    }
 }
 
 # ==========================================
@@ -82,8 +90,8 @@ function Build-Command($action, $extraJson = "") {
 # ==========================================
 
 Write-Host ""
-Write-Host "🔬 ReddBlock Helper Daemon Smoke Test (Windows)" -ForegroundColor Cyan
-Write-Host "================================================" -ForegroundColor Cyan
+Write-Host "ReddBlock Helper Daemon Smoke Test (Windows)" -ForegroundColor Cyan
+Write-Host "=============================================" -ForegroundColor Cyan
 Write-Host ""
 
 # Check admin privileges
@@ -94,13 +102,14 @@ if (-not $isAdmin) {
 }
 
 # Test 1: Check TCP connection
-Write-Host "📡 1. Checking helper connection..."
+Write-Host "1. Checking helper connection..."
 try {
     $testClient = New-Object System.Net.Sockets.TcpClient
     $testClient.Connect($HELPER_ADDR, $HELPER_PORT)
     $testClient.Close()
     Write-Pass "TCP connection to ${HELPER_ADDR}:${HELPER_PORT} succeeded"
-} catch {
+}
+catch {
     Write-Fail "Cannot connect to helper at ${HELPER_ADDR}:${HELPER_PORT}"
     Write-Host ""
     Write-Host "Helper daemon is not installed or not running."
@@ -110,105 +119,121 @@ try {
 
 # Test 2: Ping
 Write-Host ""
-Write-Host "🏓 2. Ping test..."
+Write-Host "2. Ping test..."
 $cmd = Build-Command "ping"
-$response = Send-Command $cmd
-if ($response -and $response -match '"success":\s*true') {
+$response = Send-HelperCommand $cmd
+if ($response -and ($response -match '"success":\s*true')) {
     Write-Pass "Helper responded to ping"
-} else {
+}
+else {
     Write-Fail "Helper did not respond to ping (response: $response)"
 }
 
 # Test 3: Get version
 Write-Host ""
-Write-Host "🔖 3. Version check..."
+Write-Host "3. Version check..."
 $cmd = Build-Command "get-version"
-$response = Send-Command $cmd
-if ($response -and $response -match '"version"') {
+$response = Send-HelperCommand $cmd
+if ($response -and ($response -match '"version"')) {
     $parsed = $response | ConvertFrom-Json
     Write-Pass "Helper version: $($parsed.version)"
-} else {
+}
+else {
     Write-Fail "Could not get helper version (response: $response)"
 }
 
 # Test 4: Get status
 Write-Host ""
-Write-Host "📊 4. Status check..."
+Write-Host "4. Status check..."
 $cmd = Build-Command "get-status"
-$response = Send-Command $cmd
-if ($response -and $response -match '"success":\s*true') {
+$response = Send-HelperCommand $cmd
+$skipRemaining = $false
+if ($response -and ($response -match '"success":\s*true')) {
     $parsed = $response | ConvertFrom-Json
     Write-Pass "Status check OK (active: $($parsed.active))"
-    
+
     if ($parsed.active -eq $true) {
-        Write-Warn "There is already an active block — skipping start/clear tests"
-        Write-Host ""
-        Write-Host "==========================================" -ForegroundColor Cyan
-        Write-Host "  RESULTS: $Passed passed, $Failed failed, 3 skipped" -ForegroundColor Cyan
-        Write-Host "==========================================" -ForegroundColor Cyan
-        exit 0
+        Write-Warn "There is already an active block - skipping start/clear tests"
+        $skipRemaining = $true
     }
-} else {
+}
+else {
     Write-Fail "Status check failed (response: $response)"
+}
+
+if ($skipRemaining) {
+    Write-Host ""
+    Write-Host "==========================================" -ForegroundColor Cyan
+    $msg = "  RESULTS: $($script:Passed) passed, $($script:Failed) failed, 3 skipped"
+    Write-Host $msg -ForegroundColor Cyan
+    Write-Host "==========================================" -ForegroundColor Cyan
+    exit 0
 }
 
 # Test 5: Start a test block
 Write-Host ""
-Write-Host "🚫 5. Start test block..."
+Write-Host "5. Start test block..."
 $endTime = [long](([datetime]::UtcNow - [datetime]"1970-01-01").TotalMilliseconds + 120000)
 $extra = "`"domains`":[`"$TEST_DOMAIN`"],`"endTime`":$endTime,`"blocklistId`":`"smoke-test`""
 $cmd = Build-Command "start-block" $extra
-$response = Send-Command $cmd
-if ($response -and $response -match '"success":\s*true') {
+$response = Send-HelperCommand $cmd
+if ($response -and ($response -match '"success":\s*true')) {
     Write-Pass "Test block started for $TEST_DOMAIN"
-} else {
+}
+else {
     Write-Fail "Failed to start test block (response: $response)"
 }
 
 # Test 6: Verify hosts file
 Write-Host ""
-Write-Host "📝 6. Verify hosts file..."
+Write-Host "6. Verify hosts file..."
 Start-Sleep -Seconds 1
 $hostsContent = Get-Content $HOSTS_FILE -Raw -ErrorAction SilentlyContinue
-if ($hostsContent -match [regex]::Escape($TEST_DOMAIN)) {
+$escapedDomain = [regex]::Escape($TEST_DOMAIN)
+if ($hostsContent -match $escapedDomain) {
     Write-Pass "Hosts file contains $TEST_DOMAIN"
-} else {
+}
+else {
     Write-Fail "Hosts file does NOT contain $TEST_DOMAIN"
 }
 
 # Test 7: Verify block markers
 if ($hostsContent -match "BEGIN REDD BLOCK") {
     Write-Pass "Hosts file has REDD BLOCK markers"
-} else {
+}
+else {
     Write-Fail "Hosts file missing REDD BLOCK markers"
 }
 
 # Test 8: Clear the block
 Write-Host ""
-Write-Host "🧹 7. Clear test block..."
+Write-Host "7. Clear test block..."
 $cmd = Build-Command "clear-block"
-$response = Send-Command $cmd
-if ($response -and $response -match '"success":\s*true') {
+$response = Send-HelperCommand $cmd
+if ($response -and ($response -match '"success":\s*true')) {
     Write-Pass "Test block cleared"
-} else {
+}
+else {
     Write-Fail "Failed to clear test block (response: $response)"
 }
 
 # Test 9: Verify cleanup
 Write-Host ""
-Write-Host "🔍 8. Verify cleanup..."
+Write-Host "8. Verify cleanup..."
 Start-Sleep -Seconds 1
 $hostsContent = Get-Content $HOSTS_FILE -Raw -ErrorAction SilentlyContinue
-if ($hostsContent -match [regex]::Escape($TEST_DOMAIN)) {
+if ($hostsContent -match $escapedDomain) {
     Write-Fail "Hosts file STILL contains $TEST_DOMAIN after clear"
-} else {
-    Write-Pass "Hosts file cleaned — $TEST_DOMAIN removed"
+}
+else {
+    Write-Pass "Hosts file cleaned - $TEST_DOMAIN removed"
 }
 
 # Test 10: Safety check
 if ($hostsContent -match "localhost") {
     Write-Pass "Safety: localhost entry present in hosts file"
-} else {
+}
+else {
     Write-Fail "SAFETY ISSUE: localhost entry MISSING from hosts file!"
 }
 
@@ -218,13 +243,14 @@ if ($hostsContent -match "localhost") {
 
 Write-Host ""
 Write-Host "==========================================" -ForegroundColor Cyan
-$total = $Passed + $Failed
-if ($Failed -eq 0) {
-    Write-Host "  ALL $total CHECKS PASSED ✅" -ForegroundColor Green
-} else {
-    Write-Host "  RESULTS: $Passed passed, $Failed failed" -ForegroundColor $(if ($Failed -gt 0) { "Red" } else { "Green" })
+$total = $script:Passed + $script:Failed
+if ($script:Failed -eq 0) {
+    Write-Host "  ALL $total CHECKS PASSED" -ForegroundColor Green
+}
+else {
+    Write-Host "  RESULTS: $($script:Passed) passed, $($script:Failed) failed" -ForegroundColor Red
 }
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host ""
 
-exit $Failed
+exit $script:Failed
