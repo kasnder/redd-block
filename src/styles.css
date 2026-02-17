@@ -103,7 +103,7 @@ body.ios .main-content {
 
 body.ios .app-container {
     height: calc(100vh - env(safe-area-inset-top, 20px));
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px));
     overflow: hidden;
 }
 
