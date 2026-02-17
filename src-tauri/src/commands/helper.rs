@@ -428,7 +428,9 @@ Start-Sleep -Seconds 1
 # Copy the helper binary
 Copy-Item -Path $sourcePath -Destination $helperPath -Force
 
-
+# Add Windows Firewall rule to allow the helper
+netsh advfirewall firewall delete rule name="ReDD Block Helper" 2>$null
+netsh advfirewall firewall add rule name="ReDD Block Helper" dir=in action=allow program="$helperPath" protocol=TCP localport=62222
 
 # Remove existing task if any
 schtasks /Delete /TN "$taskName" /F 2>$null
@@ -500,6 +502,10 @@ exit 0
                     let wait_result = WaitForSingleObject(sei.hProcess, 30000);
                     wait_result == WAIT_OBJECT_0
                 } else {
+                    // No process handle returned — script may have launched but we can't track it.
+                    // Wait a few seconds and hope for the best.
+                    log::warn!("ShellExecuteExW returned no process handle, waiting 5 seconds for script to finish");
+                    std::thread::sleep(std::time::Duration::from_secs(5));
                     true
                 }
             } else {
@@ -517,8 +523,8 @@ exit 0
             };
         }
         
-        // Wait for helper to respond (up to 5 seconds)
-        for attempt in 0..10 {
+        // Wait for helper to respond (up to 15 seconds)
+        for attempt in 0..30 {
             std::thread::sleep(std::time::Duration::from_millis(500));
             
             let ping_result = send_command(&IpcCommand {
@@ -528,7 +534,7 @@ exit 0
                 blocklist_id: None,
                 apps: None,
                 schedules: None,
-                    });
+            });
             
             if ping_result.is_ok() {
                 log::info!("Helper started successfully after {} attempts", attempt + 1);
@@ -537,7 +543,28 @@ exit 0
                     error: None,
                 };
             }
-            log::debug!("Waiting for helper to start, attempt {}", attempt + 1);
+            
+            // Every 5 attempts, check if the helper process is still alive
+            if attempt % 5 == 4 {
+                let proc_check = std::process::Command::new("tasklist")
+                    .args(["/FI", "IMAGENAME eq redd-block-helper.exe", "/NH"])
+                    .output();
+                let helper_alive = match &proc_check {
+                    Ok(output) => {
+                        let stdout = String::from_utf8_lossy(&output.stdout);
+                        stdout.contains("redd-block-helper")
+                    }
+                    Err(_) => false,
+                };
+                if !helper_alive {
+                    log::warn!("Helper process is not running after install (attempt {})", attempt + 1);
+                    return HelperResult {
+                        success: false,
+                        error: Some("Helper was installed but crashed on startup. This may be caused by antivirus software blocking the helper. Please check your antivirus settings and try again.".to_string()),
+                    };
+                }
+                log::debug!("Helper process is alive but not yet responding (attempt {})", attempt + 1);
+            }
         }
         
         HelperResult {
