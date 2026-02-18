@@ -11,6 +11,7 @@
  * - T18-T21: Override behavior
  * - T22-T25: App blocking (manual only - requires system interaction)
  * - T26-T32: Override All feature
+ * - T42-T46: Self-Block Prevention
  */
 
 (function () {
@@ -830,6 +831,47 @@
     }
 
     // ========================================
+    // CATEGORY 10: SELF-BLOCK PREVENTION
+    // ========================================
+
+    function runSelfBlockPreventionTests() {
+        console.log('\n🛡️ Category 10: Self-Block Prevention');
+        console.log('--------------------------------------');
+
+        const { isProtectedApp } = window.__REDDBLOCK_INTERNALS__;
+
+        // T42: "ReDD Block" is protected
+        (function T42() {
+            assert(isProtectedApp('ReDD Block'), 'T42: "ReDD Block" is protected');
+        })();
+
+        // T43: "redd-block" is protected
+        (function T43() {
+            assert(isProtectedApp('redd-block'), 'T43: "redd-block" is protected');
+        })();
+
+        // T44: "redd-block-helper" is protected
+        (function T44() {
+            assert(isProtectedApp('redd-block-helper'), 'T44: "redd-block-helper" is protected');
+        })();
+
+        // T45: Case variations are protected
+        (function T45() {
+            assert(isProtectedApp('REDD BLOCK'), 'T45: "REDD BLOCK" (uppercase) is protected');
+            assert(isProtectedApp('Redd Block'), 'T45: "Redd Block" (title case) is protected');
+            assert(isProtectedApp('  ReDD Block  '), 'T45: Leading/trailing spaces handled');
+        })();
+
+        // T46: Normal apps are NOT protected
+        (function T46() {
+            assert(!isProtectedApp('Safari'), 'T46: "Safari" is not protected');
+            assert(!isProtectedApp('Chrome'), 'T46: "Chrome" is not protected');
+            assert(!isProtectedApp('Slack'), 'T46: "Slack" is not protected');
+            assert(!isProtectedApp(''), 'T46: Empty string is not protected');
+        })();
+    }
+
+    // ========================================
     // MAIN TEST RUNNER
     // ========================================
 
@@ -851,6 +893,7 @@
             runHasAnyActiveBlocksTests();
             runFindHardestChallengeAdvancedTests();
             runOverrideAllStateTests();
+            runSelfBlockPreventionTests();
         } catch (error) {
             console.error('❌ Test suite crashed:', error);
         }
@@ -869,7 +912,8 @@
         runOverrideAllTests,
         runHasAnyActiveBlocksTests,
         runFindHardestChallengeAdvancedTests,
-        runOverrideAllStateTests
+        runOverrideAllStateTests,
+        runSelfBlockPreventionTests
     };
 
     console.log('🧪 ReddBlock Blocking Tests loaded. Press Cmd+Shift+T to run tests.');

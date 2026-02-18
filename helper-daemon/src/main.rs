@@ -776,8 +776,21 @@ impl AppWatcherHandle {
     }
 }
 
+/// Check if an app name is protected (i.e., is ReDD Block itself).
+/// Protected apps must never be blocked — this is a safety net in case
+/// the frontend validation is bypassed.
+fn is_protected_app(name: &str) -> bool {
+    let lower = name.trim().to_lowercase();
+    matches!(lower.as_str(), "redd block" | "redd-block" | "redd-block-helper")
+}
+
 /// Hide a specific app
 fn hide_app(app_name: &str) {
+    // Safety net: never hide ReDD Block itself
+    if is_protected_app(app_name) {
+        log(&format!("Skipping hide_app: '{}' is a protected app (self-block prevention)", app_name));
+        return;
+    }
     #[cfg(target_os = "macos")]
     {
         // Sanitize app_name to prevent osascript injection.
@@ -989,6 +1002,16 @@ fn set_blocked_apps(
     apps: Vec<String>,
 ) -> IpcResponse {
     log(&format!("Setting blocked apps: {:?}", apps));
+    
+    // Safety net: filter out protected apps (ReDD Block must never block itself)
+    let apps: Vec<String> = apps.into_iter().filter(|a| {
+        if is_protected_app(a) {
+            log(&format!("Filtered protected app from blocked list: {}", a));
+            false
+        } else {
+            true
+        }
+    }).collect();
     
     let had_apps = !app_state.lock().unwrap().is_empty();
     let has_apps = !apps.is_empty();

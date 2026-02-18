@@ -99,6 +99,19 @@ let scheduleSegments = getDefaultScheduleSegments(); // Array of time segments w
 // Far-future timestamp used for "always on" blocks (year 9999)
 const ALWAYS_ON_END_TIME = new Date(9999, 11, 31, 23, 59, 59, 999).getTime();
 
+// Protected app names — ReDD Block must never block itself
+const PROTECTED_APP_NAMES = ['redd block', 'redd-block', 'redd-block-helper'];
+
+/**
+ * Check if an app name matches a protected app (case-insensitive).
+ * Returns true if the app should NOT be added to a blocklist.
+ */
+function isProtectedApp(name) {
+    if (!name) return false;
+    const lower = name.trim().toLowerCase();
+    return PROTECTED_APP_NAMES.some(p => lower === p);
+}
+
 // Helper: detect always-on blocks by flag OR far-future end time
 function isBlockAlwaysOn(block) {
     return block.isAlwaysOn === true || block.endTime >= ALWAYS_ON_END_TIME;
@@ -710,6 +723,17 @@ function setupModalListeners() {
         if (e.key === 'Enter' && modalAppInput.value.trim()) {
             e.preventDefault();
             const app = modalAppInput.value.trim();
+            if (isProtectedApp(app)) {
+                // Show brief warning — ReDD Block cannot block itself
+                modalAppInput.value = '';
+                modalAppInput.placeholder = "⚠️ Can't block ReDD Block itself!";
+                modalAppInput.classList.add('input-error');
+                setTimeout(() => {
+                    modalAppInput.placeholder = 'e.g., Safari';
+                    modalAppInput.classList.remove('input-error');
+                }, 2000);
+                return;
+            }
             if (!modalApps.includes(app)) {
                 modalApps.push(app);
                 window.renderModalTags();
@@ -902,10 +926,12 @@ function setupModalListeners() {
         }
 
         const pendingApp = modalAppInput.value.trim();
-        if (pendingApp && !modalApps.includes(pendingApp)) {
+        if (pendingApp && !isProtectedApp(pendingApp) && !modalApps.includes(pendingApp)) {
             modalApps.push(pendingApp);
             modalAppInput.value = '';
             window.renderModalTags();
+        } else {
+            modalAppInput.value = '';
         }
 
         const name = document.getElementById('blocklist-name').value.trim();
@@ -4446,7 +4472,10 @@ async function updateBlockedApps() {
         });
     }
 
-    const appsArray = Array.from(allBlockedApps).sort();
+    // Filter out protected apps (ReDD Block must never block itself)
+    const appsArray = Array.from(allBlockedApps)
+        .filter(app => !isProtectedApp(app))
+        .sort();
 
     // Send blocked apps to helper daemon
     if (helperAvailable) {
@@ -7561,7 +7590,9 @@ Object.assign(window.__REDDBLOCK_INTERNALS__, {
     saveData,
     updateHostsFile,
     tauriAPI,
-    render
+    render,
+    isProtectedApp,
+    PROTECTED_APP_NAMES
 });
 
 console.log('💡 To run blocking tests, type: runBlockingTests() in the console');
