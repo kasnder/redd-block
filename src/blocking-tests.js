@@ -12,6 +12,7 @@
  * - T22-T25: App blocking (manual only - requires system interaction)
  * - T26-T32: Override All feature
  * - T42-T46: Self-Block Prevention
+ * - T47-T49: Protected Domain Prevention
  */
 
 (function () {
@@ -872,6 +873,44 @@
     }
 
     // ========================================
+    // CATEGORY 11: PROTECTED DOMAIN PREVENTION
+    // ========================================
+
+    function runProtectedDomainTests() {
+        console.log('\n🌐 Category 11: Protected Domain Prevention');
+        console.log('--------------------------------------------');
+
+        const { isProtectedDomain } = window.__REDDBLOCK_INTERNALS__;
+
+        // T47: Localhost variants are protected
+        (function T47() {
+            assert(isProtectedDomain('localhost'), 'T47: "localhost" is protected');
+            assert(isProtectedDomain('localhost.localdomain'), 'T47: "localhost.localdomain" is protected');
+            assert(isProtectedDomain('LOCALHOST'), 'T47: Case-insensitive');
+            assert(isProtectedDomain('127.0.0.1'), 'T47: "127.0.0.1" is protected');
+            assert(isProtectedDomain('0.0.0.0'), 'T47: "0.0.0.0" is protected');
+            assert(isProtectedDomain('::1'), 'T47: "::1" is protected');
+        })();
+
+        // T48: App-related domains are protected
+        (function T48() {
+            assert(isProtectedDomain('broadcasthost'), 'T48: "broadcasthost" is protected');
+            assert(isProtectedDomain('local'), 'T48: "local" is protected');
+            assert(isProtectedDomain('reddfocus.org'), 'T48: "reddfocus.org" is protected');
+            assert(isProtectedDomain('www.reddfocus.org'), 'T48: "www.reddfocus.org" is protected');
+            assert(isProtectedDomain('ulyngs.github.io'), 'T48: "ulyngs.github.io" is protected');
+        })();
+
+        // T49: Normal domains are NOT protected
+        (function T49() {
+            assert(!isProtectedDomain('reddit.com'), 'T49: "reddit.com" is not protected');
+            assert(!isProtectedDomain('facebook.com'), 'T49: "facebook.com" is not protected');
+            assert(!isProtectedDomain('youtube.com'), 'T49: "youtube.com" is not protected');
+            assert(!isProtectedDomain(''), 'T49: Empty string is not protected');
+        })();
+    }
+
+    // ========================================
     // MAIN TEST RUNNER
     // ========================================
 
@@ -894,6 +933,7 @@
             runFindHardestChallengeAdvancedTests();
             runOverrideAllStateTests();
             runSelfBlockPreventionTests();
+            runProtectedDomainTests();
         } catch (error) {
             console.error('❌ Test suite crashed:', error);
         }
@@ -913,7 +953,8 @@
         runHasAnyActiveBlocksTests,
         runFindHardestChallengeAdvancedTests,
         runOverrideAllStateTests,
-        runSelfBlockPreventionTests
+        runSelfBlockPreventionTests,
+        runProtectedDomainTests
     };
 
     console.log('🧪 ReddBlock Blocking Tests loaded. Press Cmd+Shift+T to run tests.');

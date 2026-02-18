@@ -102,6 +102,15 @@ const ALWAYS_ON_END_TIME = new Date(9999, 11, 31, 23, 59, 59, 999).getTime();
 // Protected app names — ReDD Block must never block itself
 const PROTECTED_APP_NAMES = ['redd block', 'redd-block', 'redd-block-helper'];
 
+// Protected domains — blocking these would break networking or the app itself
+const PROTECTED_DOMAINS = [
+    'localhost', 'localhost.localdomain',
+    '127.0.0.1', '0.0.0.0', '::1',
+    'broadcasthost', 'local',
+    'reddfocus.org', 'www.reddfocus.org',
+    'ulyngs.github.io'
+];
+
 /**
  * Check if an app name matches a protected app (case-insensitive).
  * Returns true if the app should NOT be added to a blocklist.
@@ -110,6 +119,16 @@ function isProtectedApp(name) {
     if (!name) return false;
     const lower = name.trim().toLowerCase();
     return PROTECTED_APP_NAMES.some(p => lower === p);
+}
+
+/**
+ * Check if a domain is protected (case-insensitive).
+ * Returns true if the domain should NOT be added to a blocklist.
+ */
+function isProtectedDomain(domain) {
+    if (!domain) return false;
+    const lower = domain.trim().toLowerCase();
+    return PROTECTED_DOMAINS.some(p => lower === p);
 }
 
 // Helper: detect always-on blocks by flag OR far-future end time
@@ -711,6 +730,17 @@ function setupModalListeners() {
             }
             // Valid domain — hide any error message
             if (errorMsg) errorMsg.classList.add('hidden');
+            if (isProtectedDomain(website)) {
+                // Show brief warning — can't block localhost/reserved domains
+                modalWebsiteInput.value = '';
+                modalWebsiteInput.placeholder = "⚠️ Can't block this domain!";
+                modalWebsiteInput.classList.add('input-error');
+                setTimeout(() => {
+                    modalWebsiteInput.placeholder = 'e.g., reddit.com';
+                    modalWebsiteInput.classList.remove('input-error');
+                }, 2000);
+                return;
+            }
             if (!modalWebsites.includes(website)) {
                 modalWebsites.push(website);
                 window.renderModalTags();
@@ -917,7 +947,7 @@ function setupModalListeners() {
     document.getElementById('save-blocklist-btn').addEventListener('click', () => {
         // Auto-confirm any pending input in the website/app fields
         const pendingWebsite = cleanDomainInput(modalWebsiteInput.value);
-        if (pendingWebsite && isValidDomain(pendingWebsite) && !modalWebsites.includes(pendingWebsite)) {
+        if (pendingWebsite && isValidDomain(pendingWebsite) && !isProtectedDomain(pendingWebsite) && !modalWebsites.includes(pendingWebsite)) {
             modalWebsites.push(pendingWebsite);
             modalWebsiteInput.value = '';
             window.renderModalTags();
@@ -4255,8 +4285,10 @@ async function updateHostsFile(silent = false) {
         });
     }
 
-    // Check if domains actually changed
-    const domainsArray = Array.from(allDomains).sort();
+    // Filter out protected domains (localhost etc. must never be blocked)
+    const domainsArray = Array.from(allDomains)
+        .filter(d => !isProtectedDomain(d))
+        .sort();
     const lastDomainsArray = Array.from(lastBlockedDomains).sort();
     const domainsChanged = JSON.stringify(domainsArray) !== JSON.stringify(lastDomainsArray);
 
@@ -7592,7 +7624,9 @@ Object.assign(window.__REDDBLOCK_INTERNALS__, {
     tauriAPI,
     render,
     isProtectedApp,
-    PROTECTED_APP_NAMES
+    PROTECTED_APP_NAMES,
+    isProtectedDomain,
+    PROTECTED_DOMAINS
 });
 
 console.log('💡 To run blocking tests, type: runBlockingTests() in the console');

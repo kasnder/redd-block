@@ -403,6 +403,12 @@ fn add_block_to_hosts(content: &str, domains: &[String]) -> String {
             .unwrap_or(domain)
             .to_lowercase();
         
+        // Safety net: never block localhost/loopback/reserved domains
+        if is_protected_domain(&clean_domain) {
+            log(&format!("Skipping protected domain in hosts file: {}", clean_domain));
+            continue;
+        }
+        
         // IPv4 entries
         block_lines.push(format!("0.0.0.0 {}", clean_domain));
         block_lines.push(format!("0.0.0.0 www.{}", clean_domain));
@@ -782,6 +788,19 @@ impl AppWatcherHandle {
 fn is_protected_app(name: &str) -> bool {
     let lower = name.trim().to_lowercase();
     matches!(lower.as_str(), "redd block" | "redd-block" | "redd-block-helper")
+}
+
+/// Check if a domain is protected (localhost, loopback, reserved).
+/// These must never be added to the hosts file block list.
+fn is_protected_domain(domain: &str) -> bool {
+    let lower = domain.trim().to_lowercase();
+    matches!(lower.as_str(),
+        "localhost" | "localhost.localdomain"
+        | "127.0.0.1" | "0.0.0.0" | "::1"
+        | "broadcasthost" | "local"
+        | "reddfocus.org" | "www.reddfocus.org"
+        | "ulyngs.github.io"
+    )
 }
 
 /// Hide a specific app
