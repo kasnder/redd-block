@@ -75,6 +75,8 @@ window.__REDDBLOCK_INTERNALS__ = {
 let selectedBlocklistId = null;
 let editingBlocklistId = null;
 let overrideBlockId = null;
+/** Blocklist id to pass to helper when confirming single-block override (set when opening modal). */
+let overrideBlocklistIdForHelper = null;
 let challengeText = '';
 let lastBlockedDomains = new Set(); // Track what's currently blocked to avoid re-prompting
 let activatedBlockIds = new Set(); // Track blocks that have already triggered host updates
@@ -1298,7 +1300,7 @@ function setupOverrideModalListeners() {
 
             if (overrideBlockId && overrideBlockId !== 'helper-removal') {
                 const overriddenBlock = appData.activeBlocks.find(b => b.id === overrideBlockId);
-                const blocklistIdToClear = overriddenBlock ? overriddenBlock.blocklistId : null;
+                const blocklistIdToClear = overrideBlocklistIdForHelper ?? (overriddenBlock ? overriddenBlock.blocklistId : null);
                 appData.activeBlocks = appData.activeBlocks.filter(b => b.id !== overrideBlockId);
                 await saveData();
 
@@ -1308,12 +1310,18 @@ function setupOverrideModalListeners() {
                     const status = await tauriAPI.checkHelperStatus();
                     if (status.running) {
                         helperAvailable = true;
-                        await tauriAPI.clearBlockViaHelper(blocklistIdToClear);
+                        if (blocklistIdToClear != null) {
+                            await tauriAPI.clearBlockViaHelper(blocklistIdToClear);
+                        } else {
+                            console.error('[override] No blocklist id for single-block override; syncing via updateHostsFile');
+                            await updateHostsFile();
+                        }
                     } else {
                         await updateHostsFile();
                     }
                 }
 
+                overrideBlocklistIdForHelper = null;
                 // Update blocked apps (will stop watcher if no apps to block, including schedules)
                 await updateBlockedApps();
             } else if (window.overrideScheduleId) {
@@ -2697,6 +2705,7 @@ function openScheduleOverrideModal(schedule) {
     // Use the existing override modal - set up challenge
     challengeText = isRandom ? generateGibberish(charCount) : generateRandomWords(charCount);
     overrideBlockId = null; // Not a block, it's a schedule
+    overrideBlocklistIdForHelper = null;
 
     // Update modal title to indicate it's a schedule
     const titleEl = document.getElementById('override-modal-title');
@@ -2765,6 +2774,7 @@ function openScheduledBlockOverrideModal(schedule, segmentIndex, day) {
     const isRandom = difficulty.type === 'gibberish';
     challengeText = isRandom ? generateGibberish(charCount) : generateRandomWords(charCount);
     overrideBlockId = null; // Not a one-off block
+    overrideBlocklistIdForHelper = null;
 
     // Update modal title
     const titleEl = document.getElementById('override-modal-title');
@@ -4775,8 +4785,9 @@ function closeBlocklistModal() {
 // Open override modal
 function openOverrideModal(blockId) {
     overrideBlockId = blockId;
-
     const block = appData.activeBlocks.find(b => b.id === blockId);
+    overrideBlocklistIdForHelper = block ? block.blocklistId : null;
+
     const blocklist = appData.blocklists.find(bl => bl.id === block?.blocklistId);
 
     if (!blocklist) return;
@@ -4847,6 +4858,7 @@ function openOverrideModal(blockId) {
 function closeOverrideModal() {
     document.getElementById('override-modal').classList.add('hidden');
     overrideBlockId = null;
+    overrideBlocklistIdForHelper = null;
     challengeText = '';
 }
 
@@ -7345,6 +7357,7 @@ async function showRemoveHelperChallenge() {
         window.helperRemovalConfirmCallback = () => {
             modal.classList.add('hidden');
             overrideBlockId = null;
+            overrideBlocklistIdForHelper = null;
             window.helperRemovalConfirmCallback = null;
             window.helperRemovalCancelCallback = null;
             resolve(true);
@@ -7353,6 +7366,7 @@ async function showRemoveHelperChallenge() {
         window.helperRemovalCancelCallback = () => {
             modal.classList.add('hidden');
             overrideBlockId = null;
+            overrideBlocklistIdForHelper = null;
             window.helperRemovalConfirmCallback = null;
             window.helperRemovalCancelCallback = null;
             resolve(false);
