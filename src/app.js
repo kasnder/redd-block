@@ -1313,8 +1313,7 @@ function setupOverrideModalListeners() {
                         if (blocklistIdToClear != null) {
                             await tauriAPI.clearBlockViaHelper(blocklistIdToClear);
                         } else {
-                            console.error('[override] No blocklist id for single-block override; syncing via updateHostsFile');
-                            await updateHostsFile();
+                            console.error('[override] No blocklist id for single-block override; not touching helper state');
                         }
                     } else {
                         await updateHostsFile();
@@ -4349,91 +4348,12 @@ async function updateHostsFile(silent = false) {
                 }
                 return result || { success: true };
             } else {
-                // Calculate end time - need to consider both activeBlocks and schedules
-                let latestEndTime = null;
-
-                // Check active blocks
-                const activeBlockEndTimes = appData.activeBlocks
-                    .filter(b => b.startTime <= now && b.endTime > now)
-                    .map(b => b.endTime);
-
-                if (activeBlockEndTimes.length > 0) {
-                    latestEndTime = Math.max(...activeBlockEndTimes);
-                }
-
-                // For schedules, calculate the actual end time of the earliest-ending
-                // currently-active segment. This ensures the helper daemon clears the
-                // block at the right time even if the app isn't running.
-                if (latestEndTime === null && appData.schedules && appData.schedules.length > 0) {
-                    let earliestSegmentEnd = null;
-
-                    appData.schedules.forEach(schedule => {
-                        if (!schedule.segments) return;
-                        schedule.segments.forEach(seg => {
-                            const startMins = seg.startHour * 60 + seg.startMinute;
-                            const endMins = seg.endHour * 60 + seg.endMinute;
-
-                            let segmentEndTime = null;
-
-                            if (endMins > startMins) {
-                                // Same-day segment (e.g., 00:00 - 10:00)
-                                if (seg.days.includes(currentDay) && currentMins >= startMins && currentMins < endMins) {
-                                    const endDate = new Date(nowDate);
-                                    endDate.setHours(seg.endHour, seg.endMinute, 0, 0);
-                                    segmentEndTime = endDate.getTime();
-                                }
-                            } else {
-                                // Cross-midnight segment (e.g., 22:00 - 04:00)
-                                const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
-
-                                if (seg.days.includes(currentDay) && currentMins >= startMins) {
-                                    // In the evening portion — ends tomorrow at endMins
-                                    const endDate = new Date(nowDate);
-                                    endDate.setDate(endDate.getDate() + 1);
-                                    endDate.setHours(seg.endHour, seg.endMinute, 0, 0);
-                                    segmentEndTime = endDate.getTime();
-                                } else if (seg.days.includes(yesterdayDay) && currentMins < endMins) {
-                                    // In the morning portion — ends today at endMins
-                                    const endDate = new Date(nowDate);
-                                    endDate.setHours(seg.endHour, seg.endMinute, 0, 0);
-                                    segmentEndTime = endDate.getTime();
-                                }
-                            }
-
-                            if (segmentEndTime !== null) {
-                                if (earliestSegmentEnd === null || segmentEndTime < earliestSegmentEnd) {
-                                    earliestSegmentEnd = segmentEndTime;
-                                }
-                            }
-                        });
-                    });
-
-                    if (earliestSegmentEnd !== null) {
-                        latestEndTime = earliestSegmentEnd;
-                    } else {
-                        // Fallback: end of today (shouldn't happen if domains are from schedules)
-                        const endOfDay = new Date();
-                        endOfDay.setHours(23, 59, 59, 999);
-                        latestEndTime = endOfDay.getTime();
-                    }
-                }
-
-                // Fallback if somehow still null
-                if (latestEndTime === null) {
-                    latestEndTime = now + (24 * 60 * 60 * 1000); // 24 hours from now
-                }
-
-                const result = await tauriAPI.startBlockViaHelper({
-                    domains: domainsArray,
-                    endTime: latestEndTime,
-                    blocklistId: 'combined' // Multiple blocklists combined
-                });
-                if (result && result.success) {
-                    lastBlockedDomains = allDomains;
-                    // Update blocked apps based on active blocks and schedules
-                    await updateBlockedApps();
-                }
-                return result || { success: true };
+                // Helper already knows about per-blocklist blocks and schedules.
+                // Just record the expected domains locally so we can short-circuit next time.
+                lastBlockedDomains = allDomains;
+                // Update apps in case effective app set changed.
+                await updateBlockedApps();
+                return { success: true };
             }
         } else {
             console.log('[updateHostsFile] Helper NOT running, falling back');
