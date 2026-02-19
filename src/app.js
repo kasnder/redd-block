@@ -32,7 +32,8 @@ const tauriAPI = {
     installHelper: () => invoke('install_helper'),
     uninstallHelper: () => invoke('uninstall_helper'),
     startBlockViaHelper: (data) => invoke('start_block_via_helper', { ...data }),
-    clearBlockViaHelper: (blocklistId) => invoke('clear_block_via_helper', blocklistId != null ? { blocklist_id: blocklistId } : {}),
+    // Tauri maps Rust snake_case params to camelCase in JS; use blocklistId not blocklist_id
+    clearBlockViaHelper: (blocklistId) => invoke('clear_block_via_helper', blocklistId != null ? { blocklistId } : {}),
     cleanHostsFile: () => invoke('clean_hosts_file'),
 
     // App operations
