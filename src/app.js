@@ -32,7 +32,7 @@ const tauriAPI = {
     installHelper: () => invoke('install_helper'),
     uninstallHelper: () => invoke('uninstall_helper'),
     startBlockViaHelper: (data) => invoke('start_block_via_helper', { ...data }),
-    clearBlockViaHelper: () => invoke('clear_block_via_helper'),
+    clearBlockViaHelper: (blocklistId) => invoke('clear_block_via_helper', blocklistId != null ? { blocklist_id: blocklistId } : {}),
     cleanHostsFile: () => invoke('clean_hosts_file'),
 
     // App operations
@@ -1297,21 +1297,19 @@ function setupOverrideModalListeners() {
             }
 
             if (overrideBlockId && overrideBlockId !== 'helper-removal') {
-                // Block override - remove the block
+                const overriddenBlock = appData.activeBlocks.find(b => b.id === overrideBlockId);
+                const blocklistIdToClear = overriddenBlock ? overriddenBlock.blocklistId : null;
                 appData.activeBlocks = appData.activeBlocks.filter(b => b.id !== overrideBlockId);
                 await saveData();
 
-                // Clear blocking - use Screen Time on iOS, helper on desktop
                 if (isIOS) {
                     await tauriAPI.screentimeClearBlock();
                 } else {
-                    // Re-check helper status in case it was installed this session
                     const status = await tauriAPI.checkHelperStatus();
                     if (status.running) {
                         helperAvailable = true;
-                        await tauriAPI.clearBlockViaHelper();
+                        await tauriAPI.clearBlockViaHelper(blocklistIdToClear);
                     } else {
-                        // Fallback to direct update only if helper truly not running
                         await updateHostsFile();
                     }
                 }

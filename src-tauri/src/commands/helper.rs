@@ -27,7 +27,7 @@ pub struct HelperStatus {
 
 /// Expected helper version - update this when helper-daemon changes
 /// This is separate from the app version to avoid unnecessary reinstalls
-const EXPECTED_HELPER_VERSION: &str = "0.6.3";
+const EXPECTED_HELPER_VERSION: &str = "0.6.5";
 
 /// Result from helper operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -677,16 +677,15 @@ pub async fn start_block_via_helper(
     }
 }
 
-/// Clear block via helper daemon
+/// Clear block via helper daemon. If blocklist_id is Some(id), only that blocklist's block is cleared; if None, all manual blocks are cleared.
 #[tauri::command]
-pub async fn clear_block_via_helper() -> HelperResult {
-    log::info!("clear_block_via_helper called");
-    
+pub async fn clear_block_via_helper(blocklist_id: Option<String>) -> HelperResult {
+    log::info!("clear_block_via_helper called (blocklist_id: {:?})", blocklist_id);
     let cmd = IpcCommand {
         action: "clear-block".to_string(),
         domains: None,
         end_time: None,
-        blocklist_id: None,
+        blocklist_id,
         apps: None,
         schedules: None,
     };

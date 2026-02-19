@@ -49,12 +49,24 @@ struct BlockState {
     blocklist_id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Persisted state. We support reading old format (current_block) and new (manual_blocks).
+#[derive(Debug, Clone, Deserialize)]
 struct HelperState {
+    #[serde(default)]
+    manual_blocks: Vec<BlockState>,
+    #[serde(default)]
     current_block: Option<BlockState>,
     #[serde(default)]
     blocked_apps: Vec<String>,
     #[serde(default)]
+    schedules: Vec<HelperSchedule>,
+}
+
+/// What we write to disk (only manual_blocks, no current_block).
+#[derive(Debug, Serialize)]
+struct HelperStatePersist {
+    manual_blocks: Vec<BlockState>,
+    blocked_apps: Vec<String>,
     schedules: Vec<HelperSchedule>,
 }
 
@@ -94,7 +106,10 @@ enum IpcCommand {
         blocklist_id: String,
     },
     #[serde(rename = "clear-block")]
-    ClearBlock,
+    ClearBlock {
+        #[serde(rename = "blocklistId", default)]
+        blocklist_id: Option<String>,
+    },
     #[serde(rename = "get-status")]
     GetStatus,
     #[serde(rename = "restore-hosts")]
@@ -193,37 +208,40 @@ fn get_data_path() -> PathBuf {
     }
 }
 
-fn load_state() -> (Option<BlockState>, Vec<String>, Vec<HelperSchedule>) {
+fn load_state() -> (Vec<BlockState>, Vec<String>, Vec<HelperSchedule>) {
     let path = get_data_path();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
     if let Ok(content) = fs::read_to_string(&path) {
         if let Ok(state) = serde_json::from_str::<HelperState>(&content) {
-            let block = if let Some(block) = state.current_block {
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as u64;
-                if block.end_time > now {
-                    log(&format!("Restored active block: {} domains", block.domains.len()));
-                    Some(block)
-                } else {
-                    None
+            let mut manual_blocks = state.manual_blocks;
+            if manual_blocks.is_empty() {
+                if let Some(block) = state.current_block {
+                    if block.end_time > now {
+                        log(&format!("Migrated current_block to manual_blocks: {} domains", block.domains.len()));
+                        manual_blocks.push(block);
+                    }
                 }
-            } else {
-                None
-            };
+            }
+            manual_blocks.retain(|b| b.end_time > now);
+            if !manual_blocks.is_empty() {
+                log(&format!("Restored {} active manual block(s)", manual_blocks.len()));
+            }
             if !state.blocked_apps.is_empty() {
                 log(&format!("Restored {} blocked apps", state.blocked_apps.len()));
             }
             if !state.schedules.is_empty() {
                 log(&format!("Restored {} schedules", state.schedules.len()));
             }
-            return (block, state.blocked_apps, state.schedules);
+            return (manual_blocks, state.blocked_apps, state.schedules);
         }
     }
-    (None, Vec::new(), Vec::new())
+    (Vec::new(), Vec::new(), Vec::new())
 }
 
-fn save_full_state(block: &Option<BlockState>, apps: &[String], schedules: &[HelperSchedule]) {
+fn save_full_state(manual_blocks: &[BlockState], apps: &[String], schedules: &[HelperSchedule]) {
     let path = get_data_path();
     if let Some(parent) = path.parent() {
         if let Err(e) = fs::create_dir_all(parent) {
@@ -231,8 +249,8 @@ fn save_full_state(block: &Option<BlockState>, apps: &[String], schedules: &[Hel
             return;
         }
     }
-    let state = HelperState {
-        current_block: block.clone(),
+    let state = HelperStatePersist {
+        manual_blocks: manual_blocks.to_vec(),
         blocked_apps: apps.to_vec(),
         schedules: schedules.to_vec(),
     };
@@ -626,23 +644,27 @@ fn chrono_now() -> LocalTimeInfo {
     LocalTimeInfo { hour, minute, weekday_mon0 }
 }
 
-/// Sync hosts file: writes the union of manual block domains + active schedule domains
+/// Sync hosts file: writes the union of all non-expired manual block domains + active schedule domains
 fn sync_hosts_file(
-    state: &Arc<Mutex<Option<BlockState>>>,
+    state: &Arc<Mutex<Vec<BlockState>>>,
     schedule_state: &Arc<Mutex<Vec<HelperSchedule>>>,
 ) {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
     let mut seen = HashSet::new();
     let mut all_domains: Vec<String> = Vec::new();
-    
-    // Add domains from current manual block
-    if let Some(block) = &*state.lock().unwrap() {
-        for d in &block.domains {
-            if seen.insert(d.clone()) {
-                all_domains.push(d.clone());
+    {
+        let blocks = state.lock().unwrap();
+        for block in blocks.iter().filter(|b| b.end_time > now) {
+            for d in &block.domains {
+                if seen.insert(d.clone()) {
+                    all_domains.push(d.clone());
+                }
             }
         }
     }
-    
     // Add domains from active schedule segments
     let schedules = schedule_state.lock().unwrap().clone();
     let schedule_domains = get_active_schedule_domains(&schedules);
@@ -674,32 +696,32 @@ fn sync_hosts_file(
 }
 
 fn start_block(
-    state: &Arc<Mutex<Option<BlockState>>>,
+    state: &Arc<Mutex<Vec<BlockState>>>,
     app_state: &Arc<Mutex<Vec<String>>>,
     schedule_state: &Arc<Mutex<Vec<HelperSchedule>>>,
     domains: Vec<String>,
     end_time: u64,
     blocklist_id: String,
 ) -> IpcResponse {
-    log(&format!("Starting block: {} domains", domains.len()));
-    
+    log(&format!("Starting block: {} domains for blocklist {}", domains.len(), blocklist_id));
     let block = BlockState {
         domains,
         end_time,
-        blocklist_id,
+        blocklist_id: blocklist_id.clone(),
     };
-    
-    *state.lock().unwrap() = Some(block);
-    
-    // Sync hosts file (merges with active schedules)
+    {
+        let mut blocks = state.lock().unwrap();
+        if let Some(pos) = blocks.iter().position(|b| b.blocklist_id == blocklist_id) {
+            blocks[pos] = block;
+        } else {
+            blocks.push(block);
+        }
+    }
     sync_hosts_file(state, schedule_state);
-    
-    // Persist
-    let current_block = state.lock().unwrap().clone();
+    let blocks = state.lock().unwrap().clone();
     let apps = app_state.lock().unwrap().clone();
     let schedules = schedule_state.lock().unwrap().clone();
-    save_full_state(&current_block, &apps, &schedules);
-    
+    save_full_state(&blocks, &apps, &schedules);
     log("Block started successfully");
     IpcResponse {
         success: true,
@@ -708,44 +730,49 @@ fn start_block(
 }
 
 fn clear_block(
-    state: &Arc<Mutex<Option<BlockState>>>,
+    state: &Arc<Mutex<Vec<BlockState>>>,
     app_state: &Arc<Mutex<Vec<String>>>,
     schedule_state: &Arc<Mutex<Vec<HelperSchedule>>>,
+    blocklist_id: Option<String>,
 ) -> IpcResponse {
-    log("Clearing block...");
-    
-    *state.lock().unwrap() = None;
-    
-    // Sync hosts file (will keep any schedule-based domains)
+    let mut blocks = state.lock().unwrap();
+    match &blocklist_id {
+        Some(id) => {
+            blocks.retain(|b| b.blocklist_id != *id);
+            log(&format!("Cleared block for blocklist {}", id));
+        }
+        None => {
+            blocks.clear();
+            log("Cleared all manual blocks");
+        }
+    }
+    drop(blocks);
     sync_hosts_file(state, schedule_state);
-    
-    // Persist
+    let blocks = state.lock().unwrap().clone();
     let apps = app_state.lock().unwrap().clone();
     let schedules = schedule_state.lock().unwrap().clone();
-    save_full_state(&None, &apps, &schedules);
-    
-    log("Block cleared successfully");
+    save_full_state(&blocks, &apps, &schedules);
     IpcResponse {
         success: true,
         ..Default::default()
     }
 }
 
-fn get_status(state: &Arc<Mutex<Option<BlockState>>>) -> IpcResponse {
-    let guard = state.lock().unwrap();
-    match &*guard {
+fn get_status(state: &Arc<Mutex<Vec<BlockState>>>) -> IpcResponse {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
+    let blocks = state.lock().unwrap().clone();
+    let active_block = blocks.iter().filter(|b| b.end_time > now).max_by_key(|b| b.end_time);
+    match active_block {
         None => IpcResponse {
             success: true,
             active: Some(false),
             ..Default::default()
         },
         Some(block) => {
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as u64;
             let remaining = block.end_time.saturating_sub(now);
-            
             IpcResponse {
                 success: true,
                 active: Some(true),
@@ -1014,15 +1041,13 @@ fn stop_app_watcher(app_watcher_handle: &Arc<Mutex<Option<AppWatcherHandle>>>) {
 
 /// Set blocked apps, starting/stopping watcher as needed
 fn set_blocked_apps(
-    state: &Arc<Mutex<Option<BlockState>>>,
+    state: &Arc<Mutex<Vec<BlockState>>>,
     app_state: &Arc<Mutex<Vec<String>>>,
     schedule_state: &Arc<Mutex<Vec<HelperSchedule>>>,
     app_watcher_handle: &Arc<Mutex<Option<AppWatcherHandle>>>,
     apps: Vec<String>,
 ) -> IpcResponse {
     log(&format!("Setting blocked apps: {:?}", apps));
-    
-    // Safety net: filter out protected apps (ReDD Block must never block itself)
     let apps: Vec<String> = apps.into_iter().filter(|a| {
         if is_protected_app(a) {
             log(&format!("Filtered protected app from blocked list: {}", a));
@@ -1031,18 +1056,13 @@ fn set_blocked_apps(
             true
         }
     }).collect();
-    
     let had_apps = !app_state.lock().unwrap().is_empty();
     let has_apps = !apps.is_empty();
-    
-    // Update state
     *app_state.lock().unwrap() = apps;
-    
-    // Persist
-    let block = state.lock().unwrap().clone();
+    let blocks = state.lock().unwrap().clone();
     let apps_for_save = app_state.lock().unwrap().clone();
     let schedules = schedule_state.lock().unwrap().clone();
-    save_full_state(&block, &apps_for_save, &schedules);
+    save_full_state(&blocks, &apps_for_save, &schedules);
     
     // Update the effective blocked-apps list (manual + schedule)
     #[cfg(target_os = "windows")]
@@ -1406,7 +1426,7 @@ fn run_windows_app_watcher(
 }
 
 fn handle_command(
-    state: &Arc<Mutex<Option<BlockState>>>,
+    state: &Arc<Mutex<Vec<BlockState>>>,
     app_state: &Arc<Mutex<Vec<String>>>,
     schedule_state: &Arc<Mutex<Vec<HelperSchedule>>>,
     app_watcher_handle: &Arc<Mutex<Option<AppWatcherHandle>>>,
@@ -1416,15 +1436,13 @@ fn handle_command(
         IpcCommand::StartBlock { domains, end_time, blocklist_id } => {
             start_block(state, app_state, schedule_state, domains, end_time, blocklist_id)
         }
-        IpcCommand::ClearBlock => clear_block(state, app_state, schedule_state),
+        IpcCommand::ClearBlock { blocklist_id } => clear_block(state, app_state, schedule_state, blocklist_id),
         IpcCommand::GetStatus => get_status(state),
         IpcCommand::RestoreHosts => {
-            // Clear any active block state first
-            *state.lock().unwrap() = None;
+            *state.lock().unwrap() = Vec::new();
             let apps = app_state.lock().unwrap().clone();
             let schedules = schedule_state.lock().unwrap().clone();
-            save_full_state(&None, &apps, &schedules);
-            
+            save_full_state(&[], &apps, &schedules);
             match restore_hosts_from_backup() {
                 Ok(()) => IpcResponse {
                     success: true,
@@ -1472,17 +1490,12 @@ fn handle_command(
                 }
             }
             if !all_apps.is_empty() {
-                // Update the effective app list for the watcher
-                // (Don't modify app_state — that's for manual apps only)
                 start_app_watcher(app_state, app_watcher_handle);
             }
-            
-            // Persist
-            let block = state.lock().unwrap().clone();
+            let blocks = state.lock().unwrap().clone();
             let apps = app_state.lock().unwrap().clone();
             let scheds = schedule_state.lock().unwrap().clone();
-            save_full_state(&block, &apps, &scheds);
-            
+            save_full_state(&blocks, &apps, &scheds);
             IpcResponse {
                 success: true,
                 ..Default::default()
@@ -1501,15 +1514,11 @@ fn handle_command(
         },
         IpcCommand::Uninstall => {
             log("Received uninstall command - cleaning up...");
-            
-            // Stop app watcher
             stop_app_watcher(app_watcher_handle);
-            
-            // Clear any active block and restore hosts
-            *state.lock().unwrap() = None;
+            *state.lock().unwrap() = Vec::new();
             *app_state.lock().unwrap() = Vec::new();
             *schedule_state.lock().unwrap() = Vec::new();
-            save_full_state(&None, &[], &[]);
+            save_full_state(&[], &[], &[]);
             let _ = restore_hosts_from_backup();
             
             // Delete state file
@@ -1655,36 +1664,27 @@ fn read_user_setting_keep_blocking() -> bool {
 
 /// Thread that periodically checks if the main app still exists
 fn app_existence_checker(
-    state: Arc<Mutex<Option<BlockState>>>,
+    state: Arc<Mutex<Vec<BlockState>>>,
     app_state: Arc<Mutex<Vec<String>>>,
     schedule_state: Arc<Mutex<Vec<HelperSchedule>>>,
 ) {
     loop {
-        // Check every 5 minutes
         thread::sleep(std::time::Duration::from_secs(300));
-        
         if !check_app_exists() {
             log("Main application no longer detected");
-            
             let keep_blocking = read_user_setting_keep_blocking();
-            let has_active_block = state.lock().unwrap().is_some();
+            let has_active_block = !state.lock().unwrap().is_empty();
             let has_blocked_apps = !app_state.lock().unwrap().is_empty();
             let has_schedules = !schedule_state.lock().unwrap().is_empty();
-            
             if keep_blocking && (has_active_block || has_blocked_apps || has_schedules) {
-                // Setting says to keep blocking - schedules are configured (may become active later)
                 log("Keep blocking enabled and blocks/schedules are configured - continuing");
                 continue;
             }
-            
-            // Either setting is off, or no active blocks/schedules - clean up
             log("Performing cleanup...");
-            
-            // Clear state and restore hosts
-            *state.lock().unwrap() = None;
+            *state.lock().unwrap() = Vec::new();
             *app_state.lock().unwrap() = Vec::new();
             *schedule_state.lock().unwrap() = Vec::new();
-            save_full_state(&None, &[], &[]);
+            save_full_state(&[], &[], &[]);
             let _ = restore_hosts_from_backup();
             
             // Delete state file
@@ -1699,7 +1699,7 @@ fn app_existence_checker(
 
 #[cfg(not(target_os = "windows"))]
 fn handle_client(
-    state: Arc<Mutex<Option<BlockState>>>,
+    state: Arc<Mutex<Vec<BlockState>>>,
     app_state: Arc<Mutex<Vec<String>>>,
     schedule_state: Arc<Mutex<Vec<HelperSchedule>>>,
     app_watcher_handle: Arc<Mutex<Option<AppWatcherHandle>>>,
@@ -1735,7 +1735,7 @@ fn handle_client(
 
 #[cfg(target_os = "windows")]
 fn handle_client(
-    state: Arc<Mutex<Option<BlockState>>>,
+    state: Arc<Mutex<Vec<BlockState>>>,
     app_state: Arc<Mutex<Vec<String>>>,
     schedule_state: Arc<Mutex<Vec<HelperSchedule>>>,
     app_watcher_handle: Arc<Mutex<Option<AppWatcherHandle>>>,
@@ -1770,36 +1770,36 @@ fn handle_client(
 }
 
 fn expiry_checker(
-    state: Arc<Mutex<Option<BlockState>>>,
+    state: Arc<Mutex<Vec<BlockState>>>,
     app_state: Arc<Mutex<Vec<String>>>,
     schedule_state: Arc<Mutex<Vec<HelperSchedule>>>,
 ) {
     loop {
         thread::sleep(Duration::from_secs(1));
-        
-        let should_clear = {
-            let guard = state.lock().unwrap();
-            if let Some(block) = &*guard {
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis() as u64;
-                now >= block.end_time
-            } else {
-                false
-            }
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        let expired = {
+            let mut blocks = state.lock().unwrap();
+            let len_before = blocks.len();
+            blocks.retain(|b| b.end_time > now);
+            len_before != blocks.len()
         };
-        
-        if should_clear {
-            log("Block expired, clearing automatically");
-            clear_block(&state, &app_state, &schedule_state);
+        if expired {
+            log("One or more blocks expired, syncing hosts");
+            sync_hosts_file(&state, &schedule_state);
+            let blocks = state.lock().unwrap().clone();
+            let apps = app_state.lock().unwrap().clone();
+            let schedules = schedule_state.lock().unwrap().clone();
+            save_full_state(&blocks, &apps, &schedules);
         }
     }
 }
 
 /// Schedule evaluator thread: checks every 30 seconds if schedule state has changed
 fn schedule_evaluator(
-    state: Arc<Mutex<Option<BlockState>>>,
+    state: Arc<Mutex<Vec<BlockState>>>,
     schedule_state: Arc<Mutex<Vec<HelperSchedule>>>,
     app_state: Arc<Mutex<Vec<String>>>,
     app_watcher_handle: Arc<Mutex<Option<AppWatcherHandle>>>,
@@ -1851,12 +1851,9 @@ fn schedule_evaluator(
             log(&format!("Schedule evaluator: domain change detected ({} -> {} domains)",
                 last_schedule_domains.len(), current_domains.len()));
             sync_hosts_file(&state, &schedule_state);
-            
-            // Persist updated state
-            let block = state.lock().unwrap().clone();
+            let blocks = state.lock().unwrap().clone();
             let apps = app_state.lock().unwrap().clone();
-            save_full_state(&block, &apps, &schedules);
-            
+            save_full_state(&blocks, &apps, &schedules);
             last_schedule_domains = current_domains;
         }
         
