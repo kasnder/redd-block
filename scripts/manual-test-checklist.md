@@ -35,6 +35,7 @@ Run this checklist before publishing a new version. Use a test blocklist with sa
 
 ### Basic Schedule
 - [ ] Create schedule for a time segment starting in 2 minutes
+- [ ] Verify schedule badge says "In X mins"
 - [ ] Wait for segment to start
 - [ ] Verify sites are blocked
 - [ ] Verify schedule badge shows "X min left"
@@ -98,7 +99,6 @@ Run this checklist before publishing a new version. Use a test blocklist with sa
 ## 7. Edge Cases
 
 - [ ] Start block at exact same time a schedule ends → no gap
-- [ ] Delete a blocklist while it has active blocks → verify cleanup
 - [ ] Close and reopen app during active block → block persists
 
 ---
@@ -139,7 +139,7 @@ Run this checklist before publishing a new version. Use a test blocklist with sa
 ## 9. Helper Lifecycle
 
 ### Installation & Status
-- [ ] Fresh install: start a block → verify helper installs (password prompt on Mac, UAC on Windows)
+- [ ] Fresh install: start a block → verify helper installs (UAC on Windows)
 - [ ] Open Settings → verify helper status shows "Running"
 - [ ] Verify version matches expected version
 
