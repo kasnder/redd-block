@@ -1,14 +1,20 @@
 /**
- * ReddBlock Integration Tests
- * 
- * These tests actually modify the system (hosts file, etc.)
- * Use with CAUTION - they create real blocks that need cleanup.
- * 
- * Run via console: runIntegrationTests()
+ * ReddBlock Tier 2 Integration Tests
+ *
+ * These tests run through the app -> Tauri -> helper pipeline
+ * and can modify real system state.
+ *
+ * Profiles:
+ * - runIntegrationTests('core')  // fast critical checks (default)
+ * - runIntegrationTests('full')  // core + exhaustive non-UI checks
  */
 
 (function () {
     'use strict';
+
+    const PROFILE_CORE = 'core';
+    const PROFILE_FULL = 'full';
+    const TEST_PREFIX = 'inttest';
 
     // Access app internals (exposed by app.js for testing)
     const getInternals = () => window.__REDDBLOCK_INTERNALS__;
@@ -18,342 +24,476 @@
     const getTauriAPI = () => getInternals()?.tauriAPI;
     const callRender = () => getInternals()?.render?.();
 
-    const INTEGRATION_BLOCKLIST_NAME = '🧪 Integration Test';
-    const TEST_DOMAIN = 'integration-test-reddblock.invalid'; // Safe domain that doesn't exist
+    const TEST_DOMAINS = {
+        a: 'integration-a-reddblock.invalid',
+        b: 'integration-b-reddblock.invalid',
+        shared: 'integration-shared-reddblock.invalid',
+        future: 'integration-future-reddblock.invalid'
+    };
 
-    let testBlocklistId = null;
+    function nowMs() {
+        return Date.now();
+    }
 
-    // ========================================
-    // SETUP & TEARDOWN
-    // ========================================
+    function makeId(suffix) {
+        return `${TEST_PREFIX}-${suffix}-${nowMs()}`;
+    }
 
-    async function setup() {
-        console.log('🔧 Setting up integration tests...');
+    function currentDayMon0() {
+        const d = new Date().getDay();
+        return d === 0 ? 6 : d - 1;
+    }
 
-        const appData = getAppData();
-        if (!appData) {
-            throw new Error('App internals not available. Make sure app.js has loaded.');
+    function assertOrThrow(condition, message) {
+        if (!condition) throw new Error(message);
+    }
+
+    async function ensureHelperRunningOrSkip(testName) {
+        const tauriAPI = getTauriAPI();
+        if (!tauriAPI) {
+            return { skipped: true, reason: `${testName}: tauriAPI unavailable` };
         }
+        const status = await tauriAPI.checkHelperStatus();
+        if (!status.running) {
+            return { skipped: true, reason: `${testName}: helper not running` };
+        }
+        if (!status.version_ok) {
+            return { skipped: true, reason: `${testName}: helper version mismatch` };
+        }
+        return null;
+    }
 
-        // Create a test blocklist
-        const testBlocklist = {
-            id: 'integration-test-' + Date.now(),
-            name: INTEGRATION_BLOCKLIST_NAME,
-            mode: 'manual', // Required by Rust backend
-            websites: [TEST_DOMAIN],
-            apps: [],
+    function addTestBlocklist({ websites = [], apps = [], name = 'Integration Test', mode = 'manual' } = {}) {
+        const appData = getAppData();
+        const blocklist = {
+            id: makeId('bl'),
+            name: `${name} ${Math.floor(Math.random() * 1000)}`,
+            mode,
+            websites,
+            apps,
             emoji: '🧪',
             color: '#ff0000',
             overrideDifficulty: { type: 'random-words', count: 10 }
         };
+        appData.blocklists.push(blocklist);
+        return blocklist;
+    }
 
-        appData.blocklists.push(testBlocklist);
-        testBlocklistId = testBlocklist.id;
+    function addActiveBlock(blocklistId, { durationMs = 120000, startOffsetMs = 0, endOffsetMs = null, isPaused = false, pauseMs = 60000 } = {}) {
+        const appData = getAppData();
+        const now = nowMs();
+        const startTime = now + startOffsetMs;
+        const endTime = endOffsetMs != null ? now + endOffsetMs : startTime + durationMs;
+        const block = {
+            id: makeId('block'),
+            blocklistId,
+            startTime,
+            endTime
+        };
+        if (isPaused) {
+            block.isPaused = true;
+            block.pauseEndTime = now + pauseMs;
+        }
+        appData.activeBlocks.push(block);
+        return block;
+    }
 
+    function addSchedule(blocklistId, segments, { repeatType = 'no' } = {}) {
+        const appData = getAppData();
+        appData.schedules = appData.schedules || [];
+        const sched = {
+            id: makeId('sched'),
+            blocklistId,
+            segments,
+            repeatType,
+            createdAt: nowMs()
+        };
+        appData.schedules.push(sched);
+        return sched;
+    }
+
+    function removeTestDataFromAppState() {
+        const appData = getAppData();
+        if (!appData) return;
+        appData.activeBlocks = (appData.activeBlocks || []).filter(b => !String(b.id || '').startsWith(TEST_PREFIX));
+        appData.schedules = (appData.schedules || []).filter(s => !String(s.id || '').startsWith(TEST_PREFIX));
+        appData.blocklists = (appData.blocklists || []).filter(bl => !String(bl.id || '').startsWith(TEST_PREFIX));
+    }
+
+    async function setupSuite() {
+        console.log('🔧 Setting up Tier 2 integration suite...');
+        const appData = getAppData();
+        assertOrThrow(appData, 'App internals not available. Ensure app.js loaded.');
         await callSaveData();
-        console.log('   Created test blocklist:', testBlocklistId);
-
         return true;
     }
 
-    async function teardown() {
-        console.log('🧹 Cleaning up integration tests...');
-
+    async function teardownSuite() {
+        console.log('🧹 Cleaning up Tier 2 integration suite...');
         try {
-            const appData = getAppData();
             const tauriAPI = getTauriAPI();
+            removeTestDataFromAppState();
+            await callSaveData();
 
-            if (!appData) {
-                console.log('   ⚠️  No appData available for cleanup');
-                return false;
-            }
-
-            // Clear any active blocks from test
-            appData.activeBlocks = appData.activeBlocks.filter(
-                b => b.blocklistId !== testBlocklistId
-            );
-
-            // Clear any schedules from test
-            appData.schedules = (appData.schedules || []).filter(
-                s => s.blocklistId !== testBlocklistId
-            );
-
-            // Remove test blocklist
-            appData.blocklists = appData.blocklists.filter(
-                bl => bl.id !== testBlocklistId
-            );
-
-            // Clear the hosts file
             if (tauriAPI) {
                 const status = await tauriAPI.checkHelperStatus();
                 if (status.running) {
                     await tauriAPI.clearBlockViaHelper();
-                    // Re-apply any legitimate blocks
                     await callUpdateHostsFile(true);
+                    await tauriAPI.setBlockedAppsViaHelper([]);
                 }
             }
-
-            await callSaveData();
             callRender();
-
             console.log('   ✅ Cleanup complete');
             return true;
         } catch (err) {
             console.error('   ❌ Cleanup failed:', err);
-            console.log('   ⚠️  You may need to manually remove the test blocklist');
             return false;
         }
     }
 
-    // ========================================
-    // INTEGRATION TESTS
-    // ========================================
-
-    async function testHostsFileModification() {
-        console.log('\n📝 IT1: Testing hosts file modification...');
-
+    async function runCase(name, fn) {
         try {
-            const appData = getAppData();
-            const tauriAPI = getTauriAPI();
-
-            // Check helper status
-            const status = await tauriAPI.checkHelperStatus();
-            if (!status.running) {
-                console.log('   ⚠️  Helper not running - skipping hosts file test');
-                console.log('   (Start a real block first to install the helper)');
-                return { skipped: true };
-            }
-
-            // Create a block for the test blocklist
-            const now = Date.now();
-            const testBlock = {
-                id: 'inttest-block-' + now,
-                blocklistId: testBlocklistId,
-                startTime: now,
-                endTime: now + 120000 // 2 minutes
-            };
-
-            appData.activeBlocks.push(testBlock);
-            await callSaveData();
-
-            // Update hosts file - this should actually block the domain
-            const result = await callUpdateHostsFile();
-
-            if (result && result.success) {
-                console.log('   ✅ Hosts file updated successfully');
-                console.log(`   📋 Domain "${TEST_DOMAIN}" should now be blocked`);
-
-                // Clean up the test block
-                appData.activeBlocks = appData.activeBlocks.filter(b => b.id !== testBlock.id);
-                await callSaveData();
-                await callUpdateHostsFile(true);
-
-                console.log('   ✅ Block removed and hosts file cleaned');
-                return { passed: true };
-            } else {
-                console.log('   ❌ Failed to update hosts file');
-                return { passed: false, error: 'updateHostsFile failed' };
-            }
+            const result = await fn();
+            if (result?.skipped) return { status: 'skipped', error: result.reason };
+            if (result?.passed) return { status: 'passed' };
+            return { status: 'failed', error: result?.error || 'Unknown failure' };
         } catch (err) {
-            console.error('   ❌ Error:', err);
-            return { passed: false, error: err.message };
+            return { status: 'failed', error: err?.message || String(err) };
         }
     }
 
-    async function testBlockStartAndEnd() {
-        console.log('\n⏱️ IT2: Testing block start and automatic end...');
-        console.log('   (This test takes ~10 seconds)');
+    // ========================================
+    // Testing Group A: One-off and schedule mechanics
+    // ========================================
 
-        try {
-            const appData = getAppData();
-            const tauriAPI = getTauriAPI();
+    async function testA1_hostsModificationPath() {
+        const skip = await ensureHelperRunningOrSkip('A1');
+        if (skip) return skip;
 
-            const status = await tauriAPI.checkHelperStatus();
-            if (!status.running) {
-                console.log('   ⚠️  Helper not running - skipping');
-                return { skipped: true };
-            }
+        const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'A1' });
+        addActiveBlock(bl.id, { durationMs: 120000 });
+        await callSaveData();
+        const result = await callUpdateHostsFile();
+        assertOrThrow(result && result.success, 'A1: updateHostsFile failed');
 
-            const now = Date.now();
-            const testBlock = {
-                id: 'inttest-timing-' + now,
-                blocklistId: testBlocklistId,
-                startTime: now,
-                endTime: now + 5000 // 5 seconds - short for testing
-            };
-
-            appData.activeBlocks.push(testBlock);
-            await callSaveData();
-            await callUpdateHostsFile();
-
-            console.log('   ⏳ Block started, waiting 6 seconds for expiry...');
-
-            // Wait for block to expire
-            await new Promise(resolve => setTimeout(resolve, 6000));
-
-            // Check if block was cleaned up
-            const blockStillExists = appData.activeBlocks.some(b => b.id === testBlock.id && b.endTime > Date.now());
-
-            if (!blockStillExists) {
-                console.log('   ✅ Block expired correctly');
-                // Force cleanup just in case
-                appData.activeBlocks = appData.activeBlocks.filter(b => b.id !== testBlock.id);
-                await callSaveData();
-                await callUpdateHostsFile(true);
-                return { passed: true };
-            } else {
-                console.log('   ❌ Block did not expire as expected');
-                // Cleanup
-                appData.activeBlocks = appData.activeBlocks.filter(b => b.id !== testBlock.id);
-                await callSaveData();
-                await callUpdateHostsFile(true);
-                return { passed: false, error: 'Block did not expire' };
-            }
-        } catch (err) {
-            console.error('   ❌ Error:', err);
-            return { passed: false, error: err.message };
-        }
+        removeTestDataFromAppState();
+        await callSaveData();
+        await callUpdateHostsFile(true);
+        return { passed: true };
     }
 
-    async function testScheduleActivation() {
-        console.log('\n📅 IT3: Testing schedule activation...');
+    async function testA2_blockStartEndTiming() {
+        const skip = await ensureHelperRunningOrSkip('A2');
+        if (skip) return skip;
 
-        try {
-            const appData = getAppData();
-            const tauriAPI = getTauriAPI();
+        const bl = addTestBlocklist({ websites: [TEST_DOMAINS.b], name: 'A2' });
+        const block = addActiveBlock(bl.id, { durationMs: 5000 });
+        await callSaveData();
+        await callUpdateHostsFile();
 
-            const status = await tauriAPI.checkHelperStatus();
-            if (!status.running) {
-                console.log('   ⚠️  Helper not running - skipping');
-                return { skipped: true };
-            }
+        await new Promise(resolve => setTimeout(resolve, 6200));
+        const appData = getAppData();
+        const stillActive = appData.activeBlocks.some(b => b.id === block.id && b.endTime > nowMs());
+        assertOrThrow(!stillActive, 'A2: one-off block did not expire naturally');
+        await callUpdateHostsFile(true);
+        return { passed: true };
+    }
 
-            // Create a schedule that's active RIGHT NOW
-            const nowDate = new Date();
-            const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1; // Mon=0
-            const currentHour = nowDate.getHours();
+    async function testA3_scheduleActiveNow() {
+        const skip = await ensureHelperRunningOrSkip('A3');
+        if (skip) return skip;
 
-            const testSchedule = {
-                id: 'inttest-sched-' + Date.now(),
-                blocklistId: testBlocklistId,
-                segments: [{
-                    startHour: currentHour,
-                    startMinute: 0,
-                    endHour: currentHour + 1,
-                    endMinute: 0,
-                    days: [currentDay]
-                }],
-                repeatType: 'no',
-                createdAt: Date.now()
-            };
+        const bl = addTestBlocklist({ websites: [TEST_DOMAINS.shared], name: 'A3' });
+        const hour = new Date().getHours();
+        addSchedule(bl.id, [{
+            startHour: hour,
+            startMinute: 0,
+            endHour: (hour + 1) % 24,
+            endMinute: 0,
+            days: [currentDayMon0()]
+        }]);
 
-            appData.schedules = appData.schedules || [];
-            appData.schedules.push(testSchedule);
-            await callSaveData();
+        await callSaveData();
+        const result = await callUpdateHostsFile();
+        assertOrThrow(result && result.success, 'A3: schedule activation path failed');
+        return { passed: true };
+    }
 
-            // Update hosts - should include schedule domains
-            await callUpdateHostsFile();
+    async function testA4_futureScheduleDoesNotThrow() {
+        const skip = await ensureHelperRunningOrSkip('A4');
+        if (skip) return skip;
 
-            // Check if domain is being blocked
-            const allDomains = new Set();
-            appData.schedules.forEach(schedule => {
-                if (!schedule.segments) return;
-                const isActive = schedule.segments.some(seg => {
-                    const startMins = seg.startHour * 60 + seg.startMinute;
-                    const endMins = seg.endHour * 60 + seg.endMinute;
-                    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
+        const bl = addTestBlocklist({ websites: [TEST_DOMAINS.future], name: 'A4' });
+        const hour = new Date().getHours();
+        addSchedule(bl.id, [{
+            startHour: (hour + 1) % 24,
+            startMinute: 0,
+            endHour: (hour + 2) % 24,
+            endMinute: 0,
+            days: [currentDayMon0()]
+        }]);
 
-                    if (endMins > startMins) {
-                        return seg.days.includes(currentDay) && currentMins >= startMins && currentMins < endMins;
-                    }
-                    return false;
-                });
+        await callSaveData();
+        const result = await callUpdateHostsFile();
+        assertOrThrow(result && result.success, 'A4: future schedule update failed');
+        return { passed: true };
+    }
 
-                if (isActive) {
-                    const bl = appData.blocklists.find(b => b.id === schedule.blocklistId);
-                    if (bl) bl.websites.forEach(d => allDomains.add(d));
-                }
-            });
+    async function testA5_pauseResumeOneOffStatePath() {
+        const skip = await ensureHelperRunningOrSkip('A5');
+        if (skip) return skip;
 
-            const scheduleWorking = allDomains.has(TEST_DOMAIN);
+        const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'A5' });
+        const block = addActiveBlock(bl.id, { durationMs: 120000 });
+        await callSaveData();
+        await callUpdateHostsFile();
 
-            // Cleanup
-            appData.schedules = appData.schedules.filter(s => s.id !== testSchedule.id);
-            await callSaveData();
-            await callUpdateHostsFile(true);
+        block.isPaused = true;
+        block.pauseEndTime = nowMs() + 60000;
+        await callSaveData();
+        const pausedResult = await callUpdateHostsFile();
+        assertOrThrow(pausedResult && pausedResult.success, 'A5: paused state update failed');
 
-            if (scheduleWorking) {
-                console.log('   ✅ Schedule activated and domain detected');
-                return { passed: true };
-            } else {
-                console.log('   ❌ Schedule did not activate domain');
-                return { passed: false, error: 'Domain not in active set' };
-            }
-        } catch (err) {
-            console.error('   ❌ Error:', err);
-            return { passed: false, error: err.message };
-        }
+        delete block.isPaused;
+        delete block.pauseEndTime;
+        await callSaveData();
+        const resumedResult = await callUpdateHostsFile();
+        assertOrThrow(resumedResult && resumedResult.success, 'A5: resume state update failed');
+        return { passed: true };
+    }
+
+    // ========================================
+    // Testing Group B: Multi-block overlap correctness
+    // ========================================
+
+    async function testB1_sharedDomainOverlap() {
+        const skip = await ensureHelperRunningOrSkip('B1');
+        if (skip) return skip;
+
+        const bl1 = addTestBlocklist({ websites: [TEST_DOMAINS.a, TEST_DOMAINS.shared], name: 'B1-A' });
+        const bl2 = addTestBlocklist({ websites: [TEST_DOMAINS.b, TEST_DOMAINS.shared], name: 'B1-B' });
+        addActiveBlock(bl1.id, { durationMs: 120000 });
+        addActiveBlock(bl2.id, { durationMs: 120000 });
+        await callSaveData();
+
+        const result = await callUpdateHostsFile();
+        assertOrThrow(result && result.success, 'B1: overlap update failed');
+        return { passed: true };
+    }
+
+    async function testB2_oneOffPlusScheduleSameBlocklist() {
+        const skip = await ensureHelperRunningOrSkip('B2');
+        if (skip) return skip;
+
+        const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a, TEST_DOMAINS.shared], name: 'B2' });
+        addActiveBlock(bl.id, { durationMs: 120000 });
+        const hour = new Date().getHours();
+        addSchedule(bl.id, [{
+            startHour: hour,
+            startMinute: 0,
+            endHour: (hour + 1) % 24,
+            endMinute: 0,
+            days: [currentDayMon0()]
+        }]);
+        await callSaveData();
+        const result = await callUpdateHostsFile();
+        assertOrThrow(result && result.success, 'B2: one-off + schedule merge failed');
+        return { passed: true };
+    }
+
+    // ========================================
+    // Testing Group C: Clear and override semantics
+    // ========================================
+
+    async function testC1_scopedClearByBlocklistId() {
+        const skip = await ensureHelperRunningOrSkip('C1');
+        if (skip) return skip;
+
+        const tauriAPI = getTauriAPI();
+        const bl1 = addTestBlocklist({ websites: [TEST_DOMAINS.a, TEST_DOMAINS.shared], name: 'C1-A' });
+        const bl2 = addTestBlocklist({ websites: [TEST_DOMAINS.b, TEST_DOMAINS.shared], name: 'C1-B' });
+        addActiveBlock(bl1.id, { durationMs: 120000 });
+        addActiveBlock(bl2.id, { durationMs: 120000 });
+        await callSaveData();
+        await callUpdateHostsFile();
+
+        const scopedResult = await tauriAPI.clearBlockViaHelper(bl1.id);
+        assertOrThrow(scopedResult && scopedResult.success, 'C1: scoped clear failed');
+
+        const syncResult = await callUpdateHostsFile();
+        assertOrThrow(syncResult && syncResult.success, 'C1: sync after scoped clear failed');
+        return { passed: true };
+    }
+
+    async function testC2_clearAllManualBlocks() {
+        const skip = await ensureHelperRunningOrSkip('C2');
+        if (skip) return skip;
+
+        const tauriAPI = getTauriAPI();
+        const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'C2' });
+        addActiveBlock(bl.id, { durationMs: 120000 });
+        await callSaveData();
+        await callUpdateHostsFile();
+
+        const clearAll = await tauriAPI.clearBlockViaHelper();
+        assertOrThrow(clearAll && clearAll.success, 'C2: clear-all manual blocks failed');
+        const result = await callUpdateHostsFile(true);
+        assertOrThrow(result && result.success, 'C2: sync after clear-all failed');
+        return { passed: true };
+    }
+
+    // ========================================
+    // Testing Group D: Keep-blocking preference decision inputs
+    // ========================================
+
+    async function testD1_setKeepBlockingPreferenceRoundtrip() {
+        const skip = await ensureHelperRunningOrSkip('D1');
+        if (skip) return skip;
+
+        const tauriAPI = getTauriAPI();
+        const setFalse = await tauriAPI.setKeepBlockingOnUninstallViaHelper(false);
+        assertOrThrow(setFalse && setFalse.success, 'D1: set keepBlocking=false failed');
+        const setTrue = await tauriAPI.setKeepBlockingOnUninstallViaHelper(true);
+        assertOrThrow(setTrue && setTrue.success, 'D1: set keepBlocking=true failed');
+        return { passed: true };
+    }
+
+    // ========================================
+    // Testing Group E: Hosts safety and cleanup invariants
+    // ========================================
+
+    async function testE1_cleanHostsCommandPath() {
+        const skip = await ensureHelperRunningOrSkip('E1');
+        if (skip) return skip;
+
+        const tauriAPI = getTauriAPI();
+        const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'E1' });
+        addActiveBlock(bl.id, { durationMs: 120000 });
+        await callSaveData();
+        await callUpdateHostsFile();
+
+        const cleanResult = await tauriAPI.cleanHostsFile();
+        assertOrThrow(cleanResult && cleanResult.success, 'E1: clean-hosts command failed');
+        return { passed: true };
+    }
+
+    // ========================================
+    // Testing Group F: App-block command-path checks (non-visual)
+    // ========================================
+
+    async function testF1_setBlockedAppsCommandPath() {
+        const skip = await ensureHelperRunningOrSkip('F1');
+        if (skip) return skip;
+
+        const tauriAPI = getTauriAPI();
+        const result = await tauriAPI.setBlockedAppsViaHelper(['Calculator', 'Notes']);
+        assertOrThrow(result && result.success, 'F1: set blocked apps failed');
+
+        const clear = await tauriAPI.setBlockedAppsViaHelper([]);
+        assertOrThrow(clear && clear.success, 'F1: clear blocked apps failed');
+        return { passed: true };
+    }
+
+    async function testF2_protectedAppPayloadPath() {
+        const skip = await ensureHelperRunningOrSkip('F2');
+        if (skip) return skip;
+
+        const tauriAPI = getTauriAPI();
+        // Helper should filter protected app names safely and still succeed.
+        const result = await tauriAPI.setBlockedAppsViaHelper(['redd-block-helper', 'Calculator']);
+        assertOrThrow(result && result.success, 'F2: protected app payload command failed');
+        await tauriAPI.setBlockedAppsViaHelper([]);
+        return { passed: true };
+    }
+
+    function buildProfileTests(profile) {
+        const coreTests = [
+            { group: 'A', name: 'A1: Hosts modification path', fn: testA1_hostsModificationPath },
+            { group: 'A', name: 'A2: One-off start/end timing', fn: testA2_blockStartEndTiming },
+            { group: 'A', name: 'A3: Schedule active-now path', fn: testA3_scheduleActiveNow },
+            { group: 'B', name: 'B1: Shared-domain overlap', fn: testB1_sharedDomainOverlap },
+            { group: 'C', name: 'C1: Scoped clear by blocklist ID', fn: testC1_scopedClearByBlocklistId },
+            { group: 'D', name: 'D1: Keep-blocking preference roundtrip', fn: testD1_setKeepBlockingPreferenceRoundtrip },
+            { group: 'E', name: 'E1: Clean hosts command path', fn: testE1_cleanHostsCommandPath }
+        ];
+
+        if (profile === PROFILE_CORE) return coreTests;
+
+        return [
+            ...coreTests,
+            { group: 'A', name: 'A4: Future schedule path', fn: testA4_futureScheduleDoesNotThrow },
+            { group: 'A', name: 'A5: Pause/resume one-off state path', fn: testA5_pauseResumeOneOffStatePath },
+            { group: 'B', name: 'B2: One-off + schedule same blocklist', fn: testB2_oneOffPlusScheduleSameBlocklist },
+            { group: 'C', name: 'C2: Clear-all manual blocks', fn: testC2_clearAllManualBlocks },
+            { group: 'F', name: 'F1: Set blocked apps command path', fn: testF1_setBlockedAppsCommandPath },
+            { group: 'F', name: 'F2: Protected app payload path', fn: testF2_protectedAppPayloadPath }
+        ];
     }
 
     // ========================================
     // MAIN RUNNER
     // ========================================
 
-    async function runIntegrationTests() {
-        console.clear();
-        console.log('🔬 ReddBlock Integration Tests');
-        console.log('================================');
-        console.log('⚠️  These tests modify real system state!');
-        console.log('⚠️  They use a safe test domain that doesn\'t exist.\n');
+    async function runIntegrationTests(profile = PROFILE_CORE) {
+        const selectedProfile = profile === PROFILE_FULL ? PROFILE_FULL : PROFILE_CORE;
 
-        // Check if internals are available
+        console.clear();
+        console.log('🔬 ReddBlock Tier 2 Integration Tests');
+        console.log('=====================================');
+        console.log(`Profile: ${selectedProfile}`);
+        console.log('⚠️  These tests modify real system state.\n');
+
         if (!getInternals()) {
             console.error('❌ App internals not available.');
             console.log('   Make sure app.js has loaded and exposes __REDDBLOCK_INTERNALS__');
-            return { passed: 0, failed: 0, skipped: 0, errors: ['Internals not available'] };
+            return { passed: 0, failed: 0, skipped: 0, errors: ['Internals not available'], profile: selectedProfile };
         }
 
-        const results = {
-            passed: 0,
-            failed: 0,
-            skipped: 0,
-            errors: []
-        };
+        const results = { passed: 0, failed: 0, skipped: 0, errors: [], profile: selectedProfile };
+        const tests = buildProfileTests(selectedProfile);
+        const groupResults = new Map();
 
         try {
-            // Setup
-            await setup();
-
-            // Run tests
-            const tests = [
-                { name: 'IT1: Hosts File Modification', fn: testHostsFileModification },
-                { name: 'IT2: Block Start/End Timing', fn: testBlockStartAndEnd },
-                { name: 'IT3: Schedule Activation', fn: testScheduleActivation }
-            ];
+            await setupSuite();
 
             for (const test of tests) {
-                const result = await test.fn();
-                if (result.skipped) {
-                    results.skipped++;
-                } else if (result.passed) {
+                const groupKey = test.group || 'Unknown';
+                const groupState = groupResults.get(groupKey) || {
+                    total: 0,
+                    passed: 0,
+                    failed: 0,
+                    skipped: 0,
+                    failures: []
+                };
+                groupState.total++;
+                const r = await runCase(test.name, test.fn);
+                if (r.status === 'passed') {
                     results.passed++;
+                    groupState.passed++;
+                    console.log(`✅ ${test.name}`);
+                } else if (r.status === 'skipped') {
+                    results.skipped++;
+                    groupState.skipped++;
+                    console.log(`⏭️  ${test.name} (skipped: ${r.error})`);
                 } else {
                     results.failed++;
-                    results.errors.push(`${test.name}: ${result.error}`);
+                    groupState.failed++;
+                    groupState.failures.push(`${test.name}: ${r.error}`);
+                    results.errors.push(`${test.name}: ${r.error}`);
+                    console.error(`❌ ${test.name}: ${r.error}`);
                 }
+                groupResults.set(groupKey, groupState);
             }
-
         } catch (err) {
             console.error('❌ Test suite crashed:', err);
-            results.errors.push('Suite crash: ' + err.message);
+            results.errors.push('Suite crash: ' + (err?.message || String(err)));
         } finally {
-            // Always cleanup
-            await teardown();
+            await teardownSuite();
         }
 
-        // Summary
         console.log('\n========================================');
-        console.log(`INTEGRATION TEST RESULTS:`);
+        console.log(`TIER 2 RESULTS (${selectedProfile.toUpperCase()}):`);
         console.log(`  ✅ Passed: ${results.passed}`);
         console.log(`  ❌ Failed: ${results.failed}`);
         console.log(`  ⏭️  Skipped: ${results.skipped}`);
@@ -364,12 +504,29 @@
             results.errors.forEach(e => console.log('  • ' + e));
         }
 
+        if (selectedProfile === PROFILE_FULL && results.failed > 0) {
+            console.log('\nGroup failure summary (full profile):');
+            ['A', 'B', 'C', 'D', 'E', 'F'].forEach(groupKey => {
+                const g = groupResults.get(groupKey);
+                if (!g) return;
+                const passedOverTotal = `${g.passed}/${g.total}`;
+                if (g.failed > 0) {
+                    const failureDetail = g.failures.join(' | ');
+                    console.log(`  Group ${groupKey}: ${passedOverTotal} tests passed, ${g.failed} failed [${failureDetail}]`);
+                } else {
+                    console.log(`  Group ${groupKey}: ${passedOverTotal} tests passed`);
+                }
+            });
+        }
         return results;
     }
 
     // Export
     window.runIntegrationTests = runIntegrationTests;
+    window.runIntegrationTestsFull = () => runIntegrationTests(PROFILE_FULL);
 
-    console.log('🔬 Integration tests loaded. Run with: runIntegrationTests()');
+    console.log("🔬 Tier 2 integration tests loaded. Run with:");
+    console.log("   runIntegrationTests('core')  // default fast profile");
+    console.log("   runIntegrationTests('full')  // expanded profile");
     console.log('   ⚠️  These tests modify real system state!');
 })();
