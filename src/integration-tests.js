@@ -44,6 +44,10 @@
         return d === 0 ? 6 : d - 1;
     }
 
+    function shortWait(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
     function assertOrThrow(condition, message) {
         if (!condition) throw new Error(message);
     }
@@ -163,6 +167,54 @@
         }
     }
 
+    async function setOneOffPaused(blockId, pauseMs) {
+        const appData = getAppData();
+        const block = appData.activeBlocks.find(b => b.id === blockId);
+        assertOrThrow(block, `pause helper: block not found (${blockId})`);
+        block.isPaused = true;
+        block.pauseEndTime = nowMs() + pauseMs;
+        await callSaveData();
+        const result = await callUpdateHostsFile();
+        assertOrThrow(result && result.success, 'pause helper: one-off pause sync failed');
+        return block;
+    }
+
+    async function clearOneOffPause(blockId) {
+        const appData = getAppData();
+        const block = appData.activeBlocks.find(b => b.id === blockId);
+        assertOrThrow(block, `resume helper: block not found (${blockId})`);
+        delete block.isPaused;
+        delete block.pauseEndTime;
+        await callSaveData();
+        const result = await callUpdateHostsFile();
+        assertOrThrow(result && result.success, 'resume helper: one-off resume sync failed');
+        return block;
+    }
+
+    async function setSchedulePaused(blocklistId, pauseMs) {
+        const appData = getAppData();
+        const schedule = (appData.schedules || []).find(s => s.blocklistId === blocklistId);
+        assertOrThrow(schedule, `pause helper: schedule not found (${blocklistId})`);
+        schedule.isPaused = true;
+        schedule.pauseEndTime = nowMs() + pauseMs;
+        await callSaveData();
+        const result = await callUpdateHostsFile();
+        assertOrThrow(result && result.success, 'pause helper: schedule pause sync failed');
+        return schedule;
+    }
+
+    async function clearSchedulePause(blocklistId) {
+        const appData = getAppData();
+        const schedule = (appData.schedules || []).find(s => s.blocklistId === blocklistId);
+        assertOrThrow(schedule, `resume helper: schedule not found (${blocklistId})`);
+        delete schedule.isPaused;
+        delete schedule.pauseEndTime;
+        await callSaveData();
+        const result = await callUpdateHostsFile();
+        assertOrThrow(result && result.success, 'resume helper: schedule resume sync failed');
+        return schedule;
+    }
+
     // ========================================
     // Testing Group A: One-off and schedule mechanics
     // ========================================
@@ -260,6 +312,131 @@
         await callSaveData();
         const resumedResult = await callUpdateHostsFile();
         assertOrThrow(resumedResult && resumedResult.success, 'A5: resume state update failed');
+        return { passed: true };
+    }
+
+    async function testA6_pauseResumeOneOffEnforcementPath() {
+        const skip = await ensureHelperRunningOrSkip('A6');
+        if (skip) return skip;
+
+        const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], apps: ['Calculator'], name: 'A6' });
+        const block = addActiveBlock(bl.id, { durationMs: 120000 });
+        await callSaveData();
+        await callUpdateHostsFile();
+
+        await setOneOffPaused(block.id, 45000);
+        assertOrThrow(!!block.isPaused, 'A6: block should be paused');
+        assertOrThrow(block.pauseEndTime > nowMs(), 'A6: pause end time should be future');
+
+        await clearOneOffPause(block.id);
+        assertOrThrow(!block.isPaused, 'A6: block should be resumed');
+        assertOrThrow(!block.pauseEndTime, 'A6: pause end time should be cleared');
+        return { passed: true };
+    }
+
+    async function testA7_pauseNaturalExpiryOneOffSmoke() {
+        const skip = await ensureHelperRunningOrSkip('A7');
+        if (skip) return skip;
+
+        const bl = addTestBlocklist({ websites: [TEST_DOMAINS.b], name: 'A7' });
+        const block = addActiveBlock(bl.id, { durationMs: 120000 });
+        await callSaveData();
+        await callUpdateHostsFile();
+
+        await setOneOffPaused(block.id, 1200);
+        await shortWait(2500);
+        const appData = getAppData();
+        const refreshed = appData.activeBlocks.find(b => b.id === block.id);
+        assertOrThrow(refreshed, 'A7: block missing after pause expiry wait');
+        assertOrThrow(!refreshed.isPaused, 'A7: one-off pause should naturally expire');
+        assertOrThrow(!refreshed.pauseEndTime, 'A7: one-off pauseEndTime should be cleared after natural expiry');
+        const result = await callUpdateHostsFile();
+        assertOrThrow(result && result.success, 'A7: post-expiry update failed');
+        return { passed: true };
+    }
+
+    async function testA8_pauseResumeScheduleActivePath() {
+        const skip = await ensureHelperRunningOrSkip('A8');
+        if (skip) return skip;
+
+        const bl = addTestBlocklist({ websites: [TEST_DOMAINS.shared], apps: ['Calculator'], name: 'A8' });
+        const hour = new Date().getHours();
+        addSchedule(bl.id, [{
+            startHour: hour,
+            startMinute: 0,
+            endHour: (hour + 1) % 24,
+            endMinute: 0,
+            days: [currentDayMon0()]
+        }]);
+        await callSaveData();
+        await callUpdateHostsFile();
+
+        const pausedSchedule = await setSchedulePaused(bl.id, 45000);
+        assertOrThrow(!!pausedSchedule.isPaused, 'A8: schedule should be paused');
+        assertOrThrow(pausedSchedule.pauseEndTime > nowMs(), 'A8: schedule pause end should be future');
+
+        const resumedSchedule = await clearSchedulePause(bl.id);
+        assertOrThrow(!resumedSchedule.isPaused, 'A8: schedule should be resumed');
+        assertOrThrow(!resumedSchedule.pauseEndTime, 'A8: schedule pauseEndTime should be cleared');
+        return { passed: true };
+    }
+
+    async function testA9_pauseNaturalExpiryScheduleSmoke() {
+        const skip = await ensureHelperRunningOrSkip('A9');
+        if (skip) return skip;
+
+        const bl = addTestBlocklist({ websites: [TEST_DOMAINS.future], name: 'A9' });
+        const hour = new Date().getHours();
+        addSchedule(bl.id, [{
+            startHour: hour,
+            startMinute: 0,
+            endHour: (hour + 1) % 24,
+            endMinute: 0,
+            days: [currentDayMon0()]
+        }]);
+        await callSaveData();
+        await callUpdateHostsFile();
+
+        await setSchedulePaused(bl.id, 1200);
+        await shortWait(2500);
+        const appData = getAppData();
+        const refreshed = (appData.schedules || []).find(s => s.blocklistId === bl.id);
+        assertOrThrow(refreshed, 'A9: schedule missing after pause expiry wait');
+        assertOrThrow(!refreshed.isPaused, 'A9: schedule pause should naturally expire');
+        assertOrThrow(!refreshed.pauseEndTime, 'A9: schedule pauseEndTime should be cleared after natural expiry');
+        const result = await callUpdateHostsFile();
+        assertOrThrow(result && result.success, 'A9: post-expiry update failed');
+        return { passed: true };
+    }
+
+    async function testA10_pauseInactiveScheduleSuppressionPath() {
+        const skip = await ensureHelperRunningOrSkip('A10');
+        if (skip) return skip;
+
+        const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a, TEST_DOMAINS.future], name: 'A10' });
+        const now = new Date();
+        const startMinute = (now.getMinutes() + 1) % 60;
+        const endMinute = (startMinute + 30) % 60;
+        const startHour = startMinute < now.getMinutes() ? (now.getHours() + 1) % 24 : now.getHours();
+        const endHour = endMinute < startMinute ? (startHour + 1) % 24 : startHour;
+
+        addSchedule(bl.id, [{
+            startHour,
+            startMinute,
+            endHour,
+            endMinute,
+            days: [currentDayMon0()]
+        }]);
+        await callSaveData();
+        await callUpdateHostsFile();
+
+        const pausedSchedule = await setSchedulePaused(bl.id, 120000);
+        assertOrThrow(!!pausedSchedule.isPaused, 'A10: schedule should be paused while inactive');
+        assertOrThrow(pausedSchedule.pauseEndTime > nowMs(), 'A10: schedule pause should suppress upcoming activation window');
+
+        const resumedSchedule = await clearSchedulePause(bl.id);
+        assertOrThrow(!resumedSchedule.isPaused, 'A10: schedule should resume from suppressed state');
+        assertOrThrow(!resumedSchedule.pauseEndTime, 'A10: resumed schedule pause end should be cleared');
         return { passed: true };
     }
 
@@ -424,6 +601,11 @@
             ...coreTests,
             { group: 'A', name: 'A4: Future schedule path', fn: testA4_futureScheduleDoesNotThrow },
             { group: 'A', name: 'A5: Pause/resume one-off state path', fn: testA5_pauseResumeOneOffStatePath },
+            { group: 'A', name: 'A6: Pause/resume one-off enforcement path', fn: testA6_pauseResumeOneOffEnforcementPath },
+            { group: 'A', name: 'A7: Pause natural-expiry one-off smoke', fn: testA7_pauseNaturalExpiryOneOffSmoke },
+            { group: 'A', name: 'A8: Pause/resume schedule active path', fn: testA8_pauseResumeScheduleActivePath },
+            { group: 'A', name: 'A9: Pause natural-expiry schedule smoke', fn: testA9_pauseNaturalExpiryScheduleSmoke },
+            { group: 'A', name: 'A10: Pause inactive schedule suppression path', fn: testA10_pauseInactiveScheduleSuppressionPath },
             { group: 'B', name: 'B2: One-off + schedule same blocklist', fn: testB2_oneOffPlusScheduleSameBlocklist },
             { group: 'C', name: 'C2: Clear-all manual blocks', fn: testC2_clearAllManualBlocks },
             { group: 'F', name: 'F1: Set blocked apps command path', fn: testF1_setBlockedAppsCommandPath },
