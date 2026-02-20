@@ -4458,7 +4458,21 @@ async function updateBlockedApps() {
         .sort();
 
     // Send blocked apps to helper daemon
-    if (helperAvailable) {
+    let helperReady = helperAvailable;
+    if (!helperReady && appsArray.length > 0) {
+        try {
+            const status = await tauriAPI.checkHelperStatus();
+            helperReady = !!(status.running && status.version_ok);
+            helperAvailable = helperReady;
+            if (helperReady) {
+                await syncKeepBlockingPreferenceToHelper();
+            }
+        } catch (e) {
+            console.warn('[updateBlockedApps] Helper status re-check failed:', e);
+        }
+    }
+
+    if (helperReady) {
         try {
             const result = await tauriAPI.setBlockedAppsViaHelper(appsArray);
             if (result && result.success) {

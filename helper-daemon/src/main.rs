@@ -19,7 +19,9 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 #[cfg(target_os = "windows")]
-use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::RwLock;
+#[cfg(target_os = "windows")]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -849,6 +851,8 @@ fn get_status(state: &Arc<Mutex<Vec<BlockState>>>) -> IpcResponse {
 struct AppWatcherHandle {
     watcher_process: Option<Child>,
     running: bool,
+    #[cfg(target_os = "windows")]
+    run_flag: Arc<AtomicBool>,
     /// Last detection time per app (for debouncing)
     last_detection: HashMap<String, Instant>,
     /// Thread ID of the watcher thread (Windows: for posting WM_QUIT)
@@ -860,6 +864,8 @@ impl AppWatcherHandle {
         AppWatcherHandle {
             watcher_process: None,
             running: false,
+            #[cfg(target_os = "windows")]
+            run_flag: Arc::new(AtomicBool::new(false)),
             last_detection: HashMap::new(),
             thread_id: None,
         }
@@ -1042,20 +1048,32 @@ fn start_app_watcher(
     app_state: &Arc<Mutex<Vec<String>>>,
     app_watcher_handle: &Arc<Mutex<Option<AppWatcherHandle>>>,
 ) {
-    // Check if already running
-    {
-        let handle = app_watcher_handle.lock().unwrap();
+    #[cfg(target_os = "windows")]
+    let run_flag = {
+        let mut handle = app_watcher_handle.lock().unwrap();
         if let Some(ref h) = *handle {
             if h.running {
                 log("App watcher already running, skipping start");
                 return;
             }
         }
-    }
-    
-    // Set up handle
+        let mut new_handle = AppWatcherHandle::new();
+        new_handle.running = true;
+        new_handle.run_flag.store(true, Ordering::SeqCst);
+        let run_flag = Arc::clone(&new_handle.run_flag);
+        *handle = Some(new_handle);
+        run_flag
+    };
+
+    #[cfg(not(target_os = "windows"))]
     {
         let mut handle = app_watcher_handle.lock().unwrap();
+        if let Some(ref h) = *handle {
+            if h.running {
+                log("App watcher already running, skipping start");
+                return;
+            }
+        }
         *handle = Some(AppWatcherHandle::new());
         if let Some(ref mut h) = *handle {
             h.running = true;
@@ -1070,7 +1088,7 @@ fn start_app_watcher(
         run_macos_app_watcher(app_state_clone, handle_clone);
         
         #[cfg(target_os = "windows")]
-        run_windows_app_watcher(app_state_clone, handle_clone);
+        run_windows_app_watcher(app_state_clone, handle_clone, run_flag);
     });
 }
 
@@ -1079,6 +1097,8 @@ fn stop_app_watcher(app_watcher_handle: &Arc<Mutex<Option<AppWatcherHandle>>>) {
     let mut handle = app_watcher_handle.lock().unwrap();
     if let Some(ref mut h) = *handle {
         h.running = false;
+        #[cfg(target_os = "windows")]
+        h.run_flag.store(false, Ordering::SeqCst);
         // On Windows, post WM_QUIT to the watcher thread's message loop
         #[cfg(target_os = "windows")]
         if let Some(tid) = h.thread_id {
@@ -1134,9 +1154,7 @@ fn set_blocked_apps(
         // Check if schedule apps still need the watcher
         #[cfg(target_os = "windows")]
         {
-            let still_need = read_effective_blocked_apps()
-                .map(|apps| !apps.is_empty())
-                .unwrap_or(false);
+            let still_need = !read_effective_blocked_apps().is_empty();
             if !still_need {
                 stop_app_watcher(app_watcher_handle);
             }
@@ -1287,10 +1305,9 @@ end repeat
 }
 
 // Global effective blocked-apps list for the WinEvent callback.
-// Uses AtomicPtr so it can be updated whenever manual apps or schedules change.
-// The callback reads it lock-free for near-zero latency.
+// Uses Arc<Vec<String>> behind RwLock to avoid raw-pointer lifetime races.
 #[cfg(target_os = "windows")]
-static EFFECTIVE_BLOCKED_APPS: AtomicPtr<Vec<String>> = AtomicPtr::new(std::ptr::null_mut());
+static EFFECTIVE_BLOCKED_APPS: std::sync::OnceLock<RwLock<Arc<Vec<String>>>> = std::sync::OnceLock::new();
 
 // Global references so update_effective_blocked_apps() can recompute the merged list.
 #[cfg(target_os = "windows")]
@@ -1318,26 +1335,20 @@ fn update_effective_blocked_apps() {
 
     let list: Vec<String> = merged.into_iter().collect();
     log(&format!("Effective blocked apps updated: {:?}", list));
-    let boxed = Box::new(list);
-    let old = EFFECTIVE_BLOCKED_APPS.swap(Box::into_raw(boxed), Ordering::SeqCst);
-    // Free the previous list
-    if !old.is_null() {
-        unsafe { drop(Box::from_raw(old)); }
+    let store = EFFECTIVE_BLOCKED_APPS.get_or_init(|| RwLock::new(Arc::new(Vec::new())));
+    if let Ok(mut guard) = store.write() {
+        *guard = Arc::new(list);
     }
 }
 
-/// Read the current effective blocked-apps list (lock-free, safe from callback).
+/// Read the current effective blocked-apps list.
 #[cfg(target_os = "windows")]
-fn read_effective_blocked_apps() -> Option<&'static Vec<String>> {
-    let ptr = EFFECTIVE_BLOCKED_APPS.load(Ordering::SeqCst);
-    if ptr.is_null() {
-        None
+fn read_effective_blocked_apps() -> Arc<Vec<String>> {
+    let store = EFFECTIVE_BLOCKED_APPS.get_or_init(|| RwLock::new(Arc::new(Vec::new())));
+    if let Ok(guard) = store.read() {
+        Arc::clone(&guard)
     } else {
-        // SAFETY: The pointer is only replaced via swap (old one freed after),
-        // and the new one lives until the next swap. The callback runs on the
-        // same thread that pumps messages, so no concurrent free can happen
-        // mid-read.
-        Some(unsafe { &*ptr })
+        Arc::new(Vec::new())
     }
 }
 
@@ -1345,6 +1356,7 @@ fn read_effective_blocked_apps() -> Option<&'static Vec<String>> {
 fn run_windows_app_watcher(
     app_state: Arc<Mutex<Vec<String>>>,
     handle: Arc<Mutex<Option<AppWatcherHandle>>>,
+    run_flag: Arc<AtomicBool>,
 ) {
     // FFI declarations
     #[link(name = "user32")]
@@ -1368,6 +1380,11 @@ fn run_windows_app_watcher(
     let _ = GLOBAL_APP_STATE.set(app_state);
     // Note: GLOBAL_SCHEDULE_STATE is set separately via init_global_schedule_state()
 
+    if !run_flag.load(Ordering::SeqCst) {
+        log("Windows watcher startup cancelled before initialization");
+        return;
+    }
+
     // Build the initial effective blocked-apps list
     update_effective_blocked_apps();
 
@@ -1378,6 +1395,13 @@ fn run_windows_app_watcher(
         if let Some(ref mut wh) = *h {
             wh.thread_id = Some(thread_id);
         }
+    }
+
+    if !run_flag.load(Ordering::SeqCst) {
+        log("Windows watcher startup cancelled before hook install");
+        let mut h = handle.lock().unwrap();
+        *h = None;
+        return;
     }
 
     // WinEvent callback — fires on foreground changes and window restorations
@@ -1421,8 +1445,8 @@ fn run_windows_app_watcher(
 
                     // Lock-free read of the effective blocked-apps list
                     let is_blocked = read_effective_blocked_apps()
-                        .map(|apps| apps.iter().any(|a| *a == name_lower))
-                        .unwrap_or(false);
+                        .iter()
+                        .any(|a| *a == name_lower);
 
                     if is_blocked {
                         log(&format!("Blocked app focused, minimizing: {}", name_lower));
@@ -1455,10 +1479,9 @@ fn run_windows_app_watcher(
     log("Windows app watcher started (native, event-driven)");
 
     // Minimize any already-open blocked apps right now
-    if let Some(apps) = read_effective_blocked_apps() {
-        for app in apps {
-            hide_app(app);
-        }
+    let apps = read_effective_blocked_apps();
+    for app in apps.iter() {
+        hide_app(app);
     }
 
     // Run the Windows message loop — blocks with zero CPU until an event arrives
@@ -1532,6 +1555,9 @@ fn handle_command(
             }
             
             *schedule_state.lock().unwrap() = schedules;
+
+            #[cfg(target_os = "windows")]
+            update_effective_blocked_apps();
             
             // Sync hosts file immediately
             sync_hosts_file(state, schedule_state);
@@ -1546,8 +1572,22 @@ fn handle_command(
                     all_apps.push(a);
                 }
             }
-            if !all_apps.is_empty() {
-                start_app_watcher(app_state, app_watcher_handle);
+            #[cfg(target_os = "windows")]
+            {
+                let still_need = !read_effective_blocked_apps().is_empty();
+                if still_need {
+                    start_app_watcher(app_state, app_watcher_handle);
+                } else {
+                    stop_app_watcher(app_watcher_handle);
+                }
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                if !all_apps.is_empty() {
+                    start_app_watcher(app_state, app_watcher_handle);
+                } else {
+                    stop_app_watcher(app_watcher_handle);
+                }
             }
             let blocks = state.lock().unwrap().clone();
             let apps = app_state.lock().unwrap().clone();
