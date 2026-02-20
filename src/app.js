@@ -7468,52 +7468,81 @@ function setupOverrideAll() {
 // Find the hardest challenge among all active blocks and schedules
 function findHardestChallenge() {
     const now = Date.now();
-    let hardestDifficulty = { type: 'random-words', count: 50 }; // Default
+    const nowDate = new Date();
+    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
+    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
+    let hardestDifficulty = null;
 
     // Check active one-off blocks
     for (const block of appData.activeBlocks) {
         if (block.startTime <= now && block.endTime > now) {
             const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
             if (blocklist?.overrideDifficulty) {
-                hardestDifficulty = compareDifficulties(hardestDifficulty, blocklist.overrideDifficulty);
+                hardestDifficulty = hardestDifficulty
+                    ? compareDifficulties(hardestDifficulty, blocklist.overrideDifficulty)
+                    : blocklist.overrideDifficulty;
             }
         }
     }
 
     // Check active schedules
     for (const schedule of appData.schedules || []) {
+        if (!schedule.segments) continue;
+        const isActive = schedule.segments.some(seg => {
+            const startMins = seg.startHour * 60 + seg.startMinute;
+            const endMins = seg.endHour * 60 + seg.endMinute;
+            if (endMins > startMins) {
+                return seg.days.includes(currentDay) &&
+                    currentMins >= startMins &&
+                    currentMins < endMins;
+            }
+            const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
+            return (seg.days.includes(currentDay) && currentMins >= startMins) ||
+                (seg.days.includes(yesterdayDay) && currentMins < endMins);
+        });
+        if (!isActive) continue;
+
         const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
         if (blocklist?.overrideDifficulty) {
-            hardestDifficulty = compareDifficulties(hardestDifficulty, blocklist.overrideDifficulty);
+            hardestDifficulty = hardestDifficulty
+                ? compareDifficulties(hardestDifficulty, blocklist.overrideDifficulty)
+                : blocklist.overrideDifficulty;
         }
     }
 
-    return hardestDifficulty;
+    return hardestDifficulty || { type: 'random-words', count: 50 };
 }
 
 // Compare two difficulties and return the harder one
 function compareDifficulties(a, b) {
-    // Custom text is considered hardest (user defined)
-    if (b.type === 'custom' && b.customText) {
-        const bLen = b.customText.length;
-        const aLen = a.type === 'custom' && a.customText ? a.customText.length : (a.count || 50);
-        return bLen >= aLen ? b : a;
-    }
-    if (a.type === 'custom' && a.customText) {
-        return a;
-    }
+    if (!a) return b;
+    if (!b) return a;
 
-    // Gibberish is harder than random words at same count
-    const aCount = a.count || 50;
-    const bCount = b.count || 50;
+    const getCharacterCount = (difficulty) => {
+        if (difficulty.type === 'custom' && typeof difficulty.customText === 'string') {
+            return difficulty.customText.length;
+        }
+        const parsed = Number(difficulty.count);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : 50;
+    };
 
-    // If b has more characters, it's harder
+    const getTypeRank = (difficulty) => {
+        if (difficulty.type === 'custom') return 3;
+        if (difficulty.type === 'gibberish') return 2;
+        if (difficulty.type === 'random-words') return 1;
+        return 0;
+    };
+
+    const aCount = getCharacterCount(a);
+    const bCount = getCharacterCount(b);
     if (bCount > aCount) return b;
     if (aCount > bCount) return a;
 
-    // Same count: gibberish is harder than random-words
-    if (b.type === 'gibberish' && a.type !== 'gibberish') return b;
-    if (a.type === 'gibberish' && b.type !== 'gibberish') return a;
+    // Same character count: custom > gibberish > random-words
+    const aRank = getTypeRank(a);
+    const bRank = getTypeRank(b);
+    if (bRank > aRank) return b;
+    if (aRank > bRank) return a;
 
     // Equal, return a
     return a;
