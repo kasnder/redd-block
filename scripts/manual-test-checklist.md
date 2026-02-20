@@ -29,6 +29,18 @@ Run this checklist before publishing a new version. Use a test blocklist with sa
 - [ ] Verify block continues after midnight
 - [ ] Verify correct "time left" display
 
+### Pause / Resume (One-Off)
+- [ ] Start a 10-minute one-off block
+- [ ] Confirm sites are blocked
+- [ ] Pause the block from the block card/calendar
+- [ ] Verify sites become unblocked while paused
+- [ ] Verify UI shows paused state and resume time countdown
+- [ ] Resume before pause expiry
+- [ ] Verify sites are blocked again immediately
+- [ ] Pause again and let pause expire naturally
+- [ ] Verify block auto-resumes when pause timer ends
+- [ ] Verify final block end time still works (no permanent pause)
+
 ---
 
 ## 3. Scheduled Blocks
@@ -46,6 +58,18 @@ Run this checklist before publishing a new version. Use a test blocklist with sa
 - [ ] Create schedule segment: e.g., 23:00 → 02:00
 - [ ] Test at both ends (evening and morning)
 - [ ] Verify "time left" calculation is correct
+
+### Pause / Resume (Schedule)
+- [ ] Create active schedule for current time window
+- [ ] Confirm sites are blocked by schedule
+- [ ] Pause schedule (single schedule pause action)
+- [ ] Verify sites become unblocked while paused
+- [ ] Verify paused schedule UI state is visible
+- [ ] Resume schedule manually
+- [ ] Verify schedule blocking resumes immediately if still in active segment
+- [ ] Pause schedule again and allow pause timer to expire
+- [ ] Verify schedule auto-resumes at pause expiry
+- [ ] Verify next schedule segment/day still triggers correctly after pause cycle
 
 ---
 
@@ -100,6 +124,9 @@ Run this checklist before publishing a new version. Use a test blocklist with sa
 
 - [ ] Start block at exact same time a schedule ends → no gap
 - [ ] Close and reopen app during active block → block persists
+- [ ] Pause an active one-off block, close app, reopen app → paused state and resume timer are preserved
+- [ ] Pause an active schedule, close app, reopen app → paused schedule state is preserved
+- [ ] During a paused block, use Override All → verify paused block is still cleared correctly
 
 ---
 
