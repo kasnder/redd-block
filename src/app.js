@@ -5074,11 +5074,11 @@ function openPauseModal(blockId) {
         pauseMaxMinutes = null; // No cap for always-on blocks
         if (pauseScheduleData) {
             if (pauseScheduleData.isActiveNow) {
-                remainingInfo.textContent = 'A segment is active now. Pause will suppress current and upcoming schedule enforcement until resume.';
+                remainingInfo.classList.add('hidden');
             } else {
-                remainingInfo.textContent = 'No segment is active now. Upcoming segments will be suppressed until pause ends or you resume.';
+                remainingInfo.textContent = 'No scheduled block is active now. Upcoming scheduled blocks will be paused until pause ends.';
+                remainingInfo.classList.remove('hidden');
             }
-            remainingInfo.classList.remove('hidden');
         } else {
             remainingInfo.classList.add('hidden');
         }
