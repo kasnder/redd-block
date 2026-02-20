@@ -2133,6 +2133,19 @@ function formatDateForDisplay(date) {
     return `${day} ${month} ${year}`;
 }
 
+function isScheduleSegmentActiveNow(schedule, nowDate = new Date()) {
+    if (!schedule || !schedule.segments || schedule.segments.length === 0) return false;
+    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
+    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
+    return schedule.segments.some(seg => {
+        const startMins = seg.startHour * 60 + seg.startMinute;
+        const endMins = seg.endHour * 60 + seg.endMinute;
+        if (endMins > startMins) return seg.days.includes(currentDay) && currentMins >= startMins && currentMins < endMins;
+        const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
+        return (seg.days.includes(currentDay) && currentMins >= startMins) || (seg.days.includes(yesterdayDay) && currentMins < endMins);
+    });
+}
+
 // Update schedule button enabled state
 function updateScheduleButtonState() {
     const startScheduleBtn = document.getElementById('start-schedule-btn');
@@ -2142,6 +2155,10 @@ function updateScheduleButtonState() {
     const activeSchedule = selectedBlocklistId && appData.schedules
         ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
         : null;
+    const now = Date.now();
+    const scheduleIsPaused = !!(activeSchedule && activeSchedule.isPaused && activeSchedule.pauseEndTime > now);
+    const scheduleIsActiveNow = !!(activeSchedule && isScheduleSegmentActiveNow(activeSchedule));
+    const scheduleIsFunctionallyActive = scheduleIsPaused || scheduleIsActiveNow;
 
     const blocklist = selectedBlocklistId
         ? appData.blocklists.find(bl => bl.id === selectedBlocklistId)
@@ -2158,7 +2175,6 @@ function updateScheduleButtonState() {
     const pauseBtn = document.getElementById('pause-block-btn');
     if (pauseBtn) {
         if (activeSchedule && activeSchedule.segments) {
-            const now = Date.now();
             const isPaused = activeSchedule.isPaused && activeSchedule.pauseEndTime > now;
 
             if (isPaused) {
@@ -2166,24 +2182,7 @@ function updateScheduleButtonState() {
                 pauseBtn.classList.remove('hidden');
                 updatePauseButtonAppearance(true);
             } else {
-                const nowDate = new Date();
-                const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1; // Mon=0
-                const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
-
-                const segmentActive = activeSchedule.segments.some(seg => {
-                    const startMins = seg.startHour * 60 + seg.startMinute;
-                    const endMins = seg.endHour * 60 + seg.endMinute;
-
-                    if (endMins > startMins) {
-                        return seg.days.includes(currentDay) &&
-                            currentMins >= startMins && currentMins < endMins;
-                    } else {
-                        const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
-                        const inEveningPortion = seg.days.includes(currentDay) && currentMins >= startMins;
-                        const inMorningPortion = seg.days.includes(yesterdayDay) && currentMins < endMins;
-                        return inEveningPortion || inMorningPortion;
-                    }
-                });
+                const segmentActive = isScheduleSegmentActiveNow(activeSchedule);
 
                 if (segmentActive) {
                     pauseBtn.classList.remove('hidden');
@@ -2197,7 +2196,7 @@ function updateScheduleButtonState() {
         }
     }
 
-    if (activeSchedule && !hasNewSegments) {
+    if (activeSchedule && scheduleIsFunctionallyActive && !hasNewSegments) {
         // Active schedule with no pending changes - show Stop button (grey/secondary style)
         if (btnLabel) btnLabel.textContent = 'Stop schedule:';
         if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
@@ -2218,8 +2217,8 @@ function updateScheduleButtonState() {
 
         // Disable controls for existing segments
         disableScheduleControls(true);
-    } else if (activeSchedule && hasNewSegments) {
-        // Active schedule with pending new segments - show Edit button (dark/primary style)
+    } else if (activeSchedule) {
+        // Existing schedule not currently active (or has pending changes) - show Edit button
         if (btnLabel) btnLabel.textContent = 'Edit schedule:';
         if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
         startScheduleBtn.classList.remove('stop-schedule');
@@ -2568,14 +2567,18 @@ async function startSchedule() {
 
     // Check if there are new segments beyond the locked count
     const hasNewSegments = activeSchedule && scheduleSegments.length > activeScheduleSegmentCount;
+    const now = Date.now();
+    const scheduleIsPaused = !!(activeSchedule && activeSchedule.isPaused && activeSchedule.pauseEndTime > now);
+    const scheduleIsActiveNow = !!(activeSchedule && isScheduleSegmentActiveNow(activeSchedule));
+    const scheduleIsFunctionallyActive = scheduleIsPaused || scheduleIsActiveNow;
 
-    if (activeSchedule && !hasNewSegments) {
+    if (activeSchedule && scheduleIsFunctionallyActive && !hasNewSegments) {
         // Stop mode - open override dialog for the schedule
         openScheduleOverrideModal(activeSchedule);
         return;
     }
 
-    if (activeSchedule && hasNewSegments) {
+    if (activeSchedule) {
         // Edit mode - show confirmation for adding new segments only
         const newSegments = scheduleSegments.slice(activeScheduleSegmentCount);
         showScheduleEditConfirmModal(blocklist, activeSchedule, newSegments);
@@ -5537,6 +5540,7 @@ function render() {
     }
 
     renderBlocklists();
+    syncSelectedControlState();
 
     // Hide "Select a blocklist" prompt if there are no blocklists
     const selectionPrompt = document.getElementById('selection-prompt');
@@ -5551,6 +5555,61 @@ function render() {
 
     // Adjust window height to fit content
     updateWindowHeight();
+}
+
+function syncSelectedControlState() {
+    if (!selectedBlocklistId) {
+        updateOverrideAllButtonVisibility();
+        updateCleanHostsBtnState();
+        return;
+    }
+    if (isScheduleMode) {
+        updateScheduleButtonState();
+        updateOverrideAllButtonVisibility();
+        updateCleanHostsBtnState();
+        return;
+    }
+    const startBlockBtn = document.getElementById('start-block-btn');
+    if (!startBlockBtn) {
+        updateOverrideAllButtonVisibility();
+        updateCleanHostsBtnState();
+        return;
+    }
+    const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+    const now = Date.now();
+    const activeBlock = appData.activeBlocks.find(b => b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now);
+    const btnLabel = startBlockBtn.querySelector('.btn-label');
+    const btnName = startBlockBtn.querySelector('.btn-name');
+    const btnIcon = startBlockBtn.querySelector('svg');
+    const pauseBtn = document.getElementById('pause-block-btn');
+    const alwaysOnMsg = document.getElementById('always-on-message');
+    const durationToggle = document.getElementById('duration-mode-toggle');
+    delete startBlockBtn.dataset.activeBlockId;
+    startBlockBtn.classList.remove('stop-block');
+    if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
+    if (activeBlock) {
+        if (btnLabel) btnLabel.textContent = 'Stop Block:';
+        startBlockBtn.classList.add('stop-block');
+        startBlockBtn.dataset.activeBlockId = activeBlock.id;
+        if (btnIcon) btnIcon.innerHTML = `<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path>`;
+        if (pauseBtn) {
+            pauseBtn.classList.remove('hidden');
+            updatePauseButtonAppearance(!!activeBlock.isPaused);
+        }
+        disableTimeControls(true);
+        if (alwaysOnMsg) alwaysOnMsg.classList.add('hidden');
+        if (durationToggle) durationToggle.classList.add('hidden');
+    } else {
+        if (btnLabel) btnLabel.textContent = 'Start Block:';
+        if (btnIcon) btnIcon.innerHTML = `<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path>`;
+        if (pauseBtn) pauseBtn.classList.add('hidden');
+        disableTimeControls(false);
+        if (durationToggle) durationToggle.classList.remove('hidden');
+        if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isAlwaysOnMode);
+    }
+    startBlockBtn.disabled = !selectedBlocklistId;
+    updateOverrideAllButtonVisibility();
+    updateCleanHostsBtnState();
 }
 
 // Get the Monday of the week containing the given date
@@ -6529,9 +6588,11 @@ function startTickInterval() {
     // Initialize app blocking immediately at startup
     // This ensures any active blocks or schedules are enforced right away
     updateBlockedApps();
+    startTickInterval._lastScheduleStateSignature = getScheduleStateSignature();
 
     setInterval(async () => {
         const now = Date.now();
+        let shouldSyncControls = false;
 
         // Check for future blocks that have now become active
         const newlyActiveBlocks = appData.activeBlocks.filter(
@@ -6544,6 +6605,7 @@ function startTickInterval() {
             // Update hosts to apply the blocking rules
             await updateHostsFile();
             render();
+            shouldSyncControls = true;
         }
 
         // Check for paused blocks that should resume
@@ -6562,6 +6624,7 @@ function startTickInterval() {
             await updateHostsFile();
             await updateBlockedApps();
             render();
+            shouldSyncControls = true;
         }
 
         // Check for paused schedules that should resume
@@ -6580,6 +6643,7 @@ function startTickInterval() {
                 await updateHostsFile();
                 await updateBlockedApps();
                 render();
+                shouldSyncControls = true;
             }
         }
 
@@ -6593,6 +6657,7 @@ function startTickInterval() {
                 startTickInterval._scheduleTickCount = 0;
                 await updateHostsFile();
                 await updateBlockedApps();
+                shouldSyncControls = true;
             }
 
             // Check for expired non-repeating schedules and auto-stop them
@@ -6661,6 +6726,7 @@ function startTickInterval() {
                     // Update blocked apps after schedule expiration
                     await updateBlockedApps();
                     render();
+                    shouldSyncControls = true;
                 }
             }
         }
@@ -6686,6 +6752,17 @@ function startTickInterval() {
             // daemon handles expiry autonomously, but the call is harmless.
             await updateHostsFile();
             await updateBlockedApps();
+            shouldSyncControls = true;
+        }
+
+        const scheduleStateSignature = getScheduleStateSignature(now);
+        if (startTickInterval._lastScheduleStateSignature !== scheduleStateSignature) {
+            startTickInterval._lastScheduleStateSignature = scheduleStateSignature;
+            render();
+            shouldSyncControls = true;
+        }
+        if (shouldSyncControls) {
+            syncSelectedControlState();
         }
 
         // Update remaining times in UI
@@ -6713,6 +6790,12 @@ function startTickInterval() {
             // Don't call handleTimeChange here to avoid circular updates
         }
     }, 1000);
+}
+
+function getScheduleStateSignature(now = Date.now()) {
+    const nowDate = new Date(now);
+    if (!appData.schedules || appData.schedules.length === 0) return '';
+    return appData.schedules.map(s => `${s.id || s.blocklistId}:${s.isPaused && s.pauseEndTime > now ? 1 : 0}:${isScheduleSegmentActiveNow(s, nowDate) ? 1 : 0}`).sort().join('|');
 }
 
 // Utility functions
@@ -7169,9 +7252,6 @@ function updateCleanHostsBtnState() {
 // Check if there are any active blocks or schedules
 function hasAnyActiveBlocks() {
     const now = Date.now();
-    const nowDate = new Date();
-    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
-    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
 
     // Check one-off blocks
     const hasActiveOneOff = appData.activeBlocks.some(block =>
@@ -7182,21 +7262,7 @@ function hasAnyActiveBlocks() {
     // Check schedules
     if (appData.schedules) {
         for (const schedule of appData.schedules) {
-            if (!schedule.segments) continue;
-            const isActive = schedule.segments.some(seg => {
-                const startMins = seg.startHour * 60 + seg.startMinute;
-                const endMins = seg.endHour * 60 + seg.endMinute;
-                if (endMins > startMins) {
-                    return seg.days.includes(currentDay) &&
-                        currentMins >= startMins &&
-                        currentMins < endMins;
-                } else {
-                    const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
-                    return (seg.days.includes(currentDay) && currentMins >= startMins) ||
-                        (seg.days.includes(yesterdayDay) && currentMins < endMins);
-                }
-            });
-            if (isActive) return true;
+            if (isScheduleSegmentActiveNow(schedule)) return true;
         }
     }
 
