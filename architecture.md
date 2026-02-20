@@ -230,6 +230,10 @@ Watcher stop details:
 - matches app names case-insensitively against blocked set.
 - debounces repeat detections (~500ms window via `last_detection` map).
 - calls `hide_app(app_name)` which executes AppleScript visibility hide.
+- includes a macOS-only periodic foreground fallback check thread (2s cadence):
+  - reads current frontmost app name,
+  - applies same blocked-app matching and debounce rules,
+  - calls `hide_app(...)` when event-driven watcher misses focus transitions.
 
 ## 6.3 Windows watcher internals
 
@@ -245,8 +249,8 @@ Watcher stop details:
 
 Windows performance path:
 
-- effective blocked apps stored in global atomic pointer (`EFFECTIVE_BLOCKED_APPS`),
-- callback performs lock-free reads to minimize UI-latency overhead.
+- effective blocked apps are stored in shared `RwLock<Arc<Vec<String>>>` state (`EFFECTIVE_BLOCKED_APPS`),
+- callback reads cloned app lists with low contention and safer lifetime semantics.
 
 ```mermaid
 flowchart TD
@@ -310,6 +314,28 @@ Technical details:
   - retains only blocks with `end_time > now`,
   - on change, triggers hosts sync + state persist.
 
+## 7.3 Pause/resume architecture (one-off + schedule)
+
+Pause semantics are stateful and enforcement-driven, not UI-only.
+
+- one-off pause state lives in app data (`src/app.js`): `isPaused`, `pauseEndTime` on active blocks.
+- schedule pause state is synchronized end-to-end:
+  - frontend schedule records include pause fields,
+  - `syncSchedulesToHelper()` sends `isPaused` + `pauseEndTime`,
+  - helper schedule records persist the same fields.
+
+Enforcement behavior:
+
+- while paused:
+  - domains/apps from paused one-off and paused schedule sources are excluded from effective blocking sets,
+  - helper schedule evaluation explicitly skips paused schedules.
+- on manual resume or natural pause expiry:
+  - pause fields are cleared,
+  - app re-syncs helper schedule/manual block state,
+  - hosts and app watcher state are recomputed and re-applied.
+
+Schedule pause can be triggered even when no segment is currently active; this suppresses upcoming segment activation until pause end or manual resume.
+
 ---
 
 ## 8) Scheduled blocks
@@ -319,6 +345,7 @@ Technical details:
 Helper schedule records include:
 
 - `id`, `domains`, `apps`,
+- `isPaused`, `pauseEndTime`,
 - segment list with start/end hour/minute and day set.
 
 ## 8.2 Evaluator loop
@@ -326,6 +353,7 @@ Helper schedule records include:
 `schedule_evaluator()` in helper runs every 30s:
 
 - computes active schedule domains/apps from local time,
+- skips schedules paused at current time (`isPaused && pauseEndTime > now`),
 - compares with previous active set,
 - applies transitions:
   - hosts sync when active domains changed,
@@ -387,7 +415,7 @@ This keeps override behavior deterministic in multi-block situations.
 
 - helper status checks,
 - install path and elevation flow,
-- version compatibility checks via `EXPECTED_HELPER_VERSION` (currently `0.6.7`),
+- version compatibility checks via `EXPECTED_HELPER_VERSION` (currently `0.6.10`),
 - reinstall/update when helper is outdated.
 
 ## 11.2 Runtime persistence
@@ -534,7 +562,8 @@ This section is intentionally non-technical and complete.
 - start immediate focus block,
 - choose timed or always-on mode,
 - block ends naturally when timer expires,
-- pause and resume paths,
+- pause and resume paths (manual or natural pause expiry),
+- paused one-off blocks remove their domains/apps from enforcement until resumed,
 - single-block override and override-all behavior.
 
 ### 17.3 Scheduled block behavior
@@ -543,6 +572,7 @@ This section is intentionally non-technical and complete.
 - support active-now and future windows,
 - support recurring/date-based semantics,
 - support cross-midnight schedule segments,
+- support pause/resume even when currently inactive (suppresses upcoming segment activation while paused),
 - schedule transitions happen automatically in background.
 
 ### 17.4 Combined and concurrent behavior
