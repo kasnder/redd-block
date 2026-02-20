@@ -2212,7 +2212,7 @@ function updateScheduleButtonState() {
 
     if (activeSchedule && !hasNewSegments) {
         // Active schedule with no pending changes - show Stop button (grey/secondary style)
-        if (btnLabel) btnLabel.textContent = 'Stop schedule:';
+        if (btnLabel) btnLabel.textContent = 'Stop Schedule:';
         if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
         startScheduleBtn.classList.add('stop-schedule');
         startScheduleBtn.classList.remove('edit-schedule');
@@ -2233,7 +2233,7 @@ function updateScheduleButtonState() {
         disableScheduleControls(true);
     } else if (activeSchedule && hasNewSegments) {
         // Existing schedule not currently active (or has pending changes) - show Edit button
-        if (btnLabel) btnLabel.textContent = 'Edit schedule:';
+        if (btnLabel) btnLabel.textContent = 'Edit Schedule:';
         if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
         startScheduleBtn.classList.remove('stop-schedule');
         startScheduleBtn.classList.add('edit-schedule');
@@ -2254,7 +2254,7 @@ function updateScheduleButtonState() {
         disableScheduleControls(true);
     } else {
         // No active schedule - show Start button (normal)
-        if (btnLabel) btnLabel.textContent = 'Start schedule:';
+        if (btnLabel) btnLabel.textContent = 'Start Schedule:';
         if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
         startScheduleBtn.classList.remove('stop-schedule');
         startScheduleBtn.classList.remove('edit-schedule');
