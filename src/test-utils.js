@@ -189,50 +189,83 @@ function getBlockedDomains(appData, now, nowDate) {
  * Find the hardest challenge among blocklists (mirrors findHardestChallenge)
  */
 function getHardestChallenge(appData, now) {
-    let hardest = { type: 'random-words', count: 50 };
+    const nowDate = new Date(now);
+    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
+    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
+    let hardest = null;
 
     // Check active blocks
     for (const block of appData.activeBlocks) {
         if (block.startTime <= now && block.endTime > now) {
             const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
             if (blocklist?.overrideDifficulty) {
-                hardest = compareDifficulties(hardest, blocklist.overrideDifficulty);
+                hardest = hardest
+                    ? compareDifficulties(hardest, blocklist.overrideDifficulty)
+                    : blocklist.overrideDifficulty;
             }
         }
     }
 
-    // Check schedules
+    // Check active schedules
     for (const schedule of appData.schedules || []) {
+        if (!schedule.segments) continue;
+        const isActive = schedule.segments.some(seg => {
+            const startMins = seg.startHour * 60 + seg.startMinute;
+            const endMins = seg.endHour * 60 + seg.endMinute;
+            if (endMins > startMins) {
+                return seg.days.includes(currentDay) &&
+                    currentMins >= startMins &&
+                    currentMins < endMins;
+            }
+            const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
+            return (seg.days.includes(currentDay) && currentMins >= startMins) ||
+                (seg.days.includes(yesterdayDay) && currentMins < endMins);
+        });
+        if (!isActive) continue;
+
         const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
         if (blocklist?.overrideDifficulty) {
-            hardest = compareDifficulties(hardest, blocklist.overrideDifficulty);
+            hardest = hardest
+                ? compareDifficulties(hardest, blocklist.overrideDifficulty)
+                : blocklist.overrideDifficulty;
         }
     }
 
-    return hardest;
+    return hardest || { type: 'random-words', count: 50 };
 }
 
 /**
  * Compare two difficulties (mirrors compareDifficulties)
  */
 function compareDifficulties(a, b) {
-    if (b.type === 'custom' && b.customText) {
-        const bLen = b.customText.length;
-        const aLen = a.type === 'custom' && a.customText ? a.customText.length : (a.count || 50);
-        return bLen >= aLen ? b : a;
-    }
-    if (a.type === 'custom' && a.customText) {
-        return a;
-    }
+    if (!a) return b;
+    if (!b) return a;
 
-    const aCount = a.count || 50;
-    const bCount = b.count || 50;
+    const getCharacterCount = (difficulty) => {
+        if (difficulty.type === 'custom' && typeof difficulty.customText === 'string') {
+            return difficulty.customText.length;
+        }
+        const parsed = Number(difficulty.count);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : 50;
+    };
+
+    const getTypeRank = (difficulty) => {
+        if (difficulty.type === 'custom') return 3;
+        if (difficulty.type === 'gibberish') return 2;
+        if (difficulty.type === 'random-words') return 1;
+        return 0;
+    };
+
+    const aCount = getCharacterCount(a);
+    const bCount = getCharacterCount(b);
 
     if (bCount > aCount) return b;
     if (aCount > bCount) return a;
 
-    if (b.type === 'gibberish' && a.type !== 'gibberish') return b;
-    if (a.type === 'gibberish' && b.type !== 'gibberish') return a;
+    const aRank = getTypeRank(a);
+    const bRank = getTypeRank(b);
+    if (bRank > aRank) return b;
+    if (aRank > bRank) return a;
 
     return a;
 }
@@ -351,27 +384,49 @@ function hasAnyActiveBlocks(appData, now, nowDate) {
  * Mirrors findHardestChallenge() in app.js but accepts time parameter
  */
 function findHardestChallengeAtTime(appData, now) {
-    let hardest = { type: 'random-words', count: 50 };
+    const nowDate = new Date(now);
+    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
+    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
+    let hardest = null;
 
     // Check active one-off blocks
     for (const block of appData.activeBlocks) {
         if (block.startTime <= now && block.endTime > now) {
             const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
             if (blocklist?.overrideDifficulty) {
-                hardest = compareDifficulties(hardest, blocklist.overrideDifficulty);
+                hardest = hardest
+                    ? compareDifficulties(hardest, blocklist.overrideDifficulty)
+                    : blocklist.overrideDifficulty;
             }
         }
     }
 
-    // Check active schedules (all schedules, since findHardestChallenge doesn't time-filter)
+    // Check active schedules
     for (const schedule of appData.schedules || []) {
+        if (!schedule.segments) continue;
+        const isActive = schedule.segments.some(seg => {
+            const startMins = seg.startHour * 60 + seg.startMinute;
+            const endMins = seg.endHour * 60 + seg.endMinute;
+            if (endMins > startMins) {
+                return seg.days.includes(currentDay) &&
+                    currentMins >= startMins &&
+                    currentMins < endMins;
+            }
+            const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
+            return (seg.days.includes(currentDay) && currentMins >= startMins) ||
+                (seg.days.includes(yesterdayDay) && currentMins < endMins);
+        });
+        if (!isActive) continue;
+
         const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
         if (blocklist?.overrideDifficulty) {
-            hardest = compareDifficulties(hardest, blocklist.overrideDifficulty);
+            hardest = hardest
+                ? compareDifficulties(hardest, blocklist.overrideDifficulty)
+                : blocklist.overrideDifficulty;
         }
     }
 
-    return hardest;
+    return hardest || { type: 'random-words', count: 50 };
 }
 
 /**

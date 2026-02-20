@@ -637,6 +637,56 @@
             assertEqual(hardest.type, 'custom', 'T31: Custom text selected (longer than 50)');
         })();
 
+        // T31b: Lower-than-50 active difficulties should not lose to default baseline
+        (function T31b() {
+            const blocklist1 = createMockBlocklist({
+                overrideDifficulty: { type: 'random-words', count: 20 }
+            });
+            const blocklist2 = createMockBlocklist({
+                overrideDifficulty: { type: 'gibberish', count: 30 }
+            });
+
+            const now = Date.now();
+            const appData = createMockAppData({
+                blocklists: [blocklist1, blocklist2],
+                activeBlocks: [
+                    createMockBlock(blocklist1.id, now - 60000, now + 60000),
+                    createMockBlock(blocklist2.id, now - 60000, now + 60000)
+                ]
+            });
+
+            const hardest = getHardestChallenge(appData, now);
+            assertEqual(hardest.type, 'gibberish', 'T31b: Active 30-char gibberish selected over baseline default');
+            assertEqual(hardest.count, 30, 'T31b: Selected count reflects active block, not default 50');
+        })();
+
+        // T31c: Equal character count tie should prefer custom over gibberish/random-words
+        (function T31c() {
+            const blocklist1 = createMockBlocklist({
+                overrideDifficulty: { type: 'random-words', count: 50 }
+            });
+            const blocklist2 = createMockBlocklist({
+                overrideDifficulty: { type: 'gibberish', count: 50 }
+            });
+            const blocklist3 = createMockBlocklist({
+                overrideDifficulty: { type: 'custom', customText: 'x'.repeat(50) }
+            });
+
+            const now = Date.now();
+            const appData = createMockAppData({
+                blocklists: [blocklist1, blocklist2, blocklist3],
+                activeBlocks: [
+                    createMockBlock(blocklist1.id, now - 60000, now + 60000),
+                    createMockBlock(blocklist2.id, now - 60000, now + 60000),
+                    createMockBlock(blocklist3.id, now - 60000, now + 60000)
+                ]
+            });
+
+            const hardest = getHardestChallenge(appData, now);
+            assertEqual(hardest.type, 'custom', 'T31c: Custom wins tie at equal character count');
+            assertEqual(hardest.customText.length, 50, 'T31c: Custom count participates in equality tie');
+        })();
+
         // T32: App blocking also stops (can only verify data state, not actual process watcher)
         (function T32() {
             console.log('   T32: App blocking stop verified via manual testing');
@@ -740,6 +790,25 @@
             const hardest = findHardestChallengeAtTime(appData, now);
             assertEqual(hardest.type, 'random-words', 'T38: No blocks → default type');
             assertEqual(hardest.count, 50, 'T38: No blocks → default count 50');
+        })();
+
+        // T38b: Inactive schedule should not affect hardest challenge selection
+        (function T38b() {
+            const blocklist = createMockBlocklist({
+                overrideDifficulty: { type: 'gibberish', count: 200 }
+            });
+            const now = Date.now();
+            const nowDate = new Date(now);
+            const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
+            const segment = createMockSegment(0, 0, 1, 0, [currentDay === 0 ? 1 : 0]); // intentionally not active now
+            const schedule = createMockSchedule(blocklist.id, [segment]);
+            const appData = createMockAppData({
+                blocklists: [blocklist],
+                schedules: [schedule]
+            });
+            const hardest = findHardestChallengeAtTime(appData, now);
+            assertEqual(hardest.type, 'random-words', 'T38b: Inactive schedule does not override default');
+            assertEqual(hardest.count, 50, 'T38b: Inactive schedule does not contribute challenge count');
         })();
     }
 
