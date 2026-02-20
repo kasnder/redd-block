@@ -103,6 +103,10 @@ struct HelperSchedule {
     domains: Vec<String>,
     #[serde(default)]
     apps: Vec<String>,
+    #[serde(rename = "isPaused", default)]
+    is_paused: bool,
+    #[serde(rename = "pauseEndTime", default)]
+    pause_end_time: Option<u64>,
     segments: Vec<ScheduleSegment>,
 }
 
@@ -540,12 +544,19 @@ fn flush_dns_cache() {
 /// Compute currently active schedule domains
 fn get_active_schedule_domains(schedules: &[HelperSchedule]) -> Vec<String> {
     let now = chrono_now();
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
     let current_day = now.weekday_mon0(); // Mon=0..Sun=6
     let current_mins = now.hour() * 60 + now.minute();
     
     let mut seen = HashSet::new();
     let mut domains = Vec::new();
     for schedule in schedules {
+        if schedule.is_paused && schedule.pause_end_time.map(|end| end > now_ms).unwrap_or(true) {
+            continue;
+        }
         let is_active = schedule.segments.iter().any(|seg| {
             let start_mins = seg.start_hour as u32 * 60 + seg.start_minute as u32;
             let end_mins = seg.end_hour as u32 * 60 + seg.end_minute as u32;
@@ -581,12 +592,19 @@ fn get_active_schedule_domains(schedules: &[HelperSchedule]) -> Vec<String> {
 /// Compute currently active schedule apps
 fn get_active_schedule_apps(schedules: &[HelperSchedule]) -> Vec<String> {
     let now = chrono_now();
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64;
     let current_day = now.weekday_mon0();
     let current_mins = now.hour() * 60 + now.minute();
     
     let mut seen = HashSet::new();
     let mut apps = Vec::new();
     for schedule in schedules {
+        if schedule.is_paused && schedule.pause_end_time.map(|end| end > now_ms).unwrap_or(true) {
+            continue;
+        }
         let is_active = schedule.segments.iter().any(|seg| {
             let start_mins = seg.start_hour as u32 * 60 + seg.start_minute as u32;
             let end_mins = seg.end_hour as u32 * 60 + seg.end_minute as u32;

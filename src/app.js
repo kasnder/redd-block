@@ -91,7 +91,7 @@ let screentimeAuthorized = false; // Track if Screen Time is authorized (iOS)
 let pauseBlockId = null; // Track which block is being paused
 let pauseChallengeText = ''; // Challenge text for pause modal
 let pauseMaxMinutes = null; // Maximum pause duration in minutes (null = unlimited)
-let pauseScheduleData = null; // Track schedule-specific pause data { blocklistId, segmentEndTime }
+let pauseScheduleData = null; // Track schedule-specific pause data { blocklistId, isActiveNow }
 
 // Week calendar state
 let currentWeekStart = null; // Date object for Monday of the displayed week
@@ -158,6 +158,8 @@ async function syncSchedulesToHelper() {
                 id: schedule.id,
                 domains: blocklist?.websites || [],
                 apps: blocklist?.apps || [],
+                isPaused: !!schedule.isPaused,
+                pauseEndTime: schedule.pauseEndTime || null,
                 segments: (schedule.segments || []).map(seg => ({
                     startHour: seg.startHour,
                     startMinute: seg.startMinute,
@@ -175,6 +177,27 @@ async function syncSchedulesToHelper() {
         }
     } catch (e) {
         console.warn('[syncSchedulesToHelper] Error:', e);
+    }
+}
+
+async function syncActiveBlocksToHelper() {
+    if (isIOS) return;
+    try {
+        const status = await tauriAPI.checkHelperStatus();
+        if (!status.running || !status.version_ok) return;
+        const now = Date.now();
+        const activeBlocks = appData.activeBlocks.filter(block => block.startTime <= now && block.endTime > now && !block.isPaused);
+        await tauriAPI.clearBlockViaHelper();
+        for (const block of activeBlocks) {
+            const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+            await tauriAPI.startBlockViaHelper({
+                domains: blocklist?.websites || [],
+                endTime: block.endTime,
+                blocklistId: block.blocklistId
+            });
+        }
+    } catch (e) {
+        console.warn('[syncActiveBlocksToHelper] Error:', e);
     }
 }
 
@@ -1195,52 +1218,11 @@ function setupOverrideModalListeners() {
                 openResumeConfirmation(selectedBlocklistId, 'schedule', null);
                 return;
             }
-
-            if (schedule.segments) {
-                const nowDate = new Date();
-                const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
-                const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
-
-                const activeSeg = schedule.segments.find(seg => {
-                    const startMins = seg.startHour * 60 + seg.startMinute;
-                    const endMins = seg.endHour * 60 + seg.endMinute;
-
-                    if (endMins > startMins) {
-                        return seg.days.includes(currentDay) &&
-                            currentMins >= startMins && currentMins < endMins;
-                    } else {
-                        const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
-                        const inEveningPortion = seg.days.includes(currentDay) && currentMins >= startMins;
-                        const inMorningPortion = seg.days.includes(yesterdayDay) && currentMins < endMins;
-                        return inEveningPortion || inMorningPortion;
-                    }
-                });
-
-                if (activeSeg) {
-                    // Calculate end time of this segment occurrence
-                    const startMins = activeSeg.startHour * 60 + activeSeg.startMinute;
-                    const endMins = activeSeg.endHour * 60 + activeSeg.endMinute;
-                    const segEnd = new Date(nowDate);
-
-                    if (endMins > startMins) {
-                        segEnd.setHours(activeSeg.endHour, activeSeg.endMinute, 0, 0);
-                    } else {
-                        // Cross-midnight
-                        if (currentMins >= startMins) {
-                            // Evening portion — ends tomorrow
-                            segEnd.setDate(segEnd.getDate() + 1);
-                        }
-                        segEnd.setHours(activeSeg.endHour, activeSeg.endMinute, 0, 0);
-                    }
-
-                    // Store schedule pause data and open modal with schedule blocklistId
-                    pauseScheduleData = {
-                        blocklistId: selectedBlocklistId,
-                        segmentEndTime: segEnd.getTime()
-                    };
-                    openPauseModal(null); // null blockId signals schedule pause
-                }
-            }
+            pauseScheduleData = {
+                blocklistId: selectedBlocklistId,
+                isActiveNow: isScheduleSegmentActiveNow(schedule)
+            };
+            openPauseModal(null); // null blockId signals schedule pause
         }
     });
 
@@ -2171,7 +2153,7 @@ function updateScheduleButtonState() {
     // Check if there are new segments (beyond the locked count)
     const hasNewSegments = activeSchedule && scheduleSegments.length > activeScheduleSegmentCount;
 
-    // Show/hide pause button based on whether a segment is currently active or schedule is paused
+    // Show/hide pause button for started schedules (pause is allowed even when no segment is active)
     const pauseBtn = document.getElementById('pause-block-btn');
     if (pauseBtn) {
         if (activeSchedule && activeSchedule.segments) {
@@ -2182,14 +2164,8 @@ function updateScheduleButtonState() {
                 pauseBtn.classList.remove('hidden');
                 updatePauseButtonAppearance(true);
             } else {
-                const segmentActive = isScheduleSegmentActiveNow(activeSchedule);
-
-                if (segmentActive) {
-                    pauseBtn.classList.remove('hidden');
-                    updatePauseButtonAppearance(false);
-                } else {
-                    pauseBtn.classList.add('hidden');
-                }
+                pauseBtn.classList.remove('hidden');
+                updatePauseButtonAppearance(false);
             }
         } else {
             pauseBtn.classList.add('hidden');
@@ -4360,24 +4336,11 @@ async function updateHostsFile(silent = false) {
             console.log('[updateHostsFile] Helper running with correct version, using helper to update blocks');
             helperAvailable = true;
             await syncKeepBlockingPreferenceToHelper();
-
-            if (domainsArray.length === 0) {
-                // Clear all blocks via helper
-                const result = await tauriAPI.clearBlockViaHelper();
-                if (result && result.success) {
-                    lastBlockedDomains = allDomains;
-                    // Update blocked apps (will stop watcher if no apps to block)
-                    await updateBlockedApps();
-                }
-                return result || { success: true };
-            } else {
-                // Helper already knows about per-blocklist blocks and schedules.
-                // Just record the expected domains locally so we can short-circuit next time.
-                lastBlockedDomains = allDomains;
-                // Update apps in case effective app set changed.
-                await updateBlockedApps();
-                return { success: true };
-            }
+            await syncActiveBlocksToHelper();
+            await syncSchedulesToHelper();
+            lastBlockedDomains = allDomains;
+            await updateBlockedApps();
+            return { success: true };
         } else {
             console.log('[updateHostsFile] Helper NOT running, falling back');
         }
@@ -4976,6 +4939,8 @@ async function proceedWithResume() {
     resumeData = null;
 
     await saveData();
+    await syncActiveBlocksToHelper();
+    await syncSchedulesToHelper();
     await updateHostsFile();
     await updateBlockedApps();
     render();
@@ -5002,7 +4967,7 @@ function openPauseModal(blockId) {
             id: null,
             blocklistId: pauseScheduleData.blocklistId,
             startTime: Date.now(),
-            endTime: pauseScheduleData.segmentEndTime,
+            endTime: ALWAYS_ON_END_TIME,
             isScheduleBlock: true
         };
     }
@@ -5074,7 +5039,16 @@ function openPauseModal(blockId) {
         }
     } else {
         pauseMaxMinutes = null; // No cap for always-on blocks
-        remainingInfo.classList.add('hidden');
+        if (pauseScheduleData) {
+            if (pauseScheduleData.isActiveNow) {
+                remainingInfo.textContent = 'A segment is active now. Pause will suppress current and upcoming schedule enforcement until resume.';
+            } else {
+                remainingInfo.textContent = 'No segment is active now. Upcoming segments will be suppressed until pause ends or you resume.';
+            }
+            remainingInfo.classList.remove('hidden');
+        } else {
+            remainingInfo.classList.add('hidden');
+        }
         daysGroup.style.display = '';
         hoursGroup.style.display = '';
     }
@@ -5333,6 +5307,8 @@ async function proceedWithPause() {
     }
 
     await saveData();
+    await syncActiveBlocksToHelper();
+    await syncSchedulesToHelper();
 
     // Update blocking rules — updateHostsFile skips paused blocks' domains
     await updateHostsFile();
@@ -6354,81 +6330,86 @@ function renderBlocklists() {
             const schedule = appData.schedules.find(s => s.blocklistId === bl.id);
             let scheduleTimeText = '';
             if (schedule && schedule.segments) {
-                // Check if any segment is currently active
-                const nowDate = new Date();
-                const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1; // Mon=0
-                const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
-
-                // Find active segment (handling cross-midnight segments)
-                const activeSegment = schedule.segments.find(seg => {
-                    const startMins = seg.startHour * 60 + seg.startMinute;
-                    const endMins = seg.endHour * 60 + seg.endMinute;
-
-                    if (endMins > startMins) {
-                        // Same-day segment (e.g., 09:00 - 17:00)
-                        return seg.days.includes(currentDay) &&
-                            currentMins >= startMins &&
-                            currentMins < endMins;
-                    } else {
-                        // Cross-midnight segment (e.g., 22:00 - 04:00)
-                        const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
-                        const inEveningPortion = seg.days.includes(currentDay) && currentMins >= startMins;
-                        const inMorningPortion = seg.days.includes(yesterdayDay) && currentMins < endMins;
-                        return inEveningPortion || inMorningPortion;
-                    }
-                });
-
-                if (activeSegment) {
-                    // Currently blocking - show time left
-                    const startMins = activeSegment.startHour * 60 + activeSegment.startMinute;
-                    const endMins = activeSegment.endHour * 60 + activeSegment.endMinute;
-                    let minsLeft;
-
-                    if (endMins > startMins) {
-                        // Same-day segment
-                        minsLeft = endMins - currentMins;
-                    } else {
-                        // Cross-midnight segment
-                        if (currentMins >= startMins) {
-                            // In evening portion: time until midnight + morning end
-                            minsLeft = (24 * 60 - currentMins) + endMins;
-                        } else {
-                            // In morning portion: time until end
-                            minsLeft = endMins - currentMins;
-                        }
-                    }
-                    scheduleTimeText = minsLeft >= 60 ? `${Math.floor(minsLeft / 60)}h ${minsLeft % 60}m left` : `${minsLeft}m left`;
+                if (schedule.isPaused && schedule.pauseEndTime > now) {
+                    const pauseMins = Math.max(1, Math.ceil((schedule.pauseEndTime - now) / 60000));
+                    scheduleTimeText = pauseMins >= 60 ? `Paused ${Math.floor(pauseMins / 60)}h ${pauseMins % 60}m` : `Paused ${pauseMins}m`;
                 } else {
-                    // Find next upcoming segment
-                    let nextStart = null;
-                    for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
-                        const checkDay = (currentDay + dayOffset) % 7;
-                        const segsForDay = schedule.segments.filter(seg => seg.days.includes(checkDay))
-                            .sort((a, b) => (a.startHour * 60 + a.startMinute) - (b.startHour * 60 + b.startMinute));
+                    // Check if any segment is currently active
+                    const nowDate = new Date();
+                    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1; // Mon=0
+                    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
 
-                        for (const seg of segsForDay) {
-                            const segStartMins = seg.startHour * 60 + seg.startMinute;
-                            if (dayOffset === 0 && segStartMins <= currentMins) continue; // Already passed today
+                    // Find active segment (handling cross-midnight segments)
+                    const activeSegment = schedule.segments.find(seg => {
+                        const startMins = seg.startHour * 60 + seg.startMinute;
+                        const endMins = seg.endHour * 60 + seg.endMinute;
 
-                            // Found next segment
-                            const minsUntil = dayOffset === 0
-                                ? segStartMins - currentMins
-                                : (dayOffset * 24 * 60) + segStartMins - currentMins + (24 * 60 - currentMins) - (24 * 60 - segStartMins);
-
-                            if (minsUntil < 60) {
-                                scheduleTimeText = `in ${minsUntil}m`;
-                            } else if (minsUntil < 24 * 60) {
-                                scheduleTimeText = `in ${Math.floor(minsUntil / 60)}h`;
-                            } else {
-                                const days = Math.floor(minsUntil / (24 * 60));
-                                scheduleTimeText = `in ${days}d`;
-                            }
-                            nextStart = true;
-                            break;
+                        if (endMins > startMins) {
+                            // Same-day segment (e.g., 09:00 - 17:00)
+                            return seg.days.includes(currentDay) &&
+                                currentMins >= startMins &&
+                                currentMins < endMins;
+                        } else {
+                            // Cross-midnight segment (e.g., 22:00 - 04:00)
+                            const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
+                            const inEveningPortion = seg.days.includes(currentDay) && currentMins >= startMins;
+                            const inMorningPortion = seg.days.includes(yesterdayDay) && currentMins < endMins;
+                            return inEveningPortion || inMorningPortion;
                         }
-                        if (nextStart) break;
+                    });
+
+                    if (activeSegment) {
+                        // Currently blocking - show time left
+                        const startMins = activeSegment.startHour * 60 + activeSegment.startMinute;
+                        const endMins = activeSegment.endHour * 60 + activeSegment.endMinute;
+                        let minsLeft;
+
+                        if (endMins > startMins) {
+                            // Same-day segment
+                            minsLeft = endMins - currentMins;
+                        } else {
+                            // Cross-midnight segment
+                            if (currentMins >= startMins) {
+                                // In evening portion: time until midnight + morning end
+                                minsLeft = (24 * 60 - currentMins) + endMins;
+                            } else {
+                                // In morning portion: time until end
+                                minsLeft = endMins - currentMins;
+                            }
+                        }
+                        scheduleTimeText = minsLeft >= 60 ? `${Math.floor(minsLeft / 60)}h ${minsLeft % 60}m left` : `${minsLeft}m left`;
+                    } else {
+                        // Find next upcoming segment
+                        let nextStart = null;
+                        for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+                            const checkDay = (currentDay + dayOffset) % 7;
+                            const segsForDay = schedule.segments.filter(seg => seg.days.includes(checkDay))
+                                .sort((a, b) => (a.startHour * 60 + a.startMinute) - (b.startHour * 60 + b.startMinute));
+
+                            for (const seg of segsForDay) {
+                                const segStartMins = seg.startHour * 60 + seg.startMinute;
+                                if (dayOffset === 0 && segStartMins <= currentMins) continue; // Already passed today
+
+                                // Found next segment
+                                const minsUntil = dayOffset === 0
+                                    ? segStartMins - currentMins
+                                    : (dayOffset * 24 * 60) + segStartMins - currentMins + (24 * 60 - currentMins) - (24 * 60 - segStartMins);
+
+                                if (minsUntil < 60) {
+                                    scheduleTimeText = `in ${minsUntil}m`;
+                                } else if (minsUntil < 24 * 60) {
+                                    scheduleTimeText = `in ${Math.floor(minsUntil / 60)}h`;
+                                } else {
+                                    const days = Math.floor(minsUntil / (24 * 60));
+                                    scheduleTimeText = `in ${days}d`;
+                                }
+                                nextStart = true;
+                                break;
+                            }
+                            if (nextStart) break;
+                        }
+                        if (!scheduleTimeText) scheduleTimeText = 'scheduled';
                     }
-                    if (!scheduleTimeText) scheduleTimeText = 'scheduled';
                 }
             }
             // Calendar icon for scheduled blocklists
@@ -6621,6 +6602,7 @@ function startTickInterval() {
             });
 
             await saveData();
+            await syncActiveBlocksToHelper();
             await updateHostsFile();
             await updateBlockedApps();
             render();
@@ -6640,6 +6622,7 @@ function startTickInterval() {
                 });
 
                 await saveData();
+                await syncSchedulesToHelper();
                 await updateHostsFile();
                 await updateBlockedApps();
                 render();
