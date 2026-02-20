@@ -1034,6 +1034,22 @@ fn hide_app(app_name: &str) {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn get_frontmost_app_name() -> Option<String> {
+    let script = r#"tell application "System Events" to get name of first application process whose frontmost is true"#;
+    match Command::new("osascript").arg("-e").arg(script).output() {
+        Ok(output) if output.status.success() => {
+            let name = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if name.is_empty() {
+                None
+            } else {
+                Some(name)
+            }
+        }
+        _ => None,
+    }
+}
+
 /// Hide all currently blocked apps
 fn hide_all_blocked_apps(app_state: &Arc<Mutex<Vec<String>>>) {
     let apps = app_state.lock().unwrap().clone();
@@ -1229,6 +1245,67 @@ end repeat
             // We can't store the process directly since we need stderr
             // The process handle will be managed via the running flag
         }
+    }
+
+    // Fallback guard: periodically verify the frontmost app and hide it if blocked.
+    // This catches edge cases where rapid focus/activation spam misses event handling.
+    {
+        let app_state_fallback = Arc::clone(&app_state);
+        let handle_fallback = Arc::clone(&handle);
+        thread::spawn(move || {
+            loop {
+                thread::sleep(Duration::from_secs(2));
+
+                let watcher_running = {
+                    let h = handle_fallback.lock().unwrap();
+                    matches!(&*h, Some(wh) if wh.running)
+                };
+                if !watcher_running {
+                    break;
+                }
+
+                let Some(frontmost_app) = get_frontmost_app_name() else {
+                    continue;
+                };
+
+                let is_blocked = {
+                    let apps = app_state_fallback.lock().unwrap();
+                    apps.iter().any(|a| a.eq_ignore_ascii_case(&frontmost_app))
+                };
+                if !is_blocked {
+                    continue;
+                }
+
+                let should_process = {
+                    let mut h = handle_fallback.lock().unwrap();
+                    if let Some(ref mut wh) = *h {
+                        let app_lower = frontmost_app.to_lowercase();
+                        let now = Instant::now();
+                        if let Some(last_time) = wh.last_detection.get(&app_lower) {
+                            if now.duration_since(*last_time) < Duration::from_millis(500) {
+                                false
+                            } else {
+                                wh.last_detection.insert(app_lower, now);
+                                true
+                            }
+                        } else {
+                            wh.last_detection.insert(app_lower, now);
+                            true
+                        }
+                    } else {
+                        false
+                    }
+                };
+
+                if should_process {
+                    log(&format!(
+                        "Fallback foreground check detected blocked app: {}",
+                        frontmost_app
+                    ));
+                    hide_app(&frontmost_app);
+                }
+            }
+        });
     }
 
     // Read stderr (AppleScript 'log' outputs to stderr)
