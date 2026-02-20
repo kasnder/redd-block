@@ -27,7 +27,7 @@ pub struct HelperStatus {
 
 /// Expected helper version - update this when helper-daemon changes
 /// This is separate from the app version to avoid unnecessary reinstalls
-const EXPECTED_HELPER_VERSION: &str = "0.6.6";
+const EXPECTED_HELPER_VERSION: &str = "0.6.7";
 
 /// Result from helper operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,6 +52,9 @@ struct IpcCommand {
     apps: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     schedules: Option<Vec<HelperScheduleData>>,
+    #[serde(rename = "keepBlockingOnUninstall")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    keep_blocking_on_uninstall: Option<bool>,
 }
 
 
@@ -191,6 +194,7 @@ pub fn check_helper_status() -> HelperStatus {
         blocklist_id: None,
         apps: None,
         schedules: None,
+        keep_blocking_on_uninstall: None,
     };
     let ping_result = send_command(&cmd);
     let (running, helper_version) = match &ping_result {
@@ -584,6 +588,7 @@ exit 0
                 blocklist_id: None,
                 apps: None,
                 schedules: None,
+                keep_blocking_on_uninstall: None,
             });
             
             if ping_result.is_ok() {
@@ -664,6 +669,7 @@ pub async fn start_block_via_helper(
         blocklist_id: Some(blocklist_id),
         apps: None,
         schedules: None,
+        keep_blocking_on_uninstall: None,
     };
     match send_command(&cmd) {
         Ok(response) => HelperResult {
@@ -688,6 +694,7 @@ pub async fn clear_block_via_helper(blocklist_id: Option<String>) -> HelperResul
         blocklist_id,
         apps: None,
         schedules: None,
+        keep_blocking_on_uninstall: None,
     };
     match send_command(&cmd) {
         Ok(response) => HelperResult {
@@ -714,6 +721,7 @@ pub async fn uninstall_helper() -> HelperResult {
         blocklist_id: None,
         apps: None,
         schedules: None,
+        keep_blocking_on_uninstall: None,
     };
     match send_command(&cmd) {
         Ok(response) if response.success => HelperResult {
@@ -760,6 +768,7 @@ fn force_cleanup_helper() -> HelperResult {
             blocklist_id: None,
             apps: None,
             schedules: None,
+            keep_blocking_on_uninstall: None,
             };
         match send_command(&restore_cmd) {
             Ok(_) => log::info!("Hosts file restored before force cleanup"),
@@ -823,6 +832,7 @@ fn force_cleanup_helper() -> HelperResult {
             blocklist_id: None,
             apps: None,
             schedules: None,
+            keep_blocking_on_uninstall: None,
             };
         match send_command(&restore_cmd) {
             Ok(_) => log::info!("Hosts file restored before force cleanup"),
@@ -867,6 +877,7 @@ pub async fn set_blocked_apps_via_helper(apps: Vec<String>) -> HelperResult {
         blocklist_id: None,
         apps: Some(apps),
         schedules: None,
+        keep_blocking_on_uninstall: None,
     };
     match send_command(&cmd) {
         Ok(response) => {
@@ -900,6 +911,7 @@ pub async fn set_schedules_via_helper(schedules: Vec<HelperScheduleData>) -> Hel
         blocklist_id: None,
         apps: None,
         schedules: Some(schedules),
+        keep_blocking_on_uninstall: None,
     };
     
     match send_command(&cmd) {
@@ -923,6 +935,35 @@ pub async fn set_schedules_via_helper(schedules: Vec<HelperScheduleData>) -> Hel
     }
 }
 
+#[tauri::command]
+pub async fn set_keep_blocking_on_uninstall_via_helper(keep_blocking_on_uninstall: bool) -> HelperResult {
+    log::info!(
+        "set_keep_blocking_on_uninstall_via_helper called with {}",
+        keep_blocking_on_uninstall
+    );
+
+    let cmd = IpcCommand {
+        action: "set-keep-blocking-on-uninstall".to_string(),
+        domains: None,
+        end_time: None,
+        blocklist_id: None,
+        apps: None,
+        schedules: None,
+        keep_blocking_on_uninstall: Some(keep_blocking_on_uninstall),
+    };
+
+    match send_command(&cmd) {
+        Ok(response) => HelperResult {
+            success: response.success,
+            error: response.error,
+        },
+        Err(e) => HelperResult {
+            success: false,
+            error: Some(e),
+        },
+    }
+}
+
 /// Clean hosts file by removing all ReDD Block entries.
 /// Tries the helper daemon first; if unavailable, falls back to an elevated process.
 #[tauri::command]
@@ -937,6 +978,7 @@ pub async fn clean_hosts_file() -> HelperResult {
         blocklist_id: None,
         apps: None,
         schedules: None,
+        keep_blocking_on_uninstall: None,
     };
     match send_command(&cmd) {
         Ok(response) if response.success => {

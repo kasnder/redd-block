@@ -49,6 +49,10 @@ struct BlockState {
     blocklist_id: String,
 }
 
+fn default_keep_blocking_on_uninstall() -> bool {
+    true
+}
+
 /// Persisted state. We support reading old format (current_block) and new (manual_blocks).
 #[derive(Debug, Clone, Deserialize)]
 struct HelperState {
@@ -60,6 +64,11 @@ struct HelperState {
     blocked_apps: Vec<String>,
     #[serde(default)]
     schedules: Vec<HelperSchedule>,
+    #[serde(
+        rename = "keepBlockingOnUninstall",
+        default = "default_keep_blocking_on_uninstall"
+    )]
+    keep_blocking_on_uninstall: bool,
 }
 
 /// What we write to disk (only manual_blocks, no current_block).
@@ -68,6 +77,8 @@ struct HelperStatePersist {
     manual_blocks: Vec<BlockState>,
     blocked_apps: Vec<String>,
     schedules: Vec<HelperSchedule>,
+    #[serde(rename = "keepBlockingOnUninstall")]
+    keep_blocking_on_uninstall: bool,
 }
 
 // Schedule types
@@ -123,6 +134,11 @@ enum IpcCommand {
     #[serde(rename = "set-schedules")]
     SetSchedules {
         schedules: Vec<HelperSchedule>,
+    },
+    #[serde(rename = "set-keep-blocking-on-uninstall")]
+    SetKeepBlockingOnUninstall {
+        #[serde(rename = "keepBlockingOnUninstall")]
+        keep_blocking_on_uninstall: bool,
     },
     #[serde(rename = "ping")]
     Ping,
@@ -241,7 +257,19 @@ fn load_state() -> (Vec<BlockState>, Vec<String>, Vec<HelperSchedule>) {
     (Vec::new(), Vec::new(), Vec::new())
 }
 
-fn save_full_state(manual_blocks: &[BlockState], apps: &[String], schedules: &[HelperSchedule]) {
+fn read_keep_blocking_preference_from_helper_state() -> Option<bool> {
+    let path = get_data_path();
+    let content = fs::read_to_string(&path).ok()?;
+    let state = serde_json::from_str::<HelperState>(&content).ok()?;
+    Some(state.keep_blocking_on_uninstall)
+}
+
+fn write_full_state(
+    manual_blocks: &[BlockState],
+    apps: &[String],
+    schedules: &[HelperSchedule],
+    keep_blocking_on_uninstall: bool,
+) {
     let path = get_data_path();
     if let Some(parent) = path.parent() {
         if let Err(e) = fs::create_dir_all(parent) {
@@ -253,6 +281,7 @@ fn save_full_state(manual_blocks: &[BlockState], apps: &[String], schedules: &[H
         manual_blocks: manual_blocks.to_vec(),
         blocked_apps: apps.to_vec(),
         schedules: schedules.to_vec(),
+        keep_blocking_on_uninstall,
     };
     match serde_json::to_string_pretty(&state) {
         Ok(json) => {
@@ -262,6 +291,34 @@ fn save_full_state(manual_blocks: &[BlockState], apps: &[String], schedules: &[H
         }
         Err(e) => log(&format!("Warning: failed to serialize state: {}", e)),
     }
+}
+
+fn save_full_state(manual_blocks: &[BlockState], apps: &[String], schedules: &[HelperSchedule]) {
+    let keep_blocking_on_uninstall =
+        read_keep_blocking_preference_from_helper_state().unwrap_or_else(|| {
+            // Migration fallback for older helper-state files without this field.
+            read_user_setting_keep_blocking_from_app_data()
+        });
+    write_full_state(
+        manual_blocks,
+        apps,
+        schedules,
+        keep_blocking_on_uninstall,
+    );
+}
+
+fn save_full_state_with_keep(
+    manual_blocks: &[BlockState],
+    apps: &[String],
+    schedules: &[HelperSchedule],
+    keep_blocking_on_uninstall: bool,
+) {
+    write_full_state(
+        manual_blocks,
+        apps,
+        schedules,
+        keep_blocking_on_uninstall,
+    );
 }
 
 // Hosts file management
@@ -1501,6 +1558,20 @@ fn handle_command(
                 ..Default::default()
             }
         }
+        IpcCommand::SetKeepBlockingOnUninstall { keep_blocking_on_uninstall } => {
+            log(&format!(
+                "Setting keepBlockingOnUninstall to {}",
+                keep_blocking_on_uninstall
+            ));
+            let blocks = state.lock().unwrap().clone();
+            let apps = app_state.lock().unwrap().clone();
+            let scheds = schedule_state.lock().unwrap().clone();
+            save_full_state_with_keep(&blocks, &apps, &scheds, keep_blocking_on_uninstall);
+            IpcResponse {
+                success: true,
+                ..Default::default()
+            }
+        }
         IpcCommand::Ping => IpcResponse {
             success: true,
             message: Some("pong".to_string()),
@@ -1629,8 +1700,8 @@ fn check_app_exists() -> bool {
     }
 }
 
-/// Read user settings to check keepBlockingOnUninstall preference
-fn read_user_setting_keep_blocking() -> bool {
+/// Read user settings from app data (legacy fallback path only).
+fn read_user_setting_keep_blocking_from_app_data() -> bool {
     // The user data file location (same as Tauri app data)
     #[cfg(target_os = "macos")]
     let data_path = {
@@ -1662,6 +1733,19 @@ fn read_user_setting_keep_blocking() -> bool {
     true
 }
 
+fn read_keep_blocking_preference() -> bool {
+    if let Some(value) = read_keep_blocking_preference_from_helper_state() {
+        return value;
+    }
+
+    let fallback = read_user_setting_keep_blocking_from_app_data();
+    log(&format!(
+        "Keep-blocking preference missing in helper state; using app-data fallback: {}",
+        fallback
+    ));
+    fallback
+}
+
 /// Thread that periodically checks if the main app still exists
 fn app_existence_checker(
     state: Arc<Mutex<Vec<BlockState>>>,
@@ -1672,10 +1756,18 @@ fn app_existence_checker(
         thread::sleep(std::time::Duration::from_secs(300));
         if !check_app_exists() {
             log("Main application no longer detected");
-            let keep_blocking = read_user_setting_keep_blocking();
-            let has_active_block = !state.lock().unwrap().is_empty();
+            let keep_blocking = read_keep_blocking_preference();
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64;
+            let has_active_block = state.lock().unwrap().iter().any(|b| b.end_time > now);
             let has_blocked_apps = !app_state.lock().unwrap().is_empty();
             let has_schedules = !schedule_state.lock().unwrap().is_empty();
+            log(&format!(
+                "Uninstall decision: keepBlockingOnUninstall={}, has_active_block={}, has_blocked_apps={}, has_schedules={}",
+                keep_blocking, has_active_block, has_blocked_apps, has_schedules
+            ));
             if keep_blocking && (has_active_block || has_blocked_apps || has_schedules) {
                 log("Keep blocking enabled and blocks/schedules are configured - continuing");
                 continue;

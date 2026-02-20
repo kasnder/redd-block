@@ -45,6 +45,8 @@ const tauriAPI = {
 
     // Schedule management via helper daemon (persistent, handles transitions autonomously)
     setSchedulesViaHelper: (schedules) => invoke('set_schedules_via_helper', { schedules }),
+    setKeepBlockingOnUninstallViaHelper: (keepBlockingOnUninstall) =>
+        invoke('set_keep_blocking_on_uninstall_via_helper', { keepBlockingOnUninstall }),
 
     // Screen Time API (iOS only - provided by tauri-plugin-screentime)
     screentimeRequestAuth: () => invoke('plugin:screentime|request_authorization'),
@@ -175,6 +177,16 @@ async function syncSchedulesToHelper() {
         console.warn('[syncSchedulesToHelper] Error:', e);
     }
 }
+
+async function syncKeepBlockingPreferenceToHelper() {
+    if (isIOS || !helperAvailable) return;
+    try {
+        const keepBlocking = appData.settings?.keepBlockingOnUninstall !== false; // default true
+        await tauriAPI.setKeepBlockingOnUninstallViaHelper(keepBlocking);
+    } catch (e) {
+        console.warn('[syncKeepBlockingPreferenceToHelper] Error:', e);
+    }
+}
 let scheduleRepeatType = 'no'; // 'no', 'forever', or 'date'
 let scheduleRepeatDate = null; // Date object when repeatType is 'date'
 let activeScheduleSegmentCount = 0; // Number of segments locked in the active schedule (new segments can be added)
@@ -269,6 +281,9 @@ async function checkHelperStatus() {
         // Helper is only considered available if running AND version matches
         helperAvailable = status.running && status.version_ok;
         console.log('Helper status:', status);
+        if (helperAvailable) {
+            await syncKeepBlockingPreferenceToHelper();
+        }
 
         if (status.running && !status.version_ok) {
             console.log('Helper is outdated (version:', status.version, ') - will prompt to update on first block');
@@ -1311,6 +1326,7 @@ function setupOverrideModalListeners() {
                     const status = await tauriAPI.checkHelperStatus();
                     if (status.running) {
                         helperAvailable = true;
+                        await syncKeepBlockingPreferenceToHelper();
                         if (blocklistIdToClear != null) {
                             await tauriAPI.clearBlockViaHelper(blocklistIdToClear);
                         } else {
@@ -4065,6 +4081,7 @@ async function proceedWithBlock() {
             if (status.running && status.version_ok) {
                 // It's running with correct version, use it
                 helperAvailable = true;
+                await syncKeepBlockingPreferenceToHelper();
                 result = await tauriAPI.startBlockViaHelper({
                     domains: blocklist.websites || [],
                     endTime: blockEnd.getTime(),
@@ -4186,6 +4203,7 @@ async function proceedWithHelperInstall() {
         }
 
         helperAvailable = true;
+        await syncKeepBlockingPreferenceToHelper();
         modal.classList.add('hidden');
 
         // Now start the pending block
@@ -4338,6 +4356,7 @@ async function updateHostsFile(silent = false) {
         if (status.running && status.version_ok) {
             console.log('[updateHostsFile] Helper running with correct version, using helper to update blocks');
             helperAvailable = true;
+            await syncKeepBlockingPreferenceToHelper();
 
             if (domainsArray.length === 0) {
                 // Clear all blocks via helper
@@ -6900,10 +6919,11 @@ function setupHelperSettings() {
         const keepBlocking = appData.settings?.keepBlockingOnUninstall !== false; // default true
         keepBlockingToggle.checked = keepBlocking;
 
-        keepBlockingToggle.addEventListener('change', (e) => {
+        keepBlockingToggle.addEventListener('change', async (e) => {
             if (!appData.settings) appData.settings = {};
             appData.settings.keepBlockingOnUninstall = e.target.checked;
-            saveData();
+            await saveData();
+            await syncKeepBlockingPreferenceToHelper();
         });
     }
 
