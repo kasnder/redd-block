@@ -34,11 +34,16 @@ Run this checklist before publishing a new version. Use a test blocklist with sa
 - [ ] Confirm sites are blocked
 - [ ] Pause the block from the block card/calendar
 - [ ] Verify sites become unblocked while paused
+- [ ] Verify blocklist domains are removed from hosts while paused
+- [ ] Verify app blocking for that blocklist is disabled while paused
 - [ ] Verify UI shows paused state and resume time countdown
 - [ ] Resume before pause expiry
 - [ ] Verify sites are blocked again immediately
+- [ ] Verify blocklist domains are restored in hosts on resume
+- [ ] Verify app blocking for that blocklist resumes on resume
 - [ ] Pause again and let pause expire naturally
 - [ ] Verify block auto-resumes when pause timer ends
+- [ ] Verify domains/apps are restored when pause ends naturally
 - [ ] Verify final block end time still works (no permanent pause)
 
 ---
@@ -64,12 +69,24 @@ Run this checklist before publishing a new version. Use a test blocklist with sa
 - [ ] Confirm sites are blocked by schedule
 - [ ] Pause schedule (single schedule pause action)
 - [ ] Verify sites become unblocked while paused
+- [ ] Verify schedule domains are removed from hosts while paused
+- [ ] Verify schedule app blocking is disabled while paused
 - [ ] Verify paused schedule UI state is visible
 - [ ] Resume schedule manually
 - [ ] Verify schedule blocking resumes immediately if still in active segment
+- [ ] Verify schedule domains/apps are restored on resume when segment is active
 - [ ] Pause schedule again and allow pause timer to expire
 - [ ] Verify schedule auto-resumes at pause expiry
 - [ ] Verify next schedule segment/day still triggers correctly after pause cycle
+
+### Pause While Schedule Is Inactive (Upcoming Segment Suppression)
+- [ ] Create a started schedule with next segment in ~5 minutes (not active yet)
+- [ ] Click Pause and choose a pause duration shorter than the gap (e.g., 2 min)
+- [ ] Verify prompt explains that upcoming segments are suppressed until pause ends/resume
+- [ ] Verify segment still activates normally if pause ends before segment starts
+- [ ] Repeat with a longer pause that overlaps segment start (e.g., 10 min)
+- [ ] Verify segment activation is suppressed during pause window
+- [ ] Resume during the overlapped segment window and verify enforcement begins immediately
 
 ---
 
