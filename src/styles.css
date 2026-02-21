@@ -2796,6 +2796,14 @@ body.ios .blocklist-actions .delete {
     margin-top: 4px;
 }
 
+.form-hint.warning {
+    color: #dc2626;
+}
+
+.dark-mode .form-hint.warning {
+    color: #fca5a5;
+}
+
 /* Label with info icon */
 .form-group .label-with-info {
     display: flex;

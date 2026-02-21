@@ -92,6 +92,9 @@ let pauseBlockId = null; // Track which block is being paused
 let pauseChallengeText = ''; // Challenge text for pause modal
 let pauseMaxMinutes = null; // Maximum pause duration in minutes (null = unlimited)
 let pauseScheduleData = null; // Track schedule-specific pause data { blocklistId, segmentEndTime }
+const MIN_OVERRIDE_CHARS = 5;
+const DEFAULT_OVERRIDE_COUNT = 10;
+const TARGET_MAX_OVERRIDE_MINUTES = 30;
 
 // Week calendar state
 let currentWeekStart = null; // Date object for Monday of the displayed week
@@ -836,23 +839,53 @@ function setupModalListeners() {
     document.getElementById('override-type').addEventListener('change', (e) => {
         const type = e.target.value;
         const customTextArea = document.getElementById('custom-override-text');
+        const overrideCountInput = document.getElementById('override-count');
         const overrideCountWrapper = document.getElementById('override-count-wrapper');
         const hintEl = document.getElementById('override-count-hint');
+        const warningEl = document.getElementById('override-count-warning');
+        const maxChars = getMaxOverrideCharsForType(type);
+        overrideCountInput.max = String(maxChars);
 
         if (type === 'custom') {
+            customTextArea.maxLength = getMaxOverrideCharsForType('custom');
             customTextArea.classList.remove('hidden');
             overrideCountWrapper.classList.add('hidden');
             hintEl.classList.add('hidden');
+            warningEl.classList.add('hidden');
+            warningEl.textContent = '';
         } else {
             customTextArea.classList.add('hidden');
             overrideCountWrapper.classList.remove('hidden');
             hintEl.classList.remove('hidden');
+            warningEl.classList.add('hidden');
 
             if (type === 'random-words') {
                 hintEl.innerHTML = "E.g. 10 chars → 'shine great'";
             } else {
                 hintEl.innerHTML = "E.g. 10 chars → 'a982j3+fd'";
             }
+        }
+
+        // Clamp to the new type-specific max when switching types.
+        overrideCountInput.value = normalizeOverrideCount(overrideCountInput.value, type);
+    });
+    document.getElementById('custom-override-text').addEventListener('input', (e) => {
+        const warningEl = document.getElementById('override-count-warning');
+        const maxChars = getMaxOverrideCharsForType('custom');
+        const charsPerMinute = getTypingCharsPerMinuteForType('custom');
+        const estimatedMinutes = Math.ceil(maxChars / charsPerMinute);
+        e.target.maxLength = maxChars;
+
+        if (e.target.value.length > maxChars) {
+            e.target.value = e.target.value.slice(0, maxChars);
+        }
+
+        if (e.target.value.length >= maxChars) {
+            warningEl.textContent = `Max is ${maxChars} characters so it's still possible to override in case of emergency (takes you ~${estimatedMinutes} minutes to type).`;
+            warningEl.classList.remove('hidden');
+        } else {
+            warningEl.classList.add('hidden');
+            warningEl.textContent = '';
         }
     });
 
@@ -861,6 +894,35 @@ function setupModalListeners() {
         if (e.key === 'Enter') {
             e.target.blur();
         }
+    });
+    document.getElementById('override-count').addEventListener('input', (e) => {
+        const warningEl = document.getElementById('override-count-warning');
+        const overrideType = document.getElementById('override-type')?.value || 'random-words';
+        const maxChars = getMaxOverrideCharsForType(overrideType);
+        e.target.max = String(maxChars);
+        const rawValue = e.target.value.trim();
+        if (rawValue === '') {
+            warningEl.classList.add('hidden');
+            warningEl.textContent = '';
+            return;
+        }
+
+        const parsed = parseInt(rawValue, 10);
+        if (Number.isFinite(parsed) && parsed > maxChars) {
+            const charsPerMinute = getTypingCharsPerMinuteForType(overrideType);
+            const estimatedMinutes = Math.ceil(maxChars / charsPerMinute);
+            e.target.value = maxChars;
+            warningEl.textContent = `Max is ${maxChars} characters so it's still possible to override in case of emergency (takes you ~${estimatedMinutes} minutes to type).`;
+            warningEl.classList.remove('hidden');
+            return;
+        }
+
+        warningEl.classList.add('hidden');
+        warningEl.textContent = '';
+    });
+    document.getElementById('override-count').addEventListener('blur', (e) => {
+        const overrideType = document.getElementById('override-type')?.value || 'random-words';
+        e.target.value = normalizeOverrideCount(e.target.value, overrideType);
     });
 
     // Color swatches
@@ -990,8 +1052,12 @@ function setupModalListeners() {
 
         const mode = 'blocklist'; // Allowlist mode not yet implemented
         const overrideType = document.getElementById('override-type').value;
-        const overrideCount = parseInt(document.getElementById('override-count').value) || 10;
-        const customText = document.getElementById('custom-override-text').value;
+        const overrideCountInput = document.getElementById('override-count');
+        const overrideCount = normalizeOverrideCount(overrideCountInput.value, overrideType);
+        overrideCountInput.value = overrideCount;
+        const customTextArea = document.getElementById('custom-override-text');
+        const customText = normalizeCustomOverrideText(customTextArea.value);
+        customTextArea.value = customText;
         const selectedSwatch = document.querySelector('.color-swatch.selected');
         const color = selectedSwatch ? selectedSwatch.dataset.color : null;
         const selectedEmoji = document.querySelector('.emoji-swatch.selected');
@@ -4504,18 +4570,29 @@ function openBlocklistModal(blocklist = null) {
     document.getElementById('custom-override-text').value = blocklist?.overrideDifficulty?.customText || '';
 
     const type = blocklist?.overrideDifficulty?.type || 'random-words';
+    const overrideCountField = document.getElementById('override-count');
     const customTextArea = document.getElementById('custom-override-text');
     const overrideCountWrapper = document.getElementById('override-count-wrapper');
     const hintEl = document.getElementById('override-count-hint');
+    const overrideCountWarningEl = document.getElementById('override-count-warning');
+    const maxChars = getMaxOverrideCharsForType(type);
+    overrideCountField.max = String(maxChars);
+    overrideCountField.value = normalizeOverrideCount(overrideCountField.value, type);
+    customTextArea.maxLength = getMaxOverrideCharsForType('custom');
+    customTextArea.value = normalizeCustomOverrideText(customTextArea.value);
 
     if (type === 'custom') {
         customTextArea.classList.remove('hidden');
         overrideCountWrapper.classList.add('hidden');
         hintEl.classList.add('hidden');
+        overrideCountWarningEl.classList.add('hidden');
+        overrideCountWarningEl.textContent = '';
     } else {
         customTextArea.classList.add('hidden');
         overrideCountWrapper.classList.remove('hidden');
         hintEl.classList.remove('hidden');
+        overrideCountWarningEl.classList.add('hidden');
+        overrideCountWarningEl.textContent = '';
 
         if (type === 'random-words') {
             hintEl.innerHTML = "E.g. 10 chars → 'shine great'";
@@ -5409,6 +5486,31 @@ function generateGibberish(count) {
         result += chars[Math.floor(Math.random() * chars.length)];
     }
     return result;
+}
+
+function normalizeOverrideCount(value, type = 'random-words') {
+    const parsed = parseInt(value, 10);
+    if (!Number.isFinite(parsed)) return DEFAULT_OVERRIDE_COUNT;
+    const maxChars = getMaxOverrideCharsForType(type);
+    return Math.min(maxChars, Math.max(MIN_OVERRIDE_CHARS, parsed));
+}
+
+function normalizeCustomOverrideText(value) {
+    const text = typeof value === 'string' ? value : '';
+    const maxChars = getMaxOverrideCharsForType('custom');
+    return text.slice(0, maxChars);
+}
+
+function getTypingCharsPerMinuteForType(type) {
+    if (type === 'gibberish') return 170;
+    if (type === 'custom') return 250; // Same assumption as random-words
+    return 250; // random-words default
+}
+
+function getMaxOverrideCharsForType(type) {
+    if (type === 'gibberish') return 5000;
+    const charsPerMinute = getTypingCharsPerMinuteForType(type);
+    return charsPerMinute * TARGET_MAX_OVERRIDE_MINUTES;
 }
 
 // Delete blocklist with undo support
