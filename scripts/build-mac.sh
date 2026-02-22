@@ -29,7 +29,16 @@ cd ..
 
 # Build Tauri universal binary
 echo "Building Tauri app..."
-npm run tauri build -- --target universal-apple-darwin
+# Tauri v2 expects CI to be a bool string ("true"/"false"), not "1"/"0".
+# Normalize inherited CI values so local shells/IDEs don't break builds.
+TAURI_CI="${CI:-}"
+if [ "$TAURI_CI" = "1" ]; then
+  TAURI_CI="true"
+elif [ "$TAURI_CI" = "0" ]; then
+  TAURI_CI="false"
+fi
+PROJECT_ROOT="$(pwd)"
+CARGO_TARGET_DIR="${PROJECT_ROOT}/src-tauri/target" CI="${TAURI_CI:-false}" npm run tauri build -- --target universal-apple-darwin
 
 # Get version from package.json
 VERSION=$(node -p "require('./package.json').version")
@@ -50,6 +59,17 @@ if [ -f "$DMG_SOURCE" ]; then
   echo "   DMG: for-distribution/reddblock-${VERSION}-universal.dmg"
 else
   echo "⚠️  DMG not found at expected location: $DMG_SOURCE"
-  echo "   Looking for DMG files..."
-  find src-tauri/target -name "*.dmg" 2>/dev/null
+  echo "   Looking for the generated universal DMG..."
+  FALLBACK_DMG=$(find src-tauri/target -name "ReDD Block_${VERSION}_*.dmg" -print 2>/dev/null | head -n 1)
+  if [ -n "$FALLBACK_DMG" ] && [ -f "$FALLBACK_DMG" ]; then
+    mv "$FALLBACK_DMG" "$DMG_TARGET"
+    mkdir -p for-distribution
+    cp "$DMG_TARGET" "for-distribution/reddblock-${VERSION}-universal.dmg"
+    echo ""
+    echo "✅ Build complete (fallback path used)!"
+    echo "   DMG: for-distribution/reddblock-${VERSION}-universal.dmg"
+  else
+    echo "⚠️  Could not locate universal DMG. Existing DMGs found:"
+    find src-tauri/target -name "*.dmg" 2>/dev/null
+  fi
 fi
