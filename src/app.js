@@ -1039,13 +1039,37 @@ function setupModalListeners() {
 
     // Save button
     document.getElementById('save-blocklist-btn').addEventListener('click', () => {
-        // Auto-confirm any pending input in the website/app fields
-        const pendingWebsite = cleanDomainInput(modalWebsiteInput.value);
-        if (pendingWebsite && isValidDomain(pendingWebsite) && !isProtectedDomain(pendingWebsite) && !modalWebsites.includes(pendingWebsite)) {
-            modalWebsites.push(pendingWebsite);
-            modalWebsiteInput.value = '';
-            window.renderModalTags();
-        } else {
+        // Auto-confirm any pending website input using the same validation flow as Enter/Space.
+        const pendingWebsiteRaw = modalWebsiteInput.value.trim();
+        if (pendingWebsiteRaw) {
+            const pendingWebsite = cleanDomainInput(pendingWebsiteRaw);
+            const errorMsg = document.getElementById('website-input-error');
+
+            if (!isValidDomain(pendingWebsite)) {
+                if (errorMsg) {
+                    errorMsg.classList.remove('hidden');
+                    setTimeout(() => errorMsg.classList.add('hidden'), 3000);
+                }
+                return; // Block save until user fixes/removes invalid website input.
+            }
+
+            if (errorMsg) errorMsg.classList.add('hidden');
+
+            if (isProtectedDomain(pendingWebsite)) {
+                modalWebsiteInput.value = '';
+                modalWebsiteInput.placeholder = "⚠️ Can't block this domain!";
+                modalWebsiteInput.classList.add('input-error');
+                setTimeout(() => {
+                    modalWebsiteInput.placeholder = 'e.g., reddit.com';
+                    modalWebsiteInput.classList.remove('input-error');
+                }, 2000);
+                return; // Block save so behavior matches explicit add interactions.
+            }
+
+            if (!modalWebsites.includes(pendingWebsite)) {
+                modalWebsites.push(pendingWebsite);
+                window.renderModalTags();
+            }
             modalWebsiteInput.value = '';
         }
 
