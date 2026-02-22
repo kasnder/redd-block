@@ -59,6 +59,9 @@ const tauriAPI = {
 
     // Event listening
     onBlocksUpdated: (callback) => listen('blocks-updated', callback),
+    onMenuZoomIn: (callback) => listen('menu-zoom-in', callback),
+    onMenuZoomOut: (callback) => listen('menu-zoom-out', callback),
+    onMenuZoomReset: (callback) => listen('menu-zoom-reset', callback),
 };
 
 // State
@@ -7157,8 +7160,26 @@ function setUiZoom(scale, options = {}) {
     saveData();
 }
 
+function zoomUiIn(options = {}) {
+    const current = getSavedUiZoom();
+    setUiZoom(Math.round((current + UI_ZOOM_STEP) * 100) / 100, options);
+}
+
+function zoomUiOut(options = {}) {
+    const current = getSavedUiZoom();
+    setUiZoom(Math.round((current - UI_ZOOM_STEP) * 100) / 100, options);
+}
+
+function resetUiZoom(options = {}) {
+    setUiZoom(DEFAULT_UI_ZOOM, options);
+}
+
 function setupUiZoomShortcuts() {
     applyUiZoom(getSavedUiZoom());
+
+    tauriAPI.onMenuZoomIn(() => zoomUiIn({ showToast: true })).catch(() => { });
+    tauriAPI.onMenuZoomOut(() => zoomUiOut({ showToast: true })).catch(() => { });
+    tauriAPI.onMenuZoomReset(() => resetUiZoom({ showToast: true })).catch(() => { });
 
     document.addEventListener('keydown', (e) => {
         const hasAccel = e.metaKey || e.ctrlKey;
@@ -7172,16 +7193,15 @@ function setupUiZoomShortcuts() {
 
         e.preventDefault();
 
-        const current = getSavedUiZoom();
         if (isZoomIn) {
-            setUiZoom(Math.round((current + UI_ZOOM_STEP) * 100) / 100, { showToast: true });
+            zoomUiIn({ showToast: true });
             return;
         }
         if (isZoomOut) {
-            setUiZoom(Math.round((current - UI_ZOOM_STEP) * 100) / 100, { showToast: true });
+            zoomUiOut({ showToast: true });
             return;
         }
-        setUiZoom(DEFAULT_UI_ZOOM, { showToast: true });
+        resetUiZoom({ showToast: true });
     });
 }
 

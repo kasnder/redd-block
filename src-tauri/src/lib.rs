@@ -1,4 +1,4 @@
-#[cfg(not(target_os = "ios"))]
+#[cfg(feature = "desktop")]
 use tauri::Manager;
 
 #[cfg(feature = "desktop")]
@@ -7,8 +7,15 @@ use tauri::{
     tray::TrayIconBuilder,
 };
 
+#[cfg(all(feature = "desktop", target_os = "macos"))]
+use tauri::menu::PredefinedMenuItem;
+#[cfg(all(feature = "desktop", target_os = "macos"))]
+use tauri::Emitter;
+
 #[cfg(target_os = "macos")]
 use tauri::{TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
+#[cfg(target_os = "macos")]
+use std::sync::Arc;
 
 #[cfg(target_os = "windows")]
 use tauri::{WebviewUrl, WebviewWindowBuilder};
@@ -67,6 +74,146 @@ pub fn run() {
                         1.0,  // A
                     );
                     ns_window.setBackgroundColor_(bg_color);
+                }
+
+                #[cfg(feature = "desktop")]
+                {
+                    // Extend default macOS Window menu with app zoom + reopen actions.
+                    let app_menu = Menu::default(app.handle())?;
+                    let window_submenu = app_menu
+                        .items()?
+                        .into_iter()
+                        .find_map(|item| {
+                            let submenu = item.as_submenu()?;
+                            match submenu.text() {
+                                Ok(text) if text == "Window" => Some(submenu.clone()),
+                                _ => None,
+                            }
+                        });
+
+                    if let Some(window_submenu) = window_submenu {
+                        // Rename the native "Zoom" item to clarify behavior.
+                        for item in window_submenu.items()? {
+                            if let Some(predefined) = item.as_predefined_menuitem() {
+                                if let Ok(text) = predefined.text() {
+                                    if text == "Zoom" {
+                                        let _ = predefined.set_text("Fill screen");
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+
+                        let zoom_in_item = MenuItem::with_id(
+                            app,
+                            "window_zoom_in",
+                            "Zoom In",
+                            true,
+                            Some("CmdOrCtrl+="),
+                        )?;
+                        let zoom_out_item = MenuItem::with_id(
+                            app,
+                            "window_zoom_out",
+                            "Zoom Out",
+                            true,
+                            Some("CmdOrCtrl+-"),
+                        )?;
+                        let reopen_separator = PredefinedMenuItem::separator(app)?;
+                        let reopen_item = MenuItem::with_id(
+                            app,
+                            "window_reopen_main",
+                            "Reopen Main Window",
+                            true,
+                            None::<&str>,
+                        )?;
+
+                        window_submenu.append(&zoom_in_item)?;
+                        window_submenu.append(&zoom_out_item)?;
+
+                        // Keep "Reopen Main Window" only when window is minimized/hidden/closed.
+                        let app_handle_for_state = app.handle().clone();
+                        let window_submenu_for_state = window_submenu.clone();
+                        let reopen_separator_for_state = reopen_separator.clone();
+                        let reopen_item_for_state = reopen_item.clone();
+                        let sync_reopen_item_visibility = Arc::new(move || {
+                            let should_show_reopen = match app_handle_for_state.get_webview_window("main") {
+                                Some(main_window) => {
+                                    main_window.is_minimized().unwrap_or(false)
+                                        || !main_window.is_visible().unwrap_or(true)
+                                }
+                                None => true,
+                            };
+
+                            let is_shown = window_submenu_for_state.get("window_reopen_main").is_some();
+                            if should_show_reopen && !is_shown {
+                                let _ = window_submenu_for_state.append(&reopen_separator_for_state);
+                                let _ = window_submenu_for_state.append(&reopen_item_for_state);
+                            } else if !should_show_reopen && is_shown {
+                                let _ = window_submenu_for_state.remove(&reopen_item_for_state);
+                                let _ = window_submenu_for_state.remove(&reopen_separator_for_state);
+                            }
+                        });
+
+                        // Initial state (main window is visible at startup, so item stays hidden).
+                        sync_reopen_item_visibility();
+
+                        let sync_reopen_item_visibility_on_window = sync_reopen_item_visibility.clone();
+                        window.on_window_event(move |_| {
+                            sync_reopen_item_visibility_on_window();
+                        });
+
+                        let sync_reopen_item_visibility_on_menu = sync_reopen_item_visibility.clone();
+                        app.on_menu_event(move |app, event| {
+                            sync_reopen_item_visibility_on_menu();
+
+                            match event.id().as_ref() {
+                                "window_zoom_in" => {
+                                    if let Some(window) = app.get_webview_window("main") {
+                                        let _ = window.emit("menu-zoom-in", ());
+                                    }
+                                }
+                                "window_zoom_out" => {
+                                    if let Some(window) = app.get_webview_window("main") {
+                                        let _ = window.emit("menu-zoom-out", ());
+                                    }
+                                }
+                                "window_reopen_main" => {
+                                    if let Some(window) = app.get_webview_window("main") {
+                                        let _ = window.unminimize();
+                                        let _ = window.show();
+                                        let _ = window.set_focus();
+                                    } else {
+                                        // Recreate main window if it was fully closed.
+                                        let win_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+                                            .title("")
+                                            .inner_size(1000.0, 900.0)
+                                            .min_inner_size(600.0, 500.0)
+                                            .resizable(true)
+                                            .center()
+                                            .title_bar_style(TitleBarStyle::Overlay);
+
+                                        if let Ok(new_window) = win_builder.build() {
+                                            use cocoa::appkit::{NSColor, NSWindow};
+                                            use cocoa::base::{id, nil};
+
+                                            let ns_window = new_window.ns_window().unwrap() as id;
+                                            unsafe {
+                                                let bg_color = NSColor::colorWithRed_green_blue_alpha_(
+                                                    nil, 1.0, 1.0, 1.0, 1.0,
+                                                );
+                                                ns_window.setBackgroundColor_(bg_color);
+                                            }
+                                            let _ = new_window.show();
+                                            let _ = new_window.set_focus();
+                                        }
+                                    }
+                                    sync_reopen_item_visibility_on_menu();
+                                }
+                                _ => {}
+                            }
+                        });
+                    }
+                    app_menu.set_as_app_menu()?;
                 }
             }
 
