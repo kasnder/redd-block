@@ -4027,6 +4027,42 @@ body.ios .undo-toast {
     background: hsl(210, 40%, 96%);
 }
 
+/* Zoom Toast */
+.zoom-toast {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: hsl(222.2, 47.4%, 11.2%);
+    color: white;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    z-index: 2100;
+    animation: zoomToastIn 0.18s ease;
+}
+
+body.ios .zoom-toast {
+    top: calc(20px + env(safe-area-inset-top, 20px));
+}
+
+.zoom-toast.hidden {
+    display: none;
+}
+
+@keyframes zoomToastIn {
+    from {
+        opacity: 0;
+        transform: translateY(-8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 /* Helper Settings in Advanced Options */
 .settings-advanced-content .override-all-btn {
     border-bottom: none;

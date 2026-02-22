@@ -95,6 +95,11 @@ let pauseScheduleData = null; // Track schedule-specific pause data { blocklistI
 const MIN_OVERRIDE_CHARS = 5;
 const DEFAULT_OVERRIDE_COUNT = 10;
 const TARGET_MAX_OVERRIDE_MINUTES = 30;
+const UI_ZOOM_MIN = 0.8;
+const UI_ZOOM_MAX = 1.8;
+const UI_ZOOM_STEP = 0.1;
+const DEFAULT_UI_ZOOM = 1.0;
+let zoomToastHideTimeout = null;
 
 // Week calendar state
 let currentWeekStart = null; // Date object for Monday of the displayed week
@@ -229,6 +234,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     setupEventListeners();
     setupTheme();
+    setupUiZoomShortcuts();
     setupHelperSettings();
     setupOverrideAll();
     render();
@@ -7102,6 +7108,81 @@ function applyTheme() {
     } else {
         body.classList.remove('dark-mode');
     }
+}
+
+function clampUiZoom(scale) {
+    return Math.min(UI_ZOOM_MAX, Math.max(UI_ZOOM_MIN, scale));
+}
+
+function getSavedUiZoom() {
+    const parsed = Number(appData.settings?.uiZoom);
+    if (!Number.isFinite(parsed)) return DEFAULT_UI_ZOOM;
+    return clampUiZoom(parsed);
+}
+
+function applyUiZoom(scale) {
+    const clamped = clampUiZoom(scale);
+    // Tauri uses Chromium/WebView2 (desktop), where CSS zoom is supported.
+    document.documentElement.style.zoom = String(clamped);
+}
+
+function showUiZoomToast(scale) {
+    const toast = document.getElementById('zoom-toast');
+    const message = document.getElementById('zoom-toast-message');
+    if (!toast || !message) return;
+
+    message.textContent = `Zoom ${Math.round(scale * 100)}%`;
+    toast.classList.remove('hidden');
+
+    if (zoomToastHideTimeout) {
+        clearTimeout(zoomToastHideTimeout);
+    }
+    zoomToastHideTimeout = setTimeout(() => {
+        toast.classList.add('hidden');
+        zoomToastHideTimeout = null;
+    }, 1400);
+}
+
+function setUiZoom(scale, options = {}) {
+    const clamped = clampUiZoom(scale);
+    applyUiZoom(clamped);
+    if (options.showToast) {
+        showUiZoomToast(clamped);
+    }
+
+    if (!appData.settings) appData.settings = {};
+    if (appData.settings.uiZoom === clamped) return;
+
+    appData.settings.uiZoom = clamped;
+    saveData();
+}
+
+function setupUiZoomShortcuts() {
+    applyUiZoom(getSavedUiZoom());
+
+    document.addEventListener('keydown', (e) => {
+        const hasAccel = e.metaKey || e.ctrlKey;
+        if (!hasAccel || e.altKey) return;
+
+        const key = e.key;
+        const isZoomIn = key === '+' || key === '=' || key === 'Add';
+        const isZoomOut = key === '-' || key === '_' || key === 'Subtract';
+        const isZoomReset = key === '0' || key === ')';
+        if (!isZoomIn && !isZoomOut && !isZoomReset) return;
+
+        e.preventDefault();
+
+        const current = getSavedUiZoom();
+        if (isZoomIn) {
+            setUiZoom(Math.round((current + UI_ZOOM_STEP) * 100) / 100, { showToast: true });
+            return;
+        }
+        if (isZoomOut) {
+            setUiZoom(Math.round((current - UI_ZOOM_STEP) * 100) / 100, { showToast: true });
+            return;
+        }
+        setUiZoom(DEFAULT_UI_ZOOM, { showToast: true });
+    });
 }
 
 // Setup Helper Settings in the settings modal
