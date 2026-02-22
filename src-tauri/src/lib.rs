@@ -80,6 +80,16 @@ pub fn run() {
                 {
                     // Extend default macOS Window menu with app zoom + reopen actions.
                     let app_menu = Menu::default(app.handle())?;
+                    let help_submenu = app_menu
+                        .items()?
+                        .into_iter()
+                        .find_map(|item| {
+                            let submenu = item.as_submenu()?;
+                            match submenu.text() {
+                                Ok(text) if text == "Help" => Some(submenu.clone()),
+                                _ => None,
+                            }
+                        });
                     let window_submenu = app_menu
                         .items()?
                         .into_iter()
@@ -90,6 +100,35 @@ pub fn run() {
                                 _ => None,
                             }
                         });
+
+                    if let Some(help_submenu) = help_submenu {
+                        let report_issue_item = MenuItem::with_id(
+                            app,
+                            "help_report_issue",
+                            "Report an issue",
+                            true,
+                            None::<&str>,
+                        )?;
+                        let contact_item = MenuItem::with_id(
+                            app,
+                            "help_contact_us",
+                            "Contact us",
+                            true,
+                            None::<&str>,
+                        )?;
+                        let who_we_are_item = MenuItem::with_id(
+                            app,
+                            "help_who_we_are",
+                            "Who we are",
+                            true,
+                            None::<&str>,
+                        )?;
+
+                        help_submenu.append(&PredefinedMenuItem::separator(app)?)?;
+                        help_submenu.append(&report_issue_item)?;
+                        help_submenu.append(&contact_item)?;
+                        help_submenu.append(&who_we_are_item)?;
+                    }
 
                     if let Some(window_submenu) = window_submenu {
                         // Rename the native "Zoom" item to clarify behavior.
@@ -208,6 +247,21 @@ pub fn run() {
                                         }
                                     }
                                     sync_reopen_item_visibility_on_menu();
+                                }
+                                "help_report_issue" => {
+                                    if let Some(window) = app.get_webview_window("main") {
+                                        let _ = window.emit("menu-help-report-issue", ());
+                                    }
+                                }
+                                "help_contact_us" => {
+                                    if let Some(window) = app.get_webview_window("main") {
+                                        let _ = window.emit("menu-help-contact-us", ());
+                                    }
+                                }
+                                "help_who_we_are" => {
+                                    if let Some(window) = app.get_webview_window("main") {
+                                        let _ = window.emit("menu-help-who-we-are", ());
+                                    }
                                 }
                                 _ => {}
                             }

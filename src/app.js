@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ask, message } from '@tauri-apps/plugin-dialog';
+import { open } from '@tauri-apps/plugin-shell';
 
 // Compatibility layer wrapping Tauri APIs
 const tauriAPI = {
@@ -62,6 +63,9 @@ const tauriAPI = {
     onMenuZoomIn: (callback) => listen('menu-zoom-in', callback),
     onMenuZoomOut: (callback) => listen('menu-zoom-out', callback),
     onMenuZoomReset: (callback) => listen('menu-zoom-reset', callback),
+    onMenuHelpReportIssue: (callback) => listen('menu-help-report-issue', callback),
+    onMenuHelpContactUs: (callback) => listen('menu-help-contact-us', callback),
+    onMenuHelpWhoWeAre: (callback) => listen('menu-help-who-we-are', callback),
 };
 
 // State
@@ -238,6 +242,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupEventListeners();
     setupTheme();
     setupUiZoomShortcuts();
+    setupHelpMenuLinks();
     setupHelperSettings();
     setupOverrideAll();
     render();
@@ -7203,6 +7208,28 @@ function setupUiZoomShortcuts() {
         }
         resetUiZoom({ showToast: true });
     });
+}
+
+function setupHelpMenuLinks() {
+    const openExternal = async (target) => {
+        try {
+            await open(target);
+        } catch {
+            window.open(target, '_blank', 'noopener,noreferrer');
+        }
+    };
+
+    tauriAPI.onMenuHelpReportIssue(() => {
+        openExternal('https://github.com/ulyngs/redd-block/issues');
+    }).catch(() => { });
+
+    tauriAPI.onMenuHelpContactUs(() => {
+        openExternal('mailto:team@reddfocus.org');
+    }).catch(() => { });
+
+    tauriAPI.onMenuHelpWhoWeAre(() => {
+        openExternal('https://www.reddfocus.org/#team-anchor');
+    }).catch(() => { });
 }
 
 // Setup Helper Settings in the settings modal
