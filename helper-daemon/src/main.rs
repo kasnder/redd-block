@@ -1781,12 +1781,17 @@ fn perform_self_cleanup() {
         // Remove launchd daemon and exit
         log("Removing launchd daemon...");
         let _ = std::process::Command::new("launchctl")
+            .args(["remove", "com.redd.block.helper"])
+            .output();
+        // Legacy fallback for older label used by previous installs.
+        let _ = std::process::Command::new("launchctl")
             .args(["remove", "org.reddfocus.block.helper"])
             .output();
         
         // Delete the plist file
-        let plist_path = "/Library/LaunchDaemons/org.reddfocus.block.helper.plist";
-        let _ = fs::remove_file(plist_path);
+        let _ = fs::remove_file("/Library/LaunchDaemons/com.redd.block.helper.plist");
+        // Legacy fallback for older plist path.
+        let _ = fs::remove_file("/Library/LaunchDaemons/org.reddfocus.block.helper.plist");
         
         // Delete the socket
         let _ = fs::remove_file(SOCKET_PATH);
