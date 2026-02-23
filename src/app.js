@@ -1113,10 +1113,15 @@ function setupModalListeners() {
         }
 
         const name = document.getElementById('blocklist-name').value.trim();
+        const nameErrorMsg = document.getElementById('blocklist-name-error');
         if (!name) {
-            alert('Please enter a name');
+            if (nameErrorMsg) {
+                nameErrorMsg.classList.remove('hidden');
+                setTimeout(() => nameErrorMsg.classList.add('hidden'), 3000);
+            }
             return;
         }
+        if (nameErrorMsg) nameErrorMsg.classList.add('hidden');
 
         const mode = 'blocklist'; // Allowlist mode not yet implemented
         const overrideType = document.getElementById('override-type').value;
@@ -1204,6 +1209,11 @@ function setupModalListeners() {
                 handleBlocklistSelect({ target: dropdown });
             }
         }
+    });
+
+    document.getElementById('blocklist-name').addEventListener('input', () => {
+        const nameErrorMsg = document.getElementById('blocklist-name-error');
+        if (nameErrorMsg) nameErrorMsg.classList.add('hidden');
     });
 
     // Store references for modal functions
@@ -4650,6 +4660,8 @@ function openBlocklistModal(blocklist = null) {
     document.getElementById('modal-title').textContent = blocklist ? 'Edit Blocklist' : 'Create Blocklist';
 
     document.getElementById('blocklist-name').value = blocklist?.name || '';
+    const nameErr = document.getElementById('blocklist-name-error');
+    if (nameErr) nameErr.classList.add('hidden');
 
     document.getElementById('override-type').value = blocklist?.overrideDifficulty?.type || 'random-words';
     document.getElementById('override-count').value = blocklist?.overrideDifficulty?.count || 10;
