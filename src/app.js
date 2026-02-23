@@ -259,8 +259,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         lastBlockedDomains = activeDomains;
     } else {
         await checkHelperStatus();
-        // Sync schedules to helper on startup so it has the latest data
-        syncSchedulesToHelper();
+        console.log('[startup-sync] Desktop startup helperAvailable:', helperAvailable);
+        // Reconcile manual blocks first so paused one-offs are removed from helper state after reinstall.
+        await syncActiveBlocksToHelper();
+        // Then sync schedules to helper so both enforcement sources are aligned.
+        await syncSchedulesToHelper();
+        console.log('[startup-sync] Startup helper reconciliation complete');
     }
     setupEventListeners();
     setupTheme();
@@ -5087,6 +5091,7 @@ async function proceedWithResume() {
     resumeData = null;
 
     await saveData();
+    console.log('[pause-resume] Proceeding with resume sync', { type, blockId, blocklistId });
     await syncActiveBlocksToHelper();
     await syncSchedulesToHelper();
     await updateHostsFile();
@@ -5455,6 +5460,10 @@ async function proceedWithPause() {
     }
 
     await saveData();
+    console.log('[pause-resume] Proceeding with pause sync', {
+        pauseBlockId,
+        scheduleBlocklistId: pauseScheduleData?.blocklistId || null
+    });
     await syncActiveBlocksToHelper();
     await syncSchedulesToHelper();
 
