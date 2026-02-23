@@ -2522,10 +2522,6 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
     flex-shrink: 0;
 }
 
-.blocklist-card-scheduled {
-    /* No special border for scheduled cards */
-}
-
 .time-remaining {
     display: inline-block;
     margin-left: 6px;
