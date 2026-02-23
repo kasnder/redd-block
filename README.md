@@ -182,13 +182,14 @@ npm run dev                   # Start the app
 # Or type in the dev console: runBlockingTests()
 ```
 
-**2. Integration Tests (in-app, ~10 seconds)**
+**2. Integration Tests (in-app, profile-based)**
 
-Creates real blocks using a safe `.invalid` domain, verifies hosts file modification, block expiry, and schedule activation. Requires the helper daemon to be running.
+Creates real blocks using a safe `.invalid` domain, verifies hosts file modification, block expiry, and schedule activation. Requires the helper daemon to be running. See testing.md for more information.
 
 ```bash
 # In the dev console:
-runIntegrationTests()
+runIntegrationTests('core')   # default, faster critical checks
+runIntegrationTests('full')   # core + expanded non-UI coverage
 ```
 
 **3. Helper Daemon Smoke Test (terminal)**
