@@ -84,6 +84,7 @@ window.__REDDBLOCK_INTERNALS__ = {
 
 let selectedBlocklistId = null;
 let editingBlocklistId = null;
+let blocklistModalPreviewSnapshot = null;
 let overrideBlockId = null;
 /** Blocklist id to pass to helper when confirming single-block override (set when opening modal). */
 let overrideBlocklistIdForHelper = null;
@@ -1181,12 +1182,8 @@ function setupModalListeners() {
             updateBlockedApps();
         }
 
-        // Clear original values so closeBlocklistModal doesn't revert the saved changes
-        const schedCb = document.getElementById('always-show-in-schedule-checkbox');
-        const detailsCb = document.getElementById('show-item-details-checkbox');
-        if (schedCb) delete schedCb._originalValue;
-        if (detailsCb) delete detailsCb._originalValue;
-
+        // Keep live preview while editing, but don't revert after a confirmed save.
+        blocklistModalPreviewSnapshot = null;
         closeBlocklistModal();
 
         // Only update blocklist display without resetting schedule segments
@@ -4598,6 +4595,17 @@ async function updateBlockedApps() {
 // Open blocklist modal
 function openBlocklistModal(blocklist = null) {
     editingBlocklistId = blocklist?.id || null;
+    blocklistModalPreviewSnapshot = null;
+
+    if (editingBlocklistId) {
+        const original = appData.blocklists.find(b => b.id === editingBlocklistId);
+        if (original) {
+            blocklistModalPreviewSnapshot = {
+                alwaysShowInSchedule: original.alwaysShowInSchedule,
+                showItemDetails: original.showItemDetails
+            };
+        }
+    }
 
     document.getElementById('modal-title').textContent = blocklist ? 'Edit Blocklist' : 'Create Blocklist';
 
@@ -4782,34 +4790,24 @@ function openBlocklistModal(blocklist = null) {
     const showItemDetailsCheckbox = document.getElementById('show-item-details-checkbox');
     if (showItemDetailsCheckbox) {
         showItemDetailsCheckbox.checked = blocklist?.showItemDetails !== false;
-
-        // Live-update blocklist card when checkbox changes
-        showItemDetailsCheckbox._originalValue = blocklist?.showItemDetails !== false;
         showItemDetailsCheckbox.onchange = () => {
-            if (editingBlocklistId) {
-                const bl = appData.blocklists.find(b => b.id === editingBlocklistId);
-                if (bl) {
-                    bl.showItemDetails = showItemDetailsCheckbox.checked;
-                    renderBlocklists();
-                }
-            }
+            if (!editingBlocklistId) return;
+            const bl = appData.blocklists.find(b => b.id === editingBlocklistId);
+            if (!bl) return;
+            bl.showItemDetails = showItemDetailsCheckbox.checked;
+            renderBlocklists();
         };
     }
 
     const alwaysShowInScheduleCheckbox = document.getElementById('always-show-in-schedule-checkbox');
     if (alwaysShowInScheduleCheckbox) {
         alwaysShowInScheduleCheckbox.checked = blocklist?.alwaysShowInSchedule !== false;
-
-        // Live-update schedule when checkbox changes
-        alwaysShowInScheduleCheckbox._originalValue = blocklist?.alwaysShowInSchedule !== false;
         alwaysShowInScheduleCheckbox.onchange = () => {
-            if (editingBlocklistId) {
-                const bl = appData.blocklists.find(b => b.id === editingBlocklistId);
-                if (bl) {
-                    bl.alwaysShowInSchedule = alwaysShowInScheduleCheckbox.checked;
-                    renderWeekBlocks();
-                }
-            }
+            if (!editingBlocklistId) return;
+            const bl = appData.blocklists.find(b => b.id === editingBlocklistId);
+            if (!bl) return;
+            bl.alwaysShowInSchedule = alwaysShowInScheduleCheckbox.checked;
+            renderWeekBlocks();
         };
     }
 
@@ -4830,24 +4828,23 @@ function openBlocklistModal(blocklist = null) {
 
 // Close blocklist modal
 function closeBlocklistModal() {
-    // Revert live-previewed alwaysShowInSchedule if user didn't save
-    if (editingBlocklistId) {
+    // Revert temporary live-preview edits if dialog closes without save.
+    if (editingBlocklistId && blocklistModalPreviewSnapshot) {
         const bl = appData.blocklists.find(b => b.id === editingBlocklistId);
-
-        // Revert live-previewed alwaysShowInSchedule
-        const scheduleCheckbox = document.getElementById('always-show-in-schedule-checkbox');
-        if (bl && scheduleCheckbox && scheduleCheckbox._originalValue !== undefined) {
-            bl.alwaysShowInSchedule = scheduleCheckbox._originalValue;
+        if (bl) {
+            bl.alwaysShowInSchedule = blocklistModalPreviewSnapshot.alwaysShowInSchedule;
+            bl.showItemDetails = blocklistModalPreviewSnapshot.showItemDetails;
             renderWeekBlocks();
-        }
-
-        // Revert live-previewed showItemDetails
-        const detailsCheckbox = document.getElementById('show-item-details-checkbox');
-        if (bl && detailsCheckbox && detailsCheckbox._originalValue !== undefined) {
-            bl.showItemDetails = detailsCheckbox._originalValue;
             renderBlocklists();
         }
     }
+
+    const showItemDetailsCheckbox = document.getElementById('show-item-details-checkbox');
+    const alwaysShowInScheduleCheckbox = document.getElementById('always-show-in-schedule-checkbox');
+    if (showItemDetailsCheckbox) showItemDetailsCheckbox.onchange = null;
+    if (alwaysShowInScheduleCheckbox) alwaysShowInScheduleCheckbox.onchange = null;
+
+    blocklistModalPreviewSnapshot = null;
     document.getElementById('blocklist-modal').classList.add('hidden');
     editingBlocklistId = null;
     document.getElementById('blocklist-name').value = '';
