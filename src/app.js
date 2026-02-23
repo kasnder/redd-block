@@ -92,6 +92,7 @@ let lastBlockedDomains = new Set(); // Track what's currently blocked to avoid r
 let activatedBlockIds = new Set(); // Track blocks that have already triggered host updates
 let helperAvailable = false; // Track if the privileged helper daemon is running
 let pendingBlockData = null; // Store block data when waiting for helper installation
+let pendingScheduleData = null; // Store schedule data when waiting for helper installation
 let draggedBlocklistId = null; // Track which blocklist is being dragged
 let isIOS = false; // Track if running on iOS
 let screentimeAuthorized = false; // Track if Screen Time is authorized (iOS)
@@ -674,6 +675,7 @@ function setupEventListeners() {
     document.getElementById('cancel-helper-install-btn')?.addEventListener('click', () => {
         document.getElementById('helper-install-modal').classList.add('hidden');
         pendingBlockData = null;
+        pendingScheduleData = null;
     });
 
     document.getElementById('proceed-helper-install-btn')?.addEventListener('click', proceedWithHelperInstall);
@@ -3055,6 +3057,36 @@ async function proceedWithSchedule() {
     const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
     if (!blocklist) return;
 
+    if (!isIOS) {
+        let helperReady = helperAvailable;
+        if (!helperReady) {
+            const status = await tauriAPI.checkHelperStatus();
+            if (status.running && status.version_ok) {
+                helperAvailable = true;
+                helperReady = true;
+                await syncKeepBlockingPreferenceToHelper();
+            }
+        }
+
+        if (!helperReady) {
+            pendingBlockData = null;
+            pendingScheduleData = {
+                blocklistId: selectedBlocklistId,
+                segments: scheduleSegments.map(seg => ({
+                    startHour: seg.startHour,
+                    startMinute: seg.startMinute,
+                    endHour: seg.endHour,
+                    endMinute: seg.endMinute,
+                    days: [...seg.days]
+                })),
+                repeatType: scheduleRepeatType,
+                repeatDate: scheduleRepeatType === 'date' ? scheduleRepeatDate : null
+            };
+            document.getElementById('helper-install-modal').classList.remove('hidden');
+            return;
+        }
+    }
+
     // Create schedule object
     const schedule = {
         id: crypto.randomUUID(),
@@ -4213,6 +4245,7 @@ async function proceedWithBlock() {
                 if (status.running && !status.version_ok) {
                     console.log('Helper is outdated, need to update - showing install modal');
                 }
+                pendingScheduleData = null;
                 pendingBlockData = {
                     block,
                     blocklist,
@@ -4358,6 +4391,21 @@ async function proceedWithHelperInstall() {
             }
 
             pendingBlockData = null;
+        } else if (pendingScheduleData) {
+            const blocklist = appData.blocklists.find(bl => bl.id === pendingScheduleData.blocklistId);
+            if (blocklist) {
+                selectedBlocklistId = pendingScheduleData.blocklistId;
+                scheduleSegments = pendingScheduleData.segments.map(seg => ({ ...seg }));
+                scheduleRepeatType = pendingScheduleData.repeatType;
+                scheduleRepeatDate = pendingScheduleData.repeatDate;
+
+                const blocklistSelect = document.getElementById('blocklist-select');
+                if (blocklistSelect) {
+                    blocklistSelect.value = blocklist.id;
+                }
+                await proceedWithSchedule();
+            }
+            pendingScheduleData = null;
         }
     } else {
         // Installation failed
