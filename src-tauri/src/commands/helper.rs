@@ -1,9 +1,13 @@
 use serde::{Deserialize, Serialize};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
+use std::time::Duration;
 
 #[cfg(target_os = "macos")]
 use std::os::unix::net::UnixStream;
+
+#[cfg(target_os = "windows")]
+use std::net::SocketAddr;
 
 #[cfg(target_os = "windows")]
 use std::net::TcpStream;
@@ -13,6 +17,9 @@ const SOCKET_PATH: &str = "/tmp/redd-block-helper.sock";
 
 #[cfg(target_os = "windows")]
 const HELPER_TCP_ADDR: &str = "127.0.0.1:62222";
+
+const HELPER_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+const HELPER_IO_TIMEOUT: Duration = Duration::from_secs(5);
 
 
 /// Helper daemon status
@@ -101,6 +108,12 @@ struct IpcResponse {
 fn send_command(command: &IpcCommand) -> Result<IpcResponse, String> {
     let mut stream = UnixStream::connect(SOCKET_PATH)
         .map_err(|e| format!("Failed to connect to helper: {}", e))?;
+    stream
+        .set_write_timeout(Some(HELPER_IO_TIMEOUT))
+        .map_err(|e| format!("Failed to configure helper write timeout: {}", e))?;
+    stream
+        .set_read_timeout(Some(HELPER_IO_TIMEOUT))
+        .map_err(|e| format!("Failed to configure helper read timeout: {}", e))?;
     
     let json = serde_json::to_string(command)
         .map_err(|e| format!("Failed to serialize command: {}", e))?;
@@ -119,8 +132,17 @@ fn send_command(command: &IpcCommand) -> Result<IpcResponse, String> {
 
 #[cfg(target_os = "windows")]
 fn send_command(command: &IpcCommand) -> Result<IpcResponse, String> {
-    let mut stream = TcpStream::connect(HELPER_TCP_ADDR)
+    let addr: SocketAddr = HELPER_TCP_ADDR
+        .parse()
+        .map_err(|e| format!("Failed to parse helper address: {}", e))?;
+    let mut stream = TcpStream::connect_timeout(&addr, HELPER_CONNECT_TIMEOUT)
         .map_err(|e| format!("Failed to connect to helper: {}", e))?;
+    stream
+        .set_write_timeout(Some(HELPER_IO_TIMEOUT))
+        .map_err(|e| format!("Failed to configure helper write timeout: {}", e))?;
+    stream
+        .set_read_timeout(Some(HELPER_IO_TIMEOUT))
+        .map_err(|e| format!("Failed to configure helper read timeout: {}", e))?;
     
     let json = serde_json::to_string(command)
         .map_err(|e| format!("Failed to serialize command: {}", e))?;
