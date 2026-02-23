@@ -135,9 +135,23 @@ The IDs below match both:
 - **A3**: Schedule active-now path
 - **A4**: Future schedule path (**full only**)
 - **A5**: Pause/resume one-off state path (**full only**)
+- **A6**: Pause/resume one-off enforcement path (**full only**)
+- **A7**: Pause natural-expiry one-off smoke (**full only**)
+- **A8**: Pause/resume schedule active path (**full only**)
+- **A9**: Pause natural-expiry schedule smoke (**full only**)
+- **A10**: Pause inactive schedule suppression path (**full only**)
 
 Expected outcome:
 - blocking and schedule state transitions succeed through app -> Tauri -> helper
+- pause/resume transitions propagate through save + hosts/helper sync paths
+- short timer-smoke checks confirm automatic pause expiry clears pause flags
+
+Pause case intent (expected vs what test verifies):
+- **A6 expected**: paused one-off is temporarily non-enforcing and manual resume restores enforcement; **verified** by pause flags + successful sync path before/after resume.
+- **A7 expected**: paused one-off auto-resumes after pause timeout; **verified** by short wait then pause flags naturally cleared.
+- **A8 expected**: active schedule can be paused and resumed with clean helper sync; **verified** by schedule pause flags + successful sync path before/after resume.
+- **A9 expected**: paused schedule auto-resumes after pause timeout; **verified** by short wait then schedule pause flags naturally cleared.
+- **A10 expected**: inactive schedule can be paused to suppress upcoming activation and then resumed; **verified** by inactive pause flag transition + clean resume/sync path.
 
 ### Testing Group B: Multi-block overlap correctness
 - **B1**: Shared-domain overlap
@@ -176,7 +190,7 @@ Expected outcome:
 ## Tier 2 profile composition
 
 - `core`: `A1`, `A2`, `A3`, `B1`, `C1`, `D1`, `E1`
-- `full`: `core` + `A4`, `A5`, `B2`, `C2`, `F1`, `F2`
+- `full`: `core` + `A4`, `A5`, `A6`, `A7`, `A8`, `A9`, `A10`, `B2`, `C2`, `F1`, `F2`
 
 ## Suite behavior
 
