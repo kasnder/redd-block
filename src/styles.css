@@ -2907,12 +2907,13 @@ body.ios .blocklist-actions .delete {
     box-shadow: none;
 }
 
+/* Inline validation message below input (name and website fields) */
 .input-error-msg {
     display: block;
     font-size: 13px;
     color: #ef4444;
-    margin-top: 4px;
-    padding-left: 2px;
+    margin-top: 6px;
+    padding-left: 0px;
 }
 
 .input-error-msg.hidden {
