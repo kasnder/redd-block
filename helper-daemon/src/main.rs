@@ -435,15 +435,23 @@ fn write_hosts_file(content: &str) -> bool {
 fn remove_block_from_hosts(content: &str) -> String {
     let mut result = content.to_string();
     
-    // Remove current-format markers
-    if let Some(start_idx) = result.find(BLOCK_MARKER_START) {
-        let before = result[..start_idx].trim_end();
-        let after = if let Some(end_idx) = result.find(BLOCK_MARKER_END) {
-            result[end_idx + BLOCK_MARKER_END.len()..].trim_start()
-        } else {
-            ""
+    // Remove all current-format marker sections (handles duplicated blocks robustly).
+    loop {
+        let Some(start_idx) = result.find(BLOCK_MARKER_START) else {
+            break;
         };
-        result = if after.is_empty() {
+        let search_from = start_idx + BLOCK_MARKER_START.len();
+        let end_after_opt = result[search_from..]
+            .find(BLOCK_MARKER_END)
+            .map(|offset| search_from + offset + BLOCK_MARKER_END.len());
+        let before = result[..start_idx].trim_end();
+        let after = match end_after_opt {
+            Some(end_after) => result[end_after..].trim_start(),
+            None => "",
+        };
+        result = if before.is_empty() {
+            after.to_string()
+        } else if after.is_empty() {
             before.to_string()
         } else {
             format!("{}\n{}", before, after)
