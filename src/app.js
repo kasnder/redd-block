@@ -1069,20 +1069,7 @@ function setupModalListeners() {
 
     // Save button
     document.getElementById('save-blocklist-btn').addEventListener('click', () => {
-        const name = document.getElementById('blocklist-name').value.trim();
-        const nameErrorMsg = document.getElementById('blocklist-name-error');
-        const nameEmpty = !name;
-        if (nameEmpty) {
-            if (nameErrorMsg) {
-                nameErrorMsg.classList.remove('hidden');
-                setTimeout(() => nameErrorMsg.classList.add('hidden'), 3000);
-            }
-        } else if (nameErrorMsg) {
-            nameErrorMsg.classList.add('hidden');
-        }
-
         // Auto-confirm any pending website input using the same validation flow as Enter/Space.
-        let websiteInvalid = false;
         const pendingWebsiteRaw = modalWebsiteInput.value.trim();
         if (pendingWebsiteRaw) {
             const pendingWebsite = cleanDomainInput(pendingWebsiteRaw);
@@ -1093,30 +1080,28 @@ function setupModalListeners() {
                     errorMsg.classList.remove('hidden');
                     setTimeout(() => errorMsg.classList.add('hidden'), 3000);
                 }
-                websiteInvalid = true;
-            } else {
-                if (errorMsg) errorMsg.classList.add('hidden');
-
-                if (isProtectedDomain(pendingWebsite)) {
-                    modalWebsiteInput.value = '';
-                    modalWebsiteInput.placeholder = "⚠️ Can't block this domain!";
-                    modalWebsiteInput.classList.add('input-error');
-                    setTimeout(() => {
-                        modalWebsiteInput.placeholder = 'e.g., reddit.com';
-                        modalWebsiteInput.classList.remove('input-error');
-                    }, 2000);
-                    return; // Block save so behavior matches explicit add interactions.
-                }
-
-                if (!modalWebsites.includes(pendingWebsite)) {
-                    modalWebsites.push(pendingWebsite);
-                    window.renderModalTags();
-                }
-                modalWebsiteInput.value = '';
+                return; // Block save until user fixes/removes invalid website input.
             }
-        }
 
-        if (nameEmpty || websiteInvalid) return;
+            if (errorMsg) errorMsg.classList.add('hidden');
+
+            if (isProtectedDomain(pendingWebsite)) {
+                modalWebsiteInput.value = '';
+                modalWebsiteInput.placeholder = "⚠️ Can't block this domain!";
+                modalWebsiteInput.classList.add('input-error');
+                setTimeout(() => {
+                    modalWebsiteInput.placeholder = 'e.g., reddit.com';
+                    modalWebsiteInput.classList.remove('input-error');
+                }, 2000);
+                return; // Block save so behavior matches explicit add interactions.
+            }
+
+            if (!modalWebsites.includes(pendingWebsite)) {
+                modalWebsites.push(pendingWebsite);
+                window.renderModalTags();
+            }
+            modalWebsiteInput.value = '';
+        }
 
         const pendingApp = modalAppInput.value.trim();
         if (pendingApp && !isProtectedApp(pendingApp) && !modalApps.includes(pendingApp)) {
@@ -1126,6 +1111,17 @@ function setupModalListeners() {
         } else {
             modalAppInput.value = '';
         }
+
+        const name = document.getElementById('blocklist-name').value.trim();
+        const nameErrorMsg = document.getElementById('blocklist-name-error');
+        if (!name) {
+            if (nameErrorMsg) {
+                nameErrorMsg.classList.remove('hidden');
+                setTimeout(() => nameErrorMsg.classList.add('hidden'), 3000);
+            }
+            return;
+        }
+        if (nameErrorMsg) nameErrorMsg.classList.add('hidden');
 
         const mode = 'blocklist'; // Allowlist mode not yet implemented
         const overrideType = document.getElementById('override-type').value;
