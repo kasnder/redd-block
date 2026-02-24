@@ -13,7 +13,8 @@
                 ],
                 "customLanguageFiles": {
                     "English": "./windows/English.nsh"
-                }
+                },
+                "installerHooks": "./windows/hooks.nsh"
             }
         }
     }
