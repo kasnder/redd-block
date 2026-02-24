@@ -34,6 +34,7 @@ const SOCKET_PATH: &str = "/tmp/redd-block-helper.sock";
 
 const BLOCK_MARKER_START: &str = "# === BEGIN REDD BLOCK (reddfocus.org) ===";
 const BLOCK_MARKER_END: &str = "# === END REDD BLOCK (reddfocus.org) ===";
+const SCHEDULE_EVALUATOR_POLL_SECS: u64 = 5;
 
 
 
@@ -765,17 +766,26 @@ fn sync_hosts_file(
         // Remove block from hosts
         let clean = remove_block_from_hosts(&content);
         if clean != content {
-            write_hosts_file(&clean);
-            flush_dns_cache();
-            log("Hosts file cleared (no active domains)");
+            if write_hosts_file(&clean) {
+                flush_dns_cache();
+                log("Hosts file cleared (no active domains)");
+            } else {
+                log("Failed to clear hosts file (no active domains) - skipping DNS flush");
+            }
         }
     } else {
         // Write merged domains to hosts
         let new_content = add_block_to_hosts(&content, &all_domains);
         if new_content != content {
-            write_hosts_file(&new_content);
-            flush_dns_cache();
-            log(&format!("Hosts file updated: {} domains", all_domains.len()));
+            if write_hosts_file(&new_content) {
+                flush_dns_cache();
+                log(&format!("Hosts file updated: {} domains", all_domains.len()));
+            } else {
+                log(&format!(
+                    "Failed to update hosts file for {} domains - skipping DNS flush",
+                    all_domains.len()
+                ));
+            }
         }
     }
 }
@@ -2064,7 +2074,7 @@ fn schedule_evaluator(
     }
     
     loop {
-        thread::sleep(Duration::from_secs(30));
+        thread::sleep(Duration::from_secs(SCHEDULE_EVALUATOR_POLL_SECS));
         
         let schedules = schedule_state.lock().unwrap().clone();
         if schedules.is_empty() {
