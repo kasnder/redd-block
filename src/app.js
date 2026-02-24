@@ -7059,6 +7059,7 @@ function setupTheme() {
             // Fetch and display version info
             const currentVersionEl = document.getElementById('current-app-version');
             const latestVersionEl = document.getElementById('latest-app-version');
+            const latestVersionWrap = document.getElementById('settings-latest-version-wrap');
 
             let currentVersion = null;
 
@@ -7075,6 +7076,7 @@ function setupTheme() {
             if (latestVersionEl) {
                 // Hide by default - only show if there's an update available
                 latestVersionEl.style.display = 'none';
+                if (latestVersionWrap) latestVersionWrap.style.display = 'none';
 
                 try {
                     const response = await fetch('https://ulyngs.github.io/redd-block/latest-versions.json');
@@ -7088,6 +7090,7 @@ function setupTheme() {
                     if (latestVersion && currentVersion && isVersionHigher(latestVersion, currentVersion)) {
                         latestVersionEl.textContent = `Latest version: ${latestVersion}`;
                         latestVersionEl.style.display = 'block';
+                        if (latestVersionWrap) latestVersionWrap.style.display = 'block';
                     }
                 } catch (e) {
                     // Silently fail if offline - don't show anything

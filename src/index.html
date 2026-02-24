@@ -830,7 +830,10 @@
         <!-- Settings Modal -->
         <div id="settings-modal" class="modal-overlay hidden">
             <div class="modal-content">
-                <h3>Settings</h3>
+                <div class="settings-modal-header">
+                    <h3>Settings</h3>
+                    <div id="current-app-version" class="settings-current-version">Your version: ...</div>
+                </div>
 
                 <div class="settings-section">
                     <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -919,9 +922,8 @@
                 </div>
 
                 <!-- Version Info -->
-                <div class="version-info"
+                <div id="settings-latest-version-wrap" class="version-info"
                     style="font-size: 13px; color: var(--text-secondary); margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-color-light);">
-                    <div id="current-app-version" style="margin-bottom: 4px;">Your version: ...</div>
                     <div id="latest-app-version" style="opacity: 0.7;">Latest version: ...</div>
                 </div>
 

@@ -3512,6 +3512,19 @@ body.ios #advanced-options-content {
     padding: 12px 0;
 }
 
+.settings-modal-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.settings-current-version {
+    font-size: 13px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
 /* Advanced Options Toggle */
 .settings-advanced-toggle {
     display: flex;
