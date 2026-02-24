@@ -6,7 +6,15 @@
     },
     "bundle": {
         "windows": {
-            "signCommand": "..\\scripts\\sign.cmd %1"
+            "signCommand": "..\\scripts\\sign.cmd %1",
+            "nsis": {
+                "languages": [
+                    "English"
+                ],
+                "customLanguageFiles": {
+                    "English": "./windows/English.nsh"
+                }
+            }
         }
     }
 }
