@@ -797,10 +797,10 @@ function setupModalListeners() {
             if (isProtectedDomain(website)) {
                 // Show brief warning — can't block localhost/reserved domains
                 modalWebsiteInput.value = '';
-                modalWebsiteInput.placeholder = "⚠️ Can't block this domain!";
+                modalWebsiteInput.placeholder = tSettings('cannotBlockDomainPlaceholder');
                 modalWebsiteInput.classList.add('input-error');
                 setTimeout(() => {
-                    modalWebsiteInput.placeholder = 'e.g., reddit.com';
+                    modalWebsiteInput.placeholder = tSettings('placeholderWebsiteExample');
                     modalWebsiteInput.classList.remove('input-error');
                 }, 2000);
                 return;
@@ -820,10 +820,10 @@ function setupModalListeners() {
             if (isProtectedApp(app)) {
                 // Show brief warning — ReDD Block cannot block itself
                 modalAppInput.value = '';
-                modalAppInput.placeholder = "⚠️ Can't block ReDD Block itself!";
+                modalAppInput.placeholder = tSettings('cannotBlockSelfAppPlaceholder');
                 modalAppInput.classList.add('input-error');
                 setTimeout(() => {
-                    modalAppInput.placeholder = 'e.g., Safari';
+                    modalAppInput.placeholder = tSettings('placeholderAppExample');
                     modalAppInput.classList.remove('input-error');
                 }, 2000);
                 return;
@@ -1086,10 +1086,10 @@ function setupModalListeners() {
 
             if (isProtectedDomain(pendingWebsite)) {
                 modalWebsiteInput.value = '';
-                modalWebsiteInput.placeholder = "⚠️ Can't block this domain!";
+                modalWebsiteInput.placeholder = tSettings('cannotBlockDomainPlaceholder');
                 modalWebsiteInput.classList.add('input-error');
                 setTimeout(() => {
-                    modalWebsiteInput.placeholder = 'e.g., reddit.com';
+                    modalWebsiteInput.placeholder = tSettings('placeholderWebsiteExample');
                     modalWebsiteInput.classList.remove('input-error');
                 }, 2000);
                 return; // Block save so behavior matches explicit add interactions.
@@ -1113,7 +1113,7 @@ function setupModalListeners() {
 
         const name = document.getElementById('blocklist-name').value.trim();
         if (!name) {
-            alert('Please enter a name');
+            alert(getSettingsLanguage() === 'da' ? 'Indtast venligst et navn' : 'Please enter a name');
             return;
         }
 
@@ -1851,7 +1851,7 @@ function getStartTimeLabel(startTime) {
     const diffMins = Math.round(diffMs / 60000);
 
     if (diffMins <= 1) {
-        return 'Now';
+        return tSettings('modeNow');
     } else if (diffMins < 60) {
         return `in ${diffMins} min`;
     } else {
@@ -1988,7 +1988,7 @@ function setScheduleMode(isSchedule) {
     // Update section heading
     const heading = document.querySelector('#scheduler-section .section-header h2');
     if (heading) {
-        heading.textContent = 'Start a Block';
+        heading.textContent = tSettings('mainStartBlockTitle');
     }
 
     // Toggle panels
@@ -2167,11 +2167,11 @@ function handleRepeatOptionClick(e) {
     // Update dropdown text
     if (btnText) {
         if (value === 'no') {
-            btnText.textContent = 'No';
+            btnText.textContent = tSettings('repeatNo');
         } else if (value === 'forever') {
-            btnText.textContent = 'Forever';
+            btnText.textContent = tSettings('repeatForever');
         } else {
-            btnText.textContent = 'Until date';
+            btnText.textContent = tSettings('repeatUntilDate');
         }
     }
 
@@ -2317,7 +2317,7 @@ function updateScheduleButtonState() {
 
     if (activeSchedule && !hasNewSegments) {
         // Active schedule with no pending changes - show Stop button (grey/secondary style)
-        if (btnLabel) btnLabel.textContent = 'Stop Schedule:';
+        if (btnLabel) btnLabel.textContent = tSettings('stopScheduleButton');
         if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
         startScheduleBtn.classList.add('stop-schedule');
         startScheduleBtn.classList.remove('edit-schedule');
@@ -2338,7 +2338,7 @@ function updateScheduleButtonState() {
         disableScheduleControls(true);
     } else if (activeSchedule && hasNewSegments) {
         // Existing schedule not currently active (or has pending changes) - show Edit button
-        if (btnLabel) btnLabel.textContent = 'Edit Schedule:';
+        if (btnLabel) btnLabel.textContent = tSettings('editScheduleButton');
         if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
         startScheduleBtn.classList.remove('stop-schedule');
         startScheduleBtn.classList.add('edit-schedule');
@@ -2359,7 +2359,7 @@ function updateScheduleButtonState() {
         disableScheduleControls(true);
     } else {
         // No active schedule - show Start button (normal)
-        if (btnLabel) btnLabel.textContent = 'Start Schedule:';
+        if (btnLabel) btnLabel.textContent = tSettings('startScheduleButton');
         if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
         startScheduleBtn.classList.remove('stop-schedule');
         startScheduleBtn.classList.remove('edit-schedule');
@@ -2710,7 +2710,7 @@ async function startSchedule() {
 
 // Show schedule confirmation modal
 function showScheduleConfirmModal(blocklist) {
-    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const dayNames = tSettings('dayAbbrevMon0');
 
     // Blocklist name
     document.getElementById('schedule-confirm-name').textContent = blocklist.name;
@@ -2777,7 +2777,7 @@ function showScheduleConfirmModal(blocklist) {
         row.className = 'schedule-segment-row';
         row.innerHTML = `
             <span class="segment-time">${startTime} → ${endTime}</span>
-            <span class="segment-days">${segDays || 'No days selected'}</span>
+            <span class="segment-days">${segDays || tSettings('noDaysSelected')}</span>
         `;
         segmentsEl.appendChild(row);
     });
@@ -2785,11 +2785,11 @@ function showScheduleConfirmModal(blocklist) {
     // Repeat info
     const repeatEl = document.getElementById('schedule-confirm-repeat');
     if (scheduleRepeatType === 'forever') {
-        repeatEl.textContent = 'Forever';
+        repeatEl.textContent = tSettings('repeatForever');
     } else if (scheduleRepeatType === 'date' && scheduleRepeatDate) {
-        repeatEl.textContent = `Until ${scheduleRepeatDate.toLocaleDateString()}`;
+        repeatEl.textContent = `${tSettings('repeatUntilDate')} ${scheduleRepeatDate.toLocaleDateString(tSettings('locale'))}`;
     } else {
-        repeatEl.textContent = 'No';
+        repeatEl.textContent = tSettings('repeatNo');
     }
 
     // Override info
@@ -2939,7 +2939,7 @@ function openScheduledBlockOverrideModal(schedule, segmentIndex, day) {
 
 // Show confirmation modal for editing (adding segments to) an existing schedule
 function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) {
-    const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const dayNames = tSettings('dayAbbrevMon0');
 
     // Store references for the proceed function
     window.editScheduleData = {
@@ -2956,7 +2956,7 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
 
     // Show NEW segments only
     const segmentsEl = document.getElementById('schedule-confirm-segments');
-    segmentsEl.innerHTML = '<div class="edit-schedule-notice">Adding these time segments:</div>';
+    segmentsEl.innerHTML = `<div class="edit-schedule-notice">${getSettingsLanguage() === 'da' ? 'Tilføjer disse tidssegmenter:' : 'Adding these time segments:'}</div>`;
 
     newSegments.forEach((seg, index) => {
         const segDays = (seg.days || []).map(d => dayNames[d]).join(', ');
@@ -2967,7 +2967,7 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
         row.className = 'schedule-segment-row new-segment';
         row.innerHTML = `
             <span class="segment-time">${startTime} → ${endTime}</span>
-            <span class="segment-days">${segDays || 'No days selected'}</span>
+            <span class="segment-days">${segDays || tSettings('noDaysSelected')}</span>
         `;
         segmentsEl.appendChild(row);
     });
@@ -3027,7 +3027,7 @@ async function proceedWithScheduleEdit() {
     // Restore the confirm button to normal
     const confirmBtn = document.querySelector('#start-schedule-confirm-modal .confirm-btn');
     if (confirmBtn) {
-        confirmBtn.textContent = 'Start Schedule';
+        confirmBtn.textContent = tSettings('startSchedule');
         confirmBtn.onclick = proceedWithSchedule;
     }
 
@@ -3902,7 +3902,7 @@ function handleBlocklistSelect(e) {
                     } else {
                         // No active block - show Start Block button (normal) with lock icon
                         // Ensure we've already cleared the activeBlockId above
-                        if (btnLabel) btnLabel.textContent = 'Start Block:';
+                        if (btnLabel) btnLabel.textContent = tSettings('startBlockButton');
                         if (btnName) btnName.textContent = blocklist.name;
 
                         // Change to lock icon
@@ -3982,7 +3982,7 @@ function startBlock() {
     // Calculate duration for display
     let durationText = '';
     if (isAlwaysOnMode) {
-        durationText = 'Always (until turned off)';
+        durationText = tSettings('alwaysUntilOff');
     } else {
         // Get times for display
         let blockStart = getStartTimeAsDate();
@@ -4099,7 +4099,7 @@ function closeStartBlockConfirmModal() {
     if (resumeData) {
         resumeData = null;
         document.querySelector('#start-block-confirm-modal .modal-content h3').textContent = 'Start this block?';
-        document.getElementById('proceed-start-confirm-btn').textContent = 'Start Block';
+        document.getElementById('proceed-start-confirm-btn').textContent = tSettings('startBlock');
     }
 }
 
@@ -4275,7 +4275,7 @@ function getStartBlockButtonHTML() {
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
             <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
         </svg>
-        <span class="btn-label">Start Block:</span>
+        <span class="btn-label">${tSettings('startBlockButton')}</span>
         <span class="btn-name"></span>
     `;
 }
@@ -4607,7 +4607,7 @@ function openBlocklistModal(blocklist = null) {
         }
     }
 
-    document.getElementById('modal-title').textContent = blocklist ? 'Edit Blocklist' : 'Create Blocklist';
+    document.getElementById('modal-title').textContent = blocklist ? tSettings('editBlocklist') : tSettings('createBlocklist');
 
     document.getElementById('blocklist-name').value = blocklist?.name || '';
 
@@ -4874,9 +4874,9 @@ function openOverrideModal(blockId) {
     if (websiteCount > 0) {
         const displaySites = blocklist.websites.map(cleanUrlForDisplay);
         if (websiteCount <= 2) {
-            metaParts.push(`${websiteCount} ${websiteCount === 1 ? 'website' : 'websites'} (${displaySites.join(', ')})`);
+            metaParts.push(`${websiteCount} ${websiteWord(websiteCount)} (${displaySites.join(', ')})`);
         } else {
-            metaParts.push(`${websiteCount} websites (${displaySites.slice(0, 2).join(', ')}, ...)`);
+            metaParts.push(`${websiteCount} ${websiteWord(websiteCount)} (${displaySites.slice(0, 2).join(', ')}, ...)`);
         }
     }
 
@@ -4888,7 +4888,7 @@ function openOverrideModal(blockId) {
         }
     }
 
-    const itemsText = metaParts.length > 0 ? metaParts.join(' and ') : 'nothing';
+    const itemsText = metaParts.length > 0 ? metaParts.join(` ${tSettings('andWord')} `) : tSettings('nothingWord');
     document.getElementById('override-summary').textContent = `${mode} ${itemsText}`;
 
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
@@ -4979,7 +4979,7 @@ function openResumeConfirmation(blocklistId, type, blockId) {
         if (block) {
             const remainingMs = block.endTime - Date.now();
             if (isBlockAlwaysOn(block)) {
-                document.getElementById('start-confirm-duration').textContent = 'Always (until turned off)';
+                document.getElementById('start-confirm-duration').textContent = tSettings('alwaysUntilOff');
             } else {
                 const remainingMins = Math.max(1, Math.floor(remainingMs / 60000));
                 const hours = Math.floor(remainingMins / 60);
@@ -4992,7 +4992,7 @@ function openResumeConfirmation(blocklistId, type, blockId) {
             }
         }
     } else {
-        document.getElementById('start-confirm-duration').textContent = 'Schedule (resuming current segment)';
+        document.getElementById('start-confirm-duration').textContent = tSettings('scheduleResumingSegment');
     }
 
     // Populate websites
@@ -5056,7 +5056,7 @@ function openResumeConfirmation(blocklistId, type, blockId) {
     document.getElementById('start-confirm-override-text').textContent = overrideText;
 
     // Change confirm button text
-    document.getElementById('proceed-start-confirm-btn').textContent = 'Resume Block';
+    document.getElementById('proceed-start-confirm-btn').textContent = tSettings('resumeBlock');
 
     // Show modal
     document.getElementById('start-block-confirm-modal').classList.remove('hidden');
@@ -5136,9 +5136,9 @@ function openPauseModal(blockId) {
     if (websiteCount > 0) {
         const displaySites = blocklist.websites.map(cleanUrlForDisplay);
         if (websiteCount <= 2) {
-            metaParts.push(`${websiteCount} ${websiteCount === 1 ? 'website' : 'websites'} (${displaySites.join(', ')})`);
+            metaParts.push(`${websiteCount} ${websiteWord(websiteCount)} (${displaySites.join(', ')})`);
         } else {
-            metaParts.push(`${websiteCount} websites (${displaySites.slice(0, 2).join(', ')}, ...)`);
+            metaParts.push(`${websiteCount} ${websiteWord(websiteCount)} (${displaySites.slice(0, 2).join(', ')}, ...)`);
         }
     }
     if (appCount > 0) {
@@ -5149,7 +5149,7 @@ function openPauseModal(blockId) {
         }
     }
 
-    const itemsText = metaParts.length > 0 ? metaParts.join(' and ') : 'nothing';
+    const itemsText = metaParts.length > 0 ? metaParts.join(` ${tSettings('andWord')} `) : tSettings('nothingWord');
     document.getElementById('pause-summary').textContent = `${mode} ${itemsText}`;
 
     // Calculate remaining time and max pause duration
@@ -5755,7 +5755,7 @@ function syncSelectedControlState() {
         if (alwaysOnMsg) alwaysOnMsg.classList.add('hidden');
         if (durationToggle) durationToggle.classList.add('hidden');
     } else {
-        if (btnLabel) btnLabel.textContent = 'Start Block:';
+        if (btnLabel) btnLabel.textContent = tSettings('startBlockButton');
         if (btnIcon) btnIcon.innerHTML = `<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path>`;
         if (pauseBtn) pauseBtn.classList.add('hidden');
         disableTimeControls(false);
@@ -5779,31 +5779,19 @@ function getWeekStart(date) {
 
 // Format week display string like "Mon 26 Jan - Sun 1 Feb"
 function formatWeekDisplay(start, end) {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-    const startDay = days[start.getDay()];
-    const startDate = start.getDate();
-    const startMonth = months[start.getMonth()];
-
-    const endDay = days[end.getDay()];
-    const endDate = end.getDate();
-    const endMonth = months[end.getMonth()];
+    const locale = tSettings('locale');
+    const formatDayMonth = new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short' });
+    const startLabel = formatDayMonth.format(start);
+    const endLabel = formatDayMonth.format(end);
 
     // Include year if different from current
     const currentYear = new Date().getFullYear();
     const startYear = start.getFullYear();
     const endYear = end.getFullYear();
 
-    if (startMonth === endMonth && startYear === endYear) {
-        const yearSuffix = startYear !== currentYear ? ` ${startYear}` : '';
-        return `${startDay} ${startDate} - ${endDay} ${endDate} ${startMonth}${yearSuffix}`;
-    } else if (startYear === endYear) {
-        const yearSuffix = startYear !== currentYear ? ` ${startYear}` : '';
-        return `${startDay} ${startDate} ${startMonth} - ${endDay} ${endDate} ${endMonth}${yearSuffix}`;
-    } else {
-        return `${startDay} ${startDate} ${startMonth} ${startYear} - ${endDay} ${endDate} ${endMonth} ${endYear}`;
-    }
+    if (startYear === endYear && startYear === currentYear) return `${startLabel} - ${endLabel}`;
+    if (startYear === endYear) return `${startLabel} - ${endLabel} ${startYear}`;
+    return `${startLabel} ${startYear} - ${endLabel} ${endYear}`;
 }
 
 // Navigate to previous/next week
@@ -5888,7 +5876,7 @@ function updateWeekCalendar() {
     // currentWeekStart represents the "anchor" week, we show 1 week before and 1 week after
     if (headerDays) headerDays.innerHTML = '';
     daysContainer.innerHTML = '';
-    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dayNames = tSettings('dayAbbrev');
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -6378,11 +6366,11 @@ function renderBlocklistSelector() {
     const activeIds = appData.activeBlocks.map(b => b.blocklistId);
 
     const newHTML = `
-    <option value="">Select a blocklist...</option>
+    <option value="">${tSettings('selectionPromptOption')}</option>
     ${appData.blocklists.map(bl => {
         const isActive = activeIds.includes(bl.id);
         const disabledAttr = isActive ? 'disabled' : '';
-        const activeLabel = isActive ? ' (Running)' : '';
+        const activeLabel = isActive ? tSettings('runningSuffix') : '';
         return `<option value="${bl.id}" ${disabledAttr}>${escapeHtml(bl.name)}${activeLabel}</option>`;
     }).join('')}
   `;
@@ -6402,8 +6390,8 @@ function renderBlocklists() {
     if (appData.blocklists.length === 0) {
         container.innerHTML = `
       <div class="no-active-blocks clickable" id="empty-blocklists-cta" style="cursor: pointer;">
-        <p>No blocklists yet</p>
-        <p class="subtle">Click here to create one</p>
+        <p>${tSettings('noBlocklistsYet')}</p>
+        <p class="subtle">${tSettings('clickHereCreateBlocklist')}</p>
       </div>
     `;
         document.getElementById('empty-blocklists-cta').addEventListener('click', () => {
@@ -6424,12 +6412,12 @@ function renderBlocklists() {
                 const displaySites = bl.websites.map(cleanUrlForDisplay);
                 const maxDisplay = appCount === 0 ? 3 : 2;
                 if (websiteCount <= maxDisplay) {
-                    metaParts.push(`${websiteCount} ${websiteCount === 1 ? 'website' : 'websites'} (${displaySites.join(', ')})`);
+                    metaParts.push(`${websiteCount} ${websiteWord(websiteCount)} (${displaySites.join(', ')})`);
                 } else {
-                    metaParts.push(`${websiteCount} websites (${displaySites.slice(0, maxDisplay).join(', ')}, ...)`);
+                    metaParts.push(`${websiteCount} ${websiteWord(websiteCount)} (${displaySites.slice(0, maxDisplay).join(', ')}, ...)`);
                 }
             } else {
-                metaParts.push(`${websiteCount} ${websiteCount === 1 ? 'website' : 'websites'}`);
+                metaParts.push(`${websiteCount} ${websiteWord(websiteCount)}`);
             }
         }
 
@@ -6464,7 +6452,7 @@ function renderBlocklists() {
             }
         }
 
-        const metaText = metaParts.length > 0 ? metaParts.join(' and ') : 'No items';
+        const metaText = metaParts.length > 0 ? metaParts.join(` ${tSettings('andWord')} `) : tSettings('noItems');
 
         // Get color for left border
         // Get color for left border
@@ -7036,6 +7024,496 @@ function getContrastTextColor(backgroundColor) {
     return luminance > 0.5 ? '#000000' : '#ffffff';
 }
 
+const SETTINGS_TRANSLATIONS = {
+    en: {
+        // Main shell
+        updateBannerPrefix: 'Version',
+        updateBannerSuffix: 'is available',
+        updateBannerCta: 'Reinstall from reddfocus.org',
+        mainStartBlockTitle: 'Start a Block',
+        modeNow: 'Now',
+        modeSchedule: 'Schedule',
+        selectionPrompt: 'Select a blocklist',
+        selectionPromptOption: 'Select a blocklist...',
+        yourBlocklists: 'Your Blocklists',
+        scheduleTitle: 'Schedule',
+        today: 'Today',
+        noActiveBlocks: 'No active blocks',
+        madeWith: 'Made with',
+        by: 'by',
+        andWord: 'and',
+        nothingWord: 'nothing',
+        noItems: 'No items',
+        noBlocklistsYet: 'No blocklists yet',
+        clickHereCreateBlocklist: 'Click here to create one',
+        typeHere: 'Type here...',
+        placeholderNameExample: 'e.g., Social Media',
+        placeholderWebsiteExample: 'e.g., facebook.com',
+        placeholderAppExample: 'e.g., Safari',
+        invalidDomainMsg: 'Please enter a valid domain (e.g. reddit.com)',
+        cannotBlockDomainPlaceholder: '⚠️ Can\'t block this domain!',
+        cannotBlockSelfAppPlaceholder: '⚠️ Can\'t block ReDD Block itself!',
+        // Start/schedule controls
+        durationModeAlways: 'always',
+        durationModeTimed: 'for some time',
+        alwaysOnMessage: 'This block will stay on until you pause it or turn it off',
+        duration: 'Duration',
+        durationUnitMin: 'min',
+        end: 'End',
+        nextDay: 'day',
+        quickSelect: 'Quick Select',
+        start: 'Start',
+        days: 'Days',
+        add: 'Add',
+        repeat: 'Repeat:',
+        repeatNo: 'No',
+        repeatForever: 'Forever',
+        repeatUntilDate: 'Until date',
+        pause: 'Pause',
+        startBlockButton: 'Start Block:',
+        startScheduleButton: 'Start Schedule:',
+        stopScheduleButton: 'Stop Schedule:',
+        editScheduleButton: 'Edit Schedule:',
+        // Blocklist modal
+        createBlocklist: 'Create Blocklist',
+        editBlocklist: 'Edit Blocklist',
+        activeBlocklistWarning: 'This blocklist is active. Some settings are locked.',
+        name: 'Name',
+        websites: 'Websites',
+        websitesTooltip: 'Blocking applies to entire domains. For example, typing "facebook.com" blocks all of Facebook, not just specific pages.',
+        apps: 'Apps',
+        appsTooltip: 'Enter the exact name of the application (e.g. \'Safari\'). You can also use the folder button to find the app.',
+        overrideDifficulty: 'Override Difficulty',
+        overrideRandomWords: 'Random Words',
+        overrideGibberish: 'Random Gibberish',
+        overrideCustomText: 'Custom Text',
+        totalCharacters: 'total characters',
+        color: 'Color',
+        emoji: 'Emoji',
+        advancedOptions: 'Advanced options',
+        listBlockedOnCard: 'List blocked websites & apps on card',
+        showInSchedule: 'Show in schedule',
+        cancel: 'Cancel',
+        save: 'Save',
+        // Override / pause / confirmation modals
+        overrideBlockTitle: 'Override Block?',
+        overrideInstruction: 'To cancel this block early, type the following:',
+        scheduleOverrideJustThis: 'Just this block',
+        scheduleOverrideStop: 'Stop schedule',
+        override: 'Override',
+        pauseBlockTitle: 'Pause Block',
+        pauseFor: 'PAUSE FOR',
+        restartsAt: 'RESTARTS AT',
+        pauseInstruction: 'To pause this block, type the following:',
+        helperSetupTitle: 'Setup Required',
+        helperSetupText: 'To block websites when the app is closed, ReDD Block needs to install a small background service. Your computer will prompt you for your password once — after that, blocks will start instantly without asking again.',
+        helperOpenSourceLink: 'open source code for ReDD Block here',
+        proceed: 'Proceed',
+        startThisBlock: 'Start this block?',
+        blockedWebsites: 'Blocked websites:',
+        blockedApps: 'Blocked apps:',
+        showAll: 'show all',
+        confirmDuration: 'Duration:',
+        confirmOverrideNeed: 'To cancel this block early, you\'ll need to:',
+        startBlock: 'Start Block',
+        resumeBlock: 'Resume Block',
+        alwaysUntilOff: 'Always (until turned off)',
+        scheduleResumingSegment: 'Schedule (resuming current segment)',
+        startThisSchedule: 'Start this schedule?',
+        repeatLabel: 'Repeat:',
+        confirmScheduleOverrideNeed: 'To cancel blocks in this schedule, you\'ll need to:',
+        startSchedule: 'Start Schedule',
+        noDaysSelected: 'No days selected',
+        runningSuffix: ' (Running)',
+        // Override all
+        overrideAllTitle: 'Override All Blocks?',
+        overrideAllWarningStrong: 'Are you sure you want to stop all running blocks?',
+        overrideAllWarningBody: 'This will stop ANY currently running blocks for any website and app. It will also stop any future scheduled blocking.',
+        overrideAllInstruction: 'To do this, type the following:',
+        overrideAll: 'Override All',
+        undo: 'Undo',
+        // Settings
+        settingsTitle: 'Settings',
+        yourVersionPrefix: 'Your version:',
+        latestVersionPrefix: 'Latest version:',
+        lightDarkMode: 'Light/dark mode',
+        language: 'Language',
+        themeAuto: 'Auto',
+        themeLight: 'Light',
+        themeDark: 'Dark',
+        languageEnglish: 'English',
+        languageDanish: 'Dansk',
+        advancedOptions: 'Advanced options',
+        overrideAllBlocks: 'Override all blocks',
+        keepBlocking: 'Keep blocking running if app is uninstalled',
+        helperService: 'Helper service',
+        helperStatusChecking: 'Checking...',
+        helperStatusRunning: 'Running',
+        helperStatusUpdateAvailable: 'Update available',
+        helperStatusNotInstalled: 'Not installed',
+        helperStatusUnknown: 'Unknown',
+        updateHelper: 'Update Helper',
+        uninstallHelper: 'Uninstall Helper',
+        cleanHostsFile: 'Clean hosts file',
+        helperHint: 'Remove all ReDD Block entries from your system\'s hosts file. Use this if websites remain blocked after all blocks have been stopped.',
+        close: 'Close',
+        // Time/date words
+        dayAbbrev: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+        dayAbbrevMon0: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        locale: 'en-US',
+    },
+    da: {
+        // Main shell
+        updateBannerPrefix: 'Version',
+        updateBannerSuffix: 'er tilgængelig',
+        updateBannerCta: 'Geninstaller fra reddfocus.org',
+        mainStartBlockTitle: 'Start en blokering',
+        modeNow: 'Nu',
+        modeSchedule: 'Skema',
+        selectionPrompt: 'Vælg en blokliste',
+        selectionPromptOption: 'Vælg en blokliste...',
+        yourBlocklists: 'Dine bloklister',
+        scheduleTitle: 'Skema',
+        today: 'I dag',
+        noActiveBlocks: 'Ingen aktive blokeringer',
+        madeWith: 'Lavet med',
+        by: 'af',
+        andWord: 'og',
+        nothingWord: 'intet',
+        noItems: 'Ingen elementer',
+        noBlocklistsYet: 'Ingen bloklister endnu',
+        clickHereCreateBlocklist: 'Klik her for at oprette en',
+        typeHere: 'Skriv her...',
+        placeholderNameExample: 'f.eks. Sociale medier',
+        placeholderWebsiteExample: 'f.eks. facebook.com',
+        placeholderAppExample: 'f.eks. Safari',
+        invalidDomainMsg: 'Indtast et gyldigt domæne (f.eks. reddit.com)',
+        cannotBlockDomainPlaceholder: '⚠️ Dette domæne kan ikke blokeres!',
+        cannotBlockSelfAppPlaceholder: '⚠️ ReDD Block kan ikke blokere sig selv!',
+        // Start/schedule controls
+        durationModeAlways: 'altid',
+        durationModeTimed: 'et stykke tid',
+        alwaysOnMessage: 'Denne blokering forbliver aktiv, indtil du pauser den eller slår den fra',
+        duration: 'Varighed',
+        durationUnitMin: 'min',
+        end: 'Slut',
+        nextDay: 'dag',
+        quickSelect: 'Hurtigvalg',
+        start: 'Start',
+        days: 'Dage',
+        add: 'Tilføj',
+        repeat: 'Gentag:',
+        repeatNo: 'Nej',
+        repeatForever: 'For evigt',
+        repeatUntilDate: 'Indtil dato',
+        pause: 'Pause',
+        startBlockButton: 'Start blokering:',
+        startScheduleButton: 'Start skema:',
+        stopScheduleButton: 'Stop skema:',
+        editScheduleButton: 'Rediger skema:',
+        // Blocklist modal
+        createBlocklist: 'Opret blokliste',
+        editBlocklist: 'Rediger blokliste',
+        activeBlocklistWarning: 'Denne blokliste er aktiv. Nogle indstillinger er låst.',
+        name: 'Navn',
+        websites: 'hjemmesider',
+        websitesTooltip: 'Blokering gælder hele domæner. Hvis du fx skriver "facebook.com", blokeres hele Facebook, ikke kun specifikke sider.',
+        apps: 'Apps',
+        appsTooltip: 'Indtast det præcise navn på appen (fx "Safari"). Du kan også bruge mappeknappen til at finde appen.',
+        overrideDifficulty: 'Sværhedsgrad',
+        overrideRandomWords: 'Tilfældige ord',
+        overrideGibberish: 'Tilfældig gibberish',
+        overrideCustomText: 'Egen tekst',
+        totalCharacters: 'tegn i alt',
+        color: 'Farve',
+        emoji: 'Emoji',
+        advancedOptions: 'Avancerede indstillinger',
+        listBlockedOnCard: 'Vis blokerede websites og apps på kortet',
+        showInSchedule: 'Vis i skema',
+        cancel: 'Annuller',
+        save: 'Gem',
+        // Override / pause / confirmation modals
+        overrideBlockTitle: 'Overstyr blokering?',
+        overrideInstruction: 'For at annullere denne blokering tidligt, skriv følgende:',
+        scheduleOverrideJustThis: 'Kun denne blokering',
+        scheduleOverrideStop: 'Stop skema',
+        override: 'Overstyr',
+        pauseBlockTitle: 'Sæt blokering på pause',
+        pauseFor: 'PAUSE I',
+        restartsAt: 'STARTER IGEN KL.',
+        pauseInstruction: 'For at pause denne blokering, skriv følgende:',
+        helperSetupTitle: 'Opsætning påkrævet',
+        helperSetupText: 'For at blokere websites, når appen er lukket, skal ReDD Block installere en lille baggrundstjeneste. Din computer beder om adgangskode én gang — derefter starter blokeringer med det samme uden ny prompt.',
+        helperOpenSourceLink: 'open source-koden til ReDD Block her',
+        proceed: 'Fortsæt',
+        startThisBlock: 'Start denne blokering?',
+        blockedWebsites: 'Blokerede hjemmesider:',
+        blockedApps: 'Blokerede apps:',
+        showAll: 'vis alle',
+        confirmDuration: 'Varighed:',
+        confirmOverrideNeed: 'For at annullere denne blokering tidligt skal du:',
+        startBlock: 'Start blokering',
+        resumeBlock: 'Genoptag blokering',
+        alwaysUntilOff: 'Altid (indtil den slås fra)',
+        scheduleResumingSegment: 'Skema (genoptager nuværende segment)',
+        startThisSchedule: 'Start dette skema?',
+        repeatLabel: 'Gentag:',
+        confirmScheduleOverrideNeed: 'For at annullere blokeringer i dette skema skal du:',
+        startSchedule: 'Start skema',
+        noDaysSelected: 'Ingen dage valgt',
+        runningSuffix: ' (Kører)',
+        // Override all
+        overrideAllTitle: 'Overstyr alle blokeringer?',
+        overrideAllWarningStrong: 'Er du sikker på, at du vil stoppe alle aktive blokeringer?',
+        overrideAllWarningBody: 'Dette stopper ALLE nuværende blokeringer af websites og apps. Det stopper også alle fremtidige planlagte blokeringer.',
+        overrideAllInstruction: 'For at gøre dette, skriv følgende:',
+        overrideAll: 'Overstyr alle',
+        undo: 'Fortryd',
+        // Settings
+        settingsTitle: 'Indstillinger',
+        yourVersionPrefix: 'Din version:',
+        latestVersionPrefix: 'Nyeste version:',
+        lightDarkMode: 'Lys/mørk tilstand',
+        language: 'Sprog',
+        themeAuto: 'Auto',
+        themeLight: 'Lys',
+        themeDark: 'Mørk',
+        languageEnglish: 'Engelsk',
+        languageDanish: 'Dansk',
+        overrideAllBlocks: 'Stop alle blokeringer',
+        keepBlocking: 'Hold blokering aktiv, hvis appen afinstalleres',
+        helperService: 'Hjælper',
+        helperStatusChecking: 'Tjekker...',
+        helperStatusRunning: 'Kører',
+        helperStatusUpdateAvailable: 'Opdatering tilgængelig',
+        helperStatusNotInstalled: 'Ikke installeret',
+        helperStatusUnknown: 'Ukendt',
+        updateHelper: 'Opdater hjælper',
+        uninstallHelper: 'Afinstaller hjælper',
+        cleanHostsFile: 'Ryd hosts-fil',
+        helperHint: 'Fjern alle ReDD Block-indsætninger fra systemets hosts-fil. Brug kun dette, hvis websites stadig er utilgængelige efter du har stoppet alle blokeringer.',
+        close: 'Luk',
+        // Time/date words
+        dayAbbrev: ['Søn', 'Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør'],
+        dayAbbrevMon0: ['Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør', 'Søn'],
+        locale: 'da-DK',
+    },
+};
+
+function getSettingsLanguage() {
+    return appData.settings?.language === 'da' ? 'da' : 'en';
+}
+
+function tSettings(key) {
+    const lang = getSettingsLanguage();
+    return SETTINGS_TRANSLATIONS[lang][key] || SETTINGS_TRANSLATIONS.en[key] || key;
+}
+
+function websiteWord(count) {
+    if (getSettingsLanguage() === 'da') {
+        return count === 1 ? 'hjemmeside' : 'hjemmesider';
+    }
+    return count === 1 ? 'website' : 'websites';
+}
+
+function formatCurrentVersionText(version) {
+    return `${tSettings('yourVersionPrefix')} ${version || 'Unknown'}`;
+}
+
+function formatLatestVersionText(version) {
+    return `${tSettings('latestVersionPrefix')} ${version || 'Unknown'}`;
+}
+
+function applySettingsLanguage() {
+    const setText = (id, text) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+    };
+
+    // Main shell / scheduler
+    setText('update-banner-prefix', tSettings('updateBannerPrefix'));
+    setText('update-banner-suffix', tSettings('updateBannerSuffix'));
+    setText('update-banner-link', tSettings('updateBannerCta'));
+    setText('main-start-block-title', tSettings('mainStartBlockTitle'));
+    setText('instant-mode-tab', tSettings('modeNow'));
+    setText('schedule-mode-tab', tSettings('modeSchedule'));
+    setText('selection-prompt-label', tSettings('selectionPrompt'));
+    const blocklistSelect = document.getElementById('blocklist-select');
+    if (blocklistSelect && blocklistSelect.options.length > 0) {
+        blocklistSelect.options[0].textContent = tSettings('selectionPromptOption');
+    }
+    setText('main-blocklists-title', tSettings('yourBlocklists'));
+    setText('main-schedule-title', tSettings('scheduleTitle'));
+    setText('today-btn', tSettings('today'));
+    setText('no-active-blocks-label', tSettings('noActiveBlocks'));
+    setText('duration-mode-always-label', tSettings('durationModeAlways'));
+    setText('duration-mode-timed-label', tSettings('durationModeTimed'));
+    setText('always-on-message-text', tSettings('alwaysOnMessage'));
+    setText('duration-label', tSettings('duration'));
+    setText('duration-unit-label', tSettings('durationUnitMin'));
+    setText('end-label', tSettings('end'));
+    setText('quick-select-label', tSettings('quickSelect'));
+    setText('schedule-start-label', tSettings('start'));
+    setText('schedule-end-label', tSettings('end'));
+    setText('schedule-days-label', tSettings('days'));
+    setText('add-segment-label', tSettings('add'));
+    setText('repeat-label', tSettings('repeat'));
+    const repeatNo = document.querySelector('.repeat-option[data-value="no"]');
+    const repeatForever = document.querySelector('.repeat-option[data-value="forever"]');
+    const repeatDate = document.querySelector('.repeat-option[data-value="date"]');
+    if (repeatNo) repeatNo.textContent = tSettings('repeatNo');
+    if (repeatForever) repeatForever.textContent = tSettings('repeatForever');
+    if (repeatDate) repeatDate.textContent = tSettings('repeatUntilDate');
+    const repeatDropdownText = document.getElementById('repeat-dropdown-text');
+    if (repeatDropdownText) {
+        if (scheduleRepeatType === 'forever') repeatDropdownText.textContent = tSettings('repeatForever');
+        else if (scheduleRepeatType === 'date') repeatDropdownText.textContent = tSettings('repeatUntilDate');
+        else repeatDropdownText.textContent = tSettings('repeatNo');
+    }
+    setText('pause-btn-label', tSettings('pause'));
+    setText('start-block-btn-label', tSettings('startBlockButton'));
+    setText('start-schedule-btn-label', tSettings('startScheduleButton'));
+    setText('footer-made-with', tSettings('madeWith'));
+    setText('footer-by', tSettings('by'));
+    const setPlaceholder = (id, text) => {
+        const el = document.getElementById(id);
+        if (el) el.placeholder = text;
+    };
+    setPlaceholder('blocklist-name', tSettings('placeholderNameExample'));
+    setPlaceholder('modal-website-input', tSettings('placeholderWebsiteExample'));
+    setPlaceholder('modal-app-input', tSettings('placeholderAppExample'));
+    setPlaceholder('challenge-input', tSettings('typeHere'));
+    setPlaceholder('pause-challenge-input', tSettings('typeHere'));
+    setPlaceholder('override-all-challenge-input', tSettings('typeHere'));
+    setText('website-input-error', tSettings('invalidDomainMsg'));
+
+    // Blocklist modal
+    const modalTitle = document.getElementById('modal-title');
+    if (modalTitle) {
+        modalTitle.textContent = editingBlocklistId ? tSettings('editBlocklist') : tSettings('createBlocklist');
+    }
+    setText('active-blocklist-warning-text', tSettings('activeBlocklistWarning'));
+    setText('blocklist-name-label', tSettings('name'));
+    setText('blocklist-websites-label', tSettings('websites'));
+    setText('blocklist-websites-tooltip', tSettings('websitesTooltip'));
+    setText('blocklist-apps-label', tSettings('apps'));
+    setText('blocklist-apps-tooltip', tSettings('appsTooltip'));
+    setText('override-difficulty-label', tSettings('overrideDifficulty'));
+    setText('override-option-random-words', tSettings('overrideRandomWords'));
+    setText('override-option-gibberish', tSettings('overrideGibberish'));
+    setText('override-option-custom', tSettings('overrideCustomText'));
+    setText('override-total-characters-label', tSettings('totalCharacters'));
+    setText('blocklist-color-label', tSettings('color'));
+    setText('blocklist-emoji-label', tSettings('emoji'));
+    setText('blocklist-advanced-options-label', tSettings('advancedOptions'));
+    setText('show-item-details-label', tSettings('listBlockedOnCard'));
+    setText('always-show-in-schedule-label', tSettings('showInSchedule'));
+    setText('cancel-blocklist-btn', tSettings('cancel'));
+    setText('save-blocklist-btn', tSettings('save'));
+
+    // Modal copy
+    setText('override-modal-title', tSettings('overrideBlockTitle'));
+    setText('override-modal-instruction', tSettings('overrideInstruction'));
+    setText('schedule-override-just-this-label', tSettings('scheduleOverrideJustThis'));
+    setText('schedule-override-stop-label', tSettings('scheduleOverrideStop'));
+    setText('cancel-override-btn', tSettings('cancel'));
+    setText('confirm-override-btn', tSettings('override'));
+    setText('pause-modal-title', tSettings('pauseBlockTitle'));
+    setText('pause-for-label', tSettings('pauseFor'));
+    setText('pause-restarts-at-label', tSettings('restartsAt'));
+    setText('pause-modal-instruction', tSettings('pauseInstruction'));
+    setText('cancel-pause-btn', tSettings('cancel'));
+    setText('confirm-pause-btn', tSettings('pause'));
+    setText('helper-setup-required-title', tSettings('helperSetupTitle'));
+    setText('helper-setup-required-text', tSettings('helperSetupText'));
+    setText('helper-open-source-link', tSettings('helperOpenSourceLink'));
+    setText('cancel-helper-install-btn', tSettings('cancel'));
+    setText('proceed-helper-install-btn', tSettings('proceed'));
+    setText('start-block-confirm-title', tSettings('startThisBlock'));
+    setText('confirm-blocked-websites-label', tSettings('blockedWebsites'));
+    setText('confirm-blocked-apps-label', tSettings('blockedApps'));
+    setText('show-all-websites', tSettings('showAll'));
+    setText('show-all-apps', tSettings('showAll'));
+    setText('confirm-duration-label', tSettings('confirmDuration'));
+    setText('confirm-override-header', tSettings('confirmOverrideNeed'));
+    setText('cancel-start-confirm-btn', tSettings('cancel'));
+    setText('proceed-start-confirm-btn', tSettings('startBlock'));
+    setText('start-schedule-confirm-title', tSettings('startThisSchedule'));
+    setText('schedule-confirm-blocked-websites-label', tSettings('blockedWebsites'));
+    setText('schedule-confirm-blocked-apps-label', tSettings('blockedApps'));
+    setText('show-all-schedule-websites', tSettings('showAll'));
+    setText('show-all-schedule-apps', tSettings('showAll'));
+    setText('schedule-summary-header', tSettings('scheduleTitle'));
+    setText('schedule-confirm-repeat-label', tSettings('repeatLabel'));
+    setText('schedule-confirm-override-header', tSettings('confirmScheduleOverrideNeed'));
+    setText('cancel-schedule-confirm-btn', tSettings('cancel'));
+    setText('proceed-schedule-confirm-btn', tSettings('startSchedule'));
+    setText('undo-toast-btn', tSettings('undo'));
+    setText('override-all-title', tSettings('overrideAllTitle'));
+    setText('override-all-warning-strong', tSettings('overrideAllWarningStrong'));
+    setText('override-all-warning-body', tSettings('overrideAllWarningBody'));
+    setText('override-all-instruction', tSettings('overrideAllInstruction'));
+    setText('cancel-override-all-btn', tSettings('cancel'));
+    setText('confirm-override-all-btn', tSettings('overrideAll'));
+    setText('next-day-indicator', `+1 ${tSettings('nextDay')}`);
+    setText('pause-next-day-indicator', `+1 ${tSettings('nextDay')}`);
+
+    setText('settings-modal-title', tSettings('settingsTitle'));
+    setText('settings-theme-label', tSettings('lightDarkMode'));
+    setText('settings-language-label', tSettings('language'));
+    setText('theme-option-system', tSettings('themeAuto'));
+    setText('theme-option-light', tSettings('themeLight'));
+    setText('theme-option-dark', tSettings('themeDark'));
+    setText('language-option-en', tSettings('languageEnglish'));
+    setText('language-option-da', tSettings('languageDanish'));
+    setText('settings-advanced-options-label', tSettings('advancedOptions'));
+    setText('settings-override-all-label', tSettings('overrideAllBlocks'));
+    setText('settings-keep-blocking-label', tSettings('keepBlocking'));
+    setText('settings-helper-service-label', tSettings('helperService'));
+    setText('settings-update-helper-label', tSettings('updateHelper'));
+    setText('settings-uninstall-helper-label', tSettings('uninstallHelper'));
+    setText('settings-clean-hosts-label', tSettings('cleanHostsFile'));
+    setText('settings-helper-hint', tSettings('helperHint'));
+    setText('close-settings-btn', tSettings('close'));
+
+    const currentVersionEl = document.getElementById('current-app-version');
+    if (currentVersionEl) {
+        const raw = currentVersionEl.textContent || '';
+        const version = raw.split(':').slice(1).join(':').trim() || '...';
+        currentVersionEl.textContent = formatCurrentVersionText(version);
+    }
+
+    const latestVersionEl = document.getElementById('latest-app-version');
+    if (latestVersionEl) {
+        const raw = latestVersionEl.textContent || '';
+        const version = raw.split(':').slice(1).join(':').trim() || '...';
+        latestVersionEl.textContent = formatLatestVersionText(version);
+    }
+
+    const helperStatusText = document.getElementById('settings-helper-status-text');
+    if (helperStatusText) {
+        const raw = (helperStatusText.textContent || '').trim();
+        const statusMap = {
+            'Checking...': tSettings('helperStatusChecking'),
+            'Running': tSettings('helperStatusRunning'),
+            'Update available': tSettings('helperStatusUpdateAvailable'),
+            'Not installed': tSettings('helperStatusNotInstalled'),
+            'Unknown': tSettings('helperStatusUnknown'),
+            'Tjekker...': tSettings('helperStatusChecking'),
+            'Korer': tSettings('helperStatusRunning'),
+            'Opdatering tilgaengelig': tSettings('helperStatusUpdateAvailable'),
+            'Ikke installeret': tSettings('helperStatusNotInstalled'),
+            'Ukendt': tSettings('helperStatusUnknown'),
+        };
+        if (statusMap[raw]) helperStatusText.textContent = statusMap[raw];
+    }
+
+    // Re-render pieces with dynamic language-dependent text.
+    if (document.getElementById('blocklist-select')) renderBlocklistSelector();
+    if (typeof updateScheduleButtonState === 'function') updateScheduleButtonState();
+    if (typeof updateWeekCalendar === 'function' && currentWeekStart) updateWeekCalendar();
+}
+
 // Theme Handling
 function setupTheme() {
     // Apply initial theme from saved settings
@@ -7046,6 +7524,10 @@ function setupTheme() {
     const settingsModal = document.getElementById('settings-modal');
     const closeSettingsBtn = document.getElementById('close-settings-btn');
     const themeSelect = document.getElementById('theme-select');
+    const languageSelect = document.getElementById('language-select');
+
+    // Apply language immediately on startup.
+    applySettingsLanguage();
 
     if (settingsBtn && settingsModal) {
         settingsBtn.addEventListener('click', async () => {
@@ -7055,6 +7537,10 @@ function setupTheme() {
                 const currentTheme = appData.settings?.themeMode || 'system';
                 themeSelect.value = currentTheme;
             }
+            if (languageSelect) {
+                languageSelect.value = getSettingsLanguage();
+            }
+            applySettingsLanguage();
 
             // Fetch and display version info
             const currentVersionEl = document.getElementById('current-app-version');
@@ -7066,10 +7552,10 @@ function setupTheme() {
             if (currentVersionEl) {
                 try {
                     currentVersion = await tauriAPI.getAppVersion();
-                    currentVersionEl.textContent = `Your version: ${currentVersion || 'Unknown'}`;
+                    currentVersionEl.textContent = formatCurrentVersionText(currentVersion || 'Unknown');
                 } catch (e) {
                     console.error('[Version] Error fetching current version:', e);
-                    currentVersionEl.textContent = 'Your version: Unknown';
+                    currentVersionEl.textContent = formatCurrentVersionText('Unknown');
                 }
             }
 
@@ -7088,7 +7574,7 @@ function setupTheme() {
 
                     // Only show if latest version is higher than current version
                     if (latestVersion && currentVersion && isVersionHigher(latestVersion, currentVersion)) {
-                        latestVersionEl.textContent = `Latest version: ${latestVersion}`;
+                        latestVersionEl.textContent = formatLatestVersionText(latestVersion);
                         latestVersionEl.style.display = 'block';
                         if (latestVersionWrap) latestVersionWrap.style.display = 'block';
                     }
@@ -7132,6 +7618,15 @@ function setupTheme() {
             }
 
             applyTheme();
+            saveData();
+        });
+    }
+
+    if (languageSelect) {
+        languageSelect.addEventListener('change', (e) => {
+            if (!appData.settings) appData.settings = {};
+            appData.settings.language = e.target.value === 'da' ? 'da' : 'en';
+            applySettingsLanguage();
             saveData();
         });
     }
@@ -7397,7 +7892,7 @@ function setupHelperSettings() {
                         statusIndicator.classList.remove('running');
                         statusIndicator.classList.add('stopped');
                         const statusText = statusIndicator.querySelector('.status-text');
-                        if (statusText) statusText.textContent = 'Not installed';
+                        if (statusText) statusText.textContent = tSettings('helperStatusNotInstalled');
                     }
                     // Hide the Remove Helper Now button
                     removeHelperNowBtn.style.display = 'none';
@@ -7418,7 +7913,7 @@ function setupHelperSettings() {
                         <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
                         <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
                     </svg>
-                    <span>Uninstall Helper</span>
+                    <span>${tSettings('uninstallHelper')}</span>
                 `;
             }
         });
@@ -7442,13 +7937,13 @@ async function updateHelperStatusIndicator() {
         statusIndicator.classList.remove('running', 'stopped');
         if (isRunning && status.version_ok) {
             statusIndicator.classList.add('running');
-            statusText.textContent = 'Running';
+            statusText.textContent = tSettings('helperStatusRunning');
         } else if (needsUpdate) {
             statusIndicator.classList.add('stopped');
-            statusText.textContent = 'Update available';
+            statusText.textContent = tSettings('helperStatusUpdateAvailable');
         } else {
             statusIndicator.classList.add('stopped');
-            statusText.textContent = 'Not installed';
+            statusText.textContent = tSettings('helperStatusNotInstalled');
         }
 
         // Show/hide Update Helper button
@@ -7507,7 +8002,7 @@ async function updateHelperStatusIndicator() {
     } catch (e) {
         statusIndicator.classList.remove('running', 'stopped');
         statusIndicator.classList.add('stopped');
-        statusText.textContent = 'Unknown';
+        statusText.textContent = tSettings('helperStatusUnknown');
 
         // Hide buttons on error
         const removeHelperBtn = document.getElementById('remove-helper-now-btn');
