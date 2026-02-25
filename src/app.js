@@ -345,6 +345,12 @@ async function checkHelperStatus() {
     }
 }
 
+/** True if the error indicates the helper daemon is not reachable (e.g. connection refused on Windows). */
+function isHelperConnectionError(errorMsg) {
+    if (!errorMsg || typeof errorMsg !== 'string') return false;
+    return errorMsg.includes('Failed to connect to helper') || errorMsg.includes('refused') || errorMsg.includes('10061');
+}
+
 // Check Screen Time authorization (iOS only)
 async function checkScreentimeAuth() {
     try {
@@ -4231,6 +4237,13 @@ async function proceedWithBlock() {
     } else {
         // Desktop: Try to use the helper daemon (no password required!)
         if (helperAvailable) {
+            // Re-verify helper is still reachable before starting block (avoids stale "available" state on Windows)
+            const status = await tauriAPI.checkHelperStatus();
+            if (!status.running || !status.version_ok) {
+                helperAvailable = false;
+            }
+        }
+        if (helperAvailable) {
             result = await tauriAPI.startBlockViaHelper({
                 domains: blocklist.websites || [],
                 endTime: blockEnd.getTime(),
@@ -4278,7 +4291,12 @@ async function proceedWithBlock() {
 
         // Only show error if user didn't cancel
         if (!result.cancelled) {
-            alert('Could not start block: ' + (result.error || 'Unknown error'));
+            if (isHelperConnectionError(result.error)) {
+                helperAvailable = false;
+                alert('The block service isn\'t running. Please open Settings, remove the helper, then try starting a block again to reinstall it.');
+            } else {
+                alert('Could not start block: ' + (result.error || 'Unknown error'));
+            }
         }
         return;
     }
@@ -4397,7 +4415,12 @@ async function proceedWithHelperInstall() {
 
                 render();
             } else {
-                alert('Could not start block: ' + (result.error || 'Unknown error'));
+                if (isHelperConnectionError(result.error)) {
+                    helperAvailable = false;
+                    alert('The block service isn\'t running. Please open Settings, remove the helper, then try starting a block again to reinstall it.');
+                } else {
+                    alert('Could not start block: ' + (result.error || 'Unknown error'));
+                }
             }
 
             pendingBlockData = null;
