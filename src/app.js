@@ -345,6 +345,12 @@ async function checkHelperStatus() {
     }
 }
 
+/** True if the error indicates the helper daemon is not reachable (e.g. connection refused on Windows). */
+function isHelperConnectionError(errorMsg) {
+    if (!errorMsg || typeof errorMsg !== 'string') return false;
+    return errorMsg.includes('Failed to connect to helper') || errorMsg.includes('refused') || errorMsg.includes('10061');
+}
+
 // Check Screen Time authorization (iOS only)
 async function checkScreentimeAuth() {
     try {
@@ -4231,6 +4237,13 @@ async function proceedWithBlock() {
     } else {
         // Desktop: Try to use the helper daemon (no password required!)
         if (helperAvailable) {
+            // Re-verify helper is still reachable before starting block (avoids stale "available" state on Windows)
+            const status = await tauriAPI.checkHelperStatus();
+            if (!status.running || !status.version_ok) {
+                helperAvailable = false;
+            }
+        }
+        if (helperAvailable) {
             result = await tauriAPI.startBlockViaHelper({
                 domains: blocklist.websites || [],
                 endTime: blockEnd.getTime(),
@@ -4278,7 +4291,12 @@ async function proceedWithBlock() {
 
         // Only show error if user didn't cancel
         if (!result.cancelled) {
-            alert('Could not start block: ' + (result.error || 'Unknown error'));
+            if (isHelperConnectionError(result.error)) {
+                helperAvailable = false;
+                alert('The block service isn\'t running. Please open Settings, remove the helper, then try starting a block again to reinstall it.');
+            } else {
+                alert('Could not start block: ' + (result.error || 'Unknown error'));
+            }
         }
         return;
     }
@@ -4397,7 +4415,12 @@ async function proceedWithHelperInstall() {
 
                 render();
             } else {
-                alert('Could not start block: ' + (result.error || 'Unknown error'));
+                if (isHelperConnectionError(result.error)) {
+                    helperAvailable = false;
+                    alert('The block service isn\'t running. Please open Settings, remove the helper, then try starting a block again to reinstall it.');
+                } else {
+                    alert('Could not start block: ' + (result.error || 'Unknown error'));
+                }
             }
 
             pendingBlockData = null;
@@ -4560,18 +4583,18 @@ async function updateHostsFile(silent = false) {
     return result || { success: true };
 }
 
-// Update blocked apps list based on active blocks and schedules
+// Update blocked apps sent to the helper. Only one-off (manual) block apps are sent here.
+// Schedule-based app blocking is owned solely by set_schedules via syncSchedulesToHelper();
+// the helper merges manual + active schedule apps internally.
 async function updateBlockedApps() {
     // iOS uses Screen Time API for app blocking - skip desktop process watcher
     if (isIOS) return;
 
     const allBlockedApps = new Set();
     const now = Date.now();
-    const nowDate = new Date();
-    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1; // Convert to Mon=0 format
-    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
 
-    // Collect apps from active one-off blocks (skip paused)
+    // Collect apps from active one-off blocks only (skip paused). Do not include schedule-derived
+    // apps here; they are synced via set_schedules and the helper computes effective list.
     appData.activeBlocks
         .filter(block => block.startTime <= now && block.endTime > now && !block.isPaused)
         .forEach(block => {
@@ -4580,42 +4603,6 @@ async function updateBlockedApps() {
                 blocklist.apps.forEach(app => allBlockedApps.add(app));
             }
         });
-
-    // Collect apps from active schedules
-    if (appData.schedules) {
-        appData.schedules.forEach(schedule => {
-            if (!schedule.segments) return;
-
-            // Skip paused schedules
-            if (schedule.isPaused && schedule.pauseEndTime > Date.now()) return;
-
-            // Check if any segment is active right now
-            const isActive = schedule.segments.some(seg => {
-                const startMins = seg.startHour * 60 + seg.startMinute;
-                const endMins = seg.endHour * 60 + seg.endMinute;
-
-                if (endMins > startMins) {
-                    // Same-day segment (e.g., 09:00 - 17:00)
-                    return seg.days.includes(currentDay) &&
-                        currentMins >= startMins &&
-                        currentMins < endMins;
-                } else {
-                    // Cross-midnight segment (e.g., 22:00 - 04:00)
-                    const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
-                    const inEveningPortion = seg.days.includes(currentDay) && currentMins >= startMins;
-                    const inMorningPortion = seg.days.includes(yesterdayDay) && currentMins < endMins;
-                    return inEveningPortion || inMorningPortion;
-                }
-            });
-
-            if (isActive) {
-                const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-                if (blocklist && blocklist.apps) {
-                    blocklist.apps.forEach(app => allBlockedApps.add(app));
-                }
-            }
-        });
-    }
 
     // Filter out protected apps (ReDD Block must never block itself)
     const appsArray = Array.from(allBlockedApps)

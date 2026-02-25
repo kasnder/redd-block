@@ -288,6 +288,7 @@ body.dark-mode .title-bar button:hover {
     flex-direction: column;
     min-height: 0;
     overflow-y: auto;
+    overscroll-behavior-y: none;
     padding: 12px 24px 2px 24px;
     margin-top: 30px;
     /* Account for fixed title bar */
@@ -3113,6 +3114,11 @@ body.ios .modal-content {
     max-height: 95vh;
     overflow-y: auto;
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+}
+
+/* Clamp edge overscroll only for add/edit blocklist modal content. */
+#blocklist-modal .modal-content {
+    overscroll-behavior-y: none;
 }
 
 .modal-content h3 {
