@@ -584,48 +584,22 @@ function setupEventListeners() {
 
         // Deselect blocklist if one is selected
         if (selectedBlocklistId) {
-            // Save pending changes before deselecting
-            const currentBlocklistId = selectedBlocklistId;
-            if (isScheduleMode) {
-                const existingSchedule = appData.schedules?.find(s => s.blocklistId === currentBlocklistId);
-                if (!appData.settings) appData.settings = {};
-                if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
+            deselectBlocklist();
+        }
+    });
 
-                if (!existingSchedule) {
-                    // No active schedule - save all segments
-                    if (scheduleSegments.length > 0) {
-                        appData.settings.pendingScheduleSegments[currentBlocklistId] = scheduleSegments.map(seg => ({ ...seg }));
-                        saveData();
-                    }
-                } else {
-                    // Active schedule exists - save only NEW segments (those beyond activeScheduleSegmentCount)
-                    const committedSegmentCount = getCommittedScheduleSegmentCount(existingSchedule);
-                    if (scheduleSegments.length > committedSegmentCount) {
-                        const newSegments = scheduleSegments.slice(committedSegmentCount);
-                        appData.settings.pendingScheduleSegments[currentBlocklistId] = newSegments.map(seg => ({ ...seg }));
-                        saveData();
-                    } else {
-                        // No new segments - clear any pending segments
-                        if (appData.settings.pendingScheduleSegments[currentBlocklistId]) {
-                            delete appData.settings.pendingScheduleSegments[currentBlocklistId];
-                            saveData();
-                        }
-                    }
-                }
-            } else {
-                // Save pending instant block duration if different from default
-                if (!appData.settings) appData.settings = {};
-                if (!appData.settings.instantBlockDuration) appData.settings.instantBlockDuration = {};
-                if (targetDurationMinutes !== 60) {
-                    appData.settings.instantBlockDuration[currentBlocklistId] = targetDurationMinutes;
-                    saveData();
-                }
-            }
-
-            selectedBlocklistId = null;
-            const blocklistSelect = document.getElementById('blocklist-select');
-            blocklistSelect.value = '';
-            handleBlocklistSelect({ target: blocklistSelect });
+    // ESC: close blocklist add/edit modal if open, otherwise deselect blocklist
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        const blocklistModal = document.getElementById('blocklist-modal');
+        if (blocklistModal && !blocklistModal.classList.contains('hidden')) {
+            closeBlocklistModal();
+            e.preventDefault();
+            return;
+        }
+        if (selectedBlocklistId) {
+            deselectBlocklist();
+            e.preventDefault();
         }
     });
 
@@ -4023,6 +3997,48 @@ function handleBlocklistSelect(e) {
     setTimeout(() => {
         updateWindowHeight();
     }, 50);
+}
+
+// Deselect current blocklist (same behavior as clicking on background).
+// Used by click-outside handler and ESC key.
+function deselectBlocklist() {
+    if (!selectedBlocklistId) return;
+    const currentBlocklistId = selectedBlocklistId;
+    if (isScheduleMode) {
+        const existingSchedule = appData.schedules?.find(s => s.blocklistId === currentBlocklistId);
+        if (!appData.settings) appData.settings = {};
+        if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
+
+        if (!existingSchedule) {
+            if (scheduleSegments.length > 0) {
+                appData.settings.pendingScheduleSegments[currentBlocklistId] = scheduleSegments.map(seg => ({ ...seg }));
+                saveData();
+            }
+        } else {
+            const committedSegmentCount = getCommittedScheduleSegmentCount(existingSchedule);
+            if (scheduleSegments.length > committedSegmentCount) {
+                const newSegments = scheduleSegments.slice(committedSegmentCount);
+                appData.settings.pendingScheduleSegments[currentBlocklistId] = newSegments.map(seg => ({ ...seg }));
+                saveData();
+            } else {
+                if (appData.settings.pendingScheduleSegments[currentBlocklistId]) {
+                    delete appData.settings.pendingScheduleSegments[currentBlocklistId];
+                    saveData();
+                }
+            }
+        }
+    } else {
+        if (!appData.settings) appData.settings = {};
+        if (!appData.settings.instantBlockDuration) appData.settings.instantBlockDuration = {};
+        if (targetDurationMinutes !== 60) {
+            appData.settings.instantBlockDuration[currentBlocklistId] = targetDurationMinutes;
+            saveData();
+        }
+    }
+    selectedBlocklistId = null;
+    const blocklistSelect = document.getElementById('blocklist-select');
+    blocklistSelect.value = '';
+    handleBlocklistSelect({ target: blocklistSelect });
 }
 
 // Show start block confirmation modal
