@@ -336,6 +336,11 @@ body.dark-mode .title-bar button:hover {
     /* Match icon-btn height to ensure consistent vertical alignment */
 }
 
+/* Keep "Start a Block" and "Your Blocklists" titles aligned in the top row */
+.grid-top-row .section-header {
+    min-height: 40px;
+}
+
 .section-header h2 {
     font-size: 17px;
     font-weight: 600;
