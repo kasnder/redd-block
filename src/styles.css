@@ -1225,6 +1225,20 @@ body.dark-mode .duration-mode-btn.active {
     gap: 4px;
 }
 
+/* Keep Duration and End labels aligned in one-off timed controls */
+#timed-controls .time-pickers-row {
+    align-items: flex-end;
+}
+
+#timed-controls .time-picker-group {
+    gap: 6px;
+}
+
+#timed-controls #end-label {
+    display: inline-block;
+    transform: translateY(-4px);
+}
+
 .time-label {
     font-size: 13px;
     font-weight: 500;
