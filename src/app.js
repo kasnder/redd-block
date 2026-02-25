@@ -7568,6 +7568,7 @@ function applySettingsLanguage() {
     }
 
     // Re-render pieces with dynamic language-dependent text.
+    renderBlocklists();
     if (document.getElementById('blocklist-select')) renderBlocklistSelector();
     if (typeof updateScheduleButtonState === 'function') updateScheduleButtonState();
     if (typeof updateWeekCalendar === 'function' && currentWeekStart) updateWeekCalendar();
