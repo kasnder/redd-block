@@ -1837,14 +1837,7 @@ body.dark-mode .mode-tab.active {
     font-size: 15px;
     cursor: pointer;
     transition: all 0.15s ease;
-    /* Match width from left edge of start hour to right edge of end minute */
-    /* Each time-part: min-width 36px + padding 4px each side = 44px */
-    /* Start group: 2 time-parts (88px) + colon (~10px) = ~98px */
-    /* Separator: ~20px */
-    /* Gap: 12px */
-    /* End group: ~98px */
-    /* Total: 98 + 20 + 12 + 98 = 228px */
-    width: 209px;
+    width: 212px;
     box-sizing: border-box;
 }
 
