@@ -865,7 +865,10 @@ fn force_cleanup_helper() -> HelperResult {
             Err(e) => log::warn!("Could not restore hosts before cleanup: {}", e),
         }
         
-        // Try to unload the launchd daemon
+        // Try to unload the launchd daemon (current label first, then legacy)
+        let _ = std::process::Command::new("launchctl")
+            .args(["remove", "com.redd.block.helper"])
+            .output();
         let _ = std::process::Command::new("launchctl")
             .args(["remove", "org.reddfocus.block.helper"])
             .output();
