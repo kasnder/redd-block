@@ -3497,7 +3497,7 @@ body.ios .modal-content {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 16px 6px;
+    padding: 0px 0px 4px;
     font-size: 13px;
     color: var(--text-muted);
 }
@@ -3506,6 +3506,7 @@ body.ios .modal-content {
     flex: 1;
     text-align: center;
     font-size: 13px;
+    padding-bottom: 8px;
 }
 
 .settings-top-btn {
