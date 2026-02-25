@@ -2453,7 +2453,15 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
 }
 
 .selection-prompt svg {
+    display: block;
+    flex-shrink: 0;
     opacity: 0.5;
+}
+
+@media (min-width: 601px) {
+    .selection-prompt {
+        padding: 26px 0;
+    }
 }
 
 @media (max-width: 600px) {
