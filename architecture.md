@@ -418,6 +418,8 @@ This keeps override behavior deterministic in multi-block situations.
 - version compatibility checks via `EXPECTED_HELPER_VERSION` (currently `0.6.10`),
 - reinstall/update when helper is outdated.
 
+Before starting a block, the frontend (`src/app.js`) re-verifies helper availability when it believes the helper is available (via `check_helper_status`). This avoids using a stale “helper available” state (e.g. on Windows, where the helper is not restarted on crash). If a start-block attempt fails with a helper connection error (e.g. connection refused on Windows, os error 10061), the app clears the cached availability flag and shows a message directing the user to remove the helper in Settings and try again to reinstall, so the next Start block shows the install modal instead of repeating the raw error.
+
 ## 11.2 Runtime persistence
 
 - macOS: launch daemon registration and privileged helper path.
@@ -540,6 +542,7 @@ These reduce risk of system networking breakage and self-lockout.
 - schedule transitions are loop-driven (not edge-triggered interrupts), so boundary effects are interval-bounded,
 - browser-level caching can delay visible effect after hosts changes even when helper completed correctly,
 - helper upgrade mismatch can disable helper-available paths until reinstall/update,
+- on Windows, the helper process is not restarted on crash (scheduled task runs at logon only); if the helper exits, the app re-verifies before start block and on connection failure clears cached availability and shows instructions to remove then reinstall the helper,
 - desktop app-block timing still depends on effective blocked-app state transitions, not hosts model,
 - iOS behavior differs by API constraints and authorization state.
 
@@ -601,6 +604,7 @@ This section is intentionally non-technical and complete.
 - update helper when outdated,
 - uninstall helper now from settings,
 - helper background persistence after setup.
+- if the helper is unreachable when starting a block (e.g. connection refused on Windows), the app clears cached “helper available” state and shows instructions to remove the helper in Settings and try again to reinstall, avoiding repeated raw connection errors.
 
 ### 17.8 Uninstall and persistence behavior
 
