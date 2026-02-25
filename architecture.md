@@ -432,6 +432,78 @@ Uninstall command path:
 - attempt graceful helper `uninstall` command,
 - fallback to force cleanup path if needed.
 
+## 11.4 Desktop helper: full UI-to-helper flow (start, stop, override, install, uninstall)
+
+The flows below show the frontend (`src/app.js`), Tauri (`helper.rs`), and helper daemon (TCP 127.0.0.1:62222 on Windows, Unix socket on macOS). They reflect post-fix behavior: re-verify before start block when `helperAvailable` is true, and clear the cached flag plus a friendly message on connection failure.
+
+*If diagrams render with low contrast, view this file on GitHub or in a Mermaid preview (e.g. VS Code Mermaid extension) for better visibility.*
+
+**Start block (desktop)**
+
+```mermaid
+flowchart TD
+    A[User: Start block] --> B{helperAvailable?}
+    B -->|Yes| C[check_helper_status]
+    C --> D{Running and version_ok?}
+    D -->|No| E[helperAvailable = false]
+    E --> F[check_helper_status]
+    F --> G[Show install modal]
+    D -->|Yes| H[start_block_via_helper]
+    B -->|No| F
+    H --> I{Success?}
+    I -->|Yes| J[Add to activeBlocks, save]
+    I -->|No| K{Connection error?}
+    K -->|Yes| L[helperAvailable = false]
+    L --> M[Alert: remove helper in Settings, try again]
+    K -->|No| N[Alert: raw error]
+```
+
+**Stop block / Override**
+
+```mermaid
+flowchart TD
+    A[User: Stop or Override] --> B{Single or override-all?}
+    B -->|Single| C[clear_block_via_helper with blocklist_id]
+    B -->|Override all| D[clear_block_via_helper with null]
+    C --> E[Helper: clear_block, sync_hosts_file]
+    D --> E
+```
+
+**Helper install**
+
+```mermaid
+flowchart TD
+    A[User: Proceed in install modal] --> B[install_helper]
+    B --> C[Elevated script: kill old, copy, firewall, schtasks, start]
+    C --> D[Poll check_helper_status up to 15s]
+    D --> E{Responding?}
+    E -->|Yes| F[helperAvailable = true]
+    E -->|No| G[Return error]
+    F --> H[If pendingBlockData: start_block_via_helper]
+    H --> I{Success?}
+    I -->|No connection error| J[helperAvailable = false, friendly message]
+```
+
+**Helper uninstall**
+
+```mermaid
+flowchart TD
+    A[User: Uninstall helper in Settings] --> B[uninstall_helper]
+    B --> C{Helper reachable?}
+    C -->|Yes| D[Helper: restore hosts, self-remove]
+    C -->|No| E[force_cleanup: taskkill, delete task, remove dir]
+    D --> F[Return success]
+    E --> F
+    F --> G[helperAvailable = false in UI]
+```
+
+**Ongoing sync to helper** (called from various flows): `set_schedules_via_helper`, `set_blocked_apps_via_helper`, `set_keep_blocking_on_uninstall_via_helper`.
+
+- **Start block:** If we believe the helper is available we re-verify with `check_helper_status`; if that fails we set `helperAvailable = false` and show the install modal. If we then call `start_block_via_helper` and it fails with a connection error, we clear the flag and show the friendly “remove helper in Settings” message so the next attempt shows the modal.
+- **Stop / Override:** Scoped clear sends `blocklist_id`; override-all sends `blocklist_id: None`. Helper updates `manual_blocks` and runs `sync_hosts_file`.
+- **Install:** Elevated script installs and starts the helper; frontend polls until ping succeeds then sets `helperAvailable = true` and may start the pending block (with same connection-error handling).
+- **Uninstall:** Frontend sends uninstall command; if helper is unreachable the backend runs force_cleanup and still returns success; frontend sets `helperAvailable = false`.
+
 ---
 
 ## 12) App close vs app uninstall semantics (desktop)
