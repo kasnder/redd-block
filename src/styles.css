@@ -983,7 +983,9 @@ body.dark-mode .day-column.weekend {
     /* Move to right column */
 }
 
-
+.scheduler-content {
+    padding-top: 2px;
+}
 
 /* Blocklist Selector */
 .blocklist-selector {
