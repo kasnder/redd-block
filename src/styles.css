@@ -1234,9 +1234,19 @@ body.dark-mode .duration-mode-btn.active {
     gap: 6px;
 }
 
-#timed-controls #end-label {
-    display: inline-block;
-    transform: translateY(-4px);
+#timed-controls .duration-input-wrapper,
+#timed-controls .time-picker-row {
+    min-height: 36px;
+}
+
+#timed-controls .time-separator {
+    align-self: flex-end;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 36px;
+    padding-bottom: 0;
+    line-height: 1;
 }
 
 .time-label {
