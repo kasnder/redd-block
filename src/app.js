@@ -1,6 +1,7 @@
 // Tauri API imports - proper ES modules from @tauri-apps/api
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ask, message } from '@tauri-apps/plugin-dialog';
 import { open } from '@tauri-apps/plugin-shell';
@@ -109,6 +110,7 @@ const UI_ZOOM_MAX = 1.8;
 const UI_ZOOM_STEP = 0.1;
 const DEFAULT_UI_ZOOM = 1.0;
 let zoomToastHideTimeout = null;
+let nativeWebviewZoomSupported = null;
 
 // Week calendar state
 let currentWeekStart = null; // Date object for Monday of the displayed week
@@ -7734,7 +7736,23 @@ function getSavedUiZoom() {
 
 function applyUiZoom(scale) {
     const clamped = clampUiZoom(scale);
-    // Tauri uses Chromium/WebView2 (desktop), where CSS zoom is supported.
+
+    // On desktop (Windows and macOS), use native webview zoom so content scales correctly
+    // and behavior matches across platforms. Fall back to CSS zoom if unavailable (e.g. permission).
+    if (!isIOS && (document.body.classList.contains('windows') || document.body.classList.contains('mac'))) {
+        if (nativeWebviewZoomSupported !== false) {
+            getCurrentWebview().setZoom(clamped).then(() => {
+                nativeWebviewZoomSupported = true;
+                document.documentElement.style.zoom = '';
+            }).catch(() => {
+                nativeWebviewZoomSupported = false;
+                document.documentElement.style.zoom = String(clamped);
+            });
+            return;
+        }
+    }
+
+    // Fallback path (iOS or if native zoom isn't available).
     document.documentElement.style.zoom = String(clamped);
 }
 
