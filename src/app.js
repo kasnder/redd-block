@@ -780,8 +780,7 @@ function setupModalListeners() {
     });
 
     document.getElementById('blocklist-name').addEventListener('input', () => {
-        const nameErrorMsg = document.getElementById('blocklist-name-error');
-        if (nameErrorMsg) nameErrorMsg.classList.add('hidden');
+        document.getElementById('blocklist-name').classList.remove('input-error');
     });
 
     modalWebsiteInput.addEventListener('keydown', (e) => {
@@ -1075,7 +1074,17 @@ function setupModalListeners() {
 
     // Save button
     document.getElementById('save-blocklist-btn').addEventListener('click', () => {
+        const nameInput = document.getElementById('blocklist-name');
+        const name = nameInput.value.trim();
+        const nameEmpty = !name;
+        if (nameEmpty) {
+            nameInput.classList.add('input-error');
+        } else {
+            nameInput.classList.remove('input-error');
+        }
+
         // Auto-confirm any pending website input using the same validation flow as Enter/Space.
+        let websiteInvalid = false;
         const pendingWebsiteRaw = modalWebsiteInput.value.trim();
         if (pendingWebsiteRaw) {
             const pendingWebsite = cleanDomainInput(pendingWebsiteRaw);
@@ -1086,28 +1095,30 @@ function setupModalListeners() {
                     errorMsg.classList.remove('hidden');
                     setTimeout(() => errorMsg.classList.add('hidden'), 3000);
                 }
-                return; // Block save until user fixes/removes invalid website input.
-            }
+                websiteInvalid = true;
+            } else {
+                if (errorMsg) errorMsg.classList.add('hidden');
 
-            if (errorMsg) errorMsg.classList.add('hidden');
+                if (isProtectedDomain(pendingWebsite)) {
+                    modalWebsiteInput.value = '';
+                    modalWebsiteInput.placeholder = tSettings('cannotBlockDomainPlaceholder');
+                    modalWebsiteInput.classList.add('input-error');
+                    setTimeout(() => {
+                        modalWebsiteInput.placeholder = tSettings('placeholderWebsiteExample');
+                        modalWebsiteInput.classList.remove('input-error');
+                    }, 2000);
+                    return; // Block save so behavior matches explicit add interactions.
+                }
 
-            if (isProtectedDomain(pendingWebsite)) {
+                if (!modalWebsites.includes(pendingWebsite)) {
+                    modalWebsites.push(pendingWebsite);
+                    window.renderModalTags();
+                }
                 modalWebsiteInput.value = '';
-                modalWebsiteInput.placeholder = tSettings('cannotBlockDomainPlaceholder');
-                modalWebsiteInput.classList.add('input-error');
-                setTimeout(() => {
-                    modalWebsiteInput.placeholder = tSettings('placeholderWebsiteExample');
-                    modalWebsiteInput.classList.remove('input-error');
-                }, 2000);
-                return; // Block save so behavior matches explicit add interactions.
             }
-
-            if (!modalWebsites.includes(pendingWebsite)) {
-                modalWebsites.push(pendingWebsite);
-                window.renderModalTags();
-            }
-            modalWebsiteInput.value = '';
         }
+
+        if (nameEmpty || websiteInvalid) return;
 
         const pendingApp = modalAppInput.value.trim();
         if (pendingApp && !isProtectedApp(pendingApp) && !modalApps.includes(pendingApp)) {
@@ -1117,17 +1128,6 @@ function setupModalListeners() {
         } else {
             modalAppInput.value = '';
         }
-
-        const name = document.getElementById('blocklist-name').value.trim();
-        const nameErrorMsg = document.getElementById('blocklist-name-error');
-        if (!name) {
-            if (nameErrorMsg) {
-                nameErrorMsg.classList.remove('hidden');
-                setTimeout(() => nameErrorMsg.classList.add('hidden'), 3000);
-            }
-            return;
-        }
-        if (nameErrorMsg) nameErrorMsg.classList.add('hidden');
 
         const mode = 'blocklist'; // Allowlist mode not yet implemented
         const overrideType = document.getElementById('override-type').value;
@@ -4668,8 +4668,7 @@ function openBlocklistModal(blocklist = null) {
     document.getElementById('modal-title').textContent = blocklist ? tSettings('editBlocklist') : tSettings('createBlocklist');
 
     document.getElementById('blocklist-name').value = blocklist?.name || '';
-    const nameErr = document.getElementById('blocklist-name-error');
-    if (nameErr) nameErr.classList.add('hidden');
+    document.getElementById('blocklist-name').classList.remove('input-error');
 
     document.getElementById('override-type').value = blocklist?.overrideDifficulty?.type || 'random-words';
     document.getElementById('override-count').value = blocklist?.overrideDifficulty?.count || 10;
@@ -7111,7 +7110,6 @@ const SETTINGS_TRANSLATIONS = {
         placeholderWebsiteExample: 'e.g., facebook.com',
         placeholderAppExample: 'e.g., Safari',
         invalidDomainMsg: 'Please enter a valid domain (e.g. reddit.com)',
-        nameRequiredMsg: 'Give your blocklist a name',
         cannotBlockDomainPlaceholder: '⚠️ Can\'t block this domain!',
         cannotBlockSelfAppPlaceholder: '⚠️ Can\'t block ReDD Block itself!',
         // Start/schedule controls
@@ -7249,7 +7247,6 @@ const SETTINGS_TRANSLATIONS = {
         placeholderWebsiteExample: 'f.eks. facebook.com',
         placeholderAppExample: 'f.eks. Safari',
         invalidDomainMsg: 'Indtast et gyldigt domæne (f.eks. reddit.com)',
-        nameRequiredMsg: 'Giv din blokliste et navn',
         cannotBlockDomainPlaceholder: '⚠️ Dette domæne kan ikke blokeres!',
         cannotBlockSelfAppPlaceholder: '⚠️ ReDD Block kan ikke blokere sig selv!',
         // Start/schedule controls
@@ -7448,7 +7445,6 @@ function applySettingsLanguage() {
     setPlaceholder('pause-challenge-input', tSettings('typeHere'));
     setPlaceholder('override-all-challenge-input', tSettings('typeHere'));
     setText('website-input-error', tSettings('invalidDomainMsg'));
-    setText('blocklist-name-error', tSettings('nameRequiredMsg'));
 
     // Blocklist modal
     const modalTitle = document.getElementById('modal-title');
