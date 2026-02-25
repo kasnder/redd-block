@@ -905,7 +905,7 @@ function setupModalListeners() {
             warningEl.classList.add('hidden');
 
             if (type === 'random-words') {
-                hintEl.innerHTML = "E.g. 10 chars → 'shine great'";
+                hintEl.innerHTML = "E.g. 10 chars → 'shine star'";
             } else {
                 hintEl.innerHTML = "E.g. 10 chars → 'a982j3+fd'";
             }
@@ -4689,7 +4689,7 @@ function openBlocklistModal(blocklist = null) {
         overrideCountWarningEl.textContent = '';
 
         if (type === 'random-words') {
-            hintEl.innerHTML = "E.g. 10 chars → 'shine great'";
+            hintEl.innerHTML = "E.g. 10 chars → 'shine star'";
         } else {
             hintEl.innerHTML = "E.g. 10 chars → 'a982j3+fd'";
         }
