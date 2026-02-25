@@ -7111,6 +7111,7 @@ const SETTINGS_TRANSLATIONS = {
         placeholderWebsiteExample: 'e.g., facebook.com',
         placeholderAppExample: 'e.g., Safari',
         invalidDomainMsg: 'Please enter a valid domain (e.g. reddit.com)',
+        nameRequiredMsg: 'Give your blocklist a name',
         cannotBlockDomainPlaceholder: '⚠️ Can\'t block this domain!',
         cannotBlockSelfAppPlaceholder: '⚠️ Can\'t block ReDD Block itself!',
         // Start/schedule controls
@@ -7248,6 +7249,7 @@ const SETTINGS_TRANSLATIONS = {
         placeholderWebsiteExample: 'f.eks. facebook.com',
         placeholderAppExample: 'f.eks. Safari',
         invalidDomainMsg: 'Indtast et gyldigt domæne (f.eks. reddit.com)',
+        nameRequiredMsg: 'Giv din blokliste et navn',
         cannotBlockDomainPlaceholder: '⚠️ Dette domæne kan ikke blokeres!',
         cannotBlockSelfAppPlaceholder: '⚠️ ReDD Block kan ikke blokere sig selv!',
         // Start/schedule controls
@@ -7446,6 +7448,7 @@ function applySettingsLanguage() {
     setPlaceholder('pause-challenge-input', tSettings('typeHere'));
     setPlaceholder('override-all-challenge-input', tSettings('typeHere'));
     setText('website-input-error', tSettings('invalidDomainMsg'));
+    setText('blocklist-name-error', tSettings('nameRequiredMsg'));
 
     // Blocklist modal
     const modalTitle = document.getElementById('modal-title');
