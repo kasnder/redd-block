@@ -107,6 +107,7 @@ const DEFAULT_OVERRIDE_COUNT = 10;
 const TARGET_MAX_OVERRIDE_MINUTES = 30;
 const UI_ZOOM_MIN = 0.8;
 const UI_ZOOM_MAX = 1.8;
+const UI_ZOOM_MAX_DESKTOP = 1.5;  // cap on macOS/Windows (native webview zoom)
 const UI_ZOOM_STEP = 0.1;
 const DEFAULT_UI_ZOOM = 1.0;
 let zoomToastHideTimeout = null;
@@ -7724,8 +7725,13 @@ function applyTheme() {
     }
 }
 
+function getUiZoomMax() {
+    const isDesktop = document.body.classList.contains('windows') || document.body.classList.contains('mac');
+    return isDesktop ? UI_ZOOM_MAX_DESKTOP : UI_ZOOM_MAX;
+}
+
 function clampUiZoom(scale) {
-    return Math.min(UI_ZOOM_MAX, Math.max(UI_ZOOM_MIN, scale));
+    return Math.min(getUiZoomMax(), Math.max(UI_ZOOM_MIN, scale));
 }
 
 function getSavedUiZoom() {
