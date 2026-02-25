@@ -1938,6 +1938,12 @@ body.dark-mode .mode-tab.active {
     color: white;
 }
 
+body:not(.dark-mode) .segment-day-toggle.active:hover:not(:disabled):not([disabled]) {
+    background: hsl(229, 79%, 72%);
+    color: white;
+    border-color: hsl(229, 79%, 72%);
+}
+
 /* Schedule Repeat Section */
 .schedule-repeat-section {
     display: flex;
