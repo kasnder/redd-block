@@ -305,8 +305,8 @@ body.dark-mode .title-bar button:hover {
     flex-shrink: 0;
 }
 
-/* Stack on small screens (iPhone) */
-@media (max-width: 600px) {
+/* Stack on small screens (md breakpoint) */
+@media (max-width: 768px) {
     .grid-top-row {
         grid-template-columns: 1fr;
         gap: 12px;
@@ -414,16 +414,16 @@ body.ios .week-calendar-section {
 }
 
 /* Week nav responsive - must come after base rules */
-@media (max-width: 600px) {
+@media (max-width: 768px) {
     .week-nav {
         justify-content: flex-start;
         width: 100%;
-        margin-bottom: 4px;
+        margin-bottom: 8px;
     }
 
     .week-display {
         position: static;
-        font-size: 17px;
+        font-size: 20px;
         flex: 1;
     }
 
@@ -1878,7 +1878,7 @@ body.dark-mode .mode-tab.active {
     gap: 16px;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 768px) {
     .segment-row {
         flex-wrap: wrap;
         gap: 8px;
@@ -2490,13 +2490,13 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
     opacity: 0.5;
 }
 
-@media (min-width: 601px) {
+@media (min-width: 769px) {
     .selection-prompt {
         padding: 26px 0;
     }
 }
 
-@media (max-width: 600px) {
+@media (max-width: 768px) {
     .selection-prompt svg {
         transform: rotate(90deg);
     }
