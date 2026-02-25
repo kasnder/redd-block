@@ -2056,6 +2056,21 @@ body:not(.dark-mode) .segment-day-toggle.active:hover:not(:disabled):not([disabl
     display: none;
 }
 
+.repeat-date-wrapper.repeat-date-disabled {
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+.repeat-date-wrapper.repeat-date-disabled .repeat-date-input {
+    border: none;
+    background: rgba(128, 128, 128, 0.05);
+    cursor: default;
+}
+
+.repeat-date-wrapper.repeat-date-disabled .repeat-date-overlay {
+    color: var(--text-muted);
+}
+
 .repeat-date-input {
     padding: 6px 12px;
     border: 1px solid var(--border-color);

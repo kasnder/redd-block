@@ -1671,6 +1671,28 @@ function disableScheduleControls(disabled) {
         }
     }
 
+    // When schedule is active and repeat is "until date", grey out the date selector.
+    // Use the persisted active schedule first so this updates immediately after starting.
+    const dateWrapper = document.getElementById('repeat-date-wrapper');
+    const dateInput = document.getElementById('repeat-date-input');
+    if (dateWrapper && dateInput) {
+        const activeSchedule = selectedBlocklistId && appData.schedules
+            ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
+            : null;
+        const isDateRepeatActive = !!(activeSchedule && activeSchedule.repeatType === 'date');
+        const shouldDisableDateSelector = disabled && (isDateRepeatActive || scheduleRepeatType === 'date');
+
+        if (shouldDisableDateSelector) {
+            dateWrapper.classList.add('repeat-date-disabled');
+            dateInput.disabled = true;
+            dateInput.style.pointerEvents = 'none';
+        } else {
+            dateWrapper.classList.remove('repeat-date-disabled');
+            dateInput.disabled = false;
+            dateInput.style.pointerEvents = 'auto';
+        }
+    }
+
     // Disable Add button when schedule is active (activeScheduleSegmentCount > 0)
     if (addSegmentBtn) {
         const isScheduleActive = activeScheduleSegmentCount > 0;
