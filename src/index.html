@@ -509,11 +509,17 @@
 
                 <div class="form-group">
                     <label id="override-difficulty-label">Override Difficulty</label>
-                    <select id="override-type" class="form-select">
-                        <option id="override-option-random-words" value="random-words">Random Words</option>
-                        <option id="override-option-gibberish" value="gibberish">Random Gibberish</option>
-                        <option id="override-option-custom" value="custom">Custom Text</option>
-                    </select>
+                    <div class="override-type-row">
+                        <select id="override-type" class="form-select override-type-select">
+                            <option id="override-option-random-words" value="random-words">Random Words</option>
+                            <option id="override-option-gibberish" value="gibberish">Random Gibberish</option>
+                            <option id="override-option-custom" value="custom">Custom Text</option>
+                        </select>
+                        <div class="checkbox-option max-difficulty-checkbox-option" id="override-max-difficulty-wrap">
+                            <input type="checkbox" id="override-max-difficulty-checkbox">
+                            <span id="override-max-difficulty-label">Max difficulty</span>
+                        </div>
+                    </div>
                     <div class="input-with-suffix" id="override-count-wrapper">
                         <input type="number" id="override-count" class="form-input small" value="50" min="5" max="6600">
                         <span class="input-suffix" id="override-total-characters-label">total characters</span>

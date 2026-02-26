@@ -3710,6 +3710,65 @@ body.ios #advanced-options-content {
     accent-color: var(--accent-color);
 }
 
+/* Override type row: dropdown + max difficulty checkbox */
+.override-type-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 8px;
+}
+
+.override-type-row .override-type-select {
+    max-width: 200px;
+    flex-shrink: 0;
+}
+
+.max-difficulty-checkbox-option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 15px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    cursor: default;
+}
+
+/* Style "Max difficulty" text like "total characters" but bold; text cursor like copyable text */
+.max-difficulty-checkbox-option span {
+    text-transform: none;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: text;
+}
+
+.max-difficulty-checkbox-option input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--accent-color);
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+/* Count input non-interactive when max difficulty (not greyed out) */
+.override-count-max-mode,
+.override-count-max-mode input {
+    pointer-events: none;
+}
+
+/* Keep same dimensions when greyed out (avoid jump from border: none on .form-input-disabled) */
+.override-count-max-mode .form-input.form-input-disabled {
+    border: 1px solid rgba(128, 128, 128, 0.2);
+    box-sizing: border-box;
+}
+
+.max-difficulty-checkbox-option.max-difficulty-disabled {
+    pointer-events: none;
+    opacity: 0.7;
+    cursor: default;
+}
+
 /* Override All Button */
 .override-all-btn {
     display: flex;
