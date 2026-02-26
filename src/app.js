@@ -789,6 +789,16 @@ function setupModalListeners() {
     });
 
     modalWebsiteInput.addEventListener('keydown', (e) => {
+        // Backspace on empty input removes the last website tag (if not locked)
+        if (e.key === 'Backspace' && !modalWebsiteInput.value.length && modalWebsites.length > 0) {
+            const lastIdx = modalWebsites.length - 1;
+            const last = modalWebsites[lastIdx];
+            if (!window.lockedWebsites || !window.lockedWebsites.includes(last)) {
+                modalWebsites.splice(lastIdx, 1);
+                window.renderModalTags();
+                e.preventDefault();
+            }
+        }
         // Enter or Space confirms the website(s) — supports multiple domains separated by space, newline, or comma
         if ((e.key === 'Enter' || e.key === ' ') && modalWebsiteInput.value.trim()) {
             e.preventDefault();
@@ -822,6 +832,16 @@ function setupModalListeners() {
     });
 
     modalAppInput.addEventListener('keydown', (e) => {
+        // Backspace on empty input removes the last app tag (if not locked)
+        if (e.key === 'Backspace' && !modalAppInput.value.length && modalApps.length > 0) {
+            const lastIdx = modalApps.length - 1;
+            const last = modalApps[lastIdx];
+            if (!window.lockedApps || !window.lockedApps.includes(last)) {
+                modalApps.splice(lastIdx, 1);
+                window.renderModalTags();
+                e.preventDefault();
+            }
+        }
         if (e.key === 'Enter' && modalAppInput.value.trim()) {
             e.preventDefault();
             const app = modalAppInput.value.trim();
