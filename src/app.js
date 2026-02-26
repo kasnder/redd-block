@@ -1078,33 +1078,8 @@ function setupModalListeners() {
         }
 
         const type = e.target.value;
-        const customTextArea = document.getElementById('custom-override-text');
         const overrideCountInput = document.getElementById('override-count');
-        const overrideCountWrapper = document.getElementById('override-count-wrapper');
-        const hintEl = document.getElementById('override-count-hint');
-        const warningEl = document.getElementById('override-count-warning');
-        const maxChars = getMaxOverrideCharsForType(type);
-        overrideCountInput.max = String(maxChars);
-
-        if (type === 'custom') {
-            customTextArea.maxLength = getMaxOverrideCharsForType('custom');
-            customTextArea.classList.remove('hidden');
-            overrideCountWrapper.classList.add('hidden');
-            hintEl.classList.add('hidden');
-            warningEl.classList.add('hidden');
-            warningEl.textContent = '';
-        } else {
-            customTextArea.classList.add('hidden');
-            overrideCountWrapper.classList.remove('hidden');
-            hintEl.classList.remove('hidden');
-            warningEl.classList.add('hidden');
-
-            if (type === 'random-words') {
-                hintEl.innerHTML = "E.g. 10 chars → 'shine star'";
-            } else {
-                hintEl.innerHTML = "E.g. 10 chars → 'a982j3+fd'";
-            }
-        }
+        applyOverrideTypeUi(type);
 
         // Clamp to the new type-specific max when switching types.
         overrideCountInput.value = normalizeOverrideCount(overrideCountInput.value, type);
@@ -1116,48 +1091,38 @@ function setupModalListeners() {
             overrideCountInput.value = String(maxCount);
             overrideCountInput.max = String(maxCount);
             lastOverrideCountValue = overrideCountInput.value;
-            overrideCountWrapper.classList.add('override-count-max-mode');
-            overrideCountInput.classList.add('form-input-disabled');
-            overrideCountWrapper.querySelector('.input-suffix')?.classList.add('input-suffix-disabled');
-            overrideCountInput.setAttribute('tabindex', '-1');
+            setOverrideCountMaxMode(true);
         }
     });
     document.getElementById('override-max-difficulty-checkbox').addEventListener('change', (e) => {
         const checked = e.target.checked;
         const overrideTypeSelect = document.getElementById('override-type');
         const overrideCountInput = document.getElementById('override-count');
-        const overrideCountWrapper = document.getElementById('override-count-wrapper');
         if (checked) {
             lastOverrideTypeValueBeforeMaxDifficulty = overrideTypeSelect.value;
             lastOverrideCountValueBeforeMaxDifficulty = overrideCountInput.value.trim() || lastOverrideCountValueBeforeMaxDifficulty;
             if (overrideTypeSelect.value === 'custom') {
                 overrideTypeSelect.value = 'random-words';
-                overrideTypeSelect.dispatchEvent(new Event('change'));
             }
             removeOverrideCustomOption();
             const type = overrideTypeSelect.value;
+            applyOverrideTypeUi(type);
             const maxCount = getMaxOverrideCharsForType(type);
             overrideCountInput.value = String(maxCount);
             overrideCountInput.max = String(maxCount);
             lastOverrideCountValue = overrideCountInput.value;
-            overrideCountWrapper.classList.add('override-count-max-mode');
-            overrideCountInput.classList.add('form-input-disabled');
-            overrideCountWrapper.querySelector('.input-suffix')?.classList.add('input-suffix-disabled');
-            overrideCountInput.setAttribute('tabindex', '-1');
+            setOverrideCountMaxMode(true);
         } else {
             ensureOverrideCustomOptionPresent();
             const typeToRestore = lastOverrideTypeValueBeforeMaxDifficulty;
             overrideTypeSelect.value = typeToRestore;
-            overrideTypeSelect.dispatchEvent(new Event('change'));
+            applyOverrideTypeUi(typeToRestore);
             const maxChars = getMaxOverrideCharsForType(typeToRestore);
             overrideCountInput.max = String(maxChars);
             overrideCountInput.value = normalizeOverrideCount(String(lastOverrideCountValueBeforeMaxDifficulty), typeToRestore);
             lastOverrideCountValue = overrideCountInput.value;
             lastOverrideCountValueBeforeMaxDifficulty = overrideCountInput.value;
-            overrideCountWrapper.classList.remove('override-count-max-mode');
-            overrideCountInput.classList.remove('form-input-disabled');
-            overrideCountWrapper.querySelector('.input-suffix')?.classList.remove('input-suffix-disabled');
-            overrideCountInput.removeAttribute('tabindex');
+            setOverrideCountMaxMode(false);
         }
     });
     document.getElementById('custom-override-text').addEventListener('input', (e) => {
@@ -5060,22 +5025,18 @@ function openBlocklistModal(blocklist = null) {
     document.getElementById('blocklist-name').classList.remove('input-error');
     lastBlocklistNameValue = blocklist?.name || '';
 
-    document.getElementById('override-type').value = blocklist?.overrideDifficulty?.type || 'random-words';
-    document.getElementById('override-count').value = blocklist?.overrideDifficulty?.count || 10;
-    document.getElementById('custom-override-text').value = blocklist?.overrideDifficulty?.customText || '';
-
+    const normalizedDifficulty = cloneOverrideDifficulty(blocklist?.overrideDifficulty, 10);
+    document.getElementById('override-type').value = normalizedDifficulty.type;
+    document.getElementById('override-count').value = normalizedDifficulty.count;
+    document.getElementById('custom-override-text').value = normalizedDifficulty.customText || '';
     const maxDifficultyCb = document.getElementById('override-max-difficulty-checkbox');
-    const maxDifficulty = blocklist?.overrideDifficulty?.maxDifficulty === true;
+    const maxDifficulty = normalizedDifficulty.maxDifficulty === true;
     if (maxDifficultyCb) maxDifficultyCb.checked = maxDifficulty;
 
-    const type = blocklist?.overrideDifficulty?.type || 'random-words';
+    const type = normalizedDifficulty.type;
     const overrideCountField = document.getElementById('override-count');
     const customTextArea = document.getElementById('custom-override-text');
-    const overrideCountWrapper = document.getElementById('override-count-wrapper');
-    const hintEl = document.getElementById('override-count-hint');
-    const overrideCountWarningEl = document.getElementById('override-count-warning');
-    const maxChars = getMaxOverrideCharsForType(type);
-    overrideCountField.max = String(maxChars);
+    applyOverrideTypeUi(type);
     overrideCountField.value = normalizeOverrideCount(overrideCountField.value, type);
     customTextArea.maxLength = getMaxOverrideCharsForType('custom');
     customTextArea.value = normalizeCustomOverrideText(customTextArea.value);
@@ -5083,43 +5044,17 @@ function openBlocklistModal(blocklist = null) {
     lastCustomOverrideTextValue = customTextArea.value;
     lastOverrideTypeValue = document.getElementById('override-type').value;
 
-    if (type === 'custom') {
-        customTextArea.classList.remove('hidden');
-        overrideCountWrapper.classList.add('hidden');
-        hintEl.classList.add('hidden');
-        overrideCountWarningEl.classList.add('hidden');
-        overrideCountWarningEl.textContent = '';
-    } else {
-        customTextArea.classList.add('hidden');
-        overrideCountWrapper.classList.remove('hidden');
-        hintEl.classList.remove('hidden');
-        overrideCountWarningEl.classList.add('hidden');
-        overrideCountWarningEl.textContent = '';
-
-        if (type === 'random-words') {
-            hintEl.innerHTML = "E.g. 10 chars → 'shine star'";
-        } else {
-            hintEl.innerHTML = "E.g. 10 chars → 'a982j3+fd'";
-        }
-    }
-
     if (maxDifficulty) {
-        lastOverrideCountValueBeforeMaxDifficulty = blocklist?.overrideDifficulty?.countBeforeMax ?? 50;
-        lastOverrideTypeValueBeforeMaxDifficulty = blocklist?.overrideDifficulty?.typeBeforeMax ?? 'random-words';
+        lastOverrideCountValueBeforeMaxDifficulty = normalizedDifficulty.countBeforeMax ?? 50;
+        lastOverrideTypeValueBeforeMaxDifficulty = normalizedDifficulty.typeBeforeMax ?? 'random-words';
         removeOverrideCustomOption();
         const maxCount = getMaxOverrideCharsForType(type);
         overrideCountField.value = String(maxCount);
         overrideCountField.max = String(maxCount);
-        overrideCountWrapper.classList.add('override-count-max-mode');
-        overrideCountField.classList.add('form-input-disabled');
-        overrideCountWrapper.querySelector('.input-suffix')?.classList.add('input-suffix-disabled');
-        overrideCountField.setAttribute('tabindex', '-1');
+        setOverrideCountMaxMode(true);
     } else {
         ensureOverrideCustomOptionPresent();
-        overrideCountWrapper.classList.remove('override-count-max-mode');
-        overrideCountField.classList.remove('form-input-disabled');
-        overrideCountWrapper.querySelector('.input-suffix')?.classList.remove('input-suffix-disabled');
-        overrideCountField.removeAttribute('tabindex');
+        setOverrideCountMaxMode(false);
     }
     lastOverrideCountValue = String(overrideCountField.value);
 
@@ -5317,16 +5252,7 @@ function closeBlocklistModal() {
     lastOverrideCountValueBeforeMaxDifficulty = 50;
     lastOverrideTypeValueBeforeMaxDifficulty = 'random-words';
     ensureOverrideCustomOptionPresent();
-    const overrideCountWrapper = document.getElementById('override-count-wrapper');
-    const overrideCountInput = document.getElementById('override-count');
-    if (overrideCountWrapper) {
-        overrideCountWrapper.classList.remove('override-count-max-mode');
-        overrideCountWrapper.querySelector('.input-suffix')?.classList.remove('input-suffix-disabled');
-    }
-    if (overrideCountInput) {
-        overrideCountInput.classList.remove('form-input-disabled');
-        overrideCountInput.removeAttribute('tabindex');
-    }
+    setOverrideCountMaxMode(false);
 
     // Revert temporary live-preview edits if dialog closes without save.
     if (editingBlocklistId && blocklistModalPreviewSnapshot) {
@@ -6154,14 +6080,15 @@ function contentKey(blocklistId) {
     if (!bl) return '';
     const w = [...(bl.websites || [])].sort();
     const a = [...(bl.apps || [])].sort();
+    const diff = cloneOverrideDifficulty(bl.overrideDifficulty);
     const o = bl.overrideDifficulty
         ? {
-            t: bl.overrideDifficulty.type,
-            c: bl.overrideDifficulty.count,
-            m: bl.overrideDifficulty.maxDifficulty === true,
-            bc: bl.overrideDifficulty.countBeforeMax,
-            bt: bl.overrideDifficulty.typeBeforeMax,
-            x: bl.overrideDifficulty.customText
+            t: diff.type,
+            c: diff.count,
+            m: diff.maxDifficulty === true,
+            bc: diff.countBeforeMax,
+            bt: diff.typeBeforeMax,
+            x: diff.customText
         }
         : {};
     const sched = appData.schedules?.find(s => s.blocklistId === blocklistId);
@@ -6226,16 +6153,7 @@ function duplicateBlocklist(id) {
         apps: [...(blocklist.apps || [])],
         showItemDetails: blocklist.showItemDetails !== false,
         alwaysShowInSchedule: blocklist.alwaysShowInSchedule !== false,
-        overrideDifficulty: blocklist.overrideDifficulty
-            ? {
-                type: blocklist.overrideDifficulty.type || 'random-words',
-                count: blocklist.overrideDifficulty.count ?? 50,
-                maxDifficulty: blocklist.overrideDifficulty.maxDifficulty === true,
-                countBeforeMax: blocklist.overrideDifficulty.countBeforeMax,
-                typeBeforeMax: blocklist.overrideDifficulty.typeBeforeMax,
-                customText: blocklist.overrideDifficulty.customText
-            }
-            : { type: 'random-words', count: 50 }
+        overrideDifficulty: cloneOverrideDifficulty(blocklist.overrideDifficulty)
     };
 
     appData.blocklists.push(duplicate);
