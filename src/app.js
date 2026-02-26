@@ -751,6 +751,22 @@ function parseDomainList(raw) {
     return raw.split(/\s+|,/).map(s => cleanDomainInput(s)).filter(Boolean);
 }
 
+/** Process raw website input: parse, validate, classify. Returns result for keydown/save handlers. */
+function processWebsiteInput(raw) {
+    const domains = parseDomainList(raw);
+    const invalid = domains.filter(d => !isValidDomain(d));
+    const valid = domains.filter(d => isValidDomain(d));
+    const protectedList = valid.filter(d => isProtectedDomain(d));
+    const toAdd = valid.filter(d => !isProtectedDomain(d));
+    return {
+        invalid,
+        toAdd,
+        websiteInvalid: invalid.length > 0,
+        inputValueToSet: invalid.length === 0 ? '' : invalid.join(' '),
+        hadProtected: protectedList.length > 0
+    };
+}
+
 // Modal listeners
 function setupModalListeners() {
     let modalWebsites = [];
@@ -776,17 +792,10 @@ function setupModalListeners() {
         // Enter or Space confirms the website(s) — supports multiple domains separated by space, newline, or comma
         if ((e.key === 'Enter' || e.key === ' ') && modalWebsiteInput.value.trim()) {
             e.preventDefault();
-            const raw = modalWebsiteInput.value.trim();
-            const domains = parseDomainList(raw);
+            const result = processWebsiteInput(modalWebsiteInput.value.trim());
             const errorMsg = document.getElementById('website-input-error');
 
-            const invalid = domains.filter(d => !isValidDomain(d));
-            const valid = domains.filter(d => isValidDomain(d));
-            const protectedList = valid.filter(d => isProtectedDomain(d));
-            const toAdd = valid.filter(d => !isProtectedDomain(d));
-
-            // Only show error if at least one parsed item is invalid
-            if (invalid.length > 0) {
+            if (result.websiteInvalid) {
                 if (errorMsg) {
                     errorMsg.classList.remove('hidden');
                     setTimeout(() => errorMsg.classList.add('hidden'), 3000);
@@ -795,7 +804,7 @@ function setupModalListeners() {
                 if (errorMsg) errorMsg.classList.add('hidden');
             }
 
-            if (protectedList.length > 0) {
+            if (result.hadProtected) {
                 modalWebsiteInput.placeholder = tSettings('cannotBlockDomainPlaceholder');
                 modalWebsiteInput.classList.add('input-error');
                 setTimeout(() => {
@@ -804,18 +813,11 @@ function setupModalListeners() {
                 }, 2000);
             }
 
-            toAdd.forEach(website => {
-                if (!modalWebsites.includes(website)) {
-                    modalWebsites.push(website);
-                }
+            result.toAdd.forEach(website => {
+                if (!modalWebsites.includes(website)) modalWebsites.push(website);
             });
-            if (toAdd.length > 0) window.renderModalTags();
-            // Clear input when all valid; otherwise keep only the invalid part(s) so user can fix them
-            if (invalid.length === 0) {
-                modalWebsiteInput.value = '';
-            } else {
-                modalWebsiteInput.value = invalid.join(' ');
-            }
+            if (result.toAdd.length > 0) window.renderModalTags();
+            modalWebsiteInput.value = result.inputValueToSet;
         }
     });
 
@@ -1087,16 +1089,10 @@ function setupModalListeners() {
         let websiteInvalid = false;
         const pendingWebsiteRaw = modalWebsiteInput.value.trim();
         if (pendingWebsiteRaw) {
-            const domains = parseDomainList(pendingWebsiteRaw);
+            const result = processWebsiteInput(pendingWebsiteRaw);
             const errorMsg = document.getElementById('website-input-error');
 
-            const invalid = domains.filter(d => !isValidDomain(d));
-            const valid = domains.filter(d => isValidDomain(d));
-            const protectedList = valid.filter(d => isProtectedDomain(d));
-            const toAdd = valid.filter(d => !isProtectedDomain(d));
-
-            // Only flag error / show message if at least one parsed domain is invalid
-            if (invalid.length > 0) {
+            if (result.websiteInvalid) {
                 if (errorMsg) {
                     errorMsg.classList.remove('hidden');
                     setTimeout(() => errorMsg.classList.add('hidden'), 3000);
@@ -1106,7 +1102,7 @@ function setupModalListeners() {
                 if (errorMsg) errorMsg.classList.add('hidden');
             }
 
-            if (protectedList.length > 0) {
+            if (result.hadProtected) {
                 modalWebsiteInput.value = '';
                 modalWebsiteInput.placeholder = tSettings('cannotBlockDomainPlaceholder');
                 modalWebsiteInput.classList.add('input-error');
@@ -1117,18 +1113,11 @@ function setupModalListeners() {
                 return; // Block save so behavior matches explicit add interactions.
             }
 
-            toAdd.forEach(pendingWebsite => {
-                if (!modalWebsites.includes(pendingWebsite)) {
-                    modalWebsites.push(pendingWebsite);
-                }
+            result.toAdd.forEach(pendingWebsite => {
+                if (!modalWebsites.includes(pendingWebsite)) modalWebsites.push(pendingWebsite);
             });
-            if (toAdd.length > 0) window.renderModalTags();
-            // Clear input when all valid; otherwise keep only the invalid part(s) so user can fix them
-            if (invalid.length === 0) {
-                modalWebsiteInput.value = '';
-            } else {
-                modalWebsiteInput.value = invalid.join(' ');
-            }
+            if (result.toAdd.length > 0) window.renderModalTags();
+            modalWebsiteInput.value = result.inputValueToSet;
         }
 
         if (nameEmpty || websiteInvalid) return;
