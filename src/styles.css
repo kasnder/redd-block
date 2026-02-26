@@ -2618,22 +2618,7 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
 .blocklist-actions {
     display: flex;
     gap: 4px;
-}
-
-.blocklist-actions .delete {
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.2s ease;
-}
-
-.blocklist-card:hover .blocklist-actions .delete {
-    opacity: 1;
-    pointer-events: auto;
-}
-
-body.ios .blocklist-actions .delete {
-    opacity: 1;
-    pointer-events: auto;
+    align-items: center;
 }
 
 .blocklist-action-btn {
@@ -2661,6 +2646,48 @@ body.ios .blocklist-actions .delete {
 }
 
 .blocklist-action-btn.delete:hover {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+}
+
+.blocklist-menu-wrapper {
+    position: relative;
+}
+
+.blocklist-menu {
+    position: absolute;
+    right: 42px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--popover-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    min-width: 120px;
+    padding: 4px;
+    z-index: 30;
+}
+
+.blocklist-menu-item {
+    width: 100%;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    border-radius: 6px;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    text-align: left;
+}
+
+.blocklist-menu-item:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.blocklist-menu-item.delete-blocklist-item:hover {
     background: rgba(239, 68, 68, 0.1);
     color: #ef4444;
 }

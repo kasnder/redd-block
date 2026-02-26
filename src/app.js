@@ -595,6 +595,13 @@ function setupEventListeners() {
         }
     });
 
+    // Close blocklist card menus when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.blocklist-menu-wrapper')) {
+            closeAllBlocklistMenus();
+        }
+    });
+
     // ESC: close blocklist add/edit modal if open, otherwise deselect blocklist
     document.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape') return;
@@ -6987,12 +6994,25 @@ function renderBlocklists() {
           <div class="blocklist-meta">${escapeHtml(metaText)}</div>
         </div>
         <div class="blocklist-actions">
-          <button class="blocklist-action-btn delete" title="Delete">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-            </svg>
-          </button>
+          <div class="blocklist-menu-wrapper">
+            <button class="blocklist-action-btn blocklist-menu-btn" title="Blocklist options">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="1"></circle>
+                <circle cx="12" cy="5" r="1"></circle>
+                <circle cx="12" cy="19" r="1"></circle>
+              </svg>
+            </button>
+            <div class="blocklist-menu hidden">
+              <button class="blocklist-menu-item delete-blocklist-item" title="Delete">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 6h18"></path>
+                  <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                  <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                </svg>
+                Delete
+              </button>
+            </div>
+          </div>
           <button class="blocklist-action-btn edit-btn" title="Edit">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
@@ -7022,15 +7042,25 @@ function renderBlocklists() {
             openBlocklistModal(blocklist);
         });
 
-        card.querySelector('.delete').addEventListener('click', (e) => {
+        card.querySelector('.blocklist-menu-btn').addEventListener('click', (e) => {
             e.stopPropagation();
+            const menu = card.querySelector('.blocklist-menu');
+            if (!menu) return;
+            const wasHidden = menu.classList.contains('hidden');
+            closeAllBlocklistMenus();
+            if (wasHidden) menu.classList.remove('hidden');
+        });
+
+        card.querySelector('.delete-blocklist-item').addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeAllBlocklistMenus();
             deleteBlocklist(id);
         });
 
         // Drag and drop using mouse events on document
         card.addEventListener('mousedown', (e) => {
             // Don't start drag if clicking on buttons
-            if (e.target.closest('.edit-btn') || e.target.closest('.delete')) return;
+            if (e.target.closest('.edit-btn') || e.target.closest('.blocklist-menu-btn') || e.target.closest('.blocklist-menu')) return;
             if (e.target.closest('.blocklist-actions')) return;
             if (e.button !== 0) return; // Only left click
 
@@ -7077,6 +7107,12 @@ function renderBlocklists() {
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
         });
+    });
+}
+
+function closeAllBlocklistMenus() {
+    document.querySelectorAll('.blocklist-menu:not(.hidden)').forEach(menu => {
+        menu.classList.add('hidden');
     });
 }
 
