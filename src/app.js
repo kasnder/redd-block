@@ -1467,9 +1467,7 @@ function setupModalListeners() {
         renderTags(modalWebsitesTags, modalWebsites, (idx) => {
             const value = modalWebsites[idx];
             if (window.lockedWebsites && window.lockedWebsites.includes(value)) {
-                modalWebsites.splice(idx, 1);
-                window.renderModalTags();
-                return;
+                return; // Do not remove locked items; do not push undo.
             }
             if (!blocklistModalApplyingUndo) {
                 blocklistModalUndoStack.push({
@@ -1487,9 +1485,7 @@ function setupModalListeners() {
         renderTags(modalAppsTags, modalApps, (idx) => {
             const value = modalApps[idx];
             if (window.lockedApps && window.lockedApps.includes(value)) {
-                modalApps.splice(idx, 1);
-                window.renderModalTags();
-                return;
+                return; // Do not remove locked items; do not push undo.
             }
             if (!blocklistModalApplyingUndo) {
                 blocklistModalUndoStack.push({
