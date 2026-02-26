@@ -86,6 +86,13 @@ window.__REDDBLOCK_INTERNALS__ = {
 let selectedBlocklistId = null;
 let editingBlocklistId = null;
 let blocklistModalPreviewSnapshot = null;
+/** Blocklist modal undo: session-scoped stack and "last" values for recording previous state. */
+let blocklistModalUndoStack = [];
+let blocklistModalApplyingUndo = false;
+let lastBlocklistNameValue = '';
+let lastOverrideCountValue = '';
+let lastCustomOverrideTextValue = '';
+let lastOverrideTypeValue = '';
 let overrideBlockId = null;
 /** Blocklist id to pass to helper when confirming single-block override (set when opening modal). */
 let overrideBlocklistIdForHelper = null;
@@ -603,6 +610,64 @@ function setupEventListeners() {
         }
     });
 
+    // Ctrl+Z / Cmd+Z: undo in blocklist add/edit modal (session-scoped).
+    // Use capture phase so we run before the input's native undo (which would undo character-by-character).
+    // Rule: clear pending (unsaved) text in website/app fields before undoing stack actions. Prefer clearing
+    // the focused field first, then clear any other field that still has pending text, then pop stack.
+    document.addEventListener('keydown', (e) => {
+        const blocklistModal = document.getElementById('blocklist-modal');
+        if (!blocklistModal || blocklistModal.classList.contains('hidden')) return;
+        const isUndo = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey;
+        if (!isUndo) return;
+
+        const websiteInput = document.getElementById('modal-website-input');
+        const appInput = document.getElementById('modal-app-input');
+        const target = e.target;
+        const websiteHasPending = websiteInput && websiteInput.value.trim().length > 0;
+        const appHasPending = appInput && appInput.value.trim().length > 0;
+
+        // 1) Clear the focused field if it has pending text (so one Ctrl+Z clears where you're typing)
+        if ((target === websiteInput || document.activeElement === websiteInput) && websiteHasPending) {
+            websiteInput.value = '';
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+        if ((target === appInput || document.activeElement === appInput) && appHasPending) {
+            appInput.value = '';
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+
+        // 2) If any field still has pending text, clear it before we touch the stack (so we don't undo
+        //    a tag add/remove while leaving unsaved text in the other field)
+        if (websiteHasPending) {
+            websiteInput.value = '';
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+        if (appHasPending) {
+            appInput.value = '';
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+
+        // 3) Both fields empty of pending text — pop stack
+        if (blocklistModalUndoStack.length > 0) {
+            blocklistModalApplyingUndo = true;
+            const entry = blocklistModalUndoStack.pop();
+            try {
+                entry.undo();
+            } finally {
+                blocklistModalApplyingUndo = false;
+            }
+            e.preventDefault();
+        }
+    }, true);
+
     // Duration picker - input change
     const durationInput = document.getElementById('duration-minutes-input');
     if (durationInput) {
@@ -785,7 +850,20 @@ function setupModalListeners() {
     });
 
     document.getElementById('blocklist-name').addEventListener('input', () => {
-        document.getElementById('blocklist-name').classList.remove('input-error');
+        const nameInput = document.getElementById('blocklist-name');
+        nameInput.classList.remove('input-error');
+        if (!blocklistModalApplyingUndo) {
+            const previous = lastBlocklistNameValue;
+            blocklistModalUndoStack.push({
+                type: 'name',
+                undo: () => {
+                    nameInput.value = previous;
+                    lastBlocklistNameValue = previous;
+                    nameInput.classList.remove('input-error');
+                }
+            });
+        }
+        lastBlocklistNameValue = nameInput.value;
     });
 
     modalWebsiteInput.addEventListener('keydown', (e) => {
@@ -794,6 +872,15 @@ function setupModalListeners() {
             const lastIdx = modalWebsites.length - 1;
             const last = modalWebsites[lastIdx];
             if (!window.lockedWebsites || !window.lockedWebsites.includes(last)) {
+                if (!blocklistModalApplyingUndo) {
+                    blocklistModalUndoStack.push({
+                        type: 'website',
+                        undo: () => {
+                            modalWebsites.splice(lastIdx, 0, last);
+                            window.renderModalTags();
+                        }
+                    });
+                }
                 modalWebsites.splice(lastIdx, 1);
                 window.renderModalTags();
                 e.preventDefault();
@@ -823,10 +910,25 @@ function setupModalListeners() {
                 }, 2000);
             }
 
-            result.toAdd.forEach(website => {
-                if (!modalWebsites.includes(website)) modalWebsites.push(website);
-            });
-            if (result.toAdd.length > 0) window.renderModalTags();
+            if (result.toAdd.length > 0) {
+                if (!blocklistModalApplyingUndo) {
+                    const toAddCopy = [...result.toAdd];
+                    blocklistModalUndoStack.push({
+                        type: 'website',
+                        undo: () => {
+                            toAddCopy.forEach(w => {
+                                const i = modalWebsites.indexOf(w);
+                                if (i !== -1) modalWebsites.splice(i, 1);
+                            });
+                            window.renderModalTags();
+                        }
+                    });
+                }
+                result.toAdd.forEach(website => {
+                    if (!modalWebsites.includes(website)) modalWebsites.push(website);
+                });
+                window.renderModalTags();
+            }
             modalWebsiteInput.value = result.inputValueToSet;
         }
     });
@@ -837,6 +939,15 @@ function setupModalListeners() {
             const lastIdx = modalApps.length - 1;
             const last = modalApps[lastIdx];
             if (!window.lockedApps || !window.lockedApps.includes(last)) {
+                if (!blocklistModalApplyingUndo) {
+                    blocklistModalUndoStack.push({
+                        type: 'app',
+                        undo: () => {
+                            modalApps.splice(lastIdx, 0, last);
+                            window.renderModalTags();
+                        }
+                    });
+                }
                 modalApps.splice(lastIdx, 1);
                 window.renderModalTags();
                 e.preventDefault();
@@ -857,6 +968,16 @@ function setupModalListeners() {
                 return;
             }
             if (!modalApps.includes(app)) {
+                if (!blocklistModalApplyingUndo) {
+                    blocklistModalUndoStack.push({
+                        type: 'app',
+                        undo: () => {
+                            const i = modalApps.indexOf(app);
+                            if (i !== -1) modalApps.splice(i, 1);
+                            window.renderModalTags();
+                        }
+                    });
+                }
                 modalApps.push(app);
                 window.renderModalTags();
             }
@@ -881,6 +1002,16 @@ function setupModalListeners() {
                             modalApps.splice(i, 1);
                         }
                     }
+                    if (!blocklistModalApplyingUndo) {
+                        blocklistModalUndoStack.push({
+                            type: 'app',
+                            undo: () => {
+                                const i = modalApps.indexOf(label);
+                                if (i !== -1) modalApps.splice(i, 1);
+                                window.renderModalTags();
+                            }
+                        });
+                    }
                     modalApps.push(label);
                     window.renderModalTags();
                 }
@@ -893,6 +1024,20 @@ function setupModalListeners() {
         modalBrowseBtn.addEventListener('click', async () => {
             const appNames = await tauriAPI.openAppPicker();
             if (appNames && appNames.length > 0) {
+                const toAdd = appNames.filter(n => !modalApps.includes(n));
+                if (toAdd.length > 0 && !blocklistModalApplyingUndo) {
+                    const toAddCopy = [...toAdd];
+                    blocklistModalUndoStack.push({
+                        type: 'app',
+                        undo: () => {
+                            toAddCopy.forEach(a => {
+                                const i = modalApps.indexOf(a);
+                                if (i !== -1) modalApps.splice(i, 1);
+                            });
+                            window.renderModalTags();
+                        }
+                    });
+                }
                 let added = false;
                 for (const appName of appNames) {
                     if (!modalApps.includes(appName)) {
@@ -908,6 +1053,19 @@ function setupModalListeners() {
     }
     // Override type
     document.getElementById('override-type').addEventListener('change', (e) => {
+        const overrideTypeSelect = e.target;
+        const previousType = lastOverrideTypeValue;
+        if (!blocklistModalApplyingUndo) {
+            blocklistModalUndoStack.push({
+                type: 'override-type',
+                undo: () => {
+                    overrideTypeSelect.value = previousType;
+                    lastOverrideTypeValue = previousType;
+                    overrideTypeSelect.dispatchEvent(new Event('change'));
+                }
+            });
+        }
+
         const type = e.target.value;
         const customTextArea = document.getElementById('custom-override-text');
         const overrideCountInput = document.getElementById('override-count');
@@ -939,8 +1097,32 @@ function setupModalListeners() {
 
         // Clamp to the new type-specific max when switching types.
         overrideCountInput.value = normalizeOverrideCount(overrideCountInput.value, type);
+        lastOverrideTypeValue = overrideTypeSelect.value;
     });
     document.getElementById('custom-override-text').addEventListener('input', (e) => {
+        const customTextArea = e.target;
+        const previous = lastCustomOverrideTextValue;
+        if (!blocklistModalApplyingUndo) {
+            blocklistModalUndoStack.push({
+                type: 'custom-override-text',
+                undo: () => {
+                    customTextArea.value = previous;
+                    lastCustomOverrideTextValue = previous;
+                    const warningEl = document.getElementById('override-count-warning');
+                    const maxChars = getMaxOverrideCharsForType('custom');
+                    if (previous.length >= maxChars) {
+                        const charsPerMinute = getTypingCharsPerMinuteForType('custom');
+                        const estimatedMinutes = Math.ceil(maxChars / charsPerMinute);
+                        warningEl.textContent = `Max is ${maxChars} characters so it's still possible to override in case of emergency (takes you ~${estimatedMinutes} minutes to type).`;
+                        warningEl.classList.remove('hidden');
+                    } else {
+                        warningEl.classList.add('hidden');
+                        warningEl.textContent = '';
+                    }
+                }
+            });
+        }
+
         const warningEl = document.getElementById('override-count-warning');
         const maxChars = getMaxOverrideCharsForType('custom');
         const charsPerMinute = getTypingCharsPerMinuteForType('custom');
@@ -958,6 +1140,7 @@ function setupModalListeners() {
             warningEl.classList.add('hidden');
             warningEl.textContent = '';
         }
+        lastCustomOverrideTextValue = e.target.value;
     });
 
     // Override count blur on enter
@@ -967,6 +1150,19 @@ function setupModalListeners() {
         }
     });
     document.getElementById('override-count').addEventListener('input', (e) => {
+        const overrideCountInput = e.target;
+        const previous = lastOverrideCountValue;
+        const current = overrideCountInput.value;
+        if (!blocklistModalApplyingUndo && previous !== current) {
+            blocklistModalUndoStack.push({
+                type: 'override-count',
+                undo: () => {
+                    overrideCountInput.value = previous;
+                    lastOverrideCountValue = previous;
+                }
+            });
+        }
+
         const warningEl = document.getElementById('override-count-warning');
         const overrideType = document.getElementById('override-type')?.value || 'random-words';
         const maxChars = getMaxOverrideCharsForType(overrideType);
@@ -975,6 +1171,7 @@ function setupModalListeners() {
         if (rawValue === '') {
             warningEl.classList.add('hidden');
             warningEl.textContent = '';
+            lastOverrideCountValue = e.target.value;
             return;
         }
 
@@ -985,11 +1182,11 @@ function setupModalListeners() {
             e.target.value = maxChars;
             warningEl.textContent = `Max is ${maxChars} characters so it's still possible to override in case of emergency (takes you ~${estimatedMinutes} minutes to type).`;
             warningEl.classList.remove('hidden');
-            return;
+        } else {
+            warningEl.classList.add('hidden');
+            warningEl.textContent = '';
         }
-
-        warningEl.classList.add('hidden');
-        warningEl.textContent = '';
+        lastOverrideCountValue = e.target.value;
     });
     document.getElementById('override-count').addEventListener('blur', (e) => {
         const overrideType = document.getElementById('override-type')?.value || 'random-words';
@@ -1133,6 +1330,21 @@ function setupModalListeners() {
                 return; // Block save so behavior matches explicit add interactions.
             }
 
+            if (result.toAdd.length > 0) {
+                if (!blocklistModalApplyingUndo) {
+                    const toAddCopy = [...result.toAdd];
+                    blocklistModalUndoStack.push({
+                        type: 'website',
+                        undo: () => {
+                            toAddCopy.forEach(w => {
+                                const i = modalWebsites.indexOf(w);
+                                if (i !== -1) modalWebsites.splice(i, 1);
+                            });
+                            window.renderModalTags();
+                        }
+                    });
+                }
+            }
             result.toAdd.forEach(pendingWebsite => {
                 if (!modalWebsites.includes(pendingWebsite)) modalWebsites.push(pendingWebsite);
             });
@@ -1144,6 +1356,16 @@ function setupModalListeners() {
 
         const pendingApp = modalAppInput.value.trim();
         if (pendingApp && !isProtectedApp(pendingApp) && !modalApps.includes(pendingApp)) {
+            if (!blocklistModalApplyingUndo) {
+                blocklistModalUndoStack.push({
+                    type: 'app',
+                    undo: () => {
+                        const i = modalApps.indexOf(pendingApp);
+                        if (i !== -1) modalApps.splice(i, 1);
+                        window.renderModalTags();
+                    }
+                });
+            }
             modalApps.push(pendingApp);
             modalAppInput.value = '';
             window.renderModalTags();
@@ -1243,11 +1465,41 @@ function setupModalListeners() {
 
     window.renderModalTags = () => {
         renderTags(modalWebsitesTags, modalWebsites, (idx) => {
+            const value = modalWebsites[idx];
+            if (window.lockedWebsites && window.lockedWebsites.includes(value)) {
+                modalWebsites.splice(idx, 1);
+                window.renderModalTags();
+                return;
+            }
+            if (!blocklistModalApplyingUndo) {
+                blocklistModalUndoStack.push({
+                    type: 'website',
+                    undo: () => {
+                        modalWebsites.splice(idx, 0, value);
+                        window.renderModalTags();
+                    }
+                });
+            }
             modalWebsites.splice(idx, 1);
             window.renderModalTags();
         }, window.lockedWebsites);
 
         renderTags(modalAppsTags, modalApps, (idx) => {
+            const value = modalApps[idx];
+            if (window.lockedApps && window.lockedApps.includes(value)) {
+                modalApps.splice(idx, 1);
+                window.renderModalTags();
+                return;
+            }
+            if (!blocklistModalApplyingUndo) {
+                blocklistModalUndoStack.push({
+                    type: 'app',
+                    undo: () => {
+                        modalApps.splice(idx, 0, value);
+                        window.renderModalTags();
+                    }
+                });
+            }
             modalApps.splice(idx, 1);
             window.renderModalTags();
         }, window.lockedApps);
@@ -4736,6 +4988,7 @@ function openBlocklistModal(blocklist = null) {
 
     document.getElementById('blocklist-name').value = blocklist?.name || '';
     document.getElementById('blocklist-name').classList.remove('input-error');
+    lastBlocklistNameValue = blocklist?.name || '';
 
     document.getElementById('override-type').value = blocklist?.overrideDifficulty?.type || 'random-words';
     document.getElementById('override-count').value = blocklist?.overrideDifficulty?.count || 10;
@@ -4752,6 +5005,9 @@ function openBlocklistModal(blocklist = null) {
     overrideCountField.value = normalizeOverrideCount(overrideCountField.value, type);
     customTextArea.maxLength = getMaxOverrideCharsForType('custom');
     customTextArea.value = normalizeCustomOverrideText(customTextArea.value);
+    lastOverrideCountValue = String(overrideCountField.value);
+    lastCustomOverrideTextValue = customTextArea.value;
+    lastOverrideTypeValue = document.getElementById('override-type').value;
 
     if (type === 'custom') {
         customTextArea.classList.remove('hidden');
@@ -4954,6 +5210,13 @@ function openBlocklistModal(blocklist = null) {
 
 // Close blocklist modal
 function closeBlocklistModal() {
+    blocklistModalUndoStack.length = 0;
+    blocklistModalApplyingUndo = false;
+    lastBlocklistNameValue = '';
+    lastOverrideCountValue = '';
+    lastCustomOverrideTextValue = '';
+    lastOverrideTypeValue = '';
+
     // Revert temporary live-preview edits if dialog closes without save.
     if (editingBlocklistId && blocklistModalPreviewSnapshot) {
         const bl = appData.blocklists.find(b => b.id === editingBlocklistId);
