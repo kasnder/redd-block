@@ -5958,6 +5958,83 @@ function getMaxOverrideCharsForType(type) {
     return charsPerMinute * TARGET_MAX_OVERRIDE_MINUTES;
 }
 
+// Compute next " - Copy N" name for duplicating a blocklist (e.g. "test" -> "test - Copy 1")
+function getNextCopyName(baseName) {
+    const copySuffix = ' - Copy ';
+    let maxN = 0;
+    for (const bl of appData.blocklists) {
+        if (!bl.name.startsWith(baseName + copySuffix)) continue;
+        const rest = bl.name.slice((baseName + copySuffix).length);
+        const match = /^(\d+)$/.exec(rest);
+        if (match) maxN = Math.max(maxN, parseInt(match[1], 10));
+    }
+    return baseName + copySuffix + (maxN + 1);
+}
+
+function duplicateBlocklist(id) {
+    const blocklist = appData.blocklists.find(bl => bl.id === id);
+    if (!blocklist) return;
+
+    const newId = generateId();
+    const newName = getNextCopyName(blocklist.name);
+
+    const duplicate = {
+        id: newId,
+        name: newName,
+        mode: blocklist.mode || 'blocklist',
+        color: blocklist.color ?? null,
+        emoji: blocklist.emoji ?? '🚫',
+        websites: [...(blocklist.websites || [])],
+        apps: [...(blocklist.apps || [])],
+        showItemDetails: blocklist.showItemDetails !== false,
+        alwaysShowInSchedule: blocklist.alwaysShowInSchedule !== false,
+        overrideDifficulty: blocklist.overrideDifficulty
+            ? {
+                type: blocklist.overrideDifficulty.type || 'random-words',
+                count: blocklist.overrideDifficulty.count ?? 50,
+                customText: blocklist.overrideDifficulty.type === 'custom' ? blocklist.overrideDifficulty.customText : undefined
+            }
+            : { type: 'random-words', count: 50 }
+    };
+
+    const sourceIndex = appData.blocklists.findIndex(bl => bl.id === id);
+    const insertIndex = sourceIndex + 1;
+    appData.blocklists.splice(insertIndex, 0, duplicate);
+
+    // Copy schedule if present (segments, repeat; duplicate is never active)
+    const existingSchedule = appData.schedules?.find(s => s.blocklistId === id);
+    if (existingSchedule && existingSchedule.segments && existingSchedule.segments.length > 0) {
+        const newSchedule = {
+            id: crypto.randomUUID(),
+            blocklistId: newId,
+            segments: existingSchedule.segments.map(seg => ({
+                startHour: seg.startHour,
+                startMinute: seg.startMinute,
+                endHour: seg.endHour,
+                endMinute: seg.endMinute,
+                days: [...(seg.days || [])]
+            })),
+            repeatType: existingSchedule.repeatType || 'no',
+            repeatDate: existingSchedule.repeatType === 'date' && existingSchedule.repeatDate
+                ? new Date(existingSchedule.repeatDate.getTime ? existingSchedule.repeatDate.getTime() : existingSchedule.repeatDate)
+                : null,
+            createdAt: Date.now()
+        };
+        if (!appData.schedules) appData.schedules = [];
+        appData.schedules.push(newSchedule);
+    }
+
+    saveData();
+    render();
+
+    // Select the new blocklist in the dropdown so the user sees it
+    const dropdown = document.getElementById('blocklist-select');
+    if (dropdown) {
+        dropdown.value = newId;
+        handleBlocklistSelect({ target: dropdown });
+    }
+}
+
 // Delete blocklist with undo support
 let pendingDelete = null; // { blocklist, activeBlocks, timeoutId }
 
@@ -7003,6 +7080,15 @@ function renderBlocklists() {
               </svg>
             </button>
             <div class="blocklist-menu hidden">
+              <button class="blocklist-menu-item duplicate-blocklist-item" title="Duplicate">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="15" x2="15" y1="12" y2="18"/>
+                  <line x1="12" x2="18" y1="15" y2="15"/>
+                  <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+                  <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+                </svg>
+                Duplicate
+              </button>
               <button class="blocklist-menu-item delete-blocklist-item" title="Delete">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M3 6h18"></path>
@@ -7049,6 +7135,12 @@ function renderBlocklists() {
             const wasHidden = menu.classList.contains('hidden');
             closeAllBlocklistMenus();
             if (wasHidden) menu.classList.remove('hidden');
+        });
+
+        card.querySelector('.duplicate-blocklist-item').addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeAllBlocklistMenus();
+            duplicateBlocklist(id);
         });
 
         card.querySelector('.delete-blocklist-item').addEventListener('click', (e) => {

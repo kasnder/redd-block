@@ -2687,6 +2687,11 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
     background: rgba(0, 0, 0, 0.05);
 }
 
+.blocklist-menu-item.duplicate-blocklist-item:hover {
+    background: rgba(0, 0, 0, 0.06);
+    color: var(--text-primary, #1a1a1a);
+}
+
 .blocklist-menu-item.delete-blocklist-item:hover {
     background: rgba(239, 68, 68, 0.1);
     color: #ef4444;
