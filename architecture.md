@@ -14,6 +14,7 @@ This document explains:
 - state ownership and synchronization rules,
 - enforcement pipelines (websites and apps),
 - lifecycle flows (start, schedule, override, uninstall, cleanup),
+- override difficulty configuration (including max difficulty mode) and blocklist duplication,
 - cross-platform differences,
 - a plain-language exhaustive functionality catalog.
 
@@ -405,6 +406,61 @@ Important paths:
 
 This keeps override behavior deterministic in multi-block situations.
 
+### 10.1 Override difficulty configuration and max difficulty mode
+
+Override difficulty (friction settings) lives on each blocklist and controls the challenge required to override a block: type (random words, random gibberish, or custom text), character count, and optional **max difficulty** lock.
+
+**Data model** (persisted in `blocklist.overrideDifficulty`):
+
+- `type`: `'random-words'` | `'gibberish'` | `'custom'`
+- `count`: number of characters (for random types) or length of custom text
+- `maxDifficulty`: boolean — when true, effective challenge is always max for the chosen random type (7500 for random-words, 5000 for gibberish)
+- `countBeforeMax`: when `maxDifficulty` is true, stored so unchecking restores this count (avoids defaulting to 50)
+- `typeBeforeMax`: when `maxDifficulty` is true, stored so unchecking restores this type (e.g. `'custom'`)
+- `customText`: used only when `type === 'custom'`
+
+**Max difficulty behavior:**
+
+- When the user checks “Max difficulty” (checkbox next to the override-type dropdown in Add/Edit Blocklist modal):
+  - The dropdown is restricted to Random Words and Random Gibberish (Custom Text option is removed from the DOM and stored in `removedOverrideCustomOptionEl` so it can be re-appended).
+  - If the current type was Custom Text, it switches to Random Words.
+  - The character count is set and locked to the max for the selected type; the count input is greyed out (same disabled styling as when the blocklist is active) and made non-interactive (`override-count-max-mode`, `form-input-disabled`, `input-suffix-disabled`).
+  - Current type and count are stored in memory (`lastOverrideTypeValueBeforeMaxDifficulty`, `lastOverrideCountValueBeforeMaxDifficulty`) and on save as `typeBeforeMax` and `countBeforeMax`.
+- When the user unchecks:
+  - Custom Text is re-added to the dropdown; dropdown and count are restored to `typeBeforeMax` and `countBeforeMax`.
+- Only the checkbox toggles max difficulty; the “Max difficulty” label is non-clickable (div, not label) and shows a text cursor. When the blocklist is active, the max difficulty checkbox is disabled like the other override inputs (`max-difficulty-disabled`).
+
+**Code locations:**
+
+- UI: `src/index.html` — Override Difficulty form group, `.override-type-row`, `#override-max-difficulty-checkbox`, `#override-max-difficulty-label`
+- Styles: `src/styles.css` — `.override-type-row`, `.override-type-select` (narrower), `.max-difficulty-checkbox-option`, `.override-count-max-mode`, `.override-count-max-mode .form-input.form-input-disabled` (border preserved to avoid layout jump), `.max-difficulty-disabled`
+- Logic: `src/app.js` — state (`lastOverrideCountValueBeforeMaxDifficulty`, `lastOverrideTypeValueBeforeMaxDifficulty`, `removedOverrideCustomOptionEl`), `ensureOverrideCustomOptionPresent()`, `removeOverrideCustomOption()`, checkbox and override-type change handlers, save/load/duplicate/close-modal handling, `getMaxOverrideCharsForType()`
+- i18n: `overrideMaxDifficulty` in app.js strings and `setText('override-max-difficulty-label', ...)`
+
+**Persistence and duplication:**
+
+- On save with max difficulty checked, `count` is set to the max for the type and `countBeforeMax` / `typeBeforeMax` are persisted so reopen and uncheck restores the previous value (e.g. 20) and type (e.g. custom).
+- On duplicate, `overrideDifficulty` is copied including `maxDifficulty`, `countBeforeMax`, and `typeBeforeMax`, so the duplicate inherits max difficulty and restore behavior.
+
+### 10.2 Blocklist duplication
+
+Blocklist duplication creates a full copy of a blocklist (and its schedule if present) with a new id and a derived name; the duplicate is never active.
+
+**Entry point:** `duplicateBlocklist(id)` in `src/app.js`.
+
+**What is copied:**
+
+- **Blocklist:** `id` (new UUID), `name` (via `getNextCopyName(blocklist)`), `mode`, `color`, `emoji`, `websites`, `apps`, `showItemDetails`, `alwaysShowInSchedule`, `overrideDifficulty` (full object: `type`, `count`, `maxDifficulty`, `countBeforeMax`, `typeBeforeMax`, `customText` when applicable).
+- **Schedule (if any):** New schedule id and `blocklistId` pointing at the new blocklist; segments, `repeatType`, `repeatDate` copied. No blocks are started for the duplicate.
+
+**Naming semantics:**
+
+- Implemented in `getNextCopyName(blocklist)`, `parseCopyRoot(name)`, `nameInChain(name, root)`, `sameBlocklistContent(idA, idB)` (`contentKey(blocklistId)`), in `src/app.js`.
+- macOS-style naming: “X” → “X copy”, then “X copy 2”, “X copy 3”, … with gap-fill when copies are deleted. If the user renames a copy, the next duplicate of the original still uses the same chain; if they edit the duplicate’s content, it is treated as a new chain for naming.
+- Content-based chain: duplicates that share the same content (websites, apps, override config, schedule) reuse the same copy-number chain; if content differs, the name is treated as a new base.
+
+**Post-duplicate UX:** Selection remains on the original blocklist so the user can duplicate again without changing selection; dropdown is updated to reflect the new list.
+
 ---
 
 ## 11) Helper lifecycle and versioning (desktop)
@@ -629,7 +685,9 @@ This section is intentionally non-technical and complete.
 - create, rename, recolor, decorate (emoji) blocklists,
 - add/remove website targets,
 - add/remove app targets,
-- configure override challenge difficulty,
+- configure override challenge difficulty (random words, random gibberish, or custom text; character count),
+- **max difficulty mode:** optional checkbox that locks override to the hardest setting (max characters for random words or gibberish); when unchecked, restores the previous type and count (including custom text),
+- **duplicate blocklist:** full copy with a new name in the “X copy” / “X copy 2” chain; copies override settings (including max difficulty and restore state), schedule if present, and other blocklist properties; duplicate is never started automatically,
 - delete blocklists with cleanup behavior.
 
 ### 17.2 One-off block behavior
