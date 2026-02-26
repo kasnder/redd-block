@@ -5958,17 +5958,64 @@ function getMaxOverrideCharsForType(type) {
     return charsPerMinute * TARGET_MAX_OVERRIDE_MINUTES;
 }
 
-// Compute next " - Copy N" name for duplicating a blocklist (e.g. "test" -> "test - Copy 1")
-function getNextCopyName(baseName) {
-    const copySuffix = ' - Copy ';
-    let maxN = 0;
-    for (const bl of appData.blocklists) {
-        if (!bl.name.startsWith(baseName + copySuffix)) continue;
-        const rest = bl.name.slice((baseName + copySuffix).length);
-        const match = /^(\d+)$/.exec(rest);
-        if (match) maxN = Math.max(maxN, parseInt(match[1], 10));
+// macOS-style duplicate naming: "test" -> "test copy", "test copy 2", ... gap-fill; content-based chain.
+
+/** Returns chain root if name is "X copy" or "X copy N", else null. */
+function parseCopyRoot(name) {
+    const m = /^(.+?) copy(?: (\d+))?$/.exec(name);
+    return m ? m[1] : null;
+}
+
+/** Comparable string for content (websites, apps, override, schedule). */
+function contentKey(blocklistId) {
+    const bl = appData.blocklists.find(b => b.id === blocklistId);
+    if (!bl) return '';
+    const w = [...(bl.websites || [])].sort();
+    const a = [...(bl.apps || [])].sort();
+    const o = bl.overrideDifficulty ? { t: bl.overrideDifficulty.type, c: bl.overrideDifficulty.count, x: bl.overrideDifficulty.customText } : {};
+    const sched = appData.schedules?.find(s => s.blocklistId === blocklistId);
+    let s = 'none';
+    if (sched?.segments?.length) {
+        const segs = sched.segments.map(seg => ({
+            s: seg.startHour * 60 + seg.startMinute,
+            e: seg.endHour * 60 + seg.endMinute,
+            d: [...(seg.days || [])].sort((a, b) => a - b)
+        })).sort((a, b) => a.s - b.s || a.e - b.e);
+        s = JSON.stringify({ segs, repeat: sched.repeatType || 'no', date: sched.repeatDate?.getTime?.() ?? sched.repeatDate ?? null });
     }
-    return baseName + copySuffix + (maxN + 1);
+    return JSON.stringify({ w, a, o, s });
+}
+
+function sameBlocklistContent(idA, idB) { return contentKey(idA) === contentKey(idB); }
+
+/** True if name is root, "root copy", or "root copy N". */
+function nameInChain(name, root) {
+    if (name === root || name === root + ' copy') return true;
+    const p = root + ' copy ';
+    return name.startsWith(p) && /^\d+$/.test(name.slice(p.length));
+}
+
+/** Next copy name: "X copy" or "X copy N" with gap-fill; same chain if unedited, else new chain from current name. */
+function getNextCopyName(blocklist) {
+    const name = blocklist.name;
+    const root = parseCopyRoot(name);
+    let base = name;
+    if (root !== null) {
+        const otherInChainSameContent = appData.blocklists.some(bl =>
+            bl.id !== blocklist.id && nameInChain(bl.name, root) && sameBlocklistContent(bl.id, blocklist.id)
+        );
+        if (otherInChainSameContent) base = root;
+    }
+    const used = new Set();
+    const p1 = base + ' copy';
+    const p2 = base + ' copy ';
+    for (const bl of appData.blocklists) {
+        if (bl.name === p1) used.add(1);
+        else if (bl.name.startsWith(p2) && /^\d+$/.test(bl.name.slice(p2.length))) used.add(parseInt(bl.name.slice(p2.length), 10));
+    }
+    let n = 1;
+    while (used.has(n)) n++;
+    return n === 1 ? p1 : p2 + n;
 }
 
 function duplicateBlocklist(id) {
@@ -5976,7 +6023,7 @@ function duplicateBlocklist(id) {
     if (!blocklist) return;
 
     const newId = generateId();
-    const newName = getNextCopyName(blocklist.name);
+    const newName = getNextCopyName(blocklist);
 
     const duplicate = {
         id: newId,
@@ -5997,9 +6044,7 @@ function duplicateBlocklist(id) {
             : { type: 'random-words', count: 50 }
     };
 
-    const sourceIndex = appData.blocklists.findIndex(bl => bl.id === id);
-    const insertIndex = sourceIndex + 1;
-    appData.blocklists.splice(insertIndex, 0, duplicate);
+    appData.blocklists.push(duplicate);
 
     // Copy schedule if present (segments, repeat; duplicate is never active)
     const existingSchedule = appData.schedules?.find(s => s.blocklistId === id);
@@ -6027,10 +6072,10 @@ function duplicateBlocklist(id) {
     saveData();
     render();
 
-    // Select the new blocklist in the dropdown so the user sees it
+    // Keep selection on the original blocklist so the user can duplicate again without moving
     const dropdown = document.getElementById('blocklist-select');
     if (dropdown) {
-        dropdown.value = newId;
+        dropdown.value = id;
         handleBlocklistSelect({ target: dropdown });
     }
 }
