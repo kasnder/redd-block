@@ -1457,12 +1457,12 @@ function setupModalListeners() {
             type: overrideType,
             count: overrideCount,
             maxDifficulty: maxDifficultyChecked,
-            customText: overrideType === 'custom' ? customText : undefined
+            customText: customText
         };
         if (maxDifficultyChecked) {
             overrideDifficultyPayload.countBeforeMax = normalizeOverrideCount(
                 String(lastOverrideCountValueBeforeMaxDifficulty),
-                overrideType
+                lastOverrideTypeValueBeforeMaxDifficulty
             );
             overrideDifficultyPayload.typeBeforeMax = lastOverrideTypeValueBeforeMaxDifficulty;
         }
@@ -6066,6 +6066,64 @@ function getMaxOverrideCharsForType(type) {
     return charsPerMinute * TARGET_MAX_OVERRIDE_MINUTES;
 }
 
+function applyOverrideTypeUi(type) {
+    const customTextArea = document.getElementById('custom-override-text');
+    const overrideCountInput = document.getElementById('override-count');
+    const overrideCountWrapper = document.getElementById('override-count-wrapper');
+    const hintEl = document.getElementById('override-count-hint');
+    const warningEl = document.getElementById('override-count-warning');
+    const maxChars = getMaxOverrideCharsForType(type);
+    overrideCountInput.max = String(maxChars);
+
+    if (type === 'custom') {
+        customTextArea.maxLength = getMaxOverrideCharsForType('custom');
+        customTextArea.classList.remove('hidden');
+        overrideCountWrapper.classList.add('hidden');
+        hintEl.classList.add('hidden');
+        warningEl.classList.add('hidden');
+        warningEl.textContent = '';
+        return;
+    }
+
+    customTextArea.classList.add('hidden');
+    overrideCountWrapper.classList.remove('hidden');
+    hintEl.classList.remove('hidden');
+    warningEl.classList.add('hidden');
+    warningEl.textContent = '';
+    hintEl.innerHTML = type === 'random-words'
+        ? "E.g. 10 chars → 'shine star'"
+        : "E.g. 10 chars → 'a982j3+fd'";
+}
+
+function setOverrideCountMaxMode(enabled) {
+    const overrideCountWrapper = document.getElementById('override-count-wrapper');
+    const overrideCountInput = document.getElementById('override-count');
+    overrideCountWrapper.classList.toggle('override-count-max-mode', enabled);
+    overrideCountInput.classList.toggle('form-input-disabled', enabled);
+    overrideCountWrapper.querySelector('.input-suffix')?.classList.toggle('input-suffix-disabled', enabled);
+    if (enabled) overrideCountInput.setAttribute('tabindex', '-1');
+    else overrideCountInput.removeAttribute('tabindex');
+}
+
+function cloneOverrideDifficulty(raw, fallbackCount = 50) {
+    if (!raw) return { type: 'random-words', count: fallbackCount, maxDifficulty: false };
+    const type = raw.type || 'random-words';
+    const maxDifficulty = raw.maxDifficulty === true;
+    const safeType = maxDifficulty && type === 'custom' ? 'random-words' : type;
+    const cloned = {
+        type: safeType,
+        count: maxDifficulty ? getMaxOverrideCharsForType(safeType) : normalizeOverrideCount(raw.count ?? fallbackCount, safeType),
+        maxDifficulty,
+        customText: normalizeCustomOverrideText(raw.customText)
+    };
+    if (maxDifficulty) {
+        const typeBeforeMax = raw.typeBeforeMax || type;
+        cloned.typeBeforeMax = typeBeforeMax;
+        cloned.countBeforeMax = normalizeOverrideCount(raw.countBeforeMax ?? 50, typeBeforeMax);
+    }
+    return cloned;
+}
+
 function ensureOverrideCustomOptionPresent() {
     const select = document.getElementById('override-type');
     const customOpt = document.getElementById('override-option-custom') || removedOverrideCustomOptionEl;
@@ -6096,7 +6154,16 @@ function contentKey(blocklistId) {
     if (!bl) return '';
     const w = [...(bl.websites || [])].sort();
     const a = [...(bl.apps || [])].sort();
-    const o = bl.overrideDifficulty ? { t: bl.overrideDifficulty.type, c: bl.overrideDifficulty.count, x: bl.overrideDifficulty.customText } : {};
+    const o = bl.overrideDifficulty
+        ? {
+            t: bl.overrideDifficulty.type,
+            c: bl.overrideDifficulty.count,
+            m: bl.overrideDifficulty.maxDifficulty === true,
+            bc: bl.overrideDifficulty.countBeforeMax,
+            bt: bl.overrideDifficulty.typeBeforeMax,
+            x: bl.overrideDifficulty.customText
+        }
+        : {};
     const sched = appData.schedules?.find(s => s.blocklistId === blocklistId);
     let s = 'none';
     if (sched?.segments?.length) {
@@ -6166,7 +6233,7 @@ function duplicateBlocklist(id) {
                 maxDifficulty: blocklist.overrideDifficulty.maxDifficulty === true,
                 countBeforeMax: blocklist.overrideDifficulty.countBeforeMax,
                 typeBeforeMax: blocklist.overrideDifficulty.typeBeforeMax,
-                customText: blocklist.overrideDifficulty.type === 'custom' ? blocklist.overrideDifficulty.customText : undefined
+                customText: blocklist.overrideDifficulty.customText
             }
             : { type: 'random-words', count: 50 }
     };
