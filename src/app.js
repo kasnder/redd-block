@@ -9076,7 +9076,10 @@ Object.assign(window.__REDDBLOCK_INTERNALS__, {
     isProtectedApp,
     PROTECTED_APP_NAMES,
     isProtectedDomain,
-    PROTECTED_DOMAINS
+    PROTECTED_DOMAINS,
+    duplicateBlocklist,
+    getNextCopyName,
+    getMaxOverrideCharsForType
 });
 
 console.log('💡 To run blocking tests, type: runBlockingTests() in the console');

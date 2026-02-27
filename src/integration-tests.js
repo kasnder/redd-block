@@ -520,6 +520,61 @@
         return { passed: true };
     }
 
+    async function testC3_maxDifficultyBlocklistStartClear() {
+        const skip = await ensureHelperRunningOrSkip('C3');
+        if (skip) return skip;
+
+        const tauriAPI = getTauriAPI();
+        const bl = addTestBlocklist({
+            websites: [TEST_DOMAINS.b],
+            name: 'C3'
+        });
+        bl.overrideDifficulty = { type: 'random-words', count: 7500, maxDifficulty: true };
+        addActiveBlock(bl.id, { durationMs: 120000 });
+        await callSaveData();
+        const startResult = await callUpdateHostsFile();
+        assertOrThrow(startResult && startResult.success, 'C3: start block with max difficulty failed');
+
+        const clearResult = await tauriAPI.clearBlockViaHelper(bl.id);
+        assertOrThrow(clearResult && clearResult.success, 'C3: scoped clear after max-difficulty start failed');
+        const syncResult = await callUpdateHostsFile(true);
+        assertOrThrow(syncResult && syncResult.success, 'C3: sync after clear failed');
+        return { passed: true };
+    }
+
+    // ========================================
+    // Testing Group G: Blocklist management
+    // ========================================
+
+    async function testG1_duplicateThenRun() {
+        const skip = await ensureHelperRunningOrSkip('G1');
+        if (skip) return skip;
+
+        const internals = getInternals();
+        const duplicateBlocklist = internals?.duplicateBlocklist;
+        assertOrThrow(typeof duplicateBlocklist === 'function', 'G1: duplicateBlocklist not available');
+
+        const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'G1' });
+        duplicateBlocklist(bl.id);
+
+        const appData = getAppData();
+        const duplicated = appData.blocklists.find(b => b.id !== bl.id);
+        assertOrThrow(duplicated, 'G1: duplicated blocklist not found');
+
+        addActiveBlock(duplicated.id, { durationMs: 120000 });
+        await callSaveData();
+        const result = await callUpdateHostsFile();
+        assertOrThrow(result && result.success, 'G1: start duplicate block failed');
+
+        const tauriAPI = getTauriAPI();
+        const clearResult = await tauriAPI.clearBlockViaHelper(duplicated.id);
+        assertOrThrow(clearResult && clearResult.success, 'G1: scoped clear duplicate failed');
+
+        appData.blocklists = appData.blocklists.filter(b => b.id !== duplicated.id);
+        await callUpdateHostsFile(true);
+        return { passed: true };
+    }
+
     // ========================================
     // Testing Group D: Keep-blocking preference decision inputs
     // ========================================
@@ -608,8 +663,10 @@
             { group: 'A', name: 'A10: Pause inactive schedule suppression path', fn: testA10_pauseInactiveScheduleSuppressionPath },
             { group: 'B', name: 'B2: One-off + schedule same blocklist', fn: testB2_oneOffPlusScheduleSameBlocklist },
             { group: 'C', name: 'C2: Clear-all manual blocks', fn: testC2_clearAllManualBlocks },
+            { group: 'C', name: 'C3: Max difficulty blocklist start/clear', fn: testC3_maxDifficultyBlocklistStartClear },
             { group: 'F', name: 'F1: Set blocked apps command path', fn: testF1_setBlockedAppsCommandPath },
-            { group: 'F', name: 'F2: Protected app payload path', fn: testF2_protectedAppPayloadPath }
+            { group: 'F', name: 'F2: Protected app payload path', fn: testF2_protectedAppPayloadPath },
+            { group: 'G', name: 'G1: Duplicate blocklist then start/clear path', fn: testG1_duplicateThenRun }
         ];
     }
 
@@ -688,7 +745,7 @@
 
         if (selectedProfile === PROFILE_FULL && results.failed > 0) {
             console.log('\nGroup failure summary (full profile):');
-            ['A', 'B', 'C', 'D', 'E', 'F'].forEach(groupKey => {
+            ['A', 'B', 'C', 'D', 'E', 'F', 'G'].forEach(groupKey => {
                 const g = groupResults.get(groupKey);
                 if (!g) return;
                 const passedOverTotal = `${g.passed}/${g.total}`;
