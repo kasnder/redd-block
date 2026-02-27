@@ -102,7 +102,6 @@ let lastOverrideTypeValue = '';
 let lastOverrideCountValueBeforeMaxDifficulty = 50;
 let lastOverrideTypeValueBeforeMaxDifficulty = 'random-words';
 /** Reference to the removed Custom Text option so it can be re-added (getElementById returns null after remove()). */
-let removedOverrideCustomOptionEl = null;
 let overrideBlockId = null;
 /** Blocklist id to pass to helper when confirming single-block override (set when opening modal). */
 let overrideBlocklistIdForHelper = null;
@@ -1064,10 +1063,6 @@ function setupModalListeners() {
         if (checked) {
             lastOverrideTypeValueBeforeMaxDifficulty = overrideTypeSelect.value;
             lastOverrideCountValueBeforeMaxDifficulty = overrideCountInput.value.trim() || lastOverrideCountValueBeforeMaxDifficulty;
-            if (overrideTypeSelect.value === 'custom') {
-                overrideTypeSelect.value = 'random-words';
-            }
-            removeOverrideCustomOption();
             const type = overrideTypeSelect.value;
             applyOverrideTypeUi(type);
             const maxCount = getMaxOverrideCharsForType(type);
@@ -1077,7 +1072,6 @@ function setupModalListeners() {
             setOverrideCountMaxMode(true);
             updateOverridePreview(); // preview must reflect max count (set just above)
         } else {
-            ensureOverrideCustomOptionPresent();
             const typeToRestore = lastOverrideTypeValueBeforeMaxDifficulty;
             overrideTypeSelect.value = typeToRestore;
             applyOverrideTypeUi(typeToRestore);
@@ -5022,13 +5016,11 @@ function openBlocklistModal(blocklist = null) {
     if (maxDifficulty) {
         lastOverrideCountValueBeforeMaxDifficulty = normalizedDifficulty.countBeforeMax ?? 50;
         lastOverrideTypeValueBeforeMaxDifficulty = normalizedDifficulty.typeBeforeMax ?? 'random-words';
-        removeOverrideCustomOption();
         const maxCount = getMaxOverrideCharsForType(type);
         overrideCountField.value = String(maxCount);
         overrideCountField.max = String(maxCount);
         setOverrideCountMaxMode(true);
     } else {
-        ensureOverrideCustomOptionPresent();
         setOverrideCountMaxMode(false);
     }
     lastOverrideCountValue = String(overrideCountField.value);
@@ -5231,7 +5223,6 @@ function closeBlocklistModal() {
     lastOverrideTypeValue = '';
     lastOverrideCountValueBeforeMaxDifficulty = 50;
     lastOverrideTypeValueBeforeMaxDifficulty = 'random-words';
-    ensureOverrideCustomOptionPresent();
     setOverrideCountMaxMode(false);
 
     // Revert temporary live-preview edits if dialog closes without save.
@@ -6021,6 +6012,7 @@ function applyOverrideTypeUi(type) {
     const overrideCountWrapper = document.getElementById('override-count-wrapper');
     const warningEl = document.getElementById('override-count-warning');
     const previewBlockEl = document.getElementById('override-preview-block');
+    const maxDifficultyWrapEl = document.getElementById('override-max-difficulty-wrap');
     const maxChars = getMaxOverrideCharsForType(type);
     overrideCountInput.max = String(maxChars);
 
@@ -6031,6 +6023,7 @@ function applyOverrideTypeUi(type) {
         warningEl.classList.add('hidden');
         warningEl.textContent = '';
         if (previewBlockEl) previewBlockEl.classList.add('hidden');
+        if (maxDifficultyWrapEl) maxDifficultyWrapEl.classList.add('hidden');
         return;
     }
 
@@ -6039,6 +6032,7 @@ function applyOverrideTypeUi(type) {
     warningEl.classList.add('hidden');
     warningEl.textContent = '';
     if (previewBlockEl) previewBlockEl.classList.remove('hidden');
+    if (maxDifficultyWrapEl) maxDifficultyWrapEl.classList.remove('hidden');
     updateOverridePreview();
 }
 
@@ -6069,22 +6063,6 @@ function cloneOverrideDifficulty(raw, fallbackCount = 50) {
         cloned.countBeforeMax = normalizeOverrideCount(raw.countBeforeMax ?? 50, typeBeforeMax);
     }
     return cloned;
-}
-
-function ensureOverrideCustomOptionPresent() {
-    const select = document.getElementById('override-type');
-    const customOpt = document.getElementById('override-option-custom') || removedOverrideCustomOptionEl;
-    if (!select || !customOpt) return;
-    if (customOpt.parentNode === select) return;
-    select.appendChild(customOpt);
-}
-
-function removeOverrideCustomOption() {
-    const select = document.getElementById('override-type');
-    const customOpt = document.getElementById('override-option-custom');
-    if (!select || !customOpt || customOpt.parentNode !== select) return;
-    customOpt.remove();
-    removedOverrideCustomOptionEl = customOpt;
 }
 
 // macOS-style duplicate naming: "test" -> "test copy", "test copy 2", ... gap-fill; content-based chain.
