@@ -121,6 +121,10 @@ let pauseScheduleData = null; // Track schedule-specific pause data { blocklistI
 const MIN_OVERRIDE_CHARS = 5;
 const DEFAULT_OVERRIDE_COUNT = 10;
 const TARGET_MAX_OVERRIDE_MINUTES = 30;
+/** When character count >= this, preview text is frozen (no more regeneration) for random words and gibberish. */
+const OVERRIDE_PREVIEW_TRUNCATE_AT = 37;
+let overridePreviewFrozenByType = { 'random-words': null, 'gibberish': null };
+let lastOverridePreviewType = null;
 const UI_ZOOM_MIN = 0.8;
 const UI_ZOOM_MAX = 1.8;
 const UI_ZOOM_MAX_DESKTOP = 1.5;  // cap on macOS/Windows (native webview zoom)
@@ -5223,6 +5227,8 @@ function closeBlocklistModal() {
     lastOverrideTypeValue = '';
     lastOverrideCountValueBeforeMaxDifficulty = 50;
     lastOverrideTypeValueBeforeMaxDifficulty = 'random-words';
+    overridePreviewFrozenByType = { 'random-words': null, 'gibberish': null };
+    lastOverridePreviewType = null;
     setOverrideCountMaxMode(false);
 
     // Revert temporary live-preview edits if dialog closes without save.
@@ -5970,9 +5976,28 @@ function getOverridePreviewText(type, count, customText) {
         return normalized || 'Your custom text will appear here';
     }
     const num = parseInt(count, 10);
-    const targetChars = Number.isFinite(num) && num >= 0 ? num : 10;
-    if (type === 'gibberish') return generateGibberish(targetChars);
-    return generateRandomWords(targetChars);
+    const countNum = Number.isFinite(num) && num >= 0 ? num : 10;
+
+    if (type !== lastOverridePreviewType) {
+        lastOverridePreviewType = type;
+        overridePreviewFrozenByType[type] = null;
+    }
+
+    if (type === 'random-words' || type === 'gibberish') {
+        if (countNum >= OVERRIDE_PREVIEW_TRUNCATE_AT) {
+            let frozen = overridePreviewFrozenByType[type];
+            if (frozen != null) return frozen;
+            const generated = type === 'gibberish'
+                ? generateGibberish(OVERRIDE_PREVIEW_TRUNCATE_AT)
+                : generateRandomWords(OVERRIDE_PREVIEW_TRUNCATE_AT);
+            frozen = generated.slice(0, OVERRIDE_PREVIEW_TRUNCATE_AT);
+            overridePreviewFrozenByType[type] = frozen;
+            return frozen;
+        }
+    }
+
+    if (type === 'gibberish') return generateGibberish(countNum);
+    return generateRandomWords(countNum);
 }
 
 /** Estimated minutes to type the override challenge (based on character count and type). */
