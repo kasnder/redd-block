@@ -6089,6 +6089,32 @@ function getNextCopyName(blocklist) {
     return n === 1 ? p1 : p2 + n;
 }
 
+/** True if the blocklist has an active one-off block or a schedule currently in an active segment (and not paused). */
+function isBlocklistCurrentlyActive(blocklistId) {
+    const now = Date.now();
+    const hasActiveBlock = appData.activeBlocks.some(
+        b => b.blocklistId === blocklistId && b.startTime <= now && b.endTime > now
+    );
+    if (hasActiveBlock) return true;
+    const schedule = appData.schedules?.find(s => s.blocklistId === blocklistId);
+    if (!schedule?.segments?.length) return false;
+    if (schedule.isPaused && schedule.pauseEndTime > now) return false;
+    const d = new Date();
+    const currentDay = d.getDay() === 0 ? 6 : d.getDay() - 1; // 0=Mon .. 6=Sun
+    const currentMins = d.getHours() * 60 + d.getMinutes();
+    const inSegment = schedule.segments.some(seg => {
+        const startMins = seg.startHour * 60 + seg.startMinute;
+        const endMins = seg.endHour * 60 + seg.endMinute;
+        if (endMins > startMins) {
+            return seg.days.includes(currentDay) && currentMins >= startMins && currentMins < endMins;
+        }
+        const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
+        return (seg.days.includes(currentDay) && currentMins >= startMins) ||
+            (seg.days.includes(yesterdayDay) && currentMins < endMins);
+    });
+    return inSegment;
+}
+
 function duplicateBlocklist(id) {
     const blocklist = appData.blocklists.find(bl => bl.id === id);
     if (!blocklist) return;
@@ -6111,9 +6137,10 @@ function duplicateBlocklist(id) {
 
     appData.blocklists.push(duplicate);
 
-    // Copy schedule if present (segments, repeat; duplicate is never active)
+    // Copy schedule only when the original is not currently active, so the duplicate starts inactive.
+    const originalIsActive = isBlocklistCurrentlyActive(id);
     const existingSchedule = appData.schedules?.find(s => s.blocklistId === id);
-    if (existingSchedule && existingSchedule.segments && existingSchedule.segments.length > 0) {
+    if (!originalIsActive && existingSchedule && existingSchedule.segments && existingSchedule.segments.length > 0) {
         const newSchedule = {
             id: crypto.randomUUID(),
             blocklistId: newId,
@@ -6132,6 +6159,7 @@ function duplicateBlocklist(id) {
         };
         if (!appData.schedules) appData.schedules = [];
         appData.schedules.push(newSchedule);
+        syncSchedulesToHelper();
     }
 
     saveData();
