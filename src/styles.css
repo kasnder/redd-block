@@ -3797,6 +3797,36 @@ body.ios #advanced-options-content {
     cursor: default;
 }
 
+/* Override difficulty: dynamic time + preview (one line, truncate with ...) */
+.override-preview-block {
+    margin-top: 10px;
+    width: 100%;
+}
+
+.override-preview-time-line {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin: 0 0 6px 0;
+    line-height: 1.4;
+}
+
+.override-preview-text {
+    width: 100%;
+    box-sizing: border-box;
+    background: hsl(214, 32%, 96%);
+    color: #000;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-family: monospace;
+    font-size: 15px;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
 /* Override All Button */
 .override-all-btn {
     display: flex;

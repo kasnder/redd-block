@@ -1075,6 +1075,7 @@ function setupModalListeners() {
             overrideCountInput.max = String(maxCount);
             lastOverrideCountValue = overrideCountInput.value;
             setOverrideCountMaxMode(true);
+            updateOverridePreview(); // preview must reflect max count (set just above)
         } else {
             ensureOverrideCustomOptionPresent();
             const typeToRestore = lastOverrideTypeValueBeforeMaxDifficulty;
@@ -1086,6 +1087,7 @@ function setupModalListeners() {
             lastOverrideCountValue = overrideCountInput.value;
             lastOverrideCountValueBeforeMaxDifficulty = overrideCountInput.value;
             setOverrideCountMaxMode(false);
+            updateOverridePreview(); // preview must reflect restored count (set just above)
         }
     });
     document.getElementById('custom-override-text').addEventListener('input', (e) => {
@@ -1125,6 +1127,7 @@ function setupModalListeners() {
             warningEl.textContent = '';
         }
         lastCustomOverrideTextValue = e.target.value;
+        updateOverridePreview();
     });
 
     // Override count blur on enter
@@ -1153,6 +1156,7 @@ function setupModalListeners() {
             warningEl.classList.add('hidden');
             warningEl.textContent = '';
             lastOverrideCountValue = e.target.value;
+            updateOverridePreview();
             return;
         }
 
@@ -1168,10 +1172,12 @@ function setupModalListeners() {
             warningEl.textContent = '';
         }
         lastOverrideCountValue = e.target.value;
+        updateOverridePreview();
     });
     document.getElementById('override-count').addEventListener('blur', (e) => {
         const overrideType = document.getElementById('override-type')?.value || 'random-words';
         e.target.value = normalizeOverrideCount(e.target.value, overrideType);
+        updateOverridePreview();
     });
 
     // Color swatches
@@ -5966,12 +5972,56 @@ function getMaxOverrideCharsForType(type) {
     return charsPerMinute * TARGET_MAX_OVERRIDE_MINUTES;
 }
 
+/** Preview text for override difficulty (random words, gibberish, or custom). Used in blocklist modal. */
+function getOverridePreviewText(type, count, customText) {
+    if (type === 'custom') {
+        const t = typeof customText === 'string' ? customText : '';
+        const normalized = t.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+        return normalized || 'Your custom text will appear here';
+    }
+    const num = parseInt(count, 10);
+    const targetChars = Number.isFinite(num) && num >= 0 ? num : 10;
+    if (type === 'gibberish') return generateGibberish(targetChars);
+    return generateRandomWords(targetChars);
+}
+
+/** Estimated minutes to type the override challenge (based on character count and type). */
+function getOverrideEstimatedMinutes(type, count, customText) {
+    const charCount = type === 'custom'
+        ? (typeof customText === 'string' ? customText : '').length
+        : (Number.isFinite(parseInt(count, 10)) ? parseInt(count, 10) : 0);
+    if (charCount <= 0) return 0;
+    const cpm = getTypingCharsPerMinuteForType(type);
+    return Math.ceil(charCount / cpm);
+}
+
+function updateOverridePreview() {
+    const typeSelect = document.getElementById('override-type');
+    const countInput = document.getElementById('override-count');
+    const customTextArea = document.getElementById('custom-override-text');
+    const timeLineEl = document.getElementById('override-preview-time-line');
+    const previewEl = document.getElementById('override-preview-text');
+    const blockEl = document.getElementById('override-preview-block');
+    if (!timeLineEl || !previewEl || !blockEl) return;
+
+    const type = typeSelect?.value || 'random-words';
+    const count = countInput?.value ?? '50';
+    const customText = customTextArea?.value ?? '';
+
+    const estimatedMins = getOverrideEstimatedMinutes(type, count, customText);
+    const previewText = getOverridePreviewText(type, count, customText);
+
+    timeLineEl.textContent = `Will take ~${estimatedMins} minute${estimatedMins !== 1 ? 's' : ''}. Will look something like:`;
+    previewEl.textContent = previewText;
+    previewEl.title = previewText;
+}
+
 function applyOverrideTypeUi(type) {
     const customTextArea = document.getElementById('custom-override-text');
     const overrideCountInput = document.getElementById('override-count');
     const overrideCountWrapper = document.getElementById('override-count-wrapper');
-    const hintEl = document.getElementById('override-count-hint');
     const warningEl = document.getElementById('override-count-warning');
+    const previewBlockEl = document.getElementById('override-preview-block');
     const maxChars = getMaxOverrideCharsForType(type);
     overrideCountInput.max = String(maxChars);
 
@@ -5979,20 +6029,18 @@ function applyOverrideTypeUi(type) {
         customTextArea.maxLength = getMaxOverrideCharsForType('custom');
         customTextArea.classList.remove('hidden');
         overrideCountWrapper.classList.add('hidden');
-        hintEl.classList.add('hidden');
         warningEl.classList.add('hidden');
         warningEl.textContent = '';
+        if (previewBlockEl) previewBlockEl.classList.add('hidden');
         return;
     }
 
     customTextArea.classList.add('hidden');
     overrideCountWrapper.classList.remove('hidden');
-    hintEl.classList.remove('hidden');
     warningEl.classList.add('hidden');
     warningEl.textContent = '';
-    hintEl.innerHTML = type === 'random-words'
-        ? "E.g. 10 chars → 'shine star'"
-        : "E.g. 10 chars → 'a982j3+fd'";
+    if (previewBlockEl) previewBlockEl.classList.remove('hidden');
+    updateOverridePreview();
 }
 
 function setOverrideCountMaxMode(enabled) {
