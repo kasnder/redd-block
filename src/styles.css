@@ -2870,6 +2870,22 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
     box-shadow: none;
 }
 
+.form-textarea.form-input-disabled {
+    border: none;
+    background: rgba(128, 128, 128, 0.05);
+    color: var(--text-muted);
+    cursor: default;
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+.form-textarea.form-input-disabled:hover,
+.form-textarea.form-input-disabled:focus {
+    border: none;
+    background: rgba(128, 128, 128, 0.05);
+    box-shadow: none;
+}
+
 .input-suffix.input-suffix-disabled {
     color: hsl(215, 20%, 50%);
 }
@@ -3766,6 +3782,18 @@ body.ios #advanced-options-content {
 .max-difficulty-checkbox-option.max-difficulty-disabled {
     pointer-events: none;
     opacity: 0.7;
+    cursor: default;
+}
+
+/* When blocklist has active block or schedule: grey out override type row and character count row */
+.override-type-row.blocklist-active-locked,
+#override-count-wrapper.blocklist-active-locked {
+    pointer-events: none;
+    opacity: 0.7;
+}
+
+#override-count-wrapper.blocklist-active-locked .form-input,
+#override-count-wrapper.blocklist-active-locked .input-suffix {
     cursor: default;
 }
 

@@ -6103,11 +6103,14 @@ function duplicateBlocklist(id) {
     saveData();
     render();
 
-    // Keep selection on the original blocklist so the user can duplicate again without moving
-    const dropdown = document.getElementById('blocklist-select');
-    if (dropdown) {
-        dropdown.value = id;
-        handleBlocklistSelect({ target: dropdown });
+    // Only keep selection on the original blocklist if it was already selected (user had focused it).
+    // If they duplicated from the card menu without having clicked the card first, don't switch focus to it.
+    if (selectedBlocklistId === id) {
+        const dropdown = document.getElementById('blocklist-select');
+        if (dropdown) {
+            dropdown.value = id;
+            handleBlocklistSelect({ target: dropdown });
+        }
     }
 }
 
