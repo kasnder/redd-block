@@ -11,8 +11,10 @@
  * - T18-T21: Override behavior
  * - T22-T25: App blocking (manual only - requires system interaction)
  * - T26-T32: Override All feature
+ * - T38c-T38e: Max difficulty (effective count)
  * - T42-T46: Self-Block Prevention
  * - T47-T49: Protected Domain Prevention
+ * - T50-T51: Blocklist duplication
  */
 
 (function () {
@@ -810,6 +812,57 @@
             assertEqual(hardest.type, 'random-words', 'T38b: Inactive schedule does not override default');
             assertEqual(hardest.count, 50, 'T38b: Inactive schedule does not contribute challenge count');
         })();
+
+        // T38c: Max difficulty (random-words) → effective count 7500
+        (function T38c() {
+            const blocklist = createMockBlocklist({
+                overrideDifficulty: { type: 'random-words', maxDifficulty: true, countBeforeMax: 20 }
+            });
+            const now = Date.now();
+            const appData = createMockAppData({
+                blocklists: [blocklist],
+                activeBlocks: [createMockBlock(blocklist.id, now - 60000, now + 60000)]
+            });
+            const hardest = findHardestChallengeAtTime(appData, now);
+            assertEqual(hardest.type, 'random-words', 'T38c: Max difficulty random-words → type');
+            assertEqual(hardest.count, 7500, 'T38c: Max difficulty random-words → effective count 7500');
+        })();
+
+        // T38d: Max difficulty (gibberish) → effective count 5000
+        (function T38d() {
+            const blocklist = createMockBlocklist({
+                overrideDifficulty: { type: 'gibberish', maxDifficulty: true }
+            });
+            const now = Date.now();
+            const appData = createMockAppData({
+                blocklists: [blocklist],
+                activeBlocks: [createMockBlock(blocklist.id, now - 60000, now + 60000)]
+            });
+            const hardest = findHardestChallengeAtTime(appData, now);
+            assertEqual(hardest.type, 'gibberish', 'T38d: Max difficulty gibberish → type');
+            assertEqual(hardest.count, 5000, 'T38d: Max difficulty gibberish → effective count 5000');
+        })();
+
+        // T38e: Two active blocks — max difficulty (random-words) wins over fixed count 100
+        (function T38e() {
+            const blocklist1 = createMockBlocklist({
+                overrideDifficulty: { type: 'random-words', count: 100 }
+            });
+            const blocklist2 = createMockBlocklist({
+                overrideDifficulty: { type: 'random-words', maxDifficulty: true, countBeforeMax: 50 }
+            });
+            const now = Date.now();
+            const appData = createMockAppData({
+                blocklists: [blocklist1, blocklist2],
+                activeBlocks: [
+                    createMockBlock(blocklist1.id, now - 60000, now + 60000),
+                    createMockBlock(blocklist2.id, now - 60000, now + 60000)
+                ]
+            });
+            const hardest = findHardestChallengeAtTime(appData, now);
+            assertEqual(hardest.type, 'random-words', 'T38e: Max difficulty block selected');
+            assertEqual(hardest.count, 7500, 'T38e: Max difficulty (7500) wins over 100');
+        })();
     }
 
     // ========================================
@@ -897,6 +950,80 @@
             assertEqual(appData.blocklists.length, 2, 'T42: Override all preserves blocklists (2 remain)');
             assertEqual(appData.blocklists[0].name, 'Work Focus', 'T42: First blocklist intact');
             assertEqual(appData.blocklists[1].name, 'Social Media', 'T42: Second blocklist intact');
+        })();
+    }
+
+    // ========================================
+    // CATEGORY 12: BLOCKLIST DUPLICATION
+    // ========================================
+
+    function runBlocklistDuplicationTests() {
+        console.log('\n📋 Category 12: Blocklist Duplication');
+        console.log('--------------------------------------');
+
+        const internals = window.__REDDBLOCK_INTERNALS__;
+        if (!internals || typeof internals.duplicateBlocklist !== 'function') {
+            console.warn('   ⏭️ Duplication tests skipped: duplicateBlocklist not available (run in app with internals)');
+            return;
+        }
+
+        // T50: Duplicate blocklist — new id, name "X copy", overrideDifficulty fully copied, not in activeBlocks
+        (function T50() {
+            const blocklist = createMockBlocklist({
+                name: 'DupTest',
+                websites: ['example.com'],
+                overrideDifficulty: {
+                    type: 'gibberish',
+                    count: 40,
+                    maxDifficulty: true,
+                    countBeforeMax: 40,
+                    typeBeforeMax: 'gibberish'
+                }
+            });
+            const appData = createMockAppData({ blocklists: [blocklist], activeBlocks: [], schedules: [] });
+            const savedAppData = internals.appData;
+            try {
+                internals.appData = appData;
+                internals.duplicateBlocklist(blocklist.id);
+                assertEqual(appData.blocklists.length, 2, 'T50: Two blocklists after duplicate');
+                const dup = appData.blocklists.find(bl => bl.id !== blocklist.id);
+                assert(dup !== undefined, 'T50: Duplicate blocklist present');
+                assert(dup.id !== blocklist.id, 'T50: Duplicate has new id');
+                assert(dup.name === 'DupTest copy', 'T50: Name is "DupTest copy"');
+                assert(dup.overrideDifficulty && dup.overrideDifficulty.maxDifficulty === true, 'T50: maxDifficulty copied');
+                assertEqual(dup.overrideDifficulty.countBeforeMax, 40, 'T50: countBeforeMax copied');
+                assertEqual(dup.overrideDifficulty.typeBeforeMax, 'gibberish', 'T50: typeBeforeMax copied');
+                assertEqual(dup.overrideDifficulty.type, 'gibberish', 'T50: type copied');
+                assertEqual(appData.activeBlocks.length, 0, 'T50: Duplicate is not in activeBlocks');
+            } finally {
+                internals.appData = savedAppData;
+            }
+        })();
+
+        // T51: Duplicate with schedule — schedule copied with new id and blocklistId
+        (function T51() {
+            const blocklist = createMockBlocklist({ name: 'DupSched', websites: ['a.com'] });
+            const segment = createMockSegment(9, 0, 17, 0, [0, 1, 2, 3, 4]);
+            const schedule = createMockSchedule(blocklist.id, [segment]);
+            const appData = createMockAppData({
+                blocklists: [blocklist],
+                schedules: [schedule],
+                activeBlocks: []
+            });
+            const savedAppData = internals.appData;
+            try {
+                internals.appData = appData;
+                internals.duplicateBlocklist(blocklist.id);
+                const dup = appData.blocklists.find(bl => bl.id !== blocklist.id);
+                assert(dup !== undefined, 'T51: Duplicate blocklist present');
+                const dupSchedule = (appData.schedules || []).find(s => s.blocklistId === dup.id);
+                assert(dupSchedule !== undefined, 'T51: Schedule copied for duplicate');
+                assert(dupSchedule.id !== schedule.id, 'T51: Schedule has new id');
+                assertEqual(dupSchedule.blocklistId, dup.id, 'T51: Schedule points to duplicate blocklist');
+                assert(dupSchedule.segments && dupSchedule.segments.length === 1, 'T51: Segments copied');
+            } finally {
+                internals.appData = savedAppData;
+            }
         })();
     }
 
@@ -1001,6 +1128,7 @@
             runHasAnyActiveBlocksTests();
             runFindHardestChallengeAdvancedTests();
             runOverrideAllStateTests();
+            runBlocklistDuplicationTests();
             runSelfBlockPreventionTests();
             runProtectedDomainTests();
         } catch (error) {
@@ -1022,6 +1150,7 @@
         runHasAnyActiveBlocksTests,
         runFindHardestChallengeAdvancedTests,
         runOverrideAllStateTests,
+        runBlocklistDuplicationTests,
         runSelfBlockPreventionTests,
         runProtectedDomainTests
     };

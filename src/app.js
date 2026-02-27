@@ -86,6 +86,23 @@ window.__REDDBLOCK_INTERNALS__ = {
 let selectedBlocklistId = null;
 let editingBlocklistId = null;
 let blocklistModalPreviewSnapshot = null;
+/** Blocklist modal undo: session-scoped stack and "last" values for recording previous state. */
+let blocklistModalUndoStack = [];
+let blocklistModalApplyingUndo = false;
+
+function pushModalUndo(type, undoFn) {
+    if (blocklistModalApplyingUndo) return;
+    blocklistModalUndoStack.push({ type, undo: undoFn });
+}
+
+let lastBlocklistNameValue = '';
+let lastOverrideCountValue = '';
+let lastCustomOverrideTextValue = '';
+let lastOverrideTypeValue = '';
+let lastOverrideCountValueBeforeMaxDifficulty = 50;
+let lastOverrideTypeValueBeforeMaxDifficulty = 'random-words';
+/** Reference to the removed Custom Text option so it can be re-added (getElementById returns null after remove()). */
+let removedOverrideCustomOptionEl = null;
 let overrideBlockId = null;
 /** Blocklist id to pass to helper when confirming single-block override (set when opening modal). */
 let overrideBlocklistIdForHelper = null;
@@ -588,6 +605,13 @@ function setupEventListeners() {
         }
     });
 
+    // Close blocklist card menus when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.blocklist-menu-wrapper')) {
+            closeAllBlocklistMenus();
+        }
+    });
+
     // ESC: close blocklist add/edit modal if open, otherwise deselect blocklist
     document.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape') return;
@@ -602,6 +626,64 @@ function setupEventListeners() {
             e.preventDefault();
         }
     });
+
+    // Ctrl+Z / Cmd+Z: undo in blocklist add/edit modal (session-scoped).
+    // Use capture phase so we run before the input's native undo (which would undo character-by-character).
+    // Rule: clear pending (unsaved) text in website/app fields before undoing stack actions. Prefer clearing
+    // the focused field first, then clear any other field that still has pending text, then pop stack.
+    document.addEventListener('keydown', (e) => {
+        const blocklistModal = document.getElementById('blocklist-modal');
+        if (!blocklistModal || blocklistModal.classList.contains('hidden')) return;
+        const isUndo = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey;
+        if (!isUndo) return;
+
+        const websiteInput = document.getElementById('modal-website-input');
+        const appInput = document.getElementById('modal-app-input');
+        const target = e.target;
+        const websiteHasPending = websiteInput && websiteInput.value.trim().length > 0;
+        const appHasPending = appInput && appInput.value.trim().length > 0;
+
+        // 1) Clear the focused field if it has pending text (so one Ctrl+Z clears where you're typing)
+        if ((target === websiteInput || document.activeElement === websiteInput) && websiteHasPending) {
+            websiteInput.value = '';
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+        if ((target === appInput || document.activeElement === appInput) && appHasPending) {
+            appInput.value = '';
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+
+        // 2) If any field still has pending text, clear it before we touch the stack (so we don't undo
+        //    a tag add/remove while leaving unsaved text in the other field)
+        if (websiteHasPending) {
+            websiteInput.value = '';
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+        if (appHasPending) {
+            appInput.value = '';
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+
+        // 3) Both fields empty of pending text — pop stack
+        if (blocklistModalUndoStack.length > 0) {
+            blocklistModalApplyingUndo = true;
+            const entry = blocklistModalUndoStack.pop();
+            try {
+                entry.undo();
+            } finally {
+                blocklistModalApplyingUndo = false;
+            }
+            e.preventDefault();
+        }
+    }, true);
 
     // Duration picker - input change
     const durationInput = document.getElementById('duration-minutes-input');
@@ -745,6 +827,28 @@ function cleanDomainInput(str) {
     return str.replace(/^https?:\/\//i, '').split('/')[0].split('?')[0].split('#')[0].toLowerCase().trim();
 }
 
+// Parse input that may contain multiple domains (space, newline, or comma separated)
+function parseDomainList(raw) {
+    if (!raw || !raw.trim()) return [];
+    return raw.split(/\s+|,/).map(s => cleanDomainInput(s)).filter(Boolean);
+}
+
+/** Process raw website input: parse, validate, classify. Returns result for keydown/save handlers. */
+function processWebsiteInput(raw) {
+    const domains = parseDomainList(raw);
+    const invalid = domains.filter(d => !isValidDomain(d));
+    const valid = domains.filter(d => isValidDomain(d));
+    const protectedList = valid.filter(d => isProtectedDomain(d));
+    const toAdd = valid.filter(d => !isProtectedDomain(d));
+    return {
+        invalid,
+        toAdd,
+        websiteInvalid: invalid.length > 0,
+        inputValueToSet: invalid.length === 0 ? '' : invalid.join(' '),
+        hadProtected: protectedList.length > 0
+    };
+}
+
 // Modal listeners
 function setupModalListeners() {
     let modalWebsites = [];
@@ -763,46 +867,89 @@ function setupModalListeners() {
     });
 
     document.getElementById('blocklist-name').addEventListener('input', () => {
-        document.getElementById('blocklist-name').classList.remove('input-error');
+        const nameInput = document.getElementById('blocklist-name');
+        nameInput.classList.remove('input-error');
+        const previous = lastBlocklistNameValue;
+        pushModalUndo('name', () => {
+            nameInput.value = previous;
+            lastBlocklistNameValue = previous;
+            nameInput.classList.remove('input-error');
+        });
+        lastBlocklistNameValue = nameInput.value;
     });
 
     modalWebsiteInput.addEventListener('keydown', (e) => {
-        // Enter or Space confirms the website (domains can't have spaces)
+        // Backspace on empty input removes the last website tag (if not locked)
+        if (e.key === 'Backspace' && !modalWebsiteInput.value.length && modalWebsites.length > 0) {
+            const lastIdx = modalWebsites.length - 1;
+            const last = modalWebsites[lastIdx];
+            if (!window.lockedWebsites || !window.lockedWebsites.includes(last)) {
+                pushModalUndo('website', () => {
+                    modalWebsites.splice(lastIdx, 0, last);
+                    window.renderModalTags();
+                });
+                modalWebsites.splice(lastIdx, 1);
+                window.renderModalTags();
+                e.preventDefault();
+            }
+        }
+        // Enter or Space confirms the website(s) — supports multiple domains separated by space, newline, or comma
         if ((e.key === 'Enter' || e.key === ' ') && modalWebsiteInput.value.trim()) {
             e.preventDefault();
-            const raw = modalWebsiteInput.value.trim();
-            const website = cleanDomainInput(raw);
+            const result = processWebsiteInput(modalWebsiteInput.value.trim());
             const errorMsg = document.getElementById('website-input-error');
-            if (!isValidDomain(website)) {
-                // Show error message, keep input so user can fix it
+
+            if (result.websiteInvalid) {
                 if (errorMsg) {
                     errorMsg.classList.remove('hidden');
                     setTimeout(() => errorMsg.classList.add('hidden'), 3000);
                 }
-                return;
+            } else {
+                if (errorMsg) errorMsg.classList.add('hidden');
             }
-            // Valid domain — hide any error message
-            if (errorMsg) errorMsg.classList.add('hidden');
-            if (isProtectedDomain(website)) {
-                // Show brief warning — can't block localhost/reserved domains
-                modalWebsiteInput.value = '';
+
+            if (result.hadProtected) {
                 modalWebsiteInput.placeholder = tSettings('cannotBlockDomainPlaceholder');
                 modalWebsiteInput.classList.add('input-error');
                 setTimeout(() => {
                     modalWebsiteInput.placeholder = tSettings('placeholderWebsiteExample');
                     modalWebsiteInput.classList.remove('input-error');
                 }, 2000);
-                return;
             }
-            if (!modalWebsites.includes(website)) {
-                modalWebsites.push(website);
+
+            if (result.toAdd.length > 0) {
+                const toAddCopy = [...result.toAdd];
+                pushModalUndo('website', () => {
+                    toAddCopy.forEach(w => {
+                        const i = modalWebsites.indexOf(w);
+                        if (i !== -1) modalWebsites.splice(i, 1);
+                    });
+                    window.renderModalTags();
+                });
+                result.toAdd.forEach(website => {
+                    if (!modalWebsites.includes(website)) modalWebsites.push(website);
+                });
                 window.renderModalTags();
             }
-            modalWebsiteInput.value = '';
+            modalWebsiteInput.value = result.inputValueToSet;
         }
     });
 
     modalAppInput.addEventListener('keydown', (e) => {
+        // Backspace on empty input removes the last app tag (if not locked)
+        if (e.key === 'Backspace' && !modalAppInput.value.length && modalApps.length > 0) {
+            const lastIdx = modalApps.length - 1;
+            const last = modalApps[lastIdx];
+            if (!window.lockedApps || !window.lockedApps.includes(last)) {
+                pushModalUndo('app', () => {
+                    modalApps.splice(lastIdx, 0, last);
+                    window.renderModalTags();
+                });
+                modalApps.splice(lastIdx, 1);
+                window.renderModalTags();
+                e.preventDefault();
+            }
+        }
         if (e.key === 'Enter' && modalAppInput.value.trim()) {
             e.preventDefault();
             const app = modalAppInput.value.trim();
@@ -818,6 +965,11 @@ function setupModalListeners() {
                 return;
             }
             if (!modalApps.includes(app)) {
+                pushModalUndo('app', () => {
+                    const i = modalApps.indexOf(app);
+                    if (i !== -1) modalApps.splice(i, 1);
+                    window.renderModalTags();
+                });
                 modalApps.push(app);
                 window.renderModalTags();
             }
@@ -854,6 +1006,17 @@ function setupModalListeners() {
         modalBrowseBtn.addEventListener('click', async () => {
             const appNames = await tauriAPI.openAppPicker();
             if (appNames && appNames.length > 0) {
+                const toAdd = appNames.filter(n => !modalApps.includes(n));
+                if (toAdd.length > 0) {
+                    const toAddCopy = [...toAdd];
+                    pushModalUndo('app', () => {
+                        toAddCopy.forEach(a => {
+                            const i = modalApps.indexOf(a);
+                            if (i !== -1) modalApps.splice(i, 1);
+                        });
+                        window.renderModalTags();
+                    });
+                }
                 let added = false;
                 for (const appName of appNames) {
                     if (!modalApps.includes(appName)) {
@@ -869,39 +1032,81 @@ function setupModalListeners() {
     }
     // Override type
     document.getElementById('override-type').addEventListener('change', (e) => {
+        const overrideTypeSelect = e.target;
+        const previousType = lastOverrideTypeValue;
+        pushModalUndo('override-type', () => {
+            overrideTypeSelect.value = previousType;
+            lastOverrideTypeValue = previousType;
+            overrideTypeSelect.dispatchEvent(new Event('change'));
+        });
+
         const type = e.target.value;
-        const customTextArea = document.getElementById('custom-override-text');
         const overrideCountInput = document.getElementById('override-count');
-        const overrideCountWrapper = document.getElementById('override-count-wrapper');
-        const hintEl = document.getElementById('override-count-hint');
-        const warningEl = document.getElementById('override-count-warning');
-        const maxChars = getMaxOverrideCharsForType(type);
-        overrideCountInput.max = String(maxChars);
-
-        if (type === 'custom') {
-            customTextArea.maxLength = getMaxOverrideCharsForType('custom');
-            customTextArea.classList.remove('hidden');
-            overrideCountWrapper.classList.add('hidden');
-            hintEl.classList.add('hidden');
-            warningEl.classList.add('hidden');
-            warningEl.textContent = '';
-        } else {
-            customTextArea.classList.add('hidden');
-            overrideCountWrapper.classList.remove('hidden');
-            hintEl.classList.remove('hidden');
-            warningEl.classList.add('hidden');
-
-            if (type === 'random-words') {
-                hintEl.innerHTML = "E.g. 10 chars → 'shine star'";
-            } else {
-                hintEl.innerHTML = "E.g. 10 chars → 'a982j3+fd'";
-            }
-        }
+        applyOverrideTypeUi(type);
 
         // Clamp to the new type-specific max when switching types.
         overrideCountInput.value = normalizeOverrideCount(overrideCountInput.value, type);
+        lastOverrideTypeValue = overrideTypeSelect.value;
+
+        const maxDifficultyCb = document.getElementById('override-max-difficulty-checkbox');
+        if (maxDifficultyCb && maxDifficultyCb.checked && type !== 'custom') {
+            const maxCount = getMaxOverrideCharsForType(type);
+            overrideCountInput.value = String(maxCount);
+            overrideCountInput.max = String(maxCount);
+            lastOverrideCountValue = overrideCountInput.value;
+            setOverrideCountMaxMode(true);
+        }
+    });
+    document.getElementById('override-max-difficulty-checkbox').addEventListener('change', (e) => {
+        const checked = e.target.checked;
+        const overrideTypeSelect = document.getElementById('override-type');
+        const overrideCountInput = document.getElementById('override-count');
+        if (checked) {
+            lastOverrideTypeValueBeforeMaxDifficulty = overrideTypeSelect.value;
+            lastOverrideCountValueBeforeMaxDifficulty = overrideCountInput.value.trim() || lastOverrideCountValueBeforeMaxDifficulty;
+            if (overrideTypeSelect.value === 'custom') {
+                overrideTypeSelect.value = 'random-words';
+            }
+            removeOverrideCustomOption();
+            const type = overrideTypeSelect.value;
+            applyOverrideTypeUi(type);
+            const maxCount = getMaxOverrideCharsForType(type);
+            overrideCountInput.value = String(maxCount);
+            overrideCountInput.max = String(maxCount);
+            lastOverrideCountValue = overrideCountInput.value;
+            setOverrideCountMaxMode(true);
+        } else {
+            ensureOverrideCustomOptionPresent();
+            const typeToRestore = lastOverrideTypeValueBeforeMaxDifficulty;
+            overrideTypeSelect.value = typeToRestore;
+            applyOverrideTypeUi(typeToRestore);
+            const maxChars = getMaxOverrideCharsForType(typeToRestore);
+            overrideCountInput.max = String(maxChars);
+            overrideCountInput.value = normalizeOverrideCount(String(lastOverrideCountValueBeforeMaxDifficulty), typeToRestore);
+            lastOverrideCountValue = overrideCountInput.value;
+            lastOverrideCountValueBeforeMaxDifficulty = overrideCountInput.value;
+            setOverrideCountMaxMode(false);
+        }
     });
     document.getElementById('custom-override-text').addEventListener('input', (e) => {
+        const customTextArea = e.target;
+        const previous = lastCustomOverrideTextValue;
+        pushModalUndo('custom-override-text', () => {
+            customTextArea.value = previous;
+            lastCustomOverrideTextValue = previous;
+            const warningEl = document.getElementById('override-count-warning');
+            const maxChars = getMaxOverrideCharsForType('custom');
+            if (previous.length >= maxChars) {
+                const charsPerMinute = getTypingCharsPerMinuteForType('custom');
+                const estimatedMinutes = Math.ceil(maxChars / charsPerMinute);
+                warningEl.textContent = `Max is ${maxChars} characters so it's still possible to override in case of emergency (takes you ~${estimatedMinutes} minutes to type).`;
+                warningEl.classList.remove('hidden');
+            } else {
+                warningEl.classList.add('hidden');
+                warningEl.textContent = '';
+            }
+        });
+
         const warningEl = document.getElementById('override-count-warning');
         const maxChars = getMaxOverrideCharsForType('custom');
         const charsPerMinute = getTypingCharsPerMinuteForType('custom');
@@ -919,6 +1124,7 @@ function setupModalListeners() {
             warningEl.classList.add('hidden');
             warningEl.textContent = '';
         }
+        lastCustomOverrideTextValue = e.target.value;
     });
 
     // Override count blur on enter
@@ -928,6 +1134,16 @@ function setupModalListeners() {
         }
     });
     document.getElementById('override-count').addEventListener('input', (e) => {
+        const overrideCountInput = e.target;
+        const previous = lastOverrideCountValue;
+        const current = overrideCountInput.value;
+        if (previous !== current) {
+            pushModalUndo('override-count', () => {
+                overrideCountInput.value = previous;
+                lastOverrideCountValue = previous;
+            });
+        }
+
         const warningEl = document.getElementById('override-count-warning');
         const overrideType = document.getElementById('override-type')?.value || 'random-words';
         const maxChars = getMaxOverrideCharsForType(overrideType);
@@ -936,6 +1152,7 @@ function setupModalListeners() {
         if (rawValue === '') {
             warningEl.classList.add('hidden');
             warningEl.textContent = '';
+            lastOverrideCountValue = e.target.value;
             return;
         }
 
@@ -946,11 +1163,11 @@ function setupModalListeners() {
             e.target.value = maxChars;
             warningEl.textContent = `Max is ${maxChars} characters so it's still possible to override in case of emergency (takes you ~${estimatedMinutes} minutes to type).`;
             warningEl.classList.remove('hidden');
-            return;
+        } else {
+            warningEl.classList.add('hidden');
+            warningEl.textContent = '';
         }
-
-        warningEl.classList.add('hidden');
-        warningEl.textContent = '';
+        lastOverrideCountValue = e.target.value;
     });
     document.getElementById('override-count').addEventListener('blur', (e) => {
         const overrideType = document.getElementById('override-type')?.value || 'random-words';
@@ -1070,10 +1287,10 @@ function setupModalListeners() {
         let websiteInvalid = false;
         const pendingWebsiteRaw = modalWebsiteInput.value.trim();
         if (pendingWebsiteRaw) {
-            const pendingWebsite = cleanDomainInput(pendingWebsiteRaw);
+            const result = processWebsiteInput(pendingWebsiteRaw);
             const errorMsg = document.getElementById('website-input-error');
 
-            if (!isValidDomain(pendingWebsite)) {
+            if (result.websiteInvalid) {
                 if (errorMsg) {
                     errorMsg.classList.remove('hidden');
                     setTimeout(() => errorMsg.classList.add('hidden'), 3000);
@@ -1081,30 +1298,45 @@ function setupModalListeners() {
                 websiteInvalid = true;
             } else {
                 if (errorMsg) errorMsg.classList.add('hidden');
-
-                if (isProtectedDomain(pendingWebsite)) {
-                    modalWebsiteInput.value = '';
-                    modalWebsiteInput.placeholder = tSettings('cannotBlockDomainPlaceholder');
-                    modalWebsiteInput.classList.add('input-error');
-                    setTimeout(() => {
-                        modalWebsiteInput.placeholder = tSettings('placeholderWebsiteExample');
-                        modalWebsiteInput.classList.remove('input-error');
-                    }, 2000);
-                    return; // Block save so behavior matches explicit add interactions.
-                }
-
-                if (!modalWebsites.includes(pendingWebsite)) {
-                    modalWebsites.push(pendingWebsite);
-                    window.renderModalTags();
-                }
-                modalWebsiteInput.value = '';
             }
+
+            if (result.hadProtected) {
+                modalWebsiteInput.value = '';
+                modalWebsiteInput.placeholder = tSettings('cannotBlockDomainPlaceholder');
+                modalWebsiteInput.classList.add('input-error');
+                setTimeout(() => {
+                    modalWebsiteInput.placeholder = tSettings('placeholderWebsiteExample');
+                    modalWebsiteInput.classList.remove('input-error');
+                }, 2000);
+                return; // Block save so behavior matches explicit add interactions.
+            }
+
+            if (result.toAdd.length > 0) {
+                const toAddCopy = [...result.toAdd];
+                pushModalUndo('website', () => {
+                    toAddCopy.forEach(w => {
+                        const i = modalWebsites.indexOf(w);
+                        if (i !== -1) modalWebsites.splice(i, 1);
+                    });
+                    window.renderModalTags();
+                });
+            }
+            result.toAdd.forEach(pendingWebsite => {
+                if (!modalWebsites.includes(pendingWebsite)) modalWebsites.push(pendingWebsite);
+            });
+            if (result.toAdd.length > 0) window.renderModalTags();
+            modalWebsiteInput.value = result.inputValueToSet;
         }
 
         if (nameEmpty || websiteInvalid) return;
 
         const pendingApp = modalAppInput.value.trim();
         if (pendingApp && !isProtectedApp(pendingApp) && !modalApps.includes(pendingApp)) {
+            pushModalUndo('app', () => {
+                const i = modalApps.indexOf(pendingApp);
+                if (i !== -1) modalApps.splice(i, 1);
+                window.renderModalTags();
+            });
             modalApps.push(pendingApp);
             modalAppInput.value = '';
             window.renderModalTags();
@@ -1115,7 +1347,10 @@ function setupModalListeners() {
         const mode = 'blocklist'; // Allowlist mode not yet implemented
         const overrideType = document.getElementById('override-type').value;
         const overrideCountInput = document.getElementById('override-count');
-        const overrideCount = normalizeOverrideCount(overrideCountInput.value, overrideType);
+        const maxDifficultyChecked = document.getElementById('override-max-difficulty-checkbox').checked;
+        const overrideCount = maxDifficultyChecked
+            ? getMaxOverrideCharsForType(overrideType)
+            : normalizeOverrideCount(overrideCountInput.value, overrideType);
         overrideCountInput.value = overrideCount;
         const customTextArea = document.getElementById('custom-override-text');
         const customText = normalizeCustomOverrideText(customTextArea.value);
@@ -1128,6 +1363,20 @@ function setupModalListeners() {
         const showItemDetails = document.getElementById('show-item-details-checkbox').checked;
         const alwaysShowInSchedule = document.getElementById('always-show-in-schedule-checkbox').checked;
 
+        const overrideDifficultyPayload = {
+            type: overrideType,
+            count: overrideCount,
+            maxDifficulty: maxDifficultyChecked,
+            customText: customText
+        };
+        if (maxDifficultyChecked) {
+            overrideDifficultyPayload.countBeforeMax = normalizeOverrideCount(
+                String(lastOverrideCountValueBeforeMaxDifficulty),
+                lastOverrideTypeValueBeforeMaxDifficulty
+            );
+            overrideDifficultyPayload.typeBeforeMax = lastOverrideTypeValueBeforeMaxDifficulty;
+        }
+
         // IMPORTANT: Create copies of the arrays, not references!
         const blocklist = {
             id: editingBlocklistId || generateId(),
@@ -1139,11 +1388,7 @@ function setupModalListeners() {
             apps: [...modalApps],          // Copy the array
             showItemDetails,
             alwaysShowInSchedule,
-            overrideDifficulty: {
-                type: overrideType,
-                count: overrideCount,
-                customText: overrideType === 'custom' ? customText : undefined
-            }
+            overrideDifficulty: overrideDifficultyPayload
         };
 
         if (editingBlocklistId) {
@@ -1204,11 +1449,27 @@ function setupModalListeners() {
 
     window.renderModalTags = () => {
         renderTags(modalWebsitesTags, modalWebsites, (idx) => {
+            const value = modalWebsites[idx];
+            if (window.lockedWebsites && window.lockedWebsites.includes(value)) {
+                return; // Do not remove locked items; do not push undo.
+            }
+            pushModalUndo('website', () => {
+                modalWebsites.splice(idx, 0, value);
+                window.renderModalTags();
+            });
             modalWebsites.splice(idx, 1);
             window.renderModalTags();
         }, window.lockedWebsites);
 
         renderTags(modalAppsTags, modalApps, (idx) => {
+            const value = modalApps[idx];
+            if (window.lockedApps && window.lockedApps.includes(value)) {
+                return; // Do not remove locked items; do not push undo.
+            }
+            pushModalUndo('app', () => {
+                modalApps.splice(idx, 0, value);
+                window.renderModalTags();
+            });
             modalApps.splice(idx, 1);
             window.renderModalTags();
         }, window.lockedApps);
@@ -1997,6 +2258,15 @@ function setAlwaysOnMode(alwaysOn) {
 // Switch between instant and schedule modes
 function setScheduleMode(isSchedule) {
     isScheduleMode = isSchedule;
+
+    // Persist this tab choice per blocklist so it restores when switching back
+    if (selectedBlocklistId && appData.settings) {
+        if (!appData.settings.preferredStartMode) appData.settings.preferredStartMode = {};
+        if (appData.settings.preferredStartMode[selectedBlocklistId] !== isSchedule) {
+            appData.settings.preferredStartMode[selectedBlocklistId] = isSchedule;
+            saveData();
+        }
+    }
 
     // Update tab active states
     document.getElementById('instant-mode-tab').classList.toggle('active', !isSchedule);
@@ -3876,7 +4146,9 @@ function handleBlocklistSelect(e) {
         } else if (hasActiveBlock && hasActiveSchedule) {
             setScheduleMode(false);
         } else {
-            setScheduleMode(false);
+            // No active block or schedule: restore this blocklist's last-viewed tab (instant vs schedule)
+            const preferredSchedule = appData.settings?.preferredStartMode?.[selectedBlocklistId];
+            setScheduleMode(preferredSchedule === true);
         }
 
         // Hide selection prompt, show time picker, hint, tabs, and appropriate button
@@ -4720,42 +4992,40 @@ function openBlocklistModal(blocklist = null) {
 
     document.getElementById('blocklist-name').value = blocklist?.name || '';
     document.getElementById('blocklist-name').classList.remove('input-error');
+    lastBlocklistNameValue = blocklist?.name || '';
 
-    document.getElementById('override-type').value = blocklist?.overrideDifficulty?.type || 'random-words';
-    document.getElementById('override-count').value = blocklist?.overrideDifficulty?.count || 10;
-    document.getElementById('custom-override-text').value = blocklist?.overrideDifficulty?.customText || '';
+    const normalizedDifficulty = cloneOverrideDifficulty(blocklist?.overrideDifficulty, 10);
+    document.getElementById('override-type').value = normalizedDifficulty.type;
+    document.getElementById('override-count').value = normalizedDifficulty.count;
+    document.getElementById('custom-override-text').value = normalizedDifficulty.customText || '';
+    const maxDifficultyCb = document.getElementById('override-max-difficulty-checkbox');
+    const maxDifficulty = normalizedDifficulty.maxDifficulty === true;
+    if (maxDifficultyCb) maxDifficultyCb.checked = maxDifficulty;
 
-    const type = blocklist?.overrideDifficulty?.type || 'random-words';
+    const type = normalizedDifficulty.type;
     const overrideCountField = document.getElementById('override-count');
     const customTextArea = document.getElementById('custom-override-text');
-    const overrideCountWrapper = document.getElementById('override-count-wrapper');
-    const hintEl = document.getElementById('override-count-hint');
-    const overrideCountWarningEl = document.getElementById('override-count-warning');
-    const maxChars = getMaxOverrideCharsForType(type);
-    overrideCountField.max = String(maxChars);
+    applyOverrideTypeUi(type);
     overrideCountField.value = normalizeOverrideCount(overrideCountField.value, type);
     customTextArea.maxLength = getMaxOverrideCharsForType('custom');
     customTextArea.value = normalizeCustomOverrideText(customTextArea.value);
+    lastOverrideCountValue = String(overrideCountField.value);
+    lastCustomOverrideTextValue = customTextArea.value;
+    lastOverrideTypeValue = document.getElementById('override-type').value;
 
-    if (type === 'custom') {
-        customTextArea.classList.remove('hidden');
-        overrideCountWrapper.classList.add('hidden');
-        hintEl.classList.add('hidden');
-        overrideCountWarningEl.classList.add('hidden');
-        overrideCountWarningEl.textContent = '';
+    if (maxDifficulty) {
+        lastOverrideCountValueBeforeMaxDifficulty = normalizedDifficulty.countBeforeMax ?? 50;
+        lastOverrideTypeValueBeforeMaxDifficulty = normalizedDifficulty.typeBeforeMax ?? 'random-words';
+        removeOverrideCustomOption();
+        const maxCount = getMaxOverrideCharsForType(type);
+        overrideCountField.value = String(maxCount);
+        overrideCountField.max = String(maxCount);
+        setOverrideCountMaxMode(true);
     } else {
-        customTextArea.classList.add('hidden');
-        overrideCountWrapper.classList.remove('hidden');
-        hintEl.classList.remove('hidden');
-        overrideCountWarningEl.classList.add('hidden');
-        overrideCountWarningEl.textContent = '';
-
-        if (type === 'random-words') {
-            hintEl.innerHTML = "E.g. 10 chars → 'shine star'";
-        } else {
-            hintEl.innerHTML = "E.g. 10 chars → 'a982j3+fd'";
-        }
+        ensureOverrideCustomOptionPresent();
+        setOverrideCountMaxMode(false);
     }
+    lastOverrideCountValue = String(overrideCountField.value);
 
     // Restore color swatch selection
     document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
@@ -4846,8 +5116,10 @@ function openBlocklistModal(blocklist = null) {
     const overrideInputs = [
         document.getElementById('override-type'),
         document.getElementById('override-count'),
-        document.getElementById('custom-override-text')
+        document.getElementById('custom-override-text'),
+        document.getElementById('override-max-difficulty-checkbox')
     ];
+    const maxDifficultyWrap = document.getElementById('override-max-difficulty-wrap');
 
     // Get override elements for styling
     const overrideTypeSelect = document.getElementById('override-type');
@@ -4874,6 +5146,7 @@ function openBlocklistModal(blocklist = null) {
         if (inputSuffix) {
             inputSuffix.classList.add('input-suffix-disabled');
         }
+        if (maxDifficultyWrap) maxDifficultyWrap.classList.add('max-difficulty-disabled');
 
         // Pass existing items as locked
         window.setModalData(blocklist.websites || [], blocklist.apps || [], blocklist.websites || [], blocklist.apps || []);
@@ -4892,8 +5165,14 @@ function openBlocklistModal(blocklist = null) {
         if (inputSuffix) {
             inputSuffix.classList.remove('input-suffix-disabled');
         }
+        if (maxDifficultyWrap) maxDifficultyWrap.classList.remove('max-difficulty-disabled');
 
         window.setModalData(blocklist?.websites || [], blocklist?.apps || [], [], []);
+    }
+
+    // Re-apply max-difficulty grey-out for count when blocklist is not active (above else branch removes it)
+    if (!isActive && document.getElementById('override-max-difficulty-checkbox')?.checked) {
+        setOverrideCountMaxMode(true);
     }
 
     // Set advanced options - default to checked (true) if not set
@@ -4938,6 +5217,17 @@ function openBlocklistModal(blocklist = null) {
 
 // Close blocklist modal
 function closeBlocklistModal() {
+    blocklistModalUndoStack.length = 0;
+    blocklistModalApplyingUndo = false;
+    lastBlocklistNameValue = '';
+    lastOverrideCountValue = '';
+    lastCustomOverrideTextValue = '';
+    lastOverrideTypeValue = '';
+    lastOverrideCountValueBeforeMaxDifficulty = 50;
+    lastOverrideTypeValueBeforeMaxDifficulty = 'random-words';
+    ensureOverrideCustomOptionPresent();
+    setOverrideCountMaxMode(false);
+
     // Revert temporary live-preview edits if dialog closes without save.
     if (editingBlocklistId && blocklistModalPreviewSnapshot) {
         const bl = appData.blocklists.find(b => b.id === editingBlocklistId);
@@ -5674,6 +5964,188 @@ function getMaxOverrideCharsForType(type) {
     if (type === 'gibberish') return 5000;
     const charsPerMinute = getTypingCharsPerMinuteForType(type);
     return charsPerMinute * TARGET_MAX_OVERRIDE_MINUTES;
+}
+
+function applyOverrideTypeUi(type) {
+    const customTextArea = document.getElementById('custom-override-text');
+    const overrideCountInput = document.getElementById('override-count');
+    const overrideCountWrapper = document.getElementById('override-count-wrapper');
+    const hintEl = document.getElementById('override-count-hint');
+    const warningEl = document.getElementById('override-count-warning');
+    const maxChars = getMaxOverrideCharsForType(type);
+    overrideCountInput.max = String(maxChars);
+
+    if (type === 'custom') {
+        customTextArea.maxLength = getMaxOverrideCharsForType('custom');
+        customTextArea.classList.remove('hidden');
+        overrideCountWrapper.classList.add('hidden');
+        hintEl.classList.add('hidden');
+        warningEl.classList.add('hidden');
+        warningEl.textContent = '';
+        return;
+    }
+
+    customTextArea.classList.add('hidden');
+    overrideCountWrapper.classList.remove('hidden');
+    hintEl.classList.remove('hidden');
+    warningEl.classList.add('hidden');
+    warningEl.textContent = '';
+    hintEl.innerHTML = type === 'random-words'
+        ? "E.g. 10 chars → 'shine star'"
+        : "E.g. 10 chars → 'a982j3+fd'";
+}
+
+function setOverrideCountMaxMode(enabled) {
+    const overrideCountWrapper = document.getElementById('override-count-wrapper');
+    const overrideCountInput = document.getElementById('override-count');
+    overrideCountWrapper.classList.toggle('override-count-max-mode', enabled);
+    overrideCountInput.classList.toggle('form-input-disabled', enabled);
+    overrideCountWrapper.querySelector('.input-suffix')?.classList.toggle('input-suffix-disabled', enabled);
+    if (enabled) overrideCountInput.setAttribute('tabindex', '-1');
+    else overrideCountInput.removeAttribute('tabindex');
+}
+
+function cloneOverrideDifficulty(raw, fallbackCount = 50) {
+    if (!raw) return { type: 'random-words', count: fallbackCount, maxDifficulty: false };
+    const type = raw.type || 'random-words';
+    const maxDifficulty = raw.maxDifficulty === true;
+    const safeType = maxDifficulty && type === 'custom' ? 'random-words' : type;
+    const cloned = {
+        type: safeType,
+        count: maxDifficulty ? getMaxOverrideCharsForType(safeType) : normalizeOverrideCount(raw.count ?? fallbackCount, safeType),
+        maxDifficulty,
+        customText: normalizeCustomOverrideText(raw.customText)
+    };
+    if (maxDifficulty) {
+        const typeBeforeMax = raw.typeBeforeMax || type;
+        cloned.typeBeforeMax = typeBeforeMax;
+        cloned.countBeforeMax = normalizeOverrideCount(raw.countBeforeMax ?? 50, typeBeforeMax);
+    }
+    return cloned;
+}
+
+function ensureOverrideCustomOptionPresent() {
+    const select = document.getElementById('override-type');
+    const customOpt = document.getElementById('override-option-custom') || removedOverrideCustomOptionEl;
+    if (!select || !customOpt) return;
+    if (customOpt.parentNode === select) return;
+    select.appendChild(customOpt);
+}
+
+function removeOverrideCustomOption() {
+    const select = document.getElementById('override-type');
+    const customOpt = document.getElementById('override-option-custom');
+    if (!select || !customOpt || customOpt.parentNode !== select) return;
+    customOpt.remove();
+    removedOverrideCustomOptionEl = customOpt;
+}
+
+// macOS-style duplicate naming: "test" -> "test copy", "test copy 2", ... gap-fill; content-based chain.
+
+/** Returns chain root if name is "X copy" or "X copy N", else null. */
+function parseCopyRoot(name) {
+    const m = /^(.+?) copy(?: (\d+))?$/.exec(name);
+    return m ? m[1] : null;
+}
+
+/** Comparable string for content (websites, apps only). Only these + name affect duplicate copy-number chain. */
+function contentKey(blocklistId) {
+    const bl = appData.blocklists.find(b => b.id === blocklistId);
+    if (!bl) return '';
+    const w = [...(bl.websites || [])].sort();
+    const a = [...(bl.apps || [])].sort();
+    return JSON.stringify({ w, a });
+}
+
+function sameBlocklistContent(idA, idB) { return contentKey(idA) === contentKey(idB); }
+
+/** True if name is root, "root copy", or "root copy N". */
+function nameInChain(name, root) {
+    if (name === root || name === root + ' copy') return true;
+    const p = root + ' copy ';
+    return name.startsWith(p) && /^\d+$/.test(name.slice(p.length));
+}
+
+/** Next copy name: "X copy" or "X copy N" with gap-fill; same chain if unedited, else new chain from current name. */
+function getNextCopyName(blocklist) {
+    const name = blocklist.name;
+    const root = parseCopyRoot(name);
+    let base = name;
+    if (root !== null) {
+        const otherInChainSameContent = appData.blocklists.some(bl =>
+            bl.id !== blocklist.id && nameInChain(bl.name, root) && sameBlocklistContent(bl.id, blocklist.id)
+        );
+        if (otherInChainSameContent) base = root;
+    }
+    const used = new Set();
+    const p1 = base + ' copy';
+    const p2 = base + ' copy ';
+    for (const bl of appData.blocklists) {
+        if (bl.name === p1) used.add(1);
+        else if (bl.name.startsWith(p2) && /^\d+$/.test(bl.name.slice(p2.length))) used.add(parseInt(bl.name.slice(p2.length), 10));
+    }
+    let n = 1;
+    while (used.has(n)) n++;
+    return n === 1 ? p1 : p2 + n;
+}
+
+function duplicateBlocklist(id) {
+    const blocklist = appData.blocklists.find(bl => bl.id === id);
+    if (!blocklist) return;
+
+    const newId = generateId();
+    const newName = getNextCopyName(blocklist);
+
+    const duplicate = {
+        id: newId,
+        name: newName,
+        mode: blocklist.mode || 'blocklist',
+        color: blocklist.color ?? null,
+        emoji: blocklist.emoji ?? '🚫',
+        websites: [...(blocklist.websites || [])],
+        apps: [...(blocklist.apps || [])],
+        showItemDetails: blocklist.showItemDetails !== false,
+        alwaysShowInSchedule: blocklist.alwaysShowInSchedule !== false,
+        overrideDifficulty: cloneOverrideDifficulty(blocklist.overrideDifficulty)
+    };
+
+    appData.blocklists.push(duplicate);
+
+    // Copy schedule if present (segments, repeat; duplicate is never active)
+    const existingSchedule = appData.schedules?.find(s => s.blocklistId === id);
+    if (existingSchedule && existingSchedule.segments && existingSchedule.segments.length > 0) {
+        const newSchedule = {
+            id: crypto.randomUUID(),
+            blocklistId: newId,
+            segments: existingSchedule.segments.map(seg => ({
+                startHour: seg.startHour,
+                startMinute: seg.startMinute,
+                endHour: seg.endHour,
+                endMinute: seg.endMinute,
+                days: [...(seg.days || [])]
+            })),
+            repeatType: existingSchedule.repeatType || 'no',
+            repeatDate: existingSchedule.repeatType === 'date' && existingSchedule.repeatDate
+                ? new Date(existingSchedule.repeatDate.getTime ? existingSchedule.repeatDate.getTime() : existingSchedule.repeatDate)
+                : null,
+            createdAt: Date.now()
+        };
+        if (!appData.schedules) appData.schedules = [];
+        appData.schedules.push(newSchedule);
+    }
+
+    saveData();
+    render();
+
+    // Only keep selection on the original blocklist if it was already selected (user had focused it).
+    // If they duplicated from the card menu without having clicked the card first, don't switch focus to it.
+    if (selectedBlocklistId === id) {
+        const dropdown = document.getElementById('blocklist-select');
+        if (dropdown) {
+            dropdown.value = id;
+            handleBlocklistSelect({ target: dropdown });
+        }
+    }
 }
 
 // Delete blocklist with undo support
@@ -6712,16 +7184,38 @@ function renderBlocklists() {
           <div class="blocklist-meta">${escapeHtml(metaText)}</div>
         </div>
         <div class="blocklist-actions">
-          <button class="blocklist-action-btn delete" title="Delete">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-            </svg>
-          </button>
+          <div class="blocklist-menu-wrapper">
+            <button class="blocklist-action-btn blocklist-menu-btn" title="Blocklist options">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="1"></circle>
+                <circle cx="12" cy="5" r="1"></circle>
+                <circle cx="12" cy="19" r="1"></circle>
+              </svg>
+            </button>
+            <div class="blocklist-menu hidden">
+              <button class="blocklist-menu-item duplicate-blocklist-item" title="Duplicate">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="15" x2="15" y1="12" y2="18"/>
+                  <line x1="12" x2="18" y1="15" y2="15"/>
+                  <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
+                  <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+                </svg>
+                Duplicate
+              </button>
+              <button class="blocklist-menu-item delete-blocklist-item" title="Delete">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M3 6h18"></path>
+                  <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                  <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                </svg>
+                Delete
+              </button>
+            </div>
+          </div>
           <button class="blocklist-action-btn edit-btn" title="Edit">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
+              <path d="m15 5 4 4"/>
             </svg>
           </button>
         </div>
@@ -6747,15 +7241,31 @@ function renderBlocklists() {
             openBlocklistModal(blocklist);
         });
 
-        card.querySelector('.delete').addEventListener('click', (e) => {
+        card.querySelector('.blocklist-menu-btn').addEventListener('click', (e) => {
             e.stopPropagation();
+            const menu = card.querySelector('.blocklist-menu');
+            if (!menu) return;
+            const wasHidden = menu.classList.contains('hidden');
+            closeAllBlocklistMenus();
+            if (wasHidden) menu.classList.remove('hidden');
+        });
+
+        card.querySelector('.duplicate-blocklist-item').addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeAllBlocklistMenus();
+            duplicateBlocklist(id);
+        });
+
+        card.querySelector('.delete-blocklist-item').addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeAllBlocklistMenus();
             deleteBlocklist(id);
         });
 
         // Drag and drop using mouse events on document
         card.addEventListener('mousedown', (e) => {
             // Don't start drag if clicking on buttons
-            if (e.target.closest('.edit-btn') || e.target.closest('.delete')) return;
+            if (e.target.closest('.edit-btn') || e.target.closest('.blocklist-menu-btn') || e.target.closest('.blocklist-menu')) return;
             if (e.target.closest('.blocklist-actions')) return;
             if (e.button !== 0) return; // Only left click
 
@@ -6802,6 +7312,12 @@ function renderBlocklists() {
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
         });
+    });
+}
+
+function closeAllBlocklistMenus() {
+    document.querySelectorAll('.blocklist-menu:not(.hidden)').forEach(menu => {
+        menu.classList.add('hidden');
     });
 }
 
@@ -7197,6 +7713,7 @@ const SETTINGS_TRANSLATIONS = {
         overrideRandomWords: 'Random Words',
         overrideGibberish: 'Random Gibberish',
         overrideCustomText: 'Custom Text',
+        overrideMaxDifficulty: 'Max difficulty',
         totalCharacters: 'total characters',
         color: 'Color',
         emoji: 'Emoji',
@@ -7336,6 +7853,7 @@ const SETTINGS_TRANSLATIONS = {
         overrideRandomWords: 'Tilfældige ord',
         overrideGibberish: 'Tilfældig gibberish',
         overrideCustomText: 'Egen tekst',
+        overrideMaxDifficulty: 'Maksimal sværhedsgrad',
         totalCharacters: 'tegn i alt',
         color: 'Farve',
         emoji: 'Emoji',
@@ -7516,6 +8034,7 @@ function applySettingsLanguage() {
     setText('override-option-random-words', tSettings('overrideRandomWords'));
     setText('override-option-gibberish', tSettings('overrideGibberish'));
     setText('override-option-custom', tSettings('overrideCustomText'));
+    setText('override-max-difficulty-label', tSettings('overrideMaxDifficulty'));
     setText('override-total-characters-label', tSettings('totalCharacters'));
     setText('blocklist-color-label', tSettings('color'));
     setText('blocklist-emoji-label', tSettings('emoji'));
@@ -8598,7 +9117,10 @@ Object.assign(window.__REDDBLOCK_INTERNALS__, {
     isProtectedApp,
     PROTECTED_APP_NAMES,
     isProtectedDomain,
-    PROTECTED_DOMAINS
+    PROTECTED_DOMAINS,
+    duplicateBlocklist,
+    getNextCopyName,
+    getMaxOverrideCharsForType
 });
 
 console.log('💡 To run blocking tests, type: runBlockingTests() in the console');

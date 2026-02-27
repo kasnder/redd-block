@@ -236,14 +236,22 @@ function getHardestChallenge(appData, now) {
 
 /**
  * Compare two difficulties (mirrors compareDifficulties)
+ * When maxDifficulty is true, effective count matches app.js getMaxOverrideCharsForType (keep in sync).
  */
 function compareDifficulties(a, b) {
     if (!a) return b;
     if (!b) return a;
 
+    const MAX_CHARS_RANDOM_WORDS = 7500;  // 250 * 30, match app.js getMaxOverrideCharsForType
+    const MAX_CHARS_GIBBERISH = 5000;    // match app.js getMaxOverrideCharsForType
+
     const getCharacterCount = (difficulty) => {
         if (difficulty.type === 'custom' && typeof difficulty.customText === 'string') {
             return difficulty.customText.length;
+        }
+        if (difficulty.maxDifficulty === true) {
+            if (difficulty.type === 'gibberish') return MAX_CHARS_GIBBERISH;
+            if (difficulty.type === 'random-words') return MAX_CHARS_RANDOM_WORDS;
         }
         const parsed = Number(difficulty.count);
         return Number.isFinite(parsed) && parsed > 0 ? parsed : 50;

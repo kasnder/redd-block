@@ -60,7 +60,8 @@ Tier 1 validates logic and state-composition rules without requiring helper inst
 - overlap/union semantics,
 - shared-domain edge cases,
 - override and override-all state transitions,
-- challenge difficulty selection,
+- challenge difficulty selection (including max-difficulty effective count),
+- blocklist duplication (data shape, naming, override copy, schedule copy),
 - protected app/domain guards.
 
 It uses mock `appData` and pure functions from `src/test-utils.js` including:
@@ -163,10 +164,12 @@ Expected outcome:
 ### Testing Group C: Clear and override semantics
 - **C1**: Scoped clear by blocklist ID
 - **C2**: Clear-all manual blocks (**full only**)
+- **C3**: Max difficulty blocklist start/clear path (**full only**)
 
 Expected outcome:
 - scoped clear affects only targeted manual block scope
 - clear-all removes all manual block scope
+- blocklists with max override difficulty start and clear without errors (C3)
 
 ### Testing Group D: Keep-blocking preference decision inputs
 - **D1**: Keep-blocking preference roundtrip
@@ -187,17 +190,23 @@ Expected outcome:
 Expected outcome:
 - app-block command transport remains stable (visual watcher behavior is still manual)
 
+### Testing Group G: Blocklist management
+- **G1**: Duplicate blocklist then start/clear path (**full only**)
+
+Expected outcome:
+- duplicating a blocklist then starting the duplicate and clearing by its ID succeeds through app -> Tauri -> helper
+
 ## Tier 2 profile composition
 
 - `core`: `A1`, `A2`, `A3`, `B1`, `C1`, `D1`, `E1`
-- `full`: `core` + `A4`, `A5`, `A6`, `A7`, `A8`, `A9`, `A10`, `B2`, `C2`, `F1`, `F2`
+- `full`: `core` + `A4`, `A5`, `A6`, `A7`, `A8`, `A9`, `A10`, `B2`, `C2`, `C3`, `F1`, `F2`, `G1`
 
 ## Suite behavior
 
 1. setup initializes test harness state.
 2. tests run sequentially by selected profile.
 3. teardown clears test-created app state and helper-side temporary enforcement state.
-4. when profile is `full` and at least one test fails, output includes a bottom **Group failure summary** for groups `A`-`F`.
+4. when profile is `full` and at least one test fails, output includes a bottom **Group failure summary** for groups `A`–`G`.
 
 ## What differentiates Tier 2
 

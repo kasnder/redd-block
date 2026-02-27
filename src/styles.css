@@ -2618,22 +2618,7 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
 .blocklist-actions {
     display: flex;
     gap: 4px;
-}
-
-.blocklist-actions .delete {
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.2s ease;
-}
-
-.blocklist-card:hover .blocklist-actions .delete {
-    opacity: 1;
-    pointer-events: auto;
-}
-
-body.ios .blocklist-actions .delete {
-    opacity: 1;
-    pointer-events: auto;
+    align-items: center;
 }
 
 .blocklist-action-btn {
@@ -2661,6 +2646,53 @@ body.ios .blocklist-actions .delete {
 }
 
 .blocklist-action-btn.delete:hover {
+    background: rgba(239, 68, 68, 0.1);
+    color: #ef4444;
+}
+
+.blocklist-menu-wrapper {
+    position: relative;
+}
+
+.blocklist-menu {
+    position: absolute;
+    right: 42px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--popover-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    min-width: 120px;
+    padding: 4px;
+    z-index: 30;
+}
+
+.blocklist-menu-item {
+    width: 100%;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    border-radius: 6px;
+    padding: 8px 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    text-align: left;
+}
+
+.blocklist-menu-item:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.blocklist-menu-item.duplicate-blocklist-item:hover {
+    background: rgba(0, 0, 0, 0.06);
+    color: var(--text-primary, #1a1a1a);
+}
+
+.blocklist-menu-item.delete-blocklist-item:hover {
     background: rgba(239, 68, 68, 0.1);
     color: #ef4444;
 }
@@ -2833,6 +2865,22 @@ body.ios .blocklist-actions .delete {
 
 .form-input.form-input-disabled:hover,
 .form-input.form-input-disabled:focus {
+    border: none;
+    background: rgba(128, 128, 128, 0.05);
+    box-shadow: none;
+}
+
+.form-textarea.form-input-disabled {
+    border: none;
+    background: rgba(128, 128, 128, 0.05);
+    color: var(--text-muted);
+    cursor: default;
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+.form-textarea.form-input-disabled:hover,
+.form-textarea.form-input-disabled:focus {
     border: none;
     background: rgba(128, 128, 128, 0.05);
     box-shadow: none;
@@ -3676,6 +3724,77 @@ body.ios #advanced-options-content {
     margin-top: 2px;
     cursor: pointer;
     accent-color: var(--accent-color);
+}
+
+/* Override type row: dropdown + max difficulty checkbox */
+.override-type-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 8px;
+}
+
+.override-type-row .override-type-select {
+    max-width: 200px;
+    flex-shrink: 0;
+}
+
+.max-difficulty-checkbox-option {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 15px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    cursor: default;
+}
+
+/* Style "Max difficulty" text like "total characters" but bold; text cursor like copyable text */
+.max-difficulty-checkbox-option span {
+    text-transform: none;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    cursor: text;
+}
+
+.max-difficulty-checkbox-option input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+    accent-color: var(--accent-color);
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+}
+
+/* Count input non-interactive when max difficulty (not greyed out) */
+.override-count-max-mode,
+.override-count-max-mode input {
+    pointer-events: none;
+}
+
+/* Keep same dimensions when greyed out (avoid jump from border: none on .form-input-disabled) */
+.override-count-max-mode .form-input.form-input-disabled {
+    border: 1px solid rgba(128, 128, 128, 0.2);
+    box-sizing: border-box;
+}
+
+.max-difficulty-checkbox-option.max-difficulty-disabled {
+    pointer-events: none;
+    opacity: 0.7;
+    cursor: default;
+}
+
+/* When blocklist has active block or schedule: grey out override type row and character count row */
+.override-type-row.blocklist-active-locked,
+#override-count-wrapper.blocklist-active-locked {
+    pointer-events: none;
+    opacity: 0.7;
+}
+
+#override-count-wrapper.blocklist-active-locked .form-input,
+#override-count-wrapper.blocklist-active-locked .input-suffix {
+    cursor: default;
 }
 
 /* Override All Button */

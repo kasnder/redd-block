@@ -184,7 +184,7 @@ npm run dev                   # Start the app
 
 **2. Integration Tests (in-app, profile-based)**
 
-Creates real blocks using a safe `.invalid` domain, verifies hosts file modification, block expiry, and schedule activation. Requires the helper daemon to be running. See testing.md for more information.
+Creates real blocks using a safe `.invalid` domain, verifies hosts file modification, block expiry, and schedule activation. The full profile also covers duplicate-then-run and max-difficulty blocklist start/clear. Requires the helper daemon to be running. See testing.md for more information.
 
 ```bash
 # In the dev console:
