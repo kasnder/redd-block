@@ -2,7 +2,12 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
-## v0.8.5 (next)
+## v0.8.6 (next)
+
+- Fixed duplicated blocklists being active by default.
+- Better preview for override text.
+
+## v0.8.5
 
 - **Duplicate blocklist** — Duplicate a blocklist from the card menu; naming follows macOS duplicate behaviour (e.g. “Copy of My List”); new list appears at end
 - **Max difficulty mode** — Optional harder override challenge (highest character count)
