@@ -2108,10 +2108,10 @@ function setScheduleMode(isSchedule) {
                 }
                 disableTimeControls(true);
 
-                // Hide always-on message and duration toggle while block is running
+                // Keep the info message visible for active always-on blocks.
                 const alwaysOnMsg = document.getElementById('always-on-message');
                 const durationToggle = document.getElementById('duration-mode-toggle');
-                if (alwaysOnMsg) alwaysOnMsg.classList.add('hidden');
+                if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
                 if (durationToggle) durationToggle.classList.add('hidden');
             } else {
                 if (pauseBtn) pauseBtn.classList.add('hidden');
@@ -3094,6 +3094,7 @@ async function proceedWithSchedule() {
                 repeatType: scheduleRepeatType,
                 repeatDate: scheduleRepeatType === 'date' ? scheduleRepeatDate : null
             };
+            configureHelperInstallModal(status);
             document.getElementById('helper-install-modal').classList.remove('hidden');
             return;
         }
@@ -3941,10 +3942,10 @@ function handleBlocklistSelect(e) {
                         // Disable time controls
                         disableTimeControls(true);
 
-                        // Hide always-on message and duration mode toggle (not useful while block is running)
+                        // Keep the info message visible for active always-on blocks.
                         const alwaysOnMsg = document.getElementById('always-on-message');
                         const durationToggle = document.getElementById('duration-mode-toggle');
-                        if (alwaysOnMsg) alwaysOnMsg.classList.add('hidden');
+                        if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
                         if (durationToggle) durationToggle.classList.add('hidden');
                     } else {
                         // No active block - show Start Block button (normal) with lock icon
@@ -4312,6 +4313,7 @@ async function proceedWithBlock() {
                     blocklist,
                     blockEnd
                 };
+                configureHelperInstallModal(status);
                 document.getElementById('helper-install-modal').classList.remove('hidden');
 
                 // Re-enable button and return - modal will handle the rest
@@ -4380,6 +4382,27 @@ function getStartBlockButtonHTML() {
         <span class="btn-label">${tSettings('startBlockButton')}</span>
         <span class="btn-name"></span>
     `;
+}
+
+function configureHelperInstallModal(status = null) {
+    const modal = document.getElementById('helper-install-modal');
+    const titleEl = document.getElementById('helper-setup-required-title');
+    const textEl = document.getElementById('helper-setup-required-text');
+    const proceedBtn = document.getElementById('proceed-helper-install-btn');
+    const isUpdate = !!status?.installed;
+
+    if (modal) {
+        modal.dataset.mode = isUpdate ? 'update' : 'install';
+    }
+    if (titleEl) {
+        titleEl.textContent = tSettings(isUpdate ? 'helperUpdateTitle' : 'helperSetupTitle');
+    }
+    if (textEl) {
+        textEl.textContent = tSettings(isUpdate ? 'helperUpdateText' : 'helperSetupText');
+    }
+    if (proceedBtn) {
+        proceedBtn.textContent = tSettings(isUpdate ? 'updateHelper' : 'proceed');
+    }
 }
 
 // Handle the Proceed button in the helper install modal
@@ -4487,7 +4510,7 @@ async function proceedWithHelperInstall() {
 
     // Re-enable button
     proceedBtn.disabled = false;
-    proceedBtn.textContent = 'Proceed';
+    proceedBtn.textContent = tSettings(modal.dataset.mode === 'update' ? 'updateHelper' : 'proceed');
 }
 
 // Update hosts file based on active blocks
@@ -5839,7 +5862,7 @@ function syncSelectedControlState() {
             updatePauseButtonAppearance(!!activeBlock.isPaused);
         }
         disableTimeControls(true);
-        if (alwaysOnMsg) alwaysOnMsg.classList.add('hidden');
+        if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
         if (durationToggle) durationToggle.classList.add('hidden');
     } else {
         if (btnLabel) btnLabel.textContent = tSettings('startBlockButton');
@@ -7194,6 +7217,8 @@ const SETTINGS_TRANSLATIONS = {
         pauseInstruction: 'To pause this block, type the following:',
         helperSetupTitle: 'Setup Required',
         helperSetupText: 'To block websites when the app is closed, ReDD Block needs to install a small background service. Your computer will prompt you for your password once — after that, blocks will start instantly without asking again.',
+        helperUpdateTitle: 'Helper Update Required',
+        helperUpdateText: 'A helper service is already installed, but it needs an update before this block can start. Your computer will prompt you for your password to apply the update.',
         helperOpenSourceLink: 'open source code for ReDD Block here',
         proceed: 'Proceed',
         startThisBlock: 'Start this block?',
@@ -7331,6 +7356,8 @@ const SETTINGS_TRANSLATIONS = {
         pauseInstruction: 'For at pause denne blokering, skriv følgende:',
         helperSetupTitle: 'Opsætning påkrævet',
         helperSetupText: 'For at blokere websites, når appen er lukket, skal ReDD Block installere en lille baggrundstjeneste. Din computer beder om adgangskode én gang — derefter starter blokeringer med det samme uden ny prompt.',
+        helperUpdateTitle: 'Helper-opdatering påkrævet',
+        helperUpdateText: 'Der er allerede installeret en helper-tjeneste, men den skal opdateres, før denne blokering kan starte. Din computer beder om adgangskode for at gennemføre opdateringen.',
         helperOpenSourceLink: 'open source-koden til ReDD Block her',
         proceed: 'Fortsæt',
         startThisBlock: 'Start denne blokering?',
