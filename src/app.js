@@ -89,6 +89,12 @@ let blocklistModalPreviewSnapshot = null;
 /** Blocklist modal undo: session-scoped stack and "last" values for recording previous state. */
 let blocklistModalUndoStack = [];
 let blocklistModalApplyingUndo = false;
+
+function pushModalUndo(type, undoFn) {
+    if (blocklistModalApplyingUndo) return;
+    blocklistModalUndoStack.push({ type, undo: undoFn });
+}
+
 let lastBlocklistNameValue = '';
 let lastOverrideCountValue = '';
 let lastCustomOverrideTextValue = '';
@@ -863,17 +869,12 @@ function setupModalListeners() {
     document.getElementById('blocklist-name').addEventListener('input', () => {
         const nameInput = document.getElementById('blocklist-name');
         nameInput.classList.remove('input-error');
-        if (!blocklistModalApplyingUndo) {
-            const previous = lastBlocklistNameValue;
-            blocklistModalUndoStack.push({
-                type: 'name',
-                undo: () => {
-                    nameInput.value = previous;
-                    lastBlocklistNameValue = previous;
-                    nameInput.classList.remove('input-error');
-                }
-            });
-        }
+        const previous = lastBlocklistNameValue;
+        pushModalUndo('name', () => {
+            nameInput.value = previous;
+            lastBlocklistNameValue = previous;
+            nameInput.classList.remove('input-error');
+        });
         lastBlocklistNameValue = nameInput.value;
     });
 
@@ -883,15 +884,10 @@ function setupModalListeners() {
             const lastIdx = modalWebsites.length - 1;
             const last = modalWebsites[lastIdx];
             if (!window.lockedWebsites || !window.lockedWebsites.includes(last)) {
-                if (!blocklistModalApplyingUndo) {
-                    blocklistModalUndoStack.push({
-                        type: 'website',
-                        undo: () => {
-                            modalWebsites.splice(lastIdx, 0, last);
-                            window.renderModalTags();
-                        }
-                    });
-                }
+                pushModalUndo('website', () => {
+                    modalWebsites.splice(lastIdx, 0, last);
+                    window.renderModalTags();
+                });
                 modalWebsites.splice(lastIdx, 1);
                 window.renderModalTags();
                 e.preventDefault();
@@ -922,19 +918,14 @@ function setupModalListeners() {
             }
 
             if (result.toAdd.length > 0) {
-                if (!blocklistModalApplyingUndo) {
-                    const toAddCopy = [...result.toAdd];
-                    blocklistModalUndoStack.push({
-                        type: 'website',
-                        undo: () => {
-                            toAddCopy.forEach(w => {
-                                const i = modalWebsites.indexOf(w);
-                                if (i !== -1) modalWebsites.splice(i, 1);
-                            });
-                            window.renderModalTags();
-                        }
+                const toAddCopy = [...result.toAdd];
+                pushModalUndo('website', () => {
+                    toAddCopy.forEach(w => {
+                        const i = modalWebsites.indexOf(w);
+                        if (i !== -1) modalWebsites.splice(i, 1);
                     });
-                }
+                    window.renderModalTags();
+                });
                 result.toAdd.forEach(website => {
                     if (!modalWebsites.includes(website)) modalWebsites.push(website);
                 });
@@ -950,15 +941,10 @@ function setupModalListeners() {
             const lastIdx = modalApps.length - 1;
             const last = modalApps[lastIdx];
             if (!window.lockedApps || !window.lockedApps.includes(last)) {
-                if (!blocklistModalApplyingUndo) {
-                    blocklistModalUndoStack.push({
-                        type: 'app',
-                        undo: () => {
-                            modalApps.splice(lastIdx, 0, last);
-                            window.renderModalTags();
-                        }
-                    });
-                }
+                pushModalUndo('app', () => {
+                    modalApps.splice(lastIdx, 0, last);
+                    window.renderModalTags();
+                });
                 modalApps.splice(lastIdx, 1);
                 window.renderModalTags();
                 e.preventDefault();
@@ -979,16 +965,11 @@ function setupModalListeners() {
                 return;
             }
             if (!modalApps.includes(app)) {
-                if (!blocklistModalApplyingUndo) {
-                    blocklistModalUndoStack.push({
-                        type: 'app',
-                        undo: () => {
-                            const i = modalApps.indexOf(app);
-                            if (i !== -1) modalApps.splice(i, 1);
-                            window.renderModalTags();
-                        }
-                    });
-                }
+                pushModalUndo('app', () => {
+                    const i = modalApps.indexOf(app);
+                    if (i !== -1) modalApps.splice(i, 1);
+                    window.renderModalTags();
+                });
                 modalApps.push(app);
                 window.renderModalTags();
             }
@@ -1013,16 +994,6 @@ function setupModalListeners() {
                             modalApps.splice(i, 1);
                         }
                     }
-                    if (!blocklistModalApplyingUndo) {
-                        blocklistModalUndoStack.push({
-                            type: 'app',
-                            undo: () => {
-                                const i = modalApps.indexOf(label);
-                                if (i !== -1) modalApps.splice(i, 1);
-                                window.renderModalTags();
-                            }
-                        });
-                    }
                     modalApps.push(label);
                     window.renderModalTags();
                 }
@@ -1036,17 +1007,14 @@ function setupModalListeners() {
             const appNames = await tauriAPI.openAppPicker();
             if (appNames && appNames.length > 0) {
                 const toAdd = appNames.filter(n => !modalApps.includes(n));
-                if (toAdd.length > 0 && !blocklistModalApplyingUndo) {
+                if (toAdd.length > 0) {
                     const toAddCopy = [...toAdd];
-                    blocklistModalUndoStack.push({
-                        type: 'app',
-                        undo: () => {
-                            toAddCopy.forEach(a => {
-                                const i = modalApps.indexOf(a);
-                                if (i !== -1) modalApps.splice(i, 1);
-                            });
-                            window.renderModalTags();
-                        }
+                    pushModalUndo('app', () => {
+                        toAddCopy.forEach(a => {
+                            const i = modalApps.indexOf(a);
+                            if (i !== -1) modalApps.splice(i, 1);
+                        });
+                        window.renderModalTags();
                     });
                 }
                 let added = false;
@@ -1066,16 +1034,11 @@ function setupModalListeners() {
     document.getElementById('override-type').addEventListener('change', (e) => {
         const overrideTypeSelect = e.target;
         const previousType = lastOverrideTypeValue;
-        if (!blocklistModalApplyingUndo) {
-            blocklistModalUndoStack.push({
-                type: 'override-type',
-                undo: () => {
-                    overrideTypeSelect.value = previousType;
-                    lastOverrideTypeValue = previousType;
-                    overrideTypeSelect.dispatchEvent(new Event('change'));
-                }
-            });
-        }
+        pushModalUndo('override-type', () => {
+            overrideTypeSelect.value = previousType;
+            lastOverrideTypeValue = previousType;
+            overrideTypeSelect.dispatchEvent(new Event('change'));
+        });
 
         const type = e.target.value;
         const overrideCountInput = document.getElementById('override-count');
@@ -1128,26 +1091,21 @@ function setupModalListeners() {
     document.getElementById('custom-override-text').addEventListener('input', (e) => {
         const customTextArea = e.target;
         const previous = lastCustomOverrideTextValue;
-        if (!blocklistModalApplyingUndo) {
-            blocklistModalUndoStack.push({
-                type: 'custom-override-text',
-                undo: () => {
-                    customTextArea.value = previous;
-                    lastCustomOverrideTextValue = previous;
-                    const warningEl = document.getElementById('override-count-warning');
-                    const maxChars = getMaxOverrideCharsForType('custom');
-                    if (previous.length >= maxChars) {
-                        const charsPerMinute = getTypingCharsPerMinuteForType('custom');
-                        const estimatedMinutes = Math.ceil(maxChars / charsPerMinute);
-                        warningEl.textContent = `Max is ${maxChars} characters so it's still possible to override in case of emergency (takes you ~${estimatedMinutes} minutes to type).`;
-                        warningEl.classList.remove('hidden');
-                    } else {
-                        warningEl.classList.add('hidden');
-                        warningEl.textContent = '';
-                    }
-                }
-            });
-        }
+        pushModalUndo('custom-override-text', () => {
+            customTextArea.value = previous;
+            lastCustomOverrideTextValue = previous;
+            const warningEl = document.getElementById('override-count-warning');
+            const maxChars = getMaxOverrideCharsForType('custom');
+            if (previous.length >= maxChars) {
+                const charsPerMinute = getTypingCharsPerMinuteForType('custom');
+                const estimatedMinutes = Math.ceil(maxChars / charsPerMinute);
+                warningEl.textContent = `Max is ${maxChars} characters so it's still possible to override in case of emergency (takes you ~${estimatedMinutes} minutes to type).`;
+                warningEl.classList.remove('hidden');
+            } else {
+                warningEl.classList.add('hidden');
+                warningEl.textContent = '';
+            }
+        });
 
         const warningEl = document.getElementById('override-count-warning');
         const maxChars = getMaxOverrideCharsForType('custom');
@@ -1179,13 +1137,10 @@ function setupModalListeners() {
         const overrideCountInput = e.target;
         const previous = lastOverrideCountValue;
         const current = overrideCountInput.value;
-        if (!blocklistModalApplyingUndo && previous !== current) {
-            blocklistModalUndoStack.push({
-                type: 'override-count',
-                undo: () => {
-                    overrideCountInput.value = previous;
-                    lastOverrideCountValue = previous;
-                }
+        if (previous !== current) {
+            pushModalUndo('override-count', () => {
+                overrideCountInput.value = previous;
+                lastOverrideCountValue = previous;
             });
         }
 
@@ -1357,19 +1312,14 @@ function setupModalListeners() {
             }
 
             if (result.toAdd.length > 0) {
-                if (!blocklistModalApplyingUndo) {
-                    const toAddCopy = [...result.toAdd];
-                    blocklistModalUndoStack.push({
-                        type: 'website',
-                        undo: () => {
-                            toAddCopy.forEach(w => {
-                                const i = modalWebsites.indexOf(w);
-                                if (i !== -1) modalWebsites.splice(i, 1);
-                            });
-                            window.renderModalTags();
-                        }
+                const toAddCopy = [...result.toAdd];
+                pushModalUndo('website', () => {
+                    toAddCopy.forEach(w => {
+                        const i = modalWebsites.indexOf(w);
+                        if (i !== -1) modalWebsites.splice(i, 1);
                     });
-                }
+                    window.renderModalTags();
+                });
             }
             result.toAdd.forEach(pendingWebsite => {
                 if (!modalWebsites.includes(pendingWebsite)) modalWebsites.push(pendingWebsite);
@@ -1382,16 +1332,11 @@ function setupModalListeners() {
 
         const pendingApp = modalAppInput.value.trim();
         if (pendingApp && !isProtectedApp(pendingApp) && !modalApps.includes(pendingApp)) {
-            if (!blocklistModalApplyingUndo) {
-                blocklistModalUndoStack.push({
-                    type: 'app',
-                    undo: () => {
-                        const i = modalApps.indexOf(pendingApp);
-                        if (i !== -1) modalApps.splice(i, 1);
-                        window.renderModalTags();
-                    }
-                });
-            }
+            pushModalUndo('app', () => {
+                const i = modalApps.indexOf(pendingApp);
+                if (i !== -1) modalApps.splice(i, 1);
+                window.renderModalTags();
+            });
             modalApps.push(pendingApp);
             modalAppInput.value = '';
             window.renderModalTags();
@@ -1508,15 +1453,10 @@ function setupModalListeners() {
             if (window.lockedWebsites && window.lockedWebsites.includes(value)) {
                 return; // Do not remove locked items; do not push undo.
             }
-            if (!blocklistModalApplyingUndo) {
-                blocklistModalUndoStack.push({
-                    type: 'website',
-                    undo: () => {
-                        modalWebsites.splice(idx, 0, value);
-                        window.renderModalTags();
-                    }
-                });
-            }
+            pushModalUndo('website', () => {
+                modalWebsites.splice(idx, 0, value);
+                window.renderModalTags();
+            });
             modalWebsites.splice(idx, 1);
             window.renderModalTags();
         }, window.lockedWebsites);
@@ -1526,15 +1466,10 @@ function setupModalListeners() {
             if (window.lockedApps && window.lockedApps.includes(value)) {
                 return; // Do not remove locked items; do not push undo.
             }
-            if (!blocklistModalApplyingUndo) {
-                blocklistModalUndoStack.push({
-                    type: 'app',
-                    undo: () => {
-                        modalApps.splice(idx, 0, value);
-                        window.renderModalTags();
-                    }
-                });
-            }
+            pushModalUndo('app', () => {
+                modalApps.splice(idx, 0, value);
+                window.renderModalTags();
+            });
             modalApps.splice(idx, 1);
             window.renderModalTags();
         }, window.lockedApps);
