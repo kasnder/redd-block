@@ -5201,6 +5201,11 @@ function openBlocklistModal(blocklist = null) {
         window.setModalData(blocklist?.websites || [], blocklist?.apps || [], [], []);
     }
 
+    // Re-apply max-difficulty grey-out for count when blocklist is not active (above else branch removes it)
+    if (!isActive && document.getElementById('override-max-difficulty-checkbox')?.checked) {
+        setOverrideCountMaxMode(true);
+    }
+
     // Set advanced options - default to checked (true) if not set
     const showItemDetailsCheckbox = document.getElementById('show-item-details-checkbox');
     if (showItemDetailsCheckbox) {
