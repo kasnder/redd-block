@@ -5963,13 +5963,12 @@ function normalizeCustomOverrideText(value) {
 function getTypingCharsPerMinuteForType(type) {
     if (type === 'gibberish') return 150;
     if (type === 'custom') return 250; // Same assumption as random-words
-    return 200; // random-words default
+    return 200; // random-words: used only for estimated time
 }
 
 function getMaxOverrideCharsForType(type) {
     if (type === 'gibberish') return 5000;
-    const charsPerMinute = getTypingCharsPerMinuteForType(type);
-    return charsPerMinute * TARGET_MAX_OVERRIDE_MINUTES;
+    return 7500; // random-words and custom: fixed max; estimated time uses CPM
 }
 
 /** Preview text for override difficulty (random words, gibberish, or custom). Used in blocklist modal. */
