@@ -6079,34 +6079,13 @@ function parseCopyRoot(name) {
     return m ? m[1] : null;
 }
 
-/** Comparable string for content (websites, apps, override, schedule). */
+/** Comparable string for content (websites, apps only). Only these + name affect duplicate copy-number chain. */
 function contentKey(blocklistId) {
     const bl = appData.blocklists.find(b => b.id === blocklistId);
     if (!bl) return '';
     const w = [...(bl.websites || [])].sort();
     const a = [...(bl.apps || [])].sort();
-    const diff = cloneOverrideDifficulty(bl.overrideDifficulty);
-    const o = bl.overrideDifficulty
-        ? {
-            t: diff.type,
-            c: diff.count,
-            m: diff.maxDifficulty === true,
-            bc: diff.countBeforeMax,
-            bt: diff.typeBeforeMax,
-            x: diff.customText
-        }
-        : {};
-    const sched = appData.schedules?.find(s => s.blocklistId === blocklistId);
-    let s = 'none';
-    if (sched?.segments?.length) {
-        const segs = sched.segments.map(seg => ({
-            s: seg.startHour * 60 + seg.startMinute,
-            e: seg.endHour * 60 + seg.endMinute,
-            d: [...(seg.days || [])].sort((a, b) => a - b)
-        })).sort((a, b) => a.s - b.s || a.e - b.e);
-        s = JSON.stringify({ segs, repeat: sched.repeatType || 'no', date: sched.repeatDate?.getTime?.() ?? sched.repeatDate ?? null });
-    }
-    return JSON.stringify({ w, a, o, s });
+    return JSON.stringify({ w, a });
 }
 
 function sameBlocklistContent(idA, idB) { return contentKey(idA) === contentKey(idB); }
