@@ -6011,7 +6011,7 @@ function updateOverridePreview() {
     const estimatedMins = getOverrideEstimatedMinutes(type, count, customText);
     const previewText = getOverridePreviewText(type, count, customText);
 
-    timeLineEl.textContent = `Will take ~${estimatedMins} minute${estimatedMins !== 1 ? 's' : ''}. Will look something like:`;
+    timeLineEl.textContent = `Will take ~${estimatedMins} minute${estimatedMins !== 1 ? 's' : ''} and will look something like:`;
     previewEl.textContent = previewText;
     previewEl.title = previewText;
 }
