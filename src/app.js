@@ -5961,9 +5961,9 @@ function normalizeCustomOverrideText(value) {
 }
 
 function getTypingCharsPerMinuteForType(type) {
-    if (type === 'gibberish') return 170;
+    if (type === 'gibberish') return 150;
     if (type === 'custom') return 250; // Same assumption as random-words
-    return 250; // random-words default
+    return 200; // random-words default
 }
 
 function getMaxOverrideCharsForType(type) {
