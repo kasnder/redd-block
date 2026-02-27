@@ -1185,8 +1185,6 @@ fn set_blocked_apps(
             true
         }
     }).collect();
-    let had_apps = !app_state.lock().unwrap().is_empty();
-    let has_apps = !apps.is_empty();
     *app_state.lock().unwrap() = apps;
     let blocks = state.lock().unwrap().clone();
     let apps_for_save = app_state.lock().unwrap().clone();
@@ -1197,21 +1195,23 @@ fn set_blocked_apps(
     #[cfg(target_os = "windows")]
     update_effective_blocked_apps();
 
-    if has_apps {
+    // Compute effective apps (manual + active schedule) for watcher lifecycle decisions.
+    let mut effective_apps = app_state.lock().unwrap().clone();
+    let schedule_apps = get_active_schedule_apps(&schedule_state.lock().unwrap().clone());
+    for app in schedule_apps {
+        if !effective_apps.iter().any(|a| a.eq_ignore_ascii_case(&app)) {
+            effective_apps.push(app);
+        }
+    }
+
+    if !effective_apps.is_empty() {
         // Start watcher if not running
         start_app_watcher(app_state, app_watcher_handle);
-        // Hide any currently open blocked apps
-        hide_all_blocked_apps(app_state);
-    } else if had_apps {
-        // Check if schedule apps still need the watcher
-        #[cfg(target_os = "windows")]
-        {
-            let still_need = !read_effective_blocked_apps().is_empty();
-            if !still_need {
-                stop_app_watcher(app_watcher_handle);
-            }
+        // Hide currently open blocked apps from both manual and active schedules
+        for app in &effective_apps {
+            hide_app(app);
         }
-        #[cfg(not(target_os = "windows"))]
+    } else {
         stop_app_watcher(app_watcher_handle);
     }
     
@@ -1304,10 +1304,7 @@ end repeat
                     continue;
                 };
 
-                let is_blocked = {
-                    let apps = app_state_fallback.lock().unwrap();
-                    apps.iter().any(|a| a.eq_ignore_ascii_case(&frontmost_app))
-                };
+                let is_blocked = is_app_effectively_blocked(&frontmost_app, &app_state_fallback);
                 if !is_blocked {
                     continue;
                 }
@@ -1365,10 +1362,7 @@ end repeat
                 }
                 
                 // Check if this app is blocked
-                let is_blocked = {
-                    let apps = app_state.lock().unwrap();
-                    apps.iter().any(|a| a.eq_ignore_ascii_case(app_name))
-                };
+                let is_blocked = is_app_effectively_blocked(app_name, &app_state);
                 
                 if is_blocked {
                     // Debounce: skip if we detected this app within the last 500ms
@@ -1427,6 +1421,33 @@ static EFFECTIVE_BLOCKED_APPS: std::sync::OnceLock<RwLock<Arc<Vec<String>>>> = s
 static GLOBAL_APP_STATE: std::sync::OnceLock<Arc<Mutex<Vec<String>>>> = std::sync::OnceLock::new();
 #[cfg(target_os = "windows")]
 static GLOBAL_SCHEDULE_STATE: std::sync::OnceLock<Arc<Mutex<Vec<HelperSchedule>>>> = std::sync::OnceLock::new();
+
+// Global schedule state for macOS watcher so it can evaluate effective
+// blocked apps (manual apps ∪ active schedule apps).
+#[cfg(target_os = "macos")]
+static GLOBAL_SCHEDULE_STATE_MAC: std::sync::OnceLock<Arc<Mutex<Vec<HelperSchedule>>>> =
+    std::sync::OnceLock::new();
+
+#[cfg(target_os = "macos")]
+fn is_app_effectively_blocked(app_name: &str, app_state: &Arc<Mutex<Vec<String>>>) -> bool {
+    {
+        let apps = app_state.lock().unwrap();
+        if apps.iter().any(|a| a.eq_ignore_ascii_case(app_name)) {
+            return true;
+        }
+    }
+
+    if let Some(schedule_state) = GLOBAL_SCHEDULE_STATE_MAC.get() {
+        let schedules = schedule_state.lock().unwrap().clone();
+        for app in get_active_schedule_apps(&schedules) {
+            if app.eq_ignore_ascii_case(app_name) {
+                return true;
+            }
+        }
+    }
+
+    false
+}
 
 /// Recompute the effective blocked-apps list (manual apps ∪ active schedule apps)
 /// and store it in EFFECTIVE_BLOCKED_APPS so the WinEvent callback can read it.
@@ -2067,6 +2088,12 @@ fn schedule_evaluator(
                 log(&format!("Schedule evaluator: initial sync - {} domains, {} apps active",
                     domains.len(), apps.len()));
                 sync_hosts_file(&state, &schedule_state);
+                if !apps.is_empty() {
+                    start_app_watcher(&app_state, &app_watcher_handle);
+                    for app in &apps {
+                        hide_app(app);
+                    }
+                }
                 last_schedule_domains = domains;
                 last_schedule_apps = apps;
             }
@@ -2177,6 +2204,10 @@ fn main() {
     #[cfg(target_os = "windows")]
     {
         let _ = GLOBAL_SCHEDULE_STATE.set(Arc::clone(&schedule_state));
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = GLOBAL_SCHEDULE_STATE_MAC.set(Arc::clone(&schedule_state));
     }
     let app_watcher_handle: Arc<Mutex<Option<AppWatcherHandle>>> = Arc::new(Mutex::new(None));
     
