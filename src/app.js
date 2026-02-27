@@ -2259,6 +2259,15 @@ function setAlwaysOnMode(alwaysOn) {
 function setScheduleMode(isSchedule) {
     isScheduleMode = isSchedule;
 
+    // Persist this tab choice per blocklist so it restores when switching back
+    if (selectedBlocklistId && appData.settings) {
+        if (!appData.settings.preferredStartMode) appData.settings.preferredStartMode = {};
+        if (appData.settings.preferredStartMode[selectedBlocklistId] !== isSchedule) {
+            appData.settings.preferredStartMode[selectedBlocklistId] = isSchedule;
+            saveData();
+        }
+    }
+
     // Update tab active states
     document.getElementById('instant-mode-tab').classList.toggle('active', !isSchedule);
     document.getElementById('schedule-mode-tab').classList.toggle('active', isSchedule);
@@ -4136,7 +4145,9 @@ function handleBlocklistSelect(e) {
         } else if (hasActiveBlock && hasActiveSchedule) {
             setScheduleMode(false);
         } else {
-            setScheduleMode(false);
+            // No active block or schedule: restore this blocklist's last-viewed tab (instant vs schedule)
+            const preferredSchedule = appData.settings?.preferredStartMode?.[selectedBlocklistId];
+            setScheduleMode(preferredSchedule === true);
         }
 
         // Hide selection prompt, show time picker, hint, tabs, and appropriate button
