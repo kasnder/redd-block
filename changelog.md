@@ -2,6 +2,21 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
+## v0.8.5 (next)
+
+- **Duplicate blocklist** — Duplicate a blocklist from the card menu; naming follows macOS duplicate behaviour (e.g. “Copy of My List”); new list appears at end
+- **Max difficulty mode** — Optional harder override challenge (highest character count)
+- Blocklist card menu — Move delete and blocklist buttons into dropdown and update edit icon
+- Undo — Undo recent changes; works correctly with locked website/app tags during active blocks.
+- Backspace on an empty website or app field removes the last tag (if not locked).
+- Paste multiple websites — Paste several URLs at once into the website field; valid ones are saved on space, Enter, or Save; invalid ones stay in the field with an error message so you can fix them.
+
+## v0.8.4
+
+- When updating the helper on macOS, legacy bundle id is now cleaned up too.
+- Scheduled blocking: app block detection corrected so blocked apps are detected reliably.
+- “Always on” block info message now stays visible when relevant.
+
 ## v0.8.1
 
 - Press **ESC** to deselect the current blocklist or close the add/edit blocklist popup.
