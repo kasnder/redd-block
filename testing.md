@@ -279,6 +279,18 @@ Recommended stance:
 
 ---
 
+## iOS and testing tiers
+
+iOS does not use the helper daemon; enforcement uses the Screen Time plugin (`tauri-plugin-screentime`). Testing should mirror desktop behavior where the same functionality exists.
+
+- **Tier 1 (logic):** Runs in the app; safe to run on iOS. Same blocking/schedule/override logic applies; no system mutation.
+- **Tier 2 (integration):** Desktop-oriented. On iOS, `checkHelperStatus()` is not used for enforcement, so helper-dependent tests are skipped (helper not running). Tier 2 does not currently include iOS-specific integration paths (e.g. Screen Time plugin calls). **Manual checklist is the primary way to validate iOS.**
+- **Tier 3 (helper):** Desktop only; not applicable on iOS.
+
+For release, run the **manual test checklist** (including section **11. iOS-Specific**) on a physical iPhone to cover permissions, one-off/schedule blocking, pause/resume, overlap, override, app blocking, and edge cases in line with the desktop list.
+
+---
+
 ## Typical contributor workflow
 
 1. Run Tier 1 during active feature work for fast feedback.
