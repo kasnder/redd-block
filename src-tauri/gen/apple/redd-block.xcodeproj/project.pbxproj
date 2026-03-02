@@ -413,7 +413,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.redd.block.monitor;
+				PRODUCT_BUNDLE_IDENTIFIER = com.reddblock.monitor;
 				PRODUCT_NAME = ReddBlockMonitor;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;
@@ -552,7 +552,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 0.6.3;
-				DEVELOPMENT_TEAM = 7YEYWQKK25;
+				DEVELOPMENT_TEAM = "4ANFU8RARX";
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				INFOPLIST_FILE = "redd-block_iOS/Info.plist";
@@ -564,7 +564,7 @@
 				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				MARKETING_VERSION = 0.5.2;
 				OTHER_LDFLAGS = "$(inherited) -lapp";
-				PRODUCT_BUNDLE_IDENTIFIER = com.redd.block;
+				PRODUCT_BUNDLE_IDENTIFIER = com.reddblock;
 				PRODUCT_NAME = "ReDD Block";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -584,7 +584,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 0.6.2;
-				DEVELOPMENT_TEAM = 7YEYWQKK25;
+				DEVELOPMENT_TEAM = "4ANFU8RARX";
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				INFOPLIST_FILE = "redd-block_iOS/Info.plist";
@@ -596,7 +596,7 @@
 				"LIBRARY_SEARCH_PATHS[arch=x86_64]" = "$(inherited) $(PROJECT_DIR)/Externals/x86_64/$(CONFIGURATION) $(SDKROOT)/usr/lib/swift $(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME) $(TOOLCHAIN_DIR)/usr/lib/swift-5.0/$(PLATFORM_NAME)";
 				MARKETING_VERSION = 0.5.2;
 				OTHER_LDFLAGS = "$(inherited) -lapp";
-				PRODUCT_BUNDLE_IDENTIFIER = com.redd.block;
+				PRODUCT_BUNDLE_IDENTIFIER = com.reddblock;
 				PRODUCT_NAME = "ReDD Block";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -617,7 +617,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.redd.block.monitor;
+				PRODUCT_BUNDLE_IDENTIFIER = com.reddblock.monitor;
 				PRODUCT_NAME = ReddBlockMonitor;
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 5.0;

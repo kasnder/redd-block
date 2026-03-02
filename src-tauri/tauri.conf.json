@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "ReDD Block",
   "version": "0.8.6",
-  "identifier": "com.redd.block",
+  "identifier": "com.reddblock",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",

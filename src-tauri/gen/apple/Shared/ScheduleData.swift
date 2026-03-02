@@ -2,7 +2,7 @@ import Foundation
 import ManagedSettings
 
 /// App Group identifier shared between the main app and the DeviceActivityMonitor extension.
-let appGroupID = "group.com.redd.block"
+let appGroupID = "group.com.reddblock"
 
 /// Key used to store schedule block data in the shared UserDefaults.
 let scheduleDataKey = "redd.scheduleBlockData"
