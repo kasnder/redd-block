@@ -94,12 +94,13 @@ For iOS builds, run **section 10 (iOS-Specific)** on a physical device so covera
 
 ## 4. Overlap Scenarios
 
-### Shared Domains
-- [ ] Create Blocklist A with: site1.com, shared.com
-- [ ] Create Blocklist B with: shared.com, site2.com
+### Shared Domains and Apps
+- [ ] Create Blocklist A with: site1.com, shared.com (and optionally a shared app, e.g. Notes)
+- [ ] Create Blocklist B with: shared.com, site2.com (and the same shared app in B if used in A)
 - [ ] Start block for both lists
 - [ ] Stop Blocklist A
 - [ ] Verify shared.com is STILL blocked (by Blocklist B)
+- [ ] If using shared app: verify shared app is STILL blocked (by Blocklist B)
 
 ### One-off + Schedule (Same Blocklist)
 - [ ] Start a one-off block for Blocklist X
@@ -168,8 +169,7 @@ Override applies to both websites and apps: overriding a block or using Override
 
 - [ ] Start block at exact same time a schedule ends → no gap
 - [ ] Close and reopen app during active block → block persists
-- [ ] Pause an active one-off block, close app, reopen app → paused state and resume timer are preserved
-- [ ] Pause an active schedule, close app, reopen app → paused schedule state is preserved
+- [ ] Pause an active one-off block or schedule, close app, reopen app → paused state and resume timer are preserved
 - [ ] During a paused block, use Override All → verify paused block is still cleared correctly
 
 ---
@@ -250,18 +250,36 @@ iOS uses Screen Time APIs instead of the desktop helper; there is no hosts file 
 - [ ] Pause while schedule inactive (next segment in ~5 min): pause shorter than gap → verify segment still activates after pause ends; pause overlapping segment start → verify activation suppressed until resume
 
 ### Overlap Scenarios
-- [ ] Shared domains: Blocklist A (site1.com, shared.com), Blocklist B (shared.com, site2.com); start both; stop A → shared.com still blocked by B
+- [ ] Shared domains and apps: Blocklist A (site1.com, shared.com, and optionally a shared app), Blocklist B (shared.com, site2.com, same shared app if used); start both; stop A → shared.com still blocked by B; if shared app used, verify it is still blocked by B
 - [ ] One-off + schedule (same blocklist): start one-off and schedule for same list; override one-off → schedule still blocks; override schedule → sites/apps unblocked
 
 ### Blocklist Management
-- [ ] Create blocklist with name, color, emoji; add website and app targets; configure override difficulty (random words, gibberish, custom; character count)
-- [ ] Max difficulty: enable max difficulty, start block, override with hardest challenge; disable and verify restore of previous type/count
-- [ ] Duplicate blocklist → verify copy has "X copy" name, same content and override settings; duplicate is not started; verify duplication of one-off and of scheduled blocklists (schedule segments copied)
-- [ ] Rename, recolor, delete blocklist
+
+#### Duplication of one-off blocklists
+- [ ] Create blocklist with websites, optional apps, override difficulty (e.g. random words, 20 chars); no schedule
+- [ ] Duplicate blocklist → verify derived name ("X copy" / "X copy 2"), same websites, apps, override settings (incl. max difficulty if set); duplicate not started
+- [ ] Start duplicate, clear by blocklist ID → verify only that block clears (scoped clear)
+
+#### Duplication of scheduled blocklists
+- [ ] Create blocklist with websites, optional apps, override settings, and a schedule (one or more segments)
+- [ ] Duplicate blocklist → verify same name derivation, websites, apps, override, full schedule (all segments); duplicate not started
+- [ ] Start duplicate → verify it runs across schedule segments as expected; scoped clear by blocklist ID affects only duplicate’s blocks/schedule
 
 ### Override Functionality
-- [ ] Single block: start block with 50-char random-words override (websites and/or apps) → open block in calendar → complete challenge → block removed and sites/apps unblocked
-- [ ] Override All: start multiple blocks (one-off + schedule) → Settings → Advanced → Override All → complete hardest challenge → all blocks/schedules cleared (websites and apps), blocklists remain
+
+Override applies to both websites and apps: overriding a block or using Override All clears blocking for all targets in that blocklist (websites and apps) equally.
+
+#### Max difficulty (Add/Edit blocklist UI)
+- [ ] Create or edit blocklist; set override to e.g. Custom text or Random words (low count)
+- [ ] Enable "Max difficulty" → verify dropdown restricts to Random Words / Random Gibberish, count locked to max; save and reopen → state preserved
+- [ ] Uncheck "Max difficulty" → verify previous type and count restored
+
+#### Single Block Override
+- [ ] Start block with 50-char random words override (websites and/or apps) → open block in calendar → complete challenge → block removed, sites/apps unblocked
+
+#### Max difficulty (override)
+- [ ] Blocklist with "Max difficulty" enabled → start one-off block → trigger override (single or Override All) → verify challenge uses hardest setting → complete → block clears
+
 
 ### Edge Cases
 - (iOS uses Screen Time API; app closing and persistence behave differently than on desktop. Leave blank if no known iOS-specific edge cases; retain section for future additions.)
