@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
     <key>method</key>
-    <string>development</string>
+    <string>app-store</string>
     <key>signingStyle</key>
     <string>automatic</string>
     <key>teamID</key>
-    <string>7YEYWQKK25</string>
+    <string>JD647S9RT6</string>
     <key>uploadSymbols</key>
     <true/>
 </dict>

@@ -1,7 +1,8 @@
 {
     "bundle": {
         "iOS": {
-            "minimumSystemVersion": "16.0"
+            "minimumSystemVersion": "16.0",
+            "developmentTeam": "JD647S9RT6"
         },
         "externalBin": [],
         "resources": []

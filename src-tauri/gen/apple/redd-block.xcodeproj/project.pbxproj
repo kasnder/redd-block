@@ -304,11 +304,11 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					07D82C1583CC8C427F543B5C = {
-						DevelopmentTeam = 7YEYWQKK25;
+						DevelopmentTeam = JD647S9RT6;
 						ProvisioningStyle = Automatic;
 					};
 					1A8486F1E15C1FC8BB2597C6 = {
-						DevelopmentTeam = 7YEYWQKK25;
+						DevelopmentTeam = JD647S9RT6;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -366,7 +366,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "export PATH=\"$HOME/.cargo/bin:$PATH\" && cargo tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}";
+			shellScript = "export PATH=\"$HOME/.cargo/bin:$PATH\" && cd \"${SRCROOT}/../../..\" && npx tauri ios xcode-script -v --platform ${PLATFORM_DISPLAY_NAME:?} --sdk-root ${SDKROOT:?} --framework-search-paths \"${FRAMEWORK_SEARCH_PATHS:?}\" --header-search-paths \"${HEADER_SEARCH_PATHS:?}\" --gcc-preprocessor-definitions \"${GCC_PREPROCESSOR_DEFINITIONS:-}\" --configuration ${CONFIGURATION:?} ${FORCE_COLOR} ${ARCHS:?}";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -405,7 +405,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ReddBlockMonitor/ReddBlockMonitor.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 7YEYWQKK25;
+				DEVELOPMENT_TEAM = JD647S9RT6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ReddBlockMonitor/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -552,7 +552,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 0.6.3;
-				DEVELOPMENT_TEAM = "7YEYWQKK25";
+				DEVELOPMENT_TEAM = "JD647S9RT6";
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				INFOPLIST_FILE = "redd-block_iOS/Info.plist";
@@ -584,7 +584,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 0.6.2;
-				DEVELOPMENT_TEAM = "7YEYWQKK25";
+				DEVELOPMENT_TEAM = "JD647S9RT6";
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
 				INFOPLIST_FILE = "redd-block_iOS/Info.plist";
@@ -609,7 +609,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = ReddBlockMonitor/ReddBlockMonitor.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 7YEYWQKK25;
+				DEVELOPMENT_TEAM = JD647S9RT6;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = ReddBlockMonitor/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
