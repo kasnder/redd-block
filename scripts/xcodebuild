@@ -1,0 +1,4 @@
+#!/bin/sh
+# Force ReDD/reddfocus team (JD647S9RT6) so Xcode doesn't fall back to a personal team.
+# Put scripts/ first in PATH when running tauri ios dev.
+exec /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild DEVELOPMENT_TEAM=JD647S9RT6 "$@"
