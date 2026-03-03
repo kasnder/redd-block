@@ -58,6 +58,7 @@ const tauriAPI = {
     screentimeStartBlock: (domains) => invoke('plugin:screentime|screentime_start_block', { domains }),
     screentimeClearBlock: () => invoke('plugin:screentime|screentime_clear_block'),
     showActivityPicker: () => invoke('plugin:screentime|show_activity_picker'),
+    setSchedulesPlugin: (schedules) => invoke('plugin:screentime|set_schedules', { schedules }),
 
     // Event listening
     onBlocksUpdated: (callback) => listen('blocks-updated', callback),
@@ -183,7 +184,38 @@ function isBlockAlwaysOn(block) {
 
 // Sync all active schedules to helper daemon so it can manage transitions autonomously
 async function syncSchedulesToHelper() {
-    if (isIOS) return;
+    if (isIOS) {
+        try {
+            const now = Date.now();
+            const flatEntries = [];
+            for (const schedule of appData.schedules || []) {
+                if (schedule.isPaused && schedule.pauseEndTime > now) continue;
+                if (!schedule.segments || schedule.segments.length === 0) continue;
+                const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+                const domains = blocklist?.websites || [];
+                for (let segIdx = 0; segIdx < schedule.segments.length; segIdx++) {
+                    const seg = schedule.segments[segIdx];
+                    flatEntries.push({
+                        id: `${schedule.id}-${segIdx}`,
+                        startHour: seg.startHour,
+                        startMinute: seg.startMinute,
+                        endHour: seg.endHour,
+                        endMinute: seg.endMinute,
+                        days: seg.days ? [...seg.days] : [],
+                        domains
+                    });
+                }
+            }
+            console.log('[syncSchedulesToHelper] iOS: Sending', flatEntries.length, 'segment entries to plugin');
+            const result = await tauriAPI.setSchedulesPlugin(flatEntries);
+            if (!result.success) {
+                console.warn('[syncSchedulesToHelper] iOS plugin failed:', result.error);
+            }
+        } catch (e) {
+            console.warn('[syncSchedulesToHelper] iOS error:', e);
+        }
+        return;
+    }
     try {
         const status = await tauriAPI.checkHelperStatus();
         if (!status.running || !status.version_ok) {

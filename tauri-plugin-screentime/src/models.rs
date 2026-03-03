@@ -96,6 +96,8 @@ pub struct ScheduleEntryRequest {
     pub end_minute: u32,
     pub domains: Option<Vec<String>>,
     pub app_token_data: Option<Vec<String>>,
+    /// Optional weekday filter: Mon=0 … Sun=6. If present, extension only applies when current day is in this list.
+    pub days: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

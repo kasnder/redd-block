@@ -26,11 +26,11 @@ class ReddBlockMonitor: DeviceActivityMonitor {
             guard let legacyData = SharedScheduleStore.load() else {
                 return
             }
-            applyBlocks(from: legacyData)
+            applyBlocksIfDayMatches(from: legacyData)
             return
         }
         
-        applyBlocks(from: scheduleData)
+        applyBlocksIfDayMatches(from: scheduleData)
     }
     
     /// Called by the system when a scheduled DeviceActivity interval ends.
@@ -91,6 +91,24 @@ class ReddBlockMonitor: DeviceActivityMonitor {
     }
     
     // MARK: - Helpers
+    
+    /// Current weekday in same encoding as frontend/helper: Mon=0 … Sun=6.
+    private static func currentWeekdayMon0() -> Int {
+        // Calendar.weekday: 1=Sun, 2=Mon, …, 7=Sat
+        let weekday = Calendar.current.component(.weekday, from: Date())
+        return (weekday - 2 + 7) % 7
+    }
+    
+    /// If data.days is present and non-empty, only apply when today is in that list. Otherwise apply.
+    private func applyBlocksIfDayMatches(from data: ScheduleBlockData) {
+        if let days = data.days, !days.isEmpty {
+            let today = Self.currentWeekdayMon0()
+            if !days.contains(today) {
+                return
+            }
+        }
+        applyBlocks(from: data)
+    }
     
     /// Apply blocks from a schedule data entry.
     private func applyBlocks(from data: ScheduleBlockData) {

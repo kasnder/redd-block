@@ -44,6 +44,8 @@ class ScheduleEntry: Decodable {
     let endMinute: Int
     let domains: [String]?
     let appTokenData: [String]?
+    /// Optional weekday filter: Mon=0 … Sun=6
+    let days: [Int]?
 }
 
 class SetSchedulesArgs: Decodable {
@@ -544,7 +546,8 @@ class ScreentimePlugin: Plugin {
         for entry in args.schedules {
             let scheduleData = buildScheduleData(
                 domains: entry.domains,
-                appTokenData: entry.appTokenData
+                appTokenData: entry.appTokenData,
+                days: entry.days
             )
             SharedScheduleStore.save(id: entry.id, data: scheduleData)
             
@@ -601,8 +604,9 @@ class ScreentimePlugin: Plugin {
     }
     
     /// Build a ScheduleBlockData from optional domains/appTokenData, encoding
-    /// category tokens from the current stored selection.
-    private func buildScheduleData(domains: [String]?, appTokenData: [String]?) -> ScheduleBlockData {
+    /// category tokens from the current stored selection. Optional days (Mon=0 … Sun=6)
+    /// is stored for the extension to filter by weekday.
+    private func buildScheduleData(domains: [String]?, appTokenData: [String]?, days: [Int]? = nil) -> ScheduleBlockData {
         let selection = ScreentimePlugin.currentSelection
         
         // Encode category tokens from the current selection
@@ -630,7 +634,8 @@ class ScreentimePlugin: Plugin {
         return ScheduleBlockData(
             domains: domains ?? [],
             appTokenData: finalAppTokenData,
-            categoryTokenData: encodedCategoryTokens
+            categoryTokenData: encodedCategoryTokens,
+            days: days
         )
     }
     

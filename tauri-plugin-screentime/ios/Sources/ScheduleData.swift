@@ -19,6 +19,8 @@ struct ScheduleBlockData: Codable {
     let appTokenData: [String]
     /// Base64-encoded ActivityCategoryToken data
     let categoryTokenData: [String]
+    /// Optional weekday filter: Mon=0 … Sun=6. If present and non-empty, extension only applies when current day is in this list.
+    let days: [Int]?
 }
 
 /// Helper to read/write schedule data from the shared App Group container.
