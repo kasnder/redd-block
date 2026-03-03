@@ -551,7 +551,7 @@
 				CODE_SIGN_ENTITLEMENTS = "redd-block_iOS/redd-block_iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 0.6.3;
+				CURRENT_PROJECT_VERSION = 0.8.6;
 				DEVELOPMENT_TEAM = "JD647S9RT6";
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
@@ -583,7 +583,7 @@
 				CODE_SIGN_ENTITLEMENTS = "redd-block_iOS/redd-block_iOS.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 0.6.2;
+				CURRENT_PROJECT_VERSION = 0.8.6;
 				DEVELOPMENT_TEAM = "JD647S9RT6";
 				ENABLE_BITCODE = NO;
 				"EXCLUDED_ARCHS[sdk=iphoneos*]" = x86_64;
