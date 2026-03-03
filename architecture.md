@@ -26,7 +26,7 @@ Primary code surfaces:
 - `src-tauri/src/commands/apps.rs` (desktop app picker utilities)
 - `src-tauri/src/lib.rs` (command registration and platform window setup)
 - `helper-daemon/src/main.rs` (desktop privileged enforcement engine)
-- `tauri-plugin-screentime/` (iOS blocking plugin stack)
+- `tauri-plugin-screentime/` (iOS blocking plugin stack): `src/commands.rs`, `src/mobile.rs` (Rust bridge), `ios/Sources/ScreentimePlugin.swift` (authorization, ManagedSettings, DeviceActivityCenter, activity picker), `ios/Sources/ScheduleData.swift` and `src-tauri/gen/apple/Shared/ScheduleData.swift` (App Group schedule payload), `src-tauri/gen/apple/ReddBlockMonitor/DeviceActivityMonitorExtension.swift` (DeviceActivityMonitor for scheduled windows).
 
 ---
 
@@ -621,14 +621,102 @@ Self-removal internals:
 
 ## 13) iOS architecture specifics
 
-iOS uses Screen Time plugin commands from `src/app.js`:
+iOS does not use a helper daemon. Enforcement is delegated to Apple’s Screen Time APIs (FamilyControls, ManagedSettings, DeviceActivity). The app talks to these via the Tauri Screen Time plugin (`tauri-plugin-screentime`), which is implemented in Swift on iOS and invoked from `src/app.js` through `plugin:screentime|...` commands.
 
-- authorization check/request,
-- website blocking commands,
-- app/category selection via activity picker,
-- clearing/unblocking path.
+### 13.1 Runtime and authority model
 
-Key distinction: there is no desktop helper engine on iOS; behavior and limitations follow Screen Time platform semantics.
+- **No helper:** There is no privileged helper process on iOS. All blocking is done by the system via Screen Time.
+- **Plugin:** `tauri-plugin-screentime` (Rust bridge in `src/mobile.rs`, native implementation in `tauri-plugin-screentime/ios/Sources/ScreentimePlugin.swift`) exposes commands that the frontend calls when `isIOS` is true.
+- **Two enforcement stores:** The plugin uses two `ManagedSettingsStore` instances so manual blocks and scheduled blocks can coexist without overwriting each other:
+  - **Default store** (`ManagedSettingsStore()`): used for manual (one-off) blocks. Holds websites (`webContent.blockedByFilter`), apps (`shield.applications`), and categories (`shield.applicationCategories`).
+  - **Named store** (`ManagedSettingsStore(named: .init("schedule"))`): used only by the DeviceActivityMonitor extension when a scheduled time window is active. The main app writes schedule payloads to the App Group; the extension reads them and applies blocks to this named store.
+- At the OS level, both stores’ settings stack: if either store blocks a domain or app, it is blocked.
+
+### 13.2 Authorization
+
+- **API:** `AuthorizationCenter.shared.requestAuthorization(for: .individual)` (FamilyControls). Status can be `notDetermined`, `denied`, or `approved`.
+- **Frontend:** On load (`DOMContentLoaded`), when `isIOS` is true, the app calls `checkScreentimeAuth()` which invokes `plugin:screentime|check_authorization` and sets `screentimeAuthorized`. Before starting a block, if `!screentimeAuthorized`, the app calls `requestScreentimeAuth()` (`plugin:screentime|request_authorization`); if the user denies, an alert directs them to Settings > Screen Time > ReDD Block.
+- **Plugin:** Every blocking command checks `isAuthorized()` (status == .approved) and returns an error if not granted. Authorization is required for website blocking, app blocking, combined start block, and scheduling.
+
+### 13.3 Website blocking pipeline (iOS)
+
+- **Path:** `src/app.js` computes desired blocked domains (from active non-paused blocks and, when implemented, active schedule windows). On iOS it calls `screentimeStartBlock(domains)` or `screentimeClearBlock()` via the plugin.
+- **Plugin:** `blockWebsites(domains)` / `startBlock(domains)` convert domain strings to `WebDomain` and set `store.webContent.blockedByFilter = .specific(Set(webDomains))`. The Screen Time API allows at most **50 domains** per store; the plugin truncates to the first 50 and returns a `warning` in the response. Domains are not normalized (e.g. no hosts-style stripping of paths) beyond what the frontend sends.
+- **Clear:** `unblockWebsites()` / `clearBlock()` set `store.webContent.blockedByFilter = nil` on the default store. `clearBlock()` also clears the named "schedule" store and calls `store.clearAllSettings()` on both so a full stop removes all blocking.
+- **Persistence:** ManagedSettingsStore persists at the OS level; blocks survive app exit and device reboot until cleared by the app or the user in Settings.
+
+### 13.4 App and category blocking (iOS)
+
+- **Tokens:** On iOS, apps and categories are represented by opaque tokens (`ApplicationToken`, `ActivityCategoryToken`) from FamilyControls. The app never sees app names in the blocking API; it only stores and passes base64-encoded token data.
+- **Activity picker:** The plugin presents Apple’s `FamilyActivityPicker` (SwiftUI) via `showActivityPicker`. The user’s selection (`FamilyActivitySelection`: applicationTokens, categoryTokens, webDomainTokens) is persisted in the App Group UserDefaults under key `redd.activitySelection` so it survives restarts and is available to the DeviceActivityMonitor extension. The picker is shown from the blocklist modal “Browse” button on iOS (instead of the desktop app picker).
+- **Applying selection:** When the user starts a manual block, `startBlock(domains)` blocks the given domains and also applies the **stored** activity selection: it reads `ScreentimePlugin.currentSelection` and sets `store.shield.applications` and `store.shield.applicationCategories` from it. So the same selection is used for every manual block until the user opens the picker again. When building schedule data (`buildScheduleData`), the plugin also uses the current selection for apps/categories if not overridden by the payload.
+- **Clear:** `clearBlock()` sets `store.shield.applications = nil` and `store.shield.applicationCategories = nil` on the default store and clears the schedule store. The **stored selection is intentionally not cleared** so the next block reuses the same apps/categories without re-picking.
+
+### 13.5 Manual (one-off) block flow
+
+1. User starts a block from the UI; frontend ensures Screen Time is authorized, then calls `screentimeStartBlock(blocklist.websites)`.
+2. Plugin `startBlock(domains)`:
+   - Sets `store.webContent.blockedByFilter` to the given domains (up to 50).
+   - Sets `store.shield.applications` and `store.shield.applicationCategories` from `currentSelection` (App Group).
+3. Frontend adds the block to `appData.activeBlocks`, saves, and updates UI. There is no separate “blocked apps” sync on iOS; `updateBlockedApps()` returns early when `isIOS`.
+4. **Stop / override:** For a single-block override or “override all,” the frontend clears the relevant entries from `appData.activeBlocks` (and for override-all, clears `appData.schedules`), then calls `screentimeClearBlock()`. The plugin clears both the default and the "schedule" store. **Scoped clear by blocklist is not implemented on iOS:** one clear removes all Screen Time blocks; the frontend does not re-apply other active blocks by calling `screentimeStartBlock` again for the remaining union. So after a single-block override on iOS, only app-owned state (e.g. which blocklists are “active”) is updated; enforcement is fully cleared until the user starts a new block.
+5. **Pause/resume:** Pause state lives in app data (`isPaused`, `pauseEndTime`). When the frontend recomputes effective domains (e.g. after resume or pause expiry), it calls `updateHostsFile()`, which on iOS calls `screentimeStartBlock(domainsArray)` with the union of domains from non-paused active blocks, or `screentimeClearBlock()` if none. So pause/resume for manual blocks is supported by re-applying the reduced set.
+
+### 13.6 Scheduled blocks (DeviceActivity and extension)
+
+- **Scheduling API:** The plugin uses `DeviceActivityCenter` to register named activities with a daily repeating `DeviceActivitySchedule` (interval start/end as `DateComponents` hour/minute). Activity names follow the pattern `redd-block-{scheduleId}`. The system invokes the **DeviceActivityMonitor** extension when an interval starts or ends; the extension runs in a separate process and has no access to the main app’s memory.
+- **Data bridge:** Schedule payloads (domains, app token data, category token data) are written by the plugin to the App Group via `SharedScheduleStore` (`tauri-plugin-screentime/ios/Sources/ScheduleData.swift` and the copy in `src-tauri/gen/apple/Shared/ScheduleData.swift`). Keys: `redd.multiScheduleData` for a dictionary of schedule id → `ScheduleBlockData` (Codable); legacy key `redd.scheduleData` for a single schedule. The extension reads from the same App Group so it can apply the correct domains/apps/categories when a window starts.
+- **Extension:** `ReddBlockMonitor` (`src-tauri/gen/apple/ReddBlockMonitor/DeviceActivityMonitorExtension.swift`) subclasses `DeviceActivityMonitor`. It uses the **named** store `ManagedSettingsStore(named: .init("schedule"))`.
+  - **intervalDidStart(for activity):** Extracts schedule id from the activity name (`redd-block-{id}`), loads `ScheduleBlockData` from `SharedScheduleStore.load(id:)`, decodes app/category tokens from base64, and applies domains, `shield.applications`, and `shield.applicationCategories` to the named store. If load by id fails, it falls back to legacy single-schedule data.
+  - **intervalDidEnd(for activity):** Does not simply clear the store. It loads all schedules from `SharedScheduleStore.loadAll()`, removes the one that ended, and computes the union of domains, app tokens, and category tokens from the remaining schedules. It then re-applies that union to the named store (or clears if empty). So overlapping schedule windows correctly maintain blocking for other active schedules.
+- **Plugin commands:** The plugin exposes `schedule_block` (single schedule) and `set_schedules` (replace all). Both persist data via `SharedScheduleStore.save(id:, data:)` and call `center.startMonitoring(activityName, during: schedule)`. `unschedule_block(id?)` stops monitoring by id or stops all and clears `SharedScheduleStore`. **Frontend:** As of this writing, `syncSchedulesToHelper()` returns immediately when `isIOS`, so the frontend does not call `set_schedules` or `schedule_block` on iOS. Schedule creation/editing in the UI updates only app data; the plugin’s scheduling API is available for a future sync path so that scheduled blocks can activate and deactivate without the app running.
+
+### 13.7 Merge semantics and store separation
+
+- Manual blocks use the **default** store; scheduled blocks use the **named "schedule"** store. The OS enforces both: a domain or app blocked in either store is blocked.
+- Within the schedule store, multiple schedules are merged by the extension on `intervalDidEnd` (union of all other schedules). Within the default store, there is only one “current” manual block set; each `startBlock` replaces the previous (no per-blocklist stacking in the store). The frontend’s `activeBlocks` array can have multiple blocklists active; on iOS the plugin is called with the **union** of all their domains in `startBlock`, and the single stored activity selection applies to all.
+
+### 13.8 End-to-end command path (app → Screen Time)
+
+```mermaid
+flowchart TD
+    ui[UserAction_src_app_js] --> branch{Platform}
+    branch -->|iOS| auth{Screen Time authorized?}
+    auth -->|No| requestAuth[request_authorization]
+    auth -->|Yes| cmd[Plugin command]
+    requestAuth --> cmd
+    cmd --> startBlock[screentime_start_block / startBlock]
+    cmd --> clearBlock[screentime_clear_block / clearBlock]
+    cmd --> picker[show_activity_picker]
+    startBlock --> defaultStore[ManagedSettingsStore default]
+    startBlock --> selection[App Group currentSelection]
+    clearBlock --> defaultStore
+    clearBlock --> scheduleStore[Named store schedule]
+    scheduleStart[DeviceActivity interval start] --> monitor[ReddBlockMonitor intervalDidStart]
+    monitor --> scheduleStore
+    scheduleEnd[DeviceActivity interval end] --> monitorEnd[ReddBlockMonitor intervalDidEnd]
+    monitorEnd --> merge[Union of other schedules]
+    merge --> scheduleStore
+```
+
+### 13.9 App Group and persistence
+
+- **App Group ID:** `group.com.reddblock` (in `ScheduleData.swift` and extension).
+- **Stored in UserDefaults(suiteName: appGroupID):**
+  - `redd.activitySelection`: encoded `FamilyActivitySelection` for the activity picker.
+  - `redd.multiScheduleData`: dictionary of schedule id → `ScheduleBlockData` (domains, appTokenData, categoryTokenData).
+  - Legacy: `redd.scheduleBlockData` for a single schedule.
+- The main app and the DeviceActivityMonitor extension both use this suite so the extension can read schedule data and the app can persist selection across launches.
+
+### 13.10 iOS-specific constraints and limitations
+
+- **50-domain cap:** Each ManagedSettings store can block at most 50 web domains. The plugin truncates and returns a warning; the frontend does not currently surface this.
+- **No scoped clear:** Clearing a single blocklist’s block on iOS clears all Screen Time blocks; the app does not re-apply the remaining active blocklists to the store.
+- **Schedules not synced from UI:** `syncSchedulesToHelper()` is desktop-only. iOS schedule creation in the UI does not yet call `set_schedules` / `schedule_block`, so scheduled time windows do not activate on iOS until that sync is implemented.
+- **Override challenge:** Override difficulty (random words, gibberish, custom text) is enforced in the frontend; Screen Time itself does not provide a challenge. So override on iOS is “confirm in app” then clear; there is no system-level friction.
+- **No keep-blocking-on-uninstall:** The desktop “keep blocking after uninstall” option has no iOS equivalent; uninstalling the app removes Screen Time enforcement for the app.
+
+Key distinction: there is no desktop-style helper engine on iOS; behavior and limitations follow Screen Time platform semantics (token-based app/category selection, single store per “kind,” DeviceActivity for schedules, and authorization required).
 
 ---
 
@@ -672,7 +760,7 @@ These reduce risk of system networking breakage and self-lockout.
 - helper upgrade mismatch can disable helper-available paths until reinstall/update,
 - on Windows, the helper process is not restarted on crash (scheduled task runs at logon only); if the helper exits, the app re-verifies before start block and on connection failure clears cached availability and shows instructions to remove then reinstall the helper,
 - desktop app-block timing still depends on effective blocked-app state transitions, not hosts model,
-- iOS behavior differs by API constraints and authorization state.
+- **iOS:** behavior differs by Screen Time API constraints: 50-domain limit per store, no scoped clear (single-block override clears all blocks), schedules from UI not yet synced to plugin so scheduled windows do not activate, override is app-only (no system-level challenge), authorization required for all blocking.
 
 ---
 
@@ -744,9 +832,12 @@ This section is intentionally non-technical and complete.
 
 ### 17.9 iOS-specific behavior
 
-- website/app restrictions are managed through Screen Time APIs,
-- app/category selection uses iOS picker flows,
-- behavior depends on authorization and iOS policy model rather than helper daemon.
+- **Enforcement:** Website and app/category restrictions are enforced by Apple’s Screen Time APIs (ManagedSettings, DeviceActivity), not a helper daemon. The app uses the Screen Time plugin (`tauri-plugin-screentime`) from `src/app.js` when `isIOS` is true.
+- **Authorization:** User must grant Screen Time access (FamilyControls). The app checks on launch and may prompt on first block; if denied, the user is directed to Settings > Screen Time > ReDD Block.
+- **Manual blocks:** Start block sends the blocklist’s websites to the plugin and applies the stored activity picker selection (apps and categories) to the default ManagedSettings store. Block persists after app close. Stop or override clears both the default store and the named “schedule” store; there is no per-blocklist clear — one clear removes all blocks.
+- **Activity picker:** On iOS, “Browse” in the blocklist modal opens Apple’s FamilyActivityPicker. Selection is stored in the App Group and reused for the next manual block and for schedule payloads; it is not cleared when clearing blocks.
+- **Scheduled blocks:** The plugin and DeviceActivityMonitor extension support multiple schedules (domains + apps + categories per schedule, time windows via DeviceActivitySchedule). The extension applies blocks when a window starts and merges remaining schedules when a window ends. The frontend does not yet sync schedules to the plugin on iOS (`syncSchedulesToHelper` returns early), so scheduled time windows from the UI do not currently activate on iOS.
+- **Pause/resume:** Supported for manual blocks by re-calling the plugin with the union of domains from non-paused active blocks (or clear if none).
 
 ### 17.10 User safety and trust
 
