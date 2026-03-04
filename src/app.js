@@ -1783,6 +1783,12 @@ function setupOverrideModalListeners() {
                     }
                 }
 
+                // On iOS, clear both Screen Time stores so the overridden schedule's blocks are removed
+                // immediately; updateHostsFile and syncSchedulesToHelper will then re-apply correct state.
+                if (isIOS) {
+                    await tauriAPI.screentimeClearBlock();
+                }
+
                 await saveData();
                 await updateHostsFile();
                 // Sync updated schedules to helper daemon
