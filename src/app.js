@@ -314,6 +314,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (bl && bl.websites) bl.websites.forEach(d => activeDomains.add(d));
             });
         lastBlockedDomains = activeDomains;
+        // Re-register DeviceActivity schedules so background activation
+        // survives app restarts (mirrors desktop startup sync at line 323).
+        await syncSchedulesToHelper();
     } else {
         await checkHelperStatus();
         console.log('[startup-sync] Desktop startup helperAvailable:', helperAvailable);
@@ -7644,6 +7647,11 @@ function startTickInterval() {
         const scheduleStateSignature = getScheduleStateSignature(now);
         if (startTickInterval._lastScheduleStateSignature !== scheduleStateSignature) {
             startTickInterval._lastScheduleStateSignature = scheduleStateSignature;
+            // Schedule segment transitioned (active↔inactive) — update blocking
+            // rules immediately so iOS Screen Time enforcement fires within ~1s
+            // instead of waiting up to 30s for the schedule tick counter.
+            await updateHostsFile();
+            await updateBlockedApps();
             render();
             shouldSyncControls = true;
         }
