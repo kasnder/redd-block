@@ -578,6 +578,10 @@ class ScreentimePlugin: Plugin {
             }
         }
         
+        if !removedIds.isEmpty {
+            reapplyActiveScheduleBlocksToStore(entries: args.schedules)
+        }
+        
         if errors.isEmpty {
             invoke.resolve([
                 "success": true,
@@ -652,6 +656,85 @@ class ScreentimePlugin: Plugin {
             categoryTokenData: encodedCategoryTokens,
             days: days
         )
+    }
+    
+    // MARK: - Re-apply active schedule blocks after clear (pause / setSchedules with removal)
+    
+    /// Current weekday in same encoding as frontend/extension: Mon=0 … Sun=6.
+    private static func currentWeekdayMon0() -> Int {
+        let weekday = Calendar.current.component(.weekday, from: Date())
+        return (weekday - 2 + 7) % 7
+    }
+    
+    /// True if the segment's time window and day filter include the current time.
+    private func isSegmentActiveNow(entry: ScheduleEntry) -> Bool {
+        let today = Self.currentWeekdayMon0()
+        if let days = entry.days, !days.isEmpty {
+            if !days.contains(today) {
+                return false
+            }
+        }
+        let now = Date()
+        let currentMins = Calendar.current.component(.hour, from: now) * 60 + Calendar.current.component(.minute, from: now)
+        let startMins = entry.startHour * 60 + entry.startMinute
+        let endMins = entry.endHour * 60 + entry.endMinute
+        if endMins > startMins {
+            return currentMins >= startMins && currentMins < endMins
+        }
+        let yesterdayDay = today == 0 ? 6 : today - 1
+        if let days = entry.days, !days.isEmpty {
+            let inEvening = days.contains(today) && currentMins >= startMins
+            let inMorning = days.contains(yesterdayDay) && currentMins < endMins
+            return inEvening || inMorning
+        }
+        return currentMins >= startMins || currentMins < endMins
+    }
+    
+    /// After clearing the schedule store, re-apply the union of blocks for all remaining
+    /// segments that are currently in their active time window.
+    private func reapplyActiveScheduleBlocksToStore(entries: [ScheduleEntry]) {
+        var allDomains = Set<WebDomain>()
+        var allAppTokens = Set<ApplicationToken>()
+        var allCategoryTokens = Set<ActivityCategoryToken>()
+        for entry in entries where isSegmentActiveNow(entry: entry) {
+            guard let data = SharedScheduleStore.load(id: entry.id) else { continue }
+            for domain in data.domains.prefix(50) {
+                allDomains.insert(WebDomain(domain: domain))
+            }
+            for tokenString in data.appTokenData {
+                if let tokenData = Data(base64Encoded: tokenString),
+                   let token = try? JSONDecoder().decode(ApplicationToken.self, from: tokenData) {
+                    allAppTokens.insert(token)
+                }
+            }
+            for tokenString in data.categoryTokenData {
+                if let tokenData = Data(base64Encoded: tokenString),
+                   let token = try? JSONDecoder().decode(ActivityCategoryToken.self, from: tokenData) {
+                    allCategoryTokens.insert(token)
+                }
+            }
+        }
+        let scheduleStore = ManagedSettingsStore(named: .init("schedule"))
+        if allDomains.isEmpty && allAppTokens.isEmpty && allCategoryTokens.isEmpty {
+            scheduleStore.clearAllSettings()
+            return
+        }
+        let domainArray = Array(allDomains.prefix(50))
+        if domainArray.isEmpty {
+            scheduleStore.webContent.blockedByFilter = nil
+        } else {
+            scheduleStore.webContent.blockedByFilter = .specific(Set(domainArray))
+        }
+        if allAppTokens.isEmpty {
+            scheduleStore.shield.applications = nil
+        } else {
+            scheduleStore.shield.applications = allAppTokens
+        }
+        if allCategoryTokens.isEmpty {
+            scheduleStore.shield.applicationCategories = nil
+        } else {
+            scheduleStore.shield.applicationCategories = .specific(allCategoryTokens)
+        }
     }
     
     private func statusString(_ status: AuthorizationStatus) -> String {
