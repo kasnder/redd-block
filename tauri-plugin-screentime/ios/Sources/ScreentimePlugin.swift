@@ -541,6 +541,16 @@ class ScreentimePlugin: Plugin {
             SharedScheduleStore.remove(id: id)
         }
         
+        // If any schedules were removed, clear the named "schedule" ManagedSettingsStore.
+        // The DeviceActivityMonitor extension writes blocks to this store when intervalDidStart
+        // fires — those blocks persist at the OS level even after monitoring stops.
+        // Remaining active schedules will re-apply their blocks when the system re-fires
+        // intervalDidStart for their re-registered monitoring.
+        if !removedIds.isEmpty {
+            let scheduleStore = ManagedSettingsStore(named: .init("schedule"))
+            scheduleStore.clearAllSettings()
+        }
+        
         // Add/update schedules
         var errors: [String] = []
         for entry in args.schedules {
@@ -600,6 +610,11 @@ class ScreentimePlugin: Plugin {
             center.stopMonitoring([DeviceActivityName("redd-block-schedule")])
             SharedScheduleStore.clear()
         }
+        
+        // Clear the named "schedule" ManagedSettingsStore to remove OS-level blocks
+        // that were applied by the DeviceActivityMonitor extension.
+        let scheduleStore = ManagedSettingsStore(named: .init("schedule"))
+        scheduleStore.clearAllSettings()
         invoke.resolve(["success": true])
     }
     
