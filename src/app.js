@@ -4588,10 +4588,20 @@ async function proceedWithBlock() {
         }
 
         try {
-            result = await tauriAPI.screentimeStartBlock(blocklist.websites || []);
-            // Sync the domain cache so pause/resume correctly detects changes
-            lastBlockedDomains = new Set(blocklist.websites || []);
+            // Apply union of all active blocks + active schedule segments (not just this blocklist).
+            appData.activeBlocks.push(block);
+            activatedBlockIds.add(block.id);
+            const updateResult = await updateHostsFile();
+            if (!updateResult.success) {
+                appData.activeBlocks = appData.activeBlocks.filter(b => b.id !== block.id);
+                activatedBlockIds.delete(block.id);
+                result = { success: false, error: updateResult.error || 'Failed to update blocking' };
+            } else {
+                result = { success: true };
+            }
         } catch (err) {
+            appData.activeBlocks = appData.activeBlocks.filter(b => b.id !== block.id);
+            activatedBlockIds.delete(block.id);
             result = { success: false, error: err.toString() };
         }
     } else {
@@ -4662,8 +4672,8 @@ async function proceedWithBlock() {
         return;
     }
 
-    // Add block to local data (both iOS screen time and desktop helper track blocks locally)
-    if (isIOS || helperAvailable) {
+    // Add block to local data (desktop: push here; iOS already pushed in branch above)
+    if (!isIOS && helperAvailable) {
         appData.activeBlocks.push(block);
         activatedBlockIds.add(block.id);
     }
