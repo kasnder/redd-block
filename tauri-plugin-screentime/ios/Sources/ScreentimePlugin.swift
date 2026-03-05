@@ -434,10 +434,12 @@ class ScreentimePlugin: Plugin {
         }
         let args = try invoke.parseArgs(BlockWebsitesArgs.self)
         
-        // Block websites
+        // Block websites (only when domains provided); for app-only blocks, clear web filter
         let truncated = args.domains.count > 50
         let webDomains = Set(args.domains.prefix(50).map { WebDomain(domain: $0) })
-        if !webDomains.isEmpty {
+        if webDomains.isEmpty {
+            store.webContent.blockedByFilter = nil
+        } else {
             store.webContent.blockedByFilter = .specific(webDomains)
         }
         

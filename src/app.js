@@ -4911,26 +4911,36 @@ async function updateHostsFile(silent = false) {
     const lastDomainsArray = Array.from(lastBlockedDomains).sort();
     const domainsChanged = JSON.stringify(domainsArray) !== JSON.stringify(lastDomainsArray);
 
-    if (!domainsChanged) {
-        return { success: true, unchanged: true };
-    }
-
     // iOS: Use Screen Time API instead of helper daemon / hosts file
+    // Only clear when there are no active blocks; when there are active blocks, always apply
+    // (even when domainsArray is empty — app-only blocklists must still shield apps).
     if (isIOS) {
         try {
-            if (domainsArray.length === 0) {
-                console.log('[updateHostsFile] iOS: stopping Screen Time block (no domains)');
+            const hasActiveBlocks = appData.activeBlocks.some(
+                block => block.startTime <= now && block.endTime > now && !block.isPaused
+            );
+            if (!hasActiveBlocks) {
+                console.log('[updateHostsFile] iOS: no active blocks, clearing Screen Time');
                 await tauriAPI.screentimeClearBlock();
+                lastBlockedDomains = new Set();
+                return { success: true };
+            }
+            if (domainsArray.length === 0) {
+                console.log('[updateHostsFile] iOS: active blocks with no domains (app-only), applying app shield');
             } else {
                 console.log('[updateHostsFile] iOS: starting Screen Time block for', domainsArray);
-                await tauriAPI.screentimeStartBlock(domainsArray);
             }
+            await tauriAPI.screentimeStartBlock(domainsArray);
             lastBlockedDomains = allDomains;
             return { success: true };
         } catch (err) {
             console.error('[updateHostsFile] iOS Screen Time error:', err);
             return { success: false, error: err.toString() };
         }
+    }
+
+    if (!domainsChanged) {
+        return { success: true, unchanged: true };
     }
 
     // For silent updates (cleanup), skip if it would require password
