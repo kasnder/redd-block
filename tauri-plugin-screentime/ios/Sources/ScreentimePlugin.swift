@@ -578,7 +578,7 @@ class ScreentimePlugin: Plugin {
             }
         }
         
-        if !removedIds.isEmpty {
+        if !args.schedules.isEmpty {
             reapplyActiveScheduleBlocksToStore(entries: args.schedules)
         }
         

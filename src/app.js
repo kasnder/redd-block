@@ -1705,6 +1705,9 @@ function setupOverrideModalListeners() {
 
                 if (isIOS) {
                     await tauriAPI.screentimeClearBlock();
+                    lastBlockedDomains = new Set();
+                    await updateHostsFile();
+                    await syncSchedulesToHelper();
                 } else {
                     const status = await tauriAPI.checkHelperStatus();
                     if (status.running) {
@@ -1787,6 +1790,7 @@ function setupOverrideModalListeners() {
                 // immediately; updateHostsFile and syncSchedulesToHelper will then re-apply correct state.
                 if (isIOS) {
                     await tauriAPI.screentimeClearBlock();
+                    lastBlockedDomains = new Set();
                 }
 
                 await saveData();
