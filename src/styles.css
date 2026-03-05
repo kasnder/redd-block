@@ -2432,6 +2432,12 @@ body.dark-mode .start-schedule-btn.stop-schedule:hover {
     /* top, right (scrollbar), bottom, left */
 }
 
+/* iOS/touch: reliable swipe scroll and momentum */
+body.ios .blocklists-container {
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+}
+
 .blocklists-container::-webkit-scrollbar {
     width: 6px;
 }

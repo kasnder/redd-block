@@ -7320,7 +7320,7 @@ function renderBlocklists() {
         const dimmedClass = isDimmed ? ' dimmed' : '';
 
         return `
-      <div class="blocklist-card${activeClass}${selectedClass}${dimmedClass}" data-id="${bl.id}" data-active="${isActive}" ${selectedStyle} style="touch-action: none;">
+      <div class="blocklist-card${activeClass}${selectedClass}${dimmedClass}" data-id="${bl.id}" data-active="${isActive}" ${selectedStyle}>
         <div class="blocklist-stripe" style="background: ${borderColor}"></div>
         <div class="blocklist-info">
           <div class="blocklist-name"><span class="blocklist-emoji">${bl.emoji || '🚫'}</span>${escapeHtml(bl.name)}${activeBadge}</div>
