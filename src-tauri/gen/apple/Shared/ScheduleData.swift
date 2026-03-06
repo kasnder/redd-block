@@ -10,6 +10,13 @@ let scheduleDataKey = "redd.scheduleBlockData"
 /// Key used to store the multi-schedule dictionary.
 let multiScheduleDataKey = "redd.multiScheduleData"
 
+/// Key prefix for manual block state (current effective state for default store).
+let manualBlockStateKey = "redd.manualBlockState"
+/// Key prefix for resume payloads: "redd.resumePayload.{blockId}"
+let resumePayloadKeyPrefix = "redd.resumePayload."
+/// Key prefix for block-end state: "redd.blockEndState.{blockId}"
+let blockEndStateKeyPrefix = "redd.blockEndState."
+
 /// Data model describing what to block during a scheduled time window.
 /// Stored in the App Group's UserDefaults so the extension can read it.
 struct ScheduleBlockData: Codable {
@@ -99,5 +106,61 @@ struct SharedScheduleStore {
         guard let defaults = sharedDefaults,
               let data = defaults.data(forKey: scheduleDataKey) else { return nil }
         return try? JSONDecoder().decode(ScheduleBlockData.self, from: data)
+    }
+}
+
+// MARK: - Manual block state (for one-off resume/block-end)
+
+/// Same shape as ScheduleBlockData: used for manual block state and resume/block-end payloads in App Group.
+typealias ManualBlockStatePayload = ScheduleBlockData
+
+/// Read/write manual block state and one-off payloads for DeviceActivityMonitor extension.
+struct SharedManualBlockStore {
+    private static var sharedDefaults: UserDefaults? {
+        return UserDefaults(suiteName: appGroupID)
+    }
+    
+    static func saveManualBlockState(_ data: ManualBlockStatePayload) {
+        guard let defaults = sharedDefaults,
+              let encoded = try? JSONEncoder().encode(data) else { return }
+        defaults.set(encoded, forKey: manualBlockStateKey)
+    }
+    
+    static func loadManualBlockState() -> ManualBlockStatePayload? {
+        guard let defaults = sharedDefaults,
+              let data = defaults.data(forKey: manualBlockStateKey) else { return nil }
+        return try? JSONDecoder().decode(ManualBlockStatePayload.self, from: data)
+    }
+    
+    static func saveResumePayload(blockId: String, _ data: ManualBlockStatePayload) {
+        guard let defaults = sharedDefaults,
+              let encoded = try? JSONEncoder().encode(data) else { return }
+        defaults.set(encoded, forKey: resumePayloadKeyPrefix + blockId)
+    }
+    
+    static func loadResumePayload(blockId: String) -> ManualBlockStatePayload? {
+        guard let defaults = sharedDefaults,
+              let data = defaults.data(forKey: resumePayloadKeyPrefix + blockId) else { return nil }
+        return try? JSONDecoder().decode(ManualBlockStatePayload.self, from: data)
+    }
+    
+    static func removeResumePayload(blockId: String) {
+        sharedDefaults?.removeObject(forKey: resumePayloadKeyPrefix + blockId)
+    }
+    
+    static func saveBlockEndState(blockId: String, _ data: ManualBlockStatePayload) {
+        guard let defaults = sharedDefaults,
+              let encoded = try? JSONEncoder().encode(data) else { return }
+        defaults.set(encoded, forKey: blockEndStateKeyPrefix + blockId)
+    }
+    
+    static func loadBlockEndState(blockId: String) -> ManualBlockStatePayload? {
+        guard let defaults = sharedDefaults,
+              let data = defaults.data(forKey: blockEndStateKeyPrefix + blockId) else { return nil }
+        return try? JSONDecoder().decode(ManualBlockStatePayload.self, from: data)
+    }
+    
+    static func removeBlockEndState(blockId: String) {
+        sharedDefaults?.removeObject(forKey: blockEndStateKeyPrefix + blockId)
     }
 }
