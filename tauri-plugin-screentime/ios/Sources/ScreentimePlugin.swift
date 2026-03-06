@@ -660,7 +660,9 @@ class ScreentimePlugin: Plugin {
         let startDate = Date(timeIntervalSince1970: args.startTimestampMs / 1000.0)
         let endDate = startDate.addingTimeInterval(15 * 60)
         let calendar = Calendar.current
-        let components: Set<Calendar.Component> = [.year, .month, .day, .hour, .minute, .second]
+        // Use only time components (no year/month/day) so the system treats this as "next occurrence of this time"
+        // and fires intervalDidStart correctly; full date components can cause the schedule to be misinterpreted.
+        let components: Set<Calendar.Component> = [.hour, .minute, .second]
         let intervalStart = calendar.dateComponents(components, from: startDate)
         let intervalEnd = calendar.dateComponents(components, from: endDate)
         let schedule = DeviceActivitySchedule(

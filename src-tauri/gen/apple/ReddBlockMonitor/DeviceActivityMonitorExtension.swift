@@ -30,7 +30,7 @@ class ReddBlockMonitor: DeviceActivityMonitor {
             return
         }
         
-        // One-off: block end — apply block-end state to default store
+        // One-off: block end — load current manual state, subtract this block's payload, apply, write back (Option B)
         if raw.hasPrefix("redd-block-end-") {
             let blockId = String(raw.dropFirst("redd-block-end-".count))
             handleBlockEndOneOff(blockId: blockId)
@@ -52,7 +52,7 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         applyBlocksIfDayMatches(from: scheduleData)
     }
     
-    /// Handle one-off resume: load manual state + resume payload, merge, apply to default store, remove payload.
+    /// Handle one-off resume: load manual state + resume payload, merge, apply to default store, write back to App Group, remove payload.
     private func handleResumeOneOff(blockId: String) {
         guard let resumePayload = SharedManualBlockStore.loadResumePayload(blockId: blockId) else {
             return
@@ -60,16 +60,36 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         let base = SharedManualBlockStore.loadManualBlockState()
         let merged = mergePayloads(base: base, extra: resumePayload)
         applyToDefaultStore(from: merged)
+        SharedManualBlockStore.saveManualBlockState(merged)
         SharedManualBlockStore.removeResumePayload(blockId: blockId)
     }
     
-    /// Handle one-off block end: apply block-end state to default store, remove payload.
+    /// Handle one-off block end (Option B): load current manual state, subtract this block's payload, apply to default store, write back to App Group.
     private func handleBlockEndOneOff(blockId: String) {
-        guard let endState = SharedManualBlockStore.loadBlockEndState(blockId: blockId) else {
+        guard let toRemove = SharedManualBlockStore.loadBlockEndState(blockId: blockId) else {
             return
         }
-        applyToDefaultStore(from: endState)
+        let current = SharedManualBlockStore.loadManualBlockState()
+        let emptyPayload = ManualBlockStatePayload(domains: [], appTokenData: [], categoryTokenData: [], days: nil)
+        let newState = subtractPayloads(current: current ?? emptyPayload, subtract: toRemove)
+        applyToDefaultStore(from: newState)
+        SharedManualBlockStore.saveManualBlockState(newState)
         SharedManualBlockStore.removeBlockEndState(blockId: blockId)
+    }
+    
+    /// Subtract "to remove" payload from current (set difference for domains; filter out matching app/category tokens).
+    private func subtractPayloads(current: ManualBlockStatePayload, subtract: ManualBlockStatePayload) -> ManualBlockStatePayload {
+        let domainSet = Set(current.domains).subtracting(subtract.domains)
+        let subtractAppSet = Set(subtract.appTokenData)
+        let appTokenData = current.appTokenData.filter { !subtractAppSet.contains($0) }
+        let subtractCategorySet = Set(subtract.categoryTokenData)
+        let categoryTokenData = current.categoryTokenData.filter { !subtractCategorySet.contains($0) }
+        return ManualBlockStatePayload(
+            domains: Array(domainSet),
+            appTokenData: appTokenData,
+            categoryTokenData: categoryTokenData,
+            days: nil
+        )
     }
     
     /// Merge two payloads (union of domains, appTokenData, categoryTokenData).

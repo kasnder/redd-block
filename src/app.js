@@ -4679,18 +4679,15 @@ async function proceedWithBlock() {
             } else {
                 result = { success: true };
                 // Register one-off DeviceActivity so block ends at endTime when app is closed
+                // Register one-off DeviceActivity so block ends at endTime when app is closed (Option B: store this block's payload to remove)
                 if (!block.isAlwaysOn && block.endTime < ALWAYS_ON_END_TIME) {
                     try {
-                        const domainsWithoutThisBlock = new Set();
-                        const now = Date.now();
-                        appData.activeBlocks
-                            .filter(b => b.id !== block.id && b.startTime <= now && b.endTime > now && !b.isPaused)
-                            .forEach(b => {
-                                const bl = appData.blocklists.find(bl => bl.id === b.blocklistId);
-                                if (bl && bl.websites) bl.websites.forEach(d => domainsWithoutThisBlock.add(d));
-                            });
-                        await tauriAPI.screentimeSetBlockEndState(block.id, Array.from(domainsWithoutThisBlock));
-                        await tauriAPI.screentimeRegisterOneOffActivity('redd-block-end-' + block.id, block.endTime);
+                        const thisBlockDomains = blocklist?.websites || [];
+                        await tauriAPI.screentimeSetBlockEndState(block.id, Array.from(thisBlockDomains));
+                        const res = await tauriAPI.screentimeRegisterOneOffActivity('redd-block-end-' + block.id, block.endTime);
+                        if (res && res.success === false) {
+                            console.error('[iOS] One-off DeviceActivity registration failed:', res.error || 'Unknown error');
+                        }
                     } catch (e) {
                         console.warn('[iOS] One-off block-end registration failed:', e);
                     }
@@ -6041,7 +6038,10 @@ async function proceedWithPause() {
                 const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
                 const domains = blocklist?.websites || [];
                 await tauriAPI.screentimeSetResumePayload(pauseBlockId, domains);
-                await tauriAPI.screentimeRegisterOneOffActivity('redd-block-resume-' + pauseBlockId, block.pauseEndTime);
+                const res = await tauriAPI.screentimeRegisterOneOffActivity('redd-block-resume-' + pauseBlockId, block.pauseEndTime);
+                if (res && res.success === false) {
+                    console.error('[iOS] One-off DeviceActivity registration failed:', res.error || 'Unknown error');
+                }
             } catch (e) {
                 console.warn('[iOS] One-off pause-resume registration failed:', e);
             }
