@@ -73,145 +73,165 @@ class SetBlockEndStateArgs: Decodable {
 // MARK: - Activity Picker SwiftUI View
 
 @available(iOS 16.0, *)
-struct ActivityPickerView: View {
-    @State private var selection: FamilyActivitySelection
-    let initialSelection: FamilyActivitySelection
-    
-    init(initialSelection: FamilyActivitySelection = FamilyActivitySelection(), onDone: @escaping (FamilyActivitySelection) -> Void, onCancel: @escaping () -> Void) {
-        self._selection = State(initialValue: initialSelection)
-        self.initialSelection = initialSelection
-        self.onDone = onDone
-        self.onCancel = onCancel
-    }
-    @State private var searchText = ""
-    private let onDone: (FamilyActivitySelection) -> Void
-    private let onCancel: () -> Void
-    
+private enum PickerStep {
+    case picker
+    case review
+}
+
+@available(iOS 16.0, *)
+private struct SelectedReviewView: View {
+    let selection: FamilyActivitySelection
+    let onDone: () -> Void
+
     var body: some View {
-        NavigationView {
-            HStack(spacing: 0) {
-                // Left: Apple's picker
-                FamilyActivityPicker(selection: $selection)
-                    .frame(maxWidth: .infinity)
-                    .searchable(text: $searchText, prompt: "Search apps")
-                
-                // Right: Selected items panel
-                Divider()
-                
-                VStack(alignment: .leading, spacing: 0) {
-                    // Header with counts
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Selected")
-                            .font(.headline)
-                        
-                        let totalApps = selection.applicationTokens.count
-                        let totalCats = selection.categoryTokens.count
-                        let totalWebs = selection.webDomainTokens.count
-                        
-                        if totalApps == 0 && totalCats == 0 && totalWebs == 0 {
-                            Text("No items selected")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        } else {
-                            Text(summaryText(apps: totalApps, categories: totalCats, domains: totalWebs))
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    .padding(.horizontal)
-                    .padding(.vertical, 10)
-                    
-                    Divider()
-                    
-                    // Selected items list
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 2) {
-                            // Categories
-                            if !selection.categoryTokens.isEmpty {
-                                Text("Categories")
-                                    .font(.caption2)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.secondary)
-                                    .textCase(.uppercase)
-                                    .padding(.horizontal)
-                                    .padding(.top, 8)
-                                
-                                ForEach(Array(selection.categoryTokens), id: \.self) { token in
-                                    Label(token)
-                                        .labelStyle(.titleAndIcon)
-                                        .font(.subheadline)
-                                        .padding(.horizontal)
-                                        .padding(.vertical, 6)
-                                }
-                            }
-                            
-                            // Apps
-                            if !selection.applicationTokens.isEmpty {
-                                Text("Apps")
-                                    .font(.caption2)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.secondary)
-                                    .textCase(.uppercase)
-                                    .padding(.horizontal)
-                                    .padding(.top, 8)
-                                
-                                ForEach(Array(selection.applicationTokens), id: \.self) { token in
-                                    Label(token)
-                                        .labelStyle(.titleAndIcon)
-                                        .font(.subheadline)
-                                        .padding(.horizontal)
-                                        .padding(.vertical, 6)
-                                }
-                            }
-                            
-                            // Web domains
-                            if !selection.webDomainTokens.isEmpty {
-                                Text("Websites")
-                                    .font(.caption2)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.secondary)
-                                    .textCase(.uppercase)
-                                    .padding(.horizontal)
-                                    .padding(.top, 8)
-                                
-                                ForEach(Array(selection.webDomainTokens), id: \.self) { token in
-                                    Label(token)
-                                        .labelStyle(.titleAndIcon)
-                                        .font(.subheadline)
-                                        .padding(.horizontal)
-                                        .padding(.vertical, 6)
-                                }
-                            }
-                        }
-                    }
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Selected")
+                    .font(.headline)
+
+                let totalApps = selection.applicationTokens.count
+                let totalCats = selection.categoryTokens.count
+                let totalWebs = selection.webDomainTokens.count
+
+                if totalApps == 0 && totalCats == 0 && totalWebs == 0 {
+                    Text("No items selected")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    Text(summaryText(apps: totalApps, categories: totalCats, domains: totalWebs))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-                .frame(maxWidth: .infinity)
-                .background(Color(.systemGroupedBackground))
             }
-            .navigationTitle("Select Apps")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") {
-                        onDone(selection)
+            .padding(.horizontal)
+            .padding(.vertical, 10)
+
+            Divider()
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    if !selection.categoryTokens.isEmpty {
+                        Text("Categories")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                            .textCase(.uppercase)
+                            .padding(.horizontal)
+                            .padding(.top, 8)
+
+                        ForEach(Array(selection.categoryTokens), id: \.self) { token in
+                            Label(token)
+                                .labelStyle(.titleAndIcon)
+                                .font(.subheadline)
+                                .padding(.horizontal)
+                                .padding(.vertical, 6)
+                        }
                     }
-                }
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        onCancel()
+
+                    if !selection.applicationTokens.isEmpty {
+                        Text("Apps")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                            .textCase(.uppercase)
+                            .padding(.horizontal)
+                            .padding(.top, 8)
+
+                        ForEach(Array(selection.applicationTokens), id: \.self) { token in
+                            Label(token)
+                                .labelStyle(.titleAndIcon)
+                                .font(.subheadline)
+                                .padding(.horizontal)
+                                .padding(.vertical, 6)
+                        }
+                    }
+
+                    if !selection.webDomainTokens.isEmpty {
+                        Text("Websites")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                            .textCase(.uppercase)
+                            .padding(.horizontal)
+                            .padding(.top, 8)
+
+                        ForEach(Array(selection.webDomainTokens), id: \.self) { token in
+                            Label(token)
+                                .labelStyle(.titleAndIcon)
+                                .font(.subheadline)
+                                .padding(.horizontal)
+                                .padding(.vertical, 6)
+                        }
                     }
                 }
             }
         }
-        .navigationViewStyle(.stack)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemGroupedBackground))
     }
-    
+
     private func summaryText(apps: Int, categories: Int, domains: Int) -> String {
         var parts: [String] = []
         if apps > 0 { parts.append("\(apps) app\(apps > 1 ? "s" : "")") }
         if categories > 0 { parts.append("\(categories) categor\(categories > 1 ? "ies" : "y")") }
         if domains > 0 { parts.append("\(domains) domain\(domains > 1 ? "s" : "")") }
         return parts.joined(separator: ", ")
+    }
+}
+
+@available(iOS 16.0, *)
+struct ActivityPickerView: View {
+    @State private var selection: FamilyActivitySelection
+    @State private var step: PickerStep = .picker
+    let initialSelection: FamilyActivitySelection
+
+    init(initialSelection: FamilyActivitySelection = FamilyActivitySelection(), onDone: @escaping (FamilyActivitySelection) -> Void, onCancel: @escaping () -> Void) {
+        self._selection = State(initialValue: initialSelection)
+        self.initialSelection = initialSelection
+        self.onDone = onDone
+        self.onCancel = onCancel
+    }
+    private let onDone: (FamilyActivitySelection) -> Void
+    private let onCancel: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if step == .picker {
+                    FamilyActivityPicker(selection: $selection)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    SelectedReviewView(selection: selection, onDone: { onDone(selection) })
+                }
+            }
+            .navigationTitle(step == .picker ? "Select Apps" : "Selected")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if step == .picker {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            onCancel()
+                        }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Next") {
+                            step = .review
+                        }
+                    }
+                } else {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Back") {
+                            step = .picker
+                        }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") {
+                            onDone(selection)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
