@@ -59,6 +59,12 @@ const tauriAPI = {
     screentimeClearBlock: () => invoke('plugin:screentime|screentime_clear_block'),
     showActivityPicker: () => invoke('plugin:screentime|show_activity_picker'),
     setSchedulesPlugin: (schedules) => invoke('plugin:screentime|set_schedules', { schedules }),
+    screentimeRegisterOneOffActivity: (activityName, startTimestampMs) =>
+        invoke('plugin:screentime|register_one_off_activity', { activityName, startTimestampMs }),
+    screentimeSetResumePayload: (blockId, domains) =>
+        invoke('plugin:screentime|set_resume_payload', { blockId, domains }),
+    screentimeSetBlockEndState: (blockId, domains) =>
+        invoke('plugin:screentime|set_block_end_state', { blockId, domains }),
 
     // Event listening
     onBlocksUpdated: (callback) => listen('blocks-updated', callback),
@@ -302,6 +308,7 @@ const wordList = [
 document.addEventListener('DOMContentLoaded', async () => {
     await loadData();
     detectPlatform(); // Must run early so isIOS is set before other setup
+    await runExpiryOnce(); // Align in-memory state with Screen Time / helper (e.g. after app was closed)
     if (isIOS) {
         await checkScreentimeAuth();
         // Sync lastBlockedDomains from active (non-paused) blocks so pause/resume works after restart
@@ -475,6 +482,79 @@ async function loadData() {
 // Save data to main process
 async function saveData() {
     await tauriAPI.saveData(appData);
+}
+
+/// Run expiry once (e.g. on app load) so in-memory state matches Screen Time / helper.
+/// Clears expired blocks and pause state, then syncs to plugin/helper.
+async function runExpiryOnce() {
+    const now = Date.now();
+    let changed = false;
+
+    // Clear expired pause on blocks
+    for (const block of appData.activeBlocks) {
+        if (block.isPaused && block.pauseEndTime && block.pauseEndTime <= now) {
+            delete block.isPaused;
+            delete block.pauseEndTime;
+            changed = true;
+        }
+    }
+    // Clear expired pause on schedules
+    if (appData.schedules) {
+        for (const schedule of appData.schedules) {
+            if (schedule.isPaused && schedule.pauseEndTime && schedule.pauseEndTime <= now) {
+                delete schedule.isPaused;
+                delete schedule.pauseEndTime;
+                changed = true;
+            }
+        }
+    }
+    // Remove expired blocks
+    const prevCount = appData.activeBlocks.length;
+    appData.activeBlocks = appData.activeBlocks.filter(b => b.endTime > now);
+    if (appData.activeBlocks.length !== prevCount) changed = true;
+
+    // Remove expired schedules (date-limited or non-repeating past end)
+    if (appData.schedules && appData.schedules.length > 0) {
+        const nowDate = new Date(now);
+        const expiredIds = [];
+        for (const schedule of appData.schedules) {
+            if (schedule.repeatType === 'forever') continue;
+            if (schedule.repeatType === 'date' && schedule.repeatDate) {
+                const endDate = new Date(schedule.repeatDate);
+                endDate.setHours(23, 59, 59, 999);
+                if (nowDate > endDate) expiredIds.push(schedule.id);
+                continue;
+            }
+            const createdAt = new Date(schedule.createdAt);
+            const createdDayOfWeek = createdAt.getDay() === 0 ? 6 : createdAt.getDay() - 1;
+            let allExpired = true;
+            for (const segment of schedule.segments || []) {
+                for (const segmentDay of segment.days || []) {
+                    let daysUntil = segmentDay - createdDayOfWeek;
+                    if (daysUntil < 0) daysUntil += 7;
+                    const segmentDate = new Date(createdAt);
+                    segmentDate.setDate(segmentDate.getDate() + daysUntil);
+                    segmentDate.setHours(segment.endHour, segment.endMinute, 0, 0);
+                    if (segmentDate > nowDate) {
+                        allExpired = false;
+                        break;
+                    }
+                }
+                if (!allExpired) break;
+            }
+            if (allExpired) expiredIds.push(schedule.id);
+        }
+        if (expiredIds.length > 0) {
+            appData.schedules = appData.schedules.filter(s => !expiredIds.includes(s.id));
+            changed = true;
+        }
+    }
+
+    if (!changed) return;
+    await saveData();
+    await updateHostsFile();
+    await syncSchedulesToHelper();
+    await updateBlockedApps();
 }
 
 // Compare semver versions - returns true if versionA > versionB
@@ -4598,6 +4678,23 @@ async function proceedWithBlock() {
                 result = { success: false, error: updateResult.error || 'Failed to update blocking' };
             } else {
                 result = { success: true };
+                // Register one-off DeviceActivity so block ends at endTime when app is closed
+                if (!block.isAlwaysOn && block.endTime < ALWAYS_ON_END_TIME) {
+                    try {
+                        const domainsWithoutThisBlock = new Set();
+                        const now = Date.now();
+                        appData.activeBlocks
+                            .filter(b => b.id !== block.id && b.startTime <= now && b.endTime > now && !b.isPaused)
+                            .forEach(b => {
+                                const bl = appData.blocklists.find(bl => bl.id === b.blocklistId);
+                                if (bl && bl.websites) bl.websites.forEach(d => domainsWithoutThisBlock.add(d));
+                            });
+                        await tauriAPI.screentimeSetBlockEndState(block.id, Array.from(domainsWithoutThisBlock));
+                        await tauriAPI.screentimeRegisterOneOffActivity('redd-block-end-' + block.id, block.endTime);
+                    } catch (e) {
+                        console.warn('[iOS] One-off block-end registration failed:', e);
+                    }
+                }
             }
         } catch (err) {
             appData.activeBlocks = appData.activeBlocks.filter(b => b.id !== block.id);
@@ -5935,6 +6032,21 @@ async function proceedWithPause() {
     // Update blocking rules — updateHostsFile skips paused blocks' domains
     await updateHostsFile();
     await updateBlockedApps();
+
+    // iOS: register one-off DeviceActivity so block resumes at pauseEndTime when app is closed
+    if (isIOS && !pauseScheduleData && pauseBlockId) {
+        const block = appData.activeBlocks.find(b => b.id === pauseBlockId);
+        if (block && block.pauseEndTime) {
+            try {
+                const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+                const domains = blocklist?.websites || [];
+                await tauriAPI.screentimeSetResumePayload(pauseBlockId, domains);
+                await tauriAPI.screentimeRegisterOneOffActivity('redd-block-resume-' + pauseBlockId, block.pauseEndTime);
+            } catch (e) {
+                console.warn('[iOS] One-off pause-resume registration failed:', e);
+            }
+        }
+    }
 
     // Re-render UI
     render();
