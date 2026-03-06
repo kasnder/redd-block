@@ -77,6 +77,18 @@ impl<R: Runtime> Screentime<R> {
     Ok(SuccessResponse { success: false, error: Some("Not supported on desktop".to_string()) })
   }
 
+  pub fn register_one_off_activity(&self, _payload: RegisterOneOffActivityRequest) -> crate::Result<SuccessResponse> {
+    Ok(SuccessResponse { success: false, error: Some("One-off DeviceActivity is only available on iOS".to_string()) })
+  }
+
+  pub fn set_resume_payload(&self, _payload: SetResumePayloadRequest) -> crate::Result<SuccessResponse> {
+    Ok(SuccessResponse { success: false, error: Some("Resume payload is only available on iOS".to_string()) })
+  }
+
+  pub fn set_block_end_state(&self, _payload: SetBlockEndStateRequest) -> crate::Result<SuccessResponse> {
+    Ok(SuccessResponse { success: false, error: Some("Block end state is only available on iOS".to_string()) })
+  }
+
   pub fn show_activity_picker(&self) -> crate::Result<ActivityPickerResponse> {
     Ok(ActivityPickerResponse {
       cancelled: true,

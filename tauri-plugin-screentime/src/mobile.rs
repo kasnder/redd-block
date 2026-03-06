@@ -101,6 +101,26 @@ impl<R: Runtime> Screentime<R> {
       .map_err(Into::into)
   }
   
+  // --- One-off DeviceActivity (pause resume / block end) ---
+  
+  pub fn register_one_off_activity(&self, payload: RegisterOneOffActivityRequest) -> crate::Result<SuccessResponse> {
+    self.0
+      .run_mobile_plugin("registerOneOffActivity", payload)
+      .map_err(Into::into)
+  }
+  
+  pub fn set_resume_payload(&self, payload: SetResumePayloadRequest) -> crate::Result<SuccessResponse> {
+    self.0
+      .run_mobile_plugin("setResumePayload", payload)
+      .map_err(Into::into)
+  }
+  
+  pub fn set_block_end_state(&self, payload: SetBlockEndStateRequest) -> crate::Result<SuccessResponse> {
+    self.0
+      .run_mobile_plugin("setBlockEndState", payload)
+      .map_err(Into::into)
+  }
+  
   // --- Activity Picker ---
   
   pub fn show_activity_picker(&self) -> crate::Result<ActivityPickerResponse> {

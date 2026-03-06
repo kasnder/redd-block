@@ -112,6 +112,29 @@ pub struct UnscheduleBlockRequest {
     pub id: Option<String>,
 }
 
+// --- One-off DeviceActivity (pause resume / block end) ---
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegisterOneOffActivityRequest {
+    pub activity_name: String,
+    pub start_timestamp_ms: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetResumePayloadRequest {
+    pub block_id: String,
+    pub domains: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetBlockEndStateRequest {
+    pub block_id: String,
+    pub domains: Vec<String>,
+}
+
 // --- Activity Picker ---
 
 #[derive(Debug, Serialize, Deserialize)]

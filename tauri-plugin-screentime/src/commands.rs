@@ -113,6 +113,44 @@ pub(crate) async fn unschedule_block<R: Runtime>(
     app.screentime().unschedule_block(UnscheduleBlockRequest { id })
 }
 
+// --- One-off DeviceActivity (pause resume / block end) ---
+
+#[command]
+pub(crate) async fn register_one_off_activity<R: Runtime>(
+    app: AppHandle<R>,
+    activity_name: String,
+    start_timestamp_ms: f64,
+) -> Result<SuccessResponse> {
+    app.screentime().register_one_off_activity(RegisterOneOffActivityRequest {
+        activity_name,
+        start_timestamp_ms,
+    })
+}
+
+#[command]
+pub(crate) async fn set_resume_payload<R: Runtime>(
+    app: AppHandle<R>,
+    block_id: String,
+    domains: Vec<String>,
+) -> Result<SuccessResponse> {
+    app.screentime().set_resume_payload(SetResumePayloadRequest {
+        block_id,
+        domains,
+    })
+}
+
+#[command]
+pub(crate) async fn set_block_end_state<R: Runtime>(
+    app: AppHandle<R>,
+    block_id: String,
+    domains: Vec<String>,
+) -> Result<SuccessResponse> {
+    app.screentime().set_block_end_state(SetBlockEndStateRequest {
+        block_id,
+        domains,
+    })
+}
+
 // --- Activity Picker ---
 
 #[command]

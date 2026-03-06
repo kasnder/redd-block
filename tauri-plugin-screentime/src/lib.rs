@@ -47,6 +47,9 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
       commands::schedule_block,
       commands::set_schedules,
       commands::unschedule_block,
+      commands::register_one_off_activity,
+      commands::set_resume_payload,
+      commands::set_block_end_state,
       commands::show_activity_picker,
     ])
     .setup(|app, api| {
