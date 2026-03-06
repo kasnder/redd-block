@@ -54,6 +54,22 @@ class SetSchedulesArgs: Decodable {
 
 class ShowActivityPickerArgs: Decodable {}
 
+// One-off DeviceActivity (pause resume / block end)
+class RegisterOneOffActivityArgs: Decodable {
+    let activityName: String
+    let startTimestampMs: Double
+}
+
+class SetResumePayloadArgs: Decodable {
+    let blockId: String
+    let domains: [String]
+}
+
+class SetBlockEndStateArgs: Decodable {
+    let blockId: String
+    let domains: [String]
+}
+
 // MARK: - Activity Picker SwiftUI View
 
 @available(iOS 16.0, *)
@@ -453,6 +469,10 @@ class ScreentimePlugin: Plugin {
             store.shield.applicationCategories = .specific(categoryTokens)
         }
         
+        // Persist current manual block state to App Group so extension can merge on resume/block-end
+        let manualState = buildScheduleData(domains: args.domains, appTokenData: nil, days: nil)
+        SharedManualBlockStore.saveManualBlockState(manualState)
+        
         var response: [String: Any] = [
             "success": true,
             "websitesBlocked": webDomains.count,
@@ -471,6 +491,9 @@ class ScreentimePlugin: Plugin {
         store.shield.applications = nil
         store.shield.applicationCategories = nil
         store.clearAllSettings()
+        
+        // Clear manual block state in App Group so extension has no stale data
+        SharedManualBlockStore.saveManualBlockState(ScheduleBlockData(domains: [], appTokenData: [], categoryTokenData: [], days: nil))
         
         // Also clear the named "schedule" store used by DeviceActivityMonitor
         // Since we use separate stores for manual vs schedule blocks, both
@@ -621,6 +644,60 @@ class ScreentimePlugin: Plugin {
         // that were applied by the DeviceActivityMonitor extension.
         let scheduleStore = ManagedSettingsStore(named: .init("schedule"))
         scheduleStore.clearAllSettings()
+        invoke.resolve(["success": true])
+    }
+    
+    // MARK: - One-off DeviceActivity (pause resume / block end)
+    
+    /// Register a one-off DeviceActivity that starts at startTimestampMs and ends 15 minutes later.
+    /// The extension will fire intervalDidStart at that time. Activity name e.g. "redd-block-resume-{blockId}" or "redd-block-end-{blockId}".
+    @objc public func registerOneOffActivity(_ invoke: Invoke) throws {
+        guard isAuthorized() else {
+            invoke.resolve(["success": false, "error": "Screen Time authorization not granted"])
+            return
+        }
+        let args = try invoke.parseArgs(RegisterOneOffActivityArgs.self)
+        let startDate = Date(timeIntervalSince1970: args.startTimestampMs / 1000.0)
+        let endDate = startDate.addingTimeInterval(15 * 60)
+        let calendar = Calendar.current
+        let components: Set<Calendar.Component> = [.year, .month, .day, .hour, .minute, .second]
+        let intervalStart = calendar.dateComponents(components, from: startDate)
+        let intervalEnd = calendar.dateComponents(components, from: endDate)
+        let schedule = DeviceActivitySchedule(
+            intervalStart: intervalStart,
+            intervalEnd: intervalEnd,
+            repeats: false
+        )
+        let activityName = DeviceActivityName(args.activityName)
+        do {
+            try center.startMonitoring(activityName, during: schedule)
+            invoke.resolve(["success": true])
+        } catch {
+            invoke.resolve(["success": false, "error": error.localizedDescription])
+        }
+    }
+    
+    /// Save resume payload for a block so the extension can re-apply it when the one-off activity fires.
+    @objc public func setResumePayload(_ invoke: Invoke) throws {
+        guard isAuthorized() else {
+            invoke.resolve(["success": false, "error": "Screen Time authorization not granted"])
+            return
+        }
+        let args = try invoke.parseArgs(SetResumePayloadArgs.self)
+        let payload = buildScheduleData(domains: args.domains, appTokenData: nil, days: nil)
+        SharedManualBlockStore.saveResumePayload(blockId: args.blockId, payload)
+        invoke.resolve(["success": true])
+    }
+    
+    /// Save state to apply when a block ends (effective state without this block) so extension can apply at endTime.
+    @objc public func setBlockEndState(_ invoke: Invoke) throws {
+        guard isAuthorized() else {
+            invoke.resolve(["success": false, "error": "Screen Time authorization not granted"])
+            return
+        }
+        let args = try invoke.parseArgs(SetBlockEndStateArgs.self)
+        let payload = buildScheduleData(domains: args.domains, appTokenData: nil, days: nil)
+        SharedManualBlockStore.saveBlockEndState(blockId: args.blockId, payload)
         invoke.resolve(["success": true])
     }
     
