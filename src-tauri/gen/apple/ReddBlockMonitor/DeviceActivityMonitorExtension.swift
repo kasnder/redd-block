@@ -14,11 +14,30 @@ class ReddBlockMonitor: DeviceActivityMonitor {
     /// blocks — these two stores stack independently at the OS level.
     private let store = ManagedSettingsStore(named: .init("schedule"))
     
+    /// Default store for manual blocks (resume/block-end one-offs write here).
+    private let defaultStore = ManagedSettingsStore()
+    
     /// Called by the system when a scheduled DeviceActivity interval starts.
     override func intervalDidStart(for activity: DeviceActivityName) {
         super.intervalDidStart(for: activity)
         
-        // Extract schedule ID from the activity name (format: "redd-block-{id}")
+        let raw = activity.rawValue
+        
+        // One-off: pause resume — merge manual state + resume payload and apply to default store
+        if raw.hasPrefix("redd-block-resume-") {
+            let blockId = String(raw.dropFirst("redd-block-resume-".count))
+            handleResumeOneOff(blockId: blockId)
+            return
+        }
+        
+        // One-off: block end — apply block-end state to default store
+        if raw.hasPrefix("redd-block-end-") {
+            let blockId = String(raw.dropFirst("redd-block-end-".count))
+            handleBlockEndOneOff(blockId: blockId)
+            return
+        }
+        
+        // Regular schedule segment
         let scheduleId = extractScheduleId(from: activity)
         
         guard let scheduleData = SharedScheduleStore.load(id: scheduleId) else {
@@ -33,9 +52,95 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         applyBlocksIfDayMatches(from: scheduleData)
     }
     
+    /// Handle one-off resume: load manual state + resume payload, merge, apply to default store, remove payload.
+    private func handleResumeOneOff(blockId: String) {
+        guard let resumePayload = SharedManualBlockStore.loadResumePayload(blockId: blockId) else {
+            return
+        }
+        let base = SharedManualBlockStore.loadManualBlockState()
+        let merged = mergePayloads(base: base, extra: resumePayload)
+        applyToDefaultStore(from: merged)
+        SharedManualBlockStore.removeResumePayload(blockId: blockId)
+    }
+    
+    /// Handle one-off block end: apply block-end state to default store, remove payload.
+    private func handleBlockEndOneOff(blockId: String) {
+        guard let endState = SharedManualBlockStore.loadBlockEndState(blockId: blockId) else {
+            return
+        }
+        applyToDefaultStore(from: endState)
+        SharedManualBlockStore.removeBlockEndState(blockId: blockId)
+    }
+    
+    /// Merge two payloads (union of domains, appTokenData, categoryTokenData).
+    private func mergePayloads(base: ManualBlockStatePayload?, extra: ManualBlockStatePayload) -> ManualBlockStatePayload {
+        let domains = Set(base?.domains ?? []).union(extra.domains)
+        var appTokenData = base?.appTokenData ?? []
+        for s in extra.appTokenData where !appTokenData.contains(s) {
+            appTokenData.append(s)
+        }
+        var categoryTokenData = base?.categoryTokenData ?? []
+        for s in extra.categoryTokenData where !categoryTokenData.contains(s) {
+            categoryTokenData.append(s)
+        }
+        return ManualBlockStatePayload(
+            domains: Array(domains),
+            appTokenData: appTokenData,
+            categoryTokenData: categoryTokenData,
+            days: nil
+        )
+    }
+    
+    /// Apply payload to the default (manual) store.
+    private func applyToDefaultStore(from data: ManualBlockStatePayload) {
+        if data.domains.isEmpty && data.appTokenData.isEmpty && data.categoryTokenData.isEmpty {
+            defaultStore.webContent.blockedByFilter = nil
+            defaultStore.shield.applications = nil
+            defaultStore.shield.applicationCategories = nil
+            defaultStore.clearAllSettings()
+            return
+        }
+        if !data.domains.isEmpty {
+            let webDomains = Set(data.domains.prefix(50).map { WebDomain(domain: $0) })
+            defaultStore.webContent.blockedByFilter = .specific(webDomains)
+        } else {
+            defaultStore.webContent.blockedByFilter = nil
+        }
+        var appTokens = Set<ApplicationToken>()
+        for tokenString in data.appTokenData {
+            if let tokenData = Data(base64Encoded: tokenString),
+               let token = try? JSONDecoder().decode(ApplicationToken.self, from: tokenData) {
+                appTokens.insert(token)
+            }
+        }
+        if appTokens.isEmpty {
+            defaultStore.shield.applications = nil
+        } else {
+            defaultStore.shield.applications = appTokens
+        }
+        var categoryTokens = Set<ActivityCategoryToken>()
+        for tokenString in data.categoryTokenData {
+            if let tokenData = Data(base64Encoded: tokenString),
+               let token = try? JSONDecoder().decode(ActivityCategoryToken.self, from: tokenData) {
+                categoryTokens.insert(token)
+            }
+        }
+        if categoryTokens.isEmpty {
+            defaultStore.shield.applicationCategories = nil
+        } else {
+            defaultStore.shield.applicationCategories = .specific(categoryTokens)
+        }
+    }
+    
     /// Called by the system when a scheduled DeviceActivity interval ends.
     override func intervalDidEnd(for activity: DeviceActivityName) {
         super.intervalDidEnd(for: activity)
+        
+        let raw = activity.rawValue
+        // One-off resume/block-end: we only care about intervalDidStart; do not clear default store when interval ends
+        if raw.hasPrefix("redd-block-resume-") || raw.hasPrefix("redd-block-end-") {
+            return
+        }
         
         // Instead of clearing everything unconditionally, check if any OTHER
         // schedules are still active and re-apply their blocks.
