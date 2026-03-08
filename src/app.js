@@ -3843,10 +3843,8 @@ function handleTimeChange() {
 
         if (blocklist && currentWeekStart && !hasActiveBlock) {
             const blockStart = new Date();
-            const weekEnd = new Date(currentWeekStart);
-            weekEnd.setDate(weekEnd.getDate() + 7);
-            weekEnd.setHours(23, 59, 59, 999);
-            renderPreviewBlock(blockStart, weekEnd, blocklist);
+            const { renderEnd } = getCalendarRenderRange();
+            renderPreviewBlock(blockStart, renderEnd, blocklist);
         } else {
             // Remove preview if there's an active block or no blocklist
             document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
@@ -4017,17 +4015,15 @@ function renderActiveScheduleBlock(blockStart, blockEnd, blocklist, segmentIndex
             const dayEnd = new Date(currentDay);
             dayEnd.setHours(23, 59, 59, 999);
 
-            const segmentStart = Math.max(blockStart.getTime(), dayStart.getTime());
-            const segmentEnd = Math.min(blockEnd.getTime(), dayEnd.getTime());
+            const {
+                topPosition,
+                height,
+                segmentStartDate,
+                segmentEndDate
+            } = getCalendarSegmentLayout(blockStart.getTime(), blockEnd.getTime(), dayStart.getTime(), dayEnd.getTime());
 
-            const startMinutes = new Date(segmentStart).getHours() * 60 + new Date(segmentStart).getMinutes();
-            const endMinutes = new Date(segmentEnd).getHours() * 60 + new Date(segmentEnd).getMinutes();
-
-            const topPosition = (startMinutes / 60) * 40;
-            const height = Math.max(20, ((endMinutes - startMinutes) / 60) * 40);
-
-            const startTimeStr = formatTime(new Date(segmentStart));
-            const endTimeStr = formatTime(new Date(segmentEnd));
+            const startTimeStr = formatTime(segmentStartDate);
+            const endTimeStr = formatTime(segmentEndDate);
 
             const blockEl = document.createElement('div');
             blockEl.className = 'calendar-block active-schedule';
@@ -4081,15 +4077,12 @@ function renderPreviewBlock(blockStart, blockEnd, blocklist, skipClear = false, 
             const dayEnd = new Date(currentDay);
             dayEnd.setHours(23, 59, 59, 999);
 
-            const segmentStart = Math.max(blockStart.getTime(), dayStart.getTime());
-            const segmentEnd = Math.min(blockEnd.getTime(), dayEnd.getTime());
-
-            const startMinutes = new Date(segmentStart).getHours() * 60 + new Date(segmentStart).getMinutes();
-            const endMinutes = new Date(segmentEnd).getHours() * 60 + new Date(segmentEnd).getMinutes();
-
-            // Calculate position (40px per hour)
-            const topPosition = (startMinutes / 60) * 40;
-            const height = Math.max(20, ((endMinutes - startMinutes) / 60) * 40);
+            const {
+                topPosition,
+                height,
+                segmentStartDate,
+                segmentEndDate
+            } = getCalendarSegmentLayout(blockStart.getTime(), blockEnd.getTime(), dayStart.getTime(), dayEnd.getTime());
 
             const previewEl = document.createElement('div');
             previewEl.className = 'calendar-block preview';
@@ -4116,7 +4109,7 @@ function renderPreviewBlock(blockStart, blockEnd, blocklist, skipClear = false, 
                 ${resizeHandles}
                 <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
                 <span class="block-label">${escapeHtml(blocklist.name)}</span>
-                <span class="block-time">${formatTime(new Date(segmentStart))} - ${formatTime(new Date(segmentEnd))}</span>
+                <span class="block-time">${formatTime(segmentStartDate)} - ${formatTime(segmentEndDate)}</span>
             `;
 
             // Attach drag/resize event handlers for schedule mode
@@ -7020,6 +7013,37 @@ function updateWeekCalendar() {
     renderWeekBlocks();
 }
 
+function getCalendarRenderRange() {
+    const renderStart = new Date(currentWeekStart);
+    renderStart.setDate(renderStart.getDate() - 7);
+    renderStart.setHours(0, 0, 0, 0);
+
+    const renderEnd = new Date(renderStart);
+    renderEnd.setDate(renderEnd.getDate() + 20);
+    renderEnd.setHours(23, 59, 59, 999);
+
+    return { renderStart, renderEnd };
+}
+
+function getCalendarSegmentLayout(segmentStartMs, segmentEndMs, dayStartMs, dayEndMs) {
+    const clampedStartMs = Math.max(segmentStartMs, dayStartMs);
+    const clampedEndMs = Math.min(segmentEndMs, dayEndMs);
+    const segmentStartDate = new Date(clampedStartMs);
+    const segmentEndDate = new Date(clampedEndMs);
+    const startMinutes = segmentStartDate.getHours() * 60 + segmentStartDate.getMinutes();
+    const reachesDayEnd = segmentEndMs >= dayEndMs;
+    const endMinutes = reachesDayEnd
+        ? 24 * 60
+        : segmentEndDate.getHours() * 60 + segmentEndDate.getMinutes();
+
+    return {
+        topPosition: (startMinutes / 60) * 40,
+        height: Math.max(20, ((endMinutes - startMinutes) / 60) * 40),
+        segmentStartDate,
+        segmentEndDate
+    };
+}
+
 // Update the displayed date range based on visible columns
 function updateVisibleRangeDisplay() {
     const scrollContainer = document.querySelector('.week-calendar-scroll');
@@ -7063,14 +7087,13 @@ function renderWeekBlocks() {
         track.innerHTML = '';
     });
 
-    // Filter blocks within the week range
-    const weekStart = currentWeekStart.getTime();
-    const weekEnd = new Date(currentWeekStart);
-    weekEnd.setDate(weekEnd.getDate() + 7);
-    const weekEndMs = weekEnd.getTime();
+    // Filter blocks within the full visible calendar range (21 rendered days)
+    const { renderStart, renderEnd } = getCalendarRenderRange();
+    const renderStartMs = renderStart.getTime();
+    const renderEndMs = renderEnd.getTime();
 
     const visibleBlocks = appData.activeBlocks.filter(block =>
-        block.endTime > weekStart && block.startTime < weekEndMs
+        block.endTime > renderStartMs && block.startTime < renderEndMs
     );
 
     // Check if there are any schedules
@@ -7093,8 +7116,8 @@ function renderWeekBlocks() {
         }
 
         const blockStart = new Date(block.startTime);
-        // Clamp blockEnd to the displayed week range to avoid infinite loops with always-on blocks
-        const blockEnd = new Date(Math.min(block.endTime, weekEndMs));
+        // Clamp blockEnd to the visible calendar range to avoid infinite loops with always-on blocks
+        const blockEnd = new Date(Math.min(block.endTime, renderEndMs));
         const isExpired = block.endTime <= now && !isBlockAlwaysOn(block);
 
         // Determine which day(s) the block spans
@@ -7118,15 +7141,12 @@ function renderWeekBlocks() {
                 const dayEnd = new Date(currentDay);
                 dayEnd.setHours(23, 59, 59, 999);
 
-                const segmentStart = Math.max(block.startTime, dayStart.getTime());
-                const segmentEnd = Math.min(block.endTime, dayEnd.getTime());
-
-                const startMinutes = new Date(segmentStart).getHours() * 60 + new Date(segmentStart).getMinutes();
-                const endMinutes = new Date(segmentEnd).getHours() * 60 + new Date(segmentEnd).getMinutes();
-
-                // Calculate position (40px per hour, offset by nothing since track starts at hour 0)
-                const topPosition = (startMinutes / 60) * 40;
-                const height = Math.max(20, ((endMinutes - startMinutes) / 60) * 40);
+                const {
+                    topPosition,
+                    height,
+                    segmentStartDate,
+                    segmentEndDate
+                } = getCalendarSegmentLayout(block.startTime, blockEnd.getTime(), dayStart.getTime(), dayEnd.getTime());
 
                 const blockEl = document.createElement('div');
                 blockEl.className = isExpired ? 'calendar-block expired' : 'calendar-block';
@@ -7142,7 +7162,7 @@ function renderWeekBlocks() {
                 blockEl.innerHTML = `
                     <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
                     <span class="block-label">${escapeHtml(blocklist.name)}</span>
-                    <span class="block-time">${formatTime(new Date(segmentStart))} - ${formatTime(new Date(segmentEnd))}</span>
+                    <span class="block-time">${formatTime(segmentStartDate)} - ${formatTime(segmentEndDate)}</span>
                 `;
 
                 // Add click handler for override (only for running blocks)
