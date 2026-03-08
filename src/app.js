@@ -3113,6 +3113,104 @@ function showScheduleTimePopover(btn, type, isStart, segmentIndex) {
 
     const max = type === 'hour' ? 24 : 60;
     const step = type === 'hour' ? 1 : 5;
+    let suppressOptionClickUntil = 0;
+    let touchStartY = null;
+    let touchStartScrollTop = 0;
+    let isTouchDragging = false;
+    let lastTouchY = null;
+    let lastTouchTime = 0;
+    let touchVelocity = 0;
+    let momentumFrame = null;
+
+    function stopMomentum() {
+        if (momentumFrame != null) {
+            cancelAnimationFrame(momentumFrame);
+            momentumFrame = null;
+        }
+    }
+
+    function startMomentum(initialVelocity) {
+        stopMomentum();
+        let velocity = initialVelocity;
+        let lastFrameTime = performance.now();
+
+        const tick = (now) => {
+            const dt = Math.min(32, now - lastFrameTime);
+            lastFrameTime = now;
+
+            scroll.scrollTop -= velocity * dt;
+            velocity *= 0.95;
+
+            if (Math.abs(velocity) < 0.02) {
+                momentumFrame = null;
+                return;
+            }
+
+            const atTop = scroll.scrollTop <= 0;
+            const atBottom = scroll.scrollTop >= scroll.scrollHeight - scroll.clientHeight;
+            if ((atTop && velocity > 0) || (atBottom && velocity < 0)) {
+                momentumFrame = null;
+                return;
+            }
+
+            momentumFrame = requestAnimationFrame(tick);
+        };
+
+        momentumFrame = requestAnimationFrame(tick);
+    }
+
+    // On iPad/iPhone, dragging inside a scrollable list of buttons can be
+    // interpreted as taps unless we explicitly suppress selection right after
+    // a scroll gesture.
+    scroll.addEventListener('touchstart', (e) => {
+        stopMomentum();
+        touchStartY = e.touches[0]?.clientY ?? null;
+        touchStartScrollTop = scroll.scrollTop;
+        isTouchDragging = false;
+        lastTouchY = touchStartY;
+        lastTouchTime = performance.now();
+        touchVelocity = 0;
+    }, { passive: true });
+
+    scroll.addEventListener('touchmove', (e) => {
+        const currentY = e.touches[0]?.clientY;
+        if (touchStartY != null && currentY != null) {
+            const deltaY = currentY - touchStartY;
+            const now = performance.now();
+            const elapsed = Math.max(1, now - lastTouchTime);
+            if (lastTouchY != null) {
+                touchVelocity = (currentY - lastTouchY) / elapsed;
+            }
+            lastTouchY = currentY;
+            lastTouchTime = now;
+            if (Math.abs(deltaY) > 6) {
+                isTouchDragging = true;
+                suppressOptionClickUntil = Date.now() + 250;
+                // Drive the scrolling ourselves so slow finger drags work
+                // reliably in iPad WKWebView even though the children are buttons.
+                scroll.scrollTop = touchStartScrollTop - deltaY;
+                e.preventDefault();
+            }
+        }
+    }, { passive: false });
+
+    scroll.addEventListener('touchend', () => {
+        if (isTouchDragging) {
+            suppressOptionClickUntil = Date.now() + 250;
+            if (Math.abs(touchVelocity) > 0.08) {
+                startMomentum(touchVelocity);
+            }
+        }
+        touchStartY = null;
+        isTouchDragging = false;
+        lastTouchY = null;
+    }, { passive: true });
+
+    scroll.addEventListener('touchcancel', () => {
+        touchStartY = null;
+        isTouchDragging = false;
+        lastTouchY = null;
+    }, { passive: true });
 
     for (let i = 0; i < max; i += step) {
         const option = document.createElement('button');
@@ -3120,6 +3218,9 @@ function showScheduleTimePopover(btn, type, isStart, segmentIndex) {
         option.textContent = String(i).padStart(2, '0');
         option.addEventListener('click', (e) => {
             e.stopPropagation(); // Prevent blocklist deselection
+            if (Date.now() < suppressOptionClickUntil) {
+                return;
+            }
 
             // Update state
             if (type === 'hour') {

@@ -1449,6 +1449,9 @@ body.dark-mode .time-part.active {
 .popover-scroll {
     max-height: 200px;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
     padding: 4px;
     display: flex;
     flex-direction: column;
@@ -1467,6 +1470,7 @@ body.dark-mode .time-part.active {
     text-align: center;
     min-width: 48px;
     color: var(--text-primary);
+    touch-action: pan-y;
 }
 
 .popover-option-now {
