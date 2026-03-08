@@ -7684,6 +7684,7 @@ function renderBlocklists() {
 
         card.querySelector('.edit-btn').addEventListener('click', (e) => {
             e.stopPropagation();
+            closeAllBlocklistMenus();
             const blocklist = appData.blocklists.find(bl => bl.id === id);
             openBlocklistModal(blocklist);
         });
