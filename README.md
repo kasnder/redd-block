@@ -63,23 +63,25 @@ flowchart TB
         Data[Data Store]
     end
 
-    subgraph Plugin["Screen Time Plugin (Swift)"]
-        Picker["FamilyActivityPicker (apps/categories)"]
-        WebBlock["WebContentSettings (websites)"]
-        Shield[ManagedSettingsStore]
+    subgraph Runtime["iOS Runtime"]
+        Plugin["Screen Time Plugin (Swift)<br/>manual blocks + registration"]
+        Shared["App Group Shared Store<br/>schedule payloads + timer payloads"]
+        Monitor["DeviceActivityMonitor Extension<br/>boundary callbacks + shield recompute"]
     end
 
-    subgraph ScreenTime["iOS Screen Time"]
-        ST[Screen Time API]
+    subgraph System["iOS Screen Time Services"]
+        ST[FamilyControls + ManagedSettings + DeviceActivityCenter]
     end
 
     UI <-->|invoke/listen| IPC
+    IPC --> Data
     IPC <--> Plugin
-    UI -->|typed domains| WebBlock
-    UI -->|selected app tokens| Picker
-    Picker --> Shield
-    WebBlock --> Shield
-    Shield -->|shield apps + block domains| ST
+    Plugin -->|manual blocks| ST
+    Plugin -->|persist schedule/timer payloads| Shared
+    Plugin -->|register schedules + one-off timers| ST
+    ST -->|wake at boundaries| Monitor
+    Monitor -->|read payloads| Shared
+    Monitor -->|apply/remove shields| ST
 ```
 
 ## How It Works
@@ -100,6 +102,17 @@ flowchart TB
 **Desktop (macOS / Windows):** The helper daemon uses event-driven monitoring to detect when blocked apps are launched or brought to focus, then immediately hides/minimizes them. App blocking persists even when the main app is closed.
 
 **iOS:** App blocking uses the Screen Time API's `ManagedSettingsStore` to apply a shield overlay on selected apps and categories.
+
+### Scheduled Blocking on iOS
+
+Yes, scheduled blocking is technically supported on iOS. ReDD Block implements it through Apple's Screen Time stack:
+
+- The app saves schedule payloads (domains/app/category tokens) in an App Group store.
+- The app registers schedule windows with `DeviceActivityCenter`.
+- At schedule boundaries, the system wakes the `DeviceActivityMonitor` extension (even when the app is closed), which reads the shared payloads and applies/removes shields via a named `ManagedSettingsStore`.
+- Short iOS schedules still work, but under the hood they must respect Apple's 15-minute minimum `DeviceActivitySchedule` interval and use warning callbacks for the real end time.
+
+This is why iOS scheduled blocking is possible without a desktop-style helper daemon.
 
 | Platform | Detection Method | Hide Method |
 |----------|------------------|-------------|
