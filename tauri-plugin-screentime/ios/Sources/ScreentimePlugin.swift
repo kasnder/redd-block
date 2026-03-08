@@ -280,6 +280,16 @@ class ScreentimePlugin: Plugin {
                     "status": self.statusString(status)
                 ])
             } catch {
+                // iOS can occasionally report a cancellation error even though the
+                // authorization state has already switched to approved.
+                let status = AuthorizationCenter.shared.authorizationStatus
+                if status == .approved {
+                    invoke.resolve([
+                        "granted": true,
+                        "status": self.statusString(status)
+                    ])
+                    return
+                }
                 invoke.resolve([
                     "granted": false,
                     "status": "error",
