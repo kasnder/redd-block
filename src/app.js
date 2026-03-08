@@ -5013,7 +5013,24 @@ async function updateHostsFile(silent = false) {
             const hasActiveBlocks = appData.activeBlocks.some(
                 block => block.startTime <= now && block.endTime > now && !block.isPaused
             );
+            const hasActiveScheduleSegments = (appData.schedules || []).some(schedule => {
+                if (!schedule || !schedule.segments || schedule.segments.length === 0) return false;
+                if (schedule.isPaused && schedule.pauseEndTime > now) return false;
+                if (schedule.repeatType === 'date' && schedule.repeatDate) {
+                    const endDate = new Date(schedule.repeatDate);
+                    endDate.setHours(23, 59, 59, 999);
+                    if (nowDate > endDate) return false;
+                }
+                return isScheduleSegmentActiveNow(schedule, nowDate);
+            });
             if (!hasActiveBlocks) {
+                if (hasActiveScheduleSegments) {
+                    // Schedule enforcement on iOS is owned by the DeviceActivityMonitor extension.
+                    // Avoid clearing stores here or we can wipe an active scheduled block.
+                    console.log('[updateHostsFile] iOS: no manual blocks but schedule segment is active; keeping schedule enforcement');
+                    lastBlockedDomains = new Set();
+                    return { success: true };
+                }
                 console.log('[updateHostsFile] iOS: no active blocks, clearing Screen Time');
                 await tauriAPI.screentimeClearBlock();
                 lastBlockedDomains = new Set();
