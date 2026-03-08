@@ -551,7 +551,11 @@ class ScreentimePlugin: Plugin {
         
         let scheduleData = buildScheduleData(
             domains: args.domains,
-            appTokenData: args.appTokenData
+            appTokenData: args.appTokenData,
+            startHour: args.startHour,
+            startMinute: args.startMinute,
+            endHour: args.endHour,
+            endMinute: args.endMinute
         )
         SharedScheduleStore.save(id: scheduleId, data: scheduleData)
         
@@ -612,7 +616,11 @@ class ScreentimePlugin: Plugin {
             let scheduleData = buildScheduleData(
                 domains: entry.domains,
                 appTokenData: entry.appTokenData,
-                days: entry.days
+                days: entry.days,
+                startHour: entry.startHour,
+                startMinute: entry.startMinute,
+                endHour: entry.endHour,
+                endMinute: entry.endMinute
             )
             SharedScheduleStore.save(id: entry.id, data: scheduleData)
             
@@ -735,8 +743,16 @@ class ScreentimePlugin: Plugin {
     
     /// Build a ScheduleBlockData from optional domains/appTokenData, encoding
     /// category tokens from the current stored selection. Optional days (Mon=0 … Sun=6)
-    /// is stored for the extension to filter by weekday.
-    private func buildScheduleData(domains: [String]?, appTokenData: [String]?, days: [Int]? = nil) -> ScheduleBlockData {
+    /// and start/end times are stored for extension-side active-segment recomputation.
+    private func buildScheduleData(
+        domains: [String]?,
+        appTokenData: [String]?,
+        days: [Int]? = nil,
+        startHour: Int? = nil,
+        startMinute: Int? = nil,
+        endHour: Int? = nil,
+        endMinute: Int? = nil
+    ) -> ScheduleBlockData {
         let selection = ScreentimePlugin.currentSelection
         
         // Encode category tokens from the current selection
@@ -765,7 +781,11 @@ class ScreentimePlugin: Plugin {
             domains: domains ?? [],
             appTokenData: finalAppTokenData,
             categoryTokenData: encodedCategoryTokens,
-            days: days
+            days: days,
+            startHour: startHour,
+            startMinute: startMinute,
+            endHour: endHour,
+            endMinute: endMinute
         )
     }
     

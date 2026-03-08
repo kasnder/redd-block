@@ -38,18 +38,7 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         }
         
         // Regular schedule segment
-        let scheduleId = extractScheduleId(from: activity)
-        
-        guard let scheduleData = SharedScheduleStore.load(id: scheduleId) else {
-            // Fallback: try loading legacy single-schedule data
-            guard let legacyData = SharedScheduleStore.load() else {
-                return
-            }
-            applyBlocksIfDayMatches(from: legacyData)
-            return
-        }
-        
-        applyBlocksIfDayMatches(from: scheduleData)
+        recomputeActiveScheduleUnion()
     }
     
     /// Handle one-off resume: load manual state + resume payload, merge, apply to default store, write back to App Group, remove payload.
@@ -162,57 +151,7 @@ class ReddBlockMonitor: DeviceActivityMonitor {
             return
         }
         
-        // Instead of clearing everything unconditionally, check if any OTHER
-        // schedules are still active and re-apply their blocks.
-        let endedId = extractScheduleId(from: activity)
-        let allSchedules = SharedScheduleStore.loadAll()
-        
-        // Collect blocks from all schedules EXCEPT the one that just ended
-        var remainingDomains = Set<WebDomain>()
-        var remainingAppTokens = Set<ApplicationToken>()
-        var remainingCategoryTokens = Set<ActivityCategoryToken>()
-        
-        for (id, data) in allSchedules where id != endedId {
-            for domain in data.domains.prefix(50) {
-                remainingDomains.insert(WebDomain(domain: domain))
-            }
-            for tokenString in data.appTokenData {
-                if let tokenData = Data(base64Encoded: tokenString),
-                   let token = try? JSONDecoder().decode(ApplicationToken.self, from: tokenData) {
-                    remainingAppTokens.insert(token)
-                }
-            }
-            for tokenString in data.categoryTokenData {
-                if let tokenData = Data(base64Encoded: tokenString),
-                   let token = try? JSONDecoder().decode(ActivityCategoryToken.self, from: tokenData) {
-                    remainingCategoryTokens.insert(token)
-                }
-            }
-        }
-        
-        // Re-apply remaining blocks, or clear if none
-        if remainingDomains.isEmpty {
-            store.webContent.blockedByFilter = nil
-        } else {
-            store.webContent.blockedByFilter = .specific(remainingDomains)
-        }
-        
-        if remainingAppTokens.isEmpty {
-            store.shield.applications = nil
-        } else {
-            store.shield.applications = remainingAppTokens
-        }
-        
-        if remainingCategoryTokens.isEmpty {
-            store.shield.applicationCategories = nil
-        } else {
-            store.shield.applicationCategories = .specific(remainingCategoryTokens)
-        }
-        
-        // If nothing remains, clear all settings for a clean state
-        if remainingDomains.isEmpty && remainingAppTokens.isEmpty && remainingCategoryTokens.isEmpty {
-            store.clearAllSettings()
-        }
+        recomputeActiveScheduleUnion()
     }
     
     // MARK: - Helpers
@@ -224,48 +163,90 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         return (weekday - 2 + 7) % 7
     }
     
-    /// If data.days is present and non-empty, only apply when today is in that list. Otherwise apply.
-    private func applyBlocksIfDayMatches(from data: ScheduleBlockData) {
-        if let days = data.days, !days.isEmpty {
-            let today = Self.currentWeekdayMon0()
-            if !days.contains(today) {
-                return
+    /// Recompute and apply the union of all schedule entries that are active at "now".
+    /// This prevents stale shields and keeps overlap handling consistent on start/end events.
+    private func recomputeActiveScheduleUnion(now: Date = Date()) {
+        let allSchedules = SharedScheduleStore.loadAll()
+        var activeDomains = Set<WebDomain>()
+        var activeAppTokens = Set<ApplicationToken>()
+        var activeCategoryTokens = Set<ActivityCategoryToken>()
+
+        for (_, data) in allSchedules where isScheduleDataActiveNow(data, now: now) {
+            for domain in data.domains.prefix(50) {
+                activeDomains.insert(WebDomain(domain: domain))
+            }
+            for tokenString in data.appTokenData {
+                if let tokenData = Data(base64Encoded: tokenString),
+                   let token = try? JSONDecoder().decode(ApplicationToken.self, from: tokenData) {
+                    activeAppTokens.insert(token)
+                }
+            }
+            for tokenString in data.categoryTokenData {
+                if let tokenData = Data(base64Encoded: tokenString),
+                   let token = try? JSONDecoder().decode(ActivityCategoryToken.self, from: tokenData) {
+                    activeCategoryTokens.insert(token)
+                }
             }
         }
-        applyBlocks(from: data)
+
+        applyScheduleUnion(
+            domains: activeDomains,
+            appTokens: activeAppTokens,
+            categoryTokens: activeCategoryTokens
+        )
     }
     
-    /// Apply blocks from a schedule data entry.
-    private func applyBlocks(from data: ScheduleBlockData) {
-        // Block websites
-        if !data.domains.isEmpty {
-            let webDomains = Set(data.domains.prefix(50).map { WebDomain(domain: $0) })
-            store.webContent.blockedByFilter = .specific(webDomains)
+    /// Apply schedule union and clear stale settings when a component is empty.
+    private func applyScheduleUnion(
+        domains: Set<WebDomain>,
+        appTokens: Set<ApplicationToken>,
+        categoryTokens: Set<ActivityCategoryToken>
+    ) {
+        store.webContent.blockedByFilter = domains.isEmpty ? nil : .specific(domains)
+        store.shield.applications = appTokens.isEmpty ? nil : appTokens
+        store.shield.applicationCategories = categoryTokens.isEmpty ? nil : .specific(categoryTokens)
+
+        if domains.isEmpty && appTokens.isEmpty && categoryTokens.isEmpty {
+            store.clearAllSettings()
         }
-        
-        // Block apps (decode from base64 token data)
-        var appTokens = Set<ApplicationToken>()
-        for tokenString in data.appTokenData {
-            if let tokenData = Data(base64Encoded: tokenString),
-               let token = try? JSONDecoder().decode(ApplicationToken.self, from: tokenData) {
-                appTokens.insert(token)
-            }
+    }
+
+    /// Evaluate whether a persisted schedule entry should be active now.
+    /// If start/end times are missing (legacy payload), fall back to day-only matching.
+    private func isScheduleDataActiveNow(_ data: ScheduleBlockData, now: Date = Date()) -> Bool {
+        let today = Self.currentWeekdayMon0()
+        let currentMins = Calendar.current.component(.hour, from: now) * 60 + Calendar.current.component(.minute, from: now)
+
+        let hasDayFilter = !(data.days?.isEmpty ?? true)
+        let includesToday = data.days?.contains(today) ?? true
+
+        guard let startHour = data.startHour,
+              let startMinute = data.startMinute,
+              let endHour = data.endHour,
+              let endMinute = data.endMinute else {
+            // Legacy schedule payload: evaluate by weekday only.
+            return !hasDayFilter || includesToday
         }
-        if !appTokens.isEmpty {
-            store.shield.applications = appTokens
+
+        let startMins = startHour * 60 + startMinute
+        let endMins = endHour * 60 + endMinute
+
+        if endMins > startMins {
+            if hasDayFilter && !includesToday { return false }
+            return currentMins >= startMins && currentMins < endMins
         }
-        
-        // Block categories (decode from base64 token data)
-        var categoryTokens = Set<ActivityCategoryToken>()
-        for tokenString in data.categoryTokenData {
-            if let tokenData = Data(base64Encoded: tokenString),
-               let token = try? JSONDecoder().decode(ActivityCategoryToken.self, from: tokenData) {
-                categoryTokens.insert(token)
-            }
+
+        // Cross-midnight segment
+        let yesterday = today == 0 ? 6 : today - 1
+        let includesYesterday = data.days?.contains(yesterday) ?? true
+
+        if hasDayFilter {
+            let inEveningPortion = includesToday && currentMins >= startMins
+            let inMorningPortion = includesYesterday && currentMins < endMins
+            return inEveningPortion || inMorningPortion
         }
-        if !categoryTokens.isEmpty {
-            store.shield.applicationCategories = .specific(categoryTokens)
-        }
+
+        return currentMins >= startMins || currentMins < endMins
     }
     
     /// Extract a schedule ID from a DeviceActivityName.

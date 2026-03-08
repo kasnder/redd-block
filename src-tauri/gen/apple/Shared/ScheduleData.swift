@@ -28,6 +28,56 @@ struct ScheduleBlockData: Codable {
     let categoryTokenData: [String]
     /// Optional weekday filter: Mon=0 … Sun=6. If present and non-empty, extension only applies when current day is in this list.
     let days: [Int]?
+    /// Optional start time for this schedule segment (hour/minute).
+    /// Used by the extension to recompute active schedule union on interval transitions.
+    let startHour: Int?
+    let startMinute: Int?
+    /// Optional end time for this schedule segment (hour/minute).
+    let endHour: Int?
+    let endMinute: Int?
+
+    init(
+        domains: [String],
+        appTokenData: [String],
+        categoryTokenData: [String],
+        days: [Int]?,
+        startHour: Int? = nil,
+        startMinute: Int? = nil,
+        endHour: Int? = nil,
+        endMinute: Int? = nil
+    ) {
+        self.domains = domains
+        self.appTokenData = appTokenData
+        self.categoryTokenData = categoryTokenData
+        self.days = days
+        self.startHour = startHour
+        self.startMinute = startMinute
+        self.endHour = endHour
+        self.endMinute = endMinute
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case domains
+        case appTokenData
+        case categoryTokenData
+        case days
+        case startHour
+        case startMinute
+        case endHour
+        case endMinute
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.domains = try container.decodeIfPresent([String].self, forKey: .domains) ?? []
+        self.appTokenData = try container.decodeIfPresent([String].self, forKey: .appTokenData) ?? []
+        self.categoryTokenData = try container.decodeIfPresent([String].self, forKey: .categoryTokenData) ?? []
+        self.days = try container.decodeIfPresent([Int].self, forKey: .days)
+        self.startHour = try container.decodeIfPresent(Int.self, forKey: .startHour)
+        self.startMinute = try container.decodeIfPresent(Int.self, forKey: .startMinute)
+        self.endHour = try container.decodeIfPresent(Int.self, forKey: .endHour)
+        self.endMinute = try container.decodeIfPresent(Int.self, forKey: .endMinute)
+    }
 }
 
 /// Helper to read/write schedule data from the shared App Group container.
