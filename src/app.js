@@ -7867,6 +7867,9 @@ function startTickInterval() {
             // Schedule segment transitioned (active↔inactive) — update blocking
             // rules immediately so iOS Screen Time enforcement fires within ~1s
             // instead of waiting up to 30s for the schedule tick counter.
+            if (isIOS) {
+                await syncSchedulesToHelper();
+            }
             await updateHostsFile();
             await updateBlockedApps();
             render();

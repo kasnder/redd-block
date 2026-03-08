@@ -28,6 +28,68 @@ struct ScheduleBlockData: Codable {
     let categoryTokenData: [String]
     /// Optional weekday filter: Mon=0 … Sun=6. If present and non-empty, extension only applies when current day is in this list.
     let days: [Int]?
+    /// Optional start time for this schedule segment (hour/minute).
+    /// Used by extension-side recompute logic for active schedule union.
+    let startHour: Int?
+    let startMinute: Int?
+    /// Optional end time for this schedule segment (hour/minute).
+    let endHour: Int?
+    let endMinute: Int?
+    /// Optional active window start/end (epoch milliseconds).
+    /// Used to enforce non-repeating and date-limited schedules.
+    let activeFromTimestampMs: Double?
+    let activeUntilTimestampMs: Double?
+
+    init(
+        domains: [String],
+        appTokenData: [String],
+        categoryTokenData: [String],
+        days: [Int]?,
+        startHour: Int? = nil,
+        startMinute: Int? = nil,
+        endHour: Int? = nil,
+        endMinute: Int? = nil,
+        activeFromTimestampMs: Double? = nil,
+        activeUntilTimestampMs: Double? = nil
+    ) {
+        self.domains = domains
+        self.appTokenData = appTokenData
+        self.categoryTokenData = categoryTokenData
+        self.days = days
+        self.startHour = startHour
+        self.startMinute = startMinute
+        self.endHour = endHour
+        self.endMinute = endMinute
+        self.activeFromTimestampMs = activeFromTimestampMs
+        self.activeUntilTimestampMs = activeUntilTimestampMs
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case domains
+        case appTokenData
+        case categoryTokenData
+        case days
+        case startHour
+        case startMinute
+        case endHour
+        case endMinute
+        case activeFromTimestampMs
+        case activeUntilTimestampMs
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.domains = try container.decodeIfPresent([String].self, forKey: .domains) ?? []
+        self.appTokenData = try container.decodeIfPresent([String].self, forKey: .appTokenData) ?? []
+        self.categoryTokenData = try container.decodeIfPresent([String].self, forKey: .categoryTokenData) ?? []
+        self.days = try container.decodeIfPresent([Int].self, forKey: .days)
+        self.startHour = try container.decodeIfPresent(Int.self, forKey: .startHour)
+        self.startMinute = try container.decodeIfPresent(Int.self, forKey: .startMinute)
+        self.endHour = try container.decodeIfPresent(Int.self, forKey: .endHour)
+        self.endMinute = try container.decodeIfPresent(Int.self, forKey: .endMinute)
+        self.activeFromTimestampMs = try container.decodeIfPresent(Double.self, forKey: .activeFromTimestampMs)
+        self.activeUntilTimestampMs = try container.decodeIfPresent(Double.self, forKey: .activeUntilTimestampMs)
+    }
 }
 
 /// Helper to read/write schedule data from the shared App Group container.
