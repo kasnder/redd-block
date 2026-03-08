@@ -274,9 +274,24 @@ async function syncSchedulesToHelper() {
             const result = await tauriAPI.setSchedulesPlugin(flatEntries);
             if (!result.success) {
                 console.warn('[syncSchedulesToHelper] iOS plugin failed:', result.error);
+                if (!hasShownIOSScheduleSyncError) {
+                    hasShownIOSScheduleSyncError = true;
+                    await message(`iOS schedule sync failed: ${result.error || 'unknown plugin error'}`, {
+                        title: 'Schedule Sync Failed',
+                        kind: 'error'
+                    });
+                }
             }
         } catch (e) {
             console.warn('[syncSchedulesToHelper] iOS error:', e);
+            if (!hasShownIOSScheduleSyncError) {
+                hasShownIOSScheduleSyncError = true;
+                const errorText = e?.message || String(e);
+                await message(`iOS schedule sync threw an error: ${errorText}`, {
+                    title: 'Schedule Sync Error',
+                    kind: 'error'
+                });
+            }
         }
         return;
     }
@@ -349,6 +364,7 @@ async function syncKeepBlockingPreferenceToHelper() {
 let scheduleRepeatType = 'no'; // 'no', 'forever', or 'date'
 let scheduleRepeatDate = null; // Date object when repeatType is 'date'
 let activeScheduleSegmentCount = 0; // Number of segments locked in the active schedule (new segments can be added)
+let hasShownIOSScheduleSyncError = false;
 
 // Word list for random word challenges
 const wordList = [

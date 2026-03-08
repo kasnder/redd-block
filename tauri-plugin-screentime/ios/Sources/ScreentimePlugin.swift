@@ -565,11 +565,11 @@ class ScreentimePlugin: Plugin {
         )
         SharedScheduleStore.save(id: scheduleId, data: scheduleData)
         
-        let startComponents = DateComponents(hour: args.startHour, minute: args.startMinute)
-        let endComponents = DateComponents(hour: args.endHour, minute: args.endMinute)
-        let schedule = DeviceActivitySchedule(
-            intervalStart: startComponents,
-            intervalEnd: endComponents,
+        let schedule = buildDeviceActivitySchedule(
+            startHour: args.startHour,
+            startMinute: args.startMinute,
+            endHour: args.endHour,
+            endMinute: args.endMinute,
             repeats: true
         )
         
@@ -594,6 +594,7 @@ class ScreentimePlugin: Plugin {
             return
         }
         let args = try invoke.parseArgs(SetSchedulesArgs.self)
+        NSLog("[ReDD Schedule] setSchedules called with %d entries", args.schedules.count)
         
         // Get current schedule IDs to determine which to remove
         let existingIds = Set(SharedScheduleStore.loadAll().keys)
@@ -619,6 +620,19 @@ class ScreentimePlugin: Plugin {
         // Add/update schedules
         var errors: [String] = []
         for entry in args.schedules {
+            NSLog(
+                "[ReDD Schedule] registering id=%@ start=%02d:%02d end=%02d:%02d repeats=%@ from=%@ until=%@ days=%@ domains=%d",
+                entry.id,
+                entry.startHour,
+                entry.startMinute,
+                entry.endHour,
+                entry.endMinute,
+                String(entry.repeats ?? true),
+                entry.activeFromTimestampMs.map { String($0) } ?? "nil",
+                entry.activeUntilTimestampMs.map { String($0) } ?? "nil",
+                String(describing: entry.days ?? []),
+                entry.domains?.count ?? 0
+            )
             let scheduleData = buildScheduleData(
                 domains: entry.domains,
                 appTokenData: entry.appTokenData,
@@ -632,11 +646,11 @@ class ScreentimePlugin: Plugin {
             )
             SharedScheduleStore.save(id: entry.id, data: scheduleData)
             
-            let startComponents = DateComponents(hour: entry.startHour, minute: entry.startMinute)
-            let endComponents = DateComponents(hour: entry.endHour, minute: entry.endMinute)
-            let schedule = DeviceActivitySchedule(
-                intervalStart: startComponents,
-                intervalEnd: endComponents,
+            let schedule = buildDeviceActivitySchedule(
+                startHour: entry.startHour,
+                startMinute: entry.startMinute,
+                endHour: entry.endHour,
+                endMinute: entry.endMinute,
                 repeats: entry.repeats ?? true
             )
             
@@ -644,7 +658,9 @@ class ScreentimePlugin: Plugin {
             
             do {
                 try center.startMonitoring(activityName, during: schedule)
+                NSLog("[ReDD Schedule] startMonitoring succeeded for %@", entry.id)
             } catch {
+                NSLog("[ReDD Schedule] startMonitoring failed for %@: %@", entry.id, error.localizedDescription)
                 errors.append("Schedule \(entry.id): \(error.localizedDescription)")
             }
         }
@@ -799,6 +815,69 @@ class ScreentimePlugin: Plugin {
             activeFromTimestampMs: activeFromTimestampMs,
             activeUntilTimestampMs: activeUntilTimestampMs
         )
+    }
+
+    /// Apple enforces a 15-minute minimum DeviceActivity interval.
+    /// For shorter schedules, pad the registered interval to 15 minutes and use
+    /// warningTime so the extension gets a callback at the real end time.
+    private func buildDeviceActivitySchedule(
+        startHour: Int,
+        startMinute: Int,
+        endHour: Int,
+        endMinute: Int,
+        repeats: Bool
+    ) -> DeviceActivitySchedule {
+        let startComponents = DateComponents(hour: startHour, minute: startMinute)
+        let actualDurationMinutes = durationMinutes(
+            startHour: startHour,
+            startMinute: startMinute,
+            endHour: endHour,
+            endMinute: endMinute
+        )
+
+        if actualDurationMinutes >= 15 {
+            let endComponents = DateComponents(hour: endHour, minute: endMinute)
+            return DeviceActivitySchedule(
+                intervalStart: startComponents,
+                intervalEnd: endComponents,
+                repeats: repeats
+            )
+        }
+
+        let paddedEndTotalMinutes = (startHour * 60 + startMinute + 15) % (24 * 60)
+        let paddedEndComponents = DateComponents(
+            hour: paddedEndTotalMinutes / 60,
+            minute: paddedEndTotalMinutes % 60
+        )
+        let minutesBeforePaddedEnd = 15 - actualDurationMinutes
+
+        NSLog(
+            "[ReDD Schedule] padding short interval %02d:%02d-%02d:%02d to 15 minutes with warningTime=%d",
+            startHour,
+            startMinute,
+            endHour,
+            endMinute,
+            minutesBeforePaddedEnd
+        )
+
+        return DeviceActivitySchedule(
+            intervalStart: startComponents,
+            intervalEnd: paddedEndComponents,
+            repeats: repeats,
+            warningTime: DateComponents(minute: minutesBeforePaddedEnd)
+        )
+    }
+
+    private func durationMinutes(
+        startHour: Int,
+        startMinute: Int,
+        endHour: Int,
+        endMinute: Int
+    ) -> Int {
+        let startTotal = startHour * 60 + startMinute
+        let endTotal = endHour * 60 + endMinute
+        let wrapped = (endTotal - startTotal + 24 * 60) % (24 * 60)
+        return wrapped == 0 ? 24 * 60 : wrapped
     }
     
     // MARK: - Re-apply active schedule blocks after clear (pause / setSchedules with removal)

@@ -10,6 +10,10 @@ permissions = [
     "allow-screentime-start-block",
     "allow-screentime-clear-block",
     "allow-schedule-block",
+    "allow-set-schedules",
     "allow-unschedule-block",
+    "allow-register-one-off-activity",
+    "allow-set-resume-payload",
+    "allow-set-block-end-state",
     "allow-show-activity-picker"
 ]

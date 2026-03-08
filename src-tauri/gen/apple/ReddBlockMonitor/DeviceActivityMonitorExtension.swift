@@ -22,6 +22,7 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         super.intervalDidStart(for: activity)
         
         let raw = activity.rawValue
+        NSLog("[ReDD Schedule] intervalDidStart raw=%@", raw)
         
         // One-off: pause resume — merge manual state + resume payload and apply to default store
         if raw.hasPrefix("redd-block-resume-") {
@@ -146,11 +147,27 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         super.intervalDidEnd(for: activity)
         
         let raw = activity.rawValue
+        NSLog("[ReDD Schedule] intervalDidEnd raw=%@", raw)
         // One-off resume/block-end: we only care about intervalDidStart; do not clear default store when interval ends
         if raw.hasPrefix("redd-block-resume-") || raw.hasPrefix("redd-block-end-") {
             return
         }
         
+        recomputeActiveScheduleUnion()
+    }
+
+    /// Called before a padded short interval ends. We use this to recompute at
+    /// the schedule's real end time when the registered DeviceActivity interval
+    /// had to be stretched to Apple's 15-minute minimum.
+    override func intervalWillEndWarning(for activity: DeviceActivityName) {
+        super.intervalWillEndWarning(for: activity)
+
+        let raw = activity.rawValue
+        NSLog("[ReDD Schedule] intervalWillEndWarning raw=%@", raw)
+        if raw.hasPrefix("redd-block-resume-") || raw.hasPrefix("redd-block-end-") {
+            return
+        }
+
         recomputeActiveScheduleUnion()
     }
     
@@ -167,11 +184,13 @@ class ReddBlockMonitor: DeviceActivityMonitor {
     /// This prevents stale shields and keeps overlap handling consistent on start/end events.
     private func recomputeActiveScheduleUnion(now: Date = Date()) {
         let allSchedules = SharedScheduleStore.loadAll()
+        NSLog("[ReDD Schedule] recomputeActiveScheduleUnion schedules=%d", allSchedules.count)
         var activeDomains = Set<WebDomain>()
         var activeAppTokens = Set<ApplicationToken>()
         var activeCategoryTokens = Set<ActivityCategoryToken>()
 
-        for (_, data) in allSchedules where isScheduleDataActiveNow(data, now: now) {
+        for (id, data) in allSchedules where isScheduleDataActiveNow(data, now: now) {
+            NSLog("[ReDD Schedule] active schedule id=%@ domains=%d apps=%d categories=%d", id, data.domains.count, data.appTokenData.count, data.categoryTokenData.count)
             for domain in data.domains.prefix(50) {
                 activeDomains.insert(WebDomain(domain: domain))
             }
@@ -202,6 +221,7 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         appTokens: Set<ApplicationToken>,
         categoryTokens: Set<ActivityCategoryToken>
     ) {
+        NSLog("[ReDD Schedule] applyScheduleUnion domains=%d apps=%d categories=%d", domains.count, appTokens.count, categoryTokens.count)
         store.webContent.blockedByFilter = domains.isEmpty ? nil : .specific(domains)
         store.shield.applications = appTokens.isEmpty ? nil : appTokens
         store.shield.applicationCategories = categoryTokens.isEmpty ? nil : .specific(categoryTokens)
@@ -216,9 +236,11 @@ class ReddBlockMonitor: DeviceActivityMonitor {
     private func isScheduleDataActiveNow(_ data: ScheduleBlockData, now: Date = Date()) -> Bool {
         let nowMs = now.timeIntervalSince1970 * 1000.0
         if let activeFrom = data.activeFromTimestampMs, nowMs < activeFrom {
+            NSLog("[ReDD Schedule] inactive: before activeFrom now=%f activeFrom=%f", nowMs, activeFrom)
             return false
         }
         if let activeUntil = data.activeUntilTimestampMs, nowMs > activeUntil {
+            NSLog("[ReDD Schedule] inactive: after activeUntil now=%f activeUntil=%f", nowMs, activeUntil)
             return false
         }
 

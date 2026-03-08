@@ -100,9 +100,24 @@ pub(crate) async fn set_schedules<R: Runtime>(
     app: AppHandle<R>,
     schedules: Vec<crate::models::ScheduleEntryRequest>,
 ) -> Result<SuccessResponse> {
-    app.screentime().set_schedules(SetSchedulesRequest {
+    eprintln!(
+        "[ReDD Schedule] Rust command set_schedules called with {} entries",
+        schedules.len()
+    );
+    let result = app.screentime().set_schedules(SetSchedulesRequest {
         schedules,
-    })
+    });
+    match &result {
+        Ok(response) => eprintln!(
+            "[ReDD Schedule] Rust command set_schedules returned success={}",
+            response.success
+        ),
+        Err(error) => eprintln!(
+            "[ReDD Schedule] Rust command set_schedules returned error={}",
+            error
+        ),
+    }
+    result
 }
 
 #[command]
