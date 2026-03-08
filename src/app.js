@@ -3993,6 +3993,8 @@ function renderSchedulePreview() {
             renderPreviewBlock(blockStart, blockEnd, blocklist, true, segmentIndex);
         }
     });
+
+    layoutOverlappingBlocks();
 }
 
 // Render an active (locked) schedule block on the calendar (not a preview)
@@ -4088,6 +4090,7 @@ function renderPreviewBlock(blockStart, blockEnd, blocklist, skipClear = false, 
             previewEl.className = 'calendar-block preview';
             previewEl.style.top = `${topPosition}px`;
             previewEl.style.height = `${height}px`;
+            previewEl.dataset.previewGroupId = segmentIndex !== null ? `preview-segment-${segmentIndex}` : 'preview-instant';
 
             if (segmentIndex !== null) {
                 previewEl.dataset.segmentIndex = segmentIndex;
@@ -4122,6 +4125,10 @@ function renderPreviewBlock(blockStart, blockEnd, blocklist, skipClear = false, 
 
         // Move to next day
         currentDay.setDate(currentDay.getDate() + 1);
+    }
+
+    if (!skipClear) {
+        layoutOverlappingBlocks();
     }
 }
 
@@ -7198,8 +7205,9 @@ function layoutOverlappingBlocks() {
         const blockData = blocks.map(block => {
             const top = parseFloat(block.style.top) || 0;
             const height = parseFloat(block.style.height) || 20;
-            // Use scheduleId if available, fall back to blockId
-            const groupId = block.dataset.scheduleId || block.dataset.blockId || null;
+            // Use the most specific logical group id available so preview blocks
+            // participate in the same side-by-side layout as saved/running blocks.
+            const groupId = block.dataset.scheduleId || block.dataset.blockId || block.dataset.previewGroupId || null;
             return {
                 element: block,
                 top: top,
