@@ -189,6 +189,60 @@ function isBlockAlwaysOn(block) {
 }
 
 // Sync all active schedules to helper daemon so it can manage transitions autonomously
+function getIOSScheduleEntryWindow(schedule, seg) {
+    const createdAt = new Date(schedule.createdAt || Date.now());
+
+    if (schedule.repeatType === 'forever') {
+        return {
+            repeats: true,
+            activeFromTimestampMs: null,
+            activeUntilTimestampMs: null
+        };
+    }
+
+    if (schedule.repeatType === 'date' && schedule.repeatDate) {
+        const endDate = new Date(schedule.repeatDate);
+        endDate.setHours(23, 59, 59, 999);
+        return {
+            repeats: true,
+            activeFromTimestampMs: createdAt.getTime(),
+            activeUntilTimestampMs: endDate.getTime()
+        };
+    }
+
+    const createdDay = createdAt.getDay() === 0 ? 6 : createdAt.getDay() - 1; // Mon=0
+    const segmentDays = (Array.isArray(seg.days) && seg.days.length > 0) ? seg.days : [createdDay];
+    let firstStart = null;
+    let firstEnd = null;
+
+    for (const segmentDay of segmentDays) {
+        let daysUntil = segmentDay - createdDay;
+        if (daysUntil < 0) daysUntil += 7;
+
+        const segmentStart = new Date(createdAt);
+        segmentStart.setDate(segmentStart.getDate() + daysUntil);
+        segmentStart.setHours(seg.startHour, seg.startMinute, 0, 0);
+
+        const segmentEnd = new Date(createdAt);
+        segmentEnd.setDate(segmentEnd.getDate() + daysUntil);
+        segmentEnd.setHours(seg.endHour, seg.endMinute, 0, 0);
+        if (segmentEnd <= segmentStart) {
+            segmentEnd.setDate(segmentEnd.getDate() + 1);
+        }
+
+        if (!firstStart || segmentStart < firstStart) {
+            firstStart = segmentStart;
+            firstEnd = segmentEnd;
+        }
+    }
+
+    return {
+        repeats: false,
+        activeFromTimestampMs: firstStart ? firstStart.getTime() : null,
+        activeUntilTimestampMs: firstEnd ? firstEnd.getTime() : null
+    };
+}
+
 async function syncSchedulesToHelper() {
     if (isIOS) {
         try {
@@ -201,6 +255,7 @@ async function syncSchedulesToHelper() {
                 const domains = blocklist?.websites || [];
                 for (let segIdx = 0; segIdx < schedule.segments.length; segIdx++) {
                     const seg = schedule.segments[segIdx];
+                    const window = getIOSScheduleEntryWindow(schedule, seg);
                     flatEntries.push({
                         id: `${schedule.id}-${segIdx}`,
                         startHour: seg.startHour,
@@ -208,7 +263,10 @@ async function syncSchedulesToHelper() {
                         endHour: seg.endHour,
                         endMinute: seg.endMinute,
                         days: seg.days ? [...seg.days] : [],
-                        domains
+                        domains,
+                        repeats: window.repeats,
+                        activeFromTimestampMs: window.activeFromTimestampMs,
+                        activeUntilTimestampMs: window.activeUntilTimestampMs
                     });
                 }
             }

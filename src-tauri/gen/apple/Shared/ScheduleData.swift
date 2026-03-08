@@ -35,6 +35,10 @@ struct ScheduleBlockData: Codable {
     /// Optional end time for this schedule segment (hour/minute).
     let endHour: Int?
     let endMinute: Int?
+    /// Optional active window start/end (epoch milliseconds).
+    /// Used to enforce non-repeating and date-limited schedules in extension.
+    let activeFromTimestampMs: Double?
+    let activeUntilTimestampMs: Double?
 
     init(
         domains: [String],
@@ -44,7 +48,9 @@ struct ScheduleBlockData: Codable {
         startHour: Int? = nil,
         startMinute: Int? = nil,
         endHour: Int? = nil,
-        endMinute: Int? = nil
+        endMinute: Int? = nil,
+        activeFromTimestampMs: Double? = nil,
+        activeUntilTimestampMs: Double? = nil
     ) {
         self.domains = domains
         self.appTokenData = appTokenData
@@ -54,6 +60,8 @@ struct ScheduleBlockData: Codable {
         self.startMinute = startMinute
         self.endHour = endHour
         self.endMinute = endMinute
+        self.activeFromTimestampMs = activeFromTimestampMs
+        self.activeUntilTimestampMs = activeUntilTimestampMs
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -65,6 +73,8 @@ struct ScheduleBlockData: Codable {
         case startMinute
         case endHour
         case endMinute
+        case activeFromTimestampMs
+        case activeUntilTimestampMs
     }
 
     init(from decoder: Decoder) throws {
@@ -77,6 +87,8 @@ struct ScheduleBlockData: Codable {
         self.startMinute = try container.decodeIfPresent(Int.self, forKey: .startMinute)
         self.endHour = try container.decodeIfPresent(Int.self, forKey: .endHour)
         self.endMinute = try container.decodeIfPresent(Int.self, forKey: .endMinute)
+        self.activeFromTimestampMs = try container.decodeIfPresent(Double.self, forKey: .activeFromTimestampMs)
+        self.activeUntilTimestampMs = try container.decodeIfPresent(Double.self, forKey: .activeUntilTimestampMs)
     }
 }
 

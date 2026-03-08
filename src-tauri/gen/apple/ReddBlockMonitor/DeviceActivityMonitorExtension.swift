@@ -214,6 +214,14 @@ class ReddBlockMonitor: DeviceActivityMonitor {
     /// Evaluate whether a persisted schedule entry should be active now.
     /// If start/end times are missing (legacy payload), fall back to day-only matching.
     private func isScheduleDataActiveNow(_ data: ScheduleBlockData, now: Date = Date()) -> Bool {
+        let nowMs = now.timeIntervalSince1970 * 1000.0
+        if let activeFrom = data.activeFromTimestampMs, nowMs < activeFrom {
+            return false
+        }
+        if let activeUntil = data.activeUntilTimestampMs, nowMs > activeUntil {
+            return false
+        }
+
         let today = Self.currentWeekdayMon0()
         let currentMins = Calendar.current.component(.hour, from: now) * 60 + Calendar.current.component(.minute, from: now)
 

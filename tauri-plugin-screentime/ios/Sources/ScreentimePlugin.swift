@@ -46,6 +46,12 @@ class ScheduleEntry: Decodable {
     let appTokenData: [String]?
     /// Optional weekday filter: Mon=0 … Sun=6
     let days: [Int]?
+    /// Whether DeviceActivity should repeat this schedule entry.
+    let repeats: Bool?
+    /// Optional active window start/end (epoch milliseconds). Extension uses this
+    /// to enforce non-repeating and date-limited schedule semantics.
+    let activeFromTimestampMs: Double?
+    let activeUntilTimestampMs: Double?
 }
 
 class SetSchedulesArgs: Decodable {
@@ -620,7 +626,9 @@ class ScreentimePlugin: Plugin {
                 startHour: entry.startHour,
                 startMinute: entry.startMinute,
                 endHour: entry.endHour,
-                endMinute: entry.endMinute
+                endMinute: entry.endMinute,
+                activeFromTimestampMs: entry.activeFromTimestampMs,
+                activeUntilTimestampMs: entry.activeUntilTimestampMs
             )
             SharedScheduleStore.save(id: entry.id, data: scheduleData)
             
@@ -629,7 +637,7 @@ class ScreentimePlugin: Plugin {
             let schedule = DeviceActivitySchedule(
                 intervalStart: startComponents,
                 intervalEnd: endComponents,
-                repeats: true
+                repeats: entry.repeats ?? true
             )
             
             let activityName = DeviceActivityName("redd-block-\(entry.id)")
@@ -751,7 +759,9 @@ class ScreentimePlugin: Plugin {
         startHour: Int? = nil,
         startMinute: Int? = nil,
         endHour: Int? = nil,
-        endMinute: Int? = nil
+        endMinute: Int? = nil,
+        activeFromTimestampMs: Double? = nil,
+        activeUntilTimestampMs: Double? = nil
     ) -> ScheduleBlockData {
         let selection = ScreentimePlugin.currentSelection
         
@@ -785,7 +795,9 @@ class ScreentimePlugin: Plugin {
             startHour: startHour,
             startMinute: startMinute,
             endHour: endHour,
-            endMinute: endMinute
+            endMinute: endMinute,
+            activeFromTimestampMs: activeFromTimestampMs,
+            activeUntilTimestampMs: activeUntilTimestampMs
         )
     }
     
@@ -799,13 +811,20 @@ class ScreentimePlugin: Plugin {
     
     /// True if the segment's time window and day filter include the current time.
     private func isSegmentActiveNow(entry: ScheduleEntry) -> Bool {
+        let now = Date()
+        let nowMs = now.timeIntervalSince1970 * 1000.0
+        if let activeFrom = entry.activeFromTimestampMs, nowMs < activeFrom {
+            return false
+        }
+        if let activeUntil = entry.activeUntilTimestampMs, nowMs > activeUntil {
+            return false
+        }
         let today = Self.currentWeekdayMon0()
         if let days = entry.days, !days.isEmpty {
             if !days.contains(today) {
                 return false
             }
         }
-        let now = Date()
         let currentMins = Calendar.current.component(.hour, from: now) * 60 + Calendar.current.component(.minute, from: now)
         let startMins = entry.startHour * 60 + entry.startMinute
         let endMins = entry.endHour * 60 + entry.endMinute

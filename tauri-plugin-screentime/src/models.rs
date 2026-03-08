@@ -98,6 +98,12 @@ pub struct ScheduleEntryRequest {
     pub app_token_data: Option<Vec<String>>,
     /// Optional weekday filter: Mon=0 … Sun=6. If present, extension only applies when current day is in this list.
     pub days: Option<Vec<u8>>,
+    /// Whether the DeviceActivity schedule should repeat.
+    pub repeats: Option<bool>,
+    /// Optional active window start for this schedule entry.
+    pub active_from_timestamp_ms: Option<f64>,
+    /// Optional active window end for this schedule entry.
+    pub active_until_timestamp_ms: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
