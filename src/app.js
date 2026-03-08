@@ -385,19 +385,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     await runExpiryOnce(); // Align in-memory state with Screen Time / helper (e.g. after app was closed)
     if (isIOS) {
         await checkScreentimeAuth();
-        // Sync lastBlockedDomains from active (non-paused) blocks so pause/resume works after restart
-        const now = Date.now();
-        const activeDomains = new Set();
-        appData.activeBlocks
-            .filter(b => b.startTime <= now && b.endTime > now && !b.isPaused)
-            .forEach(b => {
-                const bl = appData.blocklists.find(bl => bl.id === b.blocklistId);
-                if (bl && bl.websites) bl.websites.forEach(d => activeDomains.add(d));
-            });
-        lastBlockedDomains = activeDomains;
-        // Re-register DeviceActivity schedules so background activation
-        // survives app restarts (mirrors desktop startup sync at line 323).
-        await syncSchedulesToHelper();
+        if (screentimeAuthorized) {
+            await initializeIOSBlockingState();
+        }
     } else {
         await checkHelperStatus();
         console.log('[startup-sync] Desktop startup helperAvailable:', helperAvailable);
@@ -500,6 +490,7 @@ async function checkScreentimeAuth() {
         console.error('Error checking Screen Time auth:', err);
         screentimeAuthorized = false;
     }
+    updateIOSScreenTimeOnboarding();
 }
 
 // Request Screen Time authorization (iOS only)
@@ -508,11 +499,34 @@ async function requestScreentimeAuth() {
         const result = await tauriAPI.screentimeRequestAuth();
         screentimeAuthorized = result.granted;
         console.log('Screen Time auth result:', result);
+        updateIOSScreenTimeOnboarding();
         return result;
     } catch (err) {
         console.error('Error requesting Screen Time auth:', err);
+        updateIOSScreenTimeOnboarding();
         return { granted: false, status: 'error', error: err.toString() };
     }
+}
+
+async function initializeIOSBlockingState() {
+    // Sync lastBlockedDomains from active (non-paused) blocks so pause/resume works after restart
+    const now = Date.now();
+    const activeDomains = new Set();
+    appData.activeBlocks
+        .filter(b => b.startTime <= now && b.endTime > now && !b.isPaused)
+        .forEach(b => {
+            const bl = appData.blocklists.find(bl => bl.id === b.blocklistId);
+            if (bl && bl.websites) bl.websites.forEach(d => activeDomains.add(d));
+        });
+    lastBlockedDomains = activeDomains;
+    // Re-register DeviceActivity schedules so background activation survives app restarts.
+    await syncSchedulesToHelper();
+}
+
+function updateIOSScreenTimeOnboarding() {
+    const overlay = document.getElementById('ios-screentime-onboarding');
+    if (!overlay) return;
+    overlay.classList.toggle('hidden', !(isIOS && !screentimeAuthorized));
 }
 
 // Load data from main process
@@ -759,6 +773,36 @@ function setupEventListeners() {
 
     document.getElementById('titlebar-close')?.addEventListener('click', () => {
         tauriAPI.closeWindow();
+    });
+
+    document.getElementById('ios-screentime-grant-btn')?.addEventListener('click', async () => {
+        const btn = document.getElementById('ios-screentime-grant-btn');
+        const note = document.getElementById('ios-screentime-onboarding-note');
+        if (!btn) return;
+
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Requesting access...';
+
+        const result = await requestScreentimeAuth();
+
+        if (result.granted) {
+            try {
+                await initializeIOSBlockingState();
+                render();
+            } catch (err) {
+                console.error('Error initializing iOS blocking state after auth:', err);
+            }
+        } else if (note) {
+            if (result.status === 'denied') {
+                note.textContent = 'Screen Time access was denied. Please tap the button again, or enable ReDD Block in Settings > Screen Time > Apps With Screen Time Access.';
+            } else if (result.error) {
+                note.textContent = `Screen Time access failed: ${result.error}`;
+            }
+        }
+
+        btn.disabled = false;
+        btn.textContent = originalText;
     });
 
     // Initial check for maximize state

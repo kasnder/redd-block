@@ -2733,8 +2733,16 @@ body.ios .blocklists-container {
 }
 
 .onboarding-icon {
-    color: #667eea;
     margin-bottom: 20px;
+}
+
+.onboarding-app-icon {
+    width: 56px;
+    height: 56px;
+    display: block;
+    margin: 0 auto;
+    border-radius: 14px;
+    box-shadow: 0 6px 18px rgba(10, 45, 123, 0.12);
 }
 
 .onboarding-content h1 {
@@ -2755,6 +2763,40 @@ body.ios .blocklists-container {
     color: #999;
     font-size: 15px;
     margin-bottom: 24px;
+    font-style: italic;
+}
+
+.onboarding-focus-card {
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(10, 45, 123, 0.08);
+    border-radius: 18px;
+    box-shadow: 0 10px 30px rgba(10, 45, 123, 0.08);
+    padding: 30px 40px;
+    margin: 20px 0 18px;
+}
+
+.onboarding-focus-card .onboarding-primary-copy {
+    color: hsl(222, 35%, 24%);
+    font-size: 17px;
+    line-height: 1.6;
+    font-weight: 500;
+    margin-bottom: 0;
+}
+
+.ios-screentime-onboarding-content {
+    max-width: 420px;
+}
+
+.onboarding-focus-card .onboarding-primary-btn {
+    width: 100%;
+    margin: 16px 0 0;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.onboarding-signoff {
+    margin-bottom: 0;
 }
 
 .onboarding-form {
