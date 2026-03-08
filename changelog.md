@@ -2,7 +2,7 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
-## v0.8.6 (next)
+## v0.9.0 (next)
 
 - Fixed duplicated blocklists being active by default.
 - Better preview for override text.
