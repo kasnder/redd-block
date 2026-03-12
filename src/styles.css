@@ -3674,7 +3674,8 @@ body.ios .modal-content {
 /* Hide desktop-only settings sections on iOS */
 body.ios .helper-settings-section,
 body.ios #advanced-options-toggle,
-body.ios #advanced-options-content {
+body.ios #advanced-options-content,
+body.ios .desktop-only {
     display: none;
 }
 
