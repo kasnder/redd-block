@@ -1242,6 +1242,10 @@ pub struct DiagnosticsResult {
     pub helper_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub helper_state_file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub os_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arch: Option<String>,
 }
 
 /// Get diagnostics info: hosts file content + helper daemon state
@@ -1295,5 +1299,7 @@ pub async fn get_helper_diagnostics() -> DiagnosticsResult {
         helper_running: Some(running),
         helper_version: version,
         helper_state_file: Some(state_content),
+        os_name: Some(std::env::consts::OS.to_string()),
+        arch: Some(std::env::consts::ARCH.to_string()),
     }
 }

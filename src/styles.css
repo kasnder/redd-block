@@ -3888,7 +3888,7 @@ body.ios .desktop-only {
     gap: 8px;
     width: 100%;
     padding: 10px 16px;
-    background: hsl(215, 20%, 65%);
+    background: hsl(0, 65%, 50%);
     border: none;
     border-radius: 8px;
     color: white;
@@ -3899,7 +3899,7 @@ body.ios .desktop-only {
 }
 
 .override-all-btn:hover {
-    background: hsl(0, 65%, 50%);
+    background: hsl(0, 65%, 60%);
 }
 
 .override-all-btn svg {
@@ -4358,7 +4358,7 @@ body.ios .zoom-toast {
 .helper-settings-section {
     border: none;
     border-top: none;
-    margin-top: 8px;
+    margin-top: 0;
     padding-top: 0;
 }
 

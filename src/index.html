@@ -896,6 +896,18 @@
                             <option id="language-option-da" value="da">Dansk</option>
                         </select>
                     </div>
+                    <div class="helper-settings-section">
+                        <div class="helper-option-row" style="margin-top: 10px;">
+                            <label class="toggle-label" for="keep-blocking-toggle">
+                                <span id="settings-keep-blocking-label">Keep blocking running if app is
+                                    uninstalled</span>
+                            </label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="keep-blocking-toggle" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Advanced Options (Expandable) -->
@@ -907,29 +919,9 @@
                     </svg>
                 </div>
                 <div class="settings-advanced-content hidden" id="advanced-options-content">
-                    <!-- Override All Button -->
-                    <button id="override-all-btn" class="override-all-btn">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path>
-                            <path d="M12 9v4"></path>
-                            <path d="M12 17h.01"></path>
-                        </svg>
-                        <span id="settings-override-all-label">Override all blocks</span>
-                    </button>
 
                     <!-- Helper Settings -->
                     <div class="helper-settings-section">
-                        <div class="helper-option-row">
-                            <label class="toggle-label" for="keep-blocking-toggle">
-                                <span id="settings-keep-blocking-label">Keep blocking running if app is
-                                    uninstalled</span>
-                            </label>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="keep-blocking-toggle" checked>
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
                         <div class="helper-status-row">
                             <span id="settings-helper-service-label" class="helper-status-label">Helper service</span>
                             <span id="helper-status-indicator" class="helper-status-indicator">
@@ -937,6 +929,16 @@
                                 <span id="settings-helper-status-text" class="status-text">Checking...</span>
                             </span>
                         </div>
+                        <!-- Override All Button -->
+                        <button id="override-all-btn" class="override-all-btn" style="margin-top: 8px;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"></path>
+                                <path d="M12 9v4"></path>
+                                <path d="M12 17h.01"></path>
+                            </svg>
+                            <span id="settings-override-all-label">Emergency: Stop all blocks &amp; schedules</span>
+                        </button>
                         <button id="update-helper-btn"
                             style="display: none; margin-bottom: 8px; width: 100%; padding: 10px 16px; background: #4f46e5; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 500; align-items: center; justify-content: center; gap: 8px;">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -951,36 +953,24 @@
                         <button id="diagnostics-btn" class="remove-helper-btn" style="margin-top: 8px;">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                <path d="M14 2v6h6"></path>
-                                <line x1="16" y1="13" x2="8" y2="13"></line>
-                                <line x1="16" y1="17" x2="8" y2="17"></line>
-                                <line x1="10" y1="9" x2="8" y2="9"></line>
+                                <path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"></path>
                             </svg>
                             <span>Diagnostics</span>
                         </button>
-                        <button id="remove-helper-now-btn" class="remove-helper-btn">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M3 6h18"></path>
-                                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-                                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                            </svg>
-                            <span id="settings-uninstall-helper-label">Uninstall Helper</span>
-                        </button>
-                        <button id="clean-hosts-btn" class="remove-helper-btn" style="margin-top: 8px;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                <path d="M14 2v6h6"></path>
-                                <line x1="9" y1="15" x2="15" y2="15"></line>
-                            </svg>
-                            <span id="settings-clean-hosts-label">Clean hosts file</span>
-                        </button>
-                        <div id="settings-helper-hint" class="helper-hint"
-                            style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">
-                            Remove all ReDD Block entries from your system's hosts file. Use this if websites remain
-                            blocked after all blocks have been stopped.
+                        <div class="still-not-working-wrapper" style="position: relative; margin-top: 8px;">
+                            <button id="still-not-working-btn" class="remove-helper-btn">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                                    <path d="M12 17h.01"></path>
+                                </svg>
+                                <span>Something still not working?</span>
+                            </button>
+                            <div id="still-not-working-hint" class="still-not-working-hint"
+                                style="display: none; font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.4;">
+                                Please run the emergency stop above first.
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1032,6 +1022,80 @@
                 <div class="modal-buttons">
                     <button id="diagnostics-copy-btn" class="modal-btn cancel-btn">Copy to Clipboard</button>
                     <button id="close-diagnostics-btn" class="modal-btn cancel-btn">Close</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Still Not Working Modal -->
+        <div id="still-not-working-modal" class="modal-overlay hidden">
+            <div class="modal-content" style="max-width: 520px;">
+                <h3>Something still not working?</h3>
+                <p style="font-size: 14px; color: var(--text-secondary); margin-bottom: 16px;">
+                    If the emergency stop didn't resolve your issue, try these options:
+                </p>
+
+                <!-- Option 1: Uninstall Helper -->
+                <div class="snw-option">
+                    <button id="snw-uninstall-btn" class="remove-helper-btn" style="width: 100%;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M3 6h18"></path>
+                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                        </svg>
+                        <span>Uninstall Helper Service</span>
+                    </button>
+                    <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                        Removes the background helper service. You can reinstall it later by starting a block.
+                    </p>
+                </div>
+
+                <!-- Option 2: Manual Hosts Reset -->
+                <div class="snw-option" style="margin-top: 12px;">
+                    <button id="snw-manual-reset-btn" class="remove-helper-btn" style="width: 100%;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                            <path d="M14 2v6h6"></path>
+                            <line x1="9" y1="15" x2="15" y2="15"></line>
+                        </svg>
+                        <span>Manually reset hosts file</span>
+                    </button>
+                    <div id="snw-manual-reset-locked" style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                        Unlock terminal commands to manually remove blocking entries from your hosts file.
+                    </div>
+                    <!-- Challenge area (hidden until clicked) -->
+                    <div id="snw-challenge-area" class="override-challenge hidden" style="margin-top: 8px;">
+                        <p class="override-all-subline">Type the following to unlock:</p>
+                        <div id="snw-challenge-text" class="challenge-text"></div>
+                        <textarea id="snw-challenge-input" class="challenge-input" placeholder="Type here..."
+                            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+                        <div class="challenge-progress">
+                            <div id="snw-challenge-progress-bar" class="challenge-progress-bar"></div>
+                        </div>
+                    </div>
+                    <!-- Terminal commands (hidden until challenge completed) -->
+                    <div id="snw-terminal-commands" class="hidden" style="margin-top: 8px;">
+                    </div>
+                </div>
+
+                <!-- Option 3: Email Support -->
+                <div class="snw-option" style="margin-top: 12px;">
+                    <button id="snw-email-btn" class="remove-helper-btn" style="width: 100%;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
+                            <polyline points="22,6 12,13 2,6"></polyline>
+                        </svg>
+                        <span>Email support with diagnostics</span>
+                    </button>
+                    <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                        Opens your email client with diagnostic info pre-filled to team@reddfocus.org.
+                    </p>
+                </div>
+
+                <div class="modal-buttons" style="margin-top: 16px;">
+                    <button id="close-snw-btn" class="modal-btn cancel-btn">Close</button>
                 </div>
             </div>
         </div>

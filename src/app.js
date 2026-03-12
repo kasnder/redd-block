@@ -418,6 +418,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupHelperSettings();
     setupDiagnosticsButton();
     setupOverrideAll();
+    setupStillNotWorking();
     render();
     scrollToNow(false); // Initial scroll (instant, no animation)
     startTickInterval();
@@ -8319,7 +8320,7 @@ const SETTINGS_TRANSLATIONS = {
         languageEnglish: 'English',
         languageDanish: 'Dansk',
         advancedOptions: 'Advanced options',
-        overrideAllBlocks: 'Override all blocks',
+        overrideAllBlocks: 'Emergency: Stop all blocks & schedules',
         keepBlocking: 'Keep blocking running if app is uninstalled',
         helperService: 'Helper service',
         helperStatusChecking: 'Checking...',
@@ -8458,7 +8459,7 @@ const SETTINGS_TRANSLATIONS = {
         themeDark: 'Mørk',
         languageEnglish: 'Engelsk',
         languageDanish: 'Dansk',
-        overrideAllBlocks: 'Stop alle blokeringer',
+        overrideAllBlocks: 'Nødstop: Stop alle blokeringer og tidsplaner',
         keepBlocking: 'Hold blokering aktiv, hvis appen afinstalleres',
         helperService: 'Hjælper',
         helperStatusChecking: 'Tjekker...',
@@ -9239,13 +9240,31 @@ async function openDiagnosticsModal() {
 
         let html = '';
 
+        // System info — prefer values from Rust (accurate) over browser detection
+        const osName = diag.os_name || diag.osName || (navigator.platform?.startsWith('Mac') ? 'macOS' : navigator.platform?.startsWith('Win') ? 'Windows' : 'unknown');
+        const arch = diag.arch || 'unknown';
+        const appVersion = document.getElementById('settings-version')?.textContent || '';
+
+        // Store system info on diag for clipboard copy
+        diag._systemInfo = { osName, arch, appVersion };
+
         // Helper status
         const running = diag.helperRunning || diag.helper_running;
         const version = diag.helperVersion || diag.helper_version;
-        html += '<div class="diagnostics-section">';
+
+        // Two-column layout: Helper Daemon (left) + System (right)
+        html += '<div style="display: flex; gap: 16px; margin-bottom: 8px;">';
+        html += '<div class="diagnostics-section" style="flex: 1; margin-bottom: 0;">';
         html += '<div class="diagnostics-section-title">Helper Daemon</div>';
         html += `<div class="diagnostics-field"><span class="diagnostics-label">Running:</span> <span class="diagnostics-value ${running ? 'diag-ok' : 'diag-error'}">${running ? 'Yes' : 'No'}</span></div>`;
         if (version) html += `<div class="diagnostics-field"><span class="diagnostics-label">Version:</span> <span class="diagnostics-value">${version}</span></div>`;
+        html += '</div>';
+        html += '<div class="diagnostics-section" style="flex: 1; margin-bottom: 0;">';
+        html += '<div class="diagnostics-section-title">System</div>';
+        html += `<div class="diagnostics-field"><span class="diagnostics-label">OS:</span> <span class="diagnostics-value">${osName}</span></div>`;
+        html += `<div class="diagnostics-field"><span class="diagnostics-label">Architecture:</span> <span class="diagnostics-value">${arch}</span></div>`;
+        if (appVersion) html += `<div class="diagnostics-field"><span class="diagnostics-label">App version:</span> <span class="diagnostics-value">${appVersion}</span></div>`;
+        html += '</div>';
         html += '</div>';
 
         // Hosts file
@@ -9284,7 +9303,13 @@ async function openDiagnosticsModal() {
             let statePretty = stateFile;
             try { statePretty = JSON.stringify(JSON.parse(stateFile), null, 2); } catch (e) {}
 
+            const sys = diag._systemInfo || {};
             const text = [
+                '=== System ===',
+                `OS: ${sys.osName || 'unknown'}`,
+                `Architecture: ${sys.arch || 'unknown'}`,
+                sys.appVersion ? `App version: ${sys.appVersion}` : '',
+                '',
                 '=== Helper Daemon ===',
                 `Running: ${running ? 'Yes' : 'No'}`,
                 `Version: ${version || 'unknown'}`,
@@ -9296,7 +9321,7 @@ async function openDiagnosticsModal() {
                 '=== Helper State File ===',
                 '',
                 statePretty.trim(),
-            ].join('\n');
+            ].filter(line => line !== undefined).join('\n');
 
             navigator.clipboard.writeText(text).then(() => {
                 copyBtn.textContent = 'Copied!';
@@ -9350,9 +9375,12 @@ function hasAnyActiveBlocks() {
 
 // Update visibility of the Override All button based on active blocks
 function updateOverrideAllButtonVisibility() {
-    const overrideAllBtn = document.getElementById('override-all-btn');
-    if (overrideAllBtn) {
-        overrideAllBtn.style.display = hasAnyActiveBlocks() ? '' : 'none';
+    const hasBlocks = hasAnyActiveBlocks();
+    // "Something still not working?" — enabled when no blocks active, disabled when blocks active
+    const stillBtn = document.getElementById('still-not-working-btn');
+    if (stillBtn) {
+        stillBtn.disabled = hasBlocks;
+        stillBtn.title = hasBlocks ? 'Run the emergency stop first' : '';
     }
 }
 
@@ -9509,6 +9537,28 @@ function setupOverrideAll() {
             // Close settings modal first
             document.getElementById('settings-modal').classList.add('hidden');
 
+            const challengeTextEl = document.getElementById('override-all-challenge-text');
+            const instructionEl = document.getElementById('override-all-instruction');
+
+            if (!hasAnyActiveBlocks()) {
+                // No blocks active — show dialog but skip the typing challenge
+                overrideAllChallengeText = '';
+                if (challengeTextEl) challengeTextEl.style.display = 'none';
+                if (overrideAllChallengeInput) overrideAllChallengeInput.style.display = 'none';
+                if (instructionEl) instructionEl.style.display = 'none';
+                const progressEl = overrideAllModal.querySelector('.challenge-progress');
+                if (progressEl) progressEl.style.display = 'none';
+                overrideAllModal.classList.remove('hidden');
+                return;
+            }
+
+            // Restore challenge elements visibility
+            if (challengeTextEl) challengeTextEl.style.display = '';
+            if (overrideAllChallengeInput) overrideAllChallengeInput.style.display = '';
+            if (instructionEl) instructionEl.style.display = '';
+            const progressEl = overrideAllModal.querySelector('.challenge-progress');
+            if (progressEl) progressEl.style.display = '';
+
             // Find the hardest challenge among active blocks and schedules
             const hardestDifficulty = findHardestChallenge();
 
@@ -9605,6 +9655,213 @@ function setupOverrideAll() {
                 modalContent.classList.remove('wiggle');
                 void modalContent.offsetWidth; // Trigger reflow
                 modalContent.classList.add('wiggle');
+            }
+        });
+    }
+
+    // "Something still not working?" button - show hint when disabled
+    const stillNotWorkingWrapper = document.querySelector('.still-not-working-wrapper');
+    const stillNotWorkingHint = document.getElementById('still-not-working-hint');
+    if (stillNotWorkingWrapper && stillNotWorkingHint) {
+        stillNotWorkingWrapper.addEventListener('click', () => {
+            const btn = document.getElementById('still-not-working-btn');
+            if (btn && btn.disabled) {
+                stillNotWorkingHint.style.display = 'block';
+            }
+        });
+        stillNotWorkingWrapper.addEventListener('mouseenter', () => {
+            const btn = document.getElementById('still-not-working-btn');
+            if (btn && btn.disabled) {
+                stillNotWorkingHint.style.display = 'block';
+            }
+        });
+        stillNotWorkingWrapper.addEventListener('mouseleave', () => {
+            stillNotWorkingHint.style.display = 'none';
+        });
+    }
+}
+
+// Setup "Something still not working?" modal
+function setupStillNotWorking() {
+    const btn = document.getElementById('still-not-working-btn');
+    const modal = document.getElementById('still-not-working-modal');
+    const closeBtn = document.getElementById('close-snw-btn');
+    if (!btn || !modal) return;
+
+    // Open modal
+    btn.addEventListener('click', () => {
+        if (btn.disabled) return;
+        // Close settings modal first
+        document.getElementById('settings-modal')?.classList.add('hidden');
+        // Reset state each time
+        document.getElementById('snw-challenge-area')?.classList.add('hidden');
+        document.getElementById('snw-terminal-commands')?.classList.add('hidden');
+        const input = document.getElementById('snw-challenge-input');
+        if (input) input.value = '';
+        const bar = document.getElementById('snw-challenge-progress-bar');
+        if (bar) bar.style.width = '0%';
+        modal.classList.remove('hidden');
+    });
+
+    // Close
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
+    }
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) modal.classList.add('hidden');
+    });
+
+    // Option 1: Uninstall Helper
+    const uninstallBtn = document.getElementById('snw-uninstall-btn');
+    if (uninstallBtn) {
+        uninstallBtn.addEventListener('click', async () => {
+            try {
+                await tauriAPI.removeHelper();
+                uninstallBtn.textContent = 'Helper uninstalled!';
+                uninstallBtn.disabled = true;
+                setTimeout(() => {
+                    uninstallBtn.disabled = false;
+                    uninstallBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg><span>Uninstall Helper Service</span>`;
+                }, 3000);
+            } catch (e) {
+                console.error('Failed to uninstall helper:', e);
+            }
+        });
+    }
+
+    // Option 2: Manual Hosts Reset — challenge
+    let snwChallengeText = '';
+    const manualResetBtn = document.getElementById('snw-manual-reset-btn');
+    const challengeArea = document.getElementById('snw-challenge-area');
+    const terminalCommands = document.getElementById('snw-terminal-commands');
+    const challengeTextEl = document.getElementById('snw-challenge-text');
+    const challengeInput = document.getElementById('snw-challenge-input');
+    const progressBar = document.getElementById('snw-challenge-progress-bar');
+
+    if (manualResetBtn && challengeArea && terminalCommands) {
+        manualResetBtn.addEventListener('click', () => {
+            if (!challengeArea.classList.contains('hidden')) {
+                challengeArea.classList.add('hidden');
+                return;
+            }
+            // Generate 2500 random characters
+            snwChallengeText = generateRandomWords(50);
+            snwChallengeText = snwChallengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+            if (challengeTextEl) challengeTextEl.textContent = snwChallengeText;
+            if (challengeInput) challengeInput.value = '';
+            if (progressBar) progressBar.style.width = '0%';
+            challengeArea.classList.remove('hidden');
+            terminalCommands.classList.add('hidden');
+            challengeInput?.focus();
+        });
+
+        if (challengeInput) {
+            // Prevent paste
+            challengeInput.addEventListener('paste', (e) => e.preventDefault());
+
+            challengeInput.addEventListener('input', () => {
+                const typed = challengeInput.value;
+                let correctChars = 0;
+                for (let i = 0; i < typed.length && i < snwChallengeText.length; i++) {
+                    if (typed[i] === snwChallengeText[i]) correctChars++;
+                    else break;
+                }
+                const progress = (correctChars / snwChallengeText.length) * 100;
+                if (progressBar) progressBar.style.width = `${progress}%`;
+
+                // Check if complete
+                if (typed === snwChallengeText) {
+                    challengeArea.classList.add('hidden');
+
+                    // Populate with platform-specific instructions
+                    const isMac = navigator.platform?.startsWith('Mac') || navigator.userAgent?.includes('Macintosh');
+                    let appName, command, passwordNote;
+                    if (isMac) {
+                        appName = 'Terminal (find it via Spotlight: press Cmd+Space and type "Terminal")';
+                        command = "sudo sed -i '' '/# === BEGIN REDD BLOCK/,/# === END REDD BLOCK/d' /etc/hosts && sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder";
+                        passwordNote = 'You will be prompted for your Mac password (the cursor won\'t move as you type — this is normal).';
+                    } else {
+                        appName = 'PowerShell as Administrator (right-click the Start menu → "Windows PowerShell (Admin)" or "Terminal (Admin)")';
+                        command = "(Get-Content $env:SystemRoot\\System32\\drivers\\etc\\hosts) | Where-Object { $_ -notmatch 'REDD BLOCK' } | Set-Content $env:SystemRoot\\System32\\drivers\\etc\\hosts; ipconfig /flushdns";
+                        passwordNote = 'You may be prompted to confirm running as Administrator.';
+                    }
+
+                    terminalCommands.innerHTML = `
+                        <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 6px;">
+                            Open <strong>${appName}</strong> and paste this command:
+                        </p>
+                        <pre class="diagnostics-pre" style="font-size: 12px; user-select: all; white-space: pre-wrap; word-break: break-all;">${command}</pre>
+                        <div style="display: flex; gap: 8px; margin-top: 6px; align-items: center;">
+                            <button id="snw-copy-command-btn" class="modal-btn cancel-btn" style="font-size: 12px; padding: 6px 12px; flex-shrink: 0;">Copy command</button>
+                            <span id="snw-copy-status" style="font-size: 12px; color: var(--text-muted);"></span>
+                        </div>
+                        <p style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
+                            ${passwordNote}
+                        </p>
+                    `;
+
+                    // Wire up copy button
+                    const copyBtn = document.getElementById('snw-copy-command-btn');
+                    const copyStatus = document.getElementById('snw-copy-status');
+                    if (copyBtn) {
+                        copyBtn.addEventListener('click', () => {
+                            navigator.clipboard.writeText(command).then(() => {
+                                copyStatus.textContent = 'Copied!';
+                                setTimeout(() => { copyStatus.textContent = ''; }, 2000);
+                            }).catch(() => {
+                                copyStatus.textContent = 'Copy failed';
+                                setTimeout(() => { copyStatus.textContent = ''; }, 2000);
+                            });
+                        });
+                    }
+
+                    terminalCommands.classList.remove('hidden');
+                }
+            });
+        }
+    }
+
+    // Option 3: Email support with diagnostics
+    const emailBtn = document.getElementById('snw-email-btn');
+    if (emailBtn) {
+        emailBtn.addEventListener('click', async () => {
+            let diagText = 'Could not load diagnostics.';
+            try {
+                const diag = await tauriAPI.getHelperDiagnostics();
+                const running = diag.helperRunning || diag.helper_running;
+                const version = diag.helperVersion || diag.helper_version;
+                const hostsFile = diag.hostsFile || diag.hosts_file || '(unavailable)';
+                const stateFile = diag.helperStateFile || diag.helper_state_file || '(unavailable)';
+                let statePretty = stateFile;
+                try { statePretty = JSON.stringify(JSON.parse(stateFile), null, 2); } catch (e) {}
+
+                diagText = [
+                    '=== Helper Daemon ===',
+                    `Running: ${running ? 'Yes' : 'No'}`,
+                    `Version: ${version || 'unknown'}`,
+                    '',
+                    '=== Hosts File ===',
+                    hostsFile.trim(),
+                    '',
+                    '=== Helper State File ===',
+                    statePretty.trim(),
+                ].join('\n');
+            } catch (e) {
+                console.warn('Failed to get diagnostics for email:', e);
+            }
+
+            const subject = encodeURIComponent('ReDD Block — Something not working');
+            const body = encodeURIComponent(
+                'Hi ReDD Block team,\n\n' +
+                '[Please describe your issue here]\n\n\n' +
+                '--- Diagnostics (auto-generated) ---\n\n' +
+                diagText
+            );
+            const mailtoUrl = `mailto:team@reddfocus.org?subject=${subject}&body=${body}`;
+            try {
+                await open(mailtoUrl);
+            } catch {
+                window.location.href = mailtoUrl;
             }
         });
     }
@@ -9705,13 +9962,18 @@ async function performOverrideAll() {
         // Save the data
         await saveData();
 
-        // Clear website blocking - use Screen Time on iOS, helper on desktop
+        // Full cleanup on the helper side
         if (isIOS) {
             await tauriAPI.screentimeClearBlock();
         } else {
             const status = await tauriAPI.checkHelperStatus();
             if (status.running) {
-                await tauriAPI.clearBlockViaHelper();
+                // Atomically set everything to empty — helper will know nothing should be blocked
+                try { await tauriAPI.setBlocksViaHelper([]); } catch (e) { console.warn('Failed to clear blocks:', e); }
+                try { await tauriAPI.setSchedulesViaHelper([]); } catch (e) { console.warn('Failed to clear schedules:', e); }
+                try { await tauriAPI.setBlockedAppsViaHelper([]); } catch (e) { console.warn('Failed to clear apps:', e); }
+                // Also clean the hosts file directly as a safety net
+                try { await tauriAPI.cleanHostsFile(); } catch (e) { console.warn('Failed to clean hosts file:', e); }
             }
         }
 
@@ -9727,7 +9989,14 @@ async function performOverrideAll() {
             handleBlocklistSelect({ target: blocklistSelect });
         }
 
-        console.log('Override all completed successfully');
+        console.log('Emergency override completed — all blocks, schedules, apps, and hosts entries cleared');
+
+        // Enable the "Something still not working?" button
+        const stillBtn = document.getElementById('still-not-working-btn');
+        if (stillBtn) {
+            stillBtn.disabled = false;
+            stillBtn.title = '';
+        }
     } catch (err) {
         console.error('Error during override all:', err);
     }
