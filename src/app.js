@@ -5689,18 +5689,18 @@ function openOverrideModal(blockId) {
 
     if (websiteCount > 0) {
         const displaySites = blocklist.websites.map(cleanUrlForDisplay);
-        if (websiteCount <= 2) {
+        if (websiteCount <= 3) {
             metaParts.push(`${websiteCount} ${websiteWord(websiteCount)} (${displaySites.join(', ')})`);
         } else {
-            metaParts.push(`${websiteCount} ${websiteWord(websiteCount)} (${displaySites.slice(0, 2).join(', ')}, ...)`);
+            metaParts.push(`${websiteCount} ${websiteWord(websiteCount)} (${displaySites.slice(0, 3).join(', ')}, ...)`);
         }
     }
 
     if (appCount > 0) {
-        if (appCount <= 2) {
+        if (appCount <= 3) {
             metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'} (${blocklist.apps.join(', ')})`);
         } else {
-            metaParts.push(`${appCount} apps (${blocklist.apps.slice(0, 2).join(', ')}, ...)`);
+            metaParts.push(`${appCount} apps (${blocklist.apps.slice(0, 3).join(', ')}, ...)`);
         }
     }
 
