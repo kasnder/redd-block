@@ -37,6 +37,8 @@ const tauriAPI = {
     // Tauri maps Rust snake_case params to camelCase in JS; use blocklistId not blocklist_id
     clearBlockViaHelper: (blocklistId) => invoke('clear_block_via_helper', blocklistId != null ? { blocklistId } : {}),
     cleanHostsFile: () => invoke('clean_hosts_file'),
+    getHelperDiagnostics: () => invoke('get_helper_diagnostics'),
+    setBlocksViaHelper: (blocks) => invoke('set_blocks_via_helper', { blocks }),
 
     // App operations
     openAppPicker: () => invoke('open_app_picker'),
@@ -337,16 +339,28 @@ async function syncActiveBlocksToHelper() {
         const status = await tauriAPI.checkHelperStatus();
         if (!status.running || !status.version_ok) return;
         const now = Date.now();
+        console.log('[syncActiveBlocksToHelper] Total activeBlocks:', appData.activeBlocks.length,
+            'blocks:', appData.activeBlocks.map(b => ({
+                id: b.id, blocklistId: b.blocklistId, startTime: b.startTime, endTime: b.endTime,
+                isPaused: b.isPaused, isAlwaysOn: b.isAlwaysOn,
+                startOk: b.startTime <= now, endOk: b.endTime > now, pauseOk: !b.isPaused
+            })));
         const activeBlocks = appData.activeBlocks.filter(block => block.startTime <= now && block.endTime > now && !block.isPaused);
-        await tauriAPI.clearBlockViaHelper();
-        for (const block of activeBlocks) {
+        console.log('[syncActiveBlocksToHelper] Filtered activeBlocks:', activeBlocks.length);
+        
+        // Build the blocks array for the atomic set-blocks command
+        const helperBlocks = activeBlocks.map(block => {
             const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
-            await tauriAPI.startBlockViaHelper({
+            return {
                 domains: blocklist?.websites || [],
                 endTime: block.endTime,
                 blocklistId: block.blocklistId
-            });
-        }
+            };
+        });
+        
+        console.log('[syncActiveBlocksToHelper] Sending', helperBlocks.length, 'blocks to helper');
+        // Atomically replace all blocks in the helper daemon (no clear→re-add race)
+        await tauriAPI.setBlocksViaHelper(helperBlocks);
     } catch (e) {
         console.warn('[syncActiveBlocksToHelper] Error:', e);
     }
@@ -402,6 +416,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupUiZoomShortcuts();
     setupHelpMenuLinks();
     setupHelperSettings();
+    setupDiagnosticsButton();
     setupOverrideAll();
     render();
     scrollToNow(false); // Initial scroll (instant, no animation)
@@ -5190,7 +5205,10 @@ async function updateHostsFile(silent = false) {
                 const startMins = seg.startHour * 60 + seg.startMinute;
                 const endMins = seg.endHour * 60 + seg.endMinute;
 
-                if (endMins > startMins) {
+                if (startMins === endMins) {
+                    // Same start and end (e.g., 00:00 - 00:00) means "all day"
+                    return seg.days.includes(currentDay);
+                } else if (endMins > startMins) {
                     // Same-day segment (e.g., 09:00 - 17:00)
                     return seg.days.includes(currentDay) &&
                         currentMins >= startMins &&
@@ -9204,6 +9222,110 @@ function updateCleanHostsBtnState() {
     const active = hasAnyActiveBlocks();
     btn.disabled = active;
     btn.title = active ? 'Stop all running blocks first' : '';
+}
+
+// Diagnostics modal
+async function openDiagnosticsModal() {
+    const modal = document.getElementById('diagnostics-modal');
+    const content = document.getElementById('diagnostics-content');
+    if (!modal || !content) return;
+
+    content.innerHTML = '<div class="diagnostics-loading">Loading diagnostics...</div>';
+    modal.classList.remove('hidden');
+
+    let diag = null;
+    try {
+        diag = await tauriAPI.getHelperDiagnostics();
+
+        let html = '';
+
+        // Helper status
+        const running = diag.helperRunning || diag.helper_running;
+        const version = diag.helperVersion || diag.helper_version;
+        html += '<div class="diagnostics-section">';
+        html += '<div class="diagnostics-section-title">Helper Daemon</div>';
+        html += `<div class="diagnostics-field"><span class="diagnostics-label">Running:</span> <span class="diagnostics-value ${running ? 'diag-ok' : 'diag-error'}">${running ? 'Yes' : 'No'}</span></div>`;
+        if (version) html += `<div class="diagnostics-field"><span class="diagnostics-label">Version:</span> <span class="diagnostics-value">${version}</span></div>`;
+        html += '</div>';
+
+        // Hosts file
+        const hostsFile = diag.hostsFile || diag.hosts_file || '';
+        const hasReddBlock = hostsFile.includes('BEGIN REDD BLOCK');
+        html += '<div class="diagnostics-section">';
+        html += `<div class="diagnostics-section-title">Hosts File <span class="diagnostics-badge ${hasReddBlock ? 'badge-active' : 'badge-inactive'}">${hasReddBlock ? 'ReDD Block entries present' : 'No ReDD Block entries'}</span></div>`;
+        html += `<pre class="diagnostics-pre">${escapeHtml(hostsFile)}</pre>`;
+        html += '</div>';
+
+        // Helper state file
+        const stateFile = diag.helperStateFile || diag.helper_state_file || '';
+        let statePretty = stateFile;
+        try {
+            statePretty = JSON.stringify(JSON.parse(stateFile), null, 2);
+        } catch (e) { /* not valid JSON, show as-is */ }
+        html += '<div class="diagnostics-section">';
+        html += '<div class="diagnostics-section-title">Helper State File</div>';
+        html += `<pre class="diagnostics-pre">${escapeHtml(statePretty)}</pre>`;
+        html += '</div>';
+
+        content.innerHTML = html;
+    } catch (e) {
+        content.innerHTML = `<div class="diagnostics-error">Failed to load diagnostics: ${e.message || e}</div>`;
+    }
+
+    // Copy button
+    const copyBtn = document.getElementById('diagnostics-copy-btn');
+    if (copyBtn) {
+        copyBtn.onclick = () => {
+            if (!diag) { copyBtn.textContent = 'No data'; return; }
+            const running = diag.helperRunning || diag.helper_running;
+            const version = diag.helperVersion || diag.helper_version;
+            const hostsFile = diag.hostsFile || diag.hosts_file || '(unavailable)';
+            const stateFile = diag.helperStateFile || diag.helper_state_file || '(unavailable)';
+            let statePretty = stateFile;
+            try { statePretty = JSON.stringify(JSON.parse(stateFile), null, 2); } catch (e) {}
+
+            const text = [
+                '=== Helper Daemon ===',
+                `Running: ${running ? 'Yes' : 'No'}`,
+                `Version: ${version || 'unknown'}`,
+                '',
+                '=== Hosts File ===',
+                hostsFile.trim(),
+                '',
+                '',
+                '=== Helper State File ===',
+                '',
+                statePretty.trim(),
+            ].join('\n');
+
+            navigator.clipboard.writeText(text).then(() => {
+                copyBtn.textContent = 'Copied!';
+                setTimeout(() => { copyBtn.textContent = 'Copy to Clipboard'; }, 2000);
+            }).catch(() => {
+                copyBtn.textContent = 'Copy failed';
+                setTimeout(() => { copyBtn.textContent = 'Copy to Clipboard'; }, 2000);
+            });
+        };
+    }
+
+    // Close button
+    const closeBtn = document.getElementById('close-diagnostics-btn');
+    if (closeBtn) {
+        closeBtn.onclick = () => modal.classList.add('hidden');
+    }
+
+    // Close on backdrop click (outside the modal content)
+    modal.onclick = (e) => {
+        if (e.target === modal) modal.classList.add('hidden');
+    };
+}
+
+// Setup diagnostics button
+function setupDiagnosticsButton() {
+    const btn = document.getElementById('diagnostics-btn');
+    if (btn) {
+        btn.addEventListener('click', openDiagnosticsModal);
+    }
 }
 
 // Check if there are any active blocks or schedules

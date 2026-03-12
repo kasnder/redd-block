@@ -48,7 +48,9 @@ const HOSTS_PATH: &str = "/etc/hosts";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct BlockState {
     domains: Vec<String>,
+    #[serde(alias = "endTime")]
     end_time: u64, // Unix timestamp ms
+    #[serde(alias = "blocklistId")]
     blocklist_id: String,
 }
 
@@ -138,6 +140,10 @@ enum IpcCommand {
     },
     #[serde(rename = "get-blocked-apps")]
     GetBlockedApps,
+    #[serde(rename = "set-blocks")]
+    SetBlocks {
+        blocks: Vec<BlockState>,
+    },
     #[serde(rename = "set-schedules")]
     SetSchedules {
         schedules: Vec<HelperSchedule>,
@@ -405,14 +411,48 @@ fn write_hosts_file(content: &str) -> bool {
     }
     
     // On Windows, fs::rename() often fails because the hosts file may be locked
-    // by other processes (antivirus, DNS client service). Use direct write instead.
+    // by other processes (antivirus, DNS client service). Use direct write with
+    // retry logic since the file can be transiently locked.
     #[cfg(target_os = "windows")]
     {
-        if let Err(e) = fs::write(HOSTS_PATH, content) {
-            log(&format!("Failed to write hosts file: {}", e));
-            return false;
+        const MAX_RETRIES: u32 = 3;
+        const RETRY_DELAY_MS: u64 = 200;
+        
+        for attempt in 1..=MAX_RETRIES {
+            match fs::write(HOSTS_PATH, content) {
+                Ok(_) => {
+                    // Verify the write succeeded by reading back and checking for our marker
+                    match fs::read_to_string(HOSTS_PATH) {
+                        Ok(readback) => {
+                            if content.contains(BLOCK_MARKER_START) && !readback.contains(BLOCK_MARKER_START) {
+                                log(&format!("Write verification failed on attempt {} - block markers missing from hosts file", attempt));
+                                if attempt < MAX_RETRIES {
+                                    thread::sleep(Duration::from_millis(RETRY_DELAY_MS));
+                                    continue;
+                                }
+                                log("All write verification attempts failed");
+                                return false;
+                            }
+                        }
+                        Err(e) => {
+                            log(&format!("Warning: could not verify hosts file after write: {}", e));
+                        }
+                    }
+                    if attempt > 1 {
+                        log(&format!("Hosts file written successfully on attempt {}", attempt));
+                    }
+                    return true;
+                }
+                Err(e) => {
+                    log(&format!("Failed to write hosts file (attempt {}/{}): {}", attempt, MAX_RETRIES, e));
+                    if attempt < MAX_RETRIES {
+                        thread::sleep(Duration::from_millis(RETRY_DELAY_MS));
+                    }
+                }
+            }
         }
-        return true;
+        log("All hosts file write attempts failed");
+        return false;
     }
     
     // On macOS/Linux: atomic write via temp file + rename to avoid truncation on crash
@@ -1678,6 +1718,23 @@ fn handle_command(
             IpcResponse {
                 success: true,
                 blocked_apps: Some(apps),
+                ..Default::default()
+            }
+        }
+        IpcCommand::SetBlocks { blocks } => {
+            log(&format!("Setting {} blocks atomically", blocks.len()));
+            for b in &blocks {
+                log(&format!("  Block '{}': {} domains, endTime={}",
+                    b.blocklist_id, b.domains.len(), b.end_time));
+            }
+            *state.lock().unwrap() = blocks;
+            sync_hosts_file(state, schedule_state);
+            let blocks = state.lock().unwrap().clone();
+            let apps = app_state.lock().unwrap().clone();
+            let scheds = schedule_state.lock().unwrap().clone();
+            save_full_state(&blocks, &apps, &scheds);
+            IpcResponse {
+                success: true,
                 ..Default::default()
             }
         }

@@ -34,7 +34,7 @@ pub struct HelperStatus {
 
 /// Expected helper version - update this when helper-daemon changes
 /// This is separate from the app version to avoid unnecessary reinstalls
-const EXPECTED_HELPER_VERSION: &str = "0.8.5";
+const EXPECTED_HELPER_VERSION: &str = "0.9.2";
 
 /// Result from helper operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,12 +59,22 @@ struct IpcCommand {
     apps: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     schedules: Option<Vec<HelperScheduleData>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    blocks: Option<Vec<HelperBlockData>>,
     #[serde(rename = "keepBlockingOnUninstall")]
     #[serde(skip_serializing_if = "Option::is_none")]
     keep_blocking_on_uninstall: Option<bool>,
 }
 
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HelperBlockData {
+    pub domains: Vec<String>,
+    #[serde(rename = "endTime")]
+    pub end_time: u64,
+    #[serde(rename = "blocklistId")]
+    pub blocklist_id: String,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HelperScheduleSegment {
@@ -221,6 +231,7 @@ pub fn check_helper_status() -> HelperStatus {
         apps: None,
         schedules: None,
         keep_blocking_on_uninstall: None,
+        blocks: None,
     };
     let ping_result = send_command(&cmd);
     let (running, helper_version) = match &ping_result {
@@ -623,6 +634,7 @@ exit 0
                 apps: None,
                 schedules: None,
                 keep_blocking_on_uninstall: None,
+        blocks: None,
             });
             
             if ping_result.is_ok() {
@@ -704,6 +716,7 @@ pub async fn start_block_via_helper(
         apps: None,
         schedules: None,
         keep_blocking_on_uninstall: None,
+        blocks: None,
     };
     match send_command(&cmd) {
         Ok(response) => HelperResult {
@@ -729,6 +742,7 @@ pub async fn clear_block_via_helper(blocklist_id: Option<String>) -> HelperResul
         apps: None,
         schedules: None,
         keep_blocking_on_uninstall: None,
+        blocks: None,
     };
     match send_command(&cmd) {
         Ok(response) => HelperResult {
@@ -756,6 +770,7 @@ pub async fn uninstall_helper() -> HelperResult {
         apps: None,
         schedules: None,
         keep_blocking_on_uninstall: None,
+        blocks: None,
     };
     match send_command(&cmd) {
         Ok(response) if response.success => HelperResult {
@@ -803,6 +818,7 @@ fn force_cleanup_helper() -> HelperResult {
             apps: None,
             schedules: None,
             keep_blocking_on_uninstall: None,
+        blocks: None,
             };
         match send_command(&restore_cmd) {
             Ok(_) => log::info!("Hosts file restored before force cleanup"),
@@ -867,6 +883,7 @@ fn force_cleanup_helper() -> HelperResult {
             apps: None,
             schedules: None,
             keep_blocking_on_uninstall: None,
+        blocks: None,
             };
         match send_command(&restore_cmd) {
             Ok(_) => log::info!("Hosts file restored before force cleanup"),
@@ -915,6 +932,7 @@ pub async fn set_blocked_apps_via_helper(apps: Vec<String>) -> HelperResult {
         apps: Some(apps),
         schedules: None,
         keep_blocking_on_uninstall: None,
+        blocks: None,
     };
     match send_command(&cmd) {
         Ok(response) => {
@@ -938,6 +956,33 @@ pub async fn set_blocked_apps_via_helper(apps: Vec<String>) -> HelperResult {
 }
 
 #[tauri::command]
+pub async fn set_blocks_via_helper(blocks: Vec<HelperBlockData>) -> HelperResult {
+    log::info!("set_blocks_via_helper called with {} blocks", blocks.len());
+    
+    let cmd = IpcCommand {
+        action: "set-blocks".to_string(),
+        domains: None,
+        end_time: None,
+        blocklist_id: None,
+        apps: None,
+        schedules: None,
+        blocks: Some(blocks),
+        keep_blocking_on_uninstall: None,
+    };
+    
+    match send_command(&cmd) {
+        Ok(response) => HelperResult {
+            success: response.success,
+            error: response.error,
+        },
+        Err(e) => HelperResult {
+            success: false,
+            error: Some(e),
+        },
+    }
+}
+
+#[tauri::command]
 pub async fn set_schedules_via_helper(schedules: Vec<HelperScheduleData>) -> HelperResult {
     log::info!("set_schedules_via_helper called with {} schedules", schedules.len());
     
@@ -949,6 +994,7 @@ pub async fn set_schedules_via_helper(schedules: Vec<HelperScheduleData>) -> Hel
         apps: None,
         schedules: Some(schedules),
         keep_blocking_on_uninstall: None,
+        blocks: None,
     };
     
     match send_command(&cmd) {
@@ -986,6 +1032,7 @@ pub async fn set_keep_blocking_on_uninstall_via_helper(keep_blocking_on_uninstal
         blocklist_id: None,
         apps: None,
         schedules: None,
+        blocks: None,
         keep_blocking_on_uninstall: Some(keep_blocking_on_uninstall),
     };
 
@@ -1016,6 +1063,7 @@ pub async fn clean_hosts_file() -> HelperResult {
         apps: None,
         schedules: None,
         keep_blocking_on_uninstall: None,
+        blocks: None,
     };
     match send_command(&cmd) {
         Ok(response) if response.success => {
@@ -1177,5 +1225,75 @@ async fn clean_hosts_elevated() -> HelperResult {
     HelperResult {
         success: false,
         error: Some("Elevated hosts cleanup not supported on this platform".to_string()),
+    }
+}
+
+/// Diagnostics result returned to the frontend
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiagnosticsResult {
+    pub success: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hosts_file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub helper_running: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub helper_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub helper_state_file: Option<String>,
+}
+
+/// Get diagnostics info: hosts file content + helper daemon state
+#[tauri::command]
+pub async fn get_helper_diagnostics() -> DiagnosticsResult {
+    log::info!("get_helper_diagnostics called");
+    
+    // Read hosts file
+    #[cfg(target_os = "windows")]
+    let hosts_path = "C:\\Windows\\System32\\drivers\\etc\\hosts";
+    #[cfg(not(target_os = "windows"))]
+    let hosts_path = "/etc/hosts";
+    
+    let hosts_content = std::fs::read_to_string(hosts_path)
+        .unwrap_or_else(|e| format!("[Error reading hosts file: {}]", e));
+    
+    // Read helper state file
+    #[cfg(target_os = "windows")]
+    let state_path = {
+        let program_data = std::env::var("PROGRAMDATA").unwrap_or_else(|_| "C:\\ProgramData".to_string());
+        std::path::PathBuf::from(&program_data).join("ReDD Block").join("helper-state.json")
+    };
+    #[cfg(target_os = "macos")]
+    let state_path = std::path::PathBuf::from("/var/lib/redd-block/helper-state.json");
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let state_path = std::path::PathBuf::from("/var/lib/redd-block/helper-state.json");
+    
+    let state_content = std::fs::read_to_string(&state_path)
+        .unwrap_or_else(|e| format!("[Error reading state file: {}]", e));
+    
+    // Check helper status
+    let ping_cmd = IpcCommand {
+        action: "ping".to_string(),
+        domains: None,
+        end_time: None,
+        blocklist_id: None,
+        apps: None,
+        schedules: None,
+        keep_blocking_on_uninstall: None,
+        blocks: None,
+    };
+    let (running, version) = match send_command(&ping_cmd) {
+        Ok(r) if r.success => (true, r.version),
+        _ => (false, None),
+    };
+    
+    DiagnosticsResult {
+        success: true,
+        error: None,
+        hosts_file: Some(hosts_content),
+        helper_running: Some(running),
+        helper_version: version,
+        helper_state_file: Some(state_content),
     }
 }

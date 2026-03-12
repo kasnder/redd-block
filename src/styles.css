@@ -4434,3 +4434,105 @@ body.ios .zoom-toast {
     border-color: var(--border-color);
     color: var(--text-secondary);
 }
+
+/* Diagnostics Modal */
+.diagnostics-modal {
+    max-width: 620px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.diagnostics-content {
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+}
+
+.diagnostics-section {
+    margin-bottom: 16px;
+}
+
+.diagnostics-section-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.diagnostics-badge {
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
+.badge-active {
+    background: hsl(142, 71%, 92%);
+    color: hsl(142, 71%, 30%);
+}
+
+.badge-inactive {
+    background: hsl(0, 0%, 92%);
+    color: hsl(0, 0%, 45%);
+}
+
+.diagnostics-field {
+    font-size: 14px;
+    padding: 4px 0;
+    color: var(--text-secondary);
+}
+
+.diagnostics-label {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.diagnostics-value.diag-ok {
+    color: #22c55e;
+    font-weight: 600;
+}
+
+.diagnostics-value.diag-error {
+    color: #ef4444;
+    font-weight: 600;
+}
+
+.diagnostics-pre {
+    background: hsl(214, 32%, 96%);
+    border: 1px solid var(--border-color-light);
+    border-radius: 8px;
+    padding: 12px;
+    font-family: 'SF Mono', 'Menlo', 'Consolas', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre;
+    max-height: 200px;
+    overflow-y: auto;
+    color: var(--text-primary);
+}
+
+.diagnostics-loading {
+    text-align: center;
+    padding: 24px;
+    color: var(--text-muted);
+    font-size: 15px;
+}
+
+.diagnostics-error {
+    text-align: center;
+    padding: 24px;
+    color: #ef4444;
+    font-size: 15px;
+}
+
+/* Diagnostics button hover: neutral instead of red */
+#diagnostics-btn:hover {
+    border-color: var(--text-muted);
+    color: var(--text-primary);
+    background: var(--element-hover-bg);
+}

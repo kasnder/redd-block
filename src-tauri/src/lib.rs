@@ -345,10 +345,12 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::start_block_via_helper,
         commands::clear_block_via_helper,
         commands::set_blocked_apps_via_helper,
+        commands::set_blocks_via_helper,
         commands::set_schedules_via_helper,
         commands::set_keep_blocking_on_uninstall_via_helper,
         commands::block_websites,
         commands::clean_hosts_file,
+        commands::get_helper_diagnostics,
     ]
 }
 
