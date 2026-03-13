@@ -471,7 +471,7 @@ Blocklist duplication creates a full copy of a blocklist (and its schedule if pr
 
 - helper status checks,
 - install path and elevation flow,
-- version compatibility checks via `EXPECTED_HELPER_VERSION` (currently `0.8.5`),
+- version compatibility checks via `EXPECTED_HELPER_VERSION`,
 - reinstall/update when helper is outdated.
 
 Before starting a block, the frontend (`src/app.js`) re-verifies helper availability when it believes the helper is available (via `check_helper_status`). This avoids using a stale “helper available” state (e.g. on Windows, where the helper is not restarted on crash). If a start-block attempt fails with a helper connection error (e.g. connection refused on Windows, os error 10061), the app clears the cached availability flag and shows a message directing the user to remove the helper in Settings and try again to reinstall, so the next Start block shows the install modal instead of repeating the raw error.
