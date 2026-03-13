@@ -136,6 +136,30 @@ pub fn get_app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
+/// Check for data files from previous app versions that used different bundle identifiers.
+/// Returns the path to the most recently modified legacy data file, if any.
+fn find_legacy_data() -> Option<PathBuf> {
+    let app_support = dirs::data_dir()?; // ~/Library/Application Support on macOS
+    let legacy_identifiers = ["com.redd.block", "redd-block"];
+    
+    let mut best: Option<(PathBuf, std::time::SystemTime)> = None;
+    
+    for id in &legacy_identifiers {
+        let path = app_support.join(id).join("redd-block-data.json");
+        if path.exists() {
+            if let Ok(meta) = fs::metadata(&path) {
+                if let Ok(modified) = meta.modified() {
+                    if best.as_ref().map_or(true, |(_, t)| modified > *t) {
+                        best = Some((path, modified));
+                    }
+                }
+            }
+        }
+    }
+    
+    best.map(|(p, _)| p)
+}
+
 /// Load data from file
 #[tauri::command]
 pub fn load_data(app: AppHandle) -> Result<AppData, String> {
@@ -151,7 +175,18 @@ pub fn load_data(app: AppHandle) -> Result<AppData, String> {
         let data: AppData = serde_json::from_str(&content).map_err(|e| e.to_string())?;
         Ok(data)
     } else {
-        Ok(AppData::default())
+        // Check for data from older app versions with different bundle identifiers
+        if let Some(legacy_path) = find_legacy_data() {
+            log::info!("Migrating data from legacy path: {:?}", legacy_path);
+            let content = fs::read_to_string(&legacy_path).map_err(|e| e.to_string())?;
+            let data: AppData = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+            // Save to current location so migration only happens once
+            let migrated = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
+            fs::write(&data_path, migrated).map_err(|e| e.to_string())?;
+            Ok(data)
+        } else {
+            Ok(AppData::default())
+        }
     }
 }
 
