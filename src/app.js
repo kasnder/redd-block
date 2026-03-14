@@ -610,7 +610,7 @@ async function checkForAppUpdate() {
         const currentVersion = await tauriAPI.getAppVersion();
         if (!currentVersion) return;
 
-        const response = await fetch('https://ulyngs.github.io/redd-block/latest-versions.json');
+        const response = await fetch(`https://ulyngs.github.io/redd-block/latest-versions.json?t=${Date.now()}`);
         const versions = await response.json();
 
         const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
@@ -8993,7 +8993,7 @@ function setupTheme() {
                 if (latestVersionWrap) latestVersionWrap.style.display = 'none';
 
                 try {
-                    const response = await fetch('https://ulyngs.github.io/redd-block/latest-versions.json');
+                    const response = await fetch(`https://ulyngs.github.io/redd-block/latest-versions.json?t=${Date.now()}`);
                     const versions = await response.json();
                     // Detect platform
                     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
