@@ -57,16 +57,16 @@ const tauriAPI = {
     screentimeCheckAuth: () => invoke('plugin:screentime|check_authorization'),
     screentimeBlockWebsites: (domains) => invoke('plugin:screentime|block_websites', { domains }),
     screentimeUnblockWebsites: () => invoke('plugin:screentime|unblock_websites'),
-    screentimeStartBlock: (domains) => invoke('plugin:screentime|screentime_start_block', { domains }),
+    screentimeStartBlock: (payload) => invoke('plugin:screentime|screentime_start_block', payload),
     screentimeClearBlock: () => invoke('plugin:screentime|screentime_clear_block'),
-    showActivityPicker: () => invoke('plugin:screentime|show_activity_picker'),
+    showActivityPicker: (payload = {}) => invoke('plugin:screentime|show_activity_picker', payload),
     setSchedulesPlugin: (schedules) => invoke('plugin:screentime|set_schedules', { schedules }),
     screentimeRegisterOneOffActivity: (activityName, startTimestampMs) =>
         invoke('plugin:screentime|register_one_off_activity', { activityName, startTimestampMs }),
-    screentimeSetResumePayload: (blockId, domains) =>
-        invoke('plugin:screentime|set_resume_payload', { blockId, domains }),
-    screentimeSetBlockEndState: (blockId, domains) =>
-        invoke('plugin:screentime|set_block_end_state', { blockId, domains }),
+    screentimeSetResumePayload: (payload) =>
+        invoke('plugin:screentime|set_resume_payload', payload),
+    screentimeSetBlockEndState: (payload) =>
+        invoke('plugin:screentime|set_block_end_state', payload),
 
     // Event listening
     onBlocksUpdated: (callback) => listen('blocks-updated', callback),
@@ -190,6 +190,178 @@ function isBlockAlwaysOn(block) {
     return block.isAlwaysOn === true || block.endTime >= ALWAYS_ON_END_TIME;
 }
 
+function isScreenTimeSummaryEntry(appName) {
+    return typeof appName === 'string' && appName.includes('selected (Screen Time)');
+}
+
+function parseLegacyScreenTimeSummary(entries) {
+    if (!Array.isArray(entries) || entries.length === 0) return null;
+    const summaryLabel = entries.join(', ');
+    let applicationCount = 0;
+    let categoryCount = 0;
+    for (const entry of entries) {
+        const appMatch = entry.match(/(\d+)\s+app/);
+        const categoryMatch = entry.match(/(\d+)\s+categor(?:y|ies)/);
+        if (appMatch) applicationCount += Number.parseInt(appMatch[1], 10);
+        if (categoryMatch) categoryCount += Number.parseInt(categoryMatch[1], 10);
+    }
+    return {
+        applicationTokens: [],
+        categoryTokens: [],
+        applicationCount,
+        categoryCount,
+        summaryLabel,
+        requiresReselection: true
+    };
+}
+
+function normalizeIOSScreenTimeSelection(selection, legacySummaryEntries = []) {
+    if (!selection && legacySummaryEntries.length === 0) return null;
+
+    const normalized = {
+        applicationTokens: Array.isArray(selection?.applicationTokens) ? [...selection.applicationTokens] : [],
+        categoryTokens: Array.isArray(selection?.categoryTokens) ? [...selection.categoryTokens] : [],
+        applicationCount: Number.isFinite(selection?.applicationCount) ? selection.applicationCount : null,
+        categoryCount: Number.isFinite(selection?.categoryCount) ? selection.categoryCount : null,
+        summaryLabel: typeof selection?.summaryLabel === 'string' ? selection.summaryLabel : '',
+        requiresReselection: selection?.requiresReselection === true
+    };
+
+    if (normalized.applicationCount == null) {
+        normalized.applicationCount = normalized.applicationTokens.length;
+    }
+    if (normalized.categoryCount == null) {
+        normalized.categoryCount = normalized.categoryTokens.length;
+    }
+
+    if (!selection && legacySummaryEntries.length > 0) {
+        return parseLegacyScreenTimeSummary(legacySummaryEntries);
+    }
+
+    if (
+        !normalized.summaryLabel &&
+        (normalized.applicationCount > 0 || normalized.categoryCount > 0) &&
+        normalized.applicationTokens.length === 0 &&
+        normalized.categoryTokens.length === 0
+    ) {
+        const legacySelection = parseLegacyScreenTimeSummary(legacySummaryEntries);
+        if (legacySelection?.summaryLabel) {
+            normalized.summaryLabel = legacySelection.summaryLabel;
+        }
+        normalized.requiresReselection = true;
+    }
+
+    const hasAnySelection =
+        normalized.applicationTokens.length > 0 ||
+        normalized.categoryTokens.length > 0 ||
+        normalized.applicationCount > 0 ||
+        normalized.categoryCount > 0 ||
+        !!normalized.summaryLabel;
+
+    return hasAnySelection ? normalized : null;
+}
+
+function cloneIOSScreenTimeSelection(selection) {
+    const normalized = normalizeIOSScreenTimeSelection(selection);
+    return normalized ? { ...normalized } : null;
+}
+
+function hasUsableIOSScreenTimeSelection(selection) {
+    const normalized = normalizeIOSScreenTimeSelection(selection);
+    return !!normalized && (
+        normalized.applicationTokens.length > 0 ||
+        normalized.categoryTokens.length > 0
+    );
+}
+
+function formatIOSScreenTimeSelectionLabel(selection) {
+    const normalized = normalizeIOSScreenTimeSelection(selection);
+    if (!normalized) return '';
+    if (normalized.summaryLabel) return normalized.summaryLabel;
+
+    const parts = [];
+    if (normalized.applicationCount > 0) parts.push(`${normalized.applicationCount} app${normalized.applicationCount > 1 ? 's' : ''}`);
+    if (normalized.categoryCount > 0) parts.push(`${normalized.categoryCount} categor${normalized.categoryCount > 1 ? 'ies' : 'y'}`);
+    return parts.length > 0 ? `${parts.join(', ')} selected (Screen Time)` : '';
+}
+
+function getBlocklistRegularApps(blocklist) {
+    if (!Array.isArray(blocklist?.apps)) return [];
+    return blocklist.apps.filter(app => typeof app === 'string' && !isScreenTimeSummaryEntry(app));
+}
+
+function getBlocklistIOSScreenTimeSelection(blocklist) {
+    const legacySummaryEntries = Array.isArray(blocklist?.apps)
+        ? blocklist.apps.filter(isScreenTimeSummaryEntry)
+        : [];
+    return normalizeIOSScreenTimeSelection(blocklist?.iosScreenTimeSelection, legacySummaryEntries);
+}
+
+function getBlocklistDisplayApps(blocklist) {
+    const apps = [...getBlocklistRegularApps(blocklist)];
+    const screenTimeLabel = formatIOSScreenTimeSelectionLabel(getBlocklistIOSScreenTimeSelection(blocklist));
+    if (screenTimeLabel) {
+        apps.push(screenTimeLabel);
+    }
+    return apps;
+}
+
+function getBlocklistIOSPayload(blocklist) {
+    const selection = getBlocklistIOSScreenTimeSelection(blocklist);
+    return {
+        appTokenData: selection?.applicationTokens || [],
+        categoryTokenData: selection?.categoryTokens || []
+    };
+}
+
+function blocklistNeedsIOSSelectionRefresh(blocklist) {
+    const selection = getBlocklistIOSScreenTimeSelection(blocklist);
+    return !!selection && selection.requiresReselection === true && !hasUsableIOSScreenTimeSelection(selection);
+}
+
+function ensureIOSBlocklistSelectionReady(blocklist, actionLabel) {
+    if (!isIOS || !blocklistNeedsIOSSelectionRefresh(blocklist)) {
+        return true;
+    }
+
+    const blocklistName = blocklist?.name || 'This blocklist';
+    alert(`${blocklistName} has an old Screen Time app selection that iOS can no longer enforce reliably. Please edit the blocklist and re-select its apps before ${actionLabel}.`);
+    return false;
+}
+
+function normalizeBlocklist(blocklist) {
+    const normalizedBlocklist = { ...blocklist };
+    normalizedBlocklist.apps = getBlocklistRegularApps(blocklist);
+    normalizedBlocklist.iosScreenTimeSelection = getBlocklistIOSScreenTimeSelection(blocklist);
+    return normalizedBlocklist;
+}
+
+function collectActiveIOSManualBlockPayload(now = Date.now()) {
+    const allDomains = new Set();
+    const appTokenData = new Set();
+    const categoryTokenData = new Set();
+
+    for (const block of appData.activeBlocks || []) {
+        if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
+        const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+        if (!blocklist) continue;
+
+        for (const domain of blocklist.websites || []) {
+            if (!isProtectedDomain(domain)) allDomains.add(domain);
+        }
+
+        const iosPayload = getBlocklistIOSPayload(blocklist);
+        for (const token of iosPayload.appTokenData) appTokenData.add(token);
+        for (const token of iosPayload.categoryTokenData) categoryTokenData.add(token);
+    }
+
+    return {
+        domains: Array.from(allDomains).sort(),
+        appTokenData: Array.from(appTokenData),
+        categoryTokenData: Array.from(categoryTokenData)
+    };
+}
+
 // Sync all active schedules to helper daemon so it can manage transitions autonomously
 function getIOSScheduleEntryWindow(schedule, seg) {
     const createdAt = new Date(schedule.createdAt || Date.now());
@@ -255,6 +427,7 @@ async function syncSchedulesToHelper() {
                 if (!schedule.segments || schedule.segments.length === 0) continue;
                 const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
                 const domains = blocklist?.websites || [];
+                const iosPayload = getBlocklistIOSPayload(blocklist);
                 for (let segIdx = 0; segIdx < schedule.segments.length; segIdx++) {
                     const seg = schedule.segments[segIdx];
                     const window = getIOSScheduleEntryWindow(schedule, seg);
@@ -266,6 +439,8 @@ async function syncSchedulesToHelper() {
                         endMinute: seg.endMinute,
                         days: seg.days ? [...seg.days] : [],
                         domains,
+                        appTokenData: iosPayload.appTokenData,
+                        categoryTokenData: iosPayload.categoryTokenData,
                         repeats: window.repeats,
                         activeFromTimestampMs: window.activeFromTimestampMs,
                         activeUntilTimestampMs: window.activeUntilTimestampMs
@@ -564,6 +739,7 @@ async function loadData() {
     if (!appData.settings) {
         appData.settings = {};
     }
+    appData.blocklists = (appData.blocklists || []).map(normalizeBlocklist);
     // Create default blocklist on first launch (no blocklists yet)
     if (appData.blocklists.length === 0) {
         appData.blocklists.push({
@@ -572,6 +748,7 @@ async function loadData() {
             mode: 'blocklist',
             websites: ['instagram.com', 'youtube.com', 'reddit.com'],
             apps: [],
+            iosScreenTimeSelection: null,
             overrideDifficulty: {
                 type: 'random-words',
                 count: 50
@@ -1105,6 +1282,16 @@ function processWebsiteInput(raw) {
 function setupModalListeners() {
     let modalWebsites = [];
     let modalApps = [];
+    let modalIOSScreenTimeSelection = null;
+
+    const getModalDisplayApps = () => {
+        const displayApps = [...modalApps];
+        const screenTimeLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
+        if (screenTimeLabel) {
+            displayApps.push(screenTimeLabel);
+        }
+        return displayApps;
+    };
 
     const modalWebsiteInput = document.getElementById('modal-website-input');
     const modalAppInput = document.getElementById('modal-app-input');
@@ -1234,19 +1421,31 @@ function setupModalListeners() {
     if (isIOS && modalBrowseBtn) {
         modalBrowseBtn.addEventListener('click', async () => {
             try {
-                const result = await tauriAPI.showActivityPicker();
+                const result = await tauriAPI.showActivityPicker({
+                    initialApplicationTokenData: modalIOSScreenTimeSelection?.applicationTokens || [],
+                    initialCategoryTokenData: modalIOSScreenTimeSelection?.categoryTokens || []
+                });
                 if (!result.cancelled && (result.applicationCount > 0 || result.categoryCount > 0)) {
-                    const parts = [];
-                    if (result.applicationCount > 0) parts.push(`${result.applicationCount} app${result.applicationCount > 1 ? 's' : ''}`);
-                    if (result.categoryCount > 0) parts.push(`${result.categoryCount} categor${result.categoryCount > 1 ? 'ies' : 'y'}`);
-                    const label = parts.join(', ') + ' selected (Screen Time)';
-                    // Remove any existing Screen Time entries (replace, don't append)
-                    for (let i = modalApps.length - 1; i >= 0; i--) {
-                        if (modalApps[i].includes('selected (Screen Time)')) {
-                            modalApps.splice(i, 1);
-                        }
-                    }
-                    modalApps.push(label);
+                    const previousSelection = cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection);
+                    pushModalUndo('ios-screentime-selection', () => {
+                        modalIOSScreenTimeSelection = cloneIOSScreenTimeSelection(previousSelection);
+                        window.renderModalTags();
+                    });
+                    modalIOSScreenTimeSelection = normalizeIOSScreenTimeSelection({
+                        applicationTokens: result.applicationTokens || [],
+                        categoryTokens: result.categoryTokens || [],
+                        applicationCount: result.applicationCount || 0,
+                        categoryCount: result.categoryCount || 0,
+                        requiresReselection: false
+                    });
+                    window.renderModalTags();
+                } else if (!result.cancelled && modalIOSScreenTimeSelection) {
+                    const previousSelection = cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection);
+                    pushModalUndo('ios-screentime-selection-clear', () => {
+                        modalIOSScreenTimeSelection = cloneIOSScreenTimeSelection(previousSelection);
+                        window.renderModalTags();
+                    });
+                    modalIOSScreenTimeSelection = null;
                     window.renderModalTags();
                 }
             } catch (err) {
@@ -1639,6 +1838,7 @@ function setupModalListeners() {
             emoji,
             websites: [...modalWebsites],  // Copy the array
             apps: [...modalApps],          // Copy the array
+            iosScreenTimeSelection: cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection),
             showItemDetails,
             alwaysShowInSchedule,
             overrideDifficulty: overrideDifficultyPayload
@@ -1714,23 +1914,36 @@ function setupModalListeners() {
             window.renderModalTags();
         }, window.lockedWebsites);
 
-        renderTags(modalAppsTags, modalApps, (idx) => {
-            const value = modalApps[idx];
+        const displayApps = getModalDisplayApps();
+        renderTags(modalAppsTags, displayApps, (idx) => {
+            const value = displayApps[idx];
             if (window.lockedApps && window.lockedApps.includes(value)) {
                 return; // Do not remove locked items; do not push undo.
             }
-            pushModalUndo('app', () => {
-                modalApps.splice(idx, 0, value);
-                window.renderModalTags();
-            });
-            modalApps.splice(idx, 1);
+            if (value === formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection)) {
+                const previousSelection = cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection);
+                pushModalUndo('ios-screentime-selection-remove', () => {
+                    modalIOSScreenTimeSelection = cloneIOSScreenTimeSelection(previousSelection);
+                    window.renderModalTags();
+                });
+                modalIOSScreenTimeSelection = null;
+            } else {
+                const appIdx = modalApps.indexOf(value);
+                if (appIdx === -1) return;
+                pushModalUndo('app', () => {
+                    modalApps.splice(appIdx, 0, value);
+                    window.renderModalTags();
+                });
+                modalApps.splice(appIdx, 1);
+            }
             window.renderModalTags();
         }, window.lockedApps);
     };
 
-    window.setModalData = (websites, apps, lockedWebsitesList = [], lockedAppsList = []) => {
+    window.setModalData = (websites, apps, iosScreenTimeSelection = null, lockedWebsitesList = [], lockedAppsList = []) => {
         modalWebsites.length = 0;
         modalApps.length = 0;
+        modalIOSScreenTimeSelection = cloneIOSScreenTimeSelection(iosScreenTimeSelection);
         window.lockedWebsites = lockedWebsitesList;
         window.lockedApps = lockedAppsList;
 
@@ -3344,6 +3557,8 @@ async function startSchedule() {
         return;
     }
 
+    if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this schedule')) return;
+
     if (activeSchedule && hasNewSegments) {
         // Edit mode - show confirmation for adding new segments only
         const newSegments = scheduleSegments.slice(committedSegmentCount);
@@ -3392,7 +3607,7 @@ function showScheduleConfirmModal(blocklist) {
     }
 
     // Apps
-    const apps = blocklist.apps || [];
+    const apps = getBlocklistDisplayApps(blocklist);
     const appsRow = document.getElementById('schedule-apps-row');
     const appsEl = document.getElementById('schedule-confirm-apps');
     const showAllAppsBtn = document.getElementById('show-all-schedule-apps');
@@ -3702,6 +3917,7 @@ async function proceedWithSchedule() {
 
     const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
     if (!blocklist) return;
+    if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this schedule')) return;
 
     if (!isIOS) {
         let helperReady = helperAvailable;
@@ -4771,18 +4987,19 @@ function startBlock() {
     const showAllAppsBtn = document.getElementById('show-all-apps');
     const appsRowEl = document.getElementById('apps-row');
 
-    if (!blocklist.apps || blocklist.apps.length === 0) {
+    const displayApps = getBlocklistDisplayApps(blocklist);
+    if (displayApps.length === 0) {
         appsRowEl.classList.add('hidden');
     } else {
         appsRowEl.classList.remove('hidden');
-        if (blocklist.apps.length <= 3) {
-            appsValueEl.textContent = blocklist.apps.join(', ');
+        if (displayApps.length <= 3) {
+            appsValueEl.textContent = displayApps.join(', ');
             showAllAppsBtn.classList.add('hidden');
         } else {
-            appsValueEl.textContent = blocklist.apps.slice(0, 3).join(', ') + ', ...';
+            appsValueEl.textContent = displayApps.slice(0, 3).join(', ') + ', ...';
             showAllAppsBtn.classList.remove('hidden');
             showAllAppsBtn.onclick = () => {
-                appsValueEl.textContent = blocklist.apps.join(', ');
+                appsValueEl.textContent = displayApps.join(', ');
                 showAllAppsBtn.classList.add('hidden');
             };
         }
@@ -4869,6 +5086,11 @@ async function proceedWithBlock() {
         startBtn.innerHTML = getStartBlockButtonHTML();
         return;
     }
+    if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this block')) {
+        startBtn.disabled = false;
+        startBtn.innerHTML = getStartBlockButtonHTML();
+        return;
+    }
 
     const block = {
         id: generateId(),
@@ -4917,8 +5139,13 @@ async function proceedWithBlock() {
                 // Register one-off DeviceActivity so block ends at endTime when app is closed (Option B: store this block's payload to remove)
                 if (!block.isAlwaysOn && block.endTime < ALWAYS_ON_END_TIME) {
                     try {
-                        const thisBlockDomains = blocklist?.websites || [];
-                        await tauriAPI.screentimeSetBlockEndState(block.id, Array.from(thisBlockDomains));
+                        const iosPayload = getBlocklistIOSPayload(blocklist);
+                        await tauriAPI.screentimeSetBlockEndState({
+                            blockId: block.id,
+                            domains: Array.from(blocklist?.websites || []),
+                            appTokenData: iosPayload.appTokenData,
+                            categoryTokenData: iosPayload.categoryTokenData
+                        });
                         const res = await tauriAPI.screentimeRegisterOneOffActivity('redd-block-end-' + block.id, block.endTime);
                         if (res && res.success === false) {
                             console.error('[iOS] One-off DeviceActivity registration failed:', res.error || 'Unknown error');
@@ -5248,6 +5475,7 @@ async function updateHostsFile(silent = false) {
     // (even when domainsArray is empty — app-only blocklists must still shield apps).
     if (isIOS) {
         try {
+            const manualPayload = collectActiveIOSManualBlockPayload(now);
             const hasActiveBlocks = appData.activeBlocks.some(
                 block => block.startTime <= now && block.endTime > now && !block.isPaused
             );
@@ -5274,13 +5502,13 @@ async function updateHostsFile(silent = false) {
                 lastBlockedDomains = new Set();
                 return { success: true };
             }
-            if (domainsArray.length === 0) {
+            if (manualPayload.domains.length === 0) {
                 console.log('[updateHostsFile] iOS: active blocks with no domains (app-only), applying app shield');
             } else {
-                console.log('[updateHostsFile] iOS: starting Screen Time block for', domainsArray);
+                console.log('[updateHostsFile] iOS: starting Screen Time block for', manualPayload.domains);
             }
-            await tauriAPI.screentimeStartBlock(domainsArray);
-            lastBlockedDomains = allDomains;
+            await tauriAPI.screentimeStartBlock(manualPayload);
+            lastBlockedDomains = new Set(manualPayload.domains);
             return { success: true };
         } catch (err) {
             console.error('[updateHostsFile] iOS Screen Time error:', err);
@@ -5565,7 +5793,13 @@ function openBlocklistModal(blocklist = null) {
         if (maxDifficultyWrap) maxDifficultyWrap.classList.add('max-difficulty-disabled');
 
         // Pass existing items as locked
-        window.setModalData(blocklist.websites || [], blocklist.apps || [], blocklist.websites || [], blocklist.apps || []);
+        window.setModalData(
+            blocklist.websites || [],
+            getBlocklistRegularApps(blocklist),
+            getBlocklistIOSScreenTimeSelection(blocklist),
+            blocklist.websites || [],
+            getBlocklistDisplayApps(blocklist)
+        );
     } else {
         warningEl.classList.add('hidden');
         modeInputs.forEach(el => el.classList.remove('disabled'));
@@ -5583,7 +5817,13 @@ function openBlocklistModal(blocklist = null) {
         }
         if (maxDifficultyWrap) maxDifficultyWrap.classList.remove('max-difficulty-disabled');
 
-        window.setModalData(blocklist?.websites || [], blocklist?.apps || [], [], []);
+        window.setModalData(
+            blocklist?.websites || [],
+            getBlocklistRegularApps(blocklist),
+            getBlocklistIOSScreenTimeSelection(blocklist),
+            [],
+            []
+        );
     }
 
     // Re-apply max-difficulty grey-out for count when blocklist is not active (above else branch removes it)
@@ -5665,7 +5905,7 @@ function closeBlocklistModal() {
     document.getElementById('blocklist-modal').classList.add('hidden');
     editingBlocklistId = null;
     document.getElementById('blocklist-name').value = '';
-    window.setModalData([], []);
+    window.setModalData([], [], null);
 }
 
 // Open override modal
@@ -5683,7 +5923,8 @@ function openOverrideModal(blockId) {
 
     // Set summary text
     const websiteCount = blocklist.websites?.length || 0;
-    const appCount = blocklist.apps?.length || 0;
+    const displayApps = getBlocklistDisplayApps(blocklist);
+    const appCount = displayApps.length;
     const mode = blocklist.mode === 'allowlist' ? 'Allows' : 'Blocks';
 
     let metaParts = [];
@@ -5699,9 +5940,9 @@ function openOverrideModal(blockId) {
 
     if (appCount > 0) {
         if (appCount <= 3) {
-            metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'} (${blocklist.apps.join(', ')})`);
+            metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'} (${displayApps.join(', ')})`);
         } else {
-            metaParts.push(`${appCount} apps (${blocklist.apps.slice(0, 3).join(', ')}, ...)`);
+            metaParts.push(`${appCount} apps (${displayApps.slice(0, 3).join(', ')}, ...)`);
         }
     }
 
@@ -5837,16 +6078,17 @@ function openResumeConfirmation(blocklistId, type, blockId) {
     const appsRow = document.getElementById('apps-row');
     const appsEl = document.getElementById('start-confirm-apps');
     const showAllApps = document.getElementById('show-all-apps');
-    if (blocklist.apps && blocklist.apps.length > 0) {
+    const displayApps = getBlocklistDisplayApps(blocklist);
+    if (displayApps.length > 0) {
         appsRow.classList.remove('hidden');
-        if (blocklist.apps.length <= 3) {
-            appsEl.textContent = blocklist.apps.join(', ');
+        if (displayApps.length <= 3) {
+            appsEl.textContent = displayApps.join(', ');
             showAllApps.classList.add('hidden');
         } else {
-            appsEl.textContent = blocklist.apps.slice(0, 3).join(', ') + ', ...';
+            appsEl.textContent = displayApps.slice(0, 3).join(', ') + ', ...';
             showAllApps.classList.remove('hidden');
             showAllApps.onclick = () => {
-                appsEl.textContent = blocklist.apps.join(', ');
+                appsEl.textContent = displayApps.join(', ');
                 showAllApps.classList.add('hidden');
             };
         }
@@ -5946,7 +6188,8 @@ function openPauseModal(blockId) {
 
     // Set summary (same format as override modal)
     const websiteCount = blocklist.websites?.length || 0;
-    const appCount = blocklist.apps?.length || 0;
+    const displayApps = getBlocklistDisplayApps(blocklist);
+    const appCount = displayApps.length;
     const mode = blocklist.mode === 'allowlist' ? 'Allows' : 'Blocks';
 
     let metaParts = [];
@@ -5960,9 +6203,9 @@ function openPauseModal(blockId) {
     }
     if (appCount > 0) {
         if (appCount <= 2) {
-            metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'} (${blocklist.apps.join(', ')})`);
+            metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'} (${displayApps.join(', ')})`);
         } else {
-            metaParts.push(`${appCount} apps (${blocklist.apps.slice(0, 2).join(', ')}, ...)`);
+            metaParts.push(`${appCount} apps (${displayApps.slice(0, 2).join(', ')}, ...)`);
         }
     }
 
@@ -6291,8 +6534,13 @@ async function proceedWithPause() {
         if (block && block.pauseEndTime) {
             try {
                 const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
-                const domains = blocklist?.websites || [];
-                await tauriAPI.screentimeSetResumePayload(pauseBlockId, domains);
+                const iosPayload = getBlocklistIOSPayload(blocklist);
+                await tauriAPI.screentimeSetResumePayload({
+                    blockId: pauseBlockId,
+                    domains: blocklist?.websites || [],
+                    appTokenData: iosPayload.appTokenData,
+                    categoryTokenData: iosPayload.categoryTokenData
+                });
                 const res = await tauriAPI.screentimeRegisterOneOffActivity('redd-block-resume-' + pauseBlockId, block.pauseEndTime);
                 if (res && res.success === false) {
                     console.error('[iOS] One-off DeviceActivity registration failed:', res.error || 'Unknown error');
@@ -6535,8 +6783,15 @@ function contentKey(blocklistId) {
     const bl = appData.blocklists.find(b => b.id === blocklistId);
     if (!bl) return '';
     const w = [...(bl.websites || [])].sort();
-    const a = [...(bl.apps || [])].sort();
-    return JSON.stringify({ w, a });
+    const a = [...getBlocklistRegularApps(bl)].sort();
+    const iosSelection = getBlocklistIOSScreenTimeSelection(bl);
+    return JSON.stringify({
+        w,
+        a,
+        iosAppTokens: [...(iosSelection?.applicationTokens || [])].sort(),
+        iosCategoryTokens: [...(iosSelection?.categoryTokens || [])].sort(),
+        iosSummary: iosSelection?.summaryLabel || ''
+    });
 }
 
 function sameBlocklistContent(idA, idB) { return contentKey(idA) === contentKey(idB); }
@@ -6611,7 +6866,8 @@ function duplicateBlocklist(id) {
         color: blocklist.color ?? null,
         emoji: blocklist.emoji ?? '🚫',
         websites: [...(blocklist.websites || [])],
-        apps: [...(blocklist.apps || [])],
+        apps: [...getBlocklistRegularApps(blocklist)],
+        iosScreenTimeSelection: cloneIOSScreenTimeSelection(getBlocklistIOSScreenTimeSelection(blocklist)),
         showItemDetails: blocklist.showItemDetails !== false,
         alwaysShowInSchedule: blocklist.alwaysShowInSchedule !== false,
         overrideDifficulty: cloneOverrideDifficulty(blocklist.overrideDifficulty)
@@ -7523,7 +7779,10 @@ function renderBlocklists() {
     container.innerHTML = appData.blocklists.map(bl => {
         // Build detailed meta text
         const websiteCount = bl.websites?.length || 0;
-        const appCount = bl.apps?.length || 0;
+        const regularApps = getBlocklistRegularApps(bl);
+        const screenTimeSelection = getBlocklistIOSScreenTimeSelection(bl);
+        const screenTimeLabel = formatIOSScreenTimeSelectionLabel(screenTimeSelection);
+        const appCount = regularApps.length + (screenTimeLabel ? 1 : 0);
         const showDetails = bl.showItemDetails !== false; // Default to true
         let metaParts = [];
 
@@ -7542,20 +7801,8 @@ function renderBlocklists() {
         }
 
         if (appCount > 0) {
-            // Check if any entries are Screen Time selections (iOS)
-            const screenTimeEntries = bl.apps.filter(a => a.includes('selected (Screen Time)'));
-            const regularApps = bl.apps.filter(a => !a.includes('selected (Screen Time)'));
-
-            if (screenTimeEntries.length > 0) {
-                // Extract the Screen Time summary directly (e.g., "2 apps, 1 category selected (Screen Time)")
-                // Use the embedded text as-is, stripping " selected (Screen Time)"
-                const stParts = [];
-                for (const entry of screenTimeEntries) {
-                    const summary = entry.replace(' selected (Screen Time)', '');
-                    stParts.push(summary);
-                }
-                const stText = stParts.join(', ') + ' via Screen Time';
-
+            if (screenTimeLabel) {
+                const stText = `${screenTimeLabel.replace(' selected (Screen Time)', '')} via Screen Time`;
                 if (regularApps.length > 0) {
                     metaParts.push(`${regularApps.length} ${regularApps.length === 1 ? 'app' : 'apps'} + ${stText}`);
                 } else {
@@ -7563,9 +7810,9 @@ function renderBlocklists() {
                 }
             } else if (showDetails) {
                 if (appCount <= 2) {
-                    metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'} (${bl.apps.join(', ')})`);
+                    metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'} (${regularApps.join(', ')})`);
                 } else {
-                    metaParts.push(`${appCount} apps (${bl.apps.slice(0, 2).join(', ')}, ...)`);
+                    metaParts.push(`${appCount} apps (${regularApps.slice(0, 2).join(', ')}, ...)`);
                 }
             } else {
                 metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'}`);

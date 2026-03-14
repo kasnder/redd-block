@@ -123,9 +123,9 @@ impl<R: Runtime> Screentime<R> {
   
   // --- Activity Picker ---
   
-  pub fn show_activity_picker(&self) -> crate::Result<ActivityPickerResponse> {
+  pub fn show_activity_picker(&self, payload: ActivityPickerRequest) -> crate::Result<ActivityPickerResponse> {
     self.0
-      .run_mobile_plugin("showActivityPicker", ActivityPickerRequest {})
+      .run_mobile_plugin("showActivityPicker", payload)
       .map_err(Into::into)
   }
 }

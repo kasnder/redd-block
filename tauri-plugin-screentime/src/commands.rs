@@ -60,8 +60,14 @@ pub(crate) async fn unblock_apps<R: Runtime>(
 pub(crate) async fn screentime_start_block<R: Runtime>(
     app: AppHandle<R>,
     domains: Vec<String>,
+    app_token_data: Option<Vec<String>>,
+    category_token_data: Option<Vec<String>>,
 ) -> Result<StartBlockResponse> {
-    app.screentime().start_block(StartBlockRequest { domains })
+    app.screentime().start_block(StartBlockRequest {
+        domains,
+        app_token_data,
+        category_token_data,
+    })
 }
 
 #[command]
@@ -83,6 +89,7 @@ pub(crate) async fn schedule_block<R: Runtime>(
     end_minute: u32,
     domains: Option<Vec<String>>,
     app_token_data: Option<Vec<String>>,
+    category_token_data: Option<Vec<String>>,
 ) -> Result<SuccessResponse> {
     app.screentime().schedule_block(ScheduleBlockRequest {
         id,
@@ -92,6 +99,7 @@ pub(crate) async fn schedule_block<R: Runtime>(
         end_minute,
         domains,
         app_token_data,
+        category_token_data,
     })
 }
 
@@ -147,10 +155,14 @@ pub(crate) async fn set_resume_payload<R: Runtime>(
     app: AppHandle<R>,
     block_id: String,
     domains: Vec<String>,
+    app_token_data: Option<Vec<String>>,
+    category_token_data: Option<Vec<String>>,
 ) -> Result<SuccessResponse> {
     app.screentime().set_resume_payload(SetResumePayloadRequest {
         block_id,
         domains,
+        app_token_data,
+        category_token_data,
     })
 }
 
@@ -159,10 +171,14 @@ pub(crate) async fn set_block_end_state<R: Runtime>(
     app: AppHandle<R>,
     block_id: String,
     domains: Vec<String>,
+    app_token_data: Option<Vec<String>>,
+    category_token_data: Option<Vec<String>>,
 ) -> Result<SuccessResponse> {
     app.screentime().set_block_end_state(SetBlockEndStateRequest {
         block_id,
         domains,
+        app_token_data,
+        category_token_data,
     })
 }
 
@@ -171,6 +187,11 @@ pub(crate) async fn set_block_end_state<R: Runtime>(
 #[command]
 pub(crate) async fn show_activity_picker<R: Runtime>(
     app: AppHandle<R>,
+    initial_application_token_data: Option<Vec<String>>,
+    initial_category_token_data: Option<Vec<String>>,
 ) -> Result<ActivityPickerResponse> {
-    app.screentime().show_activity_picker()
+    app.screentime().show_activity_picker(ActivityPickerRequest {
+        initial_application_token_data,
+        initial_category_token_data,
+    })
 }

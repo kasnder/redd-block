@@ -22,6 +22,12 @@ class BlockAppsForTokensArgs: Decodable {
 
 class UnblockAppsArgs: Decodable {}
 
+class StartBlockArgs: Decodable {
+    let domains: [String]
+    let appTokenData: [String]?
+    let categoryTokenData: [String]?
+}
+
 class ScheduleBlockArgs: Decodable {
     let id: String?
     let startHour: Int
@@ -30,6 +36,7 @@ class ScheduleBlockArgs: Decodable {
     let endMinute: Int
     let domains: [String]?
     let appTokenData: [String]?  // Base64-encoded ApplicationToken data
+    let categoryTokenData: [String]?  // Base64-encoded ActivityCategoryToken data
 }
 
 class UnscheduleBlockArgs: Decodable {
@@ -44,6 +51,7 @@ class ScheduleEntry: Decodable {
     let endMinute: Int
     let domains: [String]?
     let appTokenData: [String]?
+    let categoryTokenData: [String]?
     /// Optional weekday filter: Mon=0 … Sun=6
     let days: [Int]?
     /// Whether DeviceActivity should repeat this schedule entry.
@@ -58,7 +66,10 @@ class SetSchedulesArgs: Decodable {
     let schedules: [ScheduleEntry]
 }
 
-class ShowActivityPickerArgs: Decodable {}
+class ShowActivityPickerArgs: Decodable {
+    let initialApplicationTokenData: [String]?
+    let initialCategoryTokenData: [String]?
+}
 
 // One-off DeviceActivity (pause resume / block end)
 class RegisterOneOffActivityArgs: Decodable {
@@ -69,11 +80,15 @@ class RegisterOneOffActivityArgs: Decodable {
 class SetResumePayloadArgs: Decodable {
     let blockId: String
     let domains: [String]
+    let appTokenData: [String]?
+    let categoryTokenData: [String]?
 }
 
 class SetBlockEndStateArgs: Decodable {
     let blockId: String
     let domains: [String]
+    let appTokenData: [String]?
+    let categoryTokenData: [String]?
 }
 
 // MARK: - Activity Picker SwiftUI View
@@ -353,6 +368,7 @@ class ScreentimePlugin: Plugin {
     // MARK: - Activity Picker
     
     @objc public func showActivityPicker(_ invoke: Invoke) throws {
+        let args = try invoke.parseArgs(ShowActivityPickerArgs.self)
         Task { @MainActor in
             guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                   let rootVC = windowScene.windows.first?.rootViewController else {
@@ -368,34 +384,22 @@ class ScreentimePlugin: Plugin {
             while let presented = topVC.presentedViewController {
                 topVC = presented
             }
+
+            let hasExplicitInitialSelection =
+                args.initialApplicationTokenData != nil || args.initialCategoryTokenData != nil
+            let initialSelection = decodeSelection(
+                applicationTokenData: args.initialApplicationTokenData,
+                categoryTokenData: args.initialCategoryTokenData
+            ) ?? (hasExplicitInitialSelection ? FamilyActivitySelection() : ScreentimePlugin.currentSelection)
             
             let pickerView = ActivityPickerView(
-                initialSelection: ScreentimePlugin.currentSelection,
+                initialSelection: initialSelection,
                 onDone: { selection in
                     // Store the selection
                     ScreentimePlugin.currentSelection = selection
-                    
-                    // Encode application tokens
-                    var encodedAppTokens: [String] = []
-                    var failedAppTokens = 0
-                    for token in selection.applicationTokens {
-                        if let data = try? JSONEncoder().encode(token) {
-                            encodedAppTokens.append(data.base64EncodedString())
-                        } else {
-                            failedAppTokens += 1
-                        }
-                    }
-                    
-                    // Encode category tokens
-                    var encodedCategoryTokens: [String] = []
-                    var failedCategoryTokens = 0
-                    for token in selection.categoryTokens {
-                        if let data = try? JSONEncoder().encode(token) {
-                            encodedCategoryTokens.append(data.base64EncodedString())
-                        } else {
-                            failedCategoryTokens += 1
-                        }
-                    }
+
+                    let encodedAppTokens = self.encodeApplicationTokens(selection.applicationTokens)
+                    let encodedCategoryTokens = self.encodeCategoryTokens(selection.categoryTokens)
                     
                     // Dismiss the picker
                     topVC.dismiss(animated: true) {
@@ -406,9 +410,6 @@ class ScreentimePlugin: Plugin {
                             "applicationCount": selection.applicationTokens.count,
                             "categoryCount": selection.categoryTokens.count
                         ]
-                        if failedAppTokens > 0 || failedCategoryTokens > 0 {
-                            response["warning"] = "Failed to encode \(failedAppTokens) app token(s) and \(failedCategoryTokens) category token(s)"
-                        }
                         invoke.resolve(response)
                     }
                 },
@@ -430,6 +431,63 @@ class ScreentimePlugin: Plugin {
     }
     
     // MARK: - Website Blocking
+
+    private func encodeApplicationTokens(_ tokens: Set<ApplicationToken>) -> [String] {
+        tokens.compactMap { token in
+            guard let data = try? JSONEncoder().encode(token) else {
+                return nil
+            }
+            return data.base64EncodedString()
+        }
+    }
+
+    private func encodeCategoryTokens(_ tokens: Set<ActivityCategoryToken>) -> [String] {
+        tokens.compactMap { token in
+            guard let data = try? JSONEncoder().encode(token) else {
+                return nil
+            }
+            return data.base64EncodedString()
+        }
+    }
+
+    private func decodeApplicationTokens(_ tokenData: [String]?) -> Set<ApplicationToken> {
+        var tokens = Set<ApplicationToken>()
+        for tokenString in tokenData ?? [] {
+            if let data = Data(base64Encoded: tokenString),
+               let token = try? JSONDecoder().decode(ApplicationToken.self, from: data) {
+                tokens.insert(token)
+            }
+        }
+        return tokens
+    }
+
+    private func decodeCategoryTokens(_ tokenData: [String]?) -> Set<ActivityCategoryToken> {
+        var tokens = Set<ActivityCategoryToken>()
+        for tokenString in tokenData ?? [] {
+            if let data = Data(base64Encoded: tokenString),
+               let token = try? JSONDecoder().decode(ActivityCategoryToken.self, from: data) {
+                tokens.insert(token)
+            }
+        }
+        return tokens
+    }
+
+    private func decodeSelection(
+        applicationTokenData: [String]?,
+        categoryTokenData: [String]?
+    ) -> FamilyActivitySelection? {
+        let appTokens = decodeApplicationTokens(applicationTokenData)
+        let categoryTokens = decodeCategoryTokens(categoryTokenData)
+
+        guard !appTokens.isEmpty || !categoryTokens.isEmpty else {
+            return nil
+        }
+
+        var selection = FamilyActivitySelection()
+        selection.applicationTokens = appTokens
+        selection.categoryTokens = categoryTokens
+        return selection
+    }
     
     /// Check if Screen Time authorization is granted
     private func isAuthorized() -> Bool {
@@ -514,14 +572,14 @@ class ScreentimePlugin: Plugin {
         invoke.resolve(["success": true])
     }
     
-    // MARK: - Combined Block (websites + apps from stored selection)
+    // MARK: - Combined Block (websites + explicit app/category payloads)
     
     @objc public func startBlock(_ invoke: Invoke) throws {
         guard isAuthorized() else {
             invoke.resolve(["success": false, "error": "Screen Time authorization not granted"])
             return
         }
-        let args = try invoke.parseArgs(BlockWebsitesArgs.self)
+        let args = try invoke.parseArgs(StartBlockArgs.self)
         
         // Block websites (only when domains provided); for app-only blocks, clear web filter
         let truncated = args.domains.count > 50
@@ -532,18 +590,18 @@ class ScreentimePlugin: Plugin {
             store.webContent.blockedByFilter = .specific(webDomains)
         }
         
-        // Also block any apps from the stored selection
-        let appTokens = ScreentimePlugin.currentSelection.applicationTokens
-        let categoryTokens = ScreentimePlugin.currentSelection.categoryTokens
-        if !appTokens.isEmpty {
-            store.shield.applications = appTokens
-        }
-        if !categoryTokens.isEmpty {
-            store.shield.applicationCategories = .specific(categoryTokens)
-        }
+        let appTokens = decodeApplicationTokens(args.appTokenData)
+        let categoryTokens = decodeCategoryTokens(args.categoryTokenData)
+        store.shield.applications = appTokens.isEmpty ? nil : appTokens
+        store.shield.applicationCategories = categoryTokens.isEmpty ? nil : .specific(categoryTokens)
         
         // Persist current manual block state to App Group so extension can merge on resume/block-end
-        let manualState = buildScheduleData(domains: args.domains, appTokenData: nil, days: nil)
+        let manualState = buildScheduleData(
+            domains: args.domains,
+            appTokenData: args.appTokenData,
+            categoryTokenData: args.categoryTokenData,
+            days: nil
+        )
         SharedManualBlockStore.saveManualBlockState(manualState)
         
         var response: [String: Any] = [
@@ -595,6 +653,7 @@ class ScreentimePlugin: Plugin {
         let scheduleData = buildScheduleData(
             domains: args.domains,
             appTokenData: args.appTokenData,
+            categoryTokenData: args.categoryTokenData,
             startHour: args.startHour,
             startMinute: args.startMinute,
             endHour: args.endHour,
@@ -673,6 +732,7 @@ class ScreentimePlugin: Plugin {
             let scheduleData = buildScheduleData(
                 domains: entry.domains,
                 appTokenData: entry.appTokenData,
+                categoryTokenData: entry.categoryTokenData,
                 days: entry.days,
                 startHour: entry.startHour,
                 startMinute: entry.startMinute,
@@ -785,7 +845,12 @@ class ScreentimePlugin: Plugin {
             return
         }
         let args = try invoke.parseArgs(SetResumePayloadArgs.self)
-        let payload = buildScheduleData(domains: args.domains, appTokenData: nil, days: nil)
+        let payload = buildScheduleData(
+            domains: args.domains,
+            appTokenData: args.appTokenData,
+            categoryTokenData: args.categoryTokenData,
+            days: nil
+        )
         SharedManualBlockStore.saveResumePayload(blockId: args.blockId, payload)
         invoke.resolve(["success": true])
     }
@@ -797,17 +862,23 @@ class ScreentimePlugin: Plugin {
             return
         }
         let args = try invoke.parseArgs(SetBlockEndStateArgs.self)
-        let payload = buildScheduleData(domains: args.domains, appTokenData: nil, days: nil)
+        let payload = buildScheduleData(
+            domains: args.domains,
+            appTokenData: args.appTokenData,
+            categoryTokenData: args.categoryTokenData,
+            days: nil
+        )
         SharedManualBlockStore.saveBlockEndState(blockId: args.blockId, payload)
         invoke.resolve(["success": true])
     }
     
-    /// Build a ScheduleBlockData from optional domains/appTokenData, encoding
-    /// category tokens from the current stored selection. Optional days (Mon=0 … Sun=6)
-    /// and start/end times are stored for extension-side active-segment recomputation.
+    /// Build a ScheduleBlockData from explicit domains/app/category token payloads.
+    /// Optional days (Mon=0 … Sun=6) and start/end times are stored for
+    /// extension-side active-segment recomputation.
     private func buildScheduleData(
         domains: [String]?,
         appTokenData: [String]?,
+        categoryTokenData: [String]?,
         days: [Int]? = nil,
         startHour: Int? = nil,
         startMinute: Int? = nil,
@@ -816,34 +887,10 @@ class ScreentimePlugin: Plugin {
         activeFromTimestampMs: Double? = nil,
         activeUntilTimestampMs: Double? = nil
     ) -> ScheduleBlockData {
-        let selection = ScreentimePlugin.currentSelection
-        
-        // Encode category tokens from the current selection
-        var encodedCategoryTokens: [String] = []
-        for token in selection.categoryTokens {
-            if let data = try? JSONEncoder().encode(token) {
-                encodedCategoryTokens.append(data.base64EncodedString())
-            }
-        }
-        
-        // Use provided app tokens, or encode from current selection
-        let finalAppTokenData: [String]
-        if let provided = appTokenData, !provided.isEmpty {
-            finalAppTokenData = provided
-        } else {
-            var encodedAppTokens: [String] = []
-            for token in selection.applicationTokens {
-                if let data = try? JSONEncoder().encode(token) {
-                    encodedAppTokens.append(data.base64EncodedString())
-                }
-            }
-            finalAppTokenData = encodedAppTokens
-        }
-        
         return ScheduleBlockData(
             domains: domains ?? [],
-            appTokenData: finalAppTokenData,
-            categoryTokenData: encodedCategoryTokens,
+            appTokenData: appTokenData ?? [],
+            categoryTokenData: categoryTokenData ?? [],
             days: days,
             startHour: startHour,
             startMinute: startMinute,

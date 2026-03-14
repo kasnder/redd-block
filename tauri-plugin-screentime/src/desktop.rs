@@ -89,7 +89,7 @@ impl<R: Runtime> Screentime<R> {
     Ok(SuccessResponse { success: false, error: Some("Block end state is only available on iOS".to_string()) })
   }
 
-  pub fn show_activity_picker(&self) -> crate::Result<ActivityPickerResponse> {
+  pub fn show_activity_picker(&self, _payload: ActivityPickerRequest) -> crate::Result<ActivityPickerResponse> {
     Ok(ActivityPickerResponse {
       cancelled: true,
       application_tokens: vec![],

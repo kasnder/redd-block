@@ -60,8 +60,11 @@ pub struct BlockAppsResponse {
 // --- Combined Block (matches existing frontend API) ---
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StartBlockRequest {
     pub domains: Vec<String>,
+    pub app_token_data: Option<Vec<String>>,
+    pub category_token_data: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -84,6 +87,7 @@ pub struct ScheduleBlockRequest {
     pub end_minute: u32,
     pub domains: Option<Vec<String>>,
     pub app_token_data: Option<Vec<String>>,
+    pub category_token_data: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -96,6 +100,7 @@ pub struct ScheduleEntryRequest {
     pub end_minute: u32,
     pub domains: Option<Vec<String>>,
     pub app_token_data: Option<Vec<String>>,
+    pub category_token_data: Option<Vec<String>>,
     /// Optional weekday filter: Mon=0 … Sun=6. If present, extension only applies when current day is in this list.
     pub days: Option<Vec<u8>>,
     /// Whether the DeviceActivity schedule should repeat.
@@ -132,6 +137,8 @@ pub struct RegisterOneOffActivityRequest {
 pub struct SetResumePayloadRequest {
     pub block_id: String,
     pub domains: Vec<String>,
+    pub app_token_data: Option<Vec<String>>,
+    pub category_token_data: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -139,12 +146,18 @@ pub struct SetResumePayloadRequest {
 pub struct SetBlockEndStateRequest {
     pub block_id: String,
     pub domains: Vec<String>,
+    pub app_token_data: Option<Vec<String>>,
+    pub category_token_data: Option<Vec<String>>,
 }
 
 // --- Activity Picker ---
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ActivityPickerRequest {}
+#[serde(rename_all = "camelCase")]
+pub struct ActivityPickerRequest {
+    pub initial_application_token_data: Option<Vec<String>>,
+    pub initial_category_token_data: Option<Vec<String>>,
+}
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
