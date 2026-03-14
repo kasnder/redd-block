@@ -352,6 +352,10 @@ body.dark-mode .title-bar button:hover {
     letter-spacing: 0.5px;
 }
 
+body.ios .section-header h2 {
+    font-size: 19px;
+}
+
 /* Icon Button */
 .icon-btn {
     width: 34px;
@@ -1115,6 +1119,11 @@ body.dark-mode .day-column.weekend {
     transition: all 0.15s ease;
 }
 
+body.ios .duration-quick-btn {
+    padding: 6px 10px;
+    font-size: 15px;
+}
+
 .duration-quick-btn:hover {
     border-color: var(--accent-color);
     color: var(--accent-color);
@@ -1172,8 +1181,18 @@ body.dark-mode .duration-mode-btn.active {
     color: white;
 }
 
+body.ios .duration-mode-btn {
+    font-size: 16px;
+    padding: 8px 16px;
+}
+
 .duration-mode-btn svg {
     flex-shrink: 0;
+}
+
+body.ios .duration-mode-btn svg {
+    width: 20px;
+    height: 20px;
 }
 
 /* Always-on message */
@@ -1778,6 +1797,11 @@ body.dark-mode .scheduler-mode-tabs {
     white-space: nowrap;
 }
 
+body.ios .mode-tab {
+    padding: 8px 16px;
+    font-size: 16px;
+}
+
 .mode-tab:hover {
     color: var(--text-secondary);
 }
@@ -1916,6 +1940,13 @@ body.dark-mode .mode-tab.active {
     font-weight: 600;
     cursor: pointer;
     transition: all 0.15s ease;
+}
+
+body.ios .segment-day-toggle {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    font-size: 15px;
 }
 
 .segment-day-toggle:disabled,
@@ -2163,6 +2194,13 @@ body:not(.dark-mode) .segment-day-toggle.active:hover:not(:disabled):not([disabl
     font-weight: 600;
     cursor: pointer;
     transition: all 0.15s ease;
+}
+
+body.ios .day-toggle {
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    font-size: 17px;
 }
 
 .day-toggle:hover {
@@ -2631,6 +2669,10 @@ body.ios .blocklists-container {
     align-items: center;
 }
 
+body.ios .blocklist-actions {
+    gap: 0px;
+}
+
 .blocklist-action-btn {
     width: 36px;
     height: 36px;
@@ -2645,9 +2687,19 @@ body.ios .blocklists-container {
     transition: all 0.2s ease;
 }
 
+body.ios .blocklist-action-btn {
+    width: 44px;
+    height: 44px;
+}
+
 .blocklist-action-btn svg {
     width: 18px;
     height: 18px;
+}
+
+body.ios .blocklist-action-btn svg {
+    width: 22px;
+    height: 22px;
 }
 
 .blocklist-action-btn:hover {
