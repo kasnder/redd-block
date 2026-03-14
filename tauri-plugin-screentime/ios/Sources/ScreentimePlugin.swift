@@ -254,6 +254,7 @@ class ScreentimePlugin: Plugin {
     // ManagedSettingsStore persists blocks at the OS level, but we need the selection
     // to re-apply blocks and show the picker state.
     private static let selectionKey = "redd.activitySelection"
+    private static let authorizationApprovedKey = "redd.authorizationApproved"
     
     private static var sharedDefaults: UserDefaults? {
         return UserDefaults(suiteName: appGroupID)
@@ -273,14 +274,50 @@ class ScreentimePlugin: Plugin {
             }
         }
     }
+
+    private static var hasCachedAuthorizationApproval: Bool {
+        get {
+            sharedDefaults?.bool(forKey: authorizationApprovedKey) ?? false
+        }
+        set {
+            sharedDefaults?.set(newValue, forKey: authorizationApprovedKey)
+        }
+    }
     
     // MARK: - Authorization
+
+    /// FamilyControls reports `authorizationStatus` as `.notDetermined` on a fresh
+    /// app launch even when the OS-level grant is still active. Persist the last
+    /// known approved state so onboarding and native commands stay in sync across launches.
+    private func resolvedAuthorizationStatus() -> AuthorizationStatus {
+        let readStatus = {
+            let status = AuthorizationCenter.shared.authorizationStatus
+            switch status {
+            case .approved:
+                Self.hasCachedAuthorizationApproval = true
+                return status
+            case .denied:
+                Self.hasCachedAuthorizationApproval = false
+                return status
+            case .notDetermined:
+                return Self.hasCachedAuthorizationApproval ? .approved : status
+            @unknown default:
+                return status
+            }
+        }
+
+        if Thread.isMainThread {
+            return readStatus()
+        }
+
+        return DispatchQueue.main.sync(execute: readStatus)
+    }
     
     @objc public func requestAuthorization(_ invoke: Invoke) throws {
-        Task {
+        Task { @MainActor in
             do {
                 try await AuthorizationCenter.shared.requestAuthorization(for: .individual)
-                let status = AuthorizationCenter.shared.authorizationStatus
+                let status = self.resolvedAuthorizationStatus()
                 invoke.resolve([
                     "granted": status == .approved,
                     "status": self.statusString(status)
@@ -288,7 +325,7 @@ class ScreentimePlugin: Plugin {
             } catch {
                 // iOS can occasionally report a cancellation error even though the
                 // authorization state has already switched to approved.
-                let status = AuthorizationCenter.shared.authorizationStatus
+                let status = self.resolvedAuthorizationStatus()
                 if status == .approved {
                     invoke.resolve([
                         "granted": true,
@@ -306,7 +343,7 @@ class ScreentimePlugin: Plugin {
     }
     
     @objc public func checkAuthorization(_ invoke: Invoke) throws {
-        let status = AuthorizationCenter.shared.authorizationStatus
+        let status = resolvedAuthorizationStatus()
         invoke.resolve([
             "granted": status == .approved,
             "status": statusString(status)
@@ -396,7 +433,7 @@ class ScreentimePlugin: Plugin {
     
     /// Check if Screen Time authorization is granted
     private func isAuthorized() -> Bool {
-        return AuthorizationCenter.shared.authorizationStatus == .approved
+        return resolvedAuthorizationStatus() == .approved
     }
     
     @objc public func blockWebsites(_ invoke: Invoke) throws {
