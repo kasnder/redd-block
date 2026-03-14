@@ -967,7 +967,29 @@
             return;
         }
 
-        // T50: Duplicate blocklist — new id, name "X copy", overrideDifficulty fully copied, not in activeBlocks
+        // Helper: run a duplication test with side-effect isolation.
+        // Stubs saveData/render to no-ops so the async fire-and-forget inside
+        // duplicateBlocklist doesn't persist mock data or re-render the UI.
+        function withIsolatedAppData(mockAppData, fn) {
+            const savedAppData = internals.appData;
+            const realSave = internals.saveData;
+            const realRender = internals.render;
+            try {
+                internals.saveData = function() {};   // stub: prevent disk writes of mock data
+                internals.render = function() {};      // stub: prevent UI re-render with mock data
+                internals.appData = mockAppData;
+                fn();
+            } finally {
+                internals.appData = savedAppData;
+                internals.saveData = realSave;
+                internals.render = realRender;
+                internals.saveData();        // persist restored data to disk
+                internals.updateHostsFile(); // re-sync helper daemon
+                internals.render();          // re-render UI with real data
+            }
+        }
+
+        // T50: Duplicate blocklist
         (function T50() {
             const blocklist = createMockBlocklist({
                 name: 'DupTest',
@@ -980,13 +1002,11 @@
                     typeBeforeMax: 'gibberish'
                 }
             });
-            const appData = createMockAppData({ blocklists: [blocklist], activeBlocks: [], schedules: [] });
-            const savedAppData = internals.appData;
-            try {
-                internals.appData = appData;
+            const mockData = createMockAppData({ blocklists: [blocklist], activeBlocks: [], schedules: [] });
+            withIsolatedAppData(mockData, function() {
                 internals.duplicateBlocklist(blocklist.id);
-                assertEqual(appData.blocklists.length, 2, 'T50: Two blocklists after duplicate');
-                const dup = appData.blocklists.find(bl => bl.id !== blocklist.id);
+                assertEqual(mockData.blocklists.length, 2, 'T50: Two blocklists after duplicate');
+                const dup = mockData.blocklists.find(function(bl) { return bl.id !== blocklist.id; });
                 assert(dup !== undefined, 'T50: Duplicate blocklist present');
                 assert(dup.id !== blocklist.id, 'T50: Duplicate has new id');
                 assert(dup.name === 'DupTest copy', 'T50: Name is "DupTest copy"');
@@ -994,36 +1014,30 @@
                 assertEqual(dup.overrideDifficulty.countBeforeMax, 40, 'T50: countBeforeMax copied');
                 assertEqual(dup.overrideDifficulty.typeBeforeMax, 'gibberish', 'T50: typeBeforeMax copied');
                 assertEqual(dup.overrideDifficulty.type, 'gibberish', 'T50: type copied');
-                assertEqual(appData.activeBlocks.length, 0, 'T50: Duplicate is not in activeBlocks');
-            } finally {
-                internals.appData = savedAppData;
-            }
+                assertEqual(mockData.activeBlocks.length, 0, 'T50: Duplicate is not in activeBlocks');
+            });
         })();
 
-        // T51: Duplicate with schedule — schedule copied with new id and blocklistId
+        // T51: Duplicate with schedule
         (function T51() {
             const blocklist = createMockBlocklist({ name: 'DupSched', websites: ['a.com'] });
             const segment = createMockSegment(9, 0, 17, 0, [0, 1, 2, 3, 4]);
             const schedule = createMockSchedule(blocklist.id, [segment]);
-            const appData = createMockAppData({
+            const mockData = createMockAppData({
                 blocklists: [blocklist],
                 schedules: [schedule],
                 activeBlocks: []
             });
-            const savedAppData = internals.appData;
-            try {
-                internals.appData = appData;
+            withIsolatedAppData(mockData, function() {
                 internals.duplicateBlocklist(blocklist.id);
-                const dup = appData.blocklists.find(bl => bl.id !== blocklist.id);
+                const dup = mockData.blocklists.find(function(bl) { return bl.id !== blocklist.id; });
                 assert(dup !== undefined, 'T51: Duplicate blocklist present');
-                const dupSchedule = (appData.schedules || []).find(s => s.blocklistId === dup.id);
+                const dupSchedule = (mockData.schedules || []).find(function(s) { return s.blocklistId === dup.id; });
                 assert(dupSchedule !== undefined, 'T51: Schedule copied for duplicate');
                 assert(dupSchedule.id !== schedule.id, 'T51: Schedule has new id');
                 assertEqual(dupSchedule.blocklistId, dup.id, 'T51: Schedule points to duplicate blocklist');
                 assert(dupSchedule.segments && dupSchedule.segments.length === 1, 'T51: Segments copied');
-            } finally {
-                internals.appData = savedAppData;
-            }
+            });
         })();
     }
 

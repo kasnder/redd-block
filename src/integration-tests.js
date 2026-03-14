@@ -124,10 +124,15 @@
         appData.blocklists = (appData.blocklists || []).filter(bl => !String(bl.id || '').startsWith(TEST_PREFIX));
     }
 
+    let originalAppDataBackup = null;
+
     async function setupSuite() {
         console.log('🔧 Setting up Tier 2 integration suite...');
         const appData = getAppData();
         assertOrThrow(appData, 'App internals not available. Ensure app.js loaded.');
+        
+        // Take a complete snapshot of the user's state to ensure we restore it exactly
+        originalAppDataBackup = JSON.parse(JSON.stringify(appData));
         await callSaveData();
         return true;
     }
@@ -136,17 +141,28 @@
         console.log('🧹 Cleaning up Tier 2 integration suite...');
         try {
             const tauriAPI = getTauriAPI();
-            removeTestDataFromAppState();
+            
+            // Restore structural state from snapshot
+            if (originalAppDataBackup) {
+                const appData = getAppData();
+                if (appData) {
+                    Object.keys(appData).forEach(k => delete appData[k]);
+                    Object.assign(appData, JSON.parse(JSON.stringify(originalAppDataBackup)));
+                }
+            } else {
+                removeTestDataFromAppState();
+            }
+            
             await callSaveData();
 
+            // Sync the precisely restored state to the daemon (handles both hosts and apps)
             if (tauriAPI) {
                 const status = await tauriAPI.checkHelperStatus();
                 if (status.running) {
-                    await tauriAPI.clearBlockViaHelper();
                     await callUpdateHostsFile(true);
-                    await tauriAPI.setBlockedAppsViaHelper([]);
                 }
             }
+            
             callRender();
             console.log('   ✅ Cleanup complete');
             return true;
@@ -558,7 +574,8 @@
         duplicateBlocklist(bl.id);
 
         const appData = getAppData();
-        const duplicated = appData.blocklists.find(b => b.id !== bl.id);
+        // Correctly find the duplicated blocklist (it has ' copy' appended to the name)
+        const duplicated = appData.blocklists.find(b => b.name === bl.name + ' copy');
         assertOrThrow(duplicated, 'G1: duplicated blocklist not found');
 
         addActiveBlock(duplicated.id, { durationMs: 120000 });
