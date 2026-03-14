@@ -289,6 +289,13 @@ fn write_full_state(
             log(&format!("Warning: failed to create state directory: {}", e));
             return;
         }
+        // Ensure directory is writable by all users so the GUI app (running
+        // as a regular user) can store shared block data alongside helper state.
+        #[cfg(not(target_os = "windows"))]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o777));
+        }
     }
     let state = HelperStatePersist {
         manual_blocks: manual_blocks.to_vec(),

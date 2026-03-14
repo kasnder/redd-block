@@ -124,40 +124,86 @@ impl Default for AppData {
     }
 }
 
-/// Get the shared, system-wide data file path.
+/// Get the shared, system-wide data file path if the shared directory is available.
 ///
-/// On desktop (macOS/Windows), app data is stored in a shared location so that
-/// all user accounts can see and edit the same blocks, schedules, and blocklists.
-/// This mirrors the helper daemon's state storage which is already system-wide.
+/// On desktop (macOS/Windows), the helper daemon creates a system-wide directory
+/// when installed. If that directory exists and is writable, we use it so all
+/// user accounts share the same blocks. If it doesn't exist (helper not installed
+/// yet), we fall back to the per-user Tauri app data dir.
 ///
-/// On iOS, the per-user app data dir is used (single-user device).
+/// On iOS, the per-user app data dir is always used (single-user device).
 fn get_data_path(app: &AppHandle) -> PathBuf {
-    #[cfg(target_os = "macos")]
-    {
-        let _ = app; // unused on macOS — path is fixed
-        PathBuf::from("/var/lib/redd-block/redd-block-data.json")
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let _ = app;
-        let program_data = std::env::var("PROGRAMDATA")
-            .unwrap_or_else(|_| "C:\\ProgramData".to_string());
-        PathBuf::from(program_data)
-            .join("ReDD Block")
-            .join("redd-block-data.json")
-    }
     #[cfg(target_os = "ios")]
     {
-        // iOS: single-user device, use standard per-app data dir
         let app_data_dir = app.path().app_data_dir().expect("Failed to get app data dir");
-        app_data_dir.join("redd-block-data.json")
+        return app_data_dir.join("redd-block-data.json");
     }
-    // Fallback for other targets (e.g. Linux)
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "ios")))]
+
+    #[cfg(not(target_os = "ios"))]
     {
-        let app_data_dir = app.path().app_data_dir().expect("Failed to get app data dir");
-        app_data_dir.join("redd-block-data.json")
+        let shared_dir = get_shared_dir();
+        if shared_dir.is_dir() && is_dir_writable(&shared_dir) {
+            shared_dir.join("redd-block-data.json")
+        } else {
+            // Shared dir not available (helper not installed yet) — fall back to per-user
+            let app_data_dir = app.path().app_data_dir().expect("Failed to get app data dir");
+            app_data_dir.join("redd-block-data.json")
+        }
     }
+}
+
+/// Get the system-wide shared directory (same location as helper-state.json).
+#[cfg(not(target_os = "ios"))]
+fn get_shared_dir() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        let program_data = std::env::var("PROGRAMDATA")
+            .unwrap_or_else(|_| "C:\\ProgramData".to_string());
+        PathBuf::from(program_data).join("ReDD Block")
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        PathBuf::from("/var/lib/redd-block")
+    }
+}
+
+/// Check if a directory is writable by attempting to create and remove a temp file.
+#[cfg(not(target_os = "ios"))]
+fn is_dir_writable(dir: &std::path::Path) -> bool {
+    let test_path = dir.join(".write-test");
+    match fs::write(&test_path, b"test") {
+        Ok(_) => {
+            let _ = fs::remove_file(&test_path);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+/// Set file permissions so all local users can read and write the data file.
+#[cfg(not(target_os = "windows"))]
+fn set_shared_permissions(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    // rw-rw-rw- (0o666) — all users can read and write
+    let perms = std::fs::Permissions::from_mode(0o666);
+    if let Err(e) = fs::set_permissions(path, perms) {
+        log::warn!("Could not set shared permissions on {:?}: {}", path, e);
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn set_shared_permissions(_path: &std::path::Path) {
+    // On Windows, %PROGRAMDATA% is already accessible to all users by default.
+}
+
+/// Ensure the parent directory for the data file exists.
+fn ensure_data_dir(path: &std::path::Path) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| {
+            format!("Failed to create data directory {:?}: {}", parent, e)
+        })?;
+    }
+    Ok(())
 }
 
 /// Get the app version
@@ -202,47 +248,14 @@ fn find_per_user_data(app: &AppHandle) -> Option<PathBuf> {
     best.map(|(p, _)| p)
 }
 
-/// Set file permissions so all local users can read and write the data file.
-#[cfg(not(target_os = "windows"))]
-fn set_shared_permissions(path: &std::path::Path) {
-    use std::os::unix::fs::PermissionsExt;
-    // rw-rw-rw- (0o666) — all users can read and write
-    let perms = std::fs::Permissions::from_mode(0o666);
-    if let Err(e) = fs::set_permissions(path, perms) {
-        log::warn!("Could not set shared permissions on {:?}: {}", path, e);
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn set_shared_permissions(_path: &std::path::Path) {
-    // On Windows, %PROGRAMDATA% is already accessible to all users by default.
-    // No additional permission changes needed.
-}
-
-/// Ensure the shared data directory exists and has appropriate permissions.
-fn ensure_shared_dir(path: &std::path::Path) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| {
-            format!("Failed to create shared data directory {:?}: {}", parent, e)
-        })?;
-        // Ensure directory is accessible to all users
-        #[cfg(not(target_os = "windows"))]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let dir_perms = std::fs::Permissions::from_mode(0o777);
-            let _ = fs::set_permissions(parent, dir_perms);
-        }
-    }
-    Ok(())
-}
-
 /// Load data from file
 #[tauri::command]
 pub fn load_data(app: AppHandle) -> Result<AppData, String> {
     let data_path = get_data_path(&app);
 
-    // Ensure shared directory exists
-    ensure_shared_dir(&data_path)?;
+    // Ensure parent directory exists (only needed for per-user fallback path;
+    // the shared dir is created by the helper daemon install)
+    ensure_data_dir(&data_path)?;
 
     if data_path.exists() {
         let content = fs::read_to_string(&data_path).map_err(|e| e.to_string())?;
@@ -255,7 +268,7 @@ pub fn load_data(app: AppHandle) -> Result<AppData, String> {
                 source_path, data_path);
             let content = fs::read_to_string(&source_path).map_err(|e| e.to_string())?;
             let data: AppData = serde_json::from_str(&content).map_err(|e| e.to_string())?;
-            // Save to shared location so migration only happens once
+            // Save to new location so migration only happens once
             let migrated = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
             fs::write(&data_path, &migrated).map_err(|e| e.to_string())?;
             set_shared_permissions(&data_path);
@@ -271,8 +284,8 @@ pub fn load_data(app: AppHandle) -> Result<AppData, String> {
 pub fn save_data(app: AppHandle, data: AppData) -> Result<(), String> {
     let data_path = get_data_path(&app);
 
-    // Ensure shared directory exists
-    ensure_shared_dir(&data_path)?;
+    // Ensure parent directory exists
+    ensure_data_dir(&data_path)?;
 
     let content = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
     fs::write(&data_path, &content).map_err(|e| e.to_string())?;
