@@ -550,7 +550,7 @@ async function syncKeepBlockingPreferenceToHelper() {
         console.warn('[syncKeepBlockingPreferenceToHelper] Error:', e);
     }
 }
-let scheduleRepeatType = 'no'; // 'no', 'forever', or 'date'
+let scheduleRepeatType = 'forever'; // 'forever', 'date', or 'no'
 let scheduleRepeatDate = null; // Date object when repeatType is 'date'
 let activeScheduleSegmentCount = 0; // Number of segments locked in the active schedule (new segments can be added)
 let hasShownIOSScheduleSyncError = false;
@@ -3980,7 +3980,6 @@ async function proceedWithSchedule() {
 
     // Update blocked apps if schedule is currently active
     await updateBlockedApps();
-
     // Update the active segment count to lock the created segments
     activeScheduleSegmentCount = scheduleSegments.length;
 
