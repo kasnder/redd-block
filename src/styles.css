@@ -2663,6 +2663,15 @@ body.ios .blocklists-container {
     color: var(--text-muted);
 }
 
+@media (min-width: 768px) {
+    body.ios .blocklist-name {
+        font-size: 20px;
+    }
+    body.ios .blocklist-meta {
+        font-size: 17px;
+    }
+}
+
 .blocklist-actions {
     display: flex;
     gap: 4px;
