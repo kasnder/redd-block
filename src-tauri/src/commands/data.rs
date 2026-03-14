@@ -23,6 +23,7 @@ pub struct AppData {
 pub struct Blocklist {
     pub id: String,
     pub name: String,
+    #[serde(default)]
     pub mode: String,
     #[serde(default)]
     pub websites: Vec<String>,

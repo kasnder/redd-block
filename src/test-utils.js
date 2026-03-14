@@ -231,7 +231,14 @@ function getHardestChallenge(appData, now) {
         }
     }
 
-    return hardest || { type: 'random-words', count: 50 };
+    if (!hardest) return { type: 'random-words', count: 50 };
+
+    // Resolve effective count for maxDifficulty
+    if (hardest.maxDifficulty === true && hardest.count === undefined) {
+        const effectiveCount = hardest.type === 'gibberish' ? 5000 : 7500;
+        return { ...hardest, count: effectiveCount };
+    }
+    return hardest;
 }
 
 /**
@@ -245,7 +252,7 @@ function compareDifficulties(a, b) {
     const MAX_CHARS_RANDOM_WORDS = 7500;  // 250 * 30, match app.js getMaxOverrideCharsForType
     const MAX_CHARS_GIBBERISH = 5000;    // match app.js getMaxOverrideCharsForType
 
-    const getCharacterCount = (difficulty) => {
+    const getEffectiveCount = (difficulty) => {
         if (difficulty.type === 'custom' && typeof difficulty.customText === 'string') {
             return difficulty.customText.length;
         }
@@ -264,18 +271,26 @@ function compareDifficulties(a, b) {
         return 0;
     };
 
-    const aCount = getCharacterCount(a);
-    const bCount = getCharacterCount(b);
+    const aCount = getEffectiveCount(a);
+    const bCount = getEffectiveCount(b);
 
-    if (bCount > aCount) return b;
-    if (aCount > bCount) return a;
+    let winner;
+    if (bCount > aCount) winner = b;
+    else if (aCount > bCount) winner = a;
+    else {
+        const aRank = getTypeRank(a);
+        const bRank = getTypeRank(b);
+        if (bRank > aRank) winner = b;
+        else if (aRank > bRank) winner = a;
+        else winner = a;
+    }
 
-    const aRank = getTypeRank(a);
-    const bRank = getTypeRank(b);
-    if (bRank > aRank) return b;
-    if (aRank > bRank) return a;
-
-    return a;
+    // Return with effective count resolved (so maxDifficulty is reflected in .count)
+    const winnerCount = getEffectiveCount(winner);
+    if (winner.count !== winnerCount) {
+        return { ...winner, count: winnerCount };
+    }
+    return winner;
 }
 
 // ========================================
@@ -434,7 +449,14 @@ function findHardestChallengeAtTime(appData, now) {
         }
     }
 
-    return hardest || { type: 'random-words', count: 50 };
+    if (!hardest) return { type: 'random-words', count: 50 };
+
+    // Resolve effective count for maxDifficulty
+    if (hardest.maxDifficulty === true && hardest.count === undefined) {
+        const effectiveCount = hardest.type === 'gibberish' ? 5000 : 7500;
+        return { ...hardest, count: effectiveCount };
+    }
+    return hardest;
 }
 
 /**

@@ -10159,7 +10159,17 @@ function findHardestChallenge() {
         }
     }
 
-    return hardestDifficulty || { type: 'random-words', count: 50 };
+    if (!hardestDifficulty) return { type: 'random-words', count: 50 };
+
+    // Resolve effective count for maxDifficulty (handles single-block case
+    // where compareDifficulties was never called)
+    if (hardestDifficulty.maxDifficulty === true && hardestDifficulty.count === undefined) {
+        const MAX_CHARS_RANDOM_WORDS = 7500;
+        const MAX_CHARS_GIBBERISH = 5000;
+        const effectiveCount = hardestDifficulty.type === 'gibberish' ? MAX_CHARS_GIBBERISH : MAX_CHARS_RANDOM_WORDS;
+        return { ...hardestDifficulty, count: effectiveCount };
+    }
+    return hardestDifficulty;
 }
 
 // Compare two difficulties and return the harder one
@@ -10167,9 +10177,16 @@ function compareDifficulties(a, b) {
     if (!a) return b;
     if (!b) return a;
 
-    const getCharacterCount = (difficulty) => {
+    const MAX_CHARS_RANDOM_WORDS = 7500;  // 250 * 30, match getMaxOverrideCharsForType
+    const MAX_CHARS_GIBBERISH = 5000;     // match getMaxOverrideCharsForType
+
+    const getEffectiveCount = (difficulty) => {
         if (difficulty.type === 'custom' && typeof difficulty.customText === 'string') {
             return difficulty.customText.length;
+        }
+        if (difficulty.maxDifficulty === true) {
+            if (difficulty.type === 'gibberish') return MAX_CHARS_GIBBERISH;
+            if (difficulty.type === 'random-words') return MAX_CHARS_RANDOM_WORDS;
         }
         const parsed = Number(difficulty.count);
         return Number.isFinite(parsed) && parsed > 0 ? parsed : 50;
@@ -10182,19 +10199,27 @@ function compareDifficulties(a, b) {
         return 0;
     };
 
-    const aCount = getCharacterCount(a);
-    const bCount = getCharacterCount(b);
-    if (bCount > aCount) return b;
-    if (aCount > bCount) return a;
+    const aCount = getEffectiveCount(a);
+    const bCount = getEffectiveCount(b);
 
-    // Same character count: custom > gibberish > random-words
-    const aRank = getTypeRank(a);
-    const bRank = getTypeRank(b);
-    if (bRank > aRank) return b;
-    if (aRank > bRank) return a;
+    let winner;
+    if (bCount > aCount) winner = b;
+    else if (aCount > bCount) winner = a;
+    else {
+        // Same character count: custom > gibberish > random-words
+        const aRank = getTypeRank(a);
+        const bRank = getTypeRank(b);
+        if (bRank > aRank) winner = b;
+        else if (aRank > bRank) winner = a;
+        else winner = a; // Equal, return a
+    }
 
-    // Equal, return a
-    return a;
+    // Return with effective count resolved (so maxDifficulty is reflected in .count)
+    const winnerCount = getEffectiveCount(winner);
+    if (winner.count !== winnerCount) {
+        return { ...winner, count: winnerCount };
+    }
+    return winner;
 }
 
 // Perform the actual override-all operation
