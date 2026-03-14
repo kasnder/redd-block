@@ -124,10 +124,40 @@ impl Default for AppData {
     }
 }
 
-/// Get the data file path
+/// Get the shared, system-wide data file path.
+///
+/// On desktop (macOS/Windows), app data is stored in a shared location so that
+/// all user accounts can see and edit the same blocks, schedules, and blocklists.
+/// This mirrors the helper daemon's state storage which is already system-wide.
+///
+/// On iOS, the per-user app data dir is used (single-user device).
 fn get_data_path(app: &AppHandle) -> PathBuf {
-    let app_data_dir = app.path().app_data_dir().expect("Failed to get app data dir");
-    app_data_dir.join("redd-block-data.json")
+    #[cfg(target_os = "macos")]
+    {
+        let _ = app; // unused on macOS — path is fixed
+        PathBuf::from("/var/lib/redd-block/redd-block-data.json")
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = app;
+        let program_data = std::env::var("PROGRAMDATA")
+            .unwrap_or_else(|_| "C:\\ProgramData".to_string());
+        PathBuf::from(program_data)
+            .join("ReDD Block")
+            .join("redd-block-data.json")
+    }
+    #[cfg(target_os = "ios")]
+    {
+        // iOS: single-user device, use standard per-app data dir
+        let app_data_dir = app.path().app_data_dir().expect("Failed to get app data dir");
+        app_data_dir.join("redd-block-data.json")
+    }
+    // Fallback for other targets (e.g. Linux)
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "ios")))]
+    {
+        let app_data_dir = app.path().app_data_dir().expect("Failed to get app data dir");
+        app_data_dir.join("redd-block-data.json")
+    }
 }
 
 /// Get the app version
@@ -136,16 +166,28 @@ pub fn get_app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
-/// Check for data files from previous app versions that used different bundle identifiers.
-/// Returns the path to the most recently modified legacy data file, if any.
-fn find_legacy_data() -> Option<PathBuf> {
-    let app_support = dirs::data_dir()?; // ~/Library/Application Support on macOS
-    let legacy_identifiers = ["com.redd.block", "redd-block"];
-    
+/// Check for data files from previous per-user locations (migration sources).
+///
+/// Returns the path to the most recently modified data file found in any of:
+/// - Current per-user Tauri app data dir (the old default location)
+/// - Legacy bundle identifier directories (com.redd.block, redd-block)
+fn find_per_user_data(app: &AppHandle) -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
+    // Current Tauri app data dir (the old per-user location before shared migration)
+    if let Ok(app_data_dir) = app.path().app_data_dir() {
+        candidates.push(app_data_dir.join("redd-block-data.json"));
+    }
+
+    // Legacy bundle identifiers
+    if let Some(app_support) = dirs::data_dir() {
+        for id in &["com.redd.block", "redd-block"] {
+            candidates.push(app_support.join(id).join("redd-block-data.json"));
+        }
+    }
+
     let mut best: Option<(PathBuf, std::time::SystemTime)> = None;
-    
-    for id in &legacy_identifiers {
-        let path = app_support.join(id).join("redd-block-data.json");
+    for path in candidates {
         if path.exists() {
             if let Ok(meta) = fs::metadata(&path) {
                 if let Ok(modified) = meta.modified() {
@@ -156,33 +198,67 @@ fn find_legacy_data() -> Option<PathBuf> {
             }
         }
     }
-    
+
     best.map(|(p, _)| p)
+}
+
+/// Set file permissions so all local users can read and write the data file.
+#[cfg(not(target_os = "windows"))]
+fn set_shared_permissions(path: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+    // rw-rw-rw- (0o666) — all users can read and write
+    let perms = std::fs::Permissions::from_mode(0o666);
+    if let Err(e) = fs::set_permissions(path, perms) {
+        log::warn!("Could not set shared permissions on {:?}: {}", path, e);
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn set_shared_permissions(_path: &std::path::Path) {
+    // On Windows, %PROGRAMDATA% is already accessible to all users by default.
+    // No additional permission changes needed.
+}
+
+/// Ensure the shared data directory exists and has appropriate permissions.
+fn ensure_shared_dir(path: &std::path::Path) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| {
+            format!("Failed to create shared data directory {:?}: {}", parent, e)
+        })?;
+        // Ensure directory is accessible to all users
+        #[cfg(not(target_os = "windows"))]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let dir_perms = std::fs::Permissions::from_mode(0o777);
+            let _ = fs::set_permissions(parent, dir_perms);
+        }
+    }
+    Ok(())
 }
 
 /// Load data from file
 #[tauri::command]
 pub fn load_data(app: AppHandle) -> Result<AppData, String> {
     let data_path = get_data_path(&app);
-    
-    // Ensure parent directory exists
-    if let Some(parent) = data_path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    
+
+    // Ensure shared directory exists
+    ensure_shared_dir(&data_path)?;
+
     if data_path.exists() {
         let content = fs::read_to_string(&data_path).map_err(|e| e.to_string())?;
         let data: AppData = serde_json::from_str(&content).map_err(|e| e.to_string())?;
         Ok(data)
     } else {
-        // Check for data from older app versions with different bundle identifiers
-        if let Some(legacy_path) = find_legacy_data() {
-            log::info!("Migrating data from legacy path: {:?}", legacy_path);
-            let content = fs::read_to_string(&legacy_path).map_err(|e| e.to_string())?;
+        // Migrate from per-user location or legacy paths
+        if let Some(source_path) = find_per_user_data(&app) {
+            log::info!("Migrating data from per-user path to shared location: {:?} -> {:?}",
+                source_path, data_path);
+            let content = fs::read_to_string(&source_path).map_err(|e| e.to_string())?;
             let data: AppData = serde_json::from_str(&content).map_err(|e| e.to_string())?;
-            // Save to current location so migration only happens once
+            // Save to shared location so migration only happens once
             let migrated = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
-            fs::write(&data_path, migrated).map_err(|e| e.to_string())?;
+            fs::write(&data_path, &migrated).map_err(|e| e.to_string())?;
+            set_shared_permissions(&data_path);
             Ok(data)
         } else {
             Ok(AppData::default())
@@ -194,14 +270,13 @@ pub fn load_data(app: AppHandle) -> Result<AppData, String> {
 #[tauri::command]
 pub fn save_data(app: AppHandle, data: AppData) -> Result<(), String> {
     let data_path = get_data_path(&app);
-    
-    // Ensure parent directory exists
-    if let Some(parent) = data_path.parent() {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    
+
+    // Ensure shared directory exists
+    ensure_shared_dir(&data_path)?;
+
     let content = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
-    fs::write(&data_path, content).map_err(|e| e.to_string())?;
+    fs::write(&data_path, &content).map_err(|e| e.to_string())?;
+    set_shared_permissions(&data_path);
     Ok(())
 }
 
