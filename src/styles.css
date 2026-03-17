@@ -724,9 +724,8 @@ body.dark-mode .day-column.weekend {
 
 .calendar-block .block-label {
     font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
 }
 
 .calendar-block .block-time {
