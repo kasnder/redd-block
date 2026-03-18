@@ -5275,7 +5275,9 @@ function configureHelperInstallModal(status = null) {
     const titleEl = document.getElementById('helper-setup-required-title');
     const textEl = document.getElementById('helper-setup-required-text');
     const proceedBtn = document.getElementById('proceed-helper-install-btn');
-    const isUpdate = !!status?.installed;
+    // Show "Update" only when helper is running but outdated.
+    // When helper isn't running (e.g. after uninstall, or crash), show "Install" — we're (re)installing it.
+    const isUpdate = !!(status?.running && !status?.version_ok);
 
     if (modal) {
         modal.dataset.mode = isUpdate ? 'update' : 'install';
@@ -9962,15 +9964,22 @@ function setupStillNotWorking() {
     if (uninstallBtn) {
         uninstallBtn.addEventListener('click', async () => {
             try {
-                await tauriAPI.removeHelper();
-                uninstallBtn.textContent = 'Helper uninstalled!';
-                uninstallBtn.disabled = true;
-                setTimeout(() => {
-                    uninstallBtn.disabled = false;
-                    uninstallBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg><span>Uninstall Helper Service</span>`;
-                }, 3000);
+                const result = await tauriAPI.uninstallHelper();
+                if (result.success) {
+                    helperAvailable = false;
+                    uninstallBtn.textContent = 'Helper uninstalled!';
+                    uninstallBtn.disabled = true;
+                    await checkHelperStatus();
+                    setTimeout(() => {
+                        uninstallBtn.disabled = false;
+                        uninstallBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg><span>Uninstall Helper Service</span>`;
+                    }, 3000);
+                } else {
+                    alert('Failed to remove helper: ' + (result.error || 'Unknown error'));
+                }
             } catch (e) {
                 console.error('Failed to uninstall helper:', e);
+                alert('Error removing helper: ' + e.message);
             }
         });
     }
