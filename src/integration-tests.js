@@ -158,8 +158,8 @@
             // Sync the precisely restored state to the daemon (handles both hosts and apps)
             if (tauriAPI) {
                 const status = await tauriAPI.checkHelperStatus();
-                if (status.running) {
-                    await callUpdateHostsFile(true);
+                if (status.running && status.version_ok) {
+                    await callUpdateHostsFile(false);
                 }
             }
             
