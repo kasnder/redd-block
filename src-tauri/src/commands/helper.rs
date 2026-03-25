@@ -36,6 +36,18 @@ pub struct HelperStatus {
 /// This is separate from the app version to avoid unnecessary reinstalls
 const EXPECTED_HELPER_VERSION: &str = "0.9.2";
 
+fn is_helper_version_ok(version: Option<&str>) -> bool {
+    match version {
+        Some(v) => {
+            let parse = |s: &str| -> Vec<u32> {
+                s.split('.').filter_map(|p| p.parse().ok()).collect()
+            };
+            parse(v) >= parse(EXPECTED_HELPER_VERSION)
+        }
+        None => false,
+    }
+}
+
 /// Result from helper operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HelperResult {
@@ -240,19 +252,7 @@ pub fn check_helper_status() -> HelperStatus {
     };
     
     // Check if version matches or is newer than expected
-    let version_ok = match &helper_version {
-        Some(v) => {
-            // Parse as semver-like: split on dots and compare numerically
-            let parse = |s: &str| -> Vec<u32> {
-                s.split('.').filter_map(|p| p.parse().ok()).collect()
-            };
-            let helper_parts = parse(v);
-            let expected_parts = parse(EXPECTED_HELPER_VERSION);
-            // Helper is OK if it's >= expected version
-            helper_parts >= expected_parts
-        }
-        None => false,
-    };
+    let version_ok = is_helper_version_ok(helper_version.as_deref());
     
     if running {
         log::info!(
@@ -622,27 +622,27 @@ exit 0
             };
         }
         
-        // Wait for helper to respond (up to 15 seconds)
+        // Wait for helper to respond with the expected version (up to 15 seconds)
         for attempt in 0..30 {
             std::thread::sleep(std::time::Duration::from_millis(500));
-            
-            let ping_result = send_command(&IpcCommand {
-                action: "ping".to_string(),
-                domains: None,
-                end_time: None,
-                blocklist_id: None,
-                apps: None,
-                schedules: None,
-                keep_blocking_on_uninstall: None,
-        blocks: None,
-            });
-            
-            if ping_result.is_ok() {
-                log::info!("Helper started successfully after {} attempts", attempt + 1);
+
+            let status = check_helper_status();
+            if status.running && status.version_ok {
+                log::info!(
+                    "Helper started successfully after {} attempts (version {:?})",
+                    attempt + 1,
+                    status.version
+                );
                 return HelperResult {
                     success: true,
                     error: None,
                 };
+            }
+            if status.running && !status.version_ok {
+                log::warn!(
+                    "Helper responded after install but version is not yet acceptable: {:?}",
+                    status.version
+                );
             }
             
             // Every 5 attempts, check if the helper process is still alive
@@ -820,9 +820,27 @@ fn force_cleanup_helper() -> HelperResult {
             keep_blocking_on_uninstall: None,
         blocks: None,
             };
-        match send_command(&restore_cmd) {
-            Ok(_) => log::info!("Hosts file restored before force cleanup"),
-            Err(e) => log::warn!("Could not restore hosts before cleanup: {}", e),
+        let hosts_restored = match send_command(&restore_cmd) {
+            Ok(response) if response.success => {
+                log::info!("Hosts file restored before force cleanup");
+                true
+            }
+            Ok(response) => {
+                log::warn!("Helper failed to restore hosts before cleanup: {:?}", response.error);
+                false
+            }
+            Err(e) => {
+                log::warn!("Could not restore hosts before cleanup: {}", e);
+                false
+            }
+        };
+        if !hosts_restored {
+            let cleanup = clean_hosts_elevated_sync();
+            if cleanup.success {
+                log::info!("Elevated hosts cleanup completed before force cleanup");
+            } else {
+                log::warn!("Elevated hosts cleanup failed before force cleanup: {:?}", cleanup.error);
+            }
         }
         
         // Run elevated taskkill and cleanup
@@ -885,9 +903,27 @@ fn force_cleanup_helper() -> HelperResult {
             keep_blocking_on_uninstall: None,
         blocks: None,
             };
-        match send_command(&restore_cmd) {
-            Ok(_) => log::info!("Hosts file restored before force cleanup"),
-            Err(e) => log::warn!("Could not restore hosts before cleanup: {}", e),
+        let hosts_restored = match send_command(&restore_cmd) {
+            Ok(response) if response.success => {
+                log::info!("Hosts file restored before force cleanup");
+                true
+            }
+            Ok(response) => {
+                log::warn!("Helper failed to restore hosts before cleanup: {:?}", response.error);
+                false
+            }
+            Err(e) => {
+                log::warn!("Could not restore hosts before cleanup: {}", e);
+                false
+            }
+        };
+        if !hosts_restored {
+            let cleanup = clean_hosts_elevated_sync();
+            if cleanup.success {
+                log::info!("Elevated hosts cleanup completed before force cleanup");
+            } else {
+                log::warn!("Elevated hosts cleanup failed before force cleanup: {:?}", cleanup.error);
+            }
         }
         
         // Try to unload the launchd daemon (current label first, then legacy)
@@ -1087,7 +1123,7 @@ pub async fn clean_hosts_file() -> HelperResult {
 
 /// Platform-specific elevated hosts file cleanup
 #[cfg(target_os = "windows")]
-async fn clean_hosts_elevated() -> HelperResult {
+fn clean_hosts_elevated_sync() -> HelperResult {
     use std::mem::size_of;
     use windows::core::HSTRING;
     use windows::Win32::UI::Shell::{
@@ -1175,7 +1211,7 @@ ipconfig /flushdns | Out-Null
 }
 
 #[cfg(target_os = "macos")]
-async fn clean_hosts_elevated() -> HelperResult {
+fn clean_hosts_elevated_sync() -> HelperResult {
     use std::process::Command;
 
     log::info!("Attempting elevated hosts file cleanup on macOS");
@@ -1221,11 +1257,15 @@ killall -HUP mDNSResponder 2>/dev/null
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-async fn clean_hosts_elevated() -> HelperResult {
+fn clean_hosts_elevated_sync() -> HelperResult {
     HelperResult {
         success: false,
         error: Some("Elevated hosts cleanup not supported on this platform".to_string()),
     }
+}
+
+async fn clean_hosts_elevated() -> HelperResult {
+    clean_hosts_elevated_sync()
 }
 
 /// Diagnostics result returned to the frontend

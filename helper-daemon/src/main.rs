@@ -1700,14 +1700,10 @@ fn handle_command(
         IpcCommand::ClearBlock { blocklist_id } => clear_block(state, app_state, schedule_state, blocklist_id),
         IpcCommand::GetStatus => get_status(state),
         IpcCommand::RestoreHosts => {
-            *state.lock().unwrap() = Vec::new();
-            let apps = app_state.lock().unwrap().clone();
-            let schedules = schedule_state.lock().unwrap().clone();
-            save_full_state(&[], &apps, &schedules);
             match restore_hosts_from_backup() {
                 Ok(()) => IpcResponse {
                     success: true,
-                    message: Some("Hosts file restored from backup".to_string()),
+                    message: Some("Hosts file restored from backup without changing helper state".to_string()),
                     ..Default::default()
                 },
                 Err(e) => IpcResponse {

@@ -550,6 +550,46 @@ async function syncKeepBlockingPreferenceToHelper() {
         console.warn('[syncKeepBlockingPreferenceToHelper] Error:', e);
     }
 }
+
+function isOneOffBlockEnforced(block, now = Date.now()) {
+    return !!(block && block.startTime <= now && block.endTime > now && !block.isPaused);
+}
+
+function isSchedulePausedNow(schedule, now = Date.now()) {
+    return !!(schedule && schedule.isPaused && schedule.pauseEndTime > now);
+}
+
+function hasAnyEnforcedBlocks(now = Date.now(), nowDate = new Date(now)) {
+    const hasActiveOneOff = appData.activeBlocks.some(block => isOneOffBlockEnforced(block, now));
+    if (hasActiveOneOff) return true;
+    return !!appData.schedules?.some(schedule => isScheduleSegmentActiveNow(schedule, nowDate));
+}
+
+async function refreshDesktopHelperStatus({ syncPreference = true } = {}) {
+    if (isIOS) {
+        return { installed: false, running: false, version: null, version_ok: false, helperReady: false };
+    }
+    try {
+        const status = await tauriAPI.checkHelperStatus();
+        const helperReady = !!(status.running && status.version_ok);
+        helperAvailable = helperReady;
+        if (helperReady && syncPreference) {
+            await syncKeepBlockingPreferenceToHelper();
+        }
+        return { ...status, helperReady };
+    } catch (err) {
+        console.error('Error checking helper status:', err);
+        helperAvailable = false;
+        return {
+            installed: false,
+            running: false,
+            version: null,
+            version_ok: false,
+            helperReady: false,
+            error: err
+        };
+    }
+}
 let scheduleRepeatType = 'forever'; // 'forever', 'date', or 'no'
 let scheduleRepeatDate = null; // Date object when repeatType is 'date'
 let activeScheduleSegmentCount = 0; // Number of segments locked in the active schedule (new segments can be added)
@@ -642,23 +682,13 @@ async function checkForAppUpdate() {
 // Check if the helper daemon is available (desktop only)
 async function checkHelperStatus() {
     if (isIOS) return; // iOS uses Screen Time, not helper daemon
-    try {
-        const status = await tauriAPI.checkHelperStatus();
-        // Helper is only considered available if running AND version matches
-        helperAvailable = status.running && status.version_ok;
-        console.log('Helper status:', status);
-        if (helperAvailable) {
-            await syncKeepBlockingPreferenceToHelper();
-        }
+    const status = await refreshDesktopHelperStatus();
+    console.log('Helper status:', status);
 
-        if (status.running && !status.version_ok) {
-            console.log('Helper is outdated (version:', status.version, ') - will prompt to update on first block');
-        } else if (!status.installed) {
-            console.log('Helper not installed - will prompt on first block');
-        }
-    } catch (err) {
-        console.error('Error checking helper status:', err);
-        helperAvailable = false;
+    if (status.running && !status.version_ok) {
+        console.log('Helper is outdated (version:', status.version, ') - will prompt to update on first block');
+    } else if (!status.installed) {
+        console.log('Helper not installed - will prompt on first block');
     }
 }
 
@@ -2136,10 +2166,8 @@ function setupOverrideModalListeners() {
                     await updateHostsFile();
                     await syncSchedulesToHelper();
                 } else {
-                    const status = await tauriAPI.checkHelperStatus();
-                    if (status.running) {
-                        helperAvailable = true;
-                        await syncKeepBlockingPreferenceToHelper();
+                    const status = await refreshDesktopHelperStatus();
+                    if (status.helperReady) {
                         if (blocklistIdToClear != null) {
                             await tauriAPI.clearBlockViaHelper(blocklistIdToClear);
                         } else {
@@ -3007,11 +3035,14 @@ function formatDateForDisplay(date) {
 
 function isScheduleSegmentActiveNow(schedule, nowDate = new Date()) {
     if (!schedule || !schedule.segments || schedule.segments.length === 0) return false;
+    const nowMs = nowDate.getTime();
+    if (isSchedulePausedNow(schedule, nowMs)) return false;
     const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
     const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
     return schedule.segments.some(seg => {
         const startMins = seg.startHour * 60 + seg.startMinute;
         const endMins = seg.endHour * 60 + seg.endMinute;
+        if (startMins === endMins) return seg.days.includes(currentDay);
         if (endMins > startMins) return seg.days.includes(currentDay) && currentMins >= startMins && currentMins < endMins;
         const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
         return (seg.days.includes(currentDay) && currentMins >= startMins) || (seg.days.includes(yesterdayDay) && currentMins < endMins);
@@ -3043,7 +3074,7 @@ function updateScheduleButtonState() {
         ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
         : null;
     const now = Date.now();
-    const scheduleIsPaused = !!(activeSchedule && activeSchedule.isPaused && activeSchedule.pauseEndTime > now);
+    const scheduleIsPaused = isSchedulePausedNow(activeSchedule, now);
     const scheduleIsActiveNow = !!(activeSchedule && isScheduleSegmentActiveNow(activeSchedule));
     const scheduleIsFunctionallyActive = scheduleIsPaused || scheduleIsActiveNow;
 
@@ -3920,15 +3951,8 @@ async function proceedWithSchedule() {
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this schedule')) return;
 
     if (!isIOS) {
-        let helperReady = helperAvailable;
-        if (!helperReady) {
-            const status = await tauriAPI.checkHelperStatus();
-            if (status.running && status.version_ok) {
-                helperAvailable = true;
-                helperReady = true;
-                await syncKeepBlockingPreferenceToHelper();
-            }
-        }
+        const status = await refreshDesktopHelperStatus();
+        const helperReady = status.helperReady;
 
         if (!helperReady) {
             pendingBlockData = null;
@@ -5306,30 +5330,23 @@ async function proceedWithHelperInstall() {
     const installResult = await tauriAPI.installHelper();
 
     if (installResult.success) {
-        // Check if the helper is actually running
-        if (!installResult.running) {
-            // Helper installed but not running yet - this is the bug scenario
-            // Wait a bit more and try again
-            proceedBtn.innerHTML = '<span class="btn-spinner"></span>Starting helper...';
+        proceedBtn.innerHTML = '<span class="btn-spinner"></span>Starting helper...';
 
-            // Additional wait with status check
-            let helperReady = false;
-            for (let i = 0; i < 5; i++) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
-                const status = await tauriAPI.checkHelperStatus();
-                if (status.running) {
-                    helperReady = true;
-                    break;
-                }
-            }
+        let finalStatus = await refreshDesktopHelperStatus();
+        for (let i = 0; i < 5 && !finalStatus.helperReady; i++) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            finalStatus = await refreshDesktopHelperStatus();
+        }
 
-            if (!helperReady) {
-                // Still not running - show a helpful error
-                proceedBtn.disabled = false;
-                proceedBtn.textContent = 'Proceed';
-                alert('The helper was installed but is not running yet. Please try again, or restart your computer if the problem persists.');
-                return;
+        if (!finalStatus.helperReady) {
+            proceedBtn.disabled = false;
+            proceedBtn.textContent = tSettings(modal.dataset.mode === 'update' ? 'updateHelper' : 'proceed');
+            if (finalStatus.running && !finalStatus.version_ok) {
+                alert('The helper started, but it is still reporting an outdated version. Please remove the helper in Settings and try installing again.');
+            } else {
+                alert('The helper was installed but is not ready yet. Please try again, or restart your computer if the problem persists.');
             }
+            return;
         }
 
         helperAvailable = true;
@@ -6831,26 +6848,12 @@ function getNextCopyName(blocklist) {
 function isBlocklistCurrentlyActive(blocklistId) {
     const now = Date.now();
     const hasActiveBlock = appData.activeBlocks.some(
-        b => b.blocklistId === blocklistId && b.startTime <= now && b.endTime > now
+        b => b.blocklistId === blocklistId && isOneOffBlockEnforced(b, now)
     );
     if (hasActiveBlock) return true;
     const schedule = appData.schedules?.find(s => s.blocklistId === blocklistId);
     if (!schedule?.segments?.length) return false;
-    if (schedule.isPaused && schedule.pauseEndTime > now) return false;
-    const d = new Date();
-    const currentDay = d.getDay() === 0 ? 6 : d.getDay() - 1; // 0=Mon .. 6=Sun
-    const currentMins = d.getHours() * 60 + d.getMinutes();
-    const inSegment = schedule.segments.some(seg => {
-        const startMins = seg.startHour * 60 + seg.startMinute;
-        const endMins = seg.endHour * 60 + seg.endMinute;
-        if (endMins > startMins) {
-            return seg.days.includes(currentDay) && currentMins >= startMins && currentMins < endMins;
-        }
-        const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
-        return (seg.days.includes(currentDay) && currentMins >= startMins) ||
-            (seg.days.includes(yesterdayDay) && currentMins < endMins);
-    });
-    return inSegment;
+    return isScheduleSegmentActiveNow(schedule, new Date(now));
 }
 
 function duplicateBlocklist(id) {
@@ -9603,22 +9606,7 @@ function setupDiagnosticsButton() {
 
 // Check if there are any active blocks or schedules
 function hasAnyActiveBlocks() {
-    const now = Date.now();
-
-    // Check one-off blocks
-    const hasActiveOneOff = appData.activeBlocks.some(block =>
-        block.startTime <= now && block.endTime > now
-    );
-    if (hasActiveOneOff) return true;
-
-    // Check schedules
-    if (appData.schedules) {
-        for (const schedule of appData.schedules) {
-            if (isScheduleSegmentActiveNow(schedule)) return true;
-        }
-    }
-
-    return false;
+    return hasAnyEnforcedBlocks();
 }
 
 // Update visibility of the Override All button based on active blocks
@@ -9642,7 +9630,7 @@ async function showRemoveHelperChallenge() {
 
         // Check active one-off blocks
         for (const block of appData.activeBlocks) {
-            if (block.startTime <= now && block.endTime > now) {
+            if (isOneOffBlockEnforced(block, now)) {
                 const bl = appData.blocklists.find(b => b.id === block.blocklistId);
                 if (bl?.overrideDifficulty) {
                     const diff = bl.overrideDifficulty;
@@ -9663,24 +9651,10 @@ async function showRemoveHelperChallenge() {
         // Check scheduled blocks too
         if (hardestDifficulty.type !== 'custom' && appData.schedules) {
             const nowDate = new Date();
-            const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
-            const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
 
             for (const schedule of appData.schedules) {
                 if (!schedule.segments) continue;
-                const isActive = schedule.segments.some(seg => {
-                    const startMins = seg.startHour * 60 + seg.startMinute;
-                    const endMins = seg.endHour * 60 + seg.endMinute;
-                    if (endMins > startMins) {
-                        return seg.days.includes(currentDay) &&
-                            currentMins >= startMins && currentMins < endMins;
-                    } else {
-                        const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
-                        return (seg.days.includes(currentDay) && currentMins >= startMins) ||
-                            (seg.days.includes(yesterdayDay) && currentMins < endMins);
-                    }
-                });
-                if (isActive) {
+                if (isScheduleSegmentActiveNow(schedule, nowDate)) {
                     const bl = appData.blocklists.find(b => b.id === schedule.blocklistId);
                     if (bl?.overrideDifficulty) {
                         const diff = bl.overrideDifficulty;
@@ -10125,14 +10099,12 @@ function setupStillNotWorking() {
 // Find the hardest challenge among all active blocks and schedules
 function findHardestChallenge() {
     const now = Date.now();
-    const nowDate = new Date();
-    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
-    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
+    const nowDate = new Date(now);
     let hardestDifficulty = null;
 
     // Check active one-off blocks
     for (const block of appData.activeBlocks) {
-        if (block.startTime <= now && block.endTime > now) {
+        if (isOneOffBlockEnforced(block, now)) {
             const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
             if (blocklist?.overrideDifficulty) {
                 hardestDifficulty = hardestDifficulty
@@ -10145,19 +10117,7 @@ function findHardestChallenge() {
     // Check active schedules
     for (const schedule of appData.schedules || []) {
         if (!schedule.segments) continue;
-        const isActive = schedule.segments.some(seg => {
-            const startMins = seg.startHour * 60 + seg.startMinute;
-            const endMins = seg.endHour * 60 + seg.endMinute;
-            if (endMins > startMins) {
-                return seg.days.includes(currentDay) &&
-                    currentMins >= startMins &&
-                    currentMins < endMins;
-            }
-            const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
-            return (seg.days.includes(currentDay) && currentMins >= startMins) ||
-                (seg.days.includes(yesterdayDay) && currentMins < endMins);
-        });
-        if (!isActive) continue;
+        if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
 
         const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
         if (blocklist?.overrideDifficulty) {
@@ -10246,15 +10206,15 @@ async function performOverrideAll() {
         if (isIOS) {
             await tauriAPI.screentimeClearBlock();
         } else {
-            const status = await tauriAPI.checkHelperStatus();
-            if (status.running) {
+            const status = await refreshDesktopHelperStatus({ syncPreference: false });
+            if (status.helperReady) {
                 // Atomically set everything to empty — helper will know nothing should be blocked
                 try { await tauriAPI.setBlocksViaHelper([]); } catch (e) { console.warn('Failed to clear blocks:', e); }
                 try { await tauriAPI.setSchedulesViaHelper([]); } catch (e) { console.warn('Failed to clear schedules:', e); }
                 try { await tauriAPI.setBlockedAppsViaHelper([]); } catch (e) { console.warn('Failed to clear apps:', e); }
-                // Also clean the hosts file directly as a safety net
-                try { await tauriAPI.cleanHostsFile(); } catch (e) { console.warn('Failed to clean hosts file:', e); }
             }
+            // Always clean the hosts file as a safety net, even if the helper is stopped or stale.
+            try { await tauriAPI.cleanHostsFile(); } catch (e) { console.warn('Failed to clean hosts file:', e); }
         }
 
         // Update blocked apps (will stop watcher if no apps to block)
