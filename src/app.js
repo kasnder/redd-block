@@ -8576,11 +8576,15 @@ const SETTINGS_TRANSLATIONS = {
         helperService: 'Helper service',
         helperStatusChecking: 'Checking...',
         helperStatusRunning: 'Running',
+        helperStatusInstalledNotRunning: 'Installed, not running',
         helperStatusUpdateAvailable: 'Update available',
         helperStatusNotInstalled: 'Not installed',
         helperStatusUnknown: 'Unknown',
         updateHelper: 'Update Helper',
         uninstallHelper: 'Uninstall Helper',
+        helperRemovedSuccess: 'Helper service removed successfully.',
+        helperRemovedFallback: 'Helper service removed using fallback cleanup because the installed helper was not responding normally.',
+        helperRemoveStaleHint: 'Installed, but not currently running. You can remove the stale helper before reinstalling it.',
         cleanHostsFile: 'Clean hosts file',
         helperHint: 'Remove all ReDD Block entries from your system\'s hosts file. Use this if websites remain blocked after all blocks have been stopped.',
         close: 'Close',
@@ -8715,11 +8719,15 @@ const SETTINGS_TRANSLATIONS = {
         helperService: 'Hjælper',
         helperStatusChecking: 'Tjekker...',
         helperStatusRunning: 'Kører',
+        helperStatusInstalledNotRunning: 'Installeret, men kører ikke',
         helperStatusUpdateAvailable: 'Opdatering tilgængelig',
         helperStatusNotInstalled: 'Ikke installeret',
         helperStatusUnknown: 'Ukendt',
         updateHelper: 'Opdater hjælper',
         uninstallHelper: 'Afinstaller hjælper',
+        helperRemovedSuccess: 'Hjælperen blev fjernet.',
+        helperRemovedFallback: 'Hjælperen blev fjernet via reserveoprydning, fordi den installerede hjælper ikke svarede normalt.',
+        helperRemoveStaleHint: 'Installeret, men kører ikke lige nu. Du kan fjerne den gamle hjælper her, før du geninstallerer den.',
         cleanHostsFile: 'Ryd hosts-fil',
         helperHint: 'Fjern alle ReDD Block-indsætninger fra systemets hosts-fil. Brug kun dette, hvis websites stadig er utilgængelige efter du har stoppet alle blokeringer.',
         close: 'Luk',
@@ -8927,12 +8935,17 @@ function applySettingsLanguage() {
         const statusMap = {
             'Checking...': tSettings('helperStatusChecking'),
             'Running': tSettings('helperStatusRunning'),
+            'Installed, not running': tSettings('helperStatusInstalledNotRunning'),
             'Update available': tSettings('helperStatusUpdateAvailable'),
             'Not installed': tSettings('helperStatusNotInstalled'),
             'Unknown': tSettings('helperStatusUnknown'),
             'Tjekker...': tSettings('helperStatusChecking'),
             'Korer': tSettings('helperStatusRunning'),
+            'Kører': tSettings('helperStatusRunning'),
+            'Installeret, men korer ikke': tSettings('helperStatusInstalledNotRunning'),
+            'Installeret, men kører ikke': tSettings('helperStatusInstalledNotRunning'),
             'Opdatering tilgaengelig': tSettings('helperStatusUpdateAvailable'),
+            'Opdatering tilgængelig': tSettings('helperStatusUpdateAvailable'),
             'Ikke installeret': tSettings('helperStatusNotInstalled'),
             'Ukendt': tSettings('helperStatusUnknown'),
         };
@@ -9349,13 +9362,13 @@ function setupHelperSettings() {
                     }
                     // Hide the Remove Helper Now button
                     removeHelperNowBtn.style.display = 'none';
-                    alert('Helper service removed successfully.');
+                    await message(getHelperRemovalSuccessMessage(result), { title: 'Done', kind: 'info' });
                 } else {
-                    alert('Failed to remove helper: ' + (result.error || 'Unknown error'));
+                    await message('Failed to remove helper: ' + (result.error || 'Unknown error'), { title: 'Error', kind: 'error' });
                 }
             } catch (e) {
                 console.error('Error removing helper:', e);
-                alert('Error removing helper: ' + e.message);
+                await message('Error removing helper: ' + e.message, { title: 'Error', kind: 'error' });
             } finally {
                 window._isRemovingHelper = false;
                 console.log('Remove helper complete, cleared global guard flag');
@@ -9373,6 +9386,61 @@ function setupHelperSettings() {
     }
 }
 
+function getHelperStatusDisplay(status) {
+    const isRunning = !!status.running;
+    const needsUpdate = isRunning && !status.version_ok;
+    const installedButStopped = !!(status.installed && !isRunning);
+
+    if (isRunning && status.version_ok) {
+        return {
+            helperReady: true,
+            indicatorClass: 'running',
+            statusKey: 'helperStatusRunning',
+            showUpdate: false,
+            showRemove: true,
+            removeTitle: '',
+        };
+    }
+
+    if (needsUpdate) {
+        return {
+            helperReady: false,
+            indicatorClass: 'stopped',
+            statusKey: 'helperStatusUpdateAvailable',
+            showUpdate: true,
+            showRemove: true,
+            removeTitle: '',
+        };
+    }
+
+    if (installedButStopped) {
+        return {
+            helperReady: false,
+            indicatorClass: 'stopped',
+            statusKey: 'helperStatusInstalledNotRunning',
+            showUpdate: false,
+            showRemove: true,
+            removeTitle: tSettings('helperRemoveStaleHint'),
+        };
+    }
+
+    return {
+        helperReady: false,
+        indicatorClass: 'stopped',
+        statusKey: 'helperStatusNotInstalled',
+        showUpdate: false,
+        showRemove: false,
+        removeTitle: '',
+    };
+}
+
+function getHelperRemovalSuccessMessage(result) {
+    if (result?.error) {
+        return `${tSettings('helperRemovedFallback')}\n\n${result.error}`;
+    }
+    return tSettings('helperRemovedSuccess');
+}
+
 // Update helper status indicator in settings modal
 async function updateHelperStatusIndicator() {
     const statusIndicator = document.getElementById('helper-status-indicator');
@@ -9383,25 +9451,16 @@ async function updateHelperStatusIndicator() {
 
     try {
         const status = await tauriAPI.checkHelperStatus();
-        const isRunning = status.running;
-        const needsUpdate = isRunning && !status.version_ok;
-        helperAvailable = isRunning && status.version_ok;
+        const helperDisplay = getHelperStatusDisplay(status);
+        helperAvailable = helperDisplay.helperReady;
 
         statusIndicator.classList.remove('running', 'stopped');
-        if (isRunning && status.version_ok) {
-            statusIndicator.classList.add('running');
-            statusText.textContent = tSettings('helperStatusRunning');
-        } else if (needsUpdate) {
-            statusIndicator.classList.add('stopped');
-            statusText.textContent = tSettings('helperStatusUpdateAvailable');
-        } else {
-            statusIndicator.classList.add('stopped');
-            statusText.textContent = tSettings('helperStatusNotInstalled');
-        }
+        statusIndicator.classList.add(helperDisplay.indicatorClass);
+        statusText.textContent = tSettings(helperDisplay.statusKey);
 
         // Show/hide Update Helper button
         if (updateBtn) {
-            updateBtn.style.display = needsUpdate ? 'flex' : 'none';
+            updateBtn.style.display = helperDisplay.showUpdate ? 'flex' : 'none';
 
             // Wire up click handler (only once)
             if (!updateBtn._listenerAdded) {
@@ -9434,18 +9493,18 @@ async function updateHelperStatusIndicator() {
         // Show/hide the Remove Helper Now button based on status
         const removeHelperBtn = document.getElementById('remove-helper-now-btn');
         if (removeHelperBtn) {
-            if (isRunning) {
+            if (helperDisplay.showRemove) {
                 removeHelperBtn.style.display = '';
 
                 // Check if there are active blocks - if so, disable the button
                 const hasActiveBlocks = hasAnyActiveBlocks();
-                if (hasActiveBlocks) {
+                if (status.running && hasActiveBlocks) {
                     removeHelperBtn.disabled = true;
                     removeHelperBtn.title = 'Override all running blocks first before removing the helper';
                     removeHelperBtn.classList.add('disabled-with-reason');
                 } else {
                     removeHelperBtn.disabled = false;
-                    removeHelperBtn.title = '';
+                    removeHelperBtn.title = helperDisplay.removeTitle;
                     removeHelperBtn.classList.remove('disabled-with-reason');
                 }
             } else {
@@ -9944,16 +10003,17 @@ function setupStillNotWorking() {
                     uninstallBtn.textContent = 'Helper uninstalled!';
                     uninstallBtn.disabled = true;
                     await checkHelperStatus();
+                    await message(getHelperRemovalSuccessMessage(result), { title: 'Done', kind: 'info' });
                     setTimeout(() => {
                         uninstallBtn.disabled = false;
                         uninstallBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg><span>Uninstall Helper Service</span>`;
                     }, 3000);
                 } else {
-                    alert('Failed to remove helper: ' + (result.error || 'Unknown error'));
+                    await message('Failed to remove helper: ' + (result.error || 'Unknown error'), { title: 'Error', kind: 'error' });
                 }
             } catch (e) {
                 console.error('Failed to uninstall helper:', e);
-                alert('Error removing helper: ' + e.message);
+                await message('Error removing helper: ' + e.message, { title: 'Error', kind: 'error' });
             }
         });
     }

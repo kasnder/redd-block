@@ -977,7 +977,7 @@ fn force_cleanup_helper() -> HelperResult {
     
     HelperResult {
         success: true,
-        error: Some("Helper force-removed (used fallback cleanup)".to_string()),
+        error: Some("The helper did not respond to the normal uninstall path, so ReDD Block used fallback cleanup to remove the installed helper files.".to_string()),
     }
 }
 
