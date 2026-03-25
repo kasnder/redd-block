@@ -237,6 +237,13 @@ fn get_data_path() -> PathBuf {
     }
 }
 
+fn get_shared_app_data_path() -> PathBuf {
+    get_data_path()
+        .parent()
+        .map(|p| p.join("redd-block-data.json"))
+        .unwrap_or_else(|| PathBuf::from("redd-block-data.json"))
+}
+
 fn load_state() -> (Vec<BlockState>, Vec<String>, Vec<HelperSchedule>) {
     let path = get_data_path();
     let now = SystemTime::now()
@@ -316,8 +323,8 @@ fn write_full_state(
 fn save_full_state(manual_blocks: &[BlockState], apps: &[String], schedules: &[HelperSchedule]) {
     let keep_blocking_on_uninstall =
         read_keep_blocking_preference_from_helper_state().unwrap_or_else(|| {
-            // Migration fallback for older helper-state files without this field.
-            read_user_setting_keep_blocking_from_app_data()
+            log("Keep-blocking preference missing in helper state; defaulting to true");
+            true
         });
     write_full_state(
         manual_blocks,
@@ -1935,71 +1942,64 @@ fn perform_self_cleanup() {
     std::process::exit(0);
 }
 
-/// Check if the main application still exists
-fn check_app_exists() -> bool {
+enum AppInstallState {
+    Detected,
+    NotDetectedButSharedDataPresent,
+    NotDetected,
+}
+
+/// Check if the main application still exists in a location we can confidently detect.
+fn check_app_install_state() -> AppInstallState {
+    let shared_app_data_exists = get_shared_app_data_path().exists();
+
     #[cfg(target_os = "macos")]
     {
-        // Check if the app bundle exists
         let app_paths = [
             "/Applications/ReDD Block.app",
+            "/Applications/redd-block.app",
             // Also check user Applications folder
             &format!("{}/Applications/ReDD Block.app", 
                 std::env::var("HOME").unwrap_or_else(|_| "/".to_string())),
+            &format!("{}/Applications/redd-block.app",
+                std::env::var("HOME").unwrap_or_else(|_| "/".to_string())),
         ];
-        app_paths.iter().any(|p| std::path::Path::new(p).exists())
-    }
-    
-    #[cfg(target_os = "windows")]
-    {
-        // Check common direct-distribution install locations
-        let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| "".to_string());
-        let program_files = std::env::var("PROGRAMFILES").unwrap_or_else(|_| "C:\\Program Files".to_string());
-        
-        let paths = [
-            format!("{}\\Programs\\redd-block\\ReDD Block.exe", local_app_data),
-            format!("{}\\ReDD Block\\ReDD Block.exe", program_files),
-        ];
-        
-        paths.iter().any(|p| std::path::Path::new(p).exists())
-    }
-    
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    {
-        true // Assume app exists on other platforms
-    }
-}
-
-/// Read user settings from app data (legacy fallback path only).
-fn read_user_setting_keep_blocking_from_app_data() -> bool {
-    // The user data file location (same as Tauri app data)
-    #[cfg(target_os = "macos")]
-    let data_path = {
-        let home = std::env::var("HOME").unwrap_or_else(|_| "/".to_string());
-        format!("{}/Library/Application Support/com.redd.block/redd-block-data.json", home)
-    };
-    
-    #[cfg(target_os = "windows")]
-    let data_path = {
-        let app_data = std::env::var("APPDATA").unwrap_or_else(|_| "".to_string());
-        format!("{}\\com.redd.block\\redd-block-data.json", app_data)
-    };
-    
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let data_path = String::new();
-    
-    if let Ok(content) = fs::read_to_string(&data_path) {
-        // Parse JSON and look for settings.keepBlockingOnUninstall
-        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-            if let Some(settings) = json.get("settings") {
-                if let Some(keep_blocking) = settings.get("keepBlockingOnUninstall") {
-                    return keep_blocking.as_bool().unwrap_or(true);
-                }
-            }
+        if app_paths.iter().any(|p| std::path::Path::new(p).exists()) {
+            AppInstallState::Detected
+        } else if shared_app_data_exists {
+            AppInstallState::NotDetectedButSharedDataPresent
+        } else {
+            AppInstallState::NotDetected
         }
     }
     
-    // Default to true (keep blocking running)
-    true
+    #[cfg(target_os = "windows")]
+    {
+        let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| "".to_string());
+        let program_files = std::env::var("PROGRAMFILES").unwrap_or_else(|_| "C:\\Program Files".to_string());
+        let program_files_x86 = std::env::var("PROGRAMFILES(X86)").unwrap_or_else(|_| "C:\\Program Files (x86)".to_string());
+        
+        let paths = [
+            format!("{}\\Programs\\redd-block\\ReDD Block.exe", local_app_data),
+            format!("{}\\Programs\\ReDD Block\\ReDD Block.exe", local_app_data),
+            format!("{}\\ReDD Block\\ReDD Block.exe", program_files),
+            format!("{}\\redd-block\\ReDD Block.exe", program_files),
+            format!("{}\\ReDD Block\\ReDD Block.exe", program_files_x86),
+            format!("{}\\redd-block\\ReDD Block.exe", program_files_x86),
+        ];
+        
+        if paths.iter().any(|p| std::path::Path::new(p).exists()) {
+            AppInstallState::Detected
+        } else if shared_app_data_exists {
+            AppInstallState::NotDetectedButSharedDataPresent
+        } else {
+            AppInstallState::NotDetected
+        }
+    }
+    
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        AppInstallState::Detected
+    }
 }
 
 fn read_keep_blocking_preference() -> bool {
@@ -2007,12 +2007,8 @@ fn read_keep_blocking_preference() -> bool {
         return value;
     }
 
-    let fallback = read_user_setting_keep_blocking_from_app_data();
-    log(&format!(
-        "Keep-blocking preference missing in helper state; using app-data fallback: {}",
-        fallback
-    ));
-    fallback
+    log("Keep-blocking preference missing in helper state; defaulting to true");
+    true
 }
 
 /// Thread that periodically checks if the main app still exists
@@ -2023,37 +2019,44 @@ fn app_existence_checker(
 ) {
     loop {
         thread::sleep(std::time::Duration::from_secs(300));
-        if !check_app_exists() {
-            log("Main application no longer detected");
-            let keep_blocking = read_keep_blocking_preference();
-            let now = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as u64;
-            let has_active_block = state.lock().unwrap().iter().any(|b| b.end_time > now);
-            let has_blocked_apps = !app_state.lock().unwrap().is_empty();
-            let has_schedules = !schedule_state.lock().unwrap().is_empty();
-            log(&format!(
-                "Uninstall decision: keepBlockingOnUninstall={}, has_active_block={}, has_blocked_apps={}, has_schedules={}",
-                keep_blocking, has_active_block, has_blocked_apps, has_schedules
-            ));
-            if keep_blocking && (has_active_block || has_blocked_apps || has_schedules) {
-                log("Keep blocking enabled and blocks/schedules are configured - continuing");
+        match check_app_install_state() {
+            AppInstallState::Detected => continue,
+            AppInstallState::NotDetectedButSharedDataPresent => {
+                log("Main application not detected in standard install paths, but shared app data still exists - skipping auto-cleanup");
                 continue;
             }
-            log("Performing cleanup...");
-            *state.lock().unwrap() = Vec::new();
-            *app_state.lock().unwrap() = Vec::new();
-            *schedule_state.lock().unwrap() = Vec::new();
-            save_full_state(&[], &[], &[]);
-            let _ = restore_hosts_from_backup();
-            
-            // Delete state file
-            let state_path = get_data_path();
-            let _ = fs::remove_file(&state_path);
-            
-            // Self-cleanup
-            perform_self_cleanup();
+            AppInstallState::NotDetected => {
+                log("Main application no longer detected");
+                let keep_blocking = read_keep_blocking_preference();
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64;
+                let has_active_block = state.lock().unwrap().iter().any(|b| b.end_time > now);
+                let has_blocked_apps = !app_state.lock().unwrap().is_empty();
+                let has_schedules = !schedule_state.lock().unwrap().is_empty();
+                log(&format!(
+                    "Uninstall decision: keepBlockingOnUninstall={}, has_active_block={}, has_blocked_apps={}, has_schedules={}",
+                    keep_blocking, has_active_block, has_blocked_apps, has_schedules
+                ));
+                if keep_blocking && (has_active_block || has_blocked_apps || has_schedules) {
+                    log("Keep blocking enabled and blocks/schedules are configured - continuing");
+                    continue;
+                }
+                log("Performing cleanup...");
+                *state.lock().unwrap() = Vec::new();
+                *app_state.lock().unwrap() = Vec::new();
+                *schedule_state.lock().unwrap() = Vec::new();
+                save_full_state(&[], &[], &[]);
+                let _ = restore_hosts_from_backup();
+                
+                // Delete state file
+                let state_path = get_data_path();
+                let _ = fs::remove_file(&state_path);
+                
+                // Self-cleanup
+                perform_self_cleanup();
+            }
         }
     }
 }
