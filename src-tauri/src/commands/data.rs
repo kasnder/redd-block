@@ -125,30 +125,56 @@ impl Default for AppData {
     }
 }
 
-/// Get the shared, system-wide data file path if the shared directory is available.
+fn get_per_user_data_path(app: &AppHandle) -> PathBuf {
+    let app_data_dir = app.path().app_data_dir().expect("Failed to get app data dir");
+    app_data_dir.join("redd-block-data.json")
+}
+
+#[cfg(not(target_os = "ios"))]
+fn get_shared_data_path() -> PathBuf {
+    get_shared_dir().join("redd-block-data.json")
+}
+
+#[cfg(not(target_os = "ios"))]
+fn get_shared_helper_state_path() -> PathBuf {
+    get_shared_dir().join("helper-state.json")
+}
+
+#[cfg(not(target_os = "ios"))]
+fn should_use_shared_data_path() -> bool {
+    let shared_data_path = get_shared_data_path();
+    if shared_data_path.exists() {
+        return true;
+    }
+
+    let helper_state_path = get_shared_helper_state_path();
+    if helper_state_path.exists() {
+        return true;
+    }
+
+    let shared_dir = get_shared_dir();
+    shared_dir.is_dir() && is_dir_writable(&shared_dir)
+}
+
+/// Resolve the canonical app-data path.
 ///
-/// On desktop (macOS/Windows), the helper daemon creates a system-wide directory
-/// when installed. If that directory exists and is writable, we use it so all
-/// user accounts share the same blocks. If it doesn't exist (helper not installed
-/// yet), we fall back to the per-user Tauri app data dir.
+/// On desktop, once shared storage has been activated we keep treating it as the
+/// canonical location so installs/uninstalls do not silently flip the app between
+/// shared and per-user data files.
 ///
 /// On iOS, the per-user app data dir is always used (single-user device).
 fn get_data_path(app: &AppHandle) -> PathBuf {
     #[cfg(target_os = "ios")]
     {
-        let app_data_dir = app.path().app_data_dir().expect("Failed to get app data dir");
-        return app_data_dir.join("redd-block-data.json");
+        return get_per_user_data_path(app);
     }
 
     #[cfg(not(target_os = "ios"))]
     {
-        let shared_dir = get_shared_dir();
-        if shared_dir.is_dir() && is_dir_writable(&shared_dir) {
-            shared_dir.join("redd-block-data.json")
+        if should_use_shared_data_path() {
+            get_shared_data_path()
         } else {
-            // Shared dir not available (helper not installed yet) — fall back to per-user
-            let app_data_dir = app.path().app_data_dir().expect("Failed to get app data dir");
-            app_data_dir.join("redd-block-data.json")
+            get_per_user_data_path(app)
         }
     }
 }
@@ -253,6 +279,7 @@ fn find_per_user_data(app: &AppHandle) -> Option<PathBuf> {
 #[tauri::command]
 pub fn load_data(app: AppHandle) -> Result<AppData, String> {
     let data_path = get_data_path(&app);
+    let per_user_data_path = get_per_user_data_path(&app);
 
     // Ensure parent directory exists (only needed for per-user fallback path;
     // the shared dir is created by the helper daemon install)
@@ -265,8 +292,23 @@ pub fn load_data(app: AppHandle) -> Result<AppData, String> {
     } else {
         // Migrate from per-user location or legacy paths
         if let Some(source_path) = find_per_user_data(&app) {
-            log::info!("Migrating data from per-user path to shared location: {:?} -> {:?}",
-                source_path, data_path);
+            if source_path == data_path {
+                let content = fs::read_to_string(&source_path).map_err(|e| e.to_string())?;
+                let data: AppData = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+                return Ok(data);
+            }
+
+            let destination_kind = if data_path == per_user_data_path {
+                "per-user"
+            } else {
+                "shared"
+            };
+            log::info!(
+                "Migrating data into canonical {} location: {:?} -> {:?}",
+                destination_kind,
+                source_path,
+                data_path
+            );
             let content = fs::read_to_string(&source_path).map_err(|e| e.to_string())?;
             let data: AppData = serde_json::from_str(&content).map_err(|e| e.to_string())?;
             // Save to new location so migration only happens once
