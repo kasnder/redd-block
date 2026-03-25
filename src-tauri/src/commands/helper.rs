@@ -285,6 +285,15 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
     #[cfg(target_os = "macos")]
     {
         use std::process::Command;
+
+        let current_status = check_helper_status();
+        if current_status.running && current_status.version_ok {
+            log::info!("Helper already running with correct version, no installation needed");
+            return HelperResult {
+                success: true,
+                error: None,
+            };
+        }
         
         // Get the bundled helper binary path
         let helper_path = match get_helper_path(&app) {
@@ -807,6 +816,11 @@ fn force_cleanup_helper() -> HelperResult {
         // Create a script that kills the process and cleans up
         let program_data = std::env::var("PROGRAMDATA").unwrap_or_else(|_| "C:\\ProgramData".to_string());
         let install_dir = PathBuf::from(&program_data).join("ReDD Block");
+        let helper_path = install_dir.join("redd-block-helper.exe");
+        let state_path = install_dir.join("helper-state.json");
+        let log_path = install_dir.join("helper.log");
+        let old_log_path = install_dir.join("helper.log.old");
+        let install_log_path = install_dir.join("install.log");
         
         // Try to restore hosts file via IPC before killing the daemon
         // This prevents stale block entries remaining in the hosts file
@@ -847,8 +861,12 @@ fn force_cleanup_helper() -> HelperResult {
         let verb = HSTRING::from("runas");
         let file = HSTRING::from("powershell");
         let cleanup_cmd = format!(
-            "-ExecutionPolicy Bypass -WindowStyle Hidden -Command \"taskkill /F /IM redd-block-helper.exe 2>$null; schtasks /Delete /TN 'ReDD Block Helper' /F 2>$null; Remove-Item -Path '{}' -Recurse -Force -ErrorAction SilentlyContinue\"",
-            install_dir.display()
+            "-ExecutionPolicy Bypass -WindowStyle Hidden -Command \"taskkill /F /IM redd-block-helper.exe 2>$null; schtasks /Delete /TN 'ReDD Block Helper' /F 2>$null; netsh advfirewall firewall delete rule name='ReDD Block Helper' 2>$null; Remove-Item -LiteralPath '{}','{}','{}','{}','{}' -Force -ErrorAction SilentlyContinue\"",
+            helper_path.display(),
+            state_path.display(),
+            log_path.display(),
+            old_log_path.display(),
+            install_log_path.display()
         );
         let params = HSTRING::from(&cleanup_cmd);
         
@@ -891,6 +909,11 @@ fn force_cleanup_helper() -> HelperResult {
     
     #[cfg(target_os = "macos")]
     {
+        let install_path = "/Library/PrivilegedHelperTools/com.redd.block.helper";
+        let plist_path = "/Library/LaunchDaemons/com.redd.block.helper.plist";
+        let legacy_helper_path = "/usr/local/bin/redd-block-helper";
+        let legacy_plist_path = "/Library/LaunchDaemons/org.reddfocus.redd-block-helper.plist";
+
         // Try to restore hosts file via IPC before killing the daemon
         // This prevents stale block entries remaining in /etc/hosts
         let restore_cmd = IpcCommand {
@@ -926,16 +949,30 @@ fn force_cleanup_helper() -> HelperResult {
             }
         }
         
-        // Try to unload the launchd daemon (current label first, then legacy)
-        let _ = std::process::Command::new("launchctl")
-            .args(["remove", "com.redd.block.helper"])
-            .output();
-        let _ = std::process::Command::new("launchctl")
-            .args(["remove", "org.reddfocus.block.helper"])
-            .output();
-        
-        // Note: On macOS, removing daemon files requires admin
-        log::info!("Force cleanup completed for macOS (launchd unloaded)");
+        let script = format!(
+            r#"do shell script "launchctl bootout system/com.redd.block.helper 2>/dev/null; launchctl unload '{}' 2>/dev/null; launchctl bootout system/org.reddfocus.redd-block-helper 2>/dev/null; launchctl unload '{}' 2>/dev/null; rm -f '{}' '{}' '{}' '{}'" with administrator privileges"#,
+            plist_path,
+            legacy_plist_path,
+            install_path,
+            plist_path,
+            legacy_helper_path,
+            legacy_plist_path
+        );
+
+        match std::process::Command::new("osascript").arg("-e").arg(&script).output() {
+            Ok(output) if output.status.success() => {
+                log::info!("Force cleanup completed for macOS");
+            }
+            Ok(output) => {
+                log::warn!(
+                    "macOS force cleanup command failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            Err(e) => {
+                log::warn!("Failed to run macOS force cleanup command: {}", e);
+            }
+        }
     }
     
     HelperResult {

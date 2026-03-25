@@ -1869,6 +1869,9 @@ fn perform_self_cleanup() {
     
     #[cfg(target_os = "macos")]
     {
+        let install_path = "/Library/PrivilegedHelperTools/com.redd.block.helper";
+        let legacy_helper_path = "/usr/local/bin/redd-block-helper";
+
         // Remove launchd daemon and exit
         log("Removing launchd daemon...");
         let _ = std::process::Command::new("launchctl")
@@ -1876,13 +1879,16 @@ fn perform_self_cleanup() {
             .output();
         // Legacy fallback for older label used by previous installs.
         let _ = std::process::Command::new("launchctl")
-            .args(["remove", "org.reddfocus.block.helper"])
+            .args(["remove", "org.reddfocus.redd-block-helper"])
             .output();
         
         // Delete the plist file
         let _ = fs::remove_file("/Library/LaunchDaemons/com.redd.block.helper.plist");
         // Legacy fallback for older plist path.
-        let _ = fs::remove_file("/Library/LaunchDaemons/org.reddfocus.block.helper.plist");
+        let _ = fs::remove_file("/Library/LaunchDaemons/org.reddfocus.redd-block-helper.plist");
+        // Remove installed helper binaries.
+        let _ = fs::remove_file(install_path);
+        let _ = fs::remove_file(legacy_helper_path);
         
         // Delete the socket
         let _ = fs::remove_file(SOCKET_PATH);
@@ -1892,6 +1898,15 @@ fn perform_self_cleanup() {
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x08000000;
+        let program_data = std::env::var("PROGRAMDATA").unwrap_or_else(|_| "C:\\ProgramData".to_string());
+        let install_dir = PathBuf::from(&program_data).join("ReDD Block");
+        let helper_path = std::env::current_exe()
+            .ok()
+            .unwrap_or_else(|| install_dir.join("redd-block-helper.exe"));
+        let helper_log_path = install_dir.join("helper.log");
+        let helper_old_log_path = install_dir.join("helper.log.old");
+        let install_log_path = install_dir.join("install.log");
+        let state_path = install_dir.join("helper-state.json");
         
         // Remove scheduled task (hidden)
         log("Removing scheduled task...");
@@ -1899,6 +1914,21 @@ fn perform_self_cleanup() {
             .args(["/Delete", "/TN", "ReDD Block Helper", "/F"])
             .creation_flags(CREATE_NO_WINDOW)
             .output();
+
+        // Delete helper artifacts after this process exits. Avoid removing the whole
+        // directory because shared desktop app data may live alongside the helper.
+        let cleanup_cmd = format!(
+            "timeout /t 2 /nobreak > NUL & del /F /Q \"{}\" > NUL 2>&1 & del /F /Q \"{}\" > NUL 2>&1 & del /F /Q \"{}\" > NUL 2>&1 & del /F /Q \"{}\" > NUL 2>&1 & del /F /Q \"{}\" > NUL 2>&1 & netsh advfirewall firewall delete rule name=\"ReDD Block Helper\" > NUL 2>&1",
+            helper_path.display(),
+            helper_log_path.display(),
+            helper_old_log_path.display(),
+            install_log_path.display(),
+            state_path.display()
+        );
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", &cleanup_cmd])
+            .creation_flags(CREATE_NO_WINDOW)
+            .spawn();
     }
     
     log("Cleanup complete, exiting...");
