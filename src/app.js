@@ -9535,6 +9535,104 @@ function updateCleanHostsBtnState() {
     btn.title = active ? 'Stop all running blocks first' : '';
 }
 
+function getDiagValue(diag, ...keys) {
+    for (const key of keys) {
+        if (diag && diag[key] !== undefined && diag[key] !== null) {
+            return diag[key];
+        }
+    }
+    return undefined;
+}
+
+function getPrettyPrintedDiagnosticsJson(rawText) {
+    if (!rawText) return '(unavailable)';
+    try {
+        return JSON.stringify(JSON.parse(rawText), null, 2);
+    } catch (e) {
+        return rawText;
+    }
+}
+
+function buildDiagnosticsReport(diag) {
+    const osName = getDiagValue(diag, 'os_name', 'osName')
+        || (navigator.platform?.startsWith('Mac') ? 'macOS' : navigator.platform?.startsWith('Win') ? 'Windows' : 'unknown');
+    const arch = getDiagValue(diag, 'arch') || 'unknown';
+    const appVersion = document.getElementById('settings-version')?.textContent || '';
+    const installed = !!getDiagValue(diag, 'helper_installed', 'helperInstalled');
+    const running = !!getDiagValue(diag, 'helper_running', 'helperRunning');
+    const version = getDiagValue(diag, 'helper_version', 'helperVersion') || 'Unknown';
+    const versionOk = !!getDiagValue(diag, 'helper_version_ok', 'helperVersionOk');
+    const expectedVersion = getDiagValue(diag, 'expected_helper_version', 'expectedHelperVersion') || 'unknown';
+    const hostsFile = getDiagValue(diag, 'hosts_file', 'hostsFile') || '(unavailable)';
+    const hostsPath = getDiagValue(diag, 'hosts_path', 'hostsPath') || '(unknown)';
+    const stateFile = getDiagValue(diag, 'helper_state_file', 'helperStateFile') || '(unavailable)';
+    const statePath = getDiagValue(diag, 'helper_state_path', 'helperStatePath') || '(unknown)';
+    const helperLogTail = getDiagValue(diag, 'helper_log_tail', 'helperLogTail');
+    const helperLogPath = getDiagValue(diag, 'helper_log_path', 'helperLogPath');
+    const installLogTail = getDiagValue(diag, 'install_log_tail', 'installLogTail');
+    const installLogPath = getDiagValue(diag, 'install_log_path', 'installLogPath');
+    const helperDisplay = getHelperStatusDisplay({ installed, running, version_ok: versionOk });
+    const helperStatusLabel = tSettings(helperDisplay.statusKey);
+
+    return {
+        osName,
+        arch,
+        appVersion,
+        installed,
+        running,
+        version,
+        versionOk,
+        expectedVersion,
+        helperStatusLabel,
+        helperDisplay,
+        hostsFile,
+        hostsPath,
+        hasReddBlock: hostsFile.includes('BEGIN REDD BLOCK'),
+        statePretty: getPrettyPrintedDiagnosticsJson(stateFile),
+        statePath,
+        helperLogTail,
+        helperLogPath,
+        installLogTail,
+        installLogPath,
+    };
+}
+
+function formatDiagnosticsText(diag) {
+    const report = buildDiagnosticsReport(diag);
+    return [
+        '=== System ===',
+        `OS: ${report.osName}`,
+        `Architecture: ${report.arch}`,
+        report.appVersion ? `App version: ${report.appVersion}` : '',
+        '',
+        '=== Helper Daemon ===',
+        `Status: ${report.helperStatusLabel}`,
+        `Installed: ${report.installed ? 'Yes' : 'No'}`,
+        `Running: ${report.running ? 'Yes' : 'No'}`,
+        `Version OK: ${report.versionOk ? 'Yes' : 'No'}`,
+        `Version: ${report.version}`,
+        `Expected version: ${report.expectedVersion}`,
+        '',
+        '=== Paths ===',
+        `Hosts file: ${report.hostsPath}`,
+        `Helper state file: ${report.statePath}`,
+        report.helperLogPath ? `Helper log: ${report.helperLogPath}` : '',
+        report.installLogPath ? `Install log: ${report.installLogPath}` : '',
+        '',
+        '=== Hosts File ===',
+        report.hostsFile.trim(),
+        '',
+        '=== Helper State File ===',
+        report.statePretty.trim(),
+        report.helperLogTail ? '' : undefined,
+        report.helperLogTail ? '=== Helper Log Tail ===' : undefined,
+        report.helperLogTail ? report.helperLogTail.trim() : undefined,
+        report.installLogTail ? '' : undefined,
+        report.installLogTail ? '=== Install Log Tail ===' : undefined,
+        report.installLogTail ? report.installLogTail.trim() : undefined,
+    ].filter(line => line !== undefined).join('\n');
+}
+
 // Diagnostics modal
 async function openDiagnosticsModal() {
     const modal = document.getElementById('diagnostics-modal');
@@ -9547,54 +9645,53 @@ async function openDiagnosticsModal() {
     let diag = null;
     try {
         diag = await tauriAPI.getHelperDiagnostics();
+        const report = buildDiagnosticsReport(diag);
+        diag._formattedText = formatDiagnosticsText(diag);
 
         let html = '';
-
-        // System info — prefer values from Rust (accurate) over browser detection
-        const osName = diag.os_name || diag.osName || (navigator.platform?.startsWith('Mac') ? 'macOS' : navigator.platform?.startsWith('Win') ? 'Windows' : 'unknown');
-        const arch = diag.arch || 'unknown';
-        const appVersion = document.getElementById('settings-version')?.textContent || '';
-
-        // Store system info on diag for clipboard copy
-        diag._systemInfo = { osName, arch, appVersion };
-
-        // Helper status
-        const running = diag.helperRunning || diag.helper_running;
-        const version = diag.helperVersion || diag.helper_version;
 
         // Two-column layout: Helper Daemon (left) + System (right)
         html += '<div style="display: flex; gap: 16px; margin-bottom: 8px;">';
         html += '<div class="diagnostics-section" style="flex: 1; margin-bottom: 0;">';
         html += '<div class="diagnostics-section-title">Helper Daemon</div>';
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Running:</span> <span class="diagnostics-value ${running ? 'diag-ok' : 'diag-error'}">${running ? 'Yes' : 'No'}</span></div>`;
-        if (version) html += `<div class="diagnostics-field"><span class="diagnostics-label">Version:</span> <span class="diagnostics-value">${version}</span></div>`;
+        html += `<div class="diagnostics-field"><span class="diagnostics-label">Status:</span> <span class="diagnostics-value ${report.helperDisplay.helperReady ? 'diag-ok' : 'diag-error'}">${escapeHtml(report.helperStatusLabel)}</span></div>`;
+        html += `<div class="diagnostics-field"><span class="diagnostics-label">Version OK:</span> <span class="diagnostics-value ${report.versionOk ? 'diag-ok' : 'diag-error'}">${report.versionOk ? 'Yes' : 'No'}</span></div>`;
+        html += `<div class="diagnostics-field"><span class="diagnostics-label">Version:</span> <span class="diagnostics-value">${escapeHtml(report.version)}</span></div>`;
+        html += `<div class="diagnostics-field"><span class="diagnostics-label">Expected:</span> <span class="diagnostics-value">${escapeHtml(report.expectedVersion)}</span></div>`;
         html += '</div>';
         html += '<div class="diagnostics-section" style="flex: 1; margin-bottom: 0;">';
         html += '<div class="diagnostics-section-title">System</div>';
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">OS:</span> <span class="diagnostics-value">${osName}</span></div>`;
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Architecture:</span> <span class="diagnostics-value">${arch}</span></div>`;
-        if (appVersion) html += `<div class="diagnostics-field"><span class="diagnostics-label">App version:</span> <span class="diagnostics-value">${appVersion}</span></div>`;
+        html += `<div class="diagnostics-field"><span class="diagnostics-label">OS:</span> <span class="diagnostics-value">${escapeHtml(report.osName)}</span></div>`;
+        html += `<div class="diagnostics-field"><span class="diagnostics-label">Architecture:</span> <span class="diagnostics-value">${escapeHtml(report.arch)}</span></div>`;
+        if (report.appVersion) html += `<div class="diagnostics-field"><span class="diagnostics-label">App version:</span> <span class="diagnostics-value">${escapeHtml(report.appVersion)}</span></div>`;
         html += '</div>';
         html += '</div>';
 
         // Hosts file
-        const hostsFile = diag.hostsFile || diag.hosts_file || '';
-        const hasReddBlock = hostsFile.includes('BEGIN REDD BLOCK');
         html += '<div class="diagnostics-section">';
-        html += `<div class="diagnostics-section-title">Hosts File <span class="diagnostics-badge ${hasReddBlock ? 'badge-active' : 'badge-inactive'}">${hasReddBlock ? 'ReDD Block entries present' : 'No ReDD Block entries'}</span></div>`;
-        html += `<pre class="diagnostics-pre">${escapeHtml(hostsFile)}</pre>`;
+        html += `<div class="diagnostics-section-title">Hosts File (${escapeHtml(report.hostsPath)}) <span class="diagnostics-badge ${report.hasReddBlock ? 'badge-active' : 'badge-inactive'}">${report.hasReddBlock ? 'ReDD Block entries present' : 'No ReDD Block entries'}</span></div>`;
+        html += `<pre class="diagnostics-pre">${escapeHtml(report.hostsFile)}</pre>`;
         html += '</div>';
 
         // Helper state file
-        const stateFile = diag.helperStateFile || diag.helper_state_file || '';
-        let statePretty = stateFile;
-        try {
-            statePretty = JSON.stringify(JSON.parse(stateFile), null, 2);
-        } catch (e) { /* not valid JSON, show as-is */ }
         html += '<div class="diagnostics-section">';
-        html += '<div class="diagnostics-section-title">Helper State File</div>';
-        html += `<pre class="diagnostics-pre">${escapeHtml(statePretty)}</pre>`;
+        html += `<div class="diagnostics-section-title">Helper State File (${escapeHtml(report.statePath)})</div>`;
+        html += `<pre class="diagnostics-pre">${escapeHtml(report.statePretty)}</pre>`;
         html += '</div>';
+
+        if (report.helperLogTail) {
+            html += '<div class="diagnostics-section">';
+            html += `<div class="diagnostics-section-title">Helper Log Tail${report.helperLogPath ? ` (${escapeHtml(report.helperLogPath)})` : ''}</div>`;
+            html += `<pre class="diagnostics-pre">${escapeHtml(report.helperLogTail)}</pre>`;
+            html += '</div>';
+        }
+
+        if (report.installLogTail) {
+            html += '<div class="diagnostics-section">';
+            html += `<div class="diagnostics-section-title">Install Log Tail${report.installLogPath ? ` (${escapeHtml(report.installLogPath)})` : ''}</div>`;
+            html += `<pre class="diagnostics-pre">${escapeHtml(report.installLogTail)}</pre>`;
+            html += '</div>';
+        }
 
         content.innerHTML = html;
     } catch (e) {
@@ -9606,32 +9703,7 @@ async function openDiagnosticsModal() {
     if (copyBtn) {
         copyBtn.onclick = () => {
             if (!diag) { copyBtn.textContent = 'No data'; return; }
-            const running = diag.helperRunning || diag.helper_running;
-            const version = diag.helperVersion || diag.helper_version;
-            const hostsFile = diag.hostsFile || diag.hosts_file || '(unavailable)';
-            const stateFile = diag.helperStateFile || diag.helper_state_file || '(unavailable)';
-            let statePretty = stateFile;
-            try { statePretty = JSON.stringify(JSON.parse(stateFile), null, 2); } catch (e) {}
-
-            const sys = diag._systemInfo || {};
-            const text = [
-                '=== System ===',
-                `OS: ${sys.osName || 'unknown'}`,
-                `Architecture: ${sys.arch || 'unknown'}`,
-                sys.appVersion ? `App version: ${sys.appVersion}` : '',
-                '',
-                '=== Helper Daemon ===',
-                `Running: ${running ? 'Yes' : 'No'}`,
-                `Version: ${version || 'unknown'}`,
-                '',
-                '=== Hosts File ===',
-                hostsFile.trim(),
-                '',
-                '',
-                '=== Helper State File ===',
-                '',
-                statePretty.trim(),
-            ].filter(line => line !== undefined).join('\n');
+            const text = diag._formattedText || formatDiagnosticsText(diag);
 
             navigator.clipboard.writeText(text).then(() => {
                 copyBtn.textContent = 'Copied!';
@@ -10117,24 +10189,7 @@ function setupStillNotWorking() {
             let diagText = 'Could not load diagnostics.';
             try {
                 const diag = await tauriAPI.getHelperDiagnostics();
-                const running = diag.helperRunning || diag.helper_running;
-                const version = diag.helperVersion || diag.helper_version;
-                const hostsFile = diag.hostsFile || diag.hosts_file || '(unavailable)';
-                const stateFile = diag.helperStateFile || diag.helper_state_file || '(unavailable)';
-                let statePretty = stateFile;
-                try { statePretty = JSON.stringify(JSON.parse(stateFile), null, 2); } catch (e) {}
-
-                diagText = [
-                    '=== Helper Daemon ===',
-                    `Running: ${running ? 'Yes' : 'No'}`,
-                    `Version: ${version || 'unknown'}`,
-                    '',
-                    '=== Hosts File ===',
-                    hostsFile.trim(),
-                    '',
-                    '=== Helper State File ===',
-                    statePretty.trim(),
-                ].join('\n');
+                diagText = formatDiagnosticsText(diag);
             } catch (e) {
                 console.warn('Failed to get diagnostics for email:', e);
             }

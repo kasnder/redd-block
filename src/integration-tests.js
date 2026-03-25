@@ -627,6 +627,36 @@
         return { passed: true };
     }
 
+    async function testE2_helperDiagnosticsContract() {
+        const tauriAPI = getTauriAPI();
+        assertOrThrow(tauriAPI && typeof tauriAPI.getHelperDiagnostics === 'function', 'E2: getHelperDiagnostics unavailable');
+
+        const status = await tauriAPI.checkHelperStatus();
+        const diag = await tauriAPI.getHelperDiagnostics();
+        assertOrThrow(diag && diag.success, 'E2: diagnostics command failed');
+
+        const diagInstalled = diag.helperInstalled ?? diag.helper_installed;
+        const diagRunning = diag.helperRunning ?? diag.helper_running;
+        const diagVersion = diag.helperVersion ?? diag.helper_version ?? null;
+        const diagVersionOk = diag.helperVersionOk ?? diag.helper_version_ok;
+        const expectedVersion = diag.expectedHelperVersion ?? diag.expected_helper_version;
+        const hostsPath = diag.hostsPath ?? diag.hosts_path;
+        const statePath = diag.helperStatePath ?? diag.helper_state_path;
+        const hostsFile = diag.hostsFile ?? diag.hosts_file;
+        const stateFile = diag.helperStateFile ?? diag.helper_state_file;
+
+        assertOrThrow(diagInstalled === status.installed, `E2: diagnostics installed mismatch (${diagInstalled} !== ${status.installed})`);
+        assertOrThrow(diagRunning === status.running, `E2: diagnostics running mismatch (${diagRunning} !== ${status.running})`);
+        assertOrThrow((diagVersion || null) === (status.version || null), `E2: diagnostics version mismatch (${diagVersion} !== ${status.version})`);
+        assertOrThrow(diagVersionOk === status.version_ok, `E2: diagnostics version_ok mismatch (${diagVersionOk} !== ${status.version_ok})`);
+        assertOrThrow(typeof expectedVersion === 'string' && expectedVersion.length > 0, 'E2: expected helper version missing');
+        assertOrThrow(typeof hostsPath === 'string' && hostsPath.length > 0, 'E2: hosts path missing');
+        assertOrThrow(typeof statePath === 'string' && statePath.length > 0, 'E2: helper state path missing');
+        assertOrThrow(typeof hostsFile === 'string' && hostsFile.length > 0, 'E2: hosts file payload missing');
+        assertOrThrow(typeof stateFile === 'string' && stateFile.length > 0, 'E2: helper state payload missing');
+        return { passed: true };
+    }
+
     // ========================================
     // Testing Group F: App-block command-path checks (non-visual)
     // ========================================
@@ -664,7 +694,8 @@
             { group: 'B', name: 'B1: Shared-domain overlap', fn: testB1_sharedDomainOverlap },
             { group: 'C', name: 'C1: Scoped clear by blocklist ID', fn: testC1_scopedClearByBlocklistId },
             { group: 'D', name: 'D1: Keep-blocking preference roundtrip', fn: testD1_setKeepBlockingPreferenceRoundtrip },
-            { group: 'E', name: 'E1: Clean hosts command path', fn: testE1_cleanHostsCommandPath }
+            { group: 'E', name: 'E1: Clean hosts command path', fn: testE1_cleanHostsCommandPath },
+            { group: 'E', name: 'E2: Helper diagnostics contract', fn: testE2_helperDiagnosticsContract }
         ];
 
         if (profile === PROFILE_CORE) return coreTests;

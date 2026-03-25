@@ -1314,15 +1314,59 @@ pub struct DiagnosticsResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hosts_file: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub hosts_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub helper_installed: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub helper_running: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub helper_version: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub helper_version_ok: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected_helper_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub helper_state_file: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub helper_state_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub helper_log_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub helper_log_tail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install_log_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install_log_tail: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub os_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub arch: Option<String>,
+}
+
+fn tail_lines(text: &str, max_lines: usize) -> String {
+    let lines: Vec<&str> = text.lines().collect();
+    if lines.is_empty() {
+        return "[File is empty]".to_string();
+    }
+    if lines.len() <= max_lines {
+        return text.to_string();
+    }
+    format!(
+        "[Showing last {} of {} lines]\n{}",
+        max_lines,
+        lines.len(),
+        lines[lines.len() - max_lines..].join("\n")
+    )
+}
+
+fn read_optional_tail(path: &std::path::Path, max_lines: usize) -> Option<String> {
+    if !path.exists() {
+        return None;
+    }
+    match std::fs::read_to_string(path) {
+        Ok(content) => Some(tail_lines(&content, max_lines)),
+        Err(e) => Some(format!("[Error reading file: {}]", e)),
+    }
 }
 
 /// Get diagnostics info: hosts file content + helper daemon state
@@ -1352,30 +1396,49 @@ pub async fn get_helper_diagnostics() -> DiagnosticsResult {
     
     let state_content = std::fs::read_to_string(&state_path)
         .unwrap_or_else(|e| format!("[Error reading state file: {}]", e));
-    
-    // Check helper status
-    let ping_cmd = IpcCommand {
-        action: "ping".to_string(),
-        domains: None,
-        end_time: None,
-        blocklist_id: None,
-        apps: None,
-        schedules: None,
-        keep_blocking_on_uninstall: None,
-        blocks: None,
+
+    #[cfg(target_os = "windows")]
+    let (helper_log_path, install_log_path) = {
+        let program_data = std::env::var("PROGRAMDATA").unwrap_or_else(|_| "C:\\ProgramData".to_string());
+        let install_dir = std::path::PathBuf::from(&program_data).join("ReDD Block");
+        (
+            install_dir.join("helper.log"),
+            Some(install_dir.join("install.log")),
+        )
     };
-    let (running, version) = match send_command(&ping_cmd) {
-        Ok(r) if r.success => (true, r.version),
-        _ => (false, None),
-    };
+    #[cfg(target_os = "macos")]
+    let (helper_log_path, install_log_path) = (
+        std::path::PathBuf::from("/var/log/redd-block-helper.log"),
+        None,
+    );
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let (helper_log_path, install_log_path) = (
+        std::path::PathBuf::from("/var/log/redd-block-helper.log"),
+        None,
+    );
+
+    let helper_status = check_helper_status();
+    let helper_log_tail = read_optional_tail(&helper_log_path, 80);
+    let install_log_tail = install_log_path
+        .as_ref()
+        .and_then(|path| read_optional_tail(path, 80));
     
     DiagnosticsResult {
         success: true,
         error: None,
         hosts_file: Some(hosts_content),
-        helper_running: Some(running),
-        helper_version: version,
+        hosts_path: Some(hosts_path.to_string()),
+        helper_installed: Some(helper_status.installed),
+        helper_running: Some(helper_status.running),
+        helper_version: helper_status.version,
+        helper_version_ok: Some(helper_status.version_ok),
+        expected_helper_version: Some(EXPECTED_HELPER_VERSION.to_string()),
         helper_state_file: Some(state_content),
+        helper_state_path: Some(state_path.display().to_string()),
+        helper_log_path: Some(helper_log_path.display().to_string()),
+        helper_log_tail,
+        install_log_path: install_log_path.as_ref().map(|path| path.display().to_string()),
+        install_log_tail,
         os_name: Some(std::env::consts::OS.to_string()),
         arch: Some(std::env::consts::ARCH.to_string()),
     }
