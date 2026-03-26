@@ -10095,8 +10095,6 @@ function setupStillNotWorking() {
     // Open modal
     btn.addEventListener('click', () => {
         if (btn.disabled) return;
-        // Close settings modal first
-        document.getElementById('settings-modal')?.classList.add('hidden');
         // Reset state each time
         document.getElementById('snw-challenge-area')?.classList.add('hidden');
         document.getElementById('snw-terminal-commands')?.classList.add('hidden');
