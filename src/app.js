@@ -8618,6 +8618,8 @@ const SETTINGS_TRANSLATIONS = {
         helperStatusUnknown: 'Unknown',
         updateHelper: 'Update Helper',
         uninstallHelper: 'Uninstall Helper',
+        helperRemoving: 'Removing...',
+        helperRemoved: 'Helper removed',
         helperRemovedSuccess: 'Helper service removed successfully.',
         helperRemovedFallback: 'Helper service removed using fallback cleanup because the installed helper was not responding normally.',
         helperRemoveStaleHint: 'Installed, but not currently running. You can remove the stale helper before reinstalling it.',
@@ -8767,6 +8769,8 @@ const SETTINGS_TRANSLATIONS = {
         helperStatusUnknown: 'Ukendt',
         updateHelper: 'Opdater hjælper',
         uninstallHelper: 'Afinstaller hjælper',
+        helperRemoving: 'Fjerner...',
+        helperRemoved: 'Helper fjernet',
         helperRemovedSuccess: 'Hjælperen blev fjernet.',
         helperRemovedFallback: 'Hjælperen blev fjernet via reserveoprydning, fordi den installerede hjælper ikke svarede normalt.',
         helperRemoveStaleHint: 'Installeret, men kører ikke lige nu. Du kan fjerne den gamle hjælper her, før du geninstallerer den.',
@@ -9363,6 +9367,7 @@ function setupHelperSettings() {
             }
             window._isRemovingHelper = true;
             console.log('Remove helper clicked, setting global guard flag');
+            let removalSucceeded = false;
 
             try {
                 // Check if there are active blocks
@@ -9389,10 +9394,11 @@ function setupHelperSettings() {
 
                 // Proceed with removal
                 removeHelperNowBtn.disabled = true;
-                removeHelperNowBtn.innerHTML = '<span class="btn-spinner"></span>Removing...';
+                removeHelperNowBtn.innerHTML = `<span class="btn-spinner"></span>${tSettings('helperRemoving')}`;
 
                 const result = await tauriAPI.uninstallHelper();
                 if (result.success) {
+                    logHelperRemovalFallback(result);
                     helperAvailable = false;
                     // Immediately update UI - don't wait for async check
                     const statusIndicator = document.getElementById('helper-status-indicator');
@@ -9402,9 +9408,10 @@ function setupHelperSettings() {
                         const statusText = statusIndicator.querySelector('.status-text');
                         if (statusText) statusText.textContent = tSettings('helperStatusNotInstalled');
                     }
-                    // Hide the Remove Helper Now button
+                    removeHelperNowBtn.innerHTML = `<span>${tSettings('helperRemoved')}</span>`;
+                    removalSucceeded = true;
+                    await new Promise(resolve => setTimeout(resolve, 1200));
                     removeHelperNowBtn.style.display = 'none';
-                    await message(getHelperRemovalSuccessMessage(result), { title: 'Done', kind: 'info' });
                 } else {
                     await message('Failed to remove helper: ' + (result.error || 'Unknown error'), { title: 'Error', kind: 'error' });
                 }
@@ -9414,6 +9421,9 @@ function setupHelperSettings() {
             } finally {
                 window._isRemovingHelper = false;
                 console.log('Remove helper complete, cleared global guard flag');
+                if (removalSucceeded) {
+                    return;
+                }
                 removeHelperNowBtn.disabled = false;
                 removeHelperNowBtn.innerHTML = `
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -9476,11 +9486,10 @@ function getHelperStatusDisplay(status) {
     };
 }
 
-function getHelperRemovalSuccessMessage(result) {
+function logHelperRemovalFallback(result) {
     if (result?.error) {
-        return `${tSettings('helperRemovedFallback')}\n\n${result.error}`;
+        console.warn('[helper-uninstall] Fallback cleanup used:', result.error);
     }
-    return tSettings('helperRemovedSuccess');
 }
 
 // Update helper status indicator in settings modal
@@ -10110,23 +10119,29 @@ function setupStillNotWorking() {
     const uninstallBtn = document.getElementById('snw-uninstall-btn');
     if (uninstallBtn) {
         uninstallBtn.addEventListener('click', async () => {
+            const originalHTML = uninstallBtn.innerHTML;
             try {
+                uninstallBtn.disabled = true;
+                uninstallBtn.innerHTML = `<span class="btn-spinner"></span>${tSettings('helperRemoving')}`;
                 const result = await tauriAPI.uninstallHelper();
                 if (result.success) {
+                    logHelperRemovalFallback(result);
                     helperAvailable = false;
-                    uninstallBtn.textContent = 'Helper uninstalled!';
-                    uninstallBtn.disabled = true;
+                    uninstallBtn.textContent = tSettings('helperRemoved');
                     await checkHelperStatus();
-                    await message(getHelperRemovalSuccessMessage(result), { title: 'Done', kind: 'info' });
                     setTimeout(() => {
                         uninstallBtn.disabled = false;
-                        uninstallBtn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg><span>Uninstall Helper Service</span>`;
+                        uninstallBtn.innerHTML = originalHTML;
                     }, 3000);
                 } else {
+                    uninstallBtn.disabled = false;
+                    uninstallBtn.innerHTML = originalHTML;
                     await message('Failed to remove helper: ' + (result.error || 'Unknown error'), { title: 'Error', kind: 'error' });
                 }
             } catch (e) {
                 console.error('Failed to uninstall helper:', e);
+                uninstallBtn.disabled = false;
+                uninstallBtn.innerHTML = originalHTML;
                 await message('Error removing helper: ' + e.message, { title: 'Error', kind: 'error' });
             }
         });
