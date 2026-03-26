@@ -5299,32 +5299,62 @@ function configureHelperInstallModal(status = null) {
     const titleEl = document.getElementById('helper-setup-required-title');
     const textEl = document.getElementById('helper-setup-required-text');
     const proceedBtn = document.getElementById('proceed-helper-install-btn');
-    // Show "Update" only when helper is running but outdated.
-    // When helper isn't running (e.g. after uninstall, or crash), show "Install" — we're (re)installing it.
-    const isUpdate = !!(status?.running && !status?.version_ok);
+    const mode = getHelperInstallMode(status);
 
     if (modal) {
-        modal.dataset.mode = isUpdate ? 'update' : 'install';
+        modal.dataset.mode = mode;
     }
     if (titleEl) {
-        titleEl.textContent = tSettings(isUpdate ? 'helperUpdateTitle' : 'helperSetupTitle');
+        titleEl.textContent = tSettings(getHelperInstallModeConfig(mode).titleKey);
     }
     if (textEl) {
-        textEl.textContent = tSettings(isUpdate ? 'helperUpdateText' : 'helperSetupText');
+        textEl.textContent = tSettings(getHelperInstallModeConfig(mode).textKey);
     }
     if (proceedBtn) {
-        proceedBtn.textContent = tSettings(isUpdate ? 'updateHelper' : 'proceed');
+        proceedBtn.textContent = tSettings(getHelperInstallModeConfig(mode).buttonKey);
     }
+}
+
+function getHelperInstallMode(status = null) {
+    if (status?.running && !status?.version_ok) return 'update';
+    if (status?.installed && !status?.running) return 'repair';
+    return 'install';
+}
+
+function getHelperInstallModeConfig(mode) {
+    if (mode === 'update') {
+        return {
+            titleKey: 'helperUpdateTitle',
+            textKey: 'helperUpdateText',
+            buttonKey: 'updateHelper',
+            loadingKey: 'helperUpdating',
+        };
+    }
+    if (mode === 'repair') {
+        return {
+            titleKey: 'helperRepairTitle',
+            textKey: 'helperRepairText',
+            buttonKey: 'reinstallHelper',
+            loadingKey: 'helperReinstalling',
+        };
+    }
+    return {
+        titleKey: 'helperSetupTitle',
+        textKey: 'helperSetupText',
+        buttonKey: 'proceed',
+        loadingKey: 'helperInstalling',
+    };
 }
 
 // Handle the Proceed button in the helper install modal
 async function proceedWithHelperInstall() {
     const modal = document.getElementById('helper-install-modal');
     const proceedBtn = document.getElementById('proceed-helper-install-btn');
+    const modeConfig = getHelperInstallModeConfig(modal?.dataset.mode || 'install');
 
     // Disable button while installing with spinner
     proceedBtn.disabled = true;
-    proceedBtn.innerHTML = '<span class="btn-spinner"></span>Installing...';
+    proceedBtn.innerHTML = `<span class="btn-spinner"></span>${tSettings(modeConfig.loadingKey)}`;
 
     // Try to install the helper
     const installResult = await tauriAPI.installHelper();
@@ -5340,7 +5370,7 @@ async function proceedWithHelperInstall() {
 
         if (!finalStatus.helperReady) {
             proceedBtn.disabled = false;
-            proceedBtn.textContent = tSettings(modal.dataset.mode === 'update' ? 'updateHelper' : 'proceed');
+            proceedBtn.textContent = tSettings(getHelperInstallModeConfig(modal?.dataset.mode || 'install').buttonKey);
             if (finalStatus.running && !finalStatus.version_ok) {
                 alert('The helper started, but it is still reporting an outdated version. Please remove the helper in Settings and try installing again.');
             } else {
@@ -5415,7 +5445,7 @@ async function proceedWithHelperInstall() {
 
     // Re-enable button
     proceedBtn.disabled = false;
-    proceedBtn.textContent = tSettings(modal.dataset.mode === 'update' ? 'updateHelper' : 'proceed');
+    proceedBtn.textContent = tSettings(getHelperInstallModeConfig(modal?.dataset.mode || 'install').buttonKey);
 }
 
 // Update hosts file based on active blocks
@@ -8532,10 +8562,16 @@ const SETTINGS_TRANSLATIONS = {
         pauseInstruction: 'To pause this block, type the following:',
         helperSetupTitle: 'Setup Required',
         helperSetupText: 'To block websites when the app is closed, ReDD Block needs to install a small background service. Your computer will prompt you for your password once — after that, blocks will start instantly without asking again.',
+        helperRepairTitle: 'Helper Repair Required',
+        helperRepairText: 'A helper service is already installed, but it is not running right now. ReDD Block needs to reinstall or repair it before this block can start. Your computer may prompt you for your password to complete the repair.',
         helperUpdateTitle: 'Helper Update Required',
         helperUpdateText: 'A helper service is already installed, but it needs an update before this block can start. Your computer will prompt you for your password to apply the update.',
         helperOpenSourceLink: 'open source code for ReDD Block here',
         proceed: 'Proceed',
+        reinstallHelper: 'Reinstall Helper',
+        helperInstalling: 'Installing...',
+        helperUpdating: 'Updating...',
+        helperReinstalling: 'Reinstalling...',
         startThisBlock: 'Start this block?',
         blockedWebsites: 'Blocked websites:',
         blockedApps: 'Blocked apps:',
@@ -8676,10 +8712,16 @@ const SETTINGS_TRANSLATIONS = {
         pauseInstruction: 'For at pause denne blokering, skriv følgende:',
         helperSetupTitle: 'Opsætning påkrævet',
         helperSetupText: 'For at blokere websites, når appen er lukket, skal ReDD Block installere en lille baggrundstjeneste. Din computer beder om adgangskode én gang — derefter starter blokeringer med det samme uden ny prompt.',
+        helperRepairTitle: 'Reparation af helper påkrævet',
+        helperRepairText: 'Der er allerede installeret en helper-tjeneste, men den kører ikke lige nu. ReDD Block skal geninstallere eller reparere den, før denne blokering kan starte. Din computer kan bede om adgangskode for at fuldføre reparationen.',
         helperUpdateTitle: 'Helper-opdatering påkrævet',
         helperUpdateText: 'Der er allerede installeret en helper-tjeneste, men den skal opdateres, før denne blokering kan starte. Din computer beder om adgangskode for at gennemføre opdateringen.',
         helperOpenSourceLink: 'open source-koden til ReDD Block her',
         proceed: 'Fortsæt',
+        reinstallHelper: 'Geninstaller helper',
+        helperInstalling: 'Installerer...',
+        helperUpdating: 'Opdaterer...',
+        helperReinstalling: 'Geninstallerer...',
         startThisBlock: 'Start denne blokering?',
         blockedWebsites: 'Blokerede hjemmesider:',
         blockedApps: 'Blokerede apps:',
