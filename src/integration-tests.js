@@ -15,6 +15,7 @@
     const PROFILE_CORE = 'core';
     const PROFILE_FULL = 'full';
     const TEST_PREFIX = 'inttest';
+    let testIdCounter = 0;
 
     // Access app internals (exposed by app.js for testing)
     const getInternals = () => window.__REDDBLOCK_INTERNALS__;
@@ -36,7 +37,8 @@
     }
 
     function makeId(suffix) {
-        return `${TEST_PREFIX}-${suffix}-${nowMs()}`;
+        testIdCounter += 1;
+        return `${TEST_PREFIX}-${suffix}-${nowMs()}-${testIdCounter}`;
     }
 
     function currentDayMon0() {
@@ -201,6 +203,42 @@
         }
     }
 
+    async function resetIntegrationTestState(testName) {
+        removeTestDataFromAppState();
+        await callSaveData();
+
+        const tauriAPI = getTauriAPI();
+        if (!tauriAPI) return;
+
+        const status = await tauriAPI.checkHelperStatus();
+        if (status.running && status.version_ok) {
+            const result = await callUpdateHostsFile(false);
+            assertOrThrow(result && result.success, `${testName}: reset sync failed`);
+        }
+    }
+
+    async function runIsolatedIntegrationTest(testName, fn) {
+        await resetIntegrationTestState(`${testName} setup`);
+        let testError = null;
+        let result;
+
+        try {
+            result = await fn();
+        } catch (err) {
+            testError = err;
+        }
+
+        try {
+            await resetIntegrationTestState(`${testName} cleanup`);
+        } catch (cleanupErr) {
+            if (!testError) throw cleanupErr;
+            console.warn(`${testName}: cleanup after failure also failed`, cleanupErr);
+        }
+
+        if (testError) throw testError;
+        return result;
+    }
+
     async function runCase(name, fn) {
         try {
             const result = await fn();
@@ -277,7 +315,9 @@
 
         removeTestDataFromAppState();
         await callSaveData();
-        await callUpdateHostsFile(true);
+        const cleanupResult = await callUpdateHostsFile(true);
+        assertOrThrow(cleanupResult && cleanupResult.success, 'A1: cleanup updateHostsFile failed');
+        assertOrThrow(!cleanupResult.deferred, 'A1: cleanup was deferred instead of syncing helper state');
         await assertHostsNotContain('A1', TEST_DOMAINS.a);
         return { passed: true };
     }
@@ -324,46 +364,50 @@
         const skip = await ensureHelperRunningOrSkip('A4');
         if (skip) return skip;
 
-        const bl = addTestBlocklist({ websites: [TEST_DOMAINS.future], name: 'A4' });
-        const hour = new Date().getHours();
-        addSchedule(bl.id, [{
-            startHour: (hour + 1) % 24,
-            startMinute: 0,
-            endHour: (hour + 2) % 24,
-            endMinute: 0,
-            days: [currentDayMon0()]
-        }]);
+        return runIsolatedIntegrationTest('A4', async () => {
+            const bl = addTestBlocklist({ websites: [TEST_DOMAINS.future], name: 'A4' });
+            const hour = new Date().getHours();
+            addSchedule(bl.id, [{
+                startHour: (hour + 1) % 24,
+                startMinute: 0,
+                endHour: (hour + 2) % 24,
+                endMinute: 0,
+                days: [currentDayMon0()]
+            }]);
 
-        await callSaveData();
-        const result = await callUpdateHostsFile();
-        assertOrThrow(result && result.success, 'A4: future schedule update failed');
-        await assertHostsNotContain('A4', TEST_DOMAINS.future);
-        return { passed: true };
+            await callSaveData();
+            const result = await callUpdateHostsFile();
+            assertOrThrow(result && result.success, 'A4: future schedule update failed');
+            await assertHostsNotContain('A4', TEST_DOMAINS.future);
+            return { passed: true };
+        });
     }
 
     async function testA5_pauseResumeOneOffStatePath() {
         const skip = await ensureHelperRunningOrSkip('A5');
         if (skip) return skip;
 
-        const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'A5' });
-        const block = addActiveBlock(bl.id, { durationMs: 120000 });
-        await callSaveData();
-        await callUpdateHostsFile();
+        return runIsolatedIntegrationTest('A5', async () => {
+            const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'A5' });
+            const block = addActiveBlock(bl.id, { durationMs: 120000 });
+            await callSaveData();
+            await callUpdateHostsFile();
 
-        block.isPaused = true;
-        block.pauseEndTime = nowMs() + 60000;
-        await callSaveData();
-        const pausedResult = await callUpdateHostsFile();
-        assertOrThrow(pausedResult && pausedResult.success, 'A5: paused state update failed');
-        await assertHostsNotContain('A5', TEST_DOMAINS.a);
+            block.isPaused = true;
+            block.pauseEndTime = nowMs() + 60000;
+            await callSaveData();
+            const pausedResult = await callUpdateHostsFile();
+            assertOrThrow(pausedResult && pausedResult.success, 'A5: paused state update failed');
+            await assertHostsNotContain('A5', TEST_DOMAINS.a);
 
-        delete block.isPaused;
-        delete block.pauseEndTime;
-        await callSaveData();
-        const resumedResult = await callUpdateHostsFile();
-        assertOrThrow(resumedResult && resumedResult.success, 'A5: resume state update failed');
-        await assertHostsContain('A5', TEST_DOMAINS.a);
-        return { passed: true };
+            delete block.isPaused;
+            delete block.pauseEndTime;
+            await callSaveData();
+            const resumedResult = await callUpdateHostsFile();
+            assertOrThrow(resumedResult && resumedResult.success, 'A5: resume state update failed');
+            await assertHostsContain('A5', TEST_DOMAINS.a);
+            return { passed: true };
+        });
     }
 
     async function testA6_pauseResumeOneOffEnforcementPath() {
@@ -392,117 +436,125 @@
         const skip = await ensureHelperRunningOrSkip('A7');
         if (skip) return skip;
 
-        const bl = addTestBlocklist({ websites: [TEST_DOMAINS.b], name: 'A7' });
-        const block = addActiveBlock(bl.id, { durationMs: 120000 });
-        await callSaveData();
-        await callUpdateHostsFile();
+        return runIsolatedIntegrationTest('A7', async () => {
+            const bl = addTestBlocklist({ websites: [TEST_DOMAINS.b], name: 'A7' });
+            const block = addActiveBlock(bl.id, { durationMs: 120000 });
+            await callSaveData();
+            await callUpdateHostsFile();
 
-        await setOneOffPaused(block.id, 1200);
-        await shortWait(2500);
-        const appData = getAppData();
-        const refreshed = appData.activeBlocks.find(b => b.id === block.id);
-        assertOrThrow(refreshed, 'A7: block missing after pause expiry wait');
-        assertOrThrow(!refreshed.isPaused, 'A7: one-off pause should naturally expire');
-        assertOrThrow(!refreshed.pauseEndTime, 'A7: one-off pauseEndTime should be cleared after natural expiry');
-        const result = await callUpdateHostsFile();
-        assertOrThrow(result && result.success, 'A7: post-expiry update failed');
-        await assertHostsContain('A7', TEST_DOMAINS.b);
-        return { passed: true };
+            await setOneOffPaused(block.id, 1200);
+            await shortWait(2500);
+            const appData = getAppData();
+            const refreshed = appData.activeBlocks.find(b => b.id === block.id);
+            assertOrThrow(refreshed, 'A7: block missing after pause expiry wait');
+            assertOrThrow(!refreshed.isPaused, 'A7: one-off pause should naturally expire');
+            assertOrThrow(!refreshed.pauseEndTime, 'A7: one-off pauseEndTime should be cleared after natural expiry');
+            const result = await callUpdateHostsFile();
+            assertOrThrow(result && result.success, 'A7: post-expiry update failed');
+            await assertHostsContain('A7', TEST_DOMAINS.b);
+            return { passed: true };
+        });
     }
 
     async function testA8_pauseResumeScheduleActivePath() {
         const skip = await ensureHelperRunningOrSkip('A8');
         if (skip) return skip;
 
-        const bl = addTestBlocklist({ websites: [TEST_DOMAINS.shared], apps: ['Calculator'], name: 'A8' });
-        const hour = new Date().getHours();
-        addSchedule(bl.id, [{
-            startHour: hour,
-            startMinute: 0,
-            endHour: (hour + 1) % 24,
-            endMinute: 0,
-            days: [currentDayMon0()]
-        }]);
-        await callSaveData();
-        await callUpdateHostsFile();
-        await assertHostsContain('A8', TEST_DOMAINS.shared);
+        return runIsolatedIntegrationTest('A8', async () => {
+            const bl = addTestBlocklist({ websites: [TEST_DOMAINS.shared], apps: ['Calculator'], name: 'A8' });
+            const hour = new Date().getHours();
+            addSchedule(bl.id, [{
+                startHour: hour,
+                startMinute: 0,
+                endHour: (hour + 1) % 24,
+                endMinute: 0,
+                days: [currentDayMon0()]
+            }]);
+            await callSaveData();
+            await callUpdateHostsFile();
+            await assertHostsContain('A8', TEST_DOMAINS.shared);
 
-        const pausedSchedule = await setSchedulePaused(bl.id, 45000);
-        assertOrThrow(!!pausedSchedule.isPaused, 'A8: schedule should be paused');
-        assertOrThrow(pausedSchedule.pauseEndTime > nowMs(), 'A8: schedule pause end should be future');
-        await assertHostsNotContain('A8', TEST_DOMAINS.shared);
+            const pausedSchedule = await setSchedulePaused(bl.id, 45000);
+            assertOrThrow(!!pausedSchedule.isPaused, 'A8: schedule should be paused');
+            assertOrThrow(pausedSchedule.pauseEndTime > nowMs(), 'A8: schedule pause end should be future');
+            await assertHostsNotContain('A8', TEST_DOMAINS.shared);
 
-        const resumedSchedule = await clearSchedulePause(bl.id);
-        assertOrThrow(!resumedSchedule.isPaused, 'A8: schedule should be resumed');
-        assertOrThrow(!resumedSchedule.pauseEndTime, 'A8: schedule pauseEndTime should be cleared');
-        await assertHostsContain('A8', TEST_DOMAINS.shared);
-        return { passed: true };
+            const resumedSchedule = await clearSchedulePause(bl.id);
+            assertOrThrow(!resumedSchedule.isPaused, 'A8: schedule should be resumed');
+            assertOrThrow(!resumedSchedule.pauseEndTime, 'A8: schedule pauseEndTime should be cleared');
+            await assertHostsContain('A8', TEST_DOMAINS.shared);
+            return { passed: true };
+        });
     }
 
     async function testA9_pauseNaturalExpiryScheduleSmoke() {
         const skip = await ensureHelperRunningOrSkip('A9');
         if (skip) return skip;
 
-        const bl = addTestBlocklist({ websites: [TEST_DOMAINS.future], name: 'A9' });
-        const hour = new Date().getHours();
-        addSchedule(bl.id, [{
-            startHour: hour,
-            startMinute: 0,
-            endHour: (hour + 1) % 24,
-            endMinute: 0,
-            days: [currentDayMon0()]
-        }]);
-        await callSaveData();
-        await callUpdateHostsFile();
+        return runIsolatedIntegrationTest('A9', async () => {
+            const bl = addTestBlocklist({ websites: [TEST_DOMAINS.future], name: 'A9' });
+            const hour = new Date().getHours();
+            addSchedule(bl.id, [{
+                startHour: hour,
+                startMinute: 0,
+                endHour: (hour + 1) % 24,
+                endMinute: 0,
+                days: [currentDayMon0()]
+            }]);
+            await callSaveData();
+            await callUpdateHostsFile();
 
-        await setSchedulePaused(bl.id, 1200);
-        await shortWait(2500);
-        const appData = getAppData();
-        const refreshed = (appData.schedules || []).find(s => s.blocklistId === bl.id);
-        assertOrThrow(refreshed, 'A9: schedule missing after pause expiry wait');
-        assertOrThrow(!refreshed.isPaused, 'A9: schedule pause should naturally expire');
-        assertOrThrow(!refreshed.pauseEndTime, 'A9: schedule pauseEndTime should be cleared after natural expiry');
-        const result = await callUpdateHostsFile();
-        assertOrThrow(result && result.success, 'A9: post-expiry update failed');
-        await assertHostsContain('A9', TEST_DOMAINS.future);
-        return { passed: true };
+            await setSchedulePaused(bl.id, 1200);
+            await shortWait(2500);
+            const appData = getAppData();
+            const refreshed = (appData.schedules || []).find(s => s.blocklistId === bl.id);
+            assertOrThrow(refreshed, 'A9: schedule missing after pause expiry wait');
+            assertOrThrow(!refreshed.isPaused, 'A9: schedule pause should naturally expire');
+            assertOrThrow(!refreshed.pauseEndTime, 'A9: schedule pauseEndTime should be cleared after natural expiry');
+            const result = await callUpdateHostsFile();
+            assertOrThrow(result && result.success, 'A9: post-expiry update failed');
+            await assertHostsContain('A9', TEST_DOMAINS.future);
+            return { passed: true };
+        });
     }
 
     async function testA10_pauseInactiveScheduleSuppressionPath() {
         const skip = await ensureHelperRunningOrSkip('A10');
         if (skip) return skip;
 
-        const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a, TEST_DOMAINS.future], name: 'A10' });
-        const now = new Date();
-        const startMinute = (now.getMinutes() + 1) % 60;
-        const endMinute = (startMinute + 30) % 60;
-        const startHour = startMinute < now.getMinutes() ? (now.getHours() + 1) % 24 : now.getHours();
-        const endHour = endMinute < startMinute ? (startHour + 1) % 24 : startHour;
+        return runIsolatedIntegrationTest('A10', async () => {
+            const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a, TEST_DOMAINS.future], name: 'A10' });
+            const now = new Date();
+            const startMinute = (now.getMinutes() + 1) % 60;
+            const endMinute = (startMinute + 30) % 60;
+            const startHour = startMinute < now.getMinutes() ? (now.getHours() + 1) % 24 : now.getHours();
+            const endHour = endMinute < startMinute ? (startHour + 1) % 24 : startHour;
 
-        addSchedule(bl.id, [{
-            startHour,
-            startMinute,
-            endHour,
-            endMinute,
-            days: [currentDayMon0()]
-        }]);
-        await callSaveData();
-        await callUpdateHostsFile();
-        await assertHostsNotContain('A10', TEST_DOMAINS.a);
-        await assertHostsNotContain('A10', TEST_DOMAINS.future);
+            addSchedule(bl.id, [{
+                startHour,
+                startMinute,
+                endHour,
+                endMinute,
+                days: [currentDayMon0()]
+            }]);
+            await callSaveData();
+            await callUpdateHostsFile();
+            await assertHostsNotContain('A10', TEST_DOMAINS.a);
+            await assertHostsNotContain('A10', TEST_DOMAINS.future);
 
-        const pausedSchedule = await setSchedulePaused(bl.id, 120000);
-        assertOrThrow(!!pausedSchedule.isPaused, 'A10: schedule should be paused while inactive');
-        assertOrThrow(pausedSchedule.pauseEndTime > nowMs(), 'A10: schedule pause should suppress upcoming activation window');
-        await assertHostsNotContain('A10', TEST_DOMAINS.a);
-        await assertHostsNotContain('A10', TEST_DOMAINS.future);
+            const pausedSchedule = await setSchedulePaused(bl.id, 120000);
+            assertOrThrow(!!pausedSchedule.isPaused, 'A10: schedule should be paused while inactive');
+            assertOrThrow(pausedSchedule.pauseEndTime > nowMs(), 'A10: schedule pause should suppress upcoming activation window');
+            await assertHostsNotContain('A10', TEST_DOMAINS.a);
+            await assertHostsNotContain('A10', TEST_DOMAINS.future);
 
-        const resumedSchedule = await clearSchedulePause(bl.id);
-        assertOrThrow(!resumedSchedule.isPaused, 'A10: schedule should resume from suppressed state');
-        assertOrThrow(!resumedSchedule.pauseEndTime, 'A10: resumed schedule pause end should be cleared');
-        await assertHostsNotContain('A10', TEST_DOMAINS.a);
-        await assertHostsNotContain('A10', TEST_DOMAINS.future);
-        return { passed: true };
+            const resumedSchedule = await clearSchedulePause(bl.id);
+            assertOrThrow(!resumedSchedule.isPaused, 'A10: schedule should resume from suppressed state');
+            assertOrThrow(!resumedSchedule.pauseEndTime, 'A10: resumed schedule pause end should be cleared');
+            await assertHostsNotContain('A10', TEST_DOMAINS.a);
+            await assertHostsNotContain('A10', TEST_DOMAINS.future);
+            return { passed: true };
+        });
     }
 
     // ========================================
@@ -565,6 +617,7 @@
         const skip = await ensureHelperRunningOrSkip('C1');
         if (skip) return skip;
 
+        await resetIntegrationTestState('C1');
         const tauriAPI = getTauriAPI();
         const bl1 = addTestBlocklist({ websites: [TEST_DOMAINS.a, TEST_DOMAINS.shared], name: 'C1-A' });
         const bl2 = addTestBlocklist({ websites: [TEST_DOMAINS.b, TEST_DOMAINS.shared], name: 'C1-B' });
@@ -578,9 +631,6 @@
 
         const scopedResult = await tauriAPI.clearBlockViaHelper(bl1.id);
         assertOrThrow(scopedResult && scopedResult.success, 'C1: scoped clear failed');
-
-        const syncResult = await callUpdateHostsFile();
-        assertOrThrow(syncResult && syncResult.success, 'C1: sync after scoped clear failed');
         await assertHostsNotContain('C1', TEST_DOMAINS.a);
         await assertHostsContain('C1', TEST_DOMAINS.b);
         await assertHostsContain('C1', TEST_DOMAINS.shared);
@@ -591,6 +641,7 @@
         const skip = await ensureHelperRunningOrSkip('C2');
         if (skip) return skip;
 
+        await resetIntegrationTestState('C2');
         const tauriAPI = getTauriAPI();
         const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'C2' });
         addActiveBlock(bl.id, { durationMs: 120000 });
@@ -600,8 +651,6 @@
 
         const clearAll = await tauriAPI.clearBlockViaHelper();
         assertOrThrow(clearAll && clearAll.success, 'C2: clear-all manual blocks failed');
-        const result = await callUpdateHostsFile(true);
-        assertOrThrow(result && result.success, 'C2: sync after clear-all failed');
         await assertHostsNotContain('C2', TEST_DOMAINS.a);
         return { passed: true };
     }
@@ -610,6 +659,7 @@
         const skip = await ensureHelperRunningOrSkip('C3');
         if (skip) return skip;
 
+        await resetIntegrationTestState('C3');
         const tauriAPI = getTauriAPI();
         const bl = addTestBlocklist({
             websites: [TEST_DOMAINS.b],
@@ -624,8 +674,6 @@
 
         const clearResult = await tauriAPI.clearBlockViaHelper(bl.id);
         assertOrThrow(clearResult && clearResult.success, 'C3: scoped clear after max-difficulty start failed');
-        const syncResult = await callUpdateHostsFile(true);
-        assertOrThrow(syncResult && syncResult.success, 'C3: sync after clear failed');
         await assertHostsNotContain('C3', TEST_DOMAINS.b);
         return { passed: true };
     }

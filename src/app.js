@@ -5568,13 +5568,6 @@ async function updateHostsFile(silent = false) {
         return { success: true, unchanged: true };
     }
 
-    // For silent updates (cleanup), skip if it would require password
-    if (silent && allDomains.size < lastBlockedDomains.size) {
-        // Domains are being removed - this still needs sudo unfortunately
-        // For now, we'll defer cleanup until the app is explicitly used
-        return { success: true, deferred: true };
-    }
-
     // Try to use helper daemon first (works on all platforms)
     try {
         console.log('[updateHostsFile] Checking helper status...');
@@ -5595,6 +5588,11 @@ async function updateHostsFile(silent = false) {
         }
     } catch (e) {
         console.warn('Helper not available, falling back to direct method:', e);
+    }
+
+    // For silent cleanup without the helper, defer instead of triggering an elevation prompt.
+    if (silent && allDomains.size < lastBlockedDomains.size) {
+        return { success: true, deferred: true };
     }
 
     // Fallback to direct hosts file modification (macOS)
