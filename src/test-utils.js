@@ -134,12 +134,45 @@ function createMockAppData(overrides = {}) {
  * @param {Date} nowDate - Date object for schedule checking
  * @returns {Set<string>} - Set of domains that should be blocked
  */
+function isOneOffBlockEnforced(block, now) {
+    return !!(block && block.startTime <= now && block.endTime > now && !block.isPaused);
+}
+
+function isSchedulePausedNow(schedule, now) {
+    return !!(schedule && schedule.isPaused && schedule.pauseEndTime > now);
+}
+
+function isScheduleSegmentActiveNow(schedule, nowDate) {
+    if (!schedule || !schedule.segments || schedule.segments.length === 0) return false;
+    const now = nowDate.getTime();
+    if (isSchedulePausedNow(schedule, now)) return false;
+
+    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
+    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
+
+    return schedule.segments.some(seg => {
+        const startMins = seg.startHour * 60 + seg.startMinute;
+        const endMins = seg.endHour * 60 + seg.endMinute;
+
+        if (startMins === endMins) return seg.days.includes(currentDay);
+        if (endMins > startMins) {
+            return seg.days.includes(currentDay) &&
+                currentMins >= startMins &&
+                currentMins < endMins;
+        }
+
+        const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
+        return (seg.days.includes(currentDay) && currentMins >= startMins) ||
+            (seg.days.includes(yesterdayDay) && currentMins < endMins);
+    });
+}
+
 function getBlockedDomains(appData, now, nowDate) {
     const allDomains = new Set();
 
-    // Check active one-off blocks
-    appData.activeBlocks
-        .filter(block => block.startTime <= now && block.endTime > now)
+    // Check enforced one-off blocks
+    (appData.activeBlocks || [])
+        .filter(block => isOneOffBlockEnforced(block, now))
         .forEach(block => {
             const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
             if (blocklist && blocklist.websites) {
@@ -147,40 +180,14 @@ function getBlockedDomains(appData, now, nowDate) {
             }
         });
 
-    // Check scheduled blocks
-    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1; // Convert to Mon=0 format
-    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
-
-    if (appData.schedules) {
-        appData.schedules.forEach(schedule => {
-            if (!schedule.segments) return;
-
-            const isActive = schedule.segments.some(seg => {
-                const startMins = seg.startHour * 60 + seg.startMinute;
-                const endMins = seg.endHour * 60 + seg.endMinute;
-
-                if (endMins > startMins) {
-                    // Same-day segment
-                    return seg.days.includes(currentDay) &&
-                        currentMins >= startMins &&
-                        currentMins < endMins;
-                } else {
-                    // Cross-midnight segment
-                    const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
-                    const inEveningPortion = seg.days.includes(currentDay) && currentMins >= startMins;
-                    const inMorningPortion = seg.days.includes(yesterdayDay) && currentMins < endMins;
-                    return inEveningPortion || inMorningPortion;
-                }
-            });
-
-            if (isActive) {
-                const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-                if (blocklist && blocklist.websites) {
-                    blocklist.websites.forEach(domain => allDomains.add(domain));
-                }
-            }
-        });
-    }
+    // Check enforced schedules
+    (appData.schedules || []).forEach(schedule => {
+        if (!isScheduleSegmentActiveNow(schedule, nowDate)) return;
+        const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+        if (blocklist && blocklist.websites) {
+            blocklist.websites.forEach(domain => allDomains.add(domain));
+        }
+    });
 
     return allDomains;
 }
@@ -188,40 +195,23 @@ function getBlockedDomains(appData, now, nowDate) {
 /**
  * Find the hardest challenge among blocklists (mirrors findHardestChallenge)
  */
-function getHardestChallenge(appData, now) {
-    const nowDate = new Date(now);
-    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
-    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
+function resolveHardestChallengeFromAppData(appData, now, nowDate) {
     let hardest = null;
 
-    // Check active blocks
-    for (const block of appData.activeBlocks) {
-        if (block.startTime <= now && block.endTime > now) {
-            const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
-            if (blocklist?.overrideDifficulty) {
-                hardest = hardest
-                    ? compareDifficulties(hardest, blocklist.overrideDifficulty)
-                    : blocklist.overrideDifficulty;
-            }
+    // Check enforced one-off blocks
+    for (const block of appData.activeBlocks || []) {
+        if (!isOneOffBlockEnforced(block, now)) continue;
+        const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+        if (blocklist?.overrideDifficulty) {
+            hardest = hardest
+                ? compareDifficulties(hardest, blocklist.overrideDifficulty)
+                : blocklist.overrideDifficulty;
         }
     }
 
-    // Check active schedules
+    // Check enforced schedules
     for (const schedule of appData.schedules || []) {
-        if (!schedule.segments) continue;
-        const isActive = schedule.segments.some(seg => {
-            const startMins = seg.startHour * 60 + seg.startMinute;
-            const endMins = seg.endHour * 60 + seg.endMinute;
-            if (endMins > startMins) {
-                return seg.days.includes(currentDay) &&
-                    currentMins >= startMins &&
-                    currentMins < endMins;
-            }
-            const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
-            return (seg.days.includes(currentDay) && currentMins >= startMins) ||
-                (seg.days.includes(yesterdayDay) && currentMins < endMins);
-        });
-        if (!isActive) continue;
+        if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
 
         const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
         if (blocklist?.overrideDifficulty) {
@@ -239,6 +229,10 @@ function getHardestChallenge(appData, now) {
         return { ...hardest, count: effectiveCount };
     }
     return hardest;
+}
+
+function getHardestChallenge(appData, now) {
+    return resolveHardestChallengeFromAppData(appData, now, new Date(now));
 }
 
 /**
@@ -365,98 +359,26 @@ function printTestSummary() {
 // ========================================
 
 /**
- * Check if there are any active blocks or schedules at the given time
- * Mirrors hasAnyActiveBlocks() in app.js but is pure and testable
+ * Check if there are any enforced blocks or schedules at the given time.
+ * Mirrors app.js `hasAnyActiveBlocks()`, which delegates to enforced-now semantics.
  */
 function hasAnyActiveBlocks(appData, now, nowDate) {
-    // Check one-off blocks
-    const hasActiveOneOff = appData.activeBlocks.some(block =>
-        block.startTime <= now && block.endTime > now
+    const hasActiveOneOff = (appData.activeBlocks || []).some(block =>
+        isOneOffBlockEnforced(block, now)
     );
     if (hasActiveOneOff) return true;
 
-    // Check schedules
-    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
-    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
-
-    if (appData.schedules) {
-        for (const schedule of appData.schedules) {
-            if (!schedule.segments) continue;
-            const isActive = schedule.segments.some(seg => {
-                const startMins = seg.startHour * 60 + seg.startMinute;
-                const endMins = seg.endHour * 60 + seg.endMinute;
-                if (endMins > startMins) {
-                    return seg.days.includes(currentDay) &&
-                        currentMins >= startMins &&
-                        currentMins < endMins;
-                } else {
-                    const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
-                    return (seg.days.includes(currentDay) && currentMins >= startMins) ||
-                        (seg.days.includes(yesterdayDay) && currentMins < endMins);
-                }
-            });
-            if (isActive) return true;
-        }
-    }
-
-    return false;
+    return (appData.schedules || []).some(schedule =>
+        isScheduleSegmentActiveNow(schedule, nowDate)
+    );
 }
 
 /**
- * Find the hardest challenge among all active blocks and schedules
- * Mirrors findHardestChallenge() in app.js but accepts time parameter
+ * Find the hardest challenge among all enforced blocks and schedules.
+ * Mirrors findHardestChallenge() in app.js but accepts time parameter.
  */
 function findHardestChallengeAtTime(appData, now) {
-    const nowDate = new Date(now);
-    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
-    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
-    let hardest = null;
-
-    // Check active one-off blocks
-    for (const block of appData.activeBlocks) {
-        if (block.startTime <= now && block.endTime > now) {
-            const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
-            if (blocklist?.overrideDifficulty) {
-                hardest = hardest
-                    ? compareDifficulties(hardest, blocklist.overrideDifficulty)
-                    : blocklist.overrideDifficulty;
-            }
-        }
-    }
-
-    // Check active schedules
-    for (const schedule of appData.schedules || []) {
-        if (!schedule.segments) continue;
-        const isActive = schedule.segments.some(seg => {
-            const startMins = seg.startHour * 60 + seg.startMinute;
-            const endMins = seg.endHour * 60 + seg.endMinute;
-            if (endMins > startMins) {
-                return seg.days.includes(currentDay) &&
-                    currentMins >= startMins &&
-                    currentMins < endMins;
-            }
-            const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
-            return (seg.days.includes(currentDay) && currentMins >= startMins) ||
-                (seg.days.includes(yesterdayDay) && currentMins < endMins);
-        });
-        if (!isActive) continue;
-
-        const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-        if (blocklist?.overrideDifficulty) {
-            hardest = hardest
-                ? compareDifficulties(hardest, blocklist.overrideDifficulty)
-                : blocklist.overrideDifficulty;
-        }
-    }
-
-    if (!hardest) return { type: 'random-words', count: 50 };
-
-    // Resolve effective count for maxDifficulty
-    if (hardest.maxDifficulty === true && hardest.count === undefined) {
-        const effectiveCount = hardest.type === 'gibberish' ? 5000 : 7500;
-        return { ...hardest, count: effectiveCount };
-    }
-    return hardest;
+    return resolveHardestChallengeFromAppData(appData, now, new Date(now));
 }
 
 /**

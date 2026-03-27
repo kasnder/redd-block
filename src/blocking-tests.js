@@ -6,15 +6,16 @@
  * 
  * Test Categories:
  * - T1-T9: Time-based scenarios
+ * - T9a-T9d: Pause-aware and all-day enforcement semantics
  * - T10-T13: Overlap & union scenarios
  * - T14-T17: Shared domain edge cases
  * - T18-T21: Override behavior
  * - T22-T25: App blocking (manual only - requires system interaction)
  * - T26-T32: Override All feature
  * - T38c-T38e: Max difficulty (effective count)
- * - T42-T46: Self-Block Prevention
- * - T47-T49: Protected Domain Prevention
- * - T50-T51: Blocklist duplication
+ * - T43-T47: Self-Block Prevention
+ * - T48-T50: Protected Domain Prevention
+ * - T51-T53: Blocklist duplication
  */
 
 (function () {
@@ -205,6 +206,79 @@
 
             const domains = getBlockedDomains(appData, testTime.getTime(), testTime);
             assertSetContains(domains, 'netflix.com', 'T9: Schedule crosses midnight, test at 02:00 → blocked');
+        })();
+
+        // T9a: All-day schedule (start == end) is active for that day
+        (function T9a() {
+            const blocklist = createMockBlocklist({ websites: ['all-day.com'] });
+            const segment = createMockSegment(9, 0, 9, 0, [0]); // Monday all day
+            const schedule = createMockSchedule(blocklist.id, [segment]);
+            const testTime = createMockDate(15, 30, 1); // Monday 15:30
+
+            const appData = createMockAppData({
+                blocklists: [blocklist],
+                schedules: [schedule]
+            });
+
+            const domains = getBlockedDomains(appData, testTime.getTime(), testTime);
+            assertSetContains(domains, 'all-day.com', 'T9a: All-day schedule stays enforced on its day');
+        })();
+
+        // T9b: Paused one-off block is excluded from enforcement
+        (function T9b() {
+            const blocklist = createMockBlocklist({ websites: ['paused-oneoff.com'] });
+            const now = Date.now();
+            const block = createMockBlock(blocklist.id, now - 60000, now + 60000, {
+                isPaused: true,
+                pauseEndTime: now + 60000
+            });
+
+            const appData = createMockAppData({
+                blocklists: [blocklist],
+                activeBlocks: [block]
+            });
+
+            const domains = getBlockedDomains(appData, now, new Date(now));
+            assertSetEmpty(domains, 'T9b: Paused one-off does not contribute blocked domains');
+        })();
+
+        // T9c: Paused schedule is excluded from enforcement
+        (function T9c() {
+            const blocklist = createMockBlocklist({ websites: ['paused-schedule.com'] });
+            const segment = createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6]);
+            const now = Date.now();
+            const schedule = createMockSchedule(blocklist.id, [segment], {
+                isPaused: true,
+                pauseEndTime: now + 60000
+            });
+
+            const appData = createMockAppData({
+                blocklists: [blocklist],
+                schedules: [schedule]
+            });
+
+            const domains = getBlockedDomains(appData, now, new Date(now));
+            assertSetEmpty(domains, 'T9c: Paused schedule does not contribute blocked domains');
+        })();
+
+        // T9d: Schedule paused before segment start suppresses the upcoming segment while pause remains active
+        (function T9d() {
+            const blocklist = createMockBlocklist({ websites: ['suppressed-segment.com'] });
+            const testTime = createMockDate(10, 30, 1); // Monday 10:30
+            const pauseEndTime = createMockDate(11, 0, 1).getTime(); // Pause still active during 10:00-12:00 segment
+            const segment = createMockSegment(10, 0, 12, 0, [0]); // Monday
+            const schedule = createMockSchedule(blocklist.id, [segment], {
+                isPaused: true,
+                pauseEndTime
+            });
+
+            const appData = createMockAppData({
+                blocklists: [blocklist],
+                schedules: [schedule]
+            });
+
+            const domains = getBlockedDomains(appData, testTime.getTime(), testTime);
+            assertSetEmpty(domains, 'T9d: Paused schedule suppresses the would-be active segment');
         })();
     }
 
@@ -738,6 +812,39 @@
             const result = hasAnyActiveBlocks(appData, now, new Date(now));
             assert(result === true, 'T35: Active schedule → true');
         })();
+
+        // T35a: Paused one-off does not count as enforced
+        (function T35a() {
+            const blocklist = createMockBlocklist({ websites: ['paused.com'] });
+            const now = Date.now();
+            const block = createMockBlock(blocklist.id, now - 60000, now + 60000, {
+                isPaused: true,
+                pauseEndTime: now + 60000
+            });
+            const appData = createMockAppData({
+                blocklists: [blocklist],
+                activeBlocks: [block]
+            });
+            const result = hasAnyActiveBlocks(appData, now, new Date(now));
+            assert(result === false, 'T35a: Paused one-off → false');
+        })();
+
+        // T35b: Paused schedule does not count as enforced
+        (function T35b() {
+            const blocklist = createMockBlocklist({ websites: ['paused-schedule.com'] });
+            const now = Date.now();
+            const schedule = createMockSchedule(
+                blocklist.id,
+                [createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6])],
+                { isPaused: true, pauseEndTime: now + 60000 }
+            );
+            const appData = createMockAppData({
+                blocklists: [blocklist],
+                schedules: [schedule]
+            });
+            const result = hasAnyActiveBlocks(appData, now, new Date(now));
+            assert(result === false, 'T35b: Paused schedule → false');
+        })();
     }
 
     // ========================================
@@ -862,6 +969,53 @@
             const hardest = findHardestChallengeAtTime(appData, now);
             assertEqual(hardest.type, 'random-words', 'T38e: Max difficulty block selected');
             assertEqual(hardest.count, 7500, 'T38e: Max difficulty (7500) wins over 100');
+        })();
+
+        // T38f: Paused one-off does not affect hardest challenge selection
+        (function T38f() {
+            const activeBlocklist = createMockBlocklist({
+                overrideDifficulty: { type: 'random-words', count: 80 }
+            });
+            const pausedBlocklist = createMockBlocklist({
+                overrideDifficulty: { type: 'gibberish', count: 200 }
+            });
+            const now = Date.now();
+            const appData = createMockAppData({
+                blocklists: [activeBlocklist, pausedBlocklist],
+                activeBlocks: [
+                    createMockBlock(activeBlocklist.id, now - 60000, now + 60000),
+                    createMockBlock(pausedBlocklist.id, now - 60000, now + 60000, {
+                        isPaused: true,
+                        pauseEndTime: now + 60000
+                    })
+                ]
+            });
+            const hardest = findHardestChallengeAtTime(appData, now);
+            assertEqual(hardest.type, 'random-words', 'T38f: Paused one-off ignored for hardest challenge type');
+            assertEqual(hardest.count, 80, 'T38f: Paused one-off ignored for hardest challenge count');
+        })();
+
+        // T38g: Paused schedule does not affect hardest challenge selection
+        (function T38g() {
+            const activeBlocklist = createMockBlocklist({
+                overrideDifficulty: { type: 'random-words', count: 70 }
+            });
+            const pausedBlocklist = createMockBlocklist({
+                overrideDifficulty: { type: 'gibberish', count: 250 }
+            });
+            const now = Date.now();
+            const appData = createMockAppData({
+                blocklists: [activeBlocklist, pausedBlocklist],
+                activeBlocks: [createMockBlock(activeBlocklist.id, now - 60000, now + 60000)],
+                schedules: [createMockSchedule(
+                    pausedBlocklist.id,
+                    [createMockSegment(0, 0, 23, 59, [0, 1, 2, 3, 4, 5, 6])],
+                    { isPaused: true, pauseEndTime: now + 60000 }
+                )]
+            });
+            const hardest = findHardestChallengeAtTime(appData, now);
+            assertEqual(hardest.type, 'random-words', 'T38g: Paused schedule ignored for hardest challenge type');
+            assertEqual(hardest.count, 70, 'T38g: Paused schedule ignored for hardest challenge count');
         })();
     }
 
@@ -989,8 +1143,8 @@
             }
         }
 
-        // T50: Duplicate blocklist
-        (function T50() {
+        // T51: Duplicate blocklist
+        (function T51() {
             const blocklist = createMockBlocklist({
                 name: 'DupTest',
                 websites: ['example.com'],
@@ -1005,21 +1159,21 @@
             const mockData = createMockAppData({ blocklists: [blocklist], activeBlocks: [], schedules: [] });
             withIsolatedAppData(mockData, function() {
                 internals.duplicateBlocklist(blocklist.id);
-                assertEqual(mockData.blocklists.length, 2, 'T50: Two blocklists after duplicate');
+                assertEqual(mockData.blocklists.length, 2, 'T51: Two blocklists after duplicate');
                 const dup = mockData.blocklists.find(function(bl) { return bl.id !== blocklist.id; });
-                assert(dup !== undefined, 'T50: Duplicate blocklist present');
-                assert(dup.id !== blocklist.id, 'T50: Duplicate has new id');
-                assert(dup.name === 'DupTest copy', 'T50: Name is "DupTest copy"');
-                assert(dup.overrideDifficulty && dup.overrideDifficulty.maxDifficulty === true, 'T50: maxDifficulty copied');
-                assertEqual(dup.overrideDifficulty.countBeforeMax, 40, 'T50: countBeforeMax copied');
-                assertEqual(dup.overrideDifficulty.typeBeforeMax, 'gibberish', 'T50: typeBeforeMax copied');
-                assertEqual(dup.overrideDifficulty.type, 'gibberish', 'T50: type copied');
-                assertEqual(mockData.activeBlocks.length, 0, 'T50: Duplicate is not in activeBlocks');
+                assert(dup !== undefined, 'T51: Duplicate blocklist present');
+                assert(dup.id !== blocklist.id, 'T51: Duplicate has new id');
+                assert(dup.name === 'DupTest copy', 'T51: Name is "DupTest copy"');
+                assert(dup.overrideDifficulty && dup.overrideDifficulty.maxDifficulty === true, 'T51: maxDifficulty copied');
+                assertEqual(dup.overrideDifficulty.countBeforeMax, 40, 'T51: countBeforeMax copied');
+                assertEqual(dup.overrideDifficulty.typeBeforeMax, 'gibberish', 'T51: typeBeforeMax copied');
+                assertEqual(dup.overrideDifficulty.type, 'gibberish', 'T51: type copied');
+                assertEqual(mockData.activeBlocks.length, 0, 'T51: Duplicate is not in activeBlocks');
             });
         })();
 
-        // T51: Duplicate with schedule
-        (function T51() {
+        // T52: Duplicate with schedule
+        (function T52() {
             const blocklist = createMockBlocklist({ name: 'DupSched', websites: ['a.com'] });
             const segment = createMockSegment(9, 0, 17, 0, [0, 1, 2, 3, 4]);
             const schedule = createMockSchedule(blocklist.id, [segment]);
@@ -1031,12 +1185,33 @@
             withIsolatedAppData(mockData, function() {
                 internals.duplicateBlocklist(blocklist.id);
                 const dup = mockData.blocklists.find(function(bl) { return bl.id !== blocklist.id; });
-                assert(dup !== undefined, 'T51: Duplicate blocklist present');
+                assert(dup !== undefined, 'T52: Duplicate blocklist present');
                 const dupSchedule = (mockData.schedules || []).find(function(s) { return s.blocklistId === dup.id; });
-                assert(dupSchedule !== undefined, 'T51: Schedule copied for duplicate');
-                assert(dupSchedule.id !== schedule.id, 'T51: Schedule has new id');
-                assertEqual(dupSchedule.blocklistId, dup.id, 'T51: Schedule points to duplicate blocklist');
-                assert(dupSchedule.segments && dupSchedule.segments.length === 1, 'T51: Segments copied');
+                assert(dupSchedule !== undefined, 'T52: Schedule copied for duplicate');
+                assert(dupSchedule.id !== schedule.id, 'T52: Schedule has new id');
+                assertEqual(dupSchedule.blocklistId, dup.id, 'T52: Schedule points to duplicate blocklist');
+                assert(dupSchedule.segments && dupSchedule.segments.length === 1, 'T52: Segments copied');
+            });
+        })();
+
+        // T53: Duplicate naming follows copy chain and gap-fill rules
+        (function T53() {
+            const original = createMockBlocklist({ name: 'ChainTest', websites: ['example.com'] });
+            const firstCopy = createMockBlocklist({ name: 'ChainTest copy', websites: ['example.com'] });
+            const thirdCopy = createMockBlocklist({ name: 'ChainTest copy 3', websites: ['example.com'] });
+            const mockData = createMockAppData({
+                blocklists: [original, firstCopy, thirdCopy],
+                activeBlocks: [],
+                schedules: []
+            });
+
+            withIsolatedAppData(mockData, function() {
+                internals.duplicateBlocklist(original.id);
+                const dup = mockData.blocklists.find(function(bl) {
+                    return bl.id !== original.id && bl.id !== firstCopy.id && bl.id !== thirdCopy.id;
+                });
+                assert(dup !== undefined, 'T53: Gap-fill duplicate blocklist present');
+                assertEqual(dup.name, 'ChainTest copy 2', 'T53: Duplicate naming fills the missing copy number');
             });
         })();
     }
@@ -1051,34 +1226,34 @@
 
         const { isProtectedApp } = window.__REDDBLOCK_INTERNALS__;
 
-        // T42: "ReDD Block" is protected
-        (function T42() {
-            assert(isProtectedApp('ReDD Block'), 'T42: "ReDD Block" is protected');
-        })();
-
-        // T43: "redd-block" is protected
+        // T43: "ReDD Block" is protected
         (function T43() {
-            assert(isProtectedApp('redd-block'), 'T43: "redd-block" is protected');
+            assert(isProtectedApp('ReDD Block'), 'T43: "ReDD Block" is protected');
         })();
 
-        // T44: "redd-block-helper" is protected
+        // T44: "redd-block" is protected
         (function T44() {
-            assert(isProtectedApp('redd-block-helper'), 'T44: "redd-block-helper" is protected');
+            assert(isProtectedApp('redd-block'), 'T44: "redd-block" is protected');
         })();
 
-        // T45: Case variations are protected
+        // T45: "redd-block-helper" is protected
         (function T45() {
-            assert(isProtectedApp('REDD BLOCK'), 'T45: "REDD BLOCK" (uppercase) is protected');
-            assert(isProtectedApp('Redd Block'), 'T45: "Redd Block" (title case) is protected');
-            assert(isProtectedApp('  ReDD Block  '), 'T45: Leading/trailing spaces handled');
+            assert(isProtectedApp('redd-block-helper'), 'T45: "redd-block-helper" is protected');
         })();
 
-        // T46: Normal apps are NOT protected
+        // T46: Case variations are protected
         (function T46() {
-            assert(!isProtectedApp('Safari'), 'T46: "Safari" is not protected');
-            assert(!isProtectedApp('Chrome'), 'T46: "Chrome" is not protected');
-            assert(!isProtectedApp('Slack'), 'T46: "Slack" is not protected');
-            assert(!isProtectedApp(''), 'T46: Empty string is not protected');
+            assert(isProtectedApp('REDD BLOCK'), 'T46: "REDD BLOCK" (uppercase) is protected');
+            assert(isProtectedApp('Redd Block'), 'T46: "Redd Block" (title case) is protected');
+            assert(isProtectedApp('  ReDD Block  '), 'T46: Leading/trailing spaces handled');
+        })();
+
+        // T47: Normal apps are NOT protected
+        (function T47() {
+            assert(!isProtectedApp('Safari'), 'T47: "Safari" is not protected');
+            assert(!isProtectedApp('Chrome'), 'T47: "Chrome" is not protected');
+            assert(!isProtectedApp('Slack'), 'T47: "Slack" is not protected');
+            assert(!isProtectedApp(''), 'T47: Empty string is not protected');
         })();
     }
 
@@ -1092,31 +1267,31 @@
 
         const { isProtectedDomain } = window.__REDDBLOCK_INTERNALS__;
 
-        // T47: Localhost variants are protected
-        (function T47() {
-            assert(isProtectedDomain('localhost'), 'T47: "localhost" is protected');
-            assert(isProtectedDomain('localhost.localdomain'), 'T47: "localhost.localdomain" is protected');
-            assert(isProtectedDomain('LOCALHOST'), 'T47: Case-insensitive');
-            assert(isProtectedDomain('127.0.0.1'), 'T47: "127.0.0.1" is protected');
-            assert(isProtectedDomain('0.0.0.0'), 'T47: "0.0.0.0" is protected');
-            assert(isProtectedDomain('::1'), 'T47: "::1" is protected');
-        })();
-
-        // T48: App-related domains are protected
+        // T48: Localhost variants are protected
         (function T48() {
-            assert(isProtectedDomain('broadcasthost'), 'T48: "broadcasthost" is protected');
-            assert(isProtectedDomain('local'), 'T48: "local" is protected');
-            assert(isProtectedDomain('reddfocus.org'), 'T48: "reddfocus.org" is protected');
-            assert(isProtectedDomain('www.reddfocus.org'), 'T48: "www.reddfocus.org" is protected');
-            assert(isProtectedDomain('ulyngs.github.io'), 'T48: "ulyngs.github.io" is protected');
+            assert(isProtectedDomain('localhost'), 'T48: "localhost" is protected');
+            assert(isProtectedDomain('localhost.localdomain'), 'T48: "localhost.localdomain" is protected');
+            assert(isProtectedDomain('LOCALHOST'), 'T48: Case-insensitive');
+            assert(isProtectedDomain('127.0.0.1'), 'T48: "127.0.0.1" is protected');
+            assert(isProtectedDomain('0.0.0.0'), 'T48: "0.0.0.0" is protected');
+            assert(isProtectedDomain('::1'), 'T48: "::1" is protected');
         })();
 
-        // T49: Normal domains are NOT protected
+        // T49: App-related domains are protected
         (function T49() {
-            assert(!isProtectedDomain('reddit.com'), 'T49: "reddit.com" is not protected');
-            assert(!isProtectedDomain('facebook.com'), 'T49: "facebook.com" is not protected');
-            assert(!isProtectedDomain('youtube.com'), 'T49: "youtube.com" is not protected');
-            assert(!isProtectedDomain(''), 'T49: Empty string is not protected');
+            assert(isProtectedDomain('broadcasthost'), 'T49: "broadcasthost" is protected');
+            assert(isProtectedDomain('local'), 'T49: "local" is protected');
+            assert(isProtectedDomain('reddfocus.org'), 'T49: "reddfocus.org" is protected');
+            assert(isProtectedDomain('www.reddfocus.org'), 'T49: "www.reddfocus.org" is protected');
+            assert(isProtectedDomain('ulyngs.github.io'), 'T49: "ulyngs.github.io" is protected');
+        })();
+
+        // T50: Normal domains are NOT protected
+        (function T50() {
+            assert(!isProtectedDomain('reddit.com'), 'T50: "reddit.com" is not protected');
+            assert(!isProtectedDomain('facebook.com'), 'T50: "facebook.com" is not protected');
+            assert(!isProtectedDomain('youtube.com'), 'T50: "youtube.com" is not protected');
+            assert(!isProtectedDomain(''), 'T50: Empty string is not protected');
         })();
     }
 
