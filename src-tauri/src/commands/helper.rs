@@ -34,7 +34,7 @@ pub struct HelperStatus {
 
 /// Expected helper version - update this when helper-daemon changes
 /// This is separate from the app version to avoid unnecessary reinstalls
-const EXPECTED_HELPER_VERSION: &str = "0.9.2";
+const EXPECTED_HELPER_VERSION: &str = "0.9.6";
 
 fn is_helper_version_ok(version: Option<&str>) -> bool {
     match version {
