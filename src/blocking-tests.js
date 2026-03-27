@@ -1172,10 +1172,12 @@
             });
         })();
 
-        // T52: Duplicate with schedule
+        // T52: Duplicate with inactive schedule copies the schedule
         (function T52() {
             const blocklist = createMockBlocklist({ name: 'DupSched', websites: ['a.com'] });
-            const segment = createMockSegment(9, 0, 17, 0, [0, 1, 2, 3, 4]);
+            const now = new Date();
+            const inactiveDay = (now.getDay() === 0 ? 6 : now.getDay() - 1) === 0 ? 1 : 0; // Pick a different Mon=0 day
+            const segment = createMockSegment(9, 0, 17, 0, [inactiveDay]);
             const schedule = createMockSchedule(blocklist.id, [segment]);
             const mockData = createMockAppData({
                 blocklists: [blocklist],
@@ -1186,16 +1188,43 @@
                 internals.duplicateBlocklist(blocklist.id);
                 const dup = mockData.blocklists.find(function(bl) { return bl.id !== blocklist.id; });
                 assert(dup !== undefined, 'T52: Duplicate blocklist present');
+                if (!dup) return;
                 const dupSchedule = (mockData.schedules || []).find(function(s) { return s.blocklistId === dup.id; });
                 assert(dupSchedule !== undefined, 'T52: Schedule copied for duplicate');
+                if (!dupSchedule) return;
                 assert(dupSchedule.id !== schedule.id, 'T52: Schedule has new id');
                 assertEqual(dupSchedule.blocklistId, dup.id, 'T52: Schedule points to duplicate blocklist');
                 assert(dupSchedule.segments && dupSchedule.segments.length === 1, 'T52: Segments copied');
             });
         })();
 
-        // T53: Duplicate naming follows copy chain and gap-fill rules
+        // T53: Duplicate with active schedule does not copy the schedule
         (function T53() {
+            const blocklist = createMockBlocklist({ name: 'DupSchedActive', websites: ['active.com'] });
+            const now = new Date();
+            const currentDayMon0 = now.getDay() === 0 ? 6 : now.getDay() - 1;
+            const startHour = now.getHours();
+            const endHour = (startHour + 1) % 24;
+            const segment = createMockSegment(startHour, 0, endHour, 0, [currentDayMon0]);
+            const schedule = createMockSchedule(blocklist.id, [segment]);
+            const mockData = createMockAppData({
+                blocklists: [blocklist],
+                schedules: [schedule],
+                activeBlocks: []
+            });
+
+            withIsolatedAppData(mockData, function() {
+                internals.duplicateBlocklist(blocklist.id);
+                const dup = mockData.blocklists.find(function(bl) { return bl.id !== blocklist.id; });
+                assert(dup !== undefined, 'T53: Duplicate blocklist present');
+                if (!dup) return;
+                const dupSchedule = (mockData.schedules || []).find(function(s) { return s.blocklistId === dup.id; });
+                assert(dupSchedule === undefined, 'T53: Active schedule is not copied to the duplicate');
+            });
+        })();
+
+        // T54: Duplicate naming follows copy chain and gap-fill rules
+        (function T54() {
             const original = createMockBlocklist({ name: 'ChainTest', websites: ['example.com'] });
             const firstCopy = createMockBlocklist({ name: 'ChainTest copy', websites: ['example.com'] });
             const thirdCopy = createMockBlocklist({ name: 'ChainTest copy 3', websites: ['example.com'] });
@@ -1210,8 +1239,9 @@
                 const dup = mockData.blocklists.find(function(bl) {
                     return bl.id !== original.id && bl.id !== firstCopy.id && bl.id !== thirdCopy.id;
                 });
-                assert(dup !== undefined, 'T53: Gap-fill duplicate blocklist present');
-                assertEqual(dup.name, 'ChainTest copy 2', 'T53: Duplicate naming fills the missing copy number');
+                assert(dup !== undefined, 'T54: Gap-fill duplicate blocklist present');
+                if (!dup) return;
+                assertEqual(dup.name, 'ChainTest copy 2', 'T54: Duplicate naming fills the missing copy number');
             });
         })();
     }
