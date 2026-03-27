@@ -590,6 +590,53 @@ async function refreshDesktopHelperStatus({ syncPreference = true } = {}) {
         };
     }
 }
+const HELPER_UI_REFRESH_MS = 3000;
+let helperUiRefreshTimer = null;
+let helperUiRefreshInFlight = false;
+
+function isModalVisible(id) {
+    const modal = document.getElementById(id);
+    return !!(modal && !modal.classList.contains('hidden'));
+}
+
+function stopHelperUiRefreshLoop() {
+    if (helperUiRefreshTimer != null) {
+        clearInterval(helperUiRefreshTimer);
+        helperUiRefreshTimer = null;
+    }
+}
+
+async function refreshOpenHelperUi() {
+    if (helperUiRefreshInFlight || isIOS) return;
+
+    const settingsVisible = isModalVisible('settings-modal');
+    const diagnosticsVisible = isModalVisible('diagnostics-modal');
+    if (!settingsVisible && !diagnosticsVisible) {
+        stopHelperUiRefreshLoop();
+        return;
+    }
+
+    helperUiRefreshInFlight = true;
+    try {
+        if (settingsVisible) {
+            await updateHelperStatusIndicator();
+            updateCleanHostsBtnState();
+        }
+        if (diagnosticsVisible) {
+            await refreshDiagnosticsModalContent();
+        }
+    } finally {
+        helperUiRefreshInFlight = false;
+    }
+}
+
+function startHelperUiRefreshLoop() {
+    if (isIOS || helperUiRefreshTimer != null) return;
+    helperUiRefreshTimer = setInterval(() => {
+        void refreshOpenHelperUi();
+    }, HELPER_UI_REFRESH_MS);
+}
+
 let scheduleRepeatType = 'forever'; // 'forever', 'date', or 'no'
 let scheduleRepeatDate = null; // Date object when repeatType is 'date'
 let activeScheduleSegmentCount = 0; // Number of segments locked in the active schedule (new segments can be added)
@@ -2274,6 +2321,7 @@ function setupOverrideModalListeners() {
             // Refresh the blocklist selection UI to update button and controls
             const blocklistSelect = document.getElementById('blocklist-select');
             handleBlocklistSelect({ target: blocklistSelect });
+            await refreshOpenHelperUi();
 
             closeOverrideModal();
         } else {
@@ -8609,8 +8657,9 @@ const SETTINGS_TRANSLATIONS = {
         keepBlocking: 'Keep blocking running if app is uninstalled',
         helperService: 'Helper service',
         helperStatusChecking: 'Checking...',
-        helperStatusRunning: 'Running',
-        helperStatusInstalledNotRunning: 'Installed, not running',
+        helperStatusActive: 'Active',
+        helperStatusIdle: 'Idle',
+        helperStatusInstalledNotReachable: 'Installed, not reachable',
         helperStatusUpdateAvailable: 'Update available',
         helperStatusNotInstalled: 'Not installed',
         helperStatusUnknown: 'Unknown',
@@ -8760,8 +8809,9 @@ const SETTINGS_TRANSLATIONS = {
         keepBlocking: 'Hold blokering aktiv, hvis appen afinstalleres',
         helperService: 'Hjælper',
         helperStatusChecking: 'Tjekker...',
-        helperStatusRunning: 'Kører',
-        helperStatusInstalledNotRunning: 'Installeret, men kører ikke',
+        helperStatusActive: 'Aktiv',
+        helperStatusIdle: 'Inaktiv',
+        helperStatusInstalledNotReachable: 'Installeret, men ikke tilgængelig',
         helperStatusUpdateAvailable: 'Opdatering tilgængelig',
         helperStatusNotInstalled: 'Ikke installeret',
         helperStatusUnknown: 'Ukendt',
@@ -8978,16 +9028,17 @@ function applySettingsLanguage() {
         const raw = (helperStatusText.textContent || '').trim();
         const statusMap = {
             'Checking...': tSettings('helperStatusChecking'),
-            'Running': tSettings('helperStatusRunning'),
-            'Installed, not running': tSettings('helperStatusInstalledNotRunning'),
+            'Active': tSettings('helperStatusActive'),
+            'Idle': tSettings('helperStatusIdle'),
+            'Installed, not reachable': tSettings('helperStatusInstalledNotReachable'),
             'Update available': tSettings('helperStatusUpdateAvailable'),
             'Not installed': tSettings('helperStatusNotInstalled'),
             'Unknown': tSettings('helperStatusUnknown'),
             'Tjekker...': tSettings('helperStatusChecking'),
-            'Korer': tSettings('helperStatusRunning'),
-            'Kører': tSettings('helperStatusRunning'),
-            'Installeret, men korer ikke': tSettings('helperStatusInstalledNotRunning'),
-            'Installeret, men kører ikke': tSettings('helperStatusInstalledNotRunning'),
+            'Aktiv': tSettings('helperStatusActive'),
+            'Inaktiv': tSettings('helperStatusIdle'),
+            'Installeret, men ikke tilgaengelig': tSettings('helperStatusInstalledNotReachable'),
+            'Installeret, men ikke tilgængelig': tSettings('helperStatusInstalledNotReachable'),
             'Opdatering tilgaengelig': tSettings('helperStatusUpdateAvailable'),
             'Opdatering tilgængelig': tSettings('helperStatusUpdateAvailable'),
             'Ikke installeret': tSettings('helperStatusNotInstalled'),
@@ -9078,6 +9129,7 @@ function setupTheme() {
     if (closeSettingsBtn && settingsModal) {
         closeSettingsBtn.addEventListener('click', () => {
             settingsModal.classList.add('hidden');
+            if (!isModalVisible('diagnostics-modal')) stopHelperUiRefreshLoop();
         });
     }
 
@@ -9086,6 +9138,7 @@ function setupTheme() {
         settingsModal.addEventListener('click', (e) => {
             if (e.target === settingsModal) {
                 settingsModal.classList.add('hidden');
+                if (!isModalVisible('diagnostics-modal')) stopHelperUiRefreshLoop();
             }
         });
     }
@@ -9314,6 +9367,7 @@ function setupHelperSettings() {
         settingsBtn.addEventListener('click', () => {
             updateHelperStatusIndicator();
             updateCleanHostsBtnState();
+            startHelperUiRefreshLoop();
         });
     }
 
@@ -9440,26 +9494,29 @@ function getHelperStatusDisplay(status) {
     const isRunning = !!status.running;
     const needsUpdate = isRunning && !status.version_ok;
     const installedButStopped = !!(status.installed && !isRunning);
+    const enforcingNow = isRunning && status.version_ok && isDesktopBlockingEnforcedNow();
 
     if (isRunning && status.version_ok) {
         return {
             helperReady: true,
             indicatorClass: 'running',
-            statusKey: 'helperStatusRunning',
+            statusKey: enforcingNow ? 'helperStatusActive' : 'helperStatusIdle',
             showUpdate: false,
             showRemove: true,
             removeTitle: '',
+            reachable: true,
         };
     }
 
     if (needsUpdate) {
         return {
             helperReady: false,
-            indicatorClass: 'stopped',
+            indicatorClass: 'running',
             statusKey: 'helperStatusUpdateAvailable',
             showUpdate: true,
             showRemove: true,
             removeTitle: '',
+            reachable: true,
         };
     }
 
@@ -9467,10 +9524,11 @@ function getHelperStatusDisplay(status) {
         return {
             helperReady: false,
             indicatorClass: 'stopped',
-            statusKey: 'helperStatusInstalledNotRunning',
+            statusKey: 'helperStatusInstalledNotReachable',
             showUpdate: false,
             showRemove: true,
             removeTitle: tSettings('helperRemoveStaleHint'),
+            reachable: false,
         };
     }
 
@@ -9481,6 +9539,7 @@ function getHelperStatusDisplay(status) {
         showUpdate: false,
         showRemove: false,
         removeTitle: '',
+        reachable: false,
     };
 }
 
@@ -9488,6 +9547,11 @@ function logHelperRemovalFallback(result) {
     if (result?.error) {
         console.warn('[helper-uninstall] Fallback cleanup used:', result.error);
     }
+}
+
+function isDesktopBlockingEnforcedNow() {
+    if (isIOS) return false;
+    return hasAnyEnforcedBlocks();
 }
 
 // Update helper status indicator in settings modal
@@ -9622,6 +9686,7 @@ function buildDiagnosticsReport(diag) {
     const installLogPath = getDiagValue(diag, 'install_log_path', 'installLogPath');
     const helperDisplay = getHelperStatusDisplay({ installed, running, version_ok: versionOk });
     const helperStatusLabel = tSettings(helperDisplay.statusKey);
+    const reachable = !!running;
 
     return {
         osName,
@@ -9629,6 +9694,7 @@ function buildDiagnosticsReport(diag) {
         appVersion,
         installed,
         running,
+        reachable,
         version,
         versionOk,
         expectedVersion,
@@ -9657,6 +9723,7 @@ function formatDiagnosticsText(diag) {
         '=== Helper Daemon ===',
         `Status: ${report.helperStatusLabel}`,
         `Installed: ${report.installed ? 'Yes' : 'No'}`,
+        `Reachable: ${report.reachable ? 'Yes' : 'No'}`,
         `Running: ${report.running ? 'Yes' : 'No'}`,
         `Version OK: ${report.versionOk ? 'Yes' : 'No'}`,
         `Version: ${report.version}`,
@@ -9682,14 +9749,32 @@ function formatDiagnosticsText(diag) {
     ].filter(line => line !== undefined).join('\n');
 }
 
-// Diagnostics modal
-async function openDiagnosticsModal() {
+function captureDiagnosticsScrollState(content) {
+    if (!content) return null;
+    return {
+        contentScrollTop: content.scrollTop,
+        preScrollTops: Array.from(content.querySelectorAll('.diagnostics-pre')).map(el => el.scrollTop),
+    };
+}
+
+function restoreDiagnosticsScrollState(content, scrollState) {
+    if (!content || !scrollState) return;
+    content.scrollTop = scrollState.contentScrollTop || 0;
+    const preEls = Array.from(content.querySelectorAll('.diagnostics-pre'));
+    preEls.forEach((el, idx) => {
+        el.scrollTop = scrollState.preScrollTops?.[idx] || 0;
+    });
+}
+
+async function refreshDiagnosticsModalContent({ showLoading = false } = {}) {
     const modal = document.getElementById('diagnostics-modal');
     const content = document.getElementById('diagnostics-content');
     if (!modal || !content) return;
 
-    content.innerHTML = '<div class="diagnostics-loading">Loading diagnostics...</div>';
-    modal.classList.remove('hidden');
+    const scrollState = showLoading ? null : captureDiagnosticsScrollState(content);
+    if (showLoading) {
+        content.innerHTML = '<div class="diagnostics-loading">Loading diagnostics...</div>';
+    }
 
     let diag = null;
     try {
@@ -9703,7 +9788,8 @@ async function openDiagnosticsModal() {
         html += '<div style="display: flex; gap: 16px; margin-bottom: 8px;">';
         html += '<div class="diagnostics-section" style="flex: 1; margin-bottom: 0;">';
         html += '<div class="diagnostics-section-title">Helper Daemon</div>';
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Status:</span> <span class="diagnostics-value ${report.helperDisplay.helperReady ? 'diag-ok' : 'diag-error'}">${escapeHtml(report.helperStatusLabel)}</span></div>`;
+        html += `<div class="diagnostics-field"><span class="diagnostics-label">Reachable:</span> <span class="diagnostics-value ${report.reachable ? 'diag-ok' : 'diag-error'}">${report.reachable ? 'Yes' : 'No'}</span></div>`;
+        html += `<div class="diagnostics-field"><span class="diagnostics-label">Status:</span> <span class="diagnostics-value ${report.reachable ? 'diag-ok' : 'diag-error'}">${escapeHtml(report.helperStatusLabel)}</span></div>`;
         html += `<div class="diagnostics-field"><span class="diagnostics-label">Version OK:</span> <span class="diagnostics-value ${report.versionOk ? 'diag-ok' : 'diag-error'}">${report.versionOk ? 'Yes' : 'No'}</span></div>`;
         html += `<div class="diagnostics-field"><span class="diagnostics-label">Version:</span> <span class="diagnostics-value">${escapeHtml(report.version)}</span></div>`;
         html += `<div class="diagnostics-field"><span class="diagnostics-label">Expected:</span> <span class="diagnostics-value">${escapeHtml(report.expectedVersion)}</span></div>`;
@@ -9743,6 +9829,7 @@ async function openDiagnosticsModal() {
         }
 
         content.innerHTML = html;
+        restoreDiagnosticsScrollState(content, scrollState);
     } catch (e) {
         content.innerHTML = `<div class="diagnostics-error">Failed to load diagnostics: ${e.message || e}</div>`;
     }
@@ -9763,16 +9850,33 @@ async function openDiagnosticsModal() {
             });
         };
     }
+}
+
+// Diagnostics modal
+async function openDiagnosticsModal() {
+    const modal = document.getElementById('diagnostics-modal');
+    const content = document.getElementById('diagnostics-content');
+    if (!modal || !content) return;
+
+    modal.classList.remove('hidden');
+    await refreshDiagnosticsModalContent({ showLoading: true });
+    startHelperUiRefreshLoop();
 
     // Close button
     const closeBtn = document.getElementById('close-diagnostics-btn');
     if (closeBtn) {
-        closeBtn.onclick = () => modal.classList.add('hidden');
+        closeBtn.onclick = () => {
+            modal.classList.add('hidden');
+            if (!isModalVisible('settings-modal')) stopHelperUiRefreshLoop();
+        };
     }
 
     // Close on backdrop click (outside the modal content)
     modal.onclick = (e) => {
-        if (e.target === modal) modal.classList.add('hidden');
+        if (e.target === modal) {
+            modal.classList.add('hidden');
+            if (!isModalVisible('settings-modal')) stopHelperUiRefreshLoop();
+        }
     };
 }
 
