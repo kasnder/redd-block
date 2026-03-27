@@ -52,6 +52,35 @@
         if (!condition) throw new Error(message);
     }
 
+    function getDiagField(diag, camelKey, snakeKey) {
+        return diag?.[camelKey] ?? diag?.[snakeKey];
+    }
+
+    async function getDiagnosticsOrThrow(testName) {
+        const tauriAPI = getTauriAPI();
+        assertOrThrow(tauriAPI && typeof tauriAPI.getHelperDiagnostics === 'function', `${testName}: getHelperDiagnostics unavailable`);
+        const diag = await tauriAPI.getHelperDiagnostics();
+        assertOrThrow(diag && diag.success, `${testName}: diagnostics command failed`);
+        return diag;
+    }
+
+    async function getHostsSnapshotOrThrow(testName) {
+        const diag = await getDiagnosticsOrThrow(testName);
+        const hostsFile = getDiagField(diag, 'hostsFile', 'hosts_file');
+        assertOrThrow(typeof hostsFile === 'string', `${testName}: hosts file payload unavailable`);
+        return hostsFile;
+    }
+
+    async function assertHostsContain(testName, domain) {
+        const hostsFile = await getHostsSnapshotOrThrow(testName);
+        assertOrThrow(hostsFile.includes(domain), `${testName}: hosts file missing ${domain}`);
+    }
+
+    async function assertHostsNotContain(testName, domain) {
+        const hostsFile = await getHostsSnapshotOrThrow(testName);
+        assertOrThrow(!hostsFile.includes(domain), `${testName}: hosts file still contains ${domain}`);
+    }
+
     async function ensureHelperRunningOrSkip(testName) {
         const tauriAPI = getTauriAPI();
         if (!tauriAPI) {
@@ -244,10 +273,12 @@
         await callSaveData();
         const result = await callUpdateHostsFile();
         assertOrThrow(result && result.success, 'A1: updateHostsFile failed');
+        await assertHostsContain('A1', TEST_DOMAINS.a);
 
         removeTestDataFromAppState();
         await callSaveData();
         await callUpdateHostsFile(true);
+        await assertHostsNotContain('A1', TEST_DOMAINS.a);
         return { passed: true };
     }
 
@@ -285,6 +316,7 @@
         await callSaveData();
         const result = await callUpdateHostsFile();
         assertOrThrow(result && result.success, 'A3: schedule activation path failed');
+        await assertHostsContain('A3', TEST_DOMAINS.shared);
         return { passed: true };
     }
 
@@ -305,6 +337,7 @@
         await callSaveData();
         const result = await callUpdateHostsFile();
         assertOrThrow(result && result.success, 'A4: future schedule update failed');
+        await assertHostsNotContain('A4', TEST_DOMAINS.future);
         return { passed: true };
     }
 
@@ -322,12 +355,14 @@
         await callSaveData();
         const pausedResult = await callUpdateHostsFile();
         assertOrThrow(pausedResult && pausedResult.success, 'A5: paused state update failed');
+        await assertHostsNotContain('A5', TEST_DOMAINS.a);
 
         delete block.isPaused;
         delete block.pauseEndTime;
         await callSaveData();
         const resumedResult = await callUpdateHostsFile();
         assertOrThrow(resumedResult && resumedResult.success, 'A5: resume state update failed');
+        await assertHostsContain('A5', TEST_DOMAINS.a);
         return { passed: true };
     }
 
@@ -339,14 +374,17 @@
         const block = addActiveBlock(bl.id, { durationMs: 120000 });
         await callSaveData();
         await callUpdateHostsFile();
+        await assertHostsContain('A6', TEST_DOMAINS.a);
 
         await setOneOffPaused(block.id, 45000);
         assertOrThrow(!!block.isPaused, 'A6: block should be paused');
         assertOrThrow(block.pauseEndTime > nowMs(), 'A6: pause end time should be future');
+        await assertHostsNotContain('A6', TEST_DOMAINS.a);
 
         await clearOneOffPause(block.id);
         assertOrThrow(!block.isPaused, 'A6: block should be resumed');
         assertOrThrow(!block.pauseEndTime, 'A6: pause end time should be cleared');
+        await assertHostsContain('A6', TEST_DOMAINS.a);
         return { passed: true };
     }
 
@@ -368,6 +406,7 @@
         assertOrThrow(!refreshed.pauseEndTime, 'A7: one-off pauseEndTime should be cleared after natural expiry');
         const result = await callUpdateHostsFile();
         assertOrThrow(result && result.success, 'A7: post-expiry update failed');
+        await assertHostsContain('A7', TEST_DOMAINS.b);
         return { passed: true };
     }
 
@@ -386,14 +425,17 @@
         }]);
         await callSaveData();
         await callUpdateHostsFile();
+        await assertHostsContain('A8', TEST_DOMAINS.shared);
 
         const pausedSchedule = await setSchedulePaused(bl.id, 45000);
         assertOrThrow(!!pausedSchedule.isPaused, 'A8: schedule should be paused');
         assertOrThrow(pausedSchedule.pauseEndTime > nowMs(), 'A8: schedule pause end should be future');
+        await assertHostsNotContain('A8', TEST_DOMAINS.shared);
 
         const resumedSchedule = await clearSchedulePause(bl.id);
         assertOrThrow(!resumedSchedule.isPaused, 'A8: schedule should be resumed');
         assertOrThrow(!resumedSchedule.pauseEndTime, 'A8: schedule pauseEndTime should be cleared');
+        await assertHostsContain('A8', TEST_DOMAINS.shared);
         return { passed: true };
     }
 
@@ -422,6 +464,7 @@
         assertOrThrow(!refreshed.pauseEndTime, 'A9: schedule pauseEndTime should be cleared after natural expiry');
         const result = await callUpdateHostsFile();
         assertOrThrow(result && result.success, 'A9: post-expiry update failed');
+        await assertHostsContain('A9', TEST_DOMAINS.future);
         return { passed: true };
     }
 
@@ -445,14 +488,20 @@
         }]);
         await callSaveData();
         await callUpdateHostsFile();
+        await assertHostsNotContain('A10', TEST_DOMAINS.a);
+        await assertHostsNotContain('A10', TEST_DOMAINS.future);
 
         const pausedSchedule = await setSchedulePaused(bl.id, 120000);
         assertOrThrow(!!pausedSchedule.isPaused, 'A10: schedule should be paused while inactive');
         assertOrThrow(pausedSchedule.pauseEndTime > nowMs(), 'A10: schedule pause should suppress upcoming activation window');
+        await assertHostsNotContain('A10', TEST_DOMAINS.a);
+        await assertHostsNotContain('A10', TEST_DOMAINS.future);
 
         const resumedSchedule = await clearSchedulePause(bl.id);
         assertOrThrow(!resumedSchedule.isPaused, 'A10: schedule should resume from suppressed state');
         assertOrThrow(!resumedSchedule.pauseEndTime, 'A10: resumed schedule pause end should be cleared');
+        await assertHostsNotContain('A10', TEST_DOMAINS.a);
+        await assertHostsNotContain('A10', TEST_DOMAINS.future);
         return { passed: true };
     }
 
@@ -472,6 +521,9 @@
 
         const result = await callUpdateHostsFile();
         assertOrThrow(result && result.success, 'B1: overlap update failed');
+        await assertHostsContain('B1', TEST_DOMAINS.a);
+        await assertHostsContain('B1', TEST_DOMAINS.b);
+        await assertHostsContain('B1', TEST_DOMAINS.shared);
         return { passed: true };
     }
 
@@ -492,6 +544,16 @@
         await callSaveData();
         const result = await callUpdateHostsFile();
         assertOrThrow(result && result.success, 'B2: one-off + schedule merge failed');
+        await assertHostsContain('B2', TEST_DOMAINS.a);
+        await assertHostsContain('B2', TEST_DOMAINS.shared);
+
+        const tauriAPI = getTauriAPI();
+        const clearResult = await tauriAPI.clearBlockViaHelper(bl.id);
+        assertOrThrow(clearResult && clearResult.success, 'B2: clear one-off scope failed');
+        const syncResult = await callUpdateHostsFile();
+        assertOrThrow(syncResult && syncResult.success, 'B2: sync after one-off clear failed');
+        await assertHostsContain('B2', TEST_DOMAINS.a);
+        await assertHostsContain('B2', TEST_DOMAINS.shared);
         return { passed: true };
     }
 
@@ -510,12 +572,18 @@
         addActiveBlock(bl2.id, { durationMs: 120000 });
         await callSaveData();
         await callUpdateHostsFile();
+        await assertHostsContain('C1', TEST_DOMAINS.a);
+        await assertHostsContain('C1', TEST_DOMAINS.b);
+        await assertHostsContain('C1', TEST_DOMAINS.shared);
 
         const scopedResult = await tauriAPI.clearBlockViaHelper(bl1.id);
         assertOrThrow(scopedResult && scopedResult.success, 'C1: scoped clear failed');
 
         const syncResult = await callUpdateHostsFile();
         assertOrThrow(syncResult && syncResult.success, 'C1: sync after scoped clear failed');
+        await assertHostsNotContain('C1', TEST_DOMAINS.a);
+        await assertHostsContain('C1', TEST_DOMAINS.b);
+        await assertHostsContain('C1', TEST_DOMAINS.shared);
         return { passed: true };
     }
 
@@ -528,11 +596,13 @@
         addActiveBlock(bl.id, { durationMs: 120000 });
         await callSaveData();
         await callUpdateHostsFile();
+        await assertHostsContain('C2', TEST_DOMAINS.a);
 
         const clearAll = await tauriAPI.clearBlockViaHelper();
         assertOrThrow(clearAll && clearAll.success, 'C2: clear-all manual blocks failed');
         const result = await callUpdateHostsFile(true);
         assertOrThrow(result && result.success, 'C2: sync after clear-all failed');
+        await assertHostsNotContain('C2', TEST_DOMAINS.a);
         return { passed: true };
     }
 
@@ -550,11 +620,13 @@
         await callSaveData();
         const startResult = await callUpdateHostsFile();
         assertOrThrow(startResult && startResult.success, 'C3: start block with max difficulty failed');
+        await assertHostsContain('C3', TEST_DOMAINS.b);
 
         const clearResult = await tauriAPI.clearBlockViaHelper(bl.id);
         assertOrThrow(clearResult && clearResult.success, 'C3: scoped clear after max-difficulty start failed');
         const syncResult = await callUpdateHostsFile(true);
         assertOrThrow(syncResult && syncResult.success, 'C3: sync after clear failed');
+        await assertHostsNotContain('C3', TEST_DOMAINS.b);
         return { passed: true };
     }
 
@@ -624,6 +696,7 @@
 
         const cleanResult = await tauriAPI.cleanHostsFile();
         assertOrThrow(cleanResult && cleanResult.success, 'E1: clean-hosts command failed');
+        await assertHostsNotContain('E1', TEST_DOMAINS.a);
         return { passed: true };
     }
 
@@ -644,6 +717,11 @@
         const statePath = diag.helperStatePath ?? diag.helper_state_path;
         const hostsFile = diag.hostsFile ?? diag.hosts_file;
         const stateFile = diag.helperStateFile ?? diag.helper_state_file;
+        const helperLogPath = diag.helperLogPath ?? diag.helper_log_path;
+        const helperLogTail = diag.helperLogTail ?? diag.helper_log_tail;
+        const installLogPath = diag.installLogPath ?? diag.install_log_path;
+        const installLogTail = diag.installLogTail ?? diag.install_log_tail;
+        const osName = diag.osName ?? diag.os_name;
 
         assertOrThrow(diagInstalled === status.installed, `E2: diagnostics installed mismatch (${diagInstalled} !== ${status.installed})`);
         assertOrThrow(diagRunning === status.running, `E2: diagnostics running mismatch (${diagRunning} !== ${status.running})`);
@@ -654,6 +732,12 @@
         assertOrThrow(typeof statePath === 'string' && statePath.length > 0, 'E2: helper state path missing');
         assertOrThrow(typeof hostsFile === 'string' && hostsFile.length > 0, 'E2: hosts file payload missing');
         assertOrThrow(typeof stateFile === 'string' && stateFile.length > 0, 'E2: helper state payload missing');
+        assertOrThrow(typeof helperLogPath === 'string' && helperLogPath.length > 0, 'E2: helper log path missing');
+        assertOrThrow(typeof helperLogTail === 'string' && helperLogTail.length > 0, 'E2: helper log tail missing');
+        if (osName === 'windows') {
+            assertOrThrow(typeof installLogPath === 'string' && installLogPath.length > 0, 'E2: install log path missing on Windows');
+            assertOrThrow(typeof installLogTail === 'string' && installLogTail.length > 0, 'E2: install log tail missing on Windows');
+        }
         return { passed: true };
     }
 
@@ -691,6 +775,7 @@
             { group: 'A', name: 'A1: Hosts modification path', fn: testA1_hostsModificationPath },
             { group: 'A', name: 'A2: One-off start/end timing', fn: testA2_blockStartEndTiming },
             { group: 'A', name: 'A3: Schedule active-now path', fn: testA3_scheduleActiveNow },
+            { group: 'A', name: 'A6: Pause/resume one-off enforcement path', fn: testA6_pauseResumeOneOffEnforcementPath },
             { group: 'B', name: 'B1: Shared-domain overlap', fn: testB1_sharedDomainOverlap },
             { group: 'C', name: 'C1: Scoped clear by blocklist ID', fn: testC1_scopedClearByBlocklistId },
             { group: 'D', name: 'D1: Keep-blocking preference roundtrip', fn: testD1_setKeepBlockingPreferenceRoundtrip },
@@ -704,7 +789,6 @@
             ...coreTests,
             { group: 'A', name: 'A4: Future schedule path', fn: testA4_futureScheduleDoesNotThrow },
             { group: 'A', name: 'A5: Pause/resume one-off state path', fn: testA5_pauseResumeOneOffStatePath },
-            { group: 'A', name: 'A6: Pause/resume one-off enforcement path', fn: testA6_pauseResumeOneOffEnforcementPath },
             { group: 'A', name: 'A7: Pause natural-expiry one-off smoke', fn: testA7_pauseNaturalExpiryOneOffSmoke },
             { group: 'A', name: 'A8: Pause/resume schedule active path', fn: testA8_pauseResumeScheduleActivePath },
             { group: 'A', name: 'A9: Pause natural-expiry schedule smoke', fn: testA9_pauseNaturalExpiryScheduleSmoke },
