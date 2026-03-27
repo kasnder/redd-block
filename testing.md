@@ -136,7 +136,7 @@ The IDs below match both:
 - **A3**: Schedule active-now path
 - **A4**: Future schedule path (**full only**)
 - **A5**: Pause/resume one-off state path (**full only**)
-- **A6**: Pause/resume one-off enforcement path (**full only**)
+- **A6**: Pause/resume one-off enforcement path
 - **A7**: Pause natural-expiry one-off smoke (**full only**)
 - **A8**: Pause/resume schedule active path (**full only**)
 - **A9**: Pause natural-expiry schedule smoke (**full only**)
@@ -144,6 +144,7 @@ The IDs below match both:
 
 Expected outcome:
 - blocking and schedule state transitions succeed through app -> Tauri -> helper
+- `core` already includes one-off pause/resume enforcement coverage via `A6`
 - pause/resume transitions propagate through save + hosts/helper sync paths
 - short timer-smoke checks confirm automatic pause expiry clears pause flags
 
@@ -160,6 +161,7 @@ Pause case intent (expected vs what test verifies):
 
 Expected outcome:
 - overlap behavior remains stable without merge/preference regressions
+- clearing one active source must not remove shared enforcement still owned by another source
 
 ### Testing Group C: Clear and override semantics
 - **C1**: Scoped clear by blocklist ID
@@ -168,6 +170,7 @@ Expected outcome:
 
 Expected outcome:
 - scoped clear affects only targeted manual block scope
+- clear assertions are made directly against helper-observed hosts state after `clearBlockViaHelper(...)`
 - clear-all removes all manual block scope
 - blocklists with max override difficulty start and clear without errors (C3)
 
@@ -179,9 +182,11 @@ Expected outcome:
 
 ### Testing Group E: Hosts safety and cleanup invariants
 - **E1**: Clean hosts command path
+- **E2**: Helper diagnostics contract
 
 Expected outcome:
 - hosts cleanup command path succeeds without helper command errors
+- helper diagnostics stay aligned with `checkHelperStatus()` and continue returning the expected core fields
 
 ### Testing Group F: App-block command-path checks (non-visual)
 - **F1**: Set blocked apps command path (**full only**)
@@ -198,15 +203,16 @@ Expected outcome:
 
 ## Tier 2 profile composition
 
-- `core`: `A1`, `A2`, `A3`, `B1`, `C1`, `D1`, `E1`
-- `full`: `core` + `A4`, `A5`, `A6`, `A7`, `A8`, `A9`, `A10`, `B2`, `C2`, `C3`, `F1`, `F2`, `G1`
+- `core`: `A1`, `A2`, `A3`, `A6`, `B1`, `C1`, `D1`, `E1`, `E2`
+- `full`: `core` + `A4`, `A5`, `A7`, `A8`, `A9`, `A10`, `B2`, `C2`, `C3`, `F1`, `F2`, `G1`
 
 ## Suite behavior
 
-1. setup initializes test harness state.
+1. setup snapshots the current `appData` so the suite can restore the user's state when it finishes.
 2. tests run sequentially by selected profile.
-3. teardown clears test-created app state and helper-side temporary enforcement state.
-4. when profile is `full` and at least one test fails, output includes a bottom **Group failure summary** for groups `A`–`G`.
+3. some full-only pause/schedule cases use per-test reset/setup-cleanup boundaries so they do not leak state across the `full` profile.
+4. teardown restores the saved snapshot, saves it, and re-syncs helper state when the helper is healthy.
+5. when profile is `full` and at least one test fails, output includes a bottom **Group failure summary** for groups `A`–`G`.
 
 ## What differentiates Tier 2
 
@@ -218,6 +224,7 @@ Expected outcome:
 
 - Some checks remain command-path assertions rather than UI-visible assertions.
 - Tests can be skipped when helper is unavailable or version-mismatched.
+- `updateHostsFile(true)` can still return `deferred: true` on the desktop fallback path when helper sync is unavailable; `A1` explicitly guards against that during helper-backed cleanup.
 - Still not a substitute for manual visual UX and OS prompt flows.
 
 ---

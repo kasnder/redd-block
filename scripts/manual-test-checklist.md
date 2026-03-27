@@ -10,8 +10,11 @@ For iOS builds, run **section 10 (iOS-Specific)** on a physical device so covera
 ## 1. Automated Tests
 
 - [ ] Start app in dev mode: `npm run dev`
-- [ ] Press **Cmd+Shift+T** (Mac) or **Ctrl+Shift+T** (Windows)
-- [ ] Verify all tests pass in the developer console
+- [ ] Run Tier 1 in the developer console: press **Cmd+Shift+T** (Mac) or **Ctrl+Shift+T** (Windows), or call `runBlockingTests()`
+- [ ] Run Tier 2 `core` in the developer console: `runIntegrationTests('core')`
+- [ ] If the release touches desktop helper behavior, pause/schedule behavior, overlap/clear behavior, or blocklist-management paths, also run Tier 2 `full`: `runIntegrationTests('full')`
+- [ ] On desktop, run Tier 3 helper smoke if helper-specific changes were made: `npm run test:helper`
+- [ ] Verify all relevant automated tests pass in the developer console / terminal output
 - [ ] If tests fail, fix issues before proceeding
 
 ---
@@ -196,6 +199,25 @@ Override applies to both websites and apps: overriding a block or using Override
 - [ ] Verify helper cleans up and removes itself
 - [ ] Verify hosts file is restored
 
+### Diagnostics
+- [ ] Open Settings → Diagnostics
+- [ ] Verify diagnostics modal opens and loads without error
+- [ ] Verify helper section shows a sensible desktop status (`Running`, `Update available`, `Installed, not running`, or `Not installed`)
+- [ ] Verify version / expected version fields are present
+- [ ] Verify hosts file preview is present
+- [ ] Verify helper state file preview is present
+- [ ] Click "Copy to Clipboard" → verify diagnostic text is copied
+
+### Still Not Working
+- [ ] Open Settings → "Something still not working?"
+- [ ] Verify the support modal opens on top of Settings
+- [ ] Click "Close" → verify only the "Something still not working?" modal closes and Settings remains open
+
+### Shared Desktop Data / Reinstall Persistence
+- [ ] On desktop, create or edit a blocklist and confirm settings save successfully
+- [ ] Close and reopen the app → verify blocklists and settings are still present
+- [ ] If testing reinstall on desktop: reinstall/open again → verify data restores from the active desktop app-data location as expected
+
 ---
 
 ## 9. Helper Lifecycle
@@ -210,11 +232,21 @@ Override applies to both websites and apps: overriding a block or using Override
 - [ ] Verify "Update available" status appears
 - [ ] Click Update → verify helper restarts with new version
 
+### Repair / Reinstall
+- [ ] With helper installed but not running, open Settings → verify helper status shows "Installed, not running"
+- [ ] Start a block
+- [ ] Verify helper modal uses repair/reinstall wording rather than first-install wording
+- [ ] Verify the action button reflects repair/reinstall (not update)
+- [ ] Complete the flow → verify helper returns to "Running"
+
 ### Uninstall Helper
 - [ ] With NO active blocks: click "Uninstall Helper" → verify confirmation dialog → confirm
+- [ ] Verify uninstall button shows progress state while removal is running
+- [ ] Verify success is communicated primarily in the button state (not via overlapping success popups)
 - [ ] Verify helper status changes to "Not installed"
 - [ ] Verify helper process is no longer running (`ps aux | grep redd-block-helper` on Mac, Task Manager on Windows)
 - [ ] Verify hosts file is clean (no ReDD Block entries)
+- [ ] Open "Something still not working?" → use uninstall there too → verify behavior is consistent with Settings uninstall flow
 
 - [ ] With active blocks: verify "Uninstall Helper" button is disabled
 - [ ] Verify tooltip says "Override all running blocks first"

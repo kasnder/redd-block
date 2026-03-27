@@ -127,7 +127,9 @@ Runs with elevated privileges to manage hosts file changes and app blocking. On 
 - **macOS**: Installed as a launchd daemon, authorized via password prompt
 - **Windows**: Installed as a Scheduled Task with highest privileges, authorized via UAC prompt
 - **Auto-upgrade**: If the helper is outdated when you start a block, the app prompts you to reinstall it (which upgrades it in place)
+- **Repair/reinstall**: If the helper is installed but not running, starting a desktop block prompts a reinstall/repair flow before blocking begins
 - **Troubleshooting**: If websites remain blocked after all blocks are stopped, use the "Clean hosts file" button in Settings → Advanced Options to remove stale entries
+- **Diagnostics**: Settings → Diagnostics shows helper status/version, hosts file preview, helper state, and available log tails for troubleshooting
 
 On iOS, the helper daemon is not used — blocking is handled entirely through the Screen Time API.
 
@@ -183,7 +185,7 @@ Built artifacts are copied to `for-distribution/` for upload or direct distribut
 
 ### Testing
 
-Three tiers of testing are available:
+Testing is organized into three automated tiers plus a manual checklist:
 
 **1. Unit Tests (in-app, instant)**
 
@@ -197,7 +199,7 @@ npm run dev                   # Start the app
 
 **2. Integration Tests (in-app, profile-based)**
 
-Creates real blocks using a safe `.invalid` domain, verifies hosts file modification, block expiry, and schedule activation. The full profile also covers duplicate-then-run and max-difficulty blocklist start/clear. Requires the helper daemon to be running. See testing.md for more information.
+Creates real blocks using safe `.invalid` domains and verifies helper-backed enforcement through the real app -> Tauri -> helper path. The default `core` profile covers hosts modification, expiry, schedule activation, one-off pause/resume enforcement, overlap safety, scoped clear, and helper diagnostics/status parity. The `full` profile adds broader pause/schedule cases, extra clear semantics, app-command transport checks, and duplicate/max-difficulty paths. Requires the helper daemon to be running and can modify real desktop system state. See `testing.md` for the exact profile breakdown.
 
 ```bash
 # In the dev console:
@@ -269,13 +271,15 @@ This separation avoids prompting users to reinstall the helper when only the app
 
 ## Data Storage
 
-### User Data
+### App Data
 
-| Platform | Location |
-|----------|----------|
-| macOS | `~/Library/Application Support/com.redd.block/redd-block-data.json` |
-| Windows | `%AppData%\com.redd.block\redd-block-data.json` |
-| iOS | App sandbox (managed by Tauri) |
+Desktop app data can exist in both a legacy per-user location and a shared system-wide location. Once the shared location becomes active, the app continues to prefer it so reinstall/uninstall flows do not silently flip storage location.
+
+| Platform | Legacy per-user location | Shared desktop location |
+|----------|--------------------------|-------------------------|
+| macOS | `~/Library/Application Support/com.redd.block/redd-block-data.json` | `/var/lib/redd-block/redd-block-data.json` |
+| Windows | `%AppData%\com.redd.block\redd-block-data.json` | `C:\ProgramData\ReDD Block\redd-block-data.json` |
+| iOS | App sandbox (managed by Tauri) | N/A |
 
 Contains blocklists, schedules, active blocks, and settings.
 
@@ -291,11 +295,21 @@ Tracks blocking state so blocks persist across app restarts.
 
 ### Uninstall Behavior
 
-User data is preserved unless manually deleted. Reinstalling restores your blocklists and settings automatically.
+User data is preserved unless manually deleted. On desktop, reinstalling typically restores blocklists and settings automatically from the active app-data location (shared if already adopted, otherwise legacy per-user storage).
 
 The helper daemon checks every 5 minutes whether the main app is still installed. If the app is no longer detected:
 - **"Keep blocking running if app is uninstalled" is ON (default):** The helper keeps running as long as any one-off blocks, app blocks, or schedules are active. Once they all finish, it cleans up and removes itself.
 - **"Keep blocking running if app is uninstalled" is OFF:** The helper immediately cleans up (restores the hosts file, clears state) and removes itself.
+
+### Desktop Development Caveat
+
+Local desktop dev builds and installed release builds currently talk to the same machine-global helper installation and helper state on a given machine.
+
+This means:
+
+- a local `npm run dev` session can see a helper installed by a release build,
+- reinstall/uninstall observations can be affected by stale helper state or logs from another build,
+- helper lifecycle debugging is clearest on a clean machine or VM.
 
 ## Requirements
 
