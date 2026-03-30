@@ -769,6 +769,8 @@
         const helperLogTail = diag.helperLogTail ?? diag.helper_log_tail;
         const installLogPath = diag.installLogPath ?? diag.install_log_path;
         const installLogTail = diag.installLogTail ?? diag.install_log_tail;
+        const statusArtifactPath = diag.helperStatusArtifactPath ?? diag.helper_status_artifact_path;
+        const statusArtifactExists = diag.helperStatusArtifactExists ?? diag.helper_status_artifact_exists;
         const osName = diag.osName ?? diag.os_name;
 
         assertOrThrow(diagInstalled === status.installed, `E2: diagnostics installed mismatch (${diagInstalled} !== ${status.installed})`);
@@ -782,6 +784,11 @@
         assertOrThrow(typeof stateFile === 'string' && stateFile.length > 0, 'E2: helper state payload missing');
         assertOrThrow(typeof helperLogPath === 'string' && helperLogPath.length > 0, 'E2: helper log path missing');
         assertOrThrow(typeof helperLogTail === 'string' && helperLogTail.length > 0, 'E2: helper log tail missing');
+        assertOrThrow(typeof statusArtifactPath === 'string' && statusArtifactPath.length > 0, 'E2: helper status artifact path missing');
+        assertOrThrow(typeof statusArtifactExists === 'boolean', 'E2: helper status artifact existence missing');
+        if (!status.running) {
+            assertOrThrow(statusArtifactExists === status.installed, 'E2: artifact existence should explain installed state when helper is not running');
+        }
         if (osName === 'windows') {
             assertOrThrow(typeof installLogPath === 'string' && installLogPath.length > 0, 'E2: install log path missing on Windows');
             assertOrThrow(typeof installLogTail === 'string' && installLogTail.length > 0, 'E2: install log tail missing on Windows');

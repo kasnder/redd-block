@@ -9448,18 +9448,8 @@ function setupHelperSettings() {
                 removeHelperNowBtn.disabled = true;
                 removeHelperNowBtn.innerHTML = `<span class="btn-spinner"></span>${tSettings('helperRemoving')}`;
 
-                const result = await tauriAPI.uninstallHelper();
+                const result = await uninstallHelperAndConfirmRemoved();
                 if (result.success) {
-                    logHelperRemovalFallback(result);
-                    helperAvailable = false;
-                    // Immediately update UI - don't wait for async check
-                    const statusIndicator = document.getElementById('helper-status-indicator');
-                    if (statusIndicator) {
-                        statusIndicator.classList.remove('running');
-                        statusIndicator.classList.add('stopped');
-                        const statusText = statusIndicator.querySelector('.status-text');
-                        if (statusText) statusText.textContent = tSettings('helperStatusNotInstalled');
-                    }
                     removeHelperNowBtn.innerHTML = `<span>${tSettings('helperRemoved')}</span>`;
                     removalSucceeded = true;
                     await new Promise(resolve => setTimeout(resolve, 1200));
@@ -9547,6 +9537,50 @@ function logHelperRemovalFallback(result) {
     if (result?.error) {
         console.warn('[helper-uninstall] Fallback cleanup used:', result.error);
     }
+}
+
+async function confirmHelperRemoved() {
+    const status = await refreshDesktopHelperStatus({ syncPreference: false });
+    const removed = !(status?.installed || status?.running);
+
+    await updateHelperStatusIndicator().catch(() => { });
+    await checkHelperStatus().catch(() => { });
+
+    if (!removed) {
+        return {
+            removed: false,
+            status,
+            error: 'ReDD Block could not confirm that the helper was fully removed. It still appears to be installed.'
+        };
+    }
+
+    helperAvailable = false;
+    return { removed: true, status };
+}
+
+async function uninstallHelperAndConfirmRemoved() {
+    const result = await tauriAPI.uninstallHelper();
+    if (!result.success) {
+        return {
+            success: false,
+            error: result.error || 'Unknown error'
+        };
+    }
+
+    logHelperRemovalFallback(result);
+
+    const confirmation = await confirmHelperRemoved();
+    if (!confirmation.removed) {
+        return {
+            success: false,
+            error: confirmation.error
+        };
+    }
+
+    return {
+        success: true,
+        usedFallback: !!result.error
+    };
 }
 
 function isDesktopBlockingEnforcedNow() {
@@ -10223,12 +10257,9 @@ function setupStillNotWorking() {
             try {
                 uninstallBtn.disabled = true;
                 uninstallBtn.innerHTML = `<span class="btn-spinner"></span>${tSettings('helperRemoving')}`;
-                const result = await tauriAPI.uninstallHelper();
+                const result = await uninstallHelperAndConfirmRemoved();
                 if (result.success) {
-                    logHelperRemovalFallback(result);
-                    helperAvailable = false;
                     uninstallBtn.textContent = tSettings('helperRemoved');
-                    await checkHelperStatus();
                     setTimeout(() => {
                         uninstallBtn.disabled = false;
                         uninstallBtn.innerHTML = originalHTML;

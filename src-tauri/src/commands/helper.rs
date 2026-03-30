@@ -20,6 +20,8 @@ const HELPER_TCP_ADDR: &str = "127.0.0.1:62222";
 
 const HELPER_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 const HELPER_IO_TIMEOUT: Duration = Duration::from_secs(5);
+const HELPER_UNINSTALL_VERIFY_TIMEOUT: Duration = Duration::from_secs(8);
+const HELPER_UNINSTALL_VERIFY_INTERVAL: Duration = Duration::from_millis(400);
 
 
 /// Helper daemon status
@@ -184,6 +186,45 @@ fn send_command(command: &IpcCommand) -> Result<IpcResponse, String> {
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn send_command(_command: &IpcCommand) -> Result<IpcResponse, String> {
     Err("Helper communication not yet implemented for this platform".to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn helper_status_artifact_path() -> PathBuf {
+    let program_data = std::env::var("PROGRAMDATA").unwrap_or_else(|_| "C:\\ProgramData".to_string());
+    PathBuf::from(&program_data).join("ReDD Block").join("redd-block-helper.exe")
+}
+
+#[cfg(target_os = "macos")]
+fn helper_status_artifact_path() -> PathBuf {
+    PathBuf::from(SOCKET_PATH)
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn helper_status_artifact_path() -> PathBuf {
+    PathBuf::new()
+}
+
+fn helper_status_artifact_exists() -> bool {
+    let path = helper_status_artifact_path();
+    !path.as_os_str().is_empty() && path.exists()
+}
+
+fn is_helper_fully_uninstalled() -> bool {
+    let status = check_helper_status();
+    !status.running && !helper_status_artifact_exists()
+}
+
+fn wait_for_helper_uninstall(timeout: Duration) -> bool {
+    let start = std::time::Instant::now();
+    loop {
+        if is_helper_fully_uninstalled() {
+            return true;
+        }
+        if start.elapsed() >= timeout {
+            return false;
+        }
+        std::thread::sleep(HELPER_UNINSTALL_VERIFY_INTERVAL);
+    }
 }
 
 /// Get path to the bundled helper binary
@@ -782,21 +823,58 @@ pub async fn uninstall_helper() -> HelperResult {
         blocks: None,
     };
     match send_command(&cmd) {
-        Ok(response) if response.success => HelperResult {
-            success: true,
-            error: None,
-        },
+        Ok(response) if response.success => {
+            if wait_for_helper_uninstall(HELPER_UNINSTALL_VERIFY_TIMEOUT) {
+                HelperResult {
+                    success: true,
+                    error: None,
+                }
+            } else {
+                log::warn!("Helper acknowledged uninstall but artifacts still remain; trying fallback cleanup");
+                let fallback = force_cleanup_helper();
+                if !fallback.success {
+                    return fallback;
+                }
+                if wait_for_helper_uninstall(HELPER_UNINSTALL_VERIFY_TIMEOUT) {
+                    fallback
+                } else {
+                    HelperResult {
+                        success: false,
+                        error: Some("The helper reported that uninstall started, but ReDD Block could still see helper artifacts afterward.".to_string()),
+                    }
+                }
+            }
+        }
         Ok(response) => {
-            // Helper responded but with an error (e.g., old helper doesn't know "uninstall")
             log::warn!("Helper returned error for uninstall: {:?}", response.error);
-            // Fall through to force cleanup
-            force_cleanup_helper()
-        },
+            let fallback = force_cleanup_helper();
+            if !fallback.success {
+                return fallback;
+            }
+            if wait_for_helper_uninstall(HELPER_UNINSTALL_VERIFY_TIMEOUT) {
+                fallback
+            } else {
+                HelperResult {
+                    success: false,
+                    error: Some("Fallback cleanup ran, but the helper still appears to be installed afterward.".to_string()),
+                }
+            }
+        }
         Err(e) => {
-            // Can't connect to helper - maybe already gone or not responding
             log::warn!("Could not connect to helper for uninstall: {}", e);
-            force_cleanup_helper()
-        },
+            let fallback = force_cleanup_helper();
+            if !fallback.success {
+                return fallback;
+            }
+            if wait_for_helper_uninstall(HELPER_UNINSTALL_VERIFY_TIMEOUT) {
+                fallback
+            } else {
+                HelperResult {
+                    success: false,
+                    error: Some("Fallback cleanup ran, but the helper still appears to be installed afterward.".to_string()),
+                }
+            }
+        }
     }
 }
 
@@ -808,12 +886,11 @@ fn force_cleanup_helper() -> HelperResult {
     #[cfg(target_os = "windows")]
     {
         use windows::core::{HSTRING, PCWSTR};
-        use windows::Win32::Foundation::WAIT_OBJECT_0;
+        use windows::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
         use windows::Win32::UI::Shell::{ShellExecuteExW, SHELLEXECUTEINFOW, SEE_MASK_NOCLOSEPROCESS};
         use windows::Win32::System::Threading::WaitForSingleObject;
         use std::mem::size_of;
         
-        // Create a script that kills the process and cleans up
         let program_data = std::env::var("PROGRAMDATA").unwrap_or_else(|_| "C:\\ProgramData".to_string());
         let install_dir = PathBuf::from(&program_data).join("ReDD Block");
         let helper_path = install_dir.join("redd-block-helper.exe");
@@ -821,47 +898,11 @@ fn force_cleanup_helper() -> HelperResult {
         let log_path = install_dir.join("helper.log");
         let old_log_path = install_dir.join("helper.log.old");
         let install_log_path = install_dir.join("install.log");
-        
-        // Try to restore hosts file via IPC before killing the daemon
-        // This prevents stale block entries remaining in the hosts file
-        let restore_cmd = IpcCommand {
-            action: "restore-hosts".to_string(),
-            domains: None,
-            end_time: None,
-            blocklist_id: None,
-            apps: None,
-            schedules: None,
-            keep_blocking_on_uninstall: None,
-        blocks: None,
-            };
-        let hosts_restored = match send_command(&restore_cmd) {
-            Ok(response) if response.success => {
-                log::info!("Hosts file restored before force cleanup");
-                true
-            }
-            Ok(response) => {
-                log::warn!("Helper failed to restore hosts before cleanup: {:?}", response.error);
-                false
-            }
-            Err(e) => {
-                log::warn!("Could not restore hosts before cleanup: {}", e);
-                false
-            }
-        };
-        if !hosts_restored {
-            let cleanup = clean_hosts_elevated_sync();
-            if cleanup.success {
-                log::info!("Elevated hosts cleanup completed before force cleanup");
-            } else {
-                log::warn!("Elevated hosts cleanup failed before force cleanup: {:?}", cleanup.error);
-            }
-        }
-        
-        // Run elevated taskkill and cleanup
+
         let verb = HSTRING::from("runas");
         let file = HSTRING::from("powershell");
         let cleanup_cmd = format!(
-            "-ExecutionPolicy Bypass -WindowStyle Hidden -Command \"taskkill /F /IM redd-block-helper.exe 2>$null; schtasks /Delete /TN 'ReDD Block Helper' /F 2>$null; netsh advfirewall firewall delete rule name='ReDD Block Helper' 2>$null; Remove-Item -LiteralPath '{}','{}','{}','{}','{}' -Force -ErrorAction SilentlyContinue\"",
+            r#"-ExecutionPolicy Bypass -WindowStyle Hidden -Command "$hostsPath = \"$env:SystemRoot\System32\drivers\etc\hosts\"; $content = Get-Content $hostsPath -Raw -ErrorAction SilentlyContinue; if ($null -eq $content) {{ $content = \"\" }}; $startMarker = '# === BEGIN REDD BLOCK (reddfocus.org) ==='; $endMarker = '# === END REDD BLOCK (reddfocus.org) ==='; $startIdx = $content.IndexOf($startMarker); if ($startIdx -ge 0) {{ $before = $content.Substring(0, $startIdx).TrimEnd(); $endIdx = $content.IndexOf($endMarker); if ($endIdx -ge 0) {{ $after = $content.Substring($endIdx + $endMarker.Length).TrimStart(); if ($after.Length -gt 0) {{ $content = \"$before`n$after\" }} else {{ $content = $before }} }} else {{ $content = $before }} }}; $content = ($content -split \"`n\" | Where-Object {{ $_.Trim() -ne '# ReDD Block Start' -and $_.Trim() -ne '# ReDD Block End' }}) -join \"`n\"; Set-Content -Path $hostsPath -Value $content -NoNewline -ErrorAction SilentlyContinue; ipconfig /flushdns | Out-Null; taskkill /F /IM redd-block-helper.exe 2>$null; schtasks /Delete /TN 'ReDD Block Helper' /F 2>$null; netsh advfirewall firewall delete rule name='ReDD Block Helper' 2>$null; Remove-Item -LiteralPath '{}','{}','{}','{}','{}' -Force -ErrorAction SilentlyContinue""#,
             helper_path.display(),
             state_path.display(),
             log_path.display(),
@@ -891,7 +932,9 @@ fn force_cleanup_helper() -> HelperResult {
         let success = unsafe {
             if ShellExecuteExW(&mut sei).is_ok() {
                 if !sei.hProcess.is_invalid() {
-                    WaitForSingleObject(sei.hProcess, 10000) == WAIT_OBJECT_0
+                    let waited = WaitForSingleObject(sei.hProcess, 10000) == WAIT_OBJECT_0;
+                    let _ = CloseHandle(sei.hProcess);
+                    waited
                 } else {
                     true
                 }
@@ -900,11 +943,15 @@ fn force_cleanup_helper() -> HelperResult {
             }
         };
         
-        if success {
-            log::info!("Force cleanup completed for Windows");
-        } else {
+        if !success {
             log::warn!("Force cleanup may have failed - user cancelled UAC or error");
+            return HelperResult {
+                success: false,
+                error: Some("Cleanup was cancelled or the admin prompt could not complete.".to_string()),
+            };
         }
+
+        log::info!("Force cleanup completed for Windows");
     }
     
     #[cfg(target_os = "macos")]
@@ -913,50 +960,16 @@ fn force_cleanup_helper() -> HelperResult {
         let plist_path = "/Library/LaunchDaemons/com.redd.block.helper.plist";
         let legacy_helper_path = "/usr/local/bin/redd-block-helper";
         let legacy_plist_path = "/Library/LaunchDaemons/org.reddfocus.redd-block-helper.plist";
-
-        // Try to restore hosts file via IPC before killing the daemon
-        // This prevents stale block entries remaining in /etc/hosts
-        let restore_cmd = IpcCommand {
-            action: "restore-hosts".to_string(),
-            domains: None,
-            end_time: None,
-            blocklist_id: None,
-            apps: None,
-            schedules: None,
-            keep_blocking_on_uninstall: None,
-        blocks: None,
-            };
-        let hosts_restored = match send_command(&restore_cmd) {
-            Ok(response) if response.success => {
-                log::info!("Hosts file restored before force cleanup");
-                true
-            }
-            Ok(response) => {
-                log::warn!("Helper failed to restore hosts before cleanup: {:?}", response.error);
-                false
-            }
-            Err(e) => {
-                log::warn!("Could not restore hosts before cleanup: {}", e);
-                false
-            }
-        };
-        if !hosts_restored {
-            let cleanup = clean_hosts_elevated_sync();
-            if cleanup.success {
-                log::info!("Elevated hosts cleanup completed before force cleanup");
-            } else {
-                log::warn!("Elevated hosts cleanup failed before force cleanup: {:?}", cleanup.error);
-            }
-        }
         
         let script = format!(
-            r#"do shell script "launchctl bootout system/com.redd.block.helper 2>/dev/null; launchctl unload '{}' 2>/dev/null; launchctl bootout system/org.reddfocus.redd-block-helper 2>/dev/null; launchctl unload '{}' 2>/dev/null; rm -f '{}' '{}' '{}' '{}'" with administrator privileges"#,
+            r#"do shell script "HOSTS=/etc/hosts; CONTENT=$(cat $HOSTS 2>/dev/null); echo \"$CONTENT\" | awk '/^# === BEGIN REDD BLOCK/ {{ skip=1; next }} /^# === END REDD BLOCK/ {{ skip=0; next }} !skip {{ print }}' | grep -v '# ReDD Block Start' | grep -v '# ReDD Block End' > ${HOSTS}.tmp; mv ${HOSTS}.tmp $HOSTS; dscacheutil -flushcache; killall -HUP mDNSResponder 2>/dev/null; launchctl bootout system/com.redd.block.helper 2>/dev/null; launchctl unload '{}' 2>/dev/null; launchctl bootout system/org.reddfocus.redd-block-helper 2>/dev/null; launchctl unload '{}' 2>/dev/null; rm -f '{}' '{}' '{}' '{}' '{}'" with administrator privileges"#,
             plist_path,
             legacy_plist_path,
             install_path,
             plist_path,
             legacy_helper_path,
-            legacy_plist_path
+            legacy_plist_path,
+            SOCKET_PATH
         );
 
         match std::process::Command::new("osascript").arg("-e").arg(&script).output() {
@@ -968,16 +981,24 @@ fn force_cleanup_helper() -> HelperResult {
                     "macOS force cleanup command failed: {}",
                     String::from_utf8_lossy(&output.stderr)
                 );
+                return HelperResult {
+                    success: false,
+                    error: Some("Cleanup was cancelled or the admin prompt could not complete.".to_string()),
+                };
             }
             Err(e) => {
                 log::warn!("Failed to run macOS force cleanup command: {}", e);
+                return HelperResult {
+                    success: false,
+                    error: Some(format!("Failed to run fallback cleanup: {}", e)),
+                };
             }
         }
     }
     
     HelperResult {
         success: true,
-        error: Some("The helper did not respond to the normal uninstall path, so ReDD Block used fallback cleanup to remove the installed helper files.".to_string()),
+        error: Some("The helper did not respond to the normal uninstall path, so ReDD Block used fallback cleanup.".to_string()),
     }
 }
 
@@ -1338,6 +1359,10 @@ pub struct DiagnosticsResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub install_log_tail: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub helper_status_artifact_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub helper_status_artifact_exists: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub os_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub arch: Option<String>,
@@ -1418,6 +1443,7 @@ pub async fn get_helper_diagnostics() -> DiagnosticsResult {
     );
 
     let helper_status = check_helper_status();
+    let helper_artifact_path = helper_status_artifact_path();
     let helper_log_tail = read_optional_tail(&helper_log_path, 80);
     let install_log_tail = install_log_path
         .as_ref()
@@ -1439,6 +1465,12 @@ pub async fn get_helper_diagnostics() -> DiagnosticsResult {
         helper_log_tail,
         install_log_path: install_log_path.as_ref().map(|path| path.display().to_string()),
         install_log_tail,
+        helper_status_artifact_path: if helper_artifact_path.as_os_str().is_empty() {
+            None
+        } else {
+            Some(helper_artifact_path.display().to_string())
+        },
+        helper_status_artifact_exists: Some(helper_status_artifact_exists()),
         os_name: Some(std::env::consts::OS.to_string()),
         arch: Some(std::env::consts::ARCH.to_string()),
     }
