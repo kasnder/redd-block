@@ -962,7 +962,7 @@ fn force_cleanup_helper() -> HelperResult {
         let legacy_plist_path = "/Library/LaunchDaemons/org.reddfocus.redd-block-helper.plist";
         
         let script = format!(
-            r#"do shell script "HOSTS=/etc/hosts; CONTENT=$(cat $HOSTS 2>/dev/null); echo \"$CONTENT\" | awk '/^# === BEGIN REDD BLOCK/ {{ skip=1; next }} /^# === END REDD BLOCK/ {{ skip=0; next }} !skip {{ print }}' | grep -v '# ReDD Block Start' | grep -v '# ReDD Block End' > ${HOSTS}.tmp; mv ${HOSTS}.tmp $HOSTS; dscacheutil -flushcache; killall -HUP mDNSResponder 2>/dev/null; launchctl bootout system/com.redd.block.helper 2>/dev/null; launchctl unload '{}' 2>/dev/null; launchctl bootout system/org.reddfocus.redd-block-helper 2>/dev/null; launchctl unload '{}' 2>/dev/null; rm -f '{}' '{}' '{}' '{}' '{}'" with administrator privileges"#,
+            r#"do shell script "HOSTS=/etc/hosts; CONTENT=$(cat $HOSTS 2>/dev/null); echo \"$CONTENT\" | awk '/^# === BEGIN REDD BLOCK/ {{ skip=1; next }} /^# === END REDD BLOCK/ {{ skip=0; next }} !skip {{ print }}' | grep -v '# ReDD Block Start' | grep -v '# ReDD Block End' > ${{HOSTS}}.tmp; mv ${{HOSTS}}.tmp $HOSTS; dscacheutil -flushcache; killall -HUP mDNSResponder 2>/dev/null; launchctl bootout system/com.redd.block.helper 2>/dev/null; launchctl unload '{}' 2>/dev/null; launchctl bootout system/org.reddfocus.redd-block-helper 2>/dev/null; launchctl unload '{}' 2>/dev/null; rm -f '{}' '{}' '{}' '{}' '{}'" with administrator privileges"#,
             plist_path,
             legacy_plist_path,
             install_path,
@@ -1434,12 +1434,12 @@ pub async fn get_helper_diagnostics() -> DiagnosticsResult {
     #[cfg(target_os = "macos")]
     let (helper_log_path, install_log_path) = (
         std::path::PathBuf::from("/var/log/redd-block-helper.log"),
-        None,
+        None::<std::path::PathBuf>,
     );
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     let (helper_log_path, install_log_path) = (
         std::path::PathBuf::from("/var/log/redd-block-helper.log"),
-        None,
+        None::<std::path::PathBuf>,
     );
 
     let helper_status = check_helper_status();
