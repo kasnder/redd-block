@@ -118,6 +118,9 @@ let challengeText = '';
 let lastBlockedDomains = new Set(); // Track what's currently blocked to avoid re-prompting
 let activatedBlockIds = new Set(); // Track blocks that have already triggered host updates
 let helperAvailable = false; // Track if the privileged helper daemon is running
+const HELPER_STATUS_CACHE_TTL_MS = 3000;
+let lastDesktopHelperStatus = null;
+let lastDesktopHelperStatusAt = 0;
 let pendingBlockData = null; // Store block data when waiting for helper installation
 let pendingScheduleData = null; // Store schedule data when waiting for helper installation
 let draggedBlocklistId = null; // Track which blocklist is being dragged
@@ -656,15 +659,18 @@ async function refreshDesktopHelperStatus({ syncPreference = true } = {}) {
     try {
         const status = await tauriAPI.checkHelperStatus();
         const helperReady = !!(status.running && status.version_ok);
+        const nextStatus = { ...status, helperReady };
         helperAvailable = helperReady;
+        lastDesktopHelperStatus = nextStatus;
+        lastDesktopHelperStatusAt = Date.now();
         if (helperReady && syncPreference) {
             await syncKeepBlockingPreferenceToHelper();
         }
-        return { ...status, helperReady };
+        return nextStatus;
     } catch (err) {
         console.error('Error checking helper status:', err);
         helperAvailable = false;
-        return {
+        lastDesktopHelperStatus = {
             installed: false,
             running: false,
             version: null,
@@ -672,8 +678,17 @@ async function refreshDesktopHelperStatus({ syncPreference = true } = {}) {
             helperReady: false,
             error: err
         };
+        lastDesktopHelperStatusAt = Date.now();
+        return lastDesktopHelperStatus;
     }
 }
+
+function getCachedDesktopHelperStatus(maxAgeMs = HELPER_STATUS_CACHE_TTL_MS) {
+    if (!lastDesktopHelperStatus) return null;
+    if ((Date.now() - lastDesktopHelperStatusAt) > maxAgeMs) return null;
+    return lastDesktopHelperStatus;
+}
+
 const HELPER_UI_REFRESH_MS = 3000;
 let helperUiRefreshTimer = null;
 let helperUiRefreshInFlight = false;
@@ -9153,7 +9168,7 @@ function setupTheme() {
     applySettingsLanguage();
 
     if (settingsBtn && settingsModal) {
-        settingsBtn.addEventListener('click', async () => {
+        settingsBtn.addEventListener('click', () => {
             settingsModal.classList.remove('hidden');
             // Set current theme selection
             if (themeSelect) {
@@ -9163,49 +9178,52 @@ function setupTheme() {
             if (languageSelect) {
                 languageSelect.value = getSettingsLanguage();
             }
-            applySettingsLanguage();
 
-            // Fetch and display version info
-            const currentVersionEl = document.getElementById('current-app-version');
-            const latestVersionEl = document.getElementById('latest-app-version');
-            const latestVersionWrap = document.getElementById('settings-latest-version-wrap');
+            void (async () => {
+                applySettingsLanguage();
 
-            let currentVersion = null;
+                // Fetch and display version info
+                const currentVersionEl = document.getElementById('current-app-version');
+                const latestVersionEl = document.getElementById('latest-app-version');
+                const latestVersionWrap = document.getElementById('settings-latest-version-wrap');
 
-            if (currentVersionEl) {
-                try {
-                    currentVersion = await tauriAPI.getAppVersion();
-                    currentVersionEl.textContent = formatCurrentVersionText(currentVersion || 'Unknown');
-                } catch (e) {
-                    console.error('[Version] Error fetching current version:', e);
-                    currentVersionEl.textContent = formatCurrentVersionText('Unknown');
-                }
-            }
+                let currentVersion = null;
 
-            if (latestVersionEl) {
-                // Hide by default - only show if there's an update available
-                latestVersionEl.style.display = 'none';
-                if (latestVersionWrap) latestVersionWrap.style.display = 'none';
-
-                try {
-                    const response = await fetch(`https://ulyngs.github.io/redd-block/latest-versions.json?t=${Date.now()}`);
-                    const versions = await response.json();
-                    // Detect platform
-                    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-                    const platform = isMac ? 'macos' : 'windows';
-                    const latestVersion = versions[platform];
-
-                    // Only show if latest version is higher than current version
-                    if (latestVersion && currentVersion && isVersionHigher(latestVersion, currentVersion)) {
-                        latestVersionEl.textContent = formatLatestVersionText(latestVersion);
-                        latestVersionEl.style.display = 'block';
-                        if (latestVersionWrap) latestVersionWrap.style.display = 'block';
+                if (currentVersionEl) {
+                    try {
+                        currentVersion = await tauriAPI.getAppVersion();
+                        currentVersionEl.textContent = formatCurrentVersionText(currentVersion || 'Unknown');
+                    } catch (e) {
+                        console.error('[Version] Error fetching current version:', e);
+                        currentVersionEl.textContent = formatCurrentVersionText('Unknown');
                     }
-                } catch (e) {
-                    // Silently fail if offline - don't show anything
-                    console.log('[Version] Could not check for updates (offline or error):', e.message);
                 }
-            }
+
+                if (latestVersionEl) {
+                    // Hide by default - only show if there's an update available
+                    latestVersionEl.style.display = 'none';
+                    if (latestVersionWrap) latestVersionWrap.style.display = 'none';
+
+                    try {
+                        const response = await fetch(`https://ulyngs.github.io/redd-block/latest-versions.json?t=${Date.now()}`);
+                        const versions = await response.json();
+                        // Detect platform
+                        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+                        const platform = isMac ? 'macos' : 'windows';
+                        const latestVersion = versions[platform];
+
+                        // Only show if latest version is higher than current version
+                        if (latestVersion && currentVersion && isVersionHigher(latestVersion, currentVersion)) {
+                            latestVersionEl.textContent = formatLatestVersionText(latestVersion);
+                            latestVersionEl.style.display = 'block';
+                            if (latestVersionWrap) latestVersionWrap.style.display = 'block';
+                        }
+                    } catch (e) {
+                        // Silently fail if offline - don't show anything
+                        console.log('[Version] Could not check for updates (offline or error):', e.message);
+                    }
+                }
+            })();
         });
     }
 
@@ -9631,7 +9649,7 @@ async function updateHelperStatusIndicator() {
     const updateBtn = document.getElementById('update-helper-btn');
 
     try {
-        const status = await tauriAPI.checkHelperStatus();
+        const status = await refreshDesktopHelperStatus({ syncPreference: false });
         const helperDisplay = getHelperStatusDisplay(status);
         helperAvailable = helperDisplay.helperReady;
 
@@ -10253,13 +10271,16 @@ function setupStillNotWorking() {
         if (bar) bar.style.width = '0%';
         modal.classList.remove('hidden');
 
+        const cachedStatus = getCachedDesktopHelperStatus();
+        if (cachedStatus) {
+            updateSnwUninstallOption(getHelperStatusDisplay(cachedStatus));
+            return;
+        }
+
+        updateSnwUninstallOption(null);
         void (async () => {
-            try {
-                const status = await tauriAPI.checkHelperStatus();
-                updateSnwUninstallOption(getHelperStatusDisplay(status));
-            } catch {
-                updateSnwUninstallOption(null);
-            }
+            const status = await refreshDesktopHelperStatus({ syncPreference: false });
+            updateSnwUninstallOption(getHelperStatusDisplay(status));
         })();
     });
 
