@@ -555,6 +555,10 @@ function isOneOffBlockEnforced(block, now = Date.now()) {
     return !!(block && block.startTime <= now && block.endTime > now && !block.isPaused);
 }
 
+function isOneOffBlockStillActive(block, now = Date.now()) {
+    return !!(block && block.endTime > now);
+}
+
 function isSchedulePausedNow(schedule, now = Date.now()) {
     return !!(schedule && schedule.isPaused && schedule.pauseEndTime > now);
 }
@@ -563,6 +567,86 @@ function hasAnyEnforcedBlocks(now = Date.now(), nowDate = new Date(now)) {
     const hasActiveOneOff = appData.activeBlocks.some(block => isOneOffBlockEnforced(block, now));
     if (hasActiveOneOff) return true;
     return !!appData.schedules?.some(schedule => isScheduleSegmentActiveNow(schedule, nowDate));
+}
+
+function scheduleHasFutureRecurringOccurrence(schedule, nowDate = new Date()) {
+    if (!schedule || !Array.isArray(schedule.segments) || schedule.segments.length === 0) return false;
+
+    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
+
+    return schedule.segments.some(seg => {
+        const segmentDays = (Array.isArray(seg.days) && seg.days.length > 0) ? seg.days : [currentDay];
+        return segmentDays.some(segmentDay => {
+            let daysUntil = segmentDay - currentDay;
+            if (daysUntil < 0) daysUntil += 7;
+
+            const candidateStart = new Date(nowDate);
+            candidateStart.setDate(candidateStart.getDate() + daysUntil);
+            candidateStart.setHours(seg.startHour, seg.startMinute, 0, 0);
+
+            const candidateEnd = new Date(candidateStart);
+            candidateEnd.setHours(seg.endHour, seg.endMinute, 0, 0);
+            if (candidateEnd <= candidateStart) {
+                candidateEnd.setDate(candidateEnd.getDate() + 1);
+            }
+
+            if (candidateEnd <= nowDate) {
+                candidateStart.setDate(candidateStart.getDate() + 7);
+                candidateEnd.setDate(candidateEnd.getDate() + 7);
+            }
+
+            if (schedule.repeatType === 'date' && schedule.repeatDate) {
+                const repeatEnd = new Date(schedule.repeatDate);
+                repeatEnd.setHours(23, 59, 59, 999);
+                return candidateStart <= repeatEnd && candidateEnd > nowDate;
+            }
+
+            return candidateEnd > nowDate;
+        });
+    });
+}
+
+function scheduleHasFutureSingleOccurrence(schedule, nowDate = new Date()) {
+    if (!schedule || !Array.isArray(schedule.segments) || schedule.segments.length === 0) return false;
+
+    const createdAt = new Date(schedule.createdAt || nowDate.getTime());
+    if (Number.isNaN(createdAt.getTime())) return false;
+
+    const createdDayOfWeek = createdAt.getDay() === 0 ? 6 : createdAt.getDay() - 1;
+
+    return schedule.segments.some(segment => {
+        const segmentDays = (Array.isArray(segment.days) && segment.days.length > 0) ? segment.days : [createdDayOfWeek];
+        return segmentDays.some(segmentDay => {
+            let daysUntil = segmentDay - createdDayOfWeek;
+            if (daysUntil < 0) daysUntil += 7;
+
+            const segmentStart = new Date(createdAt);
+            segmentStart.setDate(segmentStart.getDate() + daysUntil);
+            segmentStart.setHours(segment.startHour, segment.startMinute, 0, 0);
+
+            const segmentEnd = new Date(segmentStart);
+            segmentEnd.setHours(segment.endHour, segment.endMinute, 0, 0);
+            if (segmentEnd <= segmentStart) {
+                segmentEnd.setDate(segmentEnd.getDate() + 1);
+            }
+
+            return segmentEnd > nowDate;
+        });
+    });
+}
+
+function scheduleCanStillBecomeActive(schedule, nowDate = new Date()) {
+    if (!schedule || !Array.isArray(schedule.segments) || schedule.segments.length === 0) return false;
+    if (schedule.repeatType === 'forever' || (schedule.repeatType === 'date' && schedule.repeatDate)) {
+        return scheduleHasFutureRecurringOccurrence(schedule, nowDate);
+    }
+    return scheduleHasFutureSingleOccurrence(schedule, nowDate);
+}
+
+function hasAnyBlockingStateToClear(now = Date.now(), nowDate = new Date(now)) {
+    const hasOneOffState = appData.activeBlocks.some(block => isOneOffBlockStillActive(block, now));
+    if (hasOneOffState) return true;
+    return !!appData.schedules?.some(schedule => scheduleCanStillBecomeActive(schedule, nowDate));
 }
 
 async function refreshDesktopHelperStatus({ syncPreference = true } = {}) {
@@ -9004,7 +9088,6 @@ function applySettingsLanguage() {
     setText('settings-keep-blocking-label', tSettings('keepBlocking'));
     setText('settings-helper-service-label', tSettings('helperService'));
     setText('settings-update-helper-label', tSettings('updateHelper'));
-    setText('settings-uninstall-helper-label', tSettings('uninstallHelper'));
     setText('settings-clean-hosts-label', tSettings('cleanHostsFile'));
     setText('settings-helper-hint', tSettings('helperHint'));
     setText('close-settings-btn', tSettings('close'));
@@ -9343,7 +9426,6 @@ function setupHelpMenuLinks() {
 function setupHelperSettings() {
     const statusIndicator = document.getElementById('helper-status-indicator');
     const keepBlockingToggle = document.getElementById('keep-blocking-toggle');
-    const removeHelperNowBtn = document.getElementById('remove-helper-now-btn');
     const cleanHostsBtn = document.getElementById('clean-hosts-btn');
 
     // Initialize toggle from saved settings
@@ -9407,77 +9489,6 @@ function setupHelperSettings() {
         });
     }
 
-    // Remove Helper Now button - use named function to avoid duplicates
-    if (removeHelperNowBtn && !removeHelperNowBtn._helperRemoveListenerAdded) {
-        removeHelperNowBtn._helperRemoveListenerAdded = true;
-
-        removeHelperNowBtn.addEventListener('click', async () => {
-            // Guard against double execution using global flag
-            if (window._isRemovingHelper) {
-                console.log('Helper removal already in progress (global flag), ignoring click');
-                return;
-            }
-            window._isRemovingHelper = true;
-            console.log('Remove helper clicked, setting global guard flag');
-            let removalSucceeded = false;
-
-            try {
-                // Check if there are active blocks
-                const hasActiveBlocks = hasAnyActiveBlocks();
-                console.log('Has active blocks:', hasActiveBlocks);
-
-                let confirmed = false;
-                if (hasActiveBlocks) {
-                    // Need challenge first - show override modal
-                    confirmed = await showRemoveHelperChallenge();
-                } else {
-                    // No active blocks - use Tauri's async dialog (native confirm() doesn't block in webview)
-                    confirmed = await ask('Are you sure you want to remove the helper service? Website blocking will stop working until you reinstall it.', {
-                        title: 'Remove Helper?',
-                        kind: 'warning'
-                    });
-                }
-
-                console.log('User confirmed:', confirmed);
-                if (!confirmed) {
-                    window._isRemovingHelper = false;
-                    return;
-                }
-
-                // Proceed with removal
-                removeHelperNowBtn.disabled = true;
-                removeHelperNowBtn.innerHTML = `<span class="btn-spinner"></span>${tSettings('helperRemoving')}`;
-
-                const result = await uninstallHelperAndConfirmRemoved();
-                if (result.success) {
-                    removeHelperNowBtn.innerHTML = `<span>${tSettings('helperRemoved')}</span>`;
-                    removalSucceeded = true;
-                    await new Promise(resolve => setTimeout(resolve, 1200));
-                    removeHelperNowBtn.style.display = 'none';
-                } else {
-                    await message('Failed to remove helper: ' + (result.error || 'Unknown error'), { title: 'Error', kind: 'error' });
-                }
-            } catch (e) {
-                console.error('Error removing helper:', e);
-                await message('Error removing helper: ' + e.message, { title: 'Error', kind: 'error' });
-            } finally {
-                window._isRemovingHelper = false;
-                console.log('Remove helper complete, cleared global guard flag');
-                if (removalSucceeded) {
-                    return;
-                }
-                removeHelperNowBtn.disabled = false;
-                removeHelperNowBtn.innerHTML = `
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M3 6h18"></path>
-                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                    </svg>
-                    <span>${tSettings('uninstallHelper')}</span>
-                `;
-            }
-        });
-    }
 }
 
 function getHelperStatusDisplay(status) {
@@ -9536,6 +9547,29 @@ function getHelperStatusDisplay(status) {
 function logHelperRemovalFallback(result) {
     if (result?.error) {
         console.warn('[helper-uninstall] Fallback cleanup used:', result.error);
+    }
+}
+
+function updateSnwUninstallOption(helperDisplay) {
+    const uninstallBtn = document.getElementById('snw-uninstall-btn');
+    if (!uninstallBtn) return;
+
+    const uninstallOption = uninstallBtn.closest('.snw-option');
+    if (uninstallOption) uninstallOption.style.display = '';
+
+    if (window._isRemovingHelper) {
+        uninstallBtn.disabled = true;
+        uninstallBtn.title = '';
+        return;
+    }
+
+    const hasBlockingState = hasAnyBlockingStateToClear();
+    if (hasBlockingState) {
+        uninstallBtn.disabled = true;
+        uninstallBtn.title = 'Run the emergency stop first to clear all active or resumable blocks and schedules';
+    } else {
+        uninstallBtn.disabled = false;
+        uninstallBtn.title = helperDisplay?.removeTitle || '';
     }
 }
 
@@ -9637,35 +9671,13 @@ async function updateHelperStatusIndicator() {
             }
         }
 
-        // Show/hide the Remove Helper Now button based on status
-        const removeHelperBtn = document.getElementById('remove-helper-now-btn');
-        if (removeHelperBtn) {
-            if (helperDisplay.showRemove) {
-                removeHelperBtn.style.display = '';
-
-                // Check if there are active blocks - if so, disable the button
-                const hasActiveBlocks = hasAnyActiveBlocks();
-                if (status.running && hasActiveBlocks) {
-                    removeHelperBtn.disabled = true;
-                    removeHelperBtn.title = 'Override all running blocks first before removing the helper';
-                    removeHelperBtn.classList.add('disabled-with-reason');
-                } else {
-                    removeHelperBtn.disabled = false;
-                    removeHelperBtn.title = helperDisplay.removeTitle;
-                    removeHelperBtn.classList.remove('disabled-with-reason');
-                }
-            } else {
-                removeHelperBtn.style.display = 'none';
-            }
-        }
+        updateSnwUninstallOption(helperDisplay);
     } catch (e) {
         statusIndicator.classList.remove('running', 'stopped');
         statusIndicator.classList.add('stopped');
         statusText.textContent = tSettings('helperStatusUnknown');
 
-        // Hide buttons on error
-        const removeHelperBtn = document.getElementById('remove-helper-now-btn');
-        if (removeHelperBtn) removeHelperBtn.style.display = 'none';
+        updateSnwUninstallOption(null);
         if (updateBtn) updateBtn.style.display = 'none';
     }
 
@@ -9929,7 +9941,7 @@ function hasAnyActiveBlocks() {
 
 // Update visibility of the Override All button based on active blocks
 function updateOverrideAllButtonVisibility() {
-    const hasBlocks = hasAnyActiveBlocks();
+    const hasBlocks = hasAnyBlockingStateToClear();
     // "Something still not working?" — enabled when no blocks active, disabled when blocks active
     const stillBtn = document.getElementById('still-not-working-btn');
     if (stillBtn) {
@@ -10080,7 +10092,7 @@ function setupOverrideAll() {
             const challengeTextEl = document.getElementById('override-all-challenge-text');
             const instructionEl = document.getElementById('override-all-instruction');
 
-            if (!hasAnyActiveBlocks()) {
+            if (!hasAnyBlockingStateToClear()) {
                 // No blocks active — show dialog but skip the typing challenge
                 overrideAllChallengeText = '';
                 if (challengeTextEl) challengeTextEl.style.display = 'none';
@@ -10226,6 +10238,7 @@ function setupStillNotWorking() {
     const btn = document.getElementById('still-not-working-btn');
     const modal = document.getElementById('still-not-working-modal');
     const closeBtn = document.getElementById('close-snw-btn');
+    const uninstallBtn = document.getElementById('snw-uninstall-btn');
     if (!btn || !modal) return;
 
     // Open modal
@@ -10239,6 +10252,15 @@ function setupStillNotWorking() {
         const bar = document.getElementById('snw-challenge-progress-bar');
         if (bar) bar.style.width = '0%';
         modal.classList.remove('hidden');
+
+        void (async () => {
+            try {
+                const status = await tauriAPI.checkHelperStatus();
+                updateSnwUninstallOption(getHelperStatusDisplay(status));
+            } catch {
+                updateSnwUninstallOption(null);
+            }
+        })();
     });
 
     // Close
@@ -10250,27 +10272,42 @@ function setupStillNotWorking() {
     });
 
     // Option 1: Uninstall Helper
-    const uninstallBtn = document.getElementById('snw-uninstall-btn');
     if (uninstallBtn) {
         uninstallBtn.addEventListener('click', async () => {
+            if (window._isRemovingHelper) return;
             const originalHTML = uninstallBtn.innerHTML;
             try {
+                window._isRemovingHelper = true;
                 uninstallBtn.disabled = true;
                 uninstallBtn.innerHTML = `<span class="btn-spinner"></span>${tSettings('helperRemoving')}`;
+                if (hasAnyBlockingStateToClear()) {
+                    window._isRemovingHelper = false;
+                    uninstallBtn.disabled = false;
+                    uninstallBtn.innerHTML = originalHTML;
+                    await message('Run the emergency stop first to clear all active or resumable blocks and schedules before removing the helper.', {
+                        title: 'Finish clearing blocks first',
+                        kind: 'warning'
+                    });
+                    return;
+                }
                 const result = await uninstallHelperAndConfirmRemoved();
                 if (result.success) {
                     uninstallBtn.textContent = tSettings('helperRemoved');
                     setTimeout(() => {
+                        window._isRemovingHelper = false;
                         uninstallBtn.disabled = false;
                         uninstallBtn.innerHTML = originalHTML;
+                        updateSnwUninstallOption(null);
                     }, 3000);
                 } else {
+                    window._isRemovingHelper = false;
                     uninstallBtn.disabled = false;
                     uninstallBtn.innerHTML = originalHTML;
                     await message('Failed to remove helper: ' + (result.error || 'Unknown error'), { title: 'Error', kind: 'error' });
                 }
             } catch (e) {
                 console.error('Failed to uninstall helper:', e);
+                window._isRemovingHelper = false;
                 uninstallBtn.disabled = false;
                 uninstallBtn.innerHTML = originalHTML;
                 await message('Error removing helper: ' + e.message, { title: 'Error', kind: 'error' });
@@ -10399,15 +10436,15 @@ function setupStillNotWorking() {
     }
 }
 
-// Find the hardest challenge among all active blocks and schedules
+// Find the hardest challenge among all block/schedule state that could still resume later.
 function findHardestChallenge() {
     const now = Date.now();
     const nowDate = new Date(now);
     let hardestDifficulty = null;
 
-    // Check active one-off blocks
+    // Check one-off blocks that still have remaining time.
     for (const block of appData.activeBlocks) {
-        if (isOneOffBlockEnforced(block, now)) {
+        if (isOneOffBlockStillActive(block, now)) {
             const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
             if (blocklist?.overrideDifficulty) {
                 hardestDifficulty = hardestDifficulty
@@ -10417,10 +10454,10 @@ function findHardestChallenge() {
         }
     }
 
-    // Check active schedules
+    // Check schedules that can still become active later.
     for (const schedule of appData.schedules || []) {
         if (!schedule.segments) continue;
-        if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
+        if (!scheduleCanStillBecomeActive(schedule, nowDate)) continue;
 
         const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
         if (blocklist?.overrideDifficulty) {
