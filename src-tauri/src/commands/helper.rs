@@ -235,12 +235,20 @@ fn get_helper_path(_app: &tauri::AppHandle) -> Option<PathBuf> {
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))?;
     
-    #[cfg(target_os = "macos")]
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     let candidates = [
-        "redd-block-helper",  // Universal builds
-        "redd-block-helper-aarch64-apple-darwin",  // ARM64 build
-        "redd-block-helper-x86_64-apple-darwin",   // Intel build
+        "redd-block-helper-aarch64-apple-darwin",  // Current arch sidecar
         "redd-block-helper-universal-apple-darwin", // Universal with explicit suffix
+        "redd-block-helper",  // Universal builds
+        "redd-block-helper-x86_64-apple-darwin",   // Fallback
+    ];
+
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    let candidates = [
+        "redd-block-helper-x86_64-apple-darwin",   // Current arch sidecar
+        "redd-block-helper-universal-apple-darwin", // Universal with explicit suffix
+        "redd-block-helper",  // Universal builds
+        "redd-block-helper-aarch64-apple-darwin",  // Fallback
     ];
     
     #[cfg(target_os = "windows")]
