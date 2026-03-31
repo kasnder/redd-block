@@ -826,11 +826,23 @@ class ScreentimePlugin: Plugin {
         let startDate = Date(timeIntervalSince1970: args.startTimestampMs / 1000.0)
         let endDate = startDate.addingTimeInterval(15 * 60)
         let calendar = Calendar.current
-        // Use only time components (no year/month/day) so the system treats this as "next occurrence of this time"
-        // and fires intervalDidStart correctly; full date components can cause the schedule to be misinterpreted.
-        let components: Set<Calendar.Component> = [.hour, .minute, .second]
+        let crossesMidnight = !calendar.isDate(startDate, inSameDayAs: endDate)
+        // Keep the existing same-day path unchanged. Only midnight-crossing one-offs
+        // opt into explicit date components so 23:xx -> 00:xx registrations remain
+        // anchored to the intended day boundary.
+        let components: Set<Calendar.Component> = crossesMidnight
+            ? [.year, .month, .day, .hour, .minute, .second]
+            : [.hour, .minute, .second]
         let intervalStart = calendar.dateComponents(components, from: startDate)
         let intervalEnd = calendar.dateComponents(components, from: endDate)
+        if crossesMidnight {
+            NSLog(
+                "[ReDD Schedule] registerOneOffActivity using date-aware midnight path name=%@ start=%@ end=%@",
+                args.activityName,
+                String(describing: intervalStart),
+                String(describing: intervalEnd)
+            )
+        }
         let schedule = DeviceActivitySchedule(
             intervalStart: intervalStart,
             intervalEnd: intervalEnd,
