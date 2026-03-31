@@ -126,6 +126,8 @@ let pendingScheduleData = null; // Store schedule data when waiting for helper i
 let draggedBlocklistId = null; // Track which blocklist is being dragged
 let isIOS = false; // Track if running on iOS
 let screentimeAuthorized = false; // Track if Screen Time is authorized (iOS)
+let startupInitializationPromise = null; // Prevent duplicate post-onboarding startup runs
+let startupInitializationComplete = false; // Track whether post-onboarding startup already ran
 let pauseBlockId = null; // Track which block is being paused
 let pauseChallengeText = ''; // Challenge text for pause modal
 let pauseMaxMinutes = null; // Maximum pause duration in minutes (null = unlimited)
@@ -756,22 +758,8 @@ const wordList = [
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     await loadData();
+    await resetDevOnlyEulaAcceptance();
     detectPlatform(); // Must run early so isIOS is set before other setup
-    await runExpiryOnce(); // Align in-memory state with Screen Time / helper (e.g. after app was closed)
-    if (isIOS) {
-        await checkScreentimeAuth();
-        if (screentimeAuthorized) {
-            await initializeIOSBlockingState();
-        }
-    } else {
-        await checkHelperStatus();
-        console.log('[startup-sync] Desktop startup helperAvailable:', helperAvailable);
-        // Reconcile manual blocks first so paused one-offs are removed from helper state after reinstall.
-        await syncActiveBlocksToHelper();
-        // Then sync schedules to helper so both enforcement sources are aligned.
-        await syncSchedulesToHelper();
-        console.log('[startup-sync] Startup helper reconciliation complete');
-    }
     setupEventListeners();
     setupTheme();
     setupUiZoomShortcuts();
@@ -780,15 +768,72 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupDiagnosticsButton();
     setupOverrideAll();
     setupStillNotWorking();
-    render();
-    scrollToNow(false); // Initial scroll (instant, no animation)
-    startTickInterval();
+    updateEulaOnboarding();
+    updateIOSScreenTimeOnboarding();
 
-    // Check for app updates (non-blocking, desktop only)
-    if (!isIOS) {
-        checkForAppUpdate();
+    if (hasAcceptedEula()) {
+        await runPostAcceptanceStartup();
     }
 });
+
+function isLocalDevRun() {
+    return ['localhost', '127.0.0.1'].includes(window.location.hostname);
+}
+
+async function resetDevOnlyEulaAcceptance() {
+    if (!isLocalDevRun() || !appData?.settings?.eulaAccepted) {
+        return;
+    }
+    appData.settings.eulaAccepted = false;
+    await saveData();
+}
+
+function hasAcceptedEula() {
+    return appData?.settings?.eulaAccepted === true;
+}
+
+async function runPostAcceptanceStartup() {
+    if (startupInitializationComplete) return;
+    if (startupInitializationPromise) {
+        await startupInitializationPromise;
+        return;
+    }
+
+    startupInitializationPromise = (async () => {
+        await runExpiryOnce(); // Align in-memory state with Screen Time / helper (e.g. after app was closed)
+        if (isIOS) {
+            await checkScreentimeAuth();
+            if (screentimeAuthorized) {
+                await initializeIOSBlockingState();
+            }
+        } else {
+            await checkHelperStatus();
+            console.log('[startup-sync] Desktop startup helperAvailable:', helperAvailable);
+            // Reconcile manual blocks first so paused one-offs are removed from helper state after reinstall.
+            await syncActiveBlocksToHelper();
+            // Then sync schedules to helper so both enforcement sources are aligned.
+            await syncSchedulesToHelper();
+            console.log('[startup-sync] Startup helper reconciliation complete');
+        }
+        render();
+        scrollToNow(false); // Initial scroll (instant, no animation)
+        startTickInterval();
+
+        // Check for app updates (non-blocking, desktop only)
+        if (!isIOS) {
+            checkForAppUpdate();
+        }
+        startupInitializationComplete = true;
+    })();
+
+    try {
+        await startupInitializationPromise;
+    } finally {
+        if (!startupInitializationComplete) {
+            startupInitializationPromise = null;
+        }
+    }
+}
 
 // Check if a newer app version is available and show update banner
 async function checkForAppUpdate() {
@@ -890,10 +935,35 @@ async function initializeIOSBlockingState() {
     await syncSchedulesToHelper();
 }
 
+function updateEulaOnboarding() {
+    const overlay = document.getElementById('eula-onboarding');
+    if (!overlay) return;
+    overlay.classList.toggle('hidden', hasAcceptedEula());
+}
+
 function updateIOSScreenTimeOnboarding() {
     const overlay = document.getElementById('ios-screentime-onboarding');
     if (!overlay) return;
-    overlay.classList.toggle('hidden', !(isIOS && !screentimeAuthorized));
+    overlay.classList.toggle('hidden', !(isIOS && hasAcceptedEula() && !screentimeAuthorized));
+}
+
+async function acceptEula() {
+    if (hasAcceptedEula()) return;
+    if (!appData.settings) {
+        appData.settings = {};
+    }
+    appData.settings.eulaAccepted = true;
+    await saveData();
+    updateEulaOnboarding();
+    await runPostAcceptanceStartup();
+}
+
+async function openExternal(target) {
+    try {
+        await open(target);
+    } catch {
+        window.open(target, '_blank', 'noopener,noreferrer');
+    }
 }
 
 // Load data from main process
@@ -1142,6 +1212,43 @@ function setupEventListeners() {
 
     document.getElementById('titlebar-close')?.addEventListener('click', () => {
         tauriAPI.closeWindow();
+    });
+
+    const eulaCheckbox = document.getElementById('eula-agree-checkbox');
+    const eulaContinueBtn = document.getElementById('eula-continue-btn');
+    if (eulaCheckbox && eulaContinueBtn) {
+        eulaContinueBtn.disabled = !eulaCheckbox.checked;
+    }
+    eulaCheckbox?.addEventListener('change', () => {
+        if (eulaContinueBtn) {
+            eulaContinueBtn.disabled = !eulaCheckbox.checked;
+        }
+    });
+    eulaContinueBtn?.addEventListener('click', async () => {
+        if (!eulaCheckbox?.checked || !eulaContinueBtn) return;
+        const originalText = eulaContinueBtn.textContent;
+        eulaContinueBtn.disabled = true;
+        eulaContinueBtn.textContent = 'Continuing...';
+        try {
+            await acceptEula();
+        } catch (err) {
+            console.error('Failed to accept EULA:', err);
+            alert('Could not save your agreement. Please try again.');
+            eulaContinueBtn.disabled = !eulaCheckbox.checked;
+            eulaContinueBtn.textContent = originalText;
+            return;
+        }
+        eulaContinueBtn.textContent = originalText;
+    });
+
+    document.querySelectorAll('#eula-onboarding [data-external-url]').forEach(link => {
+        link.addEventListener('click', async (event) => {
+            event.preventDefault();
+            const target = link.dataset.externalUrl;
+            if (target) {
+                await openExternal(target);
+            }
+        });
     });
 
     document.getElementById('ios-screentime-grant-btn')?.addEventListener('click', async () => {
@@ -9419,14 +9526,6 @@ function setupUiZoomShortcuts() {
 }
 
 function setupHelpMenuLinks() {
-    const openExternal = async (target) => {
-        try {
-            await open(target);
-        } catch {
-            window.open(target, '_blank', 'noopener,noreferrer');
-        }
-    };
-
     tauriAPI.onMenuHelpReportIssue(() => {
         openExternal('https://github.com/ulyngs/redd-block/issues');
     }).catch(() => { });
