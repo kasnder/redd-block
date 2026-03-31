@@ -4536,10 +4536,26 @@ function renderSchedulePreview() {
     const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
     if (!blocklist) return;
     const draftCreatedAt = Date.now();
+    const shouldRepeat = scheduleRepeatType === 'forever' || scheduleRepeatType === 'date';
 
     // Determine the visible date range (21 days: 7 before anchor to 7 after anchor + 7)
     const renderStart = new Date(currentWeekStart);
     renderStart.setDate(renderStart.getDate() - 7);
+
+    if (!shouldRepeat) {
+        const draftOccurrences = resolveOneShotOccurrences({
+            repeatType: 'no',
+            createdAt: draftCreatedAt,
+            segments: scheduleSegments
+        }).filter(occurrence => occurrence.segmentIndex >= activeScheduleSegmentCount);
+
+        draftOccurrences.forEach(occurrence => {
+            renderPreviewBlock(occurrence.start, occurrence.end, blocklist, true, occurrence.segmentIndex);
+        });
+
+        layoutOverlappingBlocks();
+        return;
+    }
 
     // For each segment, render blocks on its specific days
     scheduleSegments.forEach((segment, segmentIndex) => {
@@ -4549,19 +4565,6 @@ function renderSchedulePreview() {
 
         // Get the days for this segment (0=Mon, 1=Tue, ..., 6=Sun)
         const segmentDays = segment.days || [];
-        const shouldRepeat = scheduleRepeatType === 'forever' || scheduleRepeatType === 'date';
-
-        if (!shouldRepeat) {
-            const singleOccurrence = getSingleOccurrenceSegmentDates({
-                repeatType: 'no',
-                createdAt: draftCreatedAt
-            }, segment);
-
-            if (singleOccurrence) {
-                renderPreviewBlock(singleOccurrence.start, singleOccurrence.end, blocklist, true, segmentIndex);
-            }
-            return;
-        }
 
         // Repeating schedules render across all visible weeks.
         const daysToRender = 21;
@@ -4648,6 +4651,67 @@ function renderActiveScheduleBlock(blockStart, blockEnd, blocklist, segmentIndex
                 <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
                 <span class="schedule-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></span>
             `;
+
+            track.appendChild(blockEl);
+        }
+
+        currentDay.setDate(currentDay.getDate() + 1);
+    }
+}
+
+function renderScheduledCalendarInterval(schedule, blockStart, blockEnd, blocklist, segmentIndex) {
+    const startDay = new Date(blockStart);
+    startDay.setHours(0, 0, 0, 0);
+
+    const endDay = new Date(blockEnd);
+    endDay.setHours(0, 0, 0, 0);
+
+    const fullStartTimeStr = formatTime(blockStart);
+    const fullEndTimeStr = formatTime(blockEnd);
+    let currentDay = new Date(startDay);
+
+    while (currentDay <= endDay) {
+        const dateStr = localDateKey(currentDay);
+        const track = document.querySelector(`.day-track[data-date="${dateStr}"]`);
+
+        if (track) {
+            const dayStart = new Date(currentDay);
+            dayStart.setHours(0, 0, 0, 0);
+            const dayEnd = new Date(currentDay);
+            dayEnd.setHours(23, 59, 59, 999);
+
+            const {
+                topPosition,
+                height
+            } = getCalendarSegmentLayout(blockStart.getTime(), blockEnd.getTime(), dayStart.getTime(), dayEnd.getTime());
+
+            const dayIndex = currentDay.getDay() === 0 ? 6 : currentDay.getDay() - 1;
+            const isContinuationDay = currentDay.getTime() > startDay.getTime();
+            const blockEl = document.createElement('div');
+            blockEl.className = `calendar-block scheduled${isContinuationDay ? ' overnight-continuation' : ''}`;
+            blockEl.dataset.scheduleId = schedule.id;
+            blockEl.dataset.segmentIndex = segmentIndex;
+            blockEl.dataset.day = dayIndex;
+            blockEl.style.top = `${topPosition}px`;
+            blockEl.style.height = `${height}px`;
+
+            if (blocklist.color) {
+                blockEl.style.background = blocklist.color;
+                blockEl.style.opacity = '0.7';
+                blockEl.style.color = getContrastTextColor(blocklist.color);
+            }
+
+            blockEl.innerHTML = `
+                <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
+                <span class="block-label">${escapeHtml(blocklist.name)}</span>
+                <span class="block-time">${fullStartTimeStr} - ${fullEndTimeStr}</span>
+                <span class="schedule-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></span>
+            `;
+
+            blockEl.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openScheduledBlockOverrideModal(schedule, segmentIndex, dayIndex);
+            });
 
             track.appendChild(blockEl);
         }
@@ -8003,17 +8067,26 @@ function renderScheduledCalendarBlocks() {
             if (now > endDate) return;
         }
 
+        if (schedule.repeatType === 'no') {
+            const occurrences = resolveOneShotOccurrences(schedule);
+            occurrences.forEach(occurrence => {
+                renderScheduledCalendarInterval(
+                    schedule,
+                    occurrence.start,
+                    occurrence.end,
+                    blocklist,
+                    occurrence.segmentIndex
+                );
+            });
+            return;
+        }
+
         // Render each segment on its applicable days
         schedule.segments.forEach((segment, segmentIdx) => {
-            const isRepeatingSchedule = schedule.repeatType === 'forever' || schedule.repeatType === 'date';
-            const singleOccurrence = isRepeatingSchedule ? null : getSingleOccurrenceSegmentDates(schedule, segment);
-            const singleOccurrenceStartDateKey = singleOccurrence ? localDateKey(singleOccurrence.start) : null;
             const segmentDays = segment.days || [];
 
             allVisibleDays.forEach((weekDay, weekDayIdx) => {
-                if (singleOccurrenceStartDateKey) {
-                    if (weekDay.dateStr !== singleOccurrenceStartDateKey) return;
-                } else if (!segmentDays.includes(weekDay.dayIndex)) {
+                if (!segmentDays.includes(weekDay.dayIndex)) {
                     return;
                 }
 
