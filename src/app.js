@@ -373,9 +373,13 @@ function collectActiveIOSManualBlockPayload(now = Date.now()) {
     };
 }
 
+function isNonRepeatingSchedule(schedule) {
+    return !!schedule && schedule.repeatType !== 'forever' && !(schedule.repeatType === 'date' && schedule.repeatDate);
+}
+
 // Resolve concrete one-shot occurrences for non-repeating schedules.
 function resolveOneShotSegmentOccurrences(schedule, segment, segmentIndex = 0) {
-    if (!schedule || schedule.repeatType !== 'no' || !segment) return [];
+    if (!isNonRepeatingSchedule(schedule) || !segment) return [];
 
     const createdAt = new Date(schedule.createdAt || Date.now());
     if (Number.isNaN(createdAt.getTime())) return [];
@@ -421,7 +425,7 @@ function resolveOneShotSegmentOccurrences(schedule, segment, segmentIndex = 0) {
 }
 
 function resolveOneShotOccurrences(schedule) {
-    if (!schedule || schedule.repeatType !== 'no' || !Array.isArray(schedule.segments)) return [];
+    if (!isNonRepeatingSchedule(schedule) || !Array.isArray(schedule.segments)) return [];
 
     const occurrences = [];
     schedule.segments.forEach((segment, segmentIndex) => {
@@ -545,7 +549,7 @@ async function syncSchedulesToHelper() {
         // Build schedule payloads with pre-resolved domains and apps
         const helperSchedules = (appData.schedules || []).map(schedule => {
             const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-            const helperSegments = schedule.repeatType === 'no'
+            const helperSegments = isNonRepeatingSchedule(schedule)
                 ? resolveOneShotOccurrences(schedule).map(occurrence => ({
                     startHour: occurrence.start.getHours(),
                     startMinute: occurrence.start.getMinutes(),
@@ -3347,7 +3351,7 @@ function isScheduleSegmentActiveNow(schedule, nowDate = new Date()) {
     if (!schedule || !schedule.segments || schedule.segments.length === 0) return false;
     const nowMs = nowDate.getTime();
     if (isSchedulePausedNow(schedule, nowMs)) return false;
-    if (schedule.repeatType === 'no') {
+    if (isNonRepeatingSchedule(schedule)) {
         return resolveOneShotOccurrences(schedule).some(occurrence => {
             const startMs = occurrence.start.getTime();
             const endMs = occurrence.end.getTime();
@@ -8018,7 +8022,7 @@ function renderScheduledCalendarBlocks() {
             if (now > endDate) return;
         }
 
-        if (schedule.repeatType === 'no') {
+        if (isNonRepeatingSchedule(schedule)) {
             const occurrences = resolveOneShotOccurrences(schedule);
             occurrences.forEach(occurrence => {
                 renderScheduledCalendarInterval(
