@@ -3299,6 +3299,17 @@ function formatDateForInput(date) {
     return `${year}-${month}-${day}`;
 }
 
+function localDateKey(date) {
+    return formatDateForInput(date);
+}
+
+function parseLocalDateKey(dateKey) {
+    if (!dateKey) return null;
+    const [year, month, day] = dateKey.split('-').map(Number);
+    if (![year, month, day].every(Number.isFinite)) return null;
+    return new Date(year, month - 1, day);
+}
+
 // Format date for display (e.g., "3 Feb 2026")
 function formatDateForDisplay(date) {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -4538,7 +4549,7 @@ function renderActiveScheduleBlock(blockStart, blockEnd, blocklist, segmentIndex
     let currentDay = new Date(startDay);
 
     while (currentDay <= endDay) {
-        const dateStr = currentDay.toISOString().split('T')[0];
+        const dateStr = localDateKey(currentDay);
         const track = document.querySelector(`.day-track[data-date="${dateStr}"]`);
 
         if (track) {
@@ -4599,7 +4610,7 @@ function renderPreviewBlock(blockStart, blockEnd, blocklist, skipClear = false, 
     let currentDay = new Date(startDay);
 
     while (currentDay <= endDay) {
-        const dateStr = currentDay.toISOString().split('T')[0];
+        const dateStr = localDateKey(currentDay);
         const track = document.querySelector(`.day-track[data-date="${dateStr}"]`);
 
         if (track) {
@@ -4681,7 +4692,8 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
     function getDayIndexFromTrack(trackEl) {
         const dateStr = trackEl.dataset.date;
         if (!dateStr) return null;
-        const date = new Date(dateStr);
+        const date = parseLocalDateKey(dateStr);
+        if (!date) return null;
         // Convert JS day (0=Sun) to our format (0=Mon)
         const jsDay = date.getDay();
         return jsDay === 0 ? 6 : jsDay - 1;
@@ -7581,7 +7593,7 @@ function updateWeekCalendar() {
         column.className = 'day-column';
         if (isToday) column.classList.add('today');
         if (isWeekend) column.classList.add('weekend');
-        column.dataset.date = dayDate.toISOString().split('T')[0];
+        column.dataset.date = localDateKey(dayDate);
 
         // Hour cells
         for (let h = 0; h < 24; h++) {
@@ -7597,7 +7609,7 @@ function updateWeekCalendar() {
         if (isScheduleMode) {
             track.classList.add('schedule-mode');
         }
-        track.dataset.date = dayDate.toISOString().split('T')[0];
+        track.dataset.date = localDateKey(dayDate);
         column.appendChild(track);
 
         // Now indicator for today (no header offset - starts at top of column)
@@ -7680,8 +7692,9 @@ function updateVisibleRangeDisplay() {
     });
 
     if (firstVisible && lastVisible) {
-        const startDate = new Date(firstVisible.dataset.date);
-        const endDate = new Date(lastVisible.dataset.date);
+        const startDate = parseLocalDateKey(firstVisible.dataset.date);
+        const endDate = parseLocalDateKey(lastVisible.dataset.date);
+        if (!startDate || !endDate) return;
         weekDisplay.textContent = formatWeekDisplay(startDate, endDate);
     }
 }
@@ -7739,7 +7752,7 @@ function renderWeekBlocks() {
         let currentDay = new Date(startDay);
 
         while (currentDay <= endDay) {
-            const dateStr = currentDay.toISOString().split('T')[0];
+            const dateStr = localDateKey(currentDay);
             const track = document.querySelector(`.day-track[data-date="${dateStr}"]`);
 
             if (track) {
@@ -7910,7 +7923,7 @@ function renderScheduledCalendarBlocks() {
         day.setDate(day.getDate() + i);
         allVisibleDays.push({
             date: day,
-            dateStr: day.toISOString().split('T')[0],
+            dateStr: localDateKey(day),
             dayIndex: (day.getDay() === 0 ? 6 : day.getDay() - 1) // Convert to 0=Mon format
         });
     }
