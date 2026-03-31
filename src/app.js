@@ -768,8 +768,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupDiagnosticsButton();
     setupOverrideAll();
     setupStillNotWorking();
-    updateEulaOnboarding();
-    updateIOSScreenTimeOnboarding();
+    if (isIOS && hasAcceptedEula()) {
+        await checkScreentimeAuth();
+    } else {
+        updateOnboardingVisibility();
+    }
 
     if (hasAcceptedEula()) {
         await runPostAcceptanceStartup();
@@ -902,7 +905,7 @@ async function checkScreentimeAuth() {
         console.error('Error checking Screen Time auth:', err);
         screentimeAuthorized = false;
     }
-    updateIOSScreenTimeOnboarding();
+    updateOnboardingVisibility();
 }
 
 // Request Screen Time authorization (iOS only)
@@ -911,11 +914,10 @@ async function requestScreentimeAuth() {
         const result = await tauriAPI.screentimeRequestAuth();
         screentimeAuthorized = result.granted;
         console.log('Screen Time auth result:', result);
-        updateIOSScreenTimeOnboarding();
         return result;
     } catch (err) {
         console.error('Error requesting Screen Time auth:', err);
-        updateIOSScreenTimeOnboarding();
+        screentimeAuthorized = false;
         return { granted: false, status: 'error', error: err.toString() };
     }
 }
@@ -935,16 +937,16 @@ async function initializeIOSBlockingState() {
     await syncSchedulesToHelper();
 }
 
-function updateEulaOnboarding() {
-    const overlay = document.getElementById('eula-onboarding');
-    if (!overlay) return;
-    overlay.classList.toggle('hidden', hasAcceptedEula());
-}
+function updateOnboardingVisibility() {
+    const eulaOverlay = document.getElementById('eula-onboarding');
+    const screentimeOverlay = document.getElementById('ios-screentime-onboarding');
+    const main = document.getElementById('main-content');
+    const showEula = !hasAcceptedEula();
+    const showScreentime = isIOS && !showEula && !screentimeAuthorized;
 
-function updateIOSScreenTimeOnboarding() {
-    const overlay = document.getElementById('ios-screentime-onboarding');
-    if (!overlay) return;
-    overlay.classList.toggle('hidden', !(isIOS && hasAcceptedEula() && !screentimeAuthorized));
+    eulaOverlay?.classList.toggle('hidden', !showEula);
+    screentimeOverlay?.classList.toggle('hidden', !showScreentime);
+    main?.classList.toggle('hidden', showEula || showScreentime);
 }
 
 async function acceptEula() {
@@ -954,7 +956,11 @@ async function acceptEula() {
     }
     appData.settings.eulaAccepted = true;
     await saveData();
-    updateEulaOnboarding();
+    if (isIOS) {
+        await checkScreentimeAuth();
+    } else {
+        updateOnboardingVisibility();
+    }
     await runPostAcceptanceStartup();
 }
 
@@ -1263,6 +1269,7 @@ function setupEventListeners() {
         const result = await requestScreentimeAuth();
 
         if (result.granted) {
+            updateOnboardingVisibility();
             try {
                 await initializeIOSBlockingState();
                 render();
@@ -1276,6 +1283,7 @@ function setupEventListeners() {
                 note.textContent = `Screen Time access failed: ${result.error}`;
             }
         }
+        updateOnboardingVisibility();
 
         btn.disabled = false;
         btn.textContent = originalText;
@@ -5397,8 +5405,10 @@ async function proceedWithBlock() {
                 } else {
                     alert('Screen Time authorization is required to block websites. Please try again.');
                 }
+                updateOnboardingVisibility();
                 return;
             }
+            updateOnboardingVisibility();
         }
 
         try {
@@ -7323,7 +7333,7 @@ function undoDelete() {
 
 // Main render function
 function render() {
-    document.getElementById('main-content').classList.remove('hidden');
+    updateOnboardingVisibility();
 
     // Initialize currentWeekStart if not set
     if (!currentWeekStart) {
