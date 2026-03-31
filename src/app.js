@@ -423,10 +423,8 @@ function getIOSScheduleEntryWindow(schedule, seg) {
 async function syncSchedulesToHelper() {
     if (isIOS) {
         try {
-            const now = Date.now();
             const flatEntries = [];
             for (const schedule of appData.schedules || []) {
-                if (schedule.isPaused && schedule.pauseEndTime > now) continue;
                 if (!schedule.segments || schedule.segments.length === 0) continue;
                 const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
                 const domains = blocklist?.websites || [];
@@ -446,7 +444,9 @@ async function syncSchedulesToHelper() {
                         categoryTokenData: iosPayload.categoryTokenData,
                         repeats: window.repeats,
                         activeFromTimestampMs: window.activeFromTimestampMs,
-                        activeUntilTimestampMs: window.activeUntilTimestampMs
+                        activeUntilTimestampMs: window.activeUntilTimestampMs,
+                        isPaused: !!schedule.isPaused,
+                        pauseEndTimestampMs: schedule.pauseEndTime || null
                     });
                 }
             }
@@ -6721,25 +6721,42 @@ async function proceedWithPause() {
     await updateHostsFile();
     await updateBlockedApps();
 
-    // iOS: register one-off DeviceActivity so block resumes at pauseEndTime when app is closed
-    if (isIOS && !pauseScheduleData && pauseBlockId) {
-        const block = appData.activeBlocks.find(b => b.id === pauseBlockId);
-        if (block && block.pauseEndTime) {
-            try {
-                const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
-                const iosPayload = getBlocklistIOSPayload(blocklist);
-                await tauriAPI.screentimeSetResumePayload({
-                    blockId: pauseBlockId,
-                    domains: blocklist?.websites || [],
-                    appTokenData: iosPayload.appTokenData,
-                    categoryTokenData: iosPayload.categoryTokenData
-                });
-                const res = await tauriAPI.screentimeRegisterOneOffActivity('redd-block-resume-' + pauseBlockId, block.pauseEndTime);
-                if (res && res.success === false) {
-                    console.error('[iOS] One-off DeviceActivity registration failed:', res.error || 'Unknown error');
+    // iOS: register one-off DeviceActivity so pause expiry re-evaluates background enforcement.
+    if (isIOS) {
+        if (pauseScheduleData) {
+            const schedule = appData.schedules?.find(s => s.blocklistId === pauseScheduleData.blocklistId);
+            if (schedule?.pauseEndTime) {
+                try {
+                    const res = await tauriAPI.screentimeRegisterOneOffActivity(
+                        'redd-schedule-resume-' + schedule.id,
+                        schedule.pauseEndTime
+                    );
+                    if (res && res.success === false) {
+                        console.error('[iOS] Schedule pause-resume registration failed:', res.error || 'Unknown error');
+                    }
+                } catch (e) {
+                    console.warn('[iOS] Schedule pause-resume registration threw:', e);
                 }
-            } catch (e) {
-                console.warn('[iOS] One-off pause-resume registration failed:', e);
+            }
+        } else if (pauseBlockId) {
+            const block = appData.activeBlocks.find(b => b.id === pauseBlockId);
+            if (block && block.pauseEndTime) {
+                try {
+                    const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+                    const iosPayload = getBlocklistIOSPayload(blocklist);
+                    await tauriAPI.screentimeSetResumePayload({
+                        blockId: pauseBlockId,
+                        domains: blocklist?.websites || [],
+                        appTokenData: iosPayload.appTokenData,
+                        categoryTokenData: iosPayload.categoryTokenData
+                    });
+                    const res = await tauriAPI.screentimeRegisterOneOffActivity('redd-block-resume-' + pauseBlockId, block.pauseEndTime);
+                    if (res && res.success === false) {
+                        console.error('[iOS] One-off DeviceActivity registration failed:', res.error || 'Unknown error');
+                    }
+                } catch (e) {
+                    console.warn('[iOS] One-off pause-resume registration failed:', e);
+                }
             }
         }
     }

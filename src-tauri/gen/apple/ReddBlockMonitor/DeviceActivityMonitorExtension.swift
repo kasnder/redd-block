@@ -23,6 +23,11 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         
         let raw = activity.rawValue
         NSLog("[ReDD Schedule] intervalDidStart raw=%@", raw)
+
+        if raw.hasPrefix("redd-schedule-resume-") {
+            recomputeActiveScheduleUnion()
+            return
+        }
         
         // One-off: pause resume — merge manual state + resume payload and apply to default store
         if raw.hasPrefix("redd-block-resume-") {
@@ -149,7 +154,7 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         let raw = activity.rawValue
         NSLog("[ReDD Schedule] intervalDidEnd raw=%@", raw)
         // One-off resume/block-end: we only care about intervalDidStart; do not clear default store when interval ends
-        if raw.hasPrefix("redd-block-resume-") || raw.hasPrefix("redd-block-end-") {
+        if raw.hasPrefix("redd-schedule-resume-") || raw.hasPrefix("redd-block-resume-") || raw.hasPrefix("redd-block-end-") {
             return
         }
         
@@ -164,7 +169,7 @@ class ReddBlockMonitor: DeviceActivityMonitor {
 
         let raw = activity.rawValue
         NSLog("[ReDD Schedule] intervalWillEndWarning raw=%@", raw)
-        if raw.hasPrefix("redd-block-resume-") || raw.hasPrefix("redd-block-end-") {
+        if raw.hasPrefix("redd-schedule-resume-") || raw.hasPrefix("redd-block-resume-") || raw.hasPrefix("redd-block-end-") {
             return
         }
 
@@ -178,6 +183,12 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         // Calendar.weekday: 1=Sun, 2=Mon, …, 7=Sat
         let weekday = Calendar.current.component(.weekday, from: Date())
         return (weekday - 2 + 7) % 7
+    }
+
+    private func isPauseActive(_ data: ScheduleBlockData, nowMs: Double) -> Bool {
+        guard data.isPaused == true else { return false }
+        guard let pauseEndTimestampMs = data.pauseEndTimestampMs else { return true }
+        return pauseEndTimestampMs > nowMs
     }
     
     /// Recompute and apply the union of all schedule entries that are active at "now".
@@ -235,6 +246,14 @@ class ReddBlockMonitor: DeviceActivityMonitor {
     /// If start/end times are missing (legacy payload), fall back to day-only matching.
     private func isScheduleDataActiveNow(_ data: ScheduleBlockData, now: Date = Date()) -> Bool {
         let nowMs = now.timeIntervalSince1970 * 1000.0
+        if isPauseActive(data, nowMs: nowMs) {
+            NSLog(
+                "[ReDD Schedule] inactive: paused now=%f pauseEnd=%@",
+                nowMs,
+                data.pauseEndTimestampMs.map { String($0) } ?? "nil"
+            )
+            return false
+        }
         if let activeFrom = data.activeFromTimestampMs, nowMs < activeFrom {
             NSLog("[ReDD Schedule] inactive: before activeFrom now=%f activeFrom=%f", nowMs, activeFrom)
             return false
