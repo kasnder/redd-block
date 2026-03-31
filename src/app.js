@@ -671,31 +671,7 @@ function scheduleHasFutureRecurringOccurrence(schedule, nowDate = new Date()) {
 
 function scheduleHasFutureSingleOccurrence(schedule, nowDate = new Date()) {
     if (!schedule || !Array.isArray(schedule.segments) || schedule.segments.length === 0) return false;
-
-    const createdAt = new Date(schedule.createdAt || nowDate.getTime());
-    if (Number.isNaN(createdAt.getTime())) return false;
-
-    const createdDayOfWeek = createdAt.getDay() === 0 ? 6 : createdAt.getDay() - 1;
-
-    return schedule.segments.some(segment => {
-        const segmentDays = (Array.isArray(segment.days) && segment.days.length > 0) ? segment.days : [createdDayOfWeek];
-        return segmentDays.some(segmentDay => {
-            let daysUntil = segmentDay - createdDayOfWeek;
-            if (daysUntil < 0) daysUntil += 7;
-
-            const segmentStart = new Date(createdAt);
-            segmentStart.setDate(segmentStart.getDate() + daysUntil);
-            segmentStart.setHours(segment.startHour, segment.startMinute, 0, 0);
-
-            const segmentEnd = new Date(segmentStart);
-            segmentEnd.setHours(segment.endHour, segment.endMinute, 0, 0);
-            if (segmentEnd <= segmentStart) {
-                segmentEnd.setDate(segmentEnd.getDate() + 1);
-            }
-
-            return segmentEnd > nowDate;
-        });
-    });
+    return resolveOneShotOccurrences(schedule).some(occurrence => occurrence.end > nowDate);
 }
 
 function scheduleCanStillBecomeActive(schedule, nowDate = new Date()) {
@@ -1116,24 +1092,9 @@ async function runExpiryOnce() {
                 if (nowDate > endDate) expiredIds.push(schedule.id);
                 continue;
             }
-            const createdAt = new Date(schedule.createdAt);
-            const createdDayOfWeek = createdAt.getDay() === 0 ? 6 : createdAt.getDay() - 1;
-            let allExpired = true;
-            for (const segment of schedule.segments || []) {
-                for (const segmentDay of segment.days || []) {
-                    let daysUntil = segmentDay - createdDayOfWeek;
-                    if (daysUntil < 0) daysUntil += 7;
-                    const segmentDate = new Date(createdAt);
-                    segmentDate.setDate(segmentDate.getDate() + daysUntil);
-                    segmentDate.setHours(segment.endHour, segment.endMinute, 0, 0);
-                    if (segmentDate > nowDate) {
-                        allExpired = false;
-                        break;
-                    }
-                }
-                if (!allExpired) break;
+            if (!scheduleHasFutureSingleOccurrence(schedule, nowDate)) {
+                expiredIds.push(schedule.id);
             }
-            if (allExpired) expiredIds.push(schedule.id);
         }
         if (expiredIds.length > 0) {
             appData.schedules = appData.schedules.filter(s => !expiredIds.includes(s.id));
@@ -3375,6 +3336,13 @@ function isScheduleSegmentActiveNow(schedule, nowDate = new Date()) {
     if (!schedule || !schedule.segments || schedule.segments.length === 0) return false;
     const nowMs = nowDate.getTime();
     if (isSchedulePausedNow(schedule, nowMs)) return false;
+    if (schedule.repeatType === 'no') {
+        return resolveOneShotOccurrences(schedule).some(occurrence => {
+            const startMs = occurrence.start.getTime();
+            const endMs = occurrence.end.getTime();
+            return nowMs >= startMs && nowMs < endMs;
+        });
+    }
     const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
     const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
     return schedule.segments.some(seg => {
@@ -5882,8 +5850,6 @@ async function updateHostsFile(silent = false) {
 
     // Also check scheduled blocks - add domains if a schedule segment is currently active
     const nowDate = new Date();
-    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1; // Convert to Mon=0 format
-    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
 
     if (appData.schedules) {
         appData.schedules.forEach(schedule => {
@@ -5892,33 +5858,7 @@ async function updateHostsFile(silent = false) {
             // Skip paused schedules
             if (schedule.isPaused && schedule.pauseEndTime > Date.now()) return;
 
-            // Check if any segment is active right now
-            const isActive = schedule.segments.some(seg => {
-                const startMins = seg.startHour * 60 + seg.startMinute;
-                const endMins = seg.endHour * 60 + seg.endMinute;
-
-                if (startMins === endMins) {
-                    // Same start and end (e.g., 00:00 - 00:00) means "all day"
-                    return seg.days.includes(currentDay);
-                } else if (endMins > startMins) {
-                    // Same-day segment (e.g., 09:00 - 17:00)
-                    return seg.days.includes(currentDay) &&
-                        currentMins >= startMins &&
-                        currentMins < endMins;
-                } else {
-                    // Cross-midnight segment (e.g., 22:00 - 04:00)
-                    // Active if: (today is in days AND currentMins >= start)
-                    //         OR (yesterday is in days AND currentMins < end)
-                    const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
-
-                    const inEveningPortion = seg.days.includes(currentDay) && currentMins >= startMins;
-                    const inMorningPortion = seg.days.includes(yesterdayDay) && currentMins < endMins;
-
-                    return inEveningPortion || inMorningPortion;
-                }
-            });
-
-            if (isActive) {
+            if (isScheduleSegmentActiveNow(schedule, nowDate)) {
                 const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
                 if (blocklist && blocklist.websites) {
                     blocklist.websites.forEach(domain => allDomains.add(domain));
