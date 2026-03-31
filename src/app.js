@@ -7389,7 +7389,6 @@ function render() {
     }
 
     updateWeekCalendar();
-    renderWeekBlocks();
     renderBlocklistSelector();
 
     // Auto-select if there's only one available (non-active) blocklist
@@ -7511,7 +7510,6 @@ function navigateWeek(direction) {
 
     currentWeekStart.setDate(currentWeekStart.getDate() + (direction * 7));
     updateWeekCalendar();
-    renderWeekBlocks();
     handleTimeChange(); // Re-render preview block after navigation
 }
 
@@ -7524,7 +7522,6 @@ function scrollToToday(smooth = true) {
     if (currentWeekStart.getTime() !== todayStart.getTime()) {
         currentWeekStart = todayStart;
         updateWeekCalendar();
-        renderWeekBlocks();
         handleTimeChange(); // Re-render preview block after navigation
     }
 
