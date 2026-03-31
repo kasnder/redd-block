@@ -373,7 +373,72 @@ function collectActiveIOSManualBlockPayload(now = Date.now()) {
     };
 }
 
-// Sync all active schedules to helper daemon so it can manage transitions autonomously
+// Resolve concrete one-shot occurrences for non-repeating schedules.
+function resolveOneShotSegmentOccurrences(schedule, segment, segmentIndex = 0) {
+    if (!schedule || schedule.repeatType !== 'no' || !segment) return [];
+
+    const createdAt = new Date(schedule.createdAt || Date.now());
+    if (Number.isNaN(createdAt.getTime())) return [];
+
+    const createdDay = createdAt.getDay() === 0 ? 6 : createdAt.getDay() - 1; // Mon=0
+    const segmentDays = Array.isArray(segment.days)
+        ? segment.days.filter(day => Number.isInteger(day) && day >= 0 && day <= 6)
+        : [];
+
+    if (segmentDays.length === 0) return [];
+
+    const occurrences = segmentDays.map(dayIndex => {
+        let daysUntil = dayIndex - createdDay;
+        if (daysUntil < 0) daysUntil += 7;
+
+        const start = new Date(createdAt);
+        start.setDate(start.getDate() + daysUntil);
+        start.setHours(segment.startHour, segment.startMinute, 0, 0);
+
+        const end = new Date(start);
+        end.setHours(segment.endHour, segment.endMinute, 0, 0);
+        if (end <= start) {
+            end.setDate(end.getDate() + 1);
+        }
+
+        return {
+            segmentIndex,
+            dayIndex,
+            start,
+            end
+        };
+    });
+
+    occurrences.sort((a, b) => {
+        const startDiff = a.start.getTime() - b.start.getTime();
+        if (startDiff !== 0) return startDiff;
+        const endDiff = a.end.getTime() - b.end.getTime();
+        if (endDiff !== 0) return endDiff;
+        return a.dayIndex - b.dayIndex;
+    });
+
+    return occurrences;
+}
+
+function resolveOneShotOccurrences(schedule) {
+    if (!schedule || schedule.repeatType !== 'no' || !Array.isArray(schedule.segments)) return [];
+
+    const occurrences = [];
+    schedule.segments.forEach((segment, segmentIndex) => {
+        occurrences.push(...resolveOneShotSegmentOccurrences(schedule, segment, segmentIndex));
+    });
+
+    occurrences.sort((a, b) => {
+        const startDiff = a.start.getTime() - b.start.getTime();
+        if (startDiff !== 0) return startDiff;
+        const segmentDiff = a.segmentIndex - b.segmentIndex;
+        if (segmentDiff !== 0) return segmentDiff;
+        return a.dayIndex - b.dayIndex;
+    });
+
+    return occurrences;
+}
+
 function getIOSScheduleEntryWindow(schedule, seg) {
     const createdAt = new Date(schedule.createdAt || Date.now());
 
@@ -395,48 +460,23 @@ function getIOSScheduleEntryWindow(schedule, seg) {
         };
     }
 
-    const createdDay = createdAt.getDay() === 0 ? 6 : createdAt.getDay() - 1; // Mon=0
-    const segmentDays = (Array.isArray(seg.days) && seg.days.length > 0) ? seg.days : [createdDay];
-    let firstStart = null;
-    let firstEnd = null;
-
-    for (const segmentDay of segmentDays) {
-        let daysUntil = segmentDay - createdDay;
-        if (daysUntil < 0) daysUntil += 7;
-
-        const segmentStart = new Date(createdAt);
-        segmentStart.setDate(segmentStart.getDate() + daysUntil);
-        segmentStart.setHours(seg.startHour, seg.startMinute, 0, 0);
-
-        const segmentEnd = new Date(createdAt);
-        segmentEnd.setDate(segmentEnd.getDate() + daysUntil);
-        segmentEnd.setHours(seg.endHour, seg.endMinute, 0, 0);
-        if (segmentEnd <= segmentStart) {
-            segmentEnd.setDate(segmentEnd.getDate() + 1);
-        }
-
-        if (!firstStart || segmentStart < firstStart) {
-            firstStart = segmentStart;
-            firstEnd = segmentEnd;
-        }
-    }
+    const occurrences = resolveOneShotSegmentOccurrences(schedule, seg);
+    const firstOccurrence = occurrences[0];
 
     return {
         repeats: false,
-        activeFromTimestampMs: firstStart ? firstStart.getTime() : null,
-        activeUntilTimestampMs: firstEnd ? firstEnd.getTime() : null
+        activeFromTimestampMs: firstOccurrence ? firstOccurrence.start.getTime() : null,
+        activeUntilTimestampMs: firstOccurrence ? firstOccurrence.end.getTime() : null
     };
 }
 
 function getSingleOccurrenceSegmentDates(schedule, segment) {
-    const window = getIOSScheduleEntryWindow(schedule, segment);
-    if (window.repeats || !window.activeFromTimestampMs || !window.activeUntilTimestampMs) {
-        return null;
-    }
+    const [firstOccurrence] = resolveOneShotSegmentOccurrences(schedule, segment);
+    if (!firstOccurrence) return null;
 
     return {
-        start: new Date(window.activeFromTimestampMs),
-        end: new Date(window.activeUntilTimestampMs)
+        start: new Date(firstOccurrence.start),
+        end: new Date(firstOccurrence.end)
     };
 }
 
