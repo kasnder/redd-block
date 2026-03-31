@@ -4,8 +4,6 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ask, message } from '@tauri-apps/plugin-dialog';
-import { open } from '@tauri-apps/plugin-shell';
-import { openUrl } from '@tauri-apps/plugin-opener';
 
 // Compatibility layer wrapping Tauri APIs
 const tauriAPI = {
@@ -78,6 +76,13 @@ const tauriAPI = {
     onMenuHelpContactUs: (callback) => listen('menu-help-contact-us', callback),
     onMenuHelpWhoWeAre: (callback) => listen('menu-help-who-we-are', callback),
 };
+
+async function openUrl(url, openWith) {
+    return invoke('plugin:opener|open_url', {
+        url,
+        with: openWith,
+    });
+}
 
 // State
 let appData = {
