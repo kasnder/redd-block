@@ -98,6 +98,10 @@ struct ScheduleSegment {
     #[serde(rename = "endMinute")]
     end_minute: u8,
     days: Vec<u8>, // Mon=0..Sun=6
+    #[serde(rename = "activeFromTimestampMs", default)]
+    active_from_timestamp_ms: Option<u64>,
+    #[serde(rename = "activeUntilTimestampMs", default)]
+    active_until_timestamp_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -604,6 +608,32 @@ fn flush_dns_cache() {
     }
 }
 
+fn is_schedule_segment_active(seg: &ScheduleSegment, now_ms: u64, current_day: u32, current_mins: u32) -> bool {
+    if let (Some(active_from), Some(active_until)) = (seg.active_from_timestamp_ms, seg.active_until_timestamp_ms) {
+        return now_ms >= active_from && now_ms < active_until;
+    }
+
+    let start_mins = seg.start_hour as u32 * 60 + seg.start_minute as u32;
+    let end_mins = seg.end_hour as u32 * 60 + seg.end_minute as u32;
+
+    if start_mins == end_mins {
+        // Same start and end (e.g., 00:00 - 00:00) means "all day"
+        return seg.days.contains(&(current_day as u8));
+    }
+
+    if end_mins > start_mins {
+        return seg.days.contains(&(current_day as u8))
+            && current_mins >= start_mins
+            && current_mins < end_mins;
+    }
+
+    // Cross-midnight segment (e.g., 22:00 - 04:00)
+    let yesterday = if current_day == 0 { 6 } else { current_day - 1 };
+    let in_evening = seg.days.contains(&(current_day as u8)) && current_mins >= start_mins;
+    let in_morning = seg.days.contains(&(yesterday as u8)) && current_mins < end_mins;
+    in_evening || in_morning
+}
+
 /// Compute currently active schedule domains
 fn get_active_schedule_domains(schedules: &[HelperSchedule]) -> Vec<String> {
     let now = chrono_now();
@@ -620,26 +650,10 @@ fn get_active_schedule_domains(schedules: &[HelperSchedule]) -> Vec<String> {
         if schedule.is_paused && schedule.pause_end_time.map(|end| end > now_ms).unwrap_or(true) {
             continue;
         }
-        let is_active = schedule.segments.iter().any(|seg| {
-            let start_mins = seg.start_hour as u32 * 60 + seg.start_minute as u32;
-            let end_mins = seg.end_hour as u32 * 60 + seg.end_minute as u32;
-            
-            if start_mins == end_mins {
-                // Same start and end (e.g., 00:00 - 00:00) means "all day"
-                seg.days.contains(&(current_day as u8))
-            } else if end_mins > start_mins {
-                // Same-day segment (e.g., 00:00 - 10:00)
-                seg.days.contains(&(current_day as u8))
-                    && current_mins >= start_mins
-                    && current_mins < end_mins
-            } else {
-                // Cross-midnight segment (e.g., 22:00 - 04:00)
-                let yesterday = if current_day == 0 { 6 } else { current_day - 1 };
-                let in_evening = seg.days.contains(&(current_day as u8)) && current_mins >= start_mins;
-                let in_morning = seg.days.contains(&(yesterday as u8)) && current_mins < end_mins;
-                in_evening || in_morning
-            }
-        });
+        let is_active = schedule
+            .segments
+            .iter()
+            .any(|seg| is_schedule_segment_active(seg, now_ms, current_day, current_mins));
         
         if is_active {
             for d in &schedule.domains {
@@ -668,24 +682,10 @@ fn get_active_schedule_apps(schedules: &[HelperSchedule]) -> Vec<String> {
         if schedule.is_paused && schedule.pause_end_time.map(|end| end > now_ms).unwrap_or(true) {
             continue;
         }
-        let is_active = schedule.segments.iter().any(|seg| {
-            let start_mins = seg.start_hour as u32 * 60 + seg.start_minute as u32;
-            let end_mins = seg.end_hour as u32 * 60 + seg.end_minute as u32;
-            
-            if start_mins == end_mins {
-                // Same start and end (e.g., 00:00 - 00:00) means "all day"
-                seg.days.contains(&(current_day as u8))
-            } else if end_mins > start_mins {
-                seg.days.contains(&(current_day as u8))
-                    && current_mins >= start_mins
-                    && current_mins < end_mins
-            } else {
-                let yesterday = if current_day == 0 { 6 } else { current_day - 1 };
-                let in_evening = seg.days.contains(&(current_day as u8)) && current_mins >= start_mins;
-                let in_morning = seg.days.contains(&(yesterday as u8)) && current_mins < end_mins;
-                in_evening || in_morning
-            }
-        });
+        let is_active = schedule
+            .segments
+            .iter()
+            .any(|seg| is_schedule_segment_active(seg, now_ms, current_day, current_mins));
         
         if is_active {
             for a in &schedule.apps {

@@ -545,19 +545,30 @@ async function syncSchedulesToHelper() {
         // Build schedule payloads with pre-resolved domains and apps
         const helperSchedules = (appData.schedules || []).map(schedule => {
             const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+            const helperSegments = schedule.repeatType === 'no'
+                ? resolveOneShotOccurrences(schedule).map(occurrence => ({
+                    startHour: occurrence.start.getHours(),
+                    startMinute: occurrence.start.getMinutes(),
+                    endHour: occurrence.end.getHours(),
+                    endMinute: occurrence.end.getMinutes(),
+                    days: [],
+                    activeFromTimestampMs: occurrence.start.getTime(),
+                    activeUntilTimestampMs: occurrence.end.getTime()
+                }))
+                : (schedule.segments || []).map(seg => ({
+                    startHour: seg.startHour,
+                    startMinute: seg.startMinute,
+                    endHour: seg.endHour,
+                    endMinute: seg.endMinute,
+                    days: [...seg.days]
+                }));
             return {
                 id: schedule.id,
                 domains: blocklist?.websites || [],
                 apps: blocklist?.apps || [],
                 isPaused: !!schedule.isPaused,
                 pauseEndTime: schedule.pauseEndTime || null,
-                segments: (schedule.segments || []).map(seg => ({
-                    startHour: seg.startHour,
-                    startMinute: seg.startMinute,
-                    endHour: seg.endHour,
-                    endMinute: seg.endMinute,
-                    days: [...seg.days]
-                }))
+                segments: helperSegments
             };
         });
 

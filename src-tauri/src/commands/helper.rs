@@ -101,6 +101,10 @@ pub struct HelperScheduleSegment {
     #[serde(rename = "endMinute")]
     pub end_minute: u8,
     pub days: Vec<u8>,
+    #[serde(rename = "activeFromTimestampMs", default)]
+    pub active_from_timestamp_ms: Option<u64>,
+    #[serde(rename = "activeUntilTimestampMs", default)]
+    pub active_until_timestamp_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
