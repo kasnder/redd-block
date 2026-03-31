@@ -1,6 +1,6 @@
 {
   "name": "redd-block",
-  "version": "0.9.7",
+  "version": "1.0.0",
   "description": "ReDD Block - block distracting websites and apps to stay focused",
   "scripts": {
     "dev": "npm run sync:helper && tauri dev",
