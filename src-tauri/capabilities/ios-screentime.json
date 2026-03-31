@@ -9,6 +9,8 @@
         "main"
     ],
     "permissions": [
-        "screentime:default"
+        "screentime:default",
+        "shell:allow-open",
+        "opener:default"
     ]
 }

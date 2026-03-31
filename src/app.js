@@ -5,6 +5,7 @@ import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ask, message } from '@tauri-apps/plugin-dialog';
 import { open } from '@tauri-apps/plugin-shell';
+import { openUrl } from '@tauri-apps/plugin-opener';
 
 // Compatibility layer wrapping Tauri APIs
 const tauriAPI = {
@@ -966,7 +967,7 @@ async function acceptEula() {
 
 async function openExternal(target) {
     try {
-        await open(target);
+        await openUrl(target);
     } catch {
         window.open(target, '_blank', 'noopener,noreferrer');
     }
@@ -1247,14 +1248,21 @@ function setupEventListeners() {
         eulaContinueBtn.textContent = originalText;
     });
 
-    document.querySelectorAll('#eula-onboarding [data-external-url]').forEach(link => {
-        link.addEventListener('click', async (event) => {
-            event.preventDefault();
-            const target = link.dataset.externalUrl;
-            if (target) {
-                await openExternal(target);
-            }
-        });
+    document.querySelectorAll('#eula-onboarding a[data-external-url]').forEach((link) => {
+        link.addEventListener(
+            'click',
+            (event) => {
+                const url = link.dataset.externalUrl;
+                if (!url) return;
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                openUrl(url).catch((err) => {
+                    console.warn('[eula] open in browser failed:', err);
+                    window.open(url, '_blank', 'noopener,noreferrer');
+                });
+            },
+            true
+        );
     });
 
     document.getElementById('ios-screentime-grant-btn')?.addEventListener('click', async () => {
@@ -10575,7 +10583,7 @@ function setupStillNotWorking() {
             );
             const mailtoUrl = `mailto:team@reddfocus.org?subject=${subject}&body=${body}`;
             try {
-                await open(mailtoUrl);
+                await openUrl(mailtoUrl);
             } catch {
                 window.location.href = mailtoUrl;
             }

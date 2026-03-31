@@ -2863,22 +2863,30 @@ body.ios .blocklist-action-btn svg {
     margin: 24px 0 20px;
 }
 
-.legal-onboarding-checkbox {
+.legal-onboarding-checkbox-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
     font-size: 17px;
     line-height: 1.5;
     color: var(--text-secondary);
-    align-items: center;
-    gap: 12px;
 }
 
-.legal-onboarding-checkbox input[type="checkbox"] {
-    margin-top: 0;
+.legal-onboarding-checkbox-row input[type="checkbox"] {
+    margin-top: 2px;
     width: 20px;
     height: 20px;
     min-width: 20px;
     border-radius: 6px;
     accent-color: var(--accent-color);
-    transform: translateY(0);
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+.legal-onboarding-checkbox-text {
+    cursor: default;
+    flex: 1;
+    min-width: 0;
 }
 
 .legal-onboarding-note {
