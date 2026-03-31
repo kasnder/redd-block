@@ -2847,6 +2847,77 @@ body.ios .blocklist-action-btn svg {
     max-width: 420px;
 }
 
+.legal-onboarding-content {
+    max-width: 560px;
+}
+
+.legal-onboarding-subtitle {
+    font-size: 18px;
+    color: var(--text-subtle);
+    margin-bottom: 8px;
+}
+
+.legal-onboarding-card {
+    text-align: left;
+    padding: 24px 22px 20px;
+    margin: 24px 0 20px;
+}
+
+.legal-onboarding-checkbox {
+    font-size: 17px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+    align-items: center;
+    gap: 12px;
+}
+
+.legal-onboarding-checkbox input[type="checkbox"] {
+    margin-top: 0;
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
+    border-radius: 6px;
+    accent-color: var(--accent-color);
+    transform: translateY(0);
+}
+
+.legal-onboarding-note {
+    margin: 16px 0 0;
+    font-size: 15px;
+    line-height: 1.55;
+    color: var(--text-muted);
+}
+
+.legal-onboarding-link {
+    color: hsl(222.2, 47.4%, 11.2%);
+    font-weight: 400;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.legal-onboarding-link:hover {
+    text-decoration: none;
+}
+
+.legal-onboarding-card .onboarding-primary-btn {
+    margin-top: 18px;
+}
+
+.legal-onboarding-card .onboarding-primary-btn:disabled {
+    background: hsl(215, 16%, 75%);
+    cursor: not-allowed;
+}
+
+.legal-onboarding-card .onboarding-primary-btn:disabled:hover {
+    background: hsl(215, 16%, 75%);
+}
+
+.legal-onboarding-body {
+    max-width: 520px;
+    margin: 0 auto;
+    color: var(--text-muted);
+}
+
 .onboarding-focus-card .onboarding-primary-btn {
     width: 100%;
     margin: 16px 0 0;
@@ -2855,8 +2926,18 @@ body.ios .blocklist-action-btn svg {
     font-weight: 600;
 }
 
-.onboarding-signoff {
-    margin-bottom: 0;
+@media (max-width: 640px) {
+    .legal-onboarding-content {
+        max-width: 100%;
+    }
+
+    .legal-onboarding-card {
+        padding: 20px 18px 18px;
+    }
+
+    .legal-onboarding-subtitle {
+        font-size: 16px;
+    }
 }
 
 .onboarding-form {
