@@ -109,6 +109,10 @@ pub struct ScheduleEntryRequest {
     pub active_from_timestamp_ms: Option<f64>,
     /// Optional active window end for this schedule entry.
     pub active_until_timestamp_ms: Option<f64>,
+    /// Whether this schedule entry is currently paused.
+    pub is_paused: Option<bool>,
+    /// Optional pause expiry for this schedule entry.
+    pub pause_end_timestamp_ms: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -60,6 +60,9 @@ class ScheduleEntry: Decodable {
     /// to enforce non-repeating and date-limited schedule semantics.
     let activeFromTimestampMs: Double?
     let activeUntilTimestampMs: Double?
+    /// Optional pause state propagated from the JS schedule model.
+    let isPaused: Bool?
+    let pauseEndTimestampMs: Double?
 }
 
 class SetSchedulesArgs: Decodable {
@@ -717,7 +720,7 @@ class ScreentimePlugin: Plugin {
         var errors: [String] = []
         for entry in args.schedules {
             NSLog(
-                "[ReDD Schedule] registering id=%@ start=%02d:%02d end=%02d:%02d repeats=%@ from=%@ until=%@ days=%@ domains=%d",
+                "[ReDD Schedule] registering id=%@ start=%02d:%02d end=%02d:%02d repeats=%@ from=%@ until=%@ paused=%@ pauseEnd=%@ days=%@ domains=%d",
                 entry.id,
                 entry.startHour,
                 entry.startMinute,
@@ -726,6 +729,8 @@ class ScreentimePlugin: Plugin {
                 String(entry.repeats ?? true),
                 entry.activeFromTimestampMs.map { String($0) } ?? "nil",
                 entry.activeUntilTimestampMs.map { String($0) } ?? "nil",
+                String(entry.isPaused ?? false),
+                entry.pauseEndTimestampMs.map { String($0) } ?? "nil",
                 String(describing: entry.days ?? []),
                 entry.domains?.count ?? 0
             )
@@ -739,7 +744,9 @@ class ScreentimePlugin: Plugin {
                 endHour: entry.endHour,
                 endMinute: entry.endMinute,
                 activeFromTimestampMs: entry.activeFromTimestampMs,
-                activeUntilTimestampMs: entry.activeUntilTimestampMs
+                activeUntilTimestampMs: entry.activeUntilTimestampMs,
+                isPaused: entry.isPaused,
+                pauseEndTimestampMs: entry.pauseEndTimestampMs
             )
             SharedScheduleStore.save(id: entry.id, data: scheduleData)
             
@@ -819,11 +826,23 @@ class ScreentimePlugin: Plugin {
         let startDate = Date(timeIntervalSince1970: args.startTimestampMs / 1000.0)
         let endDate = startDate.addingTimeInterval(15 * 60)
         let calendar = Calendar.current
-        // Use only time components (no year/month/day) so the system treats this as "next occurrence of this time"
-        // and fires intervalDidStart correctly; full date components can cause the schedule to be misinterpreted.
-        let components: Set<Calendar.Component> = [.hour, .minute, .second]
+        let crossesMidnight = !calendar.isDate(startDate, inSameDayAs: endDate)
+        // Keep the existing same-day path unchanged. Only midnight-crossing one-offs
+        // opt into explicit date components so 23:xx -> 00:xx registrations remain
+        // anchored to the intended day boundary.
+        let components: Set<Calendar.Component> = crossesMidnight
+            ? [.year, .month, .day, .hour, .minute, .second]
+            : [.hour, .minute, .second]
         let intervalStart = calendar.dateComponents(components, from: startDate)
         let intervalEnd = calendar.dateComponents(components, from: endDate)
+        if crossesMidnight {
+            NSLog(
+                "[ReDD Schedule] registerOneOffActivity using date-aware midnight path name=%@ start=%@ end=%@",
+                args.activityName,
+                String(describing: intervalStart),
+                String(describing: intervalEnd)
+            )
+        }
         let schedule = DeviceActivitySchedule(
             intervalStart: intervalStart,
             intervalEnd: intervalEnd,
@@ -831,6 +850,7 @@ class ScreentimePlugin: Plugin {
         )
         let activityName = DeviceActivityName(args.activityName)
         do {
+            center.stopMonitoring([activityName])
             try center.startMonitoring(activityName, during: schedule)
             invoke.resolve(["success": true])
         } catch {
@@ -885,7 +905,9 @@ class ScreentimePlugin: Plugin {
         endHour: Int? = nil,
         endMinute: Int? = nil,
         activeFromTimestampMs: Double? = nil,
-        activeUntilTimestampMs: Double? = nil
+        activeUntilTimestampMs: Double? = nil,
+        isPaused: Bool? = nil,
+        pauseEndTimestampMs: Double? = nil
     ) -> ScheduleBlockData {
         return ScheduleBlockData(
             domains: domains ?? [],
@@ -897,7 +919,9 @@ class ScreentimePlugin: Plugin {
             endHour: endHour,
             endMinute: endMinute,
             activeFromTimestampMs: activeFromTimestampMs,
-            activeUntilTimestampMs: activeUntilTimestampMs
+            activeUntilTimestampMs: activeUntilTimestampMs,
+            isPaused: isPaused,
+            pauseEndTimestampMs: pauseEndTimestampMs
         )
     }
 
@@ -971,11 +995,20 @@ class ScreentimePlugin: Plugin {
         let weekday = Calendar.current.component(.weekday, from: Date())
         return (weekday - 2 + 7) % 7
     }
+
+    private func isPauseActive(isPaused: Bool?, pauseEndTimestampMs: Double?, nowMs: Double) -> Bool {
+        guard isPaused == true else { return false }
+        guard let pauseEndTimestampMs else { return true }
+        return pauseEndTimestampMs > nowMs
+    }
     
     /// True if the segment's time window and day filter include the current time.
     private func isSegmentActiveNow(entry: ScheduleEntry) -> Bool {
         let now = Date()
         let nowMs = now.timeIntervalSince1970 * 1000.0
+        if isPauseActive(isPaused: entry.isPaused, pauseEndTimestampMs: entry.pauseEndTimestampMs, nowMs: nowMs) {
+            return false
+        }
         if let activeFrom = entry.activeFromTimestampMs, nowMs < activeFrom {
             return false
         }

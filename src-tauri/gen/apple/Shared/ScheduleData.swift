@@ -39,6 +39,9 @@ struct ScheduleBlockData: Codable {
     /// Used to enforce non-repeating and date-limited schedules in extension.
     let activeFromTimestampMs: Double?
     let activeUntilTimestampMs: Double?
+    /// Optional pause state for schedule-backed entries.
+    let isPaused: Bool?
+    let pauseEndTimestampMs: Double?
 
     init(
         domains: [String],
@@ -50,7 +53,9 @@ struct ScheduleBlockData: Codable {
         endHour: Int? = nil,
         endMinute: Int? = nil,
         activeFromTimestampMs: Double? = nil,
-        activeUntilTimestampMs: Double? = nil
+        activeUntilTimestampMs: Double? = nil,
+        isPaused: Bool? = nil,
+        pauseEndTimestampMs: Double? = nil
     ) {
         self.domains = domains
         self.appTokenData = appTokenData
@@ -62,6 +67,8 @@ struct ScheduleBlockData: Codable {
         self.endMinute = endMinute
         self.activeFromTimestampMs = activeFromTimestampMs
         self.activeUntilTimestampMs = activeUntilTimestampMs
+        self.isPaused = isPaused
+        self.pauseEndTimestampMs = pauseEndTimestampMs
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -75,6 +82,8 @@ struct ScheduleBlockData: Codable {
         case endMinute
         case activeFromTimestampMs
         case activeUntilTimestampMs
+        case isPaused
+        case pauseEndTimestampMs
     }
 
     init(from decoder: Decoder) throws {
@@ -89,6 +98,8 @@ struct ScheduleBlockData: Codable {
         self.endMinute = try container.decodeIfPresent(Int.self, forKey: .endMinute)
         self.activeFromTimestampMs = try container.decodeIfPresent(Double.self, forKey: .activeFromTimestampMs)
         self.activeUntilTimestampMs = try container.decodeIfPresent(Double.self, forKey: .activeUntilTimestampMs)
+        self.isPaused = try container.decodeIfPresent(Bool.self, forKey: .isPaused)
+        self.pauseEndTimestampMs = try container.decodeIfPresent(Double.self, forKey: .pauseEndTimestampMs)
     }
 }
 
