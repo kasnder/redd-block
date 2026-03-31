@@ -493,6 +493,28 @@ async function syncSchedulesToHelper() {
                 const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
                 const domains = blocklist?.websites || [];
                 const iosPayload = getBlocklistIOSPayload(blocklist);
+                if (isNonRepeatingSchedule(schedule)) {
+                    const occurrences = resolveOneShotOccurrences(schedule);
+                    occurrences.forEach((occurrence, occurrenceIdx) => {
+                        flatEntries.push({
+                            id: `${schedule.id}-${occurrence.segmentIndex}-${occurrenceIdx}`,
+                            startHour: occurrence.start.getHours(),
+                            startMinute: occurrence.start.getMinutes(),
+                            endHour: occurrence.end.getHours(),
+                            endMinute: occurrence.end.getMinutes(),
+                            days: [],
+                            domains,
+                            appTokenData: iosPayload.appTokenData,
+                            categoryTokenData: iosPayload.categoryTokenData,
+                            repeats: false,
+                            activeFromTimestampMs: occurrence.start.getTime(),
+                            activeUntilTimestampMs: occurrence.end.getTime(),
+                            isPaused: !!schedule.isPaused,
+                            pauseEndTimestampMs: schedule.pauseEndTime || null
+                        });
+                    });
+                    continue;
+                }
                 for (let segIdx = 0; segIdx < schedule.segments.length; segIdx++) {
                     const seg = schedule.segments[segIdx];
                     const window = getIOSScheduleEntryWindow(schedule, seg);
