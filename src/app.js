@@ -428,6 +428,18 @@ function getIOSScheduleEntryWindow(schedule, seg) {
     };
 }
 
+function getSingleOccurrenceSegmentDates(schedule, segment) {
+    const window = getIOSScheduleEntryWindow(schedule, segment);
+    if (window.repeats || !window.activeFromTimestampMs || !window.activeUntilTimestampMs) {
+        return null;
+    }
+
+    return {
+        start: new Date(window.activeFromTimestampMs),
+        end: new Date(window.activeUntilTimestampMs)
+    };
+}
+
 async function syncSchedulesToHelper() {
     if (isIOS) {
         try {
@@ -4483,6 +4495,7 @@ function renderSchedulePreview() {
 
     const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
     if (!blocklist) return;
+    const draftCreatedAt = Date.now();
 
     // Determine the visible date range (21 days: 7 before anchor to 7 after anchor + 7)
     const renderStart = new Date(currentWeekStart);
@@ -4496,16 +4509,26 @@ function renderSchedulePreview() {
 
         // Get the days for this segment (0=Mon, 1=Tue, ..., 6=Sun)
         const segmentDays = segment.days || [];
-
-        // For non-repeating schedules, only render on the anchor week
-        // For repeating schedules (forever or date), render on all visible weeks
         const shouldRepeat = scheduleRepeatType === 'forever' || scheduleRepeatType === 'date';
-        const daysToRender = shouldRepeat ? 21 : 7;
-        const dayOffset = shouldRepeat ? 0 : 7; // Non-repeating starts at anchor week (offset 7)
+
+        if (!shouldRepeat) {
+            const singleOccurrence = getSingleOccurrenceSegmentDates({
+                repeatType: 'no',
+                createdAt: draftCreatedAt
+            }, segment);
+
+            if (singleOccurrence) {
+                renderPreviewBlock(singleOccurrence.start, singleOccurrence.end, blocklist, true, segmentIndex);
+            }
+            return;
+        }
+
+        // Repeating schedules render across all visible weeks.
+        const daysToRender = 21;
 
         for (let d = 0; d < daysToRender; d++) {
             const dayDate = new Date(renderStart);
-            dayDate.setDate(dayDate.getDate() + d + dayOffset);
+            dayDate.setDate(dayDate.getDate() + d);
 
             // Convert JS day (0=Sun) to our format (0=Mon)
             const jsDayOfWeek = dayDate.getDay();
@@ -7945,10 +7968,17 @@ function renderScheduledCalendarBlocks() {
 
         // Render each segment on its applicable days
         schedule.segments.forEach((segment, segmentIdx) => {
+            const isRepeatingSchedule = schedule.repeatType === 'forever' || schedule.repeatType === 'date';
+            const singleOccurrence = isRepeatingSchedule ? null : getSingleOccurrenceSegmentDates(schedule, segment);
+            const singleOccurrenceStartDateKey = singleOccurrence ? localDateKey(singleOccurrence.start) : null;
             const segmentDays = segment.days || [];
 
             allVisibleDays.forEach((weekDay, weekDayIdx) => {
-                if (!segmentDays.includes(weekDay.dayIndex)) return;
+                if (singleOccurrenceStartDateKey) {
+                    if (weekDay.dateStr !== singleOccurrenceStartDateKey) return;
+                } else if (!segmentDays.includes(weekDay.dayIndex)) {
+                    return;
+                }
 
                 const track = document.querySelector(`.day-track[data-date="${weekDay.dateStr}"]`);
                 if (!track) return;
@@ -8027,7 +8057,7 @@ function renderScheduledCalendarBlocks() {
 
                             blockEl2.addEventListener('click', (e) => {
                                 e.stopPropagation();
-                                openScheduledBlockOverrideModal(schedule, segmentIdx, weekDay.dayIndex);
+                                openScheduledBlockOverrideModal(schedule, segmentIdx, nextDay.dayIndex);
                             });
 
                             nextTrack.appendChild(blockEl2);
