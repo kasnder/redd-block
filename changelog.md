@@ -2,10 +2,68 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
-## v0.9.0 (next)
+## v1.0.0
+
+- **EULA onboarding** — Added a licence-agreement step during onboarding
+- Non-repeating schedules now behave consistently across desktop and iOS: previews, saved schedules, active-state checks, and helper sync all resolve the same one-off occurrences.
+- Calendar rendering for one-off schedules now uses the correct local day, including overnight cases, instead of drifting because of timezone handling.
+- iOS schedule handling is more reliable in the background: paused schedules resume correctly, and one-off activities that cross midnight are handled properly.
+- macOS helper install now prefers the helper binary for the current architecture.
+
+## v0.9.7
+
+- **Helper troubleshooting** — Desktop helper install, update, repair, diagnostics, and uninstall flows are clearer and more reliable.
+- Settings and Diagnostics now show more accurate helper states (for example active, idle, or installed but not reachable) and refresh live while open.
+- Emergency stop and helper cleanup are more robust even when the helper is stale or not running.
+- Shared desktop data-path handling is more stable across install, uninstall, and reinstall.
+- Settings opens faster thanks to cached helper-status checks.
+
+## v0.9.6
+
+- Blocklist names now wrap correctly on the schedule.
+
+## v0.9.5
+
+- Blocklist card text is larger for readability.
+- Schedule repeats now default to **forever**.
+- Added a suggestions link.
+- iPad styling tweaks.
+- Version checks are no longer cached, so update prompts stay current more reliably.
+
+## v0.9.4
+
+- Desktop block data is now stored in a shared system-wide location, so blocks can be seen and edited more reliably across users.
+- Backwards compatibility added for the storage changes, making updates smoother on existing installs.
+- iOS no longer repeatedly asks for Screen Time access.
+- iOS app blocking inside schedules is fixed.
+
+## v0.9.3
+
+- The override dialog now lists the same number of websites as the blocklist cards.
+- Added a note that changes can take a little time to apply.
+- Emergency handling is simpler and clearer.
+
+## v0.9.2
+
+- **Diagnostics** — Added a diagnostics section in Settings to make helper/support troubleshooting easier.
+- Manual website blocking now updates the hosts file atomically for safer desktop blocking changes.
+
+## v0.9.0
+
+- **iOS scheduled blocking** — Fixed a long list of reliability issues: future segments activate correctly, schedule transitions resync properly, and date-limited or non-repeating windows are enforced as expected.
+- iOS overriding and pausing now behave properly with overlapping schedules and active blocks, so clearing one restriction no longer accidentally clears others.
+- Timed blocks and paused blocks on iOS now update in real time even when the app is closed, so they can end or resume in the background.
+- iOS now supports app-only blocklists.
+- Screen Time permission is now part of onboarding on iOS.
+- Schedule previews now match the actual running blocks more closely, including always-on schedules.
+- iOS app-picker and scrolling behaviour improved when there are many apps or blocklists.
+
+## v0.8.6
 
 - Fixed duplicated blocklists being active by default.
 - Better preview for override text.
+- Polished max difficulty challenge behaviour and copy, including more accurate typing estimates for random words and gibberish.
+- Max difficulty controls are now hidden when using custom override text.
 
 ## v0.8.5
 
