@@ -31,6 +31,8 @@
     --scrollbar-thumb-hover: hsl(214, 32%, 75%);
     --border-active: hsl(214, 32%, 85%);
     --toggle-bg: hsl(214, 32%, 93%);
+    /* iPhone landscape: horizontal space between day toggles and segment remove (X). */
+    --ios-phone-landscape-days-remove-gap: 16px;
 }
 
 body.dark-mode {
@@ -328,6 +330,40 @@ body.dark-mode .title-bar button:hover {
     .main-content {
         padding-left: 18px;
         padding-right: 18px;
+    }
+}
+
+/* iPhone landscape: keep two columns, but let the scheduler claim the width it
+   needs before blocklists, and keep the whole app inset from the screen edges. */
+@media (orientation: landscape) {
+    body.ios.ios-phone .app-container {
+        width: auto;
+        margin-left: 12px;
+        margin-right: 12px;
+    }
+
+    body.ios.ios-phone .main-content {
+        padding-left: 18px;
+        padding-right: 18px;
+    }
+
+    body.ios.ios-phone .grid-top-row {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+        min-width: 0;
+    }
+
+    body.ios.ios-phone .blocklists-section {
+        flex: 45 1 0;
+        max-width: 45%;
+        min-width: 0;
+    }
+
+    body.ios.ios-phone .scheduler-section {
+        flex: 55 1 0;
+        min-width: 0;
+        max-width: 55%;
     }
 }
 
@@ -1809,6 +1845,8 @@ body.dark-mode .scheduler-mode-tabs {
     display: flex;
     align-items: center;
     justify-content: center;
+    flex: 1 1 0;
+    min-width: 0;
     padding: 6px 14px;
     border: none;
     border-radius: 8px;
@@ -1934,6 +1972,53 @@ body.dark-mode .mode-tab.active {
     .segment-row {
         flex-wrap: wrap;
         gap: 8px;
+    }
+}
+
+@media (orientation: landscape) {
+    body.ios.ios-phone .scheduler-content,
+    body.ios.ios-phone .time-picker-container,
+    body.ios.ios-phone .schedule-block-panel,
+    body.ios.ios-phone .schedule-segments,
+    body.ios.ios-phone .schedule-segment,
+    body.ios.ios-phone .segment-row,
+    body.ios.ios-phone .time-pickers-row,
+    body.ios.ios-phone .segment-days-group {
+        min-width: 0;
+    }
+
+    body.ios.ios-phone .schedule-segment {
+        display: block;
+        width: 100%;
+    }
+
+    body.ios.ios-phone .segment-row {
+        display: flex;
+        flex-wrap: wrap;
+        column-gap: 0;
+        row-gap: 8px;
+        align-items: flex-end;
+    }
+
+    body.ios.ios-phone .segment-row>.time-pickers-row {
+        min-width: 0;
+        width: 100%;
+    }
+
+    body.ios.ios-phone .segment-days-group {
+        width: max-content;
+        max-width: 100%;
+    }
+
+    body.ios.ios-phone .segment-days {
+        flex-wrap: nowrap;
+    }
+
+    body.ios.ios-phone .remove-segment-btn {
+        /* Place X immediately after the days row with a fixed tunable gap. */
+        margin-left: var(--ios-phone-landscape-days-remove-gap);
+        margin-bottom: 0;
+        align-self: flex-end;
     }
 }
 
