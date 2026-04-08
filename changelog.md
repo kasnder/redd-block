@@ -2,6 +2,11 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
+## v1.0.1
+
+- fix bug where EULA was showing on every opening of the app
+- fix iOS UI issues
+
 ## v1.0.0
 
 - **EULA onboarding** — Added a licence-agreement step during onboarding
