@@ -390,6 +390,11 @@ body.ios .week-calendar-section {
     min-height: 400px;
 }
 
+/* iPhone / iPod only: no room for week calendar — hide entire Schedule section (iPad keeps it) */
+body.ios.ios-phone .week-calendar-section {
+    display: none !important;
+}
+
 .week-calendar-section .section-header {
     margin-bottom: 8px;
 }
@@ -1715,6 +1720,23 @@ body.dark-mode .pause-block-btn.resume-mode:hover {
     display: flex;
     align-items: center;
     gap: 12px;
+}
+
+/* When horizontal layout overflows, JS adds this class: restarts-at block below pause-for, no arrow */
+.pause-duration-row.pause-duration-row--stacked {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+}
+
+.pause-duration-row.pause-duration-row--stacked .pause-arrow {
+    display: none;
+}
+
+.pause-duration-row.pause-duration-row--stacked .pause-duration-col {
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 100%;
 }
 
 .pause-duration-col {

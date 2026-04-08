@@ -1237,6 +1237,12 @@ function detectPlatform() {
     if (isIOSDevice) {
         isIOS = true;
         document.body.classList.add('ios');
+        // iPhone / iPod (anything not iPad): used for layout (e.g. hide week calendar)
+        const isIPad = /iPad/.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        if (!isIPad) {
+            document.body.classList.add('ios-phone');
+        }
         // Hide desktop-only UI on iOS
         document.getElementById('window-controls')?.classList.add('hidden');
         document.querySelector('.title-bar')?.classList.add('hidden');
@@ -2519,6 +2525,13 @@ function setupOverrideModalListeners() {
             document.getElementById('confirm-pause-btn').click();
         }
     });
+
+    const pauseDurationSection = document.querySelector('#pause-modal .pause-duration-section');
+    if (pauseDurationSection && typeof ResizeObserver !== 'undefined') {
+        const pauseDurationRo = new ResizeObserver(() => syncPauseDurationRowLayout());
+        pauseDurationRo.observe(pauseDurationSection);
+    }
+    window.addEventListener('resize', () => syncPauseDurationRowLayout());
 
     document.getElementById('confirm-override-btn').addEventListener('click', async () => {
         const typed = challengeInput.value;
@@ -6806,6 +6819,22 @@ function openPauseModal(blockId) {
     document.querySelector('#pause-modal .modal-content').classList.remove('wiggle');
 
     document.getElementById('pause-modal').classList.remove('hidden');
+    requestAnimationFrame(() => {
+        syncPauseDurationRowLayout();
+    });
+}
+
+/** Pause modal: use horizontal row only if it fits; otherwise stack (hide arrow). */
+function syncPauseDurationRowLayout() {
+    const modal = document.getElementById('pause-modal');
+    if (!modal || modal.classList.contains('hidden')) return;
+    const row = modal.querySelector('.pause-duration-row');
+    if (!row) return;
+    row.classList.remove('pause-duration-row--stacked');
+    void row.offsetWidth;
+    if (row.scrollWidth > row.clientWidth + 1) {
+        row.classList.add('pause-duration-row--stacked');
+    }
 }
 
 function closePauseModal() {
@@ -6860,6 +6889,7 @@ function updatePauseRestartTime() {
 
     // Update selected state in popovers
     updatePauseRestartPopoverSelection(restartTime.getHours(), restartTime.getMinutes());
+    syncPauseDurationRowLayout();
 }
 
 function updatePauseRestartPopoverSelection(hour, minute) {
@@ -6981,6 +7011,7 @@ function selectPauseRestartTimeOption(e) {
     }
 
     updatePauseRestartPopoverSelection(restartHour, restartMinute);
+    syncPauseDurationRowLayout();
 }
 
 async function proceedWithPause() {
