@@ -62,13 +62,19 @@ Persisted via `src-tauri/src/commands/data.rs`:
 - `schedules`
 - `settings`
 
+Important `settings` sub-state now includes EULA acceptance:
+
+- `eulaAcceptedRevision`
+- `eulaAcceptedAt`
+
 Used by `src/app.js` for:
 
 - rendering,
 - challenge UX,
 - local schedule/block computations,
 - pause/resume state,
-- command dispatching.
+- command dispatching,
+- onboarding gates (EULA, then iOS Screen Time authorization).
 
 ## 3.2 Helper-owned state (desktop enforcement authority)
 
@@ -109,6 +115,49 @@ Canonical path selection in `src-tauri/src/commands/data.rs` is based on:
 - whether the shared directory is writable.
 
 Once the shared location becomes active, the app continues to prefer it so uninstall/reinstall flows do not silently flip storage location.
+
+EULA acceptance is stored in the same canonical app-data file as the rest of app-owned state. This means:
+
+- desktop EULA acceptance persists across normal updates and reinstall-overwrites as long as the canonical app-data file remains
+- EULA acceptance does **not** live in helper state
+- helper uninstall/reinstall is not the source of truth for EULA completion
+
+```mermaid
+flowchart TD
+    launch[AppLaunch] --> loadData[LoadCanonicalAppData]
+    loadData --> devCheck{LocalDevRun}
+    devCheck -->|Yes| forceShow[forceShowEulaThisSession]
+    devCheck -->|No| normalRun[UseSavedEulaState]
+    forceShow --> gateDecision{needsEula}
+    normalRun --> gateDecision
+    gateDecision -->|Yes| showEula[ShowEulaOverlay]
+    gateDecision -->|No| continueStartup[ContinueStartup]
+    showEula --> accept[UserAcceptsEula]
+    accept --> saveRevision[SaveAcceptedRevisionAndTimestamp]
+    saveRevision --> continueStartup
+```
+
+## 3.5 EULA state model and migration
+
+The app uses a revision-based EULA model:
+
+- `CURRENT_EULA_REVISION` is defined in `src/app.js`
+- the user is considered compliant when saved `eulaAcceptedRevision === CURRENT_EULA_REVISION`
+- local dev force-shows the EULA via runtime override rather than by deleting persisted acceptance
+
+Migration rules:
+
+- legacy installs with `eulaAccepted: true` are promoted to `eulaAcceptedRevision = 1`
+- if legacy `eulaAcceptedAt` exists, it is copied forward
+- normal app upgrades do not re-prompt users unless `CURRENT_EULA_REVISION` changes
+
+This separates three independent concepts:
+
+- app version
+- helper daemon version
+- legal revision
+
+Only the legal revision should control whether the EULA is shown again.
 
 ```mermaid
 flowchart TD
