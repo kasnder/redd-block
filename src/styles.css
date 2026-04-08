@@ -92,6 +92,9 @@ body.ios {
     padding-top: env(safe-area-inset-top, 20px);
     padding-bottom: 0;
     overflow: hidden;
+    /* Avoid Safari boosting text / chrome when rotating to landscape (narrow height, wide width) */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
 }
 
 body.ios .main-content {
@@ -108,9 +111,9 @@ body.ios .app-container {
     overflow: hidden;
 }
 
-/* iPad */
+/* iPad only — iPhone landscape is often ≥768px wide; must not use iPad padding */
 @media (min-width: 768px) {
-    body.ios .app-container {
+    body.ios:not(.ios-phone) .app-container {
         padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px));
     }
 }
@@ -2685,10 +2688,10 @@ body.ios .blocklists-container {
 }
 
 @media (min-width: 768px) {
-    body.ios .blocklist-name {
+    body.ios:not(.ios-phone) .blocklist-name {
         font-size: 20px;
     }
-    body.ios .blocklist-meta {
+    body.ios:not(.ios-phone) .blocklist-meta {
         font-size: 17px;
     }
 }
@@ -2968,6 +2971,27 @@ body.ios .blocklist-action-btn svg {
     .legal-onboarding-subtitle {
         font-size: 16px;
     }
+}
+
+/* iPhone/iPod: landscape width is usually >640px — keep same compact EULA layout as portrait */
+body.ios.ios-phone .legal-onboarding-content {
+    max-width: 100%;
+}
+
+body.ios.ios-phone .legal-onboarding-card {
+    padding: 20px 18px 18px;
+}
+
+body.ios.ios-phone .legal-onboarding-subtitle {
+    font-size: 16px;
+}
+
+body.ios.ios-phone .legal-onboarding-checkbox-row {
+    font-size: 17px;
+}
+
+body.ios.ios-phone .legal-onboarding-note {
+    font-size: 15px;
 }
 
 .onboarding-form {
@@ -3822,6 +3846,12 @@ body.ios .modal-content {
     text-align: center;
     font-size: 13px;
     padding-bottom: 8px;
+}
+
+body.ios.ios-phone .footer,
+body.ios.ios-phone .footer-text {
+    font-size: 13px;
+    line-height: 1.25;
 }
 
 .settings-top-btn {
