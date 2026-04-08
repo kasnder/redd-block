@@ -116,7 +116,7 @@ function createMockAppData(overrides = {}) {
         blocklists: [],
         activeBlocks: [],
         schedules: [],
-        settings: { onboardingComplete: true },
+        settings: { onboardingComplete: true, eulaAcceptedRevision: 1 },
         ...overrides
     };
 }

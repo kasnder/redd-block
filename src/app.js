@@ -813,6 +813,8 @@ let scheduleRepeatType = 'forever'; // 'forever', 'date', or 'no'
 let scheduleRepeatDate = null; // Date object when repeatType is 'date'
 let activeScheduleSegmentCount = 0; // Number of segments locked in the active schedule (new segments can be added)
 let hasShownIOSScheduleSyncError = false;
+const CURRENT_EULA_REVISION = 1;
+let forceShowEulaThisSession = false;
 
 // Word list for random word challenges
 const wordList = [
@@ -851,19 +853,73 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 function isLocalDevRun() {
-    return ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    return ['http:', 'https:'].includes(window.location.protocol)
+        && ['localhost', '127.0.0.1'].includes(window.location.hostname);
 }
 
 async function resetDevOnlyEulaAcceptance() {
-    if (!isLocalDevRun() || !appData?.settings?.eulaAccepted) {
-        return;
+    forceShowEulaThisSession = isLocalDevRun();
+}
+
+function getAcceptedEulaRevision() {
+    const rawRevision = appData?.settings?.eulaAcceptedRevision;
+    if (Number.isInteger(rawRevision) && rawRevision > 0) {
+        return rawRevision;
     }
-    appData.settings.eulaAccepted = false;
-    await saveData();
+    if (typeof rawRevision === 'string') {
+        const parsedRevision = Number.parseInt(rawRevision, 10);
+        if (Number.isInteger(parsedRevision) && parsedRevision > 0) {
+            return parsedRevision;
+        }
+    }
+    if (appData?.settings?.eulaAccepted === true) {
+        return CURRENT_EULA_REVISION;
+    }
+    return null;
+}
+
+function normalizeLoadedEulaState() {
+    if (!appData.settings) {
+        appData.settings = {};
+    }
+
+    let changed = false;
+    const acceptedRevision = getAcceptedEulaRevision();
+
+    if (acceptedRevision == null) {
+        if (appData.settings.eulaAcceptedRevision != null) {
+            delete appData.settings.eulaAcceptedRevision;
+            changed = true;
+        }
+    } else if (appData.settings.eulaAcceptedRevision !== acceptedRevision) {
+        appData.settings.eulaAcceptedRevision = acceptedRevision;
+        changed = true;
+    }
+
+    const rawAcceptedAt = appData.settings.eulaAcceptedAt;
+    if (rawAcceptedAt != null) {
+        const parsedAcceptedAt = Number(rawAcceptedAt);
+        if (Number.isFinite(parsedAcceptedAt) && parsedAcceptedAt > 0) {
+            if (appData.settings.eulaAcceptedAt !== parsedAcceptedAt) {
+                appData.settings.eulaAcceptedAt = parsedAcceptedAt;
+                changed = true;
+            }
+        } else {
+            delete appData.settings.eulaAcceptedAt;
+            changed = true;
+        }
+    }
+
+    if ('eulaAccepted' in appData.settings) {
+        delete appData.settings.eulaAccepted;
+        changed = true;
+    }
+
+    return changed;
 }
 
 function hasAcceptedEula() {
-    return appData?.settings?.eulaAccepted === true;
+    return !forceShowEulaThisSession && getAcceptedEulaRevision() === CURRENT_EULA_REVISION;
 }
 
 async function runPostAcceptanceStartup() {
@@ -1021,12 +1077,16 @@ function updateOnboardingVisibility() {
 }
 
 async function acceptEula() {
-    if (hasAcceptedEula()) return;
     if (!appData.settings) {
         appData.settings = {};
     }
-    appData.settings.eulaAccepted = true;
-    await saveData();
+    const alreadyAccepted = getAcceptedEulaRevision() === CURRENT_EULA_REVISION;
+    forceShowEulaThisSession = false;
+    if (!alreadyAccepted) {
+        appData.settings.eulaAcceptedRevision = CURRENT_EULA_REVISION;
+        appData.settings.eulaAcceptedAt = Date.now();
+        await saveData();
+    }
     if (isIOS) {
         await checkScreentimeAuth();
     } else {
@@ -1046,6 +1106,7 @@ async function openExternal(target) {
 // Load data from main process
 async function loadData() {
     appData = await tauriAPI.loadData();
+    let shouldSave = false;
     if (!appData || !appData.blocklists) {
         appData = {
             blocklists: [],
@@ -1061,6 +1122,9 @@ async function loadData() {
     // Ensure settings exists
     if (!appData.settings) {
         appData.settings = {};
+    }
+    if (normalizeLoadedEulaState()) {
+        shouldSave = true;
     }
     appData.blocklists = (appData.blocklists || []).map(normalizeBlocklist);
     // Create default blocklist on first launch (no blocklists yet)
@@ -1079,6 +1143,10 @@ async function loadData() {
         });
         // Mark onboarding as complete for backwards compat
         appData.settings.onboardingComplete = true;
+        shouldSave = true;
+    }
+
+    if (shouldSave) {
         await saveData();
     }
 }

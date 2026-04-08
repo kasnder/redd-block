@@ -109,6 +109,10 @@ pub struct ScheduleSegment {
 pub struct Settings {
     #[serde(default)]
     pub onboarding_complete: bool,
+    #[serde(default)]
+    pub eula_accepted_revision: Option<u32>,
+    #[serde(default)]
+    pub eula_accepted_at: Option<u64>,
     #[serde(flatten)]
     pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
@@ -275,6 +279,42 @@ fn find_per_user_data(app: &AppHandle) -> Option<PathBuf> {
     best.map(|(p, _)| p)
 }
 
+fn normalize_eula_state(data: &mut AppData) -> bool {
+    let mut changed = false;
+    let settings = &mut data.settings;
+
+    if settings.eula_accepted_revision.is_none() {
+        let legacy_accepted = settings
+            .extra
+            .get("eulaAccepted")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        if legacy_accepted {
+            settings.eula_accepted_revision = Some(1);
+            changed = true;
+        }
+    }
+
+    if settings.eula_accepted_at.is_none() {
+        if let Some(raw_accepted_at) = settings.extra.get("eulaAcceptedAt").and_then(|value| value.as_u64()) {
+            settings.eula_accepted_at = Some(raw_accepted_at);
+            changed = true;
+        }
+    }
+
+    if settings.extra.remove("eulaAccepted").is_some() {
+        changed = true;
+    }
+    if settings.extra.remove("eulaAcceptedAt").is_some() {
+        changed = true;
+    }
+    if settings.extra.remove("eulaAcceptedRevision").is_some() {
+        changed = true;
+    }
+
+    changed
+}
+
 /// Load data from file
 #[tauri::command]
 pub fn load_data(app: AppHandle) -> Result<AppData, String> {
@@ -287,14 +327,24 @@ pub fn load_data(app: AppHandle) -> Result<AppData, String> {
 
     if data_path.exists() {
         let content = fs::read_to_string(&data_path).map_err(|e| e.to_string())?;
-        let data: AppData = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+        let mut data: AppData = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+        if normalize_eula_state(&mut data) {
+            let migrated = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
+            fs::write(&data_path, &migrated).map_err(|e| e.to_string())?;
+            set_shared_permissions(&data_path);
+        }
         Ok(data)
     } else {
         // Migrate from per-user location or legacy paths
         if let Some(source_path) = find_per_user_data(&app) {
             if source_path == data_path {
                 let content = fs::read_to_string(&source_path).map_err(|e| e.to_string())?;
-                let data: AppData = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+                let mut data: AppData = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+                if normalize_eula_state(&mut data) {
+                    let migrated = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
+                    fs::write(&source_path, &migrated).map_err(|e| e.to_string())?;
+                    set_shared_permissions(&source_path);
+                }
                 return Ok(data);
             }
 
@@ -310,7 +360,8 @@ pub fn load_data(app: AppHandle) -> Result<AppData, String> {
                 data_path
             );
             let content = fs::read_to_string(&source_path).map_err(|e| e.to_string())?;
-            let data: AppData = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+            let mut data: AppData = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+            normalize_eula_state(&mut data);
             // Save to new location so migration only happens once
             let migrated = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
             fs::write(&data_path, &migrated).map_err(|e| e.to_string())?;
