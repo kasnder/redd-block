@@ -1,4 +1,4 @@
-# ReDD Block (Beta)
+# ReDD Block
 
 Block distracting websites and apps with scheduled or one-off blocks. Stay focused on what matters.
 
@@ -6,7 +6,7 @@ Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and th
 
 ## Features
 
-- **Cross-Platform** — Works on macOS, Windows, and iOS (iPad/iPhone)
+- **Cross-Platform** — Works on macOS, Windows, iOS (iPad/iPhone), and Android (source code for the Android version is here: https://github.com/kasnder/redd-block-android)
 - **Website Blocking** — System-level blocking works across all browsers (hosts file on desktop, Screen Time on iOS)
 - **App Blocking** — Automatically blocks distracting apps (minimizes/hides on desktop, Screen Time shield overlay on iOS)
 - **Flexible Blocklists** — Create multiple lists with custom names, colors, and emojis
@@ -316,8 +316,8 @@ This means:
 - **macOS**: 10.15+ (Catalina or later)
 - **Windows**: 10+ (version 1809 or later)
 - **iOS**: 16.0+ (iPhone and iPad)
+- **Android**: see https://github.com/kasnder/redd-block-android
 - **Linux**: Coming soon
-- **Android**: Coming soon
 
 ## Tech Debt
 
