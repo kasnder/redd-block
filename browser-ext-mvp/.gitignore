@@ -1,0 +1,14 @@
+# The full ReDD Focus extension is a 34 MB clone — not committed here.
+# Clone separately and apply reddfocus-patch.diff:
+#
+#   git clone <reddfocus-repo> browser-ext-mvp/reddfocus-open-source
+#   cd browser-ext-mvp/reddfocus-open-source
+#   git apply ../reddfocus-patch.diff
+reddfocus-open-source/
+
+# Runtime artifacts (host log is written to ~/Library/Application Support,
+# but keep this here in case someone points the log back at the repo).
+native-host/host.log
+native-host/host-launcher.sh
+
+.DS_Store

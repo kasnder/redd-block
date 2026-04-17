@@ -1,0 +1,144 @@
+diff --git a/Shared (Extension)/Resources/background.js b/Shared (Extension)/Resources/background.js
+index 595bd2e..5f0535e 100644
+--- a/Shared (Extension)/Resources/background.js	
++++ b/Shared (Extension)/Resources/background.js	
+@@ -1,27 +1,71 @@
++// Optional redd-block bridge. The extension must keep working on its own
++// if this fails — all ReDD Focus features (content scripts, hiding UI)
++// are independent of this code path. The only side effect of a successful
++// connection is that `blocklist` becomes non-empty and matching URLs get
++// redirected to blocked.html.
++
++const NATIVE_HOST = "com.ulriklyngs.mindshield";
++let blocklist = [];
++let port = null;
++let backoffMs = 5_000;
++const BACKOFF_MAX = 5 * 60_000;
++
++function isBlocked(url) {
++  if (!url || blocklist.length === 0) return false;
++  try {
++    const host = new URL(url).hostname.toLowerCase();
++    return blocklist.some(d => host === d || host.endsWith("." + d));
++  } catch {
++    return false;
++  }
++}
++
++function connectNative() {
++  // Graceful no-op if native messaging isn't available (e.g., older
++  // Safari builds, stripped-down platforms).
++  if (!chrome.runtime || typeof chrome.runtime.connectNative !== "function") {
++    console.info("[redd-block] native messaging unavailable; standalone mode");
++    return;
++  }
++  try {
++    port = chrome.runtime.connectNative(NATIVE_HOST);
++    port.onMessage.addListener(msg => {
++      if (msg && Array.isArray(msg.blocklist)) {
++        blocklist = msg.blocklist.map(d => String(d).toLowerCase());
++        backoffMs = 5_000; // reset on a good message
++      }
++    });
++    port.onDisconnect.addListener(() => {
++      const err = chrome.runtime.lastError;
++      console.info("[redd-block] native disconnected:", err && err.message);
++      port = null;
++      // redd-block not installed is the common case — back off exponentially.
++      setTimeout(connectNative, backoffMs);
++      backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX);
++    });
++  } catch (e) {
++    console.info("[redd-block] native connect failed:", e && e.message);
++    setTimeout(connectNative, backoffMs);
++    backoffMs = Math.min(backoffMs * 2, BACKOFF_MAX);
++  }
++}
++
++chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
++  // Cheap early-out when standalone (empty blocklist).
++  if (blocklist.length === 0) return;
++  const url = changeInfo.url || tab.url;
++  if (isBlocked(url)) {
++    chrome.tabs.update(tabId, {
++      url: chrome.runtime.getURL("blocked.html") + "?u=" + encodeURIComponent(url),
++    });
++  }
++});
++
++connectNative();
++
+ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+-  /*if (message.type === "checkPurchase") {
+-    try {
+-      // Try native messaging
+-      chrome.runtime.sendNativeMessage(
+-        "com.ulriklyngs.mind-shield",
+-        { action: "checkPurchase" }
+-      )
+-      .then(response => {
+-        if (response && response.paid !== undefined) {
+-          sendResponse({ paid: response.paid, reason: response.message || "Payment status checked" });
+-        } else {
+-          sendResponse({ paid: false, reason: "Invalid response" });
+-        }
+-      })
+-      .catch(err => {
+-        // Native messaging failed - return null to indicate no payment flow
+-        sendResponse(null);
+-      });
+-    } catch (err) {
+-      // Any other error - return null
+-      sendResponse(null);
+-    }
+-    
+-    return true; // Keep sendResponse async
+-  }*/
++  if (message && message.type === "getBlocklist") {
++    sendResponse({ blocklist });
++    return true;
++  }
+ });
+diff --git a/Shared (Extension)/Resources/manifest.json b/Shared (Extension)/Resources/manifest.json
+index aee2e52..7212fce 100644
+--- a/Shared (Extension)/Resources/manifest.json	
++++ b/Shared (Extension)/Resources/manifest.json	
+@@ -46,7 +46,8 @@
+   "permissions": [
+     "storage",
+     "tabs",
+-    "activeTab"
++    "activeTab",
++    "nativeMessaging"
+   ],
+   "browser_specific_settings": {
+     "gecko": {
+--- new file: Shared (Extension)/Resources/blocked.html ---
+diff --git a/Shared (Extension)/Resources/blocked.html b/Shared (Extension)/Resources/blocked.html
+new file mode 100644
+index 0000000..34e7dbc
+--- /dev/null
++++ b/Shared (Extension)/Resources/blocked.html	
+@@ -0,0 +1,22 @@
++<!doctype html>
++<html>
++  <head>
++    <meta charset="utf-8" />
++    <title>Blocked by ReDD Focus</title>
++    <style>
++      body { font: 15px -apple-system, system-ui, sans-serif; max-width: 480px; margin: 10vh auto; padding: 20px; color: #333; }
++      h1 { font-size: 20px; margin: 0 0 8px; }
++      code { background: #f4f4f4; padding: 2px 4px; border-radius: 3px; word-break: break-all; }
++      p { color: #666; }
++    </style>
++  </head>
++  <body>
++    <h1>🧘 Blocked by ReDD Focus</h1>
++    <p>This site is on your current blocklist.</p>
++    <p id="url"><code></code></p>
++    <script>
++      const u = new URLSearchParams(location.search).get("u");
++      if (u) document.querySelector("#url code").textContent = u;
++    </script>
++  </body>
++</html>
