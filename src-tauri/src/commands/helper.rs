@@ -88,6 +88,10 @@ pub struct HelperBlockData {
     pub end_time: u64,
     #[serde(rename = "blocklistId")]
     pub blocklist_id: String,
+    #[serde(rename = "isPaused", default)]
+    pub is_paused: bool,
+    #[serde(rename = "pauseEndTime", default, skip_serializing_if = "Option::is_none")]
+    pub pause_end_time: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

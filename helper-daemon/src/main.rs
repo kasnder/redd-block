@@ -52,6 +52,10 @@ struct BlockState {
     end_time: u64, // Unix timestamp ms
     #[serde(alias = "blocklistId")]
     blocklist_id: String,
+    #[serde(rename = "isPaused", default)]
+    is_paused: bool,
+    #[serde(rename = "pauseEndTime", default)]
+    pause_end_time: Option<u64>,
 }
 
 fn default_keep_blocking_on_uninstall() -> bool {
@@ -807,6 +811,10 @@ fn sync_hosts_file(
     {
         let blocks = state.lock().unwrap();
         for block in blocks.iter().filter(|b| b.end_time > now) {
+            // Skip blocks whose pause is still active
+            if block.is_paused && block.pause_end_time.map(|end| end > now).unwrap_or(true) {
+                continue;
+            }
             for d in &block.domains {
                 if seen.insert(d.clone()) {
                     all_domains.push(d.clone());
@@ -870,6 +878,8 @@ fn start_block(
         domains,
         end_time,
         blocklist_id: blocklist_id.clone(),
+        is_paused: false,
+        pause_end_time: None,
     };
     let snapshot = state.lock().unwrap().clone();
     {
@@ -2195,18 +2205,28 @@ fn expiry_checker(
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
-        let (expired, snapshot) = {
+        let (changed, snapshot) = {
             let mut blocks = state.lock().unwrap();
             let snap = blocks.clone();
             let len_before = blocks.len();
             blocks.retain(|b| b.end_time > now);
-            (len_before != blocks.len(), snap)
+            let removed = len_before != blocks.len();
+            // Clear expired pauses so auto-resume happens even if frontend isn't running
+            let mut resumed = false;
+            for block in blocks.iter_mut() {
+                if block.is_paused && block.pause_end_time.map(|end| end <= now).unwrap_or(false) {
+                    block.is_paused = false;
+                    block.pause_end_time = None;
+                    resumed = true;
+                }
+            }
+            (removed || resumed, snap)
         };
-        if expired {
-            log("One or more blocks expired, syncing hosts");
+        if changed {
+            log("Block state changed (expiry or pause resume), syncing hosts");
             if !sync_hosts_file(&state, &schedule_state) {
                 *state.lock().unwrap() = snapshot;
-                log("Expiry sync failed - rolled back; will retry next tick");
+                log("Sync failed - rolled back; will retry next tick");
                 continue;
             }
             let blocks = state.lock().unwrap().clone();

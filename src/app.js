@@ -620,16 +620,20 @@ async function syncActiveBlocksToHelper() {
                 isPaused: b.isPaused, isAlwaysOn: b.isAlwaysOn,
                 startOk: b.startTime <= now, endOk: b.endTime > now, pauseOk: !b.isPaused
             })));
-        const activeBlocks = appData.activeBlocks.filter(block => block.startTime <= now && block.endTime > now && !block.isPaused);
+        const activeBlocks = appData.activeBlocks.filter(block => block.startTime <= now && block.endTime > now);
         console.log('[syncActiveBlocksToHelper] Filtered activeBlocks:', activeBlocks.length);
-        
-        // Build the blocks array for the atomic set-blocks command
+
+        // Build the blocks array for the atomic set-blocks command.
+        // Paused blocks are included so the helper can auto-resume them when the pause expires,
+        // even if the frontend isn't running.
         const helperBlocks = activeBlocks.map(block => {
             const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
             return {
                 domains: blocklist?.websites || [],
                 endTime: block.endTime,
-                blocklistId: block.blocklistId
+                blocklistId: block.blocklistId,
+                isPaused: !!block.isPaused,
+                pauseEndTime: block.pauseEndTime || null
             };
         });
         
