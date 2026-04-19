@@ -36,7 +36,7 @@ pub struct HelperStatus {
 
 /// Expected helper version - update this when helper-daemon changes
 /// This is separate from the app version to avoid unnecessary reinstalls
-const EXPECTED_HELPER_VERSION: &str = "1.0.3";
+const EXPECTED_HELPER_VERSION: &str = "1.0.5";
 
 fn is_helper_version_ok(version: Option<&str>) -> bool {
     match version {
@@ -421,8 +421,12 @@ pub async fn install_helper(app: tauri::AppHandle) -> HelperResult {
         let old_helper_path = "/usr/local/bin/redd-block-helper";
         let old_plist_path = "/Library/LaunchDaemons/org.reddfocus.redd-block-helper.plist";
         let old_label = "org.reddfocus.redd-block-helper";
+        // Redirect the elevated shell's stdout/stderr to an install log. Truncates on each run so
+        // the log always reflects the most recent install attempt (matches Windows behavior).
         let script = format!(
-            r#"do shell script "launchctl bootout system/{} 2>/dev/null; launchctl unload '{}' 2>/dev/null; launchctl bootout system/{} 2>/dev/null; launchctl unload '{}' 2>/dev/null; rm -f '{}' '{}' '{}' '{}'; cp '{}' '{}' && chmod 755 '{}' && echo '{}' > '{}' && (launchctl bootstrap system '{}' || launchctl load '{}')" with administrator privileges"#,
+            r#"do shell script "exec > '/var/log/redd-block-install.log' 2>&1; date '+%F %T - Install script starting'; echo 'Source: {}'; echo 'Target: {}'; launchctl bootout system/{} 2>/dev/null; launchctl unload '{}' 2>/dev/null; launchctl bootout system/{} 2>/dev/null; launchctl unload '{}' 2>/dev/null; rm -f '{}' '{}' '{}' '{}'; cp '{}' '{}' && chmod 755 '{}' && echo '{}' > '{}' && (launchctl bootstrap system '{}' || launchctl load '{}') && date '+%F %T - Install script completed successfully' || {{ date '+%F %T - Install script failed'; exit 1; }}" with administrator privileges"#,
+            helper_path.display(),
+            install_path,
             current_label,
             plist_path,
             old_label,
@@ -1498,7 +1502,7 @@ pub async fn get_helper_diagnostics() -> DiagnosticsResult {
     #[cfg(target_os = "macos")]
     let (helper_log_path, install_log_path) = (
         std::path::PathBuf::from("/var/log/redd-block-helper.log"),
-        None::<std::path::PathBuf>,
+        Some(std::path::PathBuf::from("/var/log/redd-block-install.log")),
     );
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     let (helper_log_path, install_log_path) = (
