@@ -617,7 +617,12 @@ exit 0
             };
         }
         drop(script_file); // Close the file before running
-        
+
+        // Clear any stale install.log so a subsequent empty log unambiguously means
+        // "the elevated script never ran" (e.g. user cancelled UAC).
+        let install_log_path = install_dir.join("install.log");
+        let _ = std::fs::remove_file(&install_log_path);
+
         // Run the PowerShell script with elevation (single UAC prompt)
         log::info!("Running install script with elevation: {:?}", script_path);
         
@@ -671,18 +676,19 @@ exit 0
         // Clean up the script file
         let _ = std::fs::remove_file(&script_path);
         
-        // Read install log for diagnostics
-        let install_log_path = install_dir.join("install.log");
+        // Read install log for diagnostics (log was cleared above, so any content is from this run)
         let install_log = std::fs::read_to_string(&install_log_path).unwrap_or_default();
         if !install_log.is_empty() {
             log::info!("Install script log:\n{}", install_log);
         } else {
             log::warn!("No install log found - script may not have run at all");
         }
-        
+
         if !script_success {
             let detail = if install_log.is_empty() {
-                "Install script did not run. UAC prompt may have been cancelled or blocked.".to_string()
+                // Empty log + failure = elevated script never ran. Most commonly user denied UAC.
+                // The "cancelled:" prefix lets the frontend show a friendly non-error message.
+                "cancelled: UAC prompt was declined or blocked".to_string()
             } else {
                 format!("Install script failed. Log:\n{}", install_log)
             };

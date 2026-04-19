@@ -1052,6 +1052,14 @@ function updateHelperUpdateBanner(status) {
         btn._listenerAdded = true;
         btn.addEventListener('click', async () => {
             if (btn.disabled) return;
+
+            const confirmed = await ask(
+                'This updates the small helper service that runs in the background to manage your blocks.\n\n' +
+                'Your computer will ask you to approve an administrator action — that\'s just because the helper needs elevated permissions to edit system files. It\'s the same prompt you saw when you first installed ReDD Block.',
+                { title: 'Update helper service', kind: 'info', okLabel: 'Update', cancelLabel: 'Not now' }
+            );
+            if (!confirmed) return;
+
             btn.disabled = true;
             const originalText = btn.textContent;
             btn.textContent = 'Updating...';
@@ -1061,6 +1069,9 @@ function updateHelperUpdateBanner(status) {
                     // Give the helper a moment to start up before re-checking status.
                     await new Promise(resolve => setTimeout(resolve, 2000));
                     await checkHelperStatus();
+                } else if (isHelperInstallCancelled(result?.error)) {
+                    // User declined the UAC prompt — leave the banner visible but no error dialog.
+                    console.log('Helper update cancelled by user');
                 } else {
                     await message('Failed to update helper: ' + (result?.error || 'Unknown error'), { title: 'Error', kind: 'error' });
                 }
@@ -1073,6 +1084,13 @@ function updateHelperUpdateBanner(status) {
             }
         });
     }
+}
+
+/// True if a failed install-helper result looks like the user cancelled the UAC / admin prompt
+/// rather than an actual failure. Backend returns messages prefixed with "cancelled:" for this.
+function isHelperInstallCancelled(errorMsg) {
+    if (!errorMsg || typeof errorMsg !== 'string') return false;
+    return errorMsg.startsWith('cancelled:') || errorMsg.toLowerCase().includes('cancelled');
 }
 
 /** True if the error indicates the helper daemon is not reachable (e.g. connection refused on Windows). */
@@ -10118,6 +10136,8 @@ async function updateHelperStatusIndicator() {
                             await new Promise(resolve => setTimeout(resolve, 2000));
                             await updateHelperStatusIndicator();
                             await checkHelperStatus();
+                        } else if (isHelperInstallCancelled(result?.error)) {
+                            console.log('Helper update cancelled by user');
                         } else {
                             await message('Failed to update helper: ' + (result.error || 'Unknown error'), { title: 'Error', kind: 'error' });
                         }
