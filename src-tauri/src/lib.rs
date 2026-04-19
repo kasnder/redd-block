@@ -349,6 +349,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::set_blocks_via_helper,
         commands::set_schedules_via_helper,
         commands::set_keep_blocking_on_uninstall_via_helper,
+        commands::set_log_pings_via_helper,
         commands::block_websites,
         commands::clean_hosts_file,
         commands::get_helper_diagnostics,

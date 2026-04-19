@@ -20,7 +20,6 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 #[cfg(target_os = "windows")]
 use std::sync::RwLock;
-#[cfg(target_os = "windows")]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -35,6 +34,11 @@ const SOCKET_PATH: &str = "/tmp/redd-block-helper.sock";
 const BLOCK_MARKER_START: &str = "# === BEGIN REDD BLOCK (reddfocus.org) ===";
 const BLOCK_MARKER_END: &str = "# === END REDD BLOCK (reddfocus.org) ===";
 const SCHEDULE_EVALUATOR_POLL_SECS: u64 = 5;
+
+/// When false (default), Ping commands and their connection-accept logs are suppressed.
+/// Flipped via the SetLogPings IPC command — see `set-log-pings`. Ping is issued by
+/// the UI refresh loop many times per second, so it's the single biggest log noise source.
+static LOG_PINGS: AtomicBool = AtomicBool::new(false);
 
 
 
@@ -160,6 +164,11 @@ enum IpcCommand {
     SetKeepBlockingOnUninstall {
         #[serde(rename = "keepBlockingOnUninstall")]
         keep_blocking_on_uninstall: bool,
+    },
+    #[serde(rename = "set-log-pings")]
+    SetLogPings {
+        #[serde(rename = "logPings")]
+        log_pings: bool,
     },
     #[serde(rename = "ping")]
     Ping,
@@ -1874,6 +1883,14 @@ fn handle_command(
                 ..Default::default()
             }
         }
+        IpcCommand::SetLogPings { log_pings } => {
+            LOG_PINGS.store(log_pings, Ordering::Relaxed);
+            log(&format!("Ping logging {}", if log_pings { "enabled" } else { "disabled" }));
+            IpcResponse {
+                success: true,
+                ..Default::default()
+            }
+        }
         IpcCommand::Ping => IpcResponse {
             success: true,
             message: Some("pong".to_string()),
@@ -2141,7 +2158,9 @@ fn handle_client(
             
             let response = match serde_json::from_str::<IpcCommand>(&line) {
                 Ok(cmd) => {
-                    log(&format!("Received command: {:?}", cmd));
+                    if !matches!(cmd, IpcCommand::Ping) || LOG_PINGS.load(Ordering::Relaxed) {
+                        log(&format!("Received command: {:?}", cmd));
+                    }
                     handle_command(&state, &app_state, &schedule_state, &app_watcher_handle, cmd)
                 }
                 Err(e) => IpcResponse {
@@ -2177,7 +2196,9 @@ fn handle_client(
             
             let response = match serde_json::from_str::<IpcCommand>(&line) {
                 Ok(cmd) => {
-                    log(&format!("Received command: {:?}", cmd));
+                    if !matches!(cmd, IpcCommand::Ping) || LOG_PINGS.load(Ordering::Relaxed) {
+                        log(&format!("Received command: {:?}", cmd));
+                    }
                     handle_command(&state, &app_state, &schedule_state, &app_watcher_handle, cmd)
                 }
                 Err(e) => IpcResponse {
@@ -2436,7 +2457,6 @@ fn main() {
         
         for stream in listener.incoming() {
             if let Ok(stream) = stream {
-                log("Client connected");
                 let state_clone = Arc::clone(&state);
                 let app_state_clone = Arc::clone(&app_state);
                 let schedule_state_clone = Arc::clone(&schedule_state);
@@ -2480,7 +2500,6 @@ fn main() {
         
         for stream in listener.incoming() {
             if let Ok(stream) = stream {
-                log("Client connected");
                 let state_clone = Arc::clone(&state);
                 let app_state_clone = Arc::clone(&app_state);
                 let schedule_state_clone = Arc::clone(&schedule_state);

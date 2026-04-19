@@ -50,6 +50,8 @@ const tauriAPI = {
     setSchedulesViaHelper: (schedules) => invoke('set_schedules_via_helper', { schedules }),
     setKeepBlockingOnUninstallViaHelper: (keepBlockingOnUninstall) =>
         invoke('set_keep_blocking_on_uninstall_via_helper', { keepBlockingOnUninstall }),
+    setLogPingsViaHelper: (logPings) =>
+        invoke('set_log_pings_via_helper', { logPings }),
 
     // Screen Time API (iOS only - provided by tauri-plugin-screentime)
     screentimeRequestAuth: () => invoke('plugin:screentime|request_authorization'),
@@ -655,6 +657,16 @@ async function syncKeepBlockingPreferenceToHelper() {
     }
 }
 
+async function syncLogPingsPreferenceToHelper() {
+    if (isIOS || !helperAvailable) return;
+    try {
+        const logPings = !!appData.settings?.logHelperPings; // default false
+        await tauriAPI.setLogPingsViaHelper(logPings);
+    } catch (e) {
+        console.warn('[syncLogPingsPreferenceToHelper] Error:', e);
+    }
+}
+
 function isOneOffBlockEnforced(block, now = Date.now()) {
     return !!(block && block.startTime <= now && block.endTime > now && !block.isPaused);
 }
@@ -943,6 +955,8 @@ async function runPostAcceptanceStartup() {
         } else {
             await checkHelperStatus();
             console.log('[startup-sync] Desktop startup helperAvailable:', helperAvailable);
+            // Push the user's ping-logging preference before any Pings happen downstream.
+            await syncLogPingsPreferenceToHelper();
             // Reconcile manual blocks first so paused one-offs are removed from helper state after reinstall.
             await syncActiveBlocksToHelper();
             // Then sync schedules to helper so both enforcement sources are aligned.
@@ -6100,6 +6114,7 @@ async function updateHostsFile(silent = false) {
             console.log('[updateHostsFile] Helper running with correct version, using helper to update blocks');
             helperAvailable = true;
             await syncKeepBlockingPreferenceToHelper();
+            await syncLogPingsPreferenceToHelper();
             await syncActiveBlocksToHelper();
             await syncSchedulesToHelper();
             lastBlockedDomains = allDomains;
@@ -9860,6 +9875,7 @@ function setupHelpMenuLinks() {
 function setupHelperSettings() {
     const statusIndicator = document.getElementById('helper-status-indicator');
     const keepBlockingToggle = document.getElementById('keep-blocking-toggle');
+    const logPingsToggle = document.getElementById('log-pings-toggle');
     const cleanHostsBtn = document.getElementById('clean-hosts-btn');
 
     // Initialize toggle from saved settings
@@ -9874,6 +9890,17 @@ function setupHelperSettings() {
             appData.settings.keepBlockingOnUninstall = e.target.checked;
             await saveData();
             await syncKeepBlockingPreferenceToHelper();
+        });
+    }
+
+    if (logPingsToggle) {
+        logPingsToggle.checked = !!appData.settings?.logHelperPings; // default false
+
+        logPingsToggle.addEventListener('change', async (e) => {
+            if (!appData.settings) appData.settings = {};
+            appData.settings.logHelperPings = e.target.checked;
+            await saveData();
+            await syncLogPingsPreferenceToHelper();
         });
     }
 
