@@ -7805,8 +7805,9 @@ function navigateWeek(direction) {
     handleTimeChange(); // Re-render preview block after navigation
 }
 
-// Scroll to today's column and current time
-function scrollToToday(smooth = true) {
+// Scroll to today's column and current time.
+// alignment: 'left' places today flush against the time sidebar; 'center' centers it in the viewport.
+function scrollToToday(smooth = true, alignment = 'center') {
     const today = new Date();
     const todayStart = getWeekStart(today);
 
@@ -7825,9 +7826,11 @@ function scrollToToday(smooth = true) {
 
     if (todayColumn) {
         // offsetLeft is relative to .week-calendar-scroll (position: relative), so day columns
-        // start at 0, 120, 240, ... Setting scrollLeft = offsetLeft lands today at the left
-        // edge of the scrollable area — which is flush against the time sidebar to its left.
-        const scrollTargetX = todayColumn.offsetLeft;
+        // start at 0, 160, 320, ... Left alignment lands today against the time sidebar; centered
+        // alignment shifts by half the leftover viewport width.
+        const scrollTargetX = alignment === 'left'
+            ? todayColumn.offsetLeft
+            : todayColumn.offsetLeft - (scrollContainer.clientWidth - todayColumn.offsetWidth) / 2;
 
         // Scroll vertically to 2 hours before current time
         // Header row is sticky at 28px, content starts below it
@@ -7845,9 +7848,10 @@ function scrollToToday(smooth = true) {
     }
 }
 
-// Legacy function name for compatibility
+// Used for the instant scroll on app startup — keeps today flush against the time sidebar
+// so the user opens the app with "today" at the leftmost position of the calendar.
 function scrollToNow(smooth = true) {
-    scrollToToday(smooth);
+    scrollToToday(smooth, 'left');
 }
 
 // Update week calendar display
@@ -8119,6 +8123,88 @@ function renderWeekBlocks() {
 
     // Layout overlapping blocks side-by-side (Apple Calendar style)
     layoutOverlappingBlocks();
+
+    // Wrap the header bits (emoji + name + time) in a sticky container so the label stays
+    // visible when a block starts above the viewport (e.g. an overnight schedule at 00:00).
+    makeCalendarBlockHeadersSticky();
+
+    // Refresh the visibility-chip row so it stays in sync with the data.
+    renderScheduleVisibilityChips();
+}
+
+function makeCalendarBlockHeadersSticky() {
+    document.querySelectorAll('.calendar-block').forEach(block => {
+        // Skip if already wrapped (idempotent across renders)
+        if (block.querySelector(':scope > .calendar-block-sticky')) return;
+
+        const emoji = block.querySelector(':scope > .block-emoji');
+        const label = block.querySelector(':scope > .block-label');
+        const time = block.querySelector(':scope > .block-time');
+        if (!emoji && !label && !time) return;
+
+        const wrapper = document.createElement('div');
+        wrapper.className = 'calendar-block-sticky';
+        block.insertBefore(wrapper, block.firstChild);
+        if (emoji) wrapper.appendChild(emoji);
+        if (label) wrapper.appendChild(label);
+        if (time) wrapper.appendChild(time);
+    });
+}
+
+/// Render a row of eye/eye-slash chips under the Schedule header — one per blocklist that
+/// currently contributes anything to the calendar (has an active/future manual block or a
+/// defined schedule). Clicking a chip toggles blocklist.alwaysShowInSchedule.
+function renderScheduleVisibilityChips() {
+    const container = document.getElementById('schedule-visibility-chips');
+    if (!container) return;
+
+    const now = Date.now();
+    const scheduledIds = new Set((appData.schedules || []).map(s => s.blocklistId));
+    const manualIds = new Set(
+        (appData.activeBlocks || [])
+            .filter(b => b.endTime > now)
+            .map(b => b.blocklistId)
+    );
+    const relevantIds = new Set([...scheduledIds, ...manualIds]);
+
+    const blocklists = (appData.blocklists || []).filter(bl => relevantIds.has(bl.id));
+
+    if (blocklists.length === 0) {
+        container.classList.add('hidden');
+        container.innerHTML = '';
+        return;
+    }
+
+    container.classList.remove('hidden');
+    container.innerHTML = '';
+
+    const eyeOpenSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+    const eyeClosedSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+
+    for (const bl of blocklists) {
+        const visible = bl.alwaysShowInSchedule !== false;
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'schedule-visibility-chip';
+        chip.setAttribute('aria-pressed', visible ? 'true' : 'false');
+        chip.dataset.blocklistId = bl.id;
+        chip.title = visible ? 'Hide from schedule' : 'Show in schedule';
+        chip.innerHTML = `
+            ${visible ? eyeOpenSvg : eyeClosedSvg}
+            ${bl.color ? `<span class="schedule-visibility-chip-dot" style="background:${escapeHtml(bl.color)}"></span>` : ''}
+            <span class="schedule-visibility-chip-name">${bl.emoji ? escapeHtml(bl.emoji) + ' ' : ''}${escapeHtml(bl.name || '')}</span>
+        `;
+        chip.addEventListener('click', async () => {
+            const blocklist = appData.blocklists.find(b => b.id === bl.id);
+            if (!blocklist) return;
+            blocklist.alwaysShowInSchedule = !(blocklist.alwaysShowInSchedule !== false);
+            await saveData();
+            renderWeekBlocks();
+            // renderWeekBlocks wipes all day tracks; re-add any in-flight preview block(s).
+            handleTimeChange();
+        });
+        container.appendChild(chip);
+    }
 }
 
 // Layout overlapping blocks side-by-side within each day track (Apple Calendar style)

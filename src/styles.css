@@ -424,6 +424,53 @@ body.ios .section-header h2 {
     min-height: 240px;
 }
 
+/* Per-blocklist visibility chips shown under the Schedule header */
+.schedule-visibility-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 2px 0 8px;
+}
+
+.schedule-visibility-chips.hidden {
+    display: none;
+}
+
+.schedule-visibility-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    background: var(--element-bg);
+    border: 1px solid var(--border-color);
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-primary);
+    user-select: none;
+    transition: opacity 0.15s, background 0.15s;
+}
+
+.schedule-visibility-chip:hover {
+    background: var(--border-color-light, var(--border-color));
+}
+
+.schedule-visibility-chip[aria-pressed="false"] {
+    opacity: 0.5;
+}
+
+.schedule-visibility-chip-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.schedule-visibility-chip svg {
+    flex-shrink: 0;
+    opacity: 0.75;
+}
+
 body.ios .week-calendar-section {
     flex: 1;
     min-height: 400px;
@@ -621,8 +668,8 @@ body.dark-mode .week-nav-today-btn:hover {
 
 .day-header-cell {
     flex-shrink: 0;
-    width: 120px;
-    min-width: 120px;
+    width: 160px;
+    min-width: 160px;
     height: 28px;
     display: flex;
     align-items: center;
@@ -720,8 +767,8 @@ body.dark-mode .day-header-cell.weekend {
 /* Day Column */
 .day-column {
     flex-shrink: 0;
-    width: 120px;
-    min-width: 120px;
+    width: 160px;
+    min-width: 160px;
     position: relative;
 }
 
@@ -787,11 +834,23 @@ body.dark-mode .day-column.weekend {
     color: white;
     padding: 4px 6px;
     font-size: 11px;
-    overflow: hidden;
+    /* Using clip-path instead of overflow: hidden keeps visual clipping without creating a
+       new scroll container, which would break position: sticky on descendants (used to keep
+       the label visible when the block starts above the viewport). */
+    clip-path: inset(0 round 6px);
     cursor: pointer;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
     transition: transform 0.15s ease, box-shadow 0.15s ease;
     z-index: 1;
+}
+
+/* Keeps the block's header (emoji + name + time) visible when the block starts above the
+   viewport — wrapped around the spans after render in renderWeekBlocks. Pins below the
+   sticky day-header row (28px tall) so the two don't collide. */
+.calendar-block-sticky {
+    position: sticky;
+    top: 28px;
+    display: block;
 }
 
 .calendar-block:hover {
