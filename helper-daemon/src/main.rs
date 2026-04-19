@@ -400,41 +400,25 @@ fn restore_hosts_from_backup() -> Result<(), String> {
         return Err("Backup file is invalid (missing localhost entry)".to_string());
     }
     
-    fs::write(HOSTS_PATH, &clean)
-        .map_err(|e| format!("Failed to restore hosts file: {}", e))?;
-    
+    if !atomic_write_hosts(&clean) {
+        return Err("Failed to restore hosts file".to_string());
+    }
+
     flush_dns_cache();
     log("Hosts file restored successfully");
     Ok(())
 }
 
-fn write_hosts_file(content: &str) -> bool {
-    // Safety check: never write an empty or near-empty hosts file
-    // A valid hosts file must at least contain a localhost entry
-    if !content.contains("localhost") {
-        log("SAFETY: Refusing to write hosts file without localhost entry - would break DNS");
-        // Attempt to restore from backup instead
-        if let Err(e) = restore_hosts_from_backup() {
-            log(&format!("SAFETY: Could not restore from backup either: {}", e));
-            // Last resort: write a minimal valid hosts file
-            let minimal = "##\n# Host Database\n##\n127.0.0.1       localhost\n255.255.255.255 broadcasthost\n::1             localhost\n";
-            return fs::write(HOSTS_PATH, minimal).is_ok();
-        }
-        return true;
-    }
+/// Atomically replace the hosts file with `content` via temp-file + rename.
+/// On Windows, retries transient lock failures from AV / DNS Client Service.
+/// Does not validate content — callers are responsible for that.
+fn atomic_write_hosts(content: &str) -> bool {
+    let tmp_path = format!("{}.tmp", HOSTS_PATH);
 
-    // Ensure we have a backup before any modification
-    if let Err(e) = ensure_backup_exists() {
-        log(&format!("Warning: {}", e));
-    }
-    
-    // Write to temp file + rename for atomicity (avoids truncation on crash).
-    // Retry loop handles transient locks from AV / DNS Client Service.
     #[cfg(target_os = "windows")]
     {
         const MAX_RETRIES: u32 = 3;
         const RETRY_DELAY_MS: u64 = 200;
-        let tmp_path = format!("{}.tmp", HOSTS_PATH);
 
         for attempt in 1..=MAX_RETRIES {
             if let Err(e) = fs::write(&tmp_path, content) {
@@ -477,25 +461,42 @@ fn write_hosts_file(content: &str) -> bool {
             return true;
         }
         log("All hosts file write attempts failed");
-        return false;
+        false
     }
-    
-    // On macOS/Linux: atomic write via temp file + rename to avoid truncation on crash
+
     #[cfg(not(target_os = "windows"))]
     {
-        let tmp_path = format!("{}.tmp", HOSTS_PATH);
         if let Err(e) = fs::write(&tmp_path, content) {
             log(&format!("Failed to write temp hosts file: {}", e));
             return false;
         }
         if let Err(e) = fs::rename(&tmp_path, HOSTS_PATH) {
             log(&format!("Failed to rename temp hosts file: {}", e));
-            // Fallback: try direct write
             let _ = fs::remove_file(&tmp_path);
-            return fs::write(HOSTS_PATH, content).is_ok();
+            return false;
         }
         true
     }
+}
+
+fn write_hosts_file(content: &str) -> bool {
+    // Safety check: never write an empty or near-empty hosts file
+    // A valid hosts file must at least contain a localhost entry
+    if !content.contains("localhost") {
+        log("SAFETY: Refusing to write hosts file without localhost entry - would break DNS");
+        if let Err(e) = restore_hosts_from_backup() {
+            log(&format!("SAFETY: Could not restore from backup either: {}", e));
+            let minimal = "##\n# Host Database\n##\n127.0.0.1       localhost\n255.255.255.255 broadcasthost\n::1             localhost\n";
+            return atomic_write_hosts(minimal);
+        }
+        return true;
+    }
+
+    if let Err(e) = ensure_backup_exists() {
+        log(&format!("Warning: {}", e));
+    }
+
+    atomic_write_hosts(content)
 }
 
 fn remove_block_from_hosts(content: &str) -> String {
