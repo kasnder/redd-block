@@ -2395,7 +2395,13 @@ fn main() {
         // Hide any currently open blocked apps
         hide_all_blocked_apps(&app_state);
     }
-    
+
+    // Reconcile hosts file with loaded state. If we crashed mid-operation last time,
+    // the file on disk may not match what state says. Idempotent when they already match.
+    if !sync_hosts_file(&state, &schedule_state) {
+        log("Startup hosts reconcile failed - will retry on next state change");
+    }
+
     // Start expiry checker thread
     let state_clone = Arc::clone(&state);
     let app_state_clone = Arc::clone(&app_state);
