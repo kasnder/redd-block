@@ -557,6 +557,54 @@
         });
     }
 
+    // A11: Helper daemon owns pause state for one-off blocks and auto-resumes independently
+    // of the frontend. Bypasses appData entirely by calling setBlocksViaHelper directly, so
+    // the frontend tick can't re-sync — only the helper's own expiry_checker can resume.
+    async function testA11_helperOwnsPauseStateForOneOff() {
+        const skip = await ensureHelperRunningOrSkip('A11');
+        if (skip) return skip;
+
+        return runIsolatedIntegrationTest('A11', async () => {
+            const tauriAPI = getTauriAPI();
+            const blocklistId = makeId('bl-a11');
+            const now = nowMs();
+            const pauseEndTime = now + 1200;
+            const blockEndTime = now + 120000;
+
+            const setResult = await tauriAPI.setBlocksViaHelper([{
+                domains: [TEST_DOMAINS.a],
+                endTime: blockEndTime,
+                blocklistId,
+                isPaused: true,
+                pauseEndTime
+            }]);
+            assertOrThrow(setResult && setResult.success, 'A11: initial setBlocks failed');
+
+            // Paused → helper must skip this block when writing hosts.
+            await assertHostsNotContain('A11', TEST_DOMAINS.a);
+
+            // Wait past pauseEndTime. Helper expiry_checker ticks every ~1s.
+            await shortWait(2500);
+
+            // Auto-resumed → hosts file should now contain the domain.
+            await assertHostsContain('A11', TEST_DOMAINS.a);
+
+            // Helper's persisted state should also reflect the cleared pause.
+            const diag = await tauriAPI.getHelperDiagnostics();
+            const stateFile = diag.helperStateFile ?? diag.helper_state_file;
+            assertOrThrow(typeof stateFile === 'string' && stateFile.length > 0, 'A11: helper state file missing');
+            const state = JSON.parse(stateFile);
+            const persisted = (state.manual_blocks || []).find(b =>
+                (b.blocklistId || b.blocklist_id) === blocklistId
+            );
+            assertOrThrow(persisted, 'A11: helper state missing the test block');
+            assertOrThrow(!persisted.isPaused, 'A11: helper should have cleared isPaused after pauseEndTime');
+            assertOrThrow(persisted.pauseEndTime == null, 'A11: helper should have cleared pauseEndTime');
+
+            return { passed: true };
+        });
+    }
+
     // ========================================
     // Testing Group B: Multi-block overlap correctness
     // ========================================
@@ -848,6 +896,7 @@
             { group: 'A', name: 'A8: Pause/resume schedule active path', fn: testA8_pauseResumeScheduleActivePath },
             { group: 'A', name: 'A9: Pause natural-expiry schedule smoke', fn: testA9_pauseNaturalExpiryScheduleSmoke },
             { group: 'A', name: 'A10: Pause inactive schedule suppression path', fn: testA10_pauseInactiveScheduleSuppressionPath },
+            { group: 'A', name: 'A11: Helper owns pause state for one-off', fn: testA11_helperOwnsPauseStateForOneOff },
             { group: 'B', name: 'B2: One-off + schedule same blocklist', fn: testB2_oneOffPlusScheduleSameBlocklist },
             { group: 'C', name: 'C2: Clear-all manual blocks', fn: testC2_clearAllManualBlocks },
             { group: 'C', name: 'C3: Max difficulty blocklist start/clear', fn: testC3_maxDifficultyBlocklistStartClear },
