@@ -792,11 +792,12 @@ fn chrono_now() -> LocalTimeInfo {
     LocalTimeInfo { hour, minute, weekday_mon0 }
 }
 
-/// Sync hosts file: writes the union of all non-expired manual block domains + active schedule domains
+/// Sync hosts file: writes the union of all non-expired manual block domains + active schedule domains.
+/// Returns true if no write was needed or the write succeeded; false if a write was attempted but failed.
 fn sync_hosts_file(
     state: &Arc<Mutex<Vec<BlockState>>>,
     schedule_state: &Arc<Mutex<Vec<HelperSchedule>>>,
-) {
+) -> bool {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -821,33 +822,37 @@ fn sync_hosts_file(
             all_domains.push(d);
         }
     }
-    
+
     let content = read_hosts_file();
-    
+
     if all_domains.is_empty() {
-        // Remove block from hosts
         let clean = remove_block_from_hosts(&content);
-        if clean != content {
-            if write_hosts_file(&clean) {
-                flush_dns_cache();
-                log("Hosts file cleared (no active domains)");
-            } else {
-                log("Failed to clear hosts file (no active domains) - skipping DNS flush");
-            }
+        if clean == content {
+            return true;
+        }
+        if write_hosts_file(&clean) {
+            flush_dns_cache();
+            log("Hosts file cleared (no active domains)");
+            true
+        } else {
+            log("Failed to clear hosts file (no active domains) - skipping DNS flush");
+            false
         }
     } else {
-        // Write merged domains to hosts
         let new_content = add_block_to_hosts(&content, &all_domains);
-        if new_content != content {
-            if write_hosts_file(&new_content) {
-                flush_dns_cache();
-                log(&format!("Hosts file updated: {} domains", all_domains.len()));
-            } else {
-                log(&format!(
-                    "Failed to update hosts file for {} domains - skipping DNS flush",
-                    all_domains.len()
-                ));
-            }
+        if new_content == content {
+            return true;
+        }
+        if write_hosts_file(&new_content) {
+            flush_dns_cache();
+            log(&format!("Hosts file updated: {} domains", all_domains.len()));
+            true
+        } else {
+            log(&format!(
+                "Failed to update hosts file for {} domains - skipping DNS flush",
+                all_domains.len()
+            ));
+            false
         }
     }
 }
@@ -866,6 +871,7 @@ fn start_block(
         end_time,
         blocklist_id: blocklist_id.clone(),
     };
+    let snapshot = state.lock().unwrap().clone();
     {
         let mut blocks = state.lock().unwrap();
         if let Some(pos) = blocks.iter().position(|b| b.blocklist_id == blocklist_id) {
@@ -874,7 +880,15 @@ fn start_block(
             blocks.push(block);
         }
     }
-    sync_hosts_file(state, schedule_state);
+    if !sync_hosts_file(state, schedule_state) {
+        *state.lock().unwrap() = snapshot;
+        log("Block start failed - rolled back in-memory state");
+        return IpcResponse {
+            success: false,
+            error: Some("Failed to update hosts file".to_string()),
+            ..Default::default()
+        };
+    }
     let blocks = state.lock().unwrap().clone();
     let apps = app_state.lock().unwrap().clone();
     let schedules = schedule_state.lock().unwrap().clone();
@@ -892,19 +906,29 @@ fn clear_block(
     schedule_state: &Arc<Mutex<Vec<HelperSchedule>>>,
     blocklist_id: Option<String>,
 ) -> IpcResponse {
-    let mut blocks = state.lock().unwrap();
-    match &blocklist_id {
-        Some(id) => {
-            blocks.retain(|b| b.blocklist_id != *id);
-            log(&format!("Cleared block for blocklist {}", id));
-        }
-        None => {
-            blocks.clear();
-            log("Cleared all manual blocks");
+    let snapshot = state.lock().unwrap().clone();
+    {
+        let mut blocks = state.lock().unwrap();
+        match &blocklist_id {
+            Some(id) => {
+                blocks.retain(|b| b.blocklist_id != *id);
+                log(&format!("Cleared block for blocklist {}", id));
+            }
+            None => {
+                blocks.clear();
+                log("Cleared all manual blocks");
+            }
         }
     }
-    drop(blocks);
-    sync_hosts_file(state, schedule_state);
+    if !sync_hosts_file(state, schedule_state) {
+        *state.lock().unwrap() = snapshot;
+        log("Block clear failed - rolled back in-memory state");
+        return IpcResponse {
+            success: false,
+            error: Some("Failed to update hosts file".to_string()),
+            ..Default::default()
+        };
+    }
     let blocks = state.lock().unwrap().clone();
     let apps = app_state.lock().unwrap().clone();
     let schedules = schedule_state.lock().unwrap().clone();
@@ -1745,8 +1769,17 @@ fn handle_command(
                 log(&format!("  Block '{}': {} domains, endTime={}",
                     b.blocklist_id, b.domains.len(), b.end_time));
             }
+            let snapshot = state.lock().unwrap().clone();
             *state.lock().unwrap() = blocks;
-            sync_hosts_file(state, schedule_state);
+            if !sync_hosts_file(state, schedule_state) {
+                *state.lock().unwrap() = snapshot;
+                log("SetBlocks failed - rolled back in-memory state");
+                return IpcResponse {
+                    success: false,
+                    error: Some("Failed to update hosts file".to_string()),
+                    ..Default::default()
+                };
+            }
             let blocks = state.lock().unwrap().clone();
             let apps = app_state.lock().unwrap().clone();
             let scheds = schedule_state.lock().unwrap().clone();
@@ -1762,14 +1795,24 @@ fn handle_command(
                 log(&format!("  Schedule '{}': {} domains, {} apps, {} segments",
                     s.id, s.domains.len(), s.apps.len(), s.segments.len()));
             }
-            
+
+            let schedule_snapshot = schedule_state.lock().unwrap().clone();
             *schedule_state.lock().unwrap() = schedules;
 
             #[cfg(target_os = "windows")]
             update_effective_blocked_apps();
-            
-            // Sync hosts file immediately
-            sync_hosts_file(state, schedule_state);
+
+            if !sync_hosts_file(state, schedule_state) {
+                *schedule_state.lock().unwrap() = schedule_snapshot;
+                #[cfg(target_os = "windows")]
+                update_effective_blocked_apps();
+                log("SetSchedules failed - rolled back in-memory state");
+                return IpcResponse {
+                    success: false,
+                    error: Some("Failed to update hosts file".to_string()),
+                    ..Default::default()
+                };
+            }
             
             // Sync app blocking from schedules
             let sched = schedule_state.lock().unwrap().clone();
@@ -2152,15 +2195,20 @@ fn expiry_checker(
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64;
-        let expired = {
+        let (expired, snapshot) = {
             let mut blocks = state.lock().unwrap();
+            let snap = blocks.clone();
             let len_before = blocks.len();
             blocks.retain(|b| b.end_time > now);
-            len_before != blocks.len()
+            (len_before != blocks.len(), snap)
         };
         if expired {
             log("One or more blocks expired, syncing hosts");
-            sync_hosts_file(&state, &schedule_state);
+            if !sync_hosts_file(&state, &schedule_state) {
+                *state.lock().unwrap() = snapshot;
+                log("Expiry sync failed - rolled back; will retry next tick");
+                continue;
+            }
             let blocks = state.lock().unwrap().clone();
             let apps = app_state.lock().unwrap().clone();
             let schedules = schedule_state.lock().unwrap().clone();
@@ -2188,15 +2236,19 @@ fn schedule_evaluator(
             if !domains.is_empty() || !apps.is_empty() {
                 log(&format!("Schedule evaluator: initial sync - {} domains, {} apps active",
                     domains.len(), apps.len()));
-                sync_hosts_file(&state, &schedule_state);
+                let synced = sync_hosts_file(&state, &schedule_state);
                 if !apps.is_empty() {
                     start_app_watcher(&app_state, &app_watcher_handle);
                     for app in &apps {
                         hide_app(app);
                     }
                 }
-                last_schedule_domains = domains;
-                last_schedule_apps = apps;
+                if synced {
+                    last_schedule_domains = domains;
+                    last_schedule_apps = apps;
+                } else {
+                    log("Schedule evaluator: initial sync failed - will retry next tick");
+                }
             }
         }
     }
@@ -2207,32 +2259,36 @@ fn schedule_evaluator(
         let schedules = schedule_state.lock().unwrap().clone();
         if schedules.is_empty() {
             if !last_schedule_domains.is_empty() {
-                // Schedules were cleared — sync hosts to remove schedule domains
                 log("Schedule evaluator: all schedules removed");
-                sync_hosts_file(&state, &schedule_state);
-                last_schedule_domains.clear();
-                last_schedule_apps.clear();
+                if sync_hosts_file(&state, &schedule_state) {
+                    last_schedule_domains.clear();
+                    last_schedule_apps.clear();
+                } else {
+                    log("Schedule evaluator: cleared-sync failed - will retry next tick");
+                }
             }
             continue;
         }
-        
+
         let current_domains = get_active_schedule_domains(&schedules);
         let current_apps = get_active_schedule_apps(&schedules);
-        
-        // Check if domain set changed
+
         let mut sorted_current = current_domains.clone();
         sorted_current.sort();
         let mut sorted_last = last_schedule_domains.clone();
         sorted_last.sort();
-        
+
         if sorted_current != sorted_last {
             log(&format!("Schedule evaluator: domain change detected ({} -> {} domains)",
                 last_schedule_domains.len(), current_domains.len()));
-            sync_hosts_file(&state, &schedule_state);
-            let blocks = state.lock().unwrap().clone();
-            let apps = app_state.lock().unwrap().clone();
-            save_full_state(&blocks, &apps, &schedules);
-            last_schedule_domains = current_domains;
+            if sync_hosts_file(&state, &schedule_state) {
+                let blocks = state.lock().unwrap().clone();
+                let apps = app_state.lock().unwrap().clone();
+                save_full_state(&blocks, &apps, &schedules);
+                last_schedule_domains = current_domains;
+            } else {
+                log("Schedule evaluator: domain-change sync failed - will retry next tick");
+            }
         }
         
         // Check if apps set changed
