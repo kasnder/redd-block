@@ -1015,6 +1015,50 @@ async function checkHelperStatus() {
     } else if (!status.installed) {
         console.log('Helper not installed - will prompt on first block');
     }
+
+    updateHelperUpdateBanner(status);
+}
+
+// Show/hide the top-of-app helper update banner based on current helper status.
+// Only shown when a helper is installed and running but at an older version than required.
+// We don't show it for "not installed" because the first-block modal covers that case.
+function updateHelperUpdateBanner(status) {
+    const banner = document.getElementById('helper-update-banner');
+    if (!banner) return;
+
+    const needsUpdate = !!(status && status.running && !status.version_ok);
+    if (!needsUpdate) {
+        banner.classList.add('hidden');
+        return;
+    }
+    banner.classList.remove('hidden');
+
+    const btn = document.getElementById('helper-update-banner-btn');
+    if (btn && !btn._listenerAdded) {
+        btn._listenerAdded = true;
+        btn.addEventListener('click', async () => {
+            if (btn.disabled) return;
+            btn.disabled = true;
+            const originalText = btn.textContent;
+            btn.textContent = 'Updating...';
+            try {
+                const result = await tauriAPI.installHelper();
+                if (result && result.success) {
+                    // Give the helper a moment to start up before re-checking status.
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    await checkHelperStatus();
+                } else {
+                    await message('Failed to update helper: ' + (result?.error || 'Unknown error'), { title: 'Error', kind: 'error' });
+                }
+            } catch (e) {
+                console.error('Error updating helper:', e);
+                await message('Error updating helper: ' + e.message, { title: 'Error', kind: 'error' });
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        });
+    }
 }
 
 /** True if the error indicates the helper daemon is not reachable (e.g. connection refused on Windows). */
