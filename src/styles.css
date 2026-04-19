@@ -538,6 +538,45 @@ body.dark-mode .week-nav-today-btn:hover {
     min-height: 200px;
 }
 
+/* Flex row: fixed-width time sidebar + main scroll area */
+.week-calendar-body {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+    min-width: 0;
+}
+
+/* Time sidebar - sits outside horizontal scroll so day columns never overlap it.
+   Vertical scroll is kept in sync with the main scroll via JS. */
+.week-calendar-time-column {
+    flex-shrink: 0;
+    width: 50px;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+    overflow-y: auto;
+    border-right: 1px solid var(--border-color);
+    border-top-left-radius: 12px;
+    background: var(--panel-bg);
+    scrollbar-width: none;
+}
+
+.week-calendar-time-column::-webkit-scrollbar {
+    display: none;
+}
+
+.week-calendar-time-column .header-time-spacer {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    /* Fixed element inside its own column — left stickiness no longer needed */
+    left: auto;
+}
+
+.week-calendar-time-column .time-axis {
+    position: static;
+}
+
 .week-calendar-scroll {
     flex: 1;
     display: flex;
@@ -546,10 +585,10 @@ body.dark-mode .week-nav-today-btn:hover {
     -webkit-overflow-scrolling: touch;
     scrollbar-width: thin;
     scrollbar-color: var(--text-muted) transparent;
-    border-top-left-radius: 12px;
     border-top-right-radius: 12px;
     /* Keep scroll inside calendar; do not chain to main app when hitting top/bottom */
     overscroll-behavior: contain;
+    position: relative;
 }
 
 /* Sticky header row - contains time spacer + day headers */

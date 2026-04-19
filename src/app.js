@@ -1734,15 +1734,29 @@ function setupEventListeners() {
 
     // Week calendar scroll handling with day snap
     const calendarScroll = document.querySelector('.week-calendar-scroll');
+    const timeColumn = document.getElementById('week-calendar-time-column');
     if (calendarScroll) {
         let scrollTimeout;
         calendarScroll.addEventListener('scroll', () => {
+            // Keep the time sidebar's vertical scroll in lockstep with the day grid.
+            if (timeColumn) timeColumn.scrollTop = calendarScroll.scrollTop;
+
             clearTimeout(scrollTimeout);
             scrollTimeout = setTimeout(() => {
                 // Update the visible date range display
                 updateVisibleRangeDisplay();
             }, 150);
         });
+
+        // Forward wheel-over-sidebar to the main scroll so the time column isn't an interaction dead zone.
+        if (timeColumn) {
+            timeColumn.addEventListener('wheel', (e) => {
+                if (e.deltaY !== 0) {
+                    calendarScroll.scrollTop += e.deltaY;
+                    e.preventDefault();
+                }
+            }, { passive: false });
+        }
 
         // Click on calendar (not on block) scrolls to today
         calendarScroll.addEventListener('click', (e) => {
@@ -7801,11 +7815,12 @@ function scrollToToday(smooth = true) {
 
     // Scroll to today's column (horizontal)
     const todayColumn = document.querySelector('.day-column.today');
-    const headerTimeSpacerWidth = 50; // width of time spacer in header
 
     if (todayColumn) {
-        // Calculate horizontal scroll: offset from left of content area
-        const scrollTargetX = todayColumn.offsetLeft + headerTimeSpacerWidth - scrollContainer.offsetWidth / 2 + todayColumn.offsetWidth / 2;
+        // offsetLeft is relative to .week-calendar-scroll (position: relative), so day columns
+        // start at 0, 120, 240, ... Setting scrollLeft = offsetLeft lands today at the left
+        // edge of the scrollable area — which is flush against the time sidebar to its left.
+        const scrollTargetX = todayColumn.offsetLeft;
 
         // Scroll vertically to 2 hours before current time
         // Header row is sticky at 28px, content starts below it
@@ -7965,17 +7980,16 @@ function updateVisibleRangeDisplay() {
 
     const scrollLeft = scrollContainer.scrollLeft;
     const containerWidth = scrollContainer.clientWidth;
-    const timeAxisWidth = 50; // Width of time axis
 
-    // Find first and last visible columns
+    // Find first and last visible columns. offsetLeft is measured from the scroll container
+    // (which is position: relative), so day columns start at 0, 120, 240, ...
     let firstVisible = null;
     let lastVisible = null;
 
     dayColumns.forEach(column => {
-        const columnLeft = column.offsetLeft - timeAxisWidth;
+        const columnLeft = column.offsetLeft;
         const columnRight = columnLeft + column.offsetWidth;
 
-        // Column is visible if it overlaps the viewport
         if (columnRight > scrollLeft && columnLeft < scrollLeft + containerWidth) {
             if (!firstVisible) firstVisible = column;
             lastVisible = column;
