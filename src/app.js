@@ -1474,6 +1474,16 @@ function setupEventListeners() {
         );
     });
 
+    document.querySelectorAll('#eula-onboarding [data-toggle-target]').forEach((el) => {
+        el.addEventListener('click', (event) => {
+            if (event.target.closest('a')) return;
+            const target = document.getElementById(el.dataset.toggleTarget);
+            if (!target) return;
+            target.checked = !target.checked;
+            target.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+    });
+
     document.getElementById('ios-screentime-grant-btn')?.addEventListener('click', async () => {
         const btn = document.getElementById('ios-screentime-grant-btn');
         const note = document.getElementById('ios-screentime-onboarding-note');
