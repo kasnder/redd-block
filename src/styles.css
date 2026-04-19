@@ -4723,17 +4723,30 @@ body.ios .zoom-toast {
 }
 
 /* Diagnostics Modal */
+/* Override .modal-content's padding so .diagnostics-content can span the full modal width.
+   Scrollbar sits at the far right edge of the modal; right padding becomes part of the
+   scrollable area, so wheel events over it scroll the page as expected. */
 .diagnostics-modal {
     max-width: 620px;
     max-height: 80vh;
     display: flex;
     flex-direction: column;
+    padding: 0;
+}
+
+.diagnostics-modal > h3 {
+    padding: 24px 24px 0;
+}
+
+.diagnostics-modal > .modal-buttons {
+    padding: 0 24px 24px;
 }
 
 .diagnostics-content {
     overflow-y: auto;
     flex: 1;
     min-height: 0;
+    padding: 16px 24px;
 }
 
 .diagnostics-section {
@@ -4797,9 +4810,9 @@ body.ios .zoom-toast {
     font-size: 12px;
     line-height: 1.5;
     overflow-x: auto;
+    overflow-y: auto;
     white-space: pre;
     max-height: 200px;
-    overflow-y: auto;
     color: var(--text-primary);
 }
 
