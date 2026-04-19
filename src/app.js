@@ -4748,6 +4748,7 @@ function renderSchedulePreview() {
     }
 
     // For each segment, render blocks on its specific days
+    const nowMs = draftCreatedAt;
     scheduleSegments.forEach((segment, segmentIndex) => {
         // Determine if this is a locked (active) segment or a new preview segment
         const isLockedSegment = segmentIndex < activeScheduleSegmentCount;
@@ -4785,6 +4786,12 @@ function renderSchedulePreview() {
             if (blockEnd <= blockStart) {
                 blockEnd.setDate(blockEnd.getDate() + 1);
             }
+
+            // A forever/until-date schedule starts running when the user confirms it — it
+            // doesn't backfill the past. Skip occurrences that have already fully elapsed,
+            // and for one currently in progress, clamp the start to "now".
+            if (blockEnd.getTime() <= nowMs) continue;
+            if (blockStart.getTime() < nowMs) blockStart.setTime(nowMs);
 
             // Render only pending/new segments as preview in schedule mode.
             renderPreviewBlock(blockStart, blockEnd, blocklist, true, segmentIndex);
