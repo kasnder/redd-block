@@ -428,46 +428,53 @@ fn write_hosts_file(content: &str) -> bool {
         log(&format!("Warning: {}", e));
     }
     
-    // On Windows, fs::rename() often fails because the hosts file may be locked
-    // by other processes (antivirus, DNS client service). Use direct write with
-    // retry logic since the file can be transiently locked.
+    // Write to temp file + rename for atomicity (avoids truncation on crash).
+    // Retry loop handles transient locks from AV / DNS Client Service.
     #[cfg(target_os = "windows")]
     {
         const MAX_RETRIES: u32 = 3;
         const RETRY_DELAY_MS: u64 = 200;
-        
+        let tmp_path = format!("{}.tmp", HOSTS_PATH);
+
         for attempt in 1..=MAX_RETRIES {
-            match fs::write(HOSTS_PATH, content) {
-                Ok(_) => {
-                    // Verify the write succeeded by reading back and checking for our marker
-                    match fs::read_to_string(HOSTS_PATH) {
-                        Ok(readback) => {
-                            if content.contains(BLOCK_MARKER_START) && !readback.contains(BLOCK_MARKER_START) {
-                                log(&format!("Write verification failed on attempt {} - block markers missing from hosts file", attempt));
-                                if attempt < MAX_RETRIES {
-                                    thread::sleep(Duration::from_millis(RETRY_DELAY_MS));
-                                    continue;
-                                }
-                                log("All write verification attempts failed");
-                                return false;
-                            }
+            if let Err(e) = fs::write(&tmp_path, content) {
+                log(&format!("Failed to write temp hosts file (attempt {}/{}): {}", attempt, MAX_RETRIES, e));
+                if attempt < MAX_RETRIES {
+                    thread::sleep(Duration::from_millis(RETRY_DELAY_MS));
+                }
+                continue;
+            }
+
+            if let Err(e) = fs::rename(&tmp_path, HOSTS_PATH) {
+                log(&format!("Failed to rename temp hosts file (attempt {}/{}): {}", attempt, MAX_RETRIES, e));
+                let _ = fs::remove_file(&tmp_path);
+                if attempt < MAX_RETRIES {
+                    thread::sleep(Duration::from_millis(RETRY_DELAY_MS));
+                }
+                continue;
+            }
+
+            match fs::read_to_string(HOSTS_PATH) {
+                Ok(readback) => {
+                    if content.contains(BLOCK_MARKER_START) && !readback.contains(BLOCK_MARKER_START) {
+                        log(&format!("Write verification failed on attempt {} - block markers missing from hosts file", attempt));
+                        if attempt < MAX_RETRIES {
+                            thread::sleep(Duration::from_millis(RETRY_DELAY_MS));
+                            continue;
                         }
-                        Err(e) => {
-                            log(&format!("Warning: could not verify hosts file after write: {}", e));
-                        }
+                        log("All write verification attempts failed");
+                        return false;
                     }
-                    if attempt > 1 {
-                        log(&format!("Hosts file written successfully on attempt {}", attempt));
-                    }
-                    return true;
                 }
                 Err(e) => {
-                    log(&format!("Failed to write hosts file (attempt {}/{}): {}", attempt, MAX_RETRIES, e));
-                    if attempt < MAX_RETRIES {
-                        thread::sleep(Duration::from_millis(RETRY_DELAY_MS));
-                    }
+                    log(&format!("Warning: could not verify hosts file after write: {}", e));
                 }
             }
+
+            if attempt > 1 {
+                log(&format!("Hosts file written successfully on attempt {}", attempt));
+            }
+            return true;
         }
         log("All hosts file write attempts failed");
         return false;
