@@ -5,18 +5,17 @@ User-facing changes for each release. Every app upgrade adds a new entry here.
 ## v1.1.0 (unreleased)
 
 - **New blocking architecture on desktop.** No more privileged helper
-  daemon, no more hosts-file edits.
-  - **macOS 14+** now uses Apple's Screen Time API. One-time
-    authorization in System Settings → Screen Time; blocks apply
-    across Safari and every other browser at the OS level.
-  - **Windows** now uses the ReDD Focus browser extension, fed by a
-    built-in native-messaging host that's just the app binary in a
-    `--native-host` CLI mode.
+  daemon, no more hosts-file edits, no admin/UAC prompt on install.
+  - Website blocking on both macOS and Windows now goes through the
+    ReDD Focus browser extension. Chrome / Brave / Edge / Firefox
+    speak to the app via a built-in native messaging host that's
+    just the app binary in a `--native-host` CLI mode. Safari
+    (macOS) routes through a handler inside the signed `.app`.
   - App blocking runs in-process on both OSes. First use of app
     blocking on macOS prompts for Accessibility / Automation
     permission.
-- **Minimum macOS is now 14 (Sonoma).** Earlier versions aren't
-  supported in v1.1.
+- **Minimum macOS is now 11 (Big Sur),** for Safari Web Extension
+  support. Still supports the same Windows versions.
 - **App hides to tray on close** and launches at login so schedules
   keep firing across sessions.
 - **Automatic migration on first launch.** The app cleans its old

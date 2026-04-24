@@ -2,13 +2,19 @@
 
 > **⚠ Out-of-date for desktop (v1.1.0).** Sections 4–9 below describe
 > the old helper-daemon architecture and are kept as historical
-> reference while the rewrite lands. Current desktop architecture:
+> reference while the rewrite lands. Current desktop architecture (both
+> macOS and Windows):
 >
-> - **macOS 14+** uses the Screen Time plugin for websites; app blocking
->   runs in-process via `src-tauri/src/app_watcher.rs`.
-> - **Windows** uses the ReDD Focus browser extension + Rust native host
->   (`src-tauri/src/native_host.rs`), with a compliance enforcer loop
->   (`src-tauri/src/enforcer.rs`) and the same in-process app watcher.
+> - Website blocking runs through the ReDD Focus browser extension.
+>   Chrome / Brave / Edge / Firefox speak to the app via a built-in
+>   native-messaging host (`src-tauri/src/native_host.rs`, invoked as
+>   `--native-host`). Safari (macOS) routes through
+>   `SafariWebExtensionHandler.swift` inside the signed `.app`.
+> - A compliance enforcer loop (`src-tauri/src/enforcer.rs`) scans
+>   running browsers every 5 s and quits any whose extension is
+>   missing / disabled / not allowed in private browsing.
+> - App blocking runs in-process via `src-tauri/src/app_watcher.rs`
+>   (AppleScript NSWorkspace on macOS, `SetWinEventHook` on Windows).
 >
 > The privileged helper daemon is gone. No hosts-file writes on any
 > platform. See `browser-ext-mvp/MIGRATION_PLAN.md` for the rationale

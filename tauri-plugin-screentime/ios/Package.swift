@@ -7,7 +7,6 @@ let package = Package(
     name: "tauri-plugin-screentime",
     platforms: [
         .iOS(.v16),
-        .macOS(.v14),
     ],
     products: [
         .library(

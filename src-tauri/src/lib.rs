@@ -53,9 +53,10 @@ pub fn run() {
         Some(vec![]),
     ));
 
-    // Register the Screen Time plugin on iOS and macOS. The Windows
-    // target uses the browser-extension backend instead.
-    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    // Screen Time is iOS-only. macOS uses the browser-extension path
+    // (Safari via SafariWebExtensionHandler, other browsers via the
+    // same Rust native host the Windows target uses).
+    #[cfg(target_os = "ios")]
     let builder = builder.plugin(tauri_plugin_screentime::init());
 
     builder.setup(|app| {

@@ -5,11 +5,15 @@
 // frontend in a single pass, we keep those command names and route
 // them to the new backends:
 //
-//   - Website blocking on macOS → Screen Time plugin
-//   - Website blocking on Windows → native host + extension (the app
-//     doesn't need to do anything synchronously; the native host reads
-//     the data file directly and reacts)
-//   - App blocking (both OSes) → in-process app watcher
+//   - Website blocking (both OSes) → browser extension via the
+//     native messaging host. On Chromium/Firefox the host is this
+//     binary in `--native-host` mode; on Safari (macOS) the host is
+//     SafariWebExtensionHandler.swift inside the signed .app. Either
+//     way the host re-reads redd-block-data.json and re-derives the
+//     blocklist when the file changes — the app just has to have
+//     persisted via `save_data`, which the frontend already did
+//     before calling this command.
+//   - App blocking (both OSes) → in-process app watcher.
 //
 // The frontend can be migrated piecemeal away from these shims in a
 // follow-up; in the meantime the old call sites keep working.
@@ -87,35 +91,17 @@ pub struct StartBlockArgs {
 
 /// Website blocking entry point.
 ///
-/// macOS: push into Screen Time via the plugin.
-/// Windows: no synchronous action required — the native host running
-///          alongside the extension reads redd-block-data.json and
-///          derives the blocklist directly. The app just needs to have
-///          persisted the active block (which `save_data` already did
-///          before this call).
+/// No synchronous action is required — the native-messaging host
+/// running alongside the extension (and SafariWebExtensionHandler on
+/// Safari) re-reads `redd-block-data.json` and re-derives the
+/// blocklist whenever the file changes. The frontend has already
+/// called `save_data` before invoking this, so we just acknowledge.
 #[tauri::command]
 pub async fn start_block_via_helper(
-    args: StartBlockArgs,
-    #[allow(unused_variables)] app: tauri::AppHandle,
+    _args: StartBlockArgs,
+    _app: tauri::AppHandle,
 ) -> HelperResult {
-    #[cfg(target_os = "macos")]
-    {
-        use tauri_plugin_screentime::ScreentimeExt;
-        let screentime = app.screentime();
-        let req = tauri_plugin_screentime::BlockWebsitesRequest {
-            domains: args.domains.clone(),
-        };
-        match screentime.block_websites(req) {
-            Ok(r) if r.success => return HelperResult::ok(),
-            Ok(r) => return HelperResult { success: false, error: Some(format!("Screen Time reported {} blocked", r.blocked_count)) },
-            Err(e) => return HelperResult::err(e.to_string()),
-        }
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = args;
-        HelperResult::ok()
-    }
+    HelperResult::ok()
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -127,23 +113,10 @@ pub struct ClearBlockArgs {
 
 #[tauri::command]
 pub async fn clear_block_via_helper(
-    args: ClearBlockArgs,
-    #[allow(unused_variables)] app: tauri::AppHandle,
+    _args: ClearBlockArgs,
+    _app: tauri::AppHandle,
 ) -> HelperResult {
-    #[cfg(target_os = "macos")]
-    {
-        use tauri_plugin_screentime::ScreentimeExt;
-        let screentime = app.screentime();
-        match screentime.unblock_websites() {
-            Ok(_) => return HelperResult::ok(),
-            Err(e) => return HelperResult::err(e.to_string()),
-        }
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = args;
-        HelperResult::ok()
-    }
+    HelperResult::ok()
 }
 
 #[tauri::command]
@@ -206,9 +179,7 @@ pub struct HelperDiagnostics {
 
 #[tauri::command]
 pub fn get_helper_diagnostics() -> HelperDiagnostics {
-    let backend = if cfg!(target_os = "macos") {
-        "screentime"
-    } else if cfg!(target_os = "windows") {
+    let backend = if cfg!(any(target_os = "macos", target_os = "windows")) {
         "extension"
     } else {
         "unsupported"

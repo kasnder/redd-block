@@ -6,8 +6,8 @@ Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and th
 
 ## Features
 
-- **Cross-Platform** — Works on macOS 14+, Windows 10+, iOS (iPad/iPhone), and Android (source code for the Android version is here: https://github.com/kasnder/redd-block-android)
-- **Website Blocking** — System-level on macOS/iOS via Screen Time; on Windows via the ReDD Focus browser extension driven by a built-in native messaging host.
+- **Cross-Platform** — Works on macOS 11+, Windows 10+, iOS (iPad/iPhone), and Android (source code for the Android version is here: https://github.com/kasnder/redd-block-android)
+- **Website Blocking** — Via the ReDD Focus browser extension on desktop (Chrome/Brave/Edge/Firefox via a built-in native messaging host; Safari via the app's own `SafariWebExtensionHandler`). On iOS it's the Screen Time API.
 - **App Blocking** — Automatically blocks distracting apps (minimizes/hides on desktop via in-process watcher, Screen Time shield overlay on iOS)
 - **Flexible Blocklists** — Create multiple lists with custom names, colors, and emojis
 - **One-Off Blocks** — Quick blocks for immediate focus sessions
@@ -22,16 +22,21 @@ Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and th
 ### Desktop
 
 One unprivileged Tauri binary per OS. No helper daemon, no hosts file,
-no admin prompt. Different website-blocking backend per OS:
+no admin prompt. Website blocking goes through the ReDD Focus browser
+extension on both OSes:
 
-- **macOS 14+** uses Apple's Screen Time API (`ManagedSettings.WebContentSettings`).
-  Covers Safari and every other browser at the OS level. One user
-  authorization in System Settings → Screen Time.
-- **Windows** uses the ReDD Focus browser extension, spoken to via a
-  native-messaging host that is the Tauri binary itself (invoked with
-  `--native-host`). An in-app enforcement loop scans running browsers
-  every ~5 seconds and nags / quits any browser whose ReDD Focus
-  extension is missing, disabled, or not allowed in private browsing.
+- **Chrome / Brave / Edge / Firefox** talk to the app via native
+  messaging. The Tauri binary runs in `--native-host` mode (argv flag)
+  and speaks the stdio-framed JSON protocol; the install step writes
+  per-browser manifest JSON (macOS) or `HKCU\…\NativeMessagingHosts`
+  registry keys (Windows). Entirely user-scope.
+- **Safari** (macOS) routes through `SafariWebExtensionHandler.swift`
+  inside the signed `.app` bundle, which implements the same
+  `{ blocklist: […] }` protocol.
+- An in-app **enforcement loop** scans running browsers every ~5 s
+  (using the Rust-ported profile-scan code) and nags / quits any
+  browser whose ReDD Focus extension is missing, disabled, or not
+  allowed in private browsing.
 
 App blocking runs in-process on both OSes (AppleScript hide on macOS,
 `SetWinEventHook` + `ShowWindow` on Windows). Scheduled blocks, pause /
@@ -48,22 +53,23 @@ flowchart TB
         IPC[IPC Commands]
         Data[Data Store]
         Watcher[App Watcher]
-        Enforcer[Extension Enforcer (Windows)]
+        Enforcer[Extension Enforcer]
         Host[Native Host CLI Mode]
     end
 
-    subgraph macOS["macOS 14+"]
-        ST[Screen Time<br/>ManagedSettings.WebContentSettings]
+    subgraph Browsers["Chrome / Brave / Edge / Firefox"]
+        Ext[ReDD Focus Extension]
     end
 
-    subgraph Windows["Windows"]
-        Ext[ReDD Focus Extension]
+    subgraph Safari["Safari (macOS)"]
+        SafariHandler[SafariWebExtensionHandler.swift]
     end
 
     UI <-->|invoke/listen| IPC
     IPC --> Data
-    IPC -->|macOS| ST
     Host <-->|stdio| Ext
+    SafariHandler <-->|NSExtensionItem| Ext
+    IPC --> SafariHandler
     Enforcer -->|quit on non-compliance| Ext
     Watcher -->|hide/minimize| Apps[Running Apps]
 ```
@@ -106,9 +112,9 @@ flowchart TB
 
 ### Website Blocking
 
-**macOS 14+ and iOS:** Website blocking uses the Screen Time API's `WebContentSettings` to block domains at the OS level. Users type in domains to block, and the app applies them via a `ManagedSettingsStore`. One-time authorization in System Settings → Screen Time.
+**Desktop (macOS / Windows):** Website blocking uses the ReDD Focus browser extension. The app registers itself as a native-messaging host, derives the current blocklist from `redd-block-data.json`, and pushes it over stdio to the extension running in Chrome / Brave / Edge / Firefox. Safari (macOS) routes through a `SafariWebExtensionHandler` inside the signed `.app` bundle that speaks the same protocol. A background loop in the app scans running browsers every ~5 seconds and quits any that have the extension missing, disabled, or not allowed in private browsing.
 
-**Windows:** Website blocking uses the ReDD Focus browser extension. The app registers itself as a native-messaging host, derives the current blocklist from `redd-block-data.json`, and pushes it over stdio to the extension running in Chrome / Brave / Edge / Firefox. A background loop in the app scans running browsers every ~5 seconds and quits any that have the extension missing, disabled, or not allowed in private browsing.
+**iOS:** Website blocking uses the Screen Time API's `WebContentSettings` to block domains at the OS level. Users type in domains to block, and the app applies them via a `ManagedSettingsStore`. One-time authorization in Settings → Screen Time.
 
 ### App Blocking
 
@@ -135,8 +141,9 @@ This is why iOS scheduled blocking is possible without a desktop-style helper da
 
 ### Authorization prompts (desktop)
 
-- **macOS**: one-time Screen Time authorization (System Settings → Screen Time → enable for ReDD Block) is required for website blocking. The first time app blocking fires, macOS also prompts for Accessibility / Automation permission so the app can call `System Events` to hide blocked apps.
-- **Windows**: users install the ReDD Focus extension from the Chrome Web Store / Firefox Add-ons / Edge Add-ons. No admin prompt; everything is user-scope.
+- **Both OSes**: users install the ReDD Focus extension from the Chrome Web Store / Firefox Add-ons / Edge Add-ons. For Safari (macOS), the extension is bundled inside the signed `.app` and the user enables it in Safari → Settings → Extensions.
+- **macOS**: the first time app blocking fires, macOS prompts for Accessibility / Automation permission so the app can call `System Events` to hide blocked apps.
+- No admin or UAC prompt on either OS.
 
 ### First launch after upgrade
 
@@ -144,8 +151,8 @@ An app that was previously installed at v1.0.x has a privileged helper daemon + 
 
 1. Strips its own section from `/etc/hosts` (macOS) or `C:\Windows\System32\drivers\etc\hosts` (Windows).
 2. Removes the launchd daemon / Scheduled Task and helper binary (macOS prompts once for the admin password; Windows cleans up user-scope state silently).
-3. Registers itself as a launch-at-login item and a native-messaging host (Windows only).
-4. On macOS, walks the user through the Screen Time authorization prompt.
+3. Registers itself as a launch-at-login item and a native-messaging host (both OSes).
+4. Prompts the user to install the ReDD Focus extension if not already present in any running browser.
 
 ## Local Development
 
@@ -248,11 +255,13 @@ redd-block/
 │   ├── tauri.ios.conf.json       # iOS-specific config
 │   ├── tauri.macos.conf.json     # macOS-specific config
 │   └── tauri.windows.conf.json   # Windows-specific config
-├── tauri-plugin-screentime/      # Screen Time plugin (iOS + macOS)
-│   ├── ios/Sources/              # Swift (iOS + macOS via @_cdecl FFI)
+├── tauri-plugin-screentime/      # iOS Screen Time plugin (desktop uses extension path)
+│   ├── ios/Sources/              # Swift plugin (FamilyActivityPicker, ManagedSettings)
 │   ├── src/                      # Rust bindings
 │   └── permissions/              # Plugin permissions
-├── browser-ext-mvp/              # Reference prototypes (Node) and MIGRATION_PLAN.md
+├── browser-ext-mvp/
+│   ├── safari-handler/           # SafariWebExtensionHandler.swift (drop into Xcode)
+│   └── MIGRATION_PLAN.md         # Rollout plan for the new architecture
 ├── scripts/                      # Build and signing scripts
 ├── docs/                         # GitHub Pages (version info, App Store privacy policy)
 └── vite.config.js                # Vite dev server config
@@ -292,7 +301,7 @@ Active blocks stop firing once the app is gone because the app itself is now the
 
 ## Requirements
 
-- **macOS**: 14.0+ (Sonoma or later) — required for Screen Time APIs
+- **macOS**: 11.0+ (Big Sur or later) — required for Safari Web Extensions
 - **Windows**: 10+ (version 1809 or later)
 - **iOS**: 16.0+ (iPhone and iPad)
 - **Android**: see https://github.com/kasnder/redd-block-android
@@ -300,6 +309,5 @@ Active blocks stop firing once the app is gone because the app itself is now the
 
 ## Tech Debt
 
-- **Rename `updateHostsFile()`**: misleading now that no platform writes a hosts file. On macOS it calls Screen Time, on Windows it triggers a `save_data` that the native host picks up. Consider renaming to `syncWebsiteBlocking()`.
-- **Frontend still calls legacy `*_via_helper` commands** via the shim in `src-tauri/src/commands/helper_shim.rs`. Rewrite `src/app.js` to call `set_blocked_apps` / Screen Time plugin commands / `scan_browser_profiles` directly and delete the shim.
-- **Screen Time macOS DeviceActivity scheduling** is stubbed in `ScreentimePluginMacOS.swift` (`set_schedules` / `clear_schedules` TODOs). Near-term the app runs its own schedule evaluator in-process and calls block/clear directly; DeviceActivity wakeups are the long-term story.
+- **Rename `updateHostsFile()`**: misleading now that no platform writes a hosts file. On desktop it's a no-op notify (the native messaging host re-reads the file on change). Consider renaming to `syncWebsiteBlocking()`.
+- **Frontend still calls legacy `*_via_helper` commands** via the shim in `src-tauri/src/commands/helper_shim.rs`. Rewrite `src/app.js` to call `set_blocked_apps` / `scan_browser_profiles` / Screen Time plugin commands directly and delete the shim.
