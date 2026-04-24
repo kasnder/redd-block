@@ -26,6 +26,8 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 mod commands;
 
 #[cfg(not(target_os = "ios"))]
+pub mod app_watcher;
+#[cfg(not(target_os = "ios"))]
 pub mod enforcer;
 #[cfg(not(target_os = "ios"))]
 pub mod native_host;
@@ -42,8 +44,18 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init());
 
-    // On iOS, also register the Screen Time plugin
-    #[cfg(target_os = "ios")]
+    // Autostart: launch at login on desktop. The "keep alive" /
+    // restart-on-failure behaviour is platform-configured below once
+    // the app is running (see `apply_keep_alive` in the setup block).
+    #[cfg(not(target_os = "ios"))]
+    let builder = builder.plugin(tauri_plugin_autostart::init(
+        tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+        Some(vec![]),
+    ));
+
+    // Register the Screen Time plugin on iOS and macOS. The Windows
+    // target uses the browser-extension backend instead.
+    #[cfg(any(target_os = "ios", target_os = "macos"))]
     let builder = builder.plugin(tauri_plugin_screentime::init());
 
     builder.setup(|app| {
@@ -328,6 +340,28 @@ pub fn run() {
                     .build(app)?;
             }
 
+            // Register app-watcher + enforcer state handles.
+            #[cfg(not(target_os = "ios"))]
+            {
+                commands::app_blocking::register(app);
+                commands::enforcement::register(app);
+            }
+
+            // Hide-on-close for the main window. The app is the
+            // enforcement engine now (no privileged helper), so
+            // closing it would stop schedules from firing. Intercept
+            // the close request and hide to tray instead.
+            #[cfg(feature = "desktop")]
+            if let Some(main) = app.get_webview_window("main") {
+                let win_for_event = main.clone();
+                main.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = win_for_event.hide();
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(all_commands())
@@ -335,7 +369,7 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-/// All commands for desktop platforms (includes helper, apps)
+/// All commands for desktop platforms.
 #[cfg(not(target_os = "ios"))]
 fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
     tauri::generate_handler![
@@ -348,7 +382,23 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::open_app_picker,
         commands::get_running_apps,
         commands::minimize_app,
-        // Helper commands (desktop only)
+        // In-process app watcher (replaces helper app-watch path)
+        commands::set_blocked_apps,
+        commands::clear_blocked_apps,
+        // Browser-extension backend (Windows; also works on macOS for
+        // non-Safari browsers)
+        commands::scan_browser_profiles,
+        commands::browser_profiles_compliant,
+        native_host_install::install_native_host,
+        native_host_install::uninstall_native_host,
+        // Enforcer loop (spawns per-browser profile-scan + grace timer)
+        commands::enforcer_start,
+        commands::enforcer_pause,
+        // First-launch migration off the old helper
+        commands::strip_hosts_markers,
+        commands::uninstall_legacy_helper,
+        // Legacy helper command names kept as shims routed to the
+        // new backends; see commands/helper_shim.rs.
         commands::check_helper_status,
         commands::install_helper,
         commands::uninstall_helper,

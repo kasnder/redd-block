@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      FamilyControls entitlement is required to call the Screen Time
+      APIs (ManagedSettings, DeviceActivity). Apple must approve this
+      on the developer account before the signed build will run.
+    -->
+    <key>com.apple.developer.family-controls</key>
+    <true/>
+
+    <!--
+      AppleScript / Accessibility TCC prompt is shown at runtime when
+      the in-process app watcher first tries to hide a blocked app via
+      `System Events`. No entitlement for this — the TCC prompt is
+      user-granted at runtime.
+    -->
+</dict>
+</plist>
