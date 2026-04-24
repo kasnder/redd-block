@@ -1,5 +1,62 @@
 # Browser-Extension Migration Plan
 
+> **Status (branch `claude/plan-extension-migration-J9CTL`)**
+>
+> First-pass implementation has landed on this branch. None of it has
+> been compile-tested — this environment has no Rust toolchain, no
+> Xcode, no Mac, no Windows. Needs a desktop build pass on real
+> hardware before it can ship.
+>
+> **Landed**
+> - `src-tauri/src/native_host.rs` — `--native-host` CLI mode, stdio
+>   framing, file-watch + 30 s poll, blocklist derivation.
+> - `src-tauri/src/profile_scan.rs` — Rust port of the MVP scanner.
+> - `src-tauri/src/enforcer.rs` — 5 s tick loop, 60 s/30 s grace,
+>   `enforcer://grace-update` / `grace-resolved` events,
+>   taskkill/osascript quit.
+> - `src-tauri/src/native_host_install.rs` — per-browser manifest
+>   JSON on macOS/Linux, `HKCU\…\NativeMessagingHosts` registry keys
+>   on Windows.
+> - `src-tauri/src/app_watcher.rs` — in-process AppleScript
+>   NSWorkspace watcher + System Events hide (macOS),
+>   `SetWinEventHook` + `ShowWindow(SW_FORCEMINIMIZE)` (Windows).
+> - `tauri-plugin-screentime` — Package.swift gains `.macOS(.v14)`,
+>   `ScreentimePluginMacOS.swift` scaffold with `@_cdecl` FFI,
+>   `desktop.rs` calls the FFI symbols on macOS.
+> - `src-tauri/src/commands/migration.rs` — `strip_hosts_markers` +
+>   `uninstall_legacy_helper` Tauri commands for first-launch cleanup.
+> - `src-tauri/src/commands/helper_shim.rs` — legacy `*_via_helper`
+>   command names kept as shims routed to the new backends so
+>   `src/app.js` doesn't need to be rewritten in this pass.
+> - `helper-daemon/` crate deleted. `scripts/*helper*` deleted.
+>   `package.json` scripts scrubbed.
+> - `tauri-plugin-autostart` added, hide-on-close wired in `lib.rs`.
+> - `entitlements.macos.plist` added declaring
+>   `com.apple.developer.family-controls`.
+> - `README.md` + `changelog.md` + `architecture.md` banner updated.
+>
+> **Stubbed / needs hardware**
+> - `ScreentimePluginMacOS.swift`: `set_schedules` / `clear_schedules`
+>   are TODOs. Near-term the app drives the schedule evaluator
+>   in-process; DeviceActivity wakeups come later.
+> - `com.apple.developer.family-controls` entitlement: Apple must
+>   approve it on the developer account before signed builds run.
+> - The ReDD Focus extension patch (`reddfocus-patch.diff`) needs to
+>   land upstream in the external `reddfocus-open-source` repo and
+>   the updated extension re-published to Chrome Web Store / Firefox
+>   AMO / Edge Add-ons.
+>
+> **Not done yet**
+> - Full rewrite of `src/app.js` to call new commands directly. The
+>   shim keeps the old call sites working; direct calls are cleaner.
+> - Smoke-test on macOS and Windows hardware. Fix any compile /
+>   linking errors that surface.
+> - `manual-test-checklist.md` update for the new flows (Screen Time
+>   authorization, extension install, enforcer grace, hide-on-close,
+>   migration from v1.0.x).
+
+---
+
 One release collapses the desktop architecture to a single unprivileged
 Tauri binary per OS. No hosts file, no privileged helper, no admin
 prompt, no sudo. On first launch after upgrade the app migrates, strips

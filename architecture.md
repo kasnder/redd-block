@@ -1,5 +1,19 @@
 # ReDD Block Architecture Reference (macOS, Windows, iOS)
 
+> **⚠ Out-of-date for desktop (v1.1.0).** Sections 4–9 below describe
+> the old helper-daemon architecture and are kept as historical
+> reference while the rewrite lands. Current desktop architecture:
+>
+> - **macOS 14+** uses the Screen Time plugin for websites; app blocking
+>   runs in-process via `src-tauri/src/app_watcher.rs`.
+> - **Windows** uses the ReDD Focus browser extension + Rust native host
+>   (`src-tauri/src/native_host.rs`), with a compliance enforcer loop
+>   (`src-tauri/src/enforcer.rs`) and the same in-process app watcher.
+>
+> The privileged helper daemon is gone. No hosts-file writes on any
+> platform. See `browser-ext-mvp/MIGRATION_PLAN.md` for the rationale
+> and migration steps.
+
 This is the technical architecture source-of-truth for ReDD Block.
 
 It is intentionally detailed and implementation-aligned, with file references to actual code paths.
