@@ -26,7 +26,11 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 mod commands;
 
 #[cfg(not(target_os = "ios"))]
+pub mod enforcer;
+#[cfg(not(target_os = "ios"))]
 pub mod native_host;
+#[cfg(not(target_os = "ios"))]
+pub mod native_host_install;
 #[cfg(not(target_os = "ios"))]
 pub mod profile_scan;
 
