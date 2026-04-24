@@ -25,6 +25,11 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 
 mod commands;
 
+#[cfg(not(target_os = "ios"))]
+pub mod native_host;
+#[cfg(not(target_os = "ios"))]
+pub mod profile_scan;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
