@@ -167,6 +167,12 @@ fn should_use_shared_data_path() -> bool {
 /// shared and per-user data files.
 ///
 /// On iOS, the per-user app data dir is always used (single-user device).
+/// Public accessor so other command modules can locate the canonical
+/// redd-block-data.json without duplicating path selection logic.
+pub fn canonical_data_path(app: &AppHandle) -> Option<PathBuf> {
+    Some(get_data_path(app))
+}
+
 fn get_data_path(app: &AppHandle) -> PathBuf {
     #[cfg(target_os = "ios")]
     {

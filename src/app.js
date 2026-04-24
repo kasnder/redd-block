@@ -953,6 +953,10 @@ async function runPostAcceptanceStartup() {
                 await initializeIOSBlockingState();
             }
         } else {
+            // Run first-launch migration off the legacy helper + check
+            // Automation TCC (macOS) + extension compliance. Idempotent;
+            // a no-op on subsequent launches past the current version.
+            await runDesktopOnboarding();
             await checkHelperStatus();
             console.log('[startup-sync] Desktop startup helperAvailable:', helperAvailable);
             // Push the user's ping-logging preference before any Pings happen downstream.
@@ -1016,6 +1020,108 @@ async function checkForAppUpdate() {
         // Silently fail if offline
         console.log('[Update] Could not check for updates:', e.message);
     }
+}
+
+// ---- Desktop onboarding (v1.1+) --------------------------------------------
+//
+// - Runs the idempotent first-launch migration (strip hosts markers,
+//   uninstall legacy privileged helper, register native-messaging
+//   manifests).
+// - Queries onboarding_state to decide whether to surface the
+//   Automation permission banner (macOS TCC) and/or the extension
+//   compliance banner.
+// - No-ops on iOS.
+
+async function runDesktopOnboarding() {
+    if (isIOS) return;
+    try {
+        const state = await invoke('onboarding_state');
+        console.log('[onboarding] state:', state);
+
+        // Automation permission (macOS only).
+        updateAutomationPermissionBanner(state.automation_permission);
+
+        // Extension compliance.
+        updateExtensionComplianceBanner(state);
+    } catch (e) {
+        console.warn('[onboarding] state check failed:', e);
+    }
+}
+
+function updateAutomationPermissionBanner(status) {
+    const banner = document.getElementById('automation-permission-banner');
+    const text = document.getElementById('automation-permission-text');
+    const btn = document.getElementById('automation-permission-btn');
+    if (!banner) return;
+
+    if (status === 'granted' || status === 'not_applicable') {
+        banner.classList.add('hidden');
+        return;
+    }
+
+    if (status === 'denied') {
+        if (text) text.textContent = 'App-blocking permission was denied. Open System Settings to grant it.';
+        if (btn) {
+            btn.textContent = 'Open Settings';
+            btn.onclick = () => invoke('open_automation_settings').catch(() => {});
+        }
+    } else {
+        // notDetermined
+        if (text) text.textContent = 'ReDD Block needs permission to hide distracting apps.';
+        if (btn) {
+            btn.textContent = 'Grant access';
+            btn.onclick = async () => {
+                try {
+                    const next = await invoke('request_automation_permission');
+                    updateAutomationPermissionBanner(next);
+                } catch (e) {
+                    console.warn('[onboarding] request permission failed:', e);
+                }
+            };
+        }
+    }
+    banner.classList.remove('hidden');
+}
+
+function updateExtensionComplianceBanner(state) {
+    const banner = document.getElementById('extension-compliance-banner');
+    const text = document.getElementById('extension-compliance-text');
+    const dismiss = document.getElementById('extension-compliance-dismiss');
+    if (!banner) return;
+
+    if (state.extension_compliant) {
+        banner.classList.add('hidden');
+        return;
+    }
+
+    const failing = findFirstNonCompliantBrowser(state.browsers);
+    if (text) {
+        text.textContent = failing
+            ? `ReDD Focus isn't fully enabled in ${failing}. Install, enable it, and allow it in private browsing.`
+            : 'Install the ReDD Focus extension to block websites.';
+    }
+    if (dismiss) {
+        dismiss.onclick = () => banner.classList.add('hidden');
+    }
+    banner.classList.remove('hidden');
+}
+
+function findFirstNonCompliantBrowser(browsers) {
+    if (!browsers) return null;
+    const labels = {
+        firefox: 'Firefox', chrome: 'Chrome', brave: 'Brave', edge: 'Edge', safari: 'Safari',
+    };
+    for (const key of Object.keys(labels)) {
+        const b = browsers[key];
+        if (!b || !b.present) continue;
+        const def = (b.profiles || []).find(p => p.isDefault) || (b.profiles || [])[0];
+        if (!def) continue;
+        const okInstalled = def.installed;
+        const okEnabled = def.enabled === true || (key === 'safari' && def.enabled !== false);
+        const okPriv = def.privateBrowsing === true || key === 'safari';
+        if (!(okInstalled && okEnabled && okPriv)) return labels[key];
+    }
+    return null;
 }
 
 // Check if the helper daemon is available (desktop only)
@@ -1415,6 +1521,16 @@ async function updateMaximizeButton() {
 
 // Setup event listeners
 function setupEventListeners() {
+    // When the user comes back to ReDD Block after visiting System
+    // Settings (e.g. to grant Automation permission) or the browser
+    // extension store, re-run the onboarding state check so the
+    // relevant banner clears.
+    window.addEventListener('focus', () => {
+        if (!isIOS && startupInitializationComplete) {
+            runDesktopOnboarding().catch(() => {});
+        }
+    });
+
     // Window controls (using Tauri docs naming)
     document.getElementById('titlebar-minimize')?.addEventListener('click', () => {
         tauriAPI.minimizeWindow();

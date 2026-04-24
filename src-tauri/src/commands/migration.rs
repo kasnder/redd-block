@@ -3,14 +3,15 @@
 // itself. Called once from the frontend on app startup; idempotent.
 //
 // After this runs, the app is on the new enforcement stack:
-//   - macOS 14+: Screen Time for websites, in-process watcher for apps
-//   - Windows:   browser extension + native host, in-process watcher
-//                for apps
+//   - Websites (both OSes): ReDD Focus extension + native messaging
+//   - Apps (both OSes): in-process watcher
 //
 // The helper daemon is retired entirely. The old Rust crate at
 // `helper-daemon/` is removed in the same release.
 
 use std::path::PathBuf;
+
+use serde::Serialize;
 
 const BEGIN_MARKER: &str = "# === BEGIN REDD BLOCK (reddfocus.org) ===";
 const END_MARKER: &str = "# === END REDD BLOCK (reddfocus.org) ===";
@@ -123,6 +124,143 @@ pub async fn uninstall_legacy_helper() -> Result<bool, String> {
     }
     #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
     Ok(true)
+}
+
+// ---- Onboarding orchestration --------------------------------------------
+
+/// Summary of the migration + onboarding state at startup.
+///
+/// Reported to the frontend so a single call decides whether to show
+/// the permissions banner, the extension-install banner, or nothing.
+#[derive(Debug, Clone, Serialize)]
+pub struct OnboardingState {
+    /// True if this build migrated anything in this launch (hosts
+    /// stripped, helper removed, autostart registered). Informational.
+    pub migrated_this_launch: bool,
+    /// True when every running-and-present browser has a compliant
+    /// default profile (installed + enabled + private browsing). See
+    /// `profile_scan::compliant`.
+    pub extension_compliant: bool,
+    /// Detailed per-browser scan so the UI can render exactly which
+    /// profile is failing and why.
+    pub browsers: crate::profile_scan::ScanResult,
+    /// `"granted" | "denied" | "notDetermined" | "not_applicable"`.
+    /// Only meaningful on macOS; non-macOS returns `not_applicable`.
+    pub automation_permission: String,
+}
+
+/// Idempotent end-to-end migration. Safe to call on every launch —
+/// it persists the version it last ran against in the app-data file
+/// under `settings.migrationRanAtVersion` and no-ops when equal to
+/// the current binary version.
+#[tauri::command]
+pub async fn run_upgrade_migration(app: tauri::AppHandle) -> Result<bool, String> {
+    let current = env!("CARGO_PKG_VERSION").to_string();
+    let data_path = match super::data::canonical_data_path(&app) {
+        Some(p) => p,
+        None => return Ok(false),
+    };
+
+    // Check if we've already migrated at this version.
+    let mut data = read_data(&data_path).unwrap_or_else(serde_json::Map::new);
+    let settings = data
+        .entry("settings".to_string())
+        .or_insert(serde_json::Value::Object(Default::default()))
+        .as_object_mut();
+    let ran_at = settings
+        .as_ref()
+        .and_then(|s| s.get("migrationRanAtVersion"))
+        .and_then(|v| v.as_str())
+        .map(String::from);
+    if ran_at.as_deref() == Some(current.as_str()) {
+        return Ok(false);
+    }
+
+    // 1. Strip hosts markers. Non-fatal if permission denied.
+    let _ = strip_hosts_markers().await;
+
+    // 2. Uninstall the legacy privileged helper. This prompts once on
+    //    macOS for admin; non-fatal if the user cancels.
+    let _ = uninstall_legacy_helper().await;
+
+    // 3. Install the native-messaging manifests so the ReDD Focus
+    //    extension can talk to us. User-scope; no prompts.
+    if let Err(e) = crate::native_host_install::install() {
+        log::warn!("native-host install during migration failed: {e}");
+    }
+
+    // 4. Mark the migration as done for this version. Best-effort —
+    //    on failure we'll just retry next launch.
+    if let Some(settings) = settings {
+        settings.insert(
+            "migrationRanAtVersion".to_string(),
+            serde_json::Value::String(current),
+        );
+        settings.insert(
+            "migrationRanAt".to_string(),
+            serde_json::Value::Number(
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0)
+                    .into(),
+            ),
+        );
+        let _ = write_data(&data_path, &data);
+    }
+
+    Ok(true)
+}
+
+/// Fetch the current onboarding state. Called by the frontend once
+/// after EULA acceptance, and again whenever the user returns from
+/// System Settings.
+#[tauri::command]
+pub async fn onboarding_state(app: tauri::AppHandle) -> Result<OnboardingState, String> {
+    let migrated_this_launch = run_upgrade_migration(app).await.unwrap_or(false);
+
+    let browsers = tauri::async_runtime::spawn_blocking(crate::profile_scan::scan)
+        .await
+        .map_err(|e| e.to_string())?;
+    let extension_compliant = crate::profile_scan::compliant(&browsers);
+
+    let automation_permission = compute_automation_permission();
+
+    Ok(OnboardingState {
+        migrated_this_launch,
+        extension_compliant,
+        browsers,
+        automation_permission,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn compute_automation_permission() -> String {
+    use crate::macos_permissions::{check_automation_permission, PermissionStatus};
+    match check_automation_permission() {
+        PermissionStatus::Granted => "granted".into(),
+        PermissionStatus::Denied => "denied".into(),
+        PermissionStatus::NotDetermined => "notDetermined".into(),
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn compute_automation_permission() -> String {
+    "not_applicable".into()
+}
+
+fn read_data(path: &std::path::Path) -> Option<serde_json::Map<String, serde_json::Value>> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    parsed.as_object().cloned()
+}
+
+fn write_data(
+    path: &std::path::Path,
+    data: &serde_json::Map<String, serde_json::Value>,
+) -> std::io::Result<()> {
+    let body = serde_json::to_vec_pretty(&serde_json::Value::Object(data.clone()))?;
+    std::fs::write(path, body)
 }
 
 #[cfg(test)]
