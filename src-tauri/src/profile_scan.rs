@@ -355,9 +355,17 @@ fn scan_safari() -> BrowserStatus {
 /// True if every running-and-present browser has at least one profile
 /// that reports installed+enabled+privateBrowsing=true on the default
 /// profile. Used by onboarding to gate the backend switch.
+///
+/// Safari is a special case: "Allow in Private Browsing" lives inside
+/// Safari's sandboxed extension container, which we can't read
+/// without Full Disk Access. Instead of demanding FDA, we let the
+/// Safari extension report its own state over the native-messaging
+/// channel (see browser-ext-mvp/safari-handler). The scanner here
+/// accepts `private_browsing == None` on Safari as "trust the
+/// extension's self-report" rather than treating it as a failure.
 pub fn compliant(result: &ScanResult) -> bool {
-    let browsers = [&result.firefox, &result.chrome, &result.brave, &result.edge];
-    browsers.iter().all(|b| {
+    let chromium_or_firefox = [&result.firefox, &result.chrome, &result.brave, &result.edge];
+    let chromium_ok = chromium_or_firefox.iter().all(|b| {
         !b.present || {
             let def = b.profiles.iter().find(|p| p.is_default).or_else(|| b.profiles.first());
             matches!(
@@ -367,5 +375,12 @@ pub fn compliant(result: &ScanResult) -> bool {
                     && p.private_browsing == Some(true)
             )
         }
-    })
+    });
+    let safari_ok = !result.safari.present || {
+        let def = result.safari.profiles.iter().find(|p| p.is_default).or_else(|| result.safari.profiles.first());
+        // Safari: only require installed + enabled; private-browsing
+        // is reported separately by the extension.
+        matches!(def, Some(p) if p.installed && p.enabled != Some(false))
+    };
+    chromium_ok && safari_ok
 }

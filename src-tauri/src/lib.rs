@@ -29,6 +29,8 @@ mod commands;
 pub mod app_watcher;
 #[cfg(not(target_os = "ios"))]
 pub mod enforcer;
+#[cfg(target_os = "macos")]
+pub mod macos_permissions;
 #[cfg(not(target_os = "ios"))]
 pub mod native_host;
 #[cfg(not(target_os = "ios"))]
@@ -370,36 +372,68 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-/// All commands for desktop platforms.
-#[cfg(not(target_os = "ios"))]
+/// All commands for macOS.
+#[cfg(target_os = "macos")]
 fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
     tauri::generate_handler![
-        // Data commands (all platforms)
         commands::get_app_version,
         commands::load_data,
         commands::save_data,
         commands::set_window_size,
-        // App commands (desktop only)
         commands::open_app_picker,
         commands::get_running_apps,
         commands::minimize_app,
-        // In-process app watcher (replaces helper app-watch path)
         commands::set_blocked_apps,
         commands::clear_blocked_apps,
-        // Browser-extension backend (Windows; also works on macOS for
-        // non-Safari browsers)
         commands::scan_browser_profiles,
         commands::browser_profiles_compliant,
         native_host_install::install_native_host,
         native_host_install::uninstall_native_host,
-        // Enforcer loop (spawns per-browser profile-scan + grace timer)
         commands::enforcer_start,
         commands::enforcer_pause,
-        // First-launch migration off the old helper
         commands::strip_hosts_markers,
         commands::uninstall_legacy_helper,
-        // Legacy helper command names kept as shims routed to the
-        // new backends; see commands/helper_shim.rs.
+        commands::check_helper_status,
+        commands::install_helper,
+        commands::uninstall_helper,
+        commands::start_block_via_helper,
+        commands::clear_block_via_helper,
+        commands::set_blocked_apps_via_helper,
+        commands::set_blocks_via_helper,
+        commands::set_schedules_via_helper,
+        commands::set_keep_blocking_on_uninstall_via_helper,
+        commands::set_log_pings_via_helper,
+        commands::block_websites,
+        commands::clean_hosts_file,
+        commands::get_helper_diagnostics,
+        macos_permissions::check_automation_permission,
+        macos_permissions::request_automation_permission,
+        macos_permissions::open_automation_settings,
+        macos_permissions::open_accessibility_settings,
+    ]
+}
+
+/// All commands for Windows / Linux desktop.
+#[cfg(all(not(target_os = "ios"), not(target_os = "macos")))]
+fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
+    tauri::generate_handler![
+        commands::get_app_version,
+        commands::load_data,
+        commands::save_data,
+        commands::set_window_size,
+        commands::open_app_picker,
+        commands::get_running_apps,
+        commands::minimize_app,
+        commands::set_blocked_apps,
+        commands::clear_blocked_apps,
+        commands::scan_browser_profiles,
+        commands::browser_profiles_compliant,
+        native_host_install::install_native_host,
+        native_host_install::uninstall_native_host,
+        commands::enforcer_start,
+        commands::enforcer_pause,
+        commands::strip_hosts_markers,
+        commands::uninstall_legacy_helper,
         commands::check_helper_status,
         commands::install_helper,
         commands::uninstall_helper,
