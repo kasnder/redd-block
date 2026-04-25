@@ -38,3 +38,18 @@ pub fn enforcer_pause(state: State<EnforcerState>) {
 pub fn register<R: tauri::Runtime>(app: &tauri::App<R>) {
     app.manage(EnforcerState::default());
 }
+
+/// Auto-start the enforcer at app launch. The enforcer scans browsers
+/// every 5 s for missing/disabled extensions and quits the browser if
+/// the user doesn't fix it within the grace window. There's no reason
+/// to gate this behind a frontend opt-in — if ReDD Block is running,
+/// blocking is enforced.
+pub fn auto_start(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let h = enforcer::start(app.clone());
+    h.set_enabled(true);
+    let state = app.state::<EnforcerState>();
+    if let Ok(mut slot) = state.0.lock() {
+        *slot = Some(h);
+    };
+}

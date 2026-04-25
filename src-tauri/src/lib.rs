@@ -1,10 +1,17 @@
 #[cfg(feature = "desktop")]
 use tauri::Manager;
 
+/// Set by the tray "Quit" handler to authorise actually exiting the
+/// process. Any other `ExitRequested` (Cmd-Q, Tauri's internal
+/// last-window-closed signal, etc.) is intercepted and turned into a
+/// hide-window — otherwise the user could accidentally kill the
+/// enforcer/watcher and silently lose all blocking.
+static ALLOW_EXIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 #[cfg(feature = "desktop")]
 use tauri::{
     menu::{Menu, MenuItem},
-    tray::TrayIconBuilder,
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 
 #[cfg(all(feature = "desktop", target_os = "macos"))]
@@ -23,14 +30,12 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 #[cfg(target_os = "ios")]
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 
-mod commands;
+pub mod commands;
 
 #[cfg(not(target_os = "ios"))]
 pub mod app_watcher;
 #[cfg(not(target_os = "ios"))]
 pub mod enforcer;
-#[cfg(target_os = "macos")]
-pub mod macos_permissions;
 #[cfg(not(target_os = "ios"))]
 pub mod native_host;
 #[cfg(not(target_os = "ios"))]
@@ -38,12 +43,62 @@ pub mod native_host_install;
 #[cfg(not(target_os = "ios"))]
 pub mod profile_scan;
 
+/// Add an `applicationShouldTerminate:` override on the existing
+/// NSApp delegate's class that returns `NSTerminateCancel` while
+/// `ALLOW_EXIT` is false. Cmd-Q routes through the AppKit terminate
+/// path, which Tauri's `RunEvent::ExitRequested` does not intercept
+/// in accessory mode — so we hook it at the AppKit layer ourselves.
+/// The tray "Quit" handler sets `ALLOW_EXIT = true` before calling
+/// `app.exit(0)`, so legitimate quits still go through.
+#[cfg(target_os = "macos")]
+unsafe fn install_terminate_guard(ns_app: cocoa::base::id) {
+    use cocoa::base::id;
+    use objc::runtime::{class_addMethod, class_getInstanceMethod, method_setImplementation, Sel};
+    use objc::{msg_send, sel, sel_impl};
+
+    extern "C" fn should_terminate(_this: id, _sel: Sel, _sender: id) -> u64 {
+        // NSTerminateNow = 1, NSTerminateCancel = 0.
+        if ALLOW_EXIT.load(std::sync::atomic::Ordering::SeqCst) {
+            1
+        } else {
+            log::info!("applicationShouldTerminate: cancelled (ALLOW_EXIT=false)");
+            // Hide instead — same UX as window close.
+            unsafe {
+                let app = cocoa::appkit::NSApp();
+                let _: () = msg_send![app, hide: app];
+            }
+            0
+        }
+    }
+
+    let delegate: id = msg_send![ns_app, delegate];
+    if delegate.is_null() {
+        log::warn!("install_terminate_guard: NSApp has no delegate yet");
+        return;
+    }
+    let cls: *mut objc::runtime::Class = msg_send![delegate, class];
+    let sel = sel!(applicationShouldTerminate:);
+    let method = class_getInstanceMethod(cls, sel) as *mut objc::runtime::Method;
+    let imp = should_terminate as extern "C" fn(id, Sel, id) -> u64;
+    let imp_ptr = std::mem::transmute::<_, objc::runtime::Imp>(imp);
+    if method.is_null() {
+        // Encoding for `NSApplicationTerminateReply (^)(id self, SEL _cmd, id sender)`.
+        let types = b"Q@:@\0".as_ptr() as *const i8;
+        let added = class_addMethod(cls, sel, imp_ptr, types);
+        log::info!("install_terminate_guard: added applicationShouldTerminate: ({added})");
+    } else {
+        method_setImplementation(method, imp_ptr);
+        log::info!("install_terminate_guard: replaced applicationShouldTerminate:");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init());
 
     // Autostart: launch at login on desktop. The "keep alive" /
@@ -69,6 +124,24 @@ pub fn run() {
                         .level(log::LevelFilter::Info)
                         .build(),
                 )?;
+            }
+
+            // Run as a menu-bar accessory app on macOS: no dock icon,
+            // no app-menu Cmd-Q in the global menu when no window is
+            // focused. The window is still openable via the tray.
+            // This is the standard pattern for background utilities
+            // that occasionally surface a UI (Bartender, Hidden Bar,
+            // etc.). Combined with the ExitRequested interceptor, it
+            // prevents users from accidentally tearing down the
+            // enforcer/watcher.
+            #[cfg(target_os = "macos")]
+            unsafe {
+                use cocoa::appkit::{
+                    NSApplication, NSApplicationActivationPolicy::NSApplicationActivationPolicyAccessory,
+                };
+                let ns_app = cocoa::appkit::NSApp();
+                let _ = ns_app.setActivationPolicy_(NSApplicationActivationPolicyAccessory);
+                install_terminate_guard(ns_app);
             }
 
             // Create main window with transparent titlebar on macOS
@@ -324,9 +397,13 @@ pub fn run() {
                 let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
                 let menu = Menu::with_items(app, &[&open_item, &quit_item])?;
 
-                // Build tray icon
+                // Build tray icon. macOS template convention: black + alpha,
+                // system tints it. `include_image!` decodes the PNG at compile time.
                 let _tray = TrayIconBuilder::new()
+                    .icon(tauri::include_image!("icons/tray-template.png"))
+                    .icon_as_template(true)
                     .menu(&menu)
+                    .show_menu_on_left_click(false)
                     .tooltip("ReDD Block")
                     .on_menu_event(|app, event| match event.id.as_ref() {
                         "open" => {
@@ -336,18 +413,65 @@ pub fn run() {
                             }
                         }
                         "quit" => {
+                            ALLOW_EXIT.store(true, std::sync::atomic::Ordering::SeqCst);
                             app.exit(0);
                         }
                         _ => {}
                     })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            if let Some(window) = tray.app_handle().get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    })
                     .build(app)?;
             }
 
-            // Register app-watcher + enforcer state handles.
+            // Register app-watcher + enforcer state handles, and
+            // auto-start the enforcer. The enforcer scans browsers
+            // for missing/disabled extensions every 5 s and quits the
+            // browser if the user doesn't fix it within the grace
+            // window — that's the whole point of the migration, so
+            // there's no reason to gate it behind a frontend opt-in.
             #[cfg(not(target_os = "ios"))]
             {
                 commands::app_blocking::register(app);
                 commands::enforcement::register(app);
+                commands::enforcement::auto_start(app.handle());
+            }
+
+            // Ensure macOS notification permission is granted (or
+            // prompt for it once). Without this, the enforcer's grace
+            // / kill notifications silently no-op.
+            #[cfg(target_os = "macos")]
+            {
+                use tauri_plugin_notification::NotificationExt;
+                let n = app.notification();
+                log::info!("notification permission_state: {:?}", n.permission_state());
+                // Always request — the OS shows the prompt only on the
+                // first call and is a no-op afterwards. Logs the result
+                // so we can tell the difference between "user denied"
+                // and "plugin never reached the OS".
+                match n.request_permission() {
+                    Ok(state) => log::info!("notification request_permission -> {state:?}"),
+                    Err(e) => log::warn!("notification request_permission failed: {e}"),
+                }
+            }
+
+            // Refresh per-browser native-messaging manifests on every
+            // launch. Idempotent — overwrites the JSON with the current
+            // exe path so a dragged or reinstalled app still resolves.
+            #[cfg(not(target_os = "ios"))]
+            if let Err(e) = native_host_install::install() {
+                log::warn!("native-host install on startup failed: {e}");
             }
 
             // Hide-on-close for the main window. The app is the
@@ -368,8 +492,20 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(all_commands())
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app, event| {
+            // Belt + braces: also catch any `ExitRequested` Tauri may
+            // emit (last-window-closed paths, etc.). Cmd-Q is handled
+            // by the AppKit `applicationShouldTerminate:` hook in
+            // `install_terminate_guard`.
+            #[cfg(feature = "desktop")]
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                if !ALLOW_EXIT.load(std::sync::atomic::Ordering::SeqCst) {
+                    api.prevent_exit();
+                }
+            }
+        });
 }
 
 /// All commands for macOS.
@@ -408,10 +544,6 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::block_websites,
         commands::clean_hosts_file,
         commands::get_helper_diagnostics,
-        macos_permissions::check_automation_permission,
-        macos_permissions::request_automation_permission,
-        macos_permissions::open_automation_settings,
-        macos_permissions::open_accessibility_settings,
     ]
 }
 

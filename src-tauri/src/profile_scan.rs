@@ -17,6 +17,23 @@ const CHROMIUM_ID: &str = "hhblkhfdjijdinijakbmcpkmdfhoadcd";
 #[cfg(target_os = "macos")]
 const SAFARI_BUNDLE_ID: &str = "com.ulriklyngs.mind-shield.mind-shield";
 
+/// Chromium IDs the scanner will accept as "ReDD Focus is here".
+/// Production ID is always included. In debug builds, comma-separated
+/// IDs from `REDD_DEV_EXT_ID` are appended so an unpacked dev extension
+/// (path-derived ID, ≠ production) is recognised by the compliance
+/// scan. The env var is ignored in release builds.
+fn chromium_ids() -> Vec<String> {
+    let mut ids = vec![CHROMIUM_ID.to_string()];
+    if cfg!(debug_assertions) {
+        if let Ok(extra) = std::env::var("REDD_DEV_EXT_ID") {
+            for id in extra.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                ids.push(id.to_string());
+            }
+        }
+    }
+    ids
+}
+
 /// Result for a single browser profile.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileStatus {
@@ -83,7 +100,25 @@ fn firefox_root() -> Option<PathBuf> {
     }
 }
 
+fn firefox_app_present() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        is_process_running(&["firefox", "firefox-bin"])
+    }
+    #[cfg(target_os = "windows")]
+    {
+        is_process_running(&["firefox.exe"])
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        is_process_running(&["firefox", "firefox-esr"])
+    }
+}
+
 fn scan_firefox() -> Option<BrowserStatus> {
+    if !firefox_app_present() {
+        return Some(BrowserStatus { present: false, profiles: vec![], error: None });
+    }
     let root = firefox_root()?;
     if !root.exists() {
         return Some(BrowserStatus { present: false, profiles: vec![], error: None });
@@ -181,7 +216,50 @@ fn read_firefox_profiles(root: &Path) -> (Vec<String>, Vec<String>) {
 #[derive(Copy, Clone)]
 enum ChromiumBrowser { Chrome, Brave, Edge }
 
+/// True if any process with one of the given names is currently
+/// running. We treat "present" as "running" rather than "installed"
+/// because install paths vary widely (Setapp, manual relocations,
+/// portable installs, etc.) and stale profile dirs remain after
+/// uninstall. The compliance banner only matters when the user has
+/// the browser open; if it's closed, no nag.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn is_process_running(names: &[&str]) -> bool {
+    use sysinfo::{ProcessesToUpdate, System};
+    let mut sys = System::new();
+    sys.refresh_processes(ProcessesToUpdate::All, true);
+    sys.processes().values().any(|p| {
+        let pname = p.name().to_string_lossy().to_string();
+        names.iter().any(|n| pname.eq_ignore_ascii_case(n))
+    })
+}
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+fn is_process_running(_names: &[&str]) -> bool { false }
+
 impl ChromiumBrowser {
+    fn app_present(self) -> bool {
+        // Process names as reported by `sysinfo` (which mirrors what
+        // /bin/ps and tasklist see on each platform).
+        #[cfg(target_os = "macos")]
+        let names: &[&str] = match self {
+            ChromiumBrowser::Chrome => &["Google Chrome", "Google Chrome Helper"],
+            ChromiumBrowser::Brave => &["Brave Browser", "Brave Browser Helper"],
+            ChromiumBrowser::Edge => &["Microsoft Edge", "Microsoft Edge Helper"],
+        };
+        #[cfg(target_os = "windows")]
+        let names: &[&str] = match self {
+            ChromiumBrowser::Chrome => &["chrome.exe"],
+            ChromiumBrowser::Brave => &["brave.exe"],
+            ChromiumBrowser::Edge => &["msedge.exe"],
+        };
+        #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+        let names: &[&str] = match self {
+            ChromiumBrowser::Chrome => &["chrome", "google-chrome"],
+            ChromiumBrowser::Brave => &["brave", "brave-browser"],
+            ChromiumBrowser::Edge => &["microsoft-edge", "msedge"],
+        };
+        is_process_running(names)
+    }
+
     fn root(self) -> Option<PathBuf> {
         #[cfg(target_os = "macos")]
         {
@@ -217,6 +295,9 @@ impl ChromiumBrowser {
 }
 
 fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
+    if !b.app_present() {
+        return Some(BrowserStatus { present: false, profiles: vec![], error: None });
+    }
     let root = b.root()?;
     if !root.exists() {
         return Some(BrowserStatus { present: false, profiles: vec![], error: None });
@@ -283,7 +364,9 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
             note: None,
         };
 
-        if let Some(ext) = merged_settings.get(CHROMIUM_ID) {
+        let accepted_ids = chromium_ids();
+        let ext = accepted_ids.iter().find_map(|id| merged_settings.get(id));
+        if let Some(ext) = ext {
             s.installed = true;
             let state = ext.get("state").and_then(|v| v.as_i64());
             let has_disable_reasons = match ext.get("disable_reasons") {
@@ -306,6 +389,9 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
 #[cfg(target_os = "macos")]
 fn scan_safari() -> BrowserStatus {
     use std::process::Command;
+    if !is_process_running(&["Safari"]) {
+        return BrowserStatus { present: false, profiles: vec![], error: None };
+    }
     let output = Command::new("/usr/bin/pluginkit")
         .args(["-m", "-A", "-vvv", "-p", "com.apple.Safari.web-extension"])
         .output();

@@ -11,10 +11,6 @@
   },
   "app": {
     "windows": [],
-    "trayIcon": {
-      "iconPath": "icons/icon.png",
-      "iconAsTemplate": true
-    },
     "security": {
       "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https://asset.localhost data:; font-src 'self' data:"
     }
@@ -34,7 +30,7 @@
     "shortDescription": "Block distracting websites and apps to stay focused",
     "longDescription": "ReDD Block helps you stay focused by blocking distracting websites and apps. Create blocklists, schedule blocks, and use override challenges to stay committed.",
     "macOS": {
-      "entitlements": null,
+      "entitlements": "entitlements.macos.plist",
       "signingIdentity": "Developer ID Application: Reduce Digital Distraction Ltd (JD647S9RT6)",
       "hardenedRuntime": true,
       "minimumSystemVersion": "11.0"

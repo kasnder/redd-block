@@ -25,6 +25,7 @@
     "fs:allow-write-text-file",
     "shell:default",
     "shell:allow-execute",
+    "notification:default",
     "opener:default"
   ]
 }

@@ -79,16 +79,6 @@ pub async fn uninstall_helper() -> HelperResult {
 
 // ---- Website blocking -----------------------------------------------------
 
-#[derive(Debug, Clone, Deserialize)]
-#[allow(non_snake_case)]
-pub struct StartBlockArgs {
-    pub domains: Vec<String>,
-    #[serde(default)]
-    pub endTime: Option<u64>,
-    #[serde(default)]
-    pub blocklistId: Option<String>,
-}
-
 /// Website blocking entry point.
 ///
 /// No synchronous action is required — the native-messaging host
@@ -97,46 +87,25 @@ pub struct StartBlockArgs {
 /// blocklist whenever the file changes. The frontend has already
 /// called `save_data` before invoking this, so we just acknowledge.
 #[tauri::command]
-pub async fn start_block_via_helper(
-    _args: StartBlockArgs,
-    _app: tauri::AppHandle,
-) -> HelperResult {
-    HelperResult::ok()
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[allow(non_snake_case)]
-pub struct ClearBlockArgs {
-    #[serde(default)]
-    pub blocklistId: Option<String>,
-}
-
-#[tauri::command]
-pub async fn clear_block_via_helper(
-    _args: ClearBlockArgs,
-    _app: tauri::AppHandle,
-) -> HelperResult {
+pub async fn start_block_via_helper(_app: tauri::AppHandle) -> HelperResult {
     HelperResult::ok()
 }
 
 #[tauri::command]
-pub async fn block_websites(
-    args: StartBlockArgs,
-    app: tauri::AppHandle,
-) -> HelperResult {
-    start_block_via_helper(args, app).await
+pub async fn clear_block_via_helper(_app: tauri::AppHandle) -> HelperResult {
+    HelperResult::ok()
+}
+
+#[tauri::command]
+pub async fn block_websites(app: tauri::AppHandle) -> HelperResult {
+    start_block_via_helper(app).await
 }
 
 // ---- App blocking ---------------------------------------------------------
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct SetAppsArgs {
-    pub apps: Vec<String>,
-}
-
 #[tauri::command]
-pub fn set_blocked_apps_via_helper(args: SetAppsArgs, state: State<AppWatcherState>) -> HelperResult {
-    super::app_blocking::set_blocked_apps(args.apps, state);
+pub fn set_blocked_apps_via_helper(apps: Vec<String>, state: State<AppWatcherState>) -> HelperResult {
+    super::app_blocking::set_blocked_apps(apps, state);
     HelperResult::ok()
 }
 
@@ -153,13 +122,13 @@ pub fn set_schedules_via_helper(_schedules: serde_json::Value) -> HelperResult {
 pub fn set_blocks_via_helper(_blocks: serde_json::Value) -> HelperResult { HelperResult::ok() }
 
 #[tauri::command]
-pub fn set_keep_blocking_on_uninstall_via_helper(_value: bool) -> HelperResult {
+pub fn set_keep_blocking_on_uninstall_via_helper(_args: serde_json::Value) -> HelperResult {
     // Feature dropped in this release (see MIGRATION_PLAN.md).
     HelperResult::ok()
 }
 
 #[tauri::command]
-pub fn set_log_pings_via_helper(_value: bool) -> HelperResult { HelperResult::ok() }
+pub fn set_log_pings_via_helper(_args: serde_json::Value) -> HelperResult { HelperResult::ok() }
 
 // ---- Hosts-file cleanup / diagnostics ----------------------------------
 

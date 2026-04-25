@@ -390,7 +390,38 @@ pub fn save_data(app: AppHandle, data: AppData) -> Result<(), String> {
     let content = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
     fs::write(&data_path, &content).map_err(|e| e.to_string())?;
     set_shared_permissions(&data_path);
+
+    // Mirror to the App Group container so the sandboxed Safari Web
+    // Extension (in redd-focus-web) can read the same data. Best-effort:
+    // if the container directory doesn't exist (i.e. the matching
+    // entitlement isn't deployed yet, or we're on Linux/Windows), skip.
+    #[cfg(target_os = "macos")]
+    if let Some(mirror) = app_group_data_path() {
+        if let Some(parent) = mirror.parent() {
+            if parent.is_dir() {
+                if let Err(e) = fs::write(&mirror, &content) {
+                    log::warn!("App Group mirror write failed at {:?}: {}", mirror, e);
+                }
+            }
+        }
+    }
     Ok(())
+}
+
+/// Path to the App Group shared container's `redd-block-data.json`,
+/// used as the bridge from ReDD Block (Tauri, unsandboxed) to the
+/// Safari Web Extension (sandboxed, App Store-distributed). Both
+/// bundles must declare the matching `application-groups` entitlement
+/// (see `entitlements.macos.plist` and the redd-focus-web project).
+#[cfg(target_os = "macos")]
+pub fn app_group_data_path() -> Option<PathBuf> {
+    let home = dirs::home_dir()?;
+    Some(
+        home.join("Library")
+            .join("Group Containers")
+            .join("group.com.reddblock.shared")
+            .join("redd-block-data.json"),
+    )
 }
 
 /// Set window size (used after onboarding) - desktop only

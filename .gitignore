@@ -1,6 +1,10 @@
 # Dependencies
 node_modules/
 
+# Out-of-tree clone of the Safari extension repo. Its working
+# changes are tracked as `browser-ext-mvp/redd-focus-web.patch`.
+/redd-focus-web/
+
 # Build outputs
 dist/
 build/

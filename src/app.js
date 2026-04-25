@@ -1037,50 +1037,10 @@ async function runDesktopOnboarding() {
     try {
         const state = await invoke('onboarding_state');
         console.log('[onboarding] state:', state);
-
-        // Automation permission (macOS only).
-        updateAutomationPermissionBanner(state.automation_permission);
-
-        // Extension compliance.
         updateExtensionComplianceBanner(state);
     } catch (e) {
         console.warn('[onboarding] state check failed:', e);
     }
-}
-
-function updateAutomationPermissionBanner(status) {
-    const banner = document.getElementById('automation-permission-banner');
-    const text = document.getElementById('automation-permission-text');
-    const btn = document.getElementById('automation-permission-btn');
-    if (!banner) return;
-
-    if (status === 'granted' || status === 'not_applicable') {
-        banner.classList.add('hidden');
-        return;
-    }
-
-    if (status === 'denied') {
-        if (text) text.textContent = 'App-blocking permission was denied. Open System Settings to grant it.';
-        if (btn) {
-            btn.textContent = 'Open Settings';
-            btn.onclick = () => invoke('open_automation_settings').catch(() => {});
-        }
-    } else {
-        // notDetermined
-        if (text) text.textContent = 'ReDD Block needs permission to hide distracting apps.';
-        if (btn) {
-            btn.textContent = 'Grant access';
-            btn.onclick = async () => {
-                try {
-                    const next = await invoke('request_automation_permission');
-                    updateAutomationPermissionBanner(next);
-                } catch (e) {
-                    console.warn('[onboarding] request permission failed:', e);
-                }
-            };
-        }
-    }
-    banner.classList.remove('hidden');
 }
 
 function updateExtensionComplianceBanner(state) {
@@ -1522,9 +1482,9 @@ async function updateMaximizeButton() {
 // Setup event listeners
 function setupEventListeners() {
     // When the user comes back to ReDD Block after visiting System
-    // Settings (e.g. to grant Automation permission) or the browser
-    // extension store, re-run the onboarding state check so the
-    // relevant banner clears.
+    // Settings or the browser extension store, re-run the onboarding
+    // state check so the compliance banner clears once the user has
+    // installed the extension.
     window.addEventListener('focus', () => {
         if (!isIOS && startupInitializationComplete) {
             runDesktopOnboarding().catch(() => {});

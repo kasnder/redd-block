@@ -35,9 +35,29 @@ use serde_json::Value;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(30);
 
-/// Return true if argv contains the native-host flag.
+/// Return true if argv signals that the browser invoked us as a
+/// native-messaging host. Native-messaging manifests can't pass custom
+/// args, so we sniff for browser-supplied argv markers instead:
+///   - explicit `--native-host` flag (smoke-test path)
+///   - `chrome-extension://<id>/` (Chromium-family argv[1])
+///   - the Firefox extension ID (Firefox argv[1])
+///   - `--parent-window=...` (Windows argv suffix from chromium / Firefox)
 pub fn is_native_host_invocation() -> bool {
-    std::env::args().any(|a| a == "--native-host")
+    for arg in std::env::args().skip(1) {
+        if arg == "--native-host" {
+            return true;
+        }
+        if arg.starts_with("chrome-extension://") {
+            return true;
+        }
+        if arg == crate::native_host_install::FIREFOX_EXT_ID {
+            return true;
+        }
+        if arg.starts_with("--parent-window=") {
+            return true;
+        }
+    }
+    false
 }
 
 /// Entry point. Blocks until stdin closes.
@@ -57,7 +77,8 @@ pub fn run() -> ! {
     };
 
     // Push once on connect.
-    send_blocklist(&derive_blocklist(&data_path));
+    let (domains, blocks) = derive_payload(&data_path);
+    send_payload(&domains, &blocks);
 
     // Background refresh: file-watch + 30 s poll.
     let (tx, rx) = mpsc::channel::<()>();
@@ -71,7 +92,8 @@ pub fn run() -> ! {
     loop {
         // Drain any pending change signals before blocking on stdin.
         while let Ok(()) = rx.try_recv() {
-            send_blocklist(&derive_blocklist(&data_path));
+            let (domains, blocks) = derive_payload(&data_path);
+            send_payload(&domains, &blocks);
         }
 
         let mut len_buf = [0u8; 4];
@@ -102,13 +124,18 @@ pub fn run() -> ! {
     }
 }
 
-/// Send a blocklist payload to the extension over stdout.
-fn send_blocklist(domains: &[String]) {
+/// Send a payload to the extension over stdout. Emits both the flat
+/// `blocklist` (domain strings) and the richer `blocks` array
+/// (per-block metadata: name, emoji, color, source, startedAt, endsAt).
+/// `background.js` consumes both; older clients that only know about
+/// `blocklist` ignore `blocks` cleanly.
+fn send_payload(domains: &[String], blocks: &[BlockInfo]) {
     #[derive(Serialize)]
     struct Msg<'a> {
         blocklist: &'a [String],
+        blocks: &'a [BlockInfo],
     }
-    let msg = Msg { blocklist: domains };
+    let msg = Msg { blocklist: domains, blocks };
     let body = match serde_json::to_vec(&msg) {
         Ok(b) => b,
         Err(e) => {
@@ -156,88 +183,160 @@ fn mtime(path: &std::path::Path) -> Option<SystemTime> {
     std::fs::metadata(path).and_then(|m| m.modified()).ok()
 }
 
-/// Derive the blocklist that should be enforced right now by
-/// intersecting `activeBlocks` whose `[startTime, endTime)` contains
-/// now() with their blocklists' `websites`, plus any schedule window
-/// that's currently active.
-pub fn derive_blocklist(data_path: &std::path::Path) -> Vec<String> {
+/// Per-block metadata sent alongside the flat `blocklist`. Mirrors the
+/// `blocks[]` shape `redd-focus-web/.../background.js` reads and forwards
+/// to `blocked.html` for the pill / source / countdown UI.
+#[derive(Debug, Clone, Serialize)]
+pub struct BlockInfo {
+    #[serde(rename = "blocklistId")]
+    pub blocklist_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub emoji: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    pub domains: Vec<String>,
+    pub source: &'static str, // "schedule" | "activeBlock"
+    #[serde(rename = "endsAt", skip_serializing_if = "Option::is_none")]
+    pub ends_at: Option<u64>,
+    #[serde(rename = "startedAt", skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<u64>,
+}
+
+/// Read redd-block-data.json and compute (a) the deduped flat domain list,
+/// (b) the per-block metadata array sorted ascending by `endsAt`. This
+/// is the single source of truth for what the extension sees on every
+/// frame.
+pub fn derive_payload(data_path: &std::path::Path) -> (Vec<String>, Vec<BlockInfo>) {
     let raw = match std::fs::read_to_string(data_path) {
         Ok(s) => s,
-        Err(_) => return vec![],
+        Err(_) => return (vec![], vec![]),
     };
     let data: Value = match serde_json::from_str(&raw) {
         Ok(v) => v,
-        Err(_) => return vec![],
+        Err(_) => return (vec![], vec![]),
     };
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
 
-    let blocklists = data.get("blocklists").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-    let active = data.get("activeBlocks").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-    let schedules = data.get("schedules").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let blocklists =
+        data.get("blocklists").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let active =
+        data.get("activeBlocks").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let schedules =
+        data.get("schedules").and_then(|v| v.as_array()).cloned().unwrap_or_default();
 
-    let websites_for = |id: &str| -> Vec<String> {
-        blocklists
-            .iter()
-            .find(|b| b.get("id").and_then(|v| v.as_str()) == Some(id))
-            .and_then(|b| b.get("websites").and_then(|v| v.as_array()))
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_lowercase())).collect())
-            .unwrap_or_default()
+    // (name, emoji, color, websites_lowercased) for the matching blocklist.
+    let blocklist_meta = |id: &str| -> Option<(Option<String>, Option<String>, Option<String>, Vec<String>)> {
+        blocklists.iter().find(|b| b.get("id").and_then(|v| v.as_str()) == Some(id)).map(|b| {
+            let name = b.get("name").and_then(|v| v.as_str()).map(String::from);
+            let emoji = b.get("emoji").and_then(|v| v.as_str()).map(String::from);
+            let color = b.get("color").and_then(|v| v.as_str()).map(String::from);
+            let websites: Vec<String> = b
+                .get("websites")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_lowercase())).collect())
+                .unwrap_or_default();
+            (name, emoji, color, websites)
+        })
     };
 
-    let mut out: std::collections::BTreeSet<String> = Default::default();
+    let mut domains: std::collections::BTreeSet<String> = Default::default();
+    let mut blocks: Vec<BlockInfo> = Vec::new();
 
     for ab in &active {
         let start = ab.get("startTime").and_then(|v| v.as_u64()).unwrap_or(0);
         let end = ab.get("endTime").and_then(|v| v.as_u64()).unwrap_or(0);
         let paused = ab.get("isPaused").and_then(|v| v.as_bool()).unwrap_or(false);
-        if paused {
+        if paused || now_ms < start || now_ms >= end {
             continue;
         }
-        if now_ms < start || now_ms >= end {
-            continue;
-        }
-        if let Some(id) = ab.get("blocklistId").and_then(|v| v.as_str()) {
-            for w in websites_for(id) {
-                out.insert(w);
+        let id = match ab.get("blocklistId").and_then(|v| v.as_str()) {
+            Some(s) => s,
+            None => continue,
+        };
+        if let Some((name, emoji, color, websites)) = blocklist_meta(id) {
+            for w in &websites {
+                domains.insert(w.clone());
             }
+            blocks.push(BlockInfo {
+                blocklist_id: id.to_string(),
+                name,
+                emoji,
+                color,
+                domains: websites,
+                source: "activeBlock",
+                ends_at: Some(end),
+                started_at: Some(start),
+            });
         }
     }
 
     for sch in &schedules {
-        if !is_schedule_active_now(sch, now_ms) {
-            continue;
-        }
-        if let Some(id) = sch.get("blocklistId").and_then(|v| v.as_str()) {
-            for w in websites_for(id) {
-                out.insert(w);
+        let m = match match_schedule_now(sch, now_ms) {
+            Some(m) => m,
+            None => continue,
+        };
+        let id = match sch.get("blocklistId").and_then(|v| v.as_str()) {
+            Some(s) => s,
+            None => continue,
+        };
+        if let Some((name, emoji, color, websites)) = blocklist_meta(id) {
+            for w in &websites {
+                domains.insert(w.clone());
             }
+            blocks.push(BlockInfo {
+                blocklist_id: id.to_string(),
+                name,
+                emoji,
+                color,
+                domains: websites,
+                source: "schedule",
+                ends_at: m.ends_at,
+                started_at: m.started_at,
+            });
         }
     }
 
-    out.into_iter().collect()
+    blocks.sort_by_key(|b| b.ends_at.unwrap_or(u64::MAX));
+    (domains.into_iter().collect(), blocks)
 }
 
-/// True if any segment of `schedule` is active at `now_ms` local time.
-/// Mirrors the frontend `isScheduleSegmentActiveNow` behaviour
-/// including cross-midnight, all-day, and pause-aware rules.
-fn is_schedule_active_now(schedule: &Value, now_ms: u64) -> bool {
+/// Backward-compatible wrapper that returns just the flat domain list.
+pub fn derive_blocklist(data_path: &std::path::Path) -> Vec<String> {
+    derive_payload(data_path).0
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ScheduleMatch {
+    started_at: Option<u64>,
+    ends_at: Option<u64>,
+}
+
+/// If any segment of `schedule` is active at `now_ms`, return the
+/// absolute start/end epoch-ms of that segment occurrence. Mirrors the
+/// frontend `isScheduleSegmentActiveNow` semantics including
+/// cross-midnight, all-day, and pause-aware rules.
+fn match_schedule_now(schedule: &Value, now_ms: u64) -> Option<ScheduleMatch> {
     let paused = schedule.get("isPaused").and_then(|v| v.as_bool()).unwrap_or(false);
     let pause_end = schedule.get("pauseEndTime").and_then(|v| v.as_u64()).unwrap_or(0);
     if paused && pause_end > now_ms {
-        return false;
+        return None;
     }
-    let segments = match schedule.get("segments").and_then(|v| v.as_array()) {
-        Some(s) => s,
-        None => return false,
-    };
-    let (wd, hour, minute) = match local_time_components(now_ms) {
-        Some(t) => t,
-        None => return false,
-    };
+    let segments = schedule.get("segments").and_then(|v| v.as_array())?;
+    let (wd, hour, minute, sec) = local_time_components_full(now_ms)?;
     let now_min = hour as u32 * 60 + minute as u32;
+
+    // Today's local-midnight as epoch ms. Computed by subtracting the
+    // local time-of-day offset from now_ms — works across DST jumps as
+    // long as the local-time components themselves are correct.
+    let today_offset_secs = (hour as u64) * 3600 + (minute as u64) * 60 + (sec as u64);
+    let now_secs = now_ms / 1000;
+    let midnight_today_ms = now_secs.saturating_sub(today_offset_secs) * 1000;
+    let yesterday_midnight_ms = midnight_today_ms.saturating_sub(86_400_000);
 
     for seg in segments {
         let sh = seg.get("startHour").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
@@ -255,34 +354,45 @@ fn is_schedule_active_now(schedule: &Value, now_ms: u64) -> bool {
         let all_day = start_min == end_min;
         if all_day {
             if days.contains(&wd) {
-                return true;
+                return Some(ScheduleMatch {
+                    started_at: Some(midnight_today_ms),
+                    ends_at: Some(midnight_today_ms + 86_400_000),
+                });
             }
             continue;
         }
 
         if start_min < end_min {
             if days.contains(&wd) && now_min >= start_min && now_min < end_min {
-                return true;
+                return Some(ScheduleMatch {
+                    started_at: Some(midnight_today_ms + start_min as u64 * 60_000),
+                    ends_at: Some(midnight_today_ms + end_min as u64 * 60_000),
+                });
             }
         } else {
-            // Cross-midnight: active today after start, or active
-            // yesterday after start + before today's end.
+            // Cross-midnight.
             let yesterday = (wd + 6) % 7;
             if days.contains(&wd) && now_min >= start_min {
-                return true;
+                return Some(ScheduleMatch {
+                    started_at: Some(midnight_today_ms + start_min as u64 * 60_000),
+                    ends_at: Some(midnight_today_ms + 86_400_000 + end_min as u64 * 60_000),
+                });
             }
             if days.contains(&yesterday) && now_min < end_min {
-                return true;
+                return Some(ScheduleMatch {
+                    started_at: Some(yesterday_midnight_ms + start_min as u64 * 60_000),
+                    ends_at: Some(midnight_today_ms + end_min as u64 * 60_000),
+                });
             }
         }
     }
-    false
+    None
 }
 
-/// Return (weekday 0=Sun..6=Sat, hour 0..23, minute 0..59) in the
-/// system local timezone. Uses libc `localtime_r` on unix and
+/// Return (weekday 0=Sun..6=Sat, hour 0..23, minute 0..59, second 0..59)
+/// in the system local timezone. Uses libc `localtime_r` on unix and
 /// `GetLocalTime` on Windows.
-fn local_time_components(now_ms: u64) -> Option<(u8, u8, u8)> {
+fn local_time_components_full(now_ms: u64) -> Option<(u8, u8, u8, u8)> {
     let secs = (now_ms / 1000) as i64;
     #[cfg(unix)]
     unsafe {
@@ -291,7 +401,7 @@ fn local_time_components(now_ms: u64) -> Option<(u8, u8, u8)> {
         if libc::localtime_r(&time, &mut tm).is_null() {
             return None;
         }
-        Some((tm.tm_wday as u8, tm.tm_hour as u8, tm.tm_min as u8))
+        Some((tm.tm_wday as u8, tm.tm_hour as u8, tm.tm_min as u8, tm.tm_sec as u8))
     }
     #[cfg(windows)]
     {
@@ -321,14 +431,31 @@ fn local_time_components(now_ms: u64) -> Option<(u8, u8, u8)> {
             }
         }
         // SYSTEMTIME.wDayOfWeek is already 0=Sunday..6=Saturday.
-        Some((local.wDayOfWeek as u8, local.wHour as u8, local.wMinute as u8))
+        Some((
+            local.wDayOfWeek as u8,
+            local.wHour as u8,
+            local.wMinute as u8,
+            local.wSecond as u8,
+        ))
     }
 }
 
 /// Canonical app-data path for the running user. Mirrors
-/// `commands::data` path selection for the desktop case. We prefer the
-/// shared system-wide location when it exists (the main app uses it),
-/// and fall back to the per-user legacy path otherwise.
+/// `commands::data` path selection for the desktop case. The native
+/// host runs as a child of the user's browser (not as the Tauri app),
+/// so it can't ask Tauri for `app_data_dir()` — we replicate the
+/// resolution logic against the Tauri bundle id.
+///
+/// Order:
+///   1. `/var/lib/redd-block` (legacy shared dir from the helper era;
+///      still authoritative if it survived a v1.0.x install).
+///   2. The App Group container — written by `commands::data::save_data`
+///      whenever the user is running on a build with the entitlement.
+///   3. `~/Library/Application Support/com.reddblock/...` — the Tauri
+///      `app_data_dir()` for `identifier = "com.reddblock"`.
+///   4. `~/Library/Application Support/com.redd.block/...` — earlier
+///      bundle id used by some pre-v1.0 builds; keeps native-messaging
+///      working through the migration window.
 pub fn resolve_data_path() -> Option<PathBuf> {
     #[cfg(target_os = "macos")]
     {
@@ -337,12 +464,24 @@ pub fn resolve_data_path() -> Option<PathBuf> {
             return Some(shared);
         }
         let home = dirs::home_dir()?;
-        Some(
-            home.join("Library")
-                .join("Application Support")
-                .join("com.redd.block")
-                .join("redd-block-data.json"),
-        )
+        let group_path = home
+            .join("Library")
+            .join("Group Containers")
+            .join("group.com.reddblock.shared")
+            .join("redd-block-data.json");
+        if group_path.exists() {
+            return Some(group_path);
+        }
+        let app_support = home.join("Library").join("Application Support");
+        for id in ["com.reddblock", "com.redd.block"] {
+            let p = app_support.join(id).join("redd-block-data.json");
+            if p.exists() {
+                return Some(p);
+            }
+        }
+        // Final fallback — return the canonical Tauri path even if it
+        // doesn't exist yet, so file-watch can pick up its first write.
+        Some(app_support.join("com.reddblock").join("redd-block-data.json"))
     }
     #[cfg(target_os = "windows")]
     {
@@ -351,7 +490,13 @@ pub fn resolve_data_path() -> Option<PathBuf> {
             return Some(shared);
         }
         let appdata = std::env::var_os("APPDATA").map(PathBuf::from)?;
-        Some(appdata.join("com.redd.block").join("redd-block-data.json"))
+        for id in ["com.reddblock", "com.redd.block"] {
+            let p = appdata.join(id).join("redd-block-data.json");
+            if p.exists() {
+                return Some(p);
+            }
+        }
+        Some(appdata.join("com.reddblock").join("redd-block-data.json"))
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {

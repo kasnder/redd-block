@@ -11,7 +11,7 @@ pub mod enforcement;
 #[cfg(not(target_os = "ios"))]
 mod helper_shim;
 #[cfg(not(target_os = "ios"))]
-mod migration;
+pub mod migration;
 
 pub use data::*;
 

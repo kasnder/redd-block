@@ -24,8 +24,7 @@ const LEGACY_END: &str = "# ReDD Block End";
 /// (the browser-extension / Screen Time backend doesn't depend on
 /// hosts being clean; the leftover lines just hang around until the
 /// next admin-level write).
-#[tauri::command]
-pub async fn strip_hosts_markers() -> Result<bool, String> {
+pub fn strip_hosts_markers_sync() -> Result<bool, String> {
     let path = hosts_path();
     let raw = match std::fs::read_to_string(&path) {
         Ok(s) => s,
@@ -38,13 +37,16 @@ pub async fn strip_hosts_markers() -> Result<bool, String> {
     match std::fs::write(&path, cleaned) {
         Ok(_) => Ok(true),
         Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-            // Expected when the app runs unprivileged and no one has
-            // already cleaned the file.
             log::warn!("hosts file needs admin to clean: {e}");
             Ok(false)
         }
         Err(e) => Err(e.to_string()),
     }
+}
+
+#[tauri::command]
+pub async fn strip_hosts_markers() -> Result<bool, String> {
+    strip_hosts_markers_sync()
 }
 
 fn strip_managed_sections(content: &str) -> String {
@@ -95,11 +97,25 @@ fn hosts_path() -> PathBuf {
 /// treats failures as non-fatal — the helper is no longer in the
 /// control path, so a lingering daemon is benign as long as the
 /// hosts file is clean.
-#[tauri::command]
-pub async fn uninstall_legacy_helper() -> Result<bool, String> {
+pub fn uninstall_legacy_helper_sync() -> Result<bool, String> {
     #[cfg(target_os = "macos")]
     {
+        use std::path::Path;
         use std::process::Command;
+
+        // Preflight: skip the admin prompt entirely if none of the legacy
+        // artefacts exist. A fresh install on a new machine has nothing
+        // to remove and shouldn't pester the user.
+        let legacy_paths = [
+            "/Library/LaunchDaemons/com.redd.block.helper.plist",
+            "/Library/PrivilegedHelperTools/com.redd.block.helper",
+            "/var/lib/redd-block",
+        ];
+        let any_present = legacy_paths.iter().any(|p| Path::new(p).exists());
+        if !any_present {
+            return Ok(true);
+        }
+
         let script = r#"
         do shell script "launchctl bootout system/com.redd.block.helper; rm -f /Library/LaunchDaemons/com.redd.block.helper.plist; rm -f /Library/PrivilegedHelperTools/com.redd.block.helper; rm -rf /var/lib/redd-block" with administrator privileges with prompt "ReDD Block needs to remove the old privileged helper"
         "#;
@@ -112,7 +128,13 @@ pub async fn uninstall_legacy_helper() -> Result<bool, String> {
     }
     #[cfg(target_os = "windows")]
     {
+        use std::path::Path;
         use std::process::Command;
+        // Preflight on Windows too — skip if no artefacts present.
+        let any_present = Path::new(r"C:\ProgramData\ReDD Block").exists();
+        if !any_present {
+            return Ok(true);
+        }
         // schtasks requires Admin for system-level tasks. We run it
         // without elevation and rely on the NEW/DELETE failing
         // silently if the task doesn't exist / permission denied.
@@ -124,6 +146,11 @@ pub async fn uninstall_legacy_helper() -> Result<bool, String> {
     }
     #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
     Ok(true)
+}
+
+#[tauri::command]
+pub async fn uninstall_legacy_helper() -> Result<bool, String> {
+    uninstall_legacy_helper_sync()
 }
 
 // ---- Onboarding orchestration --------------------------------------------
@@ -144,9 +171,6 @@ pub struct OnboardingState {
     /// Detailed per-browser scan so the UI can render exactly which
     /// profile is failing and why.
     pub browsers: crate::profile_scan::ScanResult,
-    /// `"granted" | "denied" | "notDetermined" | "not_applicable"`.
-    /// Only meaningful on macOS; non-macOS returns `not_applicable`.
-    pub automation_permission: String,
 }
 
 /// Idempotent end-to-end migration. Safe to call on every launch —
@@ -206,7 +230,13 @@ pub async fn run_upgrade_migration(app: tauri::AppHandle) -> Result<bool, String
                     .into(),
             ),
         );
-        let _ = write_data(&data_path, &data);
+        if let Err(e) = write_data(&data_path, &data) {
+            log::warn!(
+                "failed to persist migrationRanAtVersion at {:?}: {}",
+                data_path,
+                e
+            );
+        }
     }
 
     Ok(true)
@@ -224,29 +254,11 @@ pub async fn onboarding_state(app: tauri::AppHandle) -> Result<OnboardingState, 
         .map_err(|e| e.to_string())?;
     let extension_compliant = crate::profile_scan::compliant(&browsers);
 
-    let automation_permission = compute_automation_permission();
-
     Ok(OnboardingState {
         migrated_this_launch,
         extension_compliant,
         browsers,
-        automation_permission,
     })
-}
-
-#[cfg(target_os = "macos")]
-fn compute_automation_permission() -> String {
-    use crate::macos_permissions::{check_automation_permission, PermissionStatus};
-    match check_automation_permission() {
-        PermissionStatus::Granted => "granted".into(),
-        PermissionStatus::Denied => "denied".into(),
-        PermissionStatus::NotDetermined => "notDetermined".into(),
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn compute_automation_permission() -> String {
-    "not_applicable".into()
 }
 
 fn read_data(path: &std::path::Path) -> Option<serde_json::Map<String, serde_json::Value>> {
@@ -259,6 +271,9 @@ fn write_data(
     path: &std::path::Path,
     data: &serde_json::Map<String, serde_json::Value>,
 ) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     let body = serde_json::to_vec_pretty(&serde_json::Value::Object(data.clone()))?;
     std::fs::write(path, body)
 }

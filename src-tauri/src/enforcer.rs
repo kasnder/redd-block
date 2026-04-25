@@ -14,6 +14,8 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
+#[cfg(target_os = "macos")]
+use tauri_plugin_notification::NotificationExt;
 
 use crate::profile_scan::{self, BrowserStatus, ProfileStatus};
 
@@ -159,14 +161,17 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
             if let Some(t) = s.timers.get(&key) {
                 (Instant::now() >= t.deadline, false)
             } else {
-                let offenses = s.offenses.entry(key).and_modify(|c| *c += 1).or_insert(1);
-                let grace = if *offenses > 1 { GRACE_REPEAT } else { GRACE_FIRST_OFFENSE };
+                let offenses = {
+                    let c = s.offenses.entry(key).and_modify(|c| *c += 1).or_insert(1);
+                    *c
+                };
+                let grace = if offenses > 1 { GRACE_REPEAT } else { GRACE_FIRST_OFFENSE };
                 s.timers.insert(
                     key,
                     TimerState {
                         deadline: Instant::now() + grace,
                         total: grace,
-                        offense_count: *offenses,
+                        offense_count: offenses,
                     },
                 );
                 (false, true)
@@ -175,6 +180,7 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
 
         if fresh {
             emit_update(app, state, key);
+            notify_grace_started(app, key);
             continue;
         }
 
@@ -185,6 +191,7 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
                 s.timers.remove(&key);
             }
             quit_browser(key);
+            notify_killed(app, key);
         } else {
             emit_update(app, state, key);
         }
@@ -217,8 +224,14 @@ fn cancel_timer(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>, key: Browser
 }
 
 fn emit_update(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>, key: BrowserKey) {
-    let (remaining, total) = match state.lock().ok().and_then(|s| s.timers.get(&key).cloned_pair()) {
-        Some(pair) => pair,
+    let pair = state.lock().ok().and_then(|s| {
+        s.timers.get(&key).map(|t| {
+            let remaining = t.deadline.saturating_duration_since(Instant::now());
+            (remaining, t.total)
+        })
+    });
+    let (remaining, total) = match pair {
+        Some(p) => p,
         None => return,
     };
     let _ = app.emit(
@@ -232,24 +245,55 @@ fn emit_update(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>, key: BrowserK
     );
 }
 
-// Helper trait to extract (remaining, total) without holding the lock
-// across the emit call.
-trait TimerPair {
-    fn cloned_pair(&self) -> Option<(Duration, Duration)>;
+fn notify_grace_started(app: &AppHandle, key: BrowserKey) {
+    let secs = GRACE_FIRST_OFFENSE.as_secs();
+    notify(
+        app,
+        "ReDD Block: action required",
+        &format!(
+            "{} extension is missing or disabled. Re-enable within {}s or {} will be closed.",
+            key.label(),
+            secs,
+            key.label()
+        ),
+    );
 }
-impl TimerPair for &TimerState {
-    fn cloned_pair(&self) -> Option<(Duration, Duration)> {
-        let remaining = self.deadline.saturating_duration_since(Instant::now());
-        Some((remaining, self.total))
+
+fn notify_killed(app: &AppHandle, key: BrowserKey) {
+    notify(
+        app,
+        "ReDD Block",
+        &format!(
+            "{} was closed because the ReDD Block extension was missing or disabled.",
+            key.label()
+        ),
+    );
+}
+
+#[cfg(target_os = "macos")]
+fn notify(app: &AppHandle, title: &str, body: &str) {
+    if let Err(e) = app
+        .notification()
+        .builder()
+        .title(title)
+        .body(body)
+        .show()
+    {
+        log::warn!("notification failed: {e}");
+    } else {
+        log::info!("notification: {title} - {body}");
     }
 }
+
+#[cfg(not(target_os = "macos"))]
+fn notify(_app: &AppHandle, _title: &str, _body: &str) {}
 
 // ---- Process detection + quit -----------------------------------------
 
 fn running_browsers() -> std::collections::HashSet<BrowserKey> {
-    use sysinfo::System;
+    use sysinfo::{ProcessesToUpdate, System};
     let mut sys = System::new();
-    sys.refresh_processes();
+    sys.refresh_processes(ProcessesToUpdate::All, true);
     let mut out = std::collections::HashSet::new();
     for key in BrowserKey::all() {
         for name in key.process_names() {
@@ -267,30 +311,50 @@ fn running_browsers() -> std::collections::HashSet<BrowserKey> {
     out
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn quit_browser(key: BrowserKey) {
-    use std::process::Command;
-    for name in key.process_names() {
-        // Graceful first.
-        let _ = Command::new("taskkill").args(["/IM", name]).output();
-    }
-    std::thread::sleep(HARD_KILL_AFTER);
-    for name in key.process_names() {
-        let _ = Command::new("taskkill").args(["/IM", name, "/F"]).output();
-    }
-}
+    // SIGTERM all matching processes, give them HARD_KILL_AFTER to
+    // shut down (browsers persist session/cookies on graceful quit),
+    // then SIGKILL anything still alive. Same primitive as the app
+    // watcher — no AppleScript and no Automation TCC dependency.
+    use sysinfo::{ProcessesToUpdate, Signal, System};
 
-#[cfg(target_os = "macos")]
-fn quit_browser(key: BrowserKey) {
-    use std::process::Command;
-    let app = match key {
-        BrowserKey::Firefox => "Firefox",
-        BrowserKey::Chrome => "Google Chrome",
-        BrowserKey::Brave => "Brave Browser",
-        BrowserKey::Edge => "Microsoft Edge",
+    let names = key.process_names();
+    let matches = |name: &str| -> bool {
+        let lower = name.to_ascii_lowercase();
+        names.iter().any(|n| lower.ends_with(&n.to_ascii_lowercase()))
     };
-    let script = format!("tell application \"{app}\" to quit");
-    let _ = Command::new("/usr/bin/osascript").args(["-e", &script]).output();
+
+    let mut sys = System::new();
+    sys.refresh_processes(ProcessesToUpdate::All, true);
+    for proc_ in sys.processes().values() {
+        let name = proc_.name().to_string_lossy().to_string();
+        if !matches(&name) {
+            continue;
+        }
+        let sent = match proc_.kill_with(Signal::Term) {
+            Some(ok) => ok,
+            None => proc_.kill(), // Windows: TerminateProcess.
+        };
+        if !sent {
+            log::warn!("enforcer: SIGTERM failed for pid={} name='{}'", proc_.pid(), name);
+        }
+    }
+
+    std::thread::sleep(HARD_KILL_AFTER);
+
+    let mut sys = System::new();
+    sys.refresh_processes(ProcessesToUpdate::All, true);
+    for proc_ in sys.processes().values() {
+        let name = proc_.name().to_string_lossy().to_string();
+        if !matches(&name) {
+            continue;
+        }
+        log::info!("enforcer: SIGKILL pid={} name='{}'", proc_.pid(), name);
+        if !proc_.kill() {
+            log::warn!("enforcer: SIGKILL failed for pid={} name='{}'", proc_.pid(), name);
+        }
+    }
 }
 
 #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]

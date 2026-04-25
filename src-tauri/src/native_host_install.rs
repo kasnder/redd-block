@@ -66,6 +66,11 @@ impl BrowserTarget {
 /// Firefox have slightly different schemas:
 ///   - Chromium uses `allowed_origins` with chrome-extension://<id>/
 ///   - Firefox uses `allowed_extensions` with <addon@id>
+///
+/// In debug builds, comma-separated IDs from `REDD_DEV_EXT_ID` are
+/// appended to `allowed_origins` so an unpacked dev extension can
+/// connect alongside the production-store one. The env var is ignored
+/// in release builds so production users only ever trust the store ID.
 fn manifest_body(browser: BrowserTarget, binary_path: &str) -> serde_json::Value {
     let mut obj = json!({
         "name": HOST_NAME,
@@ -78,9 +83,15 @@ fn manifest_body(browser: BrowserTarget, binary_path: &str) -> serde_json::Value
             obj["allowed_extensions"] = json!([FIREFOX_EXT_ID]);
         }
         _ => {
-            obj["allowed_origins"] = json!([format!(
-                "chrome-extension://{CHROMIUM_EXT_ID}/"
-            )]);
+            let mut origins = vec![format!("chrome-extension://{CHROMIUM_EXT_ID}/")];
+            if cfg!(debug_assertions) {
+                if let Ok(extra) = std::env::var("REDD_DEV_EXT_ID") {
+                    for id in extra.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                        origins.push(format!("chrome-extension://{id}/"));
+                    }
+                }
+            }
+            obj["allowed_origins"] = json!(origins);
         }
     }
     obj

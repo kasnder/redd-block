@@ -2,10 +2,98 @@
 
 > **Status (branch `claude/plan-extension-migration-J9CTL`)**
 >
-> First-pass implementation has landed. None of it has been
-> compile-tested — this environment has no Rust toolchain, no Xcode,
-> no Mac, no Windows. Needs a desktop build pass on real hardware
-> before it can ship.
+> Compiled and partially exercised on real macOS hardware. Cmd-Q,
+> tray, accessory mode, app watcher, enforcer + native notifications,
+> hide-on-close all verified working in a debug `.app` bundle.
+> Remaining work is tracked in [Remaining work](#remaining-work) below.
+
+## Remaining work
+
+Ordered by priority. Items moved here from the rest of the doc as they
+land; everything below this section is historical context for *how*
+the migration was structured.
+
+### macOS — must do before merge
+- [ ] **Phase 4 manual verification on real hardware.** Three
+      scenarios still untouched this session (the others — enforcer
+      grace, app watcher, hide-on-close, autostart — already
+      verified):
+      - **Upgrade migration** from a v1.0.x install (or a
+        hand-crafted `/etc/hosts` with `# ReDD Block start` markers
+        + a stub launchd plist). Verify
+        [src-tauri/src/commands/migration.rs:run_upgrade_migration](../src-tauri/src/commands/migration.rs)
+        strips markers, prompts admin to bootout the daemon,
+        installs native-host manifests, and stamps
+        `settings.migrationRanAtVersion`.
+      - **Extension-compliance banner** — install the extension in 1
+        of 2 browsers, confirm the banner shows the uninstalled one;
+        install in both, banner clears.
+      - **Native-messaging manifests** — `cat ~/Library/Application\
+        Support/Google/Chrome/NativeMessagingHosts/com.ulriklyngs.mindshield.json`
+        (and the Brave/Edge/Firefox equivalents) and confirm the
+        `path` field points at the running binary.
+- [ ] **Phase 5: rewrite [scripts/manual-test-checklist.md](../scripts/manual-test-checklist.md).**
+      Existing file describes the old hosts-file / helper-daemon era.
+      Replace with sections matching the verified new flow:
+      first-launch upgrade migration, extension install compliance
+      (1-of-N + all-N), native-host connectivity (Chrome / Firefox /
+      Edge), enforcer grace timer (extension disabled / removed),
+      app watcher (blocked app hide), hide-on-close + launch-at-login.
+
+### Deferred — explicit non-goals for this branch
+- [ ] **Safari support.** Phase 3 of the original plan (App Group
+      bridge + Safari handler rewrite) needs both bundles signed by
+      the same Apple Developer team. ReDD Block is on team
+      `JD647S9RT6`; redd-focus-web upstream is on `7YEYWQKK25`. Until
+      ownership is consolidated, App Groups can't bridge the
+      sandboxed Safari extension to the unsandboxed app. Deferred
+      until signing alignment is sorted; tracked as a follow-up
+      ticket. Workaround paths (localhost HTTP, dual-team local
+      re-sign for testing) documented in chat.
+- [ ] **Native-host payload upgrade** (`{blocklist, blocks: [...]}`).
+      Cosmetic improvement to `blocked.html` only — blocking already
+      works with the current `{blocklist}` payload. Pick up once
+      Safari support is back on the table.
+- [ ] **`src/app.js` rewrite** to drop the `*_via_helper` shims in
+      [src-tauri/src/commands/helper_shim.rs](../src-tauri/src/commands/helper_shim.rs).
+      Functionally a no-op for users; cleanup only.
+- [ ] **Deep-link the extension-compliance banner Install button**
+      to the right store per browser (Chrome Web Store / Firefox AMO
+      / Edge Add-ons). Currently links to `reddfocus.org/tools/reddblock`.
+- [ ] **`architecture.md` sections 4–9 full rewrite.** The banner at
+      the top marks them as historical; defer until the migration
+      lands on `main`.
+
+### Windows — untouched this pass
+All Windows items below in
+[Manual checks / follow-ups needed on real hardware](#manual-checks--follow-ups-needed-on-real-hardware)
+remain. No Windows hardware tested in this pass; treat the entire
+Windows path as unverified.
+
+### Recent additions (since the original plan)
+The following items landed during the macOS hardware-test pass and
+supersede earlier sections of this doc:
+
+- `src-tauri/src/app_watcher.rs` rewritten as a sysinfo poll-and-kill
+  loop (1 s tick, SIGTERM → 10 s grace → SIGKILL). Replaces the
+  AppleScript NSWorkspace watcher — that approach never delivered
+  events because `osascript`'s `delay` doesn't pump the Cocoa run
+  loop.
+- `src-tauri/src/enforcer.rs` `quit_browser` ported to the same
+  sysinfo SIGTERM/SIGKILL primitive. AppleScript and Automation TCC
+  no longer required.
+- `src-tauri/src/macos_permissions.rs` and the
+  `automation-permission-banner` UI deleted — no longer needed.
+- `src-tauri/src/lib.rs`: NSApplication accessory-mode (no dock
+  icon), `applicationShouldTerminate:` swizzle to intercept Cmd-Q,
+  hide-on-close handler, tray-icon left-click opens window,
+  notification permission requested at startup.
+- Custom shield-silhouette template tray icon at
+  `src-tauri/icons/tray-template.png`.
+- `tauri-plugin-notification` wired up; enforcer fires native macOS
+  notifications at grace start + at kill. Works in signed `.app`
+  bundles; silently no-ops in `tauri dev` (bare binary, no bundle
+  context — known macOS limitation).
 
 ## Landed on the branch
 
@@ -50,46 +138,31 @@
 ## Manual checks / follow-ups needed on real hardware
 
 ### Build / compile
-- [ ] `cargo check` in `src-tauri/` on macOS. Likely fallout:
-      `tauri-plugin-autostart` API surface may have changed; `windows`
-      crate feature flags may need additions (`Win32_UI_Accessibility`,
-      `Win32_System_Diagnostics_ToolHelp`, etc. are declared but
-      untested); `sysinfo` 0.32 API may have shifted (`refresh_processes`
-      signature).
-- [ ] `cargo check` on Windows. Same concerns, plus the `HKCU` write
-      path in `native_host_install.rs` uses `RegSetValueExW` — verify
-      the slice-of-bytes length / wide-string encoding is right on
-      real Windows.
-- [ ] First `cargo build` will almost certainly surface trait import
-      issues in `app_watcher.rs` (Windows `SetWinEventHook` callback
-      signature, `PostThreadMessageW` arg types).
+- [x] `cargo check` clean on macOS. Compiled and run as a debug
+      `.app` bundle (ad-hoc signed) on macOS hardware.
+- [ ] `cargo check` on Windows still untested. Concerns from the
+      original plan stand: `HKCU` write path in
+      `native_host_install.rs` (`RegSetValueExW` slice-length /
+      wide-string encoding); `app_watcher.rs` Windows trait imports
+      (`SetWinEventHook` callback signature, `PostThreadMessageW`
+      arg types). Note: macOS app_watcher is now sysinfo-based and
+      shared with Windows under the same `cfg(any(macos, windows))`,
+      so the Win-specific watcher concerns from the original plan
+      are obsolete — the new code is one polling loop, not two.
 
 ### macOS specifics
-- [ ] Confirm the osascript error-string check in
-      `macos_permissions::check_automation_permission` catches the
-      actual error text emitted by the target macOS versions.
-      Current match is on `"not authorized"` / `"-1743"`. macOS 14/15
-      have changed the wording at least once; tweak the substring
-      match as needed.
-- [ ] Verify `x-apple.systempreferences:com.apple.preference.security
-      ?Privacy_Automation` still deep-links into the right panel on
-      the target macOS versions. macOS 13 reorganised System
-      Settings; the URL scheme has been stable but verify.
+- [x] ~~Automation TCC error-string check~~ — code deleted, no
+      longer relevant.
 - [ ] `uninstall_legacy_helper` uses `osascript` with
       `"with administrator privileges"` to bootout the launchd daemon.
       Test that the prompt wording is acceptable and that the command
-      returns a usable status code when the user cancels.
-- [ ] AppleScript NSWorkspace watcher in `app_watcher.rs` uses a
-      persistent `osascript` subprocess emitting lines on stderr.
-      Test: does it stay running reliably, does Accessibility TCC
-      cover the subprocess too, does it recover cleanly when osascript
-      crashes.
-- [ ] Safari bundle ID `com.ulriklyngs.mind-shield.mind-shield` in
-      `profile_scan.rs::SAFARI_BUNDLE_ID` must match what the Safari
-      Web Extension target uses once it's added to Xcode.
-- [ ] Add the Safari Extension target in Xcode; drop in
-      `browser-ext-mvp/safari-handler/SafariWebExtensionHandler.swift`;
-      confirm signing + notarisation flow for the expanded bundle.
+      returns a usable status code when the user cancels. (Still
+      pending — covered by Phase 4 scenario 1.)
+- [x] ~~AppleScript NSWorkspace watcher reliability~~ — replaced by
+      sysinfo poll-and-kill in `app_watcher.rs`. Verified working
+      against Calculator on macOS hardware.
+- [Deferred] Safari bundle ID + Safari Extension target —
+      see [Remaining work → Safari support](#remaining-work).
 
 ### Windows specifics
 - [ ] Smoke-test the `SetWinEventHook` path in `app_watcher.rs`
@@ -111,20 +184,9 @@
       from the feature set. Update or remove.
 
 ### Frontend
-- [ ] The `extension-compliance-banner` Install button currently
-      links to `reddfocus.org/tools/reddblock`. Better: use
-      `state.browsers` to deep-link to the store for the specific
-      browser that's failing (Chrome Web Store / Firefox AMO / Edge
-      Add-ons / Safari → enable in Safari Settings).
-- [ ] Full rewrite of `src/app.js` to call new commands
-      (`scan_browser_profiles`, `set_blocked_apps`, Screen Time
-      plugin commands) directly instead of the `*_via_helper` shim.
-      Delete `commands/helper_shim.rs` after.
-- [ ] Run the `runPostAcceptanceStartup` flow on a v1.0.x-upgraded
-      install end-to-end: the migration should strip hosts markers,
-      prompt for admin to remove the helper, register autostart +
-      native-host manifests, and surface the extension-install
-      banner until the user installs ReDD Focus.
+- [Deferred] Banner Install button deep-link, `src/app.js` rewrite,
+      v1.0.x upgrade end-to-end — moved to
+      [Remaining work](#remaining-work).
 
 ### External / out-of-band
 - [ ] Land `browser-ext-mvp/reddfocus-patch.diff` in the
@@ -139,13 +201,9 @@
       gets republished under a new ID, both constants must update.
 
 ### Documentation
-- [ ] `scripts/manual-test-checklist.md` — rewrite for the new
-      flows: extension install compliance + enforcer grace timer,
-      hide-on-close + launch-at-login, first-launch migration from
-      v1.0.x, Automation TCC permission grant / deny / recover.
-- [ ] `architecture.md` — full rewrite of sections 4–9 once the
-      code shape is validated on hardware. Banner at the top of the
-      file marks them as historical for now.
+- [Deferred] `manual-test-checklist.md` rewrite, `architecture.md`
+      sections 4–9 — moved to
+      [Remaining work](#remaining-work).
 
 ---
 
