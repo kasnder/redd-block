@@ -6,7 +6,8 @@
 // the UI turns into a persistent toast + "Fix now" deep-link, and
 // quit the browser if the grace expires without the user fixing it.
 //
-// Ported from browser-ext-mvp/enforcer/enforce.mjs.
+// Originally ported from the MVP enforcer prototype (see git history
+// for browser-ext-mvp/enforcer/enforce.mjs).
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};

@@ -1,0 +1,6 @@
+# The redd-focus-web Safari extension repo is a separate clone, kept
+# at the project root (not under this folder) and ignored at the
+# top-level .gitignore. Its in-progress changes are tracked in this
+# folder as `redd-focus-web.patch`.
+
+.DS_Store

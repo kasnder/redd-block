@@ -17,7 +17,7 @@
 >   (AppleScript NSWorkspace on macOS, `SetWinEventHook` on Windows).
 >
 > The privileged helper daemon is gone. No hosts-file writes on any
-> platform. See `browser-ext-mvp/MIGRATION_PLAN.md` for the rationale
+> platform. See `browser-ext-migration/MIGRATION_PLAN.md` for the rationale
 > and migration steps.
 
 This is the technical architecture source-of-truth for ReDD Block.

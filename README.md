@@ -259,9 +259,9 @@ redd-block/
 │   ├── ios/Sources/              # Swift plugin (FamilyActivityPicker, ManagedSettings)
 │   ├── src/                      # Rust bindings
 │   └── permissions/              # Plugin permissions
-├── browser-ext-mvp/
-│   ├── safari-handler/           # SafariWebExtensionHandler.swift (drop into Xcode)
-│   └── MIGRATION_PLAN.md         # Rollout plan for the new architecture
+├── browser-ext-migration/
+│   ├── MIGRATION_PLAN.md         # Rollout plan + remaining-work checklist
+│   └── redd-focus-web.patch      # In-progress Safari extension changes (deferred)
 ├── scripts/                      # Build and signing scripts
 ├── docs/                         # GitHub Pages (version info, App Store privacy policy)
 └── vite.config.js                # Vite dev server config

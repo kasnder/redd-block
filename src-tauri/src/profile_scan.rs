@@ -1,4 +1,5 @@
-// Rust port of browser-ext-mvp/profile-scan/scan.mjs.
+// Rust port of the MVP profile-scanner prototype (see git history
+// for browser-ext-mvp/profile-scan/scan.mjs).
 //
 // Detects whether the ReDD Focus browser extension is installed,
 // enabled, and allowed in private/incognito mode across every user
@@ -446,7 +447,7 @@ fn scan_safari() -> BrowserStatus {
 /// Safari's sandboxed extension container, which we can't read
 /// without Full Disk Access. Instead of demanding FDA, we let the
 /// Safari extension report its own state over the native-messaging
-/// channel (see browser-ext-mvp/safari-handler). The scanner here
+/// channel. The scanner here
 /// accepts `private_browsing == None` on Safari as "trust the
 /// extension's self-report" rather than treating it as a failure.
 pub fn compliant(result: &ScanResult) -> bool {

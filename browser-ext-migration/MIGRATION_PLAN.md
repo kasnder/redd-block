@@ -124,10 +124,11 @@ supersede earlier sections of this doc:
 - `helper-daemon/` crate deleted. `scripts/*helper*` deleted.
   `package.json` scripts scrubbed.
 - `tauri-plugin-autostart` added, hide-on-close wired in `lib.rs`.
-- `browser-ext-mvp/safari-handler/SafariWebExtensionHandler.swift`
-  — reference implementation of the Safari native-messaging
-  handler, to be dropped into the Xcode project's Safari extension
-  target.
+- `browser-ext-migration/redd-focus-web.patch`
+  — in-progress changes to the Safari extension repo (handler
+  rewrite + manifest + entitlements). Apply with `git apply` against
+  a clone of `redd-focus-web`. Kept as a patch because the Safari
+  side is deferred until signing-team consolidation.
 - `src/index.html` + `src/app.js` — two new banners
   (`automation-permission-banner`, `extension-compliance-banner`)
   + `runDesktopOnboarding()` driven by `onboarding_state`; window
@@ -189,8 +190,12 @@ supersede earlier sections of this doc:
       [Remaining work](#remaining-work).
 
 ### External / out-of-band
-- [ ] Land `browser-ext-mvp/reddfocus-patch.diff` in the
-      `reddfocus-open-source` repo (separate, not committed here).
+- [ ] Land the upstream `reddfocus-patch.diff` (extension-side
+      `nativeMessaging` permission) in the `reddfocus-open-source`
+      repo. The diff lives in git history under
+      `browser-ext-mvp/reddfocus-patch.diff` — recover it with
+      `git show <pre-rename-sha>:browser-ext-mvp/reddfocus-patch.diff`
+      if you need it.
 - [ ] Republish ReDD Focus to Chrome Web Store / Firefox AMO /
       Edge Add-ons with the added `nativeMessaging` permission —
       triggers a re-review on each.
@@ -273,10 +278,10 @@ with the self-binding philosophy.
 - Migration cleanup: strip `/etc/hosts` section, uninstall old
   launchd daemon + helper binary, remove `/var/lib/redd-block`.
 - Safari Web Extension target in Xcode with
-  `SafariWebExtensionHandler.swift`. Reference implementation lives
-  at `browser-ext-mvp/safari-handler/` — ready to drop in. Needs a
-  Mac developer to wire it up in Xcode, confirm the bundle ID, and
-  run through signing + notarisation.
+  `SafariWebExtensionHandler.swift`. Patch with the in-progress
+  rewrite lives at `browser-ext-migration/redd-focus-web.patch`
+  (apply against a clone of redd-focus-web). Deferred until signing
+  teams are consolidated — see [Remaining work](#remaining-work).
 
 ### Windows-specific (done on branch)
 - Migration cleanup: strip `C:\…\hosts` section, delete scheduled
@@ -308,7 +313,7 @@ with the self-binding philosophy.
   after 30 s; prototype already validates the UX.
 - **Safari extension review.** `nativeMessaging` is finicky in
   Safari's pipeline; fallback is to move it to `optional_permissions`
-  and request at runtime. Documented in `browser-ext-mvp/README.md`.
+  and request at runtime.
 - **Store re-review** across Chrome / Firefox / Edge for the single
   new permission (`nativeMessaging`). Don't grow it further.
 - **User can defeat persistence.** Disabling the login item and
