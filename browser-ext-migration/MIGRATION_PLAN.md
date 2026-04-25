@@ -2,9 +2,13 @@
 
 > **Status (branch `claude/plan-extension-migration-J9CTL`)**
 >
-> Compiled and partially exercised on real macOS hardware. Cmd-Q,
-> tray, accessory mode, app watcher, enforcer + native notifications,
-> hide-on-close all verified working in a debug `.app` bundle.
+> Compiled and partially exercised on real macOS *and* Windows hardware.
+> macOS: Cmd-Q, tray, accessory mode, app watcher, enforcer + native
+> notifications, hide-on-close all verified working in a debug `.app`
+> bundle. Windows (arm64 debug NSIS bundle): build / link / install /
+> launch / native-messaging connect / extension-compliance scan /
+> enforcer kill (taskkill graceful→force) / toast notifications / tray
+> behaviour / watchdog Scheduled Task / clean uninstall — all verified.
 > Remaining work is tracked in [Remaining work](#remaining-work) below.
 
 ## Remaining work
@@ -64,11 +68,46 @@ the migration was structured.
       the top marks them as historical; defer until the migration
       lands on `main`.
 
-### Windows — untouched this pass
-All Windows items below in
-[Manual checks / follow-ups needed on real hardware](#manual-checks--follow-ups-needed-on-real-hardware)
-remain. No Windows hardware tested in this pass; treat the entire
-Windows path as unverified.
+### Windows — verified this pass
+The Windows hardware-test pass landed a string of fixes (see
+[Recent additions](#recent-additions-since-the-original-plan)). What
+still needs doing before merge:
+- [ ] **Phase 4 manual verification on Windows hardware.** Mirror the
+      macOS scenarios:
+      - **Upgrade migration** from a v1.0.x install (or a hand-crafted
+        `C:\Windows\System32\drivers\etc\hosts` with `# ReDD Block
+        Start` markers + the legacy scheduled task / `C:\ProgramData\
+        ReDD Block`). The hosts strip is expected to log
+        `Access is denied (os error 5)` because the new app runs
+        unprivileged — that's fine; the new stack doesn't depend on a
+        clean hosts file. Verify `migrationRanAtVersion` is persisted
+        so the strip isn't re-attempted every launch (currently
+        observed firing twice in a single session — investigate
+        `commands::data::canonical_data_path` / write timing).
+      - **Browser-quit graceful path.** Trigger the enforcer (disable
+        the extension during a session); confirm the 60 s toast
+        fires, the browser closes via `taskkill /IM brave.exe /T`
+        (sessions/cookies persisted), and forced `taskkill /F /T`
+        only kicks in for stragglers after the 10 s grace.
+      - **Watchdog respawn.** Kill `redd-block.exe` from Task Manager;
+        confirm the Scheduled Task `ReDD Block Watchdog` respawns it
+        within ~1 minute. Disable the task in Task Scheduler; relaunch
+        the app and confirm `watchdog::register()` re-creates it.
+      - **Clean uninstall.** Add/Remove Programs → confirm the
+        Scheduled Task is gone, `%LOCALAPPDATA%\ReDD Block\
+        native-host\` is empty, and `Get-ChildItem 'HKCU:\Software\
+        BraveSoftware\Brave-Browser\NativeMessagingHosts'` no longer
+        lists `com.ulriklyngs.mindshield`.
+- [ ] **Code-signing for production Windows builds.** `scripts/sign.cmd`
+      now skips signing when `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` /
+      `AZURE_CLIENT_SECRET` are unset, so local `--debug --bundles
+      nsis` runs produce an unsigned installer. CI must continue to
+      provide all three so production builds get the Azure Trusted
+      Signing identity.
+- [ ] **`windows/hooks.nsh` "Keep Blocking after uninstall" message.**
+      Still references a feature that's been removed from the new
+      stack; either reword (briefly explain that uninstall removes the
+      enforcement engine) or drop the prompt entirely.
 
 ### Recent additions (since the original plan)
 The following items landed during the macOS hardware-test pass and
@@ -94,6 +133,71 @@ supersede earlier sections of this doc:
   notifications at grace start + at kill. Works in signed `.app`
   bundles; silently no-ops in `tauri dev` (bare binary, no bundle
   context — known macOS limitation).
+
+#### Windows-side additions (this hardware-test pass)
+- `tauri-plugin-notification` extended to Windows (`Cargo.toml` target
+  `cfg(any(macos, windows))`). The capability moved into a new
+  `desktop-notifications` capability filtered to both platforms
+  (`src-tauri/capabilities/macos.json`). The `notify()` helper in
+  `enforcer.rs` is no longer macOS-only — Windows toasts fire on grace
+  start and on kill.
+- AUMID registration at startup. `lib.rs::run()` calls
+  `SetCurrentProcessExplicitAppUserModelID("com.reddblock")` *before*
+  the Tauri builder is constructed. Without this, WinRT
+  `ToastNotificationManager` is created with an unregistered AUMID and
+  every toast silently dies. The string matches `bundle.identifier` in
+  `tauri.conf.json`, which is what the NSIS installer writes into the
+  Start Menu shortcut's `System.AppUserModel.ID`.
+- `enforcer::quit_browser` split: macOS keeps the sysinfo
+  SIGTERM/SIGKILL loop, Windows uses
+  `taskkill /IM <browser>.exe /T` → 10 s grace →
+  `taskkill /F /IM <browser>.exe /T`. The macOS path stops claiming
+  "SIGTERM failed" when sysinfo just returns `None` (signal not
+  supported) — only `Some(false)` warns now.
+- `main.rs`: `windows_subsystem = "windows"` is now always-on for
+  Windows targets (was `not(debug_assertions)`-only). Installed `--debug`
+  builds no longer pop a console window whose close kills the app
+  tree. Stdout isn't load-bearing — `tauri-plugin-log` writes to file
+  and to the webview DevTools console.
+- `lib.rs` tray: right-click menu removed entirely (no Open / Quit
+  items). Left-click reveals/focuses the main window; right-click is
+  a no-op. Combined with the existing close + Cmd-Q + `ExitRequested`
+  interceptors, **uninstall is now the only sanctioned exit path** —
+  `ALLOW_EXIT` is read but never set to `true`.
+- `profile_scan::scan_chromium`: pick the *best-scoring* matching
+  extension entry (by `(enabled, incognito)`) instead of the first
+  one. A profile that holds both a stale Web-Store stub
+  (`hhblkhfdjijdinijakbmcpkmdfhoadcd` with everything null) and an
+  unpacked dev extension was previously evaluated against the stub →
+  compliance failed → enforcer killed the browser. The scanner now
+  walks every accepted ID and keeps the entry that gives full
+  compliance.
+- `commands/migration.rs`: hosts-strip permission-denied is now a
+  warn-and-continue, not a fatal error. The new stack doesn't need a
+  clean hosts file; leftover lines from a previous helper-daemon
+  install are benign until the next admin-level write. (Pre-existing
+  on the branch but called out because the Windows test pass surfaced
+  it.)
+- `scripts/sign.cmd`: skips signing entirely when the three Azure env
+  vars are unset (exit 0). Lets developers produce unsigned local NSIS
+  bundles via `npm run tauri -- build --debug --bundles nsis` without
+  setting up Trusted Signing. CI behaviour unchanged.
+- `src-tauri/src/watchdog.rs` (new module, Windows-only). Per-user
+  Scheduled Task `ReDD Block Watchdog` triggers every minute; the
+  task action is a small wrapper `redd-block-watchdog.cmd` next to
+  the exe that uses `tasklist` + `start ""` to spawn `redd-block.exe`
+  only if it isn't already running. `register()` is called at every
+  startup (idempotent, self-heals if the user disables the task);
+  `unregister()` is called from the `--uninstall` path and from the
+  NSIS pre-uninstall hook.
+- `windows/hooks.nsh` rewritten: now (1) deletes the watchdog
+  Scheduled Task before any process kill (otherwise the next minute
+  would respawn the binary mid-uninstall), (2) keeps the existing
+  `KillProcess` step, (3) calls `redd-block.exe --uninstall` to clean
+  per-browser native-messaging manifests + matching HKCU registry
+  keys + watchdog wrapper script. Previously the hook only killed +
+  showed a message; native-host artefacts were orphaned after every
+  Windows uninstall.
 
 ## Landed on the branch
 
@@ -141,15 +245,19 @@ supersede earlier sections of this doc:
 ### Build / compile
 - [x] `cargo check` clean on macOS. Compiled and run as a debug
       `.app` bundle (ad-hoc signed) on macOS hardware.
-- [ ] `cargo check` on Windows still untested. Concerns from the
-      original plan stand: `HKCU` write path in
-      `native_host_install.rs` (`RegSetValueExW` slice-length /
-      wide-string encoding); `app_watcher.rs` Windows trait imports
-      (`SetWinEventHook` callback signature, `PostThreadMessageW`
-      arg types). Note: macOS app_watcher is now sysinfo-based and
-      shared with Windows under the same `cfg(any(macos, windows))`,
-      so the Win-specific watcher concerns from the original plan
-      are obsolete — the new code is one polling loop, not two.
+- [x] `cargo check` clean on Windows (arm64). Compiled, linked, and
+      bundled as a debug NSIS installer. Quirk: must build via
+      PowerShell, **not** Git Bash — Git's `usr/bin/link.exe` (GNU
+      coreutils hardlink utility) shadows MSVC's linker on the bash
+      `PATH`, producing a confusing
+      `/usr/bin/link: missing operand after '\377\376'`. PowerShell's
+      `PATH` resolves `link.exe` to the VS BuildTools install
+      correctly. Document this in `manual-test-checklist.md`. The
+      original plan's `RegSetValueExW` / `SetWinEventHook` /
+      `PostThreadMessageW` concerns are obsolete — the watcher is now
+      a single sysinfo poll-and-kill loop shared with macOS, and the
+      registry-write path is verified working (the extension's
+      `connectNative` succeeds).
 
 ### macOS specifics
 - [x] ~~Automation TCC error-string check~~ — code deleted, no
@@ -166,23 +274,58 @@ supersede earlier sections of this doc:
       see [Remaining work → Safari support](#remaining-work).
 
 ### Windows specifics
-- [ ] Smoke-test the `SetWinEventHook` path in `app_watcher.rs`
-      against a real blocked app. Known concerns: the hook callback
-      uses a `static mut CURRENT: Option<BlockedApps>` pointer — not
-      `Sync`; move to a safer shared-state idiom before shipping.
-- [ ] `PostThreadMessageW(tid, WM_QUIT, ...)` for watcher shutdown —
-      verify the thread id captured during hook install matches the
-      thread running the message loop.
-- [ ] `taskkill /IM <browser>.exe` then `/F` after a delay. Confirm
-      the grace-to-hard-kill delay (10 s) is long enough for a real
-      browser to flush its state, short enough for a focus app.
-- [ ] Registry key write for the native-messaging manifest:
-      `HKCU\Software\<Vendor>\<Browser>\NativeMessagingHosts\<name>`.
-      Verify the key exists after install + gets picked up on the
-      next browser launch.
-- [ ] NSIS installer `windows/hooks.nsh` still has a
-      "Keep Blocking after uninstall" message that's been removed
-      from the feature set. Update or remove.
+- [x] ~~`SetWinEventHook` / `PostThreadMessageW` watcher~~ — obsolete.
+      Replaced by the shared sysinfo poll-and-kill loop in
+      `app_watcher.rs`, identical to the macOS path under
+      `cfg(any(macos, windows))`. No `static mut`, no per-platform
+      message-loop quirks.
+- [x] `taskkill /IM <browser>.exe /T` (graceful, posts WM_CLOSE) →
+      10 s grace → `taskkill /F /IM <browser>.exe /T` (forced) in
+      `enforcer::quit_browser`. Verified on Brave: graceful close
+      runs Chromium's normal exit path; forced `/F` only kicks in
+      for stragglers.
+- [x] Registry key writes for the native-messaging manifest under
+      `HKCU\Software\<Vendor>\<Browser>\NativeMessagingHosts\
+      com.ulriklyngs.mindshield`. Verified by an extension
+      `connectNative` round-trip from Brave.
+- [x] WinRT toast notifications. AUMID
+      `SetCurrentProcessExplicitAppUserModelID("com.reddblock")` is
+      now called at the top of `lib.rs::run()`; without it
+      `tauri-plugin-notification` silently drops every toast on
+      Windows.
+- [x] Console window. `windows_subsystem = "windows"` is always-on
+      for Windows, so installed `--debug` builds no longer pop a
+      console window whose close kills the app.
+- [x] Tray right-click menu removed (no Open / Quit items); left-click
+      reveals/focuses the main window. Uninstall is the only
+      sanctioned exit path.
+- [x] Watchdog Scheduled Task (`ReDD Block Watchdog`, per-user, 1-min
+      poll). Self-heals on every app launch via
+      `watchdog::register()`; removed by both `redd-block.exe
+      --uninstall` and the NSIS pre-uninstall hook.
+- [x] NSIS uninstall now properly cleans native-host artefacts. The
+      pre-uninstall hook deletes the watchdog task, kills the
+      process, and runs `redd-block.exe --uninstall` so per-browser
+      manifests under `%LOCALAPPDATA%\ReDD Block\native-host\` and
+      the HKCU registry keys are removed before the binary is
+      deleted.
+- [x] Local debug builds without Azure Trusted Signing creds.
+      `scripts/sign.cmd` now skips signing when
+      `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_CLIENT_SECRET`
+      are unset (exit 0), so `npm run tauri -- build --debug
+      --bundles nsis` produces an unsigned installer for development.
+- [ ] `windows/hooks.nsh` "Keep Blocking after uninstall" message
+      still references a removed feature. Reword to reflect the new
+      "uninstall removes the enforcement engine" model, or drop the
+      prompt entirely.
+- [ ] `commands/migration.rs` re-runs migration on each
+      `onboarding_state()` call instead of stamping
+      `migrationRanAtVersion` once. Observed firing the hosts-strip
+      twice in a single Windows session, ~16 s apart. Investigate
+      `commands::data::canonical_data_path` resolution / the
+      data-file write timing in `run_upgrade_migration`. Non-fatal
+      (the hosts strip is idempotent and warn-and-continue) but
+      noisy in logs.
 
 ### Frontend
 - [Deferred] Banner Install button deep-link, `src/app.js` rewrite,
@@ -255,11 +398,19 @@ schedules to fire and blocks to expire.
 
 - **Hide on close.** Intercept the window close event in Tauri; hide
   to tray / menu bar instead of quitting. Tray icon opens the UI back.
+  The tray itself has no right-click menu — uninstall is the only
+  sanctioned exit path; Cmd-Q (macOS), `RunEvent::ExitRequested`, and
+  `applicationShouldTerminate:` are all intercepted.
 - **Launch at login.** `tauri-plugin-autostart` takes care of this on
   both OSes (user-level, no admin).
-- **Relaunch on force-quit.** launchd `KeepAlive=true` (macOS) /
-  Task Scheduler "Restart on failure" (Windows) — both configurable
-  at install time.
+- **Relaunch on force-quit.**
+  - macOS: launchd `KeepAlive=true` (planned; not yet wired).
+  - Windows: per-user Scheduled Task `ReDD Block Watchdog` polling
+    every minute (`src-tauri/src/watchdog.rs`). Registered at install
+    time via the NSIS hook *and* re-registered on every app launch
+    (self-heal if the user deletes/disables it from Task Scheduler).
+    Uninstalled by both `redd-block.exe --uninstall` and the NSIS
+    pre-uninstall hook.
 
 A motivated user can still disable any of these; that's consistent
 with the self-binding philosophy.

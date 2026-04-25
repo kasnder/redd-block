@@ -9,10 +9,13 @@ use tauri::Manager;
 static ALLOW_EXIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 #[cfg(feature = "desktop")]
-use tauri::{
-    menu::{Menu, MenuItem},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+// `Menu` / `MenuItem` are only needed for the macOS app-menu extensions
+// below (Help / Window items). The tray icon itself has no menu — see
+// the tray builder in `setup`.
+#[cfg(all(feature = "desktop", target_os = "macos"))]
+use tauri::menu::{Menu, MenuItem};
 
 #[cfg(all(feature = "desktop", target_os = "macos"))]
 use tauri::menu::PredefinedMenuItem;
@@ -42,6 +45,8 @@ pub mod native_host;
 pub mod native_host_install;
 #[cfg(not(target_os = "ios"))]
 pub mod profile_scan;
+#[cfg(target_os = "windows")]
+pub mod watchdog;
 
 /// Add an `applicationShouldTerminate:` override on the existing
 /// NSApp delegate's class that returns `NSTerminateCancel` while
@@ -94,13 +99,33 @@ unsafe fn install_terminate_guard(ns_app: cocoa::base::id) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Windows: register the AppUserModelID for this process so toast
+    // notifications resolve to the bundle's Start Menu shortcut. Without
+    // this, `tauri-plugin-notification` calls `CreateToastNotifier` with
+    // an unregistered AUMID and Windows silently drops the toast — the
+    // user sees nothing, no error is raised. Must be called before the
+    // first toast and before any Win32 UI is created.
+    //
+    // The string MUST match `bundle.identifier` in `tauri.conf.json`,
+    // which is what the NSIS installer writes into the shortcut's
+    // System.AppUserModel.ID property.
+    #[cfg(target_os = "windows")]
+    unsafe {
+        use windows::core::PCWSTR;
+        use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
+        let aumid: Vec<u16> = "com.reddblock\0".encode_utf16().collect();
+        if let Err(e) = SetCurrentProcessExplicitAppUserModelID(PCWSTR(aumid.as_ptr())) {
+            log::warn!("SetCurrentProcessExplicitAppUserModelID failed: {e}");
+        }
+    }
+
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init());
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     let builder = builder.plugin(tauri_plugin_notification::init());
 
     // Autostart: launch at login on desktop. The "keep alive" /
@@ -392,34 +417,19 @@ pub fn run() {
                     .build()?;
             }
 
-            // Create system tray menu (desktop only)
+            // Tray icon (desktop only) — no right-click menu by design:
+            // exiting the app would tear down the enforcer/watcher and
+            // silently drop active blocks. Left-click reveals/focuses
+            // the main window; right-click does nothing. The only way
+            // out is uninstall.
             #[cfg(feature = "desktop")]
             {
-                let open_item = MenuItem::with_id(app, "open", "Open ReDD Block", true, None::<&str>)?;
-                let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-                let menu = Menu::with_items(app, &[&open_item, &quit_item])?;
-
-                // Build tray icon. macOS template convention: black + alpha,
-                // system tints it. `include_image!` decodes the PNG at compile time.
+                // macOS template convention: black + alpha, system tints it.
+                // `include_image!` decodes the PNG at compile time.
                 let _tray = TrayIconBuilder::new()
                     .icon(tauri::include_image!("icons/tray-template.png"))
                     .icon_as_template(true)
-                    .menu(&menu)
-                    .show_menu_on_left_click(false)
                     .tooltip("ReDD Block")
-                    .on_menu_event(|app, event| match event.id.as_ref() {
-                        "open" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
-                        "quit" => {
-                            ALLOW_EXIT.store(true, std::sync::atomic::Ordering::SeqCst);
-                            app.exit(0);
-                        }
-                        _ => {}
-                    })
                     .on_tray_icon_event(|tray, event| {
                         if let TrayIconEvent::Click {
                             button: MouseButton::Left,
@@ -450,18 +460,16 @@ pub fn run() {
                 commands::enforcement::auto_start(app.handle());
             }
 
-            // Ensure macOS notification permission is granted (or
-            // prompt for it once). Without this, the enforcer's grace
-            // / kill notifications silently no-op.
-            #[cfg(target_os = "macos")]
+            // Ensure notification permission is granted (or prompt for
+            // it once). Without this, the enforcer's grace / kill
+            // notifications silently no-op. macOS prompts via
+            // NSUserNotificationCenter; Windows toasts don't need a
+            // runtime prompt and the call returns Granted immediately.
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             {
                 use tauri_plugin_notification::NotificationExt;
                 let n = app.notification();
                 log::info!("notification permission_state: {:?}", n.permission_state());
-                // Always request — the OS shows the prompt only on the
-                // first call and is a no-op afterwards. Logs the result
-                // so we can tell the difference between "user denied"
-                // and "plugin never reached the OS".
                 match n.request_permission() {
                     Ok(state) => log::info!("notification request_permission -> {state:?}"),
                     Err(e) => log::warn!("notification request_permission failed: {e}"),
@@ -475,6 +483,13 @@ pub fn run() {
             if let Err(e) = native_host_install::install() {
                 log::warn!("native-host install on startup failed: {e}");
             }
+
+            // Self-heal the watchdog Scheduled Task on Windows. If the
+            // user disabled or deleted it (or the install dir moved),
+            // this rewrites the wrapper script with the current exe
+            // path and re-registers the task. Idempotent.
+            #[cfg(target_os = "windows")]
+            watchdog::register();
 
             // Hide-on-close for the main window. The app is the
             // enforcement engine now (no privileged helper), so

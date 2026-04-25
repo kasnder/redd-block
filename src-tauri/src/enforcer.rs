@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use tauri_plugin_notification::NotificationExt;
 
 use crate::profile_scan::{self, BrowserStatus, ProfileStatus};
@@ -271,7 +271,7 @@ fn notify_killed(app: &AppHandle, key: BrowserKey) {
     );
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn notify(app: &AppHandle, title: &str, body: &str) {
     if let Err(e) = app
         .notification()
@@ -286,7 +286,7 @@ fn notify(app: &AppHandle, title: &str, body: &str) {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
 fn notify(_app: &AppHandle, _title: &str, _body: &str) {}
 
 // ---- Process detection + quit -----------------------------------------
@@ -312,7 +312,7 @@ fn running_browsers() -> std::collections::HashSet<BrowserKey> {
     out
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
+#[cfg(target_os = "macos")]
 fn quit_browser(key: BrowserKey) {
     // SIGTERM all matching processes, give them HARD_KILL_AFTER to
     // shut down (browsers persist session/cookies on graceful quit),
@@ -333,11 +333,7 @@ fn quit_browser(key: BrowserKey) {
         if !matches(&name) {
             continue;
         }
-        let sent = match proc_.kill_with(Signal::Term) {
-            Some(ok) => ok,
-            None => proc_.kill(), // Windows: TerminateProcess.
-        };
-        if !sent {
+        if let Some(false) = proc_.kill_with(Signal::Term) {
             log::warn!("enforcer: SIGTERM failed for pid={} name='{}'", proc_.pid(), name);
         }
     }
@@ -354,6 +350,40 @@ fn quit_browser(key: BrowserKey) {
         log::info!("enforcer: SIGKILL pid={} name='{}'", proc_.pid(), name);
         if !proc_.kill() {
             log::warn!("enforcer: SIGKILL failed for pid={} name='{}'", proc_.pid(), name);
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn quit_browser(key: BrowserKey) {
+    // Windows has no SIGTERM. The closest graceful primitive is
+    // posting WM_CLOSE to the browser's top-level window — that's
+    // what `taskkill` (no /F) does, which lets Chromium run its
+    // normal exit path and persist session/cookies. After
+    // HARD_KILL_AFTER we escalate to forced termination on the whole
+    // process tree.
+    use std::process::Command;
+
+    for name in key.process_names() {
+        log::info!("enforcer: requesting graceful close of {name} (taskkill /T)");
+        match Command::new("taskkill").args(["/IM", name, "/T"]).output() {
+            Ok(out) => log::debug!(
+                "enforcer: taskkill /IM {name} /T -> exit {:?}",
+                out.status.code()
+            ),
+            Err(e) => log::warn!("enforcer: taskkill /IM {name} /T spawn failed: {e}"),
+        }
+    }
+
+    std::thread::sleep(HARD_KILL_AFTER);
+
+    for name in key.process_names() {
+        log::info!("enforcer: forcing close of {name} (taskkill /F /T)");
+        if let Err(e) = Command::new("taskkill")
+            .args(["/F", "/IM", name, "/T"])
+            .output()
+        {
+            log::warn!("enforcer: taskkill /F /IM {name} /T spawn failed: {e}");
         }
     }
 }

@@ -365,18 +365,39 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
             note: None,
         };
 
-        let accepted_ids = chromium_ids();
-        let ext = accepted_ids.iter().find_map(|id| merged_settings.get(id));
-        if let Some(ext) = ext {
-            s.installed = true;
+        // A profile can hold *multiple* matching entries — typically a
+        // stale stub from a previous Web-Store install sitting next to
+        // an unpacked dev extension. `find_map` would silently pick
+        // the first one, which is usually the empty stub: installed=
+        // true with everything else null. That makes the compliance
+        // check fail and the enforcer kill the browser even when the
+        // real extension is loaded and configured correctly. Score
+        // every matching entry and keep the best.
+        let view = |ext: &Value| {
             let state = ext.get("state").and_then(|v| v.as_i64());
             let has_disable_reasons = match ext.get("disable_reasons") {
                 Some(Value::Array(a)) => !a.is_empty(),
                 Some(Value::Number(n)) => n.as_i64().map(|x| x != 0).unwrap_or(false),
                 _ => false,
             };
-            s.enabled = Some(state == Some(1) || (state.is_none() && !has_disable_reasons));
-            s.private_browsing = Some(ext.get("incognito").and_then(|v| v.as_bool()).unwrap_or(false));
+            let enabled = state == Some(1) || (state.is_none() && !has_disable_reasons);
+            let incognito = ext.get("incognito").and_then(|v| v.as_bool()).unwrap_or(false);
+            (enabled, incognito)
+        };
+
+        let best = chromium_ids()
+            .iter()
+            .filter_map(|id| merged_settings.get(id))
+            .map(|ext| {
+                let (enabled, incognito) = view(ext);
+                (enabled, incognito, ext)
+            })
+            .max_by_key(|(enabled, incognito, _)| (*enabled as u8, *incognito as u8));
+
+        if let Some((enabled, incognito, _ext)) = best {
+            s.installed = true;
+            s.enabled = Some(enabled);
+            s.private_browsing = Some(incognito);
         }
 
         profiles.push(s);
