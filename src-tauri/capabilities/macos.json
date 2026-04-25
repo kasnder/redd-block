@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/macOS-schema.json",
+  "identifier": "macos",
+  "description": "macOS-only permissions",
+  "platforms": ["macOS"],
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "notification:default"
+  ]
+}
