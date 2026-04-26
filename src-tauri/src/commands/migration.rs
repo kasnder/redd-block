@@ -655,8 +655,17 @@ if ($cleanedRaw -notmatch 'localhost') {{ throw 'staged hosts missing localhost'
 
 # 2. STOP the legacy scheduled task FIRST and any helper processes,
 #    then poll until they're actually gone (10 s ceiling).
-& schtasks /End /TN 'ReDD Block Helper' 2>$null
-& taskkill /IM 'redd-block-helper.exe' /T /F 2>$null
+#    NOTE: schtasks/taskkill write to stderr when the task or process
+#    doesn't exist (the common case on a clean machine). Under
+#    `ErrorActionPreference = 'Stop'`, native-command stderr lines
+#    become terminating NativeCommandError records and abort the
+#    script. Relax EAP around these best-effort calls; the poll +
+#    `throw` below is the authoritative gate.
+& {{
+    $ErrorActionPreference = 'Continue'
+    & schtasks /End /TN 'ReDD Block Helper' 2>&1 | Out-Null
+    & taskkill /IM 'redd-block-helper.exe' /T /F 2>&1 | Out-Null
+}}
 for ($i = 0; $i -lt 10; $i++) {{
     $running = Get-Process -Name 'redd-block-helper' -ErrorAction SilentlyContinue
     if (-not $running) {{ break }}
@@ -679,8 +688,13 @@ if ($postWrite -match '^# === BEGIN REDD BLOCK' -or $postWrite -match '^# ReDD B
     throw 'post-write hosts still contains markers'
 }}
 
-# 5. flush DNS
-& ipconfig /flushdns | Out-Null
+# 5. flush DNS. Same EAP relaxation as steps 2/6/7: ipconfig can
+#    write to stderr (e.g. DNS Client service stopped), which would
+#    otherwise terminate the script *after* hosts is already clean.
+& {{
+    $ErrorActionPreference = 'Continue'
+    & ipconfig /flushdns 2>&1 | Out-Null
+}}
 
 # 6. retire legacy scheduled task + daemon-specific files only.
 #    CRITICAL: do NOT recursively delete C:\ProgramData\ReDD Block.
@@ -688,11 +702,22 @@ if ($postWrite -match '^# === BEGIN REDD BLOCK' -or $postWrite -match '^# ReDD B
 #    (redd-block-data.json) when shared-storage was activated — see
 #    commands/data.rs::should_use_shared_data_path. We only delete
 #    the helper's own state file and leave the data file in place.
-& schtasks /Delete /TN 'ReDD Block Helper' /F 2>$null
+# Same EAP relaxation as step 2: schtasks /Delete writes to stderr
+# when the task is absent, which would otherwise terminate the script.
+& {{
+    $ErrorActionPreference = 'Continue'
+    & schtasks /Delete /TN 'ReDD Block Helper' /F 2>&1 | Out-Null
+}}
 Remove-Item -LiteralPath 'C:\ProgramData\ReDD Block\helper-state.json' -Force -ErrorAction SilentlyContinue
 
 # 7. VERIFY removal.
-if (& schtasks /Query /TN 'ReDD Block Helper' 2>$null) {{ throw 'scheduled task still present' }}
+$taskStillThere = $false
+& {{
+    $ErrorActionPreference = 'Continue'
+    & schtasks /Query /TN 'ReDD Block Helper' 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) {{ $script:taskStillThere = $true }}
+}}
+if ($taskStillThere) {{ throw 'scheduled task still present' }}
 if (Test-Path -LiteralPath 'C:\ProgramData\ReDD Block\helper-state.json') {{ throw 'helper-state.json still present' }}
 
 # 8. INTENTIONALLY KEEP $legacyBackup ($hosts.redd-backup). Last-resort

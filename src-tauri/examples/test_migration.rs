@@ -18,18 +18,40 @@ use redd_block_lib::commands::migration::{
     migration_pending_sync, purge_legacy_backups_sync, run_elevated_migration,
 };
 
+fn app_data_dir() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        PathBuf::from(std::env::var("APPDATA").expect("APPDATA not set"))
+            .join("com.reddblock")
+    }
+    #[cfg(target_os = "macos")]
+    {
+        PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/tmp".into()))
+            .join("Library/Application Support/com.reddblock")
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        std::env::temp_dir().join("com.reddblock")
+    }
+}
+
+fn inject_hint() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "  scripts/test-migration.ps1 inject"
+    } else {
+        "  scripts/test-migration.sh inject"
+    }
+}
+
 fn main() {
     println!("=== ReDD Block migration harness ===");
     println!("residue present? {}", migration_pending_sync());
-    let app_data = PathBuf::from(
-        std::env::var("HOME").unwrap_or_else(|_| "/tmp".into()),
-    )
-    .join("Library/Application Support/com.reddblock");
+    let app_data = app_data_dir();
     println!("app-data dir: {}", app_data.display());
 
     if !migration_pending_sync() {
         println!("Nothing to migrate. Inject residue first via:");
-        println!("  scripts/test-migration.sh inject");
+        println!("{}", inject_hint());
         return;
     }
 
