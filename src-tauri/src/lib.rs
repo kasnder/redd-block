@@ -510,6 +510,28 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             watchdog::register();
 
+            // Self-heal launch-at-login on every startup. The
+            // tauri-plugin-autostart plugin only installs the
+            // facility — it doesn't enable the entry by default.
+            // For ReDD Block 2.0 the app IS the enforcement engine,
+            // so blocking dies if the user reboots and we don't come
+            // back. Enabling on every launch is idempotent (no-op if
+            // already registered) and self-heals if the user later
+            // removes us from Login Items.
+            #[cfg(not(target_os = "ios"))]
+            {
+                use tauri_plugin_autostart::ManagerExt;
+                let manager = app.autolaunch();
+                let already = manager.is_enabled().unwrap_or(false);
+                if !already {
+                    if let Err(e) = manager.enable() {
+                        log::warn!("autostart enable failed: {e}");
+                    } else {
+                        log::info!("autostart: enabled launch-at-login");
+                    }
+                }
+            }
+
             // Hide-on-close for the main window. The app is the
             // enforcement engine now (no privileged helper), so
             // closing it would stop schedules from firing. Intercept
