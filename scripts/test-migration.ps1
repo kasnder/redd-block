@@ -108,7 +108,13 @@ switch ($cmd) {
         Write-Host "Removing residue (helper-state.json, hosts.redd-backup, scheduled task)."
         Remove-Item -LiteralPath $HelperState -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $LegacyBackup -Force -ErrorAction SilentlyContinue
-        & schtasks /Delete /TN $TaskName /F 2>$null | Out-Null
+        # schtasks writes to stderr when the target task doesn't exist, which
+        # under EAP=Stop becomes a terminating NativeCommandError. Drop EAP
+        # for this best-effort delete (same pattern as cleanup.ps1).
+        & {
+            $ErrorActionPreference = 'Continue'
+            & schtasks /Delete /TN $TaskName /F *>$null
+        }
         Write-Host 'Removing test snapshot.'
         Remove-Item -LiteralPath $Snapshot -Force
         Write-Host "Done. $Hosts is back to its pre-test state."
