@@ -469,6 +469,34 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
         // check fail and the enforcer kill the browser even when the
         // real extension is loaded and configured correctly. Score
         // every matching entry and keep the best.
+        //
+        // ALSO: Brave (and Edge) keep a webstore-allowlist stub for
+        // extensions the user has merely *seen* in the store (e.g.,
+        // hovered over the install button) — `{ "active_bit": false,
+        // "allowlist": 1 }` with no `state`, `manifest`, or `path`.
+        // Treating that as "installed" makes the migration UI show
+        // "Allow in private browsing" for browsers that don't actually
+        // have the extension. Require a real install signal.
+        let is_real_install = |ext: &Value| -> bool {
+            // Most reliable: a manifest object means Chrome wrote
+            // metadata about an actual on-disk extension.
+            if ext.get("manifest").and_then(|v| v.as_object()).is_some() {
+                return true;
+            }
+            // path is set when an unpacked or store install resolved
+            // to a directory on disk.
+            if ext.get("path").and_then(|v| v.as_str()).is_some() {
+                return true;
+            }
+            // Explicit state field also indicates Chrome made a real
+            // install/disable decision (state 0 = disabled, 1 =
+            // enabled, etc). Allowlist-only stubs have no state.
+            if ext.get("state").and_then(|v| v.as_i64()).is_some() {
+                return true;
+            }
+            false
+        };
+
         let view = |ext: &Value| {
             let state = ext.get("state").and_then(|v| v.as_i64());
             let has_disable_reasons = match ext.get("disable_reasons") {
@@ -484,6 +512,7 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
         let best = chromium_ids()
             .iter()
             .filter_map(|id| merged_settings.get(id))
+            .filter(|ext| is_real_install(ext))
             .map(|ext| {
                 let (enabled, incognito) = view(ext);
                 (enabled, incognito, ext)

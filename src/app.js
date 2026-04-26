@@ -1101,6 +1101,21 @@ async function showMigrationOnboarding(phase, state) {
     pre.classList.toggle('hidden', phase !== 'pre');
     post.classList.toggle('hidden', phase !== 'post');
 
+    // Bring our window back to the front. The osascript admin
+    // prompt (and any other app the user touches mid-flow) steals
+    // focus, and on macOS we run as a menu-bar accessory with no
+    // dock icon — so without an explicit show + focus the user has
+    // no easy way to find the window again. Doing this on every
+    // phase transition guarantees the onboarding screen is visible.
+    try {
+        const win = getCurrentWindow();
+        await win.show();
+        await win.unminimize();
+        await win.setFocus();
+    } catch (e) {
+        console.warn('[migration] focus window failed:', e);
+    }
+
     if (phase === 'pre') {
         wireMigrationPrePhase();
     } else if (phase === 'post') {
