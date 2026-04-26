@@ -160,6 +160,20 @@ pub fn migration_was_pending_at_launch() -> bool {
     snapshot_initial_state()
 }
 
+/// True if this install has *ever* hosted the v1.x privileged
+/// daemon — durable signal across launches, surviving the cleanup.
+/// We use the existence of `/etc/hosts.redd-backup` (or its Windows
+/// equivalent) as the fingerprint: that file is only ever written
+/// by the v1.x daemon's `ensure_backup_exists` and is intentionally
+/// preserved by the migration as a recovery copy. The frontend uses
+/// it to decide whether to surface a persistent "behaviour has
+/// changed" banner for upgraders, separate from the one-time
+/// welcome overlay.
+#[tauri::command]
+pub fn user_came_from_v1x() -> bool {
+    legacy_hosts_backup_path().exists()
+}
+
 // ---- Hosts cleaning (pure) ----------------------------------------------
 
 fn strip_managed_sections(content: &str) -> String {

@@ -1052,6 +1052,7 @@ async function checkForAppUpdate() {
 let migrationOnboardingActive = false;
 let migrationOnboardingDismissed = false;
 const EXT_ONBOARDING_DISMISSED_KEY = 'reddBlockExtOnboardingDismissed';
+const BEHAVIOUR_CHANGE_DISMISSED_KEY = 'reddBlockBehaviourChangeDismissed';
 
 async function runDesktopOnboarding() {
     if (isIOS) return;
@@ -1102,6 +1103,7 @@ async function runDesktopOnboarding() {
         // dismissed the welcome — fall back to the slim banner for
         // ongoing nagging.
         updateExtensionComplianceBanner(state);
+        await updateBehaviourChangeBanner(state);
     } catch (e) {
         console.warn('[onboarding] state check failed:', e);
     }
@@ -1233,6 +1235,7 @@ function wireMigrationPostPhase(state) {
         try {
             const fresh = await invoke('onboarding_state');
             updateExtensionComplianceBanner(fresh);
+            await updateBehaviourChangeBanner(fresh);
         } catch (e) { /* no-op */ }
     };
 
@@ -1427,6 +1430,64 @@ async function pollMigrationCompliance() {
 window.addEventListener('focus', () => {
     if (migrationOnboardingActive) pollMigrationCompliance();
 });
+
+// Persistent low-key banner for users who upgraded from v1.x.
+// Different from the one-time welcome overlay: this stays around
+// across launches as an ongoing reminder that the blocking
+// architecture changed. Auto-hides when:
+//   - user explicitly dismisses (× button), OR
+//   - every detected browser is fully compliant (they're done),
+//   - or the user is on a fresh install with no v1.x history
+//     (`user_came_from_v1x` returns false).
+async function updateBehaviourChangeBanner(state) {
+    const banner = document.getElementById('behaviour-change-banner');
+    if (!banner) return;
+
+    let cameFromV1x = false;
+    try { cameFromV1x = await invoke('user_came_from_v1x'); }
+    catch (_) { /* Tauri command may not be available on iOS — no-op */ }
+
+    const dismissed = !!localStorage.getItem(BEHAVIOUR_CHANGE_DISMISSED_KEY);
+
+    // Compute "are they done with extension setup yet?". Same gate
+    // as the welcome screen — every detected browser must be
+    // fully compliant.
+    const browsers = (state && state.browsers) || {};
+    const detectedKeys = Object.keys(BROWSER_STORE_LINKS).filter(k => browsers[k] && browsers[k].installed);
+    const allCompliant = detectedKeys.length > 0
+        && detectedKeys.every(k => browserComplianceStatus(browsers[k]) === 'compliant');
+
+    const shouldShow = cameFromV1x && !dismissed && !allCompliant;
+    if (!shouldShow) {
+        banner.classList.add('hidden');
+        return;
+    }
+    banner.classList.remove('hidden');
+
+    const helpBtn = document.getElementById('behaviour-change-help');
+    const dismissBtn = document.getElementById('behaviour-change-dismiss');
+    if (helpBtn && !helpBtn._listenerAdded) {
+        helpBtn._listenerAdded = true;
+        helpBtn.addEventListener('click', async () => {
+            // Re-open the post-cleanup overlay so the user gets the
+            // checklist + per-browser URLs again. Same UI, same code
+            // path as the first-launch flow.
+            try {
+                const fresh = await invoke('onboarding_state');
+                migrationOnboardingDismissed = false;
+                await showMigrationOnboarding('post', fresh, { mode: 'fresh' });
+            } catch (e) { console.warn('[behaviour] reopen failed:', e); }
+        });
+    }
+    if (dismissBtn && !dismissBtn._listenerAdded) {
+        dismissBtn._listenerAdded = true;
+        dismissBtn.addEventListener('click', () => {
+            try { localStorage.setItem(BEHAVIOUR_CHANGE_DISMISSED_KEY, String(Date.now())); }
+            catch (_) { /* harmless */ }
+            banner.classList.add('hidden');
+        });
+    }
+}
 
 function updateExtensionComplianceBanner(state) {
     const banner = document.getElementById('extension-compliance-banner');
