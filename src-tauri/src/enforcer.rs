@@ -21,9 +21,27 @@ use tauri_plugin_notification::NotificationExt;
 use crate::profile_scan::{self, BrowserStatus, ProfileStatus};
 
 const TICK: Duration = Duration::from_secs(5);
-const GRACE_FIRST_OFFENSE: Duration = Duration::from_secs(60);
-const GRACE_REPEAT: Duration = Duration::from_secs(30);
 const HARD_KILL_AFTER: Duration = Duration::from_secs(10);
+
+// User-configurable grace period before a non-compliant browser is
+// quit. Read from settings.extensionGraceSeconds on every grace-start
+// so changes take effect on the *next* timer (active timers keep
+// their original deadline). Defaults to 60s; clamped to a sane range
+// so a typo can't disable enforcement entirely or starve the user
+// of any chance to fix things.
+const GRACE_DEFAULT_SECS: u64 = 60;
+pub const GRACE_MIN_SECS: u64 = 5;
+pub const GRACE_MAX_SECS: u64 = 300;
+
+fn current_grace(app: &AppHandle) -> Duration {
+    let secs = crate::commands::canonical_data_path(app)
+        .and_then(|p| std::fs::read_to_string(&p).ok())
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+        .and_then(|v| v.get("settings").and_then(|s| s.get("extensionGraceSeconds")).and_then(|n| n.as_u64()))
+        .unwrap_or(GRACE_DEFAULT_SECS)
+        .clamp(GRACE_MIN_SECS, GRACE_MAX_SECS);
+    Duration::from_secs(secs)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum BrowserKey { Firefox, Chrome, Brave, Edge }
@@ -166,7 +184,12 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
                     let c = s.offenses.entry(key).and_modify(|c| *c += 1).or_insert(1);
                     *c
                 };
-                let grace = if offenses > 1 { GRACE_REPEAT } else { GRACE_FIRST_OFFENSE };
+                // Single user-configured grace for both first and
+                // repeat offenses. The previous "30s for repeats"
+                // distinction was anti-user once the grace became
+                // configurable — a 5s setting still gave 5s on
+                // repeats, a 300s setting still gave 300s.
+                let grace = current_grace(app);
                 s.timers.insert(
                     key,
                     TimerState {
@@ -247,7 +270,7 @@ fn emit_update(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>, key: BrowserK
 }
 
 fn notify_grace_started(app: &AppHandle, key: BrowserKey) {
-    let secs = GRACE_FIRST_OFFENSE.as_secs();
+    let secs = current_grace(app).as_secs();
     notify(
         app,
         "ReDD Block: action required",
