@@ -536,83 +536,16 @@ fn run_elevated_macos(staged: &Path, status_path: &Path) -> ElevatedOutcome {
         return ElevatedOutcome { success: false, user_cancelled: false };
     }
 
-    let inner = format!(
-        r#"set -e
-# 1. validate the staged cleaned content one more time before doing anything
-test -s '{staged}'
-grep -q localhost '{staged}'
-# 2. STOP the daemon FIRST so it can't race us by re-adding markers to
-#    the hosts file. bootout returns immediately, so we poll launchd's
-#    own registry until it confirms the service is gone (10 s ceiling).
-#    We use launchctl as the authoritative signal — pgrep against the
-#    process name is unreliable here because our script's own command
-#    line literally contains the helper path string.
-launchctl bootout system/com.redd.block.helper 2>/dev/null || true
-launchctl bootout system/org.reddfocus.redd-block-helper 2>/dev/null || true
-launchctl unload /Library/LaunchDaemons/com.redd.block.helper.plist 2>/dev/null || true
-for i in 1 2 3 4 5 6 7 8 9 10; do
-    if ! launchctl print system/com.redd.block.helper >/dev/null 2>&1; then
-        break
-    fi
-    sleep 1
-done
-# Final hard check + a 1 s settle so any in-flight signal handlers in
-# the daemon finish their last writes before we touch hosts.
-if launchctl print system/com.redd.block.helper >/dev/null 2>&1; then
-    echo "daemon still registered after bootout" >&2
-    exit 11
-fi
-sleep 1
-# 3. atomic rename onto /etc/hosts via a UNIQUE temp file (avoid
-#    collision if two migration runs race).
-TMP=$(mktemp /etc/hosts.redd-tmp.XXXXXX)
-cp '{staged}' "$TMP"
-chown root:wheel "$TMP" 2>/dev/null || true
-chmod 644 "$TMP"
-mv "$TMP" /etc/hosts
-# 4. VERIFY the write actually landed — defence against weird FS behavior.
-grep -q localhost /etc/hosts || {{ echo "post-write hosts missing localhost" >&2; exit 12; }}
-if grep -qE '^# === BEGIN REDD BLOCK|^# ReDD Block Start' /etc/hosts; then
-    echo "post-write hosts still contains markers" >&2
-    exit 13
-fi
-# 5. flush DNS so the cleaned hosts file takes effect immediately
-dscacheutil -flushcache 2>/dev/null || true
-killall -HUP mDNSResponder 2>/dev/null || true
-# 6. ONLY NOW remove the daemon's persistent state. Hosts is clean,
-#    daemon is stopped — safe to make the removal permanent.
-#    CRITICAL: do NOT `rm -rf /var/lib/redd-block` blindly. The new
-#    app reuses that directory for the user's blocklist data
-#    (redd-block-data.json) when shared-storage was activated by
-#    v1.x — see commands/data.rs::should_use_shared_data_path. We
-#    only delete the daemon-specific files and leave the data file +
-#    directory in place.
-rm -f /Library/LaunchDaemons/com.redd.block.helper.plist
-rm -f /Library/LaunchDaemons/org.reddfocus.redd-block-helper.plist
-rm -f /Library/PrivilegedHelperTools/com.redd.block.helper
-rm -f /var/lib/redd-block/helper-state.json
-rm -f /tmp/redd-block-helper.sock
-# 7. VERIFY removal — `rm -f` is silent if the file is held open or
-#    on a read-only mount. We re-stat to be sure. Note: we don't
-#    check /var/lib/redd-block itself; it intentionally stays.
-for f in /Library/LaunchDaemons/com.redd.block.helper.plist \
-         /Library/LaunchDaemons/org.reddfocus.redd-block-helper.plist \
-         /Library/PrivilegedHelperTools/com.redd.block.helper \
-         /var/lib/redd-block/helper-state.json; do
-    if [ -e "$f" ]; then
-        echo "failed to remove $f" >&2
-        exit 14
-    fi
-done
-# 8. INTENTIONALLY KEEP /etc/hosts.redd-backup. Last-resort recovery
-#    copy. Only deleted during uninstall (see purge_legacy_backups_sync).
-# 9. status marker
-echo "{ok}" > '{status}'
-"#,
-        staged = staged_str,
-        status = status_str,
-        ok = STATUS_OK,
-    );
+    // Script body lives in a sibling .sh file so it can be edited
+    // with shell syntax highlighting, linted with shellcheck, and
+    // tested in isolation. Two placeholders are substituted at
+    // runtime; STATUS_OK is hard-coded in the script (must stay in
+    // sync with the Rust constant — both equal "ok").
+    const SCRIPT_TEMPLATE: &str = include_str!("migration/cleanup.sh");
+    debug_assert_eq!(STATUS_OK, "ok", "cleanup.sh hard-codes 'ok'");
+    let inner = SCRIPT_TEMPLATE
+        .replace("{STAGED}", &staged_str)
+        .replace("{STATUS}", &status_str);
 
     // Wrap in osascript do shell script. Single admin prompt for the
     // user. The prompt wording mentions both pieces of work so the
@@ -660,97 +593,15 @@ fn run_elevated_windows(staged: &Path, status_path: &Path) -> ElevatedOutcome {
     // don't have to deal with double-quote escaping through two
     // PowerShell invocations) and runs it elevated, waiting for it
     // to exit so we can read the status marker.
-    let inner_script = format!(
-        r#"$ErrorActionPreference = 'Stop'
-$staged = '{staged}'
-$status = '{status}'
-$hosts = 'C:\Windows\System32\drivers\etc\hosts'
-$legacyBackup = 'C:\Windows\System32\drivers\etc\hosts.redd-backup'
-
-# 1. validate staged cleaned content
-if (-not (Test-Path $staged)) {{ throw 'staged hosts missing' }}
-$cleanedRaw = Get-Content -Raw -LiteralPath $staged
-if ([string]::IsNullOrWhiteSpace($cleanedRaw)) {{ throw 'staged hosts empty' }}
-if ($cleanedRaw -notmatch 'localhost') {{ throw 'staged hosts missing localhost' }}
-
-# 2. STOP the legacy scheduled task FIRST and any helper processes,
-#    then poll until they're actually gone (10 s ceiling).
-#    NOTE: schtasks/taskkill write to stderr when the task or process
-#    doesn't exist (the common case on a clean machine). Under
-#    `ErrorActionPreference = 'Stop'`, native-command stderr lines
-#    become terminating NativeCommandError records and abort the
-#    script. Relax EAP around these best-effort calls; the poll +
-#    `throw` below is the authoritative gate.
-& {{
-    $ErrorActionPreference = 'Continue'
-    & schtasks /End /TN 'ReDD Block Helper' 2>&1 | Out-Null
-    & taskkill /IM 'redd-block-helper.exe' /T /F 2>&1 | Out-Null
-}}
-for ($i = 0; $i -lt 10; $i++) {{
-    $running = Get-Process -Name 'redd-block-helper' -ErrorAction SilentlyContinue
-    if (-not $running) {{ break }}
-    Start-Sleep -Seconds 1
-}}
-if (Get-Process -Name 'redd-block-helper' -ErrorAction SilentlyContinue) {{
-    throw 'helper still running after taskkill'
-}}
-
-# 3. atomic-ish replace via a UNIQUE temp file (avoid collision if two
-#    migration runs race).
-$tmp = $hosts + '.redd-tmp.' + [System.IO.Path]::GetRandomFileName()
-Set-Content -LiteralPath $tmp -Value $cleanedRaw -NoNewline -Encoding ASCII
-Move-Item -LiteralPath $tmp -Destination $hosts -Force
-
-# 4. VERIFY the write actually landed.
-$postWrite = Get-Content -Raw -LiteralPath $hosts
-if ($postWrite -notmatch 'localhost') {{ throw 'post-write hosts missing localhost' }}
-if ($postWrite -match '^# === BEGIN REDD BLOCK' -or $postWrite -match '^# ReDD Block Start') {{
-    throw 'post-write hosts still contains markers'
-}}
-
-# 5. flush DNS. Same EAP relaxation as steps 2/6/7: ipconfig can
-#    write to stderr (e.g. DNS Client service stopped), which would
-#    otherwise terminate the script *after* hosts is already clean.
-& {{
-    $ErrorActionPreference = 'Continue'
-    & ipconfig /flushdns 2>&1 | Out-Null
-}}
-
-# 6. retire legacy scheduled task + daemon-specific files only.
-#    CRITICAL: do NOT recursively delete C:\ProgramData\ReDD Block.
-#    The new app reuses that directory for the user's blocklist data
-#    (redd-block-data.json) when shared-storage was activated — see
-#    commands/data.rs::should_use_shared_data_path. We only delete
-#    the helper's own state file and leave the data file in place.
-# Same EAP relaxation as step 2: schtasks /Delete writes to stderr
-# when the task is absent, which would otherwise terminate the script.
-& {{
-    $ErrorActionPreference = 'Continue'
-    & schtasks /Delete /TN 'ReDD Block Helper' /F 2>&1 | Out-Null
-}}
-Remove-Item -LiteralPath 'C:\ProgramData\ReDD Block\helper-state.json' -Force -ErrorAction SilentlyContinue
-
-# 7. VERIFY removal.
-$taskStillThere = $false
-& {{
-    $ErrorActionPreference = 'Continue'
-    & schtasks /Query /TN 'ReDD Block Helper' 2>&1 | Out-Null
-    if ($LASTEXITCODE -eq 0) {{ $script:taskStillThere = $true }}
-}}
-if ($taskStillThere) {{ throw 'scheduled task still present' }}
-if (Test-Path -LiteralPath 'C:\ProgramData\ReDD Block\helper-state.json') {{ throw 'helper-state.json still present' }}
-
-# 8. INTENTIONALLY KEEP $legacyBackup ($hosts.redd-backup). Last-resort
-#    recovery copy of the user's pre-modification hosts file. Only
-#    deleted during uninstall (see purge_legacy_backups_sync).
-
-# 9. status marker
-Set-Content -LiteralPath $status -Value '{ok}' -Encoding ASCII -NoNewline
-"#,
-        staged = staged_str.replace('\'', "''"),
-        status = status_str.replace('\'', "''"),
-        ok = STATUS_OK,
-    );
+    // Same pattern as macOS: script body in a sibling .ps1 file so
+    // it can be edited with PowerShell syntax highlighting, linted
+    // with PSScriptAnalyzer, and tested in isolation. Two
+    // placeholders substituted at runtime.
+    const SCRIPT_TEMPLATE: &str = include_str!("migration/cleanup.ps1");
+    debug_assert_eq!(STATUS_OK, "ok", "cleanup.ps1 hard-codes 'ok'");
+    let inner_script = SCRIPT_TEMPLATE
+        .replace("{STAGED}", &staged_str.replace('\'', "''"))
+        .replace("{STATUS}", &status_str.replace('\'', "''"));
 
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

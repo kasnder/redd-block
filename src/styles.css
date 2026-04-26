@@ -3163,6 +3163,43 @@ body.ios .blocklist-action-btn svg {
     font-weight: 500;
 }
 
+.migration-howto {
+    background: rgba(37, 99, 235, 0.06);
+    border: 1px solid rgba(37, 99, 235, 0.15);
+    border-radius: 8px;
+    padding: 12px 16px 12px 12px;
+    margin: 0 0 14px 0;
+}
+
+.migration-howto.hidden {
+    display: none;
+}
+
+.migration-howto h3 {
+    margin: 0 0 6px 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: hsl(222, 35%, 24%);
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.migration-howto ol {
+    margin: 0;
+    padding-left: 22px;
+    color: hsl(222, 25%, 30%);
+    font-size: 13px;
+    line-height: 1.55;
+}
+
+.migration-howto ol li {
+    margin-bottom: 2px;
+}
+
+.migration-howto ol li strong {
+    color: hsl(222, 30%, 22%);
+}
+
 .migration-browser-buttons {
     display: flex;
     flex-direction: column;
@@ -3176,8 +3213,8 @@ body.ios .blocklist-action-btn svg {
 
 .migration-browser-row {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
+    gap: 6px;
     padding: 10px 14px;
     background: rgba(10, 45, 123, 0.04);
     border: 1px solid rgba(10, 45, 123, 0.08);
@@ -3190,18 +3227,30 @@ body.ios .blocklist-action-btn svg {
     border-color: rgba(16, 185, 129, 0.18);
 }
 
-/* Partially set up — extension installed but missing enable or
-   private-mode permission. Visually amber to distinguish from "not
-   installed at all". */
 .migration-browser-row.needs-enable,
 .migration-browser-row.needs-private {
     background: rgba(245, 158, 11, 0.08);
     border-color: rgba(245, 158, 11, 0.20);
 }
 
-.migration-browser-row.needs-enable .migration-browser-cta,
-.migration-browser-row.needs-private .migration-browser-cta {
-    background: #b45309;
+.migration-browser-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.migration-browser-action {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+}
+
+.migration-browser-hint {
+    font-size: 13px;
+    color: hsl(222, 18%, 35%);
+    line-height: 1.4;
 }
 
 .migration-browser-name {
@@ -3215,39 +3264,41 @@ body.ios .blocklist-action-btn svg {
     font-size: 13px;
 }
 
-.migration-browser-status-text {
-    color: hsl(222, 25%, 35%);
-    font-size: 13px;
-    margin-left: auto;
-    margin-right: 8px;
+.migration-browser-badge {
+    font-size: 12px;
+    font-weight: 500;
+    color: hsl(222, 18%, 45%);
 }
 
-.migration-browser-row.needs-enable .migration-browser-status-text,
-.migration-browser-row.needs-private .migration-browser-status-text {
+.migration-browser-badge.compliant {
+    color: #047857;
+    font-weight: 600;
+}
+
+.migration-browser-badge.needs-enable,
+.migration-browser-badge.needs-private {
     color: #b45309;
-    font-weight: 500;
 }
 
 .migration-browser-url {
-    flex: 0 1 auto;
+    flex: 1 1 auto;
     min-width: 0;
-    max-width: 220px;
-    color: hsl(222, 18%, 45%);
+    color: hsl(222, 18%, 35%);
     font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
-    font-size: 12px;
+    font-size: 11px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    direction: rtl;
-    text-align: left;
-    background: rgba(255, 255, 255, 0.5);
-    padding: 4px 8px;
+    background: rgba(255, 255, 255, 0.6);
+    padding: 5px 10px;
     border-radius: 4px;
     border: 1px solid rgba(10, 45, 123, 0.10);
+    user-select: text;
 }
 
 .migration-browser-copy {
-    padding: 5px 12px;
+    flex: 0 0 auto;
+    padding: 5px 14px;
     background: var(--accent-color, #2563eb);
     color: white;
     border: none;
@@ -3256,7 +3307,6 @@ body.ios .blocklist-action-btn svg {
     font-weight: 500;
     cursor: pointer;
     font-family: inherit;
-    margin-left: 6px;
     transition: opacity 0.15s;
 }
 

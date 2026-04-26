@@ -18,6 +18,30 @@ pub async fn scan_browser_profiles() -> Result<profile_scan::ScanResult, String>
         .map_err(|e| format!("join error: {e}"))
 }
 
+/// Force the app to the foreground after a focus-stealing modal
+/// (osascript admin prompt, file picker, etc.). Tauri's
+/// `window.set_focus` from JS calls `makeKeyAndOrderFront` but does
+/// NOT call `NSApp.activate(ignoringOtherApps:)` — required when
+/// the app runs as a menu-bar accessory (no Dock icon) so there's
+/// no Dock click to bring the process back to the front.
+#[tauri::command]
+pub fn activate_app(window: tauri::Window) {
+    #[cfg(target_os = "macos")]
+    {
+        use cocoa::appkit::NSApp;
+        use cocoa::base::YES;
+        use objc::{msg_send, sel, sel_impl};
+        unsafe {
+            #[allow(unexpected_cfgs)]
+            let app = NSApp();
+            let _: () = msg_send![app, activateIgnoringOtherApps: YES];
+        }
+    }
+    let _ = window.unminimize();
+    let _ = window.show();
+    let _ = window.set_focus();
+}
+
 /// True when every running-and-present browser is compliant. Shortcut
 /// for the onboarding gate; the UI can also derive this itself from
 /// `scan_browser_profiles`.

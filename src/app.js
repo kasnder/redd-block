@@ -1032,33 +1032,30 @@ async function checkForAppUpdate() {
 //   compliance banner.
 // - No-ops on iOS.
 
-// Migration onboarding state machine for v1.x → 2.0 first launch.
+// Migration / extension-install onboarding state machine.
 //
-// Three end states:
-//   1. No residue, no welcome → onboarding screen never shows. Main UI
-//      starts immediately. Enforcer running normally.
-//   2. Residue present → "pre" phase. Show explanation card. User
-//      clicks Continue → backend prompts admin → cleanup → swap to
-//      "post" phase. (If they cancel, stay in "pre" with retry CTA.)
-//   3. Residue gone, show_upgrade_welcome=true → "post" phase. Show
-//      cleanup-complete + per-browser install buttons. User
-//      acknowledges → close screen → resume enforcer → main UI.
+// Drives a single full-screen overlay used in three trigger contexts:
+//   1. v1.x residue on disk → "pre" phase (explanation + admin prompt
+//      → cleanup → swap to "post" phase).
+//   2. v1.x residue cleaned this launch → "post" phase, framed as
+//      "Cleanup complete" + browser install checklist.
+//   3. Fresh user (never had v1.x; just accepted EULA) with the
+//      ReDD Focus extension not yet compliant in any detected
+//      browser → same screen as #2 but framed as "Welcome" (no
+//      cleanup language). Dismissal persisted in localStorage so we
+//      don't nag every launch — the slim extension-compliance
+//      banner takes over after that.
 //
 // While the screen is open, the enforcer is paused (set in
 // commands::enforcement::auto_start when migration was pending at
 // launch). We resume it explicitly when the user dismisses post.
 let migrationOnboardingActive = false;
 let migrationOnboardingDismissed = false;
+const EXT_ONBOARDING_DISMISSED_KEY = 'reddBlockExtOnboardingDismissed';
 
 async function runDesktopOnboarding() {
     if (isIOS) return;
     try {
-        // Note: invoking 'onboarding_state' triggers the elevated
-        // migration script if residue is present. We don't want that
-        // to fire from runDesktopOnboarding's first call any more —
-        // we want the user to see our pre-prompt screen FIRST and
-        // click Continue to trigger the admin prompt. So we use a
-        // lighter-weight check first.
         const pendingAtLaunch = await invoke('migration_pending');
         const wasUpgrade = await invoke('migration_was_pending_at_launch');
 
@@ -1068,27 +1065,49 @@ async function runDesktopOnboarding() {
             return;
         }
         if (wasUpgrade && !migrationOnboardingDismissed) {
-            // Residue cleaned (e.g., by a previous explicit click,
-            // OR by a .pkg preinstall, OR by a previous launch that
-            // ran but didn't show welcome). Show post-cleanup screen
-            // so the user knows what changed and installs the
-            // extension. The wasUpgrade flag persists across this
-            // launch only.
+            // Residue cleaned this launch (or by an earlier launch
+            // before the user dismissed). Show the post-cleanup
+            // screen so they know what changed and install the
+            // extension. Cleanup-mode framing.
             const state = await invoke('onboarding_state');
-            await showMigrationOnboarding('post', state);
+            await showMigrationOnboarding('post', state, { mode: 'after-cleanup' });
             return;
         }
 
-        // Normal launch: just refresh the slim extension-compliance banner.
+        // Fresh-user case: not an upgrade, but at least one INSTALLED
+        // browser is missing the extension AND the user hasn't seen+
+        // dismissed this screen before.
+        //
+        // Note: state.extension_compliant from the backend is keyed
+        // off RUNNING browsers (so the in-session enforcer doesn't
+        // nag about closed ones). Here we want a broader check: any
+        // browser the user has installed but that doesn't have ReDD
+        // Focus set up. That's the migration UI's
+        // browserComplianceStatus logic.
         const state = await invoke('onboarding_state');
         console.log('[onboarding] state:', state);
+        const dismissed = localStorage.getItem(EXT_ONBOARDING_DISMISSED_KEY);
+        const browsers = state.browsers || {};
+        const anyDetected = Object.keys(BROWSER_STORE_LINKS).some(k => browsers[k] && browsers[k].installed);
+        const anyMissing = Object.keys(BROWSER_STORE_LINKS).some(k => {
+            const b = browsers[k];
+            return b && b.installed && browserComplianceStatus(b) !== 'compliant';
+        });
+        if (!dismissed && anyDetected && anyMissing && !migrationOnboardingDismissed) {
+            await showMigrationOnboarding('post', state, { mode: 'fresh' });
+            return;
+        }
+
+        // Returning user with extension already set up, OR user has
+        // dismissed the welcome — fall back to the slim banner for
+        // ongoing nagging.
         updateExtensionComplianceBanner(state);
     } catch (e) {
         console.warn('[onboarding] state check failed:', e);
     }
 }
 
-async function showMigrationOnboarding(phase, state) {
+async function showMigrationOnboarding(phase, state, opts = {}) {
     const screen = document.getElementById('migration-onboarding');
     const pre = document.getElementById('migration-phase-pre');
     const post = document.getElementById('migration-phase-post');
@@ -1101,20 +1120,39 @@ async function showMigrationOnboarding(phase, state) {
     pre.classList.toggle('hidden', phase !== 'pre');
     post.classList.toggle('hidden', phase !== 'post');
 
-    // Bring our window back to the front. The osascript admin
-    // prompt (and any other app the user touches mid-flow) steals
-    // focus, and on macOS we run as a menu-bar accessory with no
-    // dock icon — so without an explicit show + focus the user has
-    // no easy way to find the window again. Doing this on every
-    // phase transition guarantees the onboarding screen is visible.
-    try {
-        const win = getCurrentWindow();
-        await win.show();
-        await win.unminimize();
-        await win.setFocus();
-    } catch (e) {
-        console.warn('[migration] focus window failed:', e);
+    // For the post phase, swap headline + subtitle + checklist depending
+    // on whether we got here from a v1.x cleanup (mode=after-cleanup)
+    // or it's a fresh user (mode=fresh, default).
+    if (phase === 'post') {
+        const mode = opts.mode || 'fresh';
+        const title = document.getElementById('migration-post-title');
+        const subtitle = document.getElementById('migration-post-subtitle');
+        const cleanupItems = post.querySelectorAll('.migration-cleanup-only');
+        if (mode === 'after-cleanup') {
+            if (title) title.textContent = 'Cleanup complete';
+            if (subtitle) subtitle.textContent = 'One step left: install ReDD Focus in each browser you use.';
+            cleanupItems.forEach(el => el.classList.remove('hidden'));
+        } else {
+            if (title) title.textContent = 'Welcome to ReDD Block';
+            if (subtitle) subtitle.textContent = 'Install ReDD Focus in your browsers to start blocking distracting websites.';
+            cleanupItems.forEach(el => el.classList.add('hidden'));
+        }
     }
+
+    // Bring our window back to the front. The osascript admin
+    // prompt steals focus, and on macOS we run as a menu-bar
+    // accessory (no dock icon), so `window.setFocus` alone isn't
+    // enough — we need NSApp.activate(ignoringOtherApps:). The
+    // backend `activate_app` command does that. We retry twice with
+    // a small delay because macOS doesn't always restore focus
+    // immediately after osascript exits.
+    const focusBack = async () => {
+        try { await invoke('activate_app'); } catch (e) {
+            console.warn('[migration] activate_app failed:', e);
+        }
+    };
+    await focusBack();
+    setTimeout(focusBack, 250);
 
     if (phase === 'pre') {
         wireMigrationPrePhase();
@@ -1185,9 +1223,13 @@ function wireMigrationPostPhase(state) {
         } catch (e) {
             console.warn('[migration] enforcer_start failed:', e);
         }
+        // Persist dismissal so we don't surface this full-screen
+        // again on every launch — the slim extension-compliance
+        // banner takes over for ongoing nagging. Stored locally
+        // (per-install) which is fine for a UX hint.
+        try { localStorage.setItem(EXT_ONBOARDING_DISMISSED_KEY, String(Date.now())); }
+        catch (_) { /* localStorage may be disabled; harmless */ }
         hideMigrationOnboarding();
-        // Re-run normal onboarding (slim extension-compliance banner
-        // covers any browsers still missing the extension).
         try {
             const fresh = await invoke('onboarding_state');
             updateExtensionComplianceBanner(fresh);
@@ -1278,74 +1320,87 @@ function renderBrowserInstallButtons(state) {
         const row = document.createElement('div');
         row.className = `migration-browser-row ${status}`;
 
+        // Two-line row layout: header (browser name + status badge)
+        // on top, action (URL + Copy, or hint text) below. Keeps each
+        // row readable at typical window widths and avoids the prior
+        // cramped single-line stacking.
+        const header = document.createElement('div');
+        header.className = 'migration-browser-header';
+
         const name = document.createElement('span');
         name.className = 'migration-browser-name';
         name.textContent = entry.label;
-        row.appendChild(name);
+        header.appendChild(name);
 
-        if (status === 'compliant') {
-            const badge = document.createElement('span');
-            badge.className = 'migration-browser-badge compliant';
-            badge.textContent = '✓ Set up';
-            row.appendChild(badge);
-        } else {
-            // Show the URL the user needs to open in this specific
-            // browser, plus a copy button. Trying to launch the URL
-            // *in* the right browser ourselves was unreliable
-            // (App Paths registry on Windows, /Applications layout
-            // on macOS, portable installs, etc.) — better to just
-            // hand the user the link and let them paste it where
-            // they want.
-            const status_text = document.createElement('span');
-            status_text.className = 'migration-browser-status-text';
-            status_text.textContent = statusLabel(status);
-            if (status === 'needs-enable') {
-                status_text.title = 'Enable ReDD Focus in your browser\'s extensions/add-ons settings.';
-            } else if (status === 'needs-private') {
-                status_text.title = 'Allow ReDD Focus in private/incognito browsing in your browser\'s extensions/add-ons settings.';
-            }
-            row.appendChild(status_text);
+        const badge = document.createElement('span');
+        badge.className = `migration-browser-badge ${status}`;
+        switch (status) {
+            case 'compliant': badge.textContent = '✓ Set up'; break;
+            case 'needs-install': badge.textContent = 'Not installed'; break;
+            case 'needs-enable': badge.textContent = 'Disabled'; break;
+            case 'needs-private': badge.textContent = 'No private mode'; break;
+            default: badge.textContent = 'Not installed';
+        }
+        header.appendChild(badge);
 
-            // For "needs-install" we surface the store URL. For
-            // "needs-enable" / "needs-private" the user goes to the
-            // browser's own settings, not a URL — so no copy
-            // button there.
-            if (status === 'needs-install') {
-                const urlText = document.createElement('span');
-                urlText.className = 'migration-browser-url';
-                urlText.textContent = entry.url;
-                urlText.title = entry.url;
-                row.appendChild(urlText);
+        row.appendChild(header);
 
-                const copyBtn = document.createElement('button');
-                copyBtn.type = 'button';
-                copyBtn.className = 'migration-browser-copy';
-                copyBtn.textContent = 'Copy';
-                copyBtn.title = `Copy URL — paste into ${entry.label} to install`;
-                copyBtn.addEventListener('click', async () => {
-                    try {
-                        await navigator.clipboard.writeText(entry.url);
-                        copyBtn.textContent = 'Copied';
-                        setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
-                    } catch (e) {
-                        console.warn('[migration] clipboard write failed:', e);
-                        copyBtn.textContent = 'Failed';
-                        setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
-                    }
-                });
-                row.appendChild(copyBtn);
-            }
+        if (status === 'needs-install') {
+            const action = document.createElement('div');
+            action.className = 'migration-browser-action';
+
+            const urlText = document.createElement('code');
+            urlText.className = 'migration-browser-url';
+            urlText.textContent = entry.url;
+            urlText.title = entry.url;
+            action.appendChild(urlText);
+
+            const copyBtn = document.createElement('button');
+            copyBtn.type = 'button';
+            copyBtn.className = 'migration-browser-copy';
+            copyBtn.textContent = 'Copy URL';
+            copyBtn.title = `Copy URL — paste into ${entry.label} to install`;
+            copyBtn.addEventListener('click', async () => {
+                try {
+                    await navigator.clipboard.writeText(entry.url);
+                    copyBtn.textContent = 'Copied';
+                    setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
+                } catch (e) {
+                    console.warn('[migration] clipboard write failed:', e);
+                    copyBtn.textContent = 'Failed';
+                    setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
+                }
+            });
+            action.appendChild(copyBtn);
+
+            row.appendChild(action);
+        } else if (status === 'needs-enable' || status === 'needs-private') {
+            const hint = document.createElement('div');
+            hint.className = 'migration-browser-hint';
+            hint.textContent = status === 'needs-enable'
+                ? `Enable ReDD Focus in ${entry.label}'s extensions settings.`
+                : `Allow ReDD Focus in private/incognito browsing in ${entry.label}'s extensions settings.`;
+            row.appendChild(hint);
         }
 
         container.appendChild(row);
     }
 
-    // Tick the checklist as "done" once at least one installed
-    // browser is fully compliant. Polled while the screen is open so
-    // it updates when the user returns from configuring the store.
+    // Show the "How to install" instructions only when at least one
+    // browser still needs the extension. Hidden when everything's
+    // compliant — the user is done, no need to nag.
+    const howto = document.getElementById('migration-howto');
+    const anyMissing = keys.some(k => browserComplianceStatus(browsers[k]) !== 'compliant');
+    if (howto) howto.classList.toggle('hidden', !anyMissing);
+
+    // Tick the checklist as "done" only once every detected browser
+    // is compliant. "any" was misleading — if Firefox was set up but
+    // Brave still needed installing, the checklist would mark itself
+    // green even though there's still work to do.
     if (checklistItem) {
-        const anyCompliant = keys.some(k => browserComplianceStatus(browsers[k]) === 'compliant');
-        if (anyCompliant) {
+        const allCompliant = keys.length > 0
+            && keys.every(k => browserComplianceStatus(browsers[k]) === 'compliant');
+        if (allCompliant) {
             checklistItem.classList.remove('checklist-todo');
             checklistItem.classList.add('checklist-done');
             const mark = checklistItem.querySelector('.checklist-mark');

@@ -166,18 +166,21 @@
                     </div>
                 </div>
 
-                <!-- Phase: post-cleanup. Shown when migration_pending=false
-                     AND show_upgrade_welcome=true. -->
+                <!-- Phase: install browser extension. Shown both
+                     after a v1.x → 2.0 cleanup AND on first launch
+                     for new users who haven't installed the extension
+                     yet. JS swaps the headline + checklist depending
+                     on which case it is. -->
                 <div id="migration-phase-post" class="migration-phase hidden">
-                    <h1>Cleanup complete</h1>
-                    <p class="legal-onboarding-subtitle">One step left: install the browser extension.</p>
+                    <h1 id="migration-post-title">Cleanup complete</h1>
+                    <p id="migration-post-subtitle" class="legal-onboarding-subtitle">One step left: install ReDD Focus in each browser you use.</p>
                     <div class="onboarding-focus-card migration-card">
-                        <ul class="migration-checklist">
-                            <li class="checklist-done">
+                        <ul id="migration-checklist" class="migration-checklist">
+                            <li class="checklist-done migration-cleanup-only">
                                 <span class="checklist-mark">✓</span>
                                 <span>Old version cleaned up</span>
                             </li>
-                            <li class="checklist-done">
+                            <li class="checklist-done migration-cleanup-only">
                                 <span class="checklist-mark">✓</span>
                                 <span>Your blocklists are preserved</span>
                             </li>
@@ -186,6 +189,18 @@
                                 <span>Install the ReDD Focus browser extension</span>
                             </li>
                         </ul>
+
+                        <div id="migration-howto" class="migration-howto hidden">
+                            <h3>How to install</h3>
+                            <ol>
+                                <li>Click <strong>Copy URL</strong> next to a browser below.</li>
+                                <li>Open that browser.</li>
+                                <li>Paste the URL into the address bar and press Enter.</li>
+                                <li>Click <strong>Add to&nbsp;…</strong> (or <strong>Add to Firefox</strong> / <strong>Get</strong> for Safari) on the page that loads.</li>
+                                <li>Come back here and click <strong>I've installed it</strong>.</li>
+                            </ol>
+                        </div>
+
                         <div id="migration-browser-buttons" class="migration-browser-buttons"></div>
                         <button id="migration-done-btn" class="modal-btn primary-btn onboarding-primary-btn">I've installed it</button>
                         <button id="migration-skip-btn" class="modal-btn migration-skip-btn">Skip for now</button>
