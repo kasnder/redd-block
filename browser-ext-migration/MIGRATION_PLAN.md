@@ -17,6 +17,38 @@ Ordered by priority. Items moved here from the rest of the doc as they
 land; everything below this section is historical context for *how*
 the migration was structured.
 
+### Distribution: switch to `.pkg` for the v1.x → 2.0 upgrade
+A `.dmg` drag-replace install on macOS leaves the v1.x daemon running
+and the hosts file edited until the user explicitly launches the new
+app — which means a window where the old privileged stack is
+unsupervised. It also creates a "browser closed without explanation"
+failure mode the moment the new app's enforcer ticks against an
+uninstalled extension after migration.
+
+For 2.0 specifically we ship a real installer `.pkg` with pre/post
+install scripts so the cleanup happens at install time and the new
+app auto-launches:
+
+- `scripts/build-mac-pkg.sh` — wraps the Tauri-built `.app` with
+  `pkgbuild` + `productbuild`. Signed with `Developer ID Installer`
+  (env var `APPLE_DEVELOPER_INSTALLER_IDENTITY`). Notarization runs
+  if `APPLE_NOTARIZE_USER` / `APPLE_NOTARIZE_PASS` / `APPLE_TEAM_ID`
+  are set. npm scripts: `build:mac-pkg`, `build:mac-pkg:debug`.
+- `scripts/macos-pkg/scripts/preinstall` — quits any running v1.x
+  GUI, then runs the same bundled hosts-strip + daemon-removal flow
+  as the in-app `run_elevated_macos`. Same safety order: stop daemon
+  → poll launchd → atomic hosts write → verify → remove daemon files
+  → verify removal. Never fails the install on cleanup errors (the
+  in-app migration is the safety net).
+- `scripts/macos-pkg/scripts/postinstall` — `launchctl asuser …
+  /usr/bin/open /Applications/ReDD Block.app` so 2.0 auto-launches
+  for the invoking user, mirroring Windows NSIS finish-page.
+
+The in-app migration code stays as the safety net for users who
+upgrade by some other path (manual `.dmg` from old archive, partial
+`.pkg` failure, etc.). Defense in depth — both paths land on the
+same end state.
+
 ### macOS — must do before merge
 - [x] **Upgrade migration verified end-to-end on real hardware.** Two
       full v1.x → 2.0 migrations exercised against a real legacy
@@ -45,6 +77,24 @@ the migration was structured.
         retained and not pruned.
       - Test harness: `scripts/test-migration.sh` + `cargo run --example
         test_migration` (in `src-tauri/`).
+- [ ] **Full-screen migration onboarding tested in the running app.**
+      The in-app migration now drives a full-screen onboarding overlay
+      (`#migration-onboarding` in `src/index.html`) instead of thin
+      banners. Two phases:
+        - "pre" — explanation card + Continue button. Clicking Continue
+          fires `run_upgrade_migration` which prompts admin. Cancel →
+          stay in pre with retry CTA.
+        - "post" — checklist (old version cleaned ✓, blocklists
+          preserved ✓, install extension ○) + per-browser store
+          buttons (driven by `OnboardingState.browsers`). Polls
+          compliance on window focus so the checklist ticks itself
+          off when the user comes back from the store.
+      Enforcer is paused at process launch when `migration_pending`
+      was true at startup (see `commands::enforcement::auto_start`)
+      and resumed only when the user dismisses the post phase
+      (Done or Skip). This prevents the "browser closed without
+      explanation" failure mode immediately after a successful
+      migration.
 - [ ] **Extension-compliance banner** — install the extension in 1
       of 2 browsers, confirm the banner shows the uninstalled one;
       install in both, banner clears.

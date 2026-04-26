@@ -1032,71 +1032,218 @@ async function checkForAppUpdate() {
 //   compliance banner.
 // - No-ops on iOS.
 
+// Migration onboarding state machine for v1.x → 2.0 first launch.
+//
+// Three end states:
+//   1. No residue, no welcome → onboarding screen never shows. Main UI
+//      starts immediately. Enforcer running normally.
+//   2. Residue present → "pre" phase. Show explanation card. User
+//      clicks Continue → backend prompts admin → cleanup → swap to
+//      "post" phase. (If they cancel, stay in "pre" with retry CTA.)
+//   3. Residue gone, show_upgrade_welcome=true → "post" phase. Show
+//      cleanup-complete + per-browser install buttons. User
+//      acknowledges → close screen → resume enforcer → main UI.
+//
+// While the screen is open, the enforcer is paused (set in
+// commands::enforcement::auto_start when migration was pending at
+// launch). We resume it explicitly when the user dismisses post.
+let migrationOnboardingActive = false;
+let migrationOnboardingDismissed = false;
+
 async function runDesktopOnboarding() {
     if (isIOS) return;
     try {
+        // Note: invoking 'onboarding_state' triggers the elevated
+        // migration script if residue is present. We don't want that
+        // to fire from runDesktopOnboarding's first call any more —
+        // we want the user to see our pre-prompt screen FIRST and
+        // click Continue to trigger the admin prompt. So we use a
+        // lighter-weight check first.
+        const pendingAtLaunch = await invoke('migration_pending');
+        const wasUpgrade = await invoke('migration_was_pending_at_launch');
+
+        if (pendingAtLaunch) {
+            // Residue still present → show pre-prompt screen.
+            await showMigrationOnboarding('pre');
+            return;
+        }
+        if (wasUpgrade && !migrationOnboardingDismissed) {
+            // Residue cleaned (e.g., by a previous explicit click,
+            // OR by a .pkg preinstall, OR by a previous launch that
+            // ran but didn't show welcome). Show post-cleanup screen
+            // so the user knows what changed and installs the
+            // extension. The wasUpgrade flag persists across this
+            // launch only.
+            const state = await invoke('onboarding_state');
+            await showMigrationOnboarding('post', state);
+            return;
+        }
+
+        // Normal launch: just refresh the slim extension-compliance banner.
         const state = await invoke('onboarding_state');
         console.log('[onboarding] state:', state);
-        updateMigrationIncompleteBanner(state);
-        updateUpgradeWelcomeBanner(state);
         updateExtensionComplianceBanner(state);
     } catch (e) {
         console.warn('[onboarding] state check failed:', e);
     }
 }
 
-// Shown when v1.x residue (hosts markers or legacy daemon artefacts)
-// is still present — i.e. the elevated migration step never fully
-// succeeded (user cancelled, prompt failed, validation failed). The
-// CTA re-runs the migration; the prompt re-appears.
-function updateMigrationIncompleteBanner(state) {
-    const banner = document.getElementById('migration-incomplete-banner');
-    const btn = document.getElementById('migration-incomplete-btn');
-    if (!banner) return;
+async function showMigrationOnboarding(phase, state) {
+    const screen = document.getElementById('migration-onboarding');
+    const pre = document.getElementById('migration-phase-pre');
+    const post = document.getElementById('migration-phase-post');
+    const main = document.getElementById('main-content');
+    if (!screen || !pre || !post) return;
 
-    if (!state.migration_pending) {
-        banner.classList.add('hidden');
-        return;
+    migrationOnboardingActive = true;
+    if (main) main.classList.add('hidden');
+    screen.classList.remove('hidden');
+    pre.classList.toggle('hidden', phase !== 'pre');
+    post.classList.toggle('hidden', phase !== 'post');
+
+    if (phase === 'pre') {
+        wireMigrationPrePhase();
+    } else if (phase === 'post') {
+        wireMigrationPostPhase(state);
     }
-    banner.classList.remove('hidden');
+}
 
-    if (btn && !btn._listenerAdded) {
-        btn._listenerAdded = true;
-        btn.addEventListener('click', async () => {
-            if (btn.disabled) return;
-            btn.disabled = true;
-            try {
-                await invoke('run_upgrade_migration');
-            } catch (e) {
-                console.warn('[onboarding] retry failed:', e);
-            } finally {
+function hideMigrationOnboarding() {
+    const screen = document.getElementById('migration-onboarding');
+    const main = document.getElementById('main-content');
+    if (screen) screen.classList.add('hidden');
+    if (main) main.classList.remove('hidden');
+    migrationOnboardingActive = false;
+    migrationOnboardingDismissed = true;
+}
+
+function wireMigrationPrePhase() {
+    const btn = document.getElementById('migration-continue-btn');
+    const status = document.getElementById('migration-pre-status');
+    if (!btn || btn._listenerAdded) return;
+    btn._listenerAdded = true;
+
+    btn.addEventListener('click', async () => {
+        if (btn.disabled) return;
+        btn.disabled = true;
+        if (status) {
+            status.textContent = 'Approve the admin prompt to continue…';
+            status.classList.remove('hidden', 'error');
+        }
+        try {
+            await invoke('run_upgrade_migration');
+            // Re-check residue. If gone → swap to post. If still
+            // present → user cancelled or something failed; show
+            // retry guidance.
+            const stillPending = await invoke('migration_pending');
+            if (stillPending) {
                 btn.disabled = false;
-                runDesktopOnboarding();
+                btn.textContent = 'Try again';
+                if (status) {
+                    status.textContent = "We need that admin permission to finish — your blocklists are safe.";
+                    status.classList.add('error');
+                }
+                return;
             }
-        });
+            const fresh = await invoke('onboarding_state');
+            await showMigrationOnboarding('post', fresh);
+        } catch (e) {
+            console.warn('[migration] failed:', e);
+            btn.disabled = false;
+            btn.textContent = 'Try again';
+            if (status) {
+                status.textContent = "Something went wrong. Click to retry.";
+                status.classList.add('error');
+            }
+        }
+    });
+}
+
+function wireMigrationPostPhase(state) {
+    renderBrowserInstallButtons(state);
+    const doneBtn = document.getElementById('migration-done-btn');
+    const skipBtn = document.getElementById('migration-skip-btn');
+
+    const finish = async () => {
+        try {
+            await invoke('enforcer_start');
+        } catch (e) {
+            console.warn('[migration] enforcer_start failed:', e);
+        }
+        hideMigrationOnboarding();
+        // Re-run normal onboarding (slim extension-compliance banner
+        // covers any browsers still missing the extension).
+        try {
+            const fresh = await invoke('onboarding_state');
+            updateExtensionComplianceBanner(fresh);
+        } catch (e) { /* no-op */ }
+    };
+
+    if (doneBtn && !doneBtn._listenerAdded) {
+        doneBtn._listenerAdded = true;
+        doneBtn.addEventListener('click', finish);
+    }
+    if (skipBtn && !skipBtn._listenerAdded) {
+        skipBtn._listenerAdded = true;
+        skipBtn.addEventListener('click', finish);
     }
 }
 
-// One-time card on the launch immediately after a v1 → v2 migration.
-// Tells users the architecture changed and they need to install the
-// browser extension. Goes away when dismissed; re-fetched onboarding
-// state will compute false on subsequent launches.
-function updateUpgradeWelcomeBanner(state) {
-    const banner = document.getElementById('upgrade-welcome-banner');
-    const dismiss = document.getElementById('upgrade-welcome-dismiss');
-    if (!banner) return;
+// Per-browser deep links to extension stores. Keyed off the
+// detected-and-running browsers from profile_scan so we only show
+// buttons for browsers the user actually has.
+const BROWSER_STORE_LINKS = {
+    chrome: { label: 'Install for Chrome', url: 'https://chrome.google.com/webstore/detail/redd-focus/hhblkhfdjijdinijakbmcpkmdfhoadcd' },
+    brave: { label: 'Install for Brave', url: 'https://chrome.google.com/webstore/detail/redd-focus/hhblkhfdjijdinijakbmcpkmdfhoadcd' },
+    edge: { label: 'Install for Edge', url: 'https://chrome.google.com/webstore/detail/redd-focus/hhblkhfdjijdinijakbmcpkmdfhoadcd' },
+    firefox: { label: 'Install for Firefox', url: 'https://addons.mozilla.org/en-US/firefox/addon/redd-focus/' },
+    safari: { label: 'Install for Safari', url: 'https://reddfocus.org/tools/reddblock' },
+};
 
-    if (!state.show_upgrade_welcome) {
-        banner.classList.add('hidden');
-        return;
+function renderBrowserInstallButtons(state) {
+    const container = document.getElementById('migration-browser-buttons');
+    const checklistItem = document.getElementById('migration-checklist-ext');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const browsers = state && state.browsers ? state.browsers : {};
+    const detected = Object.keys(BROWSER_STORE_LINKS).filter(k => browsers[k] && browsers[k].present);
+    const targets = detected.length > 0 ? detected : ['chrome'];
+
+    for (const key of targets) {
+        const entry = BROWSER_STORE_LINKS[key];
+        if (!entry) continue;
+        const a = document.createElement('a');
+        a.href = entry.url;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.textContent = entry.label;
+        container.appendChild(a);
     }
-    banner.classList.remove('hidden');
 
-    if (dismiss && !dismiss._listenerAdded) {
-        dismiss._listenerAdded = true;
-        dismiss.addEventListener('click', () => banner.classList.add('hidden'));
+    // Visually flip the checklist item to "done" once the user has
+    // any compliant browser. Polled gently while screen is open.
+    if (checklistItem && state && state.extension_compliant) {
+        checklistItem.classList.remove('checklist-todo');
+        checklistItem.classList.add('checklist-done');
+        const mark = checklistItem.querySelector('.checklist-mark');
+        if (mark) mark.textContent = '✓';
     }
 }
+
+// While the post-cleanup screen is open, periodically re-check
+// extension compliance so the checklist ticks itself off when the
+// user comes back from the store.
+async function pollMigrationCompliance() {
+    if (!migrationOnboardingActive) return;
+    try {
+        const fresh = await invoke('onboarding_state');
+        renderBrowserInstallButtons(fresh);
+    } catch (e) { /* no-op */ }
+}
+window.addEventListener('focus', () => {
+    if (migrationOnboardingActive) pollMigrationCompliance();
+});
 
 function updateExtensionComplianceBanner(state) {
     const banner = document.getElementById('extension-compliance-banner');

@@ -1,0 +1,32 @@
+#!/bin/bash
+# postinstall — runs as root after the .pkg payload is laid down.
+#
+# Auto-launches the new app for the user who triggered the install,
+# mirroring the Windows NSIS finish-page "Run ReDD Block" checkbox.
+# Without this, macOS users who installed via .pkg would be left
+# staring at the Installer.app "Install Successful" screen with no
+# clear next step.
+
+set +e
+
+LOG=/var/log/redd-block-pkg-postinstall.log
+exec > >(tee -a "$LOG") 2>&1
+echo "=== postinstall $(date '+%F %T') ==="
+
+# The Installer.app stashes the invoking user in $USER (their actual
+# console user, not root). Use it to launch the GUI in their session.
+TARGET_USER="${USER:-$(stat -f '%Su' /dev/console)}"
+TARGET_UID=$(id -u "$TARGET_USER" 2>/dev/null)
+
+if [ -z "$TARGET_UID" ]; then
+    echo "could not resolve uid for $TARGET_USER; skipping auto-launch"
+    exit 0
+fi
+
+# launchctl asuser runs the command in the target user's bootstrap
+# domain so the GUI shows up on their session.
+launchctl asuser "$TARGET_UID" /usr/bin/open '/Applications/ReDD Block.app' || \
+    sudo -u "$TARGET_USER" /usr/bin/open '/Applications/ReDD Block.app'
+
+echo "postinstall launched ReDD Block for $TARGET_USER"
+exit 0

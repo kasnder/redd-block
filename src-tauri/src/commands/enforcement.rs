@@ -41,13 +41,31 @@ pub fn register<R: tauri::Runtime>(app: &tauri::App<R>) {
 
 /// Auto-start the enforcer at app launch. The enforcer scans browsers
 /// every 5 s for missing/disabled extensions and quits the browser if
-/// the user doesn't fix it within the grace window. There's no reason
-/// to gate this behind a frontend opt-in — if ReDD Block is running,
-/// blocking is enforced.
+/// the user doesn't fix it within the grace window.
+///
+/// IMPORTANT: when a v1.x → 2.0 migration is pending or just completed,
+/// we start the enforcer **paused**. Otherwise the user upgrades, gets
+/// an admin prompt, accepts, hasn't yet installed the browser
+/// extension — and 30-60 s later the enforcer kills their browser with
+/// no context. The frontend resumes the enforcer (via
+/// `enforcer_start`) once the user has dismissed the post-migration
+/// onboarding screen. See migration UX in app.js.
 pub fn auto_start(app: &tauri::AppHandle) {
     use tauri::Manager;
     let h = enforcer::start(app.clone());
-    h.set_enabled(true);
+
+    // If there's v1.x residue on disk at startup, hold the enforcer
+    // until the frontend's migration onboarding completes and calls
+    // enforcer_start. Migration runs in-process during the same
+    // launch, so even after residue is cleaned the enforcer stays
+    // paused until the user dismisses the post-cleanup welcome
+    // screen.
+    let pending = crate::commands::migration::migration_pending_sync();
+    h.set_enabled(!pending);
+    if pending {
+        log::info!("enforcer: starting paused (migration onboarding pending)");
+    }
+
     let state = app.state::<EnforcerState>();
     if let Ok(mut slot) = state.0.lock() {
         *slot = Some(h);

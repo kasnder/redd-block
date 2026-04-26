@@ -80,42 +80,6 @@
             </div>
         </div>
 
-        <!-- Migration incomplete banner (v1.x → new-stack residue still on disk) -->
-        <div id="migration-incomplete-banner" class="update-banner hidden">
-            <div class="update-banner-content">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 9v4" />
-                    <path d="M12 17h.01" />
-                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                </svg>
-                <span id="migration-incomplete-text">Finish the upgrade from the previous ReDD Block — one admin permission needed.</span>
-                <button id="migration-incomplete-btn" class="update-banner-btn">Finish upgrade</button>
-            </div>
-        </div>
-
-        <!-- One-time upgrade welcome card (v1 → v2 architecture boundary) -->
-        <div id="upgrade-welcome-banner" class="update-banner hidden">
-            <div class="update-banner-content">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="10" />
-                    <path d="M12 16v-4" />
-                    <path d="M12 8h.01" />
-                </svg>
-                <span id="upgrade-welcome-text">ReDD Block now blocks websites via the ReDD Focus browser extension — install it to start blocking. No more admin prompts after this upgrade.</span>
-                <a id="upgrade-welcome-link" href="https://reddfocus.org/tools/reddblock" target="_blank"
-                    class="update-banner-btn">Install ReDD Focus</a>
-            </div>
-            <button id="upgrade-welcome-dismiss" class="update-banner-dismiss" title="Dismiss">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-            </button>
-        </div>
-
         <!-- Extension compliance banner (shown when ReDD Focus isn't installed/enabled in a running browser) -->
         <div id="extension-compliance-banner" class="update-banner hidden">
             <div class="update-banner-content">
@@ -168,6 +132,65 @@
                     not-for-profit creating insights &amp; open-source digital focus tools for everyone to thrive in
                     the digital world.
                 </p>
+            </div>
+        </div>
+
+        <!-- v1.x → 2.0 migration onboarding. Full-screen, gates main UI
+             on first launch after upgrade. Two phases driven by JS:
+             "pre" = welcome + admin-permission ask, "post" = cleanup
+             complete + install browser extension. -->
+        <div id="migration-onboarding" class="onboarding-screen hidden">
+            <div class="onboarding-content migration-onboarding-content">
+                <div class="onboarding-icon">
+                    <img src="/reddblock-icon.svg" alt="ReDD Block app icon" class="onboarding-app-icon">
+                </div>
+
+                <!-- Phase: pre-cleanup. Shown when migration_pending=true. -->
+                <div id="migration-phase-pre" class="migration-phase">
+                    <h1>Welcome to ReDD Block 2.0</h1>
+                    <p class="legal-onboarding-subtitle">A one-time cleanup is needed to finish your upgrade.</p>
+                    <div class="onboarding-focus-card migration-card">
+                        <p class="migration-explainer">
+                            ReDD Block now blocks websites through a browser extension instead of a system-level helper. We need to:
+                        </p>
+                        <ul class="migration-bullets">
+                            <li>Stop and remove the old privileged helper</li>
+                            <li>Restore your <code>/etc/hosts</code> file (a backup is kept)</li>
+                            <li>Keep all your existing blocklists intact</li>
+                        </ul>
+                        <p class="migration-explainer migration-explainer-warn">
+                            You'll see <strong>one</strong> admin password prompt. Blocking will pause briefly during the changeover. After cleanup, you'll need to install the <strong>ReDD Focus</strong> browser extension.
+                        </p>
+                        <button id="migration-continue-btn" class="modal-btn primary-btn onboarding-primary-btn">Continue</button>
+                        <p id="migration-pre-status" class="migration-status hidden"></p>
+                    </div>
+                </div>
+
+                <!-- Phase: post-cleanup. Shown when migration_pending=false
+                     AND show_upgrade_welcome=true. -->
+                <div id="migration-phase-post" class="migration-phase hidden">
+                    <h1>Cleanup complete</h1>
+                    <p class="legal-onboarding-subtitle">One step left: install the browser extension.</p>
+                    <div class="onboarding-focus-card migration-card">
+                        <ul class="migration-checklist">
+                            <li class="checklist-done">
+                                <span class="checklist-mark">✓</span>
+                                <span>Old version cleaned up</span>
+                            </li>
+                            <li class="checklist-done">
+                                <span class="checklist-mark">✓</span>
+                                <span>Your blocklists are preserved</span>
+                            </li>
+                            <li id="migration-checklist-ext" class="checklist-todo">
+                                <span class="checklist-mark">○</span>
+                                <span>Install the ReDD Focus browser extension</span>
+                            </li>
+                        </ul>
+                        <div id="migration-browser-buttons" class="migration-browser-buttons"></div>
+                        <button id="migration-done-btn" class="modal-btn primary-btn onboarding-primary-btn">I've installed it</button>
+                        <button id="migration-skip-btn" class="modal-btn migration-skip-btn">Skip for now</button>
+                    </div>
+                </div>
             </div>
         </div>
 

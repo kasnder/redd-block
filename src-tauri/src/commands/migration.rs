@@ -34,8 +34,35 @@
 // re-runs the whole sequence.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicI8, Ordering};
 
 use serde::Serialize;
+
+// Snapshot of "was migration pending when this process launched?".
+// Lazily computed on first read, then frozen for the rest of the
+// process. Lets the frontend distinguish "fresh install" from
+// "we just upgraded" even after the migration script has cleared
+// the residue mid-launch.
+//
+// Encoded as: -1 = uninitialised, 0 = false, 1 = true.
+static MIGRATION_WAS_PENDING_AT_LAUNCH: AtomicI8 = AtomicI8::new(-1);
+static SNAPSHOT_INIT: AtomicBool = AtomicBool::new(false);
+
+fn snapshot_initial_state() -> bool {
+    if SNAPSHOT_INIT.load(Ordering::Acquire) {
+        return MIGRATION_WAS_PENDING_AT_LAUNCH.load(Ordering::Acquire) == 1;
+    }
+    let pending = migration_pending_uncached();
+    let val = if pending { 1 } else { 0 };
+    let _ = MIGRATION_WAS_PENDING_AT_LAUNCH.compare_exchange(
+        -1,
+        val,
+        Ordering::AcqRel,
+        Ordering::Acquire,
+    );
+    SNAPSHOT_INIT.store(true, Ordering::Release);
+    MIGRATION_WAS_PENDING_AT_LAUNCH.load(Ordering::Acquire) == 1
+}
 
 const BEGIN_MARKER: &str = "# === BEGIN REDD BLOCK (reddfocus.org) ===";
 const END_MARKER: &str = "# === END REDD BLOCK (reddfocus.org) ===";
@@ -103,13 +130,34 @@ fn legacy_artefacts_present() -> bool {
 }
 
 /// Returns true when there's any v1.x residue (hosts markers or
-/// legacy artefacts) the migration still needs to clean up.
+/// legacy artefacts) the migration still needs to clean up. Also
+/// memoises the answer at first call so we can later report what
+/// the state was at process launch (for the frontend's "we just
+/// upgraded, show the welcome" gate).
 pub fn migration_pending_sync() -> bool {
+    let _ = snapshot_initial_state();
+    migration_pending_uncached()
+}
+
+fn migration_pending_uncached() -> bool {
     let raw = std::fs::read_to_string(hosts_path()).unwrap_or_default();
     if hosts_has_markers(&raw) {
         return true;
     }
     legacy_artefacts_present()
+}
+
+#[tauri::command]
+pub fn migration_pending() -> bool {
+    migration_pending_sync()
+}
+
+/// True if there was v1.x residue when the process started, even if
+/// the migration has since cleaned it up. The frontend uses this to
+/// decide whether to show the post-cleanup "welcome to 2.0" screen.
+#[tauri::command]
+pub fn migration_was_pending_at_launch() -> bool {
+    snapshot_initial_state()
 }
 
 // ---- Hosts cleaning (pure) ----------------------------------------------
