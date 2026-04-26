@@ -47,7 +47,8 @@ mkdir -p "$OUT_DIR"
 
 COMPONENT_PKG="$OUT_DIR/component.pkg"
 DIST_PKG="$OUT_DIR/${APP_NAME// /-}-${VERSION}.pkg"
-DIST_FILE=$(mktemp /tmp/redd-block-dist.XXXXXX.xml)
+DIST_DIR=$(mktemp -d /tmp/redd-block-dist.XXXXXX)
+DIST_FILE="$DIST_DIR/distribution.xml"
 
 # Build a *temporary* scripts dir so we can copy in the shared
 # cleanup.sh template alongside preinstall/postinstall — the
@@ -111,11 +112,11 @@ fi
 productbuild \
     --distribution "$DIST_FILE" \
     --package-path "$OUT_DIR" \
-    "${SIGN_ARGS[@]}" \
+    "${SIGN_ARGS[@]+"${SIGN_ARGS[@]}"}" \
     "$DIST_PKG"
 
-rm -f "$DIST_FILE" "$COMPONENT_PKG"
-rm -rf "$PKG_SCRIPTS_DIR"
+rm -rf "$DIST_DIR" "$PKG_SCRIPTS_DIR"
+rm -f "$COMPONENT_PKG"
 
 # 4. Notarization (optional).
 if [[ -n "${APPLE_NOTARIZE_USER:-}" && -n "${APPLE_NOTARIZE_PASS:-}" && -n "${APPLE_TEAM_ID:-}" ]]; then
