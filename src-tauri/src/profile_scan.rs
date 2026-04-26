@@ -564,29 +564,48 @@ fn scan_safari() -> BrowserStatus {
     };
     let stdout = String::from_utf8_lossy(&output.stdout);
     let safari_ids = safari_bundle_ids();
-    let line = stdout
+    // pluginkit only tells us the bundle is *registered* with Safari.
+    // The leading `+` / `-` flag isn't reliable for Safari Web
+    // Extensions on modern macOS (Safari manages enabled-state
+    // internally), so we ignore it and source enabled from the
+    // heartbeat instead.
+    let pluginkit_found = stdout
         .lines()
-        .find(|l| safari_ids.iter().any(|id| l.contains(id)));
-    let (found, enabled) = match line {
-        Some(l) => {
-            let first = l.chars().next();
-            let en = match first {
-                Some('+') => Some(true),
-                Some('-') => Some(false),
-                _ => None,
-            };
-            (true, en)
-        }
-        None => (false, None),
-    };
+        .any(|l| safari_ids.iter().any(|id| l.contains(id)));
+
     let safari_status = crate::app_group::read_safari_status();
-    let fresh_status = safari_status
+    let heartbeat_fresh = safari_status
         .as_ref()
-        .filter(|status| crate::app_group::status_is_fresh(status));
-    let found = fresh_status.map(|status| status.installed).unwrap_or(found);
-    let enabled = fresh_status.map(|status| status.enabled).map(Some).unwrap_or(enabled);
-    let private_browsing = fresh_status.and_then(|status| status.private_browsing);
-    let note = fresh_status.map(|status| {
+        .map(crate::app_group::status_is_fresh)
+        .unwrap_or(false);
+
+    // Two scenarios with different signals:
+    //   1) Safari open  → heartbeat freshness is the truth. Stale
+    //      heartbeat means the extension is off (disabled or
+    //      uninstalled) and the enforcer should kick.
+    //   2) Safari closed → heartbeat is necessarily stale. Trust the
+    //      last-known state for the migration UI; the enforcer's
+    //      `compliant()` short-circuits on `!present` anyway.
+    let extension_installed = pluginkit_found || safari_status.is_some();
+    let (enabled, private_browsing) = match safari_status.as_ref() {
+        Some(_) if running && !heartbeat_fresh => {
+            // Safari is open but the extension stopped reporting →
+            // it was just disabled or uninstalled.
+            (Some(false), None)
+        }
+        Some(hb) => {
+            // Either heartbeat is fresh, or Safari is closed and we
+            // trust the last-known-good record.
+            (Some(true), hb.private_browsing)
+        }
+        None => {
+            // No heartbeat ever → never observed running. If
+            // pluginkit registered the bundle, the user has the
+            // extension installed but disabled.
+            if pluginkit_found { (Some(false), None) } else { (None, None) }
+        }
+    };
+    let note = safari_status.as_ref().map(|status| {
         format!(
             "Safari status reported by extension{}",
             status
@@ -603,7 +622,7 @@ fn scan_safari() -> BrowserStatus {
         profiles: vec![ProfileStatus {
             name: "(Safari has no profiles)".to_string(),
             is_default: true,
-            installed: found,
+            installed: extension_installed,
             enabled,
             private_browsing,
             note,
@@ -641,7 +660,12 @@ pub fn compliant(result: &ScanResult) -> bool {
     });
     let safari_ok = !result.safari.present || {
         let def = result.safari.profiles.iter().find(|p| p.is_default).or_else(|| result.safari.profiles.first());
-        matches!(def, Some(p) if p.installed && p.enabled != Some(false) && p.private_browsing != Some(true))
+        matches!(
+            def,
+            Some(p) if p.installed
+                && p.enabled == Some(true)
+                && p.private_browsing == Some(true)
+        )
     };
     chromium_ok && safari_ok
 }

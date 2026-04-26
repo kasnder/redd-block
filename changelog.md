@@ -2,7 +2,7 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
-## v1.1.0 (unreleased)
+## v2.0
 
 - **New blocking architecture on desktop.** No more privileged helper
   daemon, no more hosts-file edits, no admin/UAC prompt on install.

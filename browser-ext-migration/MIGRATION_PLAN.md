@@ -372,8 +372,13 @@ supersede earlier sections of this doc:
 - `src-tauri/src/native_host.rs` — `--native-host` CLI mode, stdio
   framing, file-watch + 30 s poll, blocklist derivation.
 - `src-tauri/src/profile_scan.rs` — Rust port of the MVP scanner.
-  Safari `privateBrowsing` relaxed to "trust the extension to
-  self-report" rather than demand Full Disk Access.
+  Safari `privateBrowsing` is sourced from
+  `browser.extension.isAllowedIncognitoAccess()` self-reported via a
+  15 s heartbeat into the App Group container; the gate matches
+  Chromium semantics. See
+  [SAFARI_COMPLIANCE.md](SAFARI_COMPLIANCE.md) for the full
+  detection model and rejected alternatives (FDA + plist parsing,
+  `SFSafariExtensionManager`).
 - `src-tauri/src/enforcer.rs` — 5 s tick, 60 s/30 s grace,
   `enforcer://grace-update` / `grace-resolved` events,
   `taskkill` / `osascript quit`.

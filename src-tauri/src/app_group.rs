@@ -21,7 +21,13 @@ const BLOCKLIST_FILENAME: &str = "redd-block-data.json";
 #[cfg(target_os = "macos")]
 const STATUS_FILENAME: &str = "safari-status.json";
 #[cfg(target_os = "macos")]
-const STATUS_STALE_MS: u64 = 5 * 60 * 1000;
+// Heartbeat fires every 15 s from background.js; treat the file as
+// stale after 45 s so we tolerate one missed beat (jitter) but flag
+// a disabled / uninstalled extension within ~30–45 s. Combined with
+// the enforcer's grace timer (60 s first / 30 s repeat) the user
+// gets ~75–105 s total before Safari is force-quit, instead of the
+// ~2.5 min the original 5-minute window allowed.
+const STATUS_STALE_MS: u64 = 45 * 1000;
 
 #[cfg(target_os = "macos")]
 static GROUP_DIR: OnceLock<Option<PathBuf>> = OnceLock::new();

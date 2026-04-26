@@ -1285,20 +1285,14 @@ function browserComplianceStatus(key, b) {
     const enabled = def.enabled;
     if (enabled === false) return 'needs-enable';
     const priv = def.privateBrowsing;
-    if (key === 'safari') {
-        if (priv === true) return 'needs-private';
-        return 'compliant';
-    }
-    if (priv === false) return 'needs-private';
+    if (priv !== true) return 'needs-private';
     return 'compliant';
 }
 
 function statusLabel(key, status) {
     switch (status) {
         case 'compliant': return '✓ Set up';
-        case 'needs-private': return key === 'safari'
-            ? 'Disable private browsing'
-            : 'Allow in private browsing';
+        case 'needs-private': return 'Allow in private browsing';
         case 'needs-enable': return 'Enable extension';
         case 'needs-install': return 'Install';
         default: return 'Install';
@@ -1354,7 +1348,7 @@ function renderBrowserInstallButtons(state) {
             case 'compliant': badge.textContent = statusLabel(key, status); break;
             case 'needs-install': badge.textContent = 'Not installed'; break;
             case 'needs-enable': badge.textContent = 'Disabled'; break;
-            case 'needs-private': badge.textContent = key === 'safari' ? 'Private mode enabled' : 'No private mode'; break;
+            case 'needs-private': badge.textContent = 'No private mode'; break;
             default: badge.textContent = 'Not installed';
         }
         header.appendChild(badge);
@@ -1395,9 +1389,7 @@ function renderBrowserInstallButtons(state) {
             hint.className = 'migration-browser-hint';
             hint.textContent = status === 'needs-enable'
                 ? `Enable ReDD Focus in ${entry.label}'s extensions settings.`
-                : key === 'safari'
-                    ? `Disable "Allow in Private Browsing" for ReDD Focus in ${entry.label}'s extensions settings.`
-                    : `Allow ReDD Focus in private/incognito browsing in ${entry.label}'s extensions settings.`;
+                : `Allow ReDD Focus in private/incognito browsing in ${entry.label}'s extensions settings.`;
             row.appendChild(hint);
         }
 
@@ -1540,10 +1532,8 @@ function findFirstNonCompliantBrowser(browsers) {
         const def = (b.profiles || []).find(p => p.isDefault) || (b.profiles || [])[0];
         if (!def) continue;
         const okInstalled = def.installed;
-        const okEnabled = def.enabled === true || (key === 'safari' && def.enabled !== false);
-        const okPriv = key === 'safari'
-            ? def.privateBrowsing !== true
-            : def.privateBrowsing === true;
+        const okEnabled = def.enabled === true;
+        const okPriv = def.privateBrowsing === true;
         if (!(okInstalled && okEnabled && okPriv)) return labels[key];
     }
     return null;
