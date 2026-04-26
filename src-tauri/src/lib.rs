@@ -119,7 +119,26 @@ pub fn run() {
         }
     }
 
-    let builder = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    // Single-instance enforcement (desktop only). On Windows, the NSIS
+    // post-install hook AND the finish-page "Run" checkbox can both
+    // try to launch redd-block.exe right after install — without
+    // single-instance we'd get two processes briefly. On macOS and
+    // Windows, this also means clicking the app icon while it's
+    // already running focuses the existing window instead of
+    // spawning a duplicate.
+    #[cfg(not(target_os = "ios"))]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        use tauri::Manager;
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.unminimize();
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+    }));
+
+    let builder = builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())

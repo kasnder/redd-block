@@ -64,3 +64,11 @@ windows = { version = "0.58", features = [
 [target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
 sysinfo = "0.32"
 tauri-plugin-notification = "2"
+
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+# Single-instance enforcement so the NSIS post-install hook (which always
+# launches redd-block.exe) and the optional finish-page "Run" checkbox
+# can't produce two running instances. Also benefits day-to-day usage —
+# clicking the app icon while already running focuses the existing
+# window instead of launching a duplicate.
+tauri-plugin-single-instance = "2"
