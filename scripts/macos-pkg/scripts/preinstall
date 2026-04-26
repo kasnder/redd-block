@@ -5,12 +5,11 @@
 #   1. Gracefully quit any running v1.x ReDD Block GUI process so the
 #      Installer.app can replace its bundle without an in-memory
 #      conflict.
-#   2. If v1.x daemon residue is on disk, do the bundled cleanup we
-#      otherwise do at first launch — same script body as the
-#      run_elevated_macos function in src-tauri/src/commands/migration.rs.
-#      Doing it here means by the time the new app launches there's
-#      nothing left to migrate; first-launch UX shows just the
-#      "post-cleanup" screen with the extension install steps.
+#   2. If v1.x daemon residue is on disk, run the SAME bundled
+#      cleanup script the app would otherwise run at first launch.
+#      The script body lives at src-tauri/src/commands/migration/cleanup.sh
+#      and is copied into this scripts dir at .pkg build time (see
+#      build-mac-pkg.sh) so we have a single source of truth.
 #
 # We never fail the install on cleanup errors. The new app's in-app
 # migration code is the safety net.
@@ -22,40 +21,36 @@ exec > >(tee -a "$LOG") 2>&1
 echo "=== preinstall $(date '+%F %T') ==="
 
 # 1. Quit the v1.x GUI app if running. AppleScript is the polite path;
-#    fall back to pkill if AppleScript can't reach a non-Tauri-aware
-#    bundle.
+#    fall back to pkill for a Tauri-aware bundle that AppleScript
+#    can't reach.
 osascript -e 'tell application "ReDD Block" to quit' 2>/dev/null || true
 pkill -x 'ReDD Block' 2>/dev/null || true
-
-# Give the app a moment to release its file handles before we touch
-# /Library and /etc.
 sleep 1
 
-# 2. v1.x → 2.0 daemon + hosts cleanup.
-HAVE_PLIST=0
-[ -e /Library/LaunchDaemons/com.redd.block.helper.plist ] && HAVE_PLIST=1
-HAVE_BIN=0
-[ -e /Library/PrivilegedHelperTools/com.redd.block.helper ] && HAVE_BIN=1
-HAVE_STATE=0
-[ -e /var/lib/redd-block/helper-state.json ] && HAVE_STATE=1
-HAVE_MARKERS=0
+# 2. Detect residue. Skip the rest if there's nothing to clean —
+#    don't bother staging files or sourcing the cleanup script.
+HAVE_RESIDUE=0
+[ -e /Library/LaunchDaemons/com.redd.block.helper.plist ] && HAVE_RESIDUE=1
+[ -e /Library/LaunchDaemons/org.reddfocus.redd-block-helper.plist ] && HAVE_RESIDUE=1
+[ -e /Library/PrivilegedHelperTools/com.redd.block.helper ] && HAVE_RESIDUE=1
+[ -e /var/lib/redd-block/helper-state.json ] && HAVE_RESIDUE=1
 if grep -qE '^# === BEGIN REDD BLOCK|^# ReDD Block Start' /etc/hosts 2>/dev/null; then
-    HAVE_MARKERS=1
+    HAVE_RESIDUE=1
 fi
-
-if [ "$HAVE_PLIST$HAVE_BIN$HAVE_STATE$HAVE_MARKERS" = "0000" ]; then
+if [ "$HAVE_RESIDUE" = "0" ]; then
     echo "no v1.x residue, nothing to clean"
     exit 0
 fi
+echo "residue detected, running cleanup"
 
-echo "residue: plist=$HAVE_PLIST bin=$HAVE_BIN state=$HAVE_STATE markers=$HAVE_MARKERS"
-
-# Compute cleaned hosts content. Prefer /etc/hosts.redd-backup if sane.
-HOSTS_TMP=$(mktemp /tmp/redd-pkg-hosts.XXXXXX)
-USE_BACKUP=0
+# 3. Compute cleaned hosts content. Prefer /etc/hosts.redd-backup
+#    if it's sane; else awk-strip the marker block in place. Same
+#    rule as the in-app `compute_cleaned_hosts` in Rust.
+STAGED=$(mktemp /tmp/redd-cleanup-staged.XXXXXX)
+USED_BACKUP=0
 if [ -s /etc/hosts.redd-backup ] && grep -q localhost /etc/hosts.redd-backup; then
-    cp /etc/hosts.redd-backup "$HOSTS_TMP"
-    USE_BACKUP=1
+    cp /etc/hosts.redd-backup "$STAGED"
+    USED_BACKUP=1
 else
     awk '
         /^# === BEGIN REDD BLOCK/ { skip=1; next }
@@ -63,59 +58,37 @@ else
         /^# ReDD Block Start/     { skip=1; next }
         /^# ReDD Block End/       { skip=0; next }
         !skip { print }
-    ' /etc/hosts > "$HOSTS_TMP"
+    ' /etc/hosts > "$STAGED"
 fi
-
-if ! grep -q localhost "$HOSTS_TMP"; then
+if ! grep -q localhost "$STAGED"; then
     echo "ERROR: cleaned hosts missing localhost; aborting cleanup, leaving residue for in-app migration to handle."
-    rm -f "$HOSTS_TMP"
+    rm -f "$STAGED"
     exit 0
 fi
+echo "staged cleaned hosts (used_backup=$USED_BACKUP)"
 
-# Stop the daemon before writing hosts so it can't race us.
-launchctl bootout system/com.redd.block.helper 2>/dev/null || true
-launchctl bootout system/org.reddfocus.redd-block-helper 2>/dev/null || true
-launchctl unload /Library/LaunchDaemons/com.redd.block.helper.plist 2>/dev/null || true
-for i in 1 2 3 4 5 6 7 8 9 10; do
-    launchctl print system/com.redd.block.helper >/dev/null 2>&1 || break
-    sleep 1
-done
-
-# Atomic write via temp file + mv.
-HOSTS_STAGE=$(mktemp /etc/hosts.redd-tmp.XXXXXX)
-cp "$HOSTS_TMP" "$HOSTS_STAGE"
-chown root:wheel "$HOSTS_STAGE" 2>/dev/null || true
-chmod 644 "$HOSTS_STAGE"
-mv "$HOSTS_STAGE" /etc/hosts
-
-# Verify post-write.
-if ! grep -q localhost /etc/hosts; then
-    echo "ERROR: post-write hosts missing localhost"
-    rm -f "$HOSTS_TMP"
+# 4. Run the shared cleanup script. cleanup.sh expects two
+#    placeholders: {STAGED} and {STATUS}. We substitute via sed and
+#    pipe to bash so any error inside `set -e` aborts cleanly.
+STATUS=$(mktemp /tmp/redd-cleanup-status.XXXXXX)
+TEMPLATE="$(dirname "$0")/cleanup.sh"
+if [ ! -f "$TEMPLATE" ]; then
+    echo "ERROR: cleanup.sh template missing alongside preinstall — pkg build is broken."
+    rm -f "$STAGED" "$STATUS"
     exit 0
 fi
-if grep -qE '^# === BEGIN REDD BLOCK|^# ReDD Block Start' /etc/hosts; then
-    echo "ERROR: post-write hosts still contains markers"
-    rm -f "$HOSTS_TMP"
-    exit 0
+RUNNABLE=$(mktemp /tmp/redd-cleanup-script.XXXXXX.sh)
+sed -e "s|{STAGED}|$STAGED|g" -e "s|{STATUS}|$STATUS|g" "$TEMPLATE" > "$RUNNABLE"
+bash "$RUNNABLE"
+SCRIPT_EXIT=$?
+
+# 5. Verify the cleanup script reached its status-marker step.
+if [ "$SCRIPT_EXIT" = "0" ] && [ -s "$STATUS" ] && [ "$(cat "$STATUS")" = "ok" ]; then
+    echo "preinstall cleanup ok"
+else
+    echo "WARN: preinstall cleanup did not complete (exit=$SCRIPT_EXIT) — falling back to in-app migration on first launch"
 fi
 
-# Flush DNS.
-dscacheutil -flushcache 2>/dev/null || true
-killall -HUP mDNSResponder 2>/dev/null || true
-
-# Remove daemon files only — leave /var/lib/redd-block + the user's
-# redd-block-data.json intact, same rule as the in-app migration.
-rm -f /Library/LaunchDaemons/com.redd.block.helper.plist
-rm -f /Library/LaunchDaemons/org.reddfocus.redd-block-helper.plist
-rm -f /Library/PrivilegedHelperTools/com.redd.block.helper
-rm -f /var/lib/redd-block/helper-state.json
-rm -f /tmp/redd-block-helper.sock
-
-# Keep /etc/hosts.redd-backup as recovery copy. The user's blocklists
-# in /var/lib/redd-block/redd-block-data.json stay where the new app
-# expects them.
-
-rm -f "$HOSTS_TMP"
-echo "preinstall cleanup ok (used_backup=$USE_BACKUP)"
+# 6. Best-effort tempfile cleanup.
+rm -f "$STAGED" "$STATUS" "$RUNNABLE"
 exit 0

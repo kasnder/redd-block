@@ -49,13 +49,27 @@ COMPONENT_PKG="$OUT_DIR/component.pkg"
 DIST_PKG="$OUT_DIR/${APP_NAME// /-}-${VERSION}.pkg"
 DIST_FILE=$(mktemp /tmp/redd-block-dist.XXXXXX.xml)
 
+# Build a *temporary* scripts dir so we can copy in the shared
+# cleanup.sh template alongside preinstall/postinstall — the
+# preinstall reads cleanup.sh at runtime via `dirname "$0"/cleanup.sh`.
+# Keeping cleanup.sh in src-tauri/src/commands/migration/ as the single
+# source of truth (the in-app Rust migration code also include_str!s
+# from there) and copying it at build time avoids duplicate
+# maintenance.
+PKG_SCRIPTS_DIR=$(mktemp -d /tmp/redd-block-pkgscripts.XXXXXX)
+cp "$SCRIPTS_DIR"/* "$PKG_SCRIPTS_DIR/"
+cp "src-tauri/src/commands/migration/cleanup.sh" "$PKG_SCRIPTS_DIR/cleanup.sh"
+chmod 755 "$PKG_SCRIPTS_DIR"/preinstall "$PKG_SCRIPTS_DIR"/postinstall
+echo "Bundled scripts in $PKG_SCRIPTS_DIR:"
+ls -l "$PKG_SCRIPTS_DIR"
+
 # 1. Component package: just wraps the .app.
 pkgbuild \
     --root "$(dirname "$APP_PATH")" \
     --identifier "$BUNDLE_ID.app" \
     --version "$VERSION" \
     --install-location "/Applications" \
-    --scripts "$SCRIPTS_DIR" \
+    --scripts "$PKG_SCRIPTS_DIR" \
     "$COMPONENT_PKG"
 
 # 2. Distribution definition (XML) — wraps the component package and
@@ -101,6 +115,7 @@ productbuild \
     "$DIST_PKG"
 
 rm -f "$DIST_FILE" "$COMPONENT_PKG"
+rm -rf "$PKG_SCRIPTS_DIR"
 
 # 4. Notarization (optional).
 if [[ -n "${APPLE_NOTARIZE_USER:-}" && -n "${APPLE_NOTARIZE_PASS:-}" && -n "${APPLE_TEAM_ID:-}" ]]; then
