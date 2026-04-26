@@ -1037,9 +1037,64 @@ async function runDesktopOnboarding() {
     try {
         const state = await invoke('onboarding_state');
         console.log('[onboarding] state:', state);
+        updateMigrationIncompleteBanner(state);
+        updateUpgradeWelcomeBanner(state);
         updateExtensionComplianceBanner(state);
     } catch (e) {
         console.warn('[onboarding] state check failed:', e);
+    }
+}
+
+// Shown when v1.x residue (hosts markers or legacy daemon artefacts)
+// is still present — i.e. the elevated migration step never fully
+// succeeded (user cancelled, prompt failed, validation failed). The
+// CTA re-runs the migration; the prompt re-appears.
+function updateMigrationIncompleteBanner(state) {
+    const banner = document.getElementById('migration-incomplete-banner');
+    const btn = document.getElementById('migration-incomplete-btn');
+    if (!banner) return;
+
+    if (!state.migration_pending) {
+        banner.classList.add('hidden');
+        return;
+    }
+    banner.classList.remove('hidden');
+
+    if (btn && !btn._listenerAdded) {
+        btn._listenerAdded = true;
+        btn.addEventListener('click', async () => {
+            if (btn.disabled) return;
+            btn.disabled = true;
+            try {
+                await invoke('run_upgrade_migration');
+            } catch (e) {
+                console.warn('[onboarding] retry failed:', e);
+            } finally {
+                btn.disabled = false;
+                runDesktopOnboarding();
+            }
+        });
+    }
+}
+
+// One-time card on the launch immediately after a v1 → v2 migration.
+// Tells users the architecture changed and they need to install the
+// browser extension. Goes away when dismissed; re-fetched onboarding
+// state will compute false on subsequent launches.
+function updateUpgradeWelcomeBanner(state) {
+    const banner = document.getElementById('upgrade-welcome-banner');
+    const dismiss = document.getElementById('upgrade-welcome-dismiss');
+    if (!banner) return;
+
+    if (!state.show_upgrade_welcome) {
+        banner.classList.add('hidden');
+        return;
+    }
+    banner.classList.remove('hidden');
+
+    if (dismiss && !dismiss._listenerAdded) {
+        dismiss._listenerAdded = true;
+        dismiss.addEventListener('click', () => banner.classList.add('hidden'));
     }
 }
 

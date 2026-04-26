@@ -18,24 +18,40 @@ land; everything below this section is historical context for *how*
 the migration was structured.
 
 ### macOS — must do before merge
-- [ ] **Phase 4 manual verification on real hardware.** Three
-      scenarios still untouched this session (the others — enforcer
-      grace, app watcher, hide-on-close, autostart — already
-      verified):
-      - **Upgrade migration** from a v1.0.x install (or a
-        hand-crafted `/etc/hosts` with `# ReDD Block start` markers
-        + a stub launchd plist). Verify
-        [src-tauri/src/commands/migration.rs:run_upgrade_migration](../src-tauri/src/commands/migration.rs)
-        strips markers, prompts admin to bootout the daemon,
-        installs native-host manifests, and stamps
-        `settings.migrationRanAtVersion`.
-      - **Extension-compliance banner** — install the extension in 1
-        of 2 browsers, confirm the banner shows the uninstalled one;
-        install in both, banner clears.
-      - **Native-messaging manifests** — `cat ~/Library/Application\
-        Support/Google/Chrome/NativeMessagingHosts/com.ulriklyngs.mindshield.json`
-        (and the Brave/Edge/Firefox equivalents) and confirm the
-        `path` field points at the running binary.
+- [x] **Upgrade migration verified end-to-end on real hardware.** Two
+      full v1.x → 2.0 migrations exercised against a real legacy
+      install (running launchd daemon + `/etc/hosts` markers + populated
+      `/var/lib/redd-block/redd-block-data.json`). Verified:
+      - One osascript admin prompt covers everything.
+      - `set -e` + ordered gates: any failed step aborts before any
+        destructive action and leaves the system retryable.
+      - Daemon-stopped poll uses `launchctl print` (pgrep would
+        false-match on the script's own argv content).
+      - Hosts content sourced from `/etc/hosts.redd-backup` when sane,
+        falling back to in-place awk-strip otherwise. Atomic mv via
+        unique mktemp staged file. Re-read + re-validate post-write.
+      - Daemon plist + binary + helper-state.json removed. **User's
+        `redd-block-data.json` preserved** — md5 confirmed identical
+        before/after migration, blocklists intact. The shared dir
+        `/var/lib/redd-block/` is intentionally kept because
+        `should_use_shared_data_path` keys off the data file's
+        existence (commands/data.rs).
+      - Cancel path: `success=false user_cancelled=true`, hosts
+        untouched, no daemon changes, status marker cleaned up.
+      - Retry after cancel: re-prompt, accept, completes cleanly.
+      - Idempotent re-run: `migration_pending_sync` returns false,
+        no prompt, no-op.
+      - App-data snapshots (`~/Library/Application Support/com.reddblock/backups/hosts.<ts>`)
+        retained and not pruned.
+      - Test harness: `scripts/test-migration.sh` + `cargo run --example
+        test_migration` (in `src-tauri/`).
+- [ ] **Extension-compliance banner** — install the extension in 1
+      of 2 browsers, confirm the banner shows the uninstalled one;
+      install in both, banner clears.
+- [ ] **Native-messaging manifests** — `cat ~/Library/Application\
+      Support/Google/Chrome/NativeMessagingHosts/com.ulriklyngs.mindshield.json`
+      (and the Brave/Edge/Firefox equivalents) and confirm the
+      `path` field points at the running binary.
 - [ ] **Phase 5: rewrite [scripts/manual-test-checklist.md](../scripts/manual-test-checklist.md).**
       Existing file describes the old hosts-file / helper-daemon era.
       Replace with sections matching the verified new flow:
@@ -68,27 +84,38 @@ the migration was structured.
       the top marks them as historical; defer until the migration
       lands on `main`.
 
-### Windows — verified this pass
+### Windows — must do before merge
+- [ ] **Mirror the macOS upgrade-migration verification.** Same harness
+      structure works (`cargo run --example test_migration` in
+      `src-tauri/`). The Windows code path uses
+      `Start-Process -Verb RunAs` PowerShell with
+      `$ErrorActionPreference='Stop'` instead of osascript; same
+      ordered gates: stop scheduled task + taskkill helper → poll for
+      gone → atomic write hosts (`Set-Content` + `Move-Item -Force`
+      with random suffix) → verify post-write → `schtasks /Delete` +
+      `Remove-Item helper-state.json` (NOT the whole `C:\ProgramData\
+      ReDD Block` — same data-preservation rule as macOS) →
+      verify removal → status marker. Things to test against a real
+      v1.x install (or a hand-crafted residue):
+      - One UAC prompt, accept → hosts cleaned, scheduled task gone,
+        `C:\ProgramData\ReDD Block\helper-state.json` gone, **`redd-block-data.json` md5 unchanged**.
+      - Cancel UAC → exit code 1223, no destructive change, banner
+        appears.
+      - Retry after cancel → completes.
+      - Idempotent re-run → no prompt, no-op.
+      - App-data snapshots written under `%APPDATA%\com.reddblock\backups\`.
+      - `C:\Windows\System32\drivers\etc\hosts.redd-backup` retained
+        (only deleted at uninstall via `purge_legacy_backups_sync`).
+
+### Windows — verified previous pass
 The Windows hardware-test pass landed a string of fixes (see
 [Recent additions](#recent-additions-since-the-original-plan)). What
 still needs doing before merge:
-- [ ] **Phase 4 manual verification on Windows hardware.** Mirror the
-      macOS scenarios:
-      - **Upgrade migration** from a v1.0.x install (or a hand-crafted
-        `C:\Windows\System32\drivers\etc\hosts` with `# ReDD Block
-        Start` markers + the legacy scheduled task / `C:\ProgramData\
-        ReDD Block`). The hosts strip is expected to log
-        `Access is denied (os error 5)` because the new app runs
-        unprivileged — that's fine; the new stack doesn't depend on a
-        clean hosts file. Verify `migrationRanAtVersion` is persisted
-        so the strip isn't re-attempted every launch (currently
-        observed firing twice in a single session — investigate
-        `commands::data::canonical_data_path` / write timing).
-      - **Browser-quit graceful path.** Trigger the enforcer (disable
-        the extension during a session); confirm the 60 s toast
-        fires, the browser closes via `taskkill /IM brave.exe /T`
-        (sessions/cookies persisted), and forced `taskkill /F /T`
-        only kicks in for stragglers after the 10 s grace.
+- [ ] **Browser-quit graceful path.** Trigger the enforcer (disable
+      the extension during a session); confirm the 60 s toast
+      fires, the browser closes via `taskkill /IM brave.exe /T`
+      (sessions/cookies persisted), and forced `taskkill /F /T`
+      only kicks in for stragglers after the 10 s grace.
       - **Watchdog respawn.** Kill `redd-block.exe` from Task Manager;
         confirm the Scheduled Task `ReDD Block Watchdog` respawns it
         within ~1 minute. Disable the task in Task Scheduler; relaunch
@@ -172,12 +199,21 @@ supersede earlier sections of this doc:
   compliance failed → enforcer killed the browser. The scanner now
   walks every accepted ID and keeps the entry that gives full
   compliance.
-- `commands/migration.rs`: hosts-strip permission-denied is now a
-  warn-and-continue, not a fatal error. The new stack doesn't need a
-  clean hosts file; leftover lines from a previous helper-daemon
-  install are benign until the next admin-level write. (Pre-existing
-  on the branch but called out because the Windows test pass surfaced
-  it.)
+- `commands/migration.rs`: rewritten to bundle the hosts-strip and
+  legacy-helper removal into ONE elevated step per OS (osascript on
+  macOS, `Start-Process -Verb RunAs` PowerShell on Windows). Order is
+  snapshot → validate cleaned content → atomic write → flush DNS →
+  remove daemon → remove `/etc/hosts.redd-backup` → status marker;
+  `set -e` / `$ErrorActionPreference='Stop'` so any failed gate aborts
+  before destructive steps. Rust re-validates after the script returns
+  and only stamps `migrationRanAtVersion` on full success. If the user
+  cancels the prompt or any step fails, the system is left exactly as
+  it was found and a "Migration incomplete" banner appears in the UI
+  to retry. A pre-edit snapshot of the live hosts file is also written
+  to `<app-data>/backups/hosts.<timestamp>` (last 3 retained) as
+  belt-and-braces. When `/etc/hosts.redd-backup` exists and is sane
+  (non-empty, contains `localhost`), it's preferred as the cleaned
+  source over awk-based marker stripping.
 - `scripts/sign.cmd`: skips signing entirely when the three Azure env
   vars are unset (exit 0). Lets developers produce unsigned local NSIS
   bundles via `npm run tauri -- build --debug --bundles nsis` without
@@ -318,14 +354,13 @@ supersede earlier sections of this doc:
       still references a removed feature. Reword to reflect the new
       "uninstall removes the enforcement engine" model, or drop the
       prompt entirely.
-- [ ] `commands/migration.rs` re-runs migration on each
-      `onboarding_state()` call instead of stamping
-      `migrationRanAtVersion` once. Observed firing the hosts-strip
-      twice in a single Windows session, ~16 s apart. Investigate
-      `commands::data::canonical_data_path` resolution / the
-      data-file write timing in `run_upgrade_migration`. Non-fatal
-      (the hosts strip is idempotent and warn-and-continue) but
-      noisy in logs.
+- [x] `commands/migration.rs` rewritten with an explicit
+      detect-then-elevate flow: `migration_pending_sync()` is the
+      single source of truth for "is there v1.x residue?" and short-
+      circuits before any prompt. `migrationRanAtVersion` is only
+      stamped on successful userspace re-validation, so partial
+      failures don't get latched and the next launch / banner click
+      retries cleanly.
 
 ### Frontend
 - [Deferred] Banner Install button deep-link, `src/app.js` rewrite,

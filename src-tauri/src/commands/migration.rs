@@ -1,15 +1,39 @@
-// First-launch migration: strip the hosts-file markers that the old
-// privileged helper daemon maintained, and uninstall the helper
-// itself. Called once from the frontend on app startup; idempotent.
+// First-launch migration off the v1.x privileged-helper stack.
 //
-// After this runs, the app is on the new enforcement stack:
-//   - Websites (both OSes): ReDD Focus extension + native messaging
-//   - Apps (both OSes): in-process watcher
+// Goal: strip the daemon-managed lines from the system hosts file and
+// remove the legacy launchd plist / scheduled task + helper binary,
+// in a way that is safe, atomic, and reversible if something goes
+// wrong mid-flight.
 //
-// The helper daemon is retired entirely. The old Rust crate at
-// `helper-daemon/` is removed in the same release.
+// Design (matches the approved plan in the planning file):
+//
+// A. Detect — markers present OR legacy daemon installed?
+//    No → no-op, stamp version, done.
+// B. Probe admin via a cheap elevated `true` call. User cancels →
+//    abort with `migration_pending=true`, no state touched.
+// C. Inside ONE elevated script (set -e or PowerShell with
+//    $ErrorActionPreference='Stop'), in this order:
+//      1. snapshot /etc/hosts to <app-data>/backups/hosts.<ts>
+//      2. validate snapshot (non-empty, contains `localhost`)
+//      3. compute cleaned hosts content (prefer the legacy
+//         /etc/hosts.redd-backup if it's sane; else awk-strip)
+//      4. validate cleaned content (non-empty, contains `localhost`)
+//      5. atomic temp-file + rename onto /etc/hosts
+//      6. flush DNS
+//      7. ONLY NOW remove daemon (bootout + rm plist + rm binary
+//         + rm /var/lib/redd-block)
+//      8. ONLY NOW remove the legacy /etc/hosts.redd-backup
+//      9. write a status marker so Rust knows the script reached
+//         the end
+// D. Rust re-validates from userspace (markers gone, plist gone),
+//    and only then stamps `settings.migrationRanAtVersion`.
+//
+// Any failure between B and D leaves the user with an intact original
+// hosts file and surfaces a "Migration incomplete" banner. The
+// migration is fully retryable — the next launch (or the banner CTA)
+// re-runs the whole sequence.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
@@ -18,36 +42,77 @@ const END_MARKER: &str = "# === END REDD BLOCK (reddfocus.org) ===";
 const LEGACY_BEGIN: &str = "# ReDD Block Start";
 const LEGACY_END: &str = "# ReDD Block End";
 
-/// Strip redd-block-managed blocks from the hosts file if present.
-/// Leaves unrelated entries alone. Requires elevation on both OSes —
-/// if the write fails with permission denied, we log and continue
-/// (the browser-extension / Screen Time backend doesn't depend on
-/// hosts being clean; the leftover lines just hang around until the
-/// next admin-level write).
-pub fn strip_hosts_markers_sync() -> Result<bool, String> {
-    let path = hosts_path();
-    let raw = match std::fs::read_to_string(&path) {
-        Ok(s) => s,
-        Err(_) => return Ok(false),
-    };
-    let cleaned = strip_managed_sections(&raw);
-    if cleaned == raw {
-        return Ok(false);
+const STATUS_OK: &str = "ok";
+
+// ---- Detection -----------------------------------------------------------
+
+fn hosts_path() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        PathBuf::from(r"C:\Windows\System32\drivers\etc\hosts")
     }
-    match std::fs::write(&path, cleaned) {
-        Ok(_) => Ok(true),
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-            log::warn!("hosts file needs admin to clean: {e}");
-            Ok(false)
-        }
-        Err(e) => Err(e.to_string()),
+    #[cfg(not(target_os = "windows"))]
+    {
+        PathBuf::from("/etc/hosts")
     }
 }
 
-#[tauri::command]
-pub async fn strip_hosts_markers() -> Result<bool, String> {
-    strip_hosts_markers_sync()
+fn legacy_hosts_backup_path() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        PathBuf::from(r"C:\Windows\System32\drivers\etc\hosts.redd-backup")
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        PathBuf::from("/etc/hosts.redd-backup")
+    }
 }
+
+fn hosts_has_markers(content: &str) -> bool {
+    content.lines().any(|l| {
+        let t = l.trim();
+        t == BEGIN_MARKER || t == END_MARKER || t == LEGACY_BEGIN || t == LEGACY_END
+    })
+}
+
+fn legacy_artefacts_present() -> bool {
+    // We only count daemon-specific files as residue. The shared data
+    // dir (/var/lib/redd-block on macOS, C:\ProgramData\ReDD Block on
+    // Windows) intentionally stays — the new app's data path resolver
+    // (commands::data::should_use_shared_data_path) keeps using it
+    // when v1.x activated it, so the user's redd-block-data.json must
+    // not be touched by migration.
+    #[cfg(target_os = "macos")]
+    {
+        let paths = [
+            "/Library/LaunchDaemons/com.redd.block.helper.plist",
+            "/Library/LaunchDaemons/org.reddfocus.redd-block-helper.plist",
+            "/Library/PrivilegedHelperTools/com.redd.block.helper",
+            "/var/lib/redd-block/helper-state.json",
+        ];
+        paths.iter().any(|p| Path::new(p).exists())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Path::new(r"C:\ProgramData\ReDD Block\helper-state.json").exists()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        false
+    }
+}
+
+/// Returns true when there's any v1.x residue (hosts markers or
+/// legacy artefacts) the migration still needs to clean up.
+pub fn migration_pending_sync() -> bool {
+    let raw = std::fs::read_to_string(hosts_path()).unwrap_or_default();
+    if hosts_has_markers(&raw) {
+        return true;
+    }
+    legacy_artefacts_present()
+}
+
+// ---- Hosts cleaning (pure) ----------------------------------------------
 
 fn strip_managed_sections(content: &str) -> String {
     let mut out = String::with_capacity(content.len());
@@ -71,112 +136,104 @@ fn strip_managed_sections(content: &str) -> String {
     out
 }
 
-fn hosts_path() -> PathBuf {
-    #[cfg(target_os = "windows")]
-    {
-        PathBuf::from(r"C:\Windows\System32\drivers\etc\hosts")
+/// Pick the source of truth for the cleaned hosts content. Prefer the
+/// legacy `/etc/hosts.redd-backup` (it's the pre-modification snapshot
+/// the daemon kept) when it's sane; otherwise awk-strip in place.
+/// Returns the cleaned text and whether we used the legacy backup.
+fn compute_cleaned_hosts() -> Result<(String, bool), String> {
+    let live = std::fs::read_to_string(hosts_path())
+        .map_err(|e| format!("read hosts: {e}"))?;
+    if let Ok(legacy) = std::fs::read_to_string(legacy_hosts_backup_path()) {
+        // legacy backup is "valid" if it's non-empty and contains a
+        // localhost line — same gate as the helper daemon used.
+        if !legacy.trim().is_empty() && legacy.contains("localhost") {
+            // The legacy backup might itself contain stale markers
+            // from an even-earlier era; strip them defensively.
+            let cleaned = strip_managed_sections(&legacy);
+            if cleaned.contains("localhost") && !cleaned.trim().is_empty() {
+                return Ok((cleaned, true));
+            }
+        }
     }
-    #[cfg(not(target_os = "windows"))]
-    {
-        PathBuf::from("/etc/hosts")
+    let cleaned = strip_managed_sections(&live);
+    if !cleaned.contains("localhost") {
+        return Err("refusing to write hosts without localhost".into());
     }
+    Ok((cleaned, false))
 }
 
-/// Remove the old privileged helper from the system so it can't
-/// continue to enforce against the new stack. Idempotent.
-///
-/// - macOS: launchd daemon at
-///   `/Library/LaunchDaemons/com.redd.block.helper.plist` + binary at
-///   `/Library/PrivilegedHelperTools/com.redd.block.helper`. Removing
-///   either requires root, so the command runs `bootout` and `rm`
-///   via AppleScript-elevated `osascript` only if the frontend has
-///   confirmed the user wants to proceed.
-/// - Windows: Scheduled Task + helper binary under ProgramData.
-///
-/// The frontend calls this once at first launch post-upgrade and
-/// treats failures as non-fatal — the helper is no longer in the
-/// control path, so a lingering daemon is benign as long as the
-/// hosts file is clean.
-pub fn uninstall_legacy_helper_sync() -> Result<bool, String> {
-    #[cfg(target_os = "macos")]
-    {
-        use std::path::Path;
-        use std::process::Command;
+// ---- Public commands -----------------------------------------------------
 
-        // Preflight: skip the admin prompt entirely if none of the legacy
-        // artefacts exist. A fresh install on a new machine has nothing
-        // to remove and shouldn't pester the user.
-        let legacy_paths = [
-            "/Library/LaunchDaemons/com.redd.block.helper.plist",
-            "/Library/PrivilegedHelperTools/com.redd.block.helper",
-            "/var/lib/redd-block",
-        ];
-        let any_present = legacy_paths.iter().any(|p| Path::new(p).exists());
-        if !any_present {
-            return Ok(true);
-        }
-
-        let script = r#"
-        do shell script "launchctl bootout system/com.redd.block.helper; rm -f /Library/LaunchDaemons/com.redd.block.helper.plist; rm -f /Library/PrivilegedHelperTools/com.redd.block.helper; rm -rf /var/lib/redd-block" with administrator privileges with prompt "ReDD Block needs to remove the old privileged helper"
-        "#;
-        let ok = Command::new("/usr/bin/osascript")
-            .args(["-e", script])
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false);
-        return Ok(ok);
+/// Legacy single-step wrapper. Kept as a Tauri command and as a public
+/// fn so the `--uninstall` CLI path and the helper-shim still compile.
+/// Now just calls into the bundled migration with a synthesised
+/// AppHandle-less data dir.
+#[tauri::command]
+pub async fn strip_hosts_markers() -> Result<bool, String> {
+    // No AppHandle here, so no app-data backup. Best-effort marker
+    // strip via the elevated path; safe to no-op when nothing to do.
+    if !migration_pending_sync() {
+        return Ok(false);
     }
-    #[cfg(target_os = "windows")]
-    {
-        use std::path::Path;
-        use std::process::Command;
-        // Preflight on Windows too — skip if no artefacts present.
-        let any_present = Path::new(r"C:\ProgramData\ReDD Block").exists();
-        if !any_present {
-            return Ok(true);
-        }
-        // schtasks requires Admin for system-level tasks. We run it
-        // without elevation and rely on the NEW/DELETE failing
-        // silently if the task doesn't exist / permission denied.
-        let _ = Command::new("schtasks")
-            .args(["/Delete", "/TN", "ReDD Block Helper", "/F"])
-            .output();
-        let _ = std::fs::remove_dir_all(r"C:\ProgramData\ReDD Block");
-        return Ok(true);
-    }
-    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-    Ok(true)
+    let outcome = run_elevated_migration(None);
+    Ok(outcome.success)
 }
 
 #[tauri::command]
 pub async fn uninstall_legacy_helper() -> Result<bool, String> {
-    uninstall_legacy_helper_sync()
+    if !migration_pending_sync() {
+        return Ok(true);
+    }
+    let outcome = run_elevated_migration(None);
+    Ok(outcome.success)
+}
+
+pub fn strip_hosts_markers_sync() -> Result<bool, String> {
+    if !migration_pending_sync() {
+        return Ok(false);
+    }
+    let outcome = run_elevated_migration(None);
+    Ok(outcome.success)
+}
+
+pub fn uninstall_legacy_helper_sync() -> Result<bool, String> {
+    if !migration_pending_sync() {
+        return Ok(true);
+    }
+    let outcome = run_elevated_migration(None);
+    Ok(outcome.success)
 }
 
 // ---- Onboarding orchestration --------------------------------------------
 
-/// Summary of the migration + onboarding state at startup.
-///
-/// Reported to the frontend so a single call decides whether to show
-/// the permissions banner, the extension-install banner, or nothing.
 #[derive(Debug, Clone, Serialize)]
 pub struct OnboardingState {
-    /// True if this build migrated anything in this launch (hosts
-    /// stripped, helper removed, autostart registered). Informational.
+    /// True if this build migrated anything in this launch
+    /// (hosts cleaned, helper removed, autostart registered).
     pub migrated_this_launch: bool,
+    /// True when v1.x residue (markers or legacy artefacts) is still
+    /// present. Drives the "Migration incomplete" banner. False on
+    /// fresh installs and after a successful migration.
+    pub migration_pending: bool,
+    /// True for users crossing the v1 → v2 architecture boundary in
+    /// this launch. Drives the one-time "what's new" welcome card.
+    pub show_upgrade_welcome: bool,
     /// True when every running-and-present browser has a compliant
-    /// default profile (installed + enabled + private browsing). See
-    /// `profile_scan::compliant`.
+    /// default profile.
     pub extension_compliant: bool,
-    /// Detailed per-browser scan so the UI can render exactly which
-    /// profile is failing and why.
+    /// Detailed per-browser scan.
     pub browsers: crate::profile_scan::ScanResult,
 }
 
-/// Idempotent end-to-end migration. Safe to call on every launch —
-/// it persists the version it last ran against in the app-data file
-/// under `settings.migrationRanAtVersion` and no-ops when equal to
-/// the current binary version.
+#[derive(Debug, Clone, Copy)]
+pub struct ElevatedOutcome {
+    pub success: bool,
+    /// True when the user cancelled the admin prompt (no destructive
+    /// action attempted). Used by the frontend to soften the banner
+    /// wording.
+    pub user_cancelled: bool,
+}
+
 #[tauri::command]
 pub async fn run_upgrade_migration(app: tauri::AppHandle) -> Result<bool, String> {
     let current = env!("CARGO_PKG_VERSION").to_string();
@@ -185,42 +242,505 @@ pub async fn run_upgrade_migration(app: tauri::AppHandle) -> Result<bool, String
         None => return Ok(false),
     };
 
-    // Check if we've already migrated at this version.
     let mut data = read_data(&data_path).unwrap_or_else(serde_json::Map::new);
-    let settings = data
-        .entry("settings".to_string())
-        .or_insert(serde_json::Value::Object(Default::default()))
-        .as_object_mut();
-    let ran_at = settings
-        .as_ref()
+    let already_at = data
+        .get("settings")
+        .and_then(|s| s.as_object())
         .and_then(|s| s.get("migrationRanAtVersion"))
         .and_then(|v| v.as_str())
         .map(String::from);
-    if ran_at.as_deref() == Some(current.as_str()) {
+    if already_at.as_deref() == Some(current.as_str()) {
         return Ok(false);
     }
 
-    // 1. Strip hosts markers. Non-fatal if permission denied.
-    let _ = strip_hosts_markers().await;
+    // (A) Detect.
+    if !migration_pending_sync() {
+        // Nothing to do — but still install native-host manifests
+        // (idempotent) and stamp the version so we don't keep
+        // checking.
+        if let Err(e) = crate::native_host_install::install() {
+            log::warn!("native-host install during migration failed: {e}");
+        }
+        stamp_version(&data_path, &mut data, &current);
+        return Ok(true);
+    }
 
-    // 2. Uninstall the legacy privileged helper. This prompts once on
-    //    macOS for admin; non-fatal if the user cancels.
-    let _ = uninstall_legacy_helper().await;
+    // (B+C) Run the bundled elevated migration.
+    let app_data_dir = data_path
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::env::temp_dir());
+    let outcome = run_elevated_migration(Some(&app_data_dir));
 
-    // 3. Install the native-messaging manifests so the ReDD Focus
-    //    extension can talk to us. User-scope; no prompts.
+    // (D) Validate from userspace before stamping.
+    if !outcome.success {
+        return Ok(false);
+    }
+    if migration_pending_sync() {
+        log::warn!("elevated migration returned ok but residue is still present");
+        return Ok(false);
+    }
+
     if let Err(e) = crate::native_host_install::install() {
         log::warn!("native-host install during migration failed: {e}");
     }
 
-    // 4. Mark the migration as done for this version. Best-effort —
-    //    on failure we'll just retry next launch.
-    if let Some(settings) = settings {
-        settings.insert(
+    stamp_version(&data_path, &mut data, &current);
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn onboarding_state(app: tauri::AppHandle) -> Result<OnboardingState, String> {
+    // Sample residue state BEFORE running migration so we can tell
+    // "fresh install, nothing to do" apart from "we just cleaned up
+    // v1.x residue this launch". The welcome card only shows for the
+    // latter.
+    let had_residue_before = migration_pending_sync();
+    let migrated_this_launch = run_upgrade_migration(app.clone()).await.unwrap_or(false);
+    let migration_pending = migration_pending_sync();
+    // Real upgrade if there WAS residue and there ISN'T anymore.
+    let show_upgrade_welcome = had_residue_before && !migration_pending;
+
+    let browsers = tauri::async_runtime::spawn_blocking(crate::profile_scan::scan)
+        .await
+        .map_err(|e| e.to_string())?;
+    let extension_compliant = crate::profile_scan::compliant(&browsers);
+
+    Ok(OnboardingState {
+        migrated_this_launch,
+        migration_pending,
+        show_upgrade_welcome,
+        extension_compliant,
+        browsers,
+    })
+}
+
+// ---- Elevated execution --------------------------------------------------
+
+/// Runs the bundled elevated migration script. `app_data_dir` is the
+/// directory under which we'll keep an in-app-data snapshot of the
+/// pre-edit hosts file (belt-and-braces alongside the legacy backup).
+/// Returns `success=false` if any step fails — including the user
+/// cancelling the admin prompt.
+///
+/// Public so test harnesses (`examples/test_migration.rs`) can drive
+/// it without spinning up the full Tauri app + browser stack.
+pub fn run_elevated_migration(app_data_dir: Option<&Path>) -> ElevatedOutcome {
+    let backup_dir = app_data_dir.map(|d| d.join("backups"));
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let snapshot_path = backup_dir
+        .as_ref()
+        .map(|d| d.join(format!("hosts.{timestamp}")));
+
+    // Compute cleaned hosts content here in Rust (we have userspace
+    // read access to /etc/hosts — only writes need elevation). Any
+    // failure aborts before prompting.
+    let (cleaned, used_legacy) = match compute_cleaned_hosts() {
+        Ok(v) => v,
+        Err(e) => {
+            log::warn!("migration aborted before prompt: {e}");
+            return ElevatedOutcome { success: false, user_cancelled: false };
+        }
+    };
+    log::info!(
+        "migration: prepared cleaned hosts content (via {})",
+        if used_legacy { "legacy backup" } else { "in-place strip" }
+    );
+
+    // Best-effort: also write the snapshot ourselves from userspace.
+    // /etc/hosts is world-readable on macOS, and the Windows hosts file
+    // is also readable without admin. This means even if the elevated
+    // script never runs (user cancels), the user already has a copy.
+    if let Some(path) = &snapshot_path {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        match std::fs::read(hosts_path()) {
+            Ok(bytes) if !bytes.is_empty() => {
+                if let Err(e) = std::fs::write(path, &bytes) {
+                    log::warn!("pre-flight hosts snapshot to {path:?} failed: {e}");
+                }
+                // Intentionally do NOT prune older snapshots. They're
+                // tiny text files, migration only runs at most once
+                // per version, and they're the only userspace-readable
+                // recovery copy if something goes wrong post-migration.
+                // Cleared during uninstall (see purge_legacy_backups_sync).
+            }
+            Ok(_) => log::warn!("pre-flight hosts snapshot: hosts file empty, skipping"),
+            Err(e) => log::warn!("pre-flight hosts snapshot read failed: {e}"),
+        }
+    }
+
+    // Stage cleaned content to a temp file readable by the elevated
+    // process. mktemp-style: in tempdir with a unique name.
+    let staged = match stage_cleaned_content(&cleaned) {
+        Ok(p) => p,
+        Err(e) => {
+            log::warn!("migration aborted: failed to stage cleaned hosts: {e}");
+            return ElevatedOutcome { success: false, user_cancelled: false };
+        }
+    };
+
+    let status_path = std::env::temp_dir().join(format!("redd-migration-status.{timestamp}"));
+    // Best-effort cleanup of any stale prior status file.
+    let _ = std::fs::remove_file(&status_path);
+
+    #[cfg(target_os = "macos")]
+    let outcome = run_elevated_macos(&staged, &status_path);
+    #[cfg(target_os = "windows")]
+    let outcome = run_elevated_windows(&staged, &status_path);
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let outcome = ElevatedOutcome { success: true, user_cancelled: false };
+
+    let _ = std::fs::remove_file(&staged);
+
+    // Final gate: the elevated script writes STATUS_OK only after
+    // every ordered step succeeded. If the marker is missing, treat
+    // this as a failure even if the process returned 0 for some
+    // reason (e.g. PowerShell -Verb RunAs returning prematurely).
+    let marker_ok = std::fs::read_to_string(&status_path)
+        .map(|s| s.trim() == STATUS_OK)
+        .unwrap_or(false);
+    let _ = std::fs::remove_file(&status_path);
+    if !marker_ok {
+        log::warn!("migration: status marker missing or wrong, treating as failure");
+        return ElevatedOutcome { success: false, ..outcome };
+    }
+
+    outcome
+}
+
+fn stage_cleaned_content(content: &str) -> std::io::Result<PathBuf> {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let path = std::env::temp_dir().join(format!("redd-hosts-cleaned.{timestamp}"));
+    std::fs::write(&path, content)?;
+    Ok(path)
+}
+
+/// Best-effort cleanup of every backup the migration ever created.
+/// Called from the `--uninstall` CLI path; never from the migration
+/// flow itself (we want backups to outlive normal operation in case
+/// something goes wrong in a future release).
+///
+/// Reachable in practice ONLY from the Windows NSIS pre-uninstall
+/// hook. macOS has no `--uninstall` invocation path — users drag the
+/// app to Trash, which never runs our binary — so on macOS both
+/// backup paths persist indefinitely. That's intentional: the legacy
+/// `/etc/hosts.redd-backup` requires root anyway and is genuinely the
+/// user's last-resort recovery copy of their pre-modification hosts
+/// file. The in-app-data snapshots are tiny and unobtrusive.
+///
+/// On Windows the NSIS uninstaller runs elevated, so an unprivileged
+/// delete of the legacy backup succeeds from this code path.
+pub fn purge_legacy_backups_sync(app_data_dir: Option<&Path>) {
+    let _ = std::fs::remove_file(legacy_hosts_backup_path());
+    if let Some(dir) = app_data_dir {
+        let _ = std::fs::remove_dir_all(dir.join("backups"));
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn run_elevated_macos(staged: &Path, status_path: &Path) -> ElevatedOutcome {
+    use std::process::Command;
+
+    // Build the shell script. set -e so any failed gate aborts before
+    // anything destructive runs. We touch the daemon ONLY after the
+    // hosts atomic-rename succeeds, and the legacy /etc/hosts.redd-backup
+    // ONLY after the daemon is gone.
+    //
+    // The shell script writes STATUS_OK to the status file only if it
+    // reaches the end with no failure. Rust reads that marker after
+    // the process exits.
+    let staged_str = staged.display().to_string();
+    let status_str = status_path.display().to_string();
+
+    // Shell escape: the paths contain only timestamp / temp-dir
+    // characters, so single-quoting is safe. Reject anything weird
+    // up front to be defensive.
+    if staged_str.contains('\'') || status_str.contains('\'') {
+        log::warn!("migration aborted: unexpected quote in staged paths");
+        return ElevatedOutcome { success: false, user_cancelled: false };
+    }
+
+    let inner = format!(
+        r#"set -e
+# 1. validate the staged cleaned content one more time before doing anything
+test -s '{staged}'
+grep -q localhost '{staged}'
+# 2. STOP the daemon FIRST so it can't race us by re-adding markers to
+#    the hosts file. bootout returns immediately, so we poll launchd's
+#    own registry until it confirms the service is gone (10 s ceiling).
+#    We use launchctl as the authoritative signal — pgrep against the
+#    process name is unreliable here because our script's own command
+#    line literally contains the helper path string.
+launchctl bootout system/com.redd.block.helper 2>/dev/null || true
+launchctl bootout system/org.reddfocus.redd-block-helper 2>/dev/null || true
+launchctl unload /Library/LaunchDaemons/com.redd.block.helper.plist 2>/dev/null || true
+for i in 1 2 3 4 5 6 7 8 9 10; do
+    if ! launchctl print system/com.redd.block.helper >/dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+done
+# Final hard check + a 1 s settle so any in-flight signal handlers in
+# the daemon finish their last writes before we touch hosts.
+if launchctl print system/com.redd.block.helper >/dev/null 2>&1; then
+    echo "daemon still registered after bootout" >&2
+    exit 11
+fi
+sleep 1
+# 3. atomic rename onto /etc/hosts via a UNIQUE temp file (avoid
+#    collision if two migration runs race).
+TMP=$(mktemp /etc/hosts.redd-tmp.XXXXXX)
+cp '{staged}' "$TMP"
+chown root:wheel "$TMP" 2>/dev/null || true
+chmod 644 "$TMP"
+mv "$TMP" /etc/hosts
+# 4. VERIFY the write actually landed — defence against weird FS behavior.
+grep -q localhost /etc/hosts || {{ echo "post-write hosts missing localhost" >&2; exit 12; }}
+if grep -qE '^# === BEGIN REDD BLOCK|^# ReDD Block Start' /etc/hosts; then
+    echo "post-write hosts still contains markers" >&2
+    exit 13
+fi
+# 5. flush DNS so the cleaned hosts file takes effect immediately
+dscacheutil -flushcache 2>/dev/null || true
+killall -HUP mDNSResponder 2>/dev/null || true
+# 6. ONLY NOW remove the daemon's persistent state. Hosts is clean,
+#    daemon is stopped — safe to make the removal permanent.
+#    CRITICAL: do NOT `rm -rf /var/lib/redd-block` blindly. The new
+#    app reuses that directory for the user's blocklist data
+#    (redd-block-data.json) when shared-storage was activated by
+#    v1.x — see commands/data.rs::should_use_shared_data_path. We
+#    only delete the daemon-specific files and leave the data file +
+#    directory in place.
+rm -f /Library/LaunchDaemons/com.redd.block.helper.plist
+rm -f /Library/LaunchDaemons/org.reddfocus.redd-block-helper.plist
+rm -f /Library/PrivilegedHelperTools/com.redd.block.helper
+rm -f /var/lib/redd-block/helper-state.json
+rm -f /tmp/redd-block-helper.sock
+# 7. VERIFY removal — `rm -f` is silent if the file is held open or
+#    on a read-only mount. We re-stat to be sure. Note: we don't
+#    check /var/lib/redd-block itself; it intentionally stays.
+for f in /Library/LaunchDaemons/com.redd.block.helper.plist \
+         /Library/LaunchDaemons/org.reddfocus.redd-block-helper.plist \
+         /Library/PrivilegedHelperTools/com.redd.block.helper \
+         /var/lib/redd-block/helper-state.json; do
+    if [ -e "$f" ]; then
+        echo "failed to remove $f" >&2
+        exit 14
+    fi
+done
+# 8. INTENTIONALLY KEEP /etc/hosts.redd-backup. Last-resort recovery
+#    copy. Only deleted during uninstall (see purge_legacy_backups_sync).
+# 9. status marker
+echo "{ok}" > '{status}'
+"#,
+        staged = staged_str,
+        status = status_str,
+        ok = STATUS_OK,
+    );
+
+    // Wrap in osascript do shell script. Single admin prompt for the
+    // user. The prompt wording mentions both pieces of work so the
+    // user knows what they're approving.
+    let escaped = inner.replace('\\', "\\\\").replace('"', "\\\"");
+    let script = format!(
+        r#"do shell script "{}" with administrator privileges with prompt "ReDD Block needs to clean up the old hosts-file entries and remove the legacy helper.""#,
+        escaped
+    );
+
+    match Command::new("/usr/bin/osascript").args(["-e", &script]).output() {
+        Ok(out) => {
+            if out.status.success() {
+                ElevatedOutcome { success: true, user_cancelled: false }
+            } else {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                // osascript returns -128 / "User cancelled" when the
+                // user clicks Cancel on the admin prompt.
+                let cancelled = stderr.contains("User cancelled") || stderr.contains("-128");
+                if !cancelled {
+                    log::warn!("elevated migration script failed: {}", stderr.trim());
+                }
+                ElevatedOutcome { success: false, user_cancelled: cancelled }
+            }
+        }
+        Err(e) => {
+            log::warn!("failed to launch osascript: {e}");
+            ElevatedOutcome { success: false, user_cancelled: false }
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn run_elevated_windows(staged: &Path, status_path: &Path) -> ElevatedOutcome {
+    use std::process::Command;
+
+    let staged_str = staged.display().to_string();
+    let status_str = status_path.display().to_string();
+
+    // PowerShell with $ErrorActionPreference='Stop' so any failure
+    // aborts the script before destructive steps. Single UAC prompt
+    // via `Start-Process -Verb RunAs`.
+    //
+    // The outer call writes the inner script to a temp file (so we
+    // don't have to deal with double-quote escaping through two
+    // PowerShell invocations) and runs it elevated, waiting for it
+    // to exit so we can read the status marker.
+    let inner_script = format!(
+        r#"$ErrorActionPreference = 'Stop'
+$staged = '{staged}'
+$status = '{status}'
+$hosts = 'C:\Windows\System32\drivers\etc\hosts'
+$legacyBackup = 'C:\Windows\System32\drivers\etc\hosts.redd-backup'
+
+# 1. validate staged cleaned content
+if (-not (Test-Path $staged)) {{ throw 'staged hosts missing' }}
+$cleanedRaw = Get-Content -Raw -LiteralPath $staged
+if ([string]::IsNullOrWhiteSpace($cleanedRaw)) {{ throw 'staged hosts empty' }}
+if ($cleanedRaw -notmatch 'localhost') {{ throw 'staged hosts missing localhost' }}
+
+# 2. STOP the legacy scheduled task FIRST and any helper processes,
+#    then poll until they're actually gone (10 s ceiling).
+& schtasks /End /TN 'ReDD Block Helper' 2>$null
+& taskkill /IM 'redd-block-helper.exe' /T /F 2>$null
+for ($i = 0; $i -lt 10; $i++) {{
+    $running = Get-Process -Name 'redd-block-helper' -ErrorAction SilentlyContinue
+    if (-not $running) {{ break }}
+    Start-Sleep -Seconds 1
+}}
+if (Get-Process -Name 'redd-block-helper' -ErrorAction SilentlyContinue) {{
+    throw 'helper still running after taskkill'
+}}
+
+# 3. atomic-ish replace via a UNIQUE temp file (avoid collision if two
+#    migration runs race).
+$tmp = $hosts + '.redd-tmp.' + [System.IO.Path]::GetRandomFileName()
+Set-Content -LiteralPath $tmp -Value $cleanedRaw -NoNewline -Encoding ASCII
+Move-Item -LiteralPath $tmp -Destination $hosts -Force
+
+# 4. VERIFY the write actually landed.
+$postWrite = Get-Content -Raw -LiteralPath $hosts
+if ($postWrite -notmatch 'localhost') {{ throw 'post-write hosts missing localhost' }}
+if ($postWrite -match '^# === BEGIN REDD BLOCK' -or $postWrite -match '^# ReDD Block Start') {{
+    throw 'post-write hosts still contains markers'
+}}
+
+# 5. flush DNS
+& ipconfig /flushdns | Out-Null
+
+# 6. retire legacy scheduled task + daemon-specific files only.
+#    CRITICAL: do NOT recursively delete C:\ProgramData\ReDD Block.
+#    The new app reuses that directory for the user's blocklist data
+#    (redd-block-data.json) when shared-storage was activated — see
+#    commands/data.rs::should_use_shared_data_path. We only delete
+#    the helper's own state file and leave the data file in place.
+& schtasks /Delete /TN 'ReDD Block Helper' /F 2>$null
+Remove-Item -LiteralPath 'C:\ProgramData\ReDD Block\helper-state.json' -Force -ErrorAction SilentlyContinue
+
+# 7. VERIFY removal.
+if (& schtasks /Query /TN 'ReDD Block Helper' 2>$null) {{ throw 'scheduled task still present' }}
+if (Test-Path -LiteralPath 'C:\ProgramData\ReDD Block\helper-state.json') {{ throw 'helper-state.json still present' }}
+
+# 8. INTENTIONALLY KEEP $legacyBackup ($hosts.redd-backup). Last-resort
+#    recovery copy of the user's pre-modification hosts file. Only
+#    deleted during uninstall (see purge_legacy_backups_sync).
+
+# 9. status marker
+Set-Content -LiteralPath $status -Value '{ok}' -Encoding ASCII -NoNewline
+"#,
+        staged = staged_str.replace('\'', "''"),
+        status = status_str.replace('\'', "''"),
+        ok = STATUS_OK,
+    );
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let inner_path = std::env::temp_dir().join(format!("redd-migration.{timestamp}.ps1"));
+    if let Err(e) = std::fs::write(&inner_path, inner_script) {
+        log::warn!("failed to stage windows migration script: {e}");
+        return ElevatedOutcome { success: false, user_cancelled: false };
+    }
+
+    // Outer launcher: spawn elevated PowerShell to run the inner
+    // script and wait. Capture exit code; UAC cancellation surfaces
+    // as a launch error from Start-Process -Verb RunAs.
+    let launcher = format!(
+        r#"$ErrorActionPreference = 'Stop'
+try {{
+  $p = Start-Process -FilePath 'powershell.exe' -ArgumentList @(
+    '-NoProfile', '-NonInteractive', '-ExecutionPolicy','Bypass',
+    '-File','{inner}'
+  ) -Verb RunAs -PassThru -Wait
+  exit $p.ExitCode
+}} catch {{
+  # User cancelled UAC, or other launch failure.
+  exit 1223
+}}
+"#,
+        inner = inner_path.display().to_string().replace('\'', "''"),
+    );
+
+    let outcome = match Command::new("powershell.exe")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &launcher,
+        ])
+        .output()
+    {
+        Ok(out) => {
+            // Windows uses exit code 1223 (ERROR_CANCELLED) for "user
+            // declined elevation". We synthesise the same code for
+            // the catch branch above.
+            let code = out.status.code().unwrap_or(-1);
+            let cancelled = code == 1223;
+            let success = code == 0;
+            if !success && !cancelled {
+                log::warn!(
+                    "elevated migration powershell failed: code={} stderr={}",
+                    code,
+                    String::from_utf8_lossy(&out.stderr).trim()
+                );
+            }
+            ElevatedOutcome { success, user_cancelled: cancelled }
+        }
+        Err(e) => {
+            log::warn!("failed to launch powershell: {e}");
+            ElevatedOutcome { success: false, user_cancelled: false }
+        }
+    };
+
+    let _ = std::fs::remove_file(&inner_path);
+    outcome
+}
+
+// ---- Settings persistence -----------------------------------------------
+
+fn stamp_version(
+    data_path: &Path,
+    data: &mut serde_json::Map<String, serde_json::Value>,
+    current: &str,
+) {
+    let settings = data
+        .entry("settings".to_string())
+        .or_insert(serde_json::Value::Object(Default::default()));
+    if let Some(obj) = settings.as_object_mut() {
+        obj.insert(
             "migrationRanAtVersion".to_string(),
-            serde_json::Value::String(current),
+            serde_json::Value::String(current.to_string()),
         );
-        settings.insert(
+        obj.insert(
             "migrationRanAt".to_string(),
             serde_json::Value::Number(
                 std::time::SystemTime::now()
@@ -230,45 +750,24 @@ pub async fn run_upgrade_migration(app: tauri::AppHandle) -> Result<bool, String
                     .into(),
             ),
         );
-        if let Err(e) = write_data(&data_path, &data) {
-            log::warn!(
-                "failed to persist migrationRanAtVersion at {:?}: {}",
-                data_path,
-                e
-            );
-        }
     }
-
-    Ok(true)
+    if let Err(e) = write_data(data_path, data) {
+        log::warn!(
+            "failed to persist migrationRanAtVersion at {:?}: {}",
+            data_path,
+            e
+        );
+    }
 }
 
-/// Fetch the current onboarding state. Called by the frontend once
-/// after EULA acceptance, and again whenever the user returns from
-/// System Settings.
-#[tauri::command]
-pub async fn onboarding_state(app: tauri::AppHandle) -> Result<OnboardingState, String> {
-    let migrated_this_launch = run_upgrade_migration(app).await.unwrap_or(false);
-
-    let browsers = tauri::async_runtime::spawn_blocking(crate::profile_scan::scan)
-        .await
-        .map_err(|e| e.to_string())?;
-    let extension_compliant = crate::profile_scan::compliant(&browsers);
-
-    Ok(OnboardingState {
-        migrated_this_launch,
-        extension_compliant,
-        browsers,
-    })
-}
-
-fn read_data(path: &std::path::Path) -> Option<serde_json::Map<String, serde_json::Value>> {
+fn read_data(path: &Path) -> Option<serde_json::Map<String, serde_json::Value>> {
     let raw = std::fs::read_to_string(path).ok()?;
     let parsed: serde_json::Value = serde_json::from_str(&raw).ok()?;
     parsed.as_object().cloned()
 }
 
 fn write_data(
-    path: &std::path::Path,
+    path: &Path,
     data: &serde_json::Map<String, serde_json::Value>,
 ) -> std::io::Result<()> {
     if let Some(parent) = path.parent() {
@@ -303,5 +802,12 @@ mod tests {
         let input = "127.0.0.1 localhost\n::1 localhost\n";
         let out = strip_managed_sections(input);
         assert_eq!(out.trim_end(), input.trim_end());
+    }
+
+    #[test]
+    fn detects_markers() {
+        assert!(hosts_has_markers("foo\n# ReDD Block Start\nbar\n"));
+        assert!(hosts_has_markers("# === BEGIN REDD BLOCK (reddfocus.org) ===\n"));
+        assert!(!hosts_has_markers("127.0.0.1 localhost\n"));
     }
 }

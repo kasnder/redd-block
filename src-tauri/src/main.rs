@@ -39,6 +39,11 @@ fn main() {
         redd_block_lib::watchdog::unregister();
         let _ = redd_block_lib::commands::migration::strip_hosts_markers_sync();
         let _ = redd_block_lib::commands::migration::uninstall_legacy_helper_sync();
+        // Final cleanup: now that the user is uninstalling, the hosts
+        // backups have served their purpose. Best-effort delete; on
+        // macOS the legacy /etc/hosts.redd-backup needs root and will
+        // be left for the user, but the in-app-data snapshots go.
+        redd_block_lib::commands::migration::purge_legacy_backups_sync(None);
         std::process::exit(0);
     }
 
