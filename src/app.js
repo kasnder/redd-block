@@ -1173,7 +1173,22 @@ function hideMigrationOnboarding() {
 function wireMigrationPrePhase() {
     const btn = document.getElementById('migration-continue-btn');
     const status = document.getElementById('migration-pre-status');
-    if (!btn || btn._listenerAdded) return;
+    if (!btn) return;
+
+    // Always reset button + status to a clean pre-cleanup state.
+    // This function is also called when the overlay is re-shown
+    // (e.g. residue reappears after a successful migration); without
+    // this, btn.disabled / btn.textContent / status would carry over
+    // from the previous click and the user would be locked out.
+    btn.disabled = false;
+    btn.textContent = 'Continue';
+    if (status) {
+        status.textContent = '';
+        status.classList.add('hidden');
+        status.classList.remove('error');
+    }
+
+    if (btn._listenerAdded) return;
     btn._listenerAdded = true;
 
     btn.addEventListener('click', async () => {
@@ -1183,31 +1198,60 @@ function wireMigrationPrePhase() {
             status.textContent = 'Approve the admin prompt to continue…';
             status.classList.remove('hidden', 'error');
         }
+
+        const failTryAgain = (msg) => {
+            btn.disabled = false;
+            btn.textContent = 'Try again';
+            if (status) {
+                status.textContent = msg;
+                status.classList.add('error');
+            }
+        };
+
+        // Race the IPC Promise against a periodic disk-state poll.
+        // The Promise is the fast signal (resolves on UAC decline in
+        // <1s; on cleanup completion within a few seconds); the poll
+        // is the safety net for cases where the Promise never settles
+        // (we've seen this happen with the blocking elevated
+        // PowerShell on the executor thread). Whichever signals
+        // first wins. The poll alone would be correct but too slow on
+        // the cancel path (user would wait for the timeout).
+        const POLL_MS = 1500;
+        const TIMEOUT_MS = 120000;
+        const start = Date.now();
+        let invokeSettled = false;
+        const invokePromise = invoke('run_upgrade_migration')
+            .catch((e) => {
+                console.warn('[migration] run_upgrade_migration rejected:', e);
+            })
+            .finally(() => { invokeSettled = true; });
+
         try {
-            await invoke('run_upgrade_migration');
-            // Re-check residue. If gone → swap to post. If still
-            // present → user cancelled or something failed; show
-            // retry guidance.
-            const stillPending = await invoke('migration_pending');
-            if (stillPending) {
-                btn.disabled = false;
-                btn.textContent = 'Try again';
-                if (status) {
-                    status.textContent = "We need that admin permission to finish — your blocklists are safe.";
-                    status.classList.add('error');
+            while (true) {
+                // Sleep, but wake early if the IPC Promise settles.
+                await Promise.race([
+                    new Promise((r) => setTimeout(r, POLL_MS)),
+                    invokePromise,
+                ]);
+                const stillPending = await invoke('migration_pending');
+                if (!stillPending) break;
+                // Fast path: IPC said it's done AND residue is still
+                // there → user cancelled / cleanup failed. Don't make
+                // them wait for the polling timeout.
+                if (invokeSettled) {
+                    failTryAgain("We need that admin permission to finish — your blocklists are safe.");
+                    return;
                 }
-                return;
+                if (Date.now() - start > TIMEOUT_MS) {
+                    failTryAgain("Something went wrong. Click to retry.");
+                    return;
+                }
             }
             const fresh = await invoke('onboarding_state');
             await showMigrationOnboarding('post', fresh);
         } catch (e) {
-            console.warn('[migration] failed:', e);
-            btn.disabled = false;
-            btn.textContent = 'Try again';
-            if (status) {
-                status.textContent = "Something went wrong. Click to retry.";
-                status.classList.add('error');
-            }
+            console.warn('[migration] poll failed:', e);
+            failTryAgain("Something went wrong. Click to retry.");
         }
     });
 }
