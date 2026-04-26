@@ -16,7 +16,10 @@ use serde_json::Value;
 const FIREFOX_ID: &str = "mindshield@example.com";
 const CHROMIUM_ID: &str = "hhblkhfdjijdinijakbmcpkmdfhoadcd";
 #[cfg(target_os = "macos")]
-const SAFARI_BUNDLE_ID: &str = "com.ulriklyngs.mind-shield.mind-shield";
+const SAFARI_BUNDLE_IDS: &[&str] = &[
+    "com.ulriklyngs.mind-shield",
+    "com.ulriklyngs.mind-shield.mind-shield",
+];
 
 /// Chromium IDs the scanner will accept as "ReDD Focus is here".
 /// Production ID is always included. In debug builds, comma-separated
@@ -30,6 +33,17 @@ fn chromium_ids() -> Vec<String> {
             for id in extra.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
                 ids.push(id.to_string());
             }
+        }
+    }
+    ids
+}
+
+#[cfg(target_os = "macos")]
+fn safari_bundle_ids() -> Vec<String> {
+    let mut ids: Vec<String> = SAFARI_BUNDLE_IDS.iter().map(|id| (*id).to_string()).collect();
+    if let Ok(extra) = std::env::var("REDD_DEV_SAFARI_BUNDLE_ID") {
+        for id in extra.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            ids.push(id.to_string());
         }
     }
     ids
@@ -536,6 +550,7 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
 #[cfg(target_os = "macos")]
 fn scan_safari() -> BrowserStatus {
     use std::process::Command;
+
     let running = is_process_running(&["Safari"]);
     // Safari is a system app — always installed on macOS.
     let output = Command::new("/usr/bin/pluginkit")
@@ -548,7 +563,10 @@ fn scan_safari() -> BrowserStatus {
         }
     };
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let line = stdout.lines().find(|l| l.contains(SAFARI_BUNDLE_ID));
+    let safari_ids = safari_bundle_ids();
+    let line = stdout
+        .lines()
+        .find(|l| safari_ids.iter().any(|id| l.contains(id)));
     let (found, enabled) = match line {
         Some(l) => {
             let first = l.chars().next();
@@ -561,6 +579,24 @@ fn scan_safari() -> BrowserStatus {
         }
         None => (false, None),
     };
+    let safari_status = crate::app_group::read_safari_status();
+    let fresh_status = safari_status
+        .as_ref()
+        .filter(|status| crate::app_group::status_is_fresh(status));
+    let found = fresh_status.map(|status| status.installed).unwrap_or(found);
+    let enabled = fresh_status.map(|status| status.enabled).map(Some).unwrap_or(enabled);
+    let private_browsing = fresh_status.and_then(|status| status.private_browsing);
+    let note = fresh_status.map(|status| {
+        format!(
+            "Safari status reported by extension{}",
+            status
+                .version
+                .as_deref()
+                .map(|version| format!(" (v{version})"))
+                .unwrap_or_default()
+        )
+    });
+
     BrowserStatus {
         present: running,
         installed: true,
@@ -569,8 +605,8 @@ fn scan_safari() -> BrowserStatus {
             is_default: true,
             installed: found,
             enabled,
-            private_browsing: None, // Not reachable; see MVP profile-scan TODO.
-            note: None,
+            private_browsing,
+            note,
         }],
         error: None,
     }
@@ -590,13 +626,6 @@ fn scan_safari() -> BrowserStatus {
 /// that reports installed+enabled+privateBrowsing=true on the default
 /// profile. Used by onboarding to gate the backend switch.
 ///
-/// Safari is a special case: "Allow in Private Browsing" lives inside
-/// Safari's sandboxed extension container, which we can't read
-/// without Full Disk Access. Instead of demanding FDA, we let the
-/// Safari extension report its own state over the native-messaging
-/// channel. The scanner here
-/// accepts `private_browsing == None` on Safari as "trust the
-/// extension's self-report" rather than treating it as a failure.
 pub fn compliant(result: &ScanResult) -> bool {
     let chromium_or_firefox = [&result.firefox, &result.chrome, &result.brave, &result.edge];
     let chromium_ok = chromium_or_firefox.iter().all(|b| {
@@ -612,9 +641,7 @@ pub fn compliant(result: &ScanResult) -> bool {
     });
     let safari_ok = !result.safari.present || {
         let def = result.safari.profiles.iter().find(|p| p.is_default).or_else(|| result.safari.profiles.first());
-        // Safari: only require installed + enabled; private-browsing
-        // is reported separately by the extension.
-        matches!(def, Some(p) if p.installed && p.enabled != Some(false))
+        matches!(def, Some(p) if p.installed && p.enabled != Some(false) && p.private_browsing != Some(true))
     };
     chromium_ok && safari_ok
 }

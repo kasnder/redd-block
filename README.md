@@ -7,7 +7,7 @@ Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and th
 ## Features
 
 - **Cross-Platform** — Works on macOS 11+, Windows 10+, iOS (iPad/iPhone), and Android (source code for the Android version is here: https://github.com/kasnder/redd-block-android)
-- **Website Blocking** — Via the ReDD Focus browser extension on desktop (Chrome/Brave/Edge/Firefox via a built-in native messaging host; Safari via the app's own `SafariWebExtensionHandler`). On iOS it's the Screen Time API.
+- **Website Blocking** — Via the ReDD Focus browser extension on desktop (Chrome/Brave/Edge/Firefox via a built-in native messaging host; Safari via `SafariWebExtensionHandler` plus an App Group bridge). On iOS it's the Screen Time API.
 - **App Blocking** — Automatically blocks distracting apps (minimizes/hides on desktop via in-process watcher, Screen Time shield overlay on iOS)
 - **Flexible Blocklists** — Create multiple lists with custom names, colors, and emojis
 - **One-Off Blocks** — Quick blocks for immediate focus sessions
@@ -31,8 +31,9 @@ extension on both OSes:
   per-browser manifest JSON (macOS) or `HKCU\…\NativeMessagingHosts`
   registry keys (Windows). Entirely user-scope.
 - **Safari** (macOS) routes through `SafariWebExtensionHandler.swift`
-  inside the signed `.app` bundle, which implements the same
-  `{ blocklist: […] }` protocol.
+  inside the signed `.app` bundle. ReDD Block mirrors
+  `redd-block-data.json` into the shared App Group container and the
+  extension writes back `safari-status.json` for compliance checks.
 - An in-app **enforcement loop** scans running browsers every ~5 s
   (using the Rust-ported profile-scan code) and nags / quits any
   browser whose ReDD Focus extension is missing, disabled, or not
@@ -112,7 +113,7 @@ flowchart TB
 
 ### Website Blocking
 
-**Desktop (macOS / Windows):** Website blocking uses the ReDD Focus browser extension. The app registers itself as a native-messaging host, derives the current blocklist from `redd-block-data.json`, and pushes it over stdio to the extension running in Chrome / Brave / Edge / Firefox. Safari (macOS) routes through a `SafariWebExtensionHandler` inside the signed `.app` bundle that speaks the same protocol. A background loop in the app scans running browsers every ~5 seconds and quits any that have the extension missing, disabled, or not allowed in private browsing.
+**Desktop (macOS / Windows):** Website blocking uses the ReDD Focus browser extension. The app registers itself as a native-messaging host, derives the current blocklist from `redd-block-data.json`, and pushes it over stdio to the extension running in Chrome / Brave / Edge / Firefox. Safari (macOS) reads the same data from the shared App Group container and reports status back through `safari-status.json`. A background loop in the app scans running browsers every ~5 seconds and quits any that have the extension missing, disabled, or not configured the way ReDD Block expects.
 
 **iOS:** Website blocking uses the Screen Time API's `WebContentSettings` to block domains at the OS level. Users type in domains to block, and the app applies them via a `ManagedSettingsStore`. One-time authorization in Settings → Screen Time.
 
@@ -261,7 +262,7 @@ redd-block/
 │   └── permissions/              # Plugin permissions
 ├── browser-ext-migration/
 │   ├── MIGRATION_PLAN.md         # Rollout plan + remaining-work checklist
-│   └── redd-focus-web.patch      # In-progress Safari extension changes (deferred)
+│   ├── FUTURE_OPTIONS.md         # Parked localhost fallback + signed .pkg notes
 ├── scripts/                      # Build and signing scripts
 ├── docs/                         # GitHub Pages (version info, App Store privacy policy)
 └── vite.config.js                # Vite dev server config

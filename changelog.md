@@ -10,7 +10,8 @@ User-facing changes for each release. Every app upgrade adds a new entry here.
     ReDD Focus browser extension. Chrome / Brave / Edge / Firefox
     speak to the app via a built-in native messaging host that's
     just the app binary in a `--native-host` CLI mode. Safari
-    (macOS) routes through a handler inside the signed `.app`.
+    (macOS) now bridges through an App Group shared container and a
+    handler inside the signed `.app`.
   - App blocking runs in-process on both OSes. First use of app
     blocking on macOS prompts for Accessibility / Automation
     permission.

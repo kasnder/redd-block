@@ -1,75 +1,82 @@
 #!/bin/bash
-# Build script for macOS universal binary with proper naming
+# Build the macOS desktop app as a bundle + DMG.
 
-set -e
+set -euo pipefail
 
-# Source environment variables for signing/notarization
+# Source environment variables for signing/notarization if present.
 if [ -f .env ]; then
   set -a
+  # shellcheck disable=SC1091
   source .env
   set +a
 fi
 
-# Build helper for both architectures
-echo "Building helper daemon for both architectures..."
-cd helper-daemon
-cargo build --release --target aarch64-apple-darwin
-cargo build --release --target x86_64-apple-darwin
-cp target/aarch64-apple-darwin/release/redd-block-helper target/release/redd-block-helper-aarch64-apple-darwin
-cp target/x86_64-apple-darwin/release/redd-block-helper target/release/redd-block-helper-x86_64-apple-darwin
-lipo -create \
-  target/release/redd-block-helper-aarch64-apple-darwin \
-  target/release/redd-block-helper-x86_64-apple-darwin \
-  -output target/release/redd-block-helper-universal-apple-darwin
+# Support the older APPLE_PASSWORD name by mapping it to the variable
+# the notarize hook actually reads.
+if [ -n "${APPLE_PASSWORD:-}" ] && [ -z "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]; then
+  export APPLE_APP_SPECIFIC_PASSWORD="${APPLE_PASSWORD}"
+fi
 
-# Tauri externalBin expects the binary with target suffix for bundling
-# For universal builds, it looks for -universal-apple-darwin suffix
-echo "Copying universal helper for Tauri bundling..."
-cd ..
-
-# Build Tauri universal binary
-echo "Building Tauri app..."
-# Tauri v2 expects CI to be a bool string ("true"/"false"), not "1"/"0".
-# Normalize inherited CI values so local shells/IDEs don't break builds.
+# Tauri v2 expects CI to be "true"/"false", not "1"/"0".
 TAURI_CI="${CI:-}"
 if [ "$TAURI_CI" = "1" ]; then
   TAURI_CI="true"
 elif [ "$TAURI_CI" = "0" ]; then
   TAURI_CI="false"
 fi
+
 PROJECT_ROOT="$(pwd)"
-CARGO_TARGET_DIR="${PROJECT_ROOT}/src-tauri/target" CI="${TAURI_CI:-false}" npm run tauri build -- --target universal-apple-darwin
+BUILD_TARGET="${BUILD_MAC_TARGET:-universal-apple-darwin}"
 
-# Get version from package.json
+CONFIG_ARGS=()
+if [ -n "${APPLE_SIGNING_IDENTITY_OVERRIDE:-}" ]; then
+  echo "Using signing identity override: ${APPLE_SIGNING_IDENTITY_OVERRIDE}"
+  CONFIG_ARGS=(
+    --config
+    "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"${APPLE_SIGNING_IDENTITY_OVERRIDE}\"}}}"
+  )
+fi
+
+TARGET_DIR="${PROJECT_ROOT}/src-tauri/target/${BUILD_TARGET}/release/bundle"
+
+echo "Building ReDD Block for macOS (${BUILD_TARGET})..."
+CARGO_TARGET_DIR="${PROJECT_ROOT}/src-tauri/target" \
+CI="${TAURI_CI:-false}" \
+npm run tauri -- build --target "${BUILD_TARGET}" "${CONFIG_ARGS[@]}"
+
 VERSION=$(node -p "require('./package.json').version")
+APP_SOURCE="${TARGET_DIR}/macos/ReDD Block.app"
+DMG_SOURCE="${TARGET_DIR}/dmg/ReDD Block_${VERSION}_$(basename "${BUILD_TARGET%%-*}")".dmg
+if [ "${BUILD_TARGET}" = "universal-apple-darwin" ]; then
+  DMG_SOURCE="${TARGET_DIR}/dmg/ReDD Block_${VERSION}_universal.dmg"
+fi
+DMG_TARGET="${TARGET_DIR}/dmg/reddblock-${VERSION}-${BUILD_TARGET}.dmg"
 
-# Rename the DMG to preferred format
-DMG_SOURCE="src-tauri/target/universal-apple-darwin/release/bundle/dmg/ReDD Block_${VERSION}_universal.dmg"
-DMG_TARGET="src-tauri/target/universal-apple-darwin/release/bundle/dmg/reddblock-${VERSION}-universal.dmg"
+mkdir -p for-distribution
+
+if [ -d "$APP_SOURCE" ]; then
+  rm -rf "for-distribution/ReDD Block.app"
+  cp -R "$APP_SOURCE" "for-distribution/ReDD Block.app"
+fi
 
 if [ -f "$DMG_SOURCE" ]; then
   mv "$DMG_SOURCE" "$DMG_TARGET"
-  
-  # Copy to for-distribution folder in project root
-  mkdir -p for-distribution
-  cp "$DMG_TARGET" "for-distribution/reddblock-${VERSION}-universal.dmg"
-  
-  echo ""
-  echo "✅ Build complete!"
-  echo "   DMG: for-distribution/reddblock-${VERSION}-universal.dmg"
-else
-  echo "⚠️  DMG not found at expected location: $DMG_SOURCE"
-  echo "   Looking for the generated universal DMG..."
-  FALLBACK_DMG=$(find src-tauri/target -name "ReDD Block_${VERSION}_*.dmg" -print 2>/dev/null | head -n 1)
-  if [ -n "$FALLBACK_DMG" ] && [ -f "$FALLBACK_DMG" ]; then
+elif [ ! -f "$DMG_TARGET" ]; then
+  FALLBACK_DMG=$(find "${TARGET_DIR}/dmg" -maxdepth 1 -name "*.dmg" -print 2>/dev/null | head -n 1)
+  if [ -n "$FALLBACK_DMG" ] && [ "$FALLBACK_DMG" != "$DMG_TARGET" ]; then
     mv "$FALLBACK_DMG" "$DMG_TARGET"
-    mkdir -p for-distribution
-    cp "$DMG_TARGET" "for-distribution/reddblock-${VERSION}-universal.dmg"
-    echo ""
-    echo "✅ Build complete (fallback path used)!"
-    echo "   DMG: for-distribution/reddblock-${VERSION}-universal.dmg"
-  else
-    echo "⚠️  Could not locate universal DMG. Existing DMGs found:"
-    find src-tauri/target -name "*.dmg" 2>/dev/null
   fi
+fi
+
+if [ -f "$DMG_TARGET" ]; then
+  cp "$DMG_TARGET" "for-distribution/reddblock-${VERSION}-${BUILD_TARGET}.dmg"
+fi
+
+echo ""
+echo "Build complete."
+if [ -d "for-distribution/ReDD Block.app" ]; then
+  echo "  App: for-distribution/ReDD Block.app"
+fi
+if [ -f "for-distribution/reddblock-${VERSION}-${BUILD_TARGET}.dmg" ]; then
+  echo "  DMG: for-distribution/reddblock-${VERSION}-${BUILD_TARGET}.dmg"
 fi

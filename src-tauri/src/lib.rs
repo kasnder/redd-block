@@ -24,7 +24,7 @@ use tauri::Emitter;
 
 #[cfg(target_os = "macos")]
 use tauri::{TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
-#[cfg(target_os = "macos")]
+#[cfg(all(feature = "desktop", target_os = "macos"))]
 use std::sync::Arc;
 
 #[cfg(target_os = "windows")]
@@ -37,6 +37,8 @@ pub mod commands;
 
 #[cfg(not(target_os = "ios"))]
 pub mod app_watcher;
+#[cfg(target_os = "macos")]
+pub mod app_group;
 #[cfg(not(target_os = "ios"))]
 pub mod enforcer;
 #[cfg(not(target_os = "ios"))]
@@ -509,6 +511,11 @@ pub fn run() {
                 log::warn!("native-host install on startup failed: {e}");
             }
 
+            #[cfg(target_os = "macos")]
+            if let Some(data_path) = native_host::resolve_data_path() {
+                app_group::start_sync_loop(data_path);
+            }
+
             // Self-heal the watchdog Scheduled Task on Windows. If the
             // user disabled or deleted it (or the install dir moved),
             // this rewrites the wrapper script with the current exe
@@ -569,13 +576,13 @@ pub fn run() {
         .invoke_handler(all_commands())
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|_app, event| {
+        .run(|_app, _event| {
             // Belt + braces: also catch any `ExitRequested` Tauri may
             // emit (last-window-closed paths, etc.). Cmd-Q is handled
             // by the AppKit `applicationShouldTerminate:` hook in
             // `install_terminate_guard`.
             #[cfg(feature = "desktop")]
-            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+            if let tauri::RunEvent::ExitRequested { api, .. } = _event {
                 if !ALLOW_EXIT.load(std::sync::atomic::Ordering::SeqCst) {
                     api.prevent_exit();
                 }

@@ -6,7 +6,7 @@
     "dev": "tauri dev",
     "dev:ios": "PATH=\"$(pwd)/scripts:$PATH\" APPLE_DEVELOPMENT_TEAM=JD647S9RT6 tauri ios dev --host",
     "build": "tauri build",
-    "build:mac": "./scripts/build-mac.sh",
+    "build:mac": "bash ./scripts/build-mac.sh",
     "build:mac-pkg": "./scripts/build-mac-pkg.sh --release",
     "build:mac-pkg:debug": "./scripts/build-mac-pkg.sh",
     "build:ios": "PATH=\"$(pwd)/scripts:$PATH\" APPLE_DEVELOPMENT_TEAM=JD647S9RT6 npx tauri ios build && mkdir -p for-distribution && cp 'src-tauri/gen/apple/build/arm64/ReDD Block.ipa' 'for-distribution/ReDD Block.ipa' && echo '' && echo '✅ App Store IPA ready: for-distribution/ReDD Block.ipa' && echo '   Upload with Transporter or: xcrun altool --upload-app --type ios --file \"for-distribution/ReDD Block.ipa\" --apiKey \\$APPLE_API_KEY_ID --apiIssuer \\$APPLE_API_ISSUER'",

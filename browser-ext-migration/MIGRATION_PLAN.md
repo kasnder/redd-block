@@ -1,11 +1,11 @@
 # Browser-Extension Migration Plan
 
 > **Status (branch `claude/plan-extension-migration-J9CTL`)** — code complete,
-> end-to-end tested on real macOS and Windows hardware. Two known gaps remain
-> before public release: **Safari extension support** (deferred pending Apple
-> Developer team consolidation) and **code-signing of both installers**
-> (.pkg needs `Developer ID Installer` cert; NSIS needs Azure Trusted Signing
-> creds in CI). See [Remaining work](#remaining-work) below for details.
+> end-to-end tested on real macOS and Windows hardware. Safari now uses an
+> App Group bridge (`group.com.reddblock.shared`) between ReDD Block and the
+> ReDD Focus Safari extension. The macOS release path is `.dmg` only; the old
+> localhost fallback and signed `.pkg` ideas are preserved in
+> [FUTURE_OPTIONS.md](./FUTURE_OPTIONS.md).
 
 ## Current state at a glance
 
@@ -13,8 +13,8 @@
 The privileged-helper-daemon stack is gone. v2.0 is a single unprivileged
 Tauri binary per OS that:
 - Blocks websites via the **ReDD Focus browser extension** (Chrome / Brave /
-  Edge / Firefox via native messaging; Safari via a dedicated extension target —
-  deferred).
+  Edge / Firefox via native messaging; Safari via a dedicated extension target
+  plus App Group container bridge).
 - Blocks apps via an in-process sysinfo poll-and-kill watcher.
 - Persists itself via `tauri-plugin-autostart` (LaunchAgent on macOS, HKCU
   Run-key on Windows) plus a watchdog Scheduled Task on Windows.
@@ -88,56 +88,17 @@ nagging.
 
 ## Remaining work
 
-Two real gaps before the migration ships to users; everything else is in
-place and verified.
+The migration itself is now implemented. Remaining follow-up work is mainly
+release operations and documentation cleanup:
 
-### 1. Safari extension support (deferred)
+- Ship the updated Safari changes from the local `redd-focus-web/` checkout
+  upstream and republish the Safari App Store build with the
+  `group.com.reddblock.shared` entitlement enabled.
+- Cut notarized macOS `.dmg` builds and signed Windows NSIS builds in CI.
+- Rewrite the old helper-era manual test checklist and longer-form architecture
+  notes.
 
-ReDD Focus is currently shipped for Chrome / Brave / Edge / Firefox via
-`nativeMessaging`. Safari needs its own extension target inside the
-ReDD Block `.app` bundle (a `SafariWebExtensionHandler.swift`), and the
-Safari extension communicates with the host via App Groups. App Groups
-require both bundles signed by the **same Apple Developer team**:
-
-- ReDD Block: team `JD647S9RT6`
-- redd-focus-web (extension repo): team `7YEYWQKK25`
-
-Until those teams are consolidated under one organisation account,
-App Groups can't bridge the sandboxed Safari extension to the
-unsandboxed app. **Workaround for testing**: a local dual-team re-sign
-or a localhost HTTP fallback (notes in chat history). Patch with the
-in-progress Safari handler rewrite is at
-`browser-ext-migration/redd-focus-web.patch` — apply against a clone of
-redd-focus-web when ready.
-
-In the meantime the Safari row in the per-browser checklist points to
-the App Store listing (`apps.apple.com/.../id1660218371`); users can
-install ReDD Focus there but it won't talk to the desktop app until
-the App Group bridge lands.
-
-### 2. Code-signing both installers
-
-**macOS `.pkg`** — currently produces an unsigned local-test `.pkg` when
-`APPLE_DEVELOPER_INSTALLER_IDENTITY` is unset. To distribute:
-1. Create a `Developer ID Installer` certificate in Apple Developer →
-   Certificates, Identifiers & Profiles. **Note**: this is a different
-   cert from the existing `Developer ID Application` cert used to sign
-   the `.app` itself; same Apple Developer team though.
-2. Set CI env var `APPLE_DEVELOPER_INSTALLER_IDENTITY="Developer ID Installer:
-   Reduce Digital Distraction Ltd (JD647S9RT6)"`. The build script
-   `scripts/build-mac-pkg.sh` auto-signs when set.
-3. Set `APPLE_NOTARIZE_USER` (Apple ID), `APPLE_NOTARIZE_PASS` (app-
-   specific password), `APPLE_TEAM_ID` (`JD647S9RT6`) for stapled
-   notarization. Build script auto-runs `xcrun notarytool submit
-   --wait` + `xcrun stapler staple` when all three are set.
-4. Update `reddfocus.org` download page to offer the `.pkg` as the
-   primary upgrade-from-v1.x download (the `.dmg` stays as a fallback
-   for direct installs).
-
-**Windows NSIS** — the existing `scripts/sign.cmd` invokes Azure Trusted
-Signing when `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_CLIENT_SECRET`
-are present. Already wired into the Tauri build pipeline. Confirm the
-CI runner has those env vars before cutting a release build.
+Parked alternatives are documented in [FUTURE_OPTIONS.md](./FUTURE_OPTIONS.md).
 
 ## Implemented and verified (was originally on this list)
 
@@ -240,19 +201,11 @@ same end state.
       app watcher (blocked app hide), hide-on-close + launch-at-login.
 
 ### Deferred — explicit non-goals for this branch
-- [ ] **Safari support.** Phase 3 of the original plan (App Group
-      bridge + Safari handler rewrite) needs both bundles signed by
-      the same Apple Developer team. ReDD Block is on team
-      `JD647S9RT6`; redd-focus-web upstream is on `7YEYWQKK25`. Until
-      ownership is consolidated, App Groups can't bridge the
-      sandboxed Safari extension to the unsandboxed app. Deferred
-      until signing alignment is sorted; tracked as a follow-up
-      ticket. Workaround paths (localhost HTTP, dual-team local
-      re-sign for testing) documented in chat.
 - [ ] **Native-host payload upgrade** (`{blocklist, blocks: [...]}`).
       Cosmetic improvement to `blocked.html` only — blocking already
-      works with the current `{blocklist}` payload. Pick up once
-      Safari support is back on the table.
+      works with the current `{blocklist}` payload.
+- [ ] **Localhost fallback transport** and **signed `.pkg` installer**.
+      Parked by design for v2.0; see [FUTURE_OPTIONS.md](./FUTURE_OPTIONS.md).
 - [ ] **`src/app.js` rewrite** to drop the `*_via_helper` shims in
       [src-tauri/src/commands/helper_shim.rs](../src-tauri/src/commands/helper_shim.rs).
       Functionally a no-op for users; cleanup only.
@@ -443,11 +396,11 @@ supersede earlier sections of this doc:
 - `helper-daemon/` crate deleted. `scripts/*helper*` deleted.
   `package.json` scripts scrubbed.
 - `tauri-plugin-autostart` added, hide-on-close wired in `lib.rs`.
-- `browser-ext-migration/redd-focus-web.patch`
-  — in-progress changes to the Safari extension repo (handler
-  rewrite + manifest + entitlements). Apply with `git apply` against
-  a clone of `redd-focus-web`. Kept as a patch because the Safari
-  side is deferred until signing-team consolidation.
+- `redd-focus-web/`
+  — local checkout of the Safari extension repo containing the
+  handler rewrite, background heartbeat, manifest bump, and App Group
+  entitlements that still need to be shipped upstream through the
+  App Store.
 - `src/index.html` + `src/app.js` — two new banners
   (`automation-permission-banner`, `extension-compliance-banner`)
   + `runDesktopOnboarding()` driven by `onboarding_state`; window
@@ -485,8 +438,8 @@ supersede earlier sections of this doc:
 - [x] ~~AppleScript NSWorkspace watcher reliability~~ — replaced by
       sysinfo poll-and-kill in `app_watcher.rs`. Verified working
       against Calculator on macOS hardware.
-- [Deferred] Safari bundle ID + Safari Extension target —
-      see [Remaining work → Safari support](#remaining-work).
+- [x] Safari bundle ID + Safari Extension target — now wired through
+      the App Group bridge described above.
 
 ### Windows specifics
 - [x] ~~`SetWinEventHook` / `PostThreadMessageW` watcher~~ — obsolete.
@@ -643,10 +596,9 @@ with the self-binding philosophy.
 - Migration cleanup: strip `/etc/hosts` section, uninstall old
   launchd daemon + helper binary, remove `/var/lib/redd-block`.
 - Safari Web Extension target in Xcode with
-  `SafariWebExtensionHandler.swift`. Patch with the in-progress
-  rewrite lives at `browser-ext-migration/redd-focus-web.patch`
-  (apply against a clone of redd-focus-web). Deferred until signing
-  teams are consolidated — see [Remaining work](#remaining-work).
+  `SafariWebExtensionHandler.swift`. The App Groups rewrite now lives
+  directly in the local `redd-focus-web/` checkout and should be
+  upstreamed from there once the Safari App Store release is cut.
 
 ### Windows-specific (done on branch)
 - Migration cleanup: strip `C:\…\hosts` section, delete scheduled

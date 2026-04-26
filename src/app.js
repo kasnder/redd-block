@@ -1278,27 +1278,27 @@ const BROWSER_STORE_LINKS = {
 //   - 'needs-enable': installed but disabled
 //   - 'needs-install': extension not installed
 // Returns null if the browser itself isn't installed on the machine.
-function browserComplianceStatus(b) {
+function browserComplianceStatus(key, b) {
     if (!b || !b.installed) return null;
     const def = (b.profiles || []).find(p => p.isDefault) || (b.profiles || [])[0];
     if (!def || !def.installed) return 'needs-install';
-    // Safari is allowed to self-report enabled/private since the
-    // outer app can't introspect its sandbox container — treat
-    // null/undefined enabled as "trust" rather than fail.
     const enabled = def.enabled;
     if (enabled === false) return 'needs-enable';
     const priv = def.privateBrowsing;
-    // For Safari (privateBrowsing === null) we accept it as fine —
-    // the extension self-reports private access through the native
-    // messaging channel.
+    if (key === 'safari') {
+        if (priv === true) return 'needs-private';
+        return 'compliant';
+    }
     if (priv === false) return 'needs-private';
     return 'compliant';
 }
 
-function statusLabel(status) {
+function statusLabel(key, status) {
     switch (status) {
         case 'compliant': return '✓ Set up';
-        case 'needs-private': return 'Allow in private browsing';
+        case 'needs-private': return key === 'safari'
+            ? 'Disable private browsing'
+            : 'Allow in private browsing';
         case 'needs-enable': return 'Enable extension';
         case 'needs-install': return 'Install';
         default: return 'Install';
@@ -1331,7 +1331,7 @@ function renderBrowserInstallButtons(state) {
     for (const key of keys) {
         const entry = BROWSER_STORE_LINKS[key];
         if (!entry) continue;
-        const status = browserComplianceStatus(browsers[key]) || 'needs-install';
+        const status = browserComplianceStatus(key, browsers[key]) || 'needs-install';
 
         const row = document.createElement('div');
         row.className = `migration-browser-row ${status}`;
@@ -1351,10 +1351,10 @@ function renderBrowserInstallButtons(state) {
         const badge = document.createElement('span');
         badge.className = `migration-browser-badge ${status}`;
         switch (status) {
-            case 'compliant': badge.textContent = '✓ Set up'; break;
+            case 'compliant': badge.textContent = statusLabel(key, status); break;
             case 'needs-install': badge.textContent = 'Not installed'; break;
             case 'needs-enable': badge.textContent = 'Disabled'; break;
-            case 'needs-private': badge.textContent = 'No private mode'; break;
+            case 'needs-private': badge.textContent = key === 'safari' ? 'Private mode enabled' : 'No private mode'; break;
             default: badge.textContent = 'Not installed';
         }
         header.appendChild(badge);
@@ -1395,7 +1395,9 @@ function renderBrowserInstallButtons(state) {
             hint.className = 'migration-browser-hint';
             hint.textContent = status === 'needs-enable'
                 ? `Enable ReDD Focus in ${entry.label}'s extensions settings.`
-                : `Allow ReDD Focus in private/incognito browsing in ${entry.label}'s extensions settings.`;
+                : key === 'safari'
+                    ? `Disable "Allow in Private Browsing" for ReDD Focus in ${entry.label}'s extensions settings.`
+                    : `Allow ReDD Focus in private/incognito browsing in ${entry.label}'s extensions settings.`;
             row.appendChild(hint);
         }
 
@@ -1406,7 +1408,7 @@ function renderBrowserInstallButtons(state) {
     // browser still needs the extension. Hidden when everything's
     // compliant — the user is done, no need to nag.
     const howto = document.getElementById('migration-howto');
-    const anyMissing = keys.some(k => browserComplianceStatus(browsers[k]) !== 'compliant');
+    const anyMissing = keys.some(k => browserComplianceStatus(k, browsers[k]) !== 'compliant');
     if (howto) howto.classList.toggle('hidden', !anyMissing);
 
     // Tick the checklist as "done" only once every detected browser
@@ -1415,7 +1417,7 @@ function renderBrowserInstallButtons(state) {
     // green even though there's still work to do.
     if (checklistItem) {
         const allCompliant = keys.length > 0
-            && keys.every(k => browserComplianceStatus(browsers[k]) === 'compliant');
+            && keys.every(k => browserComplianceStatus(k, browsers[k]) === 'compliant');
         if (allCompliant) {
             checklistItem.classList.remove('checklist-todo');
             checklistItem.classList.add('checklist-done');
@@ -1468,7 +1470,7 @@ async function updateBehaviourChangeBanner(state) {
     const browsers = (state && state.browsers) || {};
     const detectedKeys = Object.keys(BROWSER_STORE_LINKS).filter(k => browsers[k] && browsers[k].installed);
     const allCompliant = detectedKeys.length > 0
-        && detectedKeys.every(k => browserComplianceStatus(browsers[k]) === 'compliant');
+        && detectedKeys.every(k => browserComplianceStatus(k, browsers[k]) === 'compliant');
 
     const shouldShow = cameFromV1x && !dismissed && !allCompliant;
     if (!shouldShow) {
@@ -1516,7 +1518,9 @@ function updateExtensionComplianceBanner(state) {
     const failing = findFirstNonCompliantBrowser(state.browsers);
     if (text) {
         text.textContent = failing
-            ? `ReDD Focus isn't fully enabled in ${failing}. Install, enable it, and allow it in private browsing.`
+            ? failing === 'Safari'
+                ? `ReDD Focus isn't fully enabled in Safari. Install it, enable it, and disable "Allow in Private Browsing".`
+                : `ReDD Focus isn't fully enabled in ${failing}. Install, enable it, and allow it in private browsing.`
             : 'Install the ReDD Focus extension to block websites.';
     }
     if (dismiss) {
@@ -1537,7 +1541,9 @@ function findFirstNonCompliantBrowser(browsers) {
         if (!def) continue;
         const okInstalled = def.installed;
         const okEnabled = def.enabled === true || (key === 'safari' && def.enabled !== false);
-        const okPriv = def.privateBrowsing === true || key === 'safari';
+        const okPriv = key === 'safari'
+            ? def.privateBrowsing !== true
+            : def.privateBrowsing === true;
         if (!(okInstalled && okEnabled && okPriv)) return labels[key];
     }
     return null;
