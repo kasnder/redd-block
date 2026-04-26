@@ -8,17 +8,18 @@ This is a planning/analysis doc — no code edits proposed unless you choose opt
 
 ## How it actually fires today
 
-Trace: NSIS installer → first launch → frontend `invoke('onboarding_state')` → Rust migration.
+Trace: NSIS installer → first launch → frontend full-screen onboarding → Rust migration.
 
-1. **Installer** (`src-tauri/tauri.conf.json` + `src-tauri/windows/hooks.nsh`): Tauri's NSIS bundle in default mode **overwrites** v1.x files. It does **not** run the v1.x uninstaller and has **no pre-install hook**. The pre-uninstall hook in `hooks.nsh:1-39` only fires during *uninstall*, not upgrade. Installer launches `redd-block.exe` at the end.
-2. **App startup** (`src-tauri/src/lib.rs::run()`): the Rust `setup` block is **silent on migration**. No backend-driven detection. Cleanup is 100% frontend-triggered.
-3. **Frontend** (`src/app.js:959, :1038`): `runDesktopOnboarding()` is called unconditionally on every non-iOS launch and `invoke('onboarding_state')`.
-4. **Backend** (`src-tauri/src/commands/migration.rs:293-316`): `onboarding_state` synchronously calls `run_upgrade_migration` *before* returning. That function (`migration.rs:238-290`) gates on `settings.migrationRanAtVersion == CARGO_PKG_VERSION` — fast no-op on subsequent launches. On first launch after upgrade, `migration_pending_sync()` trips, `run_elevated_migration` fires the **UAC prompt**, runs the elevated PowerShell, re-validates, and stamps the version.
-5. **Banners** (`src/app.js:1040-1080+`):
-   - `migration_pending=true` → "Migration incomplete" banner with a Retry button that re-invokes `run_upgrade_migration` directly (`app.js:1069`).
-   - `had_residue_before && !migration_pending` → one-time upgrade welcome card.
+1. **Installer** (`src-tauri/tauri.conf.json` + `src-tauri/windows/hooks.nsh`): Tauri's NSIS bundle in default mode **overwrites** v1.x files. It does **not** run the v1.x uninstaller and has **no pre-install hook**. The pre-uninstall hook in `hooks.nsh:1-39` only fires during *uninstall*, not upgrade. Installer launches `redd-block.exe` at the end (or the user does, if they unchecked "Run ReDD Block" on the finish page).
+2. **App startup** (`src-tauri/src/lib.rs::run()`): the Rust `setup` block calls `commands::enforcement::auto_start`, which checks `migration_pending_sync()` and starts the enforcer **paused** if v1.x residue is on disk. Without this, the enforcer would fire 30-60 s after launch and kill the user's browser before they had a chance to install the ReDD Focus extension.
+3. **Frontend** (`src/app.js::runDesktopOnboarding`): on every non-iOS launch, calls the lightweight `migration_pending` check. Two outcomes:
+   - **Pending** → show full-screen `#migration-onboarding` overlay in **"pre"** phase (welcome card + Continue button). The main UI is gated until the user dismisses the overlay.
+   - **Not pending, but `migration_was_pending_at_launch=true`** → show overlay in **"post"** phase (cleanup-complete checklist + per-browser install buttons).
+   - Neither → main UI loads normally; `extension-compliance-banner` may still nag.
+4. **Backend** (`src-tauri/src/commands/migration.rs::run_upgrade_migration`): only fired when the user clicks Continue (or the in-overlay Try Again button) — `onboarding_state` is now pure (no migration as a side effect). The gate is `migration_pending_sync()`, not the version stamp — residue can reappear (e.g. v1.x reinstalled side-by-side) and we re-migrate. On success, version is stamped via `stamp_version`.
+5. **Recovery on cancel/failure**: same overlay stays open with status text "We need that admin permission to finish — your blocklists are safe" and the Continue button relabelled "Try again". User clicks → re-prompt. No way to accidentally dismiss the overlay short of force-quitting the app.
 
-So **yes** — re-install / update *does* run the cleanup, just at first-launch-after-install rather than during the install itself. The user sees one UAC prompt the first time they open v2.
+So **yes** — install / upgrade does run cleanup, at first launch rather than during install itself. One UAC prompt the first time they open v2 (after they click Continue on the welcome card, so they have context).
 
 ## The practical test workflow on this machine
 
@@ -38,11 +39,16 @@ npm run tauri -- build --debug --bundles nsis
 scripts/test-migration.ps1 inject
 # install
 src-tauri/target/debug/bundle/nsis/ReDD Block_<ver>_x64-setup.exe
-# Tauri auto-launches at install end → expect UAC pops automatically
-# verify: hosts clean, helper-state.json gone, scheduled task gone,
-#         redd-block-data.json hash unchanged, no "Migration incomplete" banner
+# Tauri auto-launches at install end (finish-page "Run ReDD Block").
+# Expect:
+#   1. Full-screen "Welcome to ReDD Block 2.0" overlay (not the main UI)
+#   2. Click Continue → UAC fires
+#   3. Accept → overlay swaps to post-cleanup checklist with per-browser buttons
+#   4. Click "I've installed it" → main UI shows, enforcer resumes
+# Verify: hosts clean, helper-state.json gone, scheduled task gone,
+#         redd-block-data.json hash unchanged.
 ```
-This is the only way to validate that the *frontend wiring* (auto-fire on first launch + Retry banner) actually works — `cargo run --example test_migration` skips all of it.
+This is the only way to validate that the *frontend wiring* (auto-fire on first launch + retry path + browser-store deep-links + enforcer pause) actually works — `cargo run --example test_migration` skips all of it.
 
 **Tier 3 — real v1.x upgrade:** install an actual v1.x release first (creates real `helper-state.json`, real scheduled task, real hosts markers, populated `redd-block-data.json`). Then run the v2 installer over the top. This is what the macOS Claude's instructions described. Highest fidelity, slowest to set up.
 
@@ -126,6 +132,10 @@ Cancel path:
 ```powershell
 scripts\test-migration.ps1 inject
 # launch redd-block.exe from Start menu → DECLINE UAC
-# expect: "Migration incomplete" banner in UI, residue intact
-# click Retry, accept UAC → completes, banner clears
+# expect: full-screen overlay STAYS visible with status text
+#         "We need that admin permission to finish — your blocklists
+#         are safe.", Continue button relabelled "Try again". Residue
+#         intact, main UI not visible.
+# click Try again, accept UAC → overlay swaps to post-cleanup
+# checklist (per-browser install buttons), residue cleaned.
 ```
