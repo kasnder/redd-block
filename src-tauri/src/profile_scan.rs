@@ -53,7 +53,17 @@ pub struct ProfileStatus {
 /// Result for a browser vendor across all profiles.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BrowserStatus {
+    /// True when the browser process is currently running. Used by
+    /// the enforcer's compliance check (no nag for browsers the user
+    /// doesn't have open) and by the in-session compliance banner.
     pub present: bool,
+    /// True when the browser appears to be installed on disk (profile
+    /// directory or app bundle exists), regardless of whether it's
+    /// running. Used by the migration onboarding screen so we can
+    /// show install buttons for every browser the user has, not just
+    /// the ones currently open.
+    #[serde(default)]
+    pub installed: bool,
     pub profiles: Vec<ProfileStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -80,7 +90,7 @@ pub fn scan() -> ScanResult {
 }
 
 fn empty(_label: &str) -> BrowserStatus {
-    BrowserStatus { present: false, profiles: vec![], error: None }
+    BrowserStatus { present: false, installed: false, profiles: vec![], error: None }
 }
 
 // ---- Firefox ---------------------------------------------------------------
@@ -101,6 +111,22 @@ fn firefox_root() -> Option<PathBuf> {
     }
 }
 
+/// Bundle (or equivalent) on disk, regardless of running state.
+fn firefox_app_installed() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let candidates = [
+            PathBuf::from("/Applications/Firefox.app"),
+            dirs::home_dir().map(|h| h.join("Applications/Firefox.app")).unwrap_or_default(),
+        ];
+        candidates.iter().any(|p| p.exists())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        firefox_root().map(|p| p.exists()).unwrap_or(false)
+    }
+}
+
 fn firefox_app_present() -> bool {
     #[cfg(target_os = "macos")]
     {
@@ -117,12 +143,11 @@ fn firefox_app_present() -> bool {
 }
 
 fn scan_firefox() -> Option<BrowserStatus> {
-    if !firefox_app_present() {
-        return Some(BrowserStatus { present: false, profiles: vec![], error: None });
-    }
+    let running = firefox_app_present();
+    let installed = firefox_app_installed();
     let root = firefox_root()?;
-    if !root.exists() {
-        return Some(BrowserStatus { present: false, profiles: vec![], error: None });
+    if !installed || !root.exists() {
+        return Some(BrowserStatus { present: running, installed, profiles: vec![], error: None });
     }
 
     let (profile_dirs, defaults) = read_firefox_profiles(&root);
@@ -176,7 +201,7 @@ fn scan_firefox() -> Option<BrowserStatus> {
         profiles.push(s);
     }
 
-    Some(BrowserStatus { present: true, profiles, error: None })
+    Some(BrowserStatus { present: running, installed: true, profiles, error: None })
 }
 
 fn read_firefox_profiles(root: &Path) -> (Vec<String>, Vec<String>) {
@@ -237,6 +262,38 @@ fn is_process_running(names: &[&str]) -> bool {
 fn is_process_running(_names: &[&str]) -> bool { false }
 
 impl ChromiumBrowser {
+    /// True when the browser app appears to be present on disk
+    /// (bundle in /Applications or ~/Applications on macOS, the
+    /// profile-data dir on Windows/Linux). Used by the migration
+    /// onboarding to decide whether to surface a row.
+    ///
+    /// We only consider the profile-dir alone insufficient on macOS
+    /// because empty/stub Chrome profile dirs sometimes exist on
+    /// systems that never had Chrome installed (e.g. via a Google
+    /// Updater leftover or a one-off Cast/Drive integration). The
+    /// actual .app bundle existing is the firmer signal.
+    fn app_installed(self) -> bool {
+        #[cfg(target_os = "macos")]
+        {
+            let bundle = match self {
+                ChromiumBrowser::Chrome => "Google Chrome.app",
+                ChromiumBrowser::Brave => "Brave Browser.app",
+                ChromiumBrowser::Edge => "Microsoft Edge.app",
+            };
+            let candidates = [
+                PathBuf::from("/Applications").join(bundle),
+                dirs::home_dir().map(|h| h.join("Applications").join(bundle)).unwrap_or_default(),
+            ];
+            candidates.iter().any(|p| p.exists())
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            // On Windows/Linux the profile-data dir is the canonical
+            // signal — there's no easily-enumerable bundle path.
+            self.root().map(|p| p.exists()).unwrap_or(false)
+        }
+    }
+
     fn app_present(self) -> bool {
         // Process names as reported by `sysinfo` (which mirrors what
         // /bin/ps and tasklist see on each platform).
@@ -296,12 +353,11 @@ impl ChromiumBrowser {
 }
 
 fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
-    if !b.app_present() {
-        return Some(BrowserStatus { present: false, profiles: vec![], error: None });
-    }
+    let running = b.app_present();
+    let installed = b.app_installed();
     let root = b.root()?;
-    if !root.exists() {
-        return Some(BrowserStatus { present: false, profiles: vec![], error: None });
+    if !installed || !root.exists() {
+        return Some(BrowserStatus { present: running, installed, profiles: vec![], error: None });
     }
 
     // Discover profiles via "Local State" first, dir scan as fallback.
@@ -403,7 +459,7 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
         profiles.push(s);
     }
 
-    Some(BrowserStatus { present: true, profiles, error: None })
+    Some(BrowserStatus { present: running, installed: true, profiles, error: None })
 }
 
 // ---- Safari (macOS only) --------------------------------------------------
@@ -411,16 +467,15 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
 #[cfg(target_os = "macos")]
 fn scan_safari() -> BrowserStatus {
     use std::process::Command;
-    if !is_process_running(&["Safari"]) {
-        return BrowserStatus { present: false, profiles: vec![], error: None };
-    }
+    let running = is_process_running(&["Safari"]);
+    // Safari is a system app — always installed on macOS.
     let output = Command::new("/usr/bin/pluginkit")
         .args(["-m", "-A", "-vvv", "-p", "com.apple.Safari.web-extension"])
         .output();
     let output = match output {
         Ok(o) => o,
         Err(e) => {
-            return BrowserStatus { present: false, profiles: vec![], error: Some(e.to_string()) };
+            return BrowserStatus { present: running, installed: true, profiles: vec![], error: Some(e.to_string()) };
         }
     };
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -438,7 +493,8 @@ fn scan_safari() -> BrowserStatus {
         None => (false, None),
     };
     BrowserStatus {
-        present: true,
+        present: running,
+        installed: true,
         profiles: vec![ProfileStatus {
             name: "(Safari has no profiles)".to_string(),
             is_default: true,
@@ -455,6 +511,7 @@ fn scan_safari() -> BrowserStatus {
 fn scan_safari() -> BrowserStatus {
     BrowserStatus {
         present: false,
+        installed: false,
         profiles: vec![],
         error: Some("Safari is macOS-only".to_string()),
     }

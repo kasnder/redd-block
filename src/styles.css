@@ -3165,7 +3165,7 @@ body.ios .blocklist-action-btn svg {
 
 .migration-browser-buttons {
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
     gap: 8px;
     margin-bottom: 18px;
 }
@@ -3174,21 +3174,62 @@ body.ios .blocklist-action-btn svg {
     display: none;
 }
 
-.migration-browser-buttons a {
-    flex: 1 1 auto;
-    min-width: 130px;
-    padding: 10px 12px;
-    text-align: center;
+.migration-browser-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: rgba(10, 45, 123, 0.04);
+    border: 1px solid rgba(10, 45, 123, 0.08);
+    border-radius: 8px;
+    font-size: 14px;
+}
+
+.migration-browser-row.compliant {
+    background: rgba(16, 185, 129, 0.08);
+    border-color: rgba(16, 185, 129, 0.18);
+}
+
+/* Partially set up — extension installed but missing enable or
+   private-mode permission. Visually amber to distinguish from "not
+   installed at all". */
+.migration-browser-row.needs-enable,
+.migration-browser-row.needs-private {
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.20);
+}
+
+.migration-browser-row.needs-enable .migration-browser-cta,
+.migration-browser-row.needs-private .migration-browser-cta {
+    background: #b45309;
+}
+
+.migration-browser-name {
+    font-weight: 500;
+    color: hsl(222, 25%, 25%);
+}
+
+.migration-browser-badge.compliant {
+    color: #047857;
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.migration-browser-cta {
+    padding: 6px 14px;
     background: var(--accent-color, #2563eb);
     color: white;
     text-decoration: none;
-    border-radius: 8px;
-    font-size: 14px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
     font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
     transition: opacity 0.15s;
 }
 
-.migration-browser-buttons a:hover {
+.migration-browser-cta:hover {
     opacity: 0.9;
 }
 

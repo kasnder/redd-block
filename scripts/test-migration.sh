@@ -34,17 +34,24 @@ case "$cmd" in
     cp "$HOSTS" "$SNAPSHOT"
     chmod 600 "$SNAPSHOT"
     echo "Injecting fake legacy markers into $HOSTS (one admin prompt via osascript)."
-    INJECT_SCRIPT='cat >> /etc/hosts <<EOF
+    # Build the marker block in a temp file (user-writable) so the
+    # elevated step is just a simple `cat tempfile >> /etc/hosts` —
+    # no quoting nightmares through bash → AppleScript → sh.
+    MARKER_TMP="$SNAPSHOT_DIR/markers.txt"
+    cat > "$MARKER_TMP" <<'MARKER_EOF'
 
 # === BEGIN REDD BLOCK (reddfocus.org) ===
 0.0.0.0 redd-block-test-marker.invalid
 # === END REDD BLOCK (reddfocus.org) ===
-EOF'
+MARKER_EOF
+
+    INJECT_CMD="cat '$MARKER_TMP' >> /etc/hosts"
     if [[ "$cmd" == "inject-with-backup" ]]; then
-      INJECT_SCRIPT="$INJECT_SCRIPT; cp '$SNAPSHOT' /etc/hosts.redd-backup"
+      INJECT_CMD="$INJECT_CMD && cp '$SNAPSHOT' /etc/hosts.redd-backup"
       echo "Also dropping /etc/hosts.redd-backup (legacy daemon's pre-mod copy)."
     fi
-    /usr/bin/osascript -e "do shell script \"$INJECT_SCRIPT\" with administrator privileges with prompt \"Test harness: inject legacy ReDD Block markers into /etc/hosts.\""
+    /usr/bin/osascript -e "do shell script \"$INJECT_CMD\" with administrator privileges with prompt \"Test harness: inject legacy ReDD Block markers into /etc/hosts.\""
+    rm -f "$MARKER_TMP"
     echo "Done. Now run: cd src-tauri && cargo run --example test_migration"
     ;;
 

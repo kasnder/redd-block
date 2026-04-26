@@ -1189,16 +1189,48 @@ function wireMigrationPostPhase(state) {
     }
 }
 
-// Per-browser deep links to extension stores. Keyed off the
-// detected-and-running browsers from profile_scan so we only show
-// buttons for browsers the user actually has.
+// Per-browser metadata: label + extension store URL (Chromium-family
+// browsers all use the Chrome Web Store listing).
 const BROWSER_STORE_LINKS = {
-    chrome: { label: 'Install for Chrome', url: 'https://chrome.google.com/webstore/detail/redd-focus/hhblkhfdjijdinijakbmcpkmdfhoadcd' },
-    brave: { label: 'Install for Brave', url: 'https://chrome.google.com/webstore/detail/redd-focus/hhblkhfdjijdinijakbmcpkmdfhoadcd' },
-    edge: { label: 'Install for Edge', url: 'https://chrome.google.com/webstore/detail/redd-focus/hhblkhfdjijdinijakbmcpkmdfhoadcd' },
-    firefox: { label: 'Install for Firefox', url: 'https://addons.mozilla.org/en-US/firefox/addon/redd-focus/' },
-    safari: { label: 'Install for Safari', url: 'https://reddfocus.org/tools/reddblock' },
+    chrome: { label: 'Chrome', url: 'https://chromewebstore.google.com/detail/redd-focus-hide-distracti/hhblkhfdjijdinijakbmcpkmdfhoadcd' },
+    brave: { label: 'Brave', url: 'https://chromewebstore.google.com/detail/redd-focus-hide-distracti/hhblkhfdjijdinijakbmcpkmdfhoadcd' },
+    edge: { label: 'Edge', url: 'https://chromewebstore.google.com/detail/redd-focus-hide-distracti/hhblkhfdjijdinijakbmcpkmdfhoadcd' },
+    firefox: { label: 'Firefox', url: 'https://addons.mozilla.org/en-US/firefox/addon/reddfocus/' },
+    safari: { label: 'Safari', url: 'https://apps.apple.com/us/app/redd-focus-hide-distractions/id1660218371' },
 };
+
+// Compute per-step status for the migration UI:
+//   - 'compliant': extension installed, enabled, allowed in private
+//   - 'needs-private': installed + enabled but not allowed in private
+//   - 'needs-enable': installed but disabled
+//   - 'needs-install': extension not installed
+// Returns null if the browser itself isn't installed on the machine.
+function browserComplianceStatus(b) {
+    if (!b || !b.installed) return null;
+    const def = (b.profiles || []).find(p => p.isDefault) || (b.profiles || [])[0];
+    if (!def || !def.installed) return 'needs-install';
+    // Safari is allowed to self-report enabled/private since the
+    // outer app can't introspect its sandbox container — treat
+    // null/undefined enabled as "trust" rather than fail.
+    const enabled = def.enabled;
+    if (enabled === false) return 'needs-enable';
+    const priv = def.privateBrowsing;
+    // For Safari (privateBrowsing === null) we accept it as fine —
+    // the extension self-reports private access through the native
+    // messaging channel.
+    if (priv === false) return 'needs-private';
+    return 'compliant';
+}
+
+function statusLabel(status) {
+    switch (status) {
+        case 'compliant': return '✓ Set up';
+        case 'needs-private': return 'Allow in private browsing';
+        case 'needs-enable': return 'Enable extension';
+        case 'needs-install': return 'Install';
+        default: return 'Install';
+    }
+}
 
 function renderBrowserInstallButtons(state) {
     const container = document.getElementById('migration-browser-buttons');
@@ -1207,27 +1239,86 @@ function renderBrowserInstallButtons(state) {
     container.innerHTML = '';
 
     const browsers = state && state.browsers ? state.browsers : {};
-    const detected = Object.keys(BROWSER_STORE_LINKS).filter(k => browsers[k] && browsers[k].present);
-    const targets = detected.length > 0 ? detected : ['chrome'];
 
-    for (const key of targets) {
+    // Show every browser we detect on disk (regardless of running
+    // state). During migration the user may need to install the
+    // extension in browsers they haven't opened yet — only filtering
+    // to running browsers (as the in-session compliance banner does)
+    // would hide those.
+    const detectedKeys = Object.keys(BROWSER_STORE_LINKS).filter(k => {
+        const b = browsers[k];
+        return b && b.installed;
+    });
+
+    // Fallback: if the scan didn't identify any installed browser
+    // (unusual), surface a single Chrome row so the user has
+    // somewhere to go.
+    const keys = detectedKeys.length > 0 ? detectedKeys : ['chrome'];
+
+    for (const key of keys) {
         const entry = BROWSER_STORE_LINKS[key];
         if (!entry) continue;
-        const a = document.createElement('a');
-        a.href = entry.url;
-        a.target = '_blank';
-        a.rel = 'noopener noreferrer';
-        a.textContent = entry.label;
-        container.appendChild(a);
+        const status = browserComplianceStatus(browsers[key]) || 'needs-install';
+
+        const row = document.createElement('div');
+        row.className = `migration-browser-row ${status}`;
+
+        const name = document.createElement('span');
+        name.className = 'migration-browser-name';
+        name.textContent = entry.label;
+        row.appendChild(name);
+
+        if (status === 'compliant') {
+            const badge = document.createElement('span');
+            badge.className = 'migration-browser-badge compliant';
+            badge.textContent = '✓ Set up';
+            row.appendChild(badge);
+        } else {
+            // Use a button + Tauri command so the URL opens in the
+            // SPECIFIC browser (e.g., Brave's row → Brave). A plain
+            // <a target="_blank"> would open in the system-default
+            // browser, which usually isn't where the extension needs
+            // to be installed.
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = statusLabel(status);
+            btn.className = 'migration-browser-cta';
+            if (status === 'needs-enable') {
+                btn.title = 'Enable ReDD Focus in your browser\'s extensions/add-ons settings.';
+            } else if (status === 'needs-private') {
+                btn.title = 'Allow ReDD Focus in private/incognito browsing in your browser\'s extensions/add-ons settings.';
+            }
+            btn.addEventListener('click', async () => {
+                try {
+                    await invoke('open_url_in_browser', { browser: key, url: entry.url });
+                } catch (e) {
+                    console.warn('[migration] open_url_in_browser failed:', e);
+                    // Last-ditch fallback: open in default browser.
+                    window.open(entry.url, '_blank');
+                }
+            });
+            row.appendChild(btn);
+        }
+
+        container.appendChild(row);
     }
 
-    // Visually flip the checklist item to "done" once the user has
-    // any compliant browser. Polled gently while screen is open.
-    if (checklistItem && state && state.extension_compliant) {
-        checklistItem.classList.remove('checklist-todo');
-        checklistItem.classList.add('checklist-done');
-        const mark = checklistItem.querySelector('.checklist-mark');
-        if (mark) mark.textContent = '✓';
+    // Tick the checklist as "done" once at least one installed
+    // browser is fully compliant. Polled while the screen is open so
+    // it updates when the user returns from configuring the store.
+    if (checklistItem) {
+        const anyCompliant = keys.some(k => browserComplianceStatus(browsers[k]) === 'compliant');
+        if (anyCompliant) {
+            checklistItem.classList.remove('checklist-todo');
+            checklistItem.classList.add('checklist-done');
+            const mark = checklistItem.querySelector('.checklist-mark');
+            if (mark) mark.textContent = '✓';
+        } else {
+            checklistItem.classList.remove('checklist-done');
+            checklistItem.classList.add('checklist-todo');
+            const mark = checklistItem.querySelector('.checklist-mark');
+            if (mark) mark.textContent = '○';
+        }
     }
 }
 

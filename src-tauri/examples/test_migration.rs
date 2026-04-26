@@ -44,6 +44,9 @@ fn inject_hint() -> &'static str {
 }
 
 fn main() {
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+        .format_timestamp(None)
+        .init();
     println!("=== ReDD Block migration harness ===");
     println!("residue present? {}", migration_pending_sync());
     let app_data = app_data_dir();

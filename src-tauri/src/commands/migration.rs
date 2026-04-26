@@ -291,17 +291,13 @@ pub async fn run_upgrade_migration(app: tauri::AppHandle) -> Result<bool, String
     };
 
     let mut data = read_data(&data_path).unwrap_or_else(serde_json::Map::new);
-    let already_at = data
-        .get("settings")
-        .and_then(|s| s.as_object())
-        .and_then(|s| s.get("migrationRanAtVersion"))
-        .and_then(|v| v.as_str())
-        .map(String::from);
-    if already_at.as_deref() == Some(current.as_str()) {
-        return Ok(false);
-    }
 
-    // (A) Detect.
+    // (A) Detect. The residue check is the authoritative gate, NOT
+    // the version stamp — residue can reappear (e.g., a manual
+    // reinject for testing, or a user reinstalling v1.x next to
+    // 2.0). If there's nothing to clean, we no-op and stamp the
+    // version. If there is residue, we run the elevated migration
+    // regardless of whether we've stamped this version before.
     if !migration_pending_sync() {
         // Nothing to do — but still install native-host manifests
         // (idempotent) and stamp the version so we don't keep
@@ -338,16 +334,19 @@ pub async fn run_upgrade_migration(app: tauri::AppHandle) -> Result<bool, String
 }
 
 #[tauri::command]
-pub async fn onboarding_state(app: tauri::AppHandle) -> Result<OnboardingState, String> {
-    // Sample residue state BEFORE running migration so we can tell
-    // "fresh install, nothing to do" apart from "we just cleaned up
-    // v1.x residue this launch". The welcome card only shows for the
-    // latter.
-    let had_residue_before = migration_pending_sync();
-    let migrated_this_launch = run_upgrade_migration(app.clone()).await.unwrap_or(false);
+pub async fn onboarding_state(_app: tauri::AppHandle) -> Result<OnboardingState, String> {
+    // PURE state report — does NOT trigger run_upgrade_migration.
+    // Migration is invoked explicitly by the frontend (Continue
+    // button on the pre-cleanup screen, or the retry CTA). If we
+    // re-ran migration here we'd loop admin prompts every time the
+    // window regains focus, since the post-cleanup screen polls this
+    // command to refresh the per-browser checklist.
     let migration_pending = migration_pending_sync();
-    // Real upgrade if there WAS residue and there ISN'T anymore.
-    let show_upgrade_welcome = had_residue_before && !migration_pending;
+    // "We just upgraded this launch": there was residue at process
+    // start, but it's now cleaned up. Persists for the lifetime of
+    // the process via snapshot_initial_state.
+    let show_upgrade_welcome = snapshot_initial_state() && !migration_pending;
+    let migrated_this_launch = show_upgrade_welcome;
 
     let browsers = tauri::async_runtime::spawn_blocking(crate::profile_scan::scan)
         .await
@@ -375,13 +374,20 @@ pub async fn onboarding_state(app: tauri::AppHandle) -> Result<OnboardingState, 
 /// it without spinning up the full Tauri app + browser stack.
 pub fn run_elevated_migration(app_data_dir: Option<&Path>) -> ElevatedOutcome {
     let backup_dir = app_data_dir.map(|d| d.join("backups"));
-    let timestamp = std::time::SystemTime::now()
+    let timestamp_secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
+    // Use nanos for the status-marker path so two calls within the
+    // same second can't collide (the first one's post-read delete
+    // would otherwise eat the second one's marker).
+    let timestamp_nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
     let snapshot_path = backup_dir
         .as_ref()
-        .map(|d| d.join(format!("hosts.{timestamp}")));
+        .map(|d| d.join(format!("hosts.{timestamp_secs}")));
 
     // Compute cleaned hosts content here in Rust (we have userspace
     // read access to /etc/hosts — only writes need elevation). Any
@@ -432,9 +438,10 @@ pub fn run_elevated_migration(app_data_dir: Option<&Path>) -> ElevatedOutcome {
         }
     };
 
-    let status_path = std::env::temp_dir().join(format!("redd-migration-status.{timestamp}"));
+    let status_path = std::env::temp_dir().join(format!("redd-migration-status.{timestamp_nanos}"));
     // Best-effort cleanup of any stale prior status file.
     let _ = std::fs::remove_file(&status_path);
+    log::info!("migration: status marker target = {}", status_path.display());
 
     #[cfg(target_os = "macos")]
     let outcome = run_elevated_macos(&staged, &status_path);
@@ -449,12 +456,25 @@ pub fn run_elevated_migration(app_data_dir: Option<&Path>) -> ElevatedOutcome {
     // every ordered step succeeded. If the marker is missing, treat
     // this as a failure even if the process returned 0 for some
     // reason (e.g. PowerShell -Verb RunAs returning prematurely).
-    let marker_ok = std::fs::read_to_string(&status_path)
-        .map(|s| s.trim() == STATUS_OK)
-        .unwrap_or(false);
+    let marker_read = std::fs::read_to_string(&status_path);
+    let marker_ok = match &marker_read {
+        Ok(s) => s.trim() == STATUS_OK,
+        Err(_) => false,
+    };
+    if !marker_ok {
+        match marker_read {
+            Ok(s) => log::warn!("migration: status marker present but wrong content: {:?}", s),
+            Err(e) => log::warn!(
+                "migration: could not read status marker at {}: {} (osascript said success={}, user_cancelled={})",
+                status_path.display(),
+                e,
+                outcome.success,
+                outcome.user_cancelled
+            ),
+        }
+    }
     let _ = std::fs::remove_file(&status_path);
     if !marker_ok {
-        log::warn!("migration: status marker missing or wrong, treating as failure");
         return ElevatedOutcome { success: false, ..outcome };
     }
 
