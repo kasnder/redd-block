@@ -46,7 +46,12 @@ src-tauri/target/debug/bundle/nsis/ReDD Block_<ver>_x64-setup.exe
 #   3. Accept → overlay swaps to post-cleanup checklist with per-browser buttons
 #   4. Click "I've installed it" → main UI shows, enforcer resumes
 # Verify: hosts clean, helper-state.json gone, scheduled task gone,
-#         redd-block-data.json hash unchanged.
+#         redd-block-data.json user-data fields unchanged (the file's
+#         byte hash WILL change on Windows because the running app
+#         legitimately stamps `migrationRanAtVersion` and
+#         `migrationRanAt`; only the macOS .pkg flow leaves it
+#         byte-identical because cleanup runs from preinstall before
+#         the new app ever launches).
 ```
 This is the only way to validate that the *frontend wiring* (auto-fire on first launch + retry path + browser-store deep-links + enforcer pause) actually works — `cargo run --example test_migration` skips all of it.
 
@@ -112,9 +117,14 @@ Move cleanup into a `NSIS_HOOK_PREINSTALL` macro in `windows/hooks.nsh` that cal
 ## Verification (Tier 2 — Option A)
 
 ```powershell
-# residue baseline
+# residue baseline — capture user-data fields, not byte hash. The
+# migration WILL touch redd-block-data.json on Windows (stamp the
+# version) so MD5 comparison will always fail; instead diff the
+# JSON before/after at the field level. blocklists, schedules,
+# settings.eulaAcceptedAt, settings.onboardingComplete must
+# round-trip identically.
 scripts\test-migration.ps1 inject
-$preDataHash = (Get-FileHash 'C:\ProgramData\ReDD Block\redd-block-data.json' -Algorithm MD5).Hash
+$pre = Get-Content 'C:\ProgramData\ReDD Block\redd-block-data.json' -Raw | ConvertFrom-Json
 
 # build + install
 npm run tauri -- build --debug --bundles nsis
@@ -123,8 +133,13 @@ npm run tauri -- build --debug --bundles nsis
 
 # verify
 scripts\test-migration.ps1 check                    # all (absent)
-(Get-FileHash 'C:\ProgramData\ReDD Block\redd-block-data.json' -Algorithm MD5).Hash -eq $preDataHash
-# inspect Settings → "migrationRanAtVersion" = "2.0.0"
+$post = Get-Content 'C:\ProgramData\ReDD Block\redd-block-data.json' -Raw | ConvertFrom-Json
+# preserved (must match):
+($post.blocklists | ConvertTo-Json -Depth 10) -eq ($pre.blocklists | ConvertTo-Json -Depth 10)
+($post.schedules | ConvertTo-Json -Depth 10) -eq ($pre.schedules | ConvertTo-Json -Depth 10)
+$post.settings.eulaAcceptedAt -eq $pre.settings.eulaAcceptedAt
+# stamped (must NOT match):
+$post.settings.migrationRanAtVersion -eq '2.0.0'
 # confirm one-time upgrade welcome card visible; close + relaunch → no UAC, no card
 ```
 
