@@ -1,23 +1,152 @@
 # Browser-Extension Migration Plan
 
-> **Status (branch `claude/plan-extension-migration-J9CTL`)**
->
-> Compiled and partially exercised on real macOS *and* Windows hardware.
-> macOS: Cmd-Q, tray, accessory mode, app watcher, enforcer + native
-> notifications, hide-on-close all verified working in a debug `.app`
-> bundle. Windows (arm64 debug NSIS bundle): build / link / install /
-> launch / native-messaging connect / extension-compliance scan /
-> enforcer kill (taskkill graceful→force) / toast notifications / tray
-> behaviour / watchdog Scheduled Task / clean uninstall — all verified.
-> Remaining work is tracked in [Remaining work](#remaining-work) below.
+> **Status (branch `claude/plan-extension-migration-J9CTL`)** — code complete,
+> end-to-end tested on real macOS and Windows hardware. Two known gaps remain
+> before public release: **Safari extension support** (deferred pending Apple
+> Developer team consolidation) and **code-signing of both installers**
+> (.pkg needs `Developer ID Installer` cert; NSIS needs Azure Trusted Signing
+> creds in CI). See [Remaining work](#remaining-work) below for details.
+
+## Current state at a glance
+
+### Architecture
+The privileged-helper-daemon stack is gone. v2.0 is a single unprivileged
+Tauri binary per OS that:
+- Blocks websites via the **ReDD Focus browser extension** (Chrome / Brave /
+  Edge / Firefox via native messaging; Safari via a dedicated extension target —
+  deferred).
+- Blocks apps via an in-process sysinfo poll-and-kill watcher.
+- Persists itself via `tauri-plugin-autostart` (LaunchAgent on macOS, HKCU
+  Run-key on Windows) plus a watchdog Scheduled Task on Windows.
+- Survives login: window stays hidden when launched via autostart (`--autostart`
+  flag in argv); user opens it via the menu-bar tray icon.
+
+### Migration delivery
+| OS | Path | Where cleanup runs |
+|---|---|---|
+| macOS | `.pkg` installer | preinstall script (one wizard admin prompt covers everything) |
+| macOS | `.dmg` (fallback / direct) | in-app on first launch (full-screen overlay → admin prompt) |
+| Windows | NSIS installer | in-app on first launch (post-install hook auto-opens app → overlay → UAC) |
+
+Both paths converge on the **same `cleanup.sh` / `cleanup.ps1`** loaded via
+`include_str!` from `src-tauri/src/commands/migration/`. One source of truth;
+the .pkg preinstall and the in-app `run_elevated_macos`/`run_elevated_windows`
+both substitute `{STAGED}`/`{STATUS}` placeholders into the same script body.
+
+### What's verified end-to-end
+**macOS** (real v1.x install + .pkg upgrade):
+- Preinstall stops the running v1.x daemon, atomic-writes hosts using legacy
+  `.redd-backup` as source, removes daemon-specific files, status marker.
+- User blocklist data byte-identical pre/post (MD5 verified).
+- Autostart enabled on first launch → `~/Library/LaunchAgents/ReDD Block.plist`
+  registered with `--autostart` flag.
+- Subsequent autostart-launches: app starts hidden in tray.
+- Behaviour-change banner appears for upgraders, auto-hides when extension
+  is fully set up everywhere.
+
+**Windows** (Tier 1 + Tier 2 pass per `MIGRATION_RUNBOOK.md`):
+- In-app cleanup against fake residue: accept / cancel / retry / idempotent
+  re-run all green; field-level data preservation verified.
+- Console windows hidden during elevated cleanup (no PS flash).
+- UI poll-and-recover pattern means a wedged Rust IPC doesn't lock the
+  Continue button.
+- Watchdog Scheduled Task self-heals on every launch.
+- `tauri-plugin-single-instance` collapses post-install hook + finish-page
+  Run-checkbox into one process.
+
+### Frontend onboarding overlay
+Single `#migration-onboarding` overlay drives three states:
+1. **Pre-cleanup** (residue detected) — explanation card, Continue triggers
+   admin prompt, cancel keeps overlay open with Try Again.
+2. **Post-cleanup** (just finished cleanup) — checklist (✓ Old version, ✓
+   Blocklists preserved, ○ Install extension) + per-browser status rows
+   with Copy URL buttons.
+3. **Welcome** (fresh user, never had v1.x, extension not yet compliant) —
+   same layout but cleanup checklist hidden, headline "Welcome to ReDD Block"
+   instead of "Cleanup complete".
+
+Dismissal persisted in `localStorage` (`reddBlockExtOnboardingDismissed`).
+After dismiss, slim `extension-compliance-banner` takes over for ongoing
+nagging.
+
+### Robustness improvements landed during testing
+- Elevated scripts moved to standalone files (`cleanup.sh`, `cleanup.ps1`)
+  with editor syntax-highlighting / linting support. Loaded via `include_str!`.
+- Status-marker temp paths use nanoseconds (was seconds → collisions).
+- macOS: daemon-stopped poll uses `launchctl print` (pgrep was false-matching
+  on the script's own argv).
+- Windows: PowerShell native-command stderr wrapped in EAP=Continue scopes
+  (schtasks/taskkill/ipconfig wrote to stderr and aborted under EAP=Stop).
+- `profile_scan` `installed` field requires actual app bundle/exe in standard
+  locations (was just profile-dir existence → false positives).
+- Webstore-allowlist stubs (`{active_bit, allowlist}` with no `manifest`/`path`/
+  `state`) filtered out (Brave/Edge keep these for extensions the user has
+  merely viewed in the store).
+- Dead `get_running_apps` + `minimize_app` commands removed (would have
+  triggered macOS Automation TCC permission dialog for nothing).
+- `--autostart` flag in launch agent lets us start hidden.
 
 ## Remaining work
 
-Ordered by priority. Items moved here from the rest of the doc as they
-land; everything below this section is historical context for *how*
-the migration was structured.
+Two real gaps before the migration ships to users; everything else is in
+place and verified.
 
-### Distribution: switch to `.pkg` for the v1.x → 2.0 upgrade
+### 1. Safari extension support (deferred)
+
+ReDD Focus is currently shipped for Chrome / Brave / Edge / Firefox via
+`nativeMessaging`. Safari needs its own extension target inside the
+ReDD Block `.app` bundle (a `SafariWebExtensionHandler.swift`), and the
+Safari extension communicates with the host via App Groups. App Groups
+require both bundles signed by the **same Apple Developer team**:
+
+- ReDD Block: team `JD647S9RT6`
+- redd-focus-web (extension repo): team `7YEYWQKK25`
+
+Until those teams are consolidated under one organisation account,
+App Groups can't bridge the sandboxed Safari extension to the
+unsandboxed app. **Workaround for testing**: a local dual-team re-sign
+or a localhost HTTP fallback (notes in chat history). Patch with the
+in-progress Safari handler rewrite is at
+`browser-ext-migration/redd-focus-web.patch` — apply against a clone of
+redd-focus-web when ready.
+
+In the meantime the Safari row in the per-browser checklist points to
+the App Store listing (`apps.apple.com/.../id1660218371`); users can
+install ReDD Focus there but it won't talk to the desktop app until
+the App Group bridge lands.
+
+### 2. Code-signing both installers
+
+**macOS `.pkg`** — currently produces an unsigned local-test `.pkg` when
+`APPLE_DEVELOPER_INSTALLER_IDENTITY` is unset. To distribute:
+1. Create a `Developer ID Installer` certificate in Apple Developer →
+   Certificates, Identifiers & Profiles. **Note**: this is a different
+   cert from the existing `Developer ID Application` cert used to sign
+   the `.app` itself; same Apple Developer team though.
+2. Set CI env var `APPLE_DEVELOPER_INSTALLER_IDENTITY="Developer ID Installer:
+   Reduce Digital Distraction Ltd (JD647S9RT6)"`. The build script
+   `scripts/build-mac-pkg.sh` auto-signs when set.
+3. Set `APPLE_NOTARIZE_USER` (Apple ID), `APPLE_NOTARIZE_PASS` (app-
+   specific password), `APPLE_TEAM_ID` (`JD647S9RT6`) for stapled
+   notarization. Build script auto-runs `xcrun notarytool submit
+   --wait` + `xcrun stapler staple` when all three are set.
+4. Update `reddfocus.org` download page to offer the `.pkg` as the
+   primary upgrade-from-v1.x download (the `.dmg` stays as a fallback
+   for direct installs).
+
+**Windows NSIS** — the existing `scripts/sign.cmd` invokes Azure Trusted
+Signing when `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` / `AZURE_CLIENT_SECRET`
+are present. Already wired into the Tauri build pipeline. Confirm the
+CI runner has those env vars before cutting a release build.
+
+## Implemented and verified (was originally on this list)
+
+The sections below were the original plan-doc TODOs at the start of this
+branch. Kept as historical context for *what* and *why*. Status line at
+the top of each notes whether it's done.
+
+### Distribution: `.pkg` for the v1.x → 2.0 upgrade ✓
+**Status: implemented and verified end-to-end on real macOS hardware.**
 A `.dmg` drag-replace install on macOS leaves the v1.x daemon running
 and the hosts file edited until the user explicitly launches the new
 app — which means a window where the old privileged stack is
@@ -49,7 +178,7 @@ upgrade by some other path (manual `.dmg` from old archive, partial
 `.pkg` failure, etc.). Defense in depth — both paths land on the
 same end state.
 
-### macOS — must do before merge
+### macOS — verification log
 - [x] **Upgrade migration verified end-to-end on real hardware.** Two
       full v1.x → 2.0 migrations exercised against a real legacy
       install (running launchd daemon + `/etc/hosts` markers + populated
@@ -134,7 +263,7 @@ same end state.
       the top marks them as historical; defer until the migration
       lands on `main`.
 
-### Windows — must do before merge
+### Windows — verification log
 - [ ] **Mirror the macOS upgrade-migration verification.** Same harness
       structure works (`cargo run --example test_migration` in
       `src-tauri/`). The Windows code path uses

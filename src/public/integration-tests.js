@@ -764,18 +764,6 @@
     // Testing Group D: Keep-blocking preference decision inputs
     // ========================================
 
-    async function testD1_setKeepBlockingPreferenceRoundtrip() {
-        const skip = await ensureHelperRunningOrSkip('D1');
-        if (skip) return skip;
-
-        const tauriAPI = getTauriAPI();
-        const setFalse = await tauriAPI.setKeepBlockingOnUninstallViaHelper(false);
-        assertOrThrow(setFalse && setFalse.success, 'D1: set keepBlocking=false failed');
-        const setTrue = await tauriAPI.setKeepBlockingOnUninstallViaHelper(true);
-        assertOrThrow(setTrue && setTrue.success, 'D1: set keepBlocking=true failed');
-        return { passed: true };
-    }
-
     // ========================================
     // Testing Group E: Hosts safety and cleanup invariants
     // ========================================
@@ -881,7 +869,6 @@
             { group: 'A', name: 'A6: Pause/resume one-off enforcement path', fn: testA6_pauseResumeOneOffEnforcementPath },
             { group: 'B', name: 'B1: Shared-domain overlap', fn: testB1_sharedDomainOverlap },
             { group: 'C', name: 'C1: Scoped clear by blocklist ID', fn: testC1_scopedClearByBlocklistId },
-            { group: 'D', name: 'D1: Keep-blocking preference roundtrip', fn: testD1_setKeepBlockingPreferenceRoundtrip },
             { group: 'E', name: 'E1: Clean hosts command path', fn: testE1_cleanHostsCommandPath },
             { group: 'E', name: 'E2: Helper diagnostics contract', fn: testE2_helperDiagnosticsContract }
         ];
