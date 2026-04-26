@@ -150,10 +150,16 @@ pub fn run() {
     // Autostart: launch at login on desktop. The "keep alive" /
     // restart-on-failure behaviour is platform-configured below once
     // the app is running (see `apply_keep_alive` in the setup block).
+    // Autostart: launch at login on desktop. The "--autostart" arg
+    // is appended to the LaunchAgent / Run-key entry so we can tell
+    // login launches apart from user-clicked launches and start
+    // hidden in the tray rather than popping the window on every
+    // login. Plain double-click from Finder / Start menu doesn't
+    // pass the flag, so the window shows normally there.
     #[cfg(not(target_os = "ios"))]
     let builder = builder.plugin(tauri_plugin_autostart::init(
         tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-        Some(vec![]),
+        Some(vec!["--autostart"]),
     ));
 
     // Screen Time is iOS-only. macOS uses the browser-extension path
@@ -510,6 +516,28 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             watchdog::register();
 
+            // Self-heal launch-at-login on every startup. The
+            // tauri-plugin-autostart plugin only installs the
+            // facility — it doesn't enable the entry by default.
+            // For ReDD Block 2.0 the app IS the enforcement engine,
+            // so blocking dies if the user reboots and we don't come
+            // back. Enabling on every launch is idempotent (no-op if
+            // already registered) and self-heals if the user later
+            // removes us from Login Items.
+            #[cfg(not(target_os = "ios"))]
+            {
+                use tauri_plugin_autostart::ManagerExt;
+                let manager = app.autolaunch();
+                let already = manager.is_enabled().unwrap_or(false);
+                if !already {
+                    if let Err(e) = manager.enable() {
+                        log::warn!("autostart enable failed: {e}");
+                    } else {
+                        log::info!("autostart: enabled launch-at-login");
+                    }
+                }
+            }
+
             // Hide-on-close for the main window. The app is the
             // enforcement engine now (no privileged helper), so
             // closing it would stop schedules from firing. Intercept
@@ -523,6 +551,17 @@ pub fn run() {
                         let _ = win_for_event.hide();
                     }
                 });
+
+                // Start hidden when launched by the LaunchAgent /
+                // Run-key entry — tauri-plugin-autostart appends the
+                // "--autostart" arg above. Without this, every login
+                // would briefly pop the window in the user's face.
+                // The user can re-open the window via the tray icon.
+                #[cfg(not(target_os = "ios"))]
+                if std::env::args().any(|a| a == "--autostart") {
+                    let _ = main.hide();
+                    log::info!("startup: launched by autostart, window hidden");
+                }
             }
 
             Ok(())
@@ -553,8 +592,6 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::save_data,
         commands::set_window_size,
         commands::open_app_picker,
-        commands::get_running_apps,
-        commands::minimize_app,
         commands::set_blocked_apps,
         commands::clear_blocked_apps,
         commands::scan_browser_profiles,
@@ -569,6 +606,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::run_upgrade_migration,
         commands::migration_pending,
         commands::migration_was_pending_at_launch,
+        commands::user_came_from_v1x,
         commands::onboarding_state,
         commands::check_helper_status,
         commands::install_helper,
@@ -595,8 +633,6 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::save_data,
         commands::set_window_size,
         commands::open_app_picker,
-        commands::get_running_apps,
-        commands::minimize_app,
         commands::set_blocked_apps,
         commands::clear_blocked_apps,
         commands::scan_browser_profiles,
@@ -611,6 +647,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::run_upgrade_migration,
         commands::migration_pending,
         commands::migration_was_pending_at_launch,
+        commands::user_came_from_v1x,
         commands::onboarding_state,
         commands::check_helper_status,
         commands::install_helper,
