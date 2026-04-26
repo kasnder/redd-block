@@ -150,10 +150,16 @@ pub fn run() {
     // Autostart: launch at login on desktop. The "keep alive" /
     // restart-on-failure behaviour is platform-configured below once
     // the app is running (see `apply_keep_alive` in the setup block).
+    // Autostart: launch at login on desktop. The "--autostart" arg
+    // is appended to the LaunchAgent / Run-key entry so we can tell
+    // login launches apart from user-clicked launches and start
+    // hidden in the tray rather than popping the window on every
+    // login. Plain double-click from Finder / Start menu doesn't
+    // pass the flag, so the window shows normally there.
     #[cfg(not(target_os = "ios"))]
     let builder = builder.plugin(tauri_plugin_autostart::init(
         tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-        Some(vec![]),
+        Some(vec!["--autostart"]),
     ));
 
     // Screen Time is iOS-only. macOS uses the browser-extension path
@@ -545,6 +551,17 @@ pub fn run() {
                         let _ = win_for_event.hide();
                     }
                 });
+
+                // Start hidden when launched by the LaunchAgent /
+                // Run-key entry — tauri-plugin-autostart appends the
+                // "--autostart" arg above. Without this, every login
+                // would briefly pop the window in the user's face.
+                // The user can re-open the window via the tray icon.
+                #[cfg(not(target_os = "ios"))]
+                if std::env::args().any(|a| a == "--autostart") {
+                    let _ = main.hide();
+                    log::info!("startup: launched by autostart, window hidden");
+                }
             }
 
             Ok(())
