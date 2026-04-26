@@ -1274,30 +1274,52 @@ function renderBrowserInstallButtons(state) {
             badge.textContent = '✓ Set up';
             row.appendChild(badge);
         } else {
-            // Use a button + Tauri command so the URL opens in the
-            // SPECIFIC browser (e.g., Brave's row → Brave). A plain
-            // <a target="_blank"> would open in the system-default
-            // browser, which usually isn't where the extension needs
-            // to be installed.
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.textContent = statusLabel(status);
-            btn.className = 'migration-browser-cta';
+            // Show the URL the user needs to open in this specific
+            // browser, plus a copy button. Trying to launch the URL
+            // *in* the right browser ourselves was unreliable
+            // (App Paths registry on Windows, /Applications layout
+            // on macOS, portable installs, etc.) — better to just
+            // hand the user the link and let them paste it where
+            // they want.
+            const status_text = document.createElement('span');
+            status_text.className = 'migration-browser-status-text';
+            status_text.textContent = statusLabel(status);
             if (status === 'needs-enable') {
-                btn.title = 'Enable ReDD Focus in your browser\'s extensions/add-ons settings.';
+                status_text.title = 'Enable ReDD Focus in your browser\'s extensions/add-ons settings.';
             } else if (status === 'needs-private') {
-                btn.title = 'Allow ReDD Focus in private/incognito browsing in your browser\'s extensions/add-ons settings.';
+                status_text.title = 'Allow ReDD Focus in private/incognito browsing in your browser\'s extensions/add-ons settings.';
             }
-            btn.addEventListener('click', async () => {
-                try {
-                    await invoke('open_url_in_browser', { browser: key, url: entry.url });
-                } catch (e) {
-                    console.warn('[migration] open_url_in_browser failed:', e);
-                    // Last-ditch fallback: open in default browser.
-                    window.open(entry.url, '_blank');
-                }
-            });
-            row.appendChild(btn);
+            row.appendChild(status_text);
+
+            // For "needs-install" we surface the store URL. For
+            // "needs-enable" / "needs-private" the user goes to the
+            // browser's own settings, not a URL — so no copy
+            // button there.
+            if (status === 'needs-install') {
+                const urlText = document.createElement('span');
+                urlText.className = 'migration-browser-url';
+                urlText.textContent = entry.url;
+                urlText.title = entry.url;
+                row.appendChild(urlText);
+
+                const copyBtn = document.createElement('button');
+                copyBtn.type = 'button';
+                copyBtn.className = 'migration-browser-copy';
+                copyBtn.textContent = 'Copy';
+                copyBtn.title = `Copy URL — paste into ${entry.label} to install`;
+                copyBtn.addEventListener('click', async () => {
+                    try {
+                        await navigator.clipboard.writeText(entry.url);
+                        copyBtn.textContent = 'Copied';
+                        setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
+                    } catch (e) {
+                        console.warn('[migration] clipboard write failed:', e);
+                        copyBtn.textContent = 'Failed';
+                        setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
+                    }
+                });
+                row.appendChild(copyBtn);
+            }
         }
 
         container.appendChild(row);

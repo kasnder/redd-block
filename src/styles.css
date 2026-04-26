@@ -3215,21 +3215,52 @@ body.ios .blocklist-action-btn svg {
     font-size: 13px;
 }
 
-.migration-browser-cta {
-    padding: 6px 14px;
+.migration-browser-status-text {
+    color: hsl(222, 25%, 35%);
+    font-size: 13px;
+    margin-left: auto;
+    margin-right: 8px;
+}
+
+.migration-browser-row.needs-enable .migration-browser-status-text,
+.migration-browser-row.needs-private .migration-browser-status-text {
+    color: #b45309;
+    font-weight: 500;
+}
+
+.migration-browser-url {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 220px;
+    color: hsl(222, 18%, 45%);
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl;
+    text-align: left;
+    background: rgba(255, 255, 255, 0.5);
+    padding: 4px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(10, 45, 123, 0.10);
+}
+
+.migration-browser-copy {
+    padding: 5px 12px;
     background: var(--accent-color, #2563eb);
     color: white;
-    text-decoration: none;
     border: none;
     border-radius: 6px;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 500;
     cursor: pointer;
     font-family: inherit;
+    margin-left: 6px;
     transition: opacity 0.15s;
 }
 
-.migration-browser-cta:hover {
+.migration-browser-copy:hover {
     opacity: 0.9;
 }
 
