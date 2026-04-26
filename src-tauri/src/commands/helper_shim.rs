@@ -121,15 +121,6 @@ pub fn set_schedules_via_helper(_schedules: serde_json::Value) -> HelperResult {
 #[tauri::command]
 pub fn set_blocks_via_helper(_blocks: serde_json::Value) -> HelperResult { HelperResult::ok() }
 
-#[tauri::command]
-pub fn set_keep_blocking_on_uninstall_via_helper(_args: serde_json::Value) -> HelperResult {
-    // Feature dropped in this release (see MIGRATION_PLAN.md).
-    HelperResult::ok()
-}
-
-#[tauri::command]
-pub fn set_log_pings_via_helper(_args: serde_json::Value) -> HelperResult { HelperResult::ok() }
-
 // ---- Hosts-file cleanup / diagnostics ----------------------------------
 
 #[tauri::command]

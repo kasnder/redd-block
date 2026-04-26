@@ -48,10 +48,6 @@ const tauriAPI = {
 
     // Schedule management via helper daemon (persistent, handles transitions autonomously)
     setSchedulesViaHelper: (schedules) => invoke('set_schedules_via_helper', { schedules }),
-    setKeepBlockingOnUninstallViaHelper: (keepBlockingOnUninstall) =>
-        invoke('set_keep_blocking_on_uninstall_via_helper', { keepBlockingOnUninstall }),
-    setLogPingsViaHelper: (logPings) =>
-        invoke('set_log_pings_via_helper', { logPings }),
 
     // Screen Time API (iOS only - provided by tauri-plugin-screentime)
     screentimeRequestAuth: () => invoke('plugin:screentime|request_authorization'),
@@ -647,26 +643,6 @@ async function syncActiveBlocksToHelper() {
     }
 }
 
-async function syncKeepBlockingPreferenceToHelper() {
-    if (isIOS || !helperAvailable) return;
-    try {
-        const keepBlocking = appData.settings?.keepBlockingOnUninstall !== false; // default true
-        await tauriAPI.setKeepBlockingOnUninstallViaHelper(keepBlocking);
-    } catch (e) {
-        console.warn('[syncKeepBlockingPreferenceToHelper] Error:', e);
-    }
-}
-
-async function syncLogPingsPreferenceToHelper() {
-    if (isIOS || !helperAvailable) return;
-    try {
-        const logPings = !!appData.settings?.logHelperPings; // default false
-        await tauriAPI.setLogPingsViaHelper(logPings);
-    } catch (e) {
-        console.warn('[syncLogPingsPreferenceToHelper] Error:', e);
-    }
-}
-
 function isOneOffBlockEnforced(block, now = Date.now()) {
     return !!(block && block.startTime <= now && block.endTime > now && !block.isPaused);
 }
@@ -741,7 +717,7 @@ function hasAnyBlockingStateToClear(now = Date.now(), nowDate = new Date(now)) {
     return !!appData.schedules?.some(schedule => scheduleCanStillBecomeActive(schedule, nowDate));
 }
 
-async function refreshDesktopHelperStatus({ syncPreference = true } = {}) {
+async function refreshDesktopHelperStatus() {
     if (isIOS) {
         return { installed: false, running: false, version: null, version_ok: false, helperReady: false };
     }
@@ -752,9 +728,6 @@ async function refreshDesktopHelperStatus({ syncPreference = true } = {}) {
         helperAvailable = helperReady;
         lastDesktopHelperStatus = nextStatus;
         lastDesktopHelperStatusAt = Date.now();
-        if (helperReady && syncPreference) {
-            await syncKeepBlockingPreferenceToHelper();
-        }
         return nextStatus;
     } catch (err) {
         console.error('Error checking helper status:', err);
@@ -959,8 +932,6 @@ async function runPostAcceptanceStartup() {
             await runDesktopOnboarding();
             await checkHelperStatus();
             console.log('[startup-sync] Desktop startup helperAvailable:', helperAvailable);
-            // Push the user's ping-logging preference before any Pings happen downstream.
-            await syncLogPingsPreferenceToHelper();
             // Reconcile manual blocks first so paused one-offs are removed from helper state after reinstall.
             await syncActiveBlocksToHelper();
             // Then sync schedules to helper so both enforcement sources are aligned.
@@ -6384,7 +6355,6 @@ async function proceedWithBlock() {
             if (status.running && status.version_ok) {
                 // It's running with correct version, use it
                 helperAvailable = true;
-                await syncKeepBlockingPreferenceToHelper();
                 result = await tauriAPI.startBlockViaHelper({
                     domains: blocklist.websites || [],
                     endTime: blockEnd.getTime(),
@@ -6559,7 +6529,6 @@ async function proceedWithHelperInstall() {
         }
 
         helperAvailable = true;
-        await syncKeepBlockingPreferenceToHelper();
         modal.classList.add('hidden');
 
         // Now start the pending block
@@ -6728,8 +6697,6 @@ async function updateHostsFile(silent = false) {
         if (status.running && status.version_ok) {
             console.log('[updateHostsFile] Helper running with correct version, using helper to update blocks');
             helperAvailable = true;
-            await syncKeepBlockingPreferenceToHelper();
-            await syncLogPingsPreferenceToHelper();
             await syncActiveBlocksToHelper();
             await syncSchedulesToHelper();
             lastBlockedDomains = allDomains;
@@ -6793,9 +6760,6 @@ async function updateBlockedApps() {
             const status = await tauriAPI.checkHelperStatus();
             helperReady = !!(status.running && status.version_ok);
             helperAvailable = helperReady;
-            if (helperReady) {
-                await syncKeepBlockingPreferenceToHelper();
-            }
         } catch (e) {
             console.warn('[updateBlockedApps] Helper status re-check failed:', e);
         }
@@ -9893,7 +9857,6 @@ const SETTINGS_TRANSLATIONS = {
         languageDanish: 'Dansk',
         advancedOptions: 'Advanced options',
         overrideAllBlocks: 'Emergency: Stop all blocks & schedules',
-        keepBlocking: 'Keep blocking running if app is uninstalled',
         helperService: 'Helper service',
         helperStatusChecking: 'Checking...',
         helperStatusActive: 'Active',
@@ -10045,7 +10008,6 @@ const SETTINGS_TRANSLATIONS = {
         languageEnglish: 'Engelsk',
         languageDanish: 'Dansk',
         overrideAllBlocks: 'Nødstop: Stop alle blokeringer og tidsplaner',
-        keepBlocking: 'Hold blokering aktiv, hvis appen afinstalleres',
         helperService: 'Hjælper',
         helperStatusChecking: 'Tjekker...',
         helperStatusActive: 'Aktiv',
@@ -10240,7 +10202,6 @@ function applySettingsLanguage() {
     setText('language-option-da', tSettings('languageDanish'));
     setText('settings-advanced-options-label', tSettings('advancedOptions'));
     setText('settings-override-all-label', tSettings('overrideAllBlocks'));
-    setText('settings-keep-blocking-label', tSettings('keepBlocking'));
     setText('settings-helper-service-label', tSettings('helperService'));
     setText('settings-update-helper-label', tSettings('updateHelper'));
     setText('settings-clean-hosts-label', tSettings('cleanHostsFile'));
@@ -10575,35 +10536,7 @@ function setupHelpMenuLinks() {
 // Setup Helper Settings in the settings modal
 function setupHelperSettings() {
     const statusIndicator = document.getElementById('helper-status-indicator');
-    const keepBlockingToggle = document.getElementById('keep-blocking-toggle');
-    const logPingsToggle = document.getElementById('log-pings-toggle');
     const cleanHostsBtn = document.getElementById('clean-hosts-btn');
-
-    // Initialize toggle from saved settings
-    // When checked (default): blocks continue running after uninstall until complete
-    // When unchecked: helper immediately cleans up when app is uninstalled
-    if (keepBlockingToggle) {
-        const keepBlocking = appData.settings?.keepBlockingOnUninstall !== false; // default true
-        keepBlockingToggle.checked = keepBlocking;
-
-        keepBlockingToggle.addEventListener('change', async (e) => {
-            if (!appData.settings) appData.settings = {};
-            appData.settings.keepBlockingOnUninstall = e.target.checked;
-            await saveData();
-            await syncKeepBlockingPreferenceToHelper();
-        });
-    }
-
-    if (logPingsToggle) {
-        logPingsToggle.checked = !!appData.settings?.logHelperPings; // default false
-
-        logPingsToggle.addEventListener('change', async (e) => {
-            if (!appData.settings) appData.settings = {};
-            appData.settings.logHelperPings = e.target.checked;
-            await saveData();
-            await syncLogPingsPreferenceToHelper();
-        });
-    }
 
     // Update helper status when settings modal opens
     const settingsBtn = document.getElementById('settings-btn');
@@ -10736,7 +10669,7 @@ function updateSnwUninstallOption(helperDisplay) {
 }
 
 async function confirmHelperRemoved() {
-    const status = await refreshDesktopHelperStatus({ syncPreference: false });
+    const status = await refreshDesktopHelperStatus();
     const removed = !(status?.installed || status?.running);
 
     await updateHelperStatusIndicator().catch(() => { });
@@ -10793,7 +10726,7 @@ async function updateHelperStatusIndicator() {
     const updateBtn = document.getElementById('update-helper-btn');
 
     try {
-        const status = await refreshDesktopHelperStatus({ syncPreference: false });
+        const status = await refreshDesktopHelperStatus();
         const helperDisplay = getHelperStatusDisplay(status);
         helperAvailable = helperDisplay.helperReady;
 
@@ -11425,7 +11358,7 @@ function setupStillNotWorking() {
 
         updateSnwUninstallOption(null);
         void (async () => {
-            const status = await refreshDesktopHelperStatus({ syncPreference: false });
+            const status = await refreshDesktopHelperStatus();
             updateSnwUninstallOption(getHelperStatusDisplay(status));
         })();
     });
@@ -11713,7 +11646,7 @@ async function performOverrideAll() {
         if (isIOS) {
             await tauriAPI.screentimeClearBlock();
         } else {
-            const status = await refreshDesktopHelperStatus({ syncPreference: false });
+            const status = await refreshDesktopHelperStatus();
             if (status.helperReady) {
                 // Atomically set everything to empty — helper will know nothing should be blocked
                 try { await tauriAPI.setBlocksViaHelper([]); } catch (e) { console.warn('Failed to clear blocks:', e); }
