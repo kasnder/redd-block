@@ -580,7 +580,12 @@ fn run_elevated_macos(staged: &Path, status_path: &Path) -> ElevatedOutcome {
 
 #[cfg(target_os = "windows")]
 fn run_elevated_windows(staged: &Path, status_path: &Path) -> ElevatedOutcome {
+    use std::os::windows::process::CommandExt;
     use std::process::Command;
+
+    // CREATE_NO_WINDOW: keep the outer (non-elevated) launcher invisible.
+    // The inner elevated PowerShell is hidden separately via -WindowStyle.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
     let staged_str = staged.display().to_string();
     let status_str = status_path.display().to_string();
@@ -621,8 +626,8 @@ fn run_elevated_windows(staged: &Path, status_path: &Path) -> ElevatedOutcome {
 try {{
   $p = Start-Process -FilePath 'powershell.exe' -ArgumentList @(
     '-NoProfile', '-NonInteractive', '-ExecutionPolicy','Bypass',
-    '-File','{inner}'
-  ) -Verb RunAs -PassThru -Wait
+    '-WindowStyle','Hidden', '-File','{inner}'
+  ) -Verb RunAs -WindowStyle Hidden -PassThru -Wait
   exit $p.ExitCode
 }} catch {{
   # User cancelled UAC, or other launch failure.
@@ -641,6 +646,7 @@ try {{
             "-Command",
             &launcher,
         ])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
     {
         Ok(out) => {
