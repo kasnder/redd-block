@@ -9857,7 +9857,7 @@ const SETTINGS_TRANSLATIONS = {
         languageEnglish: 'English',
         languageDanish: 'Dansk',
         advancedOptions: 'Advanced options',
-        overrideAllBlocks: 'Emergency: Stop all blocks & schedules',
+        overrideAllBlocks: 'Stop all blocks (with challenge)',
         helperService: 'Helper service',
         helperStatusChecking: 'Checking...',
         helperStatusActive: 'Active',
@@ -10008,7 +10008,7 @@ const SETTINGS_TRANSLATIONS = {
         themeDark: 'Mørk',
         languageEnglish: 'Engelsk',
         languageDanish: 'Dansk',
-        overrideAllBlocks: 'Nødstop: Stop alle blokeringer og tidsplaner',
+        overrideAllBlocks: 'Stop alle blokeringer (med udfordring)',
         helperService: 'Hjælper',
         helperStatusChecking: 'Tjekker...',
         helperStatusActive: 'Aktiv',
@@ -10922,69 +10922,18 @@ async function refreshDiagnosticsModalContent({ showLoading = false } = {}) {
 
     let diag = null;
     try {
-        diag = await tauriAPI.getHelperDiagnostics();
-        const report = buildDiagnosticsReport(diag);
-        diag._formattedText = formatDiagnosticsText(diag);
-
-        let html = '';
-
-        // Two-column layout: Helper Daemon (left) + System (right)
-        html += '<div style="display: flex; gap: 16px; margin-bottom: 8px;">';
-        html += '<div class="diagnostics-section" style="flex: 1; margin-bottom: 0;">';
-        html += '<div class="diagnostics-section-title">Helper Daemon</div>';
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Reachable:</span> <span class="diagnostics-value ${report.reachable ? 'diag-ok' : 'diag-error'}">${report.reachable ? 'Yes' : 'No'}</span></div>`;
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Status:</span> <span class="diagnostics-value ${report.reachable ? 'diag-ok' : 'diag-error'}">${escapeHtml(report.helperStatusLabel)}</span></div>`;
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Version OK:</span> <span class="diagnostics-value ${report.versionOk ? 'diag-ok' : 'diag-error'}">${report.versionOk ? 'Yes' : 'No'}</span></div>`;
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Version:</span> <span class="diagnostics-value">${escapeHtml(report.version)}</span></div>`;
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Expected:</span> <span class="diagnostics-value">${escapeHtml(report.expectedVersion)}</span></div>`;
-        html += '</div>';
-        html += '<div class="diagnostics-section" style="flex: 1; margin-bottom: 0;">';
-        html += '<div class="diagnostics-section-title">System</div>';
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">OS:</span> <span class="diagnostics-value">${escapeHtml(report.osName)}</span></div>`;
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Architecture:</span> <span class="diagnostics-value">${escapeHtml(report.arch)}</span></div>`;
-        if (report.appVersion) html += `<div class="diagnostics-field"><span class="diagnostics-label">App version:</span> <span class="diagnostics-value">${escapeHtml(report.appVersion)}</span></div>`;
-        html += '</div>';
-        html += '</div>';
-
-        // Hosts file
-        html += '<div class="diagnostics-section">';
-        html += `<div class="diagnostics-section-title">Hosts File (${escapeHtml(report.hostsPath)}) <span class="diagnostics-badge ${report.hasReddBlock ? 'badge-active' : 'badge-inactive'}">${report.hasReddBlock ? 'ReDD Block entries present' : 'No ReDD Block entries'}</span></div>`;
-        html += `<pre class="diagnostics-pre">${escapeHtml(report.hostsFile)}</pre>`;
-        html += '</div>';
-
-        // Helper state file
-        html += '<div class="diagnostics-section">';
-        html += `<div class="diagnostics-section-title">Helper State File (${escapeHtml(report.statePath)})</div>`;
-        html += `<pre class="diagnostics-pre">${escapeHtml(report.statePretty)}</pre>`;
-        html += '</div>';
-
-        if (report.helperLogTail) {
-            html += '<div class="diagnostics-section">';
-            html += `<div class="diagnostics-section-title">Helper Log Tail${report.helperLogPath ? ` (${escapeHtml(report.helperLogPath)})` : ''}</div>`;
-            html += `<pre class="diagnostics-pre">${escapeHtml(report.helperLogTail)}</pre>`;
-            html += '</div>';
-        }
-
-        if (report.installLogTail) {
-            html += '<div class="diagnostics-section">';
-            html += `<div class="diagnostics-section-title">Install Log Tail${report.installLogPath ? ` (${escapeHtml(report.installLogPath)})` : ''}</div>`;
-            html += `<pre class="diagnostics-pre">${escapeHtml(report.installLogTail)}</pre>`;
-            html += '</div>';
-        }
-
-        content.innerHTML = html;
+        diag = await invoke('get_system_diagnostics');
+        content.innerHTML = renderSystemDiagnostics(diag);
         restoreDiagnosticsScrollState(content, scrollState);
     } catch (e) {
         content.innerHTML = `<div class="diagnostics-error">Failed to load diagnostics: ${e.message || e}</div>`;
     }
 
-    // Copy button
     const copyBtn = document.getElementById('diagnostics-copy-btn');
     if (copyBtn) {
         copyBtn.onclick = () => {
             if (!diag) { copyBtn.textContent = 'No data'; return; }
-            const text = diag._formattedText || formatDiagnosticsText(diag);
-
+            const text = JSON.stringify(diag, null, 2);
             navigator.clipboard.writeText(text).then(() => {
                 copyBtn.textContent = 'Copied!';
                 setTimeout(() => { copyBtn.textContent = 'Copy to Clipboard'; }, 2000);
@@ -10994,6 +10943,68 @@ async function refreshDiagnosticsModalContent({ showLoading = false } = {}) {
             });
         };
     }
+}
+
+// Render the structured SystemDiagnostics struct as collapsible
+// HTML sections. Designed for both user-readable scan AND copy-as-JSON
+// for filing support tickets.
+function renderSystemDiagnostics(d) {
+    const ok = (b) => `<span class="diagnostics-value ${b ? 'diag-ok' : 'diag-error'}">${b ? 'Yes' : 'No'}</span>`;
+    const yesno = (b) => b ? '✓' : '✗';
+    const fmtTs = (ms) => ms ? new Date(ms).toLocaleString() : '—';
+    const e = (s) => escapeHtml(String(s));
+    let html = '';
+
+    // App
+    html += '<div class="diagnostics-section">';
+    html += '<div class="diagnostics-section-title">App</div>';
+    html += `<div class="diagnostics-field"><span class="diagnostics-label">Version:</span> <span class="diagnostics-value">${e(d.app.version)}</span> <span class="diagnostics-badge">${e(d.app.build_mode)}</span></div>`;
+    html += `<div class="diagnostics-field"><span class="diagnostics-label">OS / arch:</span> <span class="diagnostics-value">${e(d.app.os)} / ${e(d.app.arch)}</span></div>`;
+    html += '</div>';
+
+    // Migration
+    const m = d.migration;
+    html += '<div class="diagnostics-section">';
+    html += '<div class="diagnostics-section-title">Migration from v1.x</div>';
+    html += `<div class="diagnostics-field"><span class="diagnostics-label">Came from v1.x:</span> ${ok(m.came_from_v1x)}</div>`;
+    html += `<div class="diagnostics-field"><span class="diagnostics-label">Residue at launch:</span> ${ok(!m.residue_at_launch)} <span class="diagnostics-value subtle">(false = clean)</span></div>`;
+    html += `<div class="diagnostics-field"><span class="diagnostics-label">Residue right now:</span> ${ok(!m.residue_present)} <span class="diagnostics-value subtle">(false = clean)</span></div>`;
+    html += `<div class="diagnostics-field"><span class="diagnostics-label">Stamped version:</span> <span class="diagnostics-value">${e(m.ran_at_version || '—')}</span></div>`;
+    html += `<div class="diagnostics-field"><span class="diagnostics-label">Stamped at:</span> <span class="diagnostics-value">${e(fmtTs(m.ran_at_ms))}</span></div>`;
+    html += '</div>';
+
+    // Browsers
+    html += '<div class="diagnostics-section">';
+    html += '<div class="diagnostics-section-title">Browsers (extension)</div>';
+    html += '<table class="diagnostics-table"><thead><tr><th>Browser</th><th>Installed</th><th>Running</th><th>Ext set up</th></tr></thead><tbody>';
+    for (const key of ['chrome', 'brave', 'edge', 'firefox', 'safari']) {
+        const b = d.browsers[key];
+        if (!b) continue;
+        const compliant = browserComplianceStatus(b) === 'compliant';
+        html += `<tr><td>${e(key)}</td><td>${yesno(b.installed)}</td><td>${yesno(b.present)}</td><td>${b.installed ? yesno(compliant) : '—'}</td></tr>`;
+    }
+    html += '</tbody></table>';
+    html += '</div>';
+
+    // Enforcer + autostart
+    html += '<div class="diagnostics-section">';
+    html += '<div class="diagnostics-section-title">Enforcement</div>';
+    html += `<div class="diagnostics-field"><span class="diagnostics-label">Grace period:</span> <span class="diagnostics-value">${e(d.enforcer.grace_seconds)} s</span></div>`;
+    html += `<div class="diagnostics-field"><span class="diagnostics-label">Autostart at login:</span> ${ok(d.autostart.enabled)}</div>`;
+    if (d.watchdog) {
+        html += `<div class="diagnostics-field"><span class="diagnostics-label">Watchdog Scheduled Task:</span> ${ok(d.watchdog.task_present)}</div>`;
+    }
+    html += '</div>';
+
+    // Recent log
+    if (d.recent_log && d.recent_log.length > 0) {
+        html += '<div class="diagnostics-section">';
+        html += `<div class="diagnostics-section-title">Recent log (last ${d.recent_log.length} lines)</div>`;
+        html += `<pre class="diagnostics-pre">${e(d.recent_log.join('\n'))}</pre>`;
+        html += '</div>';
+    }
+
+    return html;
 }
 
 // Diagnostics modal

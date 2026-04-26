@@ -131,6 +131,18 @@ pub fn register() {
     }
 }
 
+/// True if the per-user Scheduled Task is currently registered with
+/// the Task Scheduler. Best-effort — failures (schtasks not found,
+/// permission denied) are treated as "not present" rather than
+/// crashing the diagnostics readout.
+pub fn is_registered() -> bool {
+    Command::new("schtasks")
+        .args(["/Query", "/TN", TASK_NAME])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 /// Idempotent: removes the task and both wrapper scripts if present.
 pub fn unregister() {
     let _ = Command::new("schtasks")
