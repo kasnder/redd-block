@@ -1126,21 +1126,6 @@
                             </svg>
                             <span id="settings-override-all-label">Stop all blocks (with challenge)</span>
                         </button>
-                        <div class="still-not-working-wrapper" style="position: relative; margin-top: 8px;">
-                            <button id="still-not-working-btn" class="remove-helper-btn">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <circle cx="12" cy="12" r="10"></circle>
-                                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-                                    <path d="M12 17h.01"></path>
-                                </svg>
-                                <span>Something still not working?</span>
-                            </button>
-                            <div id="still-not-working-hint" class="still-not-working-hint"
-                                style="display: none; font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.4;">
-                                Please stop all blocks and schedules first.
-                            </div>
-                        </div>
                     </div>
                 </div>
 
@@ -1191,82 +1176,6 @@
                 <div class="modal-buttons">
                     <button id="diagnostics-copy-btn" class="modal-btn cancel-btn">Copy to Clipboard</button>
                     <button id="close-diagnostics-btn" class="modal-btn cancel-btn">Close</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Still Not Working Modal -->
-        <div id="still-not-working-modal" class="modal-overlay hidden">
-            <div class="modal-content" style="max-width: 520px;">
-                <h3>Something still not working?</h3>
-                <p style="font-size: 14px; color: var(--text-secondary); margin-bottom: 16px;">
-                    If the emergency stop didn't resolve your issue, try these options:
-                </p>
-
-                <!-- Option 1: Uninstall Helper -->
-                <div class="snw-option">
-                    <button id="snw-uninstall-btn" class="remove-helper-btn" style="width: 100%;">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M3 6h18"></path>
-                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                        </svg>
-                        <span>Uninstall Helper Service</span>
-                    </button>
-                    <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
-                        Removes the background helper service. You can reinstall it later by starting a block.
-                    </p>
-                </div>
-
-                <!-- Option 2: Manual Hosts Reset -->
-                <div class="snw-option" style="margin-top: 12px;">
-                    <button id="snw-manual-reset-btn" class="remove-helper-btn" style="width: 100%;">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                            <path d="M14 2v6h6"></path>
-                            <line x1="9" y1="15" x2="15" y2="15"></line>
-                        </svg>
-                        <span>Manually reset hosts file</span>
-                    </button>
-                    <div id="snw-manual-reset-locked"
-                        style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
-                        Unlock terminal commands to manually remove blocking entries from your hosts file.
-                    </div>
-                    <!-- Challenge area (hidden until clicked) -->
-                    <div id="snw-challenge-area" class="override-challenge hidden" style="margin-top: 8px;">
-                        <p class="override-all-subline">Type the following to unlock:</p>
-                        <div id="snw-challenge-text" class="challenge-text"></div>
-                        <textarea id="snw-challenge-input" class="challenge-input" placeholder="Type here..."
-                            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
-                        <div class="challenge-progress">
-                            <div id="snw-challenge-progress-bar" class="challenge-progress-bar"></div>
-                        </div>
-                    </div>
-                    <!-- Terminal commands (hidden until challenge completed) -->
-                    <div id="snw-terminal-commands" class="hidden" style="margin-top: 8px;">
-                    </div>
-                </div>
-
-                <!-- Option 3: Email Support -->
-                <div class="snw-option" style="margin-top: 12px;">
-                    <button id="snw-email-btn" class="remove-helper-btn" style="width: 100%;">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z">
-                            </path>
-                            <polyline points="22,6 12,13 2,6"></polyline>
-                        </svg>
-                        <span>Email support with diagnostics</span>
-                    </button>
-                    <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
-                        Opens your email client with diagnostic info pre-filled to team@reddfocus.org.
-                    </p>
-                </div>
-
-                <div class="modal-buttons" style="margin-top: 16px;">
-                    <button id="close-snw-btn" class="modal-btn cancel-btn">Close</button>
                 </div>
             </div>
         </div>

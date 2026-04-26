@@ -830,7 +830,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupDiagnosticsButton();
     setupOverrideAll();
     setupGraceSetting();
-    setupStillNotWorking();
     if (isIOS && hasAcceptedEula()) {
         await checkScreentimeAuth();
     } else {
@@ -10646,28 +10645,6 @@ function logHelperRemovalFallback(result) {
     }
 }
 
-function updateSnwUninstallOption(helperDisplay) {
-    const uninstallBtn = document.getElementById('snw-uninstall-btn');
-    if (!uninstallBtn) return;
-
-    const uninstallOption = uninstallBtn.closest('.snw-option');
-    if (uninstallOption) uninstallOption.style.display = '';
-
-    if (window._isRemovingHelper) {
-        uninstallBtn.disabled = true;
-        uninstallBtn.title = '';
-        return;
-    }
-
-    const hasBlockingState = hasAnyBlockingStateToClear();
-    if (hasBlockingState) {
-        uninstallBtn.disabled = true;
-        uninstallBtn.title = 'Run the emergency stop first to clear all active or resumable blocks and schedules';
-    } else {
-        uninstallBtn.disabled = false;
-        uninstallBtn.title = helperDisplay?.removeTitle || '';
-    }
-}
 
 async function confirmHelperRemoved() {
     const status = await refreshDesktopHelperStatus();
@@ -10769,13 +10746,11 @@ async function updateHelperStatusIndicator() {
             }
         }
 
-        updateSnwUninstallOption(helperDisplay);
     } catch (e) {
         statusIndicator.classList.remove('running', 'stopped');
         statusIndicator.classList.add('stopped');
         statusText.textContent = tSettings('helperStatusUnknown');
 
-        updateSnwUninstallOption(null);
         if (updateBtn) updateBtn.style.display = 'none';
     }
 
@@ -11048,126 +11023,13 @@ function hasAnyActiveBlocks() {
     return hasAnyEnforcedBlocks();
 }
 
-// Update visibility of the Override All button based on active blocks
-function updateOverrideAllButtonVisibility() {
-    const hasBlocks = hasAnyBlockingStateToClear();
-    // "Something still not working?" — enabled when no blocks active, disabled when blocks active
-    const stillBtn = document.getElementById('still-not-working-btn');
-    if (stillBtn) {
-        stillBtn.disabled = hasBlocks;
-        stillBtn.title = hasBlocks ? 'Run the emergency stop first' : '';
-    }
-}
+// No-op kept for any legacy callers — the "still not working" button
+// it used to control was removed in 2.0 along with the helper-uninstall
+// + manual-hosts-reset escape hatches. Override All visibility is now
+// purely CSS / always-on.
+function updateOverrideAllButtonVisibility() {}
 
 // Show challenge for removing helper when blocks are active
-async function showRemoveHelperChallenge() {
-    return new Promise((resolve) => {
-        // Find the hardest challenge from active blocks' blocklists
-        const now = Date.now();
-        let hardestDifficulty = { type: 'random-words', count: 50 }; // default
-        let maxCount = 50;
-
-        // Check active one-off blocks
-        for (const block of appData.activeBlocks) {
-            if (isOneOffBlockEnforced(block, now)) {
-                const bl = appData.blocklists.find(b => b.id === block.blocklistId);
-                if (bl?.overrideDifficulty) {
-                    const diff = bl.overrideDifficulty;
-                    // Custom text is always hardest
-                    if (diff.type === 'custom' && diff.customText) {
-                        hardestDifficulty = diff;
-                        break; // Custom is always hardest
-                    }
-                    // For gibberish/random-words, higher count = harder
-                    if (diff.count > maxCount) {
-                        maxCount = diff.count;
-                        hardestDifficulty = diff;
-                    }
-                }
-            }
-        }
-
-        // Check scheduled blocks too
-        if (hardestDifficulty.type !== 'custom' && appData.schedules) {
-            const nowDate = new Date();
-
-            for (const schedule of appData.schedules) {
-                if (!schedule.segments) continue;
-                if (isScheduleSegmentActiveNow(schedule, nowDate)) {
-                    const bl = appData.blocklists.find(b => b.id === schedule.blocklistId);
-                    if (bl?.overrideDifficulty) {
-                        const diff = bl.overrideDifficulty;
-                        if (diff.type === 'custom' && diff.customText) {
-                            hardestDifficulty = diff;
-                            break;
-                        }
-                        if (diff.count > maxCount) {
-                            maxCount = diff.count;
-                            hardestDifficulty = diff;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Generate challenge text based on difficulty - use global challengeText so existing handlers work
-        if (hardestDifficulty.type === 'custom' && hardestDifficulty.customText) {
-            challengeText = hardestDifficulty.customText;
-        } else if (hardestDifficulty.type === 'gibberish') {
-            challengeText = generateGibberish(hardestDifficulty.count);
-        } else {
-            challengeText = generateRandomWords(hardestDifficulty.count);
-        }
-        challengeText = challengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
-
-        // Close settings modal first so challenge modal appears on top
-        document.getElementById('settings-modal').classList.add('hidden');
-
-        // Use the existing override modal
-        const modal = document.getElementById('override-modal');
-        const titleEl = document.getElementById('override-modal-title');
-        const summaryEl = document.getElementById('override-summary');
-        const challengeTextEl = document.getElementById('challenge-text');
-        const challengeInput = document.getElementById('challenge-input');
-        const progressBar = document.getElementById('challenge-progress-bar');
-        const confirmBtn = document.getElementById('confirm-override-btn');
-        const cancelBtn = document.getElementById('cancel-override-btn');
-        const scheduleOptions = document.getElementById('schedule-override-options');
-
-        titleEl.textContent = 'Remove Helper?';
-        summaryEl.innerHTML = '<strong>Warning:</strong> This will stop all website blocking. You have active blocks that will be cleared.';
-        challengeTextEl.textContent = challengeText;
-        challengeInput.value = '';
-        progressBar.style.width = '0%';
-        progressBar.style.background = 'linear-gradient(90deg, #dc2626 0%, #ef4444 100%)'; // Red for danger
-        scheduleOptions.classList.add('hidden');
-
-        // Store callback to be called by the existing confirm handler
-        window.helperRemovalConfirmCallback = () => {
-            modal.classList.add('hidden');
-            overrideBlockId = null;
-            overrideBlocklistIdForHelper = null;
-            window.helperRemovalConfirmCallback = null;
-            window.helperRemovalCancelCallback = null;
-            resolve(true);
-        };
-
-        window.helperRemovalCancelCallback = () => {
-            modal.classList.add('hidden');
-            overrideBlockId = null;
-            overrideBlocklistIdForHelper = null;
-            window.helperRemovalConfirmCallback = null;
-            window.helperRemovalCancelCallback = null;
-            resolve(false);
-        };
-
-        // Set special block ID so existing handlers know this is helper removal
-        overrideBlockId = 'helper-removal';
-
-        modal.classList.remove('hidden');
-        challengeInput.focus();
-    });
-}
 
 
 // Variable to track override-all challenge text
@@ -11381,233 +11243,8 @@ function setupOverrideAll() {
         });
     }
 
-    // "Something still not working?" button - show hint when disabled
-    const stillNotWorkingWrapper = document.querySelector('.still-not-working-wrapper');
-    const stillNotWorkingHint = document.getElementById('still-not-working-hint');
-    if (stillNotWorkingWrapper && stillNotWorkingHint) {
-        stillNotWorkingWrapper.addEventListener('click', () => {
-            const btn = document.getElementById('still-not-working-btn');
-            if (btn && btn.disabled) {
-                stillNotWorkingHint.style.display = 'block';
-            }
-        });
-        stillNotWorkingWrapper.addEventListener('mouseenter', () => {
-            const btn = document.getElementById('still-not-working-btn');
-            if (btn && btn.disabled) {
-                stillNotWorkingHint.style.display = 'block';
-            }
-        });
-        stillNotWorkingWrapper.addEventListener('mouseleave', () => {
-            stillNotWorkingHint.style.display = 'none';
-        });
-    }
 }
 
-// Setup "Something still not working?" modal
-function setupStillNotWorking() {
-    const btn = document.getElementById('still-not-working-btn');
-    const modal = document.getElementById('still-not-working-modal');
-    const closeBtn = document.getElementById('close-snw-btn');
-    const uninstallBtn = document.getElementById('snw-uninstall-btn');
-    if (!btn || !modal) return;
-
-    // Open modal
-    btn.addEventListener('click', () => {
-        if (btn.disabled) return;
-        // Reset state each time
-        document.getElementById('snw-challenge-area')?.classList.add('hidden');
-        document.getElementById('snw-terminal-commands')?.classList.add('hidden');
-        const input = document.getElementById('snw-challenge-input');
-        if (input) input.value = '';
-        const bar = document.getElementById('snw-challenge-progress-bar');
-        if (bar) bar.style.width = '0%';
-        modal.classList.remove('hidden');
-
-        const cachedStatus = getCachedDesktopHelperStatus();
-        if (cachedStatus) {
-            updateSnwUninstallOption(getHelperStatusDisplay(cachedStatus));
-            return;
-        }
-
-        updateSnwUninstallOption(null);
-        void (async () => {
-            const status = await refreshDesktopHelperStatus();
-            updateSnwUninstallOption(getHelperStatusDisplay(status));
-        })();
-    });
-
-    // Close
-    if (closeBtn) {
-        closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
-    }
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) modal.classList.add('hidden');
-    });
-
-    // Option 1: Uninstall Helper
-    if (uninstallBtn) {
-        uninstallBtn.addEventListener('click', async () => {
-            if (window._isRemovingHelper) return;
-            const originalHTML = uninstallBtn.innerHTML;
-            try {
-                window._isRemovingHelper = true;
-                uninstallBtn.disabled = true;
-                uninstallBtn.innerHTML = `<span class="btn-spinner"></span>${tSettings('helperRemoving')}`;
-                if (hasAnyBlockingStateToClear()) {
-                    window._isRemovingHelper = false;
-                    uninstallBtn.disabled = false;
-                    uninstallBtn.innerHTML = originalHTML;
-                    await message('Run the emergency stop first to clear all active or resumable blocks and schedules before removing the helper.', {
-                        title: 'Finish clearing blocks first',
-                        kind: 'warning'
-                    });
-                    return;
-                }
-                const result = await uninstallHelperAndConfirmRemoved();
-                if (result.success) {
-                    uninstallBtn.textContent = tSettings('helperRemoved');
-                    setTimeout(() => {
-                        window._isRemovingHelper = false;
-                        uninstallBtn.disabled = false;
-                        uninstallBtn.innerHTML = originalHTML;
-                        updateSnwUninstallOption(null);
-                    }, 3000);
-                } else {
-                    window._isRemovingHelper = false;
-                    uninstallBtn.disabled = false;
-                    uninstallBtn.innerHTML = originalHTML;
-                    await message('Failed to remove helper: ' + (result.error || 'Unknown error'), { title: 'Error', kind: 'error' });
-                }
-            } catch (e) {
-                console.error('Failed to uninstall helper:', e);
-                window._isRemovingHelper = false;
-                uninstallBtn.disabled = false;
-                uninstallBtn.innerHTML = originalHTML;
-                await message('Error removing helper: ' + e.message, { title: 'Error', kind: 'error' });
-            }
-        });
-    }
-
-    // Option 2: Manual Hosts Reset — challenge
-    let snwChallengeText = '';
-    const manualResetBtn = document.getElementById('snw-manual-reset-btn');
-    const challengeArea = document.getElementById('snw-challenge-area');
-    const terminalCommands = document.getElementById('snw-terminal-commands');
-    const challengeTextEl = document.getElementById('snw-challenge-text');
-    const challengeInput = document.getElementById('snw-challenge-input');
-    const progressBar = document.getElementById('snw-challenge-progress-bar');
-
-    if (manualResetBtn && challengeArea && terminalCommands) {
-        manualResetBtn.addEventListener('click', () => {
-            if (!challengeArea.classList.contains('hidden')) {
-                challengeArea.classList.add('hidden');
-                return;
-            }
-            // Generate 2500 random characters
-            snwChallengeText = generateRandomWords(50);
-            snwChallengeText = snwChallengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
-            if (challengeTextEl) challengeTextEl.textContent = snwChallengeText;
-            if (challengeInput) challengeInput.value = '';
-            if (progressBar) progressBar.style.width = '0%';
-            challengeArea.classList.remove('hidden');
-            terminalCommands.classList.add('hidden');
-            challengeInput?.focus();
-        });
-
-        if (challengeInput) {
-            // Prevent paste
-            challengeInput.addEventListener('paste', (e) => e.preventDefault());
-
-            challengeInput.addEventListener('input', () => {
-                const typed = challengeInput.value;
-                let correctChars = 0;
-                for (let i = 0; i < typed.length && i < snwChallengeText.length; i++) {
-                    if (typed[i] === snwChallengeText[i]) correctChars++;
-                    else break;
-                }
-                const progress = (correctChars / snwChallengeText.length) * 100;
-                if (progressBar) progressBar.style.width = `${progress}%`;
-
-                // Check if complete
-                if (typed === snwChallengeText) {
-                    challengeArea.classList.add('hidden');
-
-                    // Populate with platform-specific instructions
-                    const isMac = navigator.platform?.startsWith('Mac') || navigator.userAgent?.includes('Macintosh');
-                    let appName, command, passwordNote;
-                    if (isMac) {
-                        appName = 'Terminal (find it via Spotlight: press Cmd+Space and type "Terminal")';
-                        command = "sudo sed -i '' '/# === BEGIN REDD BLOCK/,/# === END REDD BLOCK/d' /etc/hosts && sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder";
-                        passwordNote = 'You will be prompted for your Mac password (the cursor won\'t move as you type — this is normal).';
-                    } else {
-                        appName = 'PowerShell as Administrator (right-click the Start menu → "Windows PowerShell (Admin)" or "Terminal (Admin)")';
-                        command = "(Get-Content $env:SystemRoot\\System32\\drivers\\etc\\hosts) | Where-Object { $_ -notmatch 'REDD BLOCK' } | Set-Content $env:SystemRoot\\System32\\drivers\\etc\\hosts; ipconfig /flushdns";
-                        passwordNote = 'You may be prompted to confirm running as Administrator.';
-                    }
-
-                    terminalCommands.innerHTML = `
-                        <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 6px;">
-                            Open <strong>${appName}</strong> and paste this command:
-                        </p>
-                        <pre class="diagnostics-pre" style="font-size: 12px; user-select: all; white-space: pre-wrap; word-break: break-all;">${command}</pre>
-                        <div style="display: flex; gap: 8px; margin-top: 6px; align-items: center;">
-                            <button id="snw-copy-command-btn" class="modal-btn cancel-btn" style="font-size: 12px; padding: 6px 12px; flex-shrink: 0;">Copy command</button>
-                            <span id="snw-copy-status" style="font-size: 12px; color: var(--text-muted);"></span>
-                        </div>
-                        <p style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
-                            ${passwordNote}
-                        </p>
-                    `;
-
-                    // Wire up copy button
-                    const copyBtn = document.getElementById('snw-copy-command-btn');
-                    const copyStatus = document.getElementById('snw-copy-status');
-                    if (copyBtn) {
-                        copyBtn.addEventListener('click', () => {
-                            navigator.clipboard.writeText(command).then(() => {
-                                copyStatus.textContent = 'Copied!';
-                                setTimeout(() => { copyStatus.textContent = ''; }, 2000);
-                            }).catch(() => {
-                                copyStatus.textContent = 'Copy failed';
-                                setTimeout(() => { copyStatus.textContent = ''; }, 2000);
-                            });
-                        });
-                    }
-
-                    terminalCommands.classList.remove('hidden');
-                }
-            });
-        }
-    }
-
-    // Option 3: Email support with diagnostics
-    const emailBtn = document.getElementById('snw-email-btn');
-    if (emailBtn) {
-        emailBtn.addEventListener('click', async () => {
-            let diagText = 'Could not load diagnostics.';
-            try {
-                const diag = await tauriAPI.getHelperDiagnostics();
-                diagText = formatDiagnosticsText(diag);
-            } catch (e) {
-                console.warn('Failed to get diagnostics for email:', e);
-            }
-
-            const subject = encodeURIComponent('ReDD Block — Something not working');
-            const body = encodeURIComponent(
-                'Hi ReDD Block team,\n\n' +
-                '[Please describe your issue here]\n\n\n' +
-                '--- Diagnostics (auto-generated) ---\n\n' +
-                diagText
-            );
-            const mailtoUrl = `mailto:team@reddfocus.org?subject=${subject}&body=${body}`;
-            try {
-                await openUrl(mailtoUrl);
-            } catch {
-                window.location.href = mailtoUrl;
-            }
-        });
-    }
-}
 
 // Find the hardest challenge among all block/schedule state that could still resume later.
 function findHardestChallenge() {
@@ -11742,14 +11379,7 @@ async function performOverrideAll() {
             handleBlocklistSelect({ target: blocklistSelect });
         }
 
-        console.log('Emergency override completed — all blocks, schedules, apps, and hosts entries cleared');
-
-        // Enable the "Something still not working?" button
-        const stillBtn = document.getElementById('still-not-working-btn');
-        if (stillBtn) {
-            stillBtn.disabled = false;
-            stillBtn.title = '';
-        }
+        console.log('Override-all completed — all blocks, schedules, apps, and hosts entries cleared');
     } catch (err) {
         console.error('Error during override all:', err);
     }
