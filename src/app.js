@@ -829,6 +829,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupHelperSettings();
     setupDiagnosticsButton();
     setupOverrideAll();
+    setupGraceSetting();
     setupStillNotWorking();
     if (isIOS && hasAcceptedEula()) {
         await checkScreentimeAuth();
@@ -11160,6 +11161,67 @@ async function showRemoveHelperChallenge() {
 
 // Variable to track override-all challenge text
 let overrideAllChallengeText = '';
+
+// Setup the configurable browser-extension grace period.
+// Backend reads `settings.extensionGraceSeconds` from the data file
+// on every grace-start (no app restart needed). Backend rejects
+// increases when at least one block is currently active.
+function setupGraceSetting() {
+    const input = document.getElementById('grace-seconds-input');
+    const errorEl = document.getElementById('grace-error');
+    const lockedHint = document.getElementById('grace-locked-hint');
+    if (!input) return;
+
+    const showError = (msg) => {
+        if (!errorEl) return;
+        errorEl.textContent = msg;
+        errorEl.classList.toggle('hidden', !msg);
+    };
+
+    // Load current value and reflect locked state.
+    const refresh = async () => {
+        try {
+            const secs = await invoke('get_extension_grace_seconds');
+            input.value = secs;
+            // Locked-hint UX: probe by attempting to set to current+1
+            // and checking the error. Cheaper alternative would be a
+            // dedicated `is_locked` command, but this avoids a new
+            // command for an edge-case UI nicety.
+            // Skip the probe — just reset on a real failure.
+            if (lockedHint) lockedHint.classList.add('hidden');
+        } catch (e) {
+            console.warn('[grace] read failed:', e);
+        }
+    };
+    refresh();
+
+    let lastGood = parseInt(input.value, 10) || 60;
+    input.addEventListener('change', async () => {
+        const raw = parseInt(input.value, 10);
+        if (!Number.isFinite(raw)) {
+            input.value = lastGood;
+            return;
+        }
+        const clamped = Math.max(5, Math.min(300, raw));
+        input.value = clamped;
+        try {
+            const applied = await invoke('set_extension_grace_seconds', { seconds: clamped });
+            input.value = applied;
+            lastGood = applied;
+            showError('');
+            if (lockedHint) lockedHint.classList.add('hidden');
+        } catch (e) {
+            // Backend rejects increases during active blocks. Revert
+            // to the prior good value and surface the message.
+            const msg = typeof e === 'string' ? e : (e && e.message) || 'Could not update grace period.';
+            showError(msg);
+            input.value = lastGood;
+            if (lockedHint && /active|focus session/i.test(msg)) {
+                lockedHint.classList.remove('hidden');
+            }
+        }
+    });
+}
 
 // Setup Override All functionality in settings
 function setupOverrideAll() {
