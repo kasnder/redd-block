@@ -5217,6 +5217,24 @@ body.ios .zoom-toast {
     font-weight: 600;
 }
 
+.diagnostics-list {
+    list-style: none;
+    margin: 4px 0 0 0;
+    padding: 0 0 0 4px;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.diagnostics-list li {
+    font-family: ui-monospace, "SF Mono", monospace;
+    font-size: 12px;
+    padding: 2px 0;
+}
+
+.diagnostics-list li.diag-error {
+    color: #b91c1c;
+}
+
 .diagnostics-pre {
     background: hsl(214, 32%, 96%);
     border: 1px solid var(--border-color-light);

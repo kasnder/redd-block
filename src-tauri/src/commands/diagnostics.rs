@@ -21,13 +21,12 @@ pub struct AppInfo {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct MigrationInfo {
-    /// True if residue (hosts markers or daemon-specific files) is
-    /// still on disk RIGHT NOW.
-    pub residue_present: bool,
-    /// True if residue was on disk when the app launched (snapshot).
-    pub residue_at_launch: bool,
+    /// Human-readable list of v1.x leftover items found on disk
+    /// right now. Empty when fully clean.
+    pub residue_items: Vec<String>,
     /// True if /etc/hosts.redd-backup (or Windows equivalent) exists,
-    /// signalling this install ever ran v1.x.
+    /// signalling this install ever ran v1.x. Kept around as a
+    /// recovery copy by design — does NOT count as residue.
     pub came_from_v1x: bool,
     /// Last value the in-app migration stamped into settings.
     pub ran_at_version: Option<String>,
@@ -104,8 +103,7 @@ pub fn get_system_diagnostics(app: tauri::AppHandle) -> SystemDiagnostics {
 }
 
 fn collect_migration_info(app: &tauri::AppHandle) -> MigrationInfo {
-    let residue_present = super::migration::migration_pending_sync();
-    let residue_at_launch = super::migration::migration_was_pending_at_launch();
+    let residue_items = current_residue_items();
     let came_from_v1x = super::migration::user_came_from_v1x();
 
     let settings_json = super::canonical_data_path(app)
@@ -123,12 +121,61 @@ fn collect_migration_info(app: &tauri::AppHandle) -> MigrationInfo {
         .and_then(|v| v.as_u64());
 
     MigrationInfo {
-        residue_present,
-        residue_at_launch,
+        residue_items,
         came_from_v1x,
         ran_at_version,
         ran_at_ms,
     }
+}
+
+/// Enumerate what v1.x leftovers are on disk RIGHT NOW. Returns a
+/// list of human-readable item descriptions; empty when fully clean.
+/// Mirrors the checks `migration::migration_pending_sync` makes but
+/// reports specifics so the diagnostics UI can show the user exactly
+/// what's still around.
+fn current_residue_items() -> Vec<String> {
+    let mut items = vec![];
+
+    let hosts_path = if cfg!(target_os = "windows") {
+        r"C:\Windows\System32\drivers\etc\hosts"
+    } else {
+        "/etc/hosts"
+    };
+    if let Ok(raw) = std::fs::read_to_string(hosts_path) {
+        let has_markers = raw.lines().any(|l| {
+            let t = l.trim();
+            t == "# === BEGIN REDD BLOCK (reddfocus.org) ==="
+                || t == "# === END REDD BLOCK (reddfocus.org) ==="
+                || t == "# ReDD Block Start"
+                || t == "# ReDD Block End"
+        });
+        if has_markers {
+            items.push(format!("v1.x markers in {hosts_path}"));
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        for path in [
+            "/Library/LaunchDaemons/com.redd.block.helper.plist",
+            "/Library/LaunchDaemons/org.reddfocus.redd-block-helper.plist",
+            "/Library/PrivilegedHelperTools/com.redd.block.helper",
+            "/var/lib/redd-block/helper-state.json",
+        ] {
+            if std::path::Path::new(path).exists() {
+                items.push(path.to_string());
+            }
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let p = r"C:\ProgramData\ReDD Block\helper-state.json";
+        if std::path::Path::new(p).exists() {
+            items.push(p.to_string());
+        }
+    }
+
+    items
 }
 
 fn autostart_enabled(app: &tauri::AppHandle) -> bool {

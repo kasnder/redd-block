@@ -66,20 +66,6 @@
             </button>
         </div>
 
-        <!-- Helper Update Banner (shown when the installed helper daemon is older than required) -->
-        <div id="helper-update-banner" class="update-banner hidden">
-            <div class="update-banner-content">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <polyline points="7 10 12 15 17 10" />
-                    <line x1="12" y1="15" x2="12" y2="3" />
-                </svg>
-                <span id="helper-update-banner-text">A small update to the helper service is available</span>
-                <button id="helper-update-banner-btn" class="update-banner-btn">Update helper...</button>
-            </div>
-        </div>
-
         <!-- Persistent "behaviour has changed" banner for users who
              upgraded from v1.x. Surfaces every launch (until either
              dismissed or every detected browser is fully compliant)
@@ -922,23 +908,6 @@
                 <div class="modal-buttons">
                     <button id="cancel-pause-btn" class="modal-btn cancel-btn">Cancel</button>
                     <button id="confirm-pause-btn" class="modal-btn primary-btn" disabled>Pause</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Helper Install Modal -->
-        <div id="helper-install-modal" class="modal-overlay hidden">
-            <div class="modal-content helper-install-modal">
-                <h3 id="helper-setup-required-title">Setup Required</h3>
-                <p id="helper-setup-required-text">To block websites when the app is closed, ReDD Block needs to install
-                    a small background service.
-                    Your computer will prompt you for your
-                    password once — after that, blocks will start instantly without asking again.</p>
-                <p class="modal-note">You can see the <a href="https://github.com/ulyngs/redd-block" target="_blank"
-                        id="helper-open-source-link">open source code for ReDD Block here</a>.</p>
-                <div class="modal-buttons">
-                    <button id="cancel-helper-install-btn" class="modal-btn cancel-btn">Cancel</button>
-                    <button id="proceed-helper-install-btn" class="modal-btn primary-btn">Proceed</button>
                 </div>
             </div>
         </div>

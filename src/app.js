@@ -125,8 +125,6 @@ let helperAvailable = false; // Track if the privileged helper daemon is running
 const HELPER_STATUS_CACHE_TTL_MS = 3000;
 let lastDesktopHelperStatus = null;
 let lastDesktopHelperStatusAt = 0;
-let pendingBlockData = null; // Store block data when waiting for helper installation
-let pendingScheduleData = null; // Store schedule data when waiting for helper installation
 let draggedBlocklistId = null; // Track which blocklist is being dragged
 let isIOS = false; // Track if running on iOS
 let screentimeAuthorized = false; // Track if Screen Time is authorized (iOS)
@@ -1557,61 +1555,8 @@ async function checkHelperStatus() {
         console.log('Helper not installed - will prompt on first block');
     }
 
-    updateHelperUpdateBanner(status);
 }
 
-// Show/hide the top-of-app helper update banner based on current helper status.
-// Only shown when a helper is installed and running but at an older version than required.
-// We don't show it for "not installed" because the first-block modal covers that case.
-function updateHelperUpdateBanner(status) {
-    const banner = document.getElementById('helper-update-banner');
-    if (!banner) return;
-
-    const needsUpdate = !!(status && status.running && !status.version_ok);
-    if (!needsUpdate) {
-        banner.classList.add('hidden');
-        return;
-    }
-    banner.classList.remove('hidden');
-
-    const btn = document.getElementById('helper-update-banner-btn');
-    if (btn && !btn._listenerAdded) {
-        btn._listenerAdded = true;
-        btn.addEventListener('click', async () => {
-            if (btn.disabled) return;
-
-            const confirmed = await ask(
-                'This updates the small helper service that runs in the background to manage your blocks.\n\n' +
-                'Your computer will ask you to approve an administrator action — that\'s just because the helper needs elevated permissions to edit system files. It\'s the same prompt you saw when you first installed ReDD Block.',
-                { title: 'Update helper service', kind: 'info', okLabel: 'Update', cancelLabel: 'Not now' }
-            );
-            if (!confirmed) return;
-
-            btn.disabled = true;
-            const originalText = btn.textContent;
-            btn.textContent = 'Updating...';
-            try {
-                const result = await tauriAPI.installHelper();
-                if (result && result.success) {
-                    // Give the helper a moment to start up before re-checking status.
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                    await checkHelperStatus();
-                } else if (isHelperInstallCancelled(result?.error)) {
-                    // User declined the UAC prompt — leave the banner visible but no error dialog.
-                    console.log('Helper update cancelled by user');
-                } else {
-                    await message('Failed to update helper: ' + (result?.error || 'Unknown error'), { title: 'Error', kind: 'error' });
-                }
-            } catch (e) {
-                console.error('Error updating helper:', e);
-                await message('Error updating helper: ' + e.message, { title: 'Error', kind: 'error' });
-            } finally {
-                btn.disabled = false;
-                btn.textContent = originalText;
-            }
-        });
-    }
-}
 
 /// True if a failed install-helper result looks like the user cancelled the UAC / admin prompt
 /// rather than an actual failure. Backend returns messages prefixed with "cancelled:" for this.
@@ -2220,15 +2165,6 @@ function setupEventListeners() {
 
     // Undo toast button
     document.getElementById('undo-toast-btn')?.addEventListener('click', undoDelete);
-
-    // Helper install modal buttons
-    document.getElementById('cancel-helper-install-btn')?.addEventListener('click', () => {
-        document.getElementById('helper-install-modal').classList.add('hidden');
-        pendingBlockData = null;
-        pendingScheduleData = null;
-    });
-
-    document.getElementById('proceed-helper-install-btn')?.addEventListener('click', proceedWithHelperInstall);
 
     // Start block confirmation modal buttons
     document.getElementById('cancel-start-confirm-btn')?.addEventListener('click', closeStartBlockConfirmModal);
@@ -5015,29 +4951,9 @@ async function proceedWithSchedule() {
     if (!blocklist) return;
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this schedule')) return;
 
-    if (!isIOS) {
-        const status = await refreshDesktopHelperStatus();
-        const helperReady = status.helperReady;
-
-        if (!helperReady) {
-            pendingBlockData = null;
-            pendingScheduleData = {
-                blocklistId: selectedBlocklistId,
-                segments: scheduleSegments.map(seg => ({
-                    startHour: seg.startHour,
-                    startMinute: seg.startMinute,
-                    endHour: seg.endHour,
-                    endMinute: seg.endMinute,
-                    days: [...seg.days]
-                })),
-                repeatType: scheduleRepeatType,
-                repeatDate: scheduleRepeatType === 'date' ? scheduleRepeatDate : null
-            };
-            configureHelperInstallModal(status);
-            document.getElementById('helper-install-modal').classList.remove('hidden');
-            return;
-        }
-    }
+    // v2: no helper to install. The app itself is the engine; if it
+    // launched, blocking works. The legacy helper-install-modal
+    // branch was here.
 
     // Create schedule object
     const schedule = {
@@ -6342,45 +6258,15 @@ async function proceedWithBlock() {
                 helperAvailable = false;
             }
         }
-        if (helperAvailable) {
-            result = await tauriAPI.startBlockViaHelper({
-                domains: blocklist.websites || [],
-                endTime: blockEnd.getTime(),
-                blocklistId: selectedBlocklistId
-            });
-        } else {
-            // Helper not available - check if it's installed but just not detected
-            const status = await tauriAPI.checkHelperStatus();
-
-            if (status.running && status.version_ok) {
-                // It's running with correct version, use it
-                helperAvailable = true;
-                result = await tauriAPI.startBlockViaHelper({
-                    domains: blocklist.websites || [],
-                    endTime: blockEnd.getTime(),
-                    blocklistId: selectedBlocklistId
-                });
-            } else {
-                // Helper not running, not installed, or outdated - show the install modal
-                // The install flow will update an outdated helper
-                if (status.running && !status.version_ok) {
-                    console.log('Helper is outdated, need to update - showing install modal');
-                }
-                pendingScheduleData = null;
-                pendingBlockData = {
-                    block,
-                    blocklist,
-                    blockEnd
-                };
-                configureHelperInstallModal(status);
-                document.getElementById('helper-install-modal').classList.remove('hidden');
-
-                // Re-enable button and return - modal will handle the rest
-                startBtn.disabled = false;
-                startBtn.innerHTML = getStartBlockButtonHTML();
-                return;
-            }
-        }
+        // v2: the app process IS the helper. startBlockViaHelper is a
+        // no-op shim that just acknowledges the save_data the
+        // frontend already did. The legacy "is the helper installed?"
+        // / install-modal branch was here.
+        result = await tauriAPI.startBlockViaHelper({
+            domains: blocklist.websites || [],
+            endTime: blockEnd.getTime(),
+            blocklistId: selectedBlocklistId
+        });
     }
 
     if (!result.success) {
@@ -6443,158 +6329,6 @@ function getStartBlockButtonHTML() {
     `;
 }
 
-function configureHelperInstallModal(status = null) {
-    const modal = document.getElementById('helper-install-modal');
-    const titleEl = document.getElementById('helper-setup-required-title');
-    const textEl = document.getElementById('helper-setup-required-text');
-    const proceedBtn = document.getElementById('proceed-helper-install-btn');
-    const mode = getHelperInstallMode(status);
-
-    if (modal) {
-        modal.dataset.mode = mode;
-    }
-    if (titleEl) {
-        titleEl.textContent = tSettings(getHelperInstallModeConfig(mode).titleKey);
-    }
-    if (textEl) {
-        textEl.textContent = tSettings(getHelperInstallModeConfig(mode).textKey);
-    }
-    if (proceedBtn) {
-        proceedBtn.textContent = tSettings(getHelperInstallModeConfig(mode).buttonKey);
-    }
-}
-
-function getHelperInstallMode(status = null) {
-    if (status?.running && !status?.version_ok) return 'update';
-    if (status?.installed && !status?.running) return 'repair';
-    return 'install';
-}
-
-function getHelperInstallModeConfig(mode) {
-    if (mode === 'update') {
-        return {
-            titleKey: 'helperUpdateTitle',
-            textKey: 'helperUpdateText',
-            buttonKey: 'updateHelper',
-            loadingKey: 'helperUpdating',
-        };
-    }
-    if (mode === 'repair') {
-        return {
-            titleKey: 'helperRepairTitle',
-            textKey: 'helperRepairText',
-            buttonKey: 'reinstallHelper',
-            loadingKey: 'helperReinstalling',
-        };
-    }
-    return {
-        titleKey: 'helperSetupTitle',
-        textKey: 'helperSetupText',
-        buttonKey: 'proceed',
-        loadingKey: 'helperInstalling',
-    };
-}
-
-// Handle the Proceed button in the helper install modal
-async function proceedWithHelperInstall() {
-    const modal = document.getElementById('helper-install-modal');
-    const proceedBtn = document.getElementById('proceed-helper-install-btn');
-    const modeConfig = getHelperInstallModeConfig(modal?.dataset.mode || 'install');
-
-    // Disable button while installing with spinner
-    proceedBtn.disabled = true;
-    proceedBtn.innerHTML = `<span class="btn-spinner"></span>${tSettings(modeConfig.loadingKey)}`;
-
-    // Try to install the helper
-    const installResult = await tauriAPI.installHelper();
-
-    if (installResult.success) {
-        proceedBtn.innerHTML = '<span class="btn-spinner"></span>Starting helper...';
-
-        let finalStatus = await refreshDesktopHelperStatus();
-        for (let i = 0; i < 5 && !finalStatus.helperReady; i++) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            finalStatus = await refreshDesktopHelperStatus();
-        }
-
-        if (!finalStatus.helperReady) {
-            proceedBtn.disabled = false;
-            proceedBtn.textContent = tSettings(getHelperInstallModeConfig(modal?.dataset.mode || 'install').buttonKey);
-            if (finalStatus.running && !finalStatus.version_ok) {
-                alert('The helper started, but it is still reporting an outdated version. Please remove the helper in Settings and try installing again.');
-            } else {
-                alert('The helper was installed but is not ready yet. Please try again, or restart your computer if the problem persists.');
-            }
-            return;
-        }
-
-        helperAvailable = true;
-        modal.classList.add('hidden');
-
-        // Now start the pending block
-        if (pendingBlockData) {
-            const { block, blocklist, blockEnd } = pendingBlockData;
-
-            const result = await tauriAPI.startBlockViaHelper({
-                domains: blocklist.websites || [],
-                endTime: blockEnd.getTime(),
-                blocklistId: blocklist.id
-            });
-
-            if (result.success) {
-                // Add block to local data
-                appData.activeBlocks.push(block);
-                activatedBlockIds.add(block.id);
-                await saveData();
-
-                // Send blocked apps and schedules to the newly-installed helper
-                await updateBlockedApps();
-                await syncSchedulesToHelper();
-
-                // Reset UI - keep the blocklist selected
-                const blocklistSelect = document.getElementById('blocklist-select');
-                blocklistSelect.value = blocklist.id; // Keep the blocklist selected
-                handleBlocklistSelect({ target: blocklistSelect });
-
-
-                render();
-            } else {
-                if (isHelperConnectionError(result.error)) {
-                    helperAvailable = false;
-                    alert('The block service isn\'t running. Please open Settings, remove the helper, then try starting a block again to reinstall it.');
-                } else {
-                    alert('Could not start block: ' + (result.error || 'Unknown error'));
-                }
-            }
-
-            pendingBlockData = null;
-        } else if (pendingScheduleData) {
-            const blocklist = appData.blocklists.find(bl => bl.id === pendingScheduleData.blocklistId);
-            if (blocklist) {
-                selectedBlocklistId = pendingScheduleData.blocklistId;
-                scheduleSegments = pendingScheduleData.segments.map(seg => ({ ...seg }));
-                scheduleRepeatType = pendingScheduleData.repeatType;
-                scheduleRepeatDate = pendingScheduleData.repeatDate;
-
-                const blocklistSelect = document.getElementById('blocklist-select');
-                if (blocklistSelect) {
-                    blocklistSelect.value = blocklist.id;
-                }
-                await proceedWithSchedule();
-            }
-            pendingScheduleData = null;
-        }
-    } else {
-        // Installation failed
-        if (!installResult.error?.includes('Permission denied')) {
-            alert('Could not install helper: ' + (installResult.error || 'Unknown error'));
-        }
-    }
-
-    // Re-enable button
-    proceedBtn.disabled = false;
-    proceedBtn.textContent = tSettings(getHelperInstallModeConfig(modal?.dataset.mode || 'install').buttonKey);
-}
 
 // Update hosts file based on active blocks
 // silent = true means don't prompt for password (used for cleanup)
@@ -10158,11 +9892,6 @@ function applySettingsLanguage() {
     setText('pause-modal-instruction', tSettings('pauseInstruction'));
     setText('cancel-pause-btn', tSettings('cancel'));
     setText('confirm-pause-btn', tSettings('pause'));
-    setText('helper-setup-required-title', tSettings('helperSetupTitle'));
-    setText('helper-setup-required-text', tSettings('helperSetupText'));
-    setText('helper-open-source-link', tSettings('helperOpenSourceLink'));
-    setText('cancel-helper-install-btn', tSettings('cancel'));
-    setText('proceed-helper-install-btn', tSettings('proceed'));
     setText('start-block-confirm-title', tSettings('startThisBlock'));
     setText('confirm-blocked-websites-label', tSettings('blockedWebsites'));
     setText('confirm-blocked-apps-label', tSettings('blockedApps'));
@@ -10941,9 +10670,17 @@ function renderSystemDiagnostics(d) {
     const m = d.migration;
     html += '<div class="diagnostics-section">';
     html += '<div class="diagnostics-section-title">Migration from v1.x</div>';
-    html += `<div class="diagnostics-field"><span class="diagnostics-label">Came from v1.x:</span> ${ok(m.came_from_v1x)}</div>`;
-    html += `<div class="diagnostics-field"><span class="diagnostics-label">Residue at launch:</span> ${ok(!m.residue_at_launch)} <span class="diagnostics-value subtle">(false = clean)</span></div>`;
-    html += `<div class="diagnostics-field"><span class="diagnostics-label">Residue right now:</span> ${ok(!m.residue_present)} <span class="diagnostics-value subtle">(false = clean)</span></div>`;
+    html += `<div class="diagnostics-field"><span class="diagnostics-label">Was a v1.x install:</span> <span class="diagnostics-value">${m.came_from_v1x ? 'Yes' : 'No'}</span></div>`;
+    if (m.residue_items && m.residue_items.length > 0) {
+        html += `<div class="diagnostics-field"><span class="diagnostics-label">Old version leftover files:</span></div>`;
+        html += '<ul class="diagnostics-list">';
+        for (const item of m.residue_items) {
+            html += `<li class="diag-error">${e(item)}</li>`;
+        }
+        html += '</ul>';
+    } else {
+        html += `<div class="diagnostics-field"><span class="diagnostics-label">Old version leftover files:</span> <span class="diagnostics-value diag-ok">None — fully migrated</span></div>`;
+    }
     html += `<div class="diagnostics-field"><span class="diagnostics-label">Stamped version:</span> <span class="diagnostics-value">${e(m.ran_at_version || '—')}</span></div>`;
     html += `<div class="diagnostics-field"><span class="diagnostics-label">Stamped at:</span> <span class="diagnostics-value">${e(fmtTs(m.ran_at_ms))}</span></div>`;
     html += '</div>';
