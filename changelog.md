@@ -12,19 +12,46 @@ User-facing changes for each release. Every app upgrade adds a new entry here.
     just the app binary in a `--native-host` CLI mode. Safari
     (macOS) now bridges through an App Group shared container and a
     handler inside the signed `.app`.
-  - App blocking runs in-process on both OSes. First use of app
-    blocking on macOS prompts for Accessibility / Automation
-    permission.
+  - App blocking runs in-process on both OSes via a sysinfo
+    poll-and-kill loop. First use of app blocking on macOS prompts
+    once for Accessibility permission; AppleScript / Automation TCC
+    is no longer required.
+  - The compliance enforcer scans running browsers every 5 s and
+    force-quits any whose extension has been disabled or
+    misconfigured. The grace period before force-quit is
+    user-configurable (5 – 300 s, default 60 s).
 - **Minimum macOS is now 11 (Big Sur),** for Safari Web Extension
   support. Still supports the same Windows versions.
+- **Reliable Safari extension detection.** The "Allow in Private
+  Browsing" toggle, the enabled state, and the install state are now
+  detected through a 15 s heartbeat from the extension into the App
+  Group container. A misconfigured Safari extension is caught within
+  ~45–105 s on default settings (down to ~50 s if grace is dialled
+  to its 5 s minimum). The previous v1.1 path silently passed every
+  Safari install regardless of configuration.
+- **Safari blocked-page no longer 404s.** The Safari extension
+  manifest now declares `web_accessible_resources` for `blocked.html`,
+  so opening a blocked URL renders the block page instead of
+  Safari's "can't find the file" error.
 - **App hides to tray on close** and launches at login so schedules
-  keep firing across sessions.
+  keep firing across sessions. A tray "Quit" entry remains the only
+  way to fully exit; Cmd-Q / window close are intercepted.
 - **Automatic migration on first launch.** The app cleans its old
   entries out of the hosts file, removes the privileged helper
   daemon, and moves onto the new backend. macOS prompts once for the
-  admin password to remove the old helper.
+  admin password to remove the old helper; Windows prompts once via
+  UAC. Idempotent — residue that reappears (e.g. after a v1.x
+  reinstall) re-triggers cleanup.
 - **"Keep blocking after uninstall" removed.** Uninstalling the app
   now stops blocking cleanly.
+- **Windows watchdog.** A scheduled task ("ReDD Block Watchdog")
+  relaunches the app within ~1 minute if it crashes or is killed,
+  so schedules don't silently lapse.
+- **macOS `.pkg` upgrade path.** A signed `.pkg` installer is
+  available alongside the `.dmg`. Its preinstall script stops the
+  running app (including any browser-spawned native-host helpers)
+  before the new bundle is laid down, so users can upgrade in place
+  without manually quitting first. Postinstall relaunches the app.
 
 ## v1.0.1
 

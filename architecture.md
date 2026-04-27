@@ -1,24 +1,38 @@
 # ReDD Block Architecture Reference (macOS, Windows, iOS)
 
-> **⚠ Out-of-date for desktop (v1.1.0).** Sections 4–9 below describe
-> the old helper-daemon architecture and are kept as historical
-> reference while the rewrite lands. Current desktop architecture (both
-> macOS and Windows):
+> **⚠ Sections 4–9 describe the v1.x helper-daemon desktop
+> architecture and are kept as historical reference only.** The
+> current desktop runtime is the v2 extension-based design — see
+> [browser-ext-migration/V2_OVERVIEW.md](browser-ext-migration/V2_OVERVIEW.md)
+> for the condensed read,
+> [browser-ext-migration/MIGRATION_PLAN.md](browser-ext-migration/MIGRATION_PLAN.md)
+> for full rationale, and
+> [browser-ext-migration/SAFARI_COMPLIANCE.md](browser-ext-migration/SAFARI_COMPLIANCE.md)
+> for the Safari detection model specifically.
 >
-> - Website blocking runs through the ReDD Focus browser extension.
->   Chrome / Brave / Edge / Firefox speak to the app via a built-in
->   native-messaging host (`src-tauri/src/native_host.rs`, invoked as
->   `--native-host`). Safari (macOS) routes through
->   `SafariWebExtensionHandler.swift` inside the signed `.app`.
-> - A compliance enforcer loop (`src-tauri/src/enforcer.rs`) scans
->   running browsers every 5 s and quits any whose extension is
->   missing / disabled / not allowed in private browsing.
-> - App blocking runs in-process via `src-tauri/src/app_watcher.rs`
->   (AppleScript NSWorkspace on macOS, `SetWinEventHook` on Windows).
+> **v2 desktop runtime in three lines:**
+>
+> - **Website blocking** lives in the ReDD Focus browser extension
+>   (Chrome / Brave / Edge / Firefox / Safari). The Tauri app is the
+>   data source: it doubles as a native-messaging host
+>   (`src-tauri/src/native_host.rs`, `redd-block --native-host`) for
+>   Chromium/Firefox, and bridges through the
+>   `group.com.reddblock.shared` App Group container for Safari
+>   (`src-tauri/src/app_group.rs` +
+>   `redd-focus-web/Shared (Extension)/SafariWebExtensionHandler.swift`).
+> - **Compliance enforcer** (`src-tauri/src/enforcer.rs`) — 5 s scan
+>   tick, 60/30 s grace (user-configurable 5–300 s), force-quits any
+>   running browser whose extension is missing / disabled / not
+>   allowed in private browsing. `taskkill` on Windows, sysinfo
+>   SIGTERM/SIGKILL on macOS.
+> - **App blocking** runs in-process via
+>   `src-tauri/src/app_watcher.rs` — sysinfo poll-and-kill loop
+>   shared by both OSes. The earlier AppleScript NSWorkspace watcher
+>   on macOS and `SetWinEventHook` path on Windows have been removed.
 >
 > The privileged helper daemon is gone. No hosts-file writes on any
-> platform. See `browser-ext-migration/MIGRATION_PLAN.md` for the rationale
-> and migration steps.
+> platform. No admin/UAC prompt at install time (only once at first
+> launch if v1.x residue needs cleanup).
 
 This is the technical architecture source-of-truth for ReDD Block.
 

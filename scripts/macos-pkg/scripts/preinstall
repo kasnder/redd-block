@@ -2,9 +2,14 @@
 # preinstall — runs as root before the .pkg payload is laid down.
 #
 # Two jobs:
-#   1. Gracefully quit any running v1.x ReDD Block GUI process so the
-#      Installer.app can replace its bundle without an in-memory
-#      conflict.
+#   1. Stop any running ReDD Block process (v1.x *or* v2) so the
+#      Installer.app can replace `/Applications/ReDD Block.app`
+#      without an in-memory conflict. v2 adds an
+#      `applicationShouldTerminate:` interceptor that turns ⌘-Q and
+#      `tell app "X" to quit` into a hide-window, so the polite path
+#      is unreliable — we go straight to SIGTERM/SIGKILL on the
+#      binary, plus any `--native-host` subprocesses browsers may
+#      have spawned.
 #   2. If v1.x daemon residue is on disk, run the SAME bundled
 #      cleanup script the app would otherwise run at first launch.
 #      The script body lives at src-tauri/src/commands/migration/cleanup.sh
@@ -20,11 +25,28 @@ LOG=/var/log/redd-block-pkg-preinstall.log
 exec > >(tee -a "$LOG") 2>&1
 echo "=== preinstall $(date '+%F %T') ==="
 
-# 1. Quit the v1.x GUI app if running. AppleScript is the polite path;
-#    fall back to pkill for a Tauri-aware bundle that AppleScript
-#    can't reach.
+# 1. Stop any running ReDD Block process. Order:
+#    - polite quit (works for v1.x and any v2 build before the
+#      terminate-guard installs),
+#    - SIGTERM by binary path / process name,
+#    - 2 s breather,
+#    - SIGKILL stragglers including --native-host subprocesses spawned
+#      by browsers (those hold open file handles inside the .app
+#      bundle and would block the payload swap).
 osascript -e 'tell application "ReDD Block" to quit' 2>/dev/null || true
-pkill -x 'ReDD Block' 2>/dev/null || true
+
+# `redd-block` is the Tauri binary stem inside the .app; that's the
+# name `ps` shows, not the bundle display name "ReDD Block". Match
+# both as a belt-and-braces.
+pgrep -f '/Applications/ReDD Block.app/Contents/MacOS/redd-block' | xargs -r kill -TERM 2>/dev/null
+pkill -x 'redd-block' 2>/dev/null
+pkill -x 'ReDD Block' 2>/dev/null
+sleep 2
+
+# Anything still running gets SIGKILL'd.
+pgrep -f '/Applications/ReDD Block.app/Contents/MacOS/redd-block' | xargs -r kill -KILL 2>/dev/null
+pkill -KILL -x 'redd-block' 2>/dev/null
+pkill -KILL -x 'ReDD Block' 2>/dev/null
 sleep 1
 
 # 2. Detect residue. Skip the rest if there's nothing to clean —

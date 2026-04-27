@@ -385,12 +385,14 @@ supersede earlier sections of this doc:
 - `src-tauri/src/native_host_install.rs` — per-browser manifest JSON
   on macOS/Linux, `HKCU\…\NativeMessagingHosts` registry keys on
   Windows. User-scope only.
-- `src-tauri/src/app_watcher.rs` — in-process AppleScript
-  NSWorkspace watcher + System Events hide (macOS),
-  `SetWinEventHook` + `ShowWindow(SW_FORCEMINIMIZE)` (Windows).
-- `src-tauri/src/macos_permissions.rs` — Automation TCC
-  `check` / `request` / `open_automation_settings` /
-  `open_accessibility_settings` commands.
+- `src-tauri/src/app_watcher.rs` — sysinfo poll-and-kill loop shared
+  by macOS and Windows. The earlier AppleScript NSWorkspace watcher
+  / `SetWinEventHook` / `ShowWindow(SW_FORCEMINIMIZE)` paths were
+  removed once the simpler poll proved sufficient on both OSes.
+- `src-tauri/src/macos_permissions.rs` — *deleted* during the helper
+  removal. Automation TCC was only needed by the legacy AppleScript
+  paths; the in-process app blocker no longer requires it. Recover
+  from git history if a future feature needs it.
 - `src-tauri/src/commands/migration.rs` — `strip_hosts_markers`,
   `uninstall_legacy_helper`, `run_upgrade_migration` (idempotent,
   version-gated via `settings.migrationRanAtVersion`), and
