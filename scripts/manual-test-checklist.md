@@ -285,6 +285,17 @@ Requires the ReDD Focus Safari extension built locally from `redd-focus-web/` an
 - [ ] Modify the block's name/emoji in ReDD Block → re-navigate in Safari → updated metadata appears in `blocked.html` (proves App Group write↔read round-trip)
 - [ ] End the block in ReDD Block → previously-blocked tabs in Safari unblock on next navigation / sweep
 
+### Frontmost-app enforcement gate (no false-positive kills)
+
+The compliance gate only acts on Safari when Safari is the frontmost app. Minimising / hiding / switching to another space must NOT trigger a force-quit, even after the heartbeat goes stale.
+
+- [ ] With Safari frontmost and the extension correctly configured, no in-session compliance banner appears
+- [ ] Cmd-M (minimise) Safari and switch to TextEdit → wait > 60 s → bring Safari forward → Safari is still alive (no false-positive kill)
+- [ ] Cmd-H (hide) Safari → wait > 60 s → unhide → Safari is still alive
+- [ ] Park Safari on Mission Control space 2, switch to space 1 with another app → wait > 60 s → switch back → Safari is still alive
+- [ ] With Safari frontmost, disable ReDD Focus in Safari → Settings → Extensions → within ~45 s the in-session banner appears, grace timer fires, Safari force-quits at zero
+- [ ] Re-enable the extension while the grace timer is counting down → banner clears, Safari stays open
+
 ---
 
 ## 14. iOS-Specific (Physical Device Only)

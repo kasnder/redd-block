@@ -49,6 +49,52 @@ fn safari_bundle_ids() -> Vec<String> {
     ids
 }
 
+/// True iff Safari is the user's currently-frontmost application on
+/// the active Mission Control space. Used by `scan_safari` to decide
+/// whether to mark Safari as `present` (i.e. enforcement-worthy).
+///
+/// We deliberately don't enforce when Safari is just running but
+/// hidden / minimised / on another space: Safari aggressively
+/// suspends MV3 background pages for battery savings, so the
+/// heartbeat goes stale during those states and the gate would
+/// false-positive a healthy install. Treating "not frontmost" as
+/// "not enforcing" sidesteps the whole class of false positives at
+/// the cost of a minor escape hatch (a determined user could
+/// disable the extension and let auto-refreshing minimised tabs
+/// load blocked content silently — but they can't actually use
+/// Safari without making it frontmost again, at which point
+/// enforcement resumes within ~45 s).
+///
+/// `NSWorkspace.frontmostApplication` is unprivileged Cocoa API —
+/// no TCC consent involved.
+#[cfg(target_os = "macos")]
+fn safari_is_frontmost() -> bool {
+    use cocoa::base::{id, nil};
+    use objc::{class, msg_send, sel, sel_impl};
+    use std::ffi::CStr;
+    use std::os::raw::c_char;
+    unsafe {
+        let workspace: id = msg_send![class!(NSWorkspace), sharedWorkspace];
+        if workspace == nil {
+            return false;
+        }
+        let app: id = msg_send![workspace, frontmostApplication];
+        if app == nil {
+            return false;
+        }
+        let bundle_id: id = msg_send![app, bundleIdentifier];
+        if bundle_id == nil {
+            return false;
+        }
+        let utf8: *const c_char = msg_send![bundle_id, UTF8String];
+        if utf8.is_null() {
+            return false;
+        }
+        let cstr = CStr::from_ptr(utf8);
+        matches!(cstr.to_str(), Ok("com.apple.Safari"))
+    }
+}
+
 /// Result for a single browser profile.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileStatus {
@@ -551,7 +597,11 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
 fn scan_safari() -> BrowserStatus {
     use std::process::Command;
 
-    let running = is_process_running(&["Safari"]);
+    // `present` means "enforcement-worthy" for downstream consumers
+    // (the in-session compliance banner and `compliant()` short-
+    // circuit). For Safari that's not just "process running" — see
+    // `safari_is_frontmost`'s docstring for why we gate on focus.
+    let running = is_process_running(&["Safari"]) && safari_is_frontmost();
     // Safari is a system app — always installed on macOS.
     let output = Command::new("/usr/bin/pluginkit")
         .args(["-m", "-A", "-vvv", "-p", "com.apple.Safari.web-extension"])

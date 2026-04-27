@@ -76,62 +76,73 @@ SDKs is **not reliable for Safari Web Extensions** on modern macOS
 pluginkit's flags, so the prefix is usually a space. We deliberately
 ignore it and source enabled-state from the heartbeat instead.
 
-### 3. The cached heartbeat file (last-known-good state when Safari is closed)
+### 3. Frontmost-app focus (the enforcement gate)
 
-When Safari isn't running, the heartbeat is necessarily stale, but
-the file still contains the last successfully-reported state. We
-treat that as authoritative for the migration UI ("did the user
-ever set Safari up?"). The enforcer doesn't care — it short-circuits
-on `!present` (Safari not running ⇒ nothing to enforce).
+`scan_safari` only marks Safari as `present` (i.e.
+enforcement-worthy) when both:
+
+- the Safari process is running, **and**
+- `NSWorkspace.frontmostApplication` returns
+  `com.apple.Safari` — Safari is the frontmost app on the active
+  Mission Control space.
+
+The compliance gate in `compliant()` short-circuits on `!present`,
+so a non-frontmost Safari (closed, minimised, hidden via cmd-H, on
+another Mission Control space) is left alone regardless of what
+the heartbeat says. This matters because Safari aggressively
+suspends MV3 background pages for battery savings — heartbeats
+stop firing as soon as the user switches away — and without the
+frontmost gate the enforcer would falsely flag a healthy install
+and force-quit Safari behind the user's back.
+
+`NSWorkspace.frontmostApplication` is unprivileged Cocoa API, no
+TCC consent involved.
 
 ---
 
-## Two scenarios, two behaviours
+## Three scenarios
 
 The detection logic in `scan_safari` (`src-tauri/src/profile_scan.rs`)
-splits on whether Safari is currently running.
+plus `compliant()` produces three behaviours.
 
-### A. Static check — Safari is closed
+### A. Safari is closed
 
-Used by the migration onboarding UI ("Safari ✓ Set up" badge).
+Or: not running, no process. `is_process_running` returns false →
+`present = false` → gate auto-passes. The heartbeat file may still
+exist on disk from a previous session, but `compliant()` short-
+circuits before reading it.
 
-- `installed` = `pluginkit` registered the bundle **or** a heartbeat
-  file exists.
-- `enabled` = `Some(true)` if a heartbeat file exists at all (we
-  observed it running successfully at some point).
-- `privateBrowsing` = the boolean from the cached heartbeat file.
+### B. Safari is running but not frontmost
 
-Trade-off: if the user disables the extension while Safari is
-**closed**, the migration UI keeps showing "Set up" until Safari is
-reopened. Self-corrects within ~45 s of relaunch. We don't have any
-signal we could use to detect a disable-while-closed without either
-Full Disk Access or a different app architecture.
+Minimised, hidden, on another space, or just behind another app's
+windows. `safari_is_frontmost()` returns false → `present = false`
+→ gate auto-passes. **This is the case the frontmost gate fixes.**
+Without it, the heartbeat would go stale during background
+suspension and the enforcer would force-quit Safari while the user
+was just briefly away.
 
-### B. Runtime enforcement — Safari is running
+Trade-off: a determined user could disable the extension and let
+auto-refreshing minimised tabs load blocked content silently. They
+can't actually *use* Safari without making it frontmost again, at
+which point enforcement resumes within ~45 s.
 
-Used by the compliance gate (`compliant()` in `profile_scan.rs`)
-which the enforcer
-(`src-tauri/src/enforcer.rs`) consumes.
+### C. Safari is running and frontmost
 
-- `installed` = same as above.
-- `enabled` = `Some(true)` only if the heartbeat is **fresh**.
-  Stale → `Some(false)`. The user just disabled or uninstalled the
-  extension while Safari is open.
-- `privateBrowsing` = the boolean from the heartbeat *only when
-  fresh*; otherwise `None` (so the gate fails closed).
-
-The compliance gate requires:
+The full check applies. Heartbeat must be fresh (`STATUS_STALE_MS`
+window), `enabled` must be `Some(true)`, `privateBrowsing` must be
+`Some(true)`. The compliance gate is:
 
 ```rust
 p.installed && p.enabled == Some(true) && p.private_browsing == Some(true)
 ```
 
-(see `compliant()` in `profile_scan.rs`). This mirrors the Chromium
-gate exactly — the asymmetric "trust Safari to self-report" version
-that landed during the v1.1 migration was wrong and silently passed
-every Safari install; it's now corrected.
+Mirrors the Chromium gate exactly. Since Safari's bg page is
+guaranteed to be alive when Safari is frontmost (the user is
+actively looking at it), the heartbeat is reliable here and a
+stale heartbeat is a real signal: the extension was just disabled
+or uninstalled.
 
-### Worst-case enforcement timeline
+### Worst-case enforcement timeline (scenario C)
 
 | Step | Window |
 |---|---|
@@ -141,8 +152,8 @@ every Safari install; it's now corrected.
 | User-configurable grace (5 s min, 60 s default, 300 s max) | 5–300 s |
 | Force-quit | when grace hits zero |
 
-**Default total**: ≈ 105 s before Safari is force-quit when the user
-disables the extension.
+**Default total**: ≈ 105 s from disable to force-quit when Safari
+is frontmost.
 **Tightest configurable**: ≈ 50 s.
 
 ---
@@ -152,19 +163,35 @@ disables the extension.
 ReDD Block is a focus app, not a security product. The model is
 honor-system + significant friction, not perfect prevention.
 
-- **Disable the extension while Safari is open** → ≤ 45 s detection,
-  then grace, then force-quit. ✓ caught.
-- **Disable the extension while Safari is closed, then reopen** →
-  ≤ 45 s detection from reopen. ✓ caught.
-- **Disable, browse for ≤ 30 s, quit Safari before grace expires** →
-  not caught this cycle, but next launch detects within 45 s.
-- **Force-quit-relaunch loop** → each cycle gives ~30–45 s of browsing.
-  Repeat-offence grace tightens to 30 s, which helps.
-- **Use a different browser** → outside scope; the user installs the
-  extension in every browser they care about.
+- **Disable the extension while Safari is foreground** → ≤ 45 s
+  detection, then grace, then force-quit. ✓ caught.
+- **Disable while Safari is closed/minimised/hidden, then bring
+  Safari to foreground** → ≤ 45 s detection from when Safari
+  becomes frontmost. ✓ caught.
+- **Disable + minimise + auto-refreshing background tabs** → not
+  caught while Safari is in the background, because the frontmost
+  gate suppresses enforcement there. The user can't actually
+  interact with a minimised Safari, so this only allows passive
+  background data loading (Twitter timelines, mail polling, etc.).
+  The moment they bring Safari forward, enforcement resumes.
+- **Park Safari on another Mission Control space** → not enforced
+  while the active space is something else. Same trade as
+  minimised. Switching back to Safari's space resumes enforcement.
+- **Disable, browse for < grace, quit Safari before grace
+  expires** → not caught this cycle, but next launch detects.
+- **Force-quit-relaunch loop** → each cycle gives ~30–45 s of
+  browsing while Safari is foreground. Repeat-offence grace
+  tightens to 30 s, which helps.
+- **Use a different browser** → outside scope; the user installs
+  the extension in every browser they care about.
 - **Hand-edit `safari-status.json` in the App Group container** →
   forges compliance. Requires shell access during a focus session;
   out of scope.
+
+The minimised / multi-space limitations would all be closed by
+moving to the **Full Disk Access + `Extensions.plist`** path (see
+[Rejected options](#rejected-options)), which doesn't depend on
+the heartbeat at all. Parked as a v2.1 cleanup.
 
 ---
 

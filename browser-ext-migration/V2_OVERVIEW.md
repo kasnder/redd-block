@@ -101,7 +101,17 @@ A browser is compliant iff (`profile_scan.rs::compliant`):
 
 Same rule for every browser. Safari used to have an asymmetric "trust
 the extension" rule that silently passed every install — fixed in
-`83fa81c`. See [SAFARI_COMPLIANCE.md](SAFARI_COMPLIANCE.md) for the
+`83fa81c`.
+
+For Safari, `present` is **running AND frontmost** rather than just
+running. A minimised / hidden Safari (or one parked on another
+Mission Control space) is treated like Safari-closed for
+enforcement purposes. This sidesteps the false-positive that came
+from Safari aggressively suspending MV3 background pages while
+hidden — heartbeats stop firing, but we don't care because we're
+not enforcing while the user isn't looking at Safari. Helper:
+`profile_scan::safari_is_frontmost()`. See
+[SAFARI_COMPLIANCE.md](SAFARI_COMPLIANCE.md) for the
 detection model that backs each field.
 
 When a browser is `present && !compliant`, the enforcer toasts a
@@ -282,11 +292,19 @@ likely a bug from before the signature changed). Confirm the
 Diagnostics row reflects real Safari state once the rest of v2 is
 verified.
 
-### 🟢 Tighten heartbeat staleness if false positives surface
+### 🟢 Multi-space / minimised-Safari coverage
 
-Default is 45 s with a 15 s heartbeat (one missed beat tolerated).
-If real-world Safari pauses/throttles its background page longer
-than expected, heartbeats may miss and the gate will false-positive
-on "extension disabled." If users report Safari getting force-quit
-without disabling the extension, bump heartbeat to 10 s and
-staleness to 40 s, or instrument the heartbeat to log skips.
+The frontmost-app gate (`safari_is_frontmost()` in
+[profile_scan.rs](../src-tauri/src/profile_scan.rs)) means we
+*don't* enforce when Safari is minimised or parked on a different
+Mission Control space. A determined user could disable the
+extension and let auto-refreshing background tabs load blocked
+content silently. They can't actually use Safari without bringing
+it forward (at which point enforcement resumes within ~45 s), so
+this is mostly theoretical, but it is a real escape hatch.
+
+The clean fix is the FDA + plist-read path
+([SAFARI_COMPLIANCE.md → Rejected options](SAFARI_COMPLIANCE.md#rejected-options))
+which doesn't depend on the heartbeat at all. Parked as a v2.1
+cleanup; the frontmost-app gate is the v2 ship answer because it
+needs no new permission and no battery-cost wake-ups.
