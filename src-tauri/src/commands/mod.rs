@@ -16,6 +16,8 @@ pub mod migration;
 pub mod grace;
 #[cfg(not(target_os = "ios"))]
 pub mod diagnostics;
+#[cfg(not(target_os = "ios"))]
+pub mod safari_bridge;
 
 pub use data::*;
 
@@ -35,3 +37,5 @@ pub use migration::*;
 pub use grace::*;
 #[cfg(not(target_os = "ios"))]
 pub use diagnostics::*;
+#[cfg(not(target_os = "ios"))]
+pub use safari_bridge::*;

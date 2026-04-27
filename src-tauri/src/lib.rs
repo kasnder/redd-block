@@ -629,6 +629,8 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::block_websites,
         commands::clean_hosts_file,
         commands::get_helper_diagnostics,
+        commands::check_safari_bridge_access,
+        commands::request_safari_bridge_access,
     ]
 }
 

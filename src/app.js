@@ -837,7 +837,52 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (hasAcceptedEula()) {
         await runPostAcceptanceStartup();
     }
+
+    startSafariBridgeAccessLoop();
 });
+
+// macOS-only: bombard the user with the App Group consent prompt
+// until they click Allow. macOS won't re-prompt automatically once
+// "Don't Allow" is cached, so on every cycle where access is still
+// denied we call `tccutil reset SystemPolicyAppData com.reddblock`
+// (the unprivileged user-scoped reset) and immediately probe — the
+// probe fires a fresh prompt. The loop self-stops as soon as access
+// works. While it's spinning, the rest of the Safari path naturally
+// reports the extension as unconfigured and the enforcer kills
+// Safari on sight, so the user can't use Safari without granting.
+//
+// Cadence is intentionally slow (5 s between cycles) so the user
+// has time to read each prompt; the goal is "annoying enough they
+// click Allow," not a tight loop.
+function startSafariBridgeAccessLoop() {
+    if (isIOS) return;
+    if (!/Mac/i.test(navigator.platform || '')) return;
+
+    let stopped = false;
+    const tick = async () => {
+        if (stopped) return;
+        try {
+            const ok = await invoke('check_safari_bridge_access');
+            if (ok) {
+                stopped = true;
+                return;
+            }
+            // Fires the prompt (or returns immediately false if
+            // the user has already clicked Don't Allow on the very
+            // first prompt and we haven't reset yet).
+            const granted = await invoke('request_safari_bridge_access');
+            if (granted) {
+                stopped = true;
+                return;
+            }
+        } catch (e) {
+            console.warn('[safari-bridge] access loop error:', e && e.message);
+        }
+        setTimeout(tick, 5000);
+    };
+    // Slight delay so we don't fire the prompt mid-EULA / mid-window-creation.
+    setTimeout(tick, 1500);
+}
 
 function isLocalDevRun() {
     return ['http:', 'https:'].includes(window.location.protocol)
