@@ -6324,8 +6324,12 @@ async function proceedWithBlock() {
         return;
     }
 
-    // Add block to local data (desktop: push here; iOS already pushed in branch above)
-    if (!isIOS && helperAvailable) {
+    // Add block to local data (desktop: push here; iOS already pushed in branch above).
+    // Always persist on desktop when the shim succeeds — `check_helper_status` reports
+    // the v2 in-process "helper" as ready, but `helperAvailable` can still be false on
+    // a race before startup `checkHelperStatus()` runs; skipping the push leaves
+    // `redd-block-data.json` without `activeBlocks` so the extension native host sends [].
+    if (!isIOS) {
         appData.activeBlocks.push(block);
         activatedBlockIds.add(block.id);
     }
