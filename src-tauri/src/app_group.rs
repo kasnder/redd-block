@@ -11,39 +11,14 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[cfg(target_os = "macos")]
 use objc2_foundation::{NSFileManager, NSString};
-#[cfg(target_os = "macos")]
-use serde::{Deserialize, Serialize};
 
 #[cfg(target_os = "macos")]
 const APP_GROUP_ID: &str = "group.com.reddblock.shared";
 #[cfg(target_os = "macos")]
 const BLOCKLIST_FILENAME: &str = "redd-block-data.json";
-#[cfg(target_os = "macos")]
-const STATUS_FILENAME: &str = "safari-status.json";
-#[cfg(target_os = "macos")]
-// Heartbeat fires every 15 s from background.js; treat the file as
-// stale after 45 s so we tolerate one missed beat (jitter) but flag
-// a disabled / uninstalled extension within ~30–45 s. Combined with
-// the enforcer's grace timer (60 s first / 30 s repeat) the user
-// gets ~75–105 s total before Safari is force-quit, instead of the
-// ~2.5 min the original 5-minute window allowed.
-const STATUS_STALE_MS: u64 = 45 * 1000;
 
 #[cfg(target_os = "macos")]
 static GROUP_DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
-
-#[cfg(target_os = "macos")]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SafariStatus {
-    pub installed: bool,
-    pub enabled: bool,
-    #[serde(rename = "privateBrowsing")]
-    pub private_browsing: Option<bool>,
-    #[serde(default)]
-    pub version: Option<String>,
-    #[serde(rename = "lastWriteEpochMs")]
-    pub last_write_epoch_ms: u64,
-}
 
 #[cfg(target_os = "macos")]
 pub fn path() -> Option<PathBuf> {
@@ -56,14 +31,12 @@ pub fn blocklist_path() -> Option<PathBuf> {
 }
 
 #[cfg(target_os = "macos")]
-fn status_path() -> Option<PathBuf> {
-    path().map(|dir| dir.join(STATUS_FILENAME))
-}
-
-#[cfg(target_os = "macos")]
 pub fn write_blocklist_bytes(bytes: &[u8]) -> io::Result<()> {
     let Some(target) = blocklist_path() else {
-        return Err(io::Error::new(io::ErrorKind::NotFound, "App Group container unavailable"));
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "App Group container unavailable",
+        ));
     };
     atomic_write(&target, bytes)
 }
@@ -72,21 +45,6 @@ pub fn write_blocklist_bytes(bytes: &[u8]) -> io::Result<()> {
 pub fn sync_blocklist_from(source: &Path) -> io::Result<()> {
     let bytes = fs::read(source)?;
     write_blocklist_bytes(&bytes)
-}
-
-#[cfg(target_os = "macos")]
-pub fn read_safari_status() -> Option<SafariStatus> {
-    let raw = fs::read_to_string(status_path()?).ok()?;
-    serde_json::from_str(&raw).ok()
-}
-
-#[cfg(target_os = "macos")]
-pub fn status_is_fresh(status: &SafariStatus) -> bool {
-    let now_ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-    now_ms.saturating_sub(status.last_write_epoch_ms) <= STATUS_STALE_MS
 }
 
 #[cfg(target_os = "macos")]
@@ -153,7 +111,10 @@ fn atomic_write(target: &Path, bytes: &[u8]) -> io::Result<()> {
 
     let tmp = parent.join(format!(
         ".{}.{}.tmp",
-        target.file_name().and_then(|s| s.to_str()).unwrap_or("app-group"),
+        target
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("app-group"),
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos())

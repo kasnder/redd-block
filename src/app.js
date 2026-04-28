@@ -838,51 +838,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await runPostAcceptanceStartup();
     }
 
-    startSafariBridgeAccessLoop();
 });
-
-// macOS-only: bombard the user with the App Group consent prompt
-// until they click Allow. macOS won't re-prompt automatically once
-// "Don't Allow" is cached, so on every cycle where access is still
-// denied we call `tccutil reset SystemPolicyAppData com.reddblock`
-// (the unprivileged user-scoped reset) and immediately probe — the
-// probe fires a fresh prompt. The loop self-stops as soon as access
-// works. While it's spinning, the rest of the Safari path naturally
-// reports the extension as unconfigured and the enforcer kills
-// Safari on sight, so the user can't use Safari without granting.
-//
-// Cadence is intentionally slow (5 s between cycles) so the user
-// has time to read each prompt; the goal is "annoying enough they
-// click Allow," not a tight loop.
-function startSafariBridgeAccessLoop() {
-    if (isIOS) return;
-    if (!/Mac/i.test(navigator.platform || '')) return;
-
-    let stopped = false;
-    const tick = async () => {
-        if (stopped) return;
-        try {
-            const ok = await invoke('check_safari_bridge_access');
-            if (ok) {
-                stopped = true;
-                return;
-            }
-            // Fires the prompt (or returns immediately false if
-            // the user has already clicked Don't Allow on the very
-            // first prompt and we haven't reset yet).
-            const granted = await invoke('request_safari_bridge_access');
-            if (granted) {
-                stopped = true;
-                return;
-            }
-        } catch (e) {
-            console.warn('[safari-bridge] access loop error:', e && e.message);
-        }
-        setTimeout(tick, 5000);
-    };
-    // Slight delay so we don't fire the prompt mid-EULA / mid-window-creation.
-    setTimeout(tick, 1500);
-}
 
 function isLocalDevRun() {
     return ['http:', 'https:'].includes(window.location.protocol)
@@ -1106,7 +1062,7 @@ async function runDesktopOnboarding() {
         const anyDetected = Object.keys(BROWSER_STORE_LINKS).some(k => browsers[k] && browsers[k].installed);
         const anyMissing = Object.keys(BROWSER_STORE_LINKS).some(k => {
             const b = browsers[k];
-            return b && b.installed && browserComplianceStatus(b) !== 'compliant';
+            return b && b.installed && browserComplianceStatus(k, b) !== 'compliant';
         });
         if (!dismissed && anyDetected && anyMissing && !migrationOnboardingDismissed) {
             await showMigrationOnboarding('post', state, { mode: 'fresh' });
@@ -1326,6 +1282,9 @@ const BROWSER_STORE_LINKS = {
 function browserComplianceStatus(key, b) {
     if (!b || !b.installed) return null;
     const def = (b.profiles || []).find(p => p.isDefault) || (b.profiles || [])[0];
+    if (key === 'safari' && def && /Full Disk Access|extension settings plist|Safari extension settings/i.test(def.note || '')) {
+        return 'needs-fda';
+    }
     if (!def || !def.installed) return 'needs-install';
     const enabled = def.enabled;
     if (enabled === false) return 'needs-enable';
@@ -1337,6 +1296,7 @@ function browserComplianceStatus(key, b) {
 function statusLabel(key, status) {
     switch (status) {
         case 'compliant': return '✓ Set up';
+        case 'needs-fda': return 'Grant Full Disk Access';
         case 'needs-private': return 'Allow in private browsing';
         case 'needs-enable': return 'Enable extension';
         case 'needs-install': return 'Install';
@@ -1394,13 +1354,50 @@ function renderBrowserInstallButtons(state) {
             case 'needs-install': badge.textContent = 'Not installed'; break;
             case 'needs-enable': badge.textContent = 'Disabled'; break;
             case 'needs-private': badge.textContent = 'No private mode'; break;
+            case 'needs-fda': badge.textContent = 'Needs access'; break;
             default: badge.textContent = 'Not installed';
         }
         header.appendChild(badge);
 
         row.appendChild(header);
 
-        if (status === 'needs-install') {
+        if (status === 'needs-fda') {
+            const hint = document.createElement('div');
+            hint.className = 'migration-browser-hint';
+            hint.textContent = 'Grant ReDD Block Full Disk Access so it can verify Safari extension settings. Safari will be closed during active enforcement until this is fixed.';
+            row.appendChild(hint);
+
+            const action = document.createElement('div');
+            action.className = 'migration-browser-action';
+
+            const settingsBtn = document.createElement('button');
+            settingsBtn.type = 'button';
+            settingsBtn.className = 'migration-browser-copy';
+            settingsBtn.textContent = 'Open Settings';
+            settingsBtn.title = 'Open Full Disk Access settings';
+            settingsBtn.addEventListener('click', async () => {
+                try {
+                    await invoke('open_safari_fda_settings');
+                    settingsBtn.textContent = 'Opened';
+                    setTimeout(() => { settingsBtn.textContent = 'Open Settings'; }, 1500);
+                } catch (e) {
+                    console.warn('[migration] open Full Disk Access settings failed:', e);
+                    settingsBtn.textContent = 'Failed';
+                    setTimeout(() => { settingsBtn.textContent = 'Open Settings'; }, 1500);
+                }
+            });
+            action.appendChild(settingsBtn);
+
+            const refreshBtn = document.createElement('button');
+            refreshBtn.type = 'button';
+            refreshBtn.className = 'migration-browser-copy secondary';
+            refreshBtn.textContent = 'Check again';
+            refreshBtn.title = 'Refresh Safari access status';
+            refreshBtn.addEventListener('click', pollMigrationCompliance);
+            action.appendChild(refreshBtn);
+
+            row.appendChild(action);
+        } else if (status === 'needs-install') {
             const action = document.createElement('div');
             action.className = 'migration-browser-action';
 
@@ -1556,7 +1553,7 @@ function updateExtensionComplianceBanner(state) {
     if (text) {
         text.textContent = failing
             ? failing === 'Safari'
-                ? `ReDD Focus isn't fully enabled in Safari. Install it, enable it, and disable "Allow in Private Browsing".`
+                ? `Safari is unavailable until ReDD Block can verify ReDD Focus. Grant Full Disk Access, install ReDD Focus, enable it, and allow it in Private Browsing.`
                 : `ReDD Focus isn't fully enabled in ${failing}. Install, enable it, and allow it in private browsing.`
             : 'Install the ReDD Focus extension to block websites.';
     }
@@ -10733,7 +10730,7 @@ function renderSystemDiagnostics(d) {
     for (const key of ['chrome', 'brave', 'edge', 'firefox', 'safari']) {
         const b = d.browsers[key];
         if (!b) continue;
-        const compliant = browserComplianceStatus(b) === 'compliant';
+        const compliant = browserComplianceStatus(key, b) === 'compliant';
         html += `<tr><td>${e(key)}</td><td>${yesno(b.installed)}</td><td>${yesno(b.present)}</td><td>${b.installed ? yesno(compliant) : '—'}</td></tr>`;
     }
     html += '</tbody></table>';

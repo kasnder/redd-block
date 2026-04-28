@@ -277,23 +277,27 @@ Run with at least two of {Chrome, Brave, Edge, Firefox, Safari} installed.
 Requires the ReDD Focus Safari extension built locally from `redd-focus-web/` and enabled in Safari → Settings → Extensions. Both bundles must declare the `group.com.reddblock.shared` App Group entitlement.
 
 - [ ] Build `redd-focus-web` in Xcode (Product → Run on macOS target). App launches and exposes the extension to Safari
+- [ ] Grant ReDD Block Full Disk Access in System Settings → Privacy & Security → Full Disk Access
 - [ ] Open Safari → Settings → Extensions → enable ReDD Focus
+- [ ] Enable "Allow in Private Browsing" for ReDD Focus
 - [ ] Allow ReDD Focus on "All Websites"
 - [ ] Confirm `~/Library/Group Containers/group.com.reddblock.shared/redd-block-data.json` exists and is fresh after a save in ReDD Block
+- [ ] Confirm ReDD Block reports Safari as set up from `~/Library/Containers/com.apple.Safari/Data/Library/Safari/WebExtensions/Extensions.plist`
 - [ ] Trigger an active block in ReDD Block → in Safari, navigate to a blocked domain → redirected to extension's `blocked.html` with metadata
 - [ ] `Console.app` filtered on `ReDDFocus native message` shows the handler firing on each navigation
 - [ ] Modify the block's name/emoji in ReDD Block → re-navigate in Safari → updated metadata appears in `blocked.html` (proves App Group write↔read round-trip)
 - [ ] End the block in ReDD Block → previously-blocked tabs in Safari unblock on next navigation / sweep
 
-### Frontmost-app enforcement gate (no false-positive kills)
+### Strict Safari enforcement
 
-The compliance gate only acts on Safari when Safari is the frontmost app. Minimising / hiding / switching to another space must NOT trigger a force-quit, even after the heartbeat goes stale.
+Safari is enforced whenever its process is running, matching Chrome / Brave / Edge / Firefox. Missing Full Disk Access is non-compliant because ReDD Block cannot verify Safari extension settings.
 
-- [ ] With Safari frontmost and the extension correctly configured, no in-session compliance banner appears
-- [ ] Cmd-M (minimise) Safari and switch to TextEdit → wait > 60 s → bring Safari forward → Safari is still alive (no false-positive kill)
-- [ ] Cmd-H (hide) Safari → wait > 60 s → unhide → Safari is still alive
-- [ ] Park Safari on Mission Control space 2, switch to space 1 with another app → wait > 60 s → switch back → Safari is still alive
-- [ ] With Safari frontmost, disable ReDD Focus in Safari → Settings → Extensions → within ~45 s the in-session banner appears, grace timer fires, Safari force-quits at zero
+- [ ] With Safari running and the extension correctly configured, no in-session compliance banner appears
+- [ ] Revoke Full Disk Access, launch Safari → grace timer fires, Safari force-quits at zero, and ReDD Block opens in front
+- [ ] Cmd-M (minimise) Safari with ReDD Focus disabled → grace timer still fires and Safari force-quits at zero
+- [ ] Cmd-H (hide) Safari with ReDD Focus disabled → grace timer still fires and Safari force-quits at zero
+- [ ] Park Safari on Mission Control space 2 with ReDD Focus disabled → grace timer still fires and Safari force-quits at zero
+- [ ] Disable ReDD Focus in Safari → Settings → Extensions → in-session banner appears, grace timer fires, Safari force-quits at zero, and ReDD Block opens in front
 - [ ] Re-enable the extension while the grace timer is counting down → banner clears, Safari stays open
 
 ---

@@ -4,6 +4,8 @@
 // commands are desktop-only; on iOS the Screen Time API handles
 // enforcement and these commands aren't registered.
 
+use tauri::{AppHandle, Manager};
+
 use crate::profile_scan;
 
 /// Scan every supported browser profile for ReDD Focus extension
@@ -26,6 +28,10 @@ pub async fn scan_browser_profiles() -> Result<profile_scan::ScanResult, String>
 /// no Dock click to bring the process back to the front.
 #[tauri::command]
 pub fn activate_app(window: tauri::Window) {
+    reveal_app(&window.app_handle());
+}
+
+pub fn reveal_app(app: &AppHandle) {
     #[cfg(target_os = "macos")]
     {
         use cocoa::appkit::NSApp;
@@ -37,9 +43,11 @@ pub fn activate_app(window: tauri::Window) {
             let _: () = msg_send![app, activateIgnoringOtherApps: YES];
         }
     }
-    let _ = window.unminimize();
-    let _ = window.show();
-    let _ = window.set_focus();
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
 }
 
 /// True when every running-and-present browser is compliant. Shortcut
@@ -54,4 +62,3 @@ pub async fn browser_profiles_compliant() -> Result<bool, String> {
     .await
     .map_err(|e| format!("join error: {e}"))
 }
-

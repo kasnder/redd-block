@@ -32,8 +32,9 @@ extension on both OSes:
   registry keys (Windows). Entirely user-scope.
 - **Safari** (macOS) routes through `SafariWebExtensionHandler.swift`
   inside the signed `.app` bundle. ReDD Block mirrors
-  `redd-block-data.json` into the shared App Group container and the
-  extension writes back `safari-status.json` for compliance checks.
+  `redd-block-data.json` into the shared App Group container for
+  blocking data, and reads Safari's `Extensions.plist` under Full Disk
+  Access for extension compliance checks.
 - An in-app **enforcement loop** scans running browsers every ~5 s
   (using the Rust-ported profile-scan code) and nags / quits any
   browser whose ReDD Focus extension is missing, disabled, or not
@@ -113,7 +114,7 @@ flowchart TB
 
 ### Website Blocking
 
-**Desktop (macOS / Windows):** Website blocking uses the ReDD Focus browser extension. The app registers itself as a native-messaging host, derives the current blocklist from `redd-block-data.json`, and pushes it over stdio to the extension running in Chrome / Brave / Edge / Firefox. Safari (macOS) reads the same data from the shared App Group container and reports status back through `safari-status.json`. A background loop in the app scans running browsers every ~5 seconds and quits any that have the extension missing, disabled, or not configured the way ReDD Block expects.
+**Desktop (macOS / Windows):** Website blocking uses the ReDD Focus browser extension. The app registers itself as a native-messaging host, derives the current blocklist from `redd-block-data.json`, and pushes it over stdio to the extension running in Chrome / Brave / Edge / Firefox. Safari (macOS) reads the same data from the shared App Group container; ReDD Block verifies Safari's enabled/private-browsing state by reading Safari's `Extensions.plist` under Full Disk Access. A background loop in the app scans running browsers every ~5 seconds and quits any that have the extension missing, disabled, or not configured the way ReDD Block expects.
 
 **iOS:** Website blocking uses the Screen Time API's `WebContentSettings` to block domains at the OS level. Users type in domains to block, and the app applies them via a `ManagedSettingsStore`. One-time authorization in Settings → Screen Time.
 

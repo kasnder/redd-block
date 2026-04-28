@@ -40,59 +40,16 @@ fn chromium_ids() -> Vec<String> {
 
 #[cfg(target_os = "macos")]
 fn safari_bundle_ids() -> Vec<String> {
-    let mut ids: Vec<String> = SAFARI_BUNDLE_IDS.iter().map(|id| (*id).to_string()).collect();
+    let mut ids: Vec<String> = SAFARI_BUNDLE_IDS
+        .iter()
+        .map(|id| (*id).to_string())
+        .collect();
     if let Ok(extra) = std::env::var("REDD_DEV_SAFARI_BUNDLE_ID") {
         for id in extra.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
             ids.push(id.to_string());
         }
     }
     ids
-}
-
-/// True iff Safari is the user's currently-frontmost application on
-/// the active Mission Control space. Used by `scan_safari` to decide
-/// whether to mark Safari as `present` (i.e. enforcement-worthy).
-///
-/// We deliberately don't enforce when Safari is just running but
-/// hidden / minimised / on another space: Safari aggressively
-/// suspends MV3 background pages for battery savings, so the
-/// heartbeat goes stale during those states and the gate would
-/// false-positive a healthy install. Treating "not frontmost" as
-/// "not enforcing" sidesteps the whole class of false positives at
-/// the cost of a minor escape hatch (a determined user could
-/// disable the extension and let auto-refreshing minimised tabs
-/// load blocked content silently — but they can't actually use
-/// Safari without making it frontmost again, at which point
-/// enforcement resumes within ~45 s).
-///
-/// `NSWorkspace.frontmostApplication` is unprivileged Cocoa API —
-/// no TCC consent involved.
-#[cfg(target_os = "macos")]
-fn safari_is_frontmost() -> bool {
-    use cocoa::base::{id, nil};
-    use objc::{class, msg_send, sel, sel_impl};
-    use std::ffi::CStr;
-    use std::os::raw::c_char;
-    unsafe {
-        let workspace: id = msg_send![class!(NSWorkspace), sharedWorkspace];
-        if workspace == nil {
-            return false;
-        }
-        let app: id = msg_send![workspace, frontmostApplication];
-        if app == nil {
-            return false;
-        }
-        let bundle_id: id = msg_send![app, bundleIdentifier];
-        if bundle_id == nil {
-            return false;
-        }
-        let utf8: *const c_char = msg_send![bundle_id, UTF8String];
-        if utf8.is_null() {
-            return false;
-        }
-        let cstr = CStr::from_ptr(utf8);
-        matches!(cstr.to_str(), Ok("com.apple.Safari"))
-    }
 }
 
 /// Result for a single browser profile.
@@ -150,7 +107,12 @@ pub fn scan() -> ScanResult {
 }
 
 fn empty(_label: &str) -> BrowserStatus {
-    BrowserStatus { present: false, installed: false, profiles: vec![], error: None }
+    BrowserStatus {
+        present: false,
+        installed: false,
+        profiles: vec![],
+        error: None,
+    }
 }
 
 // ---- Firefox ---------------------------------------------------------------
@@ -177,7 +139,9 @@ fn firefox_app_installed() -> bool {
     {
         let candidates = [
             PathBuf::from("/Applications/Firefox.app"),
-            dirs::home_dir().map(|h| h.join("Applications/Firefox.app")).unwrap_or_default(),
+            dirs::home_dir()
+                .map(|h| h.join("Applications/Firefox.app"))
+                .unwrap_or_default(),
         ];
         candidates.iter().any(|p| p.exists())
     }
@@ -224,7 +188,12 @@ fn scan_firefox() -> Option<BrowserStatus> {
     let installed = firefox_app_installed();
     let root = firefox_root()?;
     if !installed || !root.exists() {
-        return Some(BrowserStatus { present: running, installed, profiles: vec![], error: None });
+        return Some(BrowserStatus {
+            present: running,
+            installed,
+            profiles: vec![],
+            error: None,
+        });
     }
 
     let (profile_dirs, defaults) = read_firefox_profiles(&root);
@@ -251,9 +220,18 @@ fn scan_firefox() -> Option<BrowserStatus> {
                         .find(|a| a.get("id").and_then(|v| v.as_str()) == Some(FIREFOX_ID))
                     {
                         s.installed = true;
-                        let active = addon.get("active").and_then(|v| v.as_bool()).unwrap_or(false);
-                        let user_disabled = addon.get("userDisabled").and_then(|v| v.as_bool()).unwrap_or(false);
-                        let app_disabled = addon.get("appDisabled").and_then(|v| v.as_bool()).unwrap_or(false);
+                        let active = addon
+                            .get("active")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        let user_disabled = addon
+                            .get("userDisabled")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
+                        let app_disabled = addon
+                            .get("appDisabled")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or(false);
                         s.enabled = Some(active && !user_disabled && !app_disabled);
                     }
                 }
@@ -278,7 +256,12 @@ fn scan_firefox() -> Option<BrowserStatus> {
         profiles.push(s);
     }
 
-    Some(BrowserStatus { present: running, installed: true, profiles, error: None })
+    Some(BrowserStatus {
+        present: running,
+        installed: true,
+        profiles,
+        error: None,
+    })
 }
 
 fn read_firefox_profiles(root: &Path) -> (Vec<String>, Vec<String>) {
@@ -317,7 +300,11 @@ fn read_firefox_profiles(root: &Path) -> (Vec<String>, Vec<String>) {
 // ---- Chromium (Chrome / Brave / Edge) --------------------------------------
 
 #[derive(Copy, Clone)]
-enum ChromiumBrowser { Chrome, Brave, Edge }
+enum ChromiumBrowser {
+    Chrome,
+    Brave,
+    Edge,
+}
 
 /// True if any process with one of the given names is currently
 /// running. We treat "present" as "running" rather than "installed"
@@ -336,7 +323,9 @@ fn is_process_running(names: &[&str]) -> bool {
     })
 }
 #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-fn is_process_running(_names: &[&str]) -> bool { false }
+fn is_process_running(_names: &[&str]) -> bool {
+    false
+}
 
 impl ChromiumBrowser {
     /// True when the browser app appears to be present on disk
@@ -359,7 +348,9 @@ impl ChromiumBrowser {
             };
             let candidates = [
                 PathBuf::from("/Applications").join(bundle),
-                dirs::home_dir().map(|h| h.join("Applications").join(bundle)).unwrap_or_default(),
+                dirs::home_dir()
+                    .map(|h| h.join("Applications").join(bundle))
+                    .unwrap_or_default(),
             ];
             candidates.iter().any(|p| p.exists())
         }
@@ -372,7 +363,10 @@ impl ChromiumBrowser {
             // create stub paths there too.
             let (subpath, _exe) = match self {
                 ChromiumBrowser::Chrome => (r"Google\Chrome\Application\chrome.exe", "chrome.exe"),
-                ChromiumBrowser::Brave => (r"BraveSoftware\Brave-Browser\Application\brave.exe", "brave.exe"),
+                ChromiumBrowser::Brave => (
+                    r"BraveSoftware\Brave-Browser\Application\brave.exe",
+                    "brave.exe",
+                ),
                 ChromiumBrowser::Edge => (r"Microsoft\Edge\Application\msedge.exe", "msedge.exe"),
             };
             let mut roots = vec![];
@@ -457,7 +451,12 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
     let installed = b.app_installed();
     let root = b.root()?;
     if !installed || !root.exists() {
-        return Some(BrowserStatus { present: running, installed, profiles: vec![], error: None });
+        return Some(BrowserStatus {
+            present: running,
+            installed,
+            profiles: vec![],
+            error: None,
+        });
     }
 
     // Discover profiles via "Local State" first, dir scan as fallback.
@@ -565,7 +564,10 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
                 _ => false,
             };
             let enabled = state == Some(1) || (state.is_none() && !has_disable_reasons);
-            let incognito = ext.get("incognito").and_then(|v| v.as_bool()).unwrap_or(false);
+            let incognito = ext
+                .get("incognito")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             (enabled, incognito)
         };
 
@@ -588,83 +590,157 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
         profiles.push(s);
     }
 
-    Some(BrowserStatus { present: running, installed: true, profiles, error: None })
+    Some(BrowserStatus {
+        present: running,
+        installed: true,
+        profiles,
+        error: None,
+    })
 }
 
 // ---- Safari (macOS only) --------------------------------------------------
 
 #[cfg(target_os = "macos")]
+pub fn safari_extensions_plist_path() -> Option<PathBuf> {
+    Some(dirs::home_dir()?.join(
+        "Library/Containers/com.apple.Safari/Data/Library/Safari/WebExtensions/Extensions.plist",
+    ))
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SafariPlistScanError {
+    Missing,
+    PermissionDenied,
+    Invalid(String),
+}
+
+#[cfg(target_os = "macos")]
+impl SafariPlistScanError {
+    fn note(&self) -> String {
+        match self {
+            SafariPlistScanError::Missing => {
+                "Safari extension settings plist not found".to_string()
+            }
+            SafariPlistScanError::PermissionDenied => "Full Disk Access required".to_string(),
+            SafariPlistScanError::Invalid(e) => {
+                format!("Could not read Safari extension settings: {e}")
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SafariPlistStatus {
+    installed: bool,
+    enabled: Option<bool>,
+    private_browsing: Option<bool>,
+}
+
+#[cfg(target_os = "macos")]
+pub fn scan_safari_extensions_plist() -> Result<Option<(bool, bool)>, SafariPlistScanError> {
+    let path = safari_extensions_plist_path().ok_or(SafariPlistScanError::Missing)?;
+    let bytes = std::fs::read(&path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            SafariPlistScanError::Missing
+        } else if e.kind() == std::io::ErrorKind::PermissionDenied {
+            SafariPlistScanError::PermissionDenied
+        } else {
+            SafariPlistScanError::Invalid(e.to_string())
+        }
+    })?;
+    parse_safari_extensions_plist(&bytes, &safari_bundle_ids()).map(|s| {
+        if s.installed {
+            Some((
+                s.enabled.unwrap_or(false),
+                s.private_browsing.unwrap_or(false),
+            ))
+        } else {
+            None
+        }
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn parse_safari_extensions_plist(
+    bytes: &[u8],
+    safari_ids: &[String],
+) -> Result<SafariPlistStatus, SafariPlistScanError> {
+    let root = plist::Value::from_reader(std::io::Cursor::new(bytes))
+        .map_err(|e| SafariPlistScanError::Invalid(e.to_string()))?;
+    let Some(dict) = root.as_dictionary() else {
+        return Err(SafariPlistScanError::Invalid(
+            "root is not a dictionary".to_string(),
+        ));
+    };
+
+    let mut best: Option<SafariPlistStatus> = None;
+    for (key, value) in dict {
+        if !safari_ids.iter().any(|id| key.starts_with(id)) {
+            continue;
+        }
+        let Some(ext) = value.as_dictionary() else {
+            continue;
+        };
+        if ext.contains_key("RemovedDate") {
+            continue;
+        }
+        let enabled = ext
+            .get("Enabled")
+            .and_then(|v| v.as_boolean())
+            .unwrap_or(false);
+        let private_browsing = ext
+            .get("AllowInPrivateBrowsing")
+            .and_then(|v| v.as_boolean())
+            .unwrap_or(false);
+        let status = SafariPlistStatus {
+            installed: true,
+            enabled: Some(enabled),
+            private_browsing: Some(private_browsing),
+        };
+        let score = (enabled as u8, private_browsing as u8);
+        let current_score = best
+            .as_ref()
+            .map(|current| {
+                (
+                    (current.enabled == Some(true)) as u8,
+                    (current.private_browsing == Some(true)) as u8,
+                )
+            })
+            .unwrap_or((0, 0));
+        if best.is_none() || score > current_score {
+            best = Some(status);
+        }
+    }
+
+    Ok(best.unwrap_or(SafariPlistStatus {
+        installed: false,
+        enabled: Some(false),
+        private_browsing: Some(false),
+    }))
+}
+
+#[cfg(target_os = "macos")]
 fn scan_safari() -> BrowserStatus {
-    use std::process::Command;
-
-    // `present` means "enforcement-worthy" for downstream consumers
-    // (the in-session compliance banner and `compliant()` short-
-    // circuit). For Safari that's not just "process running" — see
-    // `safari_is_frontmost`'s docstring for why we gate on focus.
-    let running = is_process_running(&["Safari"]) && safari_is_frontmost();
-    // Safari is a system app — always installed on macOS.
-    let output = Command::new("/usr/bin/pluginkit")
-        .args(["-m", "-A", "-vvv", "-p", "com.apple.Safari.web-extension"])
-        .output();
-    let output = match output {
-        Ok(o) => o,
+    let running = is_process_running(&["Safari"]);
+    let plist_status = scan_safari_extensions_plist();
+    let (extension_installed, enabled, private_browsing, note, error) = match plist_status {
+        Ok(Some((enabled, private_browsing))) => {
+            (true, Some(enabled), Some(private_browsing), None, None)
+        }
+        Ok(None) => (false, Some(false), Some(false), None, None),
         Err(e) => {
-            return BrowserStatus { present: running, installed: true, profiles: vec![], error: Some(e.to_string()) };
+            let note = e.note();
+            (
+                false,
+                Some(false),
+                Some(false),
+                Some(note.clone()),
+                Some(note),
+            )
         }
     };
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let safari_ids = safari_bundle_ids();
-    // pluginkit only tells us the bundle is *registered* with Safari.
-    // The leading `+` / `-` flag isn't reliable for Safari Web
-    // Extensions on modern macOS (Safari manages enabled-state
-    // internally), so we ignore it and source enabled from the
-    // heartbeat instead.
-    let pluginkit_found = stdout
-        .lines()
-        .any(|l| safari_ids.iter().any(|id| l.contains(id)));
-
-    let safari_status = crate::app_group::read_safari_status();
-    let heartbeat_fresh = safari_status
-        .as_ref()
-        .map(crate::app_group::status_is_fresh)
-        .unwrap_or(false);
-
-    // Two scenarios with different signals:
-    //   1) Safari open  → heartbeat freshness is the truth. Stale
-    //      heartbeat means the extension is off (disabled or
-    //      uninstalled) and the enforcer should kick.
-    //   2) Safari closed → heartbeat is necessarily stale. Trust the
-    //      last-known state for the migration UI; the enforcer's
-    //      `compliant()` short-circuits on `!present` anyway.
-    let extension_installed = pluginkit_found || safari_status.is_some();
-    let (enabled, private_browsing) = match safari_status.as_ref() {
-        Some(_) if running && !heartbeat_fresh => {
-            // Safari is open but the extension stopped reporting →
-            // it was just disabled or uninstalled.
-            (Some(false), None)
-        }
-        Some(hb) => {
-            // Either heartbeat is fresh, or Safari is closed and we
-            // trust the last-known-good record.
-            (Some(true), hb.private_browsing)
-        }
-        None => {
-            // No heartbeat ever → never observed running. If
-            // pluginkit registered the bundle, the user has the
-            // extension installed but disabled.
-            if pluginkit_found { (Some(false), None) } else { (None, None) }
-        }
-    };
-    let note = safari_status.as_ref().map(|status| {
-        format!(
-            "Safari status reported by extension{}",
-            status
-                .version
-                .as_deref()
-                .map(|version| format!(" (v{version})"))
-                .unwrap_or_default()
-        )
-    });
 
     BrowserStatus {
         present: running,
@@ -677,7 +753,7 @@ fn scan_safari() -> BrowserStatus {
             private_browsing,
             note,
         }],
-        error: None,
+        error,
     }
 }
 
@@ -699,7 +775,11 @@ pub fn compliant(result: &ScanResult) -> bool {
     let chromium_or_firefox = [&result.firefox, &result.chrome, &result.brave, &result.edge];
     let chromium_ok = chromium_or_firefox.iter().all(|b| {
         !b.present || {
-            let def = b.profiles.iter().find(|p| p.is_default).or_else(|| b.profiles.first());
+            let def = b
+                .profiles
+                .iter()
+                .find(|p| p.is_default)
+                .or_else(|| b.profiles.first());
             matches!(
                 def,
                 Some(p) if p.installed
@@ -709,7 +789,12 @@ pub fn compliant(result: &ScanResult) -> bool {
         }
     });
     let safari_ok = !result.safari.present || {
-        let def = result.safari.profiles.iter().find(|p| p.is_default).or_else(|| result.safari.profiles.first());
+        let def = result
+            .safari
+            .profiles
+            .iter()
+            .find(|p| p.is_default)
+            .or_else(|| result.safari.profiles.first());
         matches!(
             def,
             Some(p) if p.installed
@@ -718,4 +803,106 @@ pub fn compliant(result: &ScanResult) -> bool {
         )
     };
     chromium_ok && safari_ok
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+
+    fn parse(body: &str) -> SafariPlistStatus {
+        let ids = vec!["com.ulriklyngs.mind-shield".to_string()];
+        parse_safari_extensions_plist(body.as_bytes(), &ids).expect("plist parses")
+    }
+
+    fn plist(entries: &str) -> String {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+{entries}
+</dict>
+</plist>"#
+        )
+    }
+
+    fn entry(key: &str, enabled: bool, private: bool, removed: bool) -> String {
+        let removed_date = if removed {
+            "<key>RemovedDate</key><date>2026-04-26T17:33:08Z</date>"
+        } else {
+            ""
+        };
+        format!(
+            r#"<key>{key}</key>
+<dict>
+  <key>Enabled</key><{enabled}/>
+  <key>AllowInPrivateBrowsing</key><{private}/>
+  {removed_date}
+</dict>"#,
+            enabled = if enabled { "true" } else { "false" },
+            private = if private { "true" } else { "false" },
+        )
+    }
+
+    #[test]
+    fn safari_plist_enabled_and_private_allowed() {
+        let status = parse(&plist(&entry(
+            "com.ulriklyngs.mind-shield (JD647S9RT6)",
+            true,
+            true,
+            false,
+        )));
+        assert_eq!(status.installed, true);
+        assert_eq!(status.enabled, Some(true));
+        assert_eq!(status.private_browsing, Some(true));
+    }
+
+    #[test]
+    fn safari_plist_enabled_private_denied() {
+        let status = parse(&plist(&entry(
+            "com.ulriklyngs.mind-shield (JD647S9RT6)",
+            true,
+            false,
+            false,
+        )));
+        assert_eq!(status.installed, true);
+        assert_eq!(status.enabled, Some(true));
+        assert_eq!(status.private_browsing, Some(false));
+    }
+
+    #[test]
+    fn safari_plist_disabled() {
+        let status = parse(&plist(&entry(
+            "com.ulriklyngs.mind-shield (JD647S9RT6)",
+            false,
+            true,
+            false,
+        )));
+        assert_eq!(status.installed, true);
+        assert_eq!(status.enabled, Some(false));
+        assert_eq!(status.private_browsing, Some(true));
+    }
+
+    #[test]
+    fn safari_plist_ignores_removed_entries() {
+        let entries = format!(
+            "{}\n{}",
+            entry(
+                "com.ulriklyngs.mind-shield.old (7YEYWQKK25)",
+                true,
+                true,
+                true
+            ),
+            entry(
+                "com.ulriklyngs.mind-shield (JD647S9RT6)",
+                true,
+                false,
+                false
+            ),
+        );
+        let status = parse(&plist(&entries));
+        assert_eq!(status.installed, true);
+        assert_eq!(status.enabled, Some(true));
+        assert_eq!(status.private_browsing, Some(false));
+    }
 }

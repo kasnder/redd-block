@@ -37,14 +37,24 @@ fn current_grace(app: &AppHandle) -> Duration {
     let secs = crate::commands::canonical_data_path(app)
         .and_then(|p| std::fs::read_to_string(&p).ok())
         .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
-        .and_then(|v| v.get("settings").and_then(|s| s.get("extensionGraceSeconds")).and_then(|n| n.as_u64()))
+        .and_then(|v| {
+            v.get("settings")
+                .and_then(|s| s.get("extensionGraceSeconds"))
+                .and_then(|n| n.as_u64())
+        })
         .unwrap_or(GRACE_DEFAULT_SECS)
         .clamp(GRACE_MIN_SECS, GRACE_MAX_SECS);
     Duration::from_secs(secs)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum BrowserKey { Firefox, Chrome, Brave, Edge }
+pub enum BrowserKey {
+    Firefox,
+    Chrome,
+    Brave,
+    Edge,
+    Safari,
+}
 
 impl BrowserKey {
     fn label(self) -> &'static str {
@@ -53,6 +63,7 @@ impl BrowserKey {
             BrowserKey::Chrome => "Chrome",
             BrowserKey::Brave => "Brave",
             BrowserKey::Edge => "Edge",
+            BrowserKey::Safari => "Safari",
         }
     }
 
@@ -65,6 +76,7 @@ impl BrowserKey {
             BrowserKey::Chrome => &["chrome.exe"],
             BrowserKey::Brave => &["brave.exe"],
             BrowserKey::Edge => &["msedge.exe"],
+            BrowserKey::Safari => &[],
         }
         #[cfg(target_os = "macos")]
         match self {
@@ -72,6 +84,7 @@ impl BrowserKey {
             BrowserKey::Chrome => &["Google Chrome"],
             BrowserKey::Brave => &["Brave Browser"],
             BrowserKey::Edge => &["Microsoft Edge"],
+            BrowserKey::Safari => &["Safari"],
         }
         #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
         match self {
@@ -79,8 +92,14 @@ impl BrowserKey {
         }
     }
 
-    fn all() -> [BrowserKey; 4] {
-        [BrowserKey::Firefox, BrowserKey::Chrome, BrowserKey::Brave, BrowserKey::Edge]
+    fn all() -> [BrowserKey; 5] {
+        [
+            BrowserKey::Firefox,
+            BrowserKey::Chrome,
+            BrowserKey::Brave,
+            BrowserKey::Edge,
+            BrowserKey::Safari,
+        ]
     }
 
     fn for_status<'a>(self, r: &'a profile_scan::ScanResult) -> &'a BrowserStatus {
@@ -89,6 +108,7 @@ impl BrowserKey {
             BrowserKey::Chrome => &r.chrome,
             BrowserKey::Brave => &r.brave,
             BrowserKey::Edge => &r.edge,
+            BrowserKey::Safari => &r.safari,
         }
     }
 }
@@ -216,6 +236,7 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
             }
             quit_browser(key);
             notify_killed(app, key);
+            crate::commands::reveal_app(app);
         } else {
             emit_update(app, state, key);
         }
@@ -226,8 +247,11 @@ fn default_profile_passes(b: &BrowserStatus) -> bool {
     if !b.present {
         return true; // Nothing to check.
     }
-    let def: Option<&ProfileStatus> =
-        b.profiles.iter().find(|p| p.is_default).or_else(|| b.profiles.first());
+    let def: Option<&ProfileStatus> = b
+        .profiles
+        .iter()
+        .find(|p| p.is_default)
+        .or_else(|| b.profiles.first());
     match def {
         Some(p) => p.installed && p.enabled == Some(true) && p.private_browsing == Some(true),
         None => false,
@@ -242,7 +266,10 @@ fn cancel_timer(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>, key: Browser
     if removed && emit {
         let _ = app.emit(
             "enforcer://grace-resolved",
-            ResolvedEvent { browser: key, label: key.label() },
+            ResolvedEvent {
+                browser: key,
+                label: key.label(),
+            },
         );
     }
 }
@@ -296,13 +323,7 @@ fn notify_killed(app: &AppHandle, key: BrowserKey) {
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn notify(app: &AppHandle, title: &str, body: &str) {
-    if let Err(e) = app
-        .notification()
-        .builder()
-        .title(title)
-        .body(body)
-        .show()
-    {
+    if let Err(e) = app.notification().builder().title(title).body(body).show() {
         log::warn!("notification failed: {e}");
     } else {
         log::info!("notification: {title} - {body}");
@@ -322,11 +343,12 @@ fn running_browsers() -> std::collections::HashSet<BrowserKey> {
     for key in BrowserKey::all() {
         for name in key.process_names() {
             let lowered = name.to_ascii_lowercase();
-            if sys
-                .processes()
-                .values()
-                .any(|p| p.name().to_string_lossy().to_ascii_lowercase().ends_with(&lowered))
-            {
+            if sys.processes().values().any(|p| {
+                p.name()
+                    .to_string_lossy()
+                    .to_ascii_lowercase()
+                    .ends_with(&lowered)
+            }) {
                 out.insert(key);
                 break;
             }
@@ -346,7 +368,9 @@ fn quit_browser(key: BrowserKey) {
     let names = key.process_names();
     let matches = |name: &str| -> bool {
         let lower = name.to_ascii_lowercase();
-        names.iter().any(|n| lower.ends_with(&n.to_ascii_lowercase()))
+        names
+            .iter()
+            .any(|n| lower.ends_with(&n.to_ascii_lowercase()))
     };
 
     let mut sys = System::new();
@@ -357,7 +381,11 @@ fn quit_browser(key: BrowserKey) {
             continue;
         }
         if let Some(false) = proc_.kill_with(Signal::Term) {
-            log::warn!("enforcer: SIGTERM failed for pid={} name='{}'", proc_.pid(), name);
+            log::warn!(
+                "enforcer: SIGTERM failed for pid={} name='{}'",
+                proc_.pid(),
+                name
+            );
         }
     }
 
@@ -372,7 +400,11 @@ fn quit_browser(key: BrowserKey) {
         }
         log::info!("enforcer: SIGKILL pid={} name='{}'", proc_.pid(), name);
         if !proc_.kill() {
-            log::warn!("enforcer: SIGKILL failed for pid={} name='{}'", proc_.pid(), name);
+            log::warn!(
+                "enforcer: SIGKILL failed for pid={} name='{}'",
+                proc_.pid(),
+                name
+            );
         }
     }
 }
