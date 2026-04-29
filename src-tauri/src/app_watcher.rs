@@ -82,6 +82,21 @@ impl Handle {
             }
         }
     }
+
+    /// Snapshot of the currently effective blocked-app set, sorted
+    /// alphabetically. Used by the diagnostics surface so the user
+    /// can sanity-check what the watcher is actually enforcing right
+    /// now.
+    pub fn current_apps(&self) -> Vec<String> {
+        match self.apps.read() {
+            Ok(h) => {
+                let mut v: Vec<String> = h.iter().cloned().collect();
+                v.sort();
+                v
+            }
+            Err(_) => Vec::new(),
+        }
+    }
 }
 
 /// Start the watcher. One polling thread per Handle.

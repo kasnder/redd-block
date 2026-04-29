@@ -10754,6 +10754,61 @@ function renderSystemDiagnostics(d) {
         html += '</div>';
     }
 
+    // Currently being blocked — derived data, NOT recomputed here.
+    // The Rust side reuses native_host::derive_payload (same code that
+    // pushes to the browser extension on every frame) for domains and
+    // reads the in-process app watcher's effective set for apps. So
+    // this section reflects exactly what's being enforced right now.
+    if (d.current_blocking) {
+        const cb = d.current_blocking;
+        html += '<div class="diagnostics-section">';
+        html += '<div class="diagnostics-section-title">Currently being blocked</div>';
+
+        if (cb.blocks && cb.blocks.length > 0) {
+            html += '<div class="diagnostics-field"><span class="diagnostics-label">Active sources:</span></div>';
+            html += '<ul class="diagnostics-list">';
+            for (const b of cb.blocks) {
+                const label = `${b.emoji ? b.emoji + ' ' : ''}${b.name || b.blocklistId}`;
+                const srcLabel = b.source === 'schedule' ? 'schedule' : 'one-off';
+                const endsTxt = b.endsAt ? ` until ${new Date(b.endsAt).toLocaleString()}` : '';
+                const domainsCount = (b.domains || []).length;
+                html += `<li>${e(label)} <span class="diagnostics-badge">${e(srcLabel)}</span>${e(endsTxt)} — ${domainsCount} domain${domainsCount === 1 ? '' : 's'}</li>`;
+            }
+            html += '</ul>';
+        } else {
+            html += `<div class="diagnostics-field"><span class="diagnostics-label">Active sources:</span> <span class="diagnostics-value">None</span></div>`;
+        }
+
+        html += `<div class="diagnostics-field"><span class="diagnostics-label">Domains (${cb.domains?.length ?? 0}):</span></div>`;
+        if (cb.domains && cb.domains.length > 0) {
+            html += `<pre class="diagnostics-pre">${e(cb.domains.join('\n'))}</pre>`;
+        }
+
+        html += `<div class="diagnostics-field"><span class="diagnostics-label">Apps (${cb.apps?.length ?? 0}):</span></div>`;
+        if (cb.apps && cb.apps.length > 0) {
+            html += `<pre class="diagnostics-pre">${e(cb.apps.join('\n'))}</pre>`;
+        }
+
+        html += '</div>';
+    }
+
+    // App data (redd-block-data.json) — sanity-check readout of the
+    // persisted blocklists / activeBlocks / schedules / settings.
+    if (d.app_data) {
+        html += '<div class="diagnostics-section">';
+        html += '<div class="diagnostics-section-title">App data (redd-block-data.json)</div>';
+        if (d.app_data.path) {
+            html += `<div class="diagnostics-field"><span class="diagnostics-label">Path:</span> <span class="diagnostics-value">${e(d.app_data.path)}</span></div>`;
+        }
+        if (d.app_data.error) {
+            html += `<div class="diagnostics-field diag-error">${e(d.app_data.error)}</div>`;
+        }
+        if (d.app_data.pretty_json) {
+            html += `<pre class="diagnostics-pre">${e(d.app_data.pretty_json)}</pre>`;
+        }
+        html += '</div>';
+    }
+
     return html;
 }
 

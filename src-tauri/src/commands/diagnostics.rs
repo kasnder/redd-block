@@ -9,6 +9,7 @@
 
 use serde::Serialize;
 
+use crate::native_host;
 use crate::profile_scan;
 
 #[derive(Debug, Clone, Serialize)]
@@ -51,6 +52,43 @@ pub struct WatchdogInfo {
     pub task_present: bool,
 }
 
+/// Snapshot of what's actually being enforced right now. The
+/// `domains` / `blocks` fields are produced by reusing
+/// `native_host::derive_payload` — i.e. literally the same function
+/// that pushes the blocklist to the browser extension on every
+/// frame. The `apps` list is read straight out of the in-process
+/// app watcher's effective set. Both fields are derived data, never
+/// recomputed from scratch in this module.
+#[derive(Debug, Clone, Serialize)]
+pub struct CurrentBlocking {
+    /// Flat, deduped, lowercase domain list — what the extension
+    /// receives in `{ "blocklist": [...] }`.
+    pub domains: Vec<String>,
+    /// Per-block breakdown: which blocklist contributed the domains,
+    /// whether the source is an `activeBlock` (one-off) or a
+    /// `schedule`, and the segment's start/end timestamps. Sorted
+    /// ascending by `endsAt`.
+    pub blocks: Vec<native_host::BlockInfo>,
+    /// Effective blocked-app set the in-process watcher will kill on
+    /// its next poll tick. Empty when no blocked apps are active or
+    /// the watcher has not been started.
+    pub apps: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AppDataInfo {
+    /// Canonical path of redd-block-data.json (for display).
+    pub path: Option<String>,
+    /// File contents reformatted via serde_json so the user sees a
+    /// pretty, deterministic view (helps eyeball schedules / active
+    /// blocks / pause state). Falls back to the raw file content if
+    /// the file is not parseable JSON, and is None if the file could
+    /// not be read.
+    pub pretty_json: Option<String>,
+    /// Populated only when reading the file failed.
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct SystemDiagnostics {
     pub app: AppInfo,
@@ -63,6 +101,15 @@ pub struct SystemDiagnostics {
     /// Last N lines of the rolling app log, newest last. Empty in
     /// release builds (we only enable tauri-plugin-log in debug).
     pub recent_log: Vec<String>,
+    /// What's *actually* being enforced at the time this struct is
+    /// built — domains pushed to the browser extension and apps
+    /// loaded into the watcher.
+    pub current_blocking: CurrentBlocking,
+    /// Snapshot of the on-disk app-data file. Surfaced so the user
+    /// (or a support engineer) can sanity-check what blocklists,
+    /// active blocks, schedules, and pause state are persisted right
+    /// now without poking around in the filesystem.
+    pub app_data: AppDataInfo,
 }
 
 #[tauri::command]
@@ -89,6 +136,8 @@ pub fn get_system_diagnostics(app: tauri::AppHandle) -> SystemDiagnostics {
     };
 
     let recent_log = read_recent_log_lines(50);
+    let current_blocking = collect_current_blocking(&app);
+    let app_data = collect_app_data_info(&app);
 
     SystemDiagnostics {
         app: app_info,
@@ -99,6 +148,74 @@ pub fn get_system_diagnostics(app: tauri::AppHandle) -> SystemDiagnostics {
         #[cfg(target_os = "windows")]
         watchdog,
         recent_log,
+        current_blocking,
+        app_data,
+    }
+}
+
+/// Build a snapshot of what's currently being enforced. Reuses
+/// `native_host::derive_payload` for domains (single source of truth
+/// for the extension push) and reads the in-memory app-watcher set
+/// for apps — no re-derivation is done here.
+fn collect_current_blocking(app: &tauri::AppHandle) -> CurrentBlocking {
+    let (domains, blocks) = match super::canonical_data_path(app) {
+        Some(p) => native_host::derive_payload(&p),
+        None => (Vec::new(), Vec::new()),
+    };
+    let apps = collect_current_blocked_apps(app);
+    CurrentBlocking { domains, blocks, apps }
+}
+
+/// Read the watcher's currently effective blocked-app set. Returns
+/// empty when the watcher has not been started yet (no app blocks
+/// have ever been activated this session).
+fn collect_current_blocked_apps(app: &tauri::AppHandle) -> Vec<String> {
+    use tauri::Manager;
+    let state = app.state::<super::app_blocking::AppWatcherState>();
+    let slot = match state.0.lock() {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+    slot.as_ref().map(|h| h.current_apps()).unwrap_or_default()
+}
+
+/// Read the canonical redd-block-data.json and return a pretty-
+/// printed copy plus its path, for display in the diagnostics modal.
+fn collect_app_data_info(app: &tauri::AppHandle) -> AppDataInfo {
+    let path = super::canonical_data_path(app);
+    let path_str = path.as_ref().map(|p| p.display().to_string());
+
+    let p = match path {
+        Some(p) => p,
+        None => {
+            return AppDataInfo {
+                path: path_str,
+                pretty_json: None,
+                error: Some("canonical app-data path unavailable".to_string()),
+            };
+        }
+    };
+
+    let raw = match std::fs::read_to_string(&p) {
+        Ok(s) => s,
+        Err(e) => {
+            return AppDataInfo {
+                path: path_str,
+                pretty_json: None,
+                error: Some(format!("failed to read {}: {e}", p.display())),
+            };
+        }
+    };
+
+    let pretty = serde_json::from_str::<serde_json::Value>(&raw)
+        .ok()
+        .and_then(|v| serde_json::to_string_pretty(&v).ok())
+        .unwrap_or(raw);
+
+    AppDataInfo {
+        path: path_str,
+        pretty_json: Some(pretty),
+        error: None,
     }
 }
 
