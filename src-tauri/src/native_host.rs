@@ -389,10 +389,23 @@ fn match_schedule_now(schedule: &Value, now_ms: u64) -> Option<ScheduleMatch> {
     None
 }
 
-/// Return (weekday 0=Sun..6=Sat, hour 0..23, minute 0..59, second 0..59)
+/// Return (weekday 0=Mon..6=Sun, hour 0..23, minute 0..59, second 0..59)
 /// in the system local timezone. Uses libc `localtime_r` on unix and
 /// `GetLocalTime` on Windows.
+///
+/// NOTE on weekday encoding: schedule `days` arrays in
+/// `redd-block-data.json` are authored by `src/app.js` using the
+/// JS Mon=0..Sun=6 convention (see
+/// `isScheduleSegmentActiveNow`'s `currentDay` mapping). Both
+/// `tm_wday` and Win32 `SYSTEMTIME.wDayOfWeek` are Sun=0..Sat=6, so
+/// we shift here once at the source — *not* in `match_schedule_now`
+/// — to keep the comparison sites identical to the JS predicate.
 fn local_time_components_full(now_ms: u64) -> Option<(u8, u8, u8, u8)> {
+    /// C-Sun=0..Sat=6 → JS-Mon=0..Sun=6.
+    fn shift_weekday(c_wday: u8) -> u8 {
+        if c_wday == 0 { 6 } else { c_wday - 1 }
+    }
+
     let secs = (now_ms / 1000) as i64;
     #[cfg(unix)]
     unsafe {
@@ -401,7 +414,12 @@ fn local_time_components_full(now_ms: u64) -> Option<(u8, u8, u8, u8)> {
         if libc::localtime_r(&time, &mut tm).is_null() {
             return None;
         }
-        Some((tm.tm_wday as u8, tm.tm_hour as u8, tm.tm_min as u8, tm.tm_sec as u8))
+        Some((
+            shift_weekday(tm.tm_wday as u8),
+            tm.tm_hour as u8,
+            tm.tm_min as u8,
+            tm.tm_sec as u8,
+        ))
     }
     #[cfg(windows)]
     {
@@ -430,9 +448,8 @@ fn local_time_components_full(now_ms: u64) -> Option<(u8, u8, u8, u8)> {
                 return None;
             }
         }
-        // SYSTEMTIME.wDayOfWeek is already 0=Sunday..6=Saturday.
         Some((
-            local.wDayOfWeek as u8,
+            shift_weekday(local.wDayOfWeek as u8),
             local.wHour as u8,
             local.wMinute as u8,
             local.wSecond as u8,
