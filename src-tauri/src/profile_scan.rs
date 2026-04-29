@@ -238,6 +238,12 @@ fn scan_firefox() -> Option<BrowserStatus> {
             }
         }
 
+        if cfg!(debug_assertions) && firefox_debug_temp_extension_matches(&dir) {
+            s.installed = true;
+            s.enabled = Some(true);
+            s.note = Some("Temporary about:debugging extension".to_string());
+        }
+
         if let Ok(raw) = std::fs::read_to_string(dir.join("extension-preferences.json")) {
             if let Ok(data) = serde_json::from_str::<Value>(&raw) {
                 let allowed = data
@@ -262,6 +268,42 @@ fn scan_firefox() -> Option<BrowserStatus> {
         profiles,
         error: None,
     })
+}
+
+fn firefox_debug_temp_extension_matches(profile_dir: &Path) -> bool {
+    let prefs = match std::fs::read_to_string(profile_dir.join("prefs.js")) {
+        Ok(raw) => raw,
+        Err(_) => return false,
+    };
+
+    let Some(ext_dir) = parse_firefox_tmp_ext_dir(&prefs) else {
+        return false;
+    };
+
+    let manifest_path = PathBuf::from(ext_dir).join("manifest.json");
+    let manifest = match std::fs::read_to_string(manifest_path) {
+        Ok(raw) => raw,
+        Err(_) => return false,
+    };
+    let data: Value = match serde_json::from_str(&manifest) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+
+    data.get("browser_specific_settings")
+        .and_then(|v| v.get("gecko"))
+        .and_then(|v| v.get("id"))
+        .and_then(|v| v.as_str())
+        == Some(FIREFOX_ID)
+}
+
+fn parse_firefox_tmp_ext_dir(prefs_js: &str) -> Option<String> {
+    const KEY: &str = r#"user_pref("devtools.aboutdebugging.tmpExtDirPath","#;
+
+    let line = prefs_js.lines().find(|line| line.trim_start().starts_with(KEY))?;
+    let rest = line.trim_start().strip_prefix(KEY)?.trim();
+    let raw = rest.strip_suffix(");")?.trim();
+    serde_json::from_str::<String>(raw).ok()
 }
 
 fn read_firefox_profiles(root: &Path) -> (Vec<String>, Vec<String>) {
