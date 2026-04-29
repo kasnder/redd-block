@@ -35,6 +35,13 @@ use serde_json::Value;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(30);
 
+enum HostEvent {
+    Refresh,
+    Recv(String),
+    StdinClosed,
+    StdinError(String),
+}
+
 /// Return true if argv signals that the browser invoked us as a
 /// native-messaging host. Native-messaging manifests can't pass custom
 /// args, so we sniff for browser-supplied argv markers instead:
@@ -80,48 +87,77 @@ pub fn run() -> ! {
     let (domains, blocks) = derive_payload(&data_path);
     send_payload(&domains, &blocks);
 
-    // Background refresh: file-watch + 30 s poll.
-    let (tx, rx) = mpsc::channel::<()>();
+    // Background refresh: file-watch + 30 s poll. Read stdin on its
+    // own thread so native-host updates do not depend on the extension
+    // sending heartbeat messages. Native messaging is commonly quiet
+    // extension -> host after connect; blocking this thread on stdin
+    // would otherwise prevent pause/stop updates from ever being
+    // pushed until the browser writes something.
+    let (tx, rx) = mpsc::channel::<HostEvent>();
     spawn_file_watcher(&data_path, tx.clone());
-    spawn_poller(tx);
+    spawn_poller(tx.clone());
+    spawn_stdin_reader(tx);
 
-    // Read incoming stdin frames in this thread; on any change signal
-    // (file-watch or poll tick), re-derive and push.
-    let stdin = std::io::stdin();
-    let mut stdin_lock = stdin.lock();
+    // On any refresh signal (file-watch or poll tick), re-derive and
+    // push. Stdin events only keep lifecycle/logging wired up.
     loop {
-        // Drain any pending change signals before blocking on stdin.
-        while let Ok(()) = rx.try_recv() {
-            let (domains, blocks) = derive_payload(&data_path);
-            send_payload(&domains, &blocks);
-        }
-
-        let mut len_buf = [0u8; 4];
-        match stdin_lock.read_exact(&mut len_buf) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+        match rx.recv() {
+            Ok(HostEvent::Refresh) => {
+                log_to_file("refresh signal; deriving payload");
+                let (domains, blocks) = derive_payload(&data_path);
+                send_payload(&domains, &blocks);
+            }
+            Ok(HostEvent::Recv(s)) => {
+                log_to_file(&format!("recv: {s}"));
+            }
+            Ok(HostEvent::StdinClosed) => {
                 log_to_file("stdin EOF; exiting");
                 std::process::exit(0);
             }
-            Err(e) => {
+            Ok(HostEvent::StdinError(e)) => {
                 log_to_file(&format!("stdin read error: {e}; exiting"));
                 std::process::exit(1);
             }
-        }
-        let len = u32::from_le_bytes(len_buf) as usize;
-        let mut payload = vec![0u8; len];
-        if let Err(e) = stdin_lock.read_exact(&mut payload) {
-            log_to_file(&format!("stdin read payload error: {e}; exiting"));
-            std::process::exit(1);
-        }
-
-        // We accept but don't currently act on extension -> host
-        // messages beyond logging. Heartbeats from the extension could
-        // live here later.
-        if let Ok(s) = std::str::from_utf8(&payload) {
-            log_to_file(&format!("recv: {s}"));
+            Err(_) => {
+                log_to_file("event channel closed; exiting");
+                std::process::exit(1);
+            }
         }
     }
+}
+
+fn spawn_stdin_reader(tx: mpsc::Sender<HostEvent>) {
+    std::thread::spawn(move || {
+        let stdin = std::io::stdin();
+        let mut stdin_lock = stdin.lock();
+        loop {
+            let mut len_buf = [0u8; 4];
+            match stdin_lock.read_exact(&mut len_buf) {
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                    let _ = tx.send(HostEvent::StdinClosed);
+                    return;
+                }
+                Err(e) => {
+                    let _ = tx.send(HostEvent::StdinError(e.to_string()));
+                    return;
+                }
+            }
+            let len = u32::from_le_bytes(len_buf) as usize;
+            let mut payload = vec![0u8; len];
+            if let Err(e) = stdin_lock.read_exact(&mut payload) {
+                let _ = tx.send(HostEvent::StdinError(format!("payload: {e}")));
+                return;
+            }
+
+            // We accept but don't currently act on extension -> host
+            // messages beyond logging. Heartbeats from the extension
+            // could live here later.
+            if let Ok(s) = std::str::from_utf8(&payload) {
+                let _ = tx.send(HostEvent::Recv(s.to_string()));
+            }
+        }
+    });
 }
 
 /// Send a payload to the extension over stdout. Emits both the flat
@@ -153,7 +189,7 @@ fn send_payload(domains: &[String], blocks: &[BlockInfo]) {
     let _ = lock.flush();
 }
 
-fn spawn_file_watcher(path: &std::path::Path, tx: mpsc::Sender<()>) {
+fn spawn_file_watcher(path: &std::path::Path, tx: mpsc::Sender<HostEvent>) {
     let path = path.to_path_buf();
     // We poll mtime rather than depend on the `notify` crate so this
     // module stays dependency-light and works identically on every OS.
@@ -166,16 +202,16 @@ fn spawn_file_watcher(path: &std::path::Path, tx: mpsc::Sender<()>) {
             let current = mtime(&path);
             if current != last {
                 last = current;
-                let _ = tx.send(());
+                let _ = tx.send(HostEvent::Refresh);
             }
         }
     });
 }
 
-fn spawn_poller(tx: mpsc::Sender<()>) {
+fn spawn_poller(tx: mpsc::Sender<HostEvent>) {
     std::thread::spawn(move || loop {
         std::thread::sleep(POLL_INTERVAL);
-        let _ = tx.send(());
+        let _ = tx.send(HostEvent::Refresh);
     });
 }
 
