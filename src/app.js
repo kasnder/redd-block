@@ -1947,7 +1947,13 @@ async function openEnforcerFix(payload) {
     const key = browserKeyFromLabel(browser);
     try {
         if (payload.issue === 'missing' && key && BROWSER_STORE_LINKS[key]?.url) {
-            await openUrl(BROWSER_STORE_LINKS[key].url);
+            // Open the store page in the correct browser so Windows
+            // doesn't show a "choose an app" dialog.
+            try {
+                await invoke('open_url_in_browser', { browser: key, url: BROWSER_STORE_LINKS[key].url });
+            } catch (_) {
+                await openUrl(BROWSER_STORE_LINKS[key].url);
+            }
             return;
         }
         if (payload.issue === 'access' && key === 'safari') {
