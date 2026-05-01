@@ -1274,16 +1274,25 @@ const BROWSER_STORE_LINKS = {
 };
 
 // Compute per-step status for the migration UI:
-//   - 'compliant': extension installed, enabled, allowed in private
+//   - 'compliant': extension installed, enabled, allowed in private, allowed on all websites
+//   - 'needs-website-access': Safari installed + enabled + private, but not allowed on all websites
 //   - 'needs-private': installed + enabled but not allowed in private
 //   - 'needs-enable': installed but disabled
 //   - 'needs-install': extension not installed
 // Returns null if the browser itself isn't installed on the machine.
 function browserComplianceStatus(key, b) {
     if (!b || !b.installed) return null;
-    const def = (b.profiles || []).find(p => p.isDefault) || (b.profiles || [])[0];
-    if (key === 'safari' && def && /Full Disk Access|extension settings plist|Safari extension settings/i.test(def.note || '')) {
-        return 'needs-fda';
+    const profiles = b.profiles || [];
+    const def = profiles.find(p => p.isDefault) || profiles[0];
+    if (key === 'safari') {
+        if (profiles.some(p => /Full Disk Access|extension settings plist|Safari extension settings/i.test(p.note || ''))) {
+            return 'needs-fda';
+        }
+        if (!profiles.length || profiles.some(p => !p.installed)) return 'needs-install';
+        if (profiles.some(p => p.enabled === false)) return 'needs-enable';
+        if (profiles.some(p => p.privateBrowsing !== true)) return 'needs-private';
+        if (profiles.some(p => p.websiteAccessAll !== true)) return 'needs-website-access';
+        return 'compliant';
     }
     if (!def || !def.installed) return 'needs-install';
     const enabled = def.enabled;
@@ -1297,10 +1306,65 @@ function statusLabel(key, status) {
     switch (status) {
         case 'compliant': return '✓ Set up';
         case 'needs-fda': return 'Grant Full Disk Access';
+        case 'needs-website-access': return 'Allow on all websites';
         case 'needs-private': return 'Allow in private browsing';
         case 'needs-enable': return 'Enable extension';
         case 'needs-install': return 'Install';
         default: return 'Install';
+    }
+}
+
+function safariProfileLabel(profile) {
+    const name = String(profile && profile.name ? profile.name : '').trim();
+    if (!name || name === '(Default Safari profile)') return 'Default Safari profile';
+    return name;
+}
+
+function safariProfileStatusHint(b, status) {
+    const profiles = b && Array.isArray(b.profiles) ? b.profiles : [];
+    if (profiles.length <= 1) return null;
+
+    const failing = profiles.filter(profile => {
+        switch (status) {
+            case 'needs-install': return !profile.installed;
+            case 'needs-enable': return !profile.installed || profile.enabled === false;
+            case 'needs-private': return !profile.installed || profile.enabled !== true || profile.privateBrowsing !== true;
+            case 'needs-website-access': return !profile.installed || profile.enabled !== true || profile.privateBrowsing !== true || profile.websiteAccessAll !== true;
+            case 'needs-fda': return /Full Disk Access|extension settings plist|Safari extension settings/i.test(profile.note || '');
+            default: return false;
+        }
+    });
+    if (!failing.length) return null;
+
+    const labels = failing.slice(0, 3).map(safariProfileLabel);
+    const suffix = failing.length > labels.length ? `, +${failing.length - labels.length} more` : '';
+    return `Affected Safari profiles: ${labels.join(', ')}${suffix}.`;
+}
+
+function browserStatusHint(key, entry, b, status) {
+    const hasMultipleSafariProfiles = key === 'safari' && Array.isArray(b && b.profiles) && b.profiles.length > 1;
+    const safariSuffix = key === 'safari'
+        ? ` ${safariProfileStatusHint(b, status) || 'Check every Safari profile.'}`
+        : '';
+    switch (status) {
+        case 'needs-enable':
+            return key === 'safari'
+                ? hasMultipleSafariProfiles
+                    ? `Enable ReDD Focus in Safari's extension settings for every Safari profile.${safariSuffix}`
+                    : `Enable ReDD Focus in Safari's extension settings.`
+                : `Enable ReDD Focus in ${entry.label}'s extensions settings.`;
+        case 'needs-private':
+            return key === 'safari'
+                ? hasMultipleSafariProfiles
+                    ? `Allow ReDD Focus in Private Browsing for every Safari profile.${safariSuffix}`
+                    : `Allow ReDD Focus in Private Browsing in Safari's extension settings.`
+                : `Allow ReDD Focus in private/incognito browsing in ${entry.label}'s extensions settings.`;
+        case 'needs-website-access':
+            return hasMultipleSafariProfiles
+                ? `Allow ReDD Focus on all websites for every Safari profile.${safariSuffix}`
+                : `Allow ReDD Focus on all websites in Safari's extension settings.`;
+        default:
+            return '';
     }
 }
 
@@ -1354,6 +1418,7 @@ function renderBrowserInstallButtons(state) {
             case 'needs-install': badge.textContent = 'Not installed'; break;
             case 'needs-enable': badge.textContent = 'Disabled'; break;
             case 'needs-private': badge.textContent = 'No private mode'; break;
+            case 'needs-website-access': badge.textContent = 'No website access'; break;
             case 'needs-fda': badge.textContent = 'Needs access'; break;
             default: badge.textContent = 'Not installed';
         }
@@ -1426,12 +1491,10 @@ function renderBrowserInstallButtons(state) {
             action.appendChild(copyBtn);
 
             row.appendChild(action);
-        } else if (status === 'needs-enable' || status === 'needs-private') {
+        } else if (status === 'needs-enable' || status === 'needs-private' || status === 'needs-website-access') {
             const hint = document.createElement('div');
             hint.className = 'migration-browser-hint';
-            hint.textContent = status === 'needs-enable'
-                ? `Enable ReDD Focus in ${entry.label}'s extensions settings.`
-                : `Allow ReDD Focus in private/incognito browsing in ${entry.label}'s extensions settings.`;
+            hint.textContent = browserStatusHint(key, entry, browsers[key], status);
             row.appendChild(hint);
         }
 
@@ -1553,7 +1616,7 @@ function updateExtensionComplianceBanner(state) {
     if (text) {
         text.textContent = failing
             ? failing === 'Safari'
-                ? `Safari is unavailable until ReDD Block can verify ReDD Focus. Grant Full Disk Access, install ReDD Focus, enable it, and allow it in Private Browsing.`
+                ? `Safari is unavailable until ReDD Block can verify ReDD Focus. Grant Full Disk Access, install ReDD Focus, enable it, allow it in Private Browsing, and allow it on all websites.`
                 : `ReDD Focus isn't fully enabled in ${failing}. Install, enable it, and allow it in private browsing.`
             : 'Install the ReDD Focus extension to block websites.';
     }
@@ -1571,12 +1634,7 @@ function findFirstNonCompliantBrowser(browsers) {
     for (const key of Object.keys(labels)) {
         const b = browsers[key];
         if (!b || !b.present) continue;
-        const def = (b.profiles || []).find(p => p.isDefault) || (b.profiles || [])[0];
-        if (!def) continue;
-        const okInstalled = def.installed;
-        const okEnabled = def.enabled === true;
-        const okPriv = def.privateBrowsing === true;
-        if (!(okInstalled && okEnabled && okPriv)) return labels[key];
+        if (browserComplianceStatus(key, b) !== 'compliant') return labels[key];
     }
     return null;
 }

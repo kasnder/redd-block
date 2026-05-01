@@ -247,13 +247,27 @@ fn default_profile_passes(b: &BrowserStatus) -> bool {
     if !b.present {
         return true; // Nothing to check.
     }
+    if b.profiles.iter().any(|p| p.website_access_all.is_some()) {
+        return !b.profiles.is_empty()
+            && b.profiles.iter().all(|p| {
+                p.installed
+                    && p.enabled == Some(true)
+                    && p.private_browsing == Some(true)
+                    && p.website_access_all == Some(true)
+            });
+    }
     let def: Option<&ProfileStatus> = b
         .profiles
         .iter()
         .find(|p| p.is_default)
         .or_else(|| b.profiles.first());
     match def {
-        Some(p) => p.installed && p.enabled == Some(true) && p.private_browsing == Some(true),
+        Some(p) => {
+            p.installed
+                && p.enabled == Some(true)
+                && p.private_browsing == Some(true)
+                && p.website_access_all.unwrap_or(true)
+        }
         None => false,
     }
 }

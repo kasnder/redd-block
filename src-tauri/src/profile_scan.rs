@@ -63,6 +63,8 @@ pub struct ProfileStatus {
     pub enabled: Option<bool>,
     #[serde(rename = "privateBrowsing")]
     pub private_browsing: Option<bool>,
+    #[serde(rename = "websiteAccessAll", skip_serializing_if = "Option::is_none")]
+    pub website_access_all: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
 }
@@ -209,6 +211,7 @@ fn scan_firefox() -> Option<BrowserStatus> {
             installed: false,
             enabled: Some(false),
             private_browsing: Some(false),
+            website_access_all: None,
             note: None,
         };
 
@@ -559,6 +562,7 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
             installed: false,
             enabled: Some(false),
             private_browsing: Some(false),
+            website_access_all: None,
             note: None,
         };
 
@@ -650,6 +654,49 @@ pub fn safari_extensions_plist_path() -> Option<PathBuf> {
 }
 
 #[cfg(target_os = "macos")]
+fn safari_profiles_dir() -> Option<PathBuf> {
+    Some(dirs::home_dir()?.join(
+        "Library/Containers/com.apple.Safari/Data/Library/Safari/Profiles",
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn safari_extensions_plist_paths() -> (
+    Vec<(String, bool, PathBuf)>,
+    Option<SafariPlistScanError>,
+) {
+    let mut paths = Vec::new();
+    if let Some(path) = safari_extensions_plist_path() {
+        paths.push(("(Default Safari profile)".to_string(), true, path));
+    }
+
+    let Some(profiles_dir) = safari_profiles_dir() else {
+        return (paths, None);
+    };
+    let entries = match std::fs::read_dir(profiles_dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (paths, None),
+        Err(e) => return (paths, Some(safari_plist_io_error(e))),
+    };
+    for entry in entries.flatten() {
+        let profile_dir = entry.path();
+        if !profile_dir.is_dir() {
+            continue;
+        }
+        let path = profile_dir.join("WebExtensions/Extensions.plist");
+        if path.exists() {
+            let name = profile_dir
+                .file_name()
+                .and_then(|s| s.to_str())
+                .map(|s| format!("Safari profile {s}"))
+                .unwrap_or_else(|| "Safari profile".to_string());
+            paths.push((name, false, path));
+        }
+    }
+    (paths, None)
+}
+
+#[cfg(target_os = "macos")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SafariPlistScanError {
     Missing,
@@ -678,30 +725,43 @@ struct SafariPlistStatus {
     installed: bool,
     enabled: Option<bool>,
     private_browsing: Option<bool>,
+    website_access_all: Option<bool>,
 }
 
 #[cfg(target_os = "macos")]
-pub fn scan_safari_extensions_plist() -> Result<Option<(bool, bool)>, SafariPlistScanError> {
+pub fn scan_safari_extensions_plist() -> Result<Option<(bool, bool, bool)>, SafariPlistScanError> {
     let path = safari_extensions_plist_path().ok_or(SafariPlistScanError::Missing)?;
-    let bytes = std::fs::read(&path).map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            SafariPlistScanError::Missing
-        } else if e.kind() == std::io::ErrorKind::PermissionDenied {
-            SafariPlistScanError::PermissionDenied
-        } else {
-            SafariPlistScanError::Invalid(e.to_string())
-        }
-    })?;
-    parse_safari_extensions_plist(&bytes, &safari_bundle_ids()).map(|s| {
-        if s.installed {
-            Some((
-                s.enabled.unwrap_or(false),
-                s.private_browsing.unwrap_or(false),
-            ))
-        } else {
-            None
-        }
-    })
+    scan_safari_extensions_plist_at(&path).map(safari_plist_status_tuple)
+}
+
+#[cfg(target_os = "macos")]
+fn scan_safari_extensions_plist_at(path: &Path) -> Result<SafariPlistStatus, SafariPlistScanError> {
+    let bytes = std::fs::read(path).map_err(|e| safari_plist_io_error(e))?;
+    parse_safari_extensions_plist(&bytes, &safari_bundle_ids())
+}
+
+#[cfg(target_os = "macos")]
+fn safari_plist_io_error(e: std::io::Error) -> SafariPlistScanError {
+    if e.kind() == std::io::ErrorKind::NotFound {
+        SafariPlistScanError::Missing
+    } else if e.kind() == std::io::ErrorKind::PermissionDenied {
+        SafariPlistScanError::PermissionDenied
+    } else {
+        SafariPlistScanError::Invalid(e.to_string())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn safari_plist_status_tuple(status: SafariPlistStatus) -> Option<(bool, bool, bool)> {
+    if status.installed {
+        Some((
+            status.enabled.unwrap_or(false),
+            status.private_browsing.unwrap_or(false),
+            status.website_access_all.unwrap_or(false),
+        ))
+    } else {
+        None
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -736,21 +796,28 @@ fn parse_safari_extensions_plist(
             .get("AllowInPrivateBrowsing")
             .and_then(|v| v.as_boolean())
             .unwrap_or(false);
+        let website_access_all = safari_grants_all_websites(ext);
         let status = SafariPlistStatus {
             installed: true,
             enabled: Some(enabled),
             private_browsing: Some(private_browsing),
+            website_access_all: Some(website_access_all),
         };
-        let score = (enabled as u8, private_browsing as u8);
+        let score = (
+            enabled as u8,
+            private_browsing as u8,
+            website_access_all as u8,
+        );
         let current_score = best
             .as_ref()
             .map(|current| {
                 (
                     (current.enabled == Some(true)) as u8,
                     (current.private_browsing == Some(true)) as u8,
+                    (current.website_access_all == Some(true)) as u8,
                 )
             })
-            .unwrap_or((0, 0));
+            .unwrap_or((0, 0, 0));
         if best.is_none() || score > current_score {
             best = Some(status);
         }
@@ -760,43 +827,98 @@ fn parse_safari_extensions_plist(
         installed: false,
         enabled: Some(false),
         private_browsing: Some(false),
+        website_access_all: Some(false),
     }))
 }
 
 #[cfg(target_os = "macos")]
 fn scan_safari() -> BrowserStatus {
     let running = is_process_running(&["Safari"]);
-    let plist_status = scan_safari_extensions_plist();
-    let (extension_installed, enabled, private_browsing, note, error) = match plist_status {
-        Ok(Some((enabled, private_browsing))) => {
-            (true, Some(enabled), Some(private_browsing), None, None)
+    let mut profiles = Vec::new();
+    let mut error = None;
+
+    let (plist_paths, profile_list_error) = safari_extensions_plist_paths();
+    for (name, is_default, path) in plist_paths {
+        match scan_safari_extensions_plist_at(&path) {
+            Ok(status) => profiles.push(ProfileStatus {
+                name,
+                is_default,
+                installed: status.installed,
+                enabled: status.enabled,
+                private_browsing: status.private_browsing,
+                website_access_all: status.website_access_all,
+                note: None,
+            }),
+            Err(e) => {
+                let note = e.note();
+                if error.is_none() {
+                    error = Some(note.clone());
+                }
+                profiles.push(ProfileStatus {
+                    name,
+                    is_default,
+                    installed: false,
+                    enabled: Some(false),
+                    private_browsing: Some(false),
+                    website_access_all: Some(false),
+                    note: Some(note),
+                });
+            }
         }
-        Ok(None) => (false, Some(false), Some(false), None, None),
-        Err(e) => {
-            let note = e.note();
-            (
-                false,
-                Some(false),
-                Some(false),
-                Some(note.clone()),
-                Some(note),
-            )
+    }
+    if let Some(e) = profile_list_error {
+        let note = e.note();
+        if error.is_none() {
+            error = Some(note.clone());
         }
-    };
+        profiles.push(ProfileStatus {
+            name: "Safari profiles".to_string(),
+            is_default: false,
+            installed: false,
+            enabled: Some(false),
+            private_browsing: Some(false),
+            website_access_all: Some(false),
+            note: Some(note),
+        });
+    }
+
+    if profiles.is_empty() {
+        let note = SafariPlistScanError::Missing.note();
+        error = Some(note.clone());
+        profiles.push(ProfileStatus {
+            name: "(Default Safari profile)".to_string(),
+            is_default: true,
+            installed: false,
+            enabled: Some(false),
+            private_browsing: Some(false),
+            website_access_all: Some(false),
+            note: Some(note),
+        });
+    }
 
     BrowserStatus {
         present: running,
         installed: true,
-        profiles: vec![ProfileStatus {
-            name: "(Safari has no profiles)".to_string(),
-            is_default: true,
-            installed: extension_installed,
-            enabled,
-            private_browsing,
-            note,
-        }],
+        profiles,
         error,
     }
+}
+
+#[cfg(target_os = "macos")]
+fn safari_grants_all_websites(ext: &plist::Dictionary) -> bool {
+    let has_grant = safari_origin_dict_contains(ext, "GrantedPermissionOrigins", "*://*/*")
+        || safari_origin_dict_contains(ext, "GrantedPermissionOrigins", "<all_urls>");
+    let revoked = safari_origin_dict_contains(ext, "RevokedPermissionOrigins", "*://*/*")
+        || safari_origin_dict_contains(ext, "RevokedPermissionOrigins", "<all_urls>");
+    has_grant && !revoked
+}
+
+#[cfg(target_os = "macos")]
+fn safari_origin_dict_contains(ext: &plist::Dictionary, dict_key: &str, origin: &str) -> bool {
+    ext.get(dict_key)
+        .and_then(|v| v.as_dictionary())
+        .map(|origins| origins.contains_key(origin))
+        .unwrap_or(false)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -809,9 +931,10 @@ fn scan_safari() -> BrowserStatus {
     }
 }
 
-/// True if every running-and-present browser has at least one profile
-/// that reports installed+enabled+privateBrowsing=true on the default
-/// profile. Used by onboarding to gate the backend switch.
+/// True if every running-and-present Chromium/Firefox browser has a
+/// compliant default profile. Safari is stricter: every Safari profile
+/// plist we can see must report installed+enabled+privateBrowsing and
+/// all-website access. Used by onboarding to gate the backend switch.
 ///
 pub fn compliant(result: &ScanResult) -> bool {
     let chromium_or_firefox = [&result.firefox, &result.chrome, &result.brave, &result.edge];
@@ -827,24 +950,25 @@ pub fn compliant(result: &ScanResult) -> bool {
                 Some(p) if p.installed
                     && p.enabled == Some(true)
                     && p.private_browsing == Some(true)
+                    && p.website_access_all.unwrap_or(true)
             )
         }
     });
-    let safari_ok = !result.safari.present || {
-        let def = result
-            .safari
-            .profiles
-            .iter()
-            .find(|p| p.is_default)
-            .or_else(|| result.safari.profiles.first());
-        matches!(
-            def,
-            Some(p) if p.installed
-                && p.enabled == Some(true)
-                && p.private_browsing == Some(true)
-        )
-    };
+    let safari_ok = !result.safari.present
+        || (!result.safari.profiles.is_empty()
+            && result
+                .safari
+                .profiles
+                .iter()
+                .all(|p| safari_profile_passes(p)));
     chromium_ok && safari_ok
+}
+
+fn safari_profile_passes(p: &ProfileStatus) -> bool {
+    p.installed
+        && p.enabled == Some(true)
+        && p.private_browsing == Some(true)
+        && p.website_access_all == Some(true)
 }
 
 #[cfg(all(test, target_os = "macos"))]
@@ -868,17 +992,42 @@ mod tests {
         )
     }
 
-    fn entry(key: &str, enabled: bool, private: bool, removed: bool) -> String {
+    fn entry(
+        key: &str,
+        enabled: bool,
+        private: bool,
+        website_access_all: bool,
+        revoked_all: bool,
+        removed: bool,
+    ) -> String {
         let removed_date = if removed {
             "<key>RemovedDate</key><date>2026-04-26T17:33:08Z</date>"
         } else {
             ""
+        };
+        let granted_origins = if website_access_all {
+            r#"<key>GrantedPermissionOrigins</key>
+  <dict>
+    <key>*://*/*</key><date>4001-01-01T00:00:00Z</date>
+  </dict>"#
+        } else {
+            r#"<key>GrantedPermissionOrigins</key><dict/>"#
+        };
+        let revoked_origins = if revoked_all {
+            r#"<key>RevokedPermissionOrigins</key>
+  <dict>
+    <key>*://*/*</key><date>4001-01-01T00:00:00Z</date>
+  </dict>"#
+        } else {
+            r#"<key>RevokedPermissionOrigins</key><dict/>"#
         };
         format!(
             r#"<key>{key}</key>
 <dict>
   <key>Enabled</key><{enabled}/>
   <key>AllowInPrivateBrowsing</key><{private}/>
+  {granted_origins}
+  {revoked_origins}
   {removed_date}
 </dict>"#,
             enabled = if enabled { "true" } else { "false" },
@@ -892,11 +1041,14 @@ mod tests {
             "com.ulriklyngs.mind-shield (JD647S9RT6)",
             true,
             true,
+            true,
+            false,
             false,
         )));
         assert_eq!(status.installed, true);
         assert_eq!(status.enabled, Some(true));
         assert_eq!(status.private_browsing, Some(true));
+        assert_eq!(status.website_access_all, Some(true));
     }
 
     #[test]
@@ -905,11 +1057,14 @@ mod tests {
             "com.ulriklyngs.mind-shield (JD647S9RT6)",
             true,
             false,
+            true,
+            false,
             false,
         )));
         assert_eq!(status.installed, true);
         assert_eq!(status.enabled, Some(true));
         assert_eq!(status.private_browsing, Some(false));
+        assert_eq!(status.website_access_all, Some(true));
     }
 
     #[test]
@@ -918,11 +1073,46 @@ mod tests {
             "com.ulriklyngs.mind-shield (JD647S9RT6)",
             false,
             true,
+            true,
+            false,
             false,
         )));
         assert_eq!(status.installed, true);
         assert_eq!(status.enabled, Some(false));
         assert_eq!(status.private_browsing, Some(true));
+        assert_eq!(status.website_access_all, Some(true));
+    }
+
+    #[test]
+    fn safari_plist_requires_all_website_access() {
+        let status = parse(&plist(&entry(
+            "com.ulriklyngs.mind-shield (JD647S9RT6)",
+            true,
+            true,
+            false,
+            false,
+            false,
+        )));
+        assert_eq!(status.installed, true);
+        assert_eq!(status.enabled, Some(true));
+        assert_eq!(status.private_browsing, Some(true));
+        assert_eq!(status.website_access_all, Some(false));
+    }
+
+    #[test]
+    fn safari_plist_all_website_access_revoked_fails() {
+        let status = parse(&plist(&entry(
+            "com.ulriklyngs.mind-shield (JD647S9RT6)",
+            true,
+            true,
+            true,
+            true,
+            false,
+        )));
+        assert_eq!(status.installed, true);
+        assert_eq!(status.enabled, Some(true));
+        assert_eq!(status.private_browsing, Some(true));
+        assert_eq!(status.website_access_all, Some(false));
     }
 
     #[test]
@@ -933,11 +1123,15 @@ mod tests {
                 "com.ulriklyngs.mind-shield.old (7YEYWQKK25)",
                 true,
                 true,
+                true,
+                false,
                 true
             ),
             entry(
                 "com.ulriklyngs.mind-shield (JD647S9RT6)",
                 true,
+                false,
+                false,
                 false,
                 false
             ),
@@ -946,5 +1140,6 @@ mod tests {
         assert_eq!(status.installed, true);
         assert_eq!(status.enabled, Some(true));
         assert_eq!(status.private_browsing, Some(false));
+        assert_eq!(status.website_access_all, Some(false));
     }
 }

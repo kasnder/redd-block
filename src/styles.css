@@ -3275,6 +3275,7 @@ body.ios .blocklist-action-btn svg {
 
 .migration-browser-row.needs-enable,
 .migration-browser-row.needs-private,
+.migration-browser-row.needs-website-access,
 .migration-browser-row.needs-fda {
     background: rgba(245, 158, 11, 0.08);
     border-color: rgba(245, 158, 11, 0.20);
@@ -3324,6 +3325,7 @@ body.ios .blocklist-action-btn svg {
 
 .migration-browser-badge.needs-enable,
 .migration-browser-badge.needs-private,
+.migration-browser-badge.needs-website-access,
 .migration-browser-badge.needs-fda {
     color: #b45309;
 }
