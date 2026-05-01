@@ -72,24 +72,39 @@ pub fn open_browser_extension_settings(browser: String) -> Result<(), String> {
     let chromium_id = crate::native_host_install::CHROMIUM_EXT_ID;
     let url = match normalized.as_str() {
         "firefox" => "about:addons".to_string(),
-        "safari" => "x-apple.systempreferences:com.apple.ExtensionsPreferences?".to_string(),
         _ => format!("chrome://extensions/?id={chromium_id}"),
     };
 
     #[cfg(target_os = "macos")]
     {
         if normalized == "safari" {
-            let out = std::process::Command::new("/usr/bin/open")
-                .arg(&url)
+            // Safari extensions are managed in Safari > Settings > Extensions.
+            // Use osascript to open the Extensions pane directly.
+            let script = concat!(
+                "tell application \"Safari\" to activate\n",
+                "delay 0.3\n",
+                "tell application \"System Events\"\n",
+                "  tell process \"Safari\"\n",
+                "    keystroke \",\" using command down\n",
+                "    delay 0.5\n",
+                "    click button \"Extensions\" of toolbar 1 of window 1\n",
+                "  end tell\n",
+                "end tell\n",
+            );
+            let out = std::process::Command::new("osascript")
+                .args(["-e", script])
                 .output()
-                .map_err(|e| format!("spawn /usr/bin/open: {e}"))?;
+                .map_err(|e| format!("osascript: {e}"))?;
             if !out.status.success() {
-                let stderr = String::from_utf8_lossy(&out.stderr);
-                return Err(format!(
-                    "`open {url}` exited with {}: {}",
-                    out.status,
-                    stderr.trim()
-                ));
+                // If AppleScript failed (e.g. no accessibility permission),
+                // fall back to just activating Safari.
+                log::warn!(
+                    "osascript for Safari settings failed ({}), activating Safari",
+                    String::from_utf8_lossy(&out.stderr).trim()
+                );
+                let _ = std::process::Command::new("/usr/bin/open")
+                    .args(["-a", "Safari"])
+                    .output();
             }
             return Ok(());
         }

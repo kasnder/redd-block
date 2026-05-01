@@ -341,11 +341,21 @@ body.dark-mode .title-bar button:hover {
     font-weight: 700;
 }
 
+.extension-enforcer-action-right {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
 .extension-enforcer-action-countdown {
     display: block;
     opacity: 0.95;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    text-align: center;
 }
 
 .extension-enforcer-action-instruction {
@@ -353,6 +363,53 @@ body.dark-mode .title-bar button:hover {
     line-height: 1.2;
     opacity: 0.9;
     font-style: italic;
+}
+
+.extension-enforcer-show-me {
+    margin-top: 4px;
+}
+
+.extension-enforcer-show-me summary {
+    cursor: pointer;
+    font-size: 13px;
+    opacity: 0.9;
+    text-decoration: underline;
+    user-select: none;
+}
+
+.extension-enforcer-show-me summary:hover {
+    opacity: 1;
+}
+
+.extension-enforcer-screenshot {
+    margin-top: 6px;
+    max-width: 420px;
+    width: 100%;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.extension-enforcer-screenshots {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+}
+
+.extension-enforcer-screenshots .extension-enforcer-screenshot {
+    margin-top: 0;
+    max-width: 260px;
+    flex: 1 1 0;
+    min-width: 140px;
+}
+
+.extension-enforcer-screenshot-arrow {
+    font-size: 28px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.85);
+    flex-shrink: 0;
+    line-height: 1;
 }
 
 /* Main Content */

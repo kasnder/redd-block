@@ -8,6 +8,10 @@ import iconChromeUrl from './images/icon-chrome.svg';
 import iconEdgeUrl from './images/icon-edge.svg';
 import iconFirefoxUrl from './images/icon-firefox.svg';
 import iconSafariUrl from './images/icon-safari.svg';
+import screenshotChromeIncognito from './images/toggle-chrome-incognito-windows.png';
+import screenshotFirefoxPrivate from './images/toggle-firefox-private-windows.png';
+import screenshotSafariStep1 from './images/mac-extension-settings-1.png';
+import screenshotSafariStep2 from './images/mac-extension-settings-2.png';
 
 // Compatibility layer wrapping Tauri APIs
 const tauriAPI = {
@@ -1670,35 +1674,48 @@ function enforcerCopy(payload) {
     if (issue === 'missing') {
         return {
             headline: `ReDD Focus isn't installed in ${browser}.`,
-            countdown: `Auto-closing ${browser} in ${seconds}s`,
+            countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
             instruction: `Install ReDD Focus for ${browser}.`,
             action: 'Install ReDD Focus',
         };
     }
     if (issue === 'disabled') {
+        const key = browserKeyFromLabel(browser);
+        const screenshotUrl = key === 'chrome' ? screenshotChromeIncognito
+            : key === 'firefox' ? screenshotFirefoxPrivate : null;
+        const screenshotSteps = key === 'safari' ? [screenshotSafariStep1, screenshotSafariStep2] : null;
         return {
             headline: `ReDD Focus is turned off in ${browser}.`,
-            countdown: `Auto-closing ${browser} in ${seconds}s`,
+            countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
             instruction: `In ${browser} extensions, turn ReDD Focus back on.`,
             action: `Open ${browser} Extensions`,
+            screenshotUrl,
+            screenshotSteps,
         };
     }
     if (issue === 'private') {
         const key = browserKeyFromLabel(browser);
         const instruction = key === 'chrome'
-            ? 'In Chrome extensions, find ReDD Focus, then click Details \u003e Allow in Incognito.'
+            ? 'In Chrome extensions, find ReDD Focus \u003e Details \u003e Allow in Incognito.'
+            : key === 'firefox'
+            ? 'In Firefox extension settings, click ReDD Focus \u003e Run in Private Windows \u003e Allow.'
             : `In ${browser} extensions, allow ReDD Focus in private/incognito windows.`;
+        const screenshotUrl = key === 'chrome' ? screenshotChromeIncognito
+            : key === 'firefox' ? screenshotFirefoxPrivate : null;
+        const screenshotSteps = key === 'safari' ? [screenshotSafariStep1, screenshotSafariStep2] : null;
         return {
             headline: `ReDD Focus can't block in private/incognito windows.`,
-            countdown: `Auto-closing ${browser} in ${seconds}s`,
+            countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
             instruction,
             action: `Open ${browser} Extensions`,
+            screenshotUrl,
+            screenshotSteps,
         };
     }
     if (issue === 'websiteaccess') {
         return {
             headline: `ReDD Focus isn't allowed on all websites in ${browser}.`,
-            countdown: `Auto-closing ${browser} in ${seconds}s`,
+            countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
             instruction: `In ${browser} extension settings, allow ReDD Focus on all websites.`,
             action: `Open ${browser} Extensions`,
         };
@@ -1706,7 +1723,7 @@ function enforcerCopy(payload) {
     if (issue === 'access') {
         return {
             headline: `ReDD Block can't verify ReDD Focus in ${browser}.`,
-            countdown: `Auto-closing ${browser} in ${seconds}s`,
+            countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
             instruction: browser === 'Safari'
                 ? 'Grant ReDD Block Full Disk Access.'
                 : `Grant access so ReDD Block can verify ${browser}.`,
@@ -1715,7 +1732,7 @@ function enforcerCopy(payload) {
     }
     return {
         headline: `ReDD Focus isn't ready in ${browser}.`,
-        countdown: `Auto-closing ${browser} in ${seconds}s`,
+        countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
         instruction: `Fix ReDD Focus in ${browser} extensions.`,
         action: `Open ${browser} Extensions`,
     };
@@ -1736,6 +1753,40 @@ function renderEnforcerActionCopy(banner, payload, copy) {
     if (headline) headline.textContent = copy.headline || '';
     if (countdown) countdown.textContent = copy.countdown || '';
     if (instruction) instruction.textContent = copy.instruction || '';
+
+    const showMe = banner.querySelector('.extension-enforcer-show-me');
+    const container = banner.querySelector('.extension-enforcer-screenshots');
+    if (showMe && container) {
+        const hasScreenshots = copy.screenshotUrl || (copy.screenshotSteps && copy.screenshotSteps.length);
+        if (hasScreenshots) {
+            container.innerHTML = '';
+            if (copy.screenshotSteps && copy.screenshotSteps.length) {
+                // Multi-step: images with arrows between them
+                copy.screenshotSteps.forEach((src, i) => {
+                    if (i > 0) {
+                        const arrow = document.createElement('span');
+                        arrow.className = 'extension-enforcer-screenshot-arrow';
+                        arrow.textContent = '→';
+                        container.appendChild(arrow);
+                    }
+                    const img = document.createElement('img');
+                    img.className = 'extension-enforcer-screenshot';
+                    img.src = src;
+                    img.alt = `Step ${i + 1}`;
+                    container.appendChild(img);
+                });
+            } else {
+                const img = document.createElement('img');
+                img.className = 'extension-enforcer-screenshot';
+                img.src = copy.screenshotUrl;
+                img.alt = 'Screenshot showing how to fix this';
+                container.appendChild(img);
+            }
+            showMe.classList.remove('hidden');
+        } else {
+            showMe.classList.add('hidden');
+        }
+    }
 }
 
 function enforcerBannerKey(payload) {
@@ -1761,15 +1812,19 @@ function ensureEnforcerActionBanner(payload) {
                 <div class="extension-enforcer-action-main">
                     <img class="extension-enforcer-browser-icon" aria-hidden="true">
                     <div class="extension-enforcer-action-copy">
-                        <div>
-                            <strong class="extension-enforcer-action-headline"></strong>
-                            <span class="extension-enforcer-action-countdown"></span>
-                        </div>
+                        <strong class="extension-enforcer-action-headline"></strong>
                         <em class="extension-enforcer-action-instruction"></em>
+                        <details class="extension-enforcer-show-me hidden">
+                            <summary>Show me how</summary>
+                            <div class="extension-enforcer-screenshots"></div>
+                        </details>
                     </div>
                 </div>
             </div>
-            <button class="update-banner-btn extension-enforcer-action-btn" type="button"></button>
+            <div class="extension-enforcer-action-right">
+                <span class="extension-enforcer-action-countdown"></span>
+                <button class="update-banner-btn extension-enforcer-action-btn" type="button"></button>
+            </div>
         </div>
         <button class="update-banner-dismiss extension-enforcer-action-dismiss" title="Dismiss" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
     `;
@@ -1797,19 +1852,32 @@ function enforcerClosedCopy(payload) {
     if (issue === 'private') {
         const key = browserKeyFromLabel(browser);
         const instruction = key === 'chrome'
-            ? 'In Chrome, find ReDD Focus, then click Details \u003e Allow in Incognito.'
+            ? 'In Chrome, find ReDD Focus \u003e Details \u003e Allow in Incognito.'
+            : key === 'firefox'
+            ? 'In Firefox extension settings, click ReDD Focus \u003e Run in Private Windows \u003e Allow.'
             : '';
+        const screenshotUrl = key === 'chrome' ? screenshotChromeIncognito
+            : key === 'firefox' ? screenshotFirefoxPrivate : null;
+        const screenshotSteps = key === 'safari' ? [screenshotSafariStep1, screenshotSafariStep2] : null;
         return {
             headline: `${browser} was closed because ReDD Focus can't block in private/incognito windows.`,
             instruction: instruction.trim(),
             action: `Open ${browser} Extensions`,
+            screenshotUrl,
+            screenshotSteps,
         };
     }
     if (issue === 'disabled') {
+        const key = browserKeyFromLabel(browser);
+        const screenshotUrl = key === 'chrome' ? screenshotChromeIncognito
+            : key === 'firefox' ? screenshotFirefoxPrivate : null;
+        const screenshotSteps = key === 'safari' ? [screenshotSafariStep1, screenshotSafariStep2] : null;
         return {
             headline: `${browser} was closed because ReDD Focus is turned off.`,
             instruction: `In ${browser} extensions, turn ReDD Focus back on.`,
             action: `Open ${browser} Extensions`,
+            screenshotUrl,
+            screenshotSteps,
         };
     }
     if (issue === 'missing') {
