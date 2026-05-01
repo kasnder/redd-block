@@ -4,6 +4,10 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ask, message } from '@tauri-apps/plugin-dialog';
+import iconChromeUrl from './images/icon-chrome.svg';
+import iconEdgeUrl from './images/icon-edge.svg';
+import iconFirefoxUrl from './images/icon-firefox.svg';
+import iconSafariUrl from './images/icon-safari.svg';
 
 // Compatibility layer wrapping Tauri APIs
 const tauriAPI = {
@@ -73,6 +77,11 @@ const tauriAPI = {
     onMenuHelpReportIssue: (callback) => listen('menu-help-report-issue', callback),
     onMenuHelpContactUs: (callback) => listen('menu-help-contact-us', callback),
     onMenuHelpWhoWeAre: (callback) => listen('menu-help-who-we-are', callback),
+
+    // Enforcer events (desktop only)
+    onEnforcerGraceUpdate: (callback) => listen('enforcer://grace-update', callback),
+    onEnforcerGraceResolved: (callback) => listen('enforcer://grace-resolved', callback),
+    onEnforcerBrowserClosed: (callback) => listen('enforcer://browser-closed', callback),
 };
 
 async function openUrl(url, openWith) {
@@ -928,6 +937,7 @@ async function runPostAcceptanceStartup() {
             // Run first-launch migration off the legacy helper + check
             // Automation TCC (macOS) + extension compliance. Idempotent;
             // a no-op on subsequent launches past the current version.
+            setupEnforcerUiAlerts();
             await runDesktopOnboarding();
             await checkHelperStatus();
             console.log('[startup-sync] Desktop startup helperAvailable:', helperAvailable);
@@ -1072,7 +1082,6 @@ async function runDesktopOnboarding() {
         // Returning user with extension already set up, OR user has
         // dismissed the welcome — fall back to the slim banner for
         // ongoing nagging.
-        updateExtensionComplianceBanner(state);
         await updateBehaviourChangeBanner(state);
     } catch (e) {
         console.warn('[onboarding] state check failed:', e);
@@ -1248,7 +1257,6 @@ function wireMigrationPostPhase(state) {
         hideMigrationOnboarding();
         try {
             const fresh = await invoke('onboarding_state');
-            updateExtensionComplianceBanner(fresh);
             await updateBehaviourChangeBanner(fresh);
         } catch (e) { /* no-op */ }
     };
@@ -1601,42 +1609,340 @@ async function updateBehaviourChangeBanner(state) {
     }
 }
 
-function updateExtensionComplianceBanner(state) {
-    const banner = document.getElementById('extension-compliance-banner');
-    const text = document.getElementById('extension-compliance-text');
-    const dismiss = document.getElementById('extension-compliance-dismiss');
-    if (!banner) return;
+// ---- Enforcer UI: dynamic per-browser action banners ---------------------
+// Subscribes to Rust enforcer events and shows attention-grabbing dark-orange
+// banners with a live countdown when a browser is about to be closed.
 
-    if (state.extension_compliant) {
+let enforcerUiAlertsAttached = false;
+const enforcerActionBannerStates = new Map();
+let enforcerActionBannerInterval = null;
+
+function setupEnforcerUiAlerts() {
+    if (isIOS || enforcerUiAlertsAttached) return;
+    enforcerUiAlertsAttached = true;
+    tauriAPI.onEnforcerGraceUpdate((event) => {
+        const payload = event?.payload || {};
+        renderEnforcerActionBanner(payload);
+    }).catch((e) => {
+        console.warn('[enforcer-ui] failed to attach grace-update listener:', e);
+        enforcerUiAlertsAttached = false;
+    });
+    tauriAPI.onEnforcerGraceResolved((event) => {
+        const payload = event?.payload || {};
+        hideEnforcerActionBanner(payload.browser || payload.label);
+    }).catch((e) => {
+        console.warn('[enforcer-ui] failed to attach grace-resolved listener:', e);
+    });
+    tauriAPI.onEnforcerBrowserClosed((event) => {
+        const payload = event?.payload || {};
+        renderEnforcerClosedBanner(payload);
+    }).catch((e) => {
+        console.warn('[enforcer-ui] failed to attach browser-closed listener:', e);
+    });
+}
+
+function browserKeyFromLabel(label) {
+    if (!label) return null;
+    const normalized = String(label).toLowerCase();
+    if (normalized.includes('firefox')) return 'firefox';
+    if (normalized.includes('brave')) return 'brave';
+    if (normalized.includes('edge')) return 'edge';
+    if (normalized.includes('safari')) return 'safari';
+    return 'chrome';
+}
+
+function browserIconUrl(key) {
+    switch (key) {
+        case 'firefox': return iconFirefoxUrl;
+        case 'edge': return iconEdgeUrl;
+        case 'safari': return iconSafariUrl;
+        case 'brave':
+        case 'chrome':
+        default: return iconChromeUrl;
+    }
+}
+
+function enforcerCopy(payload) {
+    const browser = payload.label || payload.browser || 'your browser';
+    const seconds = Math.max(0, Number(payload.remaining_secs ?? payload.remainingSecs ?? 0));
+    const issue = payload.issue || 'unknown';
+
+    if (issue === 'missing') {
+        return {
+            headline: `ReDD Focus isn't installed in ${browser}.`,
+            countdown: `Auto-closing ${browser} in ${seconds}s`,
+            instruction: `Install ReDD Focus for ${browser}.`,
+            action: 'Install ReDD Focus',
+        };
+    }
+    if (issue === 'disabled') {
+        return {
+            headline: `ReDD Focus is turned off in ${browser}.`,
+            countdown: `Auto-closing ${browser} in ${seconds}s`,
+            instruction: `In ${browser} extensions, turn ReDD Focus back on.`,
+            action: `Open ${browser} Extensions`,
+        };
+    }
+    if (issue === 'private') {
+        const key = browserKeyFromLabel(browser);
+        const instruction = key === 'chrome'
+            ? 'In Chrome extensions, find ReDD Focus, then click Details \u003e Allow in Incognito.'
+            : `In ${browser} extensions, allow ReDD Focus in private/incognito windows.`;
+        return {
+            headline: `ReDD Focus can't block in private/incognito windows.`,
+            countdown: `Auto-closing ${browser} in ${seconds}s`,
+            instruction,
+            action: `Open ${browser} Extensions`,
+        };
+    }
+    if (issue === 'websiteaccess') {
+        return {
+            headline: `ReDD Focus isn't allowed on all websites in ${browser}.`,
+            countdown: `Auto-closing ${browser} in ${seconds}s`,
+            instruction: `In ${browser} extension settings, allow ReDD Focus on all websites.`,
+            action: `Open ${browser} Extensions`,
+        };
+    }
+    if (issue === 'access') {
+        return {
+            headline: `ReDD Block can't verify ReDD Focus in ${browser}.`,
+            countdown: `Auto-closing ${browser} in ${seconds}s`,
+            instruction: browser === 'Safari'
+                ? 'Grant ReDD Block Full Disk Access.'
+                : `Grant access so ReDD Block can verify ${browser}.`,
+            action: browser === 'Safari' ? 'Open Full Disk Access' : `Open ${browser} Settings`,
+        };
+    }
+    return {
+        headline: `ReDD Focus isn't ready in ${browser}.`,
+        countdown: `Auto-closing ${browser} in ${seconds}s`,
+        instruction: `Fix ReDD Focus in ${browser} extensions.`,
+        action: `Open ${browser} Extensions`,
+    };
+}
+
+function renderEnforcerActionCopy(banner, payload, copy) {
+    const key = enforcerBannerKey(payload);
+    const icon = banner.querySelector('.extension-enforcer-browser-icon');
+    const headline = banner.querySelector('.extension-enforcer-action-headline');
+    const countdown = banner.querySelector('.extension-enforcer-action-countdown');
+    const instruction = banner.querySelector('.extension-enforcer-action-instruction');
+
+    if (icon) {
+        icon.src = browserIconUrl(key);
+        icon.alt = '';
+        icon.title = payload.label || payload.browser || key;
+    }
+    if (headline) headline.textContent = copy.headline || '';
+    if (countdown) countdown.textContent = copy.countdown || '';
+    if (instruction) instruction.textContent = copy.instruction || '';
+}
+
+function enforcerBannerKey(payload) {
+    return browserKeyFromLabel(payload?.label || payload?.browser || 'chrome');
+}
+
+function enforcerBannerId(key) {
+    return `extension-enforcer-action-banner-${key}`;
+}
+
+function ensureEnforcerActionBanner(payload) {
+    const key = enforcerBannerKey(payload);
+    let banner = document.getElementById(enforcerBannerId(key));
+    if (banner) return { banner, key };
+
+    banner = document.createElement('div');
+    banner.id = enforcerBannerId(key);
+    banner.className = 'update-banner extension-enforcer-action-banner';
+    banner.dataset.browser = key;
+    banner.innerHTML = `
+        <div class="update-banner-content">
+            <div class="extension-enforcer-message">
+                <div class="extension-enforcer-action-main">
+                    <img class="extension-enforcer-browser-icon" aria-hidden="true">
+                    <div class="extension-enforcer-action-copy">
+                        <div>
+                            <strong class="extension-enforcer-action-headline"></strong>
+                            <span class="extension-enforcer-action-countdown"></span>
+                        </div>
+                        <em class="extension-enforcer-action-instruction"></em>
+                    </div>
+                </div>
+            </div>
+            <button class="update-banner-btn extension-enforcer-action-btn" type="button"></button>
+        </div>
+        <button class="update-banner-dismiss extension-enforcer-action-dismiss" title="Dismiss" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+    `;
+
+    const setupBanner = document.getElementById('behaviour-change-banner');
+    const existingBanners = document.querySelectorAll('.extension-enforcer-action-banner');
+    const lastExistingBanner = existingBanners[existingBanners.length - 1];
+    if (lastExistingBanner) {
+        lastExistingBanner.insertAdjacentElement('afterend', banner);
+    } else if (setupBanner) {
+        setupBanner.insertAdjacentElement('afterend', banner);
+    } else {
+        document.querySelector('.app-container')?.prepend(banner);
+    }
+
+    banner.querySelector('.extension-enforcer-action-dismiss')?.addEventListener('click', () => {
         banner.classList.add('hidden');
-        return;
-    }
+    });
+    return { banner, key };
+}
 
-    const failing = findFirstNonCompliantBrowser(state.browsers);
-    if (text) {
-        text.textContent = failing
-            ? failing === 'Safari'
-                ? `Safari is unavailable until ReDD Block can verify ReDD Focus. Grant Full Disk Access, install ReDD Focus, enable it, allow it in Private Browsing, and allow it on all websites.`
-                : `ReDD Focus isn't fully enabled in ${failing}. Install, enable it, and allow it in private browsing.`
-            : 'Install the ReDD Focus extension to block websites.';
+function enforcerClosedCopy(payload) {
+    const browser = payload.label || payload.browser || 'your browser';
+    const issue = payload.issue || 'unknown';
+    if (issue === 'private') {
+        const key = browserKeyFromLabel(browser);
+        const instruction = key === 'chrome'
+            ? 'In Chrome, find ReDD Focus, then click Details \u003e Allow in Incognito.'
+            : '';
+        return {
+            headline: `${browser} was closed because ReDD Focus can't block in private/incognito windows.`,
+            instruction: instruction.trim(),
+            action: `Open ${browser} Extensions`,
+        };
     }
-    if (dismiss) {
-        dismiss.onclick = () => banner.classList.add('hidden');
+    if (issue === 'disabled') {
+        return {
+            headline: `${browser} was closed because ReDD Focus is turned off.`,
+            instruction: `In ${browser} extensions, turn ReDD Focus back on.`,
+            action: `Open ${browser} Extensions`,
+        };
+    }
+    if (issue === 'missing') {
+        return {
+            headline: `${browser} was closed because ReDD Focus isn't installed.`,
+            instruction: `Install ReDD Focus for ${browser}.`,
+            action: 'Install ReDD Focus',
+        };
+    }
+    if (issue === 'websiteaccess') {
+        return {
+            headline: `${browser} was closed because ReDD Focus isn't allowed on all websites.`,
+            instruction: `In ${browser} extension settings, allow ReDD Focus on all websites.`,
+            action: `Open ${browser} Extensions`,
+        };
+    }
+    if (issue === 'access') {
+        return {
+            headline: `${browser} was closed because ReDD Block can't verify ReDD Focus.`,
+            instruction: browser === 'Safari' ? 'Grant ReDD Block Full Disk Access.' : '',
+            action: browser === 'Safari' ? 'Open Full Disk Access' : `Open ${browser} Settings`,
+        };
+    }
+    return {
+        headline: `${browser} was closed because ReDD Focus isn't ready.`,
+        instruction: `Fix ReDD Focus in ${browser} extensions.`,
+        action: `Open ${browser} Extensions`,
+    };
+}
+
+async function openEnforcerFix(payload) {
+    const browser = payload.label || payload.browser || 'Chrome';
+    const key = browserKeyFromLabel(browser);
+    try {
+        if (payload.issue === 'missing' && key && BROWSER_STORE_LINKS[key]?.url) {
+            await openUrl(BROWSER_STORE_LINKS[key].url);
+            return;
+        }
+        if (payload.issue === 'access' && key === 'safari') {
+            await invoke('open_safari_fda_settings');
+            return;
+        }
+        // For enable/private issues, open the extension store page as a
+        // reasonable fallback (no open_browser_extension_settings command
+        // on this branch).
+        if (key && BROWSER_STORE_LINKS[key]?.url) {
+            await openUrl(BROWSER_STORE_LINKS[key].url);
+        }
+    } catch (e) {
+        console.warn('[enforcer-ui] fix action failed:', e);
+    }
+}
+
+function updateEnforcerActionBannerCountdown() {
+    if (enforcerActionBannerStates.size === 0) return;
+    for (const [key, state] of enforcerActionBannerStates) {
+        const remainingSecs = Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000));
+        const payload = {
+            ...state.payload,
+            remaining_secs: remainingSecs,
+            remainingSecs,
+        };
+        state.payload = payload;
+
+        const banner = document.getElementById(enforcerBannerId(key));
+        const copy = enforcerCopy(payload);
+        if (banner) renderEnforcerActionCopy(banner, payload, copy);
+
+        if (remainingSecs <= 0) {
+            enforcerActionBannerStates.delete(key);
+        }
+    }
+    if (enforcerActionBannerStates.size === 0 && enforcerActionBannerInterval) {
+        clearInterval(enforcerActionBannerInterval);
+        enforcerActionBannerInterval = null;
+    }
+}
+
+function renderEnforcerActionBanner(payload) {
+    if (!payload || !payload.browser) return;
+    const { banner, key } = ensureEnforcerActionBanner(payload);
+
+    const remainingSecs = Math.max(0, Number(payload.remaining_secs ?? payload.remainingSecs ?? 0));
+    enforcerActionBannerStates.set(key, {
+        payload: { ...payload, remaining_secs: remainingSecs, remainingSecs },
+        deadline: Date.now() + remainingSecs * 1000,
+    });
+
+    const copy = enforcerCopy(payload);
+    const action = banner.querySelector('.extension-enforcer-action-btn');
+    renderEnforcerActionCopy(banner, payload, copy);
+    if (action) {
+        action.textContent = copy.action;
+        action.onclick = () => openEnforcerFix(payload);
+    }
+    if (!enforcerActionBannerInterval) {
+        enforcerActionBannerInterval = setInterval(updateEnforcerActionBannerCountdown, 1000);
     }
     banner.classList.remove('hidden');
 }
 
-function findFirstNonCompliantBrowser(browsers) {
-    if (!browsers) return null;
-    const labels = {
-        firefox: 'Firefox', chrome: 'Chrome', brave: 'Brave', edge: 'Edge', safari: 'Safari',
-    };
-    for (const key of Object.keys(labels)) {
-        const b = browsers[key];
-        if (!b || !b.present) continue;
-        if (browserComplianceStatus(key, b) !== 'compliant') return labels[key];
+function renderEnforcerClosedBanner(payload) {
+    if (!payload || !payload.browser) return;
+    const { banner, key } = ensureEnforcerActionBanner(payload);
+    enforcerActionBannerStates.delete(key);
+    if (enforcerActionBannerStates.size === 0 && enforcerActionBannerInterval) {
+        clearInterval(enforcerActionBannerInterval);
+        enforcerActionBannerInterval = null;
     }
-    return null;
+
+    const copy = enforcerClosedCopy(payload);
+    const action = banner.querySelector('.extension-enforcer-action-btn');
+    renderEnforcerActionCopy(banner, payload, {
+        headline: copy.headline,
+        countdown: '',
+        instruction: copy.instruction,
+    });
+    if (action) {
+        action.textContent = copy.action;
+        action.onclick = () => openEnforcerFix(payload);
+    }
+    banner.classList.remove('hidden');
+}
+
+function hideEnforcerActionBanner(browser) {
+    const key = browserKeyFromLabel(browser);
+    const banner = document.getElementById(enforcerBannerId(key));
+    if (banner) banner.classList.add('hidden');
+    enforcerActionBannerStates.delete(key);
+    if (enforcerActionBannerStates.size === 0 && enforcerActionBannerInterval) {
+        clearInterval(enforcerActionBannerInterval);
+        enforcerActionBannerInterval = null;
+    }
 }
 
 // Check if the helper daemon is available (desktop only)

@@ -113,12 +113,27 @@ impl BrowserKey {
     }
 }
 
+/// What's wrong with the extension in this browser.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ExtensionIssue {
+    Missing,
+    Disabled,
+    Private,
+    /// Safari: not allowed on all websites.
+    WebsiteAccess,
+    /// Can't read extension state (e.g. Full Disk Access needed for Safari).
+    Access,
+    Unknown,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct GraceEvent {
     pub browser: BrowserKey,
     pub label: &'static str,
     pub remaining_secs: u64,
     pub total_secs: u64,
+    pub issue: ExtensionIssue,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -127,11 +142,19 @@ pub struct ResolvedEvent {
     pub label: &'static str,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct BrowserClosedEvent {
+    pub browser: BrowserKey,
+    pub label: &'static str,
+    pub issue: ExtensionIssue,
+}
+
 #[derive(Debug)]
 struct TimerState {
     deadline: Instant,
     total: Duration,
     offense_count: u32,
+    issue: ExtensionIssue,
 }
 
 #[derive(Default)]
@@ -191,6 +214,7 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
             continue;
         }
 
+        let issue = diagnose_issue(browser_status);
         log_non_compliant(key, browser_status);
 
         // Failing. Either start a timer or check if it expired.
@@ -218,6 +242,7 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
                         deadline: Instant::now() + grace,
                         total: grace,
                         offense_count: offenses,
+                        issue,
                     },
                 );
                 (false, true)
@@ -226,17 +251,19 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
 
         if fresh {
             emit_update(app, state, key);
-            notify_grace_started(app, key);
+            notify_grace_started(app, key, issue);
             continue;
         }
 
         if expired {
             // Pop the timer before killing so a concurrent tick doesn't
             // re-enter this branch.
-            if let Ok(mut s) = state.lock() {
-                s.timers.remove(&key);
-            }
+            let stored_issue = state.lock().ok()
+                .and_then(|mut s| s.timers.remove(&key))
+                .map(|t| t.issue)
+                .unwrap_or(issue);
             quit_browser(key);
+            emit_browser_closed(app, key, stored_issue);
             notify_killed(app, key);
             crate::commands::reveal_app(app);
         } else {
@@ -324,13 +351,13 @@ fn cancel_timer(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>, key: Browser
 }
 
 fn emit_update(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>, key: BrowserKey) {
-    let pair = state.lock().ok().and_then(|s| {
+    let triple = state.lock().ok().and_then(|s| {
         s.timers.get(&key).map(|t| {
             let remaining = t.deadline.saturating_duration_since(Instant::now());
-            (remaining, t.total)
+            (remaining, t.total, t.issue)
         })
     });
-    let (remaining, total) = match pair {
+    let (remaining, total, issue) = match triple {
         Some(p) => p,
         None => return,
     };
@@ -341,17 +368,84 @@ fn emit_update(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>, key: BrowserK
             label: key.label(),
             remaining_secs: remaining.as_secs(),
             total_secs: total.as_secs(),
+            issue,
         },
     );
 }
 
-fn notify_grace_started(app: &AppHandle, key: BrowserKey) {
+fn emit_browser_closed(app: &AppHandle, key: BrowserKey, issue: ExtensionIssue) {
+    let _ = app.emit(
+        "enforcer://browser-closed",
+        BrowserClosedEvent {
+            browser: key,
+            label: key.label(),
+            issue,
+        },
+    );
+}
+
+/// Derive the most specific issue from the browser's profile status.
+fn diagnose_issue(b: &BrowserStatus) -> ExtensionIssue {
+    // For browsers with website_access_all support (Safari), check all profiles.
+    if b.profiles.iter().any(|p| p.website_access_all.is_some()) {
+        // FDA issue: profile has a note mentioning Full Disk Access
+        if b.profiles.iter().any(|p| {
+            p.note.as_deref().map_or(false, |n| {
+                n.contains("Full Disk Access") || n.contains("extension settings plist")
+            })
+        }) {
+            return ExtensionIssue::Access;
+        }
+        if b.profiles.iter().any(|p| !p.installed) {
+            return ExtensionIssue::Missing;
+        }
+        if b.profiles.iter().any(|p| p.enabled == Some(false) || p.enabled.is_none()) {
+            return ExtensionIssue::Disabled;
+        }
+        if b.profiles.iter().any(|p| p.private_browsing != Some(true)) {
+            return ExtensionIssue::Private;
+        }
+        if b.profiles.iter().any(|p| p.website_access_all != Some(true)) {
+            return ExtensionIssue::WebsiteAccess;
+        }
+        return ExtensionIssue::Unknown;
+    }
+    // Standard Chromium / Firefox: check the default profile.
+    let def = b.profiles.iter().find(|p| p.is_default).or_else(|| b.profiles.first());
+    match def {
+        Some(p) => {
+            if !p.installed { ExtensionIssue::Missing }
+            else if p.enabled != Some(true) { ExtensionIssue::Disabled }
+            else if p.private_browsing != Some(true) { ExtensionIssue::Private }
+            else { ExtensionIssue::Unknown }
+        }
+        None => {
+            // No profiles at all — likely can't read the extension state
+            if b.profiles.is_empty() && b.error.is_some() {
+                ExtensionIssue::Access
+            } else {
+                ExtensionIssue::Missing
+            }
+        }
+    }
+}
+
+fn notify_grace_started(app: &AppHandle, key: BrowserKey, issue: ExtensionIssue) {
     let secs = current_grace(app).as_secs();
+    let reason = match issue {
+        ExtensionIssue::Missing => "isn't installed",
+        ExtensionIssue::Disabled => "is turned off",
+        ExtensionIssue::Private => "isn't allowed in private/incognito browsing",
+        ExtensionIssue::WebsiteAccess => "isn't allowed on all websites",
+        ExtensionIssue::Access => "can't be verified (grant Full Disk Access)",
+        ExtensionIssue::Unknown => "isn't ready",
+    };
     notify(
         app,
         "ReDD Block: action required",
         &format!(
-            "{} extension is missing or disabled. Re-enable within {}s or {} will be closed.",
+            "ReDD Focus {} in {}. Fix within {}s or {} will be closed.",
+            reason,
             key.label(),
             secs,
             key.label()
