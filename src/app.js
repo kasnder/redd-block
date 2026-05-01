@@ -1689,6 +1689,7 @@ function enforcerCopy(payload) {
             headline: `ReDD Focus is turned off in ${browser}.`,
             countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
             instruction: `In ${browser} extensions, turn ReDD Focus back on.`,
+            note: 'It may take up to 10 seconds for changes to be detected.',
             action: `Open ${browser} Extensions`,
             screenshotUrl,
             screenshotSteps,
@@ -1708,6 +1709,7 @@ function enforcerCopy(payload) {
             headline: `ReDD Focus can't block in private/incognito windows.`,
             countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
             instruction,
+            note: 'It may take up to 10 seconds for changes to be detected.',
             action: `Open ${browser} Extensions`,
             screenshotUrl,
             screenshotSteps,
@@ -1754,6 +1756,12 @@ function renderEnforcerActionCopy(banner, payload, copy) {
     if (headline) headline.textContent = copy.headline || '';
     if (countdown) countdown.textContent = copy.countdown || '';
     if (instruction) instruction.textContent = copy.instruction || '';
+
+    const note = banner.querySelector('.extension-enforcer-action-note');
+    if (note) {
+        note.textContent = copy.note || '';
+        note.classList.toggle('hidden', !copy.note);
+    }
 
     const showMe = banner.querySelector('.extension-enforcer-show-me');
     const container = banner.querySelector('.extension-enforcer-screenshots');
@@ -1815,6 +1823,7 @@ function ensureEnforcerActionBanner(payload) {
                     <div class="extension-enforcer-action-copy">
                         <strong class="extension-enforcer-action-headline"></strong>
                         <em class="extension-enforcer-action-instruction"></em>
+                        <small class="extension-enforcer-action-note hidden"></small>
                         <details class="extension-enforcer-show-me hidden">
                             <summary>Show me how</summary>
                             <div class="extension-enforcer-screenshots"></div>
