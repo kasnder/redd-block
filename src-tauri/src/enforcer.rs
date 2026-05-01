@@ -191,6 +191,8 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
             continue;
         }
 
+        log_non_compliant(key, browser_status);
+
         // Failing. Either start a timer or check if it expired.
         let (expired, fresh) = {
             let mut s = match state.lock() {
@@ -243,10 +245,39 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
     }
 }
 
+fn log_non_compliant(key: BrowserKey, b: &BrowserStatus) {
+    let reasons: Vec<String> = b
+        .profiles
+        .iter()
+        .filter(|p| {
+            !(p.installed
+                && p.enabled == Some(true)
+                && p.private_browsing == Some(true)
+                && p.website_access_all.unwrap_or(true))
+        })
+        .map(|p| {
+            format!(
+                "{} installed={} enabled={:?} private={:?} websiteAll={:?}",
+                p.name, p.installed, p.enabled, p.private_browsing, p.website_access_all
+            )
+        })
+        .collect();
+    log::info!(
+        "enforcer: {} non-compliant: {}",
+        key.label(),
+        if reasons.is_empty() {
+            "no compliant default profile".to_string()
+        } else {
+            reasons.join("; ")
+        }
+    );
+}
+
 fn default_profile_passes(b: &BrowserStatus) -> bool {
-    if !b.present {
-        return true; // Nothing to check.
-    }
+    // The caller already proved the browser is running via
+    // `running_browsers()`. Do not re-check `b.present` here: it is
+    // computed by a separate scan, and a transient disagreement would
+    // incorrectly let a running, non-compliant browser pass.
     if b.profiles.iter().any(|p| p.website_access_all.is_some()) {
         return !b.profiles.is_empty()
             && b.profiles.iter().all(|p| {
