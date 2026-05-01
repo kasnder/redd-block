@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 #[cfg(any(target_os = "macos", target_os = "windows"))]
-use tauri_plugin_notification::NotificationExt;
+
 
 use crate::profile_scan::{self, BrowserStatus, ProfileStatus};
 
@@ -251,7 +251,7 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
 
         if fresh {
             emit_update(app, state, key);
-            notify_grace_started(app, key, issue);
+            crate::commands::reveal_app(app);
             continue;
         }
 
@@ -264,7 +264,6 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
                 .unwrap_or(issue);
             quit_browser(key);
             emit_browser_closed(app, key, stored_issue);
-            notify_killed(app, key);
             crate::commands::reveal_app(app);
         } else {
             emit_update(app, state, key);
@@ -429,52 +428,6 @@ fn diagnose_issue(b: &BrowserStatus) -> ExtensionIssue {
         }
     }
 }
-
-fn notify_grace_started(app: &AppHandle, key: BrowserKey, issue: ExtensionIssue) {
-    let secs = current_grace(app).as_secs();
-    let reason = match issue {
-        ExtensionIssue::Missing => "isn't installed",
-        ExtensionIssue::Disabled => "is turned off",
-        ExtensionIssue::Private => "isn't allowed in private/incognito browsing",
-        ExtensionIssue::WebsiteAccess => "isn't allowed on all websites",
-        ExtensionIssue::Access => "can't be verified (grant Full Disk Access)",
-        ExtensionIssue::Unknown => "isn't ready",
-    };
-    notify(
-        app,
-        "ReDD Block: action required",
-        &format!(
-            "ReDD Focus {} in {}. Fix within {}s or {} will be closed.",
-            reason,
-            key.label(),
-            secs,
-            key.label()
-        ),
-    );
-}
-
-fn notify_killed(app: &AppHandle, key: BrowserKey) {
-    notify(
-        app,
-        "ReDD Block",
-        &format!(
-            "{} was closed because the ReDD Block extension was missing or disabled.",
-            key.label()
-        ),
-    );
-}
-
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-fn notify(app: &AppHandle, title: &str, body: &str) {
-    if let Err(e) = app.notification().builder().title(title).body(body).show() {
-        log::warn!("notification failed: {e}");
-    } else {
-        log::info!("notification: {title} - {body}");
-    }
-}
-
-#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-fn notify(_app: &AppHandle, _title: &str, _body: &str) {}
 
 // ---- Process detection + quit -----------------------------------------
 
