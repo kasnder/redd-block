@@ -132,35 +132,16 @@ pub fn open_browser_extension_settings(browser: String) -> Result<(), String> {
 
     #[cfg(target_os = "windows")]
     {
-        let exe = match normalized.as_str() {
-            "brave" => Some("brave.exe"),
-            "edge" => Some("msedge.exe"),
-            "firefox" => Some("firefox.exe"),
-            "chrome" => Some("chrome.exe"),
-            _ => None,
-        };
-        let args: Vec<String> = match exe {
-            Some(browser_exe) => vec![
-                "/c".into(),
-                "start".into(),
-                "".into(),
-                browser_exe.into(),
-                url.clone(),
-            ],
-            None => vec!["/c".into(), "start".into(), "".into(), url.clone()],
-        };
-        let out = std::process::Command::new("cmd")
-            .args(&args)
-            .output()
-            .map_err(|e| format!("spawn cmd start: {e}"))?;
-        if !out.status.success() {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            return Err(format!(
-                "`cmd /c start` exited with {}: {}",
-                out.status,
-                stderr.trim()
-            ));
-        }
+        // Reuse the same exe-path lookup that profile_scan uses for
+        // install detection.  Launching the browser directly (instead
+        // of `cmd /c start`) avoids slow PATH searches and ensures
+        // chrome:// URLs aren't mangled by cmd's argument parser.
+        let exe = profile_scan::find_browser_exe(&normalized)
+            .ok_or_else(|| format!("Could not find {browser} executable"))?;
+        std::process::Command::new(&exe)
+            .arg(&url)
+            .spawn()
+            .map_err(|e| format!("launch {}: {e}", exe.display()))?;
         Ok(())
     }
 

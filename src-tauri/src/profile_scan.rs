@@ -148,25 +148,36 @@ fn firefox_app_installed() -> bool {
     }
     #[cfg(target_os = "windows")]
     {
-        // Check standard Firefox install locations. Profile-dir
-        // existence alone is a false positive (uninstall leaves the
-        // profile dir behind by default).
-        let mut roots = vec![];
-        if let Some(pf) = std::env::var_os("ProgramFiles") {
-            roots.push(PathBuf::from(pf).join(r"Mozilla Firefox\firefox.exe"));
-        }
-        if let Some(pf86) = std::env::var_os("ProgramFiles(x86)") {
-            roots.push(PathBuf::from(pf86).join(r"Mozilla Firefox\firefox.exe"));
-        }
-        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
-            roots.push(PathBuf::from(local).join(r"Mozilla Firefox\firefox.exe"));
-        }
-        roots.iter().any(|p| p.exists())
+        find_browser_exe("firefox").is_some()
     }
     #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
     {
         firefox_root().map(|p| p.exists()).unwrap_or(false)
     }
+}
+
+/// Find the full path to a browser executable by name (e.g. "chrome",
+/// "firefox", "brave", "edge"). Returns `None` if not found on disk.
+/// Used by `open_browser_extension_settings` so we can launch browsers
+/// directly instead of going through `cmd /c start`.
+#[cfg(target_os = "windows")]
+pub fn find_browser_exe(name: &str) -> Option<PathBuf> {
+    let subpath = match name {
+        "chrome" => r"Google\Chrome\Application\chrome.exe",
+        "brave" => r"BraveSoftware\Brave-Browser\Application\brave.exe",
+        "edge" => r"Microsoft\Edge\Application\msedge.exe",
+        "firefox" => r"Mozilla Firefox\firefox.exe",
+        _ => return None,
+    };
+    [
+        std::env::var_os("ProgramFiles"),
+        std::env::var_os("ProgramFiles(x86)"),
+        std::env::var_os("LOCALAPPDATA"),
+    ]
+    .into_iter()
+    .flatten()
+    .map(|root| PathBuf::from(root).join(subpath))
+    .find(|p| p.exists())
 }
 
 fn firefox_app_present() -> bool {
@@ -400,31 +411,12 @@ impl ChromiumBrowser {
         }
         #[cfg(target_os = "windows")]
         {
-            // Check standard install locations for the actual exe.
-            // Profile-dir existence alone is a false positive — Chrome
-            // sometimes leaves %LOCALAPPDATA%\Google\Chrome\User Data
-            // behind after uninstall, and other Google products can
-            // create stub paths there too.
-            let (subpath, _exe) = match self {
-                ChromiumBrowser::Chrome => (r"Google\Chrome\Application\chrome.exe", "chrome.exe"),
-                ChromiumBrowser::Brave => (
-                    r"BraveSoftware\Brave-Browser\Application\brave.exe",
-                    "brave.exe",
-                ),
-                ChromiumBrowser::Edge => (r"Microsoft\Edge\Application\msedge.exe", "msedge.exe"),
+            let name = match self {
+                ChromiumBrowser::Chrome => "chrome",
+                ChromiumBrowser::Brave => "brave",
+                ChromiumBrowser::Edge => "edge",
             };
-            let mut roots = vec![];
-            if let Some(pf) = std::env::var_os("ProgramFiles") {
-                roots.push(PathBuf::from(pf));
-            }
-            if let Some(pf86) = std::env::var_os("ProgramFiles(x86)") {
-                roots.push(PathBuf::from(pf86));
-            }
-            // Per-user install on Windows lives under %LOCALAPPDATA%.
-            if let Some(local) = std::env::var_os("LOCALAPPDATA") {
-                roots.push(PathBuf::from(local));
-            }
-            roots.iter().any(|r| r.join(subpath).exists())
+            find_browser_exe(name).is_some()
         }
         #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
         {
