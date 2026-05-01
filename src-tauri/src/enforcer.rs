@@ -417,11 +417,11 @@ fn quit_browser(key: BrowserKey) {
     // normal exit path and persist session/cookies. After
     // HARD_KILL_AFTER we escalate to forced termination on the whole
     // process tree.
-    use std::process::Command;
+    use crate::windows_process::hidden_command;
 
     for name in key.process_names() {
         log::info!("enforcer: requesting graceful close of {name} (taskkill /T)");
-        match Command::new("taskkill").args(["/IM", name, "/T"]).output() {
+        match hidden_command("taskkill").args(["/IM", name, "/T"]).output() {
             Ok(out) => log::debug!(
                 "enforcer: taskkill /IM {name} /T -> exit {:?}",
                 out.status.code()
@@ -434,7 +434,7 @@ fn quit_browser(key: BrowserKey) {
 
     for name in key.process_names() {
         log::info!("enforcer: forcing close of {name} (taskkill /F /T)");
-        if let Err(e) = Command::new("taskkill")
+        if let Err(e) = hidden_command("taskkill")
             .args(["/F", "/IM", name, "/T"])
             .output()
         {

@@ -28,7 +28,8 @@
 // which the migration deliberately moved away from.
 
 use std::path::PathBuf;
-use std::process::Command;
+
+use crate::windows_process::hidden_command;
 
 pub const TASK_NAME: &str = "ReDD Block Watchdog";
 const WRAPPER_CMD_FILENAME: &str = "redd-block-watchdog.cmd";
@@ -104,7 +105,7 @@ pub fn register() {
 
     // Task action invokes wscript.exe with the .vbs — no console flash.
     let task_run = format!("wscript.exe \"{}\"", vbs_path.display());
-    let out = Command::new("schtasks")
+    let out = hidden_command("schtasks")
         .args([
             "/Create",
             "/TN",
@@ -136,7 +137,7 @@ pub fn register() {
 /// permission denied) are treated as "not present" rather than
 /// crashing the diagnostics readout.
 pub fn is_registered() -> bool {
-    Command::new("schtasks")
+    hidden_command("schtasks")
         .args(["/Query", "/TN", TASK_NAME])
         .output()
         .map(|o| o.status.success())
@@ -145,7 +146,7 @@ pub fn is_registered() -> bool {
 
 /// Idempotent: removes the task and both wrapper scripts if present.
 pub fn unregister() {
-    let _ = Command::new("schtasks")
+    let _ = hidden_command("schtasks")
         .args(["/Delete", "/TN", TASK_NAME, "/F"])
         .output();
     if let Some(dir) = install_dir() {

@@ -49,6 +49,8 @@ pub mod native_host_install;
 pub mod profile_scan;
 #[cfg(target_os = "windows")]
 pub mod watchdog;
+#[cfg(target_os = "windows")]
+pub mod windows_process;
 
 /// Add an `applicationShouldTerminate:` override on the existing
 /// NSApp delegate's class that returns `NSTerminateCancel` while
