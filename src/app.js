@@ -1852,12 +1852,9 @@ async function openEnforcerFix(payload) {
             await invoke('open_safari_fda_settings');
             return;
         }
-        // For enable/private issues, open the extension store page as a
-        // reasonable fallback (no open_browser_extension_settings command
-        // on this branch).
-        if (key && BROWSER_STORE_LINKS[key]?.url) {
-            await openUrl(BROWSER_STORE_LINKS[key].url);
-        }
+        // For disabled/private/websiteaccess issues, open the extension
+        // settings page inside the correct browser.
+        await invoke('open_browser_extension_settings', { browser: key || browser });
     } catch (e) {
         console.warn('[enforcer-ui] fix action failed:', e);
     }

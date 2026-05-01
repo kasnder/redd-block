@@ -633,6 +633,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::get_helper_diagnostics,
         commands::check_safari_fda_access,
         commands::open_safari_fda_settings,
+        commands::open_browser_extension_settings,
     ]
 }
 
@@ -675,6 +676,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::block_websites,
         commands::clean_hosts_file,
         commands::get_helper_diagnostics,
+        commands::open_browser_extension_settings,
     ]
 }
 
