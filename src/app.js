@@ -11,6 +11,9 @@ import iconSafariUrl from './images/icon-safari.svg';
 import screenshotChromeStep1 from './images/toggle-chrome-incognito-windows-1.png';
 import screenshotChromeStep2 from './images/toggle-chrome-incognito-windows-2.png';
 import screenshotChromeStep3 from './images/toggle-chrome-incognito-windows-3.png';
+import screenshotEdgeStep1 from './images/toggle-edge-incognito-windows-1.png';
+import screenshotEdgeStep2 from './images/toggle-edge-incognito-windows-2.png';
+import screenshotEdgeStep3 from './images/toggle-edge-incognito-windows-3.png';
 import screenshotFirefoxStep1 from './images/toggle-firefox-private-windows-1.png';
 import screenshotFirefoxStep2 from './images/toggle-firefox-private-windows-2.png';
 import screenshotSafariStep1 from './images/mac-extension-settings-1.png';
@@ -1674,6 +1677,11 @@ function enforcerScreenshotSteps(key) {
         { src: screenshotChromeStep1, label: 'Open Chrome extension settings' },
         { src: screenshotChromeStep2, label: 'Open Details for ReDD Focus' },
         { src: screenshotChromeStep3, label: 'Toggle ReDD Focus on and allow it in Incognito windows' },
+    ];
+    if (key === 'edge') return [
+        { src: screenshotEdgeStep1, label: 'Open Edge extension settings' },
+        { src: screenshotEdgeStep2, label: 'Open Details for ReDD Focus' },
+        { src: screenshotEdgeStep3, label: 'Toggle ReDD Focus on and allow it in InPrivate windows' },
     ];
     if (key === 'firefox') return [
         { src: screenshotFirefoxStep1 },
