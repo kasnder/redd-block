@@ -8,7 +8,9 @@ import iconChromeUrl from './images/icon-chrome.svg';
 import iconEdgeUrl from './images/icon-edge.svg';
 import iconFirefoxUrl from './images/icon-firefox.svg';
 import iconSafariUrl from './images/icon-safari.svg';
-import screenshotChromeIncognito from './images/toggle-chrome-incognito-windows.png';
+import screenshotChromeStep1 from './images/toggle-chrome-incognito-windows-1.png';
+import screenshotChromeStep2 from './images/toggle-chrome-incognito-windows-2.png';
+import screenshotChromeStep3 from './images/toggle-chrome-incognito-windows-3.png';
 import screenshotFirefoxStep1 from './images/toggle-firefox-private-windows-1.png';
 import screenshotFirefoxStep2 from './images/toggle-firefox-private-windows-2.png';
 import screenshotSafariStep1 from './images/mac-extension-settings-1.png';
@@ -1667,6 +1669,23 @@ function browserIconUrl(key) {
     }
 }
 
+function enforcerScreenshotSteps(key) {
+    if (key === 'chrome') return [
+        { src: screenshotChromeStep1, label: 'Open Chrome extension settings' },
+        { src: screenshotChromeStep2, label: 'Open Details for ReDD Focus' },
+        { src: screenshotChromeStep3, label: 'Toggle ReDD Focus on and allow it in Incognito windows' },
+    ];
+    if (key === 'firefox') return [
+        { src: screenshotFirefoxStep1 },
+        { src: screenshotFirefoxStep2 },
+    ];
+    if (key === 'safari') return [
+        { src: screenshotSafariStep1 },
+        { src: screenshotSafariStep2 },
+    ];
+    return null;
+}
+
 function enforcerCopy(payload) {
     const browser = payload.label || payload.browser || 'your browser';
     const seconds = Math.max(0, Number(payload.remaining_secs ?? payload.remainingSecs ?? 0));
@@ -1682,16 +1701,13 @@ function enforcerCopy(payload) {
     }
     if (issue === 'disabled') {
         const key = browserKeyFromLabel(browser);
-        const screenshotUrl = key === 'chrome' ? screenshotChromeIncognito : null;
-        const screenshotSteps = key === 'firefox' ? [screenshotFirefoxStep1, screenshotFirefoxStep2]
-            : key === 'safari' ? [screenshotSafariStep1, screenshotSafariStep2] : null;
+        const screenshotSteps = enforcerScreenshotSteps(key);
         return {
             headline: `ReDD Focus is turned off in ${browser}.`,
             countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
             instruction: `In ${browser} extensions, turn ReDD Focus back on.`,
             note: 'It may take up to 10 seconds for changes to be detected.',
             action: `Open ${browser} Extensions`,
-            screenshotUrl,
             screenshotSteps,
         };
     }
@@ -1702,16 +1718,13 @@ function enforcerCopy(payload) {
             : key === 'firefox'
             ? 'In Firefox extension settings, click ReDD Focus \u003e Run in Private Windows \u003e Allow.'
             : `In ${browser} extensions, allow ReDD Focus in private/incognito windows.`;
-        const screenshotUrl = key === 'chrome' ? screenshotChromeIncognito : null;
-        const screenshotSteps = key === 'firefox' ? [screenshotFirefoxStep1, screenshotFirefoxStep2]
-            : key === 'safari' ? [screenshotSafariStep1, screenshotSafariStep2] : null;
+        const screenshotSteps = enforcerScreenshotSteps(key);
         return {
             headline: `ReDD Focus can't block in private/incognito windows.`,
             countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
             instruction,
             note: 'It may take up to 10 seconds for changes to be detected.',
             action: `Open ${browser} Extensions`,
-            screenshotUrl,
             screenshotSteps,
         };
     }
@@ -1766,30 +1779,39 @@ function renderEnforcerActionCopy(banner, payload, copy) {
     const showMe = banner.querySelector('.extension-enforcer-show-me');
     const container = banner.querySelector('.extension-enforcer-screenshots');
     if (showMe && container) {
-        const hasScreenshots = copy.screenshotUrl || (copy.screenshotSteps && copy.screenshotSteps.length);
-        if (hasScreenshots) {
-            container.innerHTML = '';
-            if (copy.screenshotSteps && copy.screenshotSteps.length) {
-                // Multi-step: images with arrows between them
-                copy.screenshotSteps.forEach((src, i) => {
-                    if (i > 0) {
+        const steps = copy.screenshotSteps;
+        if (steps && steps.length) {
+            // Skip rebuild if the same screenshots are already rendered
+            const stepsKey = steps.map(s => s.src).join(',');
+            if (container.dataset.stepsKey !== stepsKey) {
+                container.dataset.stepsKey = stepsKey;
+                container.innerHTML = '';
+                // Use grid layout for 3+ steps (left column stacked, right column spanning)
+                // Use flex row layout for 2 steps
+                container.classList.toggle('screenshots-grid', steps.length >= 3);
+                container.classList.toggle('screenshots-row', steps.length < 3);
+                steps.forEach((step, i) => {
+                    if (i > 0 && steps.length < 3) {
                         const arrow = document.createElement('span');
                         arrow.className = 'extension-enforcer-screenshot-arrow';
                         arrow.textContent = '→';
                         container.appendChild(arrow);
                     }
+                    const figure = document.createElement('figure');
+                    figure.className = 'extension-enforcer-step';
+                    if (step.label) {
+                        const caption = document.createElement('figcaption');
+                        caption.className = 'extension-enforcer-step-label';
+                        caption.textContent = `${i + 1}. ${step.label}`;
+                        figure.appendChild(caption);
+                    }
                     const img = document.createElement('img');
                     img.className = 'extension-enforcer-screenshot';
-                    img.src = src;
-                    img.alt = `Step ${i + 1}`;
-                    container.appendChild(img);
+                    img.src = step.src;
+                    img.alt = step.label || `Step ${i + 1}`;
+                    figure.appendChild(img);
+                    container.appendChild(figure);
                 });
-            } else {
-                const img = document.createElement('img');
-                img.className = 'extension-enforcer-screenshot';
-                img.src = copy.screenshotUrl;
-                img.alt = 'Screenshot showing how to fix this';
-                container.appendChild(img);
             }
             showMe.classList.remove('hidden');
         } else {
@@ -1823,7 +1845,6 @@ function ensureEnforcerActionBanner(payload) {
                     <div class="extension-enforcer-action-copy">
                         <strong class="extension-enforcer-action-headline"></strong>
                         <em class="extension-enforcer-action-instruction"></em>
-                        <small class="extension-enforcer-action-note hidden"></small>
                         <details class="extension-enforcer-show-me hidden">
                             <summary>Show me how</summary>
                             <div class="extension-enforcer-screenshots"></div>
@@ -1833,6 +1854,7 @@ function ensureEnforcerActionBanner(payload) {
             </div>
             <div class="extension-enforcer-action-right">
                 <span class="extension-enforcer-action-countdown"></span>
+                <small class="extension-enforcer-action-note hidden"></small>
                 <button class="update-banner-btn extension-enforcer-action-btn" type="button"></button>
             </div>
         </div>
@@ -1866,27 +1888,21 @@ function enforcerClosedCopy(payload) {
             : key === 'firefox'
             ? 'In Firefox extension settings, click ReDD Focus \u003e Run in Private Windows \u003e Allow.'
             : '';
-        const screenshotUrl = key === 'chrome' ? screenshotChromeIncognito : null;
-        const screenshotSteps = key === 'firefox' ? [screenshotFirefoxStep1, screenshotFirefoxStep2]
-            : key === 'safari' ? [screenshotSafariStep1, screenshotSafariStep2] : null;
+        const screenshotSteps = enforcerScreenshotSteps(key);
         return {
             headline: `${browser} was closed because ReDD Focus can't block in private/incognito windows.`,
             instruction: instruction.trim(),
             action: `Open ${browser} Extensions`,
-            screenshotUrl,
             screenshotSteps,
         };
     }
     if (issue === 'disabled') {
         const key = browserKeyFromLabel(browser);
-        const screenshotUrl = key === 'chrome' ? screenshotChromeIncognito : null;
-        const screenshotSteps = key === 'firefox' ? [screenshotFirefoxStep1, screenshotFirefoxStep2]
-            : key === 'safari' ? [screenshotSafariStep1, screenshotSafariStep2] : null;
+        const screenshotSteps = enforcerScreenshotSteps(key);
         return {
             headline: `${browser} was closed because ReDD Focus is turned off.`,
             instruction: `In ${browser} extensions, turn ReDD Focus back on.`,
             action: `Open ${browser} Extensions`,
-            screenshotUrl,
             screenshotSteps,
         };
     }
@@ -1998,9 +2014,8 @@ function renderEnforcerClosedBanner(payload) {
     const copy = enforcerClosedCopy(payload);
     const action = banner.querySelector('.extension-enforcer-action-btn');
     renderEnforcerActionCopy(banner, payload, {
-        headline: copy.headline,
+        ...copy,
         countdown: '',
-        instruction: copy.instruction,
     });
     if (action) {
         action.textContent = copy.action;
