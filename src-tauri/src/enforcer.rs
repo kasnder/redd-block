@@ -256,10 +256,14 @@ fn log_non_compliant(key: BrowserKey, b: &BrowserStatus) {
                 && p.website_access_all.unwrap_or(true))
         })
         .map(|p| {
-            format!(
-                "{} installed={} enabled={:?} private={:?} websiteAll={:?}",
-                p.name, p.installed, p.enabled, p.private_browsing, p.website_access_all
-            )
+            let mut fields = format!(
+                "{} installed={} enabled={:?} private={:?}",
+                p.name, p.installed, p.enabled, p.private_browsing
+            );
+            if let Some(website_access_all) = p.website_access_all {
+                fields.push_str(&format!(" websiteAll={website_access_all}"));
+            }
+            fields
         })
         .collect();
     log::info!(

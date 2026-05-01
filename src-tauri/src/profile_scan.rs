@@ -16,10 +16,7 @@ use serde_json::Value;
 const FIREFOX_ID: &str = "mindshield@example.com";
 const CHROMIUM_ID: &str = "hhblkhfdjijdinijakbmcpkmdfhoadcd";
 #[cfg(target_os = "macos")]
-const SAFARI_BUNDLE_IDS: &[&str] = &[
-    "com.ulriklyngs.mind-shield",
-    "com.ulriklyngs.mind-shield.mind-shield",
-];
+const SAFARI_EXTENSION_KEYS: &[&str] = &["com.ulriklyngs.mind-shield.mind-shield (JD647S9RT6)"];
 
 /// Chromium IDs the scanner will accept as "ReDD Focus is here".
 /// Production ID is always included. In debug builds, comma-separated
@@ -39,17 +36,19 @@ fn chromium_ids() -> Vec<String> {
 }
 
 #[cfg(target_os = "macos")]
-fn safari_bundle_ids() -> Vec<String> {
-    let mut ids: Vec<String> = SAFARI_BUNDLE_IDS
+fn safari_extension_keys() -> Vec<String> {
+    let mut keys: Vec<String> = SAFARI_EXTENSION_KEYS
         .iter()
-        .map(|id| (*id).to_string())
+        .map(|key| (*key).to_string())
         .collect();
-    if let Ok(extra) = std::env::var("REDD_DEV_SAFARI_BUNDLE_ID") {
-        for id in extra.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
-            ids.push(id.to_string());
+    if cfg!(debug_assertions) {
+        if let Ok(extra) = std::env::var("REDD_DEV_SAFARI_EXTENSION_KEY") {
+            for key in extra.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                keys.push(key.to_string());
+            }
         }
     }
-    ids
+    keys
 }
 
 /// Result for a single browser profile.
@@ -737,7 +736,7 @@ pub fn scan_safari_extensions_plist() -> Result<Option<(bool, bool, bool)>, Safa
 #[cfg(target_os = "macos")]
 fn scan_safari_extensions_plist_at(path: &Path) -> Result<SafariPlistStatus, SafariPlistScanError> {
     let bytes = std::fs::read(path).map_err(|e| safari_plist_io_error(e))?;
-    parse_safari_extensions_plist(&bytes, &safari_bundle_ids())
+    parse_safari_extensions_plist(&bytes, &safari_extension_keys())
 }
 
 #[cfg(target_os = "macos")]
@@ -767,7 +766,7 @@ fn safari_plist_status_tuple(status: SafariPlistStatus) -> Option<(bool, bool, b
 #[cfg(target_os = "macos")]
 fn parse_safari_extensions_plist(
     bytes: &[u8],
-    safari_ids: &[String],
+    safari_keys: &[String],
 ) -> Result<SafariPlistStatus, SafariPlistScanError> {
     let root = plist::Value::from_reader(std::io::Cursor::new(bytes))
         .map_err(|e| SafariPlistScanError::Invalid(e.to_string()))?;
@@ -779,7 +778,7 @@ fn parse_safari_extensions_plist(
 
     let mut best: Option<SafariPlistStatus> = None;
     for (key, value) in dict {
-        if !safari_ids.iter().any(|id| key.starts_with(id)) {
+        if !safari_keys.iter().any(|expected| key == expected) {
             continue;
         }
         let Some(ext) = value.as_dictionary() else {
@@ -976,8 +975,8 @@ mod tests {
     use super::*;
 
     fn parse(body: &str) -> SafariPlistStatus {
-        let ids = vec!["com.ulriklyngs.mind-shield".to_string()];
-        parse_safari_extensions_plist(body.as_bytes(), &ids).expect("plist parses")
+        let keys = vec!["com.ulriklyngs.mind-shield.mind-shield (JD647S9RT6)".to_string()];
+        parse_safari_extensions_plist(body.as_bytes(), &keys).expect("plist parses")
     }
 
     fn plist(entries: &str) -> String {
@@ -1027,6 +1026,8 @@ mod tests {
   <key>Enabled</key><{enabled}/>
   <key>AllowInPrivateBrowsing</key><{private}/>
   {granted_origins}
+  <key>GrantedPermissions</key>
+  <dict/>
   {revoked_origins}
   {removed_date}
 </dict>"#,
@@ -1038,7 +1039,7 @@ mod tests {
     #[test]
     fn safari_plist_enabled_and_private_allowed() {
         let status = parse(&plist(&entry(
-            "com.ulriklyngs.mind-shield (JD647S9RT6)",
+            "com.ulriklyngs.mind-shield.mind-shield (JD647S9RT6)",
             true,
             true,
             true,
@@ -1054,7 +1055,7 @@ mod tests {
     #[test]
     fn safari_plist_enabled_private_denied() {
         let status = parse(&plist(&entry(
-            "com.ulriklyngs.mind-shield (JD647S9RT6)",
+            "com.ulriklyngs.mind-shield.mind-shield (JD647S9RT6)",
             true,
             false,
             true,
@@ -1070,7 +1071,7 @@ mod tests {
     #[test]
     fn safari_plist_disabled() {
         let status = parse(&plist(&entry(
-            "com.ulriklyngs.mind-shield (JD647S9RT6)",
+            "com.ulriklyngs.mind-shield.mind-shield (JD647S9RT6)",
             false,
             true,
             true,
@@ -1086,7 +1087,7 @@ mod tests {
     #[test]
     fn safari_plist_requires_all_website_access() {
         let status = parse(&plist(&entry(
-            "com.ulriklyngs.mind-shield (JD647S9RT6)",
+            "com.ulriklyngs.mind-shield.mind-shield (JD647S9RT6)",
             true,
             true,
             false,
@@ -1102,7 +1103,7 @@ mod tests {
     #[test]
     fn safari_plist_all_website_access_revoked_fails() {
         let status = parse(&plist(&entry(
-            "com.ulriklyngs.mind-shield (JD647S9RT6)",
+            "com.ulriklyngs.mind-shield.mind-shield (JD647S9RT6)",
             true,
             true,
             true,
@@ -1128,7 +1129,7 @@ mod tests {
                 true
             ),
             entry(
-                "com.ulriklyngs.mind-shield (JD647S9RT6)",
+                "com.ulriklyngs.mind-shield.mind-shield (JD647S9RT6)",
                 true,
                 false,
                 false,
@@ -1140,6 +1141,34 @@ mod tests {
         assert_eq!(status.installed, true);
         assert_eq!(status.enabled, Some(true));
         assert_eq!(status.private_browsing, Some(false));
+        assert_eq!(status.website_access_all, Some(false));
+    }
+
+    #[test]
+    fn safari_plist_ignores_stale_team_id_entry() {
+        let entries = format!(
+            "{}\n{}",
+            entry(
+                "com.ulriklyngs.mind-shield.mind-shield (7YEYWQKK25)",
+                true,
+                true,
+                true,
+                false,
+                false
+            ),
+            entry(
+                "com.ulriklyngs.mind-shield.mind-shield (JD647S9RT6)",
+                true,
+                true,
+                false,
+                true,
+                false
+            ),
+        );
+        let status = parse(&plist(&entries));
+        assert_eq!(status.installed, true);
+        assert_eq!(status.enabled, Some(true));
+        assert_eq!(status.private_browsing, Some(true));
         assert_eq!(status.website_access_all, Some(false));
     }
 }
