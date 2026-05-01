@@ -9,7 +9,8 @@ import iconEdgeUrl from './images/icon-edge.svg';
 import iconFirefoxUrl from './images/icon-firefox.svg';
 import iconSafariUrl from './images/icon-safari.svg';
 import screenshotChromeIncognito from './images/toggle-chrome-incognito-windows.png';
-import screenshotFirefoxPrivate from './images/toggle-firefox-private-windows.png';
+import screenshotFirefoxStep1 from './images/toggle-firefox-private-windows-1.png';
+import screenshotFirefoxStep2 from './images/toggle-firefox-private-windows-2.png';
 import screenshotSafariStep1 from './images/mac-extension-settings-1.png';
 import screenshotSafariStep2 from './images/mac-extension-settings-2.png';
 
@@ -1681,9 +1682,9 @@ function enforcerCopy(payload) {
     }
     if (issue === 'disabled') {
         const key = browserKeyFromLabel(browser);
-        const screenshotUrl = key === 'chrome' ? screenshotChromeIncognito
-            : key === 'firefox' ? screenshotFirefoxPrivate : null;
-        const screenshotSteps = key === 'safari' ? [screenshotSafariStep1, screenshotSafariStep2] : null;
+        const screenshotUrl = key === 'chrome' ? screenshotChromeIncognito : null;
+        const screenshotSteps = key === 'firefox' ? [screenshotFirefoxStep1, screenshotFirefoxStep2]
+            : key === 'safari' ? [screenshotSafariStep1, screenshotSafariStep2] : null;
         return {
             headline: `ReDD Focus is turned off in ${browser}.`,
             countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
@@ -1700,9 +1701,9 @@ function enforcerCopy(payload) {
             : key === 'firefox'
             ? 'In Firefox extension settings, click ReDD Focus \u003e Run in Private Windows \u003e Allow.'
             : `In ${browser} extensions, allow ReDD Focus in private/incognito windows.`;
-        const screenshotUrl = key === 'chrome' ? screenshotChromeIncognito
-            : key === 'firefox' ? screenshotFirefoxPrivate : null;
-        const screenshotSteps = key === 'safari' ? [screenshotSafariStep1, screenshotSafariStep2] : null;
+        const screenshotUrl = key === 'chrome' ? screenshotChromeIncognito : null;
+        const screenshotSteps = key === 'firefox' ? [screenshotFirefoxStep1, screenshotFirefoxStep2]
+            : key === 'safari' ? [screenshotSafariStep1, screenshotSafariStep2] : null;
         return {
             headline: `ReDD Focus can't block in private/incognito windows.`,
             countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
@@ -1856,9 +1857,9 @@ function enforcerClosedCopy(payload) {
             : key === 'firefox'
             ? 'In Firefox extension settings, click ReDD Focus \u003e Run in Private Windows \u003e Allow.'
             : '';
-        const screenshotUrl = key === 'chrome' ? screenshotChromeIncognito
-            : key === 'firefox' ? screenshotFirefoxPrivate : null;
-        const screenshotSteps = key === 'safari' ? [screenshotSafariStep1, screenshotSafariStep2] : null;
+        const screenshotUrl = key === 'chrome' ? screenshotChromeIncognito : null;
+        const screenshotSteps = key === 'firefox' ? [screenshotFirefoxStep1, screenshotFirefoxStep2]
+            : key === 'safari' ? [screenshotSafariStep1, screenshotSafariStep2] : null;
         return {
             headline: `${browser} was closed because ReDD Focus can't block in private/incognito windows.`,
             instruction: instruction.trim(),
@@ -1869,9 +1870,9 @@ function enforcerClosedCopy(payload) {
     }
     if (issue === 'disabled') {
         const key = browserKeyFromLabel(browser);
-        const screenshotUrl = key === 'chrome' ? screenshotChromeIncognito
-            : key === 'firefox' ? screenshotFirefoxPrivate : null;
-        const screenshotSteps = key === 'safari' ? [screenshotSafariStep1, screenshotSafariStep2] : null;
+        const screenshotUrl = key === 'chrome' ? screenshotChromeIncognito : null;
+        const screenshotSteps = key === 'firefox' ? [screenshotFirefoxStep1, screenshotFirefoxStep2]
+            : key === 'safari' ? [screenshotSafariStep1, screenshotSafariStep2] : null;
         return {
             headline: `${browser} was closed because ReDD Focus is turned off.`,
             instruction: `In ${browser} extensions, turn ReDD Focus back on.`,
