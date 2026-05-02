@@ -100,5 +100,15 @@ done
 # 8. INTENTIONALLY KEEP /etc/hosts.redd-backup. Last-resort recovery
 #    copy. Only deleted during uninstall (see purge_legacy_backups_sync).
 
-# 9. Status marker — written only if every gate above passed.
+# 9. Reset any stale Full Disk Access (TCC) entries for com.reddblock so
+#    v2.0 registers cleanly under its current code-signature
+#    requirement. TCC keys entries on the signature requirement, not
+#    just bundle id, so a previous build (e.g. a beta signed with a
+#    different identity) can shadow the new entry and prevent the app
+#    from showing up in System Settings → Privacy & Security → Full
+#    Disk Access. Harmless if no entry exists. Best-effort: failure
+#    here must not abort migration, hence `|| true`.
+tccutil reset SystemPolicyAllFiles com.reddblock 2>/dev/null || true
+
+# 10. Status marker — written only if every gate above passed.
 echo 'ok' > '{STATUS}'
