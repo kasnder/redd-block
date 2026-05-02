@@ -151,3 +151,44 @@ pub fn open_browser_extension_settings(browser: String) -> Result<(), String> {
         Err("open_browser_extension_settings unsupported on this platform".into())
     }
 }
+
+/// Open a specific URL in a specific browser.  Used by the enforcer
+/// "Install ReDD Focus" button so the store page opens in the correct
+/// browser instead of triggering the OS "choose an app" dialog.
+#[tauri::command]
+pub fn open_url_in_browser(browser: String, url: String) -> Result<(), String> {
+    let normalized = browser.trim().to_ascii_lowercase();
+
+    #[cfg(target_os = "macos")]
+    {
+        let app_name = match normalized.as_str() {
+            "brave" => "Brave Browser",
+            "edge" => "Microsoft Edge",
+            "firefox" => "Firefox",
+            "safari" => "Safari",
+            _ => "Google Chrome",
+        };
+        std::process::Command::new("/usr/bin/open")
+            .args(["-a", app_name, &url])
+            .output()
+            .map_err(|e| format!("open -a {app_name}: {e}"))?;
+        Ok(())
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let exe = profile_scan::find_browser_exe(&normalized)
+            .ok_or_else(|| format!("Could not find {browser} executable"))?;
+        std::process::Command::new(&exe)
+            .arg(&url)
+            .spawn()
+            .map_err(|e| format!("launch {}: {e}", exe.display()))?;
+        Ok(())
+    }
+
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        let _ = (url, normalized);
+        Err("open_url_in_browser unsupported on this platform".into())
+    }
+}
