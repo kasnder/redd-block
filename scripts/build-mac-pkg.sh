@@ -12,16 +12,27 @@
 #   scripts/build-mac-pkg.sh                  # debug build
 #   scripts/build-mac-pkg.sh --release        # release build
 #
-# Required env vars for a signed + notarized .pkg:
+# Env vars (auto-sourced from .env if present):
 #   APPLE_DEVELOPER_INSTALLER_IDENTITY  — "Developer ID Installer: ..."
 #   APPLE_NOTARIZE_USER, APPLE_NOTARIZE_PASS, APPLE_TEAM_ID  (optional, for notarization)
 # If APPLE_DEVELOPER_INSTALLER_IDENTITY is unset, produces an unsigned
 # .pkg suitable for local testing only.
+#
+# Picks up the same BUILD_MAC_TARGET as scripts/build-mac.sh (default
+# "universal-apple-darwin") so the .pkg wraps the universal .app.
 
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 REPO_ROOT="$(pwd)"
+
+# Source .env for signing/notarization creds, like build-mac.sh does.
+if [ -f .env ]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
 
 PROFILE="debug"
 if [[ "${1:-}" == "--release" ]]; then
@@ -30,11 +41,40 @@ fi
 
 APP_NAME="ReDD Block"
 BUNDLE_ID="com.reddblock"
-APP_PATH="src-tauri/target/${PROFILE}/bundle/macos/${APP_NAME}.app"
 SCRIPTS_DIR="scripts/macos-pkg/scripts"
 
+# Match build-mac.sh: universal build by default so the resulting .pkg works on
+# both Intel and Apple Silicon. Set BUILD_MAC_TARGET="" to use the legacy
+# arch-less path produced by a plain `tauri build` (single arch).
+BUILD_TARGET="${BUILD_MAC_TARGET-universal-apple-darwin}"
+
+resolve_bundle_base() {
+    local target="$1"
+    if [[ -n "$target" ]]; then
+        echo "src-tauri/target/${target}/${PROFILE}/bundle"
+    else
+        echo "src-tauri/target/${PROFILE}/bundle"
+    fi
+}
+
+BUNDLE_BASE="$(resolve_bundle_base "$BUILD_TARGET")"
+APP_PATH="${BUNDLE_BASE}/macos/${APP_NAME}.app"
+
+# Fall back to the legacy non-target path if the targeted .app is missing
+# (e.g. someone ran a plain `tauri build` instead of `npm run build:mac`).
+if [[ ! -d "$APP_PATH" && -n "$BUILD_TARGET" ]]; then
+    LEGACY_BUNDLE_BASE="$(resolve_bundle_base "")"
+    LEGACY_APP_PATH="${LEGACY_BUNDLE_BASE}/macos/${APP_NAME}.app"
+    if [[ -d "$LEGACY_APP_PATH" ]]; then
+        echo "Note: '${APP_PATH}' missing, falling back to '${LEGACY_APP_PATH}'."
+        BUNDLE_BASE="$LEGACY_BUNDLE_BASE"
+        APP_PATH="$LEGACY_APP_PATH"
+    fi
+fi
+
 if [[ ! -d "$APP_PATH" ]]; then
-    echo "ERROR: $APP_PATH not found. Run 'npm run tauri build' (or 'tauri build --debug') first."
+    echo "ERROR: $APP_PATH not found."
+    echo "       Run 'npm run build:mac' first (or 'npm run tauri build' for a single-arch dev build)."
     exit 1
 fi
 
@@ -42,7 +82,7 @@ fi
 VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
 echo "Building .pkg for ${APP_NAME} ${VERSION} (${PROFILE})"
 
-OUT_DIR="src-tauri/target/${PROFILE}/bundle/pkg"
+OUT_DIR="${BUNDLE_BASE}/pkg"
 mkdir -p "$OUT_DIR"
 
 COMPONENT_PKG="$OUT_DIR/component.pkg"
@@ -135,3 +175,10 @@ fi
 echo
 echo "Built: $DIST_PKG"
 ls -lh "$DIST_PKG"
+
+# Mirror build-mac.sh: also drop a copy in for-distribution/ so all shippable
+# artifacts (.app, .dmg, .pkg) live in one well-known folder.
+mkdir -p for-distribution
+DIST_PKG_COPY="for-distribution/$(basename "$DIST_PKG")"
+cp "$DIST_PKG" "$DIST_PKG_COPY"
+echo "Copied to: $DIST_PKG_COPY"
