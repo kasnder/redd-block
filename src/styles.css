@@ -593,10 +593,20 @@ body.dark-mode .title-bar button:hover {
 /* ── Screenshots wrap (full-width inside banner) ── */
 .extension-enforcer-screenshots-wrap {
     margin-top: 10px;
+
+    overflow: hidden;
+    max-height: 2000px;
+    opacity: 1;
+    transition: max-height 0.35s ease, opacity 0.25s ease 0.05s,
+        margin-top 0.35s ease;
 }
 
 .extension-enforcer-screenshots-wrap.hidden {
-    display: none;
+    max-height: 0;
+    opacity: 0;
+    margin-top: 0;
+    transition: max-height 0.3s ease, opacity 0.15s ease,
+        margin-top 0.3s ease;
 }
 
 /* ── Screenshots panel ── */
@@ -696,33 +706,28 @@ body.dark-mode .title-bar button:hover {
     align-self: center;
 }
 
-/* ── Setup page overrides (light background context) ── */
-.migration-show-me {
-    margin-top: 0;
+/* ── Setup page overrides (let screenshots breathe inside the row) ── */
+.migration-screenshots-wrap .extension-enforcer-screenshots {
+    background: transparent;
+    border: none;
+    padding: 0;
+    border-radius: 0;
 }
 
-.migration-show-me summary {
-    color: var(--text-secondary, #555);
-    background: rgba(0, 0, 0, 0.06);
+.migration-screenshots-wrap .extension-enforcer-screenshot {
+    max-width: 100%;
 }
 
-.migration-show-me summary::before {
-    color: var(--text-secondary, #555);
+.migration-screenshots-wrap .screenshots-row .extension-enforcer-step {
+    max-width: none;
+    flex: 1 1 0;
 }
 
-.migration-show-me summary:hover {
-    background: rgba(0, 0, 0, 0.1);
-}
-
-.migration-show-me .extension-enforcer-screenshots {
-    background: rgba(0, 0, 0, 0.04);
-}
-
-.migration-show-me .extension-enforcer-step-label {
+.migration-screenshots-wrap .extension-enforcer-step-label {
     color: var(--text-secondary, #555);
 }
 
-.migration-show-me .extension-enforcer-screenshot-arrow {
+.migration-screenshots-wrap .extension-enforcer-screenshot-arrow {
     color: var(--text-secondary, #888);
 }
 
@@ -3424,7 +3429,7 @@ body.ios .blocklist-action-btn svg {
     bottom: 0;
     background: var(--container-bg);
     display: flex;
-    align-items: center;
+    align-items: safe center;
     justify-content: center;
     z-index: 100;
     padding: 24px;
@@ -3857,6 +3862,110 @@ body.ios .blocklist-action-btn svg {
     align-items: baseline;
     justify-content: space-between;
     gap: 8px;
+}
+
+/* ── Notification-banner-style instruction block in migration rows ── */
+.migration-instruction {
+    font-size: 13px;
+    line-height: 1.5;
+    color: hsl(222, 18%, 25%);
+    margin-top: 2px;
+}
+
+.migration-actions-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+}
+
+.migration-primary-btn {
+    display: inline-flex;
+    align-items: center;
+    background: #d97706;
+    color: white;
+    border: 1px solid #d97706;
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.migration-primary-btn:hover {
+    background: #b86503;
+    border-color: #b86503;
+}
+
+.migration-primary-btn-url {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-size: 12.5px;
+    margin-left: 4px;
+}
+
+.migration-show-me-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: transparent;
+    border: none;
+    color: #d97706;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    line-height: 1;
+}
+
+.migration-show-me-btn:hover {
+    background: rgba(217, 119, 6, 0.08);
+    color: #b86503;
+}
+
+.migration-show-me-chevron {
+    flex: 0 0 auto;
+    transition: transform 0.2s ease;
+}
+
+.migration-show-me-btn.open .migration-show-me-chevron {
+    transform: rotate(90deg);
+}
+
+.migration-screenshots-wrap {
+    /* Floating panel below the row — wider than the card so the
+       screenshots are large enough to be readable. Solid background so
+       it stays consistent regardless of what sits behind it. */
+    position: relative;
+    width: min(92vw, 920px);
+    margin-top: 12px;
+    margin-left: 50%;
+    transform: translateX(-50%);
+    background: #fcf7f1;
+    border: none;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 4px 14px rgba(245, 158, 11, 0.10);
+
+    overflow: hidden;
+    max-height: 2000px;
+    opacity: 1;
+    transition: max-height 0.35s ease, opacity 0.25s ease 0.05s,
+        padding 0.35s ease, margin-top 0.35s ease;
+}
+
+.migration-screenshots-wrap.hidden {
+    max-height: 0;
+    opacity: 0;
+    margin-top: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    transition: max-height 0.3s ease, opacity 0.15s ease,
+        padding 0.3s ease, margin-top 0.3s ease;
 }
 
 .migration-browser-after-hint {

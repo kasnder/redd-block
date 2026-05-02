@@ -1551,7 +1551,12 @@ function renderBrowserInstallButtons(state) {
             });
             row.appendChild(afterHint);
         } else if (status === 'needs-enable' || status === 'needs-private' || status === 'needs-website-access') {
-            // Checklist-style: green "Extension installed" + instruction with inline "Show me how"
+            // Mirror the notification-banner layout for clarity:
+            // [optional ✓ Extension installed]
+            // instruction text with inline url chip
+            // [Open <url>] [Show me how ▶]
+            // delay note
+            // [screenshots wrap, full-row when expanded]
             if (status !== 'needs-enable') {
                 const extInstalledLine = document.createElement('div');
                 extInstalledLine.className = 'migration-checklist-line migration-checklist-done';
@@ -1561,14 +1566,11 @@ function renderBrowserInstallButtons(state) {
 
             const extUrl = extensionsUrl(key);
             const privNoun = privateModeNoun(key);
-            const instructionLine = document.createElement('div');
-            instructionLine.className = 'migration-checklist-line migration-checklist-todo-line';
-
-            // Build the instruction with inline "Show me how →"
             const steps = enforcerScreenshotSteps(key);
             const hasSteps = steps && steps.length;
 
-            const instructionSpan = document.createElement('span');
+            const instructionLine = document.createElement('div');
+            instructionLine.className = 'migration-instruction';
             let actionText;
             if (status === 'needs-enable') {
                 actionText = `Open <button type="button" class="migration-inline-url-btn">${extUrl}</button> → find <strong>ReDD Focus</strong> → enable the extension.`;
@@ -1577,34 +1579,44 @@ function renderBrowserInstallButtons(state) {
             } else {
                 actionText = `Open <button type="button" class="migration-inline-url-btn">${extUrl}</button> → click <strong>Details</strong> on ReDD Focus → turn on <strong>Allow in ${privNoun}</strong>.`;
             }
-            instructionSpan.innerHTML = `<span class="migration-check-icon" style="opacity:0.4">☐</span> ${actionText}`;
-            instructionSpan.querySelector('.migration-inline-url-btn').addEventListener('click', () => {
+            instructionLine.innerHTML = actionText;
+            instructionLine.querySelector('.migration-inline-url-btn').addEventListener('click', () => {
                 invoke('open_browser_extension_settings', { browser: key }).catch(e => console.warn('[migration] open ext settings:', e));
             });
-
-            instructionLine.appendChild(instructionSpan);
-
-            if (hasSteps) {
-                const showLink = document.createElement('span');
-                showLink.className = 'migration-show-me-link';
-                showLink.textContent = ' Show me how \u203A';
-                showLink.addEventListener('click', () => {
-                    const det = row.querySelector('.migration-show-me');
-                    if (det) det.open = !det.open;
-                });
-                instructionLine.appendChild(showLink);
-            }
-
             row.appendChild(instructionLine);
 
-            if (hasSteps) {
-                const details = document.createElement('details');
-                details.className = 'extension-enforcer-show-me migration-show-me';
+            const actionsRow = document.createElement('div');
+            actionsRow.className = 'migration-actions-row';
 
-                // No visible summary — controlled by the inline link above
-                const summary = document.createElement('summary');
-                summary.style.display = 'none';
-                details.appendChild(summary);
+            const primaryBtn = document.createElement('button');
+            primaryBtn.type = 'button';
+            primaryBtn.className = 'migration-primary-btn';
+            primaryBtn.innerHTML = `Open <code class="migration-primary-btn-url">${extUrl}</code>`;
+            primaryBtn.addEventListener('click', () => {
+                invoke('open_browser_extension_settings', { browser: key }).catch(e => console.warn('[migration] open ext settings:', e));
+            });
+            actionsRow.appendChild(primaryBtn);
+
+            let showMeBtn = null;
+            if (hasSteps) {
+                showMeBtn = document.createElement('button');
+                showMeBtn.type = 'button';
+                showMeBtn.className = 'migration-show-me-btn';
+                showMeBtn.setAttribute('aria-expanded', 'false');
+                showMeBtn.innerHTML = `<span>Show me how</span><svg class="migration-show-me-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>`;
+                actionsRow.appendChild(showMeBtn);
+            }
+
+            row.appendChild(actionsRow);
+
+            const delayNote = document.createElement('div');
+            delayNote.className = 'migration-browser-hint migration-delay-note';
+            delayNote.textContent = 'It may take up to 10 seconds for changes to be detected.';
+            row.appendChild(delayNote);
+
+            if (hasSteps) {
+                const screenshotsWrap = document.createElement('div');
+                screenshotsWrap.className = 'migration-screenshots-wrap hidden';
 
                 const screenshotsContainer = document.createElement('div');
                 screenshotsContainer.className = `extension-enforcer-screenshots ${steps.length >= 3 ? 'screenshots-grid' : 'screenshots-row'}`;
@@ -1621,7 +1633,7 @@ function renderBrowserInstallButtons(state) {
                     if (step.label) {
                         const caption = document.createElement('figcaption');
                         caption.className = 'extension-enforcer-step-label';
-                        caption.textContent = `${i + 1}. ${step.label}`;
+                        caption.textContent = `Step ${i + 1}: ${step.label}`;
                         figure.appendChild(caption);
                     }
                     const img = document.createElement('img');
@@ -1632,14 +1644,15 @@ function renderBrowserInstallButtons(state) {
                     screenshotsContainer.appendChild(figure);
                 });
 
-                details.appendChild(screenshotsContainer);
-                row.appendChild(details);
-            }
+                screenshotsWrap.appendChild(screenshotsContainer);
+                row.appendChild(screenshotsWrap);
 
-            const delayNote = document.createElement('div');
-            delayNote.className = 'migration-browser-hint migration-delay-note';
-            delayNote.textContent = 'It may take up to 10 seconds for changes to be detected.';
-            row.appendChild(delayNote);
+                showMeBtn.addEventListener('click', () => {
+                    const isOpen = showMeBtn.classList.toggle('open');
+                    screenshotsWrap.classList.toggle('hidden', !isOpen);
+                    showMeBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+                });
+            }
         }
 
         container.appendChild(row);
@@ -1808,12 +1821,12 @@ function enforcerScreenshotSteps(key) {
         { src: screenshotEdgeStep2, label: 'Open Details for ReDD Focus and allow it in InPrivate windows' },
     ];
     if (key === 'firefox') return [
-        { src: screenshotFirefoxStep1 },
-        { src: screenshotFirefoxStep2 },
+        { src: screenshotFirefoxStep1, label: 'Find ReDD Focus' },
+        { src: screenshotFirefoxStep2, label: 'Allow in Private Windows' },
     ];
     if (key === 'safari') return [
-        { src: screenshotSafariStep1 },
-        { src: screenshotSafariStep2 },
+        { src: screenshotSafariStep1, label: 'Find ReDD Focus' },
+        { src: screenshotSafariStep2, label: 'Enable in Private Browsing' },
     ];
     return null;
 }
@@ -1946,7 +1959,7 @@ function renderEnforcerActionCopy(banner, payload, copy) {
                     if (step.label) {
                         const caption = document.createElement('figcaption');
                         caption.className = 'extension-enforcer-step-label';
-                        caption.textContent = `${i + 1}. ${step.label}`;
+                        caption.textContent = `Step ${i + 1}: ${step.label}`;
                         figure.appendChild(caption);
                     }
                     const img = document.createElement('img');
