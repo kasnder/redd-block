@@ -68,29 +68,15 @@ $buildArm64 = -not $x64Only
 if ($buildX64) {
     Write-Host "Building x64..." -ForegroundColor Yellow
     Write-Host ""
-    
-    # Build helper for x64
-    Write-Host "  [1/2] Building helper daemon (x64)..." -ForegroundColor Gray
-    Push-Location (Join-Path $ProjectRoot "helper-daemon")
-    cargo build --release --target x86_64-pc-windows-msvc
-    if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }
-    Pop-Location
-    
-    # Copy cross-compiled binary to where Tauri's externalBin expects the sidecar.
-    # Without this, beforeBuildCommand rebuilds the helper for the HOST arch (e.g. ARM64)
-    # and Tauri would bundle that instead of the x64 binary.
-    $helperSrc = Join-Path $ProjectRoot "helper-daemon\target\x86_64-pc-windows-msvc\release\redd-block-helper.exe"
-    $helperDst = Join-Path $ProjectRoot "helper-daemon\target\release\redd-block-helper-x86_64-pc-windows-msvc.exe"
-    Copy-Item $helperSrc $helperDst -Force
-    Write-Host "  Copied x64 helper to sidecar location" -ForegroundColor Gray
-    
-    # Build Tauri app for x64 (signing happens automatically via signCommand)
-    Write-Host "  [2/2] Building Tauri app (x64)..." -ForegroundColor Gray
+
+    # Build Tauri app for x64 (signing happens automatically via signCommand).
+    # v2.0 dropped the privileged helper daemon — app blocking is now
+    # in-process, so there is no longer a sidecar binary to cross-compile.
     Push-Location $ProjectRoot
     npm run tauri build -- --target x86_64-pc-windows-msvc
     if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }
     Pop-Location
-    
+
     Write-Host ""
     Write-Host "x64 build complete!" -ForegroundColor Green
     Write-Host ""
@@ -99,27 +85,12 @@ if ($buildX64) {
 if ($buildArm64) {
     Write-Host "Building ARM64..." -ForegroundColor Yellow
     Write-Host ""
-    
-    # Build helper for ARM64
-    Write-Host "  [1/2] Building helper daemon (ARM64)..." -ForegroundColor Gray
-    Push-Location (Join-Path $ProjectRoot "helper-daemon")
-    cargo build --release --target aarch64-pc-windows-msvc
-    if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }
-    Pop-Location
-    
-    # Copy cross-compiled binary to where Tauri's externalBin expects the sidecar
-    $helperSrc = Join-Path $ProjectRoot "helper-daemon\target\aarch64-pc-windows-msvc\release\redd-block-helper.exe"
-    $helperDst = Join-Path $ProjectRoot "helper-daemon\target\release\redd-block-helper-aarch64-pc-windows-msvc.exe"
-    Copy-Item $helperSrc $helperDst -Force
-    Write-Host "  Copied ARM64 helper to sidecar location" -ForegroundColor Gray
-    
-    # Build Tauri app for ARM64 (signing happens automatically via signCommand)
-    Write-Host "  [2/2] Building Tauri app (ARM64)..." -ForegroundColor Gray
+
     Push-Location $ProjectRoot
     npm run tauri build -- --target aarch64-pc-windows-msvc
     if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }
     Pop-Location
-    
+
     Write-Host ""
     Write-Host "ARM64 build complete!" -ForegroundColor Green
     Write-Host ""
