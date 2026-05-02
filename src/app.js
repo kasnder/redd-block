@@ -1042,7 +1042,7 @@ async function checkForAppUpdate() {
 let migrationOnboardingActive = false;
 let migrationOnboardingDismissed = false;
 const EXT_ONBOARDING_DISMISSED_KEY = 'reddBlockExtOnboardingDismissed';
-const BEHAVIOUR_CHANGE_DISMISSED_KEY = 'reddBlockBehaviourChangeDismissed';
+const BEHAVIOUR_CHANGE_DISMISSED_KEY = 'reddBlockBehaviourChangeDismissedV2';
 
 async function runDesktopOnboarding() {
     if (isIOS) return;
@@ -1837,30 +1837,30 @@ function enforcerCopy(payload) {
     }
     if (issue === 'disabled') {
         const key = browserKeyFromLabel(browser);
+        const extUrl = extensionsUrl(key);
         const screenshotSteps = enforcerScreenshotSteps(key);
         return {
-            headline: `ReDD Focus is turned off in ${browser}.`,
+            headline: `ReDD Focus is turned off in ${browser}`,
             countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
-            instruction: `In ${browser} extensions, turn ReDD Focus back on.`,
+            instructionHtml: `Open <button type="button" class="migration-inline-url-btn enforcer-inline-url-btn">${extUrl}</button> → find <strong>ReDD Focus</strong> → enable the extension.`,
             note: 'It may take up to 10 seconds for changes to be detected.',
             action: `Open ${browser} Extensions`,
+            actionHtml: `Open <code class="extension-enforcer-action-btn-url">${extUrl}</code>`,
             screenshotSteps,
         };
     }
     if (issue === 'private') {
         const key = browserKeyFromLabel(browser);
-        const instruction = key === 'chrome'
-            ? 'In Chrome extensions, find ReDD Focus \u003e Details \u003e Allow in Incognito.'
-            : key === 'firefox'
-            ? 'In Firefox extension settings, click ReDD Focus \u003e Run in Private Windows \u003e Allow.'
-            : `In ${browser} extensions, allow ReDD Focus in private/incognito windows.`;
+        const extUrl = extensionsUrl(key);
+        const privNoun = privateModeNoun(key);
         const screenshotSteps = enforcerScreenshotSteps(key);
         return {
-            headline: `ReDD Focus can't block in private/incognito windows.`,
+            headline: `ReDD Focus isn't allowed in private tabs`,
             countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
-            instruction,
+            instructionHtml: `Open <button type="button" class="migration-inline-url-btn enforcer-inline-url-btn">${extUrl}</button> → click <strong>Details</strong> on ReDD Focus → turn on <strong>Allow in ${privNoun}</strong>.`,
             note: 'It may take up to 10 seconds for changes to be detected.',
             action: `Open ${browser} Extensions`,
+            actionHtml: `Open <code class="extension-enforcer-action-btn-url">${extUrl}</code>`,
             screenshotSteps,
         };
     }
@@ -1893,8 +1893,9 @@ function enforcerCopy(payload) {
 function renderEnforcerActionCopy(banner, payload, copy) {
     const key = enforcerBannerKey(payload);
     const icon = banner.querySelector('.extension-enforcer-browser-icon');
-    const headline = banner.querySelector('.extension-enforcer-action-headline');
+    const headlineText = banner.querySelector('.extension-enforcer-action-headline-text');
     const countdown = banner.querySelector('.extension-enforcer-action-countdown');
+    const countdownRow = banner.querySelector('.extension-enforcer-action-countdown-row');
     const instruction = banner.querySelector('.extension-enforcer-action-instruction');
 
     if (icon) {
@@ -1902,9 +1903,22 @@ function renderEnforcerActionCopy(banner, payload, copy) {
         icon.alt = '';
         icon.title = payload.label || payload.browser || key;
     }
-    if (headline) headline.textContent = copy.headline || '';
+    if (headlineText) headlineText.textContent = copy.headline || '';
     if (countdown) countdown.textContent = copy.countdown || '';
-    if (instruction) instruction.textContent = copy.instruction || '';
+    if (countdownRow) countdownRow.classList.toggle('hidden', !copy.countdown);
+    if (instruction) {
+        if (copy.instructionHtml) {
+            instruction.innerHTML = copy.instructionHtml;
+            const urlBtn = instruction.querySelector('.enforcer-inline-url-btn');
+            if (urlBtn) {
+                urlBtn.addEventListener('click', () => {
+                    invoke('open_browser_extension_settings', { browser: key }).catch(e => console.warn('[enforcer] open ext settings:', e));
+                });
+            }
+        } else {
+            instruction.textContent = copy.instruction || '';
+        }
+    }
 
     const note = banner.querySelector('.extension-enforcer-action-note');
     if (note) {
@@ -1912,18 +1926,16 @@ function renderEnforcerActionCopy(banner, payload, copy) {
         note.classList.toggle('hidden', !copy.note);
     }
 
-    const showMe = banner.querySelector('.extension-enforcer-show-me');
+    const showMeBtn = banner.querySelector('.extension-enforcer-show-me-btn');
+    const screenshotsWrap = banner.querySelector('.extension-enforcer-screenshots-wrap');
     const container = banner.querySelector('.extension-enforcer-screenshots');
-    if (showMe && container) {
+    if (showMeBtn && screenshotsWrap && container) {
         const steps = copy.screenshotSteps;
         if (steps && steps.length) {
-            // Skip rebuild if the same screenshots are already rendered
             const stepsKey = steps.map(s => s.src).join(',');
             if (container.dataset.stepsKey !== stepsKey) {
                 container.dataset.stepsKey = stepsKey;
                 container.innerHTML = '';
-                // Use grid layout for 3+ steps (left column stacked, right column spanning)
-                // Use flex row layout for 2 steps
                 container.classList.toggle('screenshots-grid', steps.length >= 3);
                 container.classList.toggle('screenshots-row', steps.length < 3);
                 steps.forEach((step, i) => {
@@ -1949,9 +1961,12 @@ function renderEnforcerActionCopy(banner, payload, copy) {
                     container.appendChild(figure);
                 });
             }
-            showMe.classList.remove('hidden');
+            showMeBtn.classList.remove('hidden');
         } else {
-            showMe.classList.add('hidden');
+            showMeBtn.classList.add('hidden');
+            showMeBtn.classList.remove('open');
+            showMeBtn.setAttribute('aria-expanded', 'false');
+            screenshotsWrap.classList.add('hidden');
         }
     }
 }
@@ -1974,28 +1989,51 @@ function ensureEnforcerActionBanner(payload) {
     banner.className = 'update-banner extension-enforcer-action-banner';
     banner.dataset.browser = key;
     banner.innerHTML = `
-        <div class="update-banner-content">
-            <div class="extension-enforcer-message">
-                <div class="extension-enforcer-action-main">
-                    <img class="extension-enforcer-browser-icon" aria-hidden="true">
-                    <div class="extension-enforcer-action-copy">
-                        <strong class="extension-enforcer-action-headline"></strong>
-                        <em class="extension-enforcer-action-instruction"></em>
-                        <details class="extension-enforcer-show-me hidden">
-                            <summary>Show me how</summary>
-                            <div class="extension-enforcer-screenshots"></div>
-                        </details>
+        <div class="extension-enforcer-banner-top">
+            <div class="update-banner-content">
+                <svg class="extension-enforcer-alert-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="11" fill="currentColor"></circle>
+                    <rect x="11" y="6" width="2" height="8" rx="1" fill="white"></rect>
+                    <circle cx="12" cy="17" r="1.3" fill="white"></circle>
+                </svg>
+                <div class="extension-enforcer-message">
+                    <strong class="extension-enforcer-action-headline">
+                        <img class="extension-enforcer-browser-icon" aria-hidden="true">
+                        <span class="extension-enforcer-action-headline-text"></span>
+                    </strong>
+                    <em class="extension-enforcer-action-instruction"></em>
+                    <div class="extension-enforcer-actions-row">
+                        <button class="update-banner-btn extension-enforcer-action-btn" type="button"></button>
+                        <button class="extension-enforcer-show-me-btn hidden" type="button" aria-expanded="false">Show me how</button>
                     </div>
                 </div>
+                <div class="extension-enforcer-action-right">
+                    <div class="extension-enforcer-action-countdown-row">
+                        <svg class="extension-enforcer-clock-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polyline points="12 6 12 12 16 14"></polyline>
+                        </svg>
+                        <span class="extension-enforcer-action-countdown"></span>
+                    </div>
+                    <small class="extension-enforcer-action-note hidden"></small>
+                </div>
             </div>
-            <div class="extension-enforcer-action-right">
-                <span class="extension-enforcer-action-countdown"></span>
-                <small class="extension-enforcer-action-note hidden"></small>
-                <button class="update-banner-btn extension-enforcer-action-btn" type="button"></button>
-            </div>
+            <button class="update-banner-dismiss extension-enforcer-action-dismiss" title="Dismiss" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
         </div>
-        <button class="update-banner-dismiss extension-enforcer-action-dismiss" title="Dismiss" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+        <div class="extension-enforcer-screenshots-wrap hidden">
+            <div class="extension-enforcer-screenshots"></div>
+        </div>
     `;
+
+    const showMeBtn = banner.querySelector('.extension-enforcer-show-me-btn');
+    const screenshotsWrap = banner.querySelector('.extension-enforcer-screenshots-wrap');
+    if (showMeBtn && screenshotsWrap) {
+        showMeBtn.addEventListener('click', () => {
+            const isOpen = showMeBtn.classList.toggle('open');
+            screenshotsWrap.classList.toggle('hidden', !isOpen);
+            showMeBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        });
+    }
 
     const setupBanner = document.getElementById('behaviour-change-banner');
     const existingBanners = document.querySelectorAll('.extension-enforcer-action-banner');
@@ -2019,6 +2057,7 @@ function enforcerClosedCopy(payload) {
     const issue = payload.issue || 'unknown';
     if (issue === 'private') {
         const key = browserKeyFromLabel(browser);
+        const extUrl = extensionsUrl(key);
         const instruction = key === 'chrome'
             ? 'In Chrome, find ReDD Focus \u003e Details \u003e Allow in Incognito.'
             : key === 'firefox'
@@ -2029,16 +2068,19 @@ function enforcerClosedCopy(payload) {
             headline: `${browser} was closed because ReDD Focus can't block in private/incognito windows.`,
             instruction: instruction.trim(),
             action: `Open ${browser} Extensions`,
+            actionHtml: `Open <code class="extension-enforcer-action-btn-url">${extUrl}</code>`,
             screenshotSteps,
         };
     }
     if (issue === 'disabled') {
         const key = browserKeyFromLabel(browser);
+        const extUrl = extensionsUrl(key);
         const screenshotSteps = enforcerScreenshotSteps(key);
         return {
             headline: `${browser} was closed because ReDD Focus is turned off.`,
             instruction: `In ${browser} extensions, turn ReDD Focus back on.`,
             action: `Open ${browser} Extensions`,
+            actionHtml: `Open <code class="extension-enforcer-action-btn-url">${extUrl}</code>`,
             screenshotSteps,
         };
     }
@@ -2135,7 +2177,11 @@ function renderEnforcerActionBanner(payload) {
     const action = banner.querySelector('.extension-enforcer-action-btn');
     renderEnforcerActionCopy(banner, payload, copy);
     if (action) {
-        action.textContent = copy.action;
+        if (copy.actionHtml) {
+            action.innerHTML = copy.actionHtml;
+        } else {
+            action.textContent = copy.action;
+        }
         action.onclick = () => openEnforcerFix(payload);
     }
     if (!enforcerActionBannerInterval) {
@@ -2160,7 +2206,11 @@ function renderEnforcerClosedBanner(payload) {
         countdown: '',
     });
     if (action) {
-        action.textContent = copy.action;
+        if (copy.actionHtml) {
+            action.innerHTML = copy.actionHtml;
+        } else {
+            action.textContent = copy.action;
+        }
         action.onclick = () => openEnforcerFix(payload);
     }
     banner.classList.remove('hidden');

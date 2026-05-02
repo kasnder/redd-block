@@ -286,142 +286,313 @@ body.dark-mode .title-bar button:hover {
     background: rgba(255, 255, 255, 0.15);
 }
 
-/* ---- Enforcer action banners (dark orange, per-browser) --------------- */
+/* ---- Setup banner (info / behaviour-change) --------------------------- */
+
+.setup-banner {
+    --setup-bg: #eef1f8;
+    --setup-border: #6f8db8;
+    --setup-accent: #475569;
+    --setup-headline: #1a2238;
+    --setup-text: #374151;
+    --setup-muted: #6b7280;
+
+    background: var(--setup-bg);
+    color: var(--setup-text);
+    border: 1px solid var(--setup-border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-left: 18px;
+    margin-right: 18px;
+    box-shadow: 0 1px 2px rgba(26, 34, 56, 0.04);
+    align-items: flex-start;
+}
+
+.setup-banner .update-banner-content {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.setup-banner .update-banner-dismiss {
+    color: var(--setup-muted);
+    align-self: flex-start;
+}
+
+.setup-banner .update-banner-dismiss:hover {
+    color: var(--setup-headline);
+    background: rgba(26, 34, 56, 0.08);
+}
+
+.setup-banner-info-icon {
+    flex: 0 0 auto;
+    color: var(--setup-accent);
+    margin-top: 1px;
+}
+
+.setup-banner-message {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.setup-banner-headline {
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--setup-headline);
+    line-height: 1.3;
+}
+
+.setup-banner-body {
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--setup-text);
+}
+
+.setup-banner-actions-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+}
+
+.setup-banner .update-banner-btn {
+    background: var(--button-bg);
+    color: white;
+    border: 1px solid var(--button-bg);
+    flex-shrink: 0;
+    white-space: nowrap;
+    padding: 6px 14px;
+    font-size: 13px;
+}
+
+.setup-banner .update-banner-btn:hover {
+    background: var(--button-hover);
+    border-color: var(--button-hover);
+}
+
+/* ---- Enforcer action banners (cream + orange, per-browser) ------------ */
 
 .extension-enforcer-action-banner {
-    background: #d97706;
+    --enforcer-bg: #fbe9d0;
+    --enforcer-border: #e08a35;
+    --enforcer-accent: #d97706;
+    --enforcer-accent-hover: #b86503;
+    --enforcer-headline: #7a2e0b;
+    --enforcer-text: #5c2a11;
+    --enforcer-muted: #8b5a3c;
+
+    background: var(--enforcer-bg);
+    color: var(--enforcer-text);
+    border: 1px solid var(--enforcer-border);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-left: 18px;
+    margin-right: 18px;
+    box-shadow: 0 1px 2px rgba(122, 46, 11, 0.05);
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.extension-enforcer-banner-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
 }
 
 #behaviour-change-banner:not(.hidden)+.extension-enforcer-action-banner,
 .extension-enforcer-action-banner:not(.hidden)+.extension-enforcer-action-banner {
-    margin-top: 0;
+    margin-top: 8px;
 }
 
 .extension-enforcer-action-banner .update-banner-btn {
-    background: rgba(255, 255, 255, 0.22);
-    border-color: rgba(255, 255, 255, 0.36);
+    background: var(--enforcer-accent);
+    color: white;
+    border: 1px solid var(--enforcer-accent);
     flex-shrink: 0;
     white-space: nowrap;
+    padding: 6px 14px;
+    font-size: 13px;
+}
+
+.extension-enforcer-action-banner .update-banner-btn:hover {
+    background: var(--enforcer-accent-hover);
+    border-color: var(--enforcer-accent-hover);
+}
+
+.extension-enforcer-action-btn-url {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-size: 12.5px;
+    margin-left: 4px;
 }
 
 .extension-enforcer-action-banner .update-banner-content {
     flex: 1 1 auto;
     min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+.extension-enforcer-action-banner .update-banner-dismiss {
+    color: var(--enforcer-muted);
+    align-self: flex-start;
+}
+
+.extension-enforcer-action-banner .update-banner-dismiss:hover {
+    color: var(--enforcer-headline);
+    background: rgba(122, 46, 11, 0.08);
+}
+
+.extension-enforcer-alert-icon {
+    flex: 0 0 auto;
+    color: var(--enforcer-accent);
+    margin-top: 1px;
 }
 
 .extension-enforcer-message {
     display: flex;
     flex-direction: column;
-    gap: 1px;
-    min-width: 0;
-}
-
-.extension-enforcer-action-main {
-    display: flex;
-    align-items: flex-start;
     gap: 6px;
-    line-height: 1.2;
-}
-
-.extension-enforcer-action-copy {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
     min-width: 0;
-}
-
-.extension-enforcer-browser-icon {
-    width: 18px;
-    height: 18px;
-    flex: 0 0 auto;
-    object-fit: contain;
-    margin-top: 1px;
+    flex: 1 1 auto;
 }
 
 .extension-enforcer-action-headline {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     font-weight: 700;
+    font-size: 15px;
+    color: var(--enforcer-headline);
+    line-height: 1.3;
+}
+
+.extension-enforcer-browser-icon {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+    object-fit: contain;
 }
 
 .extension-enforcer-action-right {
     display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: flex-end;
     gap: 4px;
     flex-shrink: 0;
+    text-align: right;
+}
+
+.extension-enforcer-action-countdown-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--enforcer-headline);
+    font-weight: 600;
+}
+
+.extension-enforcer-action-countdown-row.hidden {
+    display: none;
+}
+
+.extension-enforcer-clock-icon {
+    flex: 0 0 auto;
+    color: var(--enforcer-accent);
 }
 
 .extension-enforcer-action-countdown {
-    display: block;
-    opacity: 0.95;
+    display: inline;
     white-space: nowrap;
     font-variant-numeric: tabular-nums;
     font-size: 13px;
-    text-align: center;
 }
 
 .extension-enforcer-action-instruction {
-    font-size: 15px;
-    line-height: 1.2;
-    opacity: 0.9;
-    font-style: italic;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--enforcer-text);
+    font-style: normal;
 }
 
 .extension-enforcer-action-note {
     display: block;
-    font-size: 11px;
-    opacity: 0.7;
-    text-align: center;
-    white-space: nowrap;
+    font-size: 12px;
+    color: var(--enforcer-muted);
+    text-align: right;
+    max-width: 280px;
+    line-height: 1.35;
 }
 
-/* ── "Show me how" toggle ── */
-.extension-enforcer-show-me {
-    margin-top: 8px;
-}
-
-.extension-enforcer-show-me summary {
+/* Inline URL chip inside enforcer banner */
+.extension-enforcer-action-banner .enforcer-inline-url-btn {
+    background: white;
+    border: 1px solid rgba(224, 138, 53, 0.5);
+    color: var(--enforcer-headline);
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-size: 12px;
+    padding: 1px 7px;
+    border-radius: 5px;
     cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 14px;
-    font-weight: 600;
-    letter-spacing: 0.01em;
-    color: rgba(255, 255, 255, 0.95);
-    background: rgba(255, 255, 255, 0.15);
-    padding: 5px 12px;
-    border-radius: 8px;
-    user-select: none;
-    transition: background 0.2s ease;
-    list-style: none;           /* hide default marker */
+    transition: background 0.15s, border-color 0.15s;
 }
 
-.extension-enforcer-show-me summary::-webkit-details-marker {
+.extension-enforcer-action-banner .enforcer-inline-url-btn:hover {
+    background: #fff7eb;
+    border-color: var(--enforcer-accent);
+}
+
+/* ── Action row: primary button + ghost "Show me how" ── */
+.extension-enforcer-actions-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    flex-wrap: wrap;
+}
+
+.extension-enforcer-show-me-btn {
+    background: transparent;
+    border: none;
+    color: var(--enforcer-accent);
+    font-size: 13px;
+    font-weight: 600;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    line-height: 1;
+}
+
+.extension-enforcer-show-me-btn:hover {
+    background: rgba(217, 119, 6, 0.08);
+    color: var(--enforcer-accent-hover);
+}
+
+.extension-enforcer-show-me-btn.hidden {
     display: none;
 }
 
-.extension-enforcer-show-me summary::before {
-    content: '▶';
-    font-size: 9px;
-    transition: transform 0.2s ease;
-}
-
-.extension-enforcer-show-me[open] summary::before {
-    transform: rotate(90deg);
-}
-
-.extension-enforcer-show-me summary:hover {
-    background: rgba(255, 255, 255, 0.25);
-}
-
-/* ── Screenshots panel (frosted glass) ── */
-.extension-enforcer-screenshots {
+/* ── Screenshots wrap (full-width inside banner) ── */
+.extension-enforcer-screenshots-wrap {
     margin-top: 10px;
+}
+
+.extension-enforcer-screenshots-wrap.hidden {
+    display: none;
+}
+
+/* ── Screenshots panel ── */
+.extension-enforcer-screenshots {
     padding: 14px;
-    background: rgba(0, 0, 0, 0.12);
+    background: rgba(122, 46, 11, 0.06);
+    border: 1px solid rgba(224, 138, 53, 0.25);
     border-radius: 12px;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
 }
 
 /* ── Step figure ── */
@@ -435,7 +606,7 @@ body.dark-mode .title-bar button:hover {
 .extension-enforcer-step-label {
     font-size: 12px;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.92);
+    color: var(--enforcer-headline, #7a2e0b);
     margin-bottom: 5px;
     line-height: 1.35;
     letter-spacing: 0.01em;
@@ -457,6 +628,11 @@ body.dark-mode .title-bar button:hover {
     width: 100%;
 }
 
+/* In the full-width banner, let screenshots grow to fill the panel */
+.extension-enforcer-action-banner .extension-enforcer-screenshot {
+    max-width: 100%;
+}
+
 /* ── 2-step: flex row with arrow ── */
 .extension-enforcer-screenshots.screenshots-row {
     display: flex;
@@ -471,10 +647,15 @@ body.dark-mode .title-bar button:hover {
     min-width: 140px;
 }
 
+.extension-enforcer-action-banner .screenshots-row .extension-enforcer-step {
+    max-width: none;
+    flex: 1 1 0;
+}
+
 .extension-enforcer-screenshot-arrow {
     font-size: 22px;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.7);
+    color: var(--enforcer-muted, #8b5a3c);
     flex-shrink: 0;
     line-height: 1;
 }
@@ -3633,6 +3814,17 @@ body.ios .blocklist-action-btn svg {
 .migration-inline-url-btn:hover {
     background: rgba(0, 0, 0, 0.1);
     border-color: rgba(0, 0, 0, 0.2);
+}
+
+.enforcer-inline-url-btn {
+    background: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.3);
+    color: inherit;
+}
+
+.enforcer-inline-url-btn:hover {
+    background: rgba(255, 255, 255, 0.35);
+    border-color: rgba(255, 255, 255, 0.45);
 }
 
 .migration-show-me-link {
