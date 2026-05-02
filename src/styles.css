@@ -557,6 +557,9 @@ body.dark-mode .title-bar button:hover {
 }
 
 .extension-enforcer-show-me-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     background: transparent;
     border: none;
     color: var(--enforcer-accent);
@@ -576,6 +579,15 @@ body.dark-mode .title-bar button:hover {
 
 .extension-enforcer-show-me-btn.hidden {
     display: none;
+}
+
+.extension-enforcer-show-me-chevron {
+    flex: 0 0 auto;
+    transition: transform 0.2s ease;
+}
+
+.extension-enforcer-show-me-btn.open .extension-enforcer-show-me-chevron {
+    transform: rotate(90deg);
 }
 
 /* ── Screenshots wrap (full-width inside banner) ── */

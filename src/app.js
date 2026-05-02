@@ -10,10 +10,8 @@ import iconFirefoxUrl from './images/icon-firefox.svg';
 import iconSafariUrl from './images/icon-safari.svg';
 import screenshotChromeStep1 from './images/toggle-chrome-incognito-windows-1.png';
 import screenshotChromeStep2 from './images/toggle-chrome-incognito-windows-2.png';
-import screenshotChromeStep3 from './images/toggle-chrome-incognito-windows-3.png';
 import screenshotEdgeStep1 from './images/toggle-edge-incognito-windows-1.png';
 import screenshotEdgeStep2 from './images/toggle-edge-incognito-windows-2.png';
-import screenshotEdgeStep3 from './images/toggle-edge-incognito-windows-3.png';
 import screenshotFirefoxStep1 from './images/toggle-firefox-private-windows-1.png';
 import screenshotFirefoxStep2 from './images/toggle-firefox-private-windows-2.png';
 import screenshotSafariStep1 from './images/mac-extension-settings-1.png';
@@ -1803,13 +1801,11 @@ function browserIconUrl(key) {
 function enforcerScreenshotSteps(key) {
     if (key === 'chrome') return [
         { src: screenshotChromeStep1, label: 'Open Chrome extension settings' },
-        { src: screenshotChromeStep2, label: 'Open Details for ReDD Focus' },
-        { src: screenshotChromeStep3, label: 'Toggle ReDD Focus on and allow it in Incognito windows' },
+        { src: screenshotChromeStep2, label: 'Open Details for ReDD Focus and allow it in Incognito windows' },
     ];
     if (key === 'edge') return [
         { src: screenshotEdgeStep1, label: 'Open Edge extension settings' },
-        { src: screenshotEdgeStep2, label: 'Open Details for ReDD Focus' },
-        { src: screenshotEdgeStep3, label: 'Toggle ReDD Focus on and allow it in InPrivate windows' },
+        { src: screenshotEdgeStep2, label: 'Open Details for ReDD Focus and allow it in InPrivate windows' },
     ];
     if (key === 'firefox') return [
         { src: screenshotFirefoxStep1 },
@@ -2004,7 +2000,12 @@ function ensureEnforcerActionBanner(payload) {
                     <em class="extension-enforcer-action-instruction"></em>
                     <div class="extension-enforcer-actions-row">
                         <button class="update-banner-btn extension-enforcer-action-btn" type="button"></button>
-                        <button class="extension-enforcer-show-me-btn hidden" type="button" aria-expanded="false">Show me how</button>
+                        <button class="extension-enforcer-show-me-btn hidden" type="button" aria-expanded="false">
+                            <span>Show me how</span>
+                            <svg class="extension-enforcer-show-me-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <polyline points="9 6 15 12 9 18"></polyline>
+                            </svg>
+                        </button>
                     </div>
                 </div>
                 <div class="extension-enforcer-action-right">
