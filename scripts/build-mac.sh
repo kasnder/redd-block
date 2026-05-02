@@ -42,7 +42,7 @@ TARGET_DIR="${PROJECT_ROOT}/src-tauri/target/${BUILD_TARGET}/release/bundle"
 echo "Building ReDD Block for macOS (${BUILD_TARGET})..."
 CARGO_TARGET_DIR="${PROJECT_ROOT}/src-tauri/target" \
 CI="${TAURI_CI:-false}" \
-npm run tauri -- build --target "${BUILD_TARGET}" "${CONFIG_ARGS[@]}"
+npm run tauri -- build --target "${BUILD_TARGET}" ${CONFIG_ARGS[@]+"${CONFIG_ARGS[@]}"}
 
 VERSION=$(node -p "require('./package.json').version")
 APP_SOURCE="${TARGET_DIR}/macos/ReDD Block.app"
