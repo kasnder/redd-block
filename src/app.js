@@ -7159,18 +7159,19 @@ async function updateHostsFile(silent = false) {
     return result || { success: true };
 }
 
-// Update blocked apps sent to the helper. Only one-off (manual) block apps are sent here.
-// Schedule-based app blocking is owned solely by set_schedules via syncSchedulesToHelper();
-// the helper merges manual + active schedule apps internally.
+// Update blocked apps sent to the in-process app watcher (desktop only).
+// Computes the effective union of apps from active one-off blocks AND active schedule
+// segments. Both sources are evaluated on the frontend now that the legacy helper
+// daemon (which previously merged schedule + manual apps internally) is gone.
 async function updateBlockedApps() {
     // iOS uses Screen Time API for app blocking - skip desktop process watcher
     if (isIOS) return;
 
     const allBlockedApps = new Set();
     const now = Date.now();
+    const nowDate = new Date(now);
 
-    // Collect apps from active one-off blocks only (skip paused). Do not include schedule-derived
-    // apps here; they are synced via set_schedules and the helper computes effective list.
+    // Collect apps from active one-off blocks (skip paused / out-of-window).
     appData.activeBlocks
         .filter(block => block.startTime <= now && block.endTime > now && !block.isPaused)
         .forEach(block => {
@@ -7179,6 +7180,20 @@ async function updateBlockedApps() {
                 blocklist.apps.forEach(app => allBlockedApps.add(app));
             }
         });
+
+    // Collect apps from schedules whose segment is currently active (skip paused).
+    // Mirrors the schedule-domain logic in updateHostsFile().
+    if (appData.schedules) {
+        appData.schedules.forEach(schedule => {
+            if (!schedule.segments) return;
+            if (isSchedulePausedNow(schedule, now)) return;
+            if (!isScheduleSegmentActiveNow(schedule, nowDate)) return;
+            const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+            if (blocklist && blocklist.apps) {
+                blocklist.apps.forEach(app => allBlockedApps.add(app));
+            }
+        });
+    }
 
     // Filter out protected apps (ReDD Block must never block itself)
     const appsArray = Array.from(allBlockedApps)
