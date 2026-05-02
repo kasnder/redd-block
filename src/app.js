@@ -1124,8 +1124,10 @@ async function showMigrationOnboarding(phase, state, opts = {}) {
             if (subtitle) subtitle.textContent = 'One step left: install ReDD Focus in each browser you use.';
             cleanupItems.forEach(el => el.classList.remove('hidden'));
         } else {
-            if (title) title.textContent = 'Welcome to ReDD Block';
-            if (subtitle) subtitle.textContent = 'Install ReDD Focus in your browsers to start blocking distracting websites.';
+            if (title) title.classList.add('hidden');
+            if (subtitle) subtitle.classList.add('hidden');
+            const icon = post.closest('.onboarding-content')?.querySelector('.onboarding-icon');
+            if (icon) icon.classList.add('hidden');
             cleanupItems.forEach(el => el.classList.add('hidden'));
         }
     }
@@ -1322,7 +1324,7 @@ function browserComplianceStatus(key, b) {
 
 function statusLabel(key, status) {
     switch (status) {
-        case 'compliant': return '✓ Set up';
+        case 'compliant': return '✓ Installed & allowed in private tabs';
         case 'needs-fda': return 'Grant Full Disk Access';
         case 'needs-website-access': return 'Allow on all websites';
         case 'needs-private': return 'Allow in private browsing';
@@ -1357,6 +1359,28 @@ function safariProfileStatusHint(b, status) {
     const labels = failing.slice(0, 3).map(safariProfileLabel);
     const suffix = failing.length > labels.length ? `, +${failing.length - labels.length} more` : '';
     return `Affected Safari profiles: ${labels.join(', ')}${suffix}.`;
+}
+
+function extensionsUrl(key) {
+    switch (key) {
+        case 'chrome': return 'chrome://extensions';
+        case 'edge': return 'edge://extensions';
+        case 'brave': return 'brave://extensions';
+        case 'firefox': return 'about:addons';
+        case 'safari': return 'Safari → Settings → Extensions';
+        default: return 'extensions';
+    }
+}
+
+function privateModeNoun(key) {
+    switch (key) {
+        case 'chrome': return 'Incognito';
+        case 'edge': return 'InPrivate';
+        case 'brave': return 'Incognito';
+        case 'firefox': return 'Private Windows';
+        case 'safari': return 'Private Browsing';
+        default: return 'private/incognito';
+    }
 }
 
 function browserStatusHint(key, entry, b, status) {
@@ -1426,7 +1450,15 @@ function renderBrowserInstallButtons(state) {
 
         const name = document.createElement('span');
         name.className = 'migration-browser-name';
-        name.textContent = entry.label;
+
+        const icon = document.createElement('img');
+        icon.className = 'migration-browser-icon';
+        icon.src = browserIconUrl(key);
+        icon.alt = '';
+        icon.setAttribute('aria-hidden', 'true');
+        name.appendChild(icon);
+
+        name.appendChild(document.createTextNode(entry.label));
         header.appendChild(name);
 
         const badge = document.createElement('span');
@@ -1435,7 +1467,7 @@ function renderBrowserInstallButtons(state) {
             case 'compliant': badge.textContent = statusLabel(key, status); break;
             case 'needs-install': badge.textContent = 'Not installed'; break;
             case 'needs-enable': badge.textContent = 'Disabled'; break;
-            case 'needs-private': badge.textContent = 'No private mode'; break;
+            case 'needs-private': badge.textContent = 'Not allowed in private tabs'; break;
             case 'needs-website-access': badge.textContent = 'No website access'; break;
             case 'needs-fda': badge.textContent = 'Needs access'; break;
             default: badge.textContent = 'Not installed';
@@ -1509,11 +1541,107 @@ function renderBrowserInstallButtons(state) {
             action.appendChild(copyBtn);
 
             row.appendChild(action);
+
+            // After-install hint: tell users about private tabs
+            const afterHint = document.createElement('div');
+            afterHint.className = 'migration-browser-hint migration-browser-after-hint';
+            const extUrl = extensionsUrl(key);
+            const privNoun = privateModeNoun(key);
+            afterHint.innerHTML = `After installing, open <button type="button" class="migration-inline-url-btn">${extUrl}</button> → click <strong>Details</strong> on ReDD Focus → turn on <strong>Allow in ${privNoun}</strong>.`;
+            afterHint.querySelector('.migration-inline-url-btn').addEventListener('click', () => {
+                invoke('open_browser_extension_settings', { browser: key }).catch(e => console.warn('[migration] open ext settings:', e));
+            });
+            row.appendChild(afterHint);
         } else if (status === 'needs-enable' || status === 'needs-private' || status === 'needs-website-access') {
-            const hint = document.createElement('div');
-            hint.className = 'migration-browser-hint';
-            hint.textContent = browserStatusHint(key, entry, browsers[key], status);
-            row.appendChild(hint);
+            // Checklist-style: green "Extension installed" + instruction with inline "Show me how"
+            if (status !== 'needs-enable') {
+                const extInstalledLine = document.createElement('div');
+                extInstalledLine.className = 'migration-checklist-line migration-checklist-done';
+                extInstalledLine.innerHTML = `<span class="migration-check-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#047857" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span> Extension installed`;
+                row.appendChild(extInstalledLine);
+            }
+
+            const extUrl = extensionsUrl(key);
+            const privNoun = privateModeNoun(key);
+            const instructionLine = document.createElement('div');
+            instructionLine.className = 'migration-checklist-line migration-checklist-todo-line';
+
+            // Build the instruction with inline "Show me how →"
+            const steps = enforcerScreenshotSteps(key);
+            const hasSteps = steps && steps.length;
+
+            const instructionSpan = document.createElement('span');
+            let actionText;
+            if (status === 'needs-enable') {
+                actionText = `Open <button type="button" class="migration-inline-url-btn">${extUrl}</button> → find <strong>ReDD Focus</strong> → enable the extension.`;
+            } else if (status === 'needs-website-access') {
+                actionText = `Open <button type="button" class="migration-inline-url-btn">${extUrl}</button> → click <strong>Details</strong> on ReDD Focus → allow on <strong>all websites</strong>.`;
+            } else {
+                actionText = `Open <button type="button" class="migration-inline-url-btn">${extUrl}</button> → click <strong>Details</strong> on ReDD Focus → turn on <strong>Allow in ${privNoun}</strong>.`;
+            }
+            instructionSpan.innerHTML = `<span class="migration-check-icon" style="opacity:0.4">☐</span> ${actionText}`;
+            instructionSpan.querySelector('.migration-inline-url-btn').addEventListener('click', () => {
+                invoke('open_browser_extension_settings', { browser: key }).catch(e => console.warn('[migration] open ext settings:', e));
+            });
+
+            instructionLine.appendChild(instructionSpan);
+
+            if (hasSteps) {
+                const showLink = document.createElement('span');
+                showLink.className = 'migration-show-me-link';
+                showLink.textContent = ' Show me how \u203A';
+                showLink.addEventListener('click', () => {
+                    const det = row.querySelector('.migration-show-me');
+                    if (det) det.open = !det.open;
+                });
+                instructionLine.appendChild(showLink);
+            }
+
+            row.appendChild(instructionLine);
+
+            if (hasSteps) {
+                const details = document.createElement('details');
+                details.className = 'extension-enforcer-show-me migration-show-me';
+
+                // No visible summary — controlled by the inline link above
+                const summary = document.createElement('summary');
+                summary.style.display = 'none';
+                details.appendChild(summary);
+
+                const screenshotsContainer = document.createElement('div');
+                screenshotsContainer.className = `extension-enforcer-screenshots ${steps.length >= 3 ? 'screenshots-grid' : 'screenshots-row'}`;
+
+                steps.forEach((step, i) => {
+                    if (i > 0 && steps.length < 3) {
+                        const arrow = document.createElement('span');
+                        arrow.className = 'extension-enforcer-screenshot-arrow';
+                        arrow.textContent = '→';
+                        screenshotsContainer.appendChild(arrow);
+                    }
+                    const figure = document.createElement('figure');
+                    figure.className = 'extension-enforcer-step';
+                    if (step.label) {
+                        const caption = document.createElement('figcaption');
+                        caption.className = 'extension-enforcer-step-label';
+                        caption.textContent = `${i + 1}. ${step.label}`;
+                        figure.appendChild(caption);
+                    }
+                    const img = document.createElement('img');
+                    img.className = 'extension-enforcer-screenshot';
+                    img.src = step.src;
+                    img.alt = step.label || `Step ${i + 1}`;
+                    figure.appendChild(img);
+                    screenshotsContainer.appendChild(figure);
+                });
+
+                details.appendChild(screenshotsContainer);
+                row.appendChild(details);
+            }
+
+            const delayNote = document.createElement('div');
+            delayNote.className = 'migration-browser-hint migration-delay-note';
+            delayNote.textContent = 'It may take up to 10 seconds for changes to be detected.';
+            row.appendChild(delayNote);
         }
 
         container.appendChild(row);

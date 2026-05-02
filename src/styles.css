@@ -503,6 +503,36 @@ body.dark-mode .title-bar button:hover {
     align-self: center;
 }
 
+/* ── Setup page overrides (light background context) ── */
+.migration-show-me {
+    margin-top: 0;
+}
+
+.migration-show-me summary {
+    color: var(--text-secondary, #555);
+    background: rgba(0, 0, 0, 0.06);
+}
+
+.migration-show-me summary::before {
+    color: var(--text-secondary, #555);
+}
+
+.migration-show-me summary:hover {
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.migration-show-me .extension-enforcer-screenshots {
+    background: rgba(0, 0, 0, 0.04);
+}
+
+.migration-show-me .extension-enforcer-step-label {
+    color: var(--text-secondary, #555);
+}
+
+.migration-show-me .extension-enforcer-screenshot-arrow {
+    color: var(--text-secondary, #888);
+}
+
 /* Main Content */
 .main-content {
     flex: 1;
@@ -3505,11 +3535,27 @@ body.ios .blocklist-action-btn svg {
     gap: 10px;
 }
 
+.migration-browser-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    object-fit: contain;
+}
+
 .migration-browser-action {
     display: flex;
     align-items: center;
     gap: 8px;
     margin-top: 2px;
+}
+
+.migration-browser-action-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 6px;
+    flex-wrap: wrap;
 }
 
 .migration-browser-hint {
@@ -3519,6 +3565,9 @@ body.ios .blocklist-action-btn svg {
 }
 
 .migration-browser-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     font-weight: 500;
     color: hsl(222, 25%, 25%);
 }
@@ -3545,6 +3594,77 @@ body.ios .blocklist-action-btn svg {
 .migration-browser-badge.needs-website-access,
 .migration-browser-badge.needs-fda {
     color: #b45309;
+}
+
+/* Checklist-style lines inside browser cards */
+.migration-checklist-line {
+    font-size: 13px;
+    line-height: 1.5;
+    color: hsl(222, 18%, 35%);
+}
+
+.migration-checklist-done {
+    color: #047857;
+    font-weight: 500;
+    text-decoration: line-through;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.migration-check-icon {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.migration-inline-url-btn {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-size: 12px;
+    background: rgba(0, 0, 0, 0.06);
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    cursor: pointer;
+    color: hsl(222, 25%, 30%);
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.migration-inline-url-btn:hover {
+    background: rgba(0, 0, 0, 0.1);
+    border-color: rgba(0, 0, 0, 0.2);
+}
+
+.migration-show-me-link {
+    color: hsl(222, 25%, 40%);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.migration-show-me-link:hover {
+    color: hsl(222, 40%, 30%);
+    text-decoration: underline;
+}
+
+.migration-checklist-todo-line {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.migration-browser-after-hint {
+    margin-top: 4px;
+    font-size: 12px;
+}
+
+.migration-delay-note {
+    margin-top: 6px;
+    font-size: 11px;
+    opacity: 0.55;
+    font-style: italic;
 }
 
 .migration-browser-url {
