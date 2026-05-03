@@ -525,25 +525,46 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             watchdog::register();
 
-            // Self-heal launch-at-login on every startup. The
-            // tauri-plugin-autostart plugin only installs the
-            // facility — it doesn't enable the entry by default.
-            // For ReDD Block 2.0 the app IS the enforcement engine,
-            // so blocking dies if the user reboots and we don't come
-            // back. Enabling on every launch is idempotent (no-op if
-            // already registered) and self-heals if the user later
-            // removes us from Login Items.
-            #[cfg(not(target_os = "ios"))]
+            // Self-heal launch-at-login on every startup. For ReDD
+            // Block 2.0 the app IS the enforcement engine, so blocking
+            // dies if the user reboots and we don't come back. We
+            // therefore (re)register on every release-build launch.
+            //
+            // Calling `enable()` unconditionally — instead of only
+            // when `is_enabled()` is false — is deliberate: it makes
+            // the most-recently-launched release build win the slot.
+            // This rewrites the LaunchAgent / Run-key so that:
+            //   - reinstalling .pkg into a different location heals
+            //     the registered path,
+            //   - moving the .app within /Applications heals on next
+            //     launch,
+            //   - a slot orphaned by an uninstall + reinstall cycle
+            //     gets reclaimed,
+            //   - and a slot previously hijacked by some other binary
+            //     (e.g. an earlier dev-build run, before the
+            //     debug_assertions gate below was added) gets
+            //     reclaimed too.
+            // The write itself is a few hundred bytes to a plist /
+            // registry value; idempotent when the path is unchanged.
+            //
+            // Gated on `not(debug_assertions)` so `tauri dev` runs do
+            // NOT register the dev binary as the launch-at-login
+            // target. The dev binary depends on a Vite dev server
+            // that's only running while `tauri dev` is in the
+            // foreground; if it ever fires from launchd at login the
+            // user gets a blank window pointing at
+            // http://localhost:5173. Release builds — the .pkg / .dmg
+            // path users actually install — keep self-healing.
+            #[cfg(all(not(target_os = "ios"), not(debug_assertions)))]
             {
                 use tauri_plugin_autostart::ManagerExt;
-                let manager = app.autolaunch();
-                let already = manager.is_enabled().unwrap_or(false);
-                if !already {
-                    if let Err(e) = manager.enable() {
-                        log::warn!("autostart enable failed: {e}");
-                    } else {
-                        log::info!("autostart: enabled launch-at-login");
-                    }
+                if let Err(e) = app.autolaunch().enable() {
+                    log::warn!("autostart enable failed: {e}");
+                } else {
+                    log::info!(
+                        "autostart: pointed launch-at-login at {:?}",
+                        std::env::current_exe().ok()
+                    );
                 }
             }
 

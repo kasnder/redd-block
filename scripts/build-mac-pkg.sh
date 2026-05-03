@@ -104,9 +104,30 @@ chmod 755 "$PKG_SCRIPTS_DIR"/preinstall "$PKG_SCRIPTS_DIR"/postinstall
 echo "Bundled scripts in $PKG_SCRIPTS_DIR:"
 ls -l "$PKG_SCRIPTS_DIR"
 
+# Generate a component plist with BundleIsRelocatable=false. By default,
+# pkgbuild auto-emits a component plist that flags the .app as relocatable
+# AND emits a `<relocate>` block in the resulting PackageInfo. macOS
+# Installer.app then redirects installs to overwrite any pre-existing copy
+# of `com.reddblock` it finds elsewhere on disk (an old build artifact in
+# for-distribution/, a copy in Downloads, etc.) instead of installing to
+# /Applications. The Installer UI still says "Installation successful" and
+# the receipt still claims /Applications, but the bytes go to the stale
+# copy — leaving /Applications/ReDD Block.app missing and the user's new
+# launch-at-login plist pointing at a binary that doesn't exist.
+# Disabling relocation is the standard fix for non-App-Store .pkg
+# installers; pkgbuild --analyze + PlistBuddy is Apple's recommended
+# pattern for it.
+COMPONENT_PLIST_DIR=$(mktemp -d /tmp/redd-block-cplist.XXXXXX)
+COMPONENT_PLIST="$COMPONENT_PLIST_DIR/component.plist"
+pkgbuild --analyze --root "$(dirname "$APP_PATH")" "$COMPONENT_PLIST" >/dev/null
+/usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$COMPONENT_PLIST"
+echo "Component plist (post-tweak):"
+cat "$COMPONENT_PLIST"
+
 # 1. Component package: just wraps the .app.
 pkgbuild \
     --root "$(dirname "$APP_PATH")" \
+    --component-plist "$COMPONENT_PLIST" \
     --identifier "$BUNDLE_ID.app" \
     --version "$VERSION" \
     --install-location "/Applications" \
@@ -155,7 +176,7 @@ productbuild \
     "${SIGN_ARGS[@]+"${SIGN_ARGS[@]}"}" \
     "$DIST_PKG"
 
-rm -rf "$DIST_DIR" "$PKG_SCRIPTS_DIR"
+rm -rf "$DIST_DIR" "$PKG_SCRIPTS_DIR" "$COMPONENT_PLIST_DIR"
 rm -f "$COMPONENT_PKG"
 
 # 4. Notarization (optional).

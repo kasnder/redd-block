@@ -2,6 +2,41 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
+## v2.0.1
+
+- **Fix: schedule-based app blocking now works.** Apps attached to a
+  blocklist that's enforced via a schedule (e.g. a Downtime block
+  covering eM Client, Word, Cursor, etc.) are now correctly closed
+  when the schedule's segment is active. Previously only apps from
+  one-off (manual) blocks reached the in-process app watcher; the
+  schedule path was a no-op left over from the v1.x helper-merges-
+  schedules-internally design.
+- **Fix: `tauri dev` no longer hijacks launch-at-login.** Previously
+  a `tauri dev` run would self-heal the launch-at-login entry so it
+  pointed at `target/debug/redd-block`; on next reboot, launchd would
+  spawn the dev binary with no Vite server running, producing a blank
+  window and `localhost:5173` connection errors. Auto-enable is now
+  release-builds-only — dev runs leave the existing launch-at-login
+  entry untouched.
+- **Fix: launch-at-login reclaims a stale slot.** Release builds now
+  rewrite the LaunchAgent / Run-key on every startup instead of only
+  when no entry is registered. So if the slot is pointing at the
+  wrong path (for example: an earlier install that lived in a
+  different folder, an uninstall + reinstall cycle, or an old dev
+  binary from before the previous fix), the next launch of the
+  installed app reclaims it and points it at the current binary.
+- **Fix: macOS .pkg installer no longer relocates to a stale copy.**
+  Previously the .pkg was built with macOS Installer's "Bundle
+  Relocation" feature enabled, so if any other copy of `ReDD
+  Block.app` existed elsewhere on disk (e.g. a previously-downloaded
+  build still in `~/Downloads/`, or — for developers — a build
+  artifact in `for-distribution/`), the installer would silently
+  redirect the install to overwrite that stale copy, leaving
+  `/Applications/ReDD Block.app` missing and the launch-at-login slot
+  pointing at a binary that doesn't exist. The .pkg is now built
+  with `BundleIsRelocatable=false`, so the installer always lands in
+  `/Applications` regardless of what's already on disk.
+
 ## v2.0
 
 - **New blocking architecture on desktop.** No more privileged helper
