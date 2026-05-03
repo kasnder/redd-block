@@ -2903,34 +2903,11 @@ function setupEventListeners() {
         });
     });
 
-    // Week calendar scroll handling with day snap
-    const calendarScroll = document.querySelector('.week-calendar-scroll');
-    const timeColumn = document.getElementById('week-calendar-time-column');
-    if (calendarScroll) {
-        let scrollTimeout;
-        calendarScroll.addEventListener('scroll', () => {
-            // Keep the time sidebar's vertical scroll in lockstep with the day grid.
-            if (timeColumn) timeColumn.scrollTop = calendarScroll.scrollTop;
-
-            clearTimeout(scrollTimeout);
-            scrollTimeout = setTimeout(() => {
-                // Update the visible date range display
-                updateVisibleRangeDisplay();
-            }, 150);
-        });
-
-        // Forward wheel-over-sidebar to the main scroll so the time column isn't an interaction dead zone.
-        if (timeColumn) {
-            timeColumn.addEventListener('wheel', (e) => {
-                if (e.deltaY !== 0) {
-                    calendarScroll.scrollTop += e.deltaY;
-                    e.preventDefault();
-                }
-            }, { passive: false });
-        }
-
-        // Click on calendar (not on block) scrolls to today
-        calendarScroll.addEventListener('click', (e) => {
+    // The row-based week calendar fits 7 days inside the panel without scrolling, so the
+    // old scroll-sync logic is no longer needed. Clicking the empty timeline jumps to today.
+    const calendarContainer = document.getElementById('week-calendar-container');
+    if (calendarContainer) {
+        calendarContainer.addEventListener('click', (e) => {
             if (!e.target.closest('.calendar-block')) {
                 scrollToToday();
             }
@@ -5470,6 +5447,25 @@ function openScheduleOverrideModal(schedule) {
     document.getElementById('override-modal').classList.remove('hidden');
 }
 
+// Click handler for a scheduled block in the timeline: select the corresponding blocklist
+// (so the schedule editor on the left switches to it) and open the blocklist edit dialog.
+// The override flow is still reachable from the running-block actions; clicking a calendar
+// block now goes straight to editing.
+function openScheduledBlockEdit(schedule) {
+    const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+    if (!blocklist) return;
+
+    const dropdown = document.getElementById('blocklist-select');
+    if (dropdown) {
+        dropdown.value = blocklist.id;
+        handleBlocklistSelect({ target: dropdown });
+    } else {
+        selectedBlocklistId = blocklist.id;
+    }
+
+    openBlocklistModal(blocklist);
+}
+
 // Open schedule override modal when clicking on a scheduled block in the calendar
 function openScheduledBlockOverrideModal(schedule, segmentIndex, day) {
     // Store the schedule info for the override process
@@ -5879,9 +5875,8 @@ function renderSchedulePreview() {
     const draftCreatedAt = Date.now();
     const shouldRepeat = scheduleRepeatType === 'forever' || scheduleRepeatType === 'date';
 
-    // Determine the visible date range (21 days: 7 before anchor to 7 after anchor + 7)
+    // The row-based view shows 7 days starting at currentWeekStart.
     const renderStart = new Date(currentWeekStart);
-    renderStart.setDate(renderStart.getDate() - 7);
 
     if (!shouldRepeat) {
         const draftOccurrences = resolveOneShotOccurrences({
@@ -5898,18 +5893,14 @@ function renderSchedulePreview() {
         return;
     }
 
-    // For each segment, render blocks on its specific days
+    // For each segment, render preview blocks on its applicable days within the 7-day window.
     const nowMs = draftCreatedAt;
     scheduleSegments.forEach((segment, segmentIndex) => {
-        // Determine if this is a locked (active) segment or a new preview segment
         const isLockedSegment = segmentIndex < activeScheduleSegmentCount;
         if (isLockedSegment) return;
 
-        // Get the days for this segment (0=Mon, 1=Tue, ..., 6=Sun)
         const segmentDays = segment.days || [];
-
-        // Repeating schedules render across all visible weeks.
-        const daysToRender = 21;
+        const daysToRender = 7;
 
         for (let d = 0; d < daysToRender; d++) {
             const dayDate = new Date(renderStart);
@@ -5973,8 +5964,8 @@ function renderActiveScheduleBlock(blockStart, blockEnd, blocklist, segmentIndex
             dayEnd.setHours(23, 59, 59, 999);
 
             const {
-                topPosition,
-                height,
+                leftPercent,
+                widthPercent,
                 segmentStartDate,
                 segmentEndDate
             } = getCalendarSegmentLayout(blockStart.getTime(), blockEnd.getTime(), dayStart.getTime(), dayEnd.getTime());
@@ -5985,8 +5976,8 @@ function renderActiveScheduleBlock(blockStart, blockEnd, blocklist, segmentIndex
             const blockEl = document.createElement('div');
             blockEl.className = 'calendar-block active-schedule';
             blockEl.dataset.segmentIndex = segmentIndex;
-            blockEl.style.top = `${topPosition}px`;
-            blockEl.style.height = `${height}px`;
+            blockEl.style.left = `${leftPercent}%`;
+            blockEl.style.width = `${widthPercent}%`;
 
             if (blocklist.color) {
                 blockEl.style.background = blocklist.color;
@@ -5997,7 +5988,6 @@ function renderActiveScheduleBlock(blockStart, blockEnd, blocklist, segmentIndex
                 <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
                 <span class="block-label">${escapeHtml(blocklist.name)}</span>
                 <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
-                <span class="schedule-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></span>
             `;
 
             track.appendChild(blockEl);
@@ -6029,8 +6019,8 @@ function renderScheduledCalendarInterval(schedule, blockStart, blockEnd, blockli
             dayEnd.setHours(23, 59, 59, 999);
 
             const {
-                topPosition,
-                height
+                leftPercent,
+                widthPercent
             } = getCalendarSegmentLayout(blockStart.getTime(), blockEnd.getTime(), dayStart.getTime(), dayEnd.getTime());
 
             const dayIndex = currentDay.getDay() === 0 ? 6 : currentDay.getDay() - 1;
@@ -6040,8 +6030,8 @@ function renderScheduledCalendarInterval(schedule, blockStart, blockEnd, blockli
             blockEl.dataset.scheduleId = schedule.id;
             blockEl.dataset.segmentIndex = segmentIndex;
             blockEl.dataset.day = dayIndex;
-            blockEl.style.top = `${topPosition}px`;
-            blockEl.style.height = `${height}px`;
+            blockEl.style.left = `${leftPercent}%`;
+            blockEl.style.width = `${widthPercent}%`;
 
             if (blocklist.color) {
                 blockEl.style.background = blocklist.color;
@@ -6053,12 +6043,11 @@ function renderScheduledCalendarInterval(schedule, blockStart, blockEnd, blockli
                 <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
                 <span class="block-label">${escapeHtml(blocklist.name)}</span>
                 <span class="block-time">${fullStartTimeStr} - ${fullEndTimeStr}</span>
-                <span class="schedule-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></span>
             `;
 
             blockEl.addEventListener('click', (e) => {
                 e.stopPropagation();
-                openScheduledBlockOverrideModal(schedule, segmentIndex, dayIndex);
+                openScheduledBlockEdit(schedule);
             });
 
             track.appendChild(blockEl);
@@ -6070,7 +6059,6 @@ function renderScheduledCalendarInterval(schedule, blockStart, blockEnd, blockli
 
 // Render preview block on week calendar
 function renderPreviewBlock(blockStart, blockEnd, blocklist, skipClear = false, segmentIndex = null) {
-    // Clear any existing preview blocks first (unless rendering multiple schedule blocks)
     if (!skipClear) {
         document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
     }
@@ -6081,7 +6069,6 @@ function renderPreviewBlock(blockStart, blockEnd, blocklist, skipClear = false, 
     const endDay = new Date(blockEnd);
     endDay.setHours(0, 0, 0, 0);
 
-    // Render preview in each day it spans
     let currentDay = new Date(startDay);
 
     while (currentDay <= endDay) {
@@ -6089,23 +6076,22 @@ function renderPreviewBlock(blockStart, blockEnd, blocklist, skipClear = false, 
         const track = document.querySelector(`.day-track[data-date="${dateStr}"]`);
 
         if (track) {
-            // Calculate start time for this day segment
             const dayStart = new Date(currentDay);
             dayStart.setHours(0, 0, 0, 0);
             const dayEnd = new Date(currentDay);
             dayEnd.setHours(23, 59, 59, 999);
 
             const {
-                topPosition,
-                height,
+                leftPercent,
+                widthPercent,
                 segmentStartDate,
                 segmentEndDate
             } = getCalendarSegmentLayout(blockStart.getTime(), blockEnd.getTime(), dayStart.getTime(), dayEnd.getTime());
 
             const previewEl = document.createElement('div');
             previewEl.className = 'calendar-block preview';
-            previewEl.style.top = `${topPosition}px`;
-            previewEl.style.height = `${height}px`;
+            previewEl.style.left = `${leftPercent}%`;
+            previewEl.style.width = `${widthPercent}%`;
             previewEl.dataset.previewGroupId = segmentIndex !== null ? `preview-segment-${segmentIndex}` : 'preview-instant';
 
             if (segmentIndex !== null) {
@@ -6118,10 +6104,11 @@ function renderPreviewBlock(blockStart, blockEnd, blocklist, skipClear = false, 
                 previewEl.style.color = getContrastTextColor(blocklist.color);
             }
 
-            // Add resize handles for schedule mode
+            // Resize handles run vertically along the start/end edges (left/right) since
+            // time now flows horizontally.
             const resizeHandles = segmentIndex !== null ? `
-                <div class="resize-handle resize-handle-top" data-handle="top" style="cursor: ns-resize;"></div>
-                <div class="resize-handle resize-handle-bottom" data-handle="bottom" style="cursor: ns-resize;"></div>
+                <div class="resize-handle resize-handle-start" data-handle="start" style="cursor: ew-resize;"></div>
+                <div class="resize-handle resize-handle-end" data-handle="end" style="cursor: ew-resize;"></div>
             ` : '';
 
             previewEl.innerHTML = `
@@ -6131,7 +6118,6 @@ function renderPreviewBlock(blockStart, blockEnd, blocklist, skipClear = false, 
                 <span class="block-time">${formatTime(segmentStartDate)} - ${formatTime(segmentEndDate)}</span>
             `;
 
-            // Attach drag/resize event handlers for schedule mode
             if (segmentIndex !== null && isScheduleMode) {
                 attachPreviewBlockDragHandlers(previewEl, segmentIndex, track);
             }
@@ -6139,7 +6125,6 @@ function renderPreviewBlock(blockStart, blockEnd, blocklist, skipClear = false, 
             track.appendChild(previewEl);
         }
 
-        // Move to next day
         currentDay.setDate(currentDay.getDate() + 1);
     }
 
@@ -6148,94 +6133,79 @@ function renderPreviewBlock(blockStart, blockEnd, blocklist, skipClear = false, 
     }
 }
 
-// Attach drag and resize handlers to a preview block
+// Attach drag and resize handlers to a preview block.
+//
+// In the row-based layout time flows horizontally and days stack vertically:
+//   - dragging the body of the block: horizontal motion changes start/end time, vertical
+//     motion (cursor over a different row) changes the day(s) of the segment.
+//   - dragging the .resize-handle-start: adjusts start time (left edge).
+//   - dragging the .resize-handle-end: adjusts end time (right edge).
 function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
     let isDragging = false;
     let isResizing = false;
     let resizeHandle = null;
-    let startY = 0;
     let startX = 0;
-    let startTop = 0;
-    let startHeight = 0;
+    let startY = 0;
+    let startLeftPct = 0;
+    let startWidthPct = 0;
     let startDayIndex = null;
     let currentHoverTrack = track;
-    let clickOffsetX = 0; // Offset from track center where user clicked
-    const pixelsPerHour = 40;
-    const snapMinutes = 15; // Snap to 15-minute intervals
+    let clickOffsetY = 0; // Offset from row center where user clicked (helps day-boundary detection)
+    const snapMinutes = 15;
+    const minDurationMinutes = 15;
 
-    // Get the day index from the track's date
     function getDayIndexFromTrack(trackEl) {
         const dateStr = trackEl.dataset.date;
         if (!dateStr) return null;
         const date = parseLocalDateKey(dateStr);
         if (!date) return null;
-        // Convert JS day (0=Sun) to our format (0=Mon)
         const jsDay = date.getDay();
         return jsDay === 0 ? 6 : jsDay - 1;
     }
 
-    // Get the original day this block represents
     startDayIndex = getDayIndexFromTrack(track);
 
-    // Convert pixels to minutes
-    function pixelsToMinutes(px) {
-        return (px / pixelsPerHour) * 60;
-    }
-
-    // Snap minutes to nearest interval
     function snapToInterval(minutes) {
         return Math.round(minutes / snapMinutes) * snapMinutes;
     }
 
-    // Convert minutes to hours/minutes object
     function minutesToTime(totalMinutes) {
-        totalMinutes = Math.max(0, Math.min(1440, totalMinutes)); // Clamp to 0-24 hours
+        totalMinutes = Math.max(0, Math.min(1440, totalMinutes));
         const hours = Math.floor(totalMinutes / 60);
         const minutes = totalMinutes % 60;
         return { hours: Math.min(23, hours), minutes };
     }
 
-    // Update segment times and optionally days, then refresh UI
     function updateSegmentTimesAndDays(newStartMinutes, newEndMinutes, dayShift = 0) {
+        if (newEndMinutes - newStartMinutes < minDurationMinutes) return;
+
         const startTime = minutesToTime(newStartMinutes);
         const endTime = minutesToTime(newEndMinutes);
-
-        // Ensure minimum duration of 15 minutes
-        if (newEndMinutes - newStartMinutes < 15) {
-            return;
-        }
 
         scheduleSegments[segmentIndex].startHour = startTime.hours;
         scheduleSegments[segmentIndex].startMinute = startTime.minutes;
         scheduleSegments[segmentIndex].endHour = endTime.hours;
         scheduleSegments[segmentIndex].endMinute = endTime.minutes;
 
-        // If there's a day shift, update the days array
         if (dayShift !== 0) {
             const segment = scheduleSegments[segmentIndex];
             const oldDays = segment.days || [];
             const newDays = oldDays.map(d => {
                 let newDay = d + dayShift;
-                // Wrap around the week (0-6)
                 if (newDay < 0) newDay += 7;
                 if (newDay > 6) newDay -= 7;
                 return newDay;
             });
             segment.days = newDays;
-
-            // Update the day toggle buttons in the UI
             updateDayToggleUI(segmentIndex);
         }
 
-        // Update the time picker UI
         updateTimePickerUI(segmentIndex);
 
-        // Re-render preview blocks
         document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
         renderSchedulePreview();
     }
 
-    // Update time picker buttons to reflect new times
     function updateTimePickerUI(index) {
         const segment = scheduleSegments[index];
         const startHourBtn = document.querySelector(`[data-target="schedule-start-${index}"][data-type="hour"]`);
@@ -6249,7 +6219,6 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
         if (endMinBtn) endMinBtn.textContent = String(segment.endMinute).padStart(2, '0');
     }
 
-    // Update day toggle buttons in the schedule segment UI
     function updateDayToggleUI(index) {
         const segment = scheduleSegments[index];
         const days = segment.days || [];
@@ -6259,88 +6228,70 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
         const dayButtons = segmentContainer.querySelectorAll('.segment-day-toggle');
         dayButtons.forEach(btn => {
             const dayIndex = parseInt(btn.dataset.day);
-            if (days.includes(dayIndex)) {
-                btn.classList.add('active');
-            } else {
-                btn.classList.remove('active');
-            }
+            btn.classList.toggle('active', days.includes(dayIndex));
         });
     }
 
-    // Add hover listeners to resize handles to change cursor
-    const resizeHandles = previewEl.querySelectorAll('.resize-handle');
-    resizeHandles.forEach(handle => {
-        handle.addEventListener('mouseenter', () => {
-            previewEl.classList.add('resize-hover');
-        });
-        handle.addEventListener('mouseleave', () => {
-            previewEl.classList.remove('resize-hover');
-        });
+    // Cursor hover hint on resize handles
+    previewEl.querySelectorAll('.resize-handle').forEach(handle => {
+        handle.addEventListener('mouseenter', () => previewEl.classList.add('resize-hover'));
+        handle.addEventListener('mouseleave', () => previewEl.classList.remove('resize-hover'));
     });
 
-    // Mouse down handler
     previewEl.addEventListener('mousedown', (e) => {
-        // Check if clicking on a resize handle
         const handle = e.target.closest('.resize-handle');
         if (handle) {
             isResizing = true;
             resizeHandle = handle.dataset.handle;
             previewEl.classList.add('resizing');
-            document.body.style.cursor = 'ns-resize';
+            document.body.style.cursor = 'ew-resize';
         } else {
             isDragging = true;
             previewEl.classList.add('dragging');
             document.body.style.cursor = 'grabbing';
         }
 
-        startY = e.clientY;
         startX = e.clientX;
-        startTop = parseFloat(previewEl.style.top) || 0;
-        startHeight = parseFloat(previewEl.style.height) || 40;
+        startY = e.clientY;
+        startLeftPct = parseFloat(previewEl.style.left) || 0;
+        startWidthPct = parseFloat(previewEl.style.width) || 0;
         currentHoverTrack = track;
 
-        // Calculate offset from track center where user clicked (for accurate day boundary detection)
         const trackRect = track.getBoundingClientRect();
-        const trackCenterX = trackRect.left + trackRect.width / 2;
-        clickOffsetX = e.clientX - trackCenterX;
+        const trackCenterY = trackRect.top + trackRect.height / 2;
+        clickOffsetY = e.clientY - trackCenterY;
 
         e.preventDefault();
 
-        // Add mouse move and up handlers to document
         document.addEventListener('mousemove', handleMouseMove);
         document.addEventListener('mouseup', handleMouseUp);
     });
 
     function handleMouseMove(e) {
-        const deltaY = e.clientY - startY;
+        const trackRect = track.getBoundingClientRect();
+        if (trackRect.width <= 0) return;
+
+        const deltaX = e.clientX - startX;
+        const deltaPct = (deltaX / trackRect.width) * 100;
+        const allSegmentBlocks = document.querySelectorAll(`.calendar-block.preview[data-segment-index="${segmentIndex}"]`);
 
         if (isDragging) {
-            // Find all preview blocks for this segment
-            const allSegmentBlocks = document.querySelectorAll(`.calendar-block.preview[data-segment-index="${segmentIndex}"]`);
-
-            // Move all blocks vertically together
-            const newTop = Math.max(0, startTop + deltaY);
-            const maxTop = (24 * pixelsPerHour) - parseFloat(previewEl.style.height);
-            const finalTop = Math.min(newTop, maxTop);
+            // Move horizontally — clamp so the block stays within [0, 100]%
+            const maxLeftPct = 100 - startWidthPct;
+            const newLeftPct = Math.max(0, Math.min(maxLeftPct, startLeftPct + deltaPct));
 
             allSegmentBlocks.forEach(block => {
-                block.style.top = `${finalTop}px`;
+                block.style.left = `${newLeftPct}%`;
                 block.classList.add('dragging');
             });
 
-            // Check if mouse is over a different day track - move all blocks together horizontally
+            // Move vertically (across day rows)
             const allTracks = Array.from(document.querySelectorAll('.day-track'));
+            const effectiveY = e.clientY - clickOffsetY;
             let targetTrackIndex = -1;
-
-            // Use offset-corrected position to detect which day we're over
-            // This ensures the block moves when cursor crosses the day boundary, not before/after
-            const effectiveX = e.clientX - clickOffsetX;
-
             for (let i = 0; i < allTracks.length; i++) {
                 const rect = allTracks[i].getBoundingClientRect();
-                const trackCenterX = rect.left + rect.width / 2;
-                // Check if the effective center is within this track
-                if (effectiveX >= rect.left && effectiveX <= rect.right) {
+                if (effectiveY >= rect.top && effectiveY <= rect.bottom) {
                     targetTrackIndex = i;
                     currentHoverTrack = allTracks[i];
                     break;
@@ -6348,20 +6299,15 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
             }
 
             if (targetTrackIndex >= 0) {
-                // Calculate day shift from original track position
                 const originalTrackIndex = allTracks.indexOf(track);
                 const dayShiftDuringDrag = targetTrackIndex - originalTrackIndex;
 
-                // Move all segment blocks to their shifted day positions
                 allSegmentBlocks.forEach(block => {
-                    // Get this block's original track (stored as data attribute or calculate from current position)
                     if (!block.dataset.originalTrackIndex) {
                         block.dataset.originalTrackIndex = allTracks.indexOf(block.parentElement);
                     }
                     const blockOriginalIndex = parseInt(block.dataset.originalTrackIndex);
                     const newTrackIndex = blockOriginalIndex + dayShiftDuringDrag;
-
-                    // Move block to new track if in valid range
                     if (newTrackIndex >= 0 && newTrackIndex < allTracks.length) {
                         if (allTracks[newTrackIndex] !== block.parentElement) {
                             allTracks[newTrackIndex].appendChild(block);
@@ -6370,36 +6316,29 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
                 });
             }
         } else if (isResizing) {
-            // Find all preview blocks for this segment
-            const allSegmentBlocks = document.querySelectorAll(`.calendar-block.preview[data-segment-index="${segmentIndex}"]`);
-
-            if (resizeHandle === 'top') {
-                // Resize from top - adjust start time
-                const newTop = Math.max(0, startTop + deltaY);
-                const newHeight = startHeight - deltaY;
-                if (newHeight >= 10) { // Minimum height
+            if (resizeHandle === 'start') {
+                const newLeftPct = Math.max(0, startLeftPct + deltaPct);
+                const newWidthPct = startWidthPct - (newLeftPct - startLeftPct);
+                if (newWidthPct >= 0.5) {
                     allSegmentBlocks.forEach(block => {
-                        block.style.top = `${newTop}px`;
-                        block.style.height = `${newHeight}px`;
+                        block.style.left = `${newLeftPct}%`;
+                        block.style.width = `${newWidthPct}%`;
                     });
                 }
-            } else if (resizeHandle === 'bottom') {
-                // Resize from bottom - adjust end time
-                const newHeight = Math.max(10, startHeight + deltaY);
-                const maxHeight = (24 * pixelsPerHour) - startTop;
-                const finalHeight = Math.min(newHeight, maxHeight);
+            } else if (resizeHandle === 'end') {
+                const maxWidthPct = 100 - startLeftPct;
+                const newWidthPct = Math.max(0.5, Math.min(maxWidthPct, startWidthPct + deltaPct));
                 allSegmentBlocks.forEach(block => {
-                    block.style.height = `${finalHeight}px`;
+                    block.style.width = `${newWidthPct}%`;
                 });
             }
         }
     }
 
-    function handleMouseUp(e) {
+    function handleMouseUp() {
         document.removeEventListener('mousemove', handleMouseMove);
         document.removeEventListener('mouseup', handleMouseUp);
 
-        // Remove classes and data from all blocks in this segment
         const allSegmentBlocks = document.querySelectorAll(`.calendar-block.preview[data-segment-index="${segmentIndex}"]`);
         allSegmentBlocks.forEach(block => {
             block.classList.remove('dragging');
@@ -6409,14 +6348,12 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
         document.body.style.cursor = '';
 
         if (isDragging || isResizing) {
-            // Calculate new times based on final position
-            const finalTop = parseFloat(previewEl.style.top) || 0;
-            const finalHeight = parseFloat(previewEl.style.height) || 40;
+            const finalLeftPct = parseFloat(previewEl.style.left) || 0;
+            const finalWidthPct = parseFloat(previewEl.style.width) || 0;
 
-            const newStartMinutes = snapToInterval(pixelsToMinutes(finalTop));
-            const newEndMinutes = snapToInterval(pixelsToMinutes(finalTop + finalHeight));
+            const newStartMinutes = snapToInterval((finalLeftPct / 100) * 1440);
+            const newEndMinutes = snapToInterval(((finalLeftPct + finalWidthPct) / 100) * 1440);
 
-            // Calculate day shift if block was moved to different day
             let dayShift = 0;
             if (isDragging && currentHoverTrack !== track) {
                 const newDayIndex = getDayIndexFromTrack(currentHoverTrack);
@@ -8744,34 +8681,32 @@ function syncSelectedControlState() {
     updateCleanHostsBtnState();
 }
 
-// Get the Monday of the week containing the given date
+// In the row-based week view, currentWeekStart is the first visible day (not necessarily a
+// Monday). Navigation moves the 7-day window in 7-day steps; "Today" snaps the window so
+// today is the first row.
 function getWeekStart(date) {
     const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
-    d.setDate(diff);
     d.setHours(0, 0, 0, 0);
     return d;
 }
 
-// Format week display string like "Mon 26 Jan - Sun 1 Feb"
+// Format week display string like "May 2 – May 8" (or include year when crossing years).
 function formatWeekDisplay(start, end) {
     const locale = tSettings('locale');
-    const formatDayMonth = new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short' });
+    const formatDayMonth = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' });
     const startLabel = formatDayMonth.format(start);
     const endLabel = formatDayMonth.format(end);
 
-    // Include year if different from current
     const currentYear = new Date().getFullYear();
     const startYear = start.getFullYear();
     const endYear = end.getFullYear();
 
-    if (startYear === endYear && startYear === currentYear) return `${startLabel} - ${endLabel}`;
-    if (startYear === endYear) return `${startLabel} - ${endLabel} ${startYear}`;
-    return `${startLabel} ${startYear} - ${endLabel} ${endYear}`;
+    if (startYear === endYear && startYear === currentYear) return `${startLabel} – ${endLabel}`;
+    if (startYear === endYear) return `${startLabel} – ${endLabel} ${startYear}`;
+    return `${startLabel} ${startYear} – ${endLabel} ${endYear}`;
 }
 
-// Navigate to previous/next week
+// Move the 7-day window forward or backward by one week
 function navigateWeek(direction) {
     if (!currentWeekStart) {
         currentWeekStart = getWeekStart(new Date());
@@ -8779,166 +8714,128 @@ function navigateWeek(direction) {
 
     currentWeekStart.setDate(currentWeekStart.getDate() + (direction * 7));
     updateWeekCalendar();
-    handleTimeChange(); // Re-render preview block after navigation
+    handleTimeChange();
 }
 
-// Scroll to today's column and current time.
-// alignment: 'left' places today flush against the time sidebar; 'center' centers it in the viewport.
-function scrollToToday(smooth = true, alignment = 'center') {
-    const today = new Date();
-    const todayStart = getWeekStart(today);
+// Snap the 7-day window so today is the first row.
+function scrollToToday(_smooth = true, _alignment = 'left') {
+    const todayStart = getWeekStart(new Date());
 
-    // If today is not in the current week, navigate to it first
-    if (currentWeekStart.getTime() !== todayStart.getTime()) {
+    if (!currentWeekStart || currentWeekStart.getTime() !== todayStart.getTime()) {
         currentWeekStart = todayStart;
         updateWeekCalendar();
-        handleTimeChange(); // Re-render preview block after navigation
-    }
-
-    const scrollContainer = document.querySelector('.week-calendar-scroll');
-    if (!scrollContainer) return;
-
-    // Scroll to today's column (horizontal)
-    const todayColumn = document.querySelector('.day-column.today');
-
-    if (todayColumn) {
-        // offsetLeft is relative to .week-calendar-scroll (position: relative), so day columns
-        // start at 0, 160, 320, ... Left alignment lands today against the time sidebar; centered
-        // alignment shifts by half the leftover viewport width.
-        const scrollTargetX = alignment === 'left'
-            ? todayColumn.offsetLeft
-            : todayColumn.offsetLeft - (scrollContainer.clientWidth - todayColumn.offsetWidth) / 2;
-
-        // Scroll vertically to 2 hours before current time
-        // Header row is sticky at 28px, content starts below it
-        const currentHour = today.getHours();
-        const targetHour = Math.max(0, currentHour - 2); // 2 hours before, min 0
-        const headerRowHeight = 28; // sticky header height
-        const scrollTargetY = headerRowHeight + (targetHour * 40); // 40px per hour
-
-        if (smooth) {
-            scrollContainer.scrollTo({ left: scrollTargetX, top: scrollTargetY, behavior: 'smooth' });
-        } else {
-            scrollContainer.scrollLeft = scrollTargetX;
-            scrollContainer.scrollTop = scrollTargetY;
-        }
+        handleTimeChange();
     }
 }
 
-// Used for the instant scroll on app startup — keeps today flush against the time sidebar
-// so the user opens the app with "today" at the leftmost position of the calendar.
+// Used for the instant snap on app startup — sets the window to start at today.
 function scrollToNow(smooth = true) {
     scrollToToday(smooth, 'left');
 }
 
-// Update week calendar display
+// Render the row-based week calendar: 7 day rows with horizontal time axis.
 function updateWeekCalendar() {
-    const timeAxis = document.getElementById('time-axis');
-    const daysContainer = document.getElementById('days-container');
-    const headerDays = document.getElementById('header-days');
+    const dayRows = document.getElementById('day-rows');
+    const hourMarkers = document.getElementById('hour-markers');
 
-    if (!timeAxis || !daysContainer) return;
+    if (!dayRows || !hourMarkers) return;
 
-    // Generate time axis (no header spacer - it's in the header row now)
-    timeAxis.innerHTML = '';
-
-    const now = new Date();
-    const currentHour = now.getHours();
-
-    for (let h = 0; h < 24; h++) {
+    // Hour markers across the timeline (every 3 hours: 00, 03, 06, 09, 12, 15, 18, 21).
+    hourMarkers.innerHTML = '';
+    for (let h = 0; h <= 21; h += 3) {
         const marker = document.createElement('div');
-        marker.className = h === currentHour ? 'time-marker current-hour' : 'time-marker';
-        marker.textContent = `${String(h).padStart(2, '0')}:00`;
-        timeAxis.appendChild(marker);
+        marker.className = 'hour-marker';
+        marker.style.left = `${(h / 24) * 100}%`;
+        marker.textContent = String(h).padStart(2, '0');
+        hourMarkers.appendChild(marker);
     }
 
-    // Generate day columns - render 21 days (3 weeks) for open-ended scrolling
-    // currentWeekStart represents the "anchor" week, we show 1 week before and 1 week after
-    if (headerDays) headerDays.innerHTML = '';
-    daysContainer.innerHTML = '';
-    const dayNames = tSettings('dayAbbrev');
+    // Render 7 day rows starting at currentWeekStart.
+    dayRows.innerHTML = '';
+    const dayNames = tSettings('dayAbbrev'); // 0=Sun..6=Sat
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const todayKey = localDateKey(today);
 
-    // Start 7 days before currentWeekStart
-    const renderStart = new Date(currentWeekStart);
-    renderStart.setDate(renderStart.getDate() - 7);
+    // For the today row we include the weekday in the secondary label (e.g. "Sat May 2")
+    // since the primary label says "Today" and would otherwise hide what weekday it is.
+    // Other rows keep the secondary label compact ("May 3") because the weekday is already
+    // shown as the primary label.
+    const formatDateLabel = (date, withWeekday) => {
+        try {
+            return new Intl.DateTimeFormat(tSettings('locale'), withWeekday
+                ? { weekday: 'short', month: 'short', day: 'numeric' }
+                : { month: 'short', day: 'numeric' }
+            ).format(date);
+        } catch (_) {
+            return withWeekday
+                ? `${dayNames[date.getDay()]} ${date.toLocaleDateString()}`
+                : date.toLocaleDateString();
+        }
+    };
 
-    for (let d = 0; d < 21; d++) {
-        const dayDate = new Date(renderStart);
+    for (let d = 0; d < 7; d++) {
+        const dayDate = new Date(currentWeekStart);
         dayDate.setDate(dayDate.getDate() + d);
 
-        const isToday = dayDate.getTime() === today.getTime();
-        const dayOfWeek = dayDate.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+        const dateStr = localDateKey(dayDate);
+        const isToday = dateStr === todayKey;
+        const dayOfWeek = dayDate.getDay(); // 0=Sun..6=Sat
         const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
 
-        // Day header cell (in sticky header row)
-        if (headerDays) {
-            const headerCell = document.createElement('div');
-            headerCell.className = 'day-header-cell';
-            if (isToday) headerCell.classList.add('today');
-            if (isWeekend) headerCell.classList.add('weekend');
-            headerCell.textContent = `${dayNames[dayOfWeek]} ${dayDate.getDate()}`;
-            headerDays.appendChild(headerCell);
-        }
+        const row = document.createElement('div');
+        row.className = 'day-row';
+        if (isToday) row.classList.add('today');
+        if (isWeekend) row.classList.add('weekend');
+        row.dataset.date = dateStr;
 
-        // Day column (no header - headers are in separate row)
-        const column = document.createElement('div');
-        column.className = 'day-column';
-        if (isToday) column.classList.add('today');
-        if (isWeekend) column.classList.add('weekend');
-        column.dataset.date = localDateKey(dayDate);
+        const label = document.createElement('div');
+        label.className = 'day-label';
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'day-name';
+        nameSpan.textContent = isToday ? tSettings('today') : dayNames[dayOfWeek];
+        const dateSpan = document.createElement('span');
+        dateSpan.className = 'day-date';
+        dateSpan.textContent = formatDateLabel(dayDate, isToday);
+        label.append(nameSpan, dateSpan);
 
-        // Hour cells
-        for (let h = 0; h < 24; h++) {
-            const cell = document.createElement('div');
-            cell.className = 'hour-cell';
-            cell.dataset.hour = h;
-            column.appendChild(cell);
-        }
-
-        // Day track for blocks
         const track = document.createElement('div');
         track.className = 'day-track';
-        if (isScheduleMode) {
-            track.classList.add('schedule-mode');
-        }
-        track.dataset.date = localDateKey(dayDate);
-        column.appendChild(track);
+        if (isScheduleMode) track.classList.add('schedule-mode');
+        track.dataset.date = dateStr;
 
-        // Now indicator for today (no header offset - starts at top of column)
         if (isToday) {
+            const now = new Date();
+            const nowMinutes = now.getHours() * 60 + now.getMinutes();
             const nowIndicator = document.createElement('div');
             nowIndicator.className = 'now-indicator';
             nowIndicator.id = 'now-indicator';
-            const nowMinutes = now.getHours() * 60 + now.getMinutes();
-            const topPosition = (nowMinutes / 60) * 40; // hours * 40px per hour
-            nowIndicator.style.top = `${topPosition}px`;
-            column.appendChild(nowIndicator);
+            nowIndicator.style.left = `${(nowMinutes / 1440) * 100}%`;
+            track.appendChild(nowIndicator);
         }
 
-        daysContainer.appendChild(column);
+        row.append(label, track);
+        dayRows.appendChild(row);
     }
 
-    // Update visible range display after render
     updateVisibleRangeDisplay();
-
-    // Render active blocks and scheduled blocks on the calendar
     renderWeekBlocks();
 }
 
 function getCalendarRenderRange() {
     const renderStart = new Date(currentWeekStart);
-    renderStart.setDate(renderStart.getDate() - 7);
     renderStart.setHours(0, 0, 0, 0);
 
     const renderEnd = new Date(renderStart);
-    renderEnd.setDate(renderEnd.getDate() + 20);
+    renderEnd.setDate(renderEnd.getDate() + 6);
     renderEnd.setHours(23, 59, 59, 999);
 
     return { renderStart, renderEnd };
 }
 
+// Convert a time interval (clamped to a single day) into horizontal positioning for the
+// row-based timeline (left%/width% of the day track) and also keep top/height as legacy
+// values for any callers still using them.
 function getCalendarSegmentLayout(segmentStartMs, segmentEndMs, dayStartMs, dayEndMs) {
     const clampedStartMs = Math.max(segmentStartMs, dayStartMs);
     const clampedEndMs = Math.min(segmentEndMs, dayEndMs);
@@ -8951,75 +8848,61 @@ function getCalendarSegmentLayout(segmentStartMs, segmentEndMs, dayStartMs, dayE
         : segmentEndDate.getHours() * 60 + segmentEndDate.getMinutes();
 
     return {
+        leftPercent: (startMinutes / 1440) * 100,
+        widthPercent: Math.max(0.5, ((endMinutes - startMinutes) / 1440) * 100),
         topPosition: (startMinutes / 60) * 40,
         height: Math.max(20, ((endMinutes - startMinutes) / 60) * 40),
+        startMinutes,
+        endMinutes,
         segmentStartDate,
         segmentEndDate
     };
 }
 
-// Update the displayed date range based on visible columns
+// Update the displayed date range label based on the 7-day window.
 function updateVisibleRangeDisplay() {
-    const scrollContainer = document.querySelector('.week-calendar-scroll');
     const weekDisplay = document.getElementById('week-display');
-    const dayColumns = document.querySelectorAll('.day-column');
+    if (!weekDisplay || !currentWeekStart) return;
 
-    if (!scrollContainer || !weekDisplay || dayColumns.length === 0) return;
+    const start = new Date(currentWeekStart);
+    const end = new Date(currentWeekStart);
+    end.setDate(end.getDate() + 6);
 
-    const scrollLeft = scrollContainer.scrollLeft;
-    const containerWidth = scrollContainer.clientWidth;
-
-    // Find first and last visible columns. offsetLeft is measured from the scroll container
-    // (which is position: relative), so day columns start at 0, 120, 240, ...
-    let firstVisible = null;
-    let lastVisible = null;
-
-    dayColumns.forEach(column => {
-        const columnLeft = column.offsetLeft;
-        const columnRight = columnLeft + column.offsetWidth;
-
-        if (columnRight > scrollLeft && columnLeft < scrollLeft + containerWidth) {
-            if (!firstVisible) firstVisible = column;
-            lastVisible = column;
-        }
-    });
-
-    if (firstVisible && lastVisible) {
-        const startDate = parseLocalDateKey(firstVisible.dataset.date);
-        const endDate = parseLocalDateKey(lastVisible.dataset.date);
-        if (!startDate || !endDate) return;
-        weekDisplay.textContent = formatWeekDisplay(startDate, endDate);
-    }
+    weekDisplay.textContent = formatWeekDisplay(start, end);
 }
-// Render active blocks on week calendar
+// Render active blocks on week calendar (one row per day, blocks positioned left%/width%)
 function renderWeekBlocks() {
     const noBlocksMsg = document.getElementById('no-blocks-message');
     const now = Date.now();
 
-    // Clear existing blocks from all day tracks
+    // Clear existing blocks from all day tracks (preserve the now-indicator on today)
     document.querySelectorAll('.day-track').forEach(track => {
+        const nowIndicator = track.querySelector('#now-indicator');
         track.innerHTML = '';
+        if (nowIndicator) track.appendChild(nowIndicator);
     });
 
-    // Filter blocks within the full visible calendar range (21 rendered days)
     const { renderStart, renderEnd } = getCalendarRenderRange();
     const renderStartMs = renderStart.getTime();
     const renderEndMs = renderEnd.getTime();
 
+    // Always-on active blocks are represented in the "Always on" pill row instead of being
+    // drawn as bars across the timeline.
     const visibleBlocks = appData.activeBlocks.filter(block =>
-        block.endTime > renderStartMs && block.startTime < renderEndMs
+        !isBlockAlwaysOn(block) &&
+        block.endTime > renderStartMs &&
+        block.startTime < renderEndMs
     );
 
-    // Check if there are any schedules
     const hasSchedules = appData.schedules && appData.schedules.length > 0;
+    const hasAlwaysOnBlocks = appData.activeBlocks.some(b => isBlockAlwaysOn(b));
 
-    if (visibleBlocks.length === 0 && !hasSchedules) {
+    if (visibleBlocks.length === 0 && !hasSchedules && !hasAlwaysOnBlocks) {
         noBlocksMsg?.classList.remove('hidden');
     } else {
         noBlocksMsg?.classList.add('hidden');
     }
 
-    // Render each block
     visibleBlocks.forEach(block => {
         const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
         if (!blocklist) return;
@@ -9030,18 +8913,16 @@ function renderWeekBlocks() {
         }
 
         const blockStart = new Date(block.startTime);
-        // Clamp blockEnd to the visible calendar range to avoid infinite loops with always-on blocks
         const blockEnd = new Date(Math.min(block.endTime, renderEndMs));
-        const isExpired = block.endTime <= now && !isBlockAlwaysOn(block);
+        const isExpired = block.endTime <= now;
+        const isRunning = !isExpired && block.startTime <= now;
 
-        // Determine which day(s) the block spans
         const startDay = new Date(blockStart);
         startDay.setHours(0, 0, 0, 0);
 
         const endDay = new Date(blockEnd);
         endDay.setHours(0, 0, 0, 0);
 
-        // For simplicity, render block in each day it spans
         let currentDay = new Date(startDay);
 
         while (currentDay <= endDay) {
@@ -9049,37 +8930,43 @@ function renderWeekBlocks() {
             const track = document.querySelector(`.day-track[data-date="${dateStr}"]`);
 
             if (track) {
-                // Calculate start time for this day segment
                 const dayStart = new Date(currentDay);
                 dayStart.setHours(0, 0, 0, 0);
                 const dayEnd = new Date(currentDay);
                 dayEnd.setHours(23, 59, 59, 999);
 
                 const {
-                    topPosition,
-                    height,
+                    leftPercent,
+                    widthPercent,
                     segmentStartDate,
                     segmentEndDate
                 } = getCalendarSegmentLayout(block.startTime, blockEnd.getTime(), dayStart.getTime(), dayEnd.getTime());
 
                 const blockEl = document.createElement('div');
-                blockEl.className = isExpired ? 'calendar-block expired' : 'calendar-block';
+                blockEl.className = 'calendar-block';
+                if (isExpired) blockEl.classList.add('expired');
+                if (isRunning) blockEl.classList.add('running');
                 blockEl.dataset.blockId = block.id;
-                blockEl.style.top = `${topPosition}px`;
-                blockEl.style.height = `${height}px`;
+                blockEl.style.left = `${leftPercent}%`;
+                blockEl.style.width = `${widthPercent}%`;
 
                 if (blocklist.color) {
                     blockEl.style.background = blocklist.color;
                     blockEl.style.color = getContrastTextColor(blocklist.color);
                 }
 
+                // Show "until HH:MM" for currently-running blocks (matches design reference);
+                // otherwise show the block's start–end range.
+                const timeLabel = isRunning
+                    ? `until ${formatTime(segmentEndDate)}`
+                    : `${formatTime(segmentStartDate)} - ${formatTime(segmentEndDate)}`;
+
                 blockEl.innerHTML = `
                     <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
                     <span class="block-label">${escapeHtml(blocklist.name)}</span>
-                    <span class="block-time">${formatTime(segmentStartDate)} - ${formatTime(segmentEndDate)}</span>
+                    <span class="block-time">${timeLabel}</span>
                 `;
 
-                // Add click handler for override (only for running blocks)
                 if (!isExpired) {
                     blockEl.addEventListener('click', (e) => {
                         e.stopPropagation();
@@ -9090,42 +8977,61 @@ function renderWeekBlocks() {
                 track.appendChild(blockEl);
             }
 
-            // Move to next day
             currentDay.setDate(currentDay.getDate() + 1);
         }
     });
 
-    // Render scheduled blocks
     renderScheduledCalendarBlocks();
-
-    // Layout overlapping blocks side-by-side (Apple Calendar style)
     layoutOverlappingBlocks();
-
-    // Wrap the header bits (emoji + name + time) in a sticky container so the label stays
-    // visible when a block starts above the viewport (e.g. an overnight schedule at 00:00).
-    makeCalendarBlockHeadersSticky();
-
-    // Refresh the visibility-chip row so it stays in sync with the data.
+    renderScheduleAlwaysOnRow();
     renderScheduleVisibilityChips();
 }
 
-function makeCalendarBlockHeadersSticky() {
-    document.querySelectorAll('.calendar-block').forEach(block => {
-        // Skip if already wrapped (idempotent across renders)
-        if (block.querySelector(':scope > .calendar-block-sticky')) return;
 
-        const emoji = block.querySelector(':scope > .block-emoji');
-        const label = block.querySelector(':scope > .block-label');
-        const time = block.querySelector(':scope > .block-time');
-        if (!emoji && !label && !time) return;
+/// Render the "Always on: <chip> <chip> · not shown in timeline" row above the calendar.
+/// Always-on active blocks aren't drawn as bars in the timeline because they would cover
+/// every day in full; this row makes their existence clear instead.
+function renderScheduleAlwaysOnRow() {
+    const row = document.getElementById('schedule-always-on-row');
+    const chips = document.getElementById('schedule-always-on-chips');
+    if (!row || !chips) return;
 
-        const wrapper = document.createElement('div');
-        wrapper.className = 'calendar-block-sticky';
-        block.insertBefore(wrapper, block.firstChild);
-        if (emoji) wrapper.appendChild(emoji);
-        if (label) wrapper.appendChild(label);
-        if (time) wrapper.appendChild(time);
+    const alwaysOnBlocks = (appData.activeBlocks || []).filter(b => isBlockAlwaysOn(b));
+
+    if (alwaysOnBlocks.length === 0) {
+        row.classList.add('hidden');
+        chips.innerHTML = '';
+        return;
+    }
+
+    chips.innerHTML = '';
+
+    alwaysOnBlocks.forEach(block => {
+        const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+        if (!blocklist) return;
+
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'always-on-chip';
+        chip.dataset.blockId = block.id;
+        chip.title = blocklist.name;
+
+        const emoji = blocklist.emoji
+            ? `<span class="always-on-chip-emoji">${escapeHtml(blocklist.emoji)}</span>`
+            : '';
+
+        chip.innerHTML = `${emoji}<span class="always-on-chip-name">${escapeHtml(blocklist.name)}</span>`;
+
+        // Clicking the chip opens the override modal so the user can stop the always-on block.
+        chip.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openOverrideModal(block.id);
+        });
+
+        chips.appendChild(chip);
     });
+
+    row.classList.remove('hidden');
 }
 
 /// Render a row of eye/eye-slash chips under the Schedule header — one per blocklist that
@@ -9137,9 +9043,11 @@ function renderScheduleVisibilityChips() {
 
     const now = Date.now();
     const scheduledIds = new Set((appData.schedules || []).map(s => s.blocklistId));
+    // Always-on blocks aren't drawn in the timeline (they're surfaced by the "Always on"
+    // row above instead), so don't add a visibility chip for them either.
     const manualIds = new Set(
         (appData.activeBlocks || [])
-            .filter(b => b.endTime > now)
+            .filter(b => b.endTime > now && !isBlockAlwaysOn(b))
             .map(b => b.blocklistId)
     );
     const relevantIds = new Set([...scheduledIds, ...manualIds]);
@@ -9168,7 +9076,6 @@ function renderScheduleVisibilityChips() {
         chip.title = visible ? 'Hide from schedule' : 'Show in schedule';
         chip.innerHTML = `
             ${visible ? eyeOpenSvg : eyeClosedSvg}
-            ${bl.color ? `<span class="schedule-visibility-chip-dot" style="background:${escapeHtml(bl.color)}"></span>` : ''}
             <span class="schedule-visibility-chip-name">${bl.emoji ? escapeHtml(bl.emoji) + ' ' : ''}${escapeHtml(bl.name || '')}</span>
         `;
         chip.addEventListener('click', async () => {
@@ -9184,95 +9091,93 @@ function renderScheduleVisibilityChips() {
     }
 }
 
-// Layout overlapping blocks side-by-side within each day track (Apple Calendar style)
+// Layout overlapping blocks within a day row.
+//
+// In the row-based layout, blocks already use left%/width% to position by time, so blocks
+// that overlap in time would visually overlap horizontally. We resolve this by stacking
+// overlapping blocks vertically *within* the row: the row is divided into N horizontal
+// lanes (where N is the maximum overlap depth), each block sits in one lane.
 function layoutOverlappingBlocks() {
     document.querySelectorAll('.day-track').forEach(track => {
         const blocks = Array.from(track.querySelectorAll('.calendar-block'));
+        // Reset any previous lane styling so single-block rows render at full height.
+        blocks.forEach(b => {
+            b.style.top = '';
+            b.style.bottom = '';
+            b.style.height = '';
+        });
         if (blocks.length <= 1) return;
 
-        // Get block positions and group identifier (scheduleId or blockId)
+        // Compute time-extents (in % of day width) from current left/width styles.
         const blockData = blocks.map(block => {
-            const top = parseFloat(block.style.top) || 0;
-            const height = parseFloat(block.style.height) || 20;
-            // Use the most specific logical group id available so preview blocks
-            // participate in the same side-by-side layout as saved/running blocks.
+            const left = parseFloat(block.style.left) || 0;
+            const width = parseFloat(block.style.width) || 0;
             const groupId = block.dataset.scheduleId || block.dataset.blockId || block.dataset.previewGroupId || null;
             return {
                 element: block,
-                top: top,
-                bottom: top + height,
-                groupId: groupId,
-                column: 0,
-                totalColumns: 1
+                left,
+                right: left + width,
+                groupId,
+                lane: 0,
+                totalLanes: 1
             };
         });
 
-        // Sort by top position, then by height (taller blocks first)
-        blockData.sort((a, b) => a.top - b.top || b.bottom - a.bottom);
+        // Sort by left edge so we assign lanes greedily from earliest start.
+        blockData.sort((a, b) => a.left - b.left || a.right - b.right);
 
-        // First pass: assign columns to groups (blocks from same schedule get same column)
-        const groupColumns = new Map(); // groupId -> column
+        const groupLanes = new Map();
 
         for (let i = 0; i < blockData.length; i++) {
             const current = blockData[i];
 
-            // If this block's group already has a column, use it
-            if (current.groupId && groupColumns.has(current.groupId)) {
-                current.column = groupColumns.get(current.groupId);
+            if (current.groupId && groupLanes.has(current.groupId)) {
+                current.lane = groupLanes.get(current.groupId);
                 continue;
             }
 
-            // Find all blocks that overlap with current (considering the entire group)
             const overlappingGroups = new Set();
             for (let j = 0; j < blockData.length; j++) {
+                if (i === j) continue;
                 const other = blockData[j];
-                // Check if they overlap
-                if (!(current.bottom <= other.top || current.top >= other.bottom)) {
+                if (!(current.right <= other.left || current.left >= other.right)) {
                     if (other.groupId !== current.groupId) {
                         overlappingGroups.add(other.groupId);
                     }
                 }
             }
 
-            // Find columns used by overlapping groups
-            const usedColumns = new Set();
+            const usedLanes = new Set();
             overlappingGroups.forEach(gid => {
-                if (groupColumns.has(gid)) {
-                    usedColumns.add(groupColumns.get(gid));
-                }
+                if (groupLanes.has(gid)) usedLanes.add(groupLanes.get(gid));
             });
 
-            // Assign the first available column
-            let col = 1;
-            while (usedColumns.has(col)) col++;
-            current.column = col;
-            if (current.groupId) {
-                groupColumns.set(current.groupId, col);
-            }
+            let lane = 1;
+            while (usedLanes.has(lane)) lane++;
+            current.lane = lane;
+            if (current.groupId) groupLanes.set(current.groupId, lane);
         }
 
-        // Second pass: calculate totalColumns for overlapping sets
         for (let i = 0; i < blockData.length; i++) {
             const current = blockData[i];
-            let maxCol = current.column;
-
+            let maxLane = current.lane;
             for (let j = 0; j < blockData.length; j++) {
+                if (i === j) continue;
                 const other = blockData[j];
-                if (!(current.bottom <= other.top || current.top >= other.bottom)) {
-                    maxCol = Math.max(maxCol, other.column);
+                if (!(current.right <= other.left || current.left >= other.right)) {
+                    maxLane = Math.max(maxLane, other.lane);
                 }
             }
-            current.totalColumns = maxCol;
+            current.totalLanes = maxLane;
         }
 
-        // Apply positioning
         blockData.forEach(data => {
-            if (data.totalColumns > 1) {
-                const widthPercent = 100 / data.totalColumns;
-                const leftPercent = (data.column - 1) * widthPercent;
-                data.element.style.left = `calc(${leftPercent}% + 2px)`;
-                data.element.style.width = `calc(${widthPercent}% - 4px)`;
-                data.element.style.right = 'auto';
+            if (data.totalLanes > 1) {
+                const lanePercent = 100 / data.totalLanes;
+                const topPercent = (data.lane - 1) * lanePercent;
+                data.element.style.top = `calc(${topPercent}% + 2px)`;
+                data.element.style.height = `calc(${lanePercent}% - 4px)`;
+                data.element.style.bottom = 'auto';
             }
         });
     });
@@ -9280,26 +9185,20 @@ function layoutOverlappingBlocks() {
 
 // Render scheduled blocks on the calendar (from saved schedules)
 function renderScheduledCalendarBlocks() {
-    console.log('renderScheduledCalendarBlocks called, schedules:', appData.schedules);
     if (!appData.schedules || appData.schedules.length === 0) return;
 
     const now = new Date();
-    const today = now.getDay(); // 0=Sun, 1=Mon, etc.
-    const todayIndex = today === 0 ? 6 : today - 1; // Convert to 0=Mon format
 
-    // Generate all 21 visible days (7 before anchor week, anchor week, 7 after anchor week)
-    // This matches the calendar's visible range
-    const renderStart = new Date(currentWeekStart);
-    renderStart.setDate(renderStart.getDate() - 7);
-
+    // Build a list of the 7 visible days (in render order). Overnight schedules render the
+    // tail on the *next visible day* if it's in range.
     const allVisibleDays = [];
-    for (let i = 0; i < 21; i++) {
-        const day = new Date(renderStart);
+    for (let i = 0; i < 7; i++) {
+        const day = new Date(currentWeekStart);
         day.setDate(day.getDate() + i);
         allVisibleDays.push({
             date: day,
             dateStr: localDateKey(day),
-            dayIndex: (day.getDay() === 0 ? 6 : day.getDay() - 1) // Convert to 0=Mon format
+            dayIndex: (day.getDay() === 0 ? 6 : day.getDay() - 1)
         });
     }
 
@@ -9307,12 +9206,10 @@ function renderScheduledCalendarBlocks() {
         const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
         if (!blocklist) return;
 
-        // Skip if blocklist has "always show in schedule" unchecked and isn't currently selected
         if (blocklist.alwaysShowInSchedule === false && schedule.blocklistId !== selectedBlocklistId) {
             return;
         }
 
-        // Check if schedule has expired (for date-limited schedules)
         if (schedule.repeatType === 'date' && schedule.repeatDate) {
             const endDate = new Date(schedule.repeatDate);
             if (now > endDate) return;
@@ -9332,133 +9229,70 @@ function renderScheduledCalendarBlocks() {
             return;
         }
 
-        // Render each segment on its applicable days
         schedule.segments.forEach((segment, segmentIdx) => {
             const segmentDays = segment.days || [];
 
             allVisibleDays.forEach((weekDay, weekDayIdx) => {
-                if (!segmentDays.includes(weekDay.dayIndex)) {
-                    return;
-                }
+                if (!segmentDays.includes(weekDay.dayIndex)) return;
 
                 const track = document.querySelector(`.day-track[data-date="${weekDay.dateStr}"]`);
                 if (!track) return;
 
-                // Calculate position
                 const startMinutes = segment.startHour * 60 + segment.startMinute;
                 const endMinutes = segment.endHour * 60 + segment.endMinute;
-
-                // Check if this is an overnight block (end time is before start time)
                 const isOvernight = endMinutes <= startMinutes;
 
-                if (isOvernight) {
-                    // Render first part: from start until midnight (end of day)
-                    const topPosition1 = (startMinutes / 60) * 40;
-                    const height1 = ((1440 - startMinutes) / 60) * 40; // 1440 = 24 * 60 (midnight)
+                const startTimeStr = `${String(segment.startHour).padStart(2, '0')}:${String(segment.startMinute).padStart(2, '0')}`;
+                const endTimeStr = `${String(segment.endHour).padStart(2, '0')}:${String(segment.endMinute).padStart(2, '0')}`;
 
-                    const blockEl1 = document.createElement('div');
-                    blockEl1.className = 'calendar-block scheduled';
-                    blockEl1.dataset.scheduleId = schedule.id;
-                    blockEl1.dataset.segmentIndex = segmentIdx;
-                    blockEl1.dataset.day = weekDay.dayIndex;
-                    blockEl1.style.top = `${topPosition1}px`;
-                    blockEl1.style.height = `${height1}px`;
+                const buildBlock = (leftPct, widthPct, dayIndex, isContinuation) => {
+                    const el = document.createElement('div');
+                    el.className = `calendar-block scheduled${isContinuation ? ' overnight-continuation' : ''}`;
+                    el.dataset.scheduleId = schedule.id;
+                    el.dataset.segmentIndex = segmentIdx;
+                    el.dataset.day = dayIndex;
+                    el.style.left = `${leftPct}%`;
+                    el.style.width = `${widthPct}%`;
 
                     if (blocklist.color) {
-                        blockEl1.style.background = blocklist.color;
-                        blockEl1.style.opacity = '0.7';
-                        blockEl1.style.color = getContrastTextColor(blocklist.color);
+                        el.style.background = blocklist.color;
+                        el.style.opacity = '0.7';
+                        el.style.color = getContrastTextColor(blocklist.color);
                     }
 
-                    const startTimeStr = `${String(segment.startHour).padStart(2, '0')}:${String(segment.startMinute).padStart(2, '0')}`;
-                    const endTimeStr = `${String(segment.endHour).padStart(2, '0')}:${String(segment.endMinute).padStart(2, '0')}`;
-
-                    blockEl1.innerHTML = `
+                    el.innerHTML = `
                         <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
                         <span class="block-label">${escapeHtml(blocklist.name)}</span>
                         <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
-                        <span class="schedule-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></span>
                     `;
 
-                    blockEl1.addEventListener('click', (e) => {
+                    el.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        openScheduledBlockOverrideModal(schedule, segmentIdx, weekDay.dayIndex);
+                        openScheduledBlockEdit(schedule);
                     });
 
-                    track.appendChild(blockEl1);
+                    return el;
+                };
 
-                    // Render second part: from midnight until end time on the next day
+                if (isOvernight) {
+                    // Part 1: from start until 24:00 on this day
+                    const left1 = (startMinutes / 1440) * 100;
+                    const width1 = Math.max(0.5, ((1440 - startMinutes) / 1440) * 100);
+                    track.appendChild(buildBlock(left1, width1, weekDay.dayIndex, false));
+
+                    // Part 2: from 00:00 until end on the next visible day (if any)
                     const nextDay = allVisibleDays[weekDayIdx + 1];
                     if (nextDay) {
                         const nextTrack = document.querySelector(`.day-track[data-date="${nextDay.dateStr}"]`);
                         if (nextTrack) {
-                            const topPosition2 = 0;
-                            const height2 = Math.max(20, (endMinutes / 60) * 40);
-
-                            const blockEl2 = document.createElement('div');
-                            blockEl2.className = 'calendar-block scheduled overnight-continuation';
-                            blockEl2.dataset.scheduleId = schedule.id;
-                            blockEl2.dataset.segmentIndex = segmentIdx;
-                            blockEl2.dataset.day = nextDay.dayIndex;
-                            blockEl2.style.top = `${topPosition2}px`;
-                            blockEl2.style.height = `${height2}px`;
-
-                            if (blocklist.color) {
-                                blockEl2.style.background = blocklist.color;
-                                blockEl2.style.opacity = '0.7';
-                                blockEl2.style.color = getContrastTextColor(blocklist.color);
-                            }
-
-                            blockEl2.innerHTML = `
-                                <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
-                                <span class="block-label">${escapeHtml(blocklist.name)}</span>
-                                <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
-                                <span class="schedule-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></span>
-                            `;
-
-                            blockEl2.addEventListener('click', (e) => {
-                                e.stopPropagation();
-                                openScheduledBlockOverrideModal(schedule, segmentIdx, nextDay.dayIndex);
-                            });
-
-                            nextTrack.appendChild(blockEl2);
+                            const width2 = Math.max(0.5, (endMinutes / 1440) * 100);
+                            nextTrack.appendChild(buildBlock(0, width2, nextDay.dayIndex, true));
                         }
                     }
                 } else {
-                    // Normal same-day block
-                    const topPosition = (startMinutes / 60) * 40;
-                    const height = Math.max(20, ((endMinutes - startMinutes) / 60) * 40);
-
-                    const blockEl = document.createElement('div');
-                    blockEl.className = 'calendar-block scheduled';
-                    blockEl.dataset.scheduleId = schedule.id;
-                    blockEl.dataset.segmentIndex = segmentIdx;
-                    blockEl.dataset.day = weekDay.dayIndex;
-                    blockEl.style.top = `${topPosition}px`;
-                    blockEl.style.height = `${height}px`;
-
-                    if (blocklist.color) {
-                        blockEl.style.background = blocklist.color;
-                        blockEl.style.opacity = '0.7';
-                        blockEl.style.color = getContrastTextColor(blocklist.color);
-                    }
-
-                    const startTimeStr = `${String(segment.startHour).padStart(2, '0')}:${String(segment.startMinute).padStart(2, '0')}`;
-                    const endTimeStr = `${String(segment.endHour).padStart(2, '0')}:${String(segment.endMinute).padStart(2, '0')}`;
-
-                    blockEl.innerHTML = `
-                        <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
-                        <span class="block-label">${escapeHtml(blocklist.name)}</span>
-                        <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
-                        <span class="schedule-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></span>
-                    `;
-
-                    blockEl.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        openScheduledBlockOverrideModal(schedule, segmentIdx, weekDay.dayIndex);
-                    });
-
-                    track.appendChild(blockEl);
+                    const left = (startMinutes / 1440) * 100;
+                    const width = Math.max(0.5, ((endMinutes - startMinutes) / 1440) * 100);
+                    track.appendChild(buildBlock(left, width, weekDay.dayIndex, false));
                 }
             });
         });
@@ -10189,6 +10023,9 @@ const SETTINGS_TRANSLATIONS = {
         scheduleTitle: 'Schedule',
         today: 'Today',
         noActiveBlocks: 'No active blocks',
+        alwaysOnRowLabel: 'Always on:',
+        alwaysOnRowNote: '· not shown in timeline',
+        scheduleFooterHint: 'Click any block to edit',
         madeWith: 'Made with',
         by: 'by',
         andWord: 'and',
@@ -10341,6 +10178,9 @@ const SETTINGS_TRANSLATIONS = {
         scheduleTitle: 'Skema',
         today: 'I dag',
         noActiveBlocks: 'Ingen aktive blokeringer',
+        alwaysOnRowLabel: 'Altid tændt:',
+        alwaysOnRowNote: '· vises ikke i tidslinjen',
+        scheduleFooterHint: 'Klik på en blok for at redigere',
         madeWith: 'Lavet med',
         by: 'af',
         andWord: 'og',
@@ -10526,6 +10366,9 @@ function applySettingsLanguage() {
     setText('main-schedule-title', tSettings('scheduleTitle'));
     setText('today-btn', tSettings('today'));
     setText('no-active-blocks-label', tSettings('noActiveBlocks'));
+    setText('always-on-row-label', tSettings('alwaysOnRowLabel'));
+    setText('always-on-row-note', tSettings('alwaysOnRowNote'));
+    setText('schedule-footer-hint', tSettings('scheduleFooterHint'));
     setText('duration-mode-always-label', tSettings('durationModeAlways'));
     setText('duration-mode-timed-label', tSettings('durationModeTimed'));
     setText('always-on-message-text', tSettings('alwaysOnMessage'));

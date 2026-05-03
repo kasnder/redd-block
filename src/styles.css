@@ -860,28 +860,78 @@ body.ios .section-header h2 {
     color: var(--icon-btn-hover-color);
 }
 
+/* ==========================================================================
+   Schedule (week calendar) — days as rows, hours as columns
+   ========================================================================== */
+
 .week-calendar-section {
-    flex: 1;
     display: flex;
     flex-direction: column;
-    margin-top: 6px;
-    /* Keep schedule view usable: never shrink below this; main-content will scroll instead */
-    min-height: 240px;
+    margin-top: 24px;
 }
 
-/* Per-blocklist visibility chips shown under the Schedule header */
-.schedule-visibility-chips {
+/* iPhone / iPod only: no room for week calendar — hide entire Schedule section (iPad keeps it) */
+body.ios.ios-phone .week-calendar-section {
+    display: none !important;
+}
+
+.week-calendar-section .section-header {
+    margin-bottom: 8px;
+}
+
+/* Row sitting under the SCHEDULE heading: week-nav on the left, chips pushed to the far
+   right. Wraps to a new line on narrow viewports so chips drop below the nav. */
+.schedule-controls-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    margin-bottom: 8px;
+}
+
+/* Combined status row: visibility-toggle chips + always-on chips flow inline together.
+   Children use display: contents so individual chips lay out in this single flex row. */
+.schedule-status-row {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
     gap: 6px;
-    padding: 2px 0 8px;
 }
 
-.schedule-visibility-chips.hidden {
+/* Hide the row entirely when both inner groups are hidden — using :has() with a
+   fallback. */
+.schedule-status-row:not(:has(> :not(.hidden))) {
     display: none;
 }
 
-.schedule-visibility-chip {
+.schedule-visibility-chips,
+.schedule-always-on-row,
+.always-on-chips {
+    display: contents;
+}
+
+.schedule-visibility-chips.hidden,
+.schedule-always-on-row.hidden {
+    display: none;
+}
+
+.always-on-label {
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.always-on-note {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+/* Pill chip style shared by visibility-toggle chips and always-on chips so they look
+   like a single family of "small blocklist cards" in the schedule status row. */
+.schedule-visibility-chip,
+.always-on-chip {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -896,87 +946,55 @@ body.ios .section-header h2 {
     transition: opacity 0.15s, background 0.15s;
 }
 
-.schedule-visibility-chip:hover {
-    background: var(--border-color-light, var(--border-color));
+.schedule-visibility-chip:hover,
+.always-on-chip:hover {
+    background: var(--border-color);
 }
 
 .schedule-visibility-chip[aria-pressed="false"] {
     opacity: 0.5;
 }
 
-.schedule-visibility-chip-dot {
+.schedule-visibility-chip-dot,
+.always-on-chip-dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
     flex-shrink: 0;
 }
 
-.schedule-visibility-chip svg {
+.schedule-visibility-chip svg,
+.always-on-chip svg {
     flex-shrink: 0;
     opacity: 0.75;
 }
 
-body.ios .week-calendar-section {
-    flex: 1;
-    min-height: 400px;
+.always-on-chip-emoji {
+    font-size: 13px;
+    line-height: 1;
 }
 
-/* iPhone / iPod only: no room for week calendar — hide entire Schedule section (iPad keeps it) */
-body.ios.ios-phone .week-calendar-section {
-    display: none !important;
-}
-
-.week-calendar-section .section-header {
-    margin-bottom: 8px;
-}
-
-/* Week Navigation - Apple Calendar style */
+/* Week navigation: prev / range label / next / Today */
 .week-nav {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-    margin-bottom: 8px;
-}
-
-.week-nav-buttons {
     display: flex;
     align-items: center;
     gap: 6px;
 }
 
 .week-display {
-    position: absolute;
-    left: 0;
-    font-size: 20px;
+    font-size: 14px;
     font-weight: 600;
     color: var(--text-primary);
-}
-
-/* Week nav responsive - must come after base rules */
-@media (max-width: 768px) {
-    .week-nav {
-        justify-content: flex-start;
-        width: 100%;
-        margin-bottom: 8px;
-    }
-
-    .week-display {
-        position: static;
-        font-size: 20px;
-        flex: 1;
-    }
-
-    .week-calendar-section .section-header {
-        margin-bottom: 2px;
-    }
+    padding: 0 4px;
+    min-width: 90px;
+    text-align: center;
 }
 
 .week-nav-btn {
-    width: 36px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
     border: none;
-    border-radius: 8px;
+    border-radius: 6px;
     background: rgba(0, 0, 0, 0.05);
     color: var(--text-muted);
     cursor: pointer;
@@ -992,332 +1010,214 @@ body.ios.ios-phone .week-calendar-section {
 }
 
 .week-nav-today-btn {
-    height: 32px;
-    padding: 0 14px;
-    border: none;
-    border-radius: 8px;
-    background: rgba(0, 0, 0, 0.05);
+    height: 28px;
+    padding: 0 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--element-bg);
     color: var(--text-primary);
-    font-size: 15px;
+    font-size: 13px;
     font-weight: 500;
     cursor: pointer;
+    margin-left: 4px;
     transition: all 0.2s ease;
 }
 
 .week-nav-today-btn:hover {
-    background: rgba(0, 0, 0, 0.1);
+    background: rgba(0, 0, 0, 0.05);
 }
 
-body.dark-mode .week-nav-btn,
-body.dark-mode .week-nav-today-btn {
-    background: rgba(255, 255, 255, 0.1);
+body.dark-mode .week-nav-btn {
+    background: rgba(255, 255, 255, 0.08);
 }
 
-body.dark-mode .week-nav-btn:hover,
-body.dark-mode .week-nav-today-btn:hover {
+body.dark-mode .week-nav-btn:hover {
     background: rgba(255, 255, 255, 0.15);
 }
 
-/* Week Calendar Container */
+body.dark-mode .week-nav-today-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+/* Calendar container */
 .week-calendar-container {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
     background: var(--panel-bg);
-    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
     position: relative;
-    /* Enforce minimum so the calendar content stays visible; section has min-height, this fills it */
-    min-height: 200px;
+    overflow: hidden;
 }
 
-/* Flex row: fixed-width time sidebar + main scroll area */
-.week-calendar-body {
-    flex: 1;
-    display: flex;
-    min-height: 0;
-    min-width: 0;
-}
-
-/* Time sidebar - sits outside horizontal scroll so day columns never overlap it.
-   Vertical scroll is kept in sync with the main scroll via JS. */
-.week-calendar-time-column {
-    flex-shrink: 0;
-    width: 50px;
+.week-calendar-grid {
     display: flex;
     flex-direction: column;
-    overflow-x: hidden;
-    overflow-y: auto;
-    border-right: 1px solid var(--border-color);
-    border-top-left-radius: 12px;
-    background: var(--panel-bg);
-    scrollbar-width: none;
+    width: 100%;
 }
 
-.week-calendar-time-column::-webkit-scrollbar {
-    display: none;
-}
-
-.week-calendar-time-column .header-time-spacer {
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    /* Fixed element inside its own column — left stickiness no longer needed */
-    left: auto;
-}
-
-.week-calendar-time-column .time-axis {
-    position: static;
-}
-
-.week-calendar-scroll {
-    flex: 1;
+/* Top header row: day-label spacer + hour markers across the timeline width */
+.grid-header-row {
     display: flex;
-    flex-direction: column;
-    overflow: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: thin;
-    scrollbar-color: var(--text-muted) transparent;
-    border-top-right-radius: 12px;
-    /* Keep scroll inside calendar; do not chain to main app when hitting top/bottom */
-    overscroll-behavior: contain;
-    position: relative;
-}
-
-/* Sticky header row - contains time spacer + day headers */
-.calendar-header-row {
-    display: flex;
-    position: sticky;
-    top: 0;
-    z-index: 20;
-    background: var(--panel-bg);
-    min-width: max-content;
-    border-top-left-radius: 12px;
-    border-top-right-radius: 12px;
-}
-
-.header-time-spacer {
-    flex-shrink: 0;
-    width: 50px;
-    height: 28px;
-    background: var(--panel-bg);
-    position: sticky;
-    left: 0;
-    z-index: 25;
-    border-top-left-radius: 12px;
-}
-
-.header-days {
-    display: flex;
-    min-width: max-content;
-}
-
-.day-header-cell {
-    flex-shrink: 0;
-    width: 160px;
-    min-width: 160px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    background: var(--element-bg);
+    height: 24px;
     border-bottom: 1px solid var(--border-color);
+}
+
+.day-label-spacer {
+    width: 90px;
+    flex-shrink: 0;
     border-right: 1px solid var(--border-color);
 }
 
-.day-header-cell:first-child {
-    border-top-left-radius: 12px;
+.hour-markers {
+    flex: 1;
+    position: relative;
+    height: 100%;
 }
 
-.day-header-cell:last-child {
-    border-right: none;
-    border-top-right-radius: 12px;
+.hour-marker {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 500;
+    pointer-events: none;
 }
 
-.day-header-cell.today {
+.hour-marker:first-child {
+    transform: translate(0, -50%);
+}
+
+/* Day rows container — one row per day */
+.day-rows {
+    display: flex;
+    flex-direction: column;
+}
+
+.day-row {
+    display: flex;
+    height: 48px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.day-row:last-child {
+    border-bottom: none;
+}
+
+.day-row.today {
+    background: rgba(102, 126, 234, 0.05);
+}
+
+body.dark-mode .day-row.today {
+    background: rgba(129, 140, 248, 0.1);
+}
+
+.day-row.weekend {
+    background: rgba(0, 0, 0, 0.02);
+}
+
+body.dark-mode .day-row.weekend {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* Left day label */
+.day-label {
+    width: 90px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 0 10px;
+    font-size: 11px;
+    color: var(--text-muted);
+    border-right: 1px solid var(--border-color);
+    line-height: 1.25;
+}
+
+.day-label .day-name {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.day-row.today .day-label .day-name {
     color: var(--accent-color);
     font-weight: 700;
 }
 
-.day-header-cell.weekend {
-    background: rgba(0, 0, 0, 0.02);
-}
-
-body.dark-mode .day-header-cell.weekend {
-    background: rgba(255, 255, 255, 0.02);
-}
-
-/* Content row - contains time-axis and days-container */
-.calendar-content-row {
-    display: flex;
-    flex: 1;
-    min-width: max-content;
-}
-
-.week-calendar-scroll::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-}
-
-.week-calendar-scroll::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.week-calendar-scroll::-webkit-scrollbar-thumb {
-    background: var(--text-muted);
-    border-radius: 4px;
-}
-
-/* Time Axis (left side) - Apple Calendar style */
-.time-axis {
-    flex-shrink: 0;
-    width: 50px;
-    background: var(--panel-bg);
-    position: sticky;
-    left: 0;
-    z-index: 10;
-}
-
-.time-marker {
-    height: 40px;
-    display: flex;
-    align-items: flex-start;
-    justify-content: flex-end;
-    padding-right: 8px;
+.day-label .day-date {
     font-size: 11px;
     color: var(--text-muted);
-    font-weight: 500;
-    position: relative;
-    transform: translateY(-6px);
-    background: var(--panel-bg);
 }
 
-.time-marker:first-child {
-    transform: none;
-}
-
-.time-marker.current-hour {
-    color: var(--accent-color);
-    font-weight: 600;
-}
-
-/* Days Container - needs explicit width for horizontal scroll */
-.days-container {
-    display: flex;
-    min-width: max-content;
-}
-
-/* Day Column */
-.day-column {
-    flex-shrink: 0;
-    width: 160px;
-    min-width: 160px;
-    position: relative;
-}
-
-.day-column.today {
-    background: rgba(102, 126, 234, 0.05);
-}
-
-body.dark-mode .day-column.today {
-    background: rgba(129, 140, 248, 0.1);
-}
-
-.day-column.weekend {
-    background: rgba(0, 0, 0, 0.02);
-}
-
-body.dark-mode .day-column.weekend {
-    background: rgba(255, 255, 255, 0.02);
-}
-
-/* Hour Cells */
-.hour-cell {
-    height: 40px;
-    border-bottom: 1px solid var(--border-color);
-    border-right: 1px solid var(--border-color);
-}
-
-.hour-cell:last-child {
-    border-bottom: none;
-}
-
-.day-column:last-child .hour-cell {
-    border-right: none;
-}
-
-/* Day Track (for blocks) - positioned at top of day column */
+/* Day track — the timeline area for one day. Background draws hour gridlines (every 3h). */
 .day-track {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    flex: 1;
+    position: relative;
+    height: 100%;
+    /* Vertical gridlines every 3 hours (8 columns) */
+    background-image: linear-gradient(to right,
+            transparent calc(100% - 1px),
+            var(--border-color) calc(100% - 1px));
+    background-size: calc(100% / 8) 100%;
     pointer-events: none;
 }
 
-/* Schedule mode interaction on day-track */
+/* Schedule mode interaction on day-track (click-to-create etc.) */
 .day-track.schedule-mode {
     pointer-events: auto;
-    z-index: 5;
 }
 
-.day-track>* {
+.day-track > * {
     pointer-events: auto;
 }
 
-/* Calendar Blocks */
+/* Calendar block: a horizontal pill positioned by left%/width% within the day track */
 .calendar-block {
     position: absolute;
-    left: 4px;
-    right: 4px;
-    min-height: 20px;
-    border-radius: 6px;
+    top: 4px;
+    bottom: 4px;
+    border-radius: 4px;
     background: linear-gradient(135deg, #4a00e0 0%, #8e2de2 100%);
     color: white;
-    padding: 4px 6px;
+    padding: 0 8px;
     font-size: 11px;
-    /* Using clip-path instead of overflow: hidden keeps visual clipping without creating a
-       new scroll container, which would break position: sticky on descendants (used to keep
-       the label visible when the block starts above the viewport). */
-    clip-path: inset(0 round 6px);
     cursor: pointer;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    overflow: hidden;
+    white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    transition: box-shadow 0.15s ease, filter 0.15s ease;
     z-index: 1;
-}
-
-/* Keeps the block's header (emoji + name + time) visible when the block starts above the
-   viewport — wrapped around the spans after render in renderWeekBlocks. Pins below the
-   sticky day-header row (28px tall) so the two don't collide. */
-.calendar-block-sticky {
-    position: sticky;
-    top: 28px;
-    display: block;
+    min-width: 4px;
 }
 
 .calendar-block:hover {
-    transform: scale(1.02);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.18);
+    filter: brightness(1.05);
     z-index: 10;
 }
 
 .calendar-block .block-emoji {
     font-size: 13px;
     line-height: 1;
+    flex-shrink: 0;
 }
 
 .calendar-block .block-label {
     font-weight: 600;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 1;
+    min-width: 0;
 }
 
 .calendar-block .block-time {
     font-size: 11px;
-    opacity: 0.9;
+    opacity: 0.85;
+    flex-shrink: 0;
 }
 
 .calendar-block.expired {
@@ -1327,31 +1227,33 @@ body.dark-mode .day-column.weekend {
 }
 
 .calendar-block.scheduled {
-    opacity: 0.7;
-    border: 1px dashed rgba(255, 255, 255, 0.4);
+    border: 1px dashed rgba(255, 255, 255, 0.35);
+}
+
+/* Currently-running active block (highlighted state) */
+.calendar-block.running {
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.35) inset;
 }
 
 .schedule-icon {
-    position: absolute;
-    bottom: 2px;
-    right: 4px;
+    flex-shrink: 0;
     opacity: 0.8;
     display: flex;
     align-items: center;
 }
 
 .schedule-icon svg {
-    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3));
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.25));
 }
 
-/* Preview Block - Non-interactive by default (one-off mode) */
+/* Preview blocks (one-off mode: non-interactive ghost) */
 .calendar-block.preview {
     opacity: 0.5;
     border: 2px dashed rgba(255, 255, 255, 0.5);
     pointer-events: none;
 }
 
-/* Interactive preview blocks (schedule mode) */
+/* Interactive preview blocks (schedule mode: draggable / resizable) */
 .calendar-block.preview.interactive {
     opacity: 0.7;
     pointer-events: auto;
@@ -1369,71 +1271,71 @@ body.dark-mode .day-column.weekend {
 
 .calendar-block.preview.interactive.dragging {
     opacity: 0.9;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
     z-index: 100;
     cursor: grabbing;
 }
 
 .calendar-block.preview.interactive.resizing {
-    cursor: ns-resize !important;
+    cursor: ew-resize !important;
 }
 
-/* Resize handles for preview blocks */
+/* Resize handles span the full height on the left and right edges */
 .calendar-block.preview.interactive .resize-handle {
     position: absolute;
-    left: 0;
-    right: 0;
-    height: 12px;
-    cursor: ns-resize !important;
+    top: 0;
+    bottom: 0;
+    width: 8px;
+    cursor: ew-resize !important;
     z-index: 100;
     pointer-events: auto;
 }
 
-.calendar-block.preview.interactive .resize-handle-top {
-    top: 0;
+.calendar-block.preview.interactive .resize-handle-start {
+    left: 0;
 }
 
-.calendar-block.preview.interactive .resize-handle-bottom {
-    bottom: 0;
+.calendar-block.preview.interactive .resize-handle-end {
+    right: 0;
 }
 
 .calendar-block.preview.interactive .resize-handle:hover {
-    background: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.25);
 }
 
-/* Cursor change when hovering resize handles (controlled by JS) */
 .calendar-block.preview.interactive.resize-hover {
-    cursor: ns-resize !important;
+    cursor: ew-resize !important;
 }
 
 .calendar-block.preview.hidden {
     display: none;
 }
 
-/* Now Indicator (horizontal line) */
+/* "Now" indicator: a vertical line drawn on today's row */
 .now-indicator {
     position: absolute;
-    left: 0;
-    right: 0;
-    height: 2px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
     background: var(--accent-color);
     z-index: 5;
     box-shadow: 0 0 4px rgba(102, 126, 234, 0.5);
+    pointer-events: none;
 }
 
 .now-indicator::before {
     content: '';
     position: absolute;
-    left: -4px;
-    top: 50%;
-    transform: translateY(-50%);
+    left: 50%;
+    top: -3px;
+    transform: translateX(-50%);
     width: 8px;
     height: 8px;
     background: var(--accent-color);
     border-radius: 50%;
 }
 
-/* No blocks message */
+/* "No active blocks" message */
 .no-blocks-message {
     position: absolute;
     top: 50%;
@@ -1450,6 +1352,14 @@ body.dark-mode .day-column.weekend {
 
 .no-blocks-message.hidden {
     display: none;
+}
+
+/* Footer hint below the timeline */
+.schedule-footer-hint {
+    text-align: center;
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
 }
 
 /* Keep old active-blocks styles for reference but can be removed later */
