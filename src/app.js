@@ -4371,16 +4371,13 @@ function updateDurationQuickBtns(durationMinutes) {
 // ========================================
 
 // Get default schedule segments based on current time
-// Start at the current hour (floor), end 2 hours later
+// Start at the current hour (floor), end 2 hours later, selected on every day of the week.
 function getDefaultScheduleSegments() {
     const now = new Date();
     const startHour = now.getHours();
     const endHour = (startHour + 2) % 24;
-    // Get current day (0=Sun...6=Sat in JS, convert to 0=Mon...6=Sun)
-    const jsDay = now.getDay();
-    const currentDay = jsDay === 0 ? 6 : jsDay - 1; // Convert: Sun=6, Mon=0, Tue=1, etc.
     return [
-        { startHour, startMinute: 0, endHour, endMinute: 0, days: [currentDay] }
+        { startHour, startMinute: 0, endHour, endMinute: 0, days: [0, 1, 2, 3, 4, 5, 6] }
     ];
 }
 
@@ -4877,17 +4874,13 @@ function addScheduleSegment() {
     const newEndHour = (newStartHour + 2) % 24;
     const newEndMinute = 0;
 
-    // Default to current day (0=Mon...6=Sun)
-    const jsDay = new Date().getDay();
-    const currentDay = jsDay === 0 ? 6 : jsDay - 1;
-
-    // Add to state
+    // New segments default to every day of the week, matching the initial schedule default.
     scheduleSegments.push({
         startHour: newStartHour,
         startMinute: newStartMinute,
         endHour: newEndHour,
         endMinute: newEndMinute,
-        days: [currentDay]
+        days: [0, 1, 2, 3, 4, 5, 6]
     });
 
     // Rebuild all segments to ensure consistent rendering
@@ -4963,7 +4956,7 @@ function rebuildScheduleSegments() {
     const container = document.getElementById('schedule-segments');
     container.innerHTML = '';
 
-    const dayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
     scheduleSegments.forEach((seg, index) => {
         const segment = document.createElement('div');
