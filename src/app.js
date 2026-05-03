@@ -5715,6 +5715,10 @@ function handleTimeChange() {
     // Remove any existing preview blocks and active-schedule blocks (for schedule mode)
     document.querySelectorAll('.calendar-block.preview, .calendar-block.active-schedule').forEach(el => el.remove());
 
+    // Refresh the "Always on" row so any preview chip stays in sync with the current mode
+    // (it shows up only when isAlwaysOnMode is on and a blocklist is selected).
+    renderScheduleAlwaysOnRow();
+
     // Handle schedule mode separately
     if (isScheduleMode) {
         renderSchedulePreview();
@@ -5757,28 +5761,15 @@ function handleTimeChange() {
         return;
     }
 
-    // --- Always-on mode: show a preview block from now to end of visible week ---
+    // --- Always-on mode: preview shows up only as a chip in the "Always on" row above the
+    // calendar, not as a bar inside the timeline. The chip is added by the call to
+    // renderScheduleAlwaysOnRow() at the top of this function.
     if (isAlwaysOnMode) {
         startBtn.disabled = !selectedBlocklistId;
 
-        // Hide next-day indicator
         if (nextDayIndicator) nextDayIndicator.classList.add('hidden');
 
         if (noBlocksMsg) noBlocksMsg.classList.add('hidden');
-
-        // Render a preview block from now to the end of the visible week
-        const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
-        const now = Date.now();
-        const hasActiveBlock = blocklist && appData.activeBlocks.some(b => b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now);
-
-        if (blocklist && currentWeekStart && !hasActiveBlock) {
-            const blockStart = new Date();
-            const { renderEnd } = getCalendarRenderRange();
-            renderPreviewBlock(blockStart, renderEnd, blocklist);
-        } else {
-            // Remove preview if there's an active block or no blocklist
-            document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
-        }
 
         updateWindowHeight();
         return;
@@ -8998,7 +8989,22 @@ function renderScheduleAlwaysOnRow() {
 
     const alwaysOnBlocks = (appData.activeBlocks || []).filter(b => isBlockAlwaysOn(b));
 
-    if (alwaysOnBlocks.length === 0) {
+    // When the user has the "always" tab selected and picked a blocklist that isn't already
+    // running, show a faded preview chip alongside the real ones. This replaces the timeline
+    // preview bar that always-on mode used to draw across every day.
+    let previewBlocklist = null;
+    if (isAlwaysOnMode && !isScheduleMode && selectedBlocklistId) {
+        const candidate = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+        const now = Date.now();
+        const alreadyActive = (appData.activeBlocks || []).some(b =>
+            b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now
+        );
+        if (candidate && !alreadyActive) {
+            previewBlocklist = candidate;
+        }
+    }
+
+    if (alwaysOnBlocks.length === 0 && !previewBlocklist) {
         row.classList.add('hidden');
         chips.innerHTML = '';
         return;
@@ -9030,6 +9036,19 @@ function renderScheduleAlwaysOnRow() {
 
         chips.appendChild(chip);
     });
+
+    if (previewBlocklist) {
+        const chip = document.createElement('div');
+        chip.className = 'always-on-chip preview';
+        chip.title = previewBlocklist.name;
+
+        const emoji = previewBlocklist.emoji
+            ? `<span class="always-on-chip-emoji">${escapeHtml(previewBlocklist.emoji)}</span>`
+            : '';
+
+        chip.innerHTML = `${emoji}<span class="always-on-chip-name">${escapeHtml(previewBlocklist.name)}</span>`;
+        chips.appendChild(chip);
+    }
 
     row.classList.remove('hidden');
 }

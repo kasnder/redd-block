@@ -974,6 +974,19 @@ body.ios.ios-phone .week-calendar-section {
     line-height: 1;
 }
 
+/* Preview chip shown while the user has the "always" tab selected but hasn't started the
+   block yet. Styled distinctly so it can't be confused with an actually-running block. */
+.always-on-chip.preview {
+    border-style: dashed;
+    background: transparent;
+    opacity: 0.7;
+    cursor: default;
+}
+
+.always-on-chip.preview:hover {
+    background: transparent;
+}
+
 /* Week navigation: prev / range label / next / Today */
 .week-nav {
     display: flex;
