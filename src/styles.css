@@ -886,6 +886,160 @@ body.ios.ios-phone .week-calendar-section {
     gap: 8px 12px;
 }
 
+/* BLOCKING NOW row at the top of the app — small status label on the left, chips for
+   each currently-active block/schedule on the right. Hidden when nothing is blocking. */
+.now-blocking-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    padding: 8px 4px 4px;
+    margin-bottom: 6px;
+}
+
+.now-blocking-row.hidden {
+    display: none;
+}
+
+.now-blocking-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    user-select: none;
+}
+
+.now-blocking-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: hsl(142, 60%, 45%);
+    box-shadow: 0 0 0 3px hsla(142, 60%, 45%, 0.18);
+    flex-shrink: 0;
+}
+
+.now-blocking-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+/* Each "blocking now" chip: rounded pill containing emoji, name, "until HH:MM",
+   and a ⋯ menu trigger. Visually similar to the always-on chip but a bit larger
+   to host the trailing time/menu. */
+.now-blocking-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 4px 4px 12px;
+    border-radius: 999px;
+    background: var(--element-bg);
+    border: 1px solid var(--border-color);
+    font-size: 13px;
+    color: var(--text-primary);
+    user-select: none;
+}
+
+.now-blocking-chip-emoji {
+    font-size: 14px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.now-blocking-chip-name {
+    font-weight: 500;
+}
+
+.now-blocking-chip-until {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.now-blocking-chip-menu-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    flex-shrink: 0;
+}
+
+.now-blocking-chip-menu-btn:hover,
+.now-blocking-chip-menu-btn[aria-expanded="true"] {
+    background: var(--border-color);
+    color: var(--text-primary);
+}
+
+.now-blocking-chip-menu-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* Popover menu shown when ⋯ is clicked. Absolutely positioned so it can overflow
+   the chip; JS pins it just below the trigger. */
+.now-blocking-chip-menu {
+    position: absolute;
+    z-index: 1000;
+    min-width: 140px;
+    padding: 4px;
+    border-radius: 8px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.now-blocking-chip-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.now-blocking-chip-menu-item:hover {
+    background: var(--border-color);
+}
+
+.now-blocking-chip-menu-item.danger {
+    color: hsl(0, 65%, 45%);
+}
+
+.now-blocking-chip-menu-item svg {
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    opacity: 0.8;
+}
+
+body.dark-mode .now-blocking-chip-menu {
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+body.dark-mode .now-blocking-chip-menu-item.danger {
+    color: hsl(0, 70%, 70%);
+}
+
 /* Combined status row: visibility-toggle chips + always-on chips flow inline together.
    Children use display: contents so individual chips lay out in this single flex row. */
 .schedule-status-row {
@@ -4781,35 +4935,6 @@ body.ios .modal-content {
 }
 
 /* Schedule override options */
-.schedule-override-options {
-    display: flex;
-    gap: 16px;
-    margin-top: 16px;
-    padding: 12px;
-    background: hsl(214, 32%, 97%);
-    border-radius: 8px;
-}
-
-.schedule-override-options.hidden {
-    display: none;
-}
-
-.schedule-override-options .radio-option {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    font-size: 15px;
-    color: var(--text-primary);
-}
-
-.schedule-override-options .radio-option input[type="radio"] {
-    width: 16px;
-    height: 16px;
-    accent-color: hsl(214, 84%, 56%);
-    cursor: pointer;
-}
-
 /* Footer */
 .footer {
     position: fixed;

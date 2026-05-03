@@ -226,6 +226,18 @@
 
         <!-- Main Content - Grid Layout (hidden until JS clears onboarding gate; avoids flash before EULA on iOS) -->
         <div id="main-content" class="main-content hidden">
+            <!-- BLOCKING NOW row: shows everything that's actively blocking right
+                 now (one-off blocks + currently-active schedule segments). Each
+                 chip exposes an Edit / Pause / Stop menu via the ⋯ button. The
+                 row hides itself when nothing is blocking. -->
+            <div id="now-blocking-row" class="now-blocking-row hidden">
+                <span class="now-blocking-label">
+                    <span class="now-blocking-dot" aria-hidden="true"></span>
+                    <span id="now-blocking-label-text">BLOCKING NOW</span>
+                </span>
+                <div class="now-blocking-chips" id="now-blocking-chips"></div>
+            </div>
+
             <!-- Top Row: Scheduler + Blocklists -->
             <div class="grid-top-row">
                 <!-- Settings Button -->
@@ -763,17 +775,6 @@
                     autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
                 <div class="challenge-progress">
                     <div id="challenge-progress-bar" class="challenge-progress-bar"></div>
-                </div>
-                <!-- Schedule override options (shown only for scheduled blocks with multiple occurrences) -->
-                <div id="schedule-override-options" class="schedule-override-options hidden">
-                    <label class="radio-option">
-                        <input type="radio" name="schedule-override-type" value="just-this" checked>
-                        <span id="schedule-override-just-this-label">Just this block</span>
-                    </label>
-                    <label class="radio-option">
-                        <input type="radio" name="schedule-override-type" value="stop-schedule">
-                        <span id="schedule-override-stop-label">Stop schedule</span>
-                    </label>
                 </div>
                 <div class="dns-delay-hint desktop-only"
                     style="font-size: 12px; color: var(--text-muted); margin-top: 8px; line-height: 1.4;">

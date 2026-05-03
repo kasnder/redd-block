@@ -3815,63 +3815,34 @@ function setupOverrideModalListeners() {
                 // Update blocked apps (will stop watcher if no apps to block, including schedules)
                 await updateBlockedApps();
             } else if (window.overrideScheduleId) {
-                // Check which radio button is selected
-                const overrideType = document.querySelector('input[name="schedule-override-type"]:checked')?.value || 'stop-schedule';
+                // Schedules behave like one-off blocks now: stopping always tears down the
+                // entire schedule (no per-instance skip). Segments are re-loaded into the
+                // editor so the user can re-start them later without re-typing them.
                 const scheduleId = window.overrideScheduleId;
-                const segmentIndex = window.overrideSegmentIndex;
-                const segmentDay = window.overrideSegmentDay;
+                const scheduleToStop = appData.schedules.find(s =>
+                    s.id === scheduleId || s.blocklistId === scheduleId
+                );
 
-                // Only allow "just this block" if segmentIndex and segmentDay are defined
-                // (i.e., only when clicking a specific block in the timeline, not from stop schedule button)
-                if (overrideType === 'just-this' && segmentIndex !== undefined && segmentDay !== undefined) {
-                    // "Just this block" - remove only the specific day from the segment
-                    const schedule = appData.schedules.find(s => s.id === scheduleId);
-                    if (schedule && schedule.segments[segmentIndex]) {
-                        const segment = schedule.segments[segmentIndex];
-                        // Remove this day from the segment
-                        segment.days = segment.days.filter(d => d !== segmentDay);
+                if (scheduleToStop) {
+                    scheduleSegments = scheduleToStop.segments.map(seg => ({ ...seg }));
+                    activeScheduleSegmentCount = 0; // No segments are locked anymore
 
-                        // If segment has no more days, remove the entire segment
-                        if (segment.days.length === 0) {
-                            schedule.segments.splice(segmentIndex, 1);
-                        }
+                    // Save these segments as pending so they persist when clicking off/on
+                    if (!appData.settings) appData.settings = {};
+                    if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
+                    appData.settings.pendingScheduleSegments[scheduleToStop.blocklistId] = scheduleSegments.map(seg => ({ ...seg }));
 
-                        // If schedule has no more segments, remove the entire schedule
-                        if (schedule.segments.length === 0) {
-                            appData.schedules = appData.schedules.filter(s => s.id !== scheduleId);
-                            activeScheduleSegmentCount = 0;
-                        }
-                    }
-                } else {
-                    // "Stop schedule" - remove the entire schedule but preserve segments
-                    const scheduleToStop = appData.schedules.find(s =>
-                        s.id === scheduleId || s.blocklistId === scheduleId
+                    appData.schedules = appData.schedules.filter(s =>
+                        s.id !== scheduleId && s.blocklistId !== scheduleId
                     );
 
-                    if (scheduleToStop) {
-                        // Load all segments from the stopped schedule into scheduleSegments
-                        // so they become editable (not greyed out)
-                        scheduleSegments = scheduleToStop.segments.map(seg => ({ ...seg }));
-                        activeScheduleSegmentCount = 0; // No segments are locked anymore
-
-                        // Save these segments as pending so they persist when clicking off/on
-                        if (!appData.settings) appData.settings = {};
-                        if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
-                        appData.settings.pendingScheduleSegments[scheduleToStop.blocklistId] = scheduleSegments.map(seg => ({ ...seg }));
-
-                        // Remove the schedule from active schedules
-                        appData.schedules = appData.schedules.filter(s =>
-                            s.id !== scheduleId && s.blocklistId !== scheduleId
-                        );
-
-                        // Rebuild UI to show all segments as editable if we're viewing this blocklist
-                        if (selectedBlocklistId === scheduleToStop.blocklistId && isScheduleMode) {
-                            rebuildScheduleSegments();
-                            disableScheduleControls(false); // Enable all controls
-                        }
-                    } else {
-                        activeScheduleSegmentCount = 0;
+                    // Rebuild UI to show all segments as editable if we're viewing this blocklist
+                    if (selectedBlocklistId === scheduleToStop.blocklistId && isScheduleMode) {
+                        rebuildScheduleSegments();
+                        disableScheduleControls(false);
                     }
+                } else {
+                    activeScheduleSegmentCount = 0;
                 }
 
                 // On iOS, clear both Screen Time stores so the overridden schedule's blocks are removed
@@ -3883,9 +3854,7 @@ function setupOverrideModalListeners() {
 
                 await saveData();
                 await updateHostsFile();
-                // Sync updated schedules to helper daemon
                 await syncSchedulesToHelper();
-                // Update blocked apps after schedule changes
                 await updateBlockedApps();
 
                 // Reset modal title
@@ -3894,12 +3863,7 @@ function setupOverrideModalListeners() {
                     titleEl.textContent = 'Override Block?';
                 }
 
-                // Hide radio options and reset for next use
-                document.getElementById('schedule-override-options').classList.add('hidden');
-
                 delete window.overrideScheduleId;
-                delete window.overrideSegmentIndex;
-                delete window.overrideSegmentDay;
             }
 
             render();
@@ -5363,55 +5327,32 @@ function closeScheduleConfirmModal() {
     document.getElementById('start-schedule-confirm-modal').classList.add('hidden');
 }
 
-// Open override modal for stopping a schedule (uses same override modal as blocks)
-// This is ONLY called from the stop schedule button - always stops entire schedule
+// Open override modal for stopping a schedule. Schedules now stop wholesale, identically
+// to one-off blocks (no per-instance skip).
 function openScheduleOverrideModal(schedule) {
-    // Store the schedule ID for the override process
     window.overrideScheduleId = schedule.id || schedule.blocklistId;
 
-    // Clear segment index/day - this ensures we can ONLY stop the entire schedule
-    window.overrideSegmentIndex = undefined;
-    window.overrideSegmentDay = undefined;
-
-    // Get the blocklist name
     const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
     const blocklistName = blocklist ? blocklist.name : 'Schedule';
 
-    // Set the challenge text for the override modal using blocklist settings
     const difficulty = blocklist?.overrideDifficulty || { type: 'random-words', count: 50 };
     const charCount = difficulty.count || 50;
     const isRandom = difficulty.type === 'gibberish';
 
-    // Use the existing override modal - set up challenge
     challengeText = isRandom ? generateGibberish(charCount) : generateRandomWords(charCount);
-    overrideBlockId = null; // Not a block, it's a schedule
+    overrideBlockId = null;
     overrideBlocklistIdForHelper = null;
 
-    // Update modal title to indicate it's a schedule
     const titleEl = document.getElementById('override-modal-title');
     if (titleEl) {
         titleEl.textContent = `Stop Schedule: ${blocklistName}`;
     }
 
-    // Hide the radio options - stop schedule button ONLY stops entire schedule
-    const optionsDiv = document.getElementById('schedule-override-options');
-    if (optionsDiv) {
-        optionsDiv.classList.add('hidden');
-    }
-
-    // Set override type to stop-schedule (even though options are hidden)
-    const stopScheduleRadio = document.querySelector('input[name="schedule-override-type"][value="stop-schedule"]');
-    if (stopScheduleRadio) {
-        stopScheduleRadio.checked = true;
-    }
-
-    // Render challenge text directly (renderChallengeText is scoped inside setupOverrideModalListeners)
     const challengeTextEl = document.getElementById('challenge-text');
     if (challengeTextEl) {
         challengeTextEl.textContent = challengeText;
     }
 
-    // Clear input and progress
     const challengeInput = document.getElementById('challenge-input');
     if (challengeInput) challengeInput.value = '';
     const progressBar = document.getElementById('challenge-progress-bar');
@@ -5439,68 +5380,6 @@ function openScheduledBlockEdit(schedule) {
     openBlocklistModal(blocklist);
 }
 
-// Open schedule override modal when clicking on a scheduled block in the calendar
-function openScheduledBlockOverrideModal(schedule, segmentIndex, day) {
-    // Store the schedule info for the override process
-    window.overrideScheduleId = schedule.id;
-    window.overrideSegmentIndex = segmentIndex;
-    window.overrideSegmentDay = day;
-
-    // Get the blocklist
-    const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-    const blocklistName = blocklist ? blocklist.name : 'Schedule';
-
-    // Calculate if this schedule has multiple occurrences
-    const segment = schedule.segments[segmentIndex];
-    const totalDaysInSegment = segment ? segment.days.length : 1;
-    const totalSegments = schedule.segments.length;
-    const hasMultipleOccurrences = totalSegments > 1 || totalDaysInSegment > 1 ||
-        (schedule.repeatType === 'forever' || schedule.repeatType === 'date');
-
-    // Show/hide the radio options based on multiple occurrences
-    const optionsDiv = document.getElementById('schedule-override-options');
-    if (hasMultipleOccurrences) {
-        optionsDiv.classList.remove('hidden');
-        // Reset to default "Just this block"
-        document.querySelector('input[name="schedule-override-type"][value="just-this"]').checked = true;
-    } else {
-        optionsDiv.classList.add('hidden');
-    }
-
-    // Set up the challenge text using blocklist settings
-    const difficulty = blocklist?.overrideDifficulty || { type: 'random-words', count: 50 };
-    const charCount = difficulty.count || 50;
-    const isRandom = difficulty.type === 'gibberish';
-    challengeText = isRandom ? generateGibberish(charCount) : generateRandomWords(charCount);
-    overrideBlockId = null; // Not a one-off block
-    overrideBlocklistIdForHelper = null;
-
-    // Update modal title
-    const titleEl = document.getElementById('override-modal-title');
-    if (titleEl) {
-        titleEl.textContent = `Override Scheduled Block?`;
-    }
-
-    // Update summary
-    const summaryEl = document.getElementById('override-summary');
-    if (summaryEl && blocklist) {
-        summaryEl.innerHTML = `<span class="block-name">${blocklist.emoji || ''} ${blocklistName}</span>`;
-    }
-
-    // Render challenge text
-    const challengeTextEl = document.getElementById('challenge-text');
-    if (challengeTextEl) {
-        challengeTextEl.textContent = challengeText;
-    }
-
-    // Clear input and progress
-    const challengeInput = document.getElementById('challenge-input');
-    if (challengeInput) challengeInput.value = '';
-    const progressBar = document.getElementById('challenge-progress-bar');
-    if (progressBar) progressBar.style.width = '0%';
-
-    document.getElementById('override-modal').classList.remove('hidden');
-}
 
 // Show confirmation modal for editing (adding segments to) an existing schedule
 function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) {
@@ -8468,6 +8347,7 @@ function undoDelete() {
 function render() {
     updateOnboardingVisibility();
 
+    renderNowBlockingRow();
     updateWeekCalendar();
     renderBlocklistSelector();
 
@@ -8780,6 +8660,286 @@ function renderManualBlockOnWeekdays(block, blocklist, isRunning) {
 
         cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
     }
+}
+
+
+// Compute when the schedule's currently-active segment ends, returning a Date.
+// Returns null if no segment is active right now. Handles repeating, overnight, and
+// non-repeating schedules. Used by the "BLOCKING NOW" row to show "until HH:MM".
+function getScheduleCurrentSegmentEnd(schedule, nowDate = new Date()) {
+    if (!isScheduleSegmentActiveNow(schedule, nowDate)) return null;
+
+    if (isNonRepeatingSchedule(schedule)) {
+        const nowMs = nowDate.getTime();
+        const occurrence = resolveOneShotOccurrences(schedule).find(occ =>
+            nowMs >= occ.start.getTime() && nowMs < occ.end.getTime()
+        );
+        return occurrence ? new Date(occurrence.end) : null;
+    }
+
+    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1; // Mon=0
+    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
+    const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
+
+    for (const seg of schedule.segments) {
+        const startMins = seg.startHour * 60 + seg.startMinute;
+        const endMins = seg.endHour * 60 + seg.endMinute;
+        const days = Array.isArray(seg.days) ? seg.days : [];
+
+        // 24/7 segment: use end-of-day for the "until" label so we have something concrete.
+        if (startMins === endMins && days.includes(currentDay)) {
+            const end = new Date(nowDate);
+            end.setHours(23, 59, 0, 0);
+            return end;
+        }
+        // Same-day window matching now.
+        if (endMins > startMins && days.includes(currentDay) && currentMins >= startMins && currentMins < endMins) {
+            const end = new Date(nowDate);
+            end.setHours(seg.endHour, seg.endMinute, 0, 0);
+            return end;
+        }
+        // Overnight head: started yesterday-evening side, but it's stored on `currentDay`.
+        if (endMins < startMins && days.includes(currentDay) && currentMins >= startMins) {
+            const end = new Date(nowDate);
+            end.setDate(end.getDate() + 1);
+            end.setHours(seg.endHour, seg.endMinute, 0, 0);
+            return end;
+        }
+        // Overnight tail: today is the morning side of yesterday's segment.
+        if (endMins < startMins && days.includes(yesterdayDay) && currentMins < endMins) {
+            const end = new Date(nowDate);
+            end.setHours(seg.endHour, seg.endMinute, 0, 0);
+            return end;
+        }
+    }
+    return null;
+}
+
+// Build the list of items to show in the "BLOCKING NOW" row: every one-off block that's
+// currently running (and not paused) plus every schedule whose segment is active now.
+function collectNowBlockingEntries(now = Date.now()) {
+    const nowDate = new Date(now);
+    const entries = [];
+
+    for (const block of appData.activeBlocks || []) {
+        if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
+        const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+        if (!blocklist) continue;
+        entries.push({
+            kind: 'block',
+            id: block.id,
+            blocklistId: block.blocklistId,
+            blocklist,
+            until: isBlockAlwaysOn(block) ? null : new Date(block.endTime),
+            isAlwaysOn: isBlockAlwaysOn(block)
+        });
+    }
+
+    for (const schedule of appData.schedules || []) {
+        if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
+        const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+        if (!blocklist) continue;
+        // A schedule and a one-off for the same blocklist could both be active; keep both
+        // (they're independent rules) so the user can act on whichever they intend.
+        entries.push({
+            kind: 'schedule',
+            id: schedule.id || schedule.blocklistId,
+            blocklistId: schedule.blocklistId,
+            blocklist,
+            schedule,
+            until: getScheduleCurrentSegmentEnd(schedule, nowDate),
+            isAlwaysOn: false
+        });
+    }
+
+    return entries;
+}
+
+// Close any currently-open chip menu popover. Called from outside-click handlers and
+// before opening a new menu (so only one is ever visible).
+function closeNowBlockingChipMenus() {
+    document.querySelectorAll('.now-blocking-chip-menu').forEach(el => el.remove());
+    document.querySelectorAll('.now-blocking-chip-menu-btn[aria-expanded="true"]').forEach(btn => {
+        btn.setAttribute('aria-expanded', 'false');
+    });
+}
+
+// Open a small Edit / Pause / Stop popover anchored to `triggerBtn` for the given entry.
+function openNowBlockingChipMenu(triggerBtn, entry) {
+    closeNowBlockingChipMenus();
+
+    const menu = document.createElement('div');
+    menu.className = 'now-blocking-chip-menu';
+    menu.setAttribute('role', 'menu');
+
+    // Match the icons used elsewhere in the app: pencil = blocklist-card edit button,
+    // open-padlock = "Stop Block" button (the bottom shackle ends "open" so it reads as
+    // unlocking/stopping the block).
+    const editIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>';
+    const pauseIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+    const stopIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>';
+
+    const items = [
+        { label: tSettings('nowBlockingMenuEdit'), icon: editIcon, action: () => handleNowBlockingEdit(entry) },
+        { label: tSettings('nowBlockingMenuPause'), icon: pauseIcon, action: () => handleNowBlockingPause(entry) },
+        { label: tSettings('nowBlockingMenuStop'), icon: stopIcon, action: () => handleNowBlockingStop(entry), danger: true }
+    ];
+
+    items.forEach(item => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'now-blocking-chip-menu-item' + (item.danger ? ' danger' : '');
+        btn.setAttribute('role', 'menuitem');
+        btn.innerHTML = `${item.icon}<span>${escapeHtml(item.label)}</span>`;
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeNowBlockingChipMenus();
+            item.action();
+        });
+        menu.appendChild(btn);
+    });
+
+    document.body.appendChild(menu);
+
+    // Position the menu just below the trigger, keeping it on-screen horizontally.
+    const rect = triggerBtn.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    let left = rect.right - menuRect.width;
+    if (left < 8) left = 8;
+    const maxLeft = window.innerWidth - menuRect.width - 8;
+    if (left > maxLeft) left = maxLeft;
+    menu.style.left = `${left + window.scrollX}px`;
+    menu.style.top = `${rect.bottom + window.scrollY + 4}px`;
+
+    triggerBtn.setAttribute('aria-expanded', 'true');
+
+    // Outside-click and Escape close the menu. Use a microtask delay so the click that
+    // opened the menu doesn't immediately close it again.
+    setTimeout(() => {
+        const onDocClick = (e) => {
+            if (!menu.contains(e.target) && e.target !== triggerBtn) {
+                closeNowBlockingChipMenus();
+                document.removeEventListener('click', onDocClick, true);
+                document.removeEventListener('keydown', onKey, true);
+            }
+        };
+        const onKey = (e) => {
+            if (e.key === 'Escape') {
+                closeNowBlockingChipMenus();
+                document.removeEventListener('click', onDocClick, true);
+                document.removeEventListener('keydown', onKey, true);
+            }
+        };
+        document.addEventListener('click', onDocClick, true);
+        document.addEventListener('keydown', onKey, true);
+    }, 0);
+}
+
+// Edit action: select the chip's blocklist and open the blocklist edit dialog.
+function handleNowBlockingEdit(entry) {
+    const blocklist = entry.blocklist;
+    if (!blocklist) return;
+    const dropdown = document.getElementById('blocklist-select');
+    if (dropdown) {
+        dropdown.value = blocklist.id;
+        handleBlocklistSelect({ target: dropdown });
+    } else {
+        selectedBlocklistId = blocklist.id;
+    }
+    openBlocklistModal(blocklist);
+}
+
+// Pause action: open the pause modal for the corresponding block or schedule.
+function handleNowBlockingPause(entry) {
+    if (entry.kind === 'block') {
+        pauseScheduleData = null;
+        openPauseModal(entry.id);
+        return;
+    }
+    if (entry.kind === 'schedule') {
+        pauseScheduleData = {
+            blocklistId: entry.blocklistId,
+            isActiveNow: true
+        };
+        openPauseModal(null);
+    }
+}
+
+// Stop action: open the override modal so the user has to type the challenge to stop.
+function handleNowBlockingStop(entry) {
+    if (entry.kind === 'block') {
+        openOverrideModal(entry.id);
+        return;
+    }
+    if (entry.kind === 'schedule' && entry.schedule) {
+        openScheduleOverrideModal(entry.schedule);
+    }
+}
+
+// Render the BLOCKING NOW row at the top of the app. Hidden when nothing is blocking.
+function renderNowBlockingRow() {
+    const row = document.getElementById('now-blocking-row');
+    const chipsEl = document.getElementById('now-blocking-chips');
+    if (!row || !chipsEl) return;
+
+    const entries = collectNowBlockingEntries();
+
+    if (entries.length === 0) {
+        row.classList.add('hidden');
+        chipsEl.innerHTML = '';
+        closeNowBlockingChipMenus();
+        return;
+    }
+
+    chipsEl.innerHTML = '';
+    const dotsIcon = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
+
+    entries.forEach(entry => {
+        const chip = document.createElement('div');
+        chip.className = 'now-blocking-chip';
+        chip.dataset.kind = entry.kind;
+        chip.dataset.id = entry.id;
+
+        const emoji = entry.blocklist.emoji || '🚫';
+        const name = entry.blocklist.name || '';
+        let untilText;
+        if (entry.isAlwaysOn) {
+            untilText = tSettings('nowBlockingAlways');
+        } else if (entry.until) {
+            untilText = `${tSettings('nowBlockingUntil')} ${formatTime(entry.until)}`;
+        } else {
+            untilText = '';
+        }
+
+        chip.innerHTML = `
+            <span class="now-blocking-chip-emoji">${escapeHtml(emoji)}</span>
+            <span class="now-blocking-chip-name">${escapeHtml(name)}</span>
+            ${untilText ? `<span class="now-blocking-chip-until">${escapeHtml(untilText)}</span>` : ''}
+        `;
+
+        const menuBtn = document.createElement('button');
+        menuBtn.type = 'button';
+        menuBtn.className = 'now-blocking-chip-menu-btn';
+        menuBtn.setAttribute('aria-haspopup', 'menu');
+        menuBtn.setAttribute('aria-expanded', 'false');
+        menuBtn.setAttribute('aria-label', tSettings('nowBlockingMenuAria'));
+        menuBtn.title = tSettings('nowBlockingMenuAria');
+        menuBtn.innerHTML = dotsIcon;
+        menuBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = menuBtn.getAttribute('aria-expanded') === 'true';
+            if (isOpen) {
+                closeNowBlockingChipMenus();
+            } else {
+                openNowBlockingChipMenu(menuBtn, entry);
+            }
+        });
+        chip.appendChild(menuBtn);
+
+        chipsEl.appendChild(chip);
+    });
+
+    row.classList.remove('hidden');
 }
 
 
@@ -9837,6 +9997,13 @@ const SETTINGS_TRANSLATIONS = {
         noActiveBlocks: 'No active blocks',
         alwaysOnRowLabel: 'Always on:',
         alwaysOnRowNote: '· not shown in timeline',
+        nowBlockingLabel: 'BLOCKING NOW',
+        nowBlockingUntil: 'until',
+        nowBlockingAlways: 'always on',
+        nowBlockingMenuAria: 'Block actions',
+        nowBlockingMenuEdit: 'Edit',
+        nowBlockingMenuPause: 'Pause',
+        nowBlockingMenuStop: 'Stop',
         scheduleFooterHint: 'Click any block to edit',
         madeWith: 'Made with',
         by: 'by',
@@ -9897,8 +10064,6 @@ const SETTINGS_TRANSLATIONS = {
         // Override / pause / confirmation modals
         overrideBlockTitle: 'Override Block?',
         overrideInstruction: 'To cancel this block early, type the following:',
-        scheduleOverrideJustThis: 'Just this block',
-        scheduleOverrideStop: 'Stop schedule',
         override: 'Override',
         pauseBlockTitle: 'Pause Block',
         pauseFor: 'PAUSE FOR',
@@ -9991,6 +10156,13 @@ const SETTINGS_TRANSLATIONS = {
         noActiveBlocks: 'Ingen aktive blokeringer',
         alwaysOnRowLabel: 'Altid tændt:',
         alwaysOnRowNote: '· vises ikke i tidslinjen',
+        nowBlockingLabel: 'BLOKERER NU',
+        nowBlockingUntil: 'indtil',
+        nowBlockingAlways: 'altid tændt',
+        nowBlockingMenuAria: 'Handlinger for blok',
+        nowBlockingMenuEdit: 'Rediger',
+        nowBlockingMenuPause: 'Pause',
+        nowBlockingMenuStop: 'Stop',
         scheduleFooterHint: 'Klik på en blok for at redigere',
         madeWith: 'Lavet med',
         by: 'af',
@@ -10051,8 +10223,6 @@ const SETTINGS_TRANSLATIONS = {
         // Override / pause / confirmation modals
         overrideBlockTitle: 'Overstyr blokering?',
         overrideInstruction: 'For at annullere denne blokering tidligt, skriv følgende:',
-        scheduleOverrideJustThis: 'Kun denne blokering',
-        scheduleOverrideStop: 'Stop skema',
         override: 'Overstyr',
         pauseBlockTitle: 'Sæt blokering på pause',
         pauseFor: 'PAUSE I',
@@ -10177,6 +10347,7 @@ function applySettingsLanguage() {
     setText('no-active-blocks-label', tSettings('noActiveBlocks'));
     setText('always-on-row-label', tSettings('alwaysOnRowLabel'));
     setText('always-on-row-note', tSettings('alwaysOnRowNote'));
+    setText('now-blocking-label-text', tSettings('nowBlockingLabel'));
     setText('schedule-footer-hint', tSettings('scheduleFooterHint'));
     setText('duration-quick-btn-always-label', tSettings('durationQuickAlways'));
     setText('always-on-message-text', tSettings('alwaysOnMessage'));
@@ -10246,8 +10417,6 @@ function applySettingsLanguage() {
     // Modal copy
     setText('override-modal-title', tSettings('overrideBlockTitle'));
     setText('override-modal-instruction', tSettings('overrideInstruction'));
-    setText('schedule-override-just-this-label', tSettings('scheduleOverrideJustThis'));
-    setText('schedule-override-stop-label', tSettings('scheduleOverrideStop'));
     setText('cancel-override-btn', tSettings('cancel'));
     setText('confirm-override-btn', tSettings('override'));
     setText('pause-modal-title', tSettings('pauseBlockTitle'));
