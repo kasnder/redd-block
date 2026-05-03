@@ -2827,14 +2827,10 @@ function setupEventListeners() {
         });
     }
 
-    // Duration picker - quick toggle buttons
+    // Quick-select buttons: timed durations (15/30/45/60) + "Always" option
     document.querySelectorAll('.duration-quick-btn').forEach(btn => {
         btn.addEventListener('click', handleDurationQuickBtn);
     });
-
-    // Duration mode toggle ("for a bit" / "always")
-    document.getElementById('duration-mode-timed')?.addEventListener('click', () => setAlwaysOnMode(false));
-    document.getElementById('duration-mode-always')?.addEventListener('click', () => setAlwaysOnMode(true));
 
     // Initialize time picker with defaults
     initializeTimeInputs();
@@ -4010,13 +4006,6 @@ function disableTimeControls(disabled) {
     if (timePickerContainer) {
         timePickerContainer.classList.toggle('controls-disabled', disabled);
     }
-
-    // Disable/enable duration mode toggle (always / for some time)
-    const durationToggle = document.getElementById('duration-mode-toggle');
-    if (durationToggle) {
-        durationToggle.style.opacity = disabled ? '0.5' : '1';
-        durationToggle.style.pointerEvents = disabled ? 'none' : 'auto';
-    }
 }
 
 // Disable or enable schedule controls (when a schedule is active)
@@ -4313,10 +4302,25 @@ function handleDurationInputChange() {
 }
 
 // Handle duration quick toggle button click
+// Handle a click on any of the quick-select buttons. The "Always" button switches into
+// always-on mode; the numeric duration buttons switch into timed mode and apply the new
+// duration.
 function handleDurationQuickBtn(e) {
-    const mins = parseInt(e.target.dataset.mins);
+    const btn = e.currentTarget || e.target.closest('.duration-quick-btn');
+    if (!btn) return;
+
+    if (btn.dataset.mode === 'always') {
+        if (!isAlwaysOnMode) setAlwaysOnMode(true);
+        // setAlwaysOnMode already refreshes the active button state via updateDurationQuickBtns.
+        return;
+    }
+
+    // Timed selection: leave always-on mode if needed, then apply the new duration.
+    if (isAlwaysOnMode) setAlwaysOnMode(false);
+
+    const mins = parseInt(btn.dataset.mins);
     const input = document.getElementById('duration-minutes-input');
-    input.value = mins;
+    if (input) input.value = mins;
 
     // Track the target duration and reset end time editing flag
     targetDurationMinutes = mins;
@@ -4334,14 +4338,15 @@ function handleDurationQuickBtn(e) {
     handleTimeChange();
 }
 
-// Update quick button active states based on current duration
+// Update quick-select button active states. In always-on mode the "Always" button is the
+// only active one; in timed mode the button matching durationMinutes (if any) is active.
 function updateDurationQuickBtns(durationMinutes) {
     document.querySelectorAll('.duration-quick-btn').forEach(btn => {
-        const btnMins = parseInt(btn.dataset.mins);
-        if (btnMins === durationMinutes) {
-            btn.classList.add('active');
+        if (btn.dataset.mode === 'always') {
+            btn.classList.toggle('active', isAlwaysOnMode);
         } else {
-            btn.classList.remove('active');
+            const btnMins = parseInt(btn.dataset.mins);
+            btn.classList.toggle('active', !isAlwaysOnMode && btnMins === durationMinutes);
         }
     });
 }
@@ -4365,17 +4370,14 @@ function getDefaultScheduleSegments() {
 function setAlwaysOnMode(alwaysOn) {
     isAlwaysOnMode = alwaysOn;
 
-    // Update toggle button active states
-    const timedBtn = document.getElementById('duration-mode-timed');
-    const alwaysBtn = document.getElementById('duration-mode-always');
-    if (timedBtn) timedBtn.classList.toggle('active', !alwaysOn);
-    if (alwaysBtn) alwaysBtn.classList.toggle('active', alwaysOn);
-
     // Show/hide timed controls vs always-on message
     const timedControls = document.getElementById('timed-controls');
     const alwaysOnMessage = document.getElementById('always-on-message');
     if (timedControls) timedControls.classList.toggle('hidden', alwaysOn);
     if (alwaysOnMessage) alwaysOnMessage.classList.toggle('hidden', !alwaysOn);
+
+    // Reflect the mode change in the quick-select row (highlight "Always" or the matching duration).
+    updateDurationQuickBtns(targetDurationMinutes);
 
     // Save preference per blocklist
     if (selectedBlocklistId) {
@@ -4519,9 +4521,7 @@ function setScheduleMode(isSchedule) {
 
                 // Keep the info message visible for active always-on blocks.
                 const alwaysOnMsg = document.getElementById('always-on-message');
-                const durationToggle = document.getElementById('duration-mode-toggle');
                 if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
-                if (durationToggle) durationToggle.classList.add('hidden');
             } else {
                 if (pauseBtn) pauseBtn.classList.add('hidden');
                 startBlockBtn.classList.remove('stop-block');
@@ -6401,9 +6401,7 @@ function handleBlocklistSelect(e) {
 
                         // Keep the info message visible for active always-on blocks.
                         const alwaysOnMsg = document.getElementById('always-on-message');
-                        const durationToggle = document.getElementById('duration-mode-toggle');
                         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
-                        if (durationToggle) durationToggle.classList.add('hidden');
                     } else {
                         // No active block - show Start Block button (normal) with lock icon
                         // Ensure we've already cleared the activeBlockId above
@@ -6421,10 +6419,8 @@ function handleBlocklistSelect(e) {
                         // Enable time controls
                         disableTimeControls(false);
 
-                        // Re-show duration mode toggle and always-on message based on current mode
+                        // Re-show always-on message based on current mode
                         const alwaysOnMsg = document.getElementById('always-on-message');
-                        const durationToggle = document.getElementById('duration-mode-toggle');
-                        if (durationToggle) durationToggle.classList.remove('hidden');
                         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isAlwaysOnMode);
 
                         // Hide pause button
@@ -8530,7 +8526,6 @@ function syncSelectedControlState() {
     const btnIcon = startBlockBtn.querySelector('svg');
     const pauseBtn = document.getElementById('pause-block-btn');
     const alwaysOnMsg = document.getElementById('always-on-message');
-    const durationToggle = document.getElementById('duration-mode-toggle');
     delete startBlockBtn.dataset.activeBlockId;
     startBlockBtn.classList.remove('stop-block');
     if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
@@ -8545,13 +8540,11 @@ function syncSelectedControlState() {
         }
         disableTimeControls(true);
         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
-        if (durationToggle) durationToggle.classList.add('hidden');
     } else {
         if (btnLabel) btnLabel.textContent = tSettings('startBlockButton');
         if (btnIcon) btnIcon.innerHTML = `<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path>`;
         if (pauseBtn) pauseBtn.classList.add('hidden');
         disableTimeControls(false);
-        if (durationToggle) durationToggle.classList.remove('hidden');
         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isAlwaysOnMode);
     }
     startBlockBtn.disabled = !selectedBlocklistId;
@@ -9860,8 +9853,7 @@ const SETTINGS_TRANSLATIONS = {
         cannotBlockDomainPlaceholder: '⚠️ Can\'t block this domain!',
         cannotBlockSelfAppPlaceholder: '⚠️ Can\'t block ReDD Block itself!',
         // Start/schedule controls
-        durationModeAlways: 'always',
-        durationModeTimed: 'for some time',
+        durationQuickAlways: 'Always',
         alwaysOnMessage: 'This block will stay on until you pause it or turn it off',
         duration: 'Duration',
         durationUnitMin: 'min',
@@ -10015,8 +10007,7 @@ const SETTINGS_TRANSLATIONS = {
         cannotBlockDomainPlaceholder: '⚠️ Dette domæne kan ikke blokeres!',
         cannotBlockSelfAppPlaceholder: '⚠️ ReDD Block kan ikke blokere sig selv!',
         // Start/schedule controls
-        durationModeAlways: 'altid',
-        durationModeTimed: 'et stykke tid',
+        durationQuickAlways: 'Altid',
         alwaysOnMessage: 'Denne blokering forbliver aktiv, indtil du pauser den eller slår den fra',
         duration: 'Varighed',
         durationUnitMin: 'min',
@@ -10187,8 +10178,7 @@ function applySettingsLanguage() {
     setText('always-on-row-label', tSettings('alwaysOnRowLabel'));
     setText('always-on-row-note', tSettings('alwaysOnRowNote'));
     setText('schedule-footer-hint', tSettings('scheduleFooterHint'));
-    setText('duration-mode-always-label', tSettings('durationModeAlways'));
-    setText('duration-mode-timed-label', tSettings('durationModeTimed'));
+    setText('duration-quick-btn-always-label', tSettings('durationQuickAlways'));
     setText('always-on-message-text', tSettings('alwaysOnMessage'));
     setText('duration-label', tSettings('duration'));
     setText('duration-unit-label', tSettings('durationUnitMin'));

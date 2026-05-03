@@ -270,35 +270,31 @@
 
                             <!-- INSTANT BLOCK PANEL (shown by default) -->
                             <div class="instant-block-panel" id="instant-block-panel">
-                                <!-- Duration Mode Toggle: "for some time" vs "always" -->
-                                <div class="duration-mode-toggle" id="duration-mode-toggle">
-                                    <button type="button" class="duration-mode-btn" id="duration-mode-timed"
-                                        data-mode="timed">
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-                                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                            stroke-linejoin="round">
-                                            <path d="M5 22h14" />
-                                            <path d="M5 2h14" />
-                                            <path
-                                                d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22" />
-                                            <path
-                                                d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2" />
-                                        </svg>
-                                        <span id="duration-mode-timed-label">for some time</span>
-                                    </button>
-                                    <button type="button" class="duration-mode-btn active" id="duration-mode-always"
-                                        data-mode="always">
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-                                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                            stroke-linejoin="round">
-                                            <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
-                                            <line x1="12" y1="2" x2="12" y2="12"></line>
-                                        </svg>
-                                        <span id="duration-mode-always-label">always</span>
-                                    </button>
+                                <!-- Quick Select Row: a duration in minutes (15/30/45/60) or "Always".
+                                     Picking a duration switches to timed mode (Duration & End row below);
+                                     picking Always switches to always-on mode (info message below). -->
+                                <div class="quick-select-row">
+                                    <label class="time-label" id="quick-select-label">Quick Select</label>
+                                    <div class="duration-quick-btns">
+                                        <button type="button"
+                                            class="duration-quick-btn duration-quick-btn-always active"
+                                            data-mode="always" id="duration-quick-btn-always">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                                                stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                stroke-linejoin="round">
+                                                <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+                                                <line x1="12" y1="2" x2="12" y2="12"></line>
+                                            </svg>
+                                            <span id="duration-quick-btn-always-label">Always</span>
+                                        </button>
+                                        <button type="button" class="duration-quick-btn" data-mins="60">60 mins</button>
+                                        <button type="button" class="duration-quick-btn" data-mins="45">45 mins</button>
+                                        <button type="button" class="duration-quick-btn" data-mins="30">30 mins</button>
+                                        <button type="button" class="duration-quick-btn" data-mins="15">15 mins</button>
+                                    </div>
                                 </div>
 
-                                <!-- Always-on message (hidden by default) -->
+                                <!-- Always-on message (visible when "Always" is selected) -->
                                 <div class="always-on-message" id="always-on-message">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -311,7 +307,7 @@
                                         off</span>
                                 </div>
 
-                                <!-- Duration & End Row (hidden when always-on) -->
+                                <!-- Duration & End Row (visible when a duration is selected) -->
                                 <div class="timed-controls hidden" id="timed-controls">
                                     <div class="time-pickers-row">
                                         <div class="time-picker-group">
@@ -348,18 +344,6 @@
                                                 <span id="next-day-indicator" class="next-day-badge hidden">+1
                                                     day</span>
                                             </div>
-                                        </div>
-                                    </div>
-
-                                    <!-- Quick Select Row -->
-                                    <div class="quick-select-row">
-                                        <label class="time-label" id="quick-select-label">Quick Select</label>
-                                        <div class="duration-quick-btns">
-                                            <button type="button" class="duration-quick-btn" data-mins="15">15</button>
-                                            <button type="button" class="duration-quick-btn" data-mins="30">30</button>
-                                            <button type="button" class="duration-quick-btn" data-mins="45">45</button>
-                                            <button type="button" class="duration-quick-btn active"
-                                                data-mins="60">60</button>
                                         </div>
                                     </div>
                                 </div>

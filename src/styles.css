@@ -1594,64 +1594,18 @@ body.ios .duration-quick-btn {
     color: white;
 }
 
-/* Duration Mode Toggle ("for a bit" / "always") */
-.duration-mode-toggle {
-    display: flex;
-    gap: 2px;
-    background: rgba(0, 0, 0, 0.05);
-    border-radius: 10px;
-    padding: 4px;
-    margin-bottom: 12px;
-}
-
-.duration-mode-btn {
-    flex: 1;
-    display: flex;
+/* The "Always" quick-select option is conceptually distinct from the timed durations
+   (no specific length), so it gets a small visual separation and an icon. */
+.duration-quick-btn-always {
+    display: inline-flex;
     align-items: center;
-    justify-content: center;
     gap: 5px;
-    padding: 6px 14px;
-    border: none;
-    border-radius: 8px;
-    background: transparent;
-    color: var(--text-muted);
-    font-size: 15px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s ease;
+    margin-right: 4px;
 }
 
-.duration-mode-btn:hover:not(.active) {
-    color: var(--text-secondary);
-}
-
-.duration-mode-btn.active {
-    background: white;
-    color: var(--text-primary);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-body.dark-mode .duration-mode-toggle {
-    background: rgba(255, 255, 255, 0.1);
-}
-
-body.dark-mode .duration-mode-btn.active {
-    background: hsl(222, 47%, 25%);
-    color: white;
-}
-
-body.ios .duration-mode-btn {
-    font-size: 16px;
-    padding: 8px 16px;
-}
-
-.duration-mode-btn svg {
+.duration-quick-btn-always svg {
     flex-shrink: 0;
-}
-
-body.ios .duration-mode-btn svg {
-    width: 20px;
-    height: 20px;
+    opacity: 0.85;
 }
 
 /* Always-on message */
@@ -1694,7 +1648,7 @@ body.ios .duration-mode-btn svg {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    margin-top: 12px;
+    margin-bottom: 12px;
 }
 
 .time-picker-group {
