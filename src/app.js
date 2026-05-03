@@ -5709,9 +5709,11 @@ function handleTimeChange() {
     updateWindowHeight();
 }
 
-// Render a non-interactive instant-mode preview block onto the weekly calendar by
-// projecting from now → blockEnd onto today's row (and onto tomorrow's row if the duration
-// crosses midnight).
+// Render an instant-mode preview block onto the weekly calendar by projecting from
+// now → blockEnd onto today's row (and onto tomorrow's row if the duration crosses
+// midnight). The "head" slice on today's row gets a right-edge resize handle so the
+// user can drag to adjust the block's duration. Continuation tails on later days stay
+// non-interactive and are redrawn when the head is released.
 function renderInstantPreviewBlock(blockStart, blockEnd, blocklist) {
     document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
 
@@ -5720,6 +5722,10 @@ function renderInstantPreviewBlock(blockStart, blockEnd, blocklist) {
 
     let cursor = new Date(startMs);
     cursor.setHours(0, 0, 0, 0);
+
+    let isFirstSlice = true;
+    let headEl = null;
+    let headTrack = null;
 
     while (cursor.getTime() <= endMs) {
         const dayStartMs = cursor.getTime();
@@ -5735,30 +5741,142 @@ function renderInstantPreviewBlock(blockStart, blockEnd, blocklist) {
             if (track) {
                 const layout = getCalendarSegmentLayout(sliceStartMs, sliceEndMs, dayStartMs, dayEndMs);
                 const previewEl = document.createElement('div');
-                previewEl.className = 'calendar-block preview';
+                const isHead = isFirstSlice;
+                previewEl.className = 'calendar-block preview' + (isHead ? ' interactive' : ' overnight-continuation');
                 previewEl.style.left = `${layout.leftPercent}%`;
                 previewEl.style.width = `${layout.widthPercent}%`;
                 previewEl.dataset.previewGroupId = 'preview-instant';
+                if (!isHead) previewEl.dataset.continuation = '1';
 
                 if (blocklist.color) {
                     previewEl.style.background = blocklist.color;
                     previewEl.style.color = getContrastTextColor(blocklist.color);
                 }
 
+                // Only the head slice gets a right-edge handle. The start is "now" so
+                // there's no left-edge handle (you can't reschedule the start of an
+                // instant block).
+                const resizeHandle = isHead
+                    ? '<div class="resize-handle resize-handle-end" data-handle="end" title="Drag to change end time"></div>'
+                    : '';
+
                 previewEl.innerHTML = `
+                    ${resizeHandle}
                     <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
                     <span class="block-label">${escapeHtml(blocklist.name)}</span>
                     <span class="block-time">${formatTime(layout.segmentStartDate)} - ${formatTime(layout.segmentEndDate)}</span>
                 `;
 
                 track.appendChild(previewEl);
+
+                if (isHead) {
+                    headEl = previewEl;
+                    headTrack = track;
+                }
             }
         }
 
         cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
+        isFirstSlice = false;
+    }
+
+    if (headEl && headTrack) {
+        attachInstantPreviewResizeHandler(headEl, headTrack);
     }
 
     layoutOverlappingBlocks();
+}
+
+// Attach a right-edge resize handler to the instant-mode preview's head element. Dragging
+// the handle live-updates the head's width and on release commits the new total duration:
+// duration = head's new width (in minutes). Tails on later days are not adjusted in
+// real time; they're killed/redrawn cleanly on release via handleTimeChange().
+function attachInstantPreviewResizeHandler(headEl, headTrack) {
+    const handle = headEl.querySelector('.resize-handle-end');
+    if (!handle) return;
+
+    const snapMinutes = 15;
+    const minDurationMinutes = 5;
+    let isResizing = false;
+    let startX = 0;
+    let startWidthPct = 0;
+
+    handle.addEventListener('mouseenter', () => headEl.classList.add('resize-hover'));
+    handle.addEventListener('mouseleave', () => headEl.classList.remove('resize-hover'));
+
+    headEl.addEventListener('mousedown', (e) => {
+        if (!e.target.closest('.resize-handle-end')) return;
+        isResizing = true;
+        startX = e.clientX;
+        startWidthPct = parseFloat(headEl.style.width) || 0;
+        headEl.classList.add('resizing');
+        document.body.style.cursor = 'ew-resize';
+        e.preventDefault();
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    });
+
+    function onMouseMove(e) {
+        if (!isResizing) return;
+        const trackRect = headTrack.getBoundingClientRect();
+        if (trackRect.width <= 0) return;
+
+        const deltaX = e.clientX - startX;
+        const deltaPct = (deltaX / trackRect.width) * 100;
+        const headLeftPct = parseFloat(headEl.style.left) || 0;
+        // Clamp the head so it can't shrink to nothing or extend past end-of-day.
+        // Extending past midnight would require drawing/moving tail elements, which we
+        // intentionally skip to keep the live preview simple — the user can still type
+        // a longer duration into the Duration input for multi-day blocks.
+        const minWidthPct = (minDurationMinutes / 1440) * 100;
+        const maxWidthPct = 100 - headLeftPct;
+        const newWidthPct = Math.max(minWidthPct, Math.min(maxWidthPct, startWidthPct + deltaPct));
+        headEl.style.width = `${newWidthPct}%`;
+
+        // Live-update the "HH:MM - HH:MM" label so it tracks the cursor instead of
+        // staying frozen at the pre-drag value until release.
+        const startMins = (headLeftPct / 100) * 1440;
+        const endMins = ((headLeftPct + newWidthPct) / 100) * 1440;
+        const timeEl = headEl.querySelector('.block-time');
+        if (timeEl) {
+            timeEl.textContent = `${formatMinutesAsHHMM(startMins)} - ${formatMinutesAsHHMM(endMins)}`;
+        }
+    }
+
+    function onMouseUp() {
+        if (!isResizing) return;
+        isResizing = false;
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        headEl.classList.remove('resizing');
+        headEl.classList.remove('resize-hover');
+        document.body.style.cursor = '';
+
+        const headWidthPct = parseFloat(headEl.style.width) || 0;
+        // The head starts at "now" within today's row, so its width in minutes = its
+        // width-as-percent-of-day × 1440. That's also the new total duration for the
+        // block (any continuation tails are dropped — drag-to-resize sets the end here).
+        let newDurationMinutes = Math.round((headWidthPct / 100) * 1440);
+        newDurationMinutes = Math.max(minDurationMinutes, Math.round(newDurationMinutes / snapMinutes) * snapMinutes);
+
+        const startTime = getStartTimeAsDate();
+        const newEndTime = new Date(startTime.getTime() + newDurationMinutes * 60 * 1000);
+
+        targetDurationMinutes = newDurationMinutes;
+        userEditedEndTime = false;
+        selectedEndHour = newEndTime.getHours();
+        selectedEndMinute = newEndTime.getMinutes();
+
+        const durationInput = document.getElementById('duration-minutes-input');
+        if (durationInput) durationInput.value = newDurationMinutes;
+
+        // If the user was on always-on mode, dragging the preview's right edge implicitly
+        // switches them into timed mode (now there's a concrete end time again).
+        if (isAlwaysOnMode) setAlwaysOnMode(false);
+
+        updateTimeDisplay();
+        handleTimeChange();
+    }
 }
 
 // Render schedule preview blocks on the calendar
@@ -5993,6 +6111,23 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
         handle.addEventListener('mouseleave', () => previewEl.classList.remove('resize-hover'));
     });
 
+    // Recompute "HH:MM - HH:MM" from the head's current left%/width% and write it onto
+    // every preview block belonging to this segment (head + overnight tails). Matches the
+    // formula used on mouseup so what the user sees mid-drag is what gets committed.
+    function updateLiveTimeText() {
+        const headBlocks = getHeadPreviewBlocks();
+        if (headBlocks.length === 0) return;
+        const head = headBlocks[0];
+        const leftPct = parseFloat(head.style.left) || 0;
+        const widthPct = parseFloat(head.style.width) || 0;
+        const startMins = (leftPct / 100) * 1440;
+        const endMins = ((leftPct + widthPct) / 100) * 1440;
+        const text = `${formatMinutesAsHHMM(startMins)} - ${formatMinutesAsHHMM(endMins)}`;
+        document.querySelectorAll(
+            `.calendar-block.preview[data-segment-index="${segmentIndex}"] .block-time`
+        ).forEach(el => { el.textContent = text; });
+    }
+
     previewEl.addEventListener('mousedown', (e) => {
         const handle = e.target.closest('.resize-handle');
         if (handle) {
@@ -6096,6 +6231,8 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
                 });
             }
         }
+
+        updateLiveTimeText();
     }
 
     function handleMouseUp() {
@@ -9911,6 +10048,19 @@ function generateId() {
 
 function formatTime(date) {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+// Format a minutes-since-midnight value as zero-padded "HH:MM". Used by drag-resize
+// handlers to live-update the time label inside a preview block. Mirrors the clamping
+// done by `minutesToTime` (max 23:00) so what's shown mid-drag matches what'll be
+// committed on mouseup. Handles fractional minute rollover from rounding (e.g. 7:60).
+function formatMinutesAsHHMM(totalMinutes) {
+    const clamped = Math.max(0, Math.min(1440, totalMinutes));
+    let h = Math.floor(clamped / 60);
+    let m = Math.round(clamped - h * 60);
+    if (m >= 60) { h += 1; m -= 60; }
+    h = Math.min(23, h);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
 function formatDuration(minutes) {
