@@ -9488,10 +9488,9 @@ function renderBlocklists() {
                                 const segStartMins = seg.startHour * 60 + seg.startMinute;
                                 if (dayOffset === 0 && segStartMins <= currentMins) continue; // Already passed today
 
-                                // Found next segment
-                                const minsUntil = dayOffset === 0
-                                    ? segStartMins - currentMins
-                                    : (dayOffset * 24 * 60) + segStartMins - currentMins + (24 * 60 - currentMins) - (24 * 60 - segStartMins);
+                                // Found next segment. minsUntil = (full days) + (start-of-segment minutes) - (current minutes).
+                                // Same formula works whether dayOffset is 0 (today) or further out.
+                                const minsUntil = (dayOffset * 24 * 60) + segStartMins - currentMins;
 
                                 if (minsUntil < 60) {
                                     scheduleTimeText = `in ${minsUntil}m`;
