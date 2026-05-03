@@ -166,9 +166,6 @@ const DEFAULT_UI_ZOOM = 1.0;
 let zoomToastHideTimeout = null;
 let nativeWebviewZoomSupported = null;
 
-// Week calendar state
-let currentWeekStart = null; // Date object for Monday of the displayed week
-
 // Schedule mode state
 let isScheduleMode = false; // false = instant mode, true = schedule mode
 let isAlwaysOnMode = true; // false = timed block, true = always-on (permanent) block
@@ -956,7 +953,6 @@ async function runPostAcceptanceStartup() {
             console.log('[startup-sync] Startup helper reconciliation complete');
         }
         render();
-        scrollToNow(false); // Initial scroll (instant, no animation)
         startTickInterval();
 
         // Check for app updates (non-blocking, desktop only)
@@ -2872,11 +2868,6 @@ function setupEventListeners() {
     document.getElementById('cancel-schedule-confirm-btn')?.addEventListener('click', closeScheduleConfirmModal);
     document.getElementById('proceed-schedule-confirm-btn')?.addEventListener('click', proceedWithSchedule);
 
-    // Week calendar navigation buttons
-    document.getElementById('prev-week-btn')?.addEventListener('click', () => navigateWeek(-1));
-    document.getElementById('next-week-btn')?.addEventListener('click', () => navigateWeek(1));
-    document.getElementById('today-btn')?.addEventListener('click', () => scrollToToday());
-
     // Schedule mode tabs
     document.getElementById('instant-mode-tab')?.addEventListener('click', () => setScheduleMode(false));
     document.getElementById('schedule-mode-tab')?.addEventListener('click', () => setScheduleMode(true));
@@ -2902,17 +2893,6 @@ function setupEventListeners() {
             handleSegmentDayToggle(segmentIndex, dayIndex, btn);
         });
     });
-
-    // The row-based week calendar fits 7 days inside the panel without scrolling, so the
-    // old scroll-sync logic is no longer needed. Clicking the empty timeline jumps to today.
-    const calendarContainer = document.getElementById('week-calendar-container');
-    if (calendarContainer) {
-        calendarContainer.addEventListener('click', (e) => {
-            if (!e.target.closest('.calendar-block')) {
-                scrollToToday();
-            }
-        });
-    }
 
     // Listen for blocks updated from main process
     tauriAPI.onBlocksUpdated(async () => {
@@ -5843,24 +5823,77 @@ function handleTimeChange() {
     const now = Date.now();
     const hasActiveBlock = blocklist && appData.activeBlocks.some(b => b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now);
 
-    if (blocklist && currentWeekStart && !hasActiveBlock) {
-        renderPreviewBlock(blockStart, blockEnd, blocklist);
+    if (blocklist && !hasActiveBlock) {
+        renderInstantPreviewBlock(blockStart, blockEnd, blocklist);
     }
 
     updateWindowHeight();
 }
 
+// Render a non-interactive instant-mode preview block onto the weekly calendar by
+// projecting from now → blockEnd onto today's row (and onto tomorrow's row if the duration
+// crosses midnight).
+function renderInstantPreviewBlock(blockStart, blockEnd, blocklist) {
+    document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
+
+    const startMs = blockStart.getTime();
+    const endMs = blockEnd.getTime();
+
+    let cursor = new Date(startMs);
+    cursor.setHours(0, 0, 0, 0);
+
+    while (cursor.getTime() <= endMs) {
+        const dayStartMs = cursor.getTime();
+        const dayEndMs = dayStartMs + 24 * 60 * 60 * 1000 - 1;
+        const sliceStartMs = Math.max(startMs, dayStartMs);
+        const sliceEndMs = Math.min(endMs, dayEndMs);
+
+        if (sliceEndMs > sliceStartMs) {
+            const sliceDate = new Date(sliceStartMs);
+            const jsDay = sliceDate.getDay();
+            const dayIndex = jsDay === 0 ? 6 : jsDay - 1;
+            const track = document.querySelector(`.day-track[data-day-index="${dayIndex}"]`);
+            if (track) {
+                const layout = getCalendarSegmentLayout(sliceStartMs, sliceEndMs, dayStartMs, dayEndMs);
+                const previewEl = document.createElement('div');
+                previewEl.className = 'calendar-block preview';
+                previewEl.style.left = `${layout.leftPercent}%`;
+                previewEl.style.width = `${layout.widthPercent}%`;
+                previewEl.dataset.previewGroupId = 'preview-instant';
+
+                if (blocklist.color) {
+                    previewEl.style.background = blocklist.color;
+                    previewEl.style.color = getContrastTextColor(blocklist.color);
+                }
+
+                previewEl.innerHTML = `
+                    <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
+                    <span class="block-label">${escapeHtml(blocklist.name)}</span>
+                    <span class="block-time">${formatTime(layout.segmentStartDate)} - ${formatTime(layout.segmentEndDate)}</span>
+                `;
+
+                track.appendChild(previewEl);
+            }
+        }
+
+        cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
+    }
+
+    layoutOverlappingBlocks();
+}
+
 // Render schedule preview blocks on the calendar
+// Render preview blocks for the schedule the user is currently building. Previews are drawn
+// for every weekday selected in the segment's `days`. For non-repeating drafts, only days
+// that have a one-shot occurrence still ahead of "now" are rendered.
 function renderSchedulePreview() {
-    if (!selectedBlocklistId || !currentWeekStart) return;
+    if (!selectedBlocklistId) return;
 
     const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
     if (!blocklist) return;
+
     const draftCreatedAt = Date.now();
     const shouldRepeat = scheduleRepeatType === 'forever' || scheduleRepeatType === 'date';
-
-    // The row-based view shows 7 days starting at currentWeekStart.
-    const renderStart = new Date(currentWeekStart);
 
     if (!shouldRepeat) {
         const draftOccurrences = resolveOneShotOccurrences({
@@ -5870,251 +5903,111 @@ function renderSchedulePreview() {
         }).filter(occurrence => occurrence.segmentIndex >= activeScheduleSegmentCount);
 
         draftOccurrences.forEach(occurrence => {
-            renderPreviewBlock(occurrence.start, occurrence.end, blocklist, true, occurrence.segmentIndex);
+            renderPreviewSegmentOnWeekday(blocklist, scheduleSegments[occurrence.segmentIndex], occurrence.segmentIndex, occurrence.dayIndex);
         });
 
         layoutOverlappingBlocks();
         return;
     }
 
-    // For each segment, render preview blocks on its applicable days within the 7-day window.
-    const nowMs = draftCreatedAt;
     scheduleSegments.forEach((segment, segmentIndex) => {
         const isLockedSegment = segmentIndex < activeScheduleSegmentCount;
         if (isLockedSegment) return;
 
         const segmentDays = segment.days || [];
-        const daysToRender = 7;
-
-        for (let d = 0; d < daysToRender; d++) {
-            const dayDate = new Date(renderStart);
-            dayDate.setDate(dayDate.getDate() + d);
-
-            // Convert JS day (0=Sun) to our format (0=Mon)
-            const jsDayOfWeek = dayDate.getDay();
-            const dayIndex = jsDayOfWeek === 0 ? 6 : jsDayOfWeek - 1;
-
-            // Check if this day matches any selected days in the segment
-            if (!segmentDays.includes(dayIndex)) continue;
-
-            // For date-limited schedules, check if outside the "until" date
-            if (scheduleRepeatType === 'date' && scheduleRepeatDate && dayDate > scheduleRepeatDate) {
-                continue;
-            }
-
-            const blockStart = new Date(dayDate);
-            blockStart.setHours(segment.startHour, segment.startMinute, 0, 0);
-
-            const blockEnd = new Date(dayDate);
-            blockEnd.setHours(segment.endHour, segment.endMinute, 0, 0);
-
-            // Handle overnight blocks
-            if (blockEnd <= blockStart) {
-                blockEnd.setDate(blockEnd.getDate() + 1);
-            }
-
-            // A forever/until-date schedule starts running when the user confirms it — it
-            // doesn't backfill the past. Skip occurrences that have already fully elapsed,
-            // and for one currently in progress, clamp the start to "now".
-            if (blockEnd.getTime() <= nowMs) continue;
-            if (blockStart.getTime() < nowMs) blockStart.setTime(nowMs);
-
-            // Render only pending/new segments as preview in schedule mode.
-            renderPreviewBlock(blockStart, blockEnd, blocklist, true, segmentIndex);
-        }
+        segmentDays.forEach(dayIndex => {
+            renderPreviewSegmentOnWeekday(blocklist, segment, segmentIndex, dayIndex);
+        });
     });
 
     layoutOverlappingBlocks();
 }
 
-// Render an active (locked) schedule block on the calendar (not a preview)
-function renderActiveScheduleBlock(blockStart, blockEnd, blocklist, segmentIndex) {
-    const startDay = new Date(blockStart);
-    startDay.setHours(0, 0, 0, 0);
+// Build a preview block element for a schedule segment on a specific weekday.
+// Overnight segments split: head from start..24:00 on this weekday, tail from 00:00..end
+// on the next weekday (wrapping Sun → Mon).
+function renderPreviewSegmentOnWeekday(blocklist, segment, segmentIndex, dayIndex) {
+    const track = document.querySelector(`.day-track[data-day-index="${dayIndex}"]`);
+    if (!track) return;
 
-    const endDay = new Date(blockEnd);
-    endDay.setHours(0, 0, 0, 0);
+    const startMinutes = segment.startHour * 60 + segment.startMinute;
+    const endMinutes = segment.endHour * 60 + segment.endMinute;
+    const isOvernight = endMinutes <= startMinutes;
 
-    let currentDay = new Date(startDay);
+    const startTimeStr = `${String(segment.startHour).padStart(2, '0')}:${String(segment.startMinute).padStart(2, '0')}`;
+    const endTimeStr = `${String(segment.endHour).padStart(2, '0')}:${String(segment.endMinute).padStart(2, '0')}`;
 
-    while (currentDay <= endDay) {
-        const dateStr = localDateKey(currentDay);
-        const track = document.querySelector(`.day-track[data-date="${dateStr}"]`);
+    if (isOvernight) {
+        const left1 = (startMinutes / 1440) * 100;
+        const width1 = Math.max(0.5, ((1440 - startMinutes) / 1440) * 100);
+        track.appendChild(buildPreviewBlockElement({
+            blocklist, segmentIndex, dayIndex,
+            leftPct: left1, widthPct: width1,
+            startTimeStr, endTimeStr,
+            isContinuation: false
+        }));
 
-        if (track) {
-            const dayStart = new Date(currentDay);
-            dayStart.setHours(0, 0, 0, 0);
-            const dayEnd = new Date(currentDay);
-            dayEnd.setHours(23, 59, 59, 999);
-
-            const {
-                leftPercent,
-                widthPercent,
-                segmentStartDate,
-                segmentEndDate
-            } = getCalendarSegmentLayout(blockStart.getTime(), blockEnd.getTime(), dayStart.getTime(), dayEnd.getTime());
-
-            const startTimeStr = formatTime(segmentStartDate);
-            const endTimeStr = formatTime(segmentEndDate);
-
-            const blockEl = document.createElement('div');
-            blockEl.className = 'calendar-block active-schedule';
-            blockEl.dataset.segmentIndex = segmentIndex;
-            blockEl.style.left = `${leftPercent}%`;
-            blockEl.style.width = `${widthPercent}%`;
-
-            if (blocklist.color) {
-                blockEl.style.background = blocklist.color;
-                blockEl.style.color = getContrastTextColor(blocklist.color);
-            }
-
-            blockEl.innerHTML = `
-                <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
-                <span class="block-label">${escapeHtml(blocklist.name)}</span>
-                <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
-            `;
-
-            track.appendChild(blockEl);
+        const nextDayIndex = (dayIndex + 1) % 7;
+        const nextTrack = document.querySelector(`.day-track[data-day-index="${nextDayIndex}"]`);
+        if (nextTrack) {
+            const width2 = Math.max(0.5, (endMinutes / 1440) * 100);
+            nextTrack.appendChild(buildPreviewBlockElement({
+                blocklist, segmentIndex, dayIndex: nextDayIndex,
+                leftPct: 0, widthPct: width2,
+                startTimeStr, endTimeStr,
+                isContinuation: true
+            }));
         }
-
-        currentDay.setDate(currentDay.getDate() + 1);
+    } else {
+        const left = (startMinutes / 1440) * 100;
+        const width = Math.max(0.5, ((endMinutes - startMinutes) / 1440) * 100);
+        track.appendChild(buildPreviewBlockElement({
+            blocklist, segmentIndex, dayIndex,
+            leftPct: left, widthPct: width,
+            startTimeStr, endTimeStr,
+            isContinuation: false
+        }));
     }
 }
 
-function renderScheduledCalendarInterval(schedule, blockStart, blockEnd, blocklist, segmentIndex) {
-    const startDay = new Date(blockStart);
-    startDay.setHours(0, 0, 0, 0);
+// Construct a single preview block element for one weekday slot. Drag/resize handlers are
+// only attached to the head element (not the overnight tail) so that a drag operates on
+// the original anchor weekday.
+function buildPreviewBlockElement({ blocklist, segmentIndex, dayIndex, leftPct, widthPct, startTimeStr, endTimeStr, isContinuation }) {
+    const previewEl = document.createElement('div');
+    previewEl.className = `calendar-block preview interactive${isContinuation ? ' overnight-continuation' : ''}`;
+    previewEl.style.left = `${leftPct}%`;
+    previewEl.style.width = `${widthPct}%`;
+    previewEl.dataset.previewGroupId = `preview-segment-${segmentIndex}`;
+    previewEl.dataset.segmentIndex = segmentIndex;
+    previewEl.dataset.dayIndex = dayIndex;
+    if (isContinuation) previewEl.dataset.continuation = '1';
 
-    const endDay = new Date(blockEnd);
-    endDay.setHours(0, 0, 0, 0);
-
-    const fullStartTimeStr = formatTime(blockStart);
-    const fullEndTimeStr = formatTime(blockEnd);
-    let currentDay = new Date(startDay);
-
-    while (currentDay <= endDay) {
-        const dateStr = localDateKey(currentDay);
-        const track = document.querySelector(`.day-track[data-date="${dateStr}"]`);
-
-        if (track) {
-            const dayStart = new Date(currentDay);
-            dayStart.setHours(0, 0, 0, 0);
-            const dayEnd = new Date(currentDay);
-            dayEnd.setHours(23, 59, 59, 999);
-
-            const {
-                leftPercent,
-                widthPercent
-            } = getCalendarSegmentLayout(blockStart.getTime(), blockEnd.getTime(), dayStart.getTime(), dayEnd.getTime());
-
-            const dayIndex = currentDay.getDay() === 0 ? 6 : currentDay.getDay() - 1;
-            const isContinuationDay = currentDay.getTime() > startDay.getTime();
-            const blockEl = document.createElement('div');
-            blockEl.className = `calendar-block scheduled${isContinuationDay ? ' overnight-continuation' : ''}`;
-            blockEl.dataset.scheduleId = schedule.id;
-            blockEl.dataset.segmentIndex = segmentIndex;
-            blockEl.dataset.day = dayIndex;
-            blockEl.style.left = `${leftPercent}%`;
-            blockEl.style.width = `${widthPercent}%`;
-
-            if (blocklist.color) {
-                blockEl.style.background = blocklist.color;
-                blockEl.style.opacity = '0.7';
-                blockEl.style.color = getContrastTextColor(blocklist.color);
-            }
-
-            blockEl.innerHTML = `
-                <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
-                <span class="block-label">${escapeHtml(blocklist.name)}</span>
-                <span class="block-time">${fullStartTimeStr} - ${fullEndTimeStr}</span>
-            `;
-
-            blockEl.addEventListener('click', (e) => {
-                e.stopPropagation();
-                openScheduledBlockEdit(schedule);
-            });
-
-            track.appendChild(blockEl);
-        }
-
-        currentDay.setDate(currentDay.getDate() + 1);
-    }
-}
-
-// Render preview block on week calendar
-function renderPreviewBlock(blockStart, blockEnd, blocklist, skipClear = false, segmentIndex = null) {
-    if (!skipClear) {
-        document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
+    if (blocklist.color) {
+        previewEl.style.background = blocklist.color;
+        previewEl.style.color = getContrastTextColor(blocklist.color);
     }
 
-    const startDay = new Date(blockStart);
-    startDay.setHours(0, 0, 0, 0);
+    // Resize handles run vertically along the start/end edges. Continuation (tail) blocks
+    // don't get handles — the user adjusts the segment by dragging the head block.
+    const resizeHandles = !isContinuation ? `
+        <div class="resize-handle resize-handle-start" data-handle="start" title="Drag to change start time"></div>
+        <div class="resize-handle resize-handle-end" data-handle="end" title="Drag to change end time"></div>
+    ` : '';
 
-    const endDay = new Date(blockEnd);
-    endDay.setHours(0, 0, 0, 0);
+    previewEl.innerHTML = `
+        ${resizeHandles}
+        <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
+        <span class="block-label">${escapeHtml(blocklist.name)}</span>
+        <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
+    `;
 
-    let currentDay = new Date(startDay);
-
-    while (currentDay <= endDay) {
-        const dateStr = localDateKey(currentDay);
-        const track = document.querySelector(`.day-track[data-date="${dateStr}"]`);
-
-        if (track) {
-            const dayStart = new Date(currentDay);
-            dayStart.setHours(0, 0, 0, 0);
-            const dayEnd = new Date(currentDay);
-            dayEnd.setHours(23, 59, 59, 999);
-
-            const {
-                leftPercent,
-                widthPercent,
-                segmentStartDate,
-                segmentEndDate
-            } = getCalendarSegmentLayout(blockStart.getTime(), blockEnd.getTime(), dayStart.getTime(), dayEnd.getTime());
-
-            const previewEl = document.createElement('div');
-            previewEl.className = 'calendar-block preview';
-            previewEl.style.left = `${leftPercent}%`;
-            previewEl.style.width = `${widthPercent}%`;
-            previewEl.dataset.previewGroupId = segmentIndex !== null ? `preview-segment-${segmentIndex}` : 'preview-instant';
-
-            if (segmentIndex !== null) {
-                previewEl.dataset.segmentIndex = segmentIndex;
-                previewEl.classList.add('interactive');
-            }
-
-            if (blocklist.color) {
-                previewEl.style.background = blocklist.color;
-                previewEl.style.color = getContrastTextColor(blocklist.color);
-            }
-
-            // Resize handles run vertically along the start/end edges (left/right) since
-            // time now flows horizontally.
-            const resizeHandles = segmentIndex !== null ? `
-                <div class="resize-handle resize-handle-start" data-handle="start" style="cursor: ew-resize;"></div>
-                <div class="resize-handle resize-handle-end" data-handle="end" style="cursor: ew-resize;"></div>
-            ` : '';
-
-            previewEl.innerHTML = `
-                ${resizeHandles}
-                <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
-                <span class="block-label">${escapeHtml(blocklist.name)}</span>
-                <span class="block-time">${formatTime(segmentStartDate)} - ${formatTime(segmentEndDate)}</span>
-            `;
-
-            if (segmentIndex !== null && isScheduleMode) {
-                attachPreviewBlockDragHandlers(previewEl, segmentIndex, track);
-            }
-
-            track.appendChild(previewEl);
-        }
-
-        currentDay.setDate(currentDay.getDate() + 1);
+    if (!isContinuation && isScheduleMode) {
+        const track = document.querySelector(`.day-track[data-day-index="${dayIndex}"]`);
+        if (track) attachPreviewBlockDragHandlers(previewEl, segmentIndex, track);
     }
 
-    if (!skipClear) {
-        layoutOverlappingBlocks();
-    }
+    return previewEl;
 }
 
 // Attach drag and resize handlers to a preview block.
@@ -6139,12 +6032,11 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
     const minDurationMinutes = 15;
 
     function getDayIndexFromTrack(trackEl) {
-        const dateStr = trackEl.dataset.date;
-        if (!dateStr) return null;
-        const date = parseLocalDateKey(dateStr);
-        if (!date) return null;
-        const jsDay = date.getDay();
-        return jsDay === 0 ? 6 : jsDay - 1;
+        if (!trackEl) return null;
+        const raw = trackEl.dataset.dayIndex;
+        if (raw === undefined || raw === null || raw === '') return null;
+        const idx = parseInt(raw, 10);
+        return Number.isInteger(idx) && idx >= 0 && idx <= 6 ? idx : null;
     }
 
     startDayIndex = getDayIndexFromTrack(track);
@@ -6251,20 +6143,28 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
         document.addEventListener('mouseup', handleMouseUp);
     });
 
+    // Only "head" preview blocks (not overnight tails) are manipulated during a drag —
+    // tails are redrawn from the segment's new times on mouseup via renderSchedulePreview.
+    function getHeadPreviewBlocks() {
+        return document.querySelectorAll(
+            `.calendar-block.preview[data-segment-index="${segmentIndex}"]:not([data-continuation])`
+        );
+    }
+
     function handleMouseMove(e) {
         const trackRect = track.getBoundingClientRect();
         if (trackRect.width <= 0) return;
 
         const deltaX = e.clientX - startX;
         const deltaPct = (deltaX / trackRect.width) * 100;
-        const allSegmentBlocks = document.querySelectorAll(`.calendar-block.preview[data-segment-index="${segmentIndex}"]`);
+        const headBlocks = getHeadPreviewBlocks();
 
         if (isDragging) {
             // Move horizontally — clamp so the block stays within [0, 100]%
             const maxLeftPct = 100 - startWidthPct;
             const newLeftPct = Math.max(0, Math.min(maxLeftPct, startLeftPct + deltaPct));
 
-            allSegmentBlocks.forEach(block => {
+            headBlocks.forEach(block => {
                 block.style.left = `${newLeftPct}%`;
                 block.classList.add('dragging');
             });
@@ -6286,7 +6186,7 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
                 const originalTrackIndex = allTracks.indexOf(track);
                 const dayShiftDuringDrag = targetTrackIndex - originalTrackIndex;
 
-                allSegmentBlocks.forEach(block => {
+                headBlocks.forEach(block => {
                     if (!block.dataset.originalTrackIndex) {
                         block.dataset.originalTrackIndex = allTracks.indexOf(block.parentElement);
                     }
@@ -6304,7 +6204,7 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
                 const newLeftPct = Math.max(0, startLeftPct + deltaPct);
                 const newWidthPct = startWidthPct - (newLeftPct - startLeftPct);
                 if (newWidthPct >= 0.5) {
-                    allSegmentBlocks.forEach(block => {
+                    headBlocks.forEach(block => {
                         block.style.left = `${newLeftPct}%`;
                         block.style.width = `${newWidthPct}%`;
                     });
@@ -6312,7 +6212,7 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
             } else if (resizeHandle === 'end') {
                 const maxWidthPct = 100 - startLeftPct;
                 const newWidthPct = Math.max(0.5, Math.min(maxWidthPct, startWidthPct + deltaPct));
-                allSegmentBlocks.forEach(block => {
+                headBlocks.forEach(block => {
                     block.style.width = `${newWidthPct}%`;
                 });
             }
@@ -6323,8 +6223,7 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
         document.removeEventListener('mousemove', handleMouseMove);
         document.removeEventListener('mouseup', handleMouseUp);
 
-        const allSegmentBlocks = document.querySelectorAll(`.calendar-block.preview[data-segment-index="${segmentIndex}"]`);
-        allSegmentBlocks.forEach(block => {
+        getHeadPreviewBlocks().forEach(block => {
             block.classList.remove('dragging');
             block.classList.remove('resizing');
             delete block.dataset.originalTrackIndex;
@@ -8573,11 +8472,6 @@ function undoDelete() {
 function render() {
     updateOnboardingVisibility();
 
-    // Initialize currentWeekStart if not set
-    if (!currentWeekStart) {
-        currentWeekStart = getWeekStart(new Date());
-    }
-
     updateWeekCalendar();
     renderBlocklistSelector();
 
@@ -8665,59 +8559,8 @@ function syncSelectedControlState() {
     updateCleanHostsBtnState();
 }
 
-// In the row-based week view, currentWeekStart is the first visible day (not necessarily a
-// Monday). Navigation moves the 7-day window in 7-day steps; "Today" snaps the window so
-// today is the first row.
-function getWeekStart(date) {
-    const d = new Date(date);
-    d.setHours(0, 0, 0, 0);
-    return d;
-}
-
-// Format week display string like "May 2 – May 8" (or include year when crossing years).
-function formatWeekDisplay(start, end) {
-    const locale = tSettings('locale');
-    const formatDayMonth = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' });
-    const startLabel = formatDayMonth.format(start);
-    const endLabel = formatDayMonth.format(end);
-
-    const currentYear = new Date().getFullYear();
-    const startYear = start.getFullYear();
-    const endYear = end.getFullYear();
-
-    if (startYear === endYear && startYear === currentYear) return `${startLabel} – ${endLabel}`;
-    if (startYear === endYear) return `${startLabel} – ${endLabel} ${startYear}`;
-    return `${startLabel} ${startYear} – ${endLabel} ${endYear}`;
-}
-
-// Move the 7-day window forward or backward by one week
-function navigateWeek(direction) {
-    if (!currentWeekStart) {
-        currentWeekStart = getWeekStart(new Date());
-    }
-
-    currentWeekStart.setDate(currentWeekStart.getDate() + (direction * 7));
-    updateWeekCalendar();
-    handleTimeChange();
-}
-
-// Snap the 7-day window so today is the first row.
-function scrollToToday(_smooth = true, _alignment = 'left') {
-    const todayStart = getWeekStart(new Date());
-
-    if (!currentWeekStart || currentWeekStart.getTime() !== todayStart.getTime()) {
-        currentWeekStart = todayStart;
-        updateWeekCalendar();
-        handleTimeChange();
-    }
-}
-
-// Used for the instant snap on app startup — sets the window to start at today.
-function scrollToNow(smooth = true) {
-    scrollToToday(smooth, 'left');
-}
-
-// Render the row-based week calendar: 7 day rows with horizontal time axis.
+// Render the generic weekly schedule: fixed Mon..Sun rows with a horizontal time axis.
+// The view is dateless — every row represents a weekday, and today's row is highlighted.
 function updateWeekCalendar() {
     const dayRows = document.getElementById('day-rows');
     const hourMarkers = document.getElementById('hour-markers');
@@ -8734,59 +8577,41 @@ function updateWeekCalendar() {
         hourMarkers.appendChild(marker);
     }
 
-    // Render 7 day rows starting at currentWeekStart.
     dayRows.innerHTML = '';
-    const dayNames = tSettings('dayAbbrev'); // 0=Sun..6=Sat
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayKey = localDateKey(today);
+    // Day names in our internal order: 0=Mon, 1=Tue, ... 6=Sun.
+    const dayNamesMon0 = tSettings('dayAbbrevMon0');
+    const todayJsDay = new Date().getDay(); // 0=Sun..6=Sat
+    const todayDayIndex = todayJsDay === 0 ? 6 : todayJsDay - 1;
 
-    // For the today row we include the weekday in the secondary label (e.g. "Sat May 2")
-    // since the primary label says "Today" and would otherwise hide what weekday it is.
-    // Other rows keep the secondary label compact ("May 3") because the weekday is already
-    // shown as the primary label.
-    const formatDateLabel = (date, withWeekday) => {
-        try {
-            return new Intl.DateTimeFormat(tSettings('locale'), withWeekday
-                ? { weekday: 'short', month: 'short', day: 'numeric' }
-                : { month: 'short', day: 'numeric' }
-            ).format(date);
-        } catch (_) {
-            return withWeekday
-                ? `${dayNames[date.getDay()]} ${date.toLocaleDateString()}`
-                : date.toLocaleDateString();
-        }
-    };
-
-    for (let d = 0; d < 7; d++) {
-        const dayDate = new Date(currentWeekStart);
-        dayDate.setDate(dayDate.getDate() + d);
-
-        const dateStr = localDateKey(dayDate);
-        const isToday = dateStr === todayKey;
-        const dayOfWeek = dayDate.getDay(); // 0=Sun..6=Sat
-        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+        const isToday = dayIndex === todayDayIndex;
+        const isWeekend = dayIndex === 5 || dayIndex === 6; // Sat, Sun
 
         const row = document.createElement('div');
         row.className = 'day-row';
         if (isToday) row.classList.add('today');
         if (isWeekend) row.classList.add('weekend');
-        row.dataset.date = dateStr;
+        row.dataset.dayIndex = dayIndex;
 
         const label = document.createElement('div');
         label.className = 'day-label';
+
         const nameSpan = document.createElement('span');
         nameSpan.className = 'day-name';
-        nameSpan.textContent = isToday ? tSettings('today') : dayNames[dayOfWeek];
-        const dateSpan = document.createElement('span');
-        dateSpan.className = 'day-date';
-        dateSpan.textContent = formatDateLabel(dayDate, isToday);
-        label.append(nameSpan, dateSpan);
+        nameSpan.textContent = dayNamesMon0[dayIndex];
+        label.appendChild(nameSpan);
+
+        if (isToday) {
+            const todaySpan = document.createElement('span');
+            todaySpan.className = 'day-date';
+            todaySpan.textContent = tSettings('today');
+            label.appendChild(todaySpan);
+        }
 
         const track = document.createElement('div');
         track.className = 'day-track';
         if (isScheduleMode) track.classList.add('schedule-mode');
-        track.dataset.date = dateStr;
+        track.dataset.dayIndex = dayIndex;
 
         if (isToday) {
             const now = new Date();
@@ -8802,19 +8627,7 @@ function updateWeekCalendar() {
         dayRows.appendChild(row);
     }
 
-    updateVisibleRangeDisplay();
     renderWeekBlocks();
-}
-
-function getCalendarRenderRange() {
-    const renderStart = new Date(currentWeekStart);
-    renderStart.setHours(0, 0, 0, 0);
-
-    const renderEnd = new Date(renderStart);
-    renderEnd.setDate(renderEnd.getDate() + 6);
-    renderEnd.setHours(23, 59, 59, 999);
-
-    return { renderStart, renderEnd };
 }
 
 // Convert a time interval (clamped to a single day) into horizontal positioning for the
@@ -8843,39 +8656,24 @@ function getCalendarSegmentLayout(segmentStartMs, segmentEndMs, dayStartMs, dayE
     };
 }
 
-// Update the displayed date range label based on the 7-day window.
-function updateVisibleRangeDisplay() {
-    const weekDisplay = document.getElementById('week-display');
-    if (!weekDisplay || !currentWeekStart) return;
-
-    const start = new Date(currentWeekStart);
-    const end = new Date(currentWeekStart);
-    end.setDate(end.getDate() + 6);
-
-    weekDisplay.textContent = formatWeekDisplay(start, end);
-}
-// Render active blocks on week calendar (one row per day, blocks positioned left%/width%)
+// Render active manual blocks on the weekly calendar by projecting their concrete
+// timestamps onto the matching weekday(s). Overnight blocks render two halves on
+// consecutive weekdays. Fully-past blocks are not drawn.
 function renderWeekBlocks() {
     const noBlocksMsg = document.getElementById('no-blocks-message');
     const now = Date.now();
 
-    // Clear existing blocks from all day tracks (preserve the now-indicator on today)
+    // Clear existing blocks from all day tracks (preserve the now-indicator on today).
     document.querySelectorAll('.day-track').forEach(track => {
         const nowIndicator = track.querySelector('#now-indicator');
         track.innerHTML = '';
         if (nowIndicator) track.appendChild(nowIndicator);
     });
 
-    const { renderStart, renderEnd } = getCalendarRenderRange();
-    const renderStartMs = renderStart.getTime();
-    const renderEndMs = renderEnd.getTime();
-
-    // Always-on active blocks are represented in the "Always on" pill row instead of being
-    // drawn as bars across the timeline.
+    // Always-on active blocks are represented in the "Always on" pill row instead of
+    // being drawn as bars across the timeline.
     const visibleBlocks = appData.activeBlocks.filter(block =>
-        !isBlockAlwaysOn(block) &&
-        block.endTime > renderStartMs &&
-        block.startTime < renderEndMs
+        !isBlockAlwaysOn(block) && block.endTime > now
     );
 
     const hasSchedules = appData.schedules && appData.schedules.length > 0;
@@ -8896,79 +8694,99 @@ function renderWeekBlocks() {
             return;
         }
 
-        const blockStart = new Date(block.startTime);
-        const blockEnd = new Date(Math.min(block.endTime, renderEndMs));
-        const isExpired = block.endTime <= now;
-        const isRunning = !isExpired && block.startTime <= now;
-
-        const startDay = new Date(blockStart);
-        startDay.setHours(0, 0, 0, 0);
-
-        const endDay = new Date(blockEnd);
-        endDay.setHours(0, 0, 0, 0);
-
-        let currentDay = new Date(startDay);
-
-        while (currentDay <= endDay) {
-            const dateStr = localDateKey(currentDay);
-            const track = document.querySelector(`.day-track[data-date="${dateStr}"]`);
-
-            if (track) {
-                const dayStart = new Date(currentDay);
-                dayStart.setHours(0, 0, 0, 0);
-                const dayEnd = new Date(currentDay);
-                dayEnd.setHours(23, 59, 59, 999);
-
-                const {
-                    leftPercent,
-                    widthPercent,
-                    segmentStartDate,
-                    segmentEndDate
-                } = getCalendarSegmentLayout(block.startTime, blockEnd.getTime(), dayStart.getTime(), dayEnd.getTime());
-
-                const blockEl = document.createElement('div');
-                blockEl.className = 'calendar-block';
-                if (isExpired) blockEl.classList.add('expired');
-                if (isRunning) blockEl.classList.add('running');
-                blockEl.dataset.blockId = block.id;
-                blockEl.style.left = `${leftPercent}%`;
-                blockEl.style.width = `${widthPercent}%`;
-
-                if (blocklist.color) {
-                    blockEl.style.background = blocklist.color;
-                    blockEl.style.color = getContrastTextColor(blocklist.color);
-                }
-
-                // Show "until HH:MM" for currently-running blocks (matches design reference);
-                // otherwise show the block's start–end range.
-                const timeLabel = isRunning
-                    ? `until ${formatTime(segmentEndDate)}`
-                    : `${formatTime(segmentStartDate)} - ${formatTime(segmentEndDate)}`;
-
-                blockEl.innerHTML = `
-                    <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
-                    <span class="block-label">${escapeHtml(blocklist.name)}</span>
-                    <span class="block-time">${timeLabel}</span>
-                `;
-
-                if (!isExpired) {
-                    blockEl.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        openOverrideModal(block.id);
-                    });
-                }
-
-                track.appendChild(blockEl);
-            }
-
-            currentDay.setDate(currentDay.getDate() + 1);
-        }
+        const isRunning = block.startTime <= now;
+        renderManualBlockOnWeekdays(block, blocklist, isRunning);
     });
 
     renderScheduledCalendarBlocks();
     layoutOverlappingBlocks();
     renderScheduleAlwaysOnRow();
     renderScheduleVisibilityChips();
+}
+
+// Build a calendar block element for a manual one-off block on a specific weekday slice.
+function buildManualBlockElement(block, blocklist, leftPct, widthPct, segmentStartDate, segmentEndDate, isRunning) {
+    const blockEl = document.createElement('div');
+    blockEl.className = 'calendar-block';
+    if (isRunning) blockEl.classList.add('running');
+    blockEl.dataset.blockId = block.id;
+    blockEl.style.left = `${leftPct}%`;
+    blockEl.style.width = `${widthPct}%`;
+
+    if (blocklist.color) {
+        blockEl.style.background = blocklist.color;
+        blockEl.style.color = getContrastTextColor(blocklist.color);
+    }
+
+    // Show "until HH:MM" for currently-running blocks; otherwise show the block's range.
+    const timeLabel = isRunning
+        ? `until ${formatTime(segmentEndDate)}`
+        : `${formatTime(segmentStartDate)} - ${formatTime(segmentEndDate)}`;
+
+    blockEl.innerHTML = `
+        <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
+        <span class="block-label">${escapeHtml(blocklist.name)}</span>
+        <span class="block-time">${timeLabel}</span>
+    `;
+
+    blockEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openOverrideModal(block.id);
+    });
+
+    return blockEl;
+}
+
+// Render a manual block onto the weekly grid by computing the weekday(s) it spans.
+// Multi-day blocks are split per weekday; today's slice is clamped to start at "now" so
+// running blocks visually begin at the now-indicator.
+function renderManualBlockOnWeekdays(block, blocklist, isRunning) {
+    const startDate = new Date(block.startTime);
+    const endDate = new Date(block.endTime);
+    const now = Date.now();
+
+    const startDay = new Date(startDate);
+    startDay.setHours(0, 0, 0, 0);
+    const endDay = new Date(endDate);
+    endDay.setHours(0, 0, 0, 0);
+
+    let cursor = new Date(startDay);
+    while (cursor.getTime() <= endDay.getTime()) {
+        const sliceDayStartMs = cursor.getTime();
+        const sliceDayEndMs = sliceDayStartMs + 24 * 60 * 60 * 1000 - 1;
+
+        let sliceStartMs = Math.max(block.startTime, sliceDayStartMs);
+        const sliceEndMs = Math.min(block.endTime, sliceDayEndMs);
+
+        // For the currently-running slice, clamp the visible start to "now" so the bar
+        // doesn't draw over time that has already elapsed.
+        if (isRunning && now > sliceStartMs && now < sliceEndMs) {
+            sliceStartMs = now;
+        }
+
+        // Skip past slices entirely.
+        if (sliceEndMs <= now) {
+            cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
+            continue;
+        }
+
+        const sliceDate = new Date(sliceStartMs);
+        const jsDay = sliceDate.getDay();
+        const dayIndex = jsDay === 0 ? 6 : jsDay - 1;
+        const track = document.querySelector(`.day-track[data-day-index="${dayIndex}"]`);
+        if (track) {
+            const layout = getCalendarSegmentLayout(sliceStartMs, sliceEndMs, sliceDayStartMs, sliceDayEndMs);
+            const blockEl = buildManualBlockElement(
+                block, blocklist,
+                layout.leftPercent, layout.widthPercent,
+                layout.segmentStartDate, layout.segmentEndDate,
+                isRunning && sliceStartMs <= now && now < sliceEndMs
+            );
+            track.appendChild(blockEl);
+        }
+
+        cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
+    }
 }
 
 
@@ -9195,24 +9013,14 @@ function layoutOverlappingBlocks() {
     });
 }
 
-// Render scheduled blocks on the calendar (from saved schedules)
+// Render saved schedules onto the weekly calendar by weekday. Each segment lays out on
+// every weekday listed in its `days` array; overnight segments split into a tail on the
+// next weekday (wrapping Sun → Mon). One-shot non-repeating schedules render onto the
+// weekday of each resolved occurrence.
 function renderScheduledCalendarBlocks() {
     if (!appData.schedules || appData.schedules.length === 0) return;
 
     const now = new Date();
-
-    // Build a list of the 7 visible days (in render order). Overnight schedules render the
-    // tail on the *next visible day* if it's in range.
-    const allVisibleDays = [];
-    for (let i = 0; i < 7; i++) {
-        const day = new Date(currentWeekStart);
-        day.setDate(day.getDate() + i);
-        allVisibleDays.push({
-            date: day,
-            dateStr: localDateKey(day),
-            dayIndex: (day.getDay() === 0 ? 6 : day.getDay() - 1)
-        });
-    }
 
     appData.schedules.forEach(schedule => {
         const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
@@ -9222,93 +9030,93 @@ function renderScheduledCalendarBlocks() {
             return;
         }
 
+        // Date-limited schedules drop off the calendar once their end date has passed.
         if (schedule.repeatType === 'date' && schedule.repeatDate) {
             const endDate = new Date(schedule.repeatDate);
             if (now > endDate) return;
         }
 
         if (isNonRepeatingSchedule(schedule)) {
+            // One-shot occurrences carry an explicit dayIndex (Mon=0..Sun=6). Render on
+            // that weekday using the segment's clock-times.
             const occurrences = resolveOneShotOccurrences(schedule);
             occurrences.forEach(occurrence => {
-                renderScheduledCalendarInterval(
-                    schedule,
-                    occurrence.start,
-                    occurrence.end,
-                    blocklist,
-                    occurrence.segmentIndex
-                );
+                if (occurrence.end.getTime() <= now.getTime()) return; // already finished
+                const segment = schedule.segments[occurrence.segmentIndex];
+                if (!segment) return;
+                renderScheduleSegmentOnWeekday(schedule, segment, occurrence.segmentIndex, occurrence.dayIndex, blocklist);
             });
             return;
         }
 
         schedule.segments.forEach((segment, segmentIdx) => {
             const segmentDays = segment.days || [];
-
-            allVisibleDays.forEach((weekDay, weekDayIdx) => {
-                if (!segmentDays.includes(weekDay.dayIndex)) return;
-
-                const track = document.querySelector(`.day-track[data-date="${weekDay.dateStr}"]`);
-                if (!track) return;
-
-                const startMinutes = segment.startHour * 60 + segment.startMinute;
-                const endMinutes = segment.endHour * 60 + segment.endMinute;
-                const isOvernight = endMinutes <= startMinutes;
-
-                const startTimeStr = `${String(segment.startHour).padStart(2, '0')}:${String(segment.startMinute).padStart(2, '0')}`;
-                const endTimeStr = `${String(segment.endHour).padStart(2, '0')}:${String(segment.endMinute).padStart(2, '0')}`;
-
-                const buildBlock = (leftPct, widthPct, dayIndex, isContinuation) => {
-                    const el = document.createElement('div');
-                    el.className = `calendar-block scheduled${isContinuation ? ' overnight-continuation' : ''}`;
-                    el.dataset.scheduleId = schedule.id;
-                    el.dataset.segmentIndex = segmentIdx;
-                    el.dataset.day = dayIndex;
-                    el.style.left = `${leftPct}%`;
-                    el.style.width = `${widthPct}%`;
-
-                    if (blocklist.color) {
-                        el.style.background = blocklist.color;
-                        el.style.opacity = '0.7';
-                        el.style.color = getContrastTextColor(blocklist.color);
-                    }
-
-                    el.innerHTML = `
-                        <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
-                        <span class="block-label">${escapeHtml(blocklist.name)}</span>
-                        <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
-                    `;
-
-                    el.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        openScheduledBlockEdit(schedule);
-                    });
-
-                    return el;
-                };
-
-                if (isOvernight) {
-                    // Part 1: from start until 24:00 on this day
-                    const left1 = (startMinutes / 1440) * 100;
-                    const width1 = Math.max(0.5, ((1440 - startMinutes) / 1440) * 100);
-                    track.appendChild(buildBlock(left1, width1, weekDay.dayIndex, false));
-
-                    // Part 2: from 00:00 until end on the next visible day (if any)
-                    const nextDay = allVisibleDays[weekDayIdx + 1];
-                    if (nextDay) {
-                        const nextTrack = document.querySelector(`.day-track[data-date="${nextDay.dateStr}"]`);
-                        if (nextTrack) {
-                            const width2 = Math.max(0.5, (endMinutes / 1440) * 100);
-                            nextTrack.appendChild(buildBlock(0, width2, nextDay.dayIndex, true));
-                        }
-                    }
-                } else {
-                    const left = (startMinutes / 1440) * 100;
-                    const width = Math.max(0.5, ((endMinutes - startMinutes) / 1440) * 100);
-                    track.appendChild(buildBlock(left, width, weekDay.dayIndex, false));
-                }
+            segmentDays.forEach(dayIndex => {
+                renderScheduleSegmentOnWeekday(schedule, segment, segmentIdx, dayIndex, blocklist);
             });
         });
     });
+}
+
+// Render a single schedule segment onto the day-track for a specific weekday.
+// Overnight segments split: head from start..24:00 on this weekday, tail from 00:00..end
+// on the next weekday (wrapping Sun → Mon).
+function renderScheduleSegmentOnWeekday(schedule, segment, segmentIdx, dayIndex, blocklist) {
+    const track = document.querySelector(`.day-track[data-day-index="${dayIndex}"]`);
+    if (!track) return;
+
+    const startMinutes = segment.startHour * 60 + segment.startMinute;
+    const endMinutes = segment.endHour * 60 + segment.endMinute;
+    const isOvernight = endMinutes <= startMinutes;
+
+    const startTimeStr = `${String(segment.startHour).padStart(2, '0')}:${String(segment.startMinute).padStart(2, '0')}`;
+    const endTimeStr = `${String(segment.endHour).padStart(2, '0')}:${String(segment.endMinute).padStart(2, '0')}`;
+
+    const buildBlock = (leftPct, widthPct, hostDayIndex, isContinuation) => {
+        const el = document.createElement('div');
+        el.className = `calendar-block scheduled${isContinuation ? ' overnight-continuation' : ''}`;
+        el.dataset.scheduleId = schedule.id;
+        el.dataset.segmentIndex = segmentIdx;
+        el.dataset.day = hostDayIndex;
+        el.style.left = `${leftPct}%`;
+        el.style.width = `${widthPct}%`;
+
+        if (blocklist.color) {
+            el.style.background = blocklist.color;
+            el.style.opacity = '0.7';
+            el.style.color = getContrastTextColor(blocklist.color);
+        }
+
+        el.innerHTML = `
+            <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
+            <span class="block-label">${escapeHtml(blocklist.name)}</span>
+            <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
+        `;
+
+        el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openScheduledBlockEdit(schedule);
+        });
+
+        return el;
+    };
+
+    if (isOvernight) {
+        const left1 = (startMinutes / 1440) * 100;
+        const width1 = Math.max(0.5, ((1440 - startMinutes) / 1440) * 100);
+        track.appendChild(buildBlock(left1, width1, dayIndex, false));
+
+        const nextDayIndex = (dayIndex + 1) % 7;
+        const nextTrack = document.querySelector(`.day-track[data-day-index="${nextDayIndex}"]`);
+        if (nextTrack) {
+            const width2 = Math.max(0.5, (endMinutes / 1440) * 100);
+            nextTrack.appendChild(buildBlock(0, width2, nextDayIndex, true));
+        }
+    } else {
+        const left = (startMinutes / 1440) * 100;
+        const width = Math.max(0.5, ((endMinutes - startMinutes) / 1440) * 100);
+        track.appendChild(buildBlock(left, width, dayIndex, false));
+    }
 }
 
 // Render blocklist selector dropdown
@@ -10030,8 +9838,8 @@ const SETTINGS_TRANSLATIONS = {
         modeSchedule: 'Schedule',
         selectionPrompt: 'Select a blocklist',
         selectionPromptOption: 'Select a blocklist...',
-        yourBlocklists: 'Your Blocklists',
-        scheduleTitle: 'Schedule',
+        yourBlocklists: 'My Blocklists',
+        scheduleTitle: 'Weekly Schedule',
         today: 'Today',
         noActiveBlocks: 'No active blocks',
         alwaysOnRowLabel: 'Always on:',
@@ -10185,8 +9993,8 @@ const SETTINGS_TRANSLATIONS = {
         modeSchedule: 'Skema',
         selectionPrompt: 'Vælg en blokliste',
         selectionPromptOption: 'Vælg en blokliste...',
-        yourBlocklists: 'Dine bloklister',
-        scheduleTitle: 'Skema',
+        yourBlocklists: 'Mine bloklister',
+        scheduleTitle: 'Ugentligt skema',
         today: 'I dag',
         noActiveBlocks: 'Ingen aktive blokeringer',
         alwaysOnRowLabel: 'Altid tændt:',
@@ -10375,7 +10183,6 @@ function applySettingsLanguage() {
     }
     setText('main-blocklists-title', tSettings('yourBlocklists'));
     setText('main-schedule-title', tSettings('scheduleTitle'));
-    setText('today-btn', tSettings('today'));
     setText('no-active-blocks-label', tSettings('noActiveBlocks'));
     setText('always-on-row-label', tSettings('alwaysOnRowLabel'));
     setText('always-on-row-note', tSettings('alwaysOnRowNote'));
@@ -10546,7 +10353,7 @@ function applySettingsLanguage() {
     renderBlocklists();
     if (document.getElementById('blocklist-select')) renderBlocklistSelector();
     if (typeof updateScheduleButtonState === 'function') updateScheduleButtonState();
-    if (typeof updateWeekCalendar === 'function' && currentWeekStart) updateWeekCalendar();
+    if (typeof updateWeekCalendar === 'function') updateWeekCalendar();
 }
 
 // Theme Handling

@@ -518,7 +518,7 @@
                 <!-- Blocklists Section (Right Column) -->
                 <div id="blocklists-section" class="blocklists-section">
                     <div class="section-header">
-                        <h2 id="main-blocklists-title">Your Blocklists</h2>
+                        <h2 id="main-blocklists-title">My Blocklists</h2>
                         <button id="add-blocklist-btn" class="icon-btn" title="Add blocklist">
                             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -535,33 +535,12 @@
 
             <!-- Bottom Row: Week Calendar (spans full width) -->
             <div class="week-calendar-section">
-                <!-- Header: Schedule title -->
-                <div class="section-header">
-                    <h2 id="main-schedule-title">Schedule</h2>
-                </div>
-
-                <!-- Controls row: week nav (left) + chips (far right) -->
-                <div class="schedule-controls-row">
-                    <div class="week-nav">
-                        <button class="week-nav-btn" id="prev-week-btn" title="Previous Week">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2">
-                                <polyline points="15 18 9 12 15 6"></polyline>
-                            </svg>
-                        </button>
-                        <span class="week-display" id="week-display">May 2 – May 8</span>
-                        <button class="week-nav-btn" id="next-week-btn" title="Next Week">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2">
-                                <polyline points="9 18 15 12 9 6"></polyline>
-                            </svg>
-                        </button>
-                        <button class="week-nav-today-btn" id="today-btn">Today</button>
-                    </div>
-
-                    <!-- Combined status row: visibility-toggle chips (per blocklist with
-                         blocks/schedules) + "Always on:" chips (always-on blocks not shown in
-                         the timeline below). Both groups flow inline using display: contents. -->
+                <!-- Header: SCHEDULE title (left) + chips (far right). The chips are
+                     visibility-toggle chips per blocklist + "Always on:" chips for blocks
+                     that aren't drawn in the timeline below. Both groups flow inline using
+                     display: contents on their wrappers. -->
+                <div class="section-header schedule-header-row">
+                    <h2 id="main-schedule-title">Weekly Schedule</h2>
                     <div class="schedule-status-row" id="schedule-status-row">
                         <div class="schedule-visibility-chips hidden" id="schedule-visibility-chips"></div>
                         <div class="schedule-always-on-row hidden" id="schedule-always-on-row">

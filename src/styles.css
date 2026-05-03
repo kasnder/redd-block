@@ -823,7 +823,7 @@ body.dark-mode .title-bar button:hover {
     /* Match icon-btn height to ensure consistent vertical alignment */
 }
 
-/* Keep "Start a Block" and "Your Blocklists" titles aligned in the top row */
+/* Keep "Start a Block" and "My Blocklists" titles aligned in the top row */
 .grid-top-row .section-header {
     min-height: 40px;
 }
@@ -879,15 +879,11 @@ body.ios.ios-phone .week-calendar-section {
     margin-bottom: 8px;
 }
 
-/* Row sitting under the SCHEDULE heading: week-nav on the left, chips pushed to the far
-   right. Wraps to a new line on narrow viewports so chips drop below the nav. */
-.schedule-controls-row {
-    display: flex;
-    align-items: center;
+/* Schedule heading row: SCHEDULE title on the left, status chips pushed to the right. */
+.section-header.schedule-header-row {
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 8px 12px;
-    margin-bottom: 8px;
 }
 
 /* Combined status row: visibility-toggle chips + always-on chips flow inline together.
@@ -985,71 +981,6 @@ body.ios.ios-phone .week-calendar-section {
 
 .always-on-chip.preview:hover {
     background: transparent;
-}
-
-/* Week navigation: prev / range label / next / Today */
-.week-nav {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.week-display {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text-primary);
-    padding: 0 4px;
-    min-width: 90px;
-    text-align: center;
-}
-
-.week-nav-btn {
-    width: 28px;
-    height: 28px;
-    border: none;
-    border-radius: 6px;
-    background: rgba(0, 0, 0, 0.05);
-    color: var(--text-muted);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-}
-
-.week-nav-btn:hover {
-    background: rgba(0, 0, 0, 0.1);
-    color: var(--text-primary);
-}
-
-.week-nav-today-btn {
-    height: 28px;
-    padding: 0 12px;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--element-bg);
-    color: var(--text-primary);
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    margin-left: 4px;
-    transition: all 0.2s ease;
-}
-
-.week-nav-today-btn:hover {
-    background: rgba(0, 0, 0, 0.05);
-}
-
-body.dark-mode .week-nav-btn {
-    background: rgba(255, 255, 255, 0.08);
-}
-
-body.dark-mode .week-nav-btn:hover {
-    background: rgba(255, 255, 255, 0.15);
-}
-
-body.dark-mode .week-nav-today-btn:hover {
-    background: rgba(255, 255, 255, 0.08);
 }
 
 /* Calendar container */
@@ -1293,15 +1224,29 @@ body.dark-mode .day-row.weekend {
     cursor: ew-resize !important;
 }
 
-/* Resize handles span the full height on the left and right edges */
+/* Resize handles span the full height on the left and right edges. They show a faint
+   "grip" stripe always so users discover that the edges are draggable. */
 .calendar-block.preview.interactive .resize-handle {
     position: absolute;
     top: 0;
     bottom: 0;
-    width: 8px;
+    width: 10px;
     cursor: ew-resize !important;
     z-index: 100;
     pointer-events: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease;
+}
+
+.calendar-block.preview.interactive .resize-handle::before {
+    content: '';
+    width: 2px;
+    height: 60%;
+    background: rgba(255, 255, 255, 0.6);
+    border-radius: 1px;
+    transition: background 0.15s ease, height 0.15s ease;
 }
 
 .calendar-block.preview.interactive .resize-handle-start {
@@ -1313,7 +1258,12 @@ body.dark-mode .day-row.weekend {
 }
 
 .calendar-block.preview.interactive .resize-handle:hover {
-    background: rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.calendar-block.preview.interactive .resize-handle:hover::before {
+    background: rgba(255, 255, 255, 0.95);
+    height: 75%;
 }
 
 .calendar-block.preview.interactive.resize-hover {
