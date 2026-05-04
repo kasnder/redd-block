@@ -847,6 +847,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupHelpMenuLinks();
     setupHelperSettings();
     setupDiagnosticsButton();
+    setupExtensionSetupButton();
     setupOverrideAll();
     setupInAppUninstall();
     setupGraceSetting();
@@ -1044,7 +1045,6 @@ async function checkForAppUpdate() {
 let migrationOnboardingActive = false;
 let migrationOnboardingDismissed = false;
 const EXT_ONBOARDING_DISMISSED_KEY = 'reddBlockExtOnboardingDismissed';
-const BEHAVIOUR_CHANGE_DISMISSED_KEY = 'reddBlockBehaviourChangeDismissedV2';
 
 async function runDesktopOnboarding() {
     if (isIOS) return;
@@ -1701,65 +1701,207 @@ async function pollMigrationCompliance() {
     } catch (e) { /* no-op */ }
 }
 window.addEventListener('focus', () => {
-    if (migrationOnboardingActive) pollMigrationCompliance();
+    if (migrationOnboardingActive) {
+        pollMigrationCompliance();
+    } else {
+        // When the migration overlay isn't open, refresh the slim
+        // banner instead — the user may have just finished allowing
+        // the extension in another browser and tabbed back here, so
+        // the banner needs to either disappear (now compliant) or
+        // re-show (regression detected). Throttled inside.
+        refreshBehaviourBannerIfStale();
+    }
 });
 
-// Persistent low-key banner for users who upgraded from v1.x.
-// Different from the one-time welcome overlay: this stays around
-// across launches as an ongoing reminder that the blocking
-// architecture changed. Auto-hides when:
-//   - user explicitly dismisses (× button), OR
-//   - every detected browser is fully compliant (they're done),
-//   - or the user is on a fresh install with no v1.x history
-//     (`user_came_from_v1x` returns false).
+// Treat "window was hidden, then shown again" as a fresh session
+// for the slim setup banner. ReDD Block's red-X / Cmd-W handler
+// hides the window to the tray rather than quitting (see the
+// applicationShouldTerminate guard in lib.rs), so a normal user's
+// "close and reopen the app" doesn't kill the JS context — without
+// this hook, a × dismissal would persist across hide/show cycles
+// and effectively become "dismiss forever" until tray-Quit or
+// reboot. Resetting on the hidden→visible transition mirrors the
+// user's mental model: closing the window ends the session.
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    const wasDismissed = behaviourBannerDismissedThisSession;
+    behaviourBannerDismissedThisSession = false;
+    if (!wasDismissed) return;
+    // Force a refresh that bypasses the 30 s throttle: the user
+    // just deliberately re-opened the window, so the focus-based
+    // throttle (which exists to absorb rapid app-switching) is
+    // exactly wrong here — they expect the banner state they see
+    // now to reflect right now, not 30 s ago.
+    refreshBehaviourBannerIfStale({ force: true });
+});
+
+// Session-only flag for the slim setup banner. We deliberately do
+// NOT persist this in localStorage anymore: the banner is a status
+// indicator ("you have a browser without ReDD Focus set up"), not
+// a one-time notice. Persisting dismissal silently hid the reminder
+// forever, so fresh users who clicked × on it after the welcome
+// screen never saw it again — even though the underlying problem
+// (extension not allowed in incognito on Chrome, etc.) was still
+// there. Now × hides for the session and the banner re-evaluates
+// on every launch / focus refresh.
+let behaviourBannerDismissedThisSession = false;
+
+// Persistent low-key reminder banner. Surfaces on every launch
+// whenever any browser the user has installed is missing the
+// ReDD Focus extension (or has it disabled, or not allowed in
+// private browsing). Auto-hides when every installed browser is
+// fully compliant — i.e. the banner is purely a "you still have
+// setup to do" indicator. Independent of the v1.x migration story:
+// fresh installs see it too, because a fresh user with the
+// extension not yet installed in their daily-driver browser is in
+// exactly the same shape as a v1.x upgrader who hasn't installed
+// the extension yet — both need the reminder.
+//
+// Body copy is built per-state: instead of generic "install ReDD
+// Focus" text, we surface the actual outstanding actions so the
+// user knows at a glance what's still missing without having to
+// open the setup dialog (e.g. "Install in Chrome and Edge · Allow
+// in private browsing in Brave").
 async function updateBehaviourChangeBanner(state) {
     const banner = document.getElementById('behaviour-change-banner');
     if (!banner) return;
 
-    let cameFromV1x = false;
-    try { cameFromV1x = await invoke('user_came_from_v1x'); }
-    catch (_) { /* Tauri command may not be available on iOS — no-op */ }
-
-    const dismissed = !!localStorage.getItem(BEHAVIOUR_CHANGE_DISMISSED_KEY);
-
-    // Compute "are they done with extension setup yet?". Same gate
-    // as the welcome screen — every detected browser must be
-    // fully compliant.
+    // Compute "are they done with extension setup yet?". `installed`
+    // means the browser app exists on disk (regardless of running
+    // state) — same scope the welcome screen uses, so the user
+    // doesn't get nagged about Brave if they don't have Brave.
     const browsers = (state && state.browsers) || {};
     const detectedKeys = Object.keys(BROWSER_STORE_LINKS).filter(k => browsers[k] && browsers[k].installed);
     const allCompliant = detectedKeys.length > 0
         && detectedKeys.every(k => browserComplianceStatus(k, browsers[k]) === 'compliant');
 
-    const shouldShow = cameFromV1x && !dismissed && !allCompliant;
+    const shouldShow = !behaviourBannerDismissedThisSession
+        && detectedKeys.length > 0
+        && !allCompliant;
     if (!shouldShow) {
         banner.classList.add('hidden');
         return;
     }
     banner.classList.remove('hidden');
 
+    const summary = buildBannerActionSummary(browsers, detectedKeys);
+    const bodyEl = document.getElementById('behaviour-change-text');
+    if (bodyEl) {
+        // `summary` is built from a fixed vocabulary of phrases plus
+        // BROWSER_STORE_LINKS labels — both are app-controlled
+        // constants, no user input — so plain textContent is safe
+        // and avoids any XSS surface even if a future label gains
+        // unusual characters.
+        bodyEl.textContent = summary;
+    }
+
     const helpBtn = document.getElementById('behaviour-change-help');
     const dismissBtn = document.getElementById('behaviour-change-dismiss');
     if (helpBtn && !helpBtn._listenerAdded) {
         helpBtn._listenerAdded = true;
-        helpBtn.addEventListener('click', async () => {
-            // Re-open the post-cleanup overlay so the user gets the
-            // checklist + per-browser URLs again. Same UI, same code
-            // path as the first-launch flow.
-            try {
-                const fresh = await invoke('onboarding_state');
-                migrationOnboardingDismissed = false;
-                await showMigrationOnboarding('post', fresh, { mode: 'fresh' });
-            } catch (e) { console.warn('[behaviour] reopen failed:', e); }
-        });
+        helpBtn.addEventListener('click', openExtensionSetupOverlay);
     }
     if (dismissBtn && !dismissBtn._listenerAdded) {
         dismissBtn._listenerAdded = true;
         dismissBtn.addEventListener('click', () => {
-            try { localStorage.setItem(BEHAVIOUR_CHANGE_DISMISSED_KEY, String(Date.now())); }
-            catch (_) { /* harmless */ }
+            behaviourBannerDismissedThisSession = true;
             banner.classList.add('hidden');
         });
     }
+}
+
+// Build a compact, action-grouped summary of what's still missing
+// across the user's installed browsers. Browsers with the same
+// outstanding action are grouped into a single phrase so the
+// banner doesn't repeat verbs:
+//
+//   "Install in Chrome and Edge · Allow in private browsing in Brave"
+//   "Allow on all websites in Safari · Grant Full Disk Access for Safari"
+//
+// Order is foundational-first (install → enable → private → website
+// access → FDA) so the user sees the prerequisite step before any
+// follow-up step. Returns "" when nothing is non-compliant — the
+// caller is expected to have already gated on that, but defending
+// against an empty result keeps callers safe.
+function buildBannerActionSummary(browsers, detectedKeys) {
+    const groups = new Map();
+    for (const key of detectedKeys) {
+        const status = browserComplianceStatus(key, browsers[key]);
+        if (!status || status === 'compliant') continue;
+        const label = BROWSER_STORE_LINKS[key]?.label || key;
+        if (!groups.has(status)) groups.set(status, []);
+        groups.get(status).push(label);
+    }
+
+    const order = ['needs-install', 'needs-enable', 'needs-private', 'needs-website-access', 'needs-fda'];
+    const phrases = [];
+    for (const status of order) {
+        const list = groups.get(status);
+        if (!list || list.length === 0) continue;
+        phrases.push(`${bannerActionPhrase(status)} ${joinBrowserNames(list)}`);
+    }
+    return phrases.join(' · ');
+}
+
+function bannerActionPhrase(status) {
+    switch (status) {
+        case 'needs-install': return 'Install in';
+        case 'needs-enable': return 'Enable in';
+        case 'needs-private': return 'Allow in private browsing in';
+        case 'needs-website-access': return 'Allow on all websites in';
+        case 'needs-fda': return 'Grant Full Disk Access for';
+        default: return 'Set up in';
+    }
+}
+
+// Natural-language join: "Chrome", "Chrome and Edge",
+// "Chrome, Edge, and Brave" (Oxford comma).
+function joinBrowserNames(list) {
+    if (list.length === 0) return '';
+    if (list.length === 1) return list[0];
+    if (list.length === 2) return `${list[0]} and ${list[1]}`;
+    return `${list.slice(0, -1).join(', ')}, and ${list[list.length - 1]}`;
+}
+
+// Re-opens the post-cleanup migration overlay (the per-browser
+// install checklist) — the canonical "set up ReDD Focus" surface.
+// Used by both the slim banner's "Set up extension" button and the
+// new Settings → Advanced Options entry. Centralised so both call
+// sites stay in sync if the overlay's API changes.
+async function openExtensionSetupOverlay() {
+    try {
+        const fresh = await invoke('onboarding_state');
+        migrationOnboardingDismissed = false;
+        // Hide settings if it was the launch point — the migration
+        // overlay needs the full window.
+        document.getElementById('settings-modal')?.classList.add('hidden');
+        await showMigrationOnboarding('post', fresh, { mode: 'fresh' });
+    } catch (e) {
+        console.warn('[setup-overlay] reopen failed:', e);
+    }
+}
+
+// Re-poll extension compliance so the slim banner reflects reality
+// if the user just finished setting up an extension in another
+// browser and tabbed back. Throttled by default to avoid hammering
+// `onboarding_state` (which does a full profile scan that touches
+// each browser's data folder — expensive and, on macOS Sequoia,
+// the source of the "ReDD Block would like to access data from
+// other apps" prompts) on rapid focus toggling. Pass `force: true`
+// to bypass the throttle when the trigger is a deliberate user
+// action (e.g. window hide → show transition).
+let lastBannerRefreshAt = 0;
+const BANNER_REFRESH_THROTTLE_MS = 30_000;
+async function refreshBehaviourBannerIfStale({ force = false } = {}) {
+    if (isIOS) return;
+    if (migrationOnboardingActive) return; // overlay is the source of truth
+    const now = Date.now();
+    if (!force && now - lastBannerRefreshAt < BANNER_REFRESH_THROTTLE_MS) return;
+    lastBannerRefreshAt = now;
+    try {
+        const fresh = await invoke('onboarding_state');
+        await updateBehaviourChangeBanner(fresh);
+    } catch (_) { /* no-op */ }
 }
 
 // ---- Enforcer UI: dynamic per-browser action banners ---------------------
@@ -10325,6 +10467,7 @@ const SETTINGS_TRANSLATIONS = {
         languageEnglish: 'English',
         languageDanish: 'Dansk',
         advancedOptions: 'Advanced options',
+        extensionSetup: 'Set up ReDD Focus extension',
         overrideAllBlocks: 'Stop all blocks (with challenge)',
         // In-app uninstall (macOS only)
         uninstallApp: 'Uninstall ReDD Block',
@@ -10491,6 +10634,7 @@ const SETTINGS_TRANSLATIONS = {
         themeDark: 'Mørk',
         languageEnglish: 'Engelsk',
         languageDanish: 'Dansk',
+        extensionSetup: 'Opsæt ReDD Focus-udvidelse',
         overrideAllBlocks: 'Stop alle blokeringer (med udfordring)',
         // In-app uninstall (macOS only)
         uninstallApp: 'Afinstaller ReDD Block',
@@ -10688,6 +10832,7 @@ function applySettingsLanguage() {
     setText('language-option-en', tSettings('languageEnglish'));
     setText('language-option-da', tSettings('languageDanish'));
     setText('settings-advanced-options-label', tSettings('advancedOptions'));
+    setText('settings-extension-setup-label', tSettings('extensionSetup'));
     setText('settings-override-all-label', tSettings('overrideAllBlocks'));
     setText('settings-uninstall-label', tSettings('uninstallApp'));
     // The hint paragraph and button tooltip need re-translation too —
@@ -11574,6 +11719,18 @@ function setupDiagnosticsButton() {
     const btn = document.getElementById('diagnostics-btn');
     if (btn) {
         btn.addEventListener('click', openDiagnosticsModal);
+    }
+}
+
+// Settings → Advanced Options entry that re-opens the per-browser
+// ReDD Focus install checklist. Mirror of the slim banner's
+// "Set up extension" button — exists so users can re-access the
+// setup flow after dismissing the banner (or the welcome screen)
+// without having to wait for the next launch.
+function setupExtensionSetupButton() {
+    const btn = document.getElementById('extension-setup-btn');
+    if (btn) {
+        btn.addEventListener('click', openExtensionSetupOverlay);
     }
 }
 

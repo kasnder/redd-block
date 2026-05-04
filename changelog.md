@@ -4,6 +4,20 @@ User-facing changes for each release. Every app upgrade adds a new entry here.
 
 ## v2.0.1
 
+- **The "Set up ReDD Focus" reminder banner is now persistent for
+  everyone, not just v1.x upgraders.** Whenever any browser the
+  user has installed is missing the extension (or has it disabled,
+  or not allowed in private browsing), the slim banner shows up at
+  the top of the window — independent of whether the user came
+  from v1.x. Dismissing it (× button) hides it for the current
+  session only; it reappears next launch / on focus refresh while
+  the underlying problem persists, so a fresh user who clicks ×
+  on it isn't silently left without a reminder.
+- **Settings → Advanced Options → "Set up ReDD Focus extension".**
+  New entry that re-opens the per-browser install checklist on
+  demand, so users who dismissed the banner (or the welcome
+  screen) can find their way back to the setup flow without
+  waiting for the next launch.
 - **Fix: the compliance enforcer no longer force-closes browsers
   when no block is running.** Previously, if a browser had the
   ReDD Focus extension installed but misconfigured (e.g. not allowed

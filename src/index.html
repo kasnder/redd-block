@@ -66,13 +66,18 @@
             </button>
         </div>
 
-        <!-- Persistent "behaviour has changed" banner for users who
-             upgraded from v1.x. Surfaces every launch (until either
-             dismissed or every detected browser is fully compliant)
-             so the user has an ongoing reminder that ReDD Block 2.0
-             works differently and they may need to install the
-             extension somewhere. Distinct from the one-time welcome
-             overlay — this is a slim, low-key footer-style note. -->
+        <!-- Persistent "set up the extension" reminder. Surfaces on
+             every launch whenever any installed browser is missing
+             the ReDD Focus extension (or has it disabled / not
+             allowed in private). Distinct from the one-time welcome
+             overlay — this is a slim, low-key footer-style note that
+             stays visible as a status indicator until the user is
+             compliant or installs the extension. The × button
+             dismisses for the current session only; the banner
+             reappears next launch / on focus refresh if still
+             relevant, so the reminder doesn't silently disappear
+             forever the way a localStorage-persisted dismissal
+             would. -->
         <div id="behaviour-change-banner" class="update-banner setup-banner hidden">
             <div class="update-banner-content">
                 <svg class="setup-banner-info-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
@@ -81,14 +86,21 @@
                     <rect x="11" y="10" width="2" height="8" rx="1" fill="white"></rect>
                 </svg>
                 <div class="setup-banner-message">
-                    <strong class="setup-banner-headline">Install the ReDD Focus extension in your browsers</strong>
-                    <span id="behaviour-change-text" class="setup-banner-body">ReDD Block 2.0 blocks distracting sites through the browser extension instead of system-level changes. Install it once per browser you use.</span>
+                    <strong class="setup-banner-headline">Set up ReDD Focus in your browsers</strong>
+                    <!-- Body is filled in dynamically by
+                         updateBehaviourChangeBanner() with a per-
+                         browser action summary (e.g. "Install in
+                         Chrome and Edge · Allow in private browsing
+                         in Brave"). The banner stays hidden until
+                         the summary is computed, so there's no flash
+                         of empty state. -->
+                    <span id="behaviour-change-text" class="setup-banner-body"></span>
                     <div class="setup-banner-actions-row">
                         <button id="behaviour-change-help" class="update-banner-btn" type="button">Set up extension</button>
                     </div>
                 </div>
             </div>
-            <button id="behaviour-change-dismiss" class="update-banner-dismiss" title="Dismiss">
+            <button id="behaviour-change-dismiss" class="update-banner-dismiss" title="Dismiss for this session">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                     stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="6" x2="6" y2="18" />
@@ -1043,6 +1055,25 @@
 
                     <!-- Advanced settings -->
                     <div class="helper-settings-section">
+                        <!-- Re-open the per-browser ReDD Focus install
+                             checklist on demand. Same overlay as the
+                             slim setup-banner's "Set up extension"
+                             button, just reachable from Settings so
+                             users can find it again after dismissing
+                             the banner. Visible regardless of current
+                             compliance state — letting the user
+                             re-verify is harmless and the dialog auto-
+                             closes nothing the user didn't ask for. -->
+                        <button id="extension-setup-btn" class="remove-helper-btn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M14 9V5a3 3 0 0 0-6 0v4"></path>
+                                <rect x="2" y="9" width="20" height="12" rx="2" ry="2"></rect>
+                                <path d="M12 13v4"></path>
+                            </svg>
+                            <span id="settings-extension-setup-label">Set up ReDD Focus extension</span>
+                        </button>
+
                         <!-- Browser-extension grace period setting. The
                              enforcer reads this from settings on every
                              grace-start. Backend rejects increases when
@@ -1052,7 +1083,7 @@
                              only setting in this section a user is
                              likely to actually tune; the rest are
                              escape hatches. -->
-                        <div class="grace-setting-row">
+                        <div class="grace-setting-row" style="margin-top: 12px;">
                             <label class="toggle-label" for="grace-seconds-input">
                                 <span>Seconds before a non-compliant browser is closed</span>
                                 <span id="grace-locked-hint" class="grace-locked-hint hidden">Locked while a block is active — only decreases allowed.</span>
