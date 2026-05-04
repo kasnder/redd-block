@@ -1043,7 +1043,26 @@
 
                     <!-- Advanced settings -->
                     <div class="helper-settings-section">
-                        <button id="diagnostics-btn" class="remove-helper-btn">
+                        <!-- Browser-extension grace period setting. The
+                             enforcer reads this from settings on every
+                             grace-start. Backend rejects increases when
+                             a manual block is currently active so the
+                             user can't widen the window mid-session.
+                             Surfaced above Diagnostics because it's the
+                             only setting in this section a user is
+                             likely to actually tune; the rest are
+                             escape hatches. -->
+                        <div class="grace-setting-row">
+                            <label class="toggle-label" for="grace-seconds-input">
+                                <span>Seconds before a non-compliant browser is closed</span>
+                                <span id="grace-locked-hint" class="grace-locked-hint hidden">Locked while a block is active — only decreases allowed.</span>
+                            </label>
+                            <input id="grace-seconds-input" type="number" min="5" max="300" step="5"
+                                class="grace-seconds-input" value="60">
+                        </div>
+                        <p id="grace-error" class="grace-error hidden"></p>
+
+                        <button id="diagnostics-btn" class="remove-helper-btn" style="margin-top: 12px;">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                 <path
@@ -1053,20 +1072,6 @@
                             <span>Diagnostics</span>
                         </button>
 
-                        <!-- Browser-extension grace period setting. The
-                             enforcer reads this from settings on every
-                             grace-start. Backend rejects increases when
-                             a manual block is currently active so the
-                             user can't widen the window mid-session. -->
-                        <div class="grace-setting-row" style="margin-top: 12px;">
-                            <label class="toggle-label" for="grace-seconds-input">
-                                <span>Seconds before a non-compliant browser is closed</span>
-                                <span id="grace-locked-hint" class="grace-locked-hint hidden">Locked while a block is active — only decreases allowed.</span>
-                            </label>
-                            <input id="grace-seconds-input" type="number" min="5" max="300" step="5"
-                                class="grace-seconds-input" value="60">
-                        </div>
-                        <p id="grace-error" class="grace-error hidden"></p>
                         <!-- Override All Button -->
                         <button id="override-all-btn" class="override-all-btn" style="margin-top: 8px;">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -1078,6 +1083,27 @@
                             </svg>
                             <span id="settings-override-all-label">Stop all blocks (with challenge)</span>
                         </button>
+
+                        <!--
+                          Mac-only in-app uninstall. macOS .pkg installers don't
+                          ship a sibling uninstaller and the app's
+                          accessory-mode + applicationShouldTerminate guard
+                          mean the user can't quit and drag-trash it. Hidden on
+                          Windows because Settings → Apps already provides a
+                          fully-wired uninstall flow via NSIS_HOOK_PREUNINSTALL.
+                        -->
+                        <div id="uninstall-app-row" class="uninstall-app-row macos-only">
+                            <button id="uninstall-app-btn" class="uninstall-app-btn" type="button">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M3 6h18"></path>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+                                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                </svg>
+                                <span id="settings-uninstall-label">Uninstall ReDD Block</span>
+                            </button>
+                            <p id="uninstall-app-hint" class="uninstall-app-hint" hidden></p>
+                        </div>
                     </div>
                 </div>
 

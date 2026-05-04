@@ -90,6 +90,13 @@ const tauriAPI = {
     onEnforcerGraceUpdate: (callback) => listen('enforcer://grace-update', callback),
     onEnforcerGraceResolved: (callback) => listen('enforcer://grace-resolved', callback),
     onEnforcerBrowserClosed: (callback) => listen('enforcer://browser-closed', callback),
+
+    // macOS-only in-app uninstall. Disables launch-at-login, scrubs
+    // browser native-messaging manifests, and schedules a delayed
+    // self-delete of /Applications/ReDD Block.app. Caller is responsible
+    // for confirming with the user and refusing to invoke while blocks
+    // are running. See src-tauri/src/commands/uninstall.rs.
+    uninstallSelfMacos: () => invoke('uninstall_self_macos'),
 };
 
 async function openUrl(url, openWith) {
@@ -841,6 +848,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupHelperSettings();
     setupDiagnosticsButton();
     setupOverrideAll();
+    setupInAppUninstall();
     setupGraceSetting();
     if (isIOS && hasAcceptedEula()) {
         await checkScreentimeAuth();
@@ -10318,6 +10326,14 @@ const SETTINGS_TRANSLATIONS = {
         languageDanish: 'Dansk',
         advancedOptions: 'Advanced options',
         overrideAllBlocks: 'Stop all blocks (with challenge)',
+        // In-app uninstall (macOS only)
+        uninstallApp: 'Uninstall ReDD Block',
+        uninstallDisabledHint: 'Stop running blocks first before you can uninstall.',
+        uninstallConfirmTitle: 'Uninstall ReDD Block?',
+        uninstallConfirmBody: 'ReDD Block will be moved to the Trash, and its launch-at-login entry will be removed. The ReDD Focus browser extensions will stay installed — they work independently and are unaffected. Your blocklists and schedules are kept on disk so they can be restored if you reinstall later.',
+        uninstallConfirmOk: 'Uninstall',
+        uninstallFailedTitle: 'Uninstall failed',
+        uninstallFailed: 'Could not complete uninstall.',
         helperService: 'Helper service',
         helperStatusChecking: 'Checking...',
         helperStatusActive: 'Active',
@@ -10476,6 +10492,14 @@ const SETTINGS_TRANSLATIONS = {
         languageEnglish: 'Engelsk',
         languageDanish: 'Dansk',
         overrideAllBlocks: 'Stop alle blokeringer (med udfordring)',
+        // In-app uninstall (macOS only)
+        uninstallApp: 'Afinstaller ReDD Block',
+        uninstallDisabledHint: 'Stop kørende blokeringer først, før du kan afinstallere.',
+        uninstallConfirmTitle: 'Afinstaller ReDD Block?',
+        uninstallConfirmBody: 'ReDD Block flyttes til papirkurven, og login-ved-opstart fjernes. ReDD Focus-browserudvidelserne forbliver installeret — de fungerer uafhængigt og påvirkes ikke. Dine blokeringslister og tidsplaner bevares på disken, så de kan gendannes, hvis du geninstallerer senere.',
+        uninstallConfirmOk: 'Afinstaller',
+        uninstallFailedTitle: 'Afinstallation mislykkedes',
+        uninstallFailed: 'Kunne ikke gennemføre afinstallation.',
         helperService: 'Hjælper',
         helperStatusChecking: 'Tjekker...',
         helperStatusActive: 'Aktiv',
@@ -10665,6 +10689,11 @@ function applySettingsLanguage() {
     setText('language-option-da', tSettings('languageDanish'));
     setText('settings-advanced-options-label', tSettings('advancedOptions'));
     setText('settings-override-all-label', tSettings('overrideAllBlocks'));
+    setText('settings-uninstall-label', tSettings('uninstallApp'));
+    // The hint paragraph and button tooltip need re-translation too —
+    // refreshUninstallButtonState reads from tSettings() and rewrites
+    // both. Cheap to call unconditionally.
+    refreshUninstallButtonState();
     setText('settings-helper-service-label', tSettings('helperService'));
     setText('settings-update-helper-label', tSettings('updateHelper'));
     setText('settings-clean-hosts-label', tSettings('cleanHostsFile'));
@@ -10734,6 +10763,10 @@ function setupTheme() {
     if (settingsBtn && settingsModal) {
         settingsBtn.addEventListener('click', () => {
             settingsModal.classList.remove('hidden');
+            // Re-evaluate the in-app Uninstall button (Mac only): a
+            // schedule could have fired since the modal was last open,
+            // flipping the disabled state. Cheap; idempotent.
+            refreshUninstallButtonState();
             // Set current theme selection
             if (themeSelect) {
                 const currentTheme = appData.settings?.themeMode || 'system';
@@ -11769,6 +11802,93 @@ function setupOverrideAll() {
         });
     }
 
+}
+
+// macOS in-app uninstall. The Uninstall button lives in the advanced
+// options section (just below Override All) and is hidden on Windows
+// (`.macos-only` + `body.mac` gate) because Windows uses
+// Settings → Apps → Uninstall, fully wired up by NSIS_HOOK_PREUNINSTALL.
+//
+// The button is *disabled* (not hidden) when any block / schedule is
+// currently active, with a hint paragraph below nudging the user
+// toward the Override-All challenge above. Rationale: uninstalling
+// mid-block would leave the user with an unenforceable promise
+// (no app = no enforcer), so we want the user to deliberately stop
+// blocking first via the existing override path.
+function setupInAppUninstall() {
+    const btn = document.getElementById('uninstall-app-btn');
+    if (!btn) return;
+
+    refreshUninstallButtonState();
+
+    btn.addEventListener('click', async () => {
+        // Re-check at click time so a schedule that fired between
+        // settings-open and click can still gate us out cleanly.
+        if (hasAnyBlockingStateToClear()) {
+            refreshUninstallButtonState();
+            return;
+        }
+
+        // Native confirmation dialog (Tauri plugin-dialog `ask`).
+        let proceed = false;
+        try {
+            proceed = await ask(tSettings('uninstallConfirmBody'), {
+                title: tSettings('uninstallConfirmTitle'),
+                kind: 'warning',
+                okLabel: tSettings('uninstallConfirmOk'),
+                cancelLabel: tSettings('cancel'),
+            });
+        } catch (e) {
+            console.error('uninstall: confirm dialog failed', e);
+            return;
+        }
+        if (!proceed) return;
+
+        // Close settings so the user sees a clean window before the
+        // process exits and the bundle disappears.
+        document.getElementById('settings-modal')?.classList.add('hidden');
+
+        try {
+            await tauriAPI.uninstallSelfMacos();
+            // Backend exits ~200ms later. The window typically
+            // disappears before this promise resolves; nothing else
+            // to do on success.
+        } catch (e) {
+            console.error('uninstall: backend command failed', e);
+            try {
+                await message(`${tSettings('uninstallFailed')}\n\n${e}`, {
+                    title: tSettings('uninstallFailedTitle'),
+                    kind: 'error',
+                });
+            } catch (_) { /* swallow — best-effort error surface */ }
+        }
+    });
+}
+
+// Refresh the Uninstall button's enabled/disabled state and the hint
+// paragraph below it. Cheap; safe to call on settings-open and on any
+// activeBlocks/schedules state change. Idempotent — reads DOM only.
+function refreshUninstallButtonState() {
+    const btn = document.getElementById('uninstall-app-btn');
+    const hint = document.getElementById('uninstall-app-hint');
+    if (!btn) return;
+
+    const blocking = hasAnyBlockingStateToClear();
+    if (blocking) {
+        btn.disabled = true;
+        btn.setAttribute('aria-disabled', 'true');
+        if (hint) {
+            hint.textContent = tSettings('uninstallDisabledHint');
+            hint.hidden = false;
+        }
+    } else {
+        btn.disabled = false;
+        btn.removeAttribute('aria-disabled');
+        if (hint) {
+            hint.textContent = '';
+            hint.hidden = true;
+        }
+    }
 }
 
 

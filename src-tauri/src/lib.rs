@@ -656,6 +656,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::open_safari_fda_settings,
         commands::open_browser_extension_settings,
         commands::open_url_in_browser,
+        commands::uninstall_self_macos,
     ]
 }
 

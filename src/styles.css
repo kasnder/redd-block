@@ -5406,6 +5406,64 @@ body.ios .desktop-only {
     flex-shrink: 0;
 }
 
+/* macOS-only sections (in-app uninstall, etc.). Hidden by default;
+   `detectPlatform()` in app.js adds `body.mac` on macOS desktop.
+   Windows uses the OS-provided Settings → Apps uninstall flow (see
+   `windows/hooks.nsh`'s NSIS_HOOK_PREUNINSTALL macro), so this button
+   isn't shown there. */
+.macos-only { display: none; }
+body.mac .macos-only { display: block; }
+
+/* In-app Uninstall — full-width ghost button, coral text + transparent
+   chrome, with a coral-tinted hover. Matches `.override-all-btn`'s size
+   (full width, 10px×16px padding, 15px label) so the two stack as a
+   coherent "destructive actions" pair, but the ghost styling keeps it
+   visibly subordinate to the filled Override All CTA above — Override
+   is the common path; Uninstall is the rare one. The hint paragraph
+   below appears only when the button is disabled (because blocks are
+   running) and nudges the user toward the Override-All affordance. */
+.uninstall-app-row {
+    margin-top: 14px;
+}
+
+.uninstall-app-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 16px;
+    background: transparent;
+    color: var(--redd-coral);
+    border: 1px solid transparent;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+
+.uninstall-app-btn:hover:not(:disabled) {
+    background: var(--redd-coral-soft);
+}
+
+.uninstall-app-btn:disabled,
+.uninstall-app-btn[aria-disabled="true"] {
+    cursor: not-allowed;
+    opacity: 0.5;
+    background: transparent;
+}
+
+.uninstall-app-btn svg { flex-shrink: 0; }
+
+.uninstall-app-hint {
+    margin: 6px 0 0;
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.35;
+    text-align: center;
+}
+
 /* Override All Modal Styles */
 .override-all-warning {
     background: hsl(0, 80%, 97%);

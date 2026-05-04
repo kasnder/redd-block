@@ -18,6 +18,8 @@ pub mod grace;
 pub mod diagnostics;
 #[cfg(not(target_os = "ios"))]
 pub mod safari_bridge;
+#[cfg(target_os = "macos")]
+pub mod uninstall;
 
 pub use data::*;
 
@@ -39,3 +41,5 @@ pub use grace::*;
 pub use diagnostics::*;
 #[cfg(not(target_os = "ios"))]
 pub use safari_bridge::*;
+#[cfg(target_os = "macos")]
+pub use uninstall::*;
