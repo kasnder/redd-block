@@ -12,6 +12,16 @@ User-facing changes for each release. Every app upgrade adds a new entry here.
   active — pestering users about an extension that wasn't doing any
   work yet. The enforcer now no-ops while no website-blocking is
   active and only kicks in once a block is actually running.
+- **Fix: macOS data-access prompts no longer pile up on every
+  enforcer tick.** On macOS Sequoia 15+, reading a browser's
+  Application Support directory triggers a "ReDD Block would like
+  to access data from other apps" prompt — once per browser. The
+  enforcer used to scan all five vendors (Chrome / Brave / Edge /
+  Firefox / Safari) on every 5 s tick regardless of which were
+  running, so a user with four browsers installed got four serial
+  prompts even though we only ever act on running browsers. Now the
+  enforcer only scans browsers that are currently running, and bails
+  before touching disk if none are.
 - **Fix: schedule-based app blocking now works.** Apps attached to a
   blocklist that's enforced via a schedule (e.g. a Downtime block
   covering eM Client, Word, Cursor, etc.) are now correctly closed

@@ -98,12 +98,52 @@ pub struct ScanResult {
 
 /// Scan every supported browser on the current platform.
 pub fn scan() -> ScanResult {
+    scan_filter(|_| true)
+}
+
+/// Scan only the browsers for which `should_scan` returns true; the
+/// rest are returned as empty stubs (`installed=false, present=false,
+/// profiles=[]`).
+///
+/// Why this exists: the underlying scan reads each browser's
+/// `~/Library/Application Support/<vendor>/...` data files. On
+/// macOS Sequoia 15+ that triggers a per-app "ReDD Block would like
+/// to access data from other apps" TCC prompt for *each* browser
+/// data folder we touch — so a user with Chrome + Brave + Edge +
+/// Firefox installed gets four serial prompts on a single tick. The
+/// enforcer only ever takes action on *running* browsers, so it
+/// passes a predicate that filters to those, dropping prompts (and
+/// I/O cost) for browsers that aren't currently open.
+///
+/// The vendor labels passed to the predicate are the lowercase
+/// short names: "firefox", "chrome", "brave", "edge", "safari".
+pub fn scan_filter<F: Fn(&str) -> bool>(should_scan: F) -> ScanResult {
     ScanResult {
-        firefox: scan_firefox().unwrap_or_else(|| empty("firefox")),
-        chrome: scan_chromium(ChromiumBrowser::Chrome).unwrap_or_else(|| empty("chrome")),
-        brave: scan_chromium(ChromiumBrowser::Brave).unwrap_or_else(|| empty("brave")),
-        edge: scan_chromium(ChromiumBrowser::Edge).unwrap_or_else(|| empty("edge")),
-        safari: scan_safari(),
+        firefox: if should_scan("firefox") {
+            scan_firefox().unwrap_or_else(|| empty("firefox"))
+        } else {
+            empty("firefox")
+        },
+        chrome: if should_scan("chrome") {
+            scan_chromium(ChromiumBrowser::Chrome).unwrap_or_else(|| empty("chrome"))
+        } else {
+            empty("chrome")
+        },
+        brave: if should_scan("brave") {
+            scan_chromium(ChromiumBrowser::Brave).unwrap_or_else(|| empty("brave"))
+        } else {
+            empty("brave")
+        },
+        edge: if should_scan("edge") {
+            scan_chromium(ChromiumBrowser::Edge).unwrap_or_else(|| empty("edge"))
+        } else {
+            empty("edge")
+        },
+        safari: if should_scan("safari") {
+            scan_safari()
+        } else {
+            empty("safari")
+        },
     }
 }
 

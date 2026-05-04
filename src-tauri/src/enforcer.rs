@@ -247,8 +247,29 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
         return;
     }
 
-    let scan_result = profile_scan::scan();
+    // Compute the running set FIRST, then scan only those browsers.
+    // Reading a browser's `~/Library/Application Support/<vendor>/...`
+    // data triggers macOS Sequoia's per-app data-access TCC prompt;
+    // unconditionally scanning all five vendors meant a user with
+    // four browsers installed got four serial prompts every tick,
+    // even though we only ever act on running browsers. If nothing's
+    // running there's nothing to enforce — bail before touching disk.
     let running = running_browsers();
+    if running.is_empty() {
+        for key in BrowserKey::all() {
+            cancel_timer(app, state, key, false);
+        }
+        return;
+    }
+
+    let scan_result = profile_scan::scan_filter(|label| match label {
+        "firefox" => running.contains(&BrowserKey::Firefox),
+        "chrome" => running.contains(&BrowserKey::Chrome),
+        "brave" => running.contains(&BrowserKey::Brave),
+        "edge" => running.contains(&BrowserKey::Edge),
+        "safari" => running.contains(&BrowserKey::Safari),
+        _ => false,
+    });
 
     for key in BrowserKey::all() {
         let browser_status = key.for_status(&scan_result);
