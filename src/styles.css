@@ -1,73 +1,166 @@
-/* Theme Variables */
+/* Bundled fonts — locally hosted so the app works offline.
+   Inter ships latin + latin-ext (covers English, Danish, and other Western European). */
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url('fonts/inter-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url('fonts/inter-latin-ext.woff2') format('woff2');
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* ========================================
+   Theme Variables — Light Mode (default)
+   ReDD design language (design-language/redd-design-tokens.json),
+   token names aligned with redd-do for cross-product consistency.
+   ======================================== */
 :root {
-    --app-bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    --container-bg: #f0f4f8;
-    --panel-bg: rgba(255, 255, 255, 0.8);
-    --text-primary: #333;
-    --text-secondary: hsl(222.2, 84%, 4.9%);
-    --text-muted: #999;
-    --text-subtle: #bbb;
-    --border-color: hsl(214, 32%, 91%);
-    --element-bg: white;
-    --element-hover-bg: rgba(0, 0, 0, 0.05);
-    --accent-color: #667eea;
-    --accent-hover: #5a67d8;
-    --header-text: rgba(0, 0, 0, 0.5);
-    --timeline-track: rgba(0, 0, 0, 0.03);
-    --timeline-axis-text: #999;
-    --timeline-now-text: #667eea;
-    --input-bg: white;
-    --input-border: hsl(214, 32%, 91%);
-    --icon-btn-color: #999;
-    --icon-btn-hover-color: #666;
-    --timeline-message: #bbb;
-    --separator-color: rgba(0, 0, 0, 0.25);
-    --popover-bg: white;
-    --popover-border: rgba(0, 0, 0, 0.1);
-    --button-bg: hsl(222.2, 84%, 4.9%);
-    --button-hover: hsl(222.2, 84%, 9%);
-    --button-disabled-bg: hsl(214, 32%, 85%);
-    --scrollbar-thumb: hsl(214, 32%, 85%);
-    --scrollbar-thumb-hover: hsl(214, 32%, 75%);
-    --border-active: hsl(214, 32%, 85%);
-    --toggle-bg: hsl(214, 32%, 93%);
+    color-scheme: light;
+
+    /* --- Canonical ReDD brand tokens (palette, fonts, shadows, radii) --- */
+    --redd-cream: #faf8f5;
+    --redd-warm-grey: #f1eee9;
+    --redd-card: #ffffff;
+    --redd-navy: #1e2d3e;
+    --redd-body: #2c2c35;
+    --redd-muted: #696977;
+    --redd-border: #e1dcd6;
+    --redd-coral: #d4605a;
+    --redd-coral-soft: #faebea;
+    --redd-teal: #2a9d8f;
+    --redd-teal-hover: #21806f;
+    --redd-teal-soft: #e5f5f3;
+    --redd-blue: #4a90e2;
+    --redd-blue-soft: #e8f1fa;
+    --redd-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.08);
+    --redd-shadow-card-hover: 0 8px 24px rgba(30, 45, 62, 0.10);
+
+    --font-heading: Georgia, 'Times New Roman', serif;
+    --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, Arial, Helvetica, sans-serif;
+    --font-section-label: Arial, Helvetica, sans-serif;
+
+    --radius-sm: 8px;
+    --radius-card: 12px;
+
+    /* In-product primary action button: navy. The design-tokens spec lists
+       teal as the canonical brand primary, but inside the product surface
+       full-width teal slabs read as too loud — navy lets the strongest action
+       sit as a calm slab while teal stays reserved for inviting entry-points
+       (EULA / onboarding CTAs scope themselves to teal locally). */
+    --primary-btn-bg: var(--redd-navy);
+    --primary-btn-bg-hover: #2c3f55;
+    --primary-btn-text: #ffffff;
+
+    /* Status (used sparingly for warnings, danger, success badges). */
+    --danger: var(--redd-coral);
+    --success: var(--redd-teal);
+    --warning: #f59e0b;
+
+    /* --- Existing semantic tokens, repointed onto ReDD palette --- */
+    --app-bg: var(--redd-cream);
+    --container-bg: var(--redd-cream);
+    --panel-bg: var(--redd-card);
+    --text-primary: var(--redd-navy);
+    --text-secondary: var(--redd-body);
+    --text-muted: var(--redd-muted);
+    --text-subtle: #8a8a96;
+    --border-color: var(--redd-border);
+    --element-bg: var(--redd-card);
+    --element-hover-bg: rgba(30, 45, 62, 0.06);
+    --accent-color: var(--redd-teal);
+    --accent-hover: var(--redd-teal-hover);
+    --header-text: var(--redd-muted);
+    --timeline-track: var(--redd-warm-grey);
+    --timeline-axis-text: var(--redd-muted);
+    --timeline-now-text: var(--redd-teal);
+    --input-bg: var(--redd-card);
+    --input-border: var(--redd-border);
+    --icon-btn-color: var(--redd-muted);
+    --icon-btn-hover-color: var(--redd-navy);
+    --timeline-message: #8a8a96;
+    --separator-color: var(--redd-border);
+    --popover-bg: var(--redd-card);
+    --popover-border: var(--redd-border);
+    --button-bg: var(--primary-btn-bg);
+    --button-hover: var(--primary-btn-bg-hover);
+    --button-disabled-bg: var(--redd-warm-grey);
+    --scrollbar-thumb: #d4cfc8;
+    --scrollbar-thumb-hover: #bdb7af;
+    --border-active: var(--redd-border);
+    --toggle-bg: var(--redd-warm-grey);
     /* iPhone landscape: horizontal space between day toggles and segment remove (X). */
     --ios-phone-landscape-days-remove-gap: 16px;
 }
 
+/* ========================================
+   Theme Variables — Dark Mode
+   Mirrors redd-do's inverted-cream dark mode: the cream canvas becomes deep
+   navy, the navy text becomes a warm cream, teal lifts a notch.
+   ======================================== */
 body.dark-mode {
-    --app-bg: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
-    --container-bg: rgba(15, 23, 42, 0.85);
-    /* Deep dark blue glass */
-    --panel-bg: rgba(30, 41, 59, 0.4);
-    --text-primary: #e2e8f0;
-    --text-secondary: #f8fafc;
-    --text-muted: #94a3b8;
-    --text-subtle: #64748b;
-    --border-color: rgba(255, 255, 255, 0.1);
-    --element-bg: rgba(30, 41, 59, 0.5);
-    --element-hover-bg: rgba(255, 255, 255, 0.1);
-    --accent-color: #818cf8;
-    --accent-hover: #6366f1;
-    --header-text: rgba(255, 255, 255, 0.6);
+    color-scheme: dark;
+
+    --redd-cream: #14202c;
+    --redd-warm-grey: #1a2735;
+    --redd-card: #1e2d3e;
+    --redd-navy: #f5f0e8;
+    --redd-body: #e6e2d8;
+    --redd-muted: #9aa3b0;
+    --redd-border: rgba(255, 255, 255, 0.10);
+    --redd-coral: #e07b75;
+    --redd-coral-soft: rgba(212, 96, 90, 0.16);
+    --redd-teal: #4ec0b0;
+    --redd-teal-hover: #6ad0c1;
+    --redd-teal-soft: rgba(78, 192, 176, 0.14);
+    --redd-blue: #6aa9ea;
+    --redd-blue-soft: rgba(106, 169, 234, 0.14);
+    --redd-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2);
+    --redd-shadow-card-hover: 0 8px 24px rgba(0, 0, 0, 0.35);
+
+    --primary-btn-bg: var(--redd-teal);
+    --primary-btn-bg-hover: #6ad0c1;
+    --primary-btn-text: #0c1620;
+
+    --app-bg: var(--redd-cream);
+    --container-bg: var(--redd-cream);
+    --panel-bg: var(--redd-card);
+    --text-primary: var(--redd-navy);
+    --text-secondary: var(--redd-body);
+    --text-muted: var(--redd-muted);
+    --text-subtle: rgba(245, 240, 232, 0.45);
+    --border-color: var(--redd-border);
+    --element-bg: rgba(255, 255, 255, 0.04);
+    --element-hover-bg: rgba(255, 255, 255, 0.08);
+    --accent-color: var(--redd-teal);
+    --accent-hover: var(--redd-teal-hover);
+    --header-text: var(--redd-muted);
     --timeline-track: rgba(255, 255, 255, 0.05);
-    --timeline-axis-text: #64748b;
-    --timeline-now-text: #818cf8;
-    --input-bg: rgba(15, 23, 42, 0.6);
-    --input-border: rgba(255, 255, 255, 0.1);
-    --icon-btn-color: #94a3b8;
-    --icon-btn-hover-color: #e2e8f0;
-    --timeline-message: #64748b;
-    --separator-color: rgba(255, 255, 255, 0.15);
-    --popover-bg: #1e293b;
-    --toggle-bg: rgba(15, 23, 42, 0.6);
-    --popover-border: rgba(255, 255, 255, 0.1);
-    --button-bg: var(--accent-color);
-    --button-hover: var(--accent-hover);
-    --button-disabled-bg: rgba(255, 255, 255, 0.05);
+    --timeline-axis-text: var(--redd-muted);
+    --timeline-now-text: var(--redd-teal);
+    --input-bg: rgba(255, 255, 255, 0.04);
+    --input-border: var(--redd-border);
+    --icon-btn-color: var(--redd-muted);
+    --icon-btn-hover-color: var(--redd-navy);
+    --timeline-message: rgba(245, 240, 232, 0.45);
+    --separator-color: rgba(255, 255, 255, 0.10);
+    --popover-bg: var(--redd-card);
+    --popover-border: var(--redd-border);
+    --button-bg: var(--primary-btn-bg);
+    --button-hover: var(--primary-btn-bg-hover);
+    --button-disabled-bg: rgba(255, 255, 255, 0.06);
     --scrollbar-thumb: rgba(255, 255, 255, 0.2);
     --scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
-    --border-active: rgba(255, 255, 255, 0.2);
+    --border-active: var(--redd-border);
+    --toggle-bg: rgba(255, 255, 255, 0.06);
 }
 
 /* Reset and base styles */
@@ -82,11 +175,21 @@ html {
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-family: var(--font-body);
     font-size: 17px;
     background: var(--container-bg);
     color: var(--text-primary);
     overflow: hidden;
+}
+
+/* Display headings use the editorial serif from the brand.
+   The .section-header h2 below overrides this for the small uppercase
+   section labels (which are pure-Arial wayfinding text, not headlines). */
+h1,
+h2,
+h3 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.01em;
 }
 
 /* iOS safe area adjustments */
@@ -127,9 +230,6 @@ body.ios .app-container {
     display: flex;
     flex-direction: column;
     background: var(--container-bg);
-    backdrop-filter: blur(10px);
-    border-radius: 12px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
     padding-bottom: 42px;
     overflow: hidden;
 }
@@ -745,10 +845,12 @@ body.dark-mode .title-bar button:hover {
     gap: 12px;
 }
 
-/* Grid Top Row - two columns */
+/* Grid Top Row - two columns. Left column sizes to the blocklist-card cap so cards
+   don't stretch into empty whitespace; right column takes the remaining width so the
+   START A BLOCK panel can spread out on wide windows. */
 .grid-top-row {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 480px minmax(0, 1fr);
     gap: 20px;
     align-items: start;
     position: relative;
@@ -775,6 +877,58 @@ body.dark-mode .title-bar button:hover {
     .main-content {
         padding-left: 18px;
         padding-right: 18px;
+    }
+}
+
+/* Cramped two-column zone (above the stack breakpoint, below comfortable
+   desktop). The settings gear is absolutely-positioned in the top-right of
+   the scheduler column, so when the column is narrow the "Schedule" tab
+   text crashes into the gear, and the "Stop Schedule: 🌙 No Twitter" button
+   wraps onto multiple lines. In this zone we:
+     - drop the mode-tab text and rely on the icons + tooltips
+     - tighten the blocklists column so the scheduler has more breathing room
+     - collapse Start/Stop/Edit buttons to just the verb ("Start" / "Stop") */
+@media (min-width: 769px) and (max-width: 1024px) {
+    .grid-top-row {
+        grid-template-columns: 380px minmax(0, 1fr);
+    }
+
+    .blocklist-card {
+        max-width: 380px;
+    }
+
+    .mode-tab {
+        padding: 6px 12px;
+        gap: 0;
+    }
+
+    /* Visually hide the label but keep it in the accessibility tree, so the
+       button still has a clear accessible name ("Now" / "Schedule"). */
+    .mode-tab-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+
+    .mode-tab-icon {
+        width: 16px;
+        height: 16px;
+    }
+
+    /* Collapse Start / Stop / Edit buttons to just the verb so the row
+       doesn't wrap. The trailing " Block:" / " Schedule:" + emoji + name
+       are hidden; the icon + verb still convey the action, and the
+       selected blocklist card to the left supplies the "what". */
+    .start-block-btn .btn-label-context,
+    .start-block-btn .btn-emoji,
+    .start-block-btn .btn-name {
+        display: none;
     }
 }
 
@@ -823,17 +977,18 @@ body.dark-mode .title-bar button:hover {
     /* Match icon-btn height to ensure consistent vertical alignment */
 }
 
-/* Keep "Start a Block" and "Your Blocklists" titles aligned in the top row */
+/* Keep "Start a Block" and "My Blocklists" titles aligned in the top row */
 .grid-top-row .section-header {
     min-height: 40px;
 }
 
 .section-header h2 {
-    font-size: 17px;
-    font-weight: 600;
+    font-family: var(--font-section-label);
+    font-size: 14px;
+    font-weight: 500;
     color: var(--header-text);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.06em;
 }
 
 body.ios .section-header h2 {
@@ -860,28 +1015,229 @@ body.ios .section-header h2 {
     color: var(--icon-btn-hover-color);
 }
 
+/* ==========================================================================
+   Schedule (week calendar) — days as rows, hours as columns
+   ========================================================================== */
+
 .week-calendar-section {
-    flex: 1;
     display: flex;
     flex-direction: column;
-    margin-top: 6px;
-    /* Keep schedule view usable: never shrink below this; main-content will scroll instead */
-    min-height: 240px;
+    margin-top: 24px;
 }
 
-/* Per-blocklist visibility chips shown under the Schedule header */
-.schedule-visibility-chips {
-    display: flex;
+/* iPhone / iPod only: no room for week calendar — hide entire Schedule section (iPad keeps it) */
+body.ios.ios-phone .week-calendar-section {
+    display: none !important;
+}
+
+.week-calendar-section .section-header {
+    margin-bottom: 8px;
+}
+
+/* Schedule heading row: SCHEDULE title on the left, status chips pushed to the right. */
+.section-header.schedule-header-row {
+    justify-content: space-between;
     flex-wrap: wrap;
-    gap: 6px;
-    padding: 2px 0 8px;
+    gap: 8px 12px;
 }
 
-.schedule-visibility-chips.hidden {
+/* BLOCKING NOW row at the top of the app — small status label on the left, chips for
+   each currently-active block/schedule on the right. Hidden when nothing is blocking. */
+.now-blocking-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    padding: 4px 4px 2px;
+    margin-bottom: 4px;
+}
+
+.now-blocking-row.hidden {
     display: none;
 }
 
-.schedule-visibility-chip {
+.now-blocking-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-section-label);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    user-select: none;
+}
+
+.now-blocking-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: hsl(142, 60%, 45%);
+    box-shadow: 0 0 0 3px hsla(142, 60%, 45%, 0.18);
+    flex-shrink: 0;
+}
+
+.now-blocking-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+/* Each "blocking now" chip: rounded pill containing emoji, name, "until HH:MM",
+   and a ⋯ menu trigger. Visually similar to the always-on chip but a bit larger
+   to host the trailing time/menu. */
+.now-blocking-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 4px 4px 12px;
+    border-radius: 999px;
+    background: var(--element-bg);
+    border: 1px solid var(--border-color);
+    font-size: 13px;
+    color: var(--text-primary);
+    user-select: none;
+}
+
+.now-blocking-chip-emoji {
+    font-size: 14px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.now-blocking-chip-name {
+    font-weight: 500;
+}
+
+.now-blocking-chip-until {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.now-blocking-chip-menu-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    flex-shrink: 0;
+}
+
+.now-blocking-chip-menu-btn:hover,
+.now-blocking-chip-menu-btn[aria-expanded="true"] {
+    background: var(--border-color);
+    color: var(--text-primary);
+}
+
+.now-blocking-chip-menu-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* Popover menu shown when ⋯ is clicked. Absolutely positioned so it can overflow
+   the chip; JS pins it just below the trigger. */
+.now-blocking-chip-menu {
+    position: absolute;
+    z-index: 1000;
+    min-width: 140px;
+    padding: 4px;
+    border-radius: 8px;
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.now-blocking-chip-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.now-blocking-chip-menu-item:hover {
+    background: var(--border-color);
+}
+
+.now-blocking-chip-menu-item.danger {
+    color: hsl(0, 65%, 45%);
+}
+
+.now-blocking-chip-menu-item svg {
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    opacity: 0.8;
+}
+
+body.dark-mode .now-blocking-chip-menu {
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+body.dark-mode .now-blocking-chip-menu-item.danger {
+    color: hsl(0, 70%, 70%);
+}
+
+/* Combined status row: visibility-toggle chips + always-on chips flow inline together.
+   Children use display: contents so individual chips lay out in this single flex row. */
+.schedule-status-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+/* Hide the row entirely when both inner groups are hidden — using :has() with a
+   fallback. */
+.schedule-status-row:not(:has(> :not(.hidden))) {
+    display: none;
+}
+
+.schedule-visibility-chips,
+.schedule-always-on-row,
+.always-on-chips {
+    display: contents;
+}
+
+.schedule-visibility-chips.hidden,
+.schedule-always-on-row.hidden {
+    display: none;
+}
+
+.always-on-label {
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.always-on-note {
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+/* Pill chip style shared by visibility-toggle chips and always-on chips so they look
+   like a single family of "small blocklist cards" in the schedule status row. */
+.schedule-visibility-chip,
+.always-on-chip {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -896,428 +1252,226 @@ body.ios .section-header h2 {
     transition: opacity 0.15s, background 0.15s;
 }
 
-.schedule-visibility-chip:hover {
-    background: var(--border-color-light, var(--border-color));
+.schedule-visibility-chip:hover,
+.always-on-chip:hover {
+    background: var(--border-color);
 }
 
 .schedule-visibility-chip[aria-pressed="false"] {
     opacity: 0.5;
 }
 
-.schedule-visibility-chip-dot {
+.schedule-visibility-chip-dot,
+.always-on-chip-dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
     flex-shrink: 0;
 }
 
-.schedule-visibility-chip svg {
+.schedule-visibility-chip svg,
+.always-on-chip svg {
     flex-shrink: 0;
     opacity: 0.75;
 }
 
-body.ios .week-calendar-section {
-    flex: 1;
-    min-height: 400px;
-}
-
-/* iPhone / iPod only: no room for week calendar — hide entire Schedule section (iPad keeps it) */
-body.ios.ios-phone .week-calendar-section {
-    display: none !important;
-}
-
-.week-calendar-section .section-header {
-    margin-bottom: 8px;
-}
-
-/* Week Navigation - Apple Calendar style */
-.week-nav {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-    margin-bottom: 8px;
-}
-
-.week-nav-buttons {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.week-display {
-    position: absolute;
-    left: 0;
-    font-size: 20px;
-    font-weight: 600;
-    color: var(--text-primary);
-}
-
-/* Week nav responsive - must come after base rules */
-@media (max-width: 768px) {
-    .week-nav {
-        justify-content: flex-start;
-        width: 100%;
-        margin-bottom: 8px;
-    }
-
-    .week-display {
-        position: static;
-        font-size: 20px;
-        flex: 1;
-    }
-
-    .week-calendar-section .section-header {
-        margin-bottom: 2px;
-    }
-}
-
-.week-nav-btn {
-    width: 36px;
-    height: 32px;
-    border: none;
-    border-radius: 8px;
-    background: rgba(0, 0, 0, 0.05);
-    color: var(--text-muted);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-}
-
-.week-nav-btn:hover {
-    background: rgba(0, 0, 0, 0.1);
-    color: var(--text-primary);
-}
-
-.week-nav-today-btn {
-    height: 32px;
-    padding: 0 14px;
-    border: none;
-    border-radius: 8px;
-    background: rgba(0, 0, 0, 0.05);
-    color: var(--text-primary);
-    font-size: 15px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.week-nav-today-btn:hover {
-    background: rgba(0, 0, 0, 0.1);
-}
-
-body.dark-mode .week-nav-btn,
-body.dark-mode .week-nav-today-btn {
-    background: rgba(255, 255, 255, 0.1);
-}
-
-body.dark-mode .week-nav-btn:hover,
-body.dark-mode .week-nav-today-btn:hover {
-    background: rgba(255, 255, 255, 0.15);
-}
-
-/* Week Calendar Container */
-.week-calendar-container {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    background: var(--panel-bg);
-    border-radius: 12px;
-    position: relative;
-    /* Enforce minimum so the calendar content stays visible; section has min-height, this fills it */
-    min-height: 200px;
-}
-
-/* Flex row: fixed-width time sidebar + main scroll area */
-.week-calendar-body {
-    flex: 1;
-    display: flex;
-    min-height: 0;
-    min-width: 0;
-}
-
-/* Time sidebar - sits outside horizontal scroll so day columns never overlap it.
-   Vertical scroll is kept in sync with the main scroll via JS. */
-.week-calendar-time-column {
-    flex-shrink: 0;
-    width: 50px;
-    display: flex;
-    flex-direction: column;
-    overflow-x: hidden;
-    overflow-y: auto;
-    border-right: 1px solid var(--border-color);
-    border-top-left-radius: 12px;
-    background: var(--panel-bg);
-    scrollbar-width: none;
-}
-
-.week-calendar-time-column::-webkit-scrollbar {
-    display: none;
-}
-
-.week-calendar-time-column .header-time-spacer {
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    /* Fixed element inside its own column — left stickiness no longer needed */
-    left: auto;
-}
-
-.week-calendar-time-column .time-axis {
-    position: static;
-}
-
-.week-calendar-scroll {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: thin;
-    scrollbar-color: var(--text-muted) transparent;
-    border-top-right-radius: 12px;
-    /* Keep scroll inside calendar; do not chain to main app when hitting top/bottom */
-    overscroll-behavior: contain;
-    position: relative;
-}
-
-/* Sticky header row - contains time spacer + day headers */
-.calendar-header-row {
-    display: flex;
-    position: sticky;
-    top: 0;
-    z-index: 20;
-    background: var(--panel-bg);
-    min-width: max-content;
-    border-top-left-radius: 12px;
-    border-top-right-radius: 12px;
-}
-
-.header-time-spacer {
-    flex-shrink: 0;
-    width: 50px;
-    height: 28px;
-    background: var(--panel-bg);
-    position: sticky;
-    left: 0;
-    z-index: 25;
-    border-top-left-radius: 12px;
-}
-
-.header-days {
-    display: flex;
-    min-width: max-content;
-}
-
-.day-header-cell {
-    flex-shrink: 0;
-    width: 160px;
-    min-width: 160px;
-    height: 28px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+.always-on-chip-emoji {
     font-size: 13px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    background: var(--element-bg);
+    line-height: 1;
+}
+
+/* Preview chip shown while the user has the "always" tab selected but hasn't started the
+   block yet. Styled distinctly so it can't be confused with an actually-running block. */
+.always-on-chip.preview {
+    border-style: dashed;
+    background: transparent;
+    opacity: 0.7;
+    cursor: default;
+}
+
+.always-on-chip.preview:hover {
+    background: transparent;
+}
+
+/* Calendar container */
+.week-calendar-container {
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    position: relative;
+    overflow: hidden;
+}
+
+.week-calendar-grid {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+}
+
+/* Top header row: day-label spacer + hour markers across the timeline width */
+.grid-header-row {
+    display: flex;
+    height: 24px;
     border-bottom: 1px solid var(--border-color);
+}
+
+.day-label-spacer {
+    width: 90px;
+    flex-shrink: 0;
     border-right: 1px solid var(--border-color);
 }
 
-.day-header-cell:first-child {
-    border-top-left-radius: 12px;
+.hour-markers {
+    flex: 1;
+    position: relative;
+    height: 100%;
 }
 
-.day-header-cell:last-child {
-    border-right: none;
-    border-top-right-radius: 12px;
+.hour-marker {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 500;
+    pointer-events: none;
 }
 
-.day-header-cell.today {
+.hour-marker:first-child {
+    transform: translate(0, -50%);
+}
+
+/* Day rows container — one row per day */
+.day-rows {
+    display: flex;
+    flex-direction: column;
+}
+
+.day-row {
+    display: flex;
+    height: 48px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.day-row:last-child {
+    border-bottom: none;
+}
+
+.day-row.today {
+    background: rgba(42, 157, 143, 0.05);
+}
+
+body.dark-mode .day-row.today {
+    background: rgba(129, 140, 248, 0.1);
+}
+
+.day-row.weekend {
+    background: rgba(0, 0, 0, 0.02);
+}
+
+body.dark-mode .day-row.weekend {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* Left day label */
+.day-label {
+    width: 90px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 0 10px;
+    font-size: 11px;
+    color: var(--text-muted);
+    border-right: 1px solid var(--border-color);
+    line-height: 1.25;
+}
+
+.day-label .day-name {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-primary);
+}
+
+.day-row.today .day-label .day-name {
     color: var(--accent-color);
     font-weight: 700;
 }
 
-.day-header-cell.weekend {
-    background: rgba(0, 0, 0, 0.02);
-}
-
-body.dark-mode .day-header-cell.weekend {
-    background: rgba(255, 255, 255, 0.02);
-}
-
-/* Content row - contains time-axis and days-container */
-.calendar-content-row {
-    display: flex;
-    flex: 1;
-    min-width: max-content;
-}
-
-.week-calendar-scroll::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-}
-
-.week-calendar-scroll::-webkit-scrollbar-track {
-    background: transparent;
-}
-
-.week-calendar-scroll::-webkit-scrollbar-thumb {
-    background: var(--text-muted);
-    border-radius: 4px;
-}
-
-/* Time Axis (left side) - Apple Calendar style */
-.time-axis {
-    flex-shrink: 0;
-    width: 50px;
-    background: var(--panel-bg);
-    position: sticky;
-    left: 0;
-    z-index: 10;
-}
-
-.time-marker {
-    height: 40px;
-    display: flex;
-    align-items: flex-start;
-    justify-content: flex-end;
-    padding-right: 8px;
+.day-label .day-date {
     font-size: 11px;
     color: var(--text-muted);
-    font-weight: 500;
-    position: relative;
-    transform: translateY(-6px);
-    background: var(--panel-bg);
 }
 
-.time-marker:first-child {
-    transform: none;
-}
-
-.time-marker.current-hour {
-    color: var(--accent-color);
-    font-weight: 600;
-}
-
-/* Days Container - needs explicit width for horizontal scroll */
-.days-container {
-    display: flex;
-    min-width: max-content;
-}
-
-/* Day Column */
-.day-column {
-    flex-shrink: 0;
-    width: 160px;
-    min-width: 160px;
-    position: relative;
-}
-
-.day-column.today {
-    background: rgba(102, 126, 234, 0.05);
-}
-
-body.dark-mode .day-column.today {
-    background: rgba(129, 140, 248, 0.1);
-}
-
-.day-column.weekend {
-    background: rgba(0, 0, 0, 0.02);
-}
-
-body.dark-mode .day-column.weekend {
-    background: rgba(255, 255, 255, 0.02);
-}
-
-/* Hour Cells */
-.hour-cell {
-    height: 40px;
-    border-bottom: 1px solid var(--border-color);
-    border-right: 1px solid var(--border-color);
-}
-
-.hour-cell:last-child {
-    border-bottom: none;
-}
-
-.day-column:last-child .hour-cell {
-    border-right: none;
-}
-
-/* Day Track (for blocks) - positioned at top of day column */
+/* Day track — the timeline area for one day. Background draws hour gridlines (every 3h). */
 .day-track {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    flex: 1;
+    position: relative;
+    height: 100%;
+    /* Vertical gridlines every 3 hours (8 columns) */
+    background-image: linear-gradient(to right,
+            transparent calc(100% - 1px),
+            var(--border-color) calc(100% - 1px));
+    background-size: calc(100% / 8) 100%;
     pointer-events: none;
 }
 
-/* Schedule mode interaction on day-track */
+/* Schedule mode interaction on day-track (click-to-create etc.) */
 .day-track.schedule-mode {
     pointer-events: auto;
-    z-index: 5;
 }
 
-.day-track>* {
+.day-track > * {
     pointer-events: auto;
 }
 
-/* Calendar Blocks */
+/* Calendar block: a horizontal pill positioned by left%/width% within the day track */
 .calendar-block {
     position: absolute;
-    left: 4px;
-    right: 4px;
-    min-height: 20px;
-    border-radius: 6px;
-    background: linear-gradient(135deg, #4a00e0 0%, #8e2de2 100%);
+    top: 4px;
+    bottom: 4px;
+    border-radius: 4px;
+    background: var(--accent-color);
     color: white;
-    padding: 4px 6px;
+    padding: 0 8px;
     font-size: 11px;
-    /* Using clip-path instead of overflow: hidden keeps visual clipping without creating a
-       new scroll container, which would break position: sticky on descendants (used to keep
-       the label visible when the block starts above the viewport). */
-    clip-path: inset(0 round 6px);
     cursor: pointer;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    overflow: hidden;
+    white-space: nowrap;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    transition: box-shadow 0.15s ease, filter 0.15s ease;
     z-index: 1;
-}
-
-/* Keeps the block's header (emoji + name + time) visible when the block starts above the
-   viewport — wrapped around the spans after render in renderWeekBlocks. Pins below the
-   sticky day-header row (28px tall) so the two don't collide. */
-.calendar-block-sticky {
-    position: sticky;
-    top: 28px;
-    display: block;
+    min-width: 4px;
 }
 
 .calendar-block:hover {
-    transform: scale(1.02);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.18);
+    filter: brightness(1.05);
     z-index: 10;
 }
 
 .calendar-block .block-emoji {
     font-size: 13px;
     line-height: 1;
+    flex-shrink: 0;
 }
 
 .calendar-block .block-label {
     font-weight: 600;
-    word-wrap: break-word;
-    overflow-wrap: break-word;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 1;
+    min-width: 0;
 }
 
 .calendar-block .block-time {
     font-size: 11px;
-    opacity: 0.9;
+    opacity: 0.85;
+    flex-shrink: 0;
 }
 
 .calendar-block.expired {
@@ -1327,31 +1481,33 @@ body.dark-mode .day-column.weekend {
 }
 
 .calendar-block.scheduled {
-    opacity: 0.7;
-    border: 1px dashed rgba(255, 255, 255, 0.4);
+    border: 1px dashed rgba(255, 255, 255, 0.35);
+}
+
+/* Currently-running active block (highlighted state) */
+.calendar-block.running {
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(255, 255, 255, 0.35) inset;
 }
 
 .schedule-icon {
-    position: absolute;
-    bottom: 2px;
-    right: 4px;
+    flex-shrink: 0;
     opacity: 0.8;
     display: flex;
     align-items: center;
 }
 
 .schedule-icon svg {
-    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3));
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.25));
 }
 
-/* Preview Block - Non-interactive by default (one-off mode) */
+/* Preview blocks (one-off mode: non-interactive ghost) */
 .calendar-block.preview {
     opacity: 0.5;
     border: 2px dashed rgba(255, 255, 255, 0.5);
     pointer-events: none;
 }
 
-/* Interactive preview blocks (schedule mode) */
+/* Interactive preview blocks (schedule mode: draggable / resizable) */
 .calendar-block.preview.interactive {
     opacity: 0.7;
     pointer-events: auto;
@@ -1369,71 +1525,90 @@ body.dark-mode .day-column.weekend {
 
 .calendar-block.preview.interactive.dragging {
     opacity: 0.9;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
     z-index: 100;
     cursor: grabbing;
 }
 
 .calendar-block.preview.interactive.resizing {
-    cursor: ns-resize !important;
+    cursor: ew-resize !important;
 }
 
-/* Resize handles for preview blocks */
+/* Resize handles span the full height on the left and right edges. They show a faint
+   "grip" stripe always so users discover that the edges are draggable. */
 .calendar-block.preview.interactive .resize-handle {
     position: absolute;
-    left: 0;
-    right: 0;
-    height: 12px;
-    cursor: ns-resize !important;
+    top: 0;
+    bottom: 0;
+    width: 10px;
+    cursor: ew-resize !important;
     z-index: 100;
     pointer-events: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s ease;
 }
 
-.calendar-block.preview.interactive .resize-handle-top {
-    top: 0;
+.calendar-block.preview.interactive .resize-handle::before {
+    content: '';
+    width: 2px;
+    height: 60%;
+    background: rgba(255, 255, 255, 0.6);
+    border-radius: 1px;
+    transition: background 0.15s ease, height 0.15s ease;
 }
 
-.calendar-block.preview.interactive .resize-handle-bottom {
-    bottom: 0;
+.calendar-block.preview.interactive .resize-handle-start {
+    left: 0;
+}
+
+.calendar-block.preview.interactive .resize-handle-end {
+    right: 0;
 }
 
 .calendar-block.preview.interactive .resize-handle:hover {
-    background: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.2);
 }
 
-/* Cursor change when hovering resize handles (controlled by JS) */
+.calendar-block.preview.interactive .resize-handle:hover::before {
+    background: rgba(255, 255, 255, 0.95);
+    height: 75%;
+}
+
 .calendar-block.preview.interactive.resize-hover {
-    cursor: ns-resize !important;
+    cursor: ew-resize !important;
 }
 
 .calendar-block.preview.hidden {
     display: none;
 }
 
-/* Now Indicator (horizontal line) */
+/* "Now" indicator: a vertical line drawn on today's row */
 .now-indicator {
     position: absolute;
-    left: 0;
-    right: 0;
-    height: 2px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
     background: var(--accent-color);
     z-index: 5;
-    box-shadow: 0 0 4px rgba(102, 126, 234, 0.5);
+    box-shadow: 0 0 4px rgba(42, 157, 143, 0.5);
+    pointer-events: none;
 }
 
 .now-indicator::before {
     content: '';
     position: absolute;
-    left: -4px;
-    top: 50%;
-    transform: translateY(-50%);
+    left: 50%;
+    top: -3px;
+    transform: translateX(-50%);
     width: 8px;
     height: 8px;
     background: var(--accent-color);
     border-radius: 50%;
 }
 
-/* No blocks message */
+/* "No active blocks" message */
 .no-blocks-message {
     position: absolute;
     top: 50%;
@@ -1450,6 +1625,14 @@ body.dark-mode .day-column.weekend {
 
 .no-blocks-message.hidden {
     display: none;
+}
+
+/* Footer hint below the timeline */
+.schedule-footer-hint {
+    text-align: center;
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
 }
 
 /* Keep old active-blocks styles for reference but can be removed later */
@@ -1472,13 +1655,13 @@ body.dark-mode .day-column.weekend {
 }
 
 .no-active-blocks p {
-    color: #999;
+    color: var(--text-muted);
     font-size: 15px;
 }
 
 .no-active-blocks p.subtle {
     font-size: 13px;
-    color: #bbb;
+    color: var(--text-subtle);
     margin-top: 4px;
 }
 
@@ -1488,10 +1671,10 @@ body.dark-mode .day-column.weekend {
     align-items: center;
     gap: 12px;
     padding: 14px 16px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: var(--accent-color);
     border-radius: 12px;
     color: white;
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    box-shadow: 0 4px 12px rgba(42, 157, 143, 0.3);
     position: relative;
     overflow: hidden;
 }
@@ -1511,7 +1694,7 @@ body.dark-mode .day-column.weekend {
     margin-top: -8px;
     margin-left: 12px;
     margin-right: 12px;
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+    box-shadow: 0 4px 12px rgba(42, 157, 143, 0.2);
 }
 
 .entry-icon {
@@ -1616,7 +1799,7 @@ body.dark-mode .day-column.weekend {
 .blocklist-dropdown:focus {
     outline: none;
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
 }
 
 /* Block Preview */
@@ -1631,7 +1814,7 @@ body.dark-mode .day-column.weekend {
 
 .block-preview .calendar-entry {
     opacity: 0.7;
-    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+    box-shadow: 0 2px 8px rgba(42, 157, 143, 0.2);
 }
 
 /* Time Pickers */
@@ -1668,7 +1851,7 @@ body.dark-mode .day-column.weekend {
 .duration-input:focus {
     outline: none;
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+    box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.2);
 }
 
 /* Hide number input spinners */
@@ -1721,64 +1904,18 @@ body.ios .duration-quick-btn {
     color: white;
 }
 
-/* Duration Mode Toggle ("for a bit" / "always") */
-.duration-mode-toggle {
-    display: flex;
-    gap: 2px;
-    background: rgba(0, 0, 0, 0.05);
-    border-radius: 10px;
-    padding: 4px;
-    margin-bottom: 12px;
-}
-
-.duration-mode-btn {
-    flex: 1;
-    display: flex;
+/* The "Always" quick-select option is conceptually distinct from the timed durations
+   (no specific length), so it gets a small visual separation and an icon. */
+.duration-quick-btn-always {
+    display: inline-flex;
     align-items: center;
-    justify-content: center;
     gap: 5px;
-    padding: 6px 14px;
-    border: none;
-    border-radius: 8px;
-    background: transparent;
-    color: var(--text-muted);
-    font-size: 15px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s ease;
+    margin-right: 4px;
 }
 
-.duration-mode-btn:hover:not(.active) {
-    color: var(--text-secondary);
-}
-
-.duration-mode-btn.active {
-    background: white;
-    color: var(--text-primary);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-body.dark-mode .duration-mode-toggle {
-    background: rgba(255, 255, 255, 0.1);
-}
-
-body.dark-mode .duration-mode-btn.active {
-    background: hsl(222, 47%, 25%);
-    color: white;
-}
-
-body.ios .duration-mode-btn {
-    font-size: 16px;
-    padding: 8px 16px;
-}
-
-.duration-mode-btn svg {
+.duration-quick-btn-always svg {
     flex-shrink: 0;
-}
-
-body.ios .duration-mode-btn svg {
-    width: 20px;
-    height: 20px;
+    opacity: 0.85;
 }
 
 /* Always-on message */
@@ -1787,17 +1924,17 @@ body.ios .duration-mode-btn svg {
     align-items: center;
     gap: 10px;
     padding: 14px 16px;
-    background: hsl(214, 60%, 97%);
-    border: 1px solid hsl(214, 60%, 90%);
+    background: var(--redd-teal-soft);
+    border: 1px solid color-mix(in srgb, var(--redd-teal) 20%, transparent);
     border-radius: 8px;
-    color: hsl(214, 50%, 40%);
+    color: var(--redd-teal-hover);
     font-size: 15px;
     line-height: 1.4;
 }
 
 .always-on-message svg {
     flex-shrink: 0;
-    color: hsl(214, 60%, 55%);
+    color: var(--redd-teal);
 }
 
 .always-on-message.hidden {
@@ -1821,7 +1958,7 @@ body.ios .duration-mode-btn svg {
     display: flex;
     flex-direction: column;
     gap: 4px;
-    margin-top: 12px;
+    margin-bottom: 12px;
 }
 
 .time-picker-group {
@@ -1879,7 +2016,7 @@ body.ios .duration-mode-btn svg {
     padding: 8px 16px;
     font-size: 15px;
     font-weight: 500;
-    border: 1px solid hsl(214, 32%, 85%);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     background: white;
     color: hsl(222, 47%, 11%);
@@ -1888,14 +2025,14 @@ body.ios .duration-mode-btn svg {
 }
 
 .now-btn:hover {
-    border-color: hsl(214, 32%, 70%);
-    background: hsl(214, 32%, 98%);
+    border-color: #bdb7af;
+    background: var(--redd-warm-grey);
 }
 
 .now-btn.active {
-    background: #667eea;
+    background: var(--accent-color);
     color: white;
-    border-color: #667eea;
+    border-color: var(--accent-color);
 }
 
 .time-selects {
@@ -1908,7 +2045,7 @@ body.ios .duration-mode-btn svg {
     padding: 8px 4px;
     font-size: 15px;
     font-weight: 500;
-    border: 1px solid hsl(214, 32%, 85%);
+    border: 1px solid var(--border-color);
     border-radius: 6px;
     background: white;
     color: hsl(222, 47%, 11%);
@@ -1922,12 +2059,12 @@ body.ios .duration-mode-btn svg {
 }
 
 .time-select:hover {
-    border-color: hsl(214, 32%, 70%);
+    border-color: #bdb7af;
 }
 
 .time-select:focus {
-    border-color: #667eea;
-    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.15);
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.15);
 }
 
 .time-colon {
@@ -1940,7 +2077,7 @@ body.ios .duration-mode-btn svg {
     padding: 8px 10px;
     font-size: 15px;
     font-weight: 500;
-    border: 1px solid hsl(214, 32%, 85%);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     background: white;
     color: hsl(222, 47%, 11%);
@@ -1949,20 +2086,20 @@ body.ios .duration-mode-btn svg {
 }
 
 .time-input:hover {
-    border-color: hsl(214, 32%, 70%);
+    border-color: #bdb7af;
 }
 
 .time-input:focus {
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.15);
 }
 
 .start-time-badge {
     padding: 4px 8px;
     font-size: 11px;
     font-weight: 600;
-    background: hsl(214, 32%, 91%);
-    color: hsl(222.2, 84%, 4.9%);
+    background: var(--border-color);
+    color: var(--redd-navy);
     border-radius: 4px;
     margin-right: 8px;
     white-space: nowrap;
@@ -1973,7 +2110,7 @@ body.ios .duration-mode-btn svg {
     font-size: 11px;
     font-weight: 600;
     background: hsl(220, 70%, 95%);
-    color: #667eea;
+    color: var(--accent-color);
     border-radius: 4px;
     margin-left: 8px;
 }
@@ -2000,8 +2137,8 @@ body.ios .duration-mode-btn svg {
 }
 
 .time-part:hover {
-    border-color: hsl(214, 32%, 70%);
-    background: hsl(214, 32%, 98%);
+    border-color: #bdb7af;
+    background: var(--redd-warm-grey);
 }
 
 body.dark-mode .time-part:hover {
@@ -2012,12 +2149,12 @@ body.dark-mode .time-part:hover {
 
 .time-part:focus {
     outline: none;
-    border-color: #667eea;
-    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.15);
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.15);
 }
 
 .time-part.active {
-    border-color: #667eea;
+    border-color: var(--accent-color);
     background: hsl(220, 70%, 98%);
 }
 
@@ -2150,14 +2287,15 @@ body.dark-mode .time-part.active {
     border: 1px solid #e2e8f0;
 }
 
-/* Start Block Button */
+/* Start Block Button — primary teal CTA, matching the canonical brand
+   ("Get started now" on reddfocus.org). */
 .start-block-btn {
     width: 100%;
     padding: 14px;
     border: none;
     border-radius: 10px;
     background: var(--button-bg);
-    color: white;
+    color: var(--primary-btn-text);
     font-size: 17px;
     font-weight: 600;
     cursor: pointer;
@@ -2194,25 +2332,34 @@ body.dark-mode .time-part.active {
     font-weight: 400;
 }
 
-/* Stop Block Button (shadcn secondary style) */
-.start-block-btn.stop-block {
-    background: hsl(0, 0%, 96%);
-    color: hsl(0, 0%, 20%);
-    border: 1px solid hsl(0, 0%, 88%);
+/* Stop Block / Stop Schedule Button — filled secondary. Stop is the more
+   drastic action (ends the block / schedule entirely) and carries the
+   blocklist context, so it gets visual weight: warm-grey fill, navy text,
+   subtle border. Pause sits as a quieter ghost beside it. */
+.start-block-btn.stop-block,
+.start-block-btn.stop-schedule {
+    background: var(--redd-warm-grey);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
 }
 
-.start-block-btn.stop-block:hover {
-    background: hsl(0, 0%, 90%);
+.start-block-btn.stop-block:hover:not(:disabled),
+.start-block-btn.stop-schedule:hover:not(:disabled) {
+    background: rgba(30, 45, 62, 0.06);
+    transform: none;
+    box-shadow: none;
 }
 
-body.dark-mode .start-block-btn.stop-block {
-    background: hsl(0, 0%, 15%);
-    color: hsl(0, 0%, 90%);
-    border-color: hsl(0, 0%, 25%);
+body.dark-mode .start-block-btn.stop-block,
+body.dark-mode .start-block-btn.stop-schedule {
+    background: var(--redd-warm-grey);
+    color: var(--text-primary);
+    border-color: var(--border-color);
 }
 
-body.dark-mode .start-block-btn.stop-block:hover {
-    background: hsl(0, 0%, 20%);
+body.dark-mode .start-block-btn.stop-block:hover:not(:disabled),
+body.dark-mode .start-block-btn.stop-schedule:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.06);
 }
 
 /* Block action buttons wrapper (pause + stop side by side) */
@@ -2226,14 +2373,17 @@ body.dark-mode .start-block-btn.stop-block:hover {
     flex: 1;
 }
 
-/* Pause Block Button */
+/* Pause Block Button — ghost button. Pause is the gentler, undoable action,
+   so it steps back to a transparent fill with a faint border-on-hover. The
+   Stop secondary next to it carries the visual weight. The Resume state
+   lifts to teal-soft to signal "ready to go again" — same teal family as
+   the primary CTA. */
 .pause-block-btn {
     padding: 14px 16px;
-    border: none;
     border-radius: 10px;
-    background: hsl(40, 90%, 95%);
-    color: hsl(30, 80%, 30%);
-    border: 1px solid hsl(40, 70%, 80%);
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid transparent;
     font-size: 17px;
     font-weight: 600;
     cursor: pointer;
@@ -2246,39 +2396,32 @@ body.dark-mode .start-block-btn.stop-block:hover {
 }
 
 .pause-block-btn:hover {
-    background: hsl(40, 85%, 88%);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-body.dark-mode .pause-block-btn {
-    background: hsl(40, 30%, 15%);
-    color: hsl(40, 70%, 70%);
-    border-color: hsl(40, 30%, 25%);
+    background: var(--element-hover-bg);
+    color: var(--text-primary);
 }
 
 body.dark-mode .pause-block-btn:hover {
-    background: hsl(40, 30%, 20%);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-primary);
 }
 
 .pause-block-btn.resume-mode {
-    background: hsl(145, 60%, 93%);
-    color: hsl(145, 60%, 28%);
-    border-color: hsl(145, 45%, 72%);
+    background: var(--redd-teal-soft);
+    color: var(--redd-teal-hover);
+    border-color: color-mix(in srgb, var(--redd-teal) 22%, transparent);
 }
 
 .pause-block-btn.resume-mode:hover {
-    background: hsl(145, 55%, 86%);
+    background: color-mix(in srgb, var(--redd-teal) 16%, var(--redd-card));
 }
 
 body.dark-mode .pause-block-btn.resume-mode {
-    background: hsl(145, 30%, 15%);
-    color: hsl(145, 50%, 65%);
-    border-color: hsl(145, 25%, 28%);
+    color: var(--redd-teal);
+    border-color: color-mix(in srgb, var(--redd-teal) 30%, transparent);
 }
 
 body.dark-mode .pause-block-btn.resume-mode:hover {
-    background: hsl(145, 30%, 20%);
+    background: color-mix(in srgb, var(--redd-teal) 22%, transparent);
 }
 
 /* Pause Modal */
@@ -2388,6 +2531,7 @@ body.dark-mode .scheduler-mode-tabs {
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 6px;
     flex: 1 1 0;
     min-width: 0;
     padding: 6px 14px;
@@ -2400,6 +2544,15 @@ body.dark-mode .scheduler-mode-tabs {
     cursor: pointer;
     transition: all 0.15s ease;
     white-space: nowrap;
+}
+
+.mode-tab-icon {
+    flex-shrink: 0;
+    opacity: 0.85;
+}
+
+.mode-tab.active .mode-tab-icon {
+    opacity: 1;
 }
 
 body.ios .mode-tab {
@@ -2418,8 +2571,9 @@ body.ios .mode-tab {
 }
 
 body.dark-mode .mode-tab.active {
-    background: hsl(222, 47%, 25%);
-    color: white;
+    background: var(--redd-card);
+    color: var(--text-primary);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
 /* Schedule Block Panel */
@@ -2501,19 +2655,21 @@ body.dark-mode .mode-tab.active {
 .add-segment-btn:hover {
     border-color: var(--accent-color);
     color: var(--accent-color);
-    background: rgba(102, 126, 234, 0.05);
+    background: rgba(42, 157, 143, 0.05);
 }
 
-/* Segment Row - contains time pickers and day toggles inline */
+/* Segment Row - contains time pickers and day toggles inline. Wraps so the days group
+   can drop below the time pickers when the panel is too narrow to hold both side-by-side
+   (otherwise the day pills overflow off the right of the window). */
 .segment-row {
     display: flex;
     align-items: flex-end;
-    gap: 16px;
+    flex-wrap: wrap;
+    gap: 12px 16px;
 }
 
 @media (max-width: 768px) {
     .segment-row {
-        flex-wrap: wrap;
         gap: 8px;
     }
 }
@@ -2572,15 +2728,18 @@ body.dark-mode .mode-tab.active {
     gap: 6px;
 }
 
-/* Segment Days - inline day toggles for each segment */
+/* Segment Days - inline day toggles for each segment. Also wraps so the seven pills can
+   break onto a second line when the days-group itself runs out of horizontal room. */
 .segment-days {
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
 }
 
 .segment-day-toggle {
-    width: 28px;
+    min-width: 40px;
     height: 28px;
+    padding: 0 8px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2595,9 +2754,9 @@ body.dark-mode .mode-tab.active {
 }
 
 body.ios .segment-day-toggle {
-    width: 32px;
+    min-width: 48px;
     height: 32px;
-    padding: 0;
+    padding: 0 10px;
     font-size: 15px;
 }
 
@@ -2670,7 +2829,7 @@ body:not(.dark-mode) .segment-day-toggle.active:hover:not(:disabled):not([disabl
 
 .repeat-dropdown-btn:hover {
     border-color: var(--accent-color);
-    background: rgba(102, 126, 234, 0.05);
+    background: rgba(42, 157, 143, 0.05);
 }
 
 .repeat-dropdown-btn.repeat-dropdown-disabled {
@@ -2724,12 +2883,12 @@ body:not(.dark-mode) .segment-day-toggle.active:hover:not(:disabled):not([disabl
 }
 
 .repeat-option:hover {
-    background: rgba(102, 126, 234, 0.1);
+    background: rgba(42, 157, 143, 0.1);
     color: var(--accent-color);
 }
 
 .repeat-option.active {
-    background: rgba(102, 126, 234, 0.15);
+    background: rgba(42, 157, 143, 0.15);
     color: var(--accent-color);
     font-weight: 500;
 }
@@ -2782,7 +2941,7 @@ body:not(.dark-mode) .segment-day-toggle.active:hover:not(:disabled):not([disabl
 .repeat-date-input:focus {
     outline: none;
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.15);
+    box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.15);
 }
 
 .repeat-date-input::-webkit-calendar-picker-indicator {
@@ -2910,7 +3069,7 @@ body.ios .day-toggle {
 
 .until-dropdown-btn:hover {
     border-color: var(--accent-color);
-    background: rgba(102, 126, 234, 0.05);
+    background: rgba(42, 157, 143, 0.05);
 }
 
 .until-dropdown-menu {
@@ -2988,7 +3147,7 @@ body.ios .day-toggle {
 .until-date-input:focus {
     outline: none;
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.15);
+    box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.15);
 }
 
 /* Hide the native calendar icon */
@@ -3047,27 +3206,6 @@ body.ios .day-toggle {
 /* Start Schedule Button */
 .start-schedule-btn.hidden {
     display: none;
-}
-
-/* Stop Schedule Button (shadcn secondary style) */
-.start-schedule-btn.stop-schedule {
-    background: hsl(0, 0%, 96%);
-    color: hsl(0, 0%, 20%);
-    border: 1px solid hsl(0, 0%, 88%);
-}
-
-.start-schedule-btn.stop-schedule:hover {
-    background: hsl(0, 0%, 90%);
-}
-
-body.dark-mode .start-schedule-btn.stop-schedule {
-    background: hsl(0, 0%, 15%);
-    color: hsl(0, 0%, 90%);
-    border-color: hsl(0, 0%, 25%);
-}
-
-body.dark-mode .start-schedule-btn.stop-schedule:hover {
-    background: hsl(0, 0%, 20%);
 }
 
 /* Locked segment (part of active schedule) */
@@ -3161,6 +3299,11 @@ body.ios .blocklists-container {
     transition: all 0.2s ease;
     cursor: grab;
     position: relative;
+    /* Cap card width so the row content doesn't stretch into a wide expanse of empty
+       space. The grid-top-row left column is sized to match this cap, so cards fill
+       their column without overflowing it. On narrow viewports cards still shrink. */
+    max-width: 480px;
+    width: 100%;
     /* overflow: hidden; Removed to keep stripe corners sharp */
 }
 
@@ -3239,47 +3382,54 @@ body.ios .blocklists-container {
     border-bottom-left-radius: 10px;
 }
 
-.active-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    margin-left: 8px;
-    padding: 2px 8px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    background: hsl(142, 76%, 36%);
-    color: white;
-    border-radius: 4px;
-    vertical-align: middle;
-}
-
-.active-badge svg {
-    flex-shrink: 0;
-}
-
-.paused-badge {
-    background: hsl(40, 90%, 50%);
-    color: hsl(30, 80%, 15%);
-}
-
+/* Status pill on blocklist cards — "14H 49M LEFT", "IN 13H", "Always", etc.
+   Borderless / typographic: just muted small-caps text with the icon, set
+   alongside the title. No fill or border so it doesn't compete with the
+   card's other UI; the meaning lives in the words and (if running) the
+   leading green dot. */
+.active-badge,
 .schedule-badge {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
     margin-left: 8px;
-    padding: 2px 8px;
+    padding: 2px 0;
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 500;
     text-transform: uppercase;
-    background: var(--accent-color);
-    color: white;
-    border-radius: 4px;
+    letter-spacing: 0.04em;
+    background: transparent;
+    color: var(--text-secondary);
+    border: none;
     vertical-align: middle;
 }
 
+.active-badge svg,
 .schedule-badge svg {
     flex-shrink: 0;
+    opacity: 0.7;
+}
+
+/* Green "live" dot before the time-left text on currently-running blocks —
+   matches the BLOCKING NOW row dot for visual rhyme. */
+.badge-running-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: hsl(142, 60%, 45%);
+    box-shadow: 0 0 0 2px hsla(142, 60%, 45%, 0.18);
+    flex-shrink: 0;
+}
+
+/* Paused is a transient state worth signalling more strongly than a calm
+   countdown — keep a soft coral wash with a subtle outline so it still
+   stands out as "something's different here". */
+.paused-badge {
+    padding: 2px 8px;
+    background: var(--redd-coral-soft);
+    color: var(--redd-coral);
+    border: 1px solid color-mix(in srgb, var(--redd-coral) 25%, transparent);
+    border-radius: 4px;
 }
 
 .blocklist-card-scheduled {
@@ -3340,7 +3490,7 @@ body.ios .blocklist-actions {
     border: none;
     border-radius: 10px;
     background: transparent;
-    color: #999;
+    color: var(--text-muted);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -3364,8 +3514,8 @@ body.ios .blocklist-action-btn svg {
 }
 
 .blocklist-action-btn:hover {
-    background: rgba(0, 0, 0, 0.05);
-    color: #666;
+    background: var(--element-hover-bg);
+    color: var(--text-secondary);
 }
 
 .blocklist-action-btn.delete:hover {
@@ -3440,6 +3590,27 @@ body.ios .blocklist-action-btn svg {
     display: none;
 }
 
+/* Welcome / onboarding screens get a teal primary CTA — matches the
+   "Get started now" tone of reddfocus.org and the EULA flow in redd-do
+   and reddfocus. (Inside the product, primary actions stay on the calm
+   navy slab; teal is reserved for accent + welcoming entry points.) */
+.onboarding-screen {
+    --button-bg: var(--redd-teal);
+    --button-hover: var(--redd-teal-hover);
+    --accent-color: var(--redd-teal);
+}
+
+.onboarding-screen .primary-btn,
+.onboarding-screen .modal-btn.primary-btn {
+    background: var(--button-bg);
+    color: #ffffff;
+}
+
+.onboarding-screen .primary-btn:hover:not(:disabled),
+.onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
+    background: var(--button-hover);
+}
+
 .onboarding-content {
     max-width: 360px;
     text-align: center;
@@ -3473,7 +3644,7 @@ body.ios .blocklist-action-btn svg {
 }
 
 .onboarding-content p.subtle {
-    color: #999;
+    color: var(--text-muted);
     font-size: 15px;
     margin-bottom: 24px;
     font-style: italic;
@@ -4077,8 +4248,8 @@ body.ios .blocklist-action-btn svg {
 }
 
 .legal-onboarding-link {
-    color: hsl(222.2, 47.4%, 11.2%);
-    font-weight: 400;
+    color: inherit;
+    font-weight: inherit;
     text-decoration: underline;
     text-underline-offset: 2px;
 }
@@ -4091,19 +4262,18 @@ body.ios .blocklist-action-btn svg {
     margin-top: 18px;
 }
 
-.legal-onboarding-card .onboarding-primary-btn:disabled {
-    background: hsl(215, 16%, 75%);
-    cursor: not-allowed;
-}
-
+.legal-onboarding-card .onboarding-primary-btn:disabled,
 .legal-onboarding-card .onboarding-primary-btn:disabled:hover {
-    background: hsl(215, 16%, 75%);
+    background: var(--redd-warm-grey);
+    color: var(--text-muted);
+    cursor: not-allowed;
 }
 
 .legal-onboarding-body {
     max-width: 520px;
     margin: 0 auto;
     color: var(--text-muted);
+    font-style: italic;
 }
 
 .onboarding-focus-card .onboarding-primary-btn {
@@ -4181,8 +4351,8 @@ body.ios.ios-phone .legal-onboarding-note {
 
 .form-input:focus {
     outline: none;
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
 }
 
 #blocklist-name.input-error {
@@ -4231,13 +4401,13 @@ body.ios.ios-phone .legal-onboarding-note {
 }
 
 .form-select:hover {
-    border-color: #a8b4c7;
+    border-color: #bdb7af;
 }
 
 .form-select:focus {
     outline: none;
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
 }
 
 .form-select.form-select-disabled {
@@ -4295,7 +4465,7 @@ body.ios.ios-phone .legal-onboarding-note {
 .form-textarea {
     width: 100%;
     padding: 10px 12px;
-    border: 1px solid hsl(214, 32%, 91%);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     font-size: 15px;
     min-height: 80px;
@@ -4306,7 +4476,7 @@ body.ios.ios-phone .legal-onboarding-note {
 .form-hint {
     display: block;
     font-size: 13px;
-    color: #999;
+    color: var(--text-muted);
     margin-top: 4px;
 }
 
@@ -4404,7 +4574,7 @@ body.ios.ios-phone .legal-onboarding-note {
 
 .tags-input-container:focus-within {
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
 }
 
 .tags-input-container .form-input {
@@ -4476,7 +4646,7 @@ body.ios.ios-phone .legal-onboarding-note {
     align-items: center;
     gap: 4px;
     padding: 4px 8px;
-    background: #667eea;
+    background: var(--accent-color);
     color: white;
     border-radius: 4px;
     font-size: 13px;
@@ -4567,7 +4737,7 @@ body.ios.ios-phone .legal-onboarding-note {
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(30, 45, 62, 0.35);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -4604,15 +4774,18 @@ body.ios .modal-content {
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
 }
 
-/* Clamp edge overscroll only for add/edit blocklist modal content. */
+/* Add/edit blocklist modal — slightly wider than the default 400px so the
+   apps tag list, override-difficulty row and colour/emoji pickers have room
+   to breathe. Matches the 480px blocklist-card width for visual rhyme. */
 #blocklist-modal .modal-content {
+    max-width: 480px;
     overscroll-behavior-y: none;
 }
 
 .modal-content h3 {
-    font-size: 20px;
+    font-size: 22px;
     font-weight: 700;
-    color: var(--text-secondary);
+    color: var(--text-primary);
     margin-bottom: 12px;
 }
 
@@ -4678,7 +4851,7 @@ body.ios .modal-content {
 
 .helper-install-modal .modal-note {
     font-size: 15px;
-    color: #888;
+    color: var(--text-muted);
 }
 
 .helper-install-modal .modal-note a {
@@ -4827,13 +5000,13 @@ body.ios .modal-content {
 }
 
 .modal-btn.primary-btn {
-    background: hsl(222.2, 47.4%, 11.2%);
+    background: var(--button-bg);
     border: none;
-    color: white;
+    color: var(--primary-btn-text);
 }
 
 .modal-btn.primary-btn:hover {
-    background: hsl(222.2, 47.4%, 20%);
+    background: var(--button-hover);
 }
 
 /* Secondary button (grey shadcn style) */
@@ -4849,7 +5022,7 @@ body.ios .modal-content {
 
 /* Black button (shadcn primary style) */
 .modal-btn.black-btn {
-    background: hsl(222.2, 47.4%, 11.2%);
+    background: var(--redd-navy);
     color: hsl(210, 40%, 98%);
     border: none;
 }
@@ -4911,7 +5084,7 @@ body.ios .modal-content {
 }
 
 .override-challenge .challenge-text {
-    background: hsl(214, 32%, 96%);
+    background: var(--redd-warm-grey);
     color: #000;
     padding: 16px;
     border-radius: 8px;
@@ -4929,7 +5102,7 @@ body.ios .modal-content {
 .override-challenge .challenge-input {
     width: 100%;
     padding: 12px;
-    border: 1px solid hsl(214, 32%, 91%);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     font-family: monospace;
     font-size: 15px;
@@ -4939,7 +5112,7 @@ body.ios .modal-content {
 
 .override-challenge .challenge-progress {
     height: 4px;
-    background: hsl(214, 32%, 91%);
+    background: var(--border-color);
     border-radius: 2px;
     margin-top: 8px;
     overflow: hidden;
@@ -4947,41 +5120,12 @@ body.ios .modal-content {
 
 .override-challenge .challenge-progress-bar {
     height: 100%;
-    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    background: var(--accent-color);
     width: 0%;
     transition: width 0.2s ease;
 }
 
 /* Schedule override options */
-.schedule-override-options {
-    display: flex;
-    gap: 16px;
-    margin-top: 16px;
-    padding: 12px;
-    background: hsl(214, 32%, 97%);
-    border-radius: 8px;
-}
-
-.schedule-override-options.hidden {
-    display: none;
-}
-
-.schedule-override-options .radio-option {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    font-size: 15px;
-    color: var(--text-primary);
-}
-
-.schedule-override-options .radio-option input[type="radio"] {
-    width: 16px;
-    height: 16px;
-    accent-color: hsl(214, 84%, 56%);
-    cursor: pointer;
-}
-
 /* Footer */
 .footer {
     position: fixed;
@@ -5222,7 +5366,7 @@ body.ios .desktop-only {
 .override-preview-text {
     width: 100%;
     box-sizing: border-box;
-    background: hsl(214, 32%, 96%);
+    background: var(--redd-warm-grey);
     color: #000;
     padding: 10px 12px;
     border-radius: 8px;
@@ -5385,7 +5529,7 @@ body.ios .desktop-only {
 }
 
 .toggle-switch input:checked+.toggle-slider {
-    background-color: #667eea;
+    background-color: var(--accent-color);
 }
 
 .toggle-switch input:checked+.toggle-slider:before {
@@ -5496,7 +5640,7 @@ body.ios .desktop-only {
 }
 
 .color-swatch.selected {
-    border-color: hsl(222.2, 84%, 4.9%);
+    border-color: var(--redd-navy);
 }
 
 .color-swatch.selected::after {
@@ -5554,7 +5698,7 @@ body.ios .desktop-only {
     height: 28px;
     border-radius: 6px;
     border: 2px solid transparent;
-    background: hsl(214, 32%, 96%);
+    background: var(--redd-warm-grey);
     cursor: pointer;
     transition: all 0.15s ease;
     font-size: 17px;
@@ -5565,12 +5709,12 @@ body.ios .desktop-only {
 
 .emoji-swatch:hover {
     transform: scale(1.1);
-    background: hsl(214, 32%, 91%);
+    background: var(--border-color);
 }
 
 .emoji-swatch.selected {
-    border-color: hsl(222.2, 84%, 4.9%);
-    background: hsl(214, 32%, 91%);
+    border-color: var(--redd-navy);
+    background: var(--border-color);
 }
 
 /* Custom emoji selector */
@@ -5621,7 +5765,7 @@ body.ios .desktop-only {
     bottom: 20px;
     left: 50%;
     transform: translateX(-50%);
-    background: hsl(222.2, 47.4%, 11.2%);
+    background: var(--redd-navy);
     color: white;
     padding: 12px 20px;
     border-radius: 8px;
@@ -5655,7 +5799,7 @@ body.ios .undo-toast {
 
 .undo-btn {
     background: white;
-    color: hsl(222.2, 47.4%, 11.2%);
+    color: var(--redd-navy);
     border: none;
     padding: 6px 14px;
     border-radius: 6px;
@@ -5674,7 +5818,7 @@ body.ios .undo-toast {
     position: fixed;
     top: 20px;
     right: 20px;
-    background: hsl(222.2, 47.4%, 11.2%);
+    background: var(--redd-navy);
     color: white;
     padding: 10px 14px;
     border-radius: 8px;
@@ -5890,7 +6034,7 @@ body.ios .zoom-toast {
 }
 
 .diagnostics-pre {
-    background: hsl(214, 32%, 96%);
+    background: var(--redd-warm-grey);
     border: 1px solid var(--border-color-light);
     border-radius: 8px;
     padding: 12px;
