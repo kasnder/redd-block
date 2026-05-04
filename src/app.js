@@ -850,7 +850,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupHelpMenuLinks();
     setupHelperSettings();
     setupDiagnosticsButton();
-    setupExtensionSetupButton();
     setupOverrideAll();
     setupInAppUninstall();
     setupGraceSetting();
@@ -10470,7 +10469,6 @@ const SETTINGS_TRANSLATIONS = {
         languageEnglish: 'English',
         languageDanish: 'Dansk',
         advancedOptions: 'Advanced options',
-        extensionSetup: 'Set up ReDD Focus extension',
         overrideAllBlocks: 'Stop all blocks (with challenge)',
         // In-app uninstall (macOS only)
         uninstallApp: 'Uninstall ReDD Block',
@@ -10637,7 +10635,6 @@ const SETTINGS_TRANSLATIONS = {
         themeDark: 'Mørk',
         languageEnglish: 'Engelsk',
         languageDanish: 'Dansk',
-        extensionSetup: 'Opsæt ReDD Focus-udvidelse',
         overrideAllBlocks: 'Stop alle blokeringer (med udfordring)',
         // In-app uninstall (macOS only)
         uninstallApp: 'Afinstaller ReDD Block',
@@ -10835,7 +10832,6 @@ function applySettingsLanguage() {
     setText('language-option-en', tSettings('languageEnglish'));
     setText('language-option-da', tSettings('languageDanish'));
     setText('settings-advanced-options-label', tSettings('advancedOptions'));
-    setText('settings-extension-setup-label', tSettings('extensionSetup'));
     setText('settings-override-all-label', tSettings('overrideAllBlocks'));
     setText('settings-uninstall-label', tSettings('uninstallApp'));
     // The hint paragraph and button tooltip need re-translation too —
@@ -11722,18 +11718,6 @@ function setupDiagnosticsButton() {
     const btn = document.getElementById('diagnostics-btn');
     if (btn) {
         btn.addEventListener('click', openDiagnosticsModal);
-    }
-}
-
-// Settings → Advanced Options entry that re-opens the per-browser
-// ReDD Focus install checklist. Mirror of the slim banner's
-// "Set up extension" button — exists so users can re-access the
-// setup flow after dismissing the banner (or the welcome screen)
-// without having to wait for the next launch.
-function setupExtensionSetupButton() {
-    const btn = document.getElementById('extension-setup-btn');
-    if (btn) {
-        btn.addEventListener('click', openExtensionSetupOverlay);
     }
 }
 

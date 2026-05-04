@@ -1055,25 +1055,6 @@
 
                     <!-- Advanced settings -->
                     <div class="helper-settings-section">
-                        <!-- Re-open the per-browser ReDD Focus install
-                             checklist on demand. Same overlay as the
-                             slim setup-banner's "Set up extension"
-                             button, just reachable from Settings so
-                             users can find it again after dismissing
-                             the banner. Visible regardless of current
-                             compliance state — letting the user
-                             re-verify is harmless and the dialog auto-
-                             closes nothing the user didn't ask for. -->
-                        <button id="extension-setup-btn" class="remove-helper-btn">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M14 9V5a3 3 0 0 0-6 0v4"></path>
-                                <rect x="2" y="9" width="20" height="12" rx="2" ry="2"></rect>
-                                <path d="M12 13v4"></path>
-                            </svg>
-                            <span id="settings-extension-setup-label">Set up ReDD Focus extension</span>
-                        </button>
-
                         <!-- Browser-extension grace period setting. The
                              enforcer reads this from settings on every
                              grace-start. Backend rejects increases when
