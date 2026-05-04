@@ -802,6 +802,34 @@ Closing app window does not stop helper runtime. Helper loops continue:
 - schedule evaluation,
 - app watcher.
 
+### 12.1.1 macOS Dock + menu bar lifecycle
+
+The macOS app flips its `NSApp` activation policy at runtime so it
+behaves like a hybrid between a standard foreground app and a
+menu-bar utility (mirroring Cold Turkey Blocker's UX):
+
+- window visible → `NSApplicationActivationPolicyRegular` (Dock icon
+  present, app name in the global menu bar);
+- window hidden → `NSApplicationActivationPolicyAccessory` (no Dock
+  icon, no global menu bar; only the tray icon represents the app).
+
+Transitions are wired up at every show/hide entry point:
+
+- launch with `--autostart` boots straight into Accessory; a normal
+  launch boots into Regular,
+- `WindowEvent::CloseRequested` (red X / Cmd-W) → hide + Accessory,
+- `applicationShouldTerminate:` (Cmd-Q intercepted by
+  `install_terminate_guard`) → `[NSApp hide:]` + Accessory,
+- the JS title-bar close button calls the
+  `hide_main_window` Tauri command, which marshals the hide +
+  Accessory flip onto the AppKit main thread,
+- tray-icon click, "Reopen Main Window" menu item, dock-icon click
+  (`RunEvent::Reopen`), and the enforcer's `reveal_app` all promote
+  back to Regular before showing the window.
+
+The enforcer / app-watcher / native messaging host keep running the
+whole time; the activation policy is purely a presentation toggle.
+
 ## 12.2 App uninstall/removal
 
 Helper `app_existence_checker()` (5-minute cadence) decides cleanup based on:

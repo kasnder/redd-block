@@ -24,16 +24,24 @@ pub async fn scan_browser_profiles() -> Result<profile_scan::ScanResult, String>
 /// (osascript admin prompt, file picker, etc.). Tauri's
 /// `window.set_focus` from JS calls `makeKeyAndOrderFront` but does
 /// NOT call `NSApp.activate(ignoringOtherApps:)` — required when
-/// the app runs as a menu-bar accessory (no Dock icon) so there's
+/// the app is sitting in Accessory mode (no Dock icon) so there's
 /// no Dock click to bring the process back to the front.
 #[tauri::command]
 pub fn activate_app(window: tauri::Window) {
     reveal_app(&window.app_handle());
 }
 
+/// Show the main window and put the app in Regular activation
+/// policy (Dock icon + menu bar visible). Used by the tray click,
+/// the dock-icon Reopen handler, the "Reopen Main Window" menu
+/// item, and the enforcer when it surfaces compliance alerts.
 pub fn reveal_app(app: &AppHandle) {
     #[cfg(target_os = "macos")]
     {
+        // Promote to Regular *before* showing so the window comes up
+        // alongside the Dock icon / app menu instead of flashing
+        // without them.
+        crate::set_macos_activation_policy(true);
         use cocoa::appkit::NSApp;
         use cocoa::base::YES;
         use objc::{msg_send, sel, sel_impl};
@@ -48,6 +56,27 @@ pub fn reveal_app(app: &AppHandle) {
         let _ = window.show();
         let _ = window.set_focus();
     }
+}
+
+/// Hide the main window to the tray and drop the macOS Dock icon /
+/// menu bar (Accessory activation policy). Invoked from the
+/// custom title-bar close button in the frontend; the Cmd-Q and
+/// red-X paths go through `should_terminate` and the
+/// `CloseRequested` handler respectively, both of which apply the
+/// same policy flip directly.
+#[tauri::command]
+pub fn hide_main_window(window: tauri::Window) {
+    let app = window.app_handle().clone();
+    let app_for_main = app.clone();
+    // Both `NSWindow.orderOut` and `setActivationPolicy:` should
+    // happen on the AppKit main thread, so dispatch there.
+    let _ = app.run_on_main_thread(move || {
+        if let Some(main) = app_for_main.get_webview_window("main") {
+            let _ = main.hide();
+        }
+        #[cfg(target_os = "macos")]
+        crate::set_macos_activation_policy(false);
+    });
 }
 
 /// True when every running-and-present browser is compliant. Shortcut

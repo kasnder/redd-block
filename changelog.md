@@ -4,6 +4,21 @@ User-facing changes for each release. Every app upgrade adds a new entry here.
 
 ## v2.0.1
 
+- **macOS: the app now appears in the Dock and the global menu bar
+  while the window is open.** Previously ReDD Block ran as a pure
+  menu-bar accessory on macOS — the app icon never appeared in the
+  Dock and no app name showed up next to the Apple logo, even when
+  the window was front-most. This made it easy to forget the app
+  was running and hard to tell whether you were "in" it. The app
+  now behaves like Cold Turkey Blocker:
+  - window open → Dock icon + app name in the menu bar,
+  - window closed (red X, Cmd-W, Cmd-Q) → hides to the tray, Dock
+    icon and menu bar disappear,
+  - tray-icon click / Dock-icon click / "Reopen Main Window" menu
+    item all bring the foreground UI back.
+
+  The enforcer, watcher and native messaging host keep running
+  through every transition — only the visible affordances change.
 - **The "Set up ReDD Focus" reminder banner is now persistent for
   everyone, not just v1.x upgraders.** Whenever any browser the
   user has installed is missing the extension (or has it disabled,

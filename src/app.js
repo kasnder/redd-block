@@ -34,7 +34,10 @@ const tauriAPI = {
         }
         return win.maximize();
     },
-    closeWindow: () => getCurrentWindow().hide(),
+    // Routes through the Rust `hide_main_window` command so the macOS
+    // activation policy can flip back to Accessory at the same time
+    // (Dock icon + global menu bar disappear when the window closes).
+    closeWindow: () => invoke('hide_main_window').catch(() => getCurrentWindow().hide()),
 
     // Helper daemon operations
     checkHelperStatus: () => invoke('check_helper_status').catch(() => ({ installed: false, running: false })),

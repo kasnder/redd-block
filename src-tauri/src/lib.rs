@@ -8,6 +8,31 @@ use tauri::Manager;
 /// enforcer/watcher and silently lose all blocking.
 static ALLOW_EXIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Flip the macOS activation policy between Regular (Dock icon + app
+/// name in the global menu bar, like a normal foreground app) and
+/// Accessory (tray-only, no Dock icon, no menu bar). We switch at
+/// runtime so the app behaves like Cold Turkey Blocker:
+///   - window visible  → Regular  (Dock icon, menu bar present)
+///   - window hidden   → Accessory (tray-only, runs in the background)
+/// The enforcer keeps running regardless of the policy; this is purely
+/// a UI affordance.
+#[cfg(target_os = "macos")]
+pub(crate) fn set_macos_activation_policy(regular: bool) {
+    use cocoa::appkit::NSApplication;
+    use cocoa::appkit::NSApplicationActivationPolicy::{
+        NSApplicationActivationPolicyAccessory, NSApplicationActivationPolicyRegular,
+    };
+    let policy = if regular {
+        NSApplicationActivationPolicyRegular
+    } else {
+        NSApplicationActivationPolicyAccessory
+    };
+    unsafe {
+        let ns_app = cocoa::appkit::NSApp();
+        let _ = ns_app.setActivationPolicy_(policy);
+    }
+}
+
 #[cfg(feature = "desktop")]
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
@@ -76,6 +101,9 @@ unsafe fn install_terminate_guard(ns_app: cocoa::base::id) {
                 let app = cocoa::appkit::NSApp();
                 let _: () = msg_send![app, hide: app];
             }
+            // Drop the Dock icon + menu bar so the app reverts to
+            // tray-only background mode, matching the close-window UX.
+            crate::set_macos_activation_policy(false);
             0
         }
     }
@@ -182,21 +210,23 @@ pub fn run() {
                 )?;
             }
 
-            // Run as a menu-bar accessory app on macOS: no dock icon,
-            // no app-menu Cmd-Q in the global menu when no window is
-            // focused. The window is still openable via the tray.
-            // This is the standard pattern for background utilities
-            // that occasionally surface a UI (Bartender, Hidden Bar,
-            // etc.). Combined with the ExitRequested interceptor, it
-            // prevents users from accidentally tearing down the
-            // enforcer/watcher.
+            // Pick the initial macOS activation policy based on whether
+            // the window will be shown at launch (foreground use) or
+            // hidden (auto-start at login). We toggle this at runtime
+            // every time the window shows / hides so the app behaves
+            // like Cold Turkey Blocker:
+            //   - window visible → Regular (Dock icon, menu bar)
+            //   - window hidden  → Accessory (tray-only)
+            // The Cmd-Q / red-X / last-window-closed paths are still
+            // intercepted by `install_terminate_guard` and the
+            // CloseRequested handler below, so the enforcer/watcher
+            // survives every "quit" gesture and keeps running in the
+            // tray.
             #[cfg(target_os = "macos")]
             unsafe {
-                use cocoa::appkit::{
-                    NSApplication, NSApplicationActivationPolicy::NSApplicationActivationPolicyAccessory,
-                };
+                let is_autostart = std::env::args().any(|a| a == "--autostart");
+                set_macos_activation_policy(!is_autostart);
                 let ns_app = cocoa::appkit::NSApp();
-                let _ = ns_app.setActivationPolicy_(NSApplicationActivationPolicyAccessory);
                 install_terminate_guard(ns_app);
             }
 
@@ -371,10 +401,11 @@ pub fn run() {
                                     }
                                 }
                                 "window_reopen_main" => {
-                                    if let Some(window) = app.get_webview_window("main") {
-                                        let _ = window.unminimize();
-                                        let _ = window.show();
-                                        let _ = window.set_focus();
+                                    if app.get_webview_window("main").is_some() {
+                                        // `reveal_app` flips activation
+                                        // policy back to Regular and
+                                        // brings the window forward.
+                                        commands::reveal_app(app);
                                     } else {
                                         // Recreate main window if it was fully closed.
                                         let win_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
@@ -396,6 +427,7 @@ pub fn run() {
                                                 );
                                                 ns_window.setBackgroundColor_(bg_color);
                                             }
+                                            set_macos_activation_policy(true);
                                             let _ = new_window.show();
                                             let _ = new_window.set_focus();
                                         }
@@ -466,11 +498,12 @@ pub fn run() {
                             ..
                         } = event
                         {
-                            if let Some(window) = tray.app_handle().get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.unminimize();
-                                let _ = window.set_focus();
-                            }
+                            // `reveal_app` flips the activation policy
+                            // back to Regular (Dock icon + menu bar)
+                            // and pulls the app to the foreground —
+                            // required because we run as Accessory
+                            // while the window is hidden.
+                            commands::reveal_app(tray.app_handle());
                         }
                     })
                     .build(app)?;
@@ -571,7 +604,10 @@ pub fn run() {
             // Hide-on-close for the main window. The app is the
             // enforcement engine now (no privileged helper), so
             // closing it would stop schedules from firing. Intercept
-            // the close request and hide to tray instead.
+            // the close request and hide to tray instead. On macOS we
+            // also flip the activation policy back to Accessory so the
+            // Dock icon disappears — matching Cold Turkey Blocker's
+            // behaviour of "open = foreground app, closed = tray-only".
             #[cfg(feature = "desktop")]
             if let Some(main) = app.get_webview_window("main") {
                 let win_for_event = main.clone();
@@ -579,6 +615,8 @@ pub fn run() {
                     if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                         api.prevent_close();
                         let _ = win_for_event.hide();
+                        #[cfg(target_os = "macos")]
+                        set_macos_activation_policy(false);
                     }
                 });
 
@@ -604,11 +642,23 @@ pub fn run() {
             // emit (last-window-closed paths, etc.). Cmd-Q is handled
             // by the AppKit `applicationShouldTerminate:` hook in
             // `install_terminate_guard`.
+            // Match by reference so multiple `if let` arms can read the
+            // same event without moving non-`Copy` payloads (e.g.
+            // `ExitRequestApi`) out of it.
             #[cfg(feature = "desktop")]
-            if let tauri::RunEvent::ExitRequested { api, .. } = _event {
+            if let tauri::RunEvent::ExitRequested { api, .. } = &_event {
                 if !ALLOW_EXIT.load(std::sync::atomic::Ordering::SeqCst) {
                     api.prevent_exit();
                 }
+            }
+
+            // Dock-icon click while the window is hidden: surface the
+            // window again. Without this, switching the activation
+            // policy to Regular puts a Dock icon in the user's Dock
+            // that does nothing on click.
+            #[cfg(all(feature = "desktop", target_os = "macos"))]
+            if let tauri::RunEvent::Reopen { .. } = &_event {
+                commands::reveal_app(_app);
             }
         });
 }
@@ -627,6 +677,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::scan_browser_profiles,
         commands::browser_profiles_compliant,
         commands::activate_app,
+        commands::hide_main_window,
         native_host_install::install_native_host,
         native_host_install::uninstall_native_host,
         commands::enforcer_start,
@@ -674,6 +725,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::scan_browser_profiles,
         commands::browser_profiles_compliant,
         commands::activate_app,
+        commands::hide_main_window,
         native_host_install::install_native_host,
         native_host_install::uninstall_native_host,
         commands::enforcer_start,
