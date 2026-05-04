@@ -8889,6 +8889,19 @@ function collectNowBlockingEntries(now = Date.now()) {
         });
     }
 
+    // Sort to match the visual order of the "My Blocklists" section, which iterates
+    // `appData.blocklists` in array order. Entries whose blocklist isn't found in that
+    // array (shouldn't happen, but be safe) sort to the end. Within a single blocklist,
+    // one-off blocks come before schedules so explicit user-started actions read first.
+    const order = new Map(appData.blocklists.map((bl, i) => [bl.id, i]));
+    const kindRank = { block: 0, schedule: 1 };
+    entries.sort((a, b) => {
+        const ai = order.has(a.blocklistId) ? order.get(a.blocklistId) : Number.MAX_SAFE_INTEGER;
+        const bi = order.has(b.blocklistId) ? order.get(b.blocklistId) : Number.MAX_SAFE_INTEGER;
+        if (ai !== bi) return ai - bi;
+        return (kindRank[a.kind] ?? 9) - (kindRank[b.kind] ?? 9);
+    });
+
     return entries;
 }
 
@@ -9806,6 +9819,12 @@ function saveBlocklistOrderFromDOM() {
 
     appData.blocklists = reorderedBlocklists;
     saveData();
+
+    // Re-render the bits of UI that mirror blocklist order. Don't call full render() —
+    // the cards are already in the right order in the DOM (the user just dropped them
+    // there), and a full re-render would briefly flicker.
+    renderNowBlockingRow();
+    renderScheduleVisibilityChips();
 }
 
 // Start interval to update remaining time
