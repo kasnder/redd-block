@@ -745,10 +745,12 @@ body.dark-mode .title-bar button:hover {
     gap: 12px;
 }
 
-/* Grid Top Row - two columns */
+/* Grid Top Row - two columns. Left column sizes to the blocklist-card cap so cards
+   don't stretch into empty whitespace; right column takes the remaining width so the
+   START A BLOCK panel can spread out on wide windows. */
 .grid-top-row {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 480px minmax(0, 1fr);
     gap: 20px;
     align-items: start;
     position: relative;
@@ -3147,6 +3149,11 @@ body.ios .blocklists-container {
     transition: all 0.2s ease;
     cursor: grab;
     position: relative;
+    /* Cap card width so the row content doesn't stretch into a wide expanse of empty
+       space. The grid-top-row left column is sized to match this cap, so cards fill
+       their column without overflowing it. On narrow viewports cards still shrink. */
+    max-width: 480px;
+    width: 100%;
     /* overflow: hidden; Removed to keep stripe corners sharp */
 }
 
