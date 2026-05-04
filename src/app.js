@@ -4468,10 +4468,9 @@ function setScheduleMode(isSchedule) {
 
                 // Also update button to show Stop state
                 const btnLabel = startBlockBtn.querySelector('.btn-label');
-                const btnName = startBlockBtn.querySelector('.btn-name');
                 const btnIcon = startBlockBtn.querySelector('svg');
                 if (btnLabel) btnLabel.textContent = 'Stop Block:';
-                if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
+                setStartBtnBlocklistInfo(startBlockBtn, blocklist);
                 startBlockBtn.classList.add('stop-block');
                 startBlockBtn.disabled = false;
                 startBlockBtn.dataset.activeBlockId = activeBlock.id;
@@ -4490,8 +4489,7 @@ function setScheduleMode(isSchedule) {
                 if (pauseBtn) pauseBtn.classList.add('hidden');
                 startBlockBtn.classList.remove('stop-block');
                 delete startBlockBtn.dataset.activeBlockId;
-                const btnName = startBlockBtn.querySelector('.btn-name');
-                if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
+                setStartBtnBlocklistInfo(startBlockBtn, blocklist);
             }
         }
     }
@@ -4700,7 +4698,6 @@ function updateScheduleButtonState() {
         : null;
 
     const btnLabel = startScheduleBtn.querySelector('.btn-label');
-    const btnName = startScheduleBtn.querySelector('.btn-name');
     const btnIcon = startScheduleBtn.querySelector('svg');
 
     // Check if there are new segments (beyond the locked count)
@@ -4729,7 +4726,7 @@ function updateScheduleButtonState() {
     if (activeSchedule && !hasNewSegments) {
         // Active schedule with no pending changes - show Stop button (grey/secondary style)
         if (btnLabel) btnLabel.textContent = tSettings('stopScheduleButton');
-        if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
+        setStartBtnBlocklistInfo(startScheduleBtn, blocklist);
         startScheduleBtn.classList.add('stop-schedule');
         startScheduleBtn.classList.remove('edit-schedule');
         startScheduleBtn.disabled = false;
@@ -4750,7 +4747,7 @@ function updateScheduleButtonState() {
     } else if (activeSchedule && hasNewSegments) {
         // Existing schedule not currently active (or has pending changes) - show Edit button
         if (btnLabel) btnLabel.textContent = tSettings('editScheduleButton');
-        if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
+        setStartBtnBlocklistInfo(startScheduleBtn, blocklist);
         startScheduleBtn.classList.remove('stop-schedule');
         startScheduleBtn.classList.add('edit-schedule');
         startScheduleBtn.disabled = false;
@@ -4771,7 +4768,7 @@ function updateScheduleButtonState() {
     } else {
         // No active schedule - show Start button (normal)
         if (btnLabel) btnLabel.textContent = tSettings('startScheduleButton');
-        if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
+        setStartBtnBlocklistInfo(startScheduleBtn, blocklist);
         startScheduleBtn.classList.remove('stop-schedule');
         startScheduleBtn.classList.remove('edit-schedule');
         delete startScheduleBtn.dataset.activeScheduleId;
@@ -6381,7 +6378,6 @@ function handleBlocklistSelect(e) {
 
                 if (blocklist) {
                     const btnLabel = startBlockBtn.querySelector('.btn-label');
-                    const btnName = startBlockBtn.querySelector('.btn-name');
                     const btnIcon = startBlockBtn.querySelector('svg');
 
                     // Always clear the activeBlockId first to prevent cross-blocklist issues
@@ -6393,7 +6389,7 @@ function handleBlocklistSelect(e) {
                     if (activeBlock) {
                         // Active block - show Stop Block button (grey) with unlock icon
                         if (btnLabel) btnLabel.textContent = 'Stop Block:';
-                        if (btnName) btnName.textContent = blocklist.name;
+                        setStartBtnBlocklistInfo(startBlockBtn, blocklist);
                         startBlockBtn.classList.add('stop-block');
                         startBlockBtn.disabled = false;
                         startBlockBtn.dataset.activeBlockId = activeBlock.id;
@@ -6422,7 +6418,7 @@ function handleBlocklistSelect(e) {
                         // No active block - show Start Block button (normal) with lock icon
                         // Ensure we've already cleared the activeBlockId above
                         if (btnLabel) btnLabel.textContent = tSettings('startBlockButton');
-                        if (btnName) btnName.textContent = blocklist.name;
+                        setStartBtnBlocklistInfo(startBlockBtn, blocklist);
 
                         // Change to lock icon
                         if (btnIcon) {
@@ -6847,7 +6843,7 @@ async function proceedWithBlock() {
     handleBlocklistSelect({ target: blocklistSelect });
 }
 
-// Helper function for start block button HTML (includes .btn-label and .btn-name for updateability)
+// Helper function for start block button HTML (includes .btn-label, .btn-emoji and .btn-name for updateability)
 function getStartBlockButtonHTML() {
     return `
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -6855,8 +6851,18 @@ function getStartBlockButtonHTML() {
             <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
         </svg>
         <span class="btn-label">${tSettings('startBlockButton')}</span>
+        <span class="btn-emoji" aria-hidden="true"></span>
         <span class="btn-name"></span>
     `;
+}
+
+// Update both the emoji and name on a start/stop button so they stay in sync.
+function setStartBtnBlocklistInfo(btn, blocklist) {
+    if (!btn) return;
+    const btnEmoji = btn.querySelector('.btn-emoji');
+    const btnName = btn.querySelector('.btn-name');
+    if (btnEmoji) btnEmoji.textContent = blocklist ? (blocklist.emoji || '🚫') : '';
+    if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
 }
 
 
@@ -8539,13 +8545,12 @@ function syncSelectedControlState() {
     const now = Date.now();
     const activeBlock = appData.activeBlocks.find(b => b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now);
     const btnLabel = startBlockBtn.querySelector('.btn-label');
-    const btnName = startBlockBtn.querySelector('.btn-name');
     const btnIcon = startBlockBtn.querySelector('svg');
     const pauseBtn = document.getElementById('pause-block-btn');
     const alwaysOnMsg = document.getElementById('always-on-message');
     delete startBlockBtn.dataset.activeBlockId;
     startBlockBtn.classList.remove('stop-block');
-    if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
+    setStartBtnBlocklistInfo(startBlockBtn, blocklist);
     if (activeBlock) {
         if (btnLabel) btnLabel.textContent = 'Stop Block:';
         startBlockBtn.classList.add('stop-block');
@@ -9641,7 +9646,7 @@ function renderBlocklists() {
         // Check if this blocklist is selected
         const isSelected = bl.id === selectedBlocklistId;
         const selectedClass = isSelected ? ' selected' : '';
-        const selectedStyle = isSelected ? `style="box-shadow: 0 0 0 2px ${bl.color || '#667eea'}, 0 4px 8px rgba(0, 0, 0, 0.1);"` : '';
+        const selectedStyle = isSelected ? `style="box-shadow: 0 0 0 3px ${bl.color || '#667eea'}, 0 4px 8px rgba(0, 0, 0, 0.1);"` : '';
 
         // Dim if something is selected but this one isn't
         const isDimmed = selectedBlocklistId && !isSelected;
