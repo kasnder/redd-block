@@ -4,6 +4,20 @@ User-facing changes for each release. Every app upgrade adds a new entry here.
 
 ## v2.0.1
 
+- **macOS: in-app uninstall no longer surfaces an unexplained
+  "control Finder" prompt in the common case.** The Settings →
+  Uninstall ReDD Block flow now first calls
+  `NSFileManager.trashItemAtURL:` directly from the running app —
+  Apple's modern Trash API, which goes through the same privileged
+  path Finder uses internally but does **not** require Automation
+  TCC. On a typical admin account this is the only step that runs,
+  so the user sees no permission prompt at all. The detached `mv →
+  AppleScript Finder → rm -rf` script is kept as a fallback for
+  the rare case where the modern API fails (non-admin accounts,
+  unusual ownership). The uninstall confirmation dialog also now
+  warns the user up-front: *if macOS does ask permission to control
+  Finder, click Allow — that's how the app moves itself to the
+  Trash when it can't do it directly.*
 - **macOS: the app now appears in the Dock and the global menu bar
   while the window is open.** Previously ReDD Block ran as a pure
   menu-bar accessory on macOS — the app icon never appeared in the

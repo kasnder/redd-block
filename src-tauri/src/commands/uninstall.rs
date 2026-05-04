@@ -1,8 +1,8 @@
 //! macOS in-app uninstall.
 //!
 //! Removes the launch-at-login entry, scrubs per-browser
-//! native-messaging manifests, schedules a delayed move-to-Trash of the
-//! .app bundle, and exits. User data in
+//! native-messaging manifests, moves the .app bundle to the user's
+//! Trash, and exits. User data in
 //! `~/Library/Application Support/com.reddblock/` and
 //! `~/Library/Preferences/com.reddblock.plist` is preserved so a future
 //! reinstall picks the user's blocklists / schedules / settings back
@@ -26,18 +26,26 @@
 //!      launchd error.
 //!   2. Remove per-browser native-messaging manifests so browsers stop
 //!      trying to spawn the native host.
-//!   3. Spawn a detached `bash` that waits a moment and then **moves
-//!      the bundle to ~/.Trash/** (with `rm -rf` and a Finder-driven
-//!      AppleScript as fallbacks). Move-to-Trash, not `rm`, because:
-//!        - macOS 14+ ("App Management" TCC) gates `rm` of signed .app
-//!          bundles in /Applications behind an opt-in user permission
-//!          we don't have. `mv` to the user's own ~/.Trash/ is just a
-//!          rename(2) and is not gated.
-//!        - The user gets a recovery path: drag back out of Trash if
-//!          they change their mind before emptying it.
-//!      The 2 s sleep gives this process time to exit so the bundle's
-//!      executable file isn't held open by us when the rename runs.
-//!   4. Exit. Frontend should already be showing a "Goodbye…" UI before
+//!   3. Try `NSFileManager.trashItemAtURL:` synchronously, in-process.
+//!      This is Apple's modern Trash API and goes through the same
+//!      privileged code path Finder uses, *without* needing the
+//!      Automation TCC permission that AppleScript-driven Finder calls
+//!      do. In the common case this is the only step that runs, so
+//!      the user sees no permission prompt at all. We can rename the
+//!      bundle while still executing inside it: macOS rename(2)
+//!      preserves the open executable's inode, and we drop our own
+//!      reference to it ~200 ms later when the process exits.
+//!   4. If `trashItemAtURL:` failed (rare — typically only on
+//!      non-admin accounts where /Applications/ isn't user-writable,
+//!      or when stricter App Management TCC kicks in), spawn a
+//!      detached `bash` that waits a moment and then tries
+//!      `mv → ~/.Trash`, then a Finder AppleScript, then `rm -rf`.
+//!      The Finder fallback DOES surface an Automation TCC prompt
+//!      ("ReDD Block would like to control Finder") — we warn the
+//!      user about this in the uninstall confirmation dialog so it
+//!      isn't a surprise. The 2 s sleep in the script gives this
+//!      process time to exit so any further attempts run cleanly.
+//!   5. Exit. Frontend should already be showing a "Goodbye…" UI before
 //!      invoking this command — the IPC reply may or may not make it
 //!      back depending on timing.
 //!
@@ -47,7 +55,9 @@
 //!   into the Diagnostics zip and survives the bundle move (it lives
 //!   under the user's home, not inside the .app). If a user reports
 //!   "I uninstalled but the app is still in /Applications", that file
-//!   will say which step failed and why.
+//!   will say which step failed and why. The synchronous
+//!   `trashItemAtURL:` outcome is also logged via `log::info!` /
+//!   `log::warn!` so it appears in the regular Tauri log.
 
 #[cfg(target_os = "macos")]
 use std::process::{Command, Stdio};
@@ -85,17 +95,41 @@ pub fn uninstall_self_macos(app: tauri::AppHandle) -> Result<(), String> {
         log::warn!("uninstall_self_macos: native-host uninstall failed: {e}");
     }
 
-    // 3. Schedule a delayed self-delete of the .app bundle. We resolve
-    //    the path from the running executable rather than hardcoding
-    //    `/Applications/ReDD Block.app` so a copy launched from
-    //    elsewhere (rare, but happens during dev) deletes the right
-    //    bundle.
+    // 3. Resolve the .app bundle path from the running executable
+    //    rather than hardcoding `/Applications/ReDD Block.app` so a
+    //    copy launched from elsewhere (rare, but happens during dev)
+    //    deletes the right bundle.
     let bundle = app_bundle_path()
         .ok_or_else(|| "could not resolve app bundle path".to_string())?;
-    log::info!("uninstall_self_macos: scheduling self-delete of {}", bundle);
-    spawn_self_delete(&bundle).map_err(|e| format!("self-delete spawn failed: {e}"))?;
 
-    // 4. Exit on a short timer so the IPC reply lands on the frontend
+    // 4. Try the prompt-free path first: NSFileManager.trashItemAtURL:.
+    //    This is Apple's recommended way to move files to Trash and
+    //    does NOT require Automation TCC. Renaming a bundle that is
+    //    currently executing is safe — POSIX rename(2) preserves the
+    //    inode for any open file descriptor (including the running
+    //    binary), and we exit ~200 ms later anyway.
+    match try_trash_via_nsfilemanager(&bundle) {
+        Ok(()) => {
+            log::info!(
+                "uninstall_self_macos: bundle moved to Trash via NSFileManager: {bundle}"
+            );
+        }
+        Err(e) => {
+            // Fall back to the detached bash script (mv → osascript →
+            // rm). This is the path that may surface the
+            // "ReDD Block would like to control Finder" Automation
+            // prompt — the user has been warned about it in the
+            // confirmation dialog (see `uninstallConfirmBody` in
+            // `src/app.js`).
+            log::warn!(
+                "uninstall_self_macos: NSFileManager.trashItemAtURL failed ({e}); spawning bash fallback for {bundle}"
+            );
+            spawn_self_delete(&bundle)
+                .map_err(|e| format!("self-delete spawn failed: {e}"))?;
+        }
+    }
+
+    // 5. Exit on a short timer so the IPC reply lands on the frontend
     //    before this process disappears.
     std::thread::spawn(|| {
         std::thread::sleep(std::time::Duration::from_millis(200));
@@ -104,6 +138,27 @@ pub fn uninstall_self_macos(app: tauri::AppHandle) -> Result<(), String> {
     });
 
     Ok(())
+}
+
+/// Move the bundle to `~/.Trash/` using `NSFileManager.trashItemAtURL:`,
+/// the same API Finder uses internally. No subprocess, no AppleScript,
+/// no Automation TCC prompt. Returns the underlying `NSError`'s
+/// `localizedDescription` on failure so it can be logged for
+/// diagnostics.
+#[cfg(target_os = "macos")]
+fn try_trash_via_nsfilemanager(bundle: &str) -> Result<(), String> {
+    use objc2_foundation::{NSFileManager, NSString, NSURL};
+
+    let manager = NSFileManager::defaultManager();
+    let path_ns = NSString::from_str(bundle);
+    // `isDirectory: true` because a `.app` bundle is a directory; the
+    // flag lets NSURL skip a stat() to figure that out.
+    let url = NSURL::fileURLWithPath_isDirectory(&path_ns, true);
+
+    match manager.trashItemAtURL_resultingItemURL_error(&url, None) {
+        Ok(()) => Ok(()),
+        Err(err) => Err(err.localizedDescription().to_string()),
+    }
 }
 
 /// Resolve the path to the running app bundle (e.g.
