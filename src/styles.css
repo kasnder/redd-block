@@ -3659,6 +3659,12 @@ body.ios .blocklist-action-btn svg {
     margin: 20px 0 18px;
 }
 
+body.dark-mode .onboarding-focus-card {
+    background: var(--redd-card);
+    border: 1px solid var(--redd-border);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
 .onboarding-focus-card .onboarding-primary-copy {
     color: hsl(222, 35%, 24%);
     font-size: 17px;
@@ -3807,8 +3813,9 @@ body.ios .blocklist-action-btn svg {
     width: 70px;
     padding: 6px 8px;
     border-radius: 6px;
-    border: 1px solid rgba(10, 45, 123, 0.20);
-    background: white;
+    border: 1px solid var(--input-border);
+    background: var(--input-bg);
+    color: var(--text-primary);
     font-size: 14px;
     text-align: right;
     font-family: inherit;
@@ -5031,6 +5038,15 @@ body.ios .modal-content {
     background: hsla(222.2, 47.4%, 11.2%, 0.9);
 }
 
+body.dark-mode .modal-btn.black-btn {
+    background: var(--primary-btn-bg);
+    color: var(--primary-btn-text);
+}
+
+body.dark-mode .modal-btn.black-btn:hover {
+    background: var(--primary-btn-bg-hover);
+}
+
 /* Wiggle animation for error */
 @keyframes wiggle {
 
@@ -5085,7 +5101,7 @@ body.ios .modal-content {
 
 .override-challenge .challenge-text {
     background: var(--redd-warm-grey);
-    color: #000;
+    color: var(--text-primary);
     padding: 16px;
     border-radius: 8px;
     font-family: monospace;
@@ -5839,6 +5855,21 @@ body.ios .undo-toast {
     bottom: calc(20px + env(safe-area-inset-bottom, 20px));
 }
 
+body.dark-mode .undo-toast {
+    background: var(--redd-card);
+    color: var(--text-primary);
+    border: 1px solid var(--redd-border);
+}
+
+body.dark-mode .undo-btn {
+    background: var(--redd-teal);
+    color: var(--primary-btn-text);
+}
+
+body.dark-mode .undo-btn:hover {
+    background: var(--redd-teal-hover);
+}
+
 .undo-toast.hidden {
     display: none;
 }
@@ -5889,6 +5920,12 @@ body.ios .undo-toast {
 
 body.ios .zoom-toast {
     top: calc(20px + env(safe-area-inset-top, 20px));
+}
+
+body.dark-mode .zoom-toast {
+    background: var(--redd-card);
+    color: var(--text-primary);
+    border: 1px solid var(--redd-border);
 }
 
 .zoom-toast.hidden {
