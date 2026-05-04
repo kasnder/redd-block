@@ -1,10 +1,17 @@
 // In-process enforcement loop for the browser-extension backend.
 //
-// Every `TICK` seconds, scan each supported browser's default profile.
-// If a browser is running but its scan fails (missing / disabled / not
-// allowed in private browsing), start a grace countdown, emit events
-// the UI turns into a persistent toast + "Fix now" deep-link, and
-// quit the browser if the grace expires without the user fixing it.
+// Every `TICK` seconds, *if any website-blocking is currently active*
+// (`website_blocking_active`), scan each supported browser's default
+// profile. If a browser is running but its scan fails (missing /
+// disabled / not allowed in private browsing), start a grace
+// countdown, emit events the UI turns into a persistent toast +
+// "Fix now" deep-link, and quit the browser if the grace expires
+// without the user fixing it.
+//
+// When no website-blocking is active the tick is a no-op (and any
+// in-flight grace timer is resolved). The extension is only
+// load-bearing during a block, so we deliberately don't pester
+// users about its configuration outside of that.
 //
 // Originally ported from the MVP enforcer prototype (see git history
 // for browser-ext-mvp/enforcer/enforce.mjs).
@@ -22,6 +29,34 @@ use crate::profile_scan::{self, BrowserStatus, ProfileStatus};
 
 const TICK: Duration = Duration::from_secs(5);
 const HARD_KILL_AFTER: Duration = Duration::from_secs(10);
+
+/// True if any block is currently being enforced through the browser
+/// extension (one-off block in its window, or a schedule segment
+/// active right now). Reads the canonical app-data file directly so
+/// the enforcer doesn't need a separate IPC channel — the native-host
+/// payload derivation is the single source of truth for "what's
+/// blocking right now", so we reuse it.
+///
+/// Returns false when:
+///   - the data file is missing or unreadable,
+///   - no website-blocking is currently active (only app-blocking, or
+///     nothing at all, or schedules outside their active window),
+///   - all active blocks are paused.
+///
+/// This gates the entire enforcement tick. When false we don't quit
+/// browsers, don't start grace timers, and clear any in-flight ones —
+/// the browser extension is irrelevant when nothing browser-related
+/// is being enforced, so a misconfigured extension is the user's
+/// problem to discover when they next start a block, not ours to
+/// police pre-emptively.
+fn website_blocking_active(app: &AppHandle) -> bool {
+    let path = match crate::commands::canonical_data_path(app) {
+        Some(p) => p,
+        None => return false,
+    };
+    let (domains, _blocks) = crate::native_host::derive_payload(&path);
+    !domains.is_empty()
+}
 
 // User-configurable grace period before a non-compliant browser is
 // quit. Read from settings.extensionGraceSeconds on every grace-start
@@ -197,6 +232,21 @@ pub fn start(app: AppHandle) -> EnforcerHandle {
 }
 
 fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
+    // Don't pester users when no website-blocking is currently active.
+    // The enforcer exists to make sure the browser extension can do
+    // its job during a block — outside of an active block it has
+    // nothing to enforce, and force-closing a browser in that state
+    // is just hostile (a tester hit exactly this case: the extension
+    // wasn't allowed in incognito, no block was running, and Chrome
+    // got killed anyway). Resolve any in-flight grace timers so the
+    // UI banner clears if a block just expired or got paused mid-grace.
+    if !website_blocking_active(app) {
+        for key in BrowserKey::all() {
+            cancel_timer(app, state, key, true);
+        }
+        return;
+    }
+
     let scan_result = profile_scan::scan();
     let running = running_browsers();
 

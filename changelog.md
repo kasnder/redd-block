@@ -4,6 +4,14 @@ User-facing changes for each release. Every app upgrade adds a new entry here.
 
 ## v2.0.1
 
+- **Fix: the compliance enforcer no longer force-closes browsers
+  when no block is running.** Previously, if a browser had the
+  ReDD Focus extension installed but misconfigured (e.g. not allowed
+  in incognito), the enforcer would start its grace countdown and
+  eventually quit the browser even when no website-blocking was
+  active — pestering users about an extension that wasn't doing any
+  work yet. The enforcer now no-ops while no website-blocking is
+  active and only kicks in once a block is actually running.
 - **Fix: schedule-based app blocking now works.** Apps attached to a
   blocklist that's enforced via a schedule (e.g. a Downtime block
   covering eM Client, Word, Cursor, etc.) are now correctly closed

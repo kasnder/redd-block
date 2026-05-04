@@ -21,10 +21,13 @@
 >   (`src-tauri/src/app_group.rs` +
 >   `redd-focus-web/Shared (Extension)/SafariWebExtensionHandler.swift`).
 > - **Compliance enforcer** (`src-tauri/src/enforcer.rs`) — 5 s scan
->   tick, 60/30 s grace (user-configurable 5–300 s), force-quits any
+>   tick, 60 s grace (user-configurable 5–300 s), force-quits any
 >   running browser whose extension is missing / disabled / not
 >   allowed in private browsing. `taskkill` on Windows, sysinfo
->   SIGTERM/SIGKILL on macOS.
+>   SIGTERM/SIGKILL on macOS. The tick is gated on
+>   `website_blocking_active` (canonical-data derivation reused from
+>   the native-host payload code), so the enforcer is a no-op
+>   whenever no website-blocking is currently active.
 > - **App blocking** runs in-process via
 >   `src-tauri/src/app_watcher.rs` — sysinfo poll-and-kill loop
 >   shared by both OSes. The earlier AppleScript NSWorkspace watcher
