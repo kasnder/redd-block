@@ -8665,13 +8665,26 @@ function render() {
     updateWeekCalendar();
     renderBlocklistSelector();
 
-    // Auto-select if there's only one available (non-active) blocklist
+    // Auto-select a blocklist when the choice is unambiguous:
+    //   - Exactly one blocklist exists → always select it (even if it
+    //     is currently active or paused; the right pane gracefully
+    //     shows Stop / pause controls in those states).
+    //   - Otherwise, fall back to the prior behaviour of selecting
+    //     when exactly one blocklist is *not* currently active.
     if (!selectedBlocklistId) {
-        const activeIds = appData.activeBlocks.map(b => b.blocklistId);
-        const availableBlocklists = appData.blocklists.filter(bl => !activeIds.includes(bl.id));
-        if (availableBlocklists.length === 1) {
+        let blocklistToSelect = null;
+        if (appData.blocklists.length === 1) {
+            blocklistToSelect = appData.blocklists[0];
+        } else {
+            const activeIds = appData.activeBlocks.map(b => b.blocklistId);
+            const availableBlocklists = appData.blocklists.filter(bl => !activeIds.includes(bl.id));
+            if (availableBlocklists.length === 1) {
+                blocklistToSelect = availableBlocklists[0];
+            }
+        }
+        if (blocklistToSelect) {
             const dropdown = document.getElementById('blocklist-select');
-            dropdown.value = availableBlocklists[0].id;
+            dropdown.value = blocklistToSelect.id;
             handleBlocklistSelect({ target: dropdown });
         }
     }
@@ -9608,9 +9621,8 @@ function renderBlocklistSelector() {
     <option value="">${tSettings('selectionPromptOption')}</option>
     ${appData.blocklists.map(bl => {
         const isActive = activeIds.includes(bl.id);
-        const disabledAttr = isActive ? 'disabled' : '';
         const activeLabel = isActive ? tSettings('runningSuffix') : '';
-        return `<option value="${bl.id}" ${disabledAttr}>${escapeHtml(bl.name)}${activeLabel}</option>`;
+        return `<option value="${bl.id}">${escapeHtml(bl.name)}${activeLabel}</option>`;
     }).join('')}
   `;
 
