@@ -1,73 +1,166 @@
-/* Theme Variables */
+/* Bundled fonts — locally hosted so the app works offline.
+   Inter ships latin + latin-ext (covers English, Danish, and other Western European). */
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url('fonts/inter-latin.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+    font-family: 'Inter';
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url('fonts/inter-latin-ext.woff2') format('woff2');
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* ========================================
+   Theme Variables — Light Mode (default)
+   ReDD design language (design-language/redd-design-tokens.json),
+   token names aligned with redd-do for cross-product consistency.
+   ======================================== */
 :root {
-    --app-bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    --container-bg: #f0f4f8;
-    --panel-bg: rgba(255, 255, 255, 0.8);
-    --text-primary: #333;
-    --text-secondary: hsl(222.2, 84%, 4.9%);
-    --text-muted: #999;
-    --text-subtle: #bbb;
-    --border-color: hsl(214, 32%, 91%);
-    --element-bg: white;
-    --element-hover-bg: rgba(0, 0, 0, 0.05);
-    --accent-color: #667eea;
-    --accent-hover: #5a67d8;
-    --header-text: rgba(0, 0, 0, 0.5);
-    --timeline-track: rgba(0, 0, 0, 0.03);
-    --timeline-axis-text: #999;
-    --timeline-now-text: #667eea;
-    --input-bg: white;
-    --input-border: hsl(214, 32%, 91%);
-    --icon-btn-color: #999;
-    --icon-btn-hover-color: #666;
-    --timeline-message: #bbb;
-    --separator-color: rgba(0, 0, 0, 0.25);
-    --popover-bg: white;
-    --popover-border: rgba(0, 0, 0, 0.1);
-    --button-bg: hsl(222.2, 84%, 4.9%);
-    --button-hover: hsl(222.2, 84%, 9%);
-    --button-disabled-bg: hsl(214, 32%, 85%);
-    --scrollbar-thumb: hsl(214, 32%, 85%);
-    --scrollbar-thumb-hover: hsl(214, 32%, 75%);
-    --border-active: hsl(214, 32%, 85%);
-    --toggle-bg: hsl(214, 32%, 93%);
+    color-scheme: light;
+
+    /* --- Canonical ReDD brand tokens (palette, fonts, shadows, radii) --- */
+    --redd-cream: #faf8f5;
+    --redd-warm-grey: #f1eee9;
+    --redd-card: #ffffff;
+    --redd-navy: #1e2d3e;
+    --redd-body: #2c2c35;
+    --redd-muted: #696977;
+    --redd-border: #e1dcd6;
+    --redd-coral: #d4605a;
+    --redd-coral-soft: #faebea;
+    --redd-teal: #2a9d8f;
+    --redd-teal-hover: #21806f;
+    --redd-teal-soft: #e5f5f3;
+    --redd-blue: #4a90e2;
+    --redd-blue-soft: #e8f1fa;
+    --redd-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.08);
+    --redd-shadow-card-hover: 0 8px 24px rgba(30, 45, 62, 0.10);
+
+    --font-heading: Georgia, 'Times New Roman', serif;
+    --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, Arial, Helvetica, sans-serif;
+    --font-section-label: Arial, Helvetica, sans-serif;
+
+    --radius-sm: 8px;
+    --radius-card: 12px;
+
+    /* In-product primary action button: navy. The design-tokens spec lists
+       teal as the canonical brand primary, but inside the product surface
+       full-width teal slabs read as too loud — navy lets the strongest action
+       sit as a calm slab while teal stays reserved for inviting entry-points
+       (EULA / onboarding CTAs scope themselves to teal locally). */
+    --primary-btn-bg: var(--redd-navy);
+    --primary-btn-bg-hover: #2c3f55;
+    --primary-btn-text: #ffffff;
+
+    /* Status (used sparingly for warnings, danger, success badges). */
+    --danger: var(--redd-coral);
+    --success: var(--redd-teal);
+    --warning: #f59e0b;
+
+    /* --- Existing semantic tokens, repointed onto ReDD palette --- */
+    --app-bg: var(--redd-cream);
+    --container-bg: var(--redd-cream);
+    --panel-bg: var(--redd-card);
+    --text-primary: var(--redd-navy);
+    --text-secondary: var(--redd-body);
+    --text-muted: var(--redd-muted);
+    --text-subtle: #8a8a96;
+    --border-color: var(--redd-border);
+    --element-bg: var(--redd-card);
+    --element-hover-bg: rgba(30, 45, 62, 0.06);
+    --accent-color: var(--redd-teal);
+    --accent-hover: var(--redd-teal-hover);
+    --header-text: var(--redd-muted);
+    --timeline-track: var(--redd-warm-grey);
+    --timeline-axis-text: var(--redd-muted);
+    --timeline-now-text: var(--redd-teal);
+    --input-bg: var(--redd-card);
+    --input-border: var(--redd-border);
+    --icon-btn-color: var(--redd-muted);
+    --icon-btn-hover-color: var(--redd-navy);
+    --timeline-message: #8a8a96;
+    --separator-color: var(--redd-border);
+    --popover-bg: var(--redd-card);
+    --popover-border: var(--redd-border);
+    --button-bg: var(--primary-btn-bg);
+    --button-hover: var(--primary-btn-bg-hover);
+    --button-disabled-bg: var(--redd-warm-grey);
+    --scrollbar-thumb: #d4cfc8;
+    --scrollbar-thumb-hover: #bdb7af;
+    --border-active: var(--redd-border);
+    --toggle-bg: var(--redd-warm-grey);
     /* iPhone landscape: horizontal space between day toggles and segment remove (X). */
     --ios-phone-landscape-days-remove-gap: 16px;
 }
 
+/* ========================================
+   Theme Variables — Dark Mode
+   Mirrors redd-do's inverted-cream dark mode: the cream canvas becomes deep
+   navy, the navy text becomes a warm cream, teal lifts a notch.
+   ======================================== */
 body.dark-mode {
-    --app-bg: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
-    --container-bg: rgba(15, 23, 42, 0.85);
-    /* Deep dark blue glass */
-    --panel-bg: rgba(30, 41, 59, 0.4);
-    --text-primary: #e2e8f0;
-    --text-secondary: #f8fafc;
-    --text-muted: #94a3b8;
-    --text-subtle: #64748b;
-    --border-color: rgba(255, 255, 255, 0.1);
-    --element-bg: rgba(30, 41, 59, 0.5);
-    --element-hover-bg: rgba(255, 255, 255, 0.1);
-    --accent-color: #818cf8;
-    --accent-hover: #6366f1;
-    --header-text: rgba(255, 255, 255, 0.6);
+    color-scheme: dark;
+
+    --redd-cream: #14202c;
+    --redd-warm-grey: #1a2735;
+    --redd-card: #1e2d3e;
+    --redd-navy: #f5f0e8;
+    --redd-body: #e6e2d8;
+    --redd-muted: #9aa3b0;
+    --redd-border: rgba(255, 255, 255, 0.10);
+    --redd-coral: #e07b75;
+    --redd-coral-soft: rgba(212, 96, 90, 0.16);
+    --redd-teal: #4ec0b0;
+    --redd-teal-hover: #6ad0c1;
+    --redd-teal-soft: rgba(78, 192, 176, 0.14);
+    --redd-blue: #6aa9ea;
+    --redd-blue-soft: rgba(106, 169, 234, 0.14);
+    --redd-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2);
+    --redd-shadow-card-hover: 0 8px 24px rgba(0, 0, 0, 0.35);
+
+    --primary-btn-bg: var(--redd-teal);
+    --primary-btn-bg-hover: #6ad0c1;
+    --primary-btn-text: #0c1620;
+
+    --app-bg: var(--redd-cream);
+    --container-bg: var(--redd-cream);
+    --panel-bg: var(--redd-card);
+    --text-primary: var(--redd-navy);
+    --text-secondary: var(--redd-body);
+    --text-muted: var(--redd-muted);
+    --text-subtle: rgba(245, 240, 232, 0.45);
+    --border-color: var(--redd-border);
+    --element-bg: rgba(255, 255, 255, 0.04);
+    --element-hover-bg: rgba(255, 255, 255, 0.08);
+    --accent-color: var(--redd-teal);
+    --accent-hover: var(--redd-teal-hover);
+    --header-text: var(--redd-muted);
     --timeline-track: rgba(255, 255, 255, 0.05);
-    --timeline-axis-text: #64748b;
-    --timeline-now-text: #818cf8;
-    --input-bg: rgba(15, 23, 42, 0.6);
-    --input-border: rgba(255, 255, 255, 0.1);
-    --icon-btn-color: #94a3b8;
-    --icon-btn-hover-color: #e2e8f0;
-    --timeline-message: #64748b;
-    --separator-color: rgba(255, 255, 255, 0.15);
-    --popover-bg: #1e293b;
-    --toggle-bg: rgba(15, 23, 42, 0.6);
-    --popover-border: rgba(255, 255, 255, 0.1);
-    --button-bg: var(--accent-color);
-    --button-hover: var(--accent-hover);
-    --button-disabled-bg: rgba(255, 255, 255, 0.05);
+    --timeline-axis-text: var(--redd-muted);
+    --timeline-now-text: var(--redd-teal);
+    --input-bg: rgba(255, 255, 255, 0.04);
+    --input-border: var(--redd-border);
+    --icon-btn-color: var(--redd-muted);
+    --icon-btn-hover-color: var(--redd-navy);
+    --timeline-message: rgba(245, 240, 232, 0.45);
+    --separator-color: rgba(255, 255, 255, 0.10);
+    --popover-bg: var(--redd-card);
+    --popover-border: var(--redd-border);
+    --button-bg: var(--primary-btn-bg);
+    --button-hover: var(--primary-btn-bg-hover);
+    --button-disabled-bg: rgba(255, 255, 255, 0.06);
     --scrollbar-thumb: rgba(255, 255, 255, 0.2);
     --scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
-    --border-active: rgba(255, 255, 255, 0.2);
+    --border-active: var(--redd-border);
+    --toggle-bg: rgba(255, 255, 255, 0.06);
 }
 
 /* Reset and base styles */
@@ -82,11 +175,21 @@ html {
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-family: var(--font-body);
     font-size: 17px;
     background: var(--container-bg);
     color: var(--text-primary);
     overflow: hidden;
+}
+
+/* Display headings use the editorial serif from the brand.
+   The .section-header h2 below overrides this for the small uppercase
+   section labels (which are pure-Arial wayfinding text, not headlines). */
+h1,
+h2,
+h3 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.01em;
 }
 
 /* iOS safe area adjustments */
@@ -127,9 +230,6 @@ body.ios .app-container {
     display: flex;
     flex-direction: column;
     background: var(--container-bg);
-    backdrop-filter: blur(10px);
-    border-radius: 12px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
     padding-bottom: 42px;
     overflow: hidden;
 }
@@ -780,6 +880,58 @@ body.dark-mode .title-bar button:hover {
     }
 }
 
+/* Cramped two-column zone (above the stack breakpoint, below comfortable
+   desktop). The settings gear is absolutely-positioned in the top-right of
+   the scheduler column, so when the column is narrow the "Schedule" tab
+   text crashes into the gear, and the "Stop Schedule: 🌙 No Twitter" button
+   wraps onto multiple lines. In this zone we:
+     - drop the mode-tab text and rely on the icons + tooltips
+     - tighten the blocklists column so the scheduler has more breathing room
+     - collapse Start/Stop/Edit buttons to just the verb ("Start" / "Stop") */
+@media (min-width: 769px) and (max-width: 1024px) {
+    .grid-top-row {
+        grid-template-columns: 380px minmax(0, 1fr);
+    }
+
+    .blocklist-card {
+        max-width: 380px;
+    }
+
+    .mode-tab {
+        padding: 6px 12px;
+        gap: 0;
+    }
+
+    /* Visually hide the label but keep it in the accessibility tree, so the
+       button still has a clear accessible name ("Now" / "Schedule"). */
+    .mode-tab-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+
+    .mode-tab-icon {
+        width: 16px;
+        height: 16px;
+    }
+
+    /* Collapse Start / Stop / Edit buttons to just the verb so the row
+       doesn't wrap. The trailing " Block:" / " Schedule:" + emoji + name
+       are hidden; the icon + verb still convey the action, and the
+       selected blocklist card to the left supplies the "what". */
+    .start-block-btn .btn-label-context,
+    .start-block-btn .btn-emoji,
+    .start-block-btn .btn-name {
+        display: none;
+    }
+}
+
 /* iPhone landscape: keep two columns, but let the scheduler claim the width it
    needs before blocklists, and keep the whole app inset from the screen edges. */
 @media (orientation: landscape) {
@@ -831,11 +983,12 @@ body.dark-mode .title-bar button:hover {
 }
 
 .section-header h2 {
-    font-size: 17px;
-    font-weight: 600;
+    font-family: var(--font-section-label);
+    font-size: 14px;
+    font-weight: 500;
     color: var(--header-text);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.06em;
 }
 
 body.ios .section-header h2 {
@@ -895,8 +1048,8 @@ body.ios.ios-phone .week-calendar-section {
     align-items: center;
     flex-wrap: wrap;
     gap: 8px 14px;
-    padding: 8px 4px 4px;
-    margin-bottom: 6px;
+    padding: 4px 4px 2px;
+    margin-bottom: 4px;
 }
 
 .now-blocking-row.hidden {
@@ -907,9 +1060,10 @@ body.ios.ios-phone .week-calendar-section {
     display: inline-flex;
     align-items: center;
     gap: 8px;
+    font-family: var(--font-section-label);
     color: var(--text-muted);
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 500;
     letter-spacing: 0.06em;
     text-transform: uppercase;
     user-select: none;
@@ -1204,7 +1358,7 @@ body.dark-mode .now-blocking-chip-menu-item.danger {
 }
 
 .day-row.today {
-    background: rgba(102, 126, 234, 0.05);
+    background: rgba(42, 157, 143, 0.05);
 }
 
 body.dark-mode .day-row.today {
@@ -1278,7 +1432,7 @@ body.dark-mode .day-row.weekend {
     top: 4px;
     bottom: 4px;
     border-radius: 4px;
-    background: linear-gradient(135deg, #4a00e0 0%, #8e2de2 100%);
+    background: var(--accent-color);
     color: white;
     padding: 0 8px;
     font-size: 11px;
@@ -1438,7 +1592,7 @@ body.dark-mode .day-row.weekend {
     width: 2px;
     background: var(--accent-color);
     z-index: 5;
-    box-shadow: 0 0 4px rgba(102, 126, 234, 0.5);
+    box-shadow: 0 0 4px rgba(42, 157, 143, 0.5);
     pointer-events: none;
 }
 
@@ -1501,13 +1655,13 @@ body.dark-mode .day-row.weekend {
 }
 
 .no-active-blocks p {
-    color: #999;
+    color: var(--text-muted);
     font-size: 15px;
 }
 
 .no-active-blocks p.subtle {
     font-size: 13px;
-    color: #bbb;
+    color: var(--text-subtle);
     margin-top: 4px;
 }
 
@@ -1517,10 +1671,10 @@ body.dark-mode .day-row.weekend {
     align-items: center;
     gap: 12px;
     padding: 14px 16px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: var(--accent-color);
     border-radius: 12px;
     color: white;
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    box-shadow: 0 4px 12px rgba(42, 157, 143, 0.3);
     position: relative;
     overflow: hidden;
 }
@@ -1540,7 +1694,7 @@ body.dark-mode .day-row.weekend {
     margin-top: -8px;
     margin-left: 12px;
     margin-right: 12px;
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+    box-shadow: 0 4px 12px rgba(42, 157, 143, 0.2);
 }
 
 .entry-icon {
@@ -1645,7 +1799,7 @@ body.dark-mode .day-row.weekend {
 .blocklist-dropdown:focus {
     outline: none;
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
 }
 
 /* Block Preview */
@@ -1660,7 +1814,7 @@ body.dark-mode .day-row.weekend {
 
 .block-preview .calendar-entry {
     opacity: 0.7;
-    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+    box-shadow: 0 2px 8px rgba(42, 157, 143, 0.2);
 }
 
 /* Time Pickers */
@@ -1697,7 +1851,7 @@ body.dark-mode .day-row.weekend {
 .duration-input:focus {
     outline: none;
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+    box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.2);
 }
 
 /* Hide number input spinners */
@@ -1770,17 +1924,17 @@ body.ios .duration-quick-btn {
     align-items: center;
     gap: 10px;
     padding: 14px 16px;
-    background: hsl(214, 60%, 97%);
-    border: 1px solid hsl(214, 60%, 90%);
+    background: var(--redd-teal-soft);
+    border: 1px solid color-mix(in srgb, var(--redd-teal) 20%, transparent);
     border-radius: 8px;
-    color: hsl(214, 50%, 40%);
+    color: var(--redd-teal-hover);
     font-size: 15px;
     line-height: 1.4;
 }
 
 .always-on-message svg {
     flex-shrink: 0;
-    color: hsl(214, 60%, 55%);
+    color: var(--redd-teal);
 }
 
 .always-on-message.hidden {
@@ -1862,7 +2016,7 @@ body.ios .duration-quick-btn {
     padding: 8px 16px;
     font-size: 15px;
     font-weight: 500;
-    border: 1px solid hsl(214, 32%, 85%);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     background: white;
     color: hsl(222, 47%, 11%);
@@ -1871,14 +2025,14 @@ body.ios .duration-quick-btn {
 }
 
 .now-btn:hover {
-    border-color: hsl(214, 32%, 70%);
-    background: hsl(214, 32%, 98%);
+    border-color: #bdb7af;
+    background: var(--redd-warm-grey);
 }
 
 .now-btn.active {
-    background: #667eea;
+    background: var(--accent-color);
     color: white;
-    border-color: #667eea;
+    border-color: var(--accent-color);
 }
 
 .time-selects {
@@ -1891,7 +2045,7 @@ body.ios .duration-quick-btn {
     padding: 8px 4px;
     font-size: 15px;
     font-weight: 500;
-    border: 1px solid hsl(214, 32%, 85%);
+    border: 1px solid var(--border-color);
     border-radius: 6px;
     background: white;
     color: hsl(222, 47%, 11%);
@@ -1905,12 +2059,12 @@ body.ios .duration-quick-btn {
 }
 
 .time-select:hover {
-    border-color: hsl(214, 32%, 70%);
+    border-color: #bdb7af;
 }
 
 .time-select:focus {
-    border-color: #667eea;
-    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.15);
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.15);
 }
 
 .time-colon {
@@ -1923,7 +2077,7 @@ body.ios .duration-quick-btn {
     padding: 8px 10px;
     font-size: 15px;
     font-weight: 500;
-    border: 1px solid hsl(214, 32%, 85%);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     background: white;
     color: hsl(222, 47%, 11%);
@@ -1932,20 +2086,20 @@ body.ios .duration-quick-btn {
 }
 
 .time-input:hover {
-    border-color: hsl(214, 32%, 70%);
+    border-color: #bdb7af;
 }
 
 .time-input:focus {
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.15);
 }
 
 .start-time-badge {
     padding: 4px 8px;
     font-size: 11px;
     font-weight: 600;
-    background: hsl(214, 32%, 91%);
-    color: hsl(222.2, 84%, 4.9%);
+    background: var(--border-color);
+    color: var(--redd-navy);
     border-radius: 4px;
     margin-right: 8px;
     white-space: nowrap;
@@ -1956,7 +2110,7 @@ body.ios .duration-quick-btn {
     font-size: 11px;
     font-weight: 600;
     background: hsl(220, 70%, 95%);
-    color: #667eea;
+    color: var(--accent-color);
     border-radius: 4px;
     margin-left: 8px;
 }
@@ -1983,8 +2137,8 @@ body.ios .duration-quick-btn {
 }
 
 .time-part:hover {
-    border-color: hsl(214, 32%, 70%);
-    background: hsl(214, 32%, 98%);
+    border-color: #bdb7af;
+    background: var(--redd-warm-grey);
 }
 
 body.dark-mode .time-part:hover {
@@ -1995,12 +2149,12 @@ body.dark-mode .time-part:hover {
 
 .time-part:focus {
     outline: none;
-    border-color: #667eea;
-    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.15);
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.15);
 }
 
 .time-part.active {
-    border-color: #667eea;
+    border-color: var(--accent-color);
     background: hsl(220, 70%, 98%);
 }
 
@@ -2133,14 +2287,15 @@ body.dark-mode .time-part.active {
     border: 1px solid #e2e8f0;
 }
 
-/* Start Block Button */
+/* Start Block Button — primary teal CTA, matching the canonical brand
+   ("Get started now" on reddfocus.org). */
 .start-block-btn {
     width: 100%;
     padding: 14px;
     border: none;
     border-radius: 10px;
     background: var(--button-bg);
-    color: white;
+    color: var(--primary-btn-text);
     font-size: 17px;
     font-weight: 600;
     cursor: pointer;
@@ -2177,25 +2332,34 @@ body.dark-mode .time-part.active {
     font-weight: 400;
 }
 
-/* Stop Block Button (shadcn secondary style) */
-.start-block-btn.stop-block {
-    background: hsl(0, 0%, 96%);
-    color: hsl(0, 0%, 20%);
-    border: 1px solid hsl(0, 0%, 88%);
+/* Stop Block / Stop Schedule Button — filled secondary. Stop is the more
+   drastic action (ends the block / schedule entirely) and carries the
+   blocklist context, so it gets visual weight: warm-grey fill, navy text,
+   subtle border. Pause sits as a quieter ghost beside it. */
+.start-block-btn.stop-block,
+.start-block-btn.stop-schedule {
+    background: var(--redd-warm-grey);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
 }
 
-.start-block-btn.stop-block:hover {
-    background: hsl(0, 0%, 90%);
+.start-block-btn.stop-block:hover:not(:disabled),
+.start-block-btn.stop-schedule:hover:not(:disabled) {
+    background: rgba(30, 45, 62, 0.06);
+    transform: none;
+    box-shadow: none;
 }
 
-body.dark-mode .start-block-btn.stop-block {
-    background: hsl(0, 0%, 15%);
-    color: hsl(0, 0%, 90%);
-    border-color: hsl(0, 0%, 25%);
+body.dark-mode .start-block-btn.stop-block,
+body.dark-mode .start-block-btn.stop-schedule {
+    background: var(--redd-warm-grey);
+    color: var(--text-primary);
+    border-color: var(--border-color);
 }
 
-body.dark-mode .start-block-btn.stop-block:hover {
-    background: hsl(0, 0%, 20%);
+body.dark-mode .start-block-btn.stop-block:hover:not(:disabled),
+body.dark-mode .start-block-btn.stop-schedule:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.06);
 }
 
 /* Block action buttons wrapper (pause + stop side by side) */
@@ -2209,14 +2373,17 @@ body.dark-mode .start-block-btn.stop-block:hover {
     flex: 1;
 }
 
-/* Pause Block Button */
+/* Pause Block Button — ghost button. Pause is the gentler, undoable action,
+   so it steps back to a transparent fill with a faint border-on-hover. The
+   Stop secondary next to it carries the visual weight. The Resume state
+   lifts to teal-soft to signal "ready to go again" — same teal family as
+   the primary CTA. */
 .pause-block-btn {
     padding: 14px 16px;
-    border: none;
     border-radius: 10px;
-    background: hsl(40, 90%, 95%);
-    color: hsl(30, 80%, 30%);
-    border: 1px solid hsl(40, 70%, 80%);
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid transparent;
     font-size: 17px;
     font-weight: 600;
     cursor: pointer;
@@ -2229,39 +2396,32 @@ body.dark-mode .start-block-btn.stop-block:hover {
 }
 
 .pause-block-btn:hover {
-    background: hsl(40, 85%, 88%);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-body.dark-mode .pause-block-btn {
-    background: hsl(40, 30%, 15%);
-    color: hsl(40, 70%, 70%);
-    border-color: hsl(40, 30%, 25%);
+    background: var(--element-hover-bg);
+    color: var(--text-primary);
 }
 
 body.dark-mode .pause-block-btn:hover {
-    background: hsl(40, 30%, 20%);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-primary);
 }
 
 .pause-block-btn.resume-mode {
-    background: hsl(145, 60%, 93%);
-    color: hsl(145, 60%, 28%);
-    border-color: hsl(145, 45%, 72%);
+    background: var(--redd-teal-soft);
+    color: var(--redd-teal-hover);
+    border-color: color-mix(in srgb, var(--redd-teal) 22%, transparent);
 }
 
 .pause-block-btn.resume-mode:hover {
-    background: hsl(145, 55%, 86%);
+    background: color-mix(in srgb, var(--redd-teal) 16%, var(--redd-card));
 }
 
 body.dark-mode .pause-block-btn.resume-mode {
-    background: hsl(145, 30%, 15%);
-    color: hsl(145, 50%, 65%);
-    border-color: hsl(145, 25%, 28%);
+    color: var(--redd-teal);
+    border-color: color-mix(in srgb, var(--redd-teal) 30%, transparent);
 }
 
 body.dark-mode .pause-block-btn.resume-mode:hover {
-    background: hsl(145, 30%, 20%);
+    background: color-mix(in srgb, var(--redd-teal) 22%, transparent);
 }
 
 /* Pause Modal */
@@ -2371,6 +2531,7 @@ body.dark-mode .scheduler-mode-tabs {
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 6px;
     flex: 1 1 0;
     min-width: 0;
     padding: 6px 14px;
@@ -2383,6 +2544,15 @@ body.dark-mode .scheduler-mode-tabs {
     cursor: pointer;
     transition: all 0.15s ease;
     white-space: nowrap;
+}
+
+.mode-tab-icon {
+    flex-shrink: 0;
+    opacity: 0.85;
+}
+
+.mode-tab.active .mode-tab-icon {
+    opacity: 1;
 }
 
 body.ios .mode-tab {
@@ -2401,8 +2571,9 @@ body.ios .mode-tab {
 }
 
 body.dark-mode .mode-tab.active {
-    background: hsl(222, 47%, 25%);
-    color: white;
+    background: var(--redd-card);
+    color: var(--text-primary);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
 /* Schedule Block Panel */
@@ -2484,7 +2655,7 @@ body.dark-mode .mode-tab.active {
 .add-segment-btn:hover {
     border-color: var(--accent-color);
     color: var(--accent-color);
-    background: rgba(102, 126, 234, 0.05);
+    background: rgba(42, 157, 143, 0.05);
 }
 
 /* Segment Row - contains time pickers and day toggles inline. Wraps so the days group
@@ -2658,7 +2829,7 @@ body:not(.dark-mode) .segment-day-toggle.active:hover:not(:disabled):not([disabl
 
 .repeat-dropdown-btn:hover {
     border-color: var(--accent-color);
-    background: rgba(102, 126, 234, 0.05);
+    background: rgba(42, 157, 143, 0.05);
 }
 
 .repeat-dropdown-btn.repeat-dropdown-disabled {
@@ -2712,12 +2883,12 @@ body:not(.dark-mode) .segment-day-toggle.active:hover:not(:disabled):not([disabl
 }
 
 .repeat-option:hover {
-    background: rgba(102, 126, 234, 0.1);
+    background: rgba(42, 157, 143, 0.1);
     color: var(--accent-color);
 }
 
 .repeat-option.active {
-    background: rgba(102, 126, 234, 0.15);
+    background: rgba(42, 157, 143, 0.15);
     color: var(--accent-color);
     font-weight: 500;
 }
@@ -2770,7 +2941,7 @@ body:not(.dark-mode) .segment-day-toggle.active:hover:not(:disabled):not([disabl
 .repeat-date-input:focus {
     outline: none;
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.15);
+    box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.15);
 }
 
 .repeat-date-input::-webkit-calendar-picker-indicator {
@@ -2898,7 +3069,7 @@ body.ios .day-toggle {
 
 .until-dropdown-btn:hover {
     border-color: var(--accent-color);
-    background: rgba(102, 126, 234, 0.05);
+    background: rgba(42, 157, 143, 0.05);
 }
 
 .until-dropdown-menu {
@@ -2976,7 +3147,7 @@ body.ios .day-toggle {
 .until-date-input:focus {
     outline: none;
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.15);
+    box-shadow: 0 0 0 2px rgba(42, 157, 143, 0.15);
 }
 
 /* Hide the native calendar icon */
@@ -3035,27 +3206,6 @@ body.ios .day-toggle {
 /* Start Schedule Button */
 .start-schedule-btn.hidden {
     display: none;
-}
-
-/* Stop Schedule Button (shadcn secondary style) */
-.start-schedule-btn.stop-schedule {
-    background: hsl(0, 0%, 96%);
-    color: hsl(0, 0%, 20%);
-    border: 1px solid hsl(0, 0%, 88%);
-}
-
-.start-schedule-btn.stop-schedule:hover {
-    background: hsl(0, 0%, 90%);
-}
-
-body.dark-mode .start-schedule-btn.stop-schedule {
-    background: hsl(0, 0%, 15%);
-    color: hsl(0, 0%, 90%);
-    border-color: hsl(0, 0%, 25%);
-}
-
-body.dark-mode .start-schedule-btn.stop-schedule:hover {
-    background: hsl(0, 0%, 20%);
 }
 
 /* Locked segment (part of active schedule) */
@@ -3232,47 +3382,54 @@ body.ios .blocklists-container {
     border-bottom-left-radius: 10px;
 }
 
-.active-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    margin-left: 8px;
-    padding: 2px 8px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    background: hsl(142, 76%, 36%);
-    color: white;
-    border-radius: 4px;
-    vertical-align: middle;
-}
-
-.active-badge svg {
-    flex-shrink: 0;
-}
-
-.paused-badge {
-    background: hsl(40, 90%, 50%);
-    color: hsl(30, 80%, 15%);
-}
-
+/* Status pill on blocklist cards — "14H 49M LEFT", "IN 13H", "Always", etc.
+   Borderless / typographic: just muted small-caps text with the icon, set
+   alongside the title. No fill or border so it doesn't compete with the
+   card's other UI; the meaning lives in the words and (if running) the
+   leading green dot. */
+.active-badge,
 .schedule-badge {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
     margin-left: 8px;
-    padding: 2px 8px;
+    padding: 2px 0;
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 500;
     text-transform: uppercase;
-    background: var(--accent-color);
-    color: white;
-    border-radius: 4px;
+    letter-spacing: 0.04em;
+    background: transparent;
+    color: var(--text-secondary);
+    border: none;
     vertical-align: middle;
 }
 
+.active-badge svg,
 .schedule-badge svg {
     flex-shrink: 0;
+    opacity: 0.7;
+}
+
+/* Green "live" dot before the time-left text on currently-running blocks —
+   matches the BLOCKING NOW row dot for visual rhyme. */
+.badge-running-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: hsl(142, 60%, 45%);
+    box-shadow: 0 0 0 2px hsla(142, 60%, 45%, 0.18);
+    flex-shrink: 0;
+}
+
+/* Paused is a transient state worth signalling more strongly than a calm
+   countdown — keep a soft coral wash with a subtle outline so it still
+   stands out as "something's different here". */
+.paused-badge {
+    padding: 2px 8px;
+    background: var(--redd-coral-soft);
+    color: var(--redd-coral);
+    border: 1px solid color-mix(in srgb, var(--redd-coral) 25%, transparent);
+    border-radius: 4px;
 }
 
 .blocklist-card-scheduled {
@@ -3333,7 +3490,7 @@ body.ios .blocklist-actions {
     border: none;
     border-radius: 10px;
     background: transparent;
-    color: #999;
+    color: var(--text-muted);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -3357,8 +3514,8 @@ body.ios .blocklist-action-btn svg {
 }
 
 .blocklist-action-btn:hover {
-    background: rgba(0, 0, 0, 0.05);
-    color: #666;
+    background: var(--element-hover-bg);
+    color: var(--text-secondary);
 }
 
 .blocklist-action-btn.delete:hover {
@@ -3433,6 +3590,27 @@ body.ios .blocklist-action-btn svg {
     display: none;
 }
 
+/* Welcome / onboarding screens get a teal primary CTA — matches the
+   "Get started now" tone of reddfocus.org and the EULA flow in redd-do
+   and reddfocus. (Inside the product, primary actions stay on the calm
+   navy slab; teal is reserved for accent + welcoming entry points.) */
+.onboarding-screen {
+    --button-bg: var(--redd-teal);
+    --button-hover: var(--redd-teal-hover);
+    --accent-color: var(--redd-teal);
+}
+
+.onboarding-screen .primary-btn,
+.onboarding-screen .modal-btn.primary-btn {
+    background: var(--button-bg);
+    color: #ffffff;
+}
+
+.onboarding-screen .primary-btn:hover:not(:disabled),
+.onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
+    background: var(--button-hover);
+}
+
 .onboarding-content {
     max-width: 360px;
     text-align: center;
@@ -3466,7 +3644,7 @@ body.ios .blocklist-action-btn svg {
 }
 
 .onboarding-content p.subtle {
-    color: #999;
+    color: var(--text-muted);
     font-size: 15px;
     margin-bottom: 24px;
     font-style: italic;
@@ -4070,8 +4248,8 @@ body.ios .blocklist-action-btn svg {
 }
 
 .legal-onboarding-link {
-    color: hsl(222.2, 47.4%, 11.2%);
-    font-weight: 400;
+    color: inherit;
+    font-weight: inherit;
     text-decoration: underline;
     text-underline-offset: 2px;
 }
@@ -4084,19 +4262,18 @@ body.ios .blocklist-action-btn svg {
     margin-top: 18px;
 }
 
-.legal-onboarding-card .onboarding-primary-btn:disabled {
-    background: hsl(215, 16%, 75%);
-    cursor: not-allowed;
-}
-
+.legal-onboarding-card .onboarding-primary-btn:disabled,
 .legal-onboarding-card .onboarding-primary-btn:disabled:hover {
-    background: hsl(215, 16%, 75%);
+    background: var(--redd-warm-grey);
+    color: var(--text-muted);
+    cursor: not-allowed;
 }
 
 .legal-onboarding-body {
     max-width: 520px;
     margin: 0 auto;
     color: var(--text-muted);
+    font-style: italic;
 }
 
 .onboarding-focus-card .onboarding-primary-btn {
@@ -4174,8 +4351,8 @@ body.ios.ios-phone .legal-onboarding-note {
 
 .form-input:focus {
     outline: none;
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
 }
 
 #blocklist-name.input-error {
@@ -4224,13 +4401,13 @@ body.ios.ios-phone .legal-onboarding-note {
 }
 
 .form-select:hover {
-    border-color: #a8b4c7;
+    border-color: #bdb7af;
 }
 
 .form-select:focus {
     outline: none;
-    border-color: #667eea;
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
 }
 
 .form-select.form-select-disabled {
@@ -4288,7 +4465,7 @@ body.ios.ios-phone .legal-onboarding-note {
 .form-textarea {
     width: 100%;
     padding: 10px 12px;
-    border: 1px solid hsl(214, 32%, 91%);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     font-size: 15px;
     min-height: 80px;
@@ -4299,7 +4476,7 @@ body.ios.ios-phone .legal-onboarding-note {
 .form-hint {
     display: block;
     font-size: 13px;
-    color: #999;
+    color: var(--text-muted);
     margin-top: 4px;
 }
 
@@ -4397,7 +4574,7 @@ body.ios.ios-phone .legal-onboarding-note {
 
 .tags-input-container:focus-within {
     border-color: var(--accent-color);
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
 }
 
 .tags-input-container .form-input {
@@ -4469,7 +4646,7 @@ body.ios.ios-phone .legal-onboarding-note {
     align-items: center;
     gap: 4px;
     padding: 4px 8px;
-    background: #667eea;
+    background: var(--accent-color);
     color: white;
     border-radius: 4px;
     font-size: 13px;
@@ -4560,7 +4737,7 @@ body.ios.ios-phone .legal-onboarding-note {
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(30, 45, 62, 0.35);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -4597,15 +4774,18 @@ body.ios .modal-content {
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
 }
 
-/* Clamp edge overscroll only for add/edit blocklist modal content. */
+/* Add/edit blocklist modal — slightly wider than the default 400px so the
+   apps tag list, override-difficulty row and colour/emoji pickers have room
+   to breathe. Matches the 480px blocklist-card width for visual rhyme. */
 #blocklist-modal .modal-content {
+    max-width: 480px;
     overscroll-behavior-y: none;
 }
 
 .modal-content h3 {
-    font-size: 20px;
+    font-size: 22px;
     font-weight: 700;
-    color: var(--text-secondary);
+    color: var(--text-primary);
     margin-bottom: 12px;
 }
 
@@ -4671,7 +4851,7 @@ body.ios .modal-content {
 
 .helper-install-modal .modal-note {
     font-size: 15px;
-    color: #888;
+    color: var(--text-muted);
 }
 
 .helper-install-modal .modal-note a {
@@ -4820,13 +5000,13 @@ body.ios .modal-content {
 }
 
 .modal-btn.primary-btn {
-    background: hsl(222.2, 47.4%, 11.2%);
+    background: var(--button-bg);
     border: none;
-    color: white;
+    color: var(--primary-btn-text);
 }
 
 .modal-btn.primary-btn:hover {
-    background: hsl(222.2, 47.4%, 20%);
+    background: var(--button-hover);
 }
 
 /* Secondary button (grey shadcn style) */
@@ -4842,7 +5022,7 @@ body.ios .modal-content {
 
 /* Black button (shadcn primary style) */
 .modal-btn.black-btn {
-    background: hsl(222.2, 47.4%, 11.2%);
+    background: var(--redd-navy);
     color: hsl(210, 40%, 98%);
     border: none;
 }
@@ -4904,7 +5084,7 @@ body.ios .modal-content {
 }
 
 .override-challenge .challenge-text {
-    background: hsl(214, 32%, 96%);
+    background: var(--redd-warm-grey);
     color: #000;
     padding: 16px;
     border-radius: 8px;
@@ -4922,7 +5102,7 @@ body.ios .modal-content {
 .override-challenge .challenge-input {
     width: 100%;
     padding: 12px;
-    border: 1px solid hsl(214, 32%, 91%);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     font-family: monospace;
     font-size: 15px;
@@ -4932,7 +5112,7 @@ body.ios .modal-content {
 
 .override-challenge .challenge-progress {
     height: 4px;
-    background: hsl(214, 32%, 91%);
+    background: var(--border-color);
     border-radius: 2px;
     margin-top: 8px;
     overflow: hidden;
@@ -4940,7 +5120,7 @@ body.ios .modal-content {
 
 .override-challenge .challenge-progress-bar {
     height: 100%;
-    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    background: var(--accent-color);
     width: 0%;
     transition: width 0.2s ease;
 }
@@ -5186,7 +5366,7 @@ body.ios .desktop-only {
 .override-preview-text {
     width: 100%;
     box-sizing: border-box;
-    background: hsl(214, 32%, 96%);
+    background: var(--redd-warm-grey);
     color: #000;
     padding: 10px 12px;
     border-radius: 8px;
@@ -5349,7 +5529,7 @@ body.ios .desktop-only {
 }
 
 .toggle-switch input:checked+.toggle-slider {
-    background-color: #667eea;
+    background-color: var(--accent-color);
 }
 
 .toggle-switch input:checked+.toggle-slider:before {
@@ -5460,7 +5640,7 @@ body.ios .desktop-only {
 }
 
 .color-swatch.selected {
-    border-color: hsl(222.2, 84%, 4.9%);
+    border-color: var(--redd-navy);
 }
 
 .color-swatch.selected::after {
@@ -5518,7 +5698,7 @@ body.ios .desktop-only {
     height: 28px;
     border-radius: 6px;
     border: 2px solid transparent;
-    background: hsl(214, 32%, 96%);
+    background: var(--redd-warm-grey);
     cursor: pointer;
     transition: all 0.15s ease;
     font-size: 17px;
@@ -5529,12 +5709,12 @@ body.ios .desktop-only {
 
 .emoji-swatch:hover {
     transform: scale(1.1);
-    background: hsl(214, 32%, 91%);
+    background: var(--border-color);
 }
 
 .emoji-swatch.selected {
-    border-color: hsl(222.2, 84%, 4.9%);
-    background: hsl(214, 32%, 91%);
+    border-color: var(--redd-navy);
+    background: var(--border-color);
 }
 
 /* Custom emoji selector */
@@ -5585,7 +5765,7 @@ body.ios .desktop-only {
     bottom: 20px;
     left: 50%;
     transform: translateX(-50%);
-    background: hsl(222.2, 47.4%, 11.2%);
+    background: var(--redd-navy);
     color: white;
     padding: 12px 20px;
     border-radius: 8px;
@@ -5619,7 +5799,7 @@ body.ios .undo-toast {
 
 .undo-btn {
     background: white;
-    color: hsl(222.2, 47.4%, 11.2%);
+    color: var(--redd-navy);
     border: none;
     padding: 6px 14px;
     border-radius: 6px;
@@ -5638,7 +5818,7 @@ body.ios .undo-toast {
     position: fixed;
     top: 20px;
     right: 20px;
-    background: hsl(222.2, 47.4%, 11.2%);
+    background: var(--redd-navy);
     color: white;
     padding: 10px 14px;
     border-radius: 8px;
@@ -5854,7 +6034,7 @@ body.ios .zoom-toast {
 }
 
 .diagnostics-pre {
-    background: hsl(214, 32%, 96%);
+    background: var(--redd-warm-grey);
     border: 1px solid var(--border-color-light);
     border-radius: 8px;
     padding: 12px;

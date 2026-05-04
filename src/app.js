@@ -4469,7 +4469,7 @@ function setScheduleMode(isSchedule) {
                 // Also update button to show Stop state
                 const btnLabel = startBlockBtn.querySelector('.btn-label');
                 const btnIcon = startBlockBtn.querySelector('svg');
-                if (btnLabel) btnLabel.textContent = 'Stop Block:';
+                setBtnActionLabel(btnLabel, 'Stop Block:');
                 setStartBtnBlocklistInfo(startBlockBtn, blocklist);
                 startBlockBtn.classList.add('stop-block');
                 startBlockBtn.disabled = false;
@@ -4725,7 +4725,7 @@ function updateScheduleButtonState() {
 
     if (activeSchedule && !hasNewSegments) {
         // Active schedule with no pending changes - show Stop button (grey/secondary style)
-        if (btnLabel) btnLabel.textContent = tSettings('stopScheduleButton');
+        setBtnActionLabel(btnLabel, tSettings('stopScheduleButton'));
         setStartBtnBlocklistInfo(startScheduleBtn, blocklist);
         startScheduleBtn.classList.add('stop-schedule');
         startScheduleBtn.classList.remove('edit-schedule');
@@ -4746,7 +4746,7 @@ function updateScheduleButtonState() {
         disableScheduleControls(true);
     } else if (activeSchedule && hasNewSegments) {
         // Existing schedule not currently active (or has pending changes) - show Edit button
-        if (btnLabel) btnLabel.textContent = tSettings('editScheduleButton');
+        setBtnActionLabel(btnLabel, tSettings('editScheduleButton'));
         setStartBtnBlocklistInfo(startScheduleBtn, blocklist);
         startScheduleBtn.classList.remove('stop-schedule');
         startScheduleBtn.classList.add('edit-schedule');
@@ -4767,7 +4767,7 @@ function updateScheduleButtonState() {
         disableScheduleControls(true);
     } else {
         // No active schedule - show Start button (normal)
-        if (btnLabel) btnLabel.textContent = tSettings('startScheduleButton');
+        setBtnActionLabel(btnLabel, tSettings('startScheduleButton'));
         setStartBtnBlocklistInfo(startScheduleBtn, blocklist);
         startScheduleBtn.classList.remove('stop-schedule');
         startScheduleBtn.classList.remove('edit-schedule');
@@ -6388,7 +6388,7 @@ function handleBlocklistSelect(e) {
 
                     if (activeBlock) {
                         // Active block - show Stop Block button (grey) with unlock icon
-                        if (btnLabel) btnLabel.textContent = 'Stop Block:';
+                        setBtnActionLabel(btnLabel, 'Stop Block:');
                         setStartBtnBlocklistInfo(startBlockBtn, blocklist);
                         startBlockBtn.classList.add('stop-block');
                         startBlockBtn.disabled = false;
@@ -6417,7 +6417,7 @@ function handleBlocklistSelect(e) {
                     } else {
                         // No active block - show Start Block button (normal) with lock icon
                         // Ensure we've already cleared the activeBlockId above
-                        if (btnLabel) btnLabel.textContent = tSettings('startBlockButton');
+                        setBtnActionLabel(btnLabel, tSettings('startBlockButton'));
                         setStartBtnBlocklistInfo(startBlockBtn, blocklist);
 
                         // Change to lock icon
@@ -6850,10 +6850,29 @@ function getStartBlockButtonHTML() {
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
             <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
         </svg>
-        <span class="btn-label">${tSettings('startBlockButton')}</span>
+        <span class="btn-label">${getActionLabelHTML(tSettings('startBlockButton'))}</span>
         <span class="btn-emoji" aria-hidden="true"></span>
         <span class="btn-name"></span>
     `;
+}
+
+// Render an action label like "Stop Schedule:" / "Start blokering:" as two
+// inner spans so narrow viewports can hide the trailing context (and the
+// .btn-emoji + .btn-name beside it) and just show "Stop" / "Start". Splits
+// at the first space so it works for any locale that follows verb-then-noun.
+function getActionLabelHTML(fullText) {
+    const safe = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const text = String(fullText ?? '');
+    const spaceIdx = text.indexOf(' ');
+    if (spaceIdx <= 0) return safe(text);
+    const action = text.slice(0, spaceIdx);
+    const context = text.slice(spaceIdx);
+    return `<span class="btn-label-action">${safe(action)}</span><span class="btn-label-context">${safe(context)}</span>`;
+}
+
+function setBtnActionLabel(el, fullText) {
+    if (!el) return;
+    el.innerHTML = getActionLabelHTML(fullText);
 }
 
 // Update both the emoji and name on a start/stop button so they stay in sync.
@@ -7137,8 +7156,8 @@ function openBlocklistModal(blocklist = null) {
             // If all are used, wrap around to the first one
             colorToSelect = swatches[0].dataset.color;
         } else {
-            // Fallback default
-            colorToSelect = 'linear-gradient(135deg, #4a00e0 0%, #8e2de2 100%)';
+            // Fallback default — first colour in the palette.
+            colorToSelect = '#B8D1DE';
         }
     }
 
@@ -8552,7 +8571,7 @@ function syncSelectedControlState() {
     startBlockBtn.classList.remove('stop-block');
     setStartBtnBlocklistInfo(startBlockBtn, blocklist);
     if (activeBlock) {
-        if (btnLabel) btnLabel.textContent = 'Stop Block:';
+        setBtnActionLabel(btnLabel, 'Stop Block:');
         startBlockBtn.classList.add('stop-block');
         startBlockBtn.dataset.activeBlockId = activeBlock.id;
         if (btnIcon) btnIcon.innerHTML = `<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path>`;
@@ -8563,7 +8582,7 @@ function syncSelectedControlState() {
         disableTimeControls(true);
         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
     } else {
-        if (btnLabel) btnLabel.textContent = tSettings('startBlockButton');
+        setBtnActionLabel(btnLabel, tSettings('startBlockButton'));
         if (btnIcon) btnIcon.innerHTML = `<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path>`;
         if (pauseBtn) pauseBtn.classList.add('hidden');
         disableTimeControls(false);
@@ -9531,6 +9550,11 @@ function renderBlocklists() {
         let oneOffBadge = '';
         let scheduleBadge = '';
 
+        // Green "live" dot prefixed onto badges for blocks that are
+        // currently running (one-off active or active schedule segment).
+        // Same colour treatment as the BLOCKING NOW row dot.
+        const runningDot = '<span class="badge-running-dot" aria-hidden="true"></span>';
+
         // One-off block badge (green with hourglass, or power icon for always-on)
         if (isActive && activeBlock) {
             if (activeBlock.isPaused) {
@@ -9541,17 +9565,18 @@ function renderBlocklists() {
                 oneOffBadge = `<span class="active-badge paused-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg> Paused ${pauseTimeText}</span>`;
             } else if (isBlockAlwaysOn(activeBlock)) {
                 // Power icon for always-on blocks
-                oneOffBadge = `<span class="active-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg> Always</span>`;
+                oneOffBadge = `<span class="active-badge">${runningDot}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg> Always</span>`;
             } else {
                 const remaining = activeBlock.endTime - now;
                 const mins = Math.ceil(remaining / 60000);
                 const timeText = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
                 // Hourglass icon
-                oneOffBadge = `<span class="active-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg> ${timeText} left</span>`;
+                oneOffBadge = `<span class="active-badge">${runningDot}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg> ${timeText} left</span>`;
             }
         }
 
         // Schedule badge (blue with calendar-sync)
+        let scheduleSegmentRunning = false;
         if (hasSchedule) {
             const schedule = appData.schedules.find(s => s.blocklistId === bl.id);
             let scheduleTimeText = '';
@@ -9586,6 +9611,7 @@ function renderBlocklists() {
 
                     if (activeSegment) {
                         // Currently blocking - show time left
+                        scheduleSegmentRunning = true;
                         const startMins = activeSegment.startHour * 60 + activeSegment.startMinute;
                         const endMins = activeSegment.endHour * 60 + activeSegment.endMinute;
                         let minsLeft;
@@ -9621,12 +9647,12 @@ function renderBlocklists() {
                                 const minsUntil = (dayOffset * 24 * 60) + segStartMins - currentMins;
 
                                 if (minsUntil < 60) {
-                                    scheduleTimeText = `in ${minsUntil}m`;
+                                    scheduleTimeText = `starts in ${minsUntil}m`;
                                 } else if (minsUntil < 24 * 60) {
-                                    scheduleTimeText = `in ${Math.floor(minsUntil / 60)}h`;
+                                    scheduleTimeText = `starts in ${Math.floor(minsUntil / 60)}h`;
                                 } else {
                                     const days = Math.floor(minsUntil / (24 * 60));
-                                    scheduleTimeText = `in ${days}d`;
+                                    scheduleTimeText = `starts in ${days}d`;
                                 }
                                 nextStart = true;
                                 break;
@@ -9638,7 +9664,8 @@ function renderBlocklists() {
                 }
             }
             // Calendar icon for scheduled blocklists
-            scheduleBadge = `<span class="schedule-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg> ${scheduleTimeText}</span>`;
+            const scheduleDot = scheduleSegmentRunning ? runningDot : '';
+            scheduleBadge = `<span class="schedule-badge">${scheduleDot}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg> ${scheduleTimeText}</span>`;
         }
 
         const activeBadge = oneOffBadge + scheduleBadge;
@@ -10509,8 +10536,8 @@ function applySettingsLanguage() {
     setText('update-banner-suffix', tSettings('updateBannerSuffix'));
     setText('update-banner-link', tSettings('updateBannerCta'));
     setText('main-start-block-title', tSettings('mainStartBlockTitle'));
-    setText('instant-mode-tab', tSettings('modeNow'));
-    setText('schedule-mode-tab', tSettings('modeSchedule'));
+    setText('instant-mode-tab-label', tSettings('modeNow'));
+    setText('schedule-mode-tab-label', tSettings('modeSchedule'));
     setText('selection-prompt-label', tSettings('selectionPrompt'));
     const blocklistSelect = document.getElementById('blocklist-select');
     if (blocklistSelect && blocklistSelect.options.length > 0) {
@@ -10547,8 +10574,8 @@ function applySettingsLanguage() {
         else repeatDropdownText.textContent = tSettings('repeatNo');
     }
     setText('pause-btn-label', tSettings('pause'));
-    setText('start-block-btn-label', tSettings('startBlockButton'));
-    setText('start-schedule-btn-label', tSettings('startScheduleButton'));
+    setBtnActionLabel(document.getElementById('start-block-btn-label'), tSettings('startBlockButton'));
+    setBtnActionLabel(document.getElementById('start-schedule-btn-label'), tSettings('startScheduleButton'));
     setText('footer-made-with', tSettings('madeWith'));
     setText('footer-by', tSettings('by'));
     const setPlaceholder = (id, text) => {

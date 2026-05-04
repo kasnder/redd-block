@@ -256,9 +256,33 @@
                         <h2 id="main-start-block-title">Start a Block</h2>
                         <div class="scheduler-mode-tabs">
                             <button class="mode-tab active" id="instant-mode-tab" data-mode="instant"
-                                title="One-off">Now</button>
+                                title="One-off">
+                                <svg class="mode-tab-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M5 22h14"></path>
+                                    <path d="M5 2h14"></path>
+                                    <path
+                                        d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22">
+                                    </path>
+                                    <path
+                                        d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2">
+                                    </path>
+                                </svg>
+                                <span class="mode-tab-label" id="instant-mode-tab-label">Now</span>
+                            </button>
                             <button class="mode-tab" id="schedule-mode-tab" data-mode="schedule"
-                                title="Schedule">Schedule</button>
+                                title="Schedule">
+                                <svg class="mode-tab-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round" aria-hidden="true">
+                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                                </svg>
+                                <span class="mode-tab-label" id="schedule-mode-tab-label">Schedule</span>
+                            </button>
                         </div>
                     </div>
 
@@ -488,7 +512,9 @@
                                         <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                                         <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                                     </svg>
-                                    <span class="btn-label" id="start-block-btn-label">Start Block:</span>
+                                    <span class="btn-label" id="start-block-btn-label"><span
+                                            class="btn-label-action">Start</span><span
+                                            class="btn-label-context"> Block:</span></span>
                                     <span class="btn-emoji" aria-hidden="true"></span>
                                     <span class="btn-name"></span>
                                 </button>
@@ -504,7 +530,9 @@
                                         <path d="M17.5 17.5 16 16.25V14"></path>
                                         <circle cx="16" cy="16" r="6"></circle>
                                     </svg>
-                                    <span class="btn-label" id="start-schedule-btn-label">Start Schedule:</span>
+                                    <span class="btn-label" id="start-schedule-btn-label"><span
+                                            class="btn-label-action">Start</span><span
+                                            class="btn-label-context"> Schedule:</span></span>
                                     <span class="btn-emoji" aria-hidden="true"></span>
                                     <span class="btn-name"></span>
                                 </button>
@@ -686,28 +714,34 @@
                     <label id="blocklist-color-label">Color</label>
                     <div class="color-picker-container">
                         <div class="color-swatches" id="color-swatches">
-                            <!-- Fun yet calming pastel palette: dark blue → green → yellow → pink → dark red → lavender -->
-                            <button type="button" class="color-swatch selected" data-color="#81B1D1"
-                                style="background: #81B1D1" title="Sky"></button>
-                            <button type="button" class="color-swatch" data-color="#A0CED9" style="background: #A0CED9"
-                                title="Ice"></button>
-                            <button type="button" class="color-swatch" data-color="#ADF7B6" style="background: #ADF7B6"
-                                title="Mint"></button>
-                            <button type="button" class="color-swatch" data-color="#FFEE93" style="background: #FFEE93"
-                                title="Buttercup"></button>
-                            <button type="button" class="color-swatch" data-color="#FFD1DC" style="background: #FFD1DC"
-                                title="Blush"></button>
-                            <button type="button" class="color-swatch" data-color="#FFC09F" style="background: #FFC09F"
-                                title="Apricot"></button>
-                            <button type="button" class="color-swatch" data-color="#FF9E9E" style="background: #FF9E9E"
-                                title="Sunset"></button>
-                            <button type="button" class="color-swatch" data-color="#B19CD9" style="background: #B19CD9"
-                                title="Lavender"></button>
+                            <!-- ReDD-aligned palette: Nordic-watercolor pastels, taking inspiration
+                                 from reddfocus.org's soft-surface accents (coral-soft, teal-soft,
+                                 blue-soft) which read as calm watercolor washes on the cream canvas.
+                                 Hues sweep cleanly around the wheel — sky → sea → fern → linen →
+                                 peach → terracotta → rose → lilac — so the family feels Scandi /
+                                 sophisticated, not earthy. Lightness held in a 76-82% band so they
+                                 sit comfortably on cream without shouting. -->
+                            <button type="button" class="color-swatch selected" data-color="#B8D1DE"
+                                style="background: #B8D1DE" title="Sky"></button>
+                            <button type="button" class="color-swatch" data-color="#B3D2C8" style="background: #B3D2C8"
+                                title="Seafoam"></button>
+                            <button type="button" class="color-swatch" data-color="#BCD9B6" style="background: #BCD9B6"
+                                title="Fern"></button>
+                            <button type="button" class="color-swatch" data-color="#EBDCB6" style="background: #EBDCB6"
+                                title="Linen"></button>
+                            <button type="button" class="color-swatch" data-color="#EECAAD" style="background: #EECAAD"
+                                title="Peach"></button>
+                            <button type="button" class="color-swatch" data-color="#E7B3A8" style="background: #E7B3A8"
+                                title="Terracotta"></button>
+                            <button type="button" class="color-swatch" data-color="#E1BAC3" style="background: #E1BAC3"
+                                title="Rose"></button>
+                            <button type="button" class="color-swatch" data-color="#C8B9D6" style="background: #C8B9D6"
+                                title="Lilac"></button>
                             <!-- Custom color picker -->
                             <div class="custom-color-wrapper">
-                                <input type="color" id="custom-color-input" class="custom-color-input" value="#667eea">
+                                <input type="color" id="custom-color-input" class="custom-color-input" value="#B8D1DE">
                                 <button type="button" class="color-swatch custom-swatch" id="custom-color-swatch"
-                                    data-color="custom" style="background: #667eea">
+                                    data-color="custom" style="background: #B8D1DE">
                                     <span class="custom-icon">+</span>
                                 </button>
                             </div>
@@ -777,10 +811,6 @@
                     autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
                 <div class="challenge-progress">
                     <div id="challenge-progress-bar" class="challenge-progress-bar"></div>
-                </div>
-                <div class="dns-delay-hint desktop-only"
-                    style="font-size: 12px; color: var(--text-muted); margin-top: 8px; line-height: 1.4;">
-                    Changes to website blocking may take up to 60 seconds to take effect in your browser due to caching.
                 </div>
                 <div class="modal-buttons">
                     <button id="cancel-override-btn" class="modal-btn cancel-btn">Cancel</button>
@@ -901,10 +931,6 @@
                         <span id="confirm-override-header">To cancel this block early, you'll need to:</span>
                     </div>
                     <p id="start-confirm-override-text"></p>
-                </div>
-                <div id="start-confirm-dns-hint" class="dns-delay-hint desktop-only"
-                    style="font-size: 12px; color: var(--text-muted); margin-top: 8px; line-height: 1.4;">
-                    Changes to website blocking may take up to 60 seconds to take effect in your browser due to caching.
                 </div>
                 <div class="modal-buttons">
                     <button id="cancel-start-confirm-btn" class="modal-btn cancel-btn">Cancel</button>
