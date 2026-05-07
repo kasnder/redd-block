@@ -4,9 +4,40 @@
 // commands are desktop-only; on iOS the Screen Time API handles
 // enforcement and these commands aren't registered.
 
-use tauri::{AppHandle, Manager};
+use std::sync::Mutex;
+use tauri::{AppHandle, LogicalSize, Manager, PhysicalPosition};
 
 use crate::profile_scan;
+
+/// Geometry of the main window before we shrink it for the app-blocking
+/// force-quit countdown. Restored when the last warning layer clears.
+#[derive(Clone, Copy)]
+struct SavedWindowGeom {
+    inner_w: f64,
+    inner_h: f64,
+    outer_x: i32,
+    outer_y: i32,
+}
+
+static BLOCKING_WARNING_SAVED_GEOM: Mutex<Option<SavedWindowGeom>> = Mutex::new(None);
+
+/// Matches `WebviewWindowBuilder` min on macOS / Windows.
+const MAIN_RESTORE_MIN_W: f64 = 600.0;
+const MAIN_RESTORE_MIN_H: f64 = 500.0;
+
+/// Inner width (logical points) for the warning-only shell — frontend
+/// measures height and calls [`resize_blocking_warning_inner_size`].
+const WARNING_COMPACT_W: f64 = 592.0;
+
+/// Short-lived bootstrap height before JS fits the window to content.
+const WARNING_COMPACT_BOOTSTRAP_H: f64 = 360.0;
+
+/// Loose bounds so we can shrink below the normal 600×500 app min.
+const WARNING_SHELL_MIN_W: f64 = 480.0;
+const WARNING_SHELL_MIN_H: f64 = 360.0;
+
+/// Cap so an enormous block list cannot create an unusably tall window.
+const WARNING_SHELL_MAX_H: f64 = 1280.0;
 
 /// Scan every supported browser profile for ReDD Focus extension
 /// compliance. Returns the raw scan result so the UI can render a
@@ -57,6 +88,288 @@ pub fn reveal_app(app: &AppHandle) {
         let _ = window.set_focus();
     }
 }
+
+/// Best-effort: bring another process (`pid`) forward so dialogs and
+/// save prompts are plainly visible — used before graceful quit attempts.
+#[cfg(target_os = "macos")]
+pub fn activate_external_process_by_pid(pid: u32) {
+    if pid == 0 {
+        return;
+    }
+    use cocoa::base::{id, YES};
+    use objc::runtime::Class;
+    use objc::{msg_send, sel, sel_impl};
+
+    unsafe {
+        let Some(class) = Class::get("NSRunningApplication") else {
+            log::warn!("activate_external_process_by_pid: NSRunningApplication class missing");
+            return;
+        };
+        let raw_pid = pid as i32;
+        let app: id = msg_send![class, runningApplicationWithProcessIdentifier: raw_pid];
+        if app.is_null() {
+            log::debug!("activate_external_process_by_pid: no app for pid {pid}");
+            return;
+        }
+        // NSApplicationActivateAllWindows | NSApplicationActivateIgnoringOtherApps
+        let options: u64 = 1 | 2;
+        let ok: cocoa::base::BOOL = msg_send![app, activateWithOptions: options];
+        if ok != YES {
+            log::debug!("activate_external_process_by_pid: activateWithOptions(NO) pid={pid}");
+        }
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn activate_external_process_by_pid(target_pid: u32) {
+    use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        AttachThreadInput, EnumWindows, GetForegroundWindow, GetWindow,
+        GetWindowThreadProcessId, IsIconic, IsWindowVisible, SetForegroundWindow, ShowWindow,
+        GW_OWNER, SW_RESTORE,
+    };
+
+    struct FindCtx {
+        target_pid: u32,
+        hwnd: Option<HWND>,
+    }
+
+    unsafe extern "system" fn pick_top_level(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let ctx = &mut *(lparam.0 as *mut FindCtx);
+        if !IsWindowVisible(hwnd).as_bool() {
+            return windows::Win32::Foundation::TRUE;
+        }
+        let owner = GetWindow(hwnd, GW_OWNER);
+        if !owner.is_invalid() && owner != HWND::default() {
+            return windows::Win32::Foundation::TRUE;
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if pid != ctx.target_pid {
+            return windows::Win32::Foundation::TRUE;
+        }
+        ctx.hwnd = Some(hwnd);
+        windows::Win32::Foundation::FALSE // stop enumeration
+    }
+
+    unsafe {
+        let mut ctx = FindCtx {
+            target_pid,
+            hwnd: None,
+        };
+        let ptr = (&mut ctx) as *mut FindCtx as isize;
+        let _ = EnumWindows(Some(pick_top_level), LPARAM(ptr));
+
+        let Some(hwnd) = ctx.hwnd else {
+            log::debug!("activate_external_process_by_pid: no hwnd for pid {target_pid}");
+            return;
+        };
+
+        if IsIconic(hwnd).as_bool() {
+            let _ = ShowWindow(hwnd, SW_RESTORE);
+        }
+
+        let fg = GetForegroundWindow();
+        if fg.is_invalid() {
+            let _ = SetForegroundWindow(hwnd);
+            return;
+        }
+
+        let mut _fg_pid = 0u32;
+        let fg_tid = GetWindowThreadProcessId(fg, Some(&mut _fg_pid));
+        let mut _win_pid = 0u32;
+        let tgt_tid = GetWindowThreadProcessId(hwnd, Some(&mut _win_pid));
+        let _ = AttachThreadInput(fg_tid, tgt_tid, true.into());
+        let _ = SetForegroundWindow(hwnd);
+        let _ = AttachThreadInput(fg_tid, tgt_tid, false.into());
+    }
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+pub fn activate_external_process_by_pid(_pid: u32) {}
+
+/// Visible compact warning chrome without activating ReDD Block as the key
+/// app — keeps keyboard focus with the blocked app so the user can type in
+/// save dialogs while the countdown stays `always_on_top`.
+#[cfg(target_os = "macos")]
+pub fn show_blocking_warning_shell_without_stealing_focus(app: &AppHandle) {
+    use cocoa::base::{id, nil, YES};
+    use objc::{msg_send, sel, sel_impl};
+
+    let handle = app.clone();
+    let handle_in_closure = handle.clone();
+    if let Err(e) = handle.run_on_main_thread(move || {
+        let Some(win) = handle_in_closure.get_webview_window("main") else {
+            return;
+        };
+        let _ = win.unminimize();
+        match win.ns_window() {
+            Ok(raw) => {
+                let ns_window = raw as id;
+                unsafe {
+                    let _: () = msg_send![ns_window, deminiaturize: nil];
+                    let _: () = msg_send![ns_window, setIsVisible: YES];
+                    let _: () = msg_send![ns_window, orderFront: nil];
+                }
+            }
+            Err(_) => {
+                let _ = win.show();
+            }
+        }
+    }) {
+        log::warn!("show_blocking_warning_shell_without_stealing_focus: main thread: {e:?}");
+    }
+}
+
+#[cfg(target_os = "windows")]
+pub fn show_blocking_warning_shell_without_stealing_focus(app: &AppHandle) {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SetWindowPos, ShowWindow, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        SWP_SHOWWINDOW, SW_SHOWNOACTIVATE,
+    };
+
+    let Some(win) = app.get_webview_window("main") else {
+        return;
+    };
+
+    match win.hwnd() {
+        Ok(hwnd) => unsafe {
+            let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE;
+            let _ = SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, flags);
+        },
+        Err(_) => {
+            let _ = win.unminimize();
+            let _ = win.show();
+        }
+    }
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+pub fn show_blocking_warning_shell_without_stealing_focus(_app: &AppHandle) {}
+
+/// While the app-blocking force-quit warning is visible, keep the main
+/// window above normal windows and on every desktop Space (the second
+/// part is especially important on macOS so the countdown isn't stuck on
+/// another Space while a blocked app is full-screen).
+pub fn set_blocking_warning_attention(app: &AppHandle, active: bool) {
+    let Some(w) = app.get_webview_window("main") else {
+        return;
+    };
+    let _ = w.set_always_on_top(active);
+    let _ = w.set_visible_on_all_workspaces(active);
+}
+
+/// Shrinks the main window to the warning-card footprint and strips the
+/// normal app chrome (CSS toggle via JS `eval`). Snapshots geometry on the
+/// first transition so [`leave_blocking_warning_compact_window`] can restore.
+#[cfg(not(target_os = "ios"))]
+pub fn enter_blocking_warning_compact_window(app: &AppHandle) {
+    let Some(w) = app.get_webview_window("main") else {
+        return;
+    };
+
+    {
+        let Ok(mut slot) = BLOCKING_WARNING_SAVED_GEOM.lock() else {
+            return;
+        };
+        if slot.is_none() {
+            let scale = w.scale_factor().unwrap_or(1.0);
+            match (w.inner_size(), w.outer_position()) {
+                (Ok(inner), Ok(outer)) => {
+                    *slot = Some(SavedWindowGeom {
+                        inner_w: inner.width as f64 / scale,
+                        inner_h: inner.height as f64 / scale,
+                        outer_x: outer.x,
+                        outer_y: outer.y,
+                    });
+                }
+                _ => {
+                    log::warn!(
+                        "blocking warning: could not read window geometry — compact shell skipped"
+                    );
+                    return;
+                }
+            }
+        }
+    }
+
+    const MODE_ON: &str = r#"(function(){
+  try {
+    document.documentElement.classList.add('app-blocking-warning-window-mode');
+    document.body.classList.add('app-blocking-warning-window-mode');
+  } catch (_) {}
+})();"#;
+
+    let _ = w.eval(MODE_ON);
+    let _ = w.set_min_size(Some(LogicalSize::new(
+        WARNING_SHELL_MIN_W,
+        WARNING_SHELL_MIN_H,
+    )));
+    let _ = w.set_size(LogicalSize::new(
+        WARNING_COMPACT_W,
+        WARNING_COMPACT_BOOTSTRAP_H,
+    ));
+    let _ = w.center();
+}
+
+/// Sets main window **inner** logical size from measured webview content (no
+/// `center()` — preserves user drag). Used to drop the empty margin below
+/// the force-quit warning once the DOM has laid out.
+#[tauri::command]
+#[cfg(not(target_os = "ios"))]
+pub fn resize_blocking_warning_inner_size(
+    window: tauri::WebviewWindow,
+    width: f64,
+    height: f64,
+) -> Result<(), String> {
+    if window.label() != "main" {
+        return Ok(());
+    }
+    let iw = width.clamp(WARNING_SHELL_MIN_W, 960.0);
+    let ih = height.clamp(WARNING_SHELL_MIN_H, WARNING_SHELL_MAX_H);
+    window
+        .set_size(LogicalSize::new(iw, ih))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[cfg(target_os = "ios")]
+pub fn enter_blocking_warning_compact_window(_app: &AppHandle) {}
+
+#[cfg(not(target_os = "ios"))]
+pub fn leave_blocking_warning_compact_window(app: &AppHandle) {
+    let Some(w) = app.get_webview_window("main") else {
+        return;
+    };
+
+    const MODE_OFF: &str = r#"(function(){
+  try {
+    document.documentElement.classList.remove('app-blocking-warning-window-mode');
+    document.body.classList.remove('app-blocking-warning-window-mode');
+  } catch (_) {}
+})();"#;
+
+    let _ = w.eval(MODE_OFF);
+
+    let saved = BLOCKING_WARNING_SAVED_GEOM
+        .lock()
+        .ok()
+        .and_then(|mut g| g.take());
+
+    let _ = w.set_min_size(Some(LogicalSize::new(
+        MAIN_RESTORE_MIN_W,
+        MAIN_RESTORE_MIN_H,
+    )));
+
+    if let Some(g) = saved {
+        let _ = w.set_size(LogicalSize::new(g.inner_w, g.inner_h));
+        let _ = w.set_position(PhysicalPosition::new(g.outer_x, g.outer_y));
+    }
+}
+
+#[cfg(target_os = "ios")]
+pub fn leave_blocking_warning_compact_window(_app: &AppHandle) {}
 
 /// Hide the main window to the tray and drop the macOS Dock icon /
 /// menu bar (Accessory activation policy). Invoked from the

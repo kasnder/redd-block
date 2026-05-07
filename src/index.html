@@ -1208,6 +1208,19 @@
             </div>
         </div>
 
+        <!-- Full-window force-quit warning (raised by native app watcher) -->
+        <div id="app-blocking-warning-overlay" class="app-blocking-warning-overlay hidden" role="alertdialog"
+            aria-modal="true" aria-labelledby="app-blocking-warning-heading">
+            <div class="app-blocking-warning-panel">
+                <h2 id="app-blocking-warning-heading" class="app-blocking-warning-heading" data-tauri-drag-region>
+                    Quit these apps cleanly — or they will be force-closed
+                </h2>
+                <div id="app-blocking-warning-targets" class="app-blocking-warning-targets" hidden aria-live="polite"></div>
+                <div id="app-blocking-warning-list" class="app-blocking-warning-list"></div>
+                <div id="app-blocking-warning-footer" class="app-blocking-warning-footer hidden"></div>
+            </div>
+        </div>
+
         <!-- Footer -->
         <div class="footer">
             <span class="footer-text"><span id="footer-made-with">Made with</span> <span class="heart">♥</span> <span

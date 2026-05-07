@@ -95,6 +95,15 @@ const tauriAPI = {
     onEnforcerGraceResolved: (callback) => listen('enforcer://grace-resolved', callback),
     onEnforcerBrowserClosed: (callback) => listen('enforcer://browser-closed', callback),
 
+    // App blocking: force-quit warning overlay (desktop)
+    onAppBlockingWarningShow: (callback) => listen('app-blocking://warning-show', callback),
+    onAppBlockingWarningUpdate: (callback) => listen('app-blocking://warning-update', callback),
+    onAppBlockingWarningHide: (callback) => listen('app-blocking://warning-hide', callback),
+    appBlockingBringForwardThenQuitAgain: (pids) =>
+        invoke('app_blocking_bring_forward_then_quit_again', { pids }),
+    resizeBlockingWarningInner: (width, height) =>
+        invoke('resize_blocking_warning_inner_size', { width, height }),
+
     // macOS-only in-app uninstall. Disables launch-at-login, scrubs
     // browser native-messaging manifests, and schedules a delayed
     // self-delete of /Applications/ReDD Block.app. Caller is responsible
@@ -1005,6 +1014,7 @@ async function runPostAcceptanceStartup() {
             // Automation TCC (macOS) + extension compliance. Idempotent;
             // a no-op on subsequent launches past the current version.
             setupEnforcerUiAlerts();
+            setupAppBlockingWarningOverlay();
             await runDesktopOnboarding();
             await checkHelperStatus();
             console.log('[startup-sync] Desktop startup helperAvailable:', helperAvailable);
@@ -2438,6 +2448,240 @@ function hideEnforcerActionBanner(browser) {
         clearInterval(enforcerActionBannerInterval);
         enforcerActionBannerInterval = null;
     }
+}
+
+// ---- App-blocking: force-quit warning (multi-app, native watcher) ---------
+
+/** @type {Map<number, { name: string, totalSecs: number, remainingSecs: number, paused: boolean }>} */
+const appBlockingWarningRows = new Map();
+let appBlockingWarningUiAttached = false;
+/** @type {ResizeObserver|null} */
+let appBlockingWarningResizeObserver = null;
+
+function teardownAppBlockingWarningResizeObserver() {
+    appBlockingWarningResizeObserver?.disconnect();
+    appBlockingWarningResizeObserver = null;
+}
+
+/** Keep the compact native window height in sync with the warning panel DOM. */
+function ensureAppBlockingWarningResizeObserver() {
+    if (isIOS || typeof ResizeObserver === 'undefined') return;
+    const root = document.getElementById('app-blocking-warning-overlay');
+    if (!root) return;
+    appBlockingWarningResizeObserver?.disconnect();
+    appBlockingWarningResizeObserver = new ResizeObserver(() => {
+        scheduleBlockingWarningWindowFit();
+    });
+    appBlockingWarningResizeObserver.observe(root);
+}
+
+function scheduleBlockingWarningWindowFit() {
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            requestAnimationFrame(syncBlockingWarningWindowToContent);
+        });
+    });
+}
+
+/** Extra logical px so title bar / font metrics / borders do not clip the last buttons. */
+const BLOCKING_WARNING_WINDOW_SIZE_BUFFER = 40;
+
+async function syncBlockingWarningWindowToContent() {
+    if (!document.documentElement.classList.contains('app-blocking-warning-window-mode')) return;
+    if (isIOS) return;
+    const overlay = document.getElementById('app-blocking-warning-overlay');
+    const panel = document.querySelector('.app-blocking-warning-panel');
+    if (!overlay || !panel || overlay.classList.contains('hidden')) return;
+    const ro = overlay.getBoundingClientRect();
+    const rp = panel.getBoundingClientRect();
+    const width = Math.ceil(
+        Math.max(overlay.scrollWidth, panel.scrollWidth, ro.width, rp.width) + 4,
+    );
+    const height = Math.ceil(
+        Math.max(overlay.scrollHeight, panel.scrollHeight, ro.height, rp.height)
+            + BLOCKING_WARNING_WINDOW_SIZE_BUFFER,
+    );
+    try {
+        await tauriAPI.resizeBlockingWarningInner(width, height);
+    } catch {
+        /* dev in browser — no IPC */
+    }
+}
+
+function setupAppBlockingWarningOverlay() {
+    if (isIOS || appBlockingWarningUiAttached) return;
+    appBlockingWarningUiAttached = true;
+
+    const onFail = (label) => (e) => {
+        console.warn(`[app-blocking-ui] failed to attach ${label}:`, e);
+        appBlockingWarningUiAttached = false;
+    };
+
+    tauriAPI.onAppBlockingWarningShow((event) => {
+        const p = event?.payload || {};
+        const pid = Number(p.pid);
+        if (!Number.isFinite(pid)) return;
+        const totalSecs = Math.max(1, Number(p.total_secs ?? p.totalSecs ?? 60));
+        appBlockingWarningRows.set(pid, {
+            name: p.name || 'App',
+            totalSecs,
+            remainingSecs: totalSecs,
+            paused: false,
+        });
+        renderAppBlockingWarningOverlay();
+    }).catch(onFail('warning-show'));
+
+    tauriAPI.onAppBlockingWarningUpdate((event) => {
+        const p = event?.payload || {};
+        const pid = Number(p.pid);
+        if (!Number.isFinite(pid)) return;
+        const row = appBlockingWarningRows.get(pid);
+        if (!row) return;
+        row.remainingSecs = Math.max(0, Number(p.remaining_secs ?? p.remainingSecs ?? 0));
+        row.totalSecs = Math.max(1, Number(p.total_secs ?? p.totalSecs ?? row.totalSecs));
+        row.paused = Boolean(p.paused);
+        renderAppBlockingWarningOverlay();
+    }).catch(onFail('warning-update'));
+
+    tauriAPI.onAppBlockingWarningHide((event) => {
+        const p = event?.payload || {};
+        const pid = Number(p.pid);
+        if (!Number.isFinite(pid)) return;
+        const reason = p.reason || p.reason_snake_case;
+        appBlockingWarningRows.delete(pid);
+        renderAppBlockingWarningOverlay();
+        if (reason === 'force_killed') {
+            showAppBlockingForceKilledToast(p.name || 'the app');
+        }
+    }).catch(onFail('warning-hide'));
+}
+
+function renderAppBlockingWarningOverlay() {
+    const overlay = document.getElementById('app-blocking-warning-overlay');
+    const listEl = document.getElementById('app-blocking-warning-list');
+    if (!overlay || !listEl) return;
+
+    const syncWindowModeClass = () => {
+        const active = appBlockingWarningRows.size > 0;
+        document.documentElement.classList.toggle('app-blocking-warning-window-mode', active);
+        document.body.classList.toggle('app-blocking-warning-window-mode', active);
+    };
+
+    const footerEl = document.getElementById('app-blocking-warning-footer');
+
+    if (appBlockingWarningRows.size === 0) {
+        overlay.classList.add('hidden');
+        listEl.innerHTML = '';
+        if (footerEl) {
+            footerEl.classList.add('hidden');
+            footerEl.innerHTML = '';
+        }
+        const targetsEl = document.getElementById('app-blocking-warning-targets');
+        if (targetsEl) {
+            targetsEl.hidden = true;
+            targetsEl.innerHTML = '';
+        }
+        teardownAppBlockingWarningResizeObserver();
+        syncWindowModeClass();
+        return;
+    }
+
+    overlay.classList.remove('hidden');
+    listEl.innerHTML = '';
+
+    const targetsEl = document.getElementById('app-blocking-warning-targets');
+    /** @type {string[]} */
+    const names = [];
+    for (const [, row] of appBlockingWarningRows) {
+        const n = (row.name || 'Unknown app').trim() || 'Unknown app';
+        names.push(n);
+    }
+
+    if (targetsEl) {
+        targetsEl.hidden = false;
+        const intro =
+            names.length === 1
+                ? 'Exact application name below — ReDD&nbsp;Block <strong>will force-close</strong> it when the countdown reaches zero unless you quit it cleanly first (⌘Q on Mac, Alt+F4 or File → Quit on Windows):'
+                : 'Exact application names below — ReDD&nbsp;Block <strong>will force-close</strong> each one when its countdown reaches zero unless you quit that app cleanly first (⌘Q on Mac, Alt+F4 or File → Quit on Windows):';
+        targetsEl.innerHTML = `
+            <p class="app-blocking-warning-targets-intro">${intro}</p>
+            <ul class="app-blocking-warning-targets-list" aria-label="Exact names of apps that ReDD Block will force-close">
+                ${names.map((n) => `<li>${escapeHtml(n)}</li>`).join('')}
+            </ul>
+        `;
+    }
+
+    for (const [pid, row] of appBlockingWarningRows) {
+        const card = document.createElement('div');
+        card.className = 'app-blocking-warning-card';
+        card.dataset.pid = String(pid);
+
+        const displayName = (row.name || 'Unknown app').trim() || 'Unknown app';
+        const pausedNote = row.paused
+            ? '<p class="app-blocking-warning-paused">Countdown paused — no recent keyboard or mouse activity. It resumes when you return.</p>'
+            : '';
+
+        card.innerHTML = `
+            <div class="app-blocking-warning-card-head">
+                <h3 class="app-blocking-warning-app-name">${escapeHtml(displayName)}</h3>
+            </div>
+            <div class="app-blocking-warning-countdown-hero" aria-live="polite">
+                <span class="app-blocking-warning-countdown-giant">${row.remainingSecs}</span>
+                <span class="app-blocking-warning-countdown-unit-giant">s</span>
+            </div>
+            ${pausedNote}
+        `;
+
+        listEl.appendChild(card);
+    }
+
+    if (footerEl) {
+        footerEl.classList.remove('hidden');
+        footerEl.innerHTML = `
+            <button type="button" class="modal-btn cancel-btn app-blocking-btn-bring-forward-quit" id="app-blocking-bring-forward-quit-btn">
+                Bring each app forward, then try to quit again — save your work first
+            </button>
+        `;
+        footerEl.querySelector('#app-blocking-bring-forward-quit-btn')?.addEventListener('click', () => {
+            const pids = Array.from(appBlockingWarningRows.keys(), (k) => Number(k)).filter((n) =>
+                Number.isFinite(n) && n > 0,
+            );
+            tauriAPI
+                .appBlockingBringForwardThenQuitAgain(pids)
+                .catch((e) => console.warn('[app-blocking-ui] bring forward + quit again:', e));
+        });
+    }
+
+    syncWindowModeClass();
+    ensureAppBlockingWarningResizeObserver();
+    scheduleBlockingWarningWindowFit();
+}
+
+/** One-off banner after the native watcher SIGKILLs from the countdown. */
+function showAppBlockingForceKilledToast(appName) {
+    const id = 'app-blocking-killed-toast';
+    let el = document.getElementById(id);
+    if (!el) {
+        el = document.createElement('div');
+        el.id = id;
+        el.className = 'app-blocking-killed-toast hidden';
+        el.setAttribute('role', 'status');
+        document.querySelector('.app-container')?.prepend(el);
+    }
+    el.innerHTML = `
+        <span class="app-blocking-killed-toast-msg">
+            <strong>${escapeHtml(appName)}</strong> was force-quit because the warning countdown ran out while you were active.
+        </span>
+        <button type="button" class="app-blocking-killed-toast-dismiss" title="Dismiss">&times;</button>
+    `;
+    el.classList.remove('hidden');
+    el.querySelector('.app-blocking-killed-toast-dismiss')?.addEventListener('click', () => {
+        el.classList.add('hidden');
+    }, { once: true });
+    window.clearTimeout(el._appBlockingKilledTimer);
+    el._appBlockingKilledTimer = window.setTimeout(() => {
+        el?.classList.add('hidden');
+    }, 15000);
 }
 
 // Check if the helper daemon is available (desktop only)
