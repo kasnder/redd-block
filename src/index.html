@@ -640,6 +640,70 @@
                 </div>
 
                 <div class="form-group">
+                    <label id="blocklist-color-label">Color</label>
+                    <div class="color-picker-container">
+                        <div class="color-swatches" id="color-swatches">
+                            <!-- ReDD-aligned palette: Nordic-watercolor pastels, taking inspiration
+                                 from reddfocus.org's soft-surface accents (coral-soft, teal-soft,
+                                 blue-soft) which read as calm watercolor washes on the cream canvas.
+                                 Hues sweep cleanly around the wheel — sky → sea → fern → linen →
+                                 peach → terracotta → rose → lilac — so the family feels Scandi /
+                                 sophisticated, not earthy. Lightness held in a 76-82% band so they
+                                 sit comfortably on cream without shouting. -->
+                            <button type="button" class="color-swatch selected" data-color="#B8D1DE"
+                                style="background: #B8D1DE" title="Sky"></button>
+                            <button type="button" class="color-swatch" data-color="#B3D2C8" style="background: #B3D2C8"
+                                title="Seafoam"></button>
+                            <button type="button" class="color-swatch" data-color="#BCD9B6" style="background: #BCD9B6"
+                                title="Fern"></button>
+                            <button type="button" class="color-swatch" data-color="#EBDCB6" style="background: #EBDCB6"
+                                title="Linen"></button>
+                            <button type="button" class="color-swatch" data-color="#EECAAD" style="background: #EECAAD"
+                                title="Peach"></button>
+                            <button type="button" class="color-swatch" data-color="#E7B3A8" style="background: #E7B3A8"
+                                title="Terracotta"></button>
+                            <button type="button" class="color-swatch" data-color="#E1BAC3" style="background: #E1BAC3"
+                                title="Rose"></button>
+                            <button type="button" class="color-swatch" data-color="#C8B9D6" style="background: #C8B9D6"
+                                title="Lilac"></button>
+                            <!-- Custom color picker -->
+                            <div class="custom-color-wrapper">
+                                <input type="color" id="custom-color-input" class="custom-color-input" value="#B8D1DE">
+                                <button type="button" class="color-swatch custom-swatch" id="custom-color-swatch"
+                                    data-color="custom" style="background: #B8D1DE">
+                                    <span class="custom-icon">+</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label id="blocklist-emoji-label">Emoji</label>
+                    <div class="emoji-picker-container">
+                        <div class="emoji-swatches" id="emoji-swatches">
+                            <button type="button" class="emoji-swatch selected" data-emoji="🎯">🎯</button>
+                            <button type="button" class="emoji-swatch" data-emoji="💪">💪</button>
+                            <button type="button" class="emoji-swatch" data-emoji="📚">📚</button>
+                            <button type="button" class="emoji-swatch" data-emoji="🚫">🚫</button>
+                            <button type="button" class="emoji-swatch" data-emoji="🌳">🌳</button>
+                            <button type="button" class="emoji-swatch" data-emoji="🎉">🎉</button>
+                            <button type="button" class="emoji-swatch" data-emoji="🛏️">🛏️</button>
+                            <button type="button" class="emoji-swatch" data-emoji="🎹">🎹</button>
+                            <!-- Custom emoji selector -->
+                            <div class="custom-emoji-wrapper">
+                                <button type="button" class="emoji-swatch custom-emoji-swatch" id="custom-emoji-swatch">
+                                    <span class="custom-icon">+</span>
+                                </button>
+                                <div id="emoji-picker-popover" class="emoji-picker-popover hidden">
+                                    <emoji-picker></emoji-picker>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
                     <label class="label-with-info">
                         <span id="blocklist-websites-label">Websites</span>
                         <span class="info-tooltip-wrapper">
@@ -720,70 +784,6 @@
                     <textarea id="custom-override-text" class="form-textarea hidden"
                         placeholder="Enter your custom text (e.g., a motivational statement)"></textarea>
                     <span id="override-count-warning" class="form-hint warning hidden"></span>
-                </div>
-
-                <div class="form-group">
-                    <label id="blocklist-color-label">Color</label>
-                    <div class="color-picker-container">
-                        <div class="color-swatches" id="color-swatches">
-                            <!-- ReDD-aligned palette: Nordic-watercolor pastels, taking inspiration
-                                 from reddfocus.org's soft-surface accents (coral-soft, teal-soft,
-                                 blue-soft) which read as calm watercolor washes on the cream canvas.
-                                 Hues sweep cleanly around the wheel — sky → sea → fern → linen →
-                                 peach → terracotta → rose → lilac — so the family feels Scandi /
-                                 sophisticated, not earthy. Lightness held in a 76-82% band so they
-                                 sit comfortably on cream without shouting. -->
-                            <button type="button" class="color-swatch selected" data-color="#B8D1DE"
-                                style="background: #B8D1DE" title="Sky"></button>
-                            <button type="button" class="color-swatch" data-color="#B3D2C8" style="background: #B3D2C8"
-                                title="Seafoam"></button>
-                            <button type="button" class="color-swatch" data-color="#BCD9B6" style="background: #BCD9B6"
-                                title="Fern"></button>
-                            <button type="button" class="color-swatch" data-color="#EBDCB6" style="background: #EBDCB6"
-                                title="Linen"></button>
-                            <button type="button" class="color-swatch" data-color="#EECAAD" style="background: #EECAAD"
-                                title="Peach"></button>
-                            <button type="button" class="color-swatch" data-color="#E7B3A8" style="background: #E7B3A8"
-                                title="Terracotta"></button>
-                            <button type="button" class="color-swatch" data-color="#E1BAC3" style="background: #E1BAC3"
-                                title="Rose"></button>
-                            <button type="button" class="color-swatch" data-color="#C8B9D6" style="background: #C8B9D6"
-                                title="Lilac"></button>
-                            <!-- Custom color picker -->
-                            <div class="custom-color-wrapper">
-                                <input type="color" id="custom-color-input" class="custom-color-input" value="#B8D1DE">
-                                <button type="button" class="color-swatch custom-swatch" id="custom-color-swatch"
-                                    data-color="custom" style="background: #B8D1DE">
-                                    <span class="custom-icon">+</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label id="blocklist-emoji-label">Emoji</label>
-                    <div class="emoji-picker-container">
-                        <div class="emoji-swatches" id="emoji-swatches">
-                            <button type="button" class="emoji-swatch selected" data-emoji="🎯">🎯</button>
-                            <button type="button" class="emoji-swatch" data-emoji="💪">💪</button>
-                            <button type="button" class="emoji-swatch" data-emoji="📚">📚</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🚫">🚫</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🌳">🌳</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🎉">🎉</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🛏️">🛏️</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🎹">🎹</button>
-                            <!-- Custom emoji selector -->
-                            <div class="custom-emoji-wrapper">
-                                <button type="button" class="emoji-swatch custom-emoji-swatch" id="custom-emoji-swatch">
-                                    <span class="custom-icon">+</span>
-                                </button>
-                                <div id="emoji-picker-popover" class="emoji-picker-popover hidden">
-                                    <emoji-picker></emoji-picker>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- Advanced Options (Expandable) -->

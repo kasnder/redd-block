@@ -2792,10 +2792,14 @@ body.ios .segment-day-toggle {
     color: white;
 }
 
-body:not(.dark-mode) .segment-day-toggle.active:hover:not(:disabled):not([disabled]) {
-    background: hsl(229, 79%, 72%);
+/* On hover the generic .segment-day-toggle:hover rule overrides color to
+   --accent-color via specificity; for active toggles that means white text
+   would flip to teal-on-teal. Override with a lightened accent so the day
+   name stays legible while still giving hover feedback. */
+.segment-day-toggle.active:hover:not(:disabled):not([disabled]) {
+    background: color-mix(in srgb, var(--accent-color) 82%, white);
+    border-color: color-mix(in srgb, var(--accent-color) 82%, white);
     color: white;
-    border-color: hsl(229, 79%, 72%);
 }
 
 /* Schedule Repeat Section */
