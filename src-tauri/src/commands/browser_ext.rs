@@ -249,15 +249,91 @@ pub fn show_blocking_warning_shell_without_stealing_focus(app: &AppHandle) {
 pub fn show_blocking_warning_shell_without_stealing_focus(_app: &AppHandle) {}
 
 /// While the app-blocking force-quit warning is visible, keep the main
-/// window above normal windows and on every desktop Space (the second
-/// part is especially important on macOS so the countdown isn't stuck on
-/// another Space while a blocked app is full-screen).
+/// window above normal windows and on every desktop Space — including
+/// when a blocked app is in macOS fullscreen, where the countdown would
+/// otherwise be invisible on another Space.
 pub fn set_blocking_warning_attention(app: &AppHandle, active: bool) {
     let Some(w) = app.get_webview_window("main") else {
         return;
     };
     let _ = w.set_always_on_top(active);
     let _ = w.set_visible_on_all_workspaces(active);
+
+    #[cfg(target_os = "macos")]
+    apply_macos_blocking_warning_panel_mode(app, active);
+}
+
+/// Switch the main window between "regular app window" and "redd-do-style
+/// pop-out NSPanel" modes. The window's underlying class is already an
+/// NSPanel subclass (see `MainPanel` in `lib.rs`); here we only flip the
+/// runtime properties that distinguish a panel-style overlay:
+///
+/// * `NSWindowStyleMaskNonactivatingPanel` — the panel can come to the
+///   front without making ReDD Block the active app, so the user can keep
+///   typing into the save dialog of the blocked app.
+/// * `PanelLevel::Floating` — sits above normal windows.
+/// * `FullScreenAuxiliary` collection behavior — the missing piece that
+///   lets the panel join and float over a third-party fullscreen Space
+///   (`canJoinAllSpaces` alone is not enough).
+///
+/// On exit we restore the regular main-window style mask + level +
+/// default collection behavior so the app behaves normally again.
+///
+/// All three setters dispatch into AppKit, which asserts main-thread-only
+/// — but our caller (`app_watcher`) lives on a background thread, so
+/// dispatch the whole flip via `run_on_main_thread`. (Tauri's own
+/// `set_always_on_top` / `set_visible_on_all_workspaces` do this for you;
+/// the tauri-nspanel panel API does not.)
+#[cfg(target_os = "macos")]
+fn apply_macos_blocking_warning_panel_mode(app: &AppHandle, active: bool) {
+    use tauri_nspanel::{
+        objc2_app_kit::NSWindowStyleMask, CollectionBehavior, ManagerExt, PanelLevel, StyleMask,
+    };
+
+    let handle = app.clone();
+    if let Err(e) = app.run_on_main_thread(move || {
+        // The main window was converted to an NSPanel-backed `MainPanel`
+        // at setup. If the panel handle is missing here we're either
+        // being called before that ran (very early startup) or after
+        // the window was destroyed — in either case the legacy
+        // `set_always_on_top` / `set_visible_on_all_workspaces` calls
+        // already gave us a best-effort overlay, so we just log and
+        // return.
+        let panel = match handle.get_webview_panel("main") {
+            Ok(p) => p,
+            Err(e) => {
+                log::warn!("set_blocking_warning_attention: main panel missing: {e:?}");
+                return;
+            }
+        };
+
+        // The main window's baseline style mask matches the
+        // `WebviewWindowBuilder` config: titled (with `TitleBarStyle::Overlay`
+        // contributing `FullSizeContentView`), closable, miniaturizable,
+        // resizable. We add/remove only the `NonactivatingPanel` bit on
+        // top of that so the title-bar layout stays stable across the
+        // switch.
+        let base_mask: NSWindowStyleMask = StyleMask::new().full_size_content_view().into();
+
+        if active {
+            panel.set_style_mask(base_mask | NSWindowStyleMask::NonactivatingPanel);
+            panel.set_level(PanelLevel::Floating.value());
+            panel.set_collection_behavior(
+                CollectionBehavior::new()
+                    .can_join_all_spaces()
+                    .stationary()
+                    .full_screen_auxiliary()
+                    .ignores_cycle()
+                    .into(),
+            );
+        } else {
+            panel.set_style_mask(base_mask);
+            panel.set_level(PanelLevel::Normal.value());
+            panel.set_collection_behavior(CollectionBehavior::new().into());
+        }
+    }) {
+        log::warn!("apply_macos_blocking_warning_panel_mode: main thread: {e:?}");
+    }
 }
 
 /// Shrinks the main window to the warning-card footprint and strips the

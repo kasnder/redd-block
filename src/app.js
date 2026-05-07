@@ -2547,12 +2547,8 @@ function setupAppBlockingWarningOverlay() {
         const p = event?.payload || {};
         const pid = Number(p.pid);
         if (!Number.isFinite(pid)) return;
-        const reason = p.reason || p.reason_snake_case;
         appBlockingWarningRows.delete(pid);
         renderAppBlockingWarningOverlay();
-        if (reason === 'force_killed') {
-            showAppBlockingForceKilledToast(p.name || 'the app');
-        }
     }).catch(onFail('warning-hide'));
 }
 
@@ -2655,33 +2651,6 @@ function renderAppBlockingWarningOverlay() {
     syncWindowModeClass();
     ensureAppBlockingWarningResizeObserver();
     scheduleBlockingWarningWindowFit();
-}
-
-/** One-off banner after the native watcher SIGKILLs from the countdown. */
-function showAppBlockingForceKilledToast(appName) {
-    const id = 'app-blocking-killed-toast';
-    let el = document.getElementById(id);
-    if (!el) {
-        el = document.createElement('div');
-        el.id = id;
-        el.className = 'app-blocking-killed-toast hidden';
-        el.setAttribute('role', 'status');
-        document.querySelector('.app-container')?.prepend(el);
-    }
-    el.innerHTML = `
-        <span class="app-blocking-killed-toast-msg">
-            <strong>${escapeHtml(appName)}</strong> was force-quit because the warning countdown ran out while you were active.
-        </span>
-        <button type="button" class="app-blocking-killed-toast-dismiss" title="Dismiss">&times;</button>
-    `;
-    el.classList.remove('hidden');
-    el.querySelector('.app-blocking-killed-toast-dismiss')?.addEventListener('click', () => {
-        el.classList.add('hidden');
-    }, { once: true });
-    window.clearTimeout(el._appBlockingKilledTimer);
-    el._appBlockingKilledTimer = window.setTimeout(() => {
-        el?.classList.add('hidden');
-    }, 15000);
 }
 
 // Check if the helper daemon is available (desktop only)

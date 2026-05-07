@@ -6574,48 +6574,6 @@ body.app-blocking-warning-window-mode .app-blocking-warning-heading {
     box-sizing: border-box;
 }
 
-.app-blocking-killed-toast {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin: 0 16px 12px 16px;
-    padding: 12px 14px;
-    border-radius: var(--radius-sm);
-    border: 1px solid #fca5a5;
-    background: #fef2f2;
-    color: #991b1b;
-    font-size: 14px;
-    line-height: 1.45;
-    z-index: 50;
-}
-
-.app-blocking-killed-toast.hidden {
-    display: none;
-}
-
-.app-blocking-killed-toast-dismiss {
-    flex-shrink: 0;
-    border: none;
-    background: transparent;
-    color: inherit;
-    font-size: 22px;
-    line-height: 1;
-    cursor: pointer;
-    padding: 0 4px;
-    opacity: 0.75;
-}
-
-.app-blocking-killed-toast-dismiss:hover {
-    opacity: 1;
-}
-
-body.dark-mode .app-blocking-killed-toast {
-    background: rgba(127, 29, 29, 0.25);
-    border-color: #b91c1c;
-    color: #fecaca;
-}
-
 body.dark-mode .app-blocking-warning-heading {
     color: #f87171;
 }

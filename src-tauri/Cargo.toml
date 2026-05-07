@@ -45,6 +45,12 @@ cocoa = "0.26"
 objc = "0.2"
 objc2-foundation = { version = "0.3", default-features = false, features = ["NSError", "NSFileManager", "NSString", "NSURL"] }
 plist = "1"
+# NSPanel-backed main window: lets the blocking-warning shell adopt
+# `NSWindowStyleMaskNonactivatingPanel` + `FullScreenAuxiliary` collection
+# behavior during the countdown so it floats above third-party fullscreen
+# windows without stealing focus — same machinery redd-do uses for its
+# pop-out focus panel.
+tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.1" }
 
 [target.'cfg(target_os = "ios")'.dependencies]
 tauri-plugin-screentime = { path = "../tauri-plugin-screentime" }
