@@ -172,7 +172,7 @@ const UI_ZOOM_MIN = 0.8;
 const UI_ZOOM_MAX = 1.8;
 const UI_ZOOM_MAX_DESKTOP = 1.5;  // cap on macOS/Windows (native webview zoom)
 const UI_ZOOM_STEP = 0.1;
-const DEFAULT_UI_ZOOM = 1.0;
+const DEFAULT_UI_ZOOM = 1.1;
 let zoomToastHideTimeout = null;
 let nativeWebviewZoomSupported = null;
 
@@ -11089,6 +11089,7 @@ function getSavedUiZoom() {
 
 function applyUiZoom(scale) {
     const clamped = clampUiZoom(scale);
+    syncFooterZoomControl(clamped);
 
     // On desktop (Windows and macOS), use native webview zoom so content scales correctly
     // and behavior matches across platforms. Fall back to CSS zoom if unavailable (e.g. permission).
@@ -11107,6 +11108,27 @@ function applyUiZoom(scale) {
 
     // Fallback path (iOS or if native zoom isn't available).
     document.documentElement.style.zoom = String(clamped);
+}
+
+// Mirror the current zoom level into the footer percentage label and
+// +/- button enabled state. Called from applyUiZoom so every entry
+// point (footer buttons, cmd-+/-/0 shortcuts, native menu items) keeps
+// the UI in sync.
+function syncFooterZoomControl(scale) {
+    const valueDisplay = document.getElementById('footer-zoom-value');
+    const zoomOutBtn = document.getElementById('footer-zoom-out');
+    const zoomInBtn = document.getElementById('footer-zoom-in');
+    if (valueDisplay) valueDisplay.textContent = `${Math.round(scale * 100)}%`;
+    const max = getUiZoomMax();
+    if (zoomOutBtn) zoomOutBtn.disabled = scale <= UI_ZOOM_MIN + 1e-6;
+    if (zoomInBtn) zoomInBtn.disabled = scale >= max - 1e-6;
+}
+
+function setupFooterZoomControl() {
+    const zoomOutBtn = document.getElementById('footer-zoom-out');
+    const zoomInBtn = document.getElementById('footer-zoom-in');
+    if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => zoomUiOut());
+    if (zoomInBtn) zoomInBtn.addEventListener('click', () => zoomUiIn());
 }
 
 function showUiZoomToast(scale) {
@@ -11155,6 +11177,7 @@ function resetUiZoom(options = {}) {
 }
 
 function setupUiZoomShortcuts() {
+    setupFooterZoomControl();
     applyUiZoom(getSavedUiZoom());
 
     tauriAPI.onMenuZoomIn(() => zoomUiIn({ showToast: true })).catch(() => { });
