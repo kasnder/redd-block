@@ -103,6 +103,11 @@ const tauriAPI = {
         invoke('app_blocking_bring_forward_then_quit_again', { pids }),
     resizeBlockingWarningInner: (width, height) =>
         invoke('resize_blocking_warning_inner_size', { width, height }),
+    // Toggles the always-on-top compact-window panel mode (the same
+    // mechanism the native app-blocking watcher uses, refcounted in
+    // Rust). Used by the scheduled-block heads-up countdown.
+    enterBlockingWarningPanelMode: () => invoke('enter_blocking_warning_panel_mode'),
+    leaveBlockingWarningPanelMode: () => invoke('leave_blocking_warning_panel_mode'),
 
     // macOS-only in-app uninstall. Disables launch-at-login, scrubs
     // browser native-messaging manifests, and schedules a delayed
@@ -1015,6 +1020,7 @@ async function runPostAcceptanceStartup() {
             // a no-op on subsequent launches past the current version.
             setupEnforcerUiAlerts();
             setupAppBlockingWarningOverlay();
+            setupScheduledBlockWarningCard();
             await runDesktopOnboarding();
             await checkHelperStatus();
             console.log('[startup-sync] Desktop startup helperAvailable:', helperAvailable);
@@ -2533,16 +2539,31 @@ async function syncBlockingWarningWindowToContent() {
     if (!document.documentElement.classList.contains('app-blocking-warning-window-mode')) return;
     if (isIOS) return;
     const overlay = document.getElementById('app-blocking-warning-overlay');
-    const panel = document.querySelector('.app-blocking-warning-panel');
-    if (!overlay || !panel || overlay.classList.contains('hidden')) return;
+    if (!overlay || overlay.classList.contains('hidden')) return;
+    // Pick whichever card is currently visible inside the overlay so the
+    // measurement reflects the live content rather than a stale or
+    // hidden panel. (We used to query a single hard-coded selector,
+    // which broke after the force-quit panel got restructured.)
+    const visibleCard = overlay.querySelector(
+        '#app-blocking-warning-panel:not(.hidden), #scheduled-block-warning-card:not(.hidden)',
+    );
     const ro = overlay.getBoundingClientRect();
-    const rp = panel.getBoundingClientRect();
+    const rp = visibleCard?.getBoundingClientRect();
     const width = Math.ceil(
-        Math.max(overlay.scrollWidth, panel.scrollWidth, ro.width, rp.width) + 4,
+        Math.max(
+            overlay.scrollWidth,
+            visibleCard?.scrollWidth ?? 0,
+            ro.width,
+            rp?.width ?? 0,
+        ) + 4,
     );
     const height = Math.ceil(
-        Math.max(overlay.scrollHeight, panel.scrollHeight, ro.height, rp.height)
-            + BLOCKING_WARNING_WINDOW_SIZE_BUFFER,
+        Math.max(
+            overlay.scrollHeight,
+            visibleCard?.scrollHeight ?? 0,
+            ro.height,
+            rp?.height ?? 0,
+        ) + BLOCKING_WARNING_WINDOW_SIZE_BUFFER,
     );
     try {
         await tauriAPI.resizeBlockingWarningInner(width, height);
@@ -2595,105 +2616,470 @@ function setupAppBlockingWarningOverlay() {
     }).catch(onFail('warning-hide'));
 }
 
+/** Find the user's blocklist that contains a given app name (case-insensitive).
+ *  Used to surface the matching blocklist's name + emoji in the
+ *  force-quit warning so the user knows which block is responsible. */
+function findBlocklistForBlockedAppName(appName) {
+    if (!appName) return null;
+    const target = String(appName).trim().toLowerCase();
+    if (!target) return null;
+    const blocklists = appData?.blocklists || [];
+    for (const bl of blocklists) {
+        const apps = bl.apps || [];
+        if (apps.some((a) => String(a).trim().toLowerCase() === target)) {
+            return bl;
+        }
+    }
+    return null;
+}
+
 function renderAppBlockingWarningOverlay() {
     const overlay = document.getElementById('app-blocking-warning-overlay');
-    const listEl = document.getElementById('app-blocking-warning-list');
-    if (!overlay || !listEl) return;
-
-    const syncWindowModeClass = () => {
-        const active = appBlockingWarningRows.size > 0;
-        document.documentElement.classList.toggle('app-blocking-warning-window-mode', active);
-        document.body.classList.toggle('app-blocking-warning-window-mode', active);
-    };
+    if (!overlay) return;
 
     const footerEl = document.getElementById('app-blocking-warning-footer');
+    if (footerEl) {
+        footerEl.classList.add('hidden');
+        footerEl.innerHTML = '';
+    }
 
     if (appBlockingWarningRows.size === 0) {
-        overlay.classList.add('hidden');
-        listEl.innerHTML = '';
-        if (footerEl) {
-            footerEl.classList.add('hidden');
-            footerEl.innerHTML = '';
-        }
-        const targetsEl = document.getElementById('app-blocking-warning-targets');
-        if (targetsEl) {
-            targetsEl.hidden = true;
-            targetsEl.innerHTML = '';
-        }
-        teardownAppBlockingWarningResizeObserver();
-        syncWindowModeClass();
+        applyWarningOverlayPresence();
         return;
     }
 
-    overlay.classList.remove('hidden');
-    listEl.innerHTML = '';
-
-    const targetsEl = document.getElementById('app-blocking-warning-targets');
+    // Multi-app warnings collapse to ONE shared ring (smallest remaining
+    // across all rows). All rows are caught around the same time so the
+    // spread is small in practice; honest urgency over per-app fidelity.
+    let smallestRemaining = Infinity;
+    let largestTotal = 0;
+    let anyPaused = false;
     /** @type {string[]} */
     const names = [];
     for (const [, row] of appBlockingWarningRows) {
+        if (row.remainingSecs < smallestRemaining) smallestRemaining = row.remainingSecs;
+        if (row.totalSecs > largestTotal) largestTotal = row.totalSecs;
+        if (row.paused) anyPaused = true;
         const n = (row.name || 'Unknown app').trim() || 'Unknown app';
         names.push(n);
     }
+    if (!Number.isFinite(smallestRemaining)) smallestRemaining = 0;
+    if (largestTotal <= 0) largestTotal = 60;
 
-    if (targetsEl) {
-        targetsEl.hidden = false;
-        const intro =
-            names.length === 1
-                ? 'Exact application name below — ReDD&nbsp;Block <strong>will force-close</strong> it when the countdown reaches zero unless you quit it cleanly first (⌘Q on Mac, Alt+F4 or File → Quit on Windows):'
-                : 'Exact application names below — ReDD&nbsp;Block <strong>will force-close</strong> each one when its countdown reaches zero unless you quit that app cleanly first (⌘Q on Mac, Alt+F4 or File → Quit on Windows):';
-        targetsEl.innerHTML = `
-            <p class="app-blocking-warning-targets-intro">${intro}</p>
-            <ul class="app-blocking-warning-targets-list" aria-label="Exact names of apps that ReDD Block will force-close">
-                ${names.map((n) => `<li>${escapeHtml(n)}</li>`).join('')}
-            </ul>
-        `;
+    // Pick the blocklist responsible for these warnings — for the common
+    // single-app case this is unambiguous; for multi-app we fall back to
+    // the first matching blocklist (multiple-blocklist conflicts are
+    // rare and not worth the UI complexity).
+    const responsibleBlocklist = names
+        .map(findBlocklistForBlockedAppName)
+        .find((bl) => bl) || null;
+    const blocklistName = responsibleBlocklist?.name || 'this block';
+    const blocklistEmoji = responsibleBlocklist?.emoji || '🎯';
+
+    const countdownEl = document.getElementById('force-quit-warning-countdown');
+    const ringEl = document.getElementById('force-quit-warning-ring-progress');
+    const summaryEl = document.getElementById('force-quit-warning-summary');
+    const blocklistNameEl = document.getElementById('force-quit-warning-blocklist-name');
+    const emojiEl = document.getElementById('force-quit-warning-emoji');
+
+    if (countdownEl) countdownEl.textContent = formatScheduledBlockCountdown(smallestRemaining);
+
+    if (ringEl) {
+        const elapsedFraction = Math.min(
+            1,
+            Math.max(0, 1 - smallestRemaining / largestTotal),
+        );
+        const elapsedPct = (elapsedFraction * 100).toFixed(2);
+        ringEl.setAttribute('stroke-dasharray', `${elapsedPct} 100`);
     }
 
-    for (const [pid, row] of appBlockingWarningRows) {
-        const card = document.createElement('div');
-        card.className = 'app-blocking-warning-card';
-        card.dataset.pid = String(pid);
+    if (blocklistNameEl) blocklistNameEl.textContent = blocklistName;
+    if (emojiEl) emojiEl.textContent = blocklistEmoji;
 
-        const displayName = (row.name || 'Unknown app').trim() || 'Unknown app';
-        const pausedNote = row.paused
-            ? '<p class="app-blocking-warning-paused">Countdown paused — no recent keyboard or mouse activity. It resumes when you return.</p>'
+    if (summaryEl) {
+        const apps = joinAppListWithLimit(names, 3);
+        const them = names.length === 1 ? 'it' : 'them';
+        const seconds = Math.max(0, Math.ceil(smallestRemaining));
+        const secondsPhrase = `<strong>${seconds}s</strong>`;
+        const pausedNote = anyPaused
+            ? ' Countdown paused while you\'re away — it resumes the moment you come back.'
             : '';
-
-        card.innerHTML = `
-            <div class="app-blocking-warning-card-head">
-                <h3 class="app-blocking-warning-app-name">${escapeHtml(displayName)}</h3>
-            </div>
-            <div class="app-blocking-warning-countdown-hero" aria-live="polite">
-                <span class="app-blocking-warning-countdown-giant">${row.remainingSecs}</span>
-                <span class="app-blocking-warning-countdown-unit-giant">s</span>
-            </div>
-            ${pausedNote}
-        `;
-
-        listEl.appendChild(card);
+        summaryEl.innerHTML =
+            `We're closing ${apps} for you in ${secondsPhrase}, because you have decided to block ${them}.${pausedNote}`;
     }
 
-    if (footerEl) {
-        footerEl.classList.remove('hidden');
-        footerEl.innerHTML = `
-            <button type="button" class="modal-btn cancel-btn app-blocking-btn-bring-forward-quit" id="app-blocking-bring-forward-quit-btn">
-                Bring each app forward, then try to quit again — save your work first
-            </button>
-        `;
-        footerEl.querySelector('#app-blocking-bring-forward-quit-btn')?.addEventListener('click', () => {
-            const pids = Array.from(appBlockingWarningRows.keys(), (k) => Number(k)).filter((n) =>
-                Number.isFinite(n) && n > 0,
-            );
-            tauriAPI
-                .appBlockingBringForwardThenQuitAgain(pids)
-                .catch((e) => console.warn('[app-blocking-ui] bring forward + quit again:', e));
+    applyWarningOverlayPresence();
+}
+
+// ---- Warning-overlay shared coordinator -----------------------------------
+//
+// The same `#app-blocking-warning-overlay` + `app-blocking-warning-window-mode`
+// compact-window panel mode hosts both the native force-quit countdown
+// (driven by `appBlockingWarningRows`) and the heads-up scheduled-block
+// card (driven by `scheduledBlockWarningCurrent`). One coordinator
+// reconciles their state into the DOM + native panel mode so we never
+// end up with the overlay shown while every inner panel is hidden, or
+// vice versa.
+//
+// The native app-blocking watcher already manages its own panel-mode
+// layer in Rust (`blocking_warning_begin/end`). Here we maintain ONE
+// extra refcount layer for the schedule warning, so panel mode stays on
+// when only the schedule card is visible and turns off cleanly when
+// both warning sources go quiet.
+let scheduledBlockWarningPanelLayered = false;
+
+function applyWarningOverlayPresence() {
+    if (isIOS) return;
+    const overlay = document.getElementById('app-blocking-warning-overlay');
+    if (!overlay) return;
+    const appPanel = document.getElementById('app-blocking-warning-panel');
+    const schedCard = document.getElementById('scheduled-block-warning-card');
+
+    const hasAppBlocking = appBlockingWarningRows.size > 0;
+    const hasScheduled = scheduledBlockWarningCurrent !== null;
+    const anyVisible = hasAppBlocking || hasScheduled;
+
+    overlay.classList.toggle('hidden', !anyVisible);
+    appPanel?.classList.toggle('hidden', !hasAppBlocking);
+    schedCard?.classList.toggle('hidden', !hasScheduled);
+
+    document.documentElement.classList.toggle('app-blocking-warning-window-mode', anyVisible);
+    document.body.classList.toggle('app-blocking-warning-window-mode', anyVisible);
+
+    if (hasScheduled && !scheduledBlockWarningPanelLayered) {
+        scheduledBlockWarningPanelLayered = true;
+        tauriAPI.enterBlockingWarningPanelMode().catch((e) => {
+            // Don't leave a phantom layer if the IPC failed.
+            scheduledBlockWarningPanelLayered = false;
+            console.warn('[scheduled-warning] enter panel mode:', e);
+        });
+    } else if (!hasScheduled && scheduledBlockWarningPanelLayered) {
+        scheduledBlockWarningPanelLayered = false;
+        tauriAPI.leaveBlockingWarningPanelMode().catch((e) => {
+            console.warn('[scheduled-warning] leave panel mode:', e);
         });
     }
 
-    syncWindowModeClass();
-    ensureAppBlockingWarningResizeObserver();
-    scheduleBlockingWarningWindowFit();
+    if (anyVisible) {
+        ensureAppBlockingWarningResizeObserver();
+        scheduleBlockingWarningWindowFit();
+    } else {
+        teardownAppBlockingWarningResizeObserver();
+    }
+}
+
+// ---- Scheduled-block heads-up warning -------------------------------------
+//
+// Two minutes before a scheduled block starts, surface the same compact
+// always-on-top panel the force-quit watcher uses, with a friendly
+// "starts in 1:23" countdown and a "Got it!" dismiss. Lets the user wrap
+// up what they're doing — e.g. close form-data-heavy browser tabs — and
+// guarantees they see the heads-up even from a fullscreen Space.
+
+const SCHEDULED_BLOCK_WARNING_LEAD_MS = 2 * 60 * 1000;
+// Below this remaining-time threshold the card switches to the
+// "ALMOST TIME / Save anything you need" amber state with a single
+// full-width CTA. Above it the card stays in the calmer "HEADS UP"
+// initial state.
+const SCHEDULED_BLOCK_WARNING_FINAL_MS = 15 * 1000;
+
+/** @type {{ occurrenceKey: string, startMs: number, schedule: any, blocklist: any } | null} */
+let scheduledBlockWarningCurrent = null;
+/** Occurrence keys the user has dismissed via "Got it!". Pruned as starts pass. */
+const scheduledBlockWarningDismissed = new Set();
+
+/** Earliest upcoming start time (ms) for this schedule, or null. */
+function computeNextScheduledBlockStartMs(schedule, nowMs) {
+    if (!schedule || !schedule.segments || schedule.segments.length === 0) return null;
+    if (isSchedulePausedNow(schedule, nowMs)) return null;
+
+    if (isNonRepeatingSchedule(schedule)) {
+        let best = null;
+        for (const occ of resolveOneShotOccurrences(schedule)) {
+            const startMs = occ.start.getTime();
+            if (startMs <= nowMs) continue;
+            if (best === null || startMs < best) best = startMs;
+        }
+        return best;
+    }
+
+    // Repeating schedules: scan the next 8 days for the earliest segment
+    // start that hasn't already passed.
+    const now = new Date(nowMs);
+    const currentDow = now.getDay() === 0 ? 6 : now.getDay() - 1; // Mon=0
+    let best = null;
+    for (let dayOffset = 0; dayOffset < 8; dayOffset++) {
+        const dow = (currentDow + dayOffset) % 7;
+        for (const seg of schedule.segments) {
+            if (!seg.days || !seg.days.includes(dow)) continue;
+            const segStart = new Date(now);
+            segStart.setDate(now.getDate() + dayOffset);
+            segStart.setHours(seg.startHour, seg.startMinute, 0, 0);
+            const startMs = segStart.getTime();
+            if (startMs <= nowMs) continue;
+            if (best === null || startMs < best) best = startMs;
+        }
+    }
+    return best;
+}
+
+/** Format remaining seconds as "M:SS" (or "0:SS" when under 60s). */
+function formatScheduledBlockCountdown(secondsRemaining) {
+    const s = Math.max(0, Math.ceil(secondsRemaining));
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return `${m}:${String(r).padStart(2, '0')}`;
+}
+
+/** Pretty list join: "A", "A and B", "A, B and C", "A, B and 4 more". */
+function joinAppListWithLimit(names, max = 3, { bold = true } = {}) {
+    const arr = names.filter(Boolean);
+    const wrap = bold
+        ? (n) => `<strong>${escapeHtml(n)}</strong>`
+        : (n) => escapeHtml(n);
+    if (arr.length === 0) return '';
+    if (arr.length === 1) return wrap(arr[0]);
+    if (arr.length <= max) {
+        const head = arr.slice(0, -1).map(wrap).join(', ');
+        const tail = wrap(arr[arr.length - 1]);
+        return `${head} and ${tail}`;
+    }
+    const shown = arr.slice(0, max - 1).map(wrap).join(', ');
+    const remaining = arr.length - (max - 1);
+    return `${shown} and ${wrap(`${remaining} more`)}`;
+}
+
+/** Initial-state body text. Apps are listed, website count summarised,
+ *  and the closing-handoff sentence ("we'll close them for you") only
+ *  appears when there's at least one app to close. */
+function formatScheduledBlockSummaryInitial(blocklist) {
+    if (!blocklist) return '';
+    const apps = blocklist.apps || [];
+    const websiteCount = (blocklist.websites || []).length;
+    const websitePhrase = websiteCount === 1 ? '1 website' : `${websiteCount} websites`;
+
+    const sentences = [];
+    if (apps.length > 0 && websiteCount > 0) {
+        sentences.push(
+            `${joinAppListWithLimit(apps)} will be closed and `
+            + `<strong>${websitePhrase}</strong> will be blocked.`,
+        );
+    } else if (apps.length > 0) {
+        sentences.push(`${joinAppListWithLimit(apps)} will be closed.`);
+    } else if (websiteCount > 0) {
+        sentences.push(`<strong>${websitePhrase}</strong> will be blocked.`);
+    } else {
+        return '';
+    }
+
+    sentences.push('If you are using any of these now, save anything you need.');
+    if (apps.length > 0) {
+        sentences.push("We'll close the apps down for you when the countdown ends.");
+    }
+    return sentences.join(' ');
+}
+
+/** Final-state body text: "Closing <apps> in N seconds. Save anything you want to keep right now." */
+function formatScheduledBlockSummaryFinal(blocklist, secondsLeft) {
+    if (!blocklist) return '';
+    const apps = blocklist.apps || [];
+    const websiteCount = (blocklist.websites || []).length;
+    const seconds = Math.max(0, Math.ceil(secondsLeft));
+    const secondsPhrase = `in <strong>${seconds} ${seconds === 1 ? 'second' : 'seconds'}</strong>`;
+
+    if (apps.length > 0 && websiteCount > 0) {
+        return `Closing ${joinAppListWithLimit(apps)} ${secondsPhrase}, plus `
+            + `<strong>${websiteCount} ${websiteCount === 1 ? 'website' : 'websites'}</strong>. `
+            + 'Save anything you want to keep right now.';
+    }
+    if (apps.length > 0) {
+        return `Closing ${joinAppListWithLimit(apps)} ${secondsPhrase}. `
+            + 'Save anything you want to keep right now.';
+    }
+    if (websiteCount > 0) {
+        return `Blocking <strong>${websiteCount} ${websiteCount === 1 ? 'website' : 'websites'}</strong> ${secondsPhrase}.`;
+    }
+    return '';
+}
+
+/** Populate the static (non-countdown) parts of the schedule card for a
+ *  freshly-shown occurrence. Resets any leftover `.final` class from a
+ *  previous occurrence and re-applies the initial-state copy/emoji/CTA.
+ *  Final-state copy is then applied live in
+ *  `updateScheduledBlockWarningCountdown` once the 15s threshold is crossed. */
+function populateScheduledBlockWarningCard(state) {
+    const cardEl = document.getElementById('scheduled-block-warning-card');
+    cardEl?.classList.remove('final');
+    restoreScheduledBlockInitialState(state);
+}
+
+/** Render the eyebrow / top line.
+ *  Initial: "HEADS UP · <Blocklist> starts soon"
+ *  Final:   "ALMOST TIME · <Blocklist> starts now" */
+function renderScheduledBlockEyebrow(state, isFinal) {
+    const labelEl = document.querySelector('.scheduled-block-warning-eyebrow-label');
+    const detailEl = document.querySelector('.scheduled-block-warning-eyebrow-detail');
+    const nameEl = document.getElementById('scheduled-block-warning-blocklist-name');
+    const blocklistName = state.blocklist?.name || 'Block';
+    if (labelEl) labelEl.textContent = isFinal ? 'ALMOST TIME' : 'HEADS UP';
+    if (nameEl) nameEl.textContent = blocklistName;
+    if (detailEl) {
+        // Re-render so the trailing word matches the urgency level. Keep
+        // the <strong> wrap on the name so its weight is consistent.
+        detailEl.innerHTML = `<strong id="scheduled-block-warning-blocklist-name">${escapeHtml(blocklistName)}</strong> ${
+            isFinal ? 'starts now' : 'starts soon'
+        }`;
+    }
+}
+
+/** Push the live final-state copy + button label. Cheap; called every
+ *  tick once the 15s threshold is crossed so the seconds count in the
+ *  body text stays accurate. */
+function applyScheduledBlockFinalState(state, secondsLeft) {
+    const emojiEl = document.getElementById('scheduled-block-warning-emoji');
+    const summaryEl = document.getElementById('scheduled-block-warning-summary');
+
+    renderScheduledBlockEyebrow(state, /* isFinal */ true);
+    // Swap blocklist emoji for a warning glyph so the iconography
+    // reinforces the urgency shift.
+    if (emojiEl) emojiEl.textContent = '⚠️';
+    if (summaryEl) {
+        summaryEl.innerHTML = formatScheduledBlockSummaryFinal(state.blocklist, secondsLeft);
+    }
+}
+
+/** Restore initial-state copy/emoji. Idempotent. */
+function restoreScheduledBlockInitialState(state) {
+    const emojiEl = document.getElementById('scheduled-block-warning-emoji');
+    const summaryEl = document.getElementById('scheduled-block-warning-summary');
+
+    renderScheduledBlockEyebrow(state, /* isFinal */ false);
+    if (emojiEl) emojiEl.textContent = state.blocklist.emoji || '🎯';
+    if (summaryEl) summaryEl.innerHTML = formatScheduledBlockSummaryInitial(state.blocklist);
+}
+
+/**
+ * Update the countdown text + the SVG progress ring + final-state class.
+ *
+ * The ring uses `stroke-dasharray="<elapsed%> 100"` on a circle whose
+ * circumference is exactly 100 (r ≈ 15.91549431) — so the dash length
+ * maps directly to the percentage of the 2-minute window that has
+ * elapsed. The arc grows clockwise as the deadline approaches.
+ *
+ * Below the 15s threshold we toggle `.final` on the card root, which
+ * swaps the entire colour palette to amber (CSS variables), and we
+ * push live copy/emoji/button updates so the body text reflects the
+ * current seconds count.
+ */
+function updateScheduledBlockWarningCountdown(nowMs) {
+    if (!scheduledBlockWarningCurrent) return;
+    const countdownEl = document.getElementById('scheduled-block-warning-countdown');
+    const ringEl = document.getElementById('scheduled-block-warning-ring-progress');
+    const cardEl = document.getElementById('scheduled-block-warning-card');
+    if (!countdownEl) return;
+
+    const remainingMs = Math.max(0, scheduledBlockWarningCurrent.startMs - nowMs);
+    countdownEl.textContent = formatScheduledBlockCountdown(remainingMs / 1000);
+
+    const elapsedFraction = Math.min(
+        1,
+        Math.max(0, 1 - remainingMs / SCHEDULED_BLOCK_WARNING_LEAD_MS),
+    );
+    if (ringEl) {
+        const elapsedPct = (elapsedFraction * 100).toFixed(2);
+        ringEl.setAttribute('stroke-dasharray', `${elapsedPct} 100`);
+    }
+
+    const isFinal = remainingMs > 0 && remainingMs <= SCHEDULED_BLOCK_WARNING_FINAL_MS;
+    const wasFinal = cardEl?.classList.contains('final');
+    if (isFinal) {
+        cardEl?.classList.add('final');
+        applyScheduledBlockFinalState(scheduledBlockWarningCurrent, remainingMs / 1000);
+    } else if (wasFinal) {
+        // Should not normally happen (countdown is monotonic), but
+        // restore cleanly if state is forced backwards (e.g. clock change).
+        cardEl?.classList.remove('final');
+        restoreScheduledBlockInitialState(scheduledBlockWarningCurrent);
+    }
+}
+
+/** Called from the 1-second app-wide tick. Idempotent and cheap. */
+function tickScheduledBlockWarning(nowMs) {
+    if (isIOS) return;
+
+    // Forget dismissals whose occurrence has already passed.
+    if (scheduledBlockWarningDismissed.size > 0) {
+        for (const key of [...scheduledBlockWarningDismissed]) {
+            const startStr = key.split('@')[1];
+            const startMs = Number(startStr);
+            if (Number.isFinite(startMs) && startMs <= nowMs) {
+                scheduledBlockWarningDismissed.delete(key);
+            }
+        }
+    }
+
+    // App-blocking force-quit warnings outrank schedule heads-ups —
+    // a force-close happening NOW is more urgent than a block starting
+    // soon, so we suppress the schedule card while any are active.
+    if (appBlockingWarningRows.size > 0) {
+        if (scheduledBlockWarningCurrent) {
+            scheduledBlockWarningCurrent = null;
+            applyWarningOverlayPresence();
+        }
+        return;
+    }
+
+    // Find the soonest upcoming scheduled block (across all schedules).
+    let next = null;
+    const nowDate = new Date(nowMs);
+    for (const schedule of (appData.schedules || [])) {
+        if (!scheduleCanStillBecomeActive(schedule, nowDate)) continue;
+        if (isScheduleSegmentActiveNow(schedule, nowDate)) continue;
+        const startMs = computeNextScheduledBlockStartMs(schedule, nowMs);
+        if (startMs === null) continue;
+        if (next === null || startMs < next.startMs) {
+            const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
+            if (!blocklist) continue;
+            next = { startMs, schedule, blocklist };
+        }
+    }
+
+    const occurrenceKey = next ? `${next.schedule.id}@${next.startMs}` : null;
+    const withinLead = next && next.startMs - nowMs <= SCHEDULED_BLOCK_WARNING_LEAD_MS;
+    const dismissed = occurrenceKey && scheduledBlockWarningDismissed.has(occurrenceKey);
+    const shouldShow = withinLead && !dismissed;
+
+    if (shouldShow) {
+        const isNewOccurrence =
+            !scheduledBlockWarningCurrent
+            || scheduledBlockWarningCurrent.occurrenceKey !== occurrenceKey;
+        scheduledBlockWarningCurrent = { occurrenceKey, ...next };
+        if (isNewOccurrence) {
+            populateScheduledBlockWarningCard(scheduledBlockWarningCurrent);
+            applyWarningOverlayPresence();
+        }
+        updateScheduledBlockWarningCountdown(nowMs);
+    } else if (scheduledBlockWarningCurrent) {
+        scheduledBlockWarningCurrent = null;
+        applyWarningOverlayPresence();
+    }
+}
+
+/** Wire up the dismiss button. Idempotent. */
+let scheduledBlockWarningWired = false;
+function setupScheduledBlockWarningCard() {
+    if (scheduledBlockWarningWired) return;
+    const dismissBtn = document.getElementById('scheduled-block-warning-dismiss-btn');
+    if (!dismissBtn) return;
+    scheduledBlockWarningWired = true;
+
+    dismissBtn.addEventListener('click', () => {
+        if (scheduledBlockWarningCurrent) {
+            scheduledBlockWarningDismissed.add(scheduledBlockWarningCurrent.occurrenceKey);
+            scheduledBlockWarningCurrent = null;
+            applyWarningOverlayPresence();
+        }
+    });
 }
 
 // Check if the helper daemon is available (desktop only)
@@ -10804,6 +11190,14 @@ function startTickInterval() {
     setInterval(async () => {
         const now = Date.now();
         let shouldSyncControls = false;
+
+        // Drive the scheduled-block heads-up countdown. Cheap (no IPC unless
+        // the warning state actually transitions); safe to run unconditionally.
+        try {
+            tickScheduledBlockWarning(now);
+        } catch (e) {
+            console.warn('[scheduled-warning] tick:', e);
+        }
 
         // Check for future blocks that have now become active
         const newlyActiveBlocks = appData.activeBlocks.filter(

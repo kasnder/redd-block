@@ -1213,16 +1213,96 @@
             </div>
         </div>
 
-        <!-- Full-window force-quit warning (raised by native app watcher) -->
+        <!-- Full-window force-quit warning (raised by native app watcher).
+             Also hosts the scheduled-block heads-up card below — the
+             always-on-top compact-window panel mode is shared between
+             both warning types. -->
         <div id="app-blocking-warning-overlay" class="app-blocking-warning-overlay hidden" role="alertdialog"
             aria-modal="true" aria-labelledby="app-blocking-warning-heading">
-            <div class="app-blocking-warning-panel">
-                <h2 id="app-blocking-warning-heading" class="app-blocking-warning-heading" data-tauri-drag-region>
-                    Quit these apps cleanly — or they will be force-closed
-                </h2>
-                <div id="app-blocking-warning-targets" class="app-blocking-warning-targets" hidden aria-live="polite"></div>
-                <div id="app-blocking-warning-list" class="app-blocking-warning-list"></div>
+            <div class="force-quit-warning-card" id="app-blocking-warning-panel" data-tauri-drag-region>
+                <div class="force-quit-warning-card-body">
+                    <div class="force-quit-warning-hero">
+                        <!-- Single shared progress ring — when multiple apps are
+                             warning at once we show the smallest remaining
+                             across them so the urgency is honest. -->
+                        <div class="force-quit-warning-ring" aria-live="polite">
+                            <svg viewBox="0 0 36 36" class="force-quit-warning-ring-svg" aria-hidden="true">
+                                <circle class="force-quit-warning-ring-track"
+                                    cx="18" cy="18" r="15.91549431"></circle>
+                                <circle id="force-quit-warning-ring-progress"
+                                    class="force-quit-warning-ring-progress"
+                                    cx="18" cy="18" r="15.91549431"
+                                    stroke-dasharray="0 100" stroke-dashoffset="0"></circle>
+                            </svg>
+                            <span id="force-quit-warning-countdown" class="force-quit-warning-ring-label">1:00</span>
+                        </div>
+                        <div class="force-quit-warning-text">
+                            <p class="force-quit-warning-eyebrow">
+                                <span class="force-quit-warning-eyebrow-label">CLOSING SOON</span>
+                                <span class="force-quit-warning-eyebrow-sep" aria-hidden="true">·</span>
+                                <span class="force-quit-warning-eyebrow-detail">
+                                    <strong id="force-quit-warning-blocklist-name">Block</strong>
+                                </span>
+                            </p>
+                        </div>
+                        <div class="force-quit-warning-emoji-badge" aria-hidden="true">
+                            <span id="force-quit-warning-emoji">🎯</span>
+                        </div>
+                    </div>
+                    <p id="force-quit-warning-summary" class="force-quit-warning-summary"></p>
+                </div>
+                <!-- Footer button preserved (hidden by default) so JS still has
+                     a slot for the manual "bring forward + retry Cmd-Q" CTA on
+                     occasions where it's useful — currently unused under the
+                     new design but the slot is here if we want it back. -->
                 <div id="app-blocking-warning-footer" class="app-blocking-warning-footer hidden"></div>
+            </div>
+            <!-- Heads-up card shown 2 minutes before a scheduled block
+                 starts. Lives inside the same overlay so it inherits the
+                 NSPanel-backed compact-window plumbing (always-on-top,
+                 floats over fullscreen). Toggled by JS — hidden when
+                 either no schedule is approaching or the user has
+                 dismissed this occurrence with "Got it!". -->
+            <div id="scheduled-block-warning-card" class="scheduled-block-warning-card hidden" data-tauri-drag-region>
+                <div class="scheduled-block-warning-card-body">
+                    <div class="scheduled-block-warning-hero">
+                        <!-- Circular progress ring with countdown text inside.
+                             The progress arc is updated by JS via stroke-dasharray
+                             so the ring fills clockwise as the deadline approaches. -->
+                        <div class="scheduled-block-warning-ring" aria-live="polite">
+                            <svg viewBox="0 0 36 36" class="scheduled-block-warning-ring-svg" aria-hidden="true">
+                                <circle class="scheduled-block-warning-ring-track"
+                                    cx="18" cy="18" r="15.91549431"></circle>
+                                <circle id="scheduled-block-warning-ring-progress"
+                                    class="scheduled-block-warning-ring-progress"
+                                    cx="18" cy="18" r="15.91549431"
+                                    stroke-dasharray="0 100" stroke-dashoffset="0"></circle>
+                            </svg>
+                            <span id="scheduled-block-warning-countdown" class="scheduled-block-warning-ring-label">2:00</span>
+                        </div>
+                        <div class="scheduled-block-warning-text">
+                            <p id="scheduled-block-warning-eyebrow" class="scheduled-block-warning-eyebrow">
+                                <span class="scheduled-block-warning-eyebrow-label">HEADS UP</span>
+                                <span class="scheduled-block-warning-eyebrow-sep" aria-hidden="true">·</span>
+                                <span class="scheduled-block-warning-eyebrow-detail">
+                                    <strong id="scheduled-block-warning-blocklist-name">Block</strong>
+                                    starts soon
+                                </span>
+                            </p>
+                        </div>
+                        <!-- Badge holds either the blocklist emoji (initial state) or
+                             a warning glyph (final 15-second state). JS swaps the
+                             content via #scheduled-block-warning-emoji. -->
+                        <div class="scheduled-block-warning-emoji-badge" aria-hidden="true">
+                            <span id="scheduled-block-warning-emoji">🎯</span>
+                        </div>
+                    </div>
+                    <p id="scheduled-block-warning-summary" class="scheduled-block-warning-summary"></p>
+                </div>
+                <div class="scheduled-block-warning-footer">
+                    <button type="button" id="scheduled-block-warning-dismiss-btn"
+                        class="modal-btn primary-btn scheduled-block-warning-dismiss-btn">Got it — I'm wrapping up!</button>
+                </div>
             </div>
         </div>
 

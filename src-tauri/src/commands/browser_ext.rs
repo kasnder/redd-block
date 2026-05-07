@@ -32,9 +32,13 @@ const WARNING_COMPACT_W: f64 = 592.0;
 /// Short-lived bootstrap height before JS fits the window to content.
 const WARNING_COMPACT_BOOTSTRAP_H: f64 = 360.0;
 
-/// Loose bounds so we can shrink below the normal 600×500 app min.
+/// Loose bounds so we can shrink below the normal 600×500 app min. The
+/// height floor needs to be small enough that the compact scheduled-block
+/// heads-up card (which is shorter than the force-quit warning) doesn't
+/// get padded out by an oversized window — `syncBlockingWarningWindowToContent`
+/// clamps the measured height to this floor.
 const WARNING_SHELL_MIN_W: f64 = 480.0;
-const WARNING_SHELL_MIN_H: f64 = 360.0;
+const WARNING_SHELL_MIN_H: f64 = 200.0;
 
 /// Cap so an enormous block list cannot create an unusably tall window.
 const WARNING_SHELL_MAX_H: f64 = 1280.0;
@@ -409,6 +413,34 @@ pub fn resize_blocking_warning_inner_size(
         .map_err(|e| e.to_string())?;
     Ok(())
 }
+
+/// Frontend-callable entry into the same panel-overlay refcount the
+/// app-blocking force-quit watcher uses. Lets JS trigger the always-on-
+/// top compact-window mode for non-watcher warnings (e.g. the heads-up
+/// before a scheduled block starts), so app-blocking and schedule
+/// warnings share one refcount and panel mode stays on as long as any
+/// warning layer is up.
+#[tauri::command]
+#[cfg(not(target_os = "ios"))]
+pub fn enter_blocking_warning_panel_mode(app: AppHandle) {
+    crate::app_watcher::blocking_warning_begin(Some(&app));
+}
+
+#[tauri::command]
+#[cfg(not(target_os = "ios"))]
+pub fn leave_blocking_warning_panel_mode(app: AppHandle) {
+    crate::app_watcher::blocking_warning_end(Some(&app));
+}
+
+// On iOS the compact-window / panel machinery is no-op anyway, but we
+// still register the commands so the JS `invoke` calls don't fail.
+#[tauri::command]
+#[cfg(target_os = "ios")]
+pub fn enter_blocking_warning_panel_mode(_app: AppHandle) {}
+
+#[tauri::command]
+#[cfg(target_os = "ios")]
+pub fn leave_blocking_warning_panel_mode(_app: AppHandle) {}
 
 #[cfg(target_os = "ios")]
 pub fn enter_blocking_warning_compact_window(_app: &AppHandle) {}

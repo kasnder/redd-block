@@ -6355,18 +6355,6 @@ body.dark-mode .zoom-toast {
     display: none;
 }
 
-.app-blocking-warning-panel {
-    max-width: 560px;
-    width: 100%;
-    max-height: min(90vh, 720px);
-    overflow: auto;
-    background: var(--panel-bg);
-    border: none;
-    border-radius: var(--radius-card);
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
-    padding: 0 24px 28px;
-}
-
 .app-blocking-warning-overlay button {
     -webkit-app-region: no-drag;
 }
@@ -6429,167 +6417,458 @@ body.app-blocking-warning-window-mode #app-blocking-warning-overlay.hidden {
     display: none !important;
 }
 
-body.app-blocking-warning-window-mode .app-blocking-warning-panel {
+
+/* ---- Force-quit "CLOSING SOON" warning card ------------------------------
+   Same skeleton as the schedule heads-up card but with a rose/pink
+   palette so the urgency is unmissable. Lives inside `#app-blocking-warning-overlay`
+   and inherits the always-on-top compact-window panel mode.
+
+   Multi-app warnings collapse to ONE shared ring (the smallest remaining
+   countdown across all blocked PIDs) so the visual is calm even when
+   3+ apps are queued for force-close.
+*/
+.force-quit-warning-card {
+    --fq-card-bg: #f6dfdf;
+    --fq-ring-track: rgba(155, 35, 35, 0.2);
+    --fq-ring-progress: #b22f2f;
+    --fq-eyebrow: #9b2323;
+
+    max-width: 560px;
+    width: 100%;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: stretch;
+}
+
+.force-quit-warning-card-body {
+    padding: 22px 22px 18px;
+    background: var(--fq-card-bg);
+    border-radius: 16px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+/* Compact-window mode: stretch edge-to-edge, no rounded corners. */
+body.app-blocking-warning-window-mode #app-blocking-warning-panel {
     flex: 0 0 auto;
     align-self: stretch;
-    width: 100%;
     max-width: none;
-    /* Let content define height — JS fits the native window; avoid max-height here
-       or scrollHeight clamps and the webview clips buttons at the bottom. */
-    max-height: none;
-    padding: calc(28px + env(safe-area-inset-top, 0px)) 24px 32px;
-    border-radius: 0;
-    box-shadow: none;
-    display: flex;
-    flex-direction: column;
-    border: none;
-    background: var(--panel-bg);
-    overflow: visible;
-}
-
-.app-blocking-warning-heading {
-    font-family: var(--font-heading);
-    color: #b91c1c;
-    font-size: 1.5rem;
-    font-weight: 700;
-    margin: 0 0 12px 0;
-    line-height: 1.25;
-    padding-top: 4px;
-    cursor: grab;
-    user-select: none;
-}
-
-.app-blocking-warning-heading:active {
-    cursor: grabbing;
-}
-
-body.app-blocking-warning-window-mode .app-blocking-warning-heading {
-    -webkit-app-region: drag;
-    padding-top: 0;
-}
-
-.app-blocking-warning-targets {
-    margin: 0 0 20px 0;
-}
-
-.app-blocking-warning-targets-intro {
-    margin: 0 0 14px 0;
-    font-size: 14px;
-    line-height: 1.5;
-    color: var(--text-secondary);
-}
-
-.app-blocking-warning-targets-list {
-    list-style: none;
     margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
     gap: 10px;
 }
 
-.app-blocking-warning-targets-list li {
-    margin: 0;
-    padding: 14px 18px;
-    font-family: var(--font-body);
-    font-size: 1.28rem;
-    font-weight: 700;
-    line-height: 1.3;
-    color: var(--text-primary);
-    background: var(--redd-warm-grey);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
+body.app-blocking-warning-window-mode .force-quit-warning-card-body {
+    border-radius: 0;
+    box-shadow: none;
+    /* Extra top padding so the macOS traffic-light buttons don't overlap
+       the card content (titlebar style is `Overlay`, so the lights sit
+       inside the webview viewport). */
+    padding: calc(36px + env(safe-area-inset-top, 0px)) 22px 22px;
+    -webkit-app-region: drag;
 }
 
-.app-blocking-warning-list {
-    display: flex;
-    flex-direction: column;
+body.app-blocking-warning-window-mode .force-quit-warning-card-body button,
+body.app-blocking-warning-window-mode .force-quit-warning-card-body .force-quit-warning-summary {
+    -webkit-app-region: no-drag;
+}
+
+/* Top row: ring + heading + emoji */
+.force-quit-warning-hero {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
     gap: 16px;
 }
 
-.app-blocking-warning-card {
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    padding: 16px;
-    background: var(--element-bg);
+.force-quit-warning-ring {
+    position: relative;
+    width: 64px;
+    height: 64px;
+    flex: 0 0 64px;
 }
 
-.app-blocking-warning-card-head {
-    text-align: center;
-    margin: 0 0 12px;
+.force-quit-warning-ring-svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
 }
 
-.app-blocking-warning-card-head .app-blocking-warning-app-name {
-    margin: 0;
-    font-size: 1.05rem;
-    font-family: var(--font-body);
-    font-weight: 600;
-    color: var(--text-muted);
+.force-quit-warning-ring-track {
+    fill: none;
+    stroke: var(--fq-ring-track);
+    stroke-width: 3;
 }
 
-.app-blocking-warning-countdown-hero {
+.force-quit-warning-ring-progress {
+    fill: none;
+    stroke: var(--fq-ring-progress);
+    stroke-width: 3;
+    stroke-linecap: round;
+    transition: stroke-dasharray 200ms linear, stroke 200ms ease;
+}
+
+.force-quit-warning-ring-label {
+    position: absolute;
+    inset: 0;
     display: flex;
-    flex-direction: row;
-    align-items: baseline;
+    align-items: center;
     justify-content: center;
+    font-family: var(--font-body);
+    font-size: 0.95rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--fq-eyebrow);
+    letter-spacing: -0.01em;
+}
+
+.force-quit-warning-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+/* Single dense top line: "CLOSING SOON · <Blocklist>". Same shape as
+   the schedule warning's eyebrow so the two warning cards read as
+   members of one family. */
+.force-quit-warning-eyebrow {
+    margin: 0;
+    font-family: var(--font-body);
+    font-size: 1rem;
+    font-weight: 500;
+    line-height: 1.35;
+    color: var(--text-primary);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
     gap: 6px;
-    margin: 0 0 8px;
+}
+
+.force-quit-warning-eyebrow-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--fq-eyebrow);
+}
+
+.force-quit-warning-eyebrow-sep {
+    color: var(--fq-eyebrow);
+    opacity: 0.65;
+}
+
+.force-quit-warning-eyebrow-detail {
+    font-size: 1.05rem;
+}
+
+.force-quit-warning-eyebrow-detail strong {
+    font-weight: 700;
+}
+
+/* Naked emoji on the right — no background pill so it reads as part of
+   the card surface (matches the schedule warning's emoji style). */
+.force-quit-warning-emoji-badge {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.6rem;
     line-height: 1;
 }
 
-.app-blocking-warning-countdown-giant {
-    font-family: var(--font-body);
-    font-size: clamp(3.25rem, 14vw, 5.5rem);
-    font-weight: 800;
-    font-variant-numeric: tabular-nums;
-    color: #b91c1c;
-    letter-spacing: -0.03em;
-}
-
-.app-blocking-warning-countdown-unit-giant {
-    font-size: clamp(1.35rem, 5vw, 2.35rem);
-    font-weight: 700;
-    color: var(--text-muted);
-}
-
-.app-blocking-warning-paused {
-    margin: 8px 0 0 0;
-    padding: 10px 12px;
-    font-size: 13px;
+.force-quit-warning-summary {
+    margin: 0;
+    font-size: 0.95rem;
+    color: var(--text-primary);
     line-height: 1.45;
-    color: var(--text-secondary);
-    background: var(--redd-warm-grey);
-    border-radius: 6px;
-    border: 1px dashed var(--border-color);
 }
 
+.force-quit-warning-summary strong {
+    font-weight: 700;
+}
+
+/* Optional footer slot — kept for future "bring forward + retry" CTA. */
 .app-blocking-warning-footer {
-    margin-top: 8px;
-    padding-top: 8px;
-    border-top: 1px solid var(--border-color);
+    margin-top: 4px;
+    padding: 0;
+    border: none;
+    display: flex;
+    gap: 10px;
 }
 
 .app-blocking-warning-footer .modal-btn {
-    width: 100%;
+    flex: 1;
     box-sizing: border-box;
 }
 
-body.dark-mode .app-blocking-warning-heading {
-    color: #f87171;
+body.dark-mode .force-quit-warning-card {
+    --fq-card-bg: rgba(178, 47, 47, 0.18);
+    --fq-ring-track: rgba(248, 113, 113, 0.22);
+    --fq-ring-progress: #f87171;
+    --fq-eyebrow: #fca5a5;
 }
 
-body.dark-mode .app-blocking-warning-countdown-giant {
-    color: #f87171;
+
+/* ---- Scheduled-block heads-up card ---------------------------------------
+   Lives inside `#app-blocking-warning-overlay` so it inherits the
+   always-on-top compact-window panel mode. Layout mirrors the
+   "wrap-up" mockup: small circular progress ring + countdown on the
+   left, "HEADS UP" eyebrow + bold heading in the middle, blocklist
+   emoji badge on the right; body text below; primary "Bring my apps
+   forward" + "Got it" buttons in a footer row.
+
+   This is intentionally calmer than the force-quit countdown — the
+   user hasn't done anything wrong yet, the block just hasn't started.
+*/
+.scheduled-block-warning-card {
+    --sched-warn-card-bg: #e6ece1;
+    --sched-warn-ring-track: rgba(15, 47, 32, 0.12);
+    --sched-warn-ring-progress: var(--redd-teal, #5fb8a7);
+    --sched-warn-eyebrow: rgba(15, 47, 32, 0.55);
+
+    max-width: 560px;
+    width: 100%;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: stretch;
 }
 
-body.dark-mode .app-blocking-warning-paused {
-    background: rgba(30, 45, 62, 0.5);
-    border-color: var(--border-color);
+.scheduled-block-warning-card.hidden {
+    display: none;
 }
 
-body.dark-mode .app-blocking-warning-targets-list li {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: var(--border-color);
+/* The visual card body — colored background + rounded corners. The
+   footer below sits as a sibling so the buttons read as separate from
+   the card surface (matches the wrap-up + almost-time mockups). */
+.scheduled-block-warning-card-body {
+    padding: 22px 22px 18px;
+    background: var(--sched-warn-card-bg);
+    border-radius: 16px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+/* Compact-window mode: stretch to the panel width and drop the rounded
+   corners so the body fills the window edge-to-edge. */
+body.app-blocking-warning-window-mode #scheduled-block-warning-card {
+    flex: 0 0 auto;
+    align-self: stretch;
+    max-width: none;
+    margin: 0;
+    gap: 10px;
+}
+
+body.app-blocking-warning-window-mode .scheduled-block-warning-card-body {
+    border-radius: 0;
+    box-shadow: none;
+    /* Extra top padding so the macOS traffic-light buttons don't overlap
+       the card content (titlebar style is `Overlay`, so the lights sit
+       inside the webview viewport). */
+    padding: calc(36px + env(safe-area-inset-top, 0px)) 22px 22px;
+}
+
+/* Top row: ring + heading + emoji badge */
+.scheduled-block-warning-hero {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 16px;
+}
+
+/* Circular progress ring */
+.scheduled-block-warning-ring {
+    position: relative;
+    width: 64px;
+    height: 64px;
+    flex: 0 0 64px;
+}
+
+.scheduled-block-warning-ring-svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg); /* 12 o'clock start */
+}
+
+.scheduled-block-warning-ring-track {
+    fill: none;
+    stroke: var(--sched-warn-ring-track);
+    stroke-width: 3;
+}
+
+.scheduled-block-warning-ring-progress {
+    fill: none;
+    stroke: var(--sched-warn-ring-progress);
+    stroke-width: 3;
+    stroke-linecap: round;
+    /* `r` is set so circumference = 100 (so dasharray maps directly to
+       percent). JS updates `stroke-dasharray="<elapsed%> 100"`. */
+    transition: stroke-dasharray 200ms linear, stroke 200ms ease;
+}
+
+.scheduled-block-warning-ring-label {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-body);
+    font-size: 0.95rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
     color: var(--text-primary);
+    letter-spacing: -0.01em;
+}
+
+/* Middle: eyebrow + heading */
+.scheduled-block-warning-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+/* Top line: tiny "HEADS UP" all-caps tag + bulleted dot + the
+   contextual "<Blocklist> starts soon" detail. Sits in the same place
+   the previous heading + eyebrow stack did, just denser. */
+.scheduled-block-warning-eyebrow {
+    margin: 0;
+    font-family: var(--font-body);
+    font-size: 1rem;
+    font-weight: 500;
+    line-height: 1.35;
+    color: var(--text-primary);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.scheduled-block-warning-eyebrow-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--sched-warn-eyebrow);
+}
+
+.scheduled-block-warning-eyebrow-sep {
+    color: var(--sched-warn-eyebrow);
+    opacity: 0.65;
+}
+
+.scheduled-block-warning-eyebrow-detail {
+    font-size: 1.05rem;
+}
+
+.scheduled-block-warning-eyebrow-detail strong {
+    font-weight: 700;
+}
+
+/* Right: blocklist emoji (initial state) or warning glyph (final state).
+   Naked — no background pill — so the emoji reads as part of the card. */
+.scheduled-block-warning-emoji-badge {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.6rem;
+    line-height: 1;
+}
+
+/* Body text below the hero row */
+.scheduled-block-warning-summary {
+    margin: 0;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    line-height: 1.45;
+}
+
+.scheduled-block-warning-summary strong {
+    font-weight: 700;
+}
+
+/* Footer button — centered and content-sized rather than spanning the
+   full row width (a stretched giant button reads as visually heavy when
+   it's the only thing in the footer). */
+.scheduled-block-warning-footer {
+    margin-top: 4px;
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+}
+
+.scheduled-block-warning-footer .modal-btn {
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    padding: 10px 28px;
+    min-width: 200px;
+}
+
+/* The single "Got it — I'm wrapping up!" button uses the brand navy
+   primary style as-is in the initial state. Final amber state below
+   swaps it via card-scoped vars. */
+
+/* ---- Final 15-second "ALMOST TIME" state --------------------------------
+   Color palette shifts to amber on `.final` so the urgency escalation is
+   unmissable. JS swaps the eyebrow / body copy and emoji glyph; the
+   button text stays the same ("Got it — I'm wrapping up!"). */
+.scheduled-block-warning-card.final {
+    --sched-warn-card-bg: #f7e9c8;
+    --sched-warn-ring-track: rgba(120, 75, 0, 0.18);
+    --sched-warn-ring-progress: #b07a1f;
+    --sched-warn-eyebrow: #8b6914;
+}
+
+.scheduled-block-warning-card.final .scheduled-block-warning-ring-label {
+    color: #6e4c0f;
+}
+
+.scheduled-block-warning-card.final .scheduled-block-warning-emoji-badge {
+    font-size: 1.5rem;
+}
+
+/* Amber primary button in the final state. */
+.scheduled-block-warning-card.final .scheduled-block-warning-footer .modal-btn.primary-btn {
+    background: #b07a1f;
+    color: #ffffff;
+}
+
+.scheduled-block-warning-card.final .scheduled-block-warning-footer .modal-btn.primary-btn:hover {
+    background: #946317;
+}
+
+/* Dark-mode tints */
+body.dark-mode .scheduled-block-warning-card {
+    --sched-warn-card-bg: rgba(95, 184, 167, 0.08);
+    --sched-warn-ring-track: rgba(255, 255, 255, 0.12);
+    --sched-warn-eyebrow: rgba(229, 231, 235, 0.6);
+}
+
+body.dark-mode .scheduled-block-warning-card.final {
+    --sched-warn-card-bg: rgba(176, 122, 31, 0.18);
+    --sched-warn-ring-track: rgba(247, 233, 200, 0.18);
+    --sched-warn-ring-progress: #d9a44b;
+    --sched-warn-eyebrow: #d9a44b;
+}
+
+body.dark-mode .scheduled-block-warning-card.final .scheduled-block-warning-ring-label {
+    color: #f7e9c8;
+}
+
+body.dark-mode .scheduled-block-warning-card.final .scheduled-block-warning-footer .modal-btn.primary-btn {
+    background: #d9a44b;
+    color: #1f1f1f;
+}
+
+body.dark-mode .scheduled-block-warning-card.final .scheduled-block-warning-footer .modal-btn.primary-btn:hover {
+    background: #c0902f;
 }
 

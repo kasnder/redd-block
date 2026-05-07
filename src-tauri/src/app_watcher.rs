@@ -34,12 +34,11 @@
 //      foreground the blocked app when entering this phase so its
 //      windows stay easy to spot. The countdown ticks down only while
 //      the user is *active* (system input within the last
-//      `IDLE_THRESHOLD_SECS`). Idle pauses the countdown; the very
-//      moment the user returns from idle the countdown resets to a
-//      full `WARNING_COUNTDOWN`. This guarantees that the only way the
-//      countdown can elapse is with a fully-conscious user staring at
-//      a giant red warning for the entire duration. Anyone walking away
-//      in the middle gets a fresh window when they sit back down.
+//      `IDLE_THRESHOLD_SECS`). Idle pauses the countdown; returning
+//      from idle resumes it where it left off (we deliberately do NOT
+//      reset, so stepping away mid-countdown can't be used to extend
+//      the deadline indefinitely). The pause guarantees that the
+//      countdown only burns through conscious wall-clock time.
 //
 //   4. **Force-quit.** When the countdown reaches zero with the user
 //      still active, we SIGKILL the process. This is the *only* path
@@ -67,12 +66,13 @@ const POLL_INTERVAL: Duration = Duration::from_millis(1000);
 /// sheet without a second quit signal.
 const QUIT_TO_WARNING_GRACE: Duration = Duration::from_secs(15);
 /// Fully-conscious time the warning overlay is shown before we
-/// SIGKILL. Resets every time the user returns from idle, so AFK
-/// time never counts toward this.
+/// SIGKILL. Pauses while the user is idle, but resumes from where it
+/// left off when they come back — AFK time never counts toward this,
+/// but stepping away can't extend it either.
 const WARNING_COUNTDOWN: Duration = Duration::from_secs(60);
 /// Anything with no input activity for this long counts as AFK; the
-/// countdown is paused while idle, and resets to `WARNING_COUNTDOWN`
-/// the instant the user becomes active again. Five seconds is short
+/// countdown pauses while idle and resumes (does not reset) the
+/// instant the user becomes active again. Five seconds is short
 /// enough that "user is reading the warning" still ticks down the
 /// countdown but long enough that "user stepped away to grab water"
 /// reliably pauses it.
@@ -210,7 +210,7 @@ enum HideReason {
 /// drives `set_blocking_warning_attention` ref-counting.
 static BLOCKING_WARNING_LAYERS: AtomicU32 = AtomicU32::new(0);
 
-fn blocking_warning_begin(app: Option<&AppHandle>) {
+pub(crate) fn blocking_warning_begin(app: Option<&AppHandle>) {
     let prev = BLOCKING_WARNING_LAYERS.fetch_add(1, Ordering::SeqCst);
     if prev == 0 {
         #[cfg(target_os = "macos")]
@@ -227,7 +227,7 @@ fn blocking_warning_begin(app: Option<&AppHandle>) {
     }
 }
 
-fn blocking_warning_end(app: Option<&AppHandle>) {
+pub(crate) fn blocking_warning_end(app: Option<&AppHandle>) {
     let prev = BLOCKING_WARNING_LAYERS.fetch_sub(1, Ordering::SeqCst);
     if prev == 1 {
         if let Some(a) = app {
@@ -443,16 +443,15 @@ fn sweep(
                         was_idle_last_tick,
                     } => {
                         let mut remaining = *remaining;
-                        let was_idle = *was_idle_last_tick;
+                        let _ = *was_idle_last_tick; // tracked for emit-paused only
                         let is_idle = idle >= IDLE_THRESHOLD_SECS;
                         if !is_idle {
-                            if was_idle {
-                                // User just walked back in. Reset
-                                // the countdown so they always get a
-                                // full conscious window — the
-                                // central guarantee of this design.
-                                remaining = WARNING_COUNTDOWN;
-                            }
+                            // Countdown only decrements while the user is
+                            // active. Returning from idle resumes from
+                            // where we paused — we deliberately do NOT
+                            // reset back to the full window, so a user
+                            // who walks away mid-countdown can't game
+                            // the timer by stepping away.
                             remaining = remaining.saturating_sub(POLL_INTERVAL);
                         }
                         emit_warning_update(
