@@ -99,6 +99,9 @@
     --toggle-bg: var(--redd-warm-grey);
     /* iPhone landscape: horizontal space between day toggles and segment remove (X). */
     --ios-phone-landscape-days-remove-gap: 16px;
+    /* Width of the schedule's day-label column (and matching header spacer). Sized to fit
+       the day name / "Today" label plus a small right padding. */
+    --day-label-width: 65px;
 }
 
 /* ========================================
@@ -1316,9 +1319,8 @@ body.dark-mode .now-blocking-chip-menu-item.danger {
 }
 
 .day-label-spacer {
-    width: 90px;
+    width: var(--day-label-width);
     flex-shrink: 0;
-    border-right: 1px solid var(--border-color);
 }
 
 .hour-markers {
@@ -1335,10 +1337,6 @@ body.dark-mode .now-blocking-chip-menu-item.danger {
     color: var(--text-muted);
     font-weight: 500;
     pointer-events: none;
-}
-
-.hour-marker:first-child {
-    transform: translate(0, -50%);
 }
 
 /* Day rows container — one row per day */
@@ -1375,13 +1373,13 @@ body.dark-mode .day-row.weekend {
 
 /* Left day label */
 .day-label {
-    width: 90px;
+    width: var(--day-label-width);
     flex-shrink: 0;
     display: flex;
     flex-direction: column;
     align-items: flex-start;
     justify-content: center;
-    padding: 0 10px;
+    padding: 0 8px 0 10px;
     font-size: 11px;
     color: var(--text-muted);
     border-right: 1px solid var(--border-color);
@@ -2115,6 +2113,10 @@ body.ios .duration-quick-btn {
     margin-left: 8px;
 }
 
+body.dark-mode .next-day-badge {
+    background: var(--redd-teal-soft);
+}
+
 /* Custom time display */
 .time-display {
     display: flex;
@@ -2285,6 +2287,12 @@ body.dark-mode .time-part.active {
     padding-right: 8px;
     /* Standardize padding since no button */
     border: 1px solid #e2e8f0;
+}
+
+body.dark-mode .tag.locked {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-muted);
+    border-color: rgba(255, 255, 255, 0.10);
 }
 
 /* Start Block Button — primary teal CTA, matching the canonical brand
@@ -4584,6 +4592,22 @@ body.ios.ios-phone .legal-onboarding-note {
     box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
 }
 
+/* Inside the Edit Blocklist modal, the websites and apps inputs are
+   softly tinted with the blocklist's currently-selected colour so the
+   identity of the blocklist is visible while editing it. The colour
+   is set as a CSS custom property by openBlocklistModal() and the
+   colour-swatch / custom-picker handlers; light mode mixes the pastel
+   with the white input bg, dark mode mixes a smaller share with the
+   solid card colour (--input-bg is translucent in dark mode and
+   would wash out under color-mix). */
+#blocklist-modal .tags-input-container {
+    background: color-mix(in srgb, var(--blocklist-tint, transparent) 55%, var(--input-bg));
+}
+
+body.dark-mode #blocklist-modal .tags-input-container {
+    background: color-mix(in srgb, var(--blocklist-tint, transparent) 38%, var(--redd-card));
+}
+
 .tags-input-container .form-input {
     flex: 1;
     min-width: 120px;
@@ -5383,7 +5407,7 @@ body.ios .desktop-only {
     width: 100%;
     box-sizing: border-box;
     background: var(--redd-warm-grey);
-    color: #000;
+    color: var(--text-primary);
     padding: 10px 12px;
     border-radius: 8px;
     font-family: monospace;

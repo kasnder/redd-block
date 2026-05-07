@@ -3439,6 +3439,7 @@ function setupModalListeners() {
         swatch.addEventListener('click', () => {
             document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
             swatch.classList.add('selected');
+            applyModalBlocklistTint(swatch.dataset.color);
         });
     });
 
@@ -3457,6 +3458,7 @@ function setupModalListeners() {
             customSwatch.dataset.color = color;
             document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
             customSwatch.classList.add('selected');
+            applyModalBlocklistTint(color);
         });
     }
 
@@ -7237,6 +7239,23 @@ async function updateBlockedApps() {
     }
 }
 
+// Tint the websites and apps inputs in the Edit Blocklist modal with
+// the blocklist's currently-selected colour. The CSS rule reads
+// --blocklist-tint via color-mix() and softens the pastel down so it
+// reads as a wash in light mode and as a subtle hint of colour in
+// dark mode. Called when the modal opens, when the user picks a
+// preset colour swatch, and when the user picks a custom colour.
+// Pass null on close to drop the inline style cleanly.
+function applyModalBlocklistTint(hexColor) {
+    const modal = document.getElementById('blocklist-modal');
+    if (!modal) return;
+    if (typeof hexColor === 'string' && hexColor.startsWith('#')) {
+        modal.style.setProperty('--blocklist-tint', hexColor);
+    } else {
+        modal.style.removeProperty('--blocklist-tint');
+    }
+}
+
 // Open blocklist modal
 function openBlocklistModal(blocklist = null) {
     editingBlocklistId = blocklist?.id || null;
@@ -7325,6 +7344,8 @@ function openBlocklistModal(blocklist = null) {
             customSwatch.classList.add('selected');
         }
     }
+
+    applyModalBlocklistTint(colorToSelect);
 
     // Restore emoji swatch selection
     document.querySelectorAll('.emoji-swatch').forEach(s => s.classList.remove('selected'));
@@ -7521,6 +7542,7 @@ function closeBlocklistModal() {
 
     blocklistModalPreviewSnapshot = null;
     document.getElementById('blocklist-modal').classList.add('hidden');
+    applyModalBlocklistTint(null);
     editingBlocklistId = null;
     document.getElementById('blocklist-name').value = '';
     window.setModalData([], [], null);
