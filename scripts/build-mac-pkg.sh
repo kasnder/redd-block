@@ -90,6 +90,17 @@ DIST_PKG="$OUT_DIR/${APP_NAME// /-}-${VERSION}.pkg"
 DIST_DIR=$(mktemp -d /tmp/redd-block-dist.XXXXXX)
 DIST_FILE="$DIST_DIR/distribution.xml"
 
+# Stage the .app inside an OTHERWISE-EMPTY directory before invoking
+# pkgbuild --root. The Tauri DMG bundler writes a writable working
+# copy of each DMG to bundle/macos/ as `rw.<pid>.<name>.dmg` and only
+# deletes it on a clean success — any interrupted build leaves an
+# orphan there, and `pkgbuild --root` would happily ship them to
+# /Applications alongside the .app on every install. Copying just the
+# .app into a clean staging dir means we no longer care what other
+# junk Tauri leaves in bundle/macos/.
+PKG_ROOT_DIR=$(mktemp -d /tmp/redd-block-pkgroot.XXXXXX)
+ditto "$APP_PATH" "$PKG_ROOT_DIR/$(basename "$APP_PATH")"
+
 # Build a *temporary* scripts dir so we can copy in the shared
 # cleanup.sh template alongside preinstall/postinstall — the
 # preinstall reads cleanup.sh at runtime via `dirname "$0"/cleanup.sh`.
@@ -119,14 +130,14 @@ ls -l "$PKG_SCRIPTS_DIR"
 # pattern for it.
 COMPONENT_PLIST_DIR=$(mktemp -d /tmp/redd-block-cplist.XXXXXX)
 COMPONENT_PLIST="$COMPONENT_PLIST_DIR/component.plist"
-pkgbuild --analyze --root "$(dirname "$APP_PATH")" "$COMPONENT_PLIST" >/dev/null
+pkgbuild --analyze --root "$PKG_ROOT_DIR" "$COMPONENT_PLIST" >/dev/null
 /usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$COMPONENT_PLIST"
 echo "Component plist (post-tweak):"
 cat "$COMPONENT_PLIST"
 
 # 1. Component package: just wraps the .app.
 pkgbuild \
-    --root "$(dirname "$APP_PATH")" \
+    --root "$PKG_ROOT_DIR" \
     --component-plist "$COMPONENT_PLIST" \
     --identifier "$BUNDLE_ID.app" \
     --version "$VERSION" \
@@ -176,7 +187,7 @@ productbuild \
     "${SIGN_ARGS[@]+"${SIGN_ARGS[@]}"}" \
     "$DIST_PKG"
 
-rm -rf "$DIST_DIR" "$PKG_SCRIPTS_DIR" "$COMPONENT_PLIST_DIR"
+rm -rf "$DIST_DIR" "$PKG_SCRIPTS_DIR" "$COMPONENT_PLIST_DIR" "$PKG_ROOT_DIR"
 rm -f "$COMPONENT_PKG"
 
 # 4. Notarization (optional).

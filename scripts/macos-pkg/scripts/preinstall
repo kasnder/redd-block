@@ -49,6 +49,21 @@ pkill -KILL -x 'redd-block' 2>/dev/null
 pkill -KILL -x 'ReDD Block' 2>/dev/null
 sleep 1
 
+# 1b. Clean up stale Tauri DMG temp files that earlier builds of this
+#     .pkg (v2.1.x and prior) accidentally laid down alongside the
+#     .app in /Applications. They have the form
+#     `rw.<pid>.ReDD Block_<old-version>_universal.dmg` — leftover
+#     writable-DMG working copies that leaked through `pkgbuild
+#     --root` when the bundle/macos/ source dir wasn't cleanly
+#     staged. Harmless data, but confusing junk in /Applications.
+#     Best-effort: never fail the install on this.
+shopt -s nullglob 2>/dev/null || true
+for f in '/Applications/rw.'*'.ReDD Block_'*'_universal.dmg' \
+         '/Applications/._rw.'*'.ReDD Block_'*'_universal.dmg'; do
+    [ -e "$f" ] || continue
+    rm -f "$f" && echo "removed stray $f"
+done
+
 # 2. Detect residue. Skip the rest if there's nothing to clean —
 #    don't bother staging files or sourcing the cleanup script.
 HAVE_RESIDUE=0
