@@ -720,8 +720,50 @@
                     </label>
                     <div class="tags-input-container">
                         <div id="modal-websites-tags" class="tags-container"></div>
-                        <input type="text" id="modal-website-input" placeholder="e.g., facebook.com" class="form-input"
-                            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+                        <div class="input-with-button websites-input-with-import">
+                            <input type="text" id="modal-website-input" placeholder="e.g., facebook.com" class="form-input"
+                                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+                            <button type="button" id="modal-import-websites-btn" class="browse-btn"
+                                title="Import websites" aria-haspopup="menu" aria-expanded="false">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="8" y1="6" x2="21" y2="6"></line>
+                                    <line x1="8" y1="12" x2="21" y2="12"></line>
+                                    <line x1="8" y1="18" x2="21" y2="18"></line>
+                                    <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                                    <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                                    <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                                </svg>
+                            </button>
+                            <div class="websites-import-menu hidden" id="websites-import-menu" role="menu">
+                                <button type="button" class="websites-import-menu-item"
+                                    id="websites-import-menu-text-file" data-import-action="text-file" role="menuitem">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                        <polyline points="14 2 14 8 20 8"></polyline>
+                                    </svg>
+                                    <span id="websites-import-menu-text-file-label">From text file…</span>
+                                </button>
+                                <div class="websites-import-menu-divider" role="separator"></div>
+                                <div class="websites-import-menu-section-label"
+                                    id="websites-import-menu-section-label">Pre-made list</div>
+                                <button type="button" class="websites-import-menu-item"
+                                    id="websites-import-menu-email" data-preset="email" role="menuitem">Email</button>
+                                <button type="button" class="websites-import-menu-item"
+                                    id="websites-import-menu-gambling" data-preset="gambling" role="menuitem">Gambling</button>
+                                <button type="button" class="websites-import-menu-item"
+                                    id="websites-import-menu-news" data-preset="news" role="menuitem">News</button>
+                                <button type="button" class="websites-import-menu-item"
+                                    id="websites-import-menu-porn" data-preset="porn" role="menuitem">Porn</button>
+                                <button type="button" class="websites-import-menu-item"
+                                    id="websites-import-menu-search-engines" data-preset="search-engines" role="menuitem">Search engines</button>
+                                <button type="button" class="websites-import-menu-item"
+                                    id="websites-import-menu-shopping" data-preset="shopping" role="menuitem">Shopping</button>
+                                <button type="button" class="websites-import-menu-item"
+                                    id="websites-import-menu-social-media" data-preset="social-media" role="menuitem">Social media</button>
+                            </div>
+                        </div>
                     </div>
                     <span id="website-input-error" class="input-error-msg hidden">Please enter a valid domain (e.g.
                         reddit.com)</span>

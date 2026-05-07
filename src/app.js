@@ -3,7 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { ask, message } from '@tauri-apps/plugin-dialog';
+import { ask, message, open as openDialog } from '@tauri-apps/plugin-dialog';
+import { readTextFile } from '@tauri-apps/plugin-fs';
 import iconChromeUrl from './images/icon-chrome.svg';
 import iconEdgeUrl from './images/icon-edge.svg';
 import iconFirefoxUrl from './images/icon-firefox.svg';
@@ -175,6 +176,56 @@ const UI_ZOOM_STEP = 0.1;
 const DEFAULT_UI_ZOOM = 1.1;
 let zoomToastHideTimeout = null;
 let nativeWebviewZoomSupported = null;
+
+// Pre-made website lists offered by the Edit Blocklist "Import" menu. Each
+// list is intentionally small/curated — a starting point users can prune or
+// extend after import. Keys match the data-preset attributes in index.html.
+const WEBSITES_PRESET_LISTS = {
+    'email': [
+        'gmail.com', 'mail.google.com', 'outlook.com', 'outlook.live.com',
+        'mail.yahoo.com', 'icloud.com', 'mail.proton.me', 'proton.me',
+        'fastmail.com', 'hey.com', 'mail.aol.com', 'mail.ru', 'gmx.com',
+        'tutanota.com', 'zoho.com'
+    ],
+    'gambling': [
+        'bet365.com', 'pokerstars.com', 'draftkings.com', 'fanduel.com',
+        'betmgm.com', 'caesars.com', 'betfair.com', 'paddypower.com',
+        'williamhill.com', 'ladbrokes.com', 'betway.com', 'unibet.com',
+        '888.com', 'pinnacle.com', 'bovada.lv'
+    ],
+    'news': [
+        'cnn.com', 'nytimes.com', 'bbc.com', 'bbc.co.uk', 'theguardian.com',
+        'washingtonpost.com', 'reuters.com', 'apnews.com', 'foxnews.com',
+        'bloomberg.com', 'wsj.com', 'ft.com', 'npr.org',
+        'news.ycombinator.com', 'politico.com', 'vox.com', 'huffpost.com',
+        'buzzfeed.com', 'techcrunch.com', 'theverge.com', 'wired.com',
+        'arstechnica.com'
+    ],
+    'porn': [
+        'pornhub.com', 'xvideos.com', 'xnxx.com', 'xhamster.com', 'redtube.com',
+        'youporn.com', 'tube8.com', 'spankbang.com', 'eporner.com', 'beeg.com',
+        'tnaflix.com', 'chaturbate.com', 'onlyfans.com', 'fansly.com',
+        'camsoda.com'
+    ],
+    'search-engines': [
+        'google.com', 'bing.com', 'duckduckgo.com', 'yahoo.com', 'baidu.com',
+        'yandex.com', 'ecosia.org', 'kagi.com', 'brave.com', 'startpage.com',
+        'swisscows.com', 'qwant.com'
+    ],
+    'shopping': [
+        'amazon.com', 'ebay.com', 'etsy.com', 'walmart.com', 'target.com',
+        'bestbuy.com', 'costco.com', 'aliexpress.com', 'alibaba.com',
+        'shein.com', 'temu.com', 'wish.com', 'newegg.com', 'ikea.com',
+        'macys.com', 'nike.com', 'adidas.com', 'zara.com', 'hm.com'
+    ],
+    'social-media': [
+        'facebook.com', 'instagram.com', 'twitter.com', 'x.com', 'tiktok.com',
+        'snapchat.com', 'linkedin.com', 'pinterest.com', 'reddit.com',
+        'tumblr.com', 'threads.net', 'mastodon.social', 'bsky.app',
+        'discord.com', 'whatsapp.com', 'web.whatsapp.com', 't.me',
+        'telegram.org'
+    ]
+};
 
 // Schedule mode state
 let isScheduleMode = false; // false = instant mode, true = schedule mode
@@ -3089,6 +3140,96 @@ function processWebsiteInput(raw) {
     };
 }
 
+// Parse a text-file's contents into a flat list of candidate domains. Each
+// non-comment line may contain one or more space/comma-separated domains.
+// '#' starts a line/inline comment (hosts-file style). Returns raw strings,
+// not yet validated.
+function parseTextFileDomains(content) {
+    if (!content) return [];
+    const out = [];
+    for (const rawLine of content.split(/\r?\n/)) {
+        const beforeComment = rawLine.split('#')[0];
+        if (!beforeComment.trim()) continue;
+        for (const token of parseDomainList(beforeComment)) {
+            if (token) out.push(token);
+        }
+    }
+    return out;
+}
+
+// Wire up the Edit Blocklist "Import" popover for the websites field. The
+// caller supplies a callback that receives an array of cleaned domain
+// strings; it's responsible for de-duplicating against current modal state
+// and pushing an undo entry.
+function setupWebsitesImportMenu({ addDomainsToModal }) {
+    const importBtn = document.getElementById('modal-import-websites-btn');
+    const menu = document.getElementById('websites-import-menu');
+    if (!importBtn || !menu) return;
+
+    const closeMenu = () => {
+        menu.classList.add('hidden');
+        importBtn.setAttribute('aria-expanded', 'false');
+    };
+    const openMenu = () => {
+        menu.classList.remove('hidden');
+        importBtn.setAttribute('aria-expanded', 'true');
+    };
+
+    importBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (menu.classList.contains('hidden')) {
+            openMenu();
+        } else {
+            closeMenu();
+        }
+    });
+
+    // Close on outside click / Escape.
+    document.addEventListener('click', (e) => {
+        if (menu.classList.contains('hidden')) return;
+        if (!menu.contains(e.target) && !importBtn.contains(e.target)) {
+            closeMenu();
+        }
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !menu.classList.contains('hidden')) {
+            closeMenu();
+        }
+    });
+
+    const textFileBtn = document.getElementById('websites-import-menu-text-file');
+    if (textFileBtn) {
+        textFileBtn.addEventListener('click', async () => {
+            closeMenu();
+            try {
+                const selected = await openDialog({
+                    multiple: false,
+                    title: tSettings('importWebsitesPickFileTitle'),
+                    filters: [
+                        { name: 'Text', extensions: ['txt', 'list', 'csv'] },
+                        { name: 'All files', extensions: ['*'] }
+                    ]
+                });
+                if (!selected || typeof selected !== 'string') return;
+                const contents = await readTextFile(selected);
+                addDomainsToModal(parseTextFileDomains(contents));
+            } catch (err) {
+                console.warn('[import] text file:', err);
+            }
+        });
+    }
+
+    menu.querySelectorAll('[data-preset]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            closeMenu();
+            const preset = btn.dataset.preset;
+            const list = WEBSITES_PRESET_LISTS[preset];
+            if (!list) return;
+            addDomainsToModal(list);
+        });
+    });
+}
+
 // Modal listeners
 function setupModalListeners() {
     let modalWebsites = [];
@@ -3109,12 +3250,204 @@ function setupModalListeners() {
     const modalWebsitesTags = document.getElementById('modal-websites-tags');
     const modalAppsTags = document.getElementById('modal-apps-tags');
 
+    // Email-to-field-style multi-selection. Track selection by VALUE so the
+    // sets stay valid across re-renders and modifications.
+    const selectedWebsites = new Set();
+    const selectedApps = new Set();
+
+    const isWebsiteLocked = (w) => Array.isArray(window.lockedWebsites) && window.lockedWebsites.includes(w);
+    const isAppLocked = (a) => Array.isArray(window.lockedApps) && window.lockedApps.includes(a);
+
+    const clearWebsiteSelection = () => {
+        if (selectedWebsites.size === 0) return false;
+        selectedWebsites.clear();
+        window.renderModalTags();
+        return true;
+    };
+    const clearAppSelection = () => {
+        if (selectedApps.size === 0) return false;
+        selectedApps.clear();
+        window.renderModalTags();
+        return true;
+    };
+
+    const selectAllUnlockedWebsites = () => {
+        selectedWebsites.clear();
+        modalWebsites.forEach(w => {
+            if (!isWebsiteLocked(w)) selectedWebsites.add(w);
+        });
+        window.renderModalTags();
+    };
+    const selectAllUnlockedApps = () => {
+        selectedApps.clear();
+        modalApps.forEach(a => {
+            if (!isAppLocked(a)) selectedApps.add(a);
+        });
+        // Also include the iOS Screen Time aggregate label if present.
+        const iosLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
+        if (iosLabel && !isAppLocked(iosLabel)) selectedApps.add(iosLabel);
+        window.renderModalTags();
+    };
+
+    // Bulk-delete every selected website. Pushes a single undo entry that
+    // restores all of them at once, matching the user's "select-all then
+    // backspace" mental model in a text editor.
+    const deleteSelectedWebsites = () => {
+        if (selectedWebsites.size === 0) return false;
+        const toDelete = modalWebsites.filter(w => selectedWebsites.has(w) && !isWebsiteLocked(w));
+        if (toDelete.length === 0) {
+            selectedWebsites.clear();
+            window.renderModalTags();
+            return false;
+        }
+        const restoreCopy = [...toDelete];
+        pushModalUndo('website-bulk', () => {
+            restoreCopy.forEach(w => {
+                if (!modalWebsites.includes(w)) modalWebsites.push(w);
+            });
+            window.renderModalTags();
+        });
+        toDelete.forEach(w => {
+            const i = modalWebsites.indexOf(w);
+            if (i !== -1) modalWebsites.splice(i, 1);
+        });
+        selectedWebsites.clear();
+        window.renderModalTags();
+        return true;
+    };
+
+    // Arrow-key navigation through chips, like an email-to field.
+    //   direction === -1  → ArrowLeft  (move selection left, or pull last chip
+    //                       into selection when selection is empty)
+    //   direction === +1  → ArrowRight (move selection right, deselect & return
+    //                       focus to the input if past the last chip)
+    // Returns:
+    //   'moved'      — selection changed
+    //   'deselected' — past the last chip; selection was cleared
+    //   false        — nothing happened
+    const moveSelectionInList = (list, lockedFn, selection, direction) => {
+        if (selection.size === 0) {
+            if (direction === -1) {
+                for (let i = list.length - 1; i >= 0; i--) {
+                    if (!lockedFn(list[i])) {
+                        selection.add(list[i]);
+                        return 'moved';
+                    }
+                }
+            }
+            return false;
+        }
+
+        const selectedIdx = [];
+        list.forEach((item, idx) => {
+            if (selection.has(item)) selectedIdx.push(idx);
+        });
+        if (selectedIdx.length === 0) return false;
+
+        if (direction === -1) {
+            let next = selectedIdx[0] - 1;
+            while (next >= 0 && lockedFn(list[next])) next--;
+            if (next < 0) {
+                // At the start: collapse a multi-selection onto the leftmost
+                // chip; otherwise nothing to do.
+                if (selectedIdx.length > 1) {
+                    selection.clear();
+                    selection.add(list[selectedIdx[0]]);
+                    return 'moved';
+                }
+                return false;
+            }
+            selection.clear();
+            selection.add(list[next]);
+            return 'moved';
+        }
+
+        // direction === +1 (ArrowRight)
+        let next = selectedIdx[selectedIdx.length - 1] + 1;
+        while (next < list.length && lockedFn(list[next])) next++;
+        if (next >= list.length) {
+            selection.clear();
+            return 'deselected';
+        }
+        selection.clear();
+        selection.add(list[next]);
+        return 'moved';
+    };
+
+    const moveWebsiteSelection = (direction) => {
+        const result = moveSelectionInList(modalWebsites, isWebsiteLocked, selectedWebsites, direction);
+        if (result) {
+            window.renderModalTags();
+            if (result === 'deselected') modalWebsiteInput.focus();
+        }
+        return result;
+    };
+    const moveAppSelection = (direction) => {
+        const result = moveSelectionInList(getModalDisplayApps(), isAppLocked, selectedApps, direction);
+        if (result) {
+            window.renderModalTags();
+            if (result === 'deselected') modalAppInput.focus();
+        }
+        return result;
+    };
+
+    const deleteSelectedApps = () => {
+        if (selectedApps.size === 0) return false;
+        const iosLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
+        const toDeleteApps = modalApps.filter(a => selectedApps.has(a) && !isAppLocked(a));
+        const shouldDeleteIos = iosLabel && selectedApps.has(iosLabel) && !isAppLocked(iosLabel);
+        if (toDeleteApps.length === 0 && !shouldDeleteIos) {
+            selectedApps.clear();
+            window.renderModalTags();
+            return false;
+        }
+        const previousIosSelection = shouldDeleteIos ? cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection) : null;
+        const restoredApps = [...toDeleteApps];
+        pushModalUndo('app-bulk', () => {
+            restoredApps.forEach(a => {
+                if (!modalApps.includes(a)) modalApps.push(a);
+            });
+            if (previousIosSelection) {
+                modalIOSScreenTimeSelection = cloneIOSScreenTimeSelection(previousIosSelection);
+            }
+            window.renderModalTags();
+        });
+        toDeleteApps.forEach(a => {
+            const i = modalApps.indexOf(a);
+            if (i !== -1) modalApps.splice(i, 1);
+        });
+        if (shouldDeleteIos) modalIOSScreenTimeSelection = null;
+        selectedApps.clear();
+        window.renderModalTags();
+        return true;
+    };
+
     // Close modal when clicking outside content
     document.getElementById('blocklist-modal').addEventListener('click', (e) => {
         if (e.target.classList.contains('modal-overlay')) {
             closeBlocklistModal();
         }
     });
+
+    // Make the tags+input area feel like a single email-to-field: clicking
+    // anywhere in the tags container (between chips, after the last chip,
+    // empty space) focuses the matching input so the user can immediately
+    // press Backspace to delete the last tag.
+    const focusInputOnTagAreaClick = (tagsContainer, input) => {
+        if (!tagsContainer || !input) return;
+        const wrapper = tagsContainer.closest('.tags-input-container');
+        if (!wrapper) return;
+        wrapper.addEventListener('click', (e) => {
+            if (e.target === input) return;
+            // Don't hijack clicks on chips, the X buttons, or the trailing
+            // browse/import button — they all have their own click semantics.
+            if (e.target.closest('.tag')) return;
+            if (e.target.closest('button')) return;
+            input.focus();
+        });
+    };
+    focusInputOnTagAreaClick(modalWebsitesTags, modalWebsiteInput);
+    focusInputOnTagAreaClick(modalAppsTags, modalAppInput);
 
     document.getElementById('blocklist-name').addEventListener('input', () => {
         const nameInput = document.getElementById('blocklist-name');
@@ -3129,6 +3462,35 @@ function setupModalListeners() {
     });
 
     modalWebsiteInput.addEventListener('keydown', (e) => {
+        const accel = e.metaKey || e.ctrlKey;
+
+        // Cmd/Ctrl-A in an empty input → select all unlocked website tags.
+        // Caret in input + text present keeps the native "select text" behaviour.
+        if (accel && (e.key === 'a' || e.key === 'A') && !modalWebsiteInput.value.length) {
+            e.preventDefault();
+            selectAllUnlockedWebsites();
+            return;
+        }
+
+        // Arrow navigation. ArrowLeft from an empty input pulls the last chip
+        // into selection; ArrowLeft/Right with an active selection walks the
+        // chip list. With caret-in-text, fall through to the default behaviour.
+        if (e.key === 'ArrowLeft' && !accel && !modalWebsiteInput.value.length && selectedWebsites.size === 0) {
+            if (moveWebsiteSelection(-1)) e.preventDefault();
+            return;
+        }
+        if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !accel && selectedWebsites.size > 0) {
+            if (moveWebsiteSelection(e.key === 'ArrowLeft' ? -1 : 1)) e.preventDefault();
+            return;
+        }
+
+        // Backspace/Delete with active selection → bulk delete.
+        if ((e.key === 'Backspace' || e.key === 'Delete') && selectedWebsites.size > 0) {
+            e.preventDefault();
+            deleteSelectedWebsites();
+            return;
+        }
+
         // Backspace on empty input removes the last website tag (if not locked)
         if (e.key === 'Backspace' && !modalWebsiteInput.value.length && modalWebsites.length > 0) {
             const lastIdx = modalWebsites.length - 1;
@@ -3142,6 +3504,12 @@ function setupModalListeners() {
                 window.renderModalTags();
                 e.preventDefault();
             }
+        }
+
+        // Any printable key with an active selection clears it so the user can
+        // keep typing without nuking their tags.
+        if (selectedWebsites.size > 0 && !accel && e.key.length === 1) {
+            clearWebsiteSelection();
         }
         // Enter or Space confirms the website(s) — supports multiple domains separated by space, newline, or comma
         if ((e.key === 'Enter' || e.key === ' ') && modalWebsiteInput.value.trim()) {
@@ -3185,7 +3553,53 @@ function setupModalListeners() {
         }
     });
 
+    setupWebsitesImportMenu({
+        addDomainsToModal: (rawDomains) => {
+            // Validate, drop protected, drop dupes — same filtering rules as
+            // the manual input keydown path.
+            const cleaned = (rawDomains || [])
+                .map(d => cleanDomainInput(d))
+                .filter(d => isValidDomain(d) && !isProtectedDomain(d));
+            const newDomains = cleaned.filter(d => !modalWebsites.includes(d));
+            if (newDomains.length === 0) return;
+
+            const addedCopy = [...newDomains];
+            pushModalUndo('website', () => {
+                addedCopy.forEach(w => {
+                    const i = modalWebsites.indexOf(w);
+                    if (i !== -1) modalWebsites.splice(i, 1);
+                });
+                window.renderModalTags();
+            });
+            newDomains.forEach(w => modalWebsites.push(w));
+            window.renderModalTags();
+        }
+    });
+
     modalAppInput.addEventListener('keydown', (e) => {
+        const accel = e.metaKey || e.ctrlKey;
+
+        if (accel && (e.key === 'a' || e.key === 'A') && !modalAppInput.value.length) {
+            e.preventDefault();
+            selectAllUnlockedApps();
+            return;
+        }
+
+        if (e.key === 'ArrowLeft' && !accel && !modalAppInput.value.length && selectedApps.size === 0) {
+            if (moveAppSelection(-1)) e.preventDefault();
+            return;
+        }
+        if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !accel && selectedApps.size > 0) {
+            if (moveAppSelection(e.key === 'ArrowLeft' ? -1 : 1)) e.preventDefault();
+            return;
+        }
+
+        if ((e.key === 'Backspace' || e.key === 'Delete') && selectedApps.size > 0) {
+            e.preventDefault();
+            deleteSelectedApps();
+            return;
+        }
+
         // Backspace on empty input removes the last app tag (if not locked)
         if (e.key === 'Backspace' && !modalAppInput.value.length && modalApps.length > 0) {
             const lastIdx = modalApps.length - 1;
@@ -3199,6 +3613,10 @@ function setupModalListeners() {
                 window.renderModalTags();
                 e.preventDefault();
             }
+        }
+
+        if (selectedApps.size > 0 && !accel && e.key.length === 1) {
+            clearAppSelection();
         }
         if (e.key === 'Enter' && modalAppInput.value.trim()) {
             e.preventDefault();
@@ -3730,7 +4148,21 @@ function setupModalListeners() {
             });
             modalWebsites.splice(idx, 1);
             window.renderModalTags();
-        }, window.lockedWebsites);
+        }, window.lockedWebsites, {
+            selectedItems: selectedWebsites,
+            onTagClick: (idx) => {
+                const value = modalWebsites[idx];
+                if (!value || isWebsiteLocked(value)) return;
+                if (selectedWebsites.has(value)) {
+                    selectedWebsites.delete(value);
+                } else {
+                    selectedWebsites.add(value);
+                }
+                window.renderModalTags();
+                // Keep keyboard focus on the input so Backspace works immediately.
+                modalWebsiteInput.focus();
+            }
+        });
 
         const displayApps = getModalDisplayApps();
         renderTags(modalAppsTags, displayApps, (idx) => {
@@ -3755,12 +4187,36 @@ function setupModalListeners() {
                 modalApps.splice(appIdx, 1);
             }
             window.renderModalTags();
-        }, window.lockedApps);
+        }, window.lockedApps, {
+            selectedItems: selectedApps,
+            onTagClick: (idx) => {
+                const value = displayApps[idx];
+                if (!value || isAppLocked(value)) return;
+                if (selectedApps.has(value)) {
+                    selectedApps.delete(value);
+                } else {
+                    selectedApps.add(value);
+                }
+                window.renderModalTags();
+                modalAppInput.focus();
+            }
+        });
     };
+
+    // Esc inside the modal clears any active tag selection (it does NOT close
+    // the modal in that case — only when no selection is active).
+    document.getElementById('blocklist-modal').addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        const clearedWebsites = clearWebsiteSelection();
+        const clearedApps = clearAppSelection();
+        if (clearedWebsites || clearedApps) e.stopPropagation();
+    });
 
     window.setModalData = (websites, apps, iosScreenTimeSelection = null, lockedWebsitesList = [], lockedAppsList = []) => {
         modalWebsites.length = 0;
         modalApps.length = 0;
+        selectedWebsites.clear();
+        selectedApps.clear();
         modalIOSScreenTimeSelection = cloneIOSScreenTimeSelection(iosScreenTimeSelection);
         window.lockedWebsites = lockedWebsitesList;
         window.lockedApps = lockedAppsList;
@@ -4058,14 +4514,20 @@ function setupOverrideModalListeners() {
 }
 
 // Render tags
-function renderTags(container, items, onRemove, lockedItems = []) {
+function renderTags(container, items, onRemove, lockedItems = [], options = {}) {
+    const selectedItems = options.selectedItems instanceof Set ? options.selectedItems : null;
+    const onTagClick = typeof options.onTagClick === 'function' ? options.onTagClick : null;
+
     container.innerHTML = items.map((item, idx) => {
         const isLocked = lockedItems.includes(item);
-        const lockedClass = isLocked ? 'locked' : '';
+        const isSelected = !isLocked && selectedItems?.has(item);
+        const classes = ['tag'];
+        if (isLocked) classes.push('locked');
+        if (isSelected) classes.push('selected');
         const removeBtn = !isLocked ? `<button class="tag-remove" data-idx="${idx}">×</button>` : '';
 
         return `
-    <span class="tag ${lockedClass}">
+    <span class="${classes.join(' ')}" data-idx="${idx}">
       ${escapeHtml(item)}
       ${removeBtn}
     </span>
@@ -4079,6 +4541,18 @@ function renderTags(container, items, onRemove, lockedItems = []) {
             if (onRemove) onRemove(idx);
         });
     });
+
+    if (onTagClick) {
+        container.querySelectorAll('.tag').forEach(tagEl => {
+            tagEl.addEventListener('click', (e) => {
+                // Don't toggle when the user clicks the inline ✕ — that path
+                // is handled by .tag-remove above and removes the chip outright.
+                if (e.target.closest('.tag-remove')) return;
+                const idx = parseInt(tagEl.dataset.idx);
+                if (Number.isFinite(idx)) onTagClick(idx);
+            });
+        });
+    }
 }
 // Track current selected end time only (start is always 'now')
 let selectedEndHour = 20;
@@ -7532,6 +8006,12 @@ function closeBlocklistModal() {
     const showItemDetailsCheckbox = document.getElementById('show-item-details-checkbox');
     if (showItemDetailsCheckbox) showItemDetailsCheckbox.onchange = null;
 
+    // Reset the websites Import popover so it starts closed next open.
+    const importMenu = document.getElementById('websites-import-menu');
+    const importBtn = document.getElementById('modal-import-websites-btn');
+    if (importMenu) importMenu.classList.add('hidden');
+    if (importBtn) importBtn.setAttribute('aria-expanded', 'false');
+
     blocklistModalPreviewSnapshot = null;
     document.getElementById('blocklist-modal').classList.add('hidden');
     applyModalBlocklistTint(null);
@@ -10440,6 +10920,17 @@ const SETTINGS_TRANSLATIONS = {
         emoji: 'Emoji',
         advancedOptions: 'Advanced options',
         listBlockedOnCard: 'List blocked websites & apps on card',
+        importWebsitesTitle: 'Import websites',
+        importWebsitesPickFileTitle: 'Select a file with one domain per line',
+        importWebsitesFromFile: 'From text file…',
+        importWebsitesPreMadeList: 'Pre-made list',
+        importPresetEmail: 'Email',
+        importPresetGambling: 'Gambling',
+        importPresetNews: 'News',
+        importPresetPorn: 'Porn',
+        importPresetSearchEngines: 'Search engines',
+        importPresetShopping: 'Shopping',
+        importPresetSocialMedia: 'Social media',
         cancel: 'Cancel',
         save: 'Save',
         // Override / pause / confirmation modals
@@ -10606,6 +11097,17 @@ const SETTINGS_TRANSLATIONS = {
         emoji: 'Emoji',
         advancedOptions: 'Avancerede indstillinger',
         listBlockedOnCard: 'Vis blokerede websites og apps på kortet',
+        importWebsitesTitle: 'Importér websites',
+        importWebsitesPickFileTitle: 'Vælg en fil med ét domæne pr. linje',
+        importWebsitesFromFile: 'Fra tekstfil…',
+        importWebsitesPreMadeList: 'Færdiglavet liste',
+        importPresetEmail: 'E-mail',
+        importPresetGambling: 'Spil',
+        importPresetNews: 'Nyheder',
+        importPresetPorn: 'Porno',
+        importPresetSearchEngines: 'Søgemaskiner',
+        importPresetShopping: 'Shopping',
+        importPresetSocialMedia: 'Sociale medier',
         cancel: 'Annuller',
         save: 'Gem',
         // Override / pause / confirmation modals
@@ -10806,6 +11308,20 @@ function applySettingsLanguage() {
     setText('blocklist-emoji-label', tSettings('emoji'));
     setText('blocklist-advanced-options-label', tSettings('advancedOptions'));
     setText('show-item-details-label', tSettings('listBlockedOnCard'));
+    setText('websites-import-menu-text-file-label', tSettings('importWebsitesFromFile'));
+    setText('websites-import-menu-section-label', tSettings('importWebsitesPreMadeList'));
+    setText('websites-import-menu-email', tSettings('importPresetEmail'));
+    setText('websites-import-menu-gambling', tSettings('importPresetGambling'));
+    setText('websites-import-menu-news', tSettings('importPresetNews'));
+    setText('websites-import-menu-porn', tSettings('importPresetPorn'));
+    setText('websites-import-menu-search-engines', tSettings('importPresetSearchEngines'));
+    setText('websites-import-menu-shopping', tSettings('importPresetShopping'));
+    setText('websites-import-menu-social-media', tSettings('importPresetSocialMedia'));
+    const importWebsitesBtn = document.getElementById('modal-import-websites-btn');
+    if (importWebsitesBtn) {
+        importWebsitesBtn.title = tSettings('importWebsitesTitle');
+        importWebsitesBtn.setAttribute('aria-label', tSettings('importWebsitesTitle'));
+    }
     setText('cancel-blocklist-btn', tSettings('cancel'));
     setText('save-blocklist-btn', tSettings('save'));
 
