@@ -1358,6 +1358,49 @@ const BROWSER_STORE_LINKS = {
     safari: { label: 'Safari', url: 'https://apps.apple.com/us/app/redd-focus-hide-distractions/id1660218371' },
 };
 
+// Names users typically end up with in the app blocklist when they pick
+// a browser via "Browse Applications" or type one in by hand. Values are
+// normalized — lowercased, with `.app` / `.exe` stripped — so the
+// comparison in `isBrowserAppName` is a flat Set lookup.
+//
+// Used by the blocklist editor to surface a tab-restore hint when the
+// user's apps list contains a browser, since the force-close path can
+// drop unsaved form data + open tabs.
+const BROWSER_APP_NORMALIZED_NAMES = new Set([
+    'safari',
+    'google chrome',
+    'chrome',
+    'chromium',
+    'firefox',
+    'firefox developer edition',
+    'firefox nightly',
+    'microsoft edge',
+    'edge',
+    'msedge',
+    'brave browser',
+    'brave',
+    'arc',
+    'opera',
+    'opera gx',
+    'vivaldi',
+    'tor browser',
+    'duckduckgo',
+    'duckduckgo browser',
+    'librewolf',
+    'waterfox',
+    'zen',
+    'zen browser',
+]);
+
+function isBrowserAppName(name) {
+    if (!name) return false;
+    const normalized = String(name)
+        .trim()
+        .toLowerCase()
+        .replace(/\.(app|exe)$/, '');
+    return BROWSER_APP_NORMALIZED_NAMES.has(normalized);
+}
+
 // Compute per-step status for the migration UI:
 //   - 'compliant': extension installed, enabled, allowed in private, allowed on all websites
 //   - 'needs-website-access': Safari installed + enabled + private, but not allowed on all websites
@@ -4414,6 +4457,16 @@ function setupModalListeners() {
                 modalAppInput.focus();
             }
         });
+
+        // Show a tab-restore hint when the user has any browser in the apps
+        // list. The force-close path can drop unsaved form data + open tabs,
+        // so it's worth flagging up-front rather than only mentioning it in
+        // the countdown — by the time that fires it's usually too late.
+        const browserHint = document.getElementById('blocklist-apps-browser-hint');
+        if (browserHint) {
+            const hasBrowser = modalApps.some(isBrowserAppName);
+            browserHint.classList.toggle('hidden', !hasBrowser);
+        }
     };
 
     // Esc inside the modal clears any active tag selection (it does NOT close
