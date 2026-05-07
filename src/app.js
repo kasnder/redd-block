@@ -8902,8 +8902,9 @@ function renderWeekBlocks() {
         const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
         if (!blocklist) return;
 
-        // Skip if blocklist has "always show in schedule" unchecked and isn't currently selected
-        if (blocklist.alwaysShowInSchedule === false && block.blocklistId !== selectedBlocklistId) {
+        // The eye chip above the schedule is authoritative — hidden means hidden,
+        // even if the blocklist is currently selected.
+        if (blocklist.alwaysShowInSchedule === false) {
             return;
         }
 
@@ -9532,7 +9533,9 @@ function renderScheduledCalendarBlocks() {
         const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
         if (!blocklist) return;
 
-        if (blocklist.alwaysShowInSchedule === false && schedule.blocklistId !== selectedBlocklistId) {
+        // The eye chip above the schedule is authoritative — hidden means hidden,
+        // even if the blocklist is currently selected.
+        if (blocklist.alwaysShowInSchedule === false) {
             return;
         }
 
