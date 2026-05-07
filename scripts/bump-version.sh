@@ -5,7 +5,7 @@
 # This script updates the version in all necessary files:
 # - package.json
 # - src-tauri/tauri.conf.json (single source of truth for builds)
-# - helper-daemon/Cargo.toml
+# - src-tauri/Cargo.toml
 
 set -e
 
@@ -38,14 +38,6 @@ else
     sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$NEW_VERSION\"/" "$PROJECT_ROOT/src-tauri/tauri.conf.json"
 fi
 
-# Update helper-daemon/Cargo.toml
-echo "  Updating helper-daemon/Cargo.toml..."
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    sed -i '' "s/^version = \"[^\"]*\"/version = \"$NEW_VERSION\"/" "$PROJECT_ROOT/helper-daemon/Cargo.toml"
-else
-    sed -i "s/^version = \"[^\"]*\"/version = \"$NEW_VERSION\"/" "$PROJECT_ROOT/helper-daemon/Cargo.toml"
-fi
-
 # Update src-tauri/Cargo.toml
 echo "  Updating src-tauri/Cargo.toml..."
 if [[ "$OSTYPE" == "darwin"* ]]; then
@@ -61,7 +53,6 @@ echo "Files updated:"
 echo "  - package.json"
 echo "  - src-tauri/tauri.conf.json"
 echo "  - src-tauri/Cargo.toml"
-echo "  - helper-daemon/Cargo.toml"
 echo ""
 echo "Note: Build scripts (build-mac.sh, build-win.ps1) read from"
 echo "      tauri.conf.json automatically - no manual update needed."
