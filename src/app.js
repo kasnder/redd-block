@@ -3623,7 +3623,12 @@ function setupModalListeners() {
         const emoji = selectedEmoji ? selectedEmoji.dataset.emoji : '🚫';
 
         const showItemDetails = document.getElementById('show-item-details-checkbox').checked;
-        const alwaysShowInSchedule = document.getElementById('always-show-in-schedule-checkbox').checked;
+        // Preserve the blocklist's existing schedule visibility (toggled via the chips above the
+        // schedule); default to true for new blocklists.
+        const existingBlocklistForSave = editingBlocklistId
+            ? appData.blocklists.find(bl => bl.id === editingBlocklistId)
+            : null;
+        const alwaysShowInSchedule = existingBlocklistForSave?.alwaysShowInSchedule !== false;
 
         const overrideDifficultyPayload = {
             type: overrideType,
@@ -3692,7 +3697,7 @@ function setupModalListeners() {
         // Only update blocklist display without resetting schedule segments
         renderBlocklists();
         renderBlocklistSelector();
-        renderWeekBlocks(); // Refresh calendar to apply alwaysShowInSchedule changes
+        renderWeekBlocks(); // Refresh calendar so colour / emoji / name changes propagate
 
         // Re-trigger blocklist selection to update button text (name may have changed)
         if (selectedBlocklistId) {
@@ -7265,7 +7270,6 @@ function openBlocklistModal(blocklist = null) {
         const original = appData.blocklists.find(b => b.id === editingBlocklistId);
         if (original) {
             blocklistModalPreviewSnapshot = {
-                alwaysShowInSchedule: original.alwaysShowInSchedule,
                 showItemDetails: original.showItemDetails
             };
         }
@@ -7483,18 +7487,6 @@ function openBlocklistModal(blocklist = null) {
         };
     }
 
-    const alwaysShowInScheduleCheckbox = document.getElementById('always-show-in-schedule-checkbox');
-    if (alwaysShowInScheduleCheckbox) {
-        alwaysShowInScheduleCheckbox.checked = blocklist?.alwaysShowInSchedule !== false;
-        alwaysShowInScheduleCheckbox.onchange = () => {
-            if (!editingBlocklistId) return;
-            const bl = appData.blocklists.find(b => b.id === editingBlocklistId);
-            if (!bl) return;
-            bl.alwaysShowInSchedule = alwaysShowInScheduleCheckbox.checked;
-            renderWeekBlocks();
-        };
-    }
-
     // Reset advanced options to collapsed state
     const blocklistAdvancedToggle = document.getElementById('blocklist-advanced-toggle');
     const blocklistAdvancedContent = document.getElementById('blocklist-advanced-content');
@@ -7528,7 +7520,6 @@ function closeBlocklistModal() {
     if (editingBlocklistId && blocklistModalPreviewSnapshot) {
         const bl = appData.blocklists.find(b => b.id === editingBlocklistId);
         if (bl) {
-            bl.alwaysShowInSchedule = blocklistModalPreviewSnapshot.alwaysShowInSchedule;
             bl.showItemDetails = blocklistModalPreviewSnapshot.showItemDetails;
             renderWeekBlocks();
             renderBlocklists();
@@ -7536,9 +7527,7 @@ function closeBlocklistModal() {
     }
 
     const showItemDetailsCheckbox = document.getElementById('show-item-details-checkbox');
-    const alwaysShowInScheduleCheckbox = document.getElementById('always-show-in-schedule-checkbox');
     if (showItemDetailsCheckbox) showItemDetailsCheckbox.onchange = null;
-    if (alwaysShowInScheduleCheckbox) alwaysShowInScheduleCheckbox.onchange = null;
 
     blocklistModalPreviewSnapshot = null;
     document.getElementById('blocklist-modal').classList.add('hidden');
@@ -10445,7 +10434,6 @@ const SETTINGS_TRANSLATIONS = {
         emoji: 'Emoji',
         advancedOptions: 'Advanced options',
         listBlockedOnCard: 'List blocked websites & apps on card',
-        showInSchedule: 'Show in schedule',
         cancel: 'Cancel',
         save: 'Save',
         // Override / pause / confirmation modals
@@ -10612,7 +10600,6 @@ const SETTINGS_TRANSLATIONS = {
         emoji: 'Emoji',
         advancedOptions: 'Avancerede indstillinger',
         listBlockedOnCard: 'Vis blokerede websites og apps på kortet',
-        showInSchedule: 'Vis i skema',
         cancel: 'Annuller',
         save: 'Gem',
         // Override / pause / confirmation modals
@@ -10813,7 +10800,6 @@ function applySettingsLanguage() {
     setText('blocklist-emoji-label', tSettings('emoji'));
     setText('blocklist-advanced-options-label', tSettings('advancedOptions'));
     setText('show-item-details-label', tSettings('listBlockedOnCard'));
-    setText('always-show-in-schedule-label', tSettings('showInSchedule'));
     setText('cancel-blocklist-btn', tSettings('cancel'));
     setText('save-blocklist-btn', tSettings('save'));
 
