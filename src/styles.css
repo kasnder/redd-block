@@ -496,6 +496,26 @@ body.dark-mode .title-bar {
     border-color: var(--button-hover);
 }
 
+/* ---- App-blocking close-down banner (rose-tint, urgency variant) ------- */
+.app-blocking-closedown-banner {
+    background: linear-gradient(135deg, #b91c1c, #dc2626);
+    color: #ffffff;
+    box-shadow: 0 1px 4px rgba(120, 0, 0, 0.18);
+}
+
+.app-blocking-closedown-banner .update-banner-content {
+    gap: 10px;
+}
+
+.app-blocking-closedown-banner strong {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+body.dark-mode .app-blocking-closedown-banner {
+    background: linear-gradient(135deg, #991b1b, #b91c1c);
+}
+
 /* ---- Enforcer action banners (cream + orange, per-browser) ------------ */
 
 .extension-enforcer-action-banner {
@@ -6431,3 +6451,156 @@ body.dark-mode .zoom-toast {
     color: var(--text-primary);
     background: var(--element-hover-bg);
 }
+
+/* =====================================================================
+   App-blocking force-quit warning — full-window overlay inside main UI
+   ===================================================================== */
+.app-blocking-warning-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(30, 45, 62, 0.72);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+}
+
+.app-blocking-warning-overlay.hidden {
+    display: none;
+}
+
+.app-blocking-warning-overlay button {
+    -webkit-app-region: no-drag;
+}
+
+/* When the warning is up, the native window is sized to cover the full
+   display (see `enter_blocking_warning_compact_window` in browser_ext.rs).
+   Hide the rest of the app so the webview reads as ONE full-screen
+   take-over with the warning card centered in it. */
+:root.app-blocking-warning-window-mode,
+html.app-blocking-warning-window-mode,
+body.app-blocking-warning-window-mode {
+    height: 100%;
+    overflow: hidden;
+    background: var(--panel-bg);
+}
+
+body.app-blocking-warning-window-mode .app-container {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 0;
+    background: var(--panel-bg);
+}
+
+body.app-blocking-warning-window-mode .app-container > *:not(#app-blocking-warning-overlay) {
+    display: none !important;
+}
+
+body.app-blocking-warning-window-mode #app-blocking-warning-overlay {
+    /* Take the entire window — the window itself is the size of the
+       display, so the overlay covers the full screen. */
+    position: relative;
+    inset: auto;
+    flex: 1 1 auto;
+    align-self: stretch;
+    width: 100%;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 48px;
+    background: var(--panel-bg);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+body.app-blocking-warning-window-mode #app-blocking-warning-overlay.hidden {
+    display: none !important;
+}
+
+/* ---- "Let's go!" warning card -------------------------------------------
+   Centered inside the full-screen overlay — emoji, heading with the
+   blocklist name, supportive body copy, and a single primary CTA. */
+.app-blocking-warning-panel-wrap {
+    width: 100%;
+    max-width: 640px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-app-region: drag;
+}
+
+.app-blocking-warning-card {
+    width: 100%;
+    background: var(--element-bg);
+    border-radius: 24px;
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18);
+    padding: 56px 48px 44px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 20px;
+}
+
+.app-blocking-warning-emoji {
+    font-size: 64px;
+    line-height: 1;
+}
+
+.app-blocking-warning-heading {
+    margin: 0;
+    font-family: var(--font-body);
+    font-size: 2.25rem;
+    font-weight: 700;
+    line-height: 1.15;
+    color: var(--text-primary);
+}
+
+.app-blocking-warning-heading strong {
+    font-weight: 800;
+}
+
+.app-blocking-warning-summary {
+    margin: 0;
+    max-width: 520px;
+    font-size: 1.05rem;
+    line-height: 1.55;
+    color: var(--text-primary);
+}
+
+.app-blocking-warning-summary strong {
+    font-weight: 700;
+}
+
+.app-blocking-warning-actions {
+    margin-top: 8px;
+    display: flex;
+    justify-content: center;
+}
+
+.app-blocking-warning-actions .modal-btn.primary-btn {
+    -webkit-app-region: no-drag;
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    padding: 14px 48px;
+    font-size: 1.05rem;
+    font-weight: 600;
+    min-width: 220px;
+}
+
+.app-blocking-warning-actions .modal-btn.primary-btn[disabled] {
+    opacity: 0.6;
+    cursor: progress;
+}
+
+body.dark-mode .app-blocking-warning-card {
+    background: rgba(255, 255, 255, 0.04);
+    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+}
+

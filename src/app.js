@@ -60,7 +60,8 @@ const tauriAPI = {
     blockWebsites: (domains) => invoke('block_websites', { domains }),
 
     // App blocking via helper daemon (persistent, survives app close)
-    setBlockedAppsViaHelper: (apps) => invoke('set_blocked_apps_via_helper', { apps }),
+    setBlockedAppsViaHelper: (apps, newlyAdded) =>
+        invoke('set_blocked_apps_via_helper', { apps, newlyAdded }),
 
     // Schedule management via helper daemon (persistent, handles transitions autonomously)
     setSchedulesViaHelper: (schedules) => invoke('set_schedules_via_helper', { schedules }),
@@ -94,6 +95,16 @@ const tauriAPI = {
     onEnforcerGraceUpdate: (callback) => listen('enforcer://grace-update', callback),
     onEnforcerGraceResolved: (callback) => listen('enforcer://grace-resolved', callback),
     onEnforcerBrowserClosed: (callback) => listen('enforcer://browser-closed', callback),
+
+    // App blocking: force-quit warning overlay (desktop)
+    onAppBlockingWarningShow: (callback) => listen('app-blocking://warning-show', callback),
+    onAppBlockingWarningHide: (callback) => listen('app-blocking://warning-hide', callback),
+    appBlockingBringForwardThenQuitAgain: (pids) =>
+        invoke('app_blocking_bring_forward_then_quit_again', { pids }),
+    /// User clicked "Let's go!" on the app-blocking warning — the
+    /// watcher transitions every awaiting PID to the 30-second
+    /// PreQuit phase before sending the polite Cmd-Q.
+    letsGoAcknowledge: () => invoke('lets_go_acknowledge'),
 
     // macOS-only in-app uninstall. Disables launch-at-login, scrubs
     // browser native-messaging manifests, and schedules a delayed
@@ -1124,6 +1135,7 @@ async function runPostAcceptanceStartup() {
             // Automation TCC (macOS) + extension compliance. Idempotent;
             // a no-op on subsequent launches past the current version.
             setupEnforcerUiAlerts();
+            setupAppBlockingWarningOverlay();
             await runDesktopOnboarding();
             await checkHelperStatus();
             console.log('[startup-sync] Desktop startup helperAvailable:', helperAvailable);
@@ -1466,6 +1478,49 @@ const BROWSER_STORE_LINKS = {
     firefox: { label: 'Firefox', url: 'https://addons.mozilla.org/en-US/firefox/addon/reddfocus/' },
     safari: { label: 'Safari', url: 'https://apps.apple.com/us/app/redd-focus-hide-distractions/id1660218371' },
 };
+
+// Names users typically end up with in the app blocklist when they pick
+// a browser via "Browse Applications" or type one in by hand. Values are
+// normalized — lowercased, with `.app` / `.exe` stripped — so the
+// comparison in `isBrowserAppName` is a flat Set lookup.
+//
+// Used by the blocklist editor to surface a tab-restore hint when the
+// user's apps list contains a browser, since the force-close path can
+// drop unsaved form data + open tabs.
+const BROWSER_APP_NORMALIZED_NAMES = new Set([
+    'safari',
+    'google chrome',
+    'chrome',
+    'chromium',
+    'firefox',
+    'firefox developer edition',
+    'firefox nightly',
+    'microsoft edge',
+    'edge',
+    'msedge',
+    'brave browser',
+    'brave',
+    'arc',
+    'opera',
+    'opera gx',
+    'vivaldi',
+    'tor browser',
+    'duckduckgo',
+    'duckduckgo browser',
+    'librewolf',
+    'waterfox',
+    'zen',
+    'zen browser',
+]);
+
+function isBrowserAppName(name) {
+    if (!name) return false;
+    const normalized = String(name)
+        .trim()
+        .toLowerCase()
+        .replace(/\.(app|exe)$/, '');
+    return BROWSER_APP_NORMALIZED_NAMES.has(normalized);
+}
 
 // Compute per-step status for the migration UI:
 //   - 'compliant': extension installed, enabled, allowed in private, allowed on all websites
@@ -2557,6 +2612,244 @@ function hideEnforcerActionBanner(browser) {
         clearInterval(enforcerActionBannerInterval);
         enforcerActionBannerInterval = null;
     }
+}
+
+// ---- App-blocking: "Let's go!" warning (driven by native watcher) ---------
+//
+// Two pieces of UI:
+//   1. The full-screen always-on-top overlay (raised by the native watcher
+//      when a blocked PID first appears; rendered out of `appBlockingWarningRows`
+//      entries that have NO `ackedDeadlineMs`).
+//   2. The in-app countdown banner (shown after the user clicks "Let's go!";
+//      driven by entries that have an `ackedDeadlineMs` set).
+//
+// Per-row ack metadata so the overlay and banner can coexist sensibly
+// when a new blocked app gets launched mid-countdown — the new PID
+// shows in the overlay while the previously-acked PIDs continue
+// counting down in the banner.
+
+/** @type {Map<number, { name: string, ackedDeadlineMs?: number }>} */
+const appBlockingWarningRows = new Map();
+let appBlockingWarningUiAttached = false;
+let appBlockingClosedownTickInterval = null;
+
+/// 30 seconds of wrap-up time after the user clicks "Let's go!" before
+/// the watcher sends the polite Cmd-Q. Mirrors `PREQUIT_DURATION` in
+/// `app_watcher.rs`. Kept in JS too so the banner can show the right
+/// countdown without a server round-trip.
+const APP_BLOCKING_CLOSEDOWN_PREQUIT_MS = 30 * 1000;
+
+function setupAppBlockingWarningOverlay() {
+    if (isIOS || appBlockingWarningUiAttached) return;
+    appBlockingWarningUiAttached = true;
+
+    const onFail = (label) => (e) => {
+        console.warn(`[app-blocking-ui] failed to attach ${label}:`, e);
+        appBlockingWarningUiAttached = false;
+    };
+
+    // The new flow has just two events: warning-show (user-ack required)
+    // and warning-hide (the PID exited or got SIGKILLed). The old
+    // warning-update countdown stream is gone — there's no number to tick.
+    tauriAPI.onAppBlockingWarningShow((event) => {
+        const p = event?.payload || {};
+        const pid = Number(p.pid);
+        if (!Number.isFinite(pid)) return;
+        appBlockingWarningRows.set(pid, {
+            name: p.name || 'App',
+        });
+        renderAppBlockingWarningOverlay();
+        renderAppBlockingClosedownBanner();
+    }).catch(onFail('warning-show'));
+
+    tauriAPI.onAppBlockingWarningHide((event) => {
+        const p = event?.payload || {};
+        const pid = Number(p.pid);
+        if (!Number.isFinite(pid)) return;
+        appBlockingWarningRows.delete(pid);
+        renderAppBlockingWarningOverlay();
+        renderAppBlockingClosedownBanner();
+    }).catch(onFail('warning-hide'));
+
+    // "Let's go!" button — ack every currently-awaiting row, hide the
+    // full-screen overlay immediately, and surface the in-app close-down
+    // countdown banner. The watcher's AwaitingUserAck → PreQuit
+    // transition happens server-side via `letsGoAcknowledge`; we just
+    // mirror that timeline in the UI so the user sees how long they
+    // have to wrap up.
+    const letsGoBtn = document.getElementById('app-blocking-lets-go-btn');
+    letsGoBtn?.addEventListener('click', () => {
+        const ackedDeadlineMs = Date.now() + APP_BLOCKING_CLOSEDOWN_PREQUIT_MS;
+        for (const row of appBlockingWarningRows.values()) {
+            if (!row.ackedDeadlineMs) row.ackedDeadlineMs = ackedDeadlineMs;
+        }
+        applyWarningOverlayPresence();
+        renderAppBlockingClosedownBanner();
+        tauriAPI
+            .letsGoAcknowledge()
+            .catch((e) => console.warn('[app-blocking-ui] lets-go ack:', e));
+    });
+}
+
+/** Find the user's blocklist that contains a given app name (case-insensitive).
+ *  Used to surface the matching blocklist's name + emoji in the
+ *  force-quit warning so the user knows which block is responsible. */
+function findBlocklistForBlockedAppName(appName) {
+    if (!appName) return null;
+    const target = String(appName).trim().toLowerCase();
+    if (!target) return null;
+    const blocklists = appData?.blocklists || [];
+    for (const bl of blocklists) {
+        const apps = bl.apps || [];
+        if (apps.some((a) => String(a).trim().toLowerCase() === target)) {
+            return bl;
+        }
+    }
+    return null;
+}
+
+function renderAppBlockingWarningOverlay() {
+    const overlay = document.getElementById('app-blocking-warning-overlay');
+    if (!overlay) return;
+
+    if (appBlockingWarningRows.size === 0) {
+        applyWarningOverlayPresence();
+        return;
+    }
+
+    /** @type {string[]} */
+    const names = [];
+    for (const [, row] of appBlockingWarningRows) {
+        const n = (row.name || 'Unknown app').trim() || 'Unknown app';
+        names.push(n);
+    }
+
+    // Pick the blocklist responsible for the warnings — for the common
+    // single-app case this is unambiguous; for multi-app we fall back to
+    // the first matching blocklist (multiple-blocklist conflicts are
+    // rare and not worth the UI complexity).
+    const responsibleBlocklist = names
+        .map(findBlocklistForBlockedAppName)
+        .find((bl) => bl) || null;
+    const blocklistName = responsibleBlocklist?.name || 'this block';
+    const blocklistEmoji = responsibleBlocklist?.emoji || '🎯';
+
+    const summaryEl = document.getElementById('app-blocking-warning-summary');
+    const blocklistNameEl = document.getElementById('app-blocking-warning-blocklist-name');
+    const emojiEl = document.getElementById('app-blocking-warning-emoji');
+    const letsGoBtn = document.getElementById('app-blocking-lets-go-btn');
+
+    if (blocklistNameEl) blocklistNameEl.textContent = blocklistName;
+    if (emojiEl) emojiEl.textContent = blocklistEmoji;
+
+    // Re-enable the button whenever we fresh-render — this is a new
+    // warning event, so any "disabled after click" state from a previous
+    // warning needs clearing. (No-op on the very first render.)
+    letsGoBtn?.removeAttribute('disabled');
+
+    if (summaryEl) {
+        const apps = joinAppListWithLimit(names, 3);
+        const them = names.length === 1 ? 'it' : 'them';
+        summaryEl.innerHTML =
+            `<strong>${escapeHtml(blocklistName)}</strong> is starting — time to wrap up. `
+            + `When you click <strong>Let's go!</strong>, we'll give you 30 seconds to save your work in `
+            + `${apps}, then we'll close ${them} for you.`;
+    }
+
+    applyWarningOverlayPresence();
+}
+
+// ---- Warning-overlay coordinator -----------------------------------------
+//
+// Reconciles the always-on-top compact-window panel mode with the only
+// warning surface we now have — the app-blocking "Let's go!" warning.
+// The native watcher's `blocking_warning_begin/end` already manages the
+// panel-mode refcount in Rust (see `emit_warning_show/_hide`), so this
+// function is purely DOM-side: overlay visibility, body class for the
+// compact-mode CSS, and resize-observer setup.
+function applyWarningOverlayPresence() {
+    if (isIOS) return;
+    const overlay = document.getElementById('app-blocking-warning-overlay');
+    if (!overlay) return;
+
+    // Show the overlay only for rows the user hasn't yet acknowledged
+    // — once they've clicked "Let's go!" the row gets an
+    // `ackedDeadlineMs` and migrates from the overlay to the banner.
+    const hasUnackedRows = [...appBlockingWarningRows.values()]
+        .some((row) => !row.ackedDeadlineMs);
+
+    overlay.classList.toggle('hidden', !hasUnackedRows);
+    document.documentElement.classList.toggle('app-blocking-warning-window-mode', hasUnackedRows);
+    document.body.classList.toggle('app-blocking-warning-window-mode', hasUnackedRows);
+}
+
+/// Render the in-app close-down countdown banner. Idempotent — call
+/// whenever rows change or the timer ticks. Shows the soonest deadline
+/// across acked rows so the countdown reads honestly.
+function renderAppBlockingClosedownBanner() {
+    const banner = document.getElementById('app-blocking-closedown-banner');
+    const text = document.getElementById('app-blocking-closedown-banner-text');
+    if (!banner || !text) return;
+
+    const acked = [...appBlockingWarningRows.values()].filter(
+        (row) => typeof row.ackedDeadlineMs === 'number',
+    );
+    if (acked.length === 0) {
+        banner.classList.add('hidden');
+        stopAppBlockingClosedownTick();
+        return;
+    }
+
+    const names = acked.map((r) => (r.name || 'an app').trim() || 'an app');
+    const appsHtml = joinAppListWithLimit(names, 3);
+    const them = names.length === 1 ? 'it' : 'them';
+    const soonestDeadline = Math.min(...acked.map((r) => r.ackedDeadlineMs));
+    const remainingMs = Math.max(0, soonestDeadline - Date.now());
+    const remainingSecs = Math.ceil(remainingMs / 1000);
+
+    if (remainingSecs > 0) {
+        text.innerHTML = `Closing ${appsHtml} in <strong>${remainingSecs}s</strong> — save your work now.`;
+    } else {
+        // PreQuit elapsed — Rust is now sending Cmd-Q and waiting on
+        // the 10s SIGKILL grace. Banner stays up until the watcher's
+        // warning-hide event clears the row.
+        text.innerHTML = `Closing ${appsHtml} now${names.length === 1 ? '' : ` — saving any pending dialogs in ${them}`}…`;
+    }
+
+    banner.classList.remove('hidden');
+    ensureAppBlockingClosedownTick();
+}
+
+function ensureAppBlockingClosedownTick() {
+    if (appBlockingClosedownTickInterval !== null) return;
+    appBlockingClosedownTickInterval = window.setInterval(() => {
+        renderAppBlockingClosedownBanner();
+    }, 1000);
+}
+
+function stopAppBlockingClosedownTick() {
+    if (appBlockingClosedownTickInterval !== null) {
+        window.clearInterval(appBlockingClosedownTickInterval);
+        appBlockingClosedownTickInterval = null;
+    }
+}
+
+/** Pretty list join: "A", "A and B", "A, B and C", "A, B and 4 more". */
+function joinAppListWithLimit(names, max = 3, { bold = true } = {}) {
+    const arr = names.filter(Boolean);
+    const wrap = bold
+        ? (n) => `<strong>${escapeHtml(n)}</strong>`
+        : (n) => escapeHtml(n);
+    if (arr.length === 0) return '';
+    if (arr.length === 1) return wrap(arr[0]);
+    if (arr.length <= max) {
+        const head = arr.slice(0, -1).map(wrap).join(', ');
+        const tail = wrap(arr[arr.length - 1]);
+        return `${head} and ${tail}`;
+    }
+    const shown = arr.slice(0, max - 1).map(wrap).join(', ');
+    const remaining = arr.length - (max - 1);
+    return `${shown} and ${wrap(`${remaining} more`)}`;
 }
 
 // Check if the helper daemon is available (desktop only)
@@ -4322,6 +4615,16 @@ function setupModalListeners() {
                 modalAppInput.focus();
             }
         });
+
+        // Show a tab-restore hint when the user has any browser in the apps
+        // list. The force-close path can drop unsaved form data + open tabs,
+        // so it's worth flagging up-front rather than only mentioning it in
+        // the countdown — by the time that fires it's usually too late.
+        const browserHint = document.getElementById('blocklist-apps-browser-hint');
+        if (browserHint) {
+            const hasBrowser = modalApps.some(isBrowserAppName);
+            browserHint.classList.toggle('hidden', !hasBrowser);
+        }
     };
 
     // Esc inside the modal clears any active tag selection (it does NOT close
@@ -7991,6 +8294,18 @@ async function updateHostsFile(silent = false) {
 // Computes the effective union of apps from active one-off blocks AND active schedule
 // segments. Both sources are evaluated on the frontend now that the legacy helper
 // daemon (which previously merged schedule + manual apps internally) is gone.
+/// Set of app names that were in the blocked set at the LAST
+/// `updateBlockedApps` call. Used to compute which apps just
+/// transitioned to blocking ("newly added") so the watcher can
+/// distinguish "block just starting → raise Let's-go warning" from
+/// "user launched a blocked app while a block was already running →
+/// silent SIGTERM". `null` until the first call so the very first
+/// sync (typically right after app launch, when blocks may already
+/// be active from a prior session) doesn't fire warnings — we treat
+/// that initial state as "what was already running before we got
+/// here", not as a transition the user just initiated.
+let appBlockingPreviousAppsSet = null;
+
 async function updateBlockedApps() {
     // iOS uses Screen Time API for app blocking - skip desktop process watcher
     if (isIOS) return;
@@ -8040,11 +8355,24 @@ async function updateBlockedApps() {
         }
     }
 
+    // Compute the diff against the last sync so the watcher knows
+    // which apps just transitioned to blocked (warning-eligible) vs
+    // which were already blocked (silent enforcement). On the very
+    // first call `appBlockingPreviousAppsSet` is null — we treat that
+    // as "initial state, no transitions" and skip warnings entirely.
+    const newlyAddedApps = appBlockingPreviousAppsSet === null
+        ? []
+        : appsArray.filter((a) => !appBlockingPreviousAppsSet.has(a));
+    appBlockingPreviousAppsSet = new Set(appsArray);
+
     if (helperReady) {
         try {
-            const result = await tauriAPI.setBlockedAppsViaHelper(appsArray);
+            const result = await tauriAPI.setBlockedAppsViaHelper(appsArray, newlyAddedApps);
             if (result && result.success) {
-                console.log('[updateBlockedApps] Apps set via helper daemon:', appsArray.length, 'apps');
+                console.log(
+                    '[updateBlockedApps] Apps set via helper daemon:',
+                    appsArray.length, 'apps,', newlyAddedApps.length, 'newly added',
+                );
             } else {
                 console.warn('[updateBlockedApps] Helper failed to set blocked apps:', result?.error);
             }

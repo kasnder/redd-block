@@ -60,6 +60,38 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 
 pub mod commands;
 
+/// Custom NSPanel class for the main ReDD Block window. Most of the time
+/// this behaves indistinguishably from a regular NSWindow — but having
+/// the underlying class be an NSPanel lets us toggle
+/// `NSWindowStyleMaskNonactivatingPanel` (and the matching collection
+/// behavior) during the app-blocking force-quit countdown so the warning
+/// floats over third-party fullscreen windows without stealing focus.
+/// Same shape of trick redd-do uses for its pop-out focus panel.
+///
+/// The `config:` block overrides NSPanel defaults so the panel acts like
+/// a regular main window: it can become key + main, doesn't hide on app
+/// deactivation, and isn't a floating panel by default.
+//
+// `tauri::Manager` is required in scope by the macro expansion (it calls
+// `window.app_handle()` internally). The crate-level import is gated on
+// the `desktop` feature, so re-import it here for the macOS build.
+#[cfg(target_os = "macos")]
+use tauri::Manager as _;
+
+#[cfg(target_os = "macos")]
+tauri_nspanel::tauri_panel! {
+    panel!(MainPanel {
+        config: {
+            can_become_key_window: true,
+            can_become_main_window: true,
+            becomes_key_only_if_needed: false,
+            hides_on_deactivate: false,
+            works_when_modal: true,
+            is_floating_panel: false
+        }
+    })
+}
+
 #[cfg(not(target_os = "ios"))]
 pub mod app_watcher;
 #[cfg(target_os = "macos")]
@@ -176,6 +208,12 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init());
 
+    // tauri-nspanel is what enables the macOS-fullscreen-overlay trick
+    // for the app-blocking countdown — see `MainPanel` above and
+    // `commands::set_blocking_warning_attention`.
+    #[cfg(target_os = "macos")]
+    let builder = builder.plugin(tauri_nspanel::init());
+
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     let builder = builder.plugin(tauri_plugin_notification::init());
 
@@ -242,6 +280,19 @@ pub fn run() {
                     .title_bar_style(TitleBarStyle::Overlay);
 
                 let window = win_builder.build()?;
+
+                // Swizzle the underlying NSWindow into our `MainPanel`
+                // NSPanel subclass. This is a no-op visually — the panel
+                // is configured to behave like a normal window — but it
+                // unlocks `NSWindowStyleMaskNonactivatingPanel` and the
+                // FullScreenAuxiliary collection behavior, which the
+                // blocking-warning countdown turns on so it can float
+                // over third-party fullscreen windows. Same approach as
+                // redd-do's pop-out focus panel.
+                use tauri_nspanel::WebviewWindowExt as _;
+                if let Err(e) = window.to_panel::<MainPanel>() {
+                    log::warn!("main window: to_panel failed: {e:?}");
+                }
 
                 // Set background color to match app (white)
                 use cocoa::appkit::{NSColor, NSWindow};
@@ -417,6 +468,14 @@ pub fn run() {
                                             .title_bar_style(TitleBarStyle::Overlay);
 
                                         if let Ok(new_window) = win_builder.build() {
+                                            // Re-apply NSPanel swizzle on the rebuilt
+                                            // window so the blocking-warning fullscreen
+                                            // overlay still works after a close+reopen.
+                                            use tauri_nspanel::WebviewWindowExt as _;
+                                            if let Err(e) = new_window.to_panel::<MainPanel>() {
+                                                log::warn!("main window (rebuild): to_panel failed: {e:?}");
+                                            }
+
                                             use cocoa::appkit::{NSColor, NSWindow};
                                             use cocoa::base::{id, nil};
 
@@ -674,6 +733,11 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::open_app_picker,
         commands::set_blocked_apps,
         commands::clear_blocked_apps,
+        commands::app_blocking_bring_forward_then_quit_again,
+        commands::lets_go_acknowledge,
+        commands::resize_blocking_warning_inner_size,
+        commands::enter_blocking_warning_panel_mode,
+        commands::leave_blocking_warning_panel_mode,
         commands::scan_browser_profiles,
         commands::browser_profiles_compliant,
         commands::activate_app,
@@ -722,6 +786,11 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::open_app_picker,
         commands::set_blocked_apps,
         commands::clear_blocked_apps,
+        commands::app_blocking_bring_forward_then_quit_again,
+        commands::lets_go_acknowledge,
+        commands::resize_blocking_warning_inner_size,
+        commands::enter_blocking_warning_panel_mode,
+        commands::leave_blocking_warning_panel_mode,
         commands::scan_browser_profiles,
         commands::browser_profiles_compliant,
         commands::activate_app,

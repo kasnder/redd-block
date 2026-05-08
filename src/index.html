@@ -86,6 +86,22 @@
              relevant, so the reminder doesn't silently disappear
              forever the way a localStorage-persisted dismissal
              would. -->
+        <!-- App-blocking close-down countdown. Replaces the always-on-top
+             warning panel once the user has clicked "Let's go!"; ticks
+             down to the polite Cmd-Q (T+30s) and then through the
+             SIGKILL grace (T+40s). Auto-hides when every tracked app
+             has exited (clean save+quit or SIGKILL'd). -->
+        <div id="app-blocking-closedown-banner" class="update-banner app-blocking-closedown-banner hidden">
+            <div class="update-banner-content">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12 6 12 12 16 14" />
+                </svg>
+                <span id="app-blocking-closedown-banner-text"></span>
+            </div>
+        </div>
+
         <div id="behaviour-change-banner" class="update-banner setup-banner hidden">
             <div class="update-banner-content">
                 <svg class="setup-banner-info-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
@@ -815,6 +831,11 @@
                             </button>
                         </div>
                     </div>
+                    <span id="blocklist-apps-browser-hint" class="form-hint hidden" style="font-style: italic;">
+                        Note: when a browser is automatically closed, you may need to manually
+                        restore your tabs. On Mac, open the browser and click
+                        History&nbsp;→&nbsp;Reopen All Tabs / Reopen All Windows From Last Session.
+                    </span>
                 </div>
 
                 <div class="form-group">
@@ -1220,6 +1241,33 @@
                 <div class="modal-buttons">
                     <button id="diagnostics-copy-btn" class="modal-btn cancel-btn">Copy to Clipboard</button>
                     <button id="close-diagnostics-btn" class="modal-btn cancel-btn">Close</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Full-screen, always-on-top "Let's go!" warning. The watcher
+             raises this when it detects a blocked app running while a
+             block is active — the user is presented with the warning,
+             clicks Let's go!, gets 30 seconds to save + manually quit,
+             then the watcher sends a polite Cmd-Q. 10 seconds after
+             that, anything still alive gets SIGKILL. The window itself
+             is sized to cover the entire display by `enter_blocking_warning_compact_window`. -->
+        <div id="app-blocking-warning-overlay" class="app-blocking-warning-overlay hidden" role="alertdialog"
+            aria-modal="true" aria-labelledby="app-blocking-warning-heading">
+            <div class="app-blocking-warning-panel-wrap" id="app-blocking-warning-panel" data-tauri-drag-region>
+                <div class="app-blocking-warning-card">
+                    <div class="app-blocking-warning-emoji" aria-hidden="true">
+                        <span id="app-blocking-warning-emoji">🎯</span>
+                    </div>
+                    <h2 id="app-blocking-warning-heading" class="app-blocking-warning-heading">
+                        <strong id="app-blocking-warning-blocklist-name">This block</strong>
+                        is starting
+                    </h2>
+                    <p id="app-blocking-warning-summary" class="app-blocking-warning-summary"></p>
+                    <div class="app-blocking-warning-actions">
+                        <button type="button" id="app-blocking-lets-go-btn"
+                            class="modal-btn primary-btn app-blocking-lets-go-btn">Let's go!</button>
+                    </div>
                 </div>
             </div>
         </div>
