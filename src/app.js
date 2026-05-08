@@ -1849,7 +1849,8 @@ function renderBrowserInstallButtons(state) {
                 // Focus" hint references a button macOS 26 no longer
                 // shows) and a much clearer mental model than feeding
                 // the user one instruction at a time as they progress.
-                const profiles = (b && Array.isArray(b.profiles)) ? b.profiles : [];
+                const safariBrowser = browsers[key];
+                const profiles = (safariBrowser && Array.isArray(safariBrowser.profiles)) ? safariBrowser.profiles : [];
                 // Aggregate across profiles: a step is "done" only if
                 // every Safari profile has it. Matches how
                 // browserComplianceStatus computes the overall status.
