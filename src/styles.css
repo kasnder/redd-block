@@ -240,7 +240,7 @@ body.ios .app-container {
     display: flex;
     flex-direction: column;
     background: var(--container-bg);
-    padding-bottom: 42px;
+    padding-bottom: 38px;
     overflow: hidden;
 }
 
@@ -937,7 +937,7 @@ body.dark-mode .app-blocking-closedown-banner {
 .grid-top-row {
     display: grid;
     grid-template-columns: 480px minmax(0, 1fr);
-    gap: 20px;
+    gap: 28px;
     align-items: start;
     position: relative;
     flex-shrink: 0;
@@ -5911,7 +5911,7 @@ body.dark-mode .modal-btn.black-btn:hover {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
-    padding: 0 8px 4px;
+    padding: 0 8px 2px;
     font-size: 13px;
     color: var(--text-muted);
 }
@@ -5920,7 +5920,7 @@ body.dark-mode .modal-btn.black-btn:hover {
     grid-column: 2;
     text-align: center;
     font-size: 13px;
-    padding-bottom: 4px;
+    padding-bottom: 6px;
 }
 
 .footer-zoom-control {
@@ -5931,7 +5931,7 @@ body.dark-mode .modal-btn.black-btn:hover {
     gap: 6px;
     color: var(--text-muted);
     /* Match .footer-text padding-bottom so both sit on the same baseline. */
-    padding-bottom: 4px;
+    padding-bottom: 2px;
 }
 
 .footer-zoom-btn {
