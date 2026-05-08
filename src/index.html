@@ -887,6 +887,34 @@
             </div>
         </div>
 
+        <!-- Installed Apps Picker Modal -->
+        <div id="app-picker-modal" class="modal-overlay hidden">
+            <div class="modal-content app-picker-modal-content">
+                <h3 id="app-picker-title">Select Apps to Block</h3>
+                <div class="app-picker-search-wrap">
+                    <input type="text" id="app-picker-search" class="form-input"
+                        placeholder="Search installed apps..." autocomplete="off">
+                    <svg class="app-picker-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                </div>
+                <div id="app-picker-list" class="app-picker-list">
+                    <div class="app-picker-loading">Scanning installed apps...</div>
+                </div>
+                <div class="app-picker-footer">
+                    <button type="button" id="app-picker-browse-btn" class="app-picker-browse-link">
+                        Browse manually...
+                    </button>
+                    <div class="app-picker-actions">
+                        <button type="button" id="app-picker-cancel-btn" class="modal-btn cancel-btn">Cancel</button>
+                        <button type="button" id="app-picker-add-btn" class="modal-btn confirm-btn">Add Selected</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Override Challenge Modal -->
         <div id="override-modal" class="modal-overlay hidden">
             <div class="modal-content override-challenge">
