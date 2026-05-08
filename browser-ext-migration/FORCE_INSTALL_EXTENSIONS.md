@@ -1,7 +1,8 @@
 # Force-installing the ReDD Focus extension at ReDD Block install time
 
 > Branch: `explore-force-install-extensions`
-> Status: research / design — not yet implemented.
+> Status: implemented for all four target browsers (Chrome / Brave /
+> Edge / Firefox). See `src-tauri/src/extension_install.rs`.
 > Out of scope: Safari (handled by the bundled `SafariWebExtensionHandler`).
 
 ## Why

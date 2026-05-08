@@ -607,15 +607,17 @@ pub fn run() {
                 log::warn!("native-host install on startup failed: {e}");
             }
 
-            // Drop the External-Extensions hint for every Chromium-family
-            // browser the user has on this machine. Browsers auto-install
-            // the ReDD Focus extension from the Chrome Web Store on next
-            // launch — saves the user a per-browser "Add to Chrome" walk
+            // Drop the auto-install hint for every supported browser.
+            // Chromium-family (Chrome/Brave/Edge): External-Extensions
+            // JSON / HKCU registry → silent install on next launch.
+            // Firefox: sideload the bundled signed XPI → one-time
+            // "Allow this extension?" prompt on next launch.
+            // Saves the user a per-browser "Add to <browser>" walk
             // through during onboarding. Idempotent; safe to re-run on
             // every startup. See `browser-ext-migration/FORCE_INSTALL_EXTENSIONS.md`
-            // for design rationale + the deferred Firefox sideload plan.
+            // for design rationale.
             #[cfg(not(target_os = "ios"))]
-            if let Err(e) = extension_install::install() {
+            if let Err(e) = extension_install::install(Some(app.handle())) {
                 log::warn!("extension-install hint on startup failed: {e}");
             }
 

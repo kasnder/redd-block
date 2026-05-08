@@ -25,6 +25,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "resources": {
+      "resources/*.xpi": "resources/"
+    },
     "category": "Productivity",
     "copyright": "Copyright © 2026 Reduce Digital Distraction Ltd",
     "shortDescription": "Block distracting websites and apps to stay focused",
