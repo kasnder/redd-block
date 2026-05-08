@@ -103,6 +103,8 @@ pub mod native_host;
 #[cfg(not(target_os = "ios"))]
 pub mod native_host_install;
 #[cfg(not(target_os = "ios"))]
+pub mod extension_install;
+#[cfg(not(target_os = "ios"))]
 pub mod profile_scan;
 #[cfg(target_os = "windows")]
 pub mod watchdog;
@@ -605,6 +607,18 @@ pub fn run() {
                 log::warn!("native-host install on startup failed: {e}");
             }
 
+            // Drop the External-Extensions hint for every Chromium-family
+            // browser the user has on this machine. Browsers auto-install
+            // the ReDD Focus extension from the Chrome Web Store on next
+            // launch — saves the user a per-browser "Add to Chrome" walk
+            // through during onboarding. Idempotent; safe to re-run on
+            // every startup. See `browser-ext-migration/FORCE_INSTALL_EXTENSIONS.md`
+            // for design rationale + the deferred Firefox sideload plan.
+            #[cfg(not(target_os = "ios"))]
+            if let Err(e) = extension_install::install() {
+                log::warn!("extension-install hint on startup failed: {e}");
+            }
+
             #[cfg(target_os = "macos")]
             if let Some(data_path) = native_host::resolve_data_path() {
                 app_group::start_sync_loop(data_path);
@@ -744,6 +758,8 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::hide_main_window,
         native_host_install::install_native_host,
         native_host_install::uninstall_native_host,
+        extension_install::install_extension_hints,
+        extension_install::uninstall_extension_hints,
         commands::enforcer_start,
         commands::enforcer_pause,
         commands::strip_hosts_markers,
@@ -797,6 +813,8 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::hide_main_window,
         native_host_install::install_native_host,
         native_host_install::uninstall_native_host,
+        extension_install::install_extension_hints,
+        extension_install::uninstall_extension_hints,
         commands::enforcer_start,
         commands::enforcer_pause,
         commands::strip_hosts_markers,
