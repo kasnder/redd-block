@@ -1,9 +1,28 @@
 # Force-installing the ReDD Focus extension at ReDD Block install time
 
 > Branch: `explore-force-install-extensions`
-> Status: implemented for all four target browsers (Chrome / Brave /
-> Edge / Firefox). See `src-tauri/src/extension_install.rs`.
+> Status: implemented. Chrome / Brave / Edge use the user-level
+> External Extensions hint mechanism. Firefox on macOS uses an
+> enterprise `policies.json` written into the Firefox bundle.
+> Firefox on Windows / Linux falls back to the existing onboarding
+> "Install in Firefox" link (no admin-less force-install path is
+> available there).
+> See `src-tauri/src/extension_install.rs`.
 > Out of scope: Safari (handled by the bundled `SafariWebExtensionHandler`).
+
+## Note: the original Firefox plan (XPI sideload) doesn't work
+
+An earlier draft of this document proposed sideloading a signed XPI
+into `~/Library/Application Support/Mozilla/Extensions/{guid}/`.
+That mechanism was deprecated in Firefox 73 and **removed in Firefox
+74** (released early 2020). Modern Firefox no longer reads that
+directory; sideloaded XPIs sit there but never trigger an install
+prompt. We tried this initially and discovered the issue empirically
+— the prior version of `extension_install.rs` carried the dead path
++ a bundled XPI in `src-tauri/resources/` which we've since removed.
+
+The current implementation uses Firefox's enterprise `policies.json`
+mechanism instead — see "Recommended path" below.
 
 ## Why
 
@@ -114,44 +133,67 @@ Extensions path (#1) is the cleaner version of this — skip.
 
 ### Firefox
 
-Firefox is materially stricter. None of the user-level mechanisms
-match Chrome's "silent auto-install on next launch" experience.
+Firefox is materially stricter than Chromium. The shortlist:
 
-#### 1. Sideload via Extensions directory (user-level, requires user prompt)
+#### 1. Sideload via Extensions directory — REMOVED in Firefox 74
 
-Firefox watches:
-- **macOS**: `~/Library/Application Support/Mozilla/Extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}/`
-  (where the GUID is Firefox's app ID, constant)
-- **Windows**: `%APPDATA%\Mozilla\Firefox\Extensions\{ec8030f7-c20a-464f-9b0e-13a3a9e97384}\`
+Historically Firefox watched:
+- **macOS**: `~/Library/Application Support/Mozilla/Extensions/{...}/`
+- **Windows**: `%APPDATA%\Mozilla\Firefox\Extensions\{...}\`
 
-Drop the signed `.xpi` here. On next Firefox launch the user gets a
-one-time "An extension was added to Firefox: ReDD Focus. Allow this
-extension to run?" prompt. They click Allow → installed.
+XPIs dropped here triggered a one-time install prompt on next launch.
+Mozilla [removed this mechanism in Firefox 74](https://blog.mozilla.org/addons/2019/10/31/firefox-to-discontinue-sideloaded-extensions/)
+(released early 2020). Modern Firefox simply doesn't read these
+directories anymore — XPIs placed there sit forever doing nothing.
+**Don't use this path.**
 
-User can disable / remove from `about:addons` afterwards.
+#### 2. policies.json — admin on Windows, USABLE on macOS
 
-This is the lightest-touch Firefox option, and it matches modern
-Firefox's expectations (signed XPI from AMO, user-consent prompt).
-Won't be 100% silent, but the prompt only fires once per install.
+`distribution/policies.json` next to the Firefox binary:
 
-#### 2. policies.json (system-wide, admin required)
+- **macOS**: `/Applications/Firefox.app/Contents/Resources/distribution/policies.json`
+- **Windows**: `%PROGRAMFILES%\Mozilla Firefox\distribution\policies.json` (admin-only)
 
-`distribution/policies.json` next to `firefox.exe` / inside `Firefox.app`:
 ```json
-{ "policies": { "ExtensionSettings": { "ext-id@example.com": {
+{ "policies": { "ExtensionSettings": { "<gecko-id>": {
   "installation_mode": "force_installed",
-  "install_url": "https://addons.mozilla.org/firefox/downloads/latest/.../latest.xpi"
+  "install_url": "https://addons.mozilla.org/firefox/downloads/latest/reddfocus/latest.xpi"
 }}}}
 ```
 
-Effect: silent install on launch, locked. But:
-- macOS: requires writing inside the bundle → admin / SIP scope, also
-  the bundle may be on a read-only volume.
-- Windows: requires writing to `Program Files` → admin elevation.
+On Firefox launch: silent install from AMO, "Managed by your
+administrator" badge in `about:addons`, user can't disable/remove
+from the UI. When the policy entry is removed, Firefox auto-uninstalls
+the extension on its next launch — clean install + uninstall hygiene.
 
-Doesn't fit our "no-helper, no-admin" stance. Park this as a possible
-follow-up if `redd-block` ever ships with a privileged installer, but
-not in scope for the user-level branch.
+**On macOS this is feasible without `sudo`** because consumer Macs
+typically grant the logged-in user admin group write access to
+`/Applications`. ReDD Block runs as the user; if it has write access
+to `/Applications/Firefox.app/Contents/Resources/`, it can drop the
+file directly. On managed / non-admin Macs the write fails and we
+fall back to the existing onboarding "Install in Firefox" link.
+
+Trade-offs:
+- Modifying the .app bundle invalidates Firefox's codesign signature.
+  In practice this doesn't break anything: Gatekeeper only verifies
+  at quarantine / first-launch, not every launch. Mozilla
+  [officially supports](https://mozilla.github.io/policy-templates/)
+  this deployment pattern. Firefox auto-updates replace the bundle
+  and wipe our policy file, but we re-apply on every ReDD Block
+  launch (idempotent install) so it stays in sync.
+- "Managed by your administrator" UX. Some users will find it
+  aggressive — implies more authority than ReDD Block actually has.
+  Acceptable trade for the auto-uninstall behavior; consistent with
+  the project's "annoying enough that you have to mean it" stance.
+
+**On Windows** writing into `Program Files` requires UAC elevation,
+which conflicts with our "no admin / no helper" stance. Windows
+Firefox stays on the existing onboarding link path until / unless
+ReDD Block ever ships a privileged installer.
+
+#### 3. Sideload via Extensions directory — REMOVED in Firefox 74
+
+(See above.)
 
 ### Browsers we'd skip / treat as best-effort
 
@@ -168,19 +210,19 @@ not in scope for the user-level branch.
 
 **Tier-1 default (covered by this work):**
 
-| Browser           | Mechanism                                | UX cost                               |
-|-------------------|-------------------------------------------|---------------------------------------|
-| Chrome            | External Extensions JSON (user-level)    | Silent on next launch                 |
-| Edge              | External Extensions JSON (user-level)    | Silent on next launch                 |
-| Brave             | External Extensions JSON (user-level)    | Silent on next launch                 |
-| Firefox           | Sideload `.xpi` to user Extensions dir   | One "allow this extension?" prompt    |
+| Browser              | Mechanism                                  | UX cost                                     | Auto-uninstall? |
+|----------------------|--------------------------------------------|---------------------------------------------|-----------------|
+| Chrome / Brave / Edge | External Extensions hint (user-level)     | Chrome safety dialog: "Enable Extension"   | ❌ user removes  |
+| Firefox (macOS)      | `policies.json` in `Firefox.app` Resources | Silent + "Managed" badge in `about:addons` | ✅ auto          |
+| Firefox (Win / Linux) | (No no-admin path — fall back to AMO link) | One "Add to Firefox" click                 | ❌ user removes  |
 
 **Tier-2 (defer):**
-- ExtensionInstallForcelist (lock-down mode) — opt-in setting later.
-- `policies.json` — needs admin; only if we adopt a privileged
+- ExtensionInstallForcelist on Chromium (matches Firefox's lock-down
+  + auto-uninstall behavior) — opt-in setting later.
+- Firefox `policies.json` on Windows — needs admin / privileged
   installer.
-- Vivaldi / Opera / Arc — same code path as Chrome; just need detection
-  in `profile_scan` to also opt them in.
+- Vivaldi / Opera / Arc — same code path as Chrome; just need
+  detection in `profile_scan` to also opt them in.
 
 ## Implementation sketch
 

@@ -610,14 +610,15 @@ pub fn run() {
             // Drop the auto-install hint for every supported browser.
             // Chromium-family (Chrome/Brave/Edge): External-Extensions
             // JSON / HKCU registry → silent install on next launch.
-            // Firefox: sideload the bundled signed XPI → one-time
-            // "Allow this extension?" prompt on next launch.
-            // Saves the user a per-browser "Add to <browser>" walk
-            // through during onboarding. Idempotent; safe to re-run on
-            // every startup. See `browser-ext-migration/FORCE_INSTALL_EXTENSIONS.md`
-            // for design rationale.
+            // Firefox (macOS only): write `policies.json` inside
+            // Firefox.app → silent force-install via Firefox enterprise
+            // policy on next launch. Saves the user a per-browser
+            // "Add to <browser>" walk-through during onboarding.
+            // Idempotent; safe to re-run on every startup. See
+            // `browser-ext-migration/FORCE_INSTALL_EXTENSIONS.md` for
+            // design rationale.
             #[cfg(not(target_os = "ios"))]
-            if let Err(e) = extension_install::install(Some(app.handle())) {
+            if let Err(e) = extension_install::install() {
                 log::warn!("extension-install hint on startup failed: {e}");
             }
 
