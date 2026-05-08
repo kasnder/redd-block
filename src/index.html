@@ -371,18 +371,30 @@
                                             <div class="time-picker-row">
                                                 <div class="time-display" id="end-time-display">
                                                     <div class="time-part-wrapper">
-                                                        <button class="time-part" id="end-hour-btn" data-type="hour"
-                                                            data-target="end">20</button>
-                                                        <!-- Hour Popover -->
+                                                        <input type="text"
+                                                            inputmode="numeric"
+                                                            maxlength="2"
+                                                            autocomplete="off"
+                                                            class="time-part time-popover-anchor"
+                                                            id="end-hour-input"
+                                                            data-type="hour"
+                                                            data-target="end"
+                                                            aria-label="End hour" />
                                                         <div class="time-popover hidden" id="end-hour-popover">
                                                             <div class="popover-scroll" id="end-hour-options"></div>
                                                         </div>
                                                     </div>
                                                     <span class="time-colon">:</span>
                                                     <div class="time-part-wrapper">
-                                                        <button class="time-part" id="end-minute-btn" data-type="minute"
-                                                            data-target="end">30</button>
-                                                        <!-- Minute Popover -->
+                                                        <input type="text"
+                                                            inputmode="numeric"
+                                                            maxlength="2"
+                                                            autocomplete="off"
+                                                            class="time-part time-popover-anchor"
+                                                            id="end-minute-input"
+                                                            data-type="minute"
+                                                            data-target="end"
+                                                            aria-label="End minute" />
                                                         <div class="time-popover hidden" id="end-minute-popover">
                                                             <div class="popover-scroll" id="end-minute-options"></div>
                                                         </div>
@@ -409,15 +421,17 @@
                                                     <div class="time-picker-row">
                                                         <div class="time-display schedule-start-display">
                                                             <div class="time-part-wrapper">
-                                                                <button class="time-part schedule-hour-btn"
-                                                                    data-type="hour"
-                                                                    data-target="schedule-start-0">09</button>
+                                                                <input type="text" class="time-part schedule-hour-btn"
+                                                                    data-type="hour" data-target="schedule-start-0"
+                                                                    inputmode="numeric" maxlength="2" autocomplete="off"
+                                                                    value="09" aria-label="Schedule start hour" />
                                                             </div>
                                                             <span class="time-colon">:</span>
                                                             <div class="time-part-wrapper">
-                                                                <button class="time-part schedule-minute-btn"
-                                                                    data-type="minute"
-                                                                    data-target="schedule-start-0">00</button>
+                                                                <input type="text" class="time-part schedule-minute-btn"
+                                                                    data-type="minute" data-target="schedule-start-0"
+                                                                    inputmode="numeric" maxlength="2" autocomplete="off"
+                                                                    value="00" aria-label="Schedule start minute" />
                                                             </div>
                                                         </div>
                                                     </div>
@@ -428,15 +442,17 @@
                                                     <div class="time-picker-row">
                                                         <div class="time-display schedule-end-display">
                                                             <div class="time-part-wrapper">
-                                                                <button class="time-part schedule-hour-btn"
-                                                                    data-type="hour"
-                                                                    data-target="schedule-end-0">12</button>
+                                                                <input type="text" class="time-part schedule-hour-btn"
+                                                                    data-type="hour" data-target="schedule-end-0"
+                                                                    inputmode="numeric" maxlength="2" autocomplete="off"
+                                                                    value="12" aria-label="Schedule end hour" />
                                                             </div>
                                                             <span class="time-colon">:</span>
                                                             <div class="time-part-wrapper">
-                                                                <button class="time-part schedule-minute-btn"
-                                                                    data-type="minute"
-                                                                    data-target="schedule-end-0">00</button>
+                                                                <input type="text" class="time-part schedule-minute-btn"
+                                                                    data-type="minute" data-target="schedule-end-0"
+                                                                    inputmode="numeric" maxlength="2" autocomplete="off"
+                                                                    value="00" aria-label="Schedule end minute" />
                                                             </div>
                                                         </div>
                                                     </div>
@@ -911,7 +927,7 @@
                             <div class="time-picker-row">
                                 <div class="time-display" id="pause-restart-time-display">
                                     <div class="time-part-wrapper">
-                                        <button class="time-part" id="pause-restart-hour-btn" data-type="hour"
+                                        <button class="time-part time-popover-anchor" id="pause-restart-hour-btn" data-type="hour"
                                             data-target="pause-restart">00</button>
                                         <div class="time-popover hidden" id="pause-restart-hour-popover">
                                             <div class="popover-scroll" id="pause-restart-hour-options"></div>
@@ -919,7 +935,7 @@
                                     </div>
                                     <span class="time-colon">:</span>
                                     <div class="time-part-wrapper">
-                                        <button class="time-part" id="pause-restart-minute-btn" data-type="minute"
+                                        <button class="time-part time-popover-anchor" id="pause-restart-minute-btn" data-type="minute"
                                             data-target="pause-restart">00</button>
                                         <div class="time-popover hidden" id="pause-restart-minute-popover">
                                             <div class="popover-scroll" id="pause-restart-minute-options"></div>

@@ -3024,9 +3024,10 @@ function setupEventListeners() {
     // This ensures the icon updates even if window is maximized/restored via other means
     setInterval(updateMaximizeButton, 300);
 
-    // Time pickers - custom popover handlers
-    document.querySelectorAll('.time-part').forEach(btn => {
-        btn.addEventListener('click', handleTimePartClick);
+    // Time pickers — instant end uses compact `input.time-part time-popover-anchor` (click opens list + caret);
+    // schedule uses its own overlays; pause modal uses button anchors.
+    document.querySelectorAll('.time-popover-anchor').forEach(el => {
+        el.addEventListener('click', handleTimePartClick);
     });
 
     // Close popovers on outside click
@@ -3159,6 +3160,7 @@ function setupEventListeners() {
 
     // Initialize time picker with defaults
     initializeTimeInputs();
+    setupEndTimeDirectInputs();
 
     // Blocklist selector
     document.getElementById('blocklist-select').addEventListener('change', handleBlocklistSelect);
@@ -4687,8 +4689,8 @@ function pad(num) {
 // Disable or enable time controls (when a block is active, controls should be disabled)
 function disableTimeControls(disabled) {
     const durationInput = document.getElementById('duration-minutes-input');
-    const endHourBtn = document.getElementById('end-hour-btn');
-    const endMinuteBtn = document.getElementById('end-minute-btn');
+    const endHourInput = document.getElementById('end-hour-input');
+    const endMinuteInput = document.getElementById('end-minute-input');
     const endTimeDisplay = document.getElementById('end-time-display');
     const quickSelectBtns = document.querySelectorAll('.duration-quick-btn');
     const timePickerContainer = document.getElementById('time-picker-container');
@@ -4699,16 +4701,16 @@ function disableTimeControls(disabled) {
         durationInput.style.pointerEvents = disabled ? 'none' : 'auto';
     }
 
-    if (endHourBtn) {
-        endHourBtn.disabled = disabled;
-        endHourBtn.style.opacity = disabled ? '0.5' : '1';
-        endHourBtn.style.pointerEvents = disabled ? 'none' : 'auto';
+    if (endHourInput) {
+        endHourInput.disabled = disabled;
+        endHourInput.style.opacity = disabled ? '0.5' : '1';
+        endHourInput.style.pointerEvents = disabled ? 'none' : 'auto';
     }
 
-    if (endMinuteBtn) {
-        endMinuteBtn.disabled = disabled;
-        endMinuteBtn.style.opacity = disabled ? '0.5' : '1';
-        endMinuteBtn.style.pointerEvents = disabled ? 'none' : 'auto';
+    if (endMinuteInput) {
+        endMinuteInput.disabled = disabled;
+        endMinuteInput.style.opacity = disabled ? '0.5' : '1';
+        endMinuteInput.style.pointerEvents = disabled ? 'none' : 'auto';
     }
 
     if (endTimeDisplay) {
@@ -4849,11 +4851,11 @@ function initializeTimeInputs() {
         }
     }
 
-    // Populate minute options (0-59) for end time only
+    // Populate minute options (0, 5, … 55) — typing still allows any 0–59
     const minuteContainer = document.getElementById('end-minute-options');
     if (minuteContainer) {
         minuteContainer.innerHTML = '';
-        for (let m = 0; m < 60; m++) {
+        for (let m = 0; m < 60; m += 5) {
             const btn = document.createElement('button');
             btn.className = 'popover-option';
             btn.textContent = pad(m);
@@ -4869,18 +4871,20 @@ function initializeTimeInputs() {
     updateTimeDisplay();
     handleTimeChange();
 
-    // Initialize click handlers for schedule segment time buttons
-    document.querySelectorAll('.schedule-block-panel .time-part').forEach(btn => {
-        btn.addEventListener('click', handleScheduleTimeClick);
-    });
+    // Initialize click handlers + typing for schedule segment time fields
+    wireAllScheduleSegmentTimeControls();
 }
 
-// Update the time display buttons (end time only)
+// Update the end-time display (compact inputs; skip while focused).
 function updateTimeDisplay() {
-    const endHourBtn = document.getElementById('end-hour-btn');
-    const endMinuteBtn = document.getElementById('end-minute-btn');
-    if (endHourBtn) endHourBtn.textContent = pad(selectedEndHour);
-    if (endMinuteBtn) endMinuteBtn.textContent = pad(selectedEndMinute);
+    const endHourInput = document.getElementById('end-hour-input');
+    const endMinuteInput = document.getElementById('end-minute-input');
+    if (endHourInput && document.activeElement !== endHourInput) {
+        endHourInput.value = pad(selectedEndHour);
+    }
+    if (endMinuteInput && document.activeElement !== endMinuteInput) {
+        endMinuteInput.value = pad(selectedEndMinute);
+    }
 
     // Update selected state in popovers
     updatePopoverSelection();
@@ -4895,12 +4899,96 @@ function updatePopoverSelection() {
     document.querySelectorAll('#end-hour-options .popover-option').forEach(btn => {
         if (parseInt(btn.dataset.value) === selectedEndHour) btn.classList.add('selected');
     });
+    let minuteListMatch = selectedEndMinute;
+    if (selectedEndMinute % 5 !== 0) {
+        const rounded = Math.round(selectedEndMinute / 5) * 5;
+        minuteListMatch = rounded >= 60 ? 55 : rounded;
+    }
     document.querySelectorAll('#end-minute-options .popover-option').forEach(btn => {
-        if (parseInt(btn.dataset.value) === selectedEndMinute) btn.classList.add('selected');
+        if (parseInt(btn.dataset.value) === minuteListMatch) btn.classList.add('selected');
     });
 }
 
-// Handle click on time part button
+/** Parse HH / MM from end-time numeric fields (0–23 / 0–59). Empty or invalid → null. */
+function parseEndTimeBoundedInt(raw, min, max) {
+    const digits = String(raw ?? '').replace(/\D/g, '');
+    if (digits === '') return null;
+    const n = parseInt(digits, 10);
+    if (Number.isNaN(n)) return null;
+    return Math.min(max, Math.max(min, n));
+}
+
+function commitEndHourInput() {
+    const input = document.getElementById('end-hour-input');
+    if (!input) return;
+    const v = parseEndTimeBoundedInt(input.value, 0, 23);
+    if (v === null) {
+        input.value = pad(selectedEndHour);
+        return;
+    }
+    selectedEndHour = v;
+    input.value = pad(v);
+    userEditedEndTime = true;
+    updatePopoverSelection();
+    handleTimeChange();
+}
+
+function commitEndMinuteInput() {
+    const input = document.getElementById('end-minute-input');
+    if (!input) return;
+    const v = parseEndTimeBoundedInt(input.value, 0, 59);
+    if (v === null) {
+        input.value = pad(selectedEndMinute);
+        return;
+    }
+    selectedEndMinute = v;
+    input.value = pad(v);
+    userEditedEndTime = true;
+    updatePopoverSelection();
+    handleTimeChange();
+}
+
+/** Wire blur/input once for editable instant end HH:MM fields. */
+function setupEndTimeDirectInputs() {
+    const hourEl = document.getElementById('end-hour-input');
+    const minuteEl = document.getElementById('end-minute-input');
+    if (!hourEl || !minuteEl) return;
+    if (hourEl.dataset.directInputBound === '1') return;
+    hourEl.dataset.directInputBound = '1';
+
+    const digitsOnly = (el) => {
+        const next = el.value.replace(/\D/g, '').slice(0, 2);
+        if (next !== el.value) el.value = next;
+    };
+
+    hourEl.addEventListener('input', () => {
+        closeAllPopovers();
+        digitsOnly(hourEl);
+    });
+    hourEl.addEventListener('blur', () => commitEndHourInput());
+    hourEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            hourEl.blur();
+            minuteEl.focus();
+            if (typeof minuteEl.select === 'function') minuteEl.select();
+        }
+    });
+
+    minuteEl.addEventListener('input', () => {
+        closeAllPopovers();
+        digitsOnly(minuteEl);
+    });
+    minuteEl.addEventListener('blur', () => commitEndMinuteInput());
+    minuteEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            minuteEl.blur();
+        }
+    });
+}
+
+// Handle click on time part (button or instant-end input): open list and mark active.
 function handleTimePartClick(e) {
     e.stopPropagation();
     const btn = e.currentTarget;
@@ -4912,6 +5000,7 @@ function handleTimePartClick(e) {
 
     // Open the relevant popover
     const popover = document.getElementById(`${target}-${type}-popover`);
+    if (!popover) return;
     popover.classList.remove('hidden');
     btn.classList.add('active');
 
@@ -4947,15 +5036,21 @@ function selectTimeOption(e) {
 
 // Close all popovers
 function closeAllPopovers() {
-    document.querySelectorAll('.time-popover').forEach(p => p.classList.add('hidden'));
-    document.querySelectorAll('.time-part').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.time-popover:not(.schedule-time-popover)').forEach(p => p.classList.add('hidden'));
+    document.querySelectorAll('.time-part.active, .time-popover-anchor.active').forEach(el =>
+        el.classList.remove('active'));
 }
 
 // Handle clicks outside popovers
 function handlePopoverOutsideClick(e) {
-    if (!e.target.closest('.time-popover') && !e.target.closest('.time-part')) {
-        closeAllPopovers();
+    if (
+        e.target.closest('.time-popover') ||
+        e.target.closest('.time-popover-anchor') ||
+        e.target.closest('button.time-part')
+    ) {
+        return;
     }
+    closeAllPopovers();
 }
 
 // Get start time as Date (always now, with seconds zeroed for consistent duration calculation)
@@ -5678,11 +5773,19 @@ function rebuildScheduleSegments() {
                         <div class="time-picker-row">
                             <div class="time-display schedule-start-display">
                                 <div class="time-part-wrapper">
-                                    <button class="time-part schedule-hour-btn" data-type="hour" data-target="schedule-start-${index}">${String(seg.startHour).padStart(2, '0')}</button>
+                                    <input type="text" class="time-part schedule-hour-btn"
+                                        data-type="hour" data-target="schedule-start-${index}"
+                                        inputmode="numeric" maxlength="2" autocomplete="off"
+                                        value="${String(seg.startHour).padStart(2, '0')}"
+                                        aria-label="Schedule start hour" />
                                 </div>
                                 <span class="time-colon">:</span>
                                 <div class="time-part-wrapper">
-                                    <button class="time-part schedule-minute-btn" data-type="minute" data-target="schedule-start-${index}">${String(seg.startMinute).padStart(2, '0')}</button>
+                                    <input type="text" class="time-part schedule-minute-btn"
+                                        data-type="minute" data-target="schedule-start-${index}"
+                                        inputmode="numeric" maxlength="2" autocomplete="off"
+                                        value="${String(seg.startMinute).padStart(2, '0')}"
+                                        aria-label="Schedule start minute" />
                                 </div>
                             </div>
                         </div>
@@ -5693,11 +5796,19 @@ function rebuildScheduleSegments() {
                         <div class="time-picker-row">
                             <div class="time-display schedule-end-display">
                                 <div class="time-part-wrapper">
-                                    <button class="time-part schedule-hour-btn" data-type="hour" data-target="schedule-end-${index}">${String(seg.endHour).padStart(2, '0')}</button>
+                                    <input type="text" class="time-part schedule-hour-btn"
+                                        data-type="hour" data-target="schedule-end-${index}"
+                                        inputmode="numeric" maxlength="2" autocomplete="off"
+                                        value="${String(seg.endHour).padStart(2, '0')}"
+                                        aria-label="Schedule end hour" />
                                 </div>
                                 <span class="time-colon">:</span>
                                 <div class="time-part-wrapper">
-                                    <button class="time-part schedule-minute-btn" data-type="minute" data-target="schedule-end-${index}">${String(seg.endMinute).padStart(2, '0')}</button>
+                                    <input type="text" class="time-part schedule-minute-btn"
+                                        data-type="minute" data-target="schedule-end-${index}"
+                                        inputmode="numeric" maxlength="2" autocomplete="off"
+                                        value="${String(seg.endMinute).padStart(2, '0')}"
+                                        aria-label="Schedule end minute" />
                                 </div>
                             </div>
                         </div>
@@ -5723,10 +5834,8 @@ function rebuildScheduleSegments() {
 
         container.appendChild(segment);
 
-        // Add click handlers for time parts
-        segment.querySelectorAll('.time-part').forEach(btn => {
-            btn.addEventListener('click', handleScheduleTimeClick);
-        });
+        // Wire schedule time pills (popover + typing)
+        attachScheduleSegmentTimeInteractions(segment);
 
         // Add click handlers for day toggles
         segment.querySelectorAll('.segment-day-toggle').forEach(btn => {
@@ -5748,12 +5857,96 @@ function rebuildScheduleSegments() {
     });
 }
 
-// Handle schedule time button click (show popover)
+/** Parse `schedule-start-0` → { isStart, segmentIndex }. */
+function parseScheduleTimeTarget(target) {
+    const parts = String(target || '').split('-');
+    return {
+        isStart: parts[1] === 'start',
+        segmentIndex: parseInt(parts[2], 10)
+    };
+}
+
+/** Editable schedule HH:MM — same UX as instant end: click opens list; type to edit. */
+function bindScheduleTimePartInput(el) {
+    el.addEventListener('input', () => {
+        document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
+        const next = el.value.replace(/\D/g, '').slice(0, 2);
+        if (next !== el.value) el.value = next;
+    });
+    el.addEventListener('blur', () => commitScheduleTimePart(el));
+    el.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        const type = el.dataset.type;
+        const target = el.dataset.target;
+        const segmentEl = el.closest('.schedule-segment');
+        if (type === 'hour') {
+            const minIn = segmentEl
+                ? segmentEl.querySelector(`[data-target="${target}"][data-type="minute"]`)
+                : null;
+            el.blur();
+            if (minIn) {
+                minIn.focus();
+                if (typeof minIn.select === 'function') minIn.select();
+            }
+        } else {
+            el.blur();
+        }
+    });
+}
+
+function commitScheduleTimePart(input) {
+    const type = input.dataset.type;
+    const target = input.dataset.target;
+    if (!type || !target || (type !== 'hour' && type !== 'minute')) return;
+    const { isStart, segmentIndex } = parseScheduleTimeTarget(target);
+    const seg = scheduleSegments[segmentIndex];
+    if (!seg) return;
+
+    const max = type === 'hour' ? 23 : 59;
+    const v = parseEndTimeBoundedInt(input.value, 0, max);
+    let current;
+    if (type === 'hour') {
+        current = isStart ? seg.startHour : seg.endHour;
+    } else {
+        current = isStart ? seg.startMinute : seg.endMinute;
+    }
+    if (v === null) {
+        input.value = pad(current);
+        return;
+    }
+    if (type === 'hour') {
+        if (isStart) seg.startHour = v;
+        else seg.endHour = v;
+    } else {
+        if (isStart) seg.startMinute = v;
+        else seg.endMinute = v;
+    }
+    input.value = pad(v);
+    handleTimeChange();
+}
+
+function attachScheduleSegmentTimeInteractions(segment) {
+    segment
+        .querySelectorAll('.schedule-start-display input.time-part, .schedule-end-display input.time-part')
+        .forEach(el => {
+            if (el.dataset.scheduleUiBound === '1') return;
+            el.dataset.scheduleUiBound = '1';
+            el.addEventListener('click', handleScheduleTimeClick);
+            bindScheduleTimePartInput(el);
+        });
+}
+
+function wireAllScheduleSegmentTimeControls() {
+    document.querySelectorAll('#schedule-segments .schedule-segment').forEach(attachScheduleSegmentTimeInteractions);
+}
+
+// Handle schedule time control click (show popover)
 function handleScheduleTimeClick(e) {
     e.stopPropagation();
-    const btn = e.target;
-    const type = btn.dataset.type; // 'hour' or 'minute'
-    const target = btn.dataset.target; // e.g., 'schedule-start-0' or 'schedule-end-1'
+    const el = e.currentTarget;
+    const type = el.dataset.type; // 'hour' or 'minute'
+    const target = el.dataset.target; // e.g., 'schedule-start-0' or 'schedule-end-1'
 
     // Parse target
     const parts = target.split('-');
@@ -5761,11 +5954,11 @@ function handleScheduleTimeClick(e) {
     const segmentIndex = parseInt(parts[2]);
 
     // Create and show popover for time selection
-    showScheduleTimePopover(btn, type, isStart, segmentIndex);
+    showScheduleTimePopover(el, type, isStart, segmentIndex);
 }
 
-// Show time popover for schedule time selection
-function showScheduleTimePopover(btn, type, isStart, segmentIndex) {
+// Show time popover for schedule time selection (anchored to editable time pill)
+function showScheduleTimePopover(field, type, isStart, segmentIndex) {
     // Remove any existing schedule popovers
     document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
 
@@ -5779,6 +5972,13 @@ function showScheduleTimePopover(btn, type, isStart, segmentIndex) {
     const currentValue = type === 'hour'
         ? (isStart ? segment.startHour : segment.endHour)
         : (isStart ? segment.startMinute : segment.endMinute);
+
+    /** Nearest slot in the 5-minute list for scroll/highlight when value was typed freely. */
+    let listHighlightValue = currentValue;
+    if (type === 'minute' && currentValue % 5 !== 0) {
+        const rounded = Math.round(currentValue / 5) * 5;
+        listHighlightValue = rounded >= 60 ? 55 : rounded;
+    }
 
     const max = type === 'hour' ? 24 : 60;
     const step = type === 'hour' ? 1 : 5;
@@ -5883,7 +6083,7 @@ function showScheduleTimePopover(btn, type, isStart, segmentIndex) {
 
     for (let i = 0; i < max; i += step) {
         const option = document.createElement('button');
-        option.className = 'popover-option' + (i === currentValue ? ' selected' : '');
+        option.className = 'popover-option' + (i === listHighlightValue ? ' selected' : '');
         option.textContent = String(i).padStart(2, '0');
         option.addEventListener('click', (e) => {
             e.stopPropagation(); // Prevent blocklist deselection
@@ -5900,8 +6100,8 @@ function showScheduleTimePopover(btn, type, isStart, segmentIndex) {
                 else segment.endMinute = i;
             }
 
-            // Update button text
-            btn.textContent = String(i).padStart(2, '0');
+            // Update field display
+            field.value = String(i).padStart(2, '0');
 
             // Close popover
             popover.remove();
@@ -5913,7 +6113,7 @@ function showScheduleTimePopover(btn, type, isStart, segmentIndex) {
     }
 
     popover.appendChild(scroll);
-    btn.parentElement.appendChild(popover);
+    field.parentElement.appendChild(popover);
 
     // Scroll to current value
     const activeOption = scroll.querySelector('.selected');
@@ -5924,7 +6124,7 @@ function showScheduleTimePopover(btn, type, isStart, segmentIndex) {
     // Close on outside click
     setTimeout(() => {
         document.addEventListener('click', function closePopover(e) {
-            if (!popover.contains(e.target) && e.target !== btn) {
+            if (!popover.contains(e.target) && e.target !== field) {
                 popover.remove();
                 document.removeEventListener('click', closePopover);
             }
@@ -6429,7 +6629,15 @@ function handleTimeChange() {
 
     // Sync duration input and quick buttons with calculated duration
     const durationInput = document.getElementById('duration-minutes-input');
-    if (durationInput && document.activeElement !== durationInput) {
+    const endH = document.getElementById('end-hour-input');
+    const endM = document.getElementById('end-minute-input');
+    const ae = document.activeElement;
+    if (
+        durationInput &&
+        ae !== durationInput &&
+        ae !== endH &&
+        ae !== endM
+    ) {
         durationInput.value = durationMinutes;
     }
     updateDurationQuickBtns(durationMinutes);
@@ -6833,15 +7041,23 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
 
     function updateTimePickerUI(index) {
         const segment = scheduleSegments[index];
-        const startHourBtn = document.querySelector(`[data-target="schedule-start-${index}"][data-type="hour"]`);
-        const startMinBtn = document.querySelector(`[data-target="schedule-start-${index}"][data-type="minute"]`);
-        const endHourBtn = document.querySelector(`[data-target="schedule-end-${index}"][data-type="hour"]`);
-        const endMinBtn = document.querySelector(`[data-target="schedule-end-${index}"][data-type="minute"]`);
+        const startHourEl = document.querySelector(`[data-target="schedule-start-${index}"][data-type="hour"]`);
+        const startMinEl = document.querySelector(`[data-target="schedule-start-${index}"][data-type="minute"]`);
+        const endHourEl = document.querySelector(`[data-target="schedule-end-${index}"][data-type="hour"]`);
+        const endMinEl = document.querySelector(`[data-target="schedule-end-${index}"][data-type="minute"]`);
 
-        if (startHourBtn) startHourBtn.textContent = String(segment.startHour).padStart(2, '0');
-        if (startMinBtn) startMinBtn.textContent = String(segment.startMinute).padStart(2, '0');
-        if (endHourBtn) endHourBtn.textContent = String(segment.endHour).padStart(2, '0');
-        if (endMinBtn) endMinBtn.textContent = String(segment.endMinute).padStart(2, '0');
+        if (startHourEl && document.activeElement !== startHourEl) {
+            startHourEl.value = pad(segment.startHour);
+        }
+        if (startMinEl && document.activeElement !== startMinEl) {
+            startMinEl.value = pad(segment.startMinute);
+        }
+        if (endHourEl && document.activeElement !== endHourEl) {
+            endHourEl.value = pad(segment.endHour);
+        }
+        if (endMinEl && document.activeElement !== endMinEl) {
+            endMinEl.value = pad(segment.endMinute);
+        }
     }
 
     function updateDayToggleUI(index) {
@@ -8643,11 +8859,7 @@ function initPauseRestartPopovers() {
         }
     }
 
-    // Attach click handlers to the time-part buttons
-    const hourBtn = document.getElementById('pause-restart-hour-btn');
-    const minuteBtn = document.getElementById('pause-restart-minute-btn');
-    if (hourBtn) hourBtn.addEventListener('click', handleTimePartClick);
-    if (minuteBtn) minuteBtn.addEventListener('click', handleTimePartClick);
+    // Popover triggers use `.time-popover-anchor` — wired once at DOMContentLoaded.
 }
 
 // When user selects a restart time, reverse-calculate the duration

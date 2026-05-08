@@ -2228,6 +2228,45 @@ body.dark-mode .time-part.active {
 .time-part-wrapper {
     position: relative;
     display: flex;
+    flex: 0 0 auto;
+}
+
+/* Compact instant end HH:MM — same footprint as legacy buttons; editable + opens list on click. */
+#end-time-display {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+#end-time-display input.time-part.time-popover-anchor {
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    width: 2.55em;
+    min-width: 36px;
+    max-width: 48px;
+    cursor: text;
+    -webkit-appearance: none;
+    appearance: none;
+    margin: 0;
+}
+
+/* Schedule segments: match instant end-time compact editable pills */
+.schedule-block-panel .schedule-start-display,
+.schedule-block-panel .schedule-end-display {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.schedule-block-panel .schedule-start-display input.time-part,
+.schedule-block-panel .schedule-end-display input.time-part {
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    width: 2.55em;
+    min-width: 36px;
+    max-width: 48px;
+    cursor: text;
+    -webkit-appearance: none;
+    appearance: none;
+    margin: 0;
 }
 
 /* Time popover */
