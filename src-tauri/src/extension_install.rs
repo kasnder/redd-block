@@ -311,6 +311,13 @@ fn install_firefox_policy() -> std::io::Result<()> {
         json!({
             "installation_mode": "force_installed",
             "install_url": FIREFOX_AMO_XPI_URL,
+            // Auto-grant private-browsing access (and lock the toggle).
+            // Without this, the extension installs but users still
+            // have to walk through `about:addons` → ReDD Focus →
+            // Details → Allow in Private Windows. Same trade as the
+            // install itself: more friction up front, but consistent
+            // enforcement across normal + private windows.
+            "private_browsing": true,
         }),
     );
 
