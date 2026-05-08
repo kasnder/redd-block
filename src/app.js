@@ -1815,11 +1815,20 @@ function renderBrowserInstallButtons(state) {
         } else if (status === 'needs-enable' || status === 'needs-private' || status === 'needs-website-access') {
             // Mirror the notification-banner layout for clarity:
             // [optional ✓ Extension installed]
-            // instruction text with inline url chip
-            // [Open <url>] [Show me how ▶]
+            // instruction text (single line for Chromium / Firefox,
+            //   three-step checklist for Safari)
+            // [Open Extension Settings] [Show me how ▶]
             // delay note
             // [screenshots wrap, full-row when expanded]
-            if (status !== 'needs-enable') {
+            const isSafari = key === 'safari';
+
+            // "✓ Extension installed" line. Always show for Safari —
+            // we bundle the .appex inside ReDD Block.app, so install
+            // is structurally guaranteed at this point. For Chromium /
+            // Firefox we only show it once we've moved past the
+            // install step (status !== 'needs-enable') because there
+            // the install + enable are distinct user actions.
+            if (isSafari || status !== 'needs-enable') {
                 const extInstalledLine = document.createElement('div');
                 extInstalledLine.className = 'migration-checklist-line migration-checklist-done';
                 extInstalledLine.innerHTML = `<span class="migration-check-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#047857" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span> Extension installed`;
@@ -1831,21 +1840,79 @@ function renderBrowserInstallButtons(state) {
             const steps = enforcerScreenshotSteps(key);
             const hasSteps = steps && steps.length;
 
-            const instructionLine = document.createElement('div');
-            instructionLine.className = 'migration-instruction';
-            let actionText;
-            if (status === 'needs-enable') {
-                actionText = `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${entry.label}'s address bar) → find <strong>ReDD Focus</strong> → enable the extension.`;
-            } else if (status === 'needs-website-access') {
-                actionText = `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${entry.label}'s address bar) → click <strong>Details</strong> on ReDD Focus → allow on <strong>all websites</strong>.`;
-            } else if (key === 'firefox') {
-                actionText = `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${entry.label}'s address bar) → click <strong>ReDD Focus</strong> → turn on <strong>Run in ${privNoun}</strong>.`;
+            if (isSafari) {
+                // Safari needs three explicit user actions in Settings →
+                // Extensions: enable the extension, allow in Private
+                // Browsing, allow on every website. Surfacing all three
+                // upfront — with green ✓ on the ones already done — is
+                // both more accurate (the old "click Details on ReDD
+                // Focus" hint references a button macOS 26 no longer
+                // shows) and a much clearer mental model than feeding
+                // the user one instruction at a time as they progress.
+                const profiles = (b && Array.isArray(b.profiles)) ? b.profiles : [];
+                // Aggregate across profiles: a step is "done" only if
+                // every Safari profile has it. Matches how
+                // browserComplianceStatus computes the overall status.
+                const allEnabled = profiles.length > 0 && profiles.every(p => p.enabled === true);
+                const allPrivate = profiles.length > 0 && profiles.every(p => p.privateBrowsing === true);
+                const allAllSites = profiles.length > 0 && profiles.every(p => p.websiteAccessAll === true);
+
+                const stepDefs = [
+                    { label: 'Enable the extension', done: allEnabled },
+                    { label: 'Allow in Private Browsing', done: allPrivate },
+                    { label: 'Allow on Every Website', done: allAllSites },
+                ];
+                // The "active" step is the first not-done one — what we
+                // want the user to focus on next. Earlier steps are
+                // green-strike done; later ones are muted "pending".
+                const activeIdx = stepDefs.findIndex(s => !s.done);
+
+                const checklist = document.createElement('div');
+                checklist.className = 'migration-safari-steps';
+
+                stepDefs.forEach((step, i) => {
+                    const line = document.createElement('div');
+                    let klass = 'migration-checklist-line';
+                    let iconHtml;
+                    if (step.done) {
+                        klass += ' migration-checklist-done';
+                        iconHtml = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#047857" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+                    } else if (i === activeIdx) {
+                        klass += ' migration-checklist-active';
+                        // Right-pointing chevron in amber matches the
+                        // "No website access" badge colour and reads as
+                        // "this is the next thing to do".
+                        iconHtml = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>`;
+                    } else {
+                        klass += ' migration-checklist-pending';
+                        // Empty circle keeps the row alignment tidy
+                        // without drawing the eye away from the active
+                        // step above it.
+                        iconHtml = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8" opacity="0.4"/></svg>`;
+                    }
+                    line.className = klass;
+                    line.innerHTML = `<span class="migration-check-icon">${iconHtml}</span> Step ${i + 1} — ${step.label}`;
+                    checklist.appendChild(line);
+                });
+
+                row.appendChild(checklist);
             } else {
-                actionText = `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${entry.label}'s address bar) → click <strong>Details</strong> on ReDD Focus → turn on <strong>Allow in ${privNoun}</strong>.`;
+                const instructionLine = document.createElement('div');
+                instructionLine.className = 'migration-instruction';
+                let actionText;
+                if (status === 'needs-enable') {
+                    actionText = `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${entry.label}'s address bar) → find <strong>ReDD Focus</strong> → enable the extension.`;
+                } else if (status === 'needs-website-access') {
+                    actionText = `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${entry.label}'s address bar) → click <strong>Details</strong> on ReDD Focus → allow on <strong>all websites</strong>.`;
+                } else if (key === 'firefox') {
+                    actionText = `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${entry.label}'s address bar) → click <strong>ReDD Focus</strong> → turn on <strong>Run in ${privNoun}</strong>.`;
+                } else {
+                    actionText = `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${entry.label}'s address bar) → click <strong>Details</strong> on ReDD Focus → turn on <strong>Allow in ${privNoun}</strong>.`;
+                }
+                instructionLine.innerHTML = actionText;
+                attachCopyChipHandlers(instructionLine);
+                row.appendChild(instructionLine);
             }
-            instructionLine.innerHTML = actionText;
-            attachCopyChipHandlers(instructionLine);
-            row.appendChild(instructionLine);
 
             const actionsRow = document.createElement('div');
             actionsRow.className = 'migration-actions-row';

@@ -3828,6 +3828,18 @@ body.dark-mode .onboarding-focus-card {
     padding: 24px 28px 22px;
 }
 
+/* No outer headline in fresh-install post phase; tighten space above checklist “title”. */
+#migration-phase-post:has(#migration-post-title.hidden) .migration-card {
+    margin-top: 10px;
+    padding-top: 18px;
+}
+
+#migration-phase-post:has(#migration-post-title.hidden)
+    .migration-checklist
+    li:first-child {
+    padding-top: 4px;
+}
+
 .migration-explainer {
     color: hsl(222, 25%, 30%);
     font-size: 15px;
@@ -4124,6 +4136,36 @@ body.dark-mode .onboarding-focus-card {
     display: flex;
     align-items: center;
     gap: 4px;
+}
+
+/* "Next thing to do" — amber to match the "No website access" badge,
+   bold so the eye lands on it first. Used by the Safari 3-step list. */
+.migration-checklist-active {
+    color: #b45309;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* "Later step in the sequence" — muted, no emphasis, but still
+   visible enough that the user can preview what's coming. */
+.migration-checklist-pending {
+    color: hsl(222, 18%, 55%);
+    font-weight: 400;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* Tighten vertical rhythm for the Safari 3-step block — without this
+   the lines space out at the parent's gap and the list visually
+   detaches from the "Extension installed" line above it. */
+.migration-safari-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 2px;
 }
 
 .migration-check-icon {
