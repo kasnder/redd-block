@@ -28,13 +28,14 @@ fn main() {
     }
 
     // `--uninstall` tears down per-browser native-messaging manifests,
-    // the Windows watchdog Scheduled Task, and any leftover legacy-
-    // helper artefacts, then exits. Called from the NSIS pre-uninstall
-    // hook on Windows; also useful for an `Uninstall.app` shim or a
-    // manual `redd-block --uninstall`.
+    // External-Extensions install hints, the Windows watchdog Scheduled
+    // Task, and any leftover legacy-helper artefacts, then exits.
+    // Called from the NSIS pre-uninstall hook on Windows; also useful
+    // for an `Uninstall.app` shim or a manual `redd-block --uninstall`.
     #[cfg(not(target_os = "ios"))]
     if std::env::args().skip(1).any(|a| a == "--uninstall") {
         let _ = redd_block_lib::native_host_install::uninstall();
+        let _ = redd_block_lib::extension_install::uninstall();
         #[cfg(target_os = "windows")]
         redd_block_lib::watchdog::unregister();
         let _ = redd_block_lib::commands::migration::strip_hosts_markers_sync();

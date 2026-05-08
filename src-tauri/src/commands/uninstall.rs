@@ -95,6 +95,14 @@ pub fn uninstall_self_macos(app: tauri::AppHandle) -> Result<(), String> {
         log::warn!("uninstall_self_macos: native-host uninstall failed: {e}");
     }
 
+    // 3. Remove the External-Extensions hints we dropped at install
+    //    time so a clean uninstall doesn't leave hooks pointing at a
+    //    non-existent app. The extension itself stays installed in
+    //    each browser — we only own the auto-install hint.
+    if let Err(e) = crate::extension_install::uninstall() {
+        log::warn!("uninstall_self_macos: extension-install uninstall failed: {e}");
+    }
+
     // 3. Resolve the .app bundle path from the running executable
     //    rather than hardcoding `/Applications/ReDD Block.app` so a
     //    copy launched from elsewhere (rare, but happens during dev)
