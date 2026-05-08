@@ -1238,6 +1238,8 @@ let migrationOnboardingDismissed = false;
 // the "up to 10 seconds" window the UI already promises. Cleared
 // when the overlay is dismissed.
 let migrationPollIntervalId = null;
+/** Preserves "Show me how" across `renderBrowserInstallButtons` poll refreshes. */
+const migrationShowMeHowExpandedKeys = new Set();
 const MIGRATION_POLL_MS = 2500;
 const EXT_ONBOARDING_DISMISSED_KEY = 'reddBlockExtOnboardingDismissed';
 
@@ -1359,6 +1361,7 @@ function hideMigrationOnboarding() {
     if (main) main.classList.remove('hidden');
     migrationOnboardingActive = false;
     migrationOnboardingDismissed = true;
+    migrationShowMeHowExpandedKeys.clear();
     stopMigrationPolling();
 }
 
@@ -1490,6 +1493,14 @@ function wireMigrationPostPhase(state) {
 // the user can't weaken enforcement mid-session. The server-side
 // guard in enforcement_toggle.rs is the ultimate backstop.
 
+function syncEnforcementToggleSectionVisual(toggle) {
+    const section = document.getElementById('enforcement-toggle-section');
+    if (!section || !toggle) return;
+    const on = !!toggle.checked;
+    section.classList.toggle('enforcement-on', on);
+    section.classList.toggle('enforcement-off', !on);
+}
+
 async function wireEnforcementToggle() {
     const toggle = document.getElementById('enforcement-toggle-input');
     const lockedMsg = document.getElementById('enforcement-toggle-locked-msg');
@@ -1504,6 +1515,8 @@ async function wireEnforcementToggle() {
         toggle.checked = false;
     }
 
+    syncEnforcementToggleSectionVisual(toggle);
+
     // Check if any block is currently active (to lock the toggle)
     await updateEnforcementToggleLock(toggle, lockedMsg);
 
@@ -1512,12 +1525,14 @@ async function wireEnforcementToggle() {
         toggle._listenerAdded = true;
         toggle.addEventListener('change', async () => {
             const desired = toggle.checked;
+            syncEnforcementToggleSectionVisual(toggle);
             try {
                 await invoke('set_enforcement_enabled', { enabled: desired });
             } catch (e) {
                 console.warn('[enforcement-toggle] set failed:', e);
                 // Revert the checkbox — the backend rejected it
                 toggle.checked = !desired;
+                syncEnforcementToggleSectionVisual(toggle);
                 // Flash the locked message if it was a block-active rejection
                 if (lockedMsg) {
                     lockedMsg.classList.remove('hidden');
@@ -2112,7 +2127,15 @@ function renderBrowserInstallButtons(state) {
                     const isOpen = showMeBtn.classList.toggle('open');
                     screenshotsWrap.classList.toggle('hidden', !isOpen);
                     showMeBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+                    if (isOpen) migrationShowMeHowExpandedKeys.add(key);
+                    else migrationShowMeHowExpandedKeys.delete(key);
                 });
+
+                if (migrationShowMeHowExpandedKeys.has(key)) {
+                    showMeBtn.classList.add('open');
+                    screenshotsWrap.classList.remove('hidden');
+                    showMeBtn.setAttribute('aria-expanded', 'true');
+                }
             }
         }
 

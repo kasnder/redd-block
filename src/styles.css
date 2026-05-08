@@ -4445,6 +4445,24 @@ body.dark-mode .onboarding-focus-card {
     border-radius: 10px;
 }
 
+.enforcement-toggle-section.enforcement-off {
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.20);
+}
+
+.enforcement-toggle-section.enforcement-off .enforcement-toggle-icon {
+    color: #b45309;
+}
+
+.enforcement-toggle-section.enforcement-on {
+    background: rgba(16, 185, 129, 0.08);
+    border-color: rgba(16, 185, 129, 0.18);
+}
+
+.enforcement-toggle-section.enforcement-on .enforcement-toggle-icon {
+    color: #047857;
+}
+
 .enforcement-toggle-row {
     display: flex;
     align-items: flex-start;
@@ -4518,7 +4536,7 @@ body.dark-mode .onboarding-focus-card {
 }
 
 .enforcement-switch input:checked + .enforcement-slider {
-    background: #2563eb;
+    background: #10b981;
 }
 
 .enforcement-switch input:checked + .enforcement-slider::before {
@@ -4554,16 +4572,29 @@ body.dark-mode .onboarding-focus-card {
     color: hsl(222, 18%, 55%);
 }
 
-body.dark-mode .enforcement-toggle-section {
-    background: rgba(255, 255, 255, 0.06);
-    border-color: var(--redd-border);
+body.dark-mode #migration-onboarding .enforcement-toggle-section.enforcement-off {
+    background: rgba(245, 158, 11, 0.14);
+    border-color: rgba(251, 191, 36, 0.35);
+}
+
+body.dark-mode #migration-onboarding .enforcement-toggle-section.enforcement-on {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(52, 211, 153, 0.32);
 }
 
 body.dark-mode .enforcement-toggle-headline {
     color: var(--text-primary);
 }
 
-body.dark-mode .enforcement-toggle-icon {
+body.dark-mode #migration-onboarding .enforcement-toggle-section.enforcement-off .enforcement-toggle-icon {
+    color: #fbbf24;
+}
+
+body.dark-mode #migration-onboarding .enforcement-toggle-section.enforcement-on .enforcement-toggle-icon {
+    color: #6ee7b7;
+}
+
+body.dark-mode .enforcement-toggle-section:not(.enforcement-off):not(.enforcement-on) .enforcement-toggle-icon {
     color: var(--text-muted);
 }
 
@@ -4589,11 +4620,11 @@ body.dark-mode .enforcement-slider::before {
 }
 
 body.dark-mode .enforcement-switch input:checked + .enforcement-slider {
-    background: var(--redd-teal);
+    background: #34d399;
 }
 
 body.dark-mode .enforcement-switch input:checked + .enforcement-slider::before {
-    background: var(--primary-btn-text);
+    background: #0f172a;
 }
 
 .migration-skip-btn {
