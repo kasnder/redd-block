@@ -9722,7 +9722,7 @@ async function deleteBlocklist(id) {
     );
 
     if (hasActiveBlock) {
-        alert(`Cannot delete "${blocklist.name}" while a block is running. Override the block first.`);
+        alert(`Cannot delete "${blocklist.name}" while a block is running. Stop the block first.`);
         return;
     }
 
