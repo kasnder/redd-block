@@ -3579,10 +3579,10 @@ body.ios .blocklists-container {
     justify-content: flex-start;
     gap: 11px;
     padding: 0 0 18px 20px;
-    margin-top: -30px;
+    margin-top: -32px;
     color: var(--text-muted);
-    font-size: 16px;
-    font-weight: 500;
+    font-size: 15px;
+    font-weight: 400;
     border: none;
     border-radius: 8px;
     background: transparent;
@@ -3601,9 +3601,9 @@ body.ios .selection-prompt {
 }
 
 @media (min-width: 769px) {
-    /* Two-column: slightly lower than prior 10px top — settles under header a bit */
+    /* Two-column: modest top inset under header */
     .selection-prompt {
-        padding: 16px 0 26px 0;
+        padding: 21px 0 26px 0;
         margin-top: 0;
     }
 }
