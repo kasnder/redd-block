@@ -2,49 +2,40 @@
 //
 // Replaces the helper-daemon's privileged watcher. Runs as the user
 // and works without elevation, AppleScript, or Accessibility/Automation
-// TCC. The previous AppleScript-based NSWorkspace observer was unable
-// to actually deliver activate-notifications because AppleScript's
-// `delay` doesn't pump the Cocoa run loop — observers never fired.
-// Polling sysinfo is dumber but reliable.
+// TCC. Polling sysinfo is dumber than NSWorkspace notifications but
+// reliable — the previous AppleScript-based observer was unable to
+// deliver activate-notifications because AppleScript's `delay` doesn't
+// pump the Cocoa run loop.
 //
 // Behaviour (per blocked-app PID):
 //
-//   1. **Graceful quit.** First sighting fires the platform's polite
-//      quit primitive — `[NSRunningApplication terminate]` on macOS,
-//      `taskkill /PID <pid>` (no `/F`) on Windows. Both run the
-//      target app's normal terminate path, including the
-//      "save changes?" sheet for any dirty documents. Before that
-//      quit we call `activateWithOptions:` / `SetForegroundWindow`
-//      so that app is visibly in front and easy to find. We never use
-//      POSIX SIGTERM here: it bypasses Cocoa's
-//      `applicationShouldTerminate:` and would silently destroy
-//      unsaved work — the exact scenario this design exists to avoid.
+//   1. **AwaitingUserAck.** First sighting raises the always-on-top
+//      "Let's go!" warning overlay (`app-blocking://warning-show`) and
+//      sits idle. *No* polite quit is sent yet — the warning is the
+//      user's chance to save unsaved work, and the user clicks
+//      "Let's go!" to acknowledge once they're ready.
 //
-//   2. **Grace, then warning.** If the PID is still alive after
-//      `QUIT_TO_WARNING_GRACE`, we do **not** send another polite quit —
-//      we surface the warning overlay and 60-second countdown. One
-//      prior quit is enough; a second nudge was removed as redundant.
+//   2. **PreQuit.** When the user clicks Let's go (frontend invokes
+//      `lets_go_acknowledge`), every PID in AwaitingUserAck moves to
+//      PreQuit with a 30-second timer. The warning stays up. The user
+//      uses these 30 seconds to save + manually quit; the watcher
+//      stays out of the way.
 //
-//   3. **Warning overlay.** We transition into a warning phase: emit
-//      `app-blocking://warning-show` so the frontend renders a big
-//      red countdown modal. The compact ReDD Block window stays
-//      `always_on_top` but we avoid `activateIgnoringOtherApps` and
-//      `set_focus` so the blocked app usually remains the key
-//      application while the user tends to save dialogs. We also
-//      foreground the blocked app when entering this phase so its
-//      windows stay easy to spot. The countdown ticks down only while
-//      the user is *active* (system input within the last
-//      `IDLE_THRESHOLD_SECS`). Idle pauses the countdown; returning
-//      from idle resumes it where it left off (we deliberately do NOT
-//      reset, so stepping away mid-countdown can't be used to extend
-//      the deadline indefinitely). The pause guarantees that the
-//      countdown only burns through conscious wall-clock time.
+//   3. **PostQuit.** When the 30 seconds elapse, we send the platform's
+//      polite quit — `[NSRunningApplication terminate]` on macOS,
+//      `taskkill /PID <pid>` (no `/F`) on Windows. Both run the app's
+//      normal terminate path, including any "save changes?" sheet for
+//      dirty documents. We never use POSIX SIGTERM here: it bypasses
+//      Cocoa's `applicationShouldTerminate:` and would silently
+//      destroy unsaved work — exactly what this design exists to
+//      avoid. The PID transitions to PostQuit with a 10-second timer.
 //
-//   4. **Force-quit.** When the countdown reaches zero with the user
-//      still active, we SIGKILL the process. This is the *only* path
-//      that can destroy unsaved work from the watcher. The warning
-//      modal offers only a batch "foreground + quit again" gesture;
-//      there is no in-UI immediate-kill button.
+//   4. **SIGKILL.** If the PID is still alive after the 10-second
+//      PostQuit grace, we SIGKILL it. This is the *only* path that
+//      can destroy unsaved work from the watcher.
+//
+// PIDs that disappear at any phase (the user saved + quit themselves)
+// just dissolve out of the state machine; the warning hides cleanly.
 //
 // `is_protected` keeps us from ever quitting ReDD Block, the OS
 // loginwindow, Finder, etc.
@@ -61,22 +52,22 @@ use tauri::{AppHandle, Emitter};
 pub type BlockedApps = Arc<RwLock<HashSet<String>>>;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(1000);
-/// After the sole polite quit, wait this long (while the PID stays
-/// alive) before raising the warning — gives time to answer a save
-/// sheet without a second quit signal.
-const QUIT_TO_WARNING_GRACE: Duration = Duration::from_secs(15);
-/// Fully-conscious time the warning overlay is shown before we
-/// SIGKILL. Pauses while the user is idle, but resumes from where it
-/// left off when they come back — AFK time never counts toward this,
-/// but stepping away can't extend it either.
-const WARNING_COUNTDOWN: Duration = Duration::from_secs(60);
-/// Anything with no input activity for this long counts as AFK; the
-/// countdown pauses while idle and resumes (does not reset) the
-/// instant the user becomes active again. Five seconds is short
-/// enough that "user is reading the warning" still ticks down the
-/// countdown but long enough that "user stepped away to grab water"
-/// reliably pauses it.
-const IDLE_THRESHOLD_SECS: f64 = 5.0;
+/// After the user clicks "Let's go!", how long they get to save +
+/// manually quit before the watcher sends the polite Cmd-Q.
+const PREQUIT_DURATION: Duration = Duration::from_secs(30);
+/// After the watcher sends the polite Cmd-Q, how long it waits before
+/// SIGKILLing if the PID is still alive. Long enough to clear a
+/// "save?" sheet, short enough that the user can't stall forever.
+const POSTQUIT_GRACE: Duration = Duration::from_secs(10);
+
+/// Set by the `lets_go_acknowledge` Tauri command. The next sweep
+/// observes the flag (atomically swapping it back to false) and
+/// transitions every PID currently in `AwaitingUserAck` to `PreQuit`.
+static USER_ACK_PENDING: AtomicBool = AtomicBool::new(false);
+
+pub fn user_acknowledge_warning() {
+    USER_ACK_PENDING.store(true, Ordering::SeqCst);
+}
 
 const PROTECTED: &[&str] = &[
     "ReDD Block", "redd-block", "ReddBlock",
@@ -90,17 +81,42 @@ fn is_protected(name: &str) -> bool {
 
 // ---- Public handle --------------------------------------------------------
 
+/// Names that should get the AwaitingUserAck warning on their NEXT
+/// first-sighting. Populated by `set_apps` with the (new − old) diff —
+/// i.e. apps that just got added to the blocked set because a block
+/// started. Drained by the next sweep so the warning eligibility is
+/// strictly one-shot: mid-block app launches (apps that were already
+/// in the blocked set when the user opened them) skip the warning and
+/// go straight to silent Cmd-Q + grace + SIGKILL.
+type PendingWarningApps = Arc<Mutex<HashSet<String>>>;
+
 /// Public handle returned from `start`. Use `set_apps` to update the
 /// effective blocked set; drop-or-call-`stop` to tear down the watcher.
 pub struct Handle {
     apps: BlockedApps,
+    pending_warning_apps: PendingWarningApps,
     stop: Arc<AtomicBool>,
     join: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 impl Handle {
-    pub fn set_apps(&self, names: Vec<String>) {
-        log::info!("app_watcher::set_apps called with {:?}", names);
+    /// Update the effective blocked-app set. The frontend passes the
+    /// full new set as `names` and, separately, the subset that just
+    /// transitioned from "not blocked" to "blocked" as `newly_added`
+    /// — those are the apps that should raise the Let's-go warning
+    /// on their next first-sighting (block-just-starting path), as
+    /// opposed to mid-block app launches which get the silent SIGTERM
+    /// path. The frontend is the source of truth for that transition
+    /// because it owns block / schedule lifecycle and can distinguish
+    /// "app-launch initialization" (no warnings) from "user just
+    /// started a block / a schedule just fired" (warn for everything
+    /// in `newly_added`).
+    pub fn set_apps(&self, names: Vec<String>, newly_added: Vec<String>) {
+        log::info!(
+            "app_watcher::set_apps called: {} blocked, {} newly added",
+            names.len(),
+            newly_added.len()
+        );
         if let Ok(mut w) = self.apps.write() {
             w.clear();
             for n in names {
@@ -110,9 +126,17 @@ impl Handle {
                 w.insert(n);
             }
         }
+        if !newly_added.is_empty() {
+            if let Ok(mut p) = self.pending_warning_apps.lock() {
+                for n in newly_added {
+                    if !is_protected(&n) {
+                        p.insert(n);
+                    }
+                }
+            }
+        }
         // The poll loop picks up the new set on its next tick — no
-        // need for an immediate sweep here. Skipping the eager pass
-        // also keeps quit/escalation bookkeeping in one place.
+        // need for an immediate sweep here.
     }
 
     pub fn stop(&self) {
@@ -151,12 +175,17 @@ impl Handle {
 /// (no frontend to render them anyway).
 pub fn start(app: Option<AppHandle>) -> Handle {
     let apps: BlockedApps = Arc::new(RwLock::new(HashSet::new()));
+    let pending_warning_apps: PendingWarningApps = Arc::new(Mutex::new(HashSet::new()));
     let stop = Arc::new(AtomicBool::new(false));
     let apps_for_thread = apps.clone();
+    let pending_for_thread = pending_warning_apps.clone();
     let stop_for_thread = stop.clone();
-    let join = std::thread::spawn(move || run(app, apps_for_thread, stop_for_thread));
+    let join = std::thread::spawn(move || {
+        run(app, apps_for_thread, pending_for_thread, stop_for_thread)
+    });
     Handle {
         apps,
+        pending_warning_apps,
         stop,
         join: Mutex::new(Some(join)),
     }
@@ -169,19 +198,6 @@ pub fn start(app: Option<AppHandle>) -> Handle {
 struct WarningShow {
     pid: u32,
     name: String,
-    total_secs: u64,
-}
-
-/// Emitted every poll tick while a PID is in the warning phase. The
-/// frontend renders `remaining_secs` directly; `paused` flips the UI
-/// into "(paused — you're idle)" mode without changing the number.
-#[derive(Clone, Debug, Serialize)]
-struct WarningUpdate {
-    pid: u32,
-    name: String,
-    remaining_secs: u64,
-    total_secs: u64,
-    paused: bool,
 }
 
 /// Emitted when a PID leaves the warning phase, regardless of cause.
@@ -228,7 +244,14 @@ pub(crate) fn blocking_warning_begin(app: Option<&AppHandle>) {
 }
 
 pub(crate) fn blocking_warning_end(app: Option<&AppHandle>) {
-    let prev = BLOCKING_WARNING_LAYERS.fetch_sub(1, Ordering::SeqCst);
+    // Saturating decrement so a force-dismiss (which zeroes the refcount,
+    // see `force_dismiss_warning_overlay`) doesn't underflow when the
+    // still-tracked PIDs eventually exit and hit this path.
+    let prev = BLOCKING_WARNING_LAYERS
+        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+            Some(v.saturating_sub(1))
+        })
+        .unwrap_or(0);
     if prev == 1 {
         if let Some(a) = app {
             crate::commands::leave_blocking_warning_compact_window(a);
@@ -237,7 +260,22 @@ pub(crate) fn blocking_warning_end(app: Option<&AppHandle>) {
     }
 }
 
-fn emit_warning_show(app: Option<&AppHandle>, pid: u32, name: &str, total_secs: u64) {
+/// Force the panel-mode window back to its normal size + level *now*,
+/// regardless of how many PIDs are still in flight. Called when the
+/// user clicks "Let's go!" — the warning UI is dismissed even though
+/// the watcher continues running its 30s + 10s timers in the background.
+/// The refcount is reset to 0 so a NEW first-sighting (e.g. a fresh
+/// blocked app launched during the wrap-up window) properly re-enters
+/// panel mode from a clean slate.
+pub(crate) fn force_dismiss_warning_overlay(app: Option<&AppHandle>) {
+    BLOCKING_WARNING_LAYERS.store(0, Ordering::SeqCst);
+    if let Some(a) = app {
+        crate::commands::leave_blocking_warning_compact_window(a);
+        crate::commands::set_blocking_warning_attention(a, false);
+    }
+}
+
+fn emit_warning_show(app: Option<&AppHandle>, pid: u32, name: &str, _total_secs: u64) {
     blocking_warning_begin(app);
     if let Some(a) = app {
         crate::commands::show_blocking_warning_shell_without_stealing_focus(a);
@@ -249,29 +287,6 @@ fn emit_warning_show(app: Option<&AppHandle>, pid: u32, name: &str, total_secs: 
             WarningShow {
                 pid,
                 name: name.to_string(),
-                total_secs,
-            },
-        );
-    }
-}
-
-fn emit_warning_update(
-    app: Option<&AppHandle>,
-    pid: u32,
-    name: &str,
-    remaining_secs: u64,
-    total_secs: u64,
-    paused: bool,
-) {
-    if let Some(app) = app {
-        let _ = app.emit(
-            "app-blocking://warning-update",
-            WarningUpdate {
-                pid,
-                name: name.to_string(),
-                remaining_secs,
-                total_secs,
-                paused,
             },
         );
     }
@@ -295,17 +310,13 @@ fn emit_warning_hide(app: Option<&AppHandle>, pid: u32, name: &str, reason: Hide
 
 #[derive(Debug)]
 enum PidPhase {
-    /// One polite Cmd-Q-equivalent quit has been sent. If the PID
-    /// survives past `QUIT_TO_WARNING_GRACE`, we open the warning overlay
-    /// (no second automatic quit — the user may use “Try again” in UI).
-    Quitting {
-        last_attempt: Instant,
-    },
-    /// Warning overlay is up; counting down.
-    Warning {
-        remaining: Duration,
-        was_idle_last_tick: bool,
-    },
+    /// First sighting. Warning overlay is up; we're waiting for the
+    /// user to click "Let's go!". No quit signal sent yet.
+    AwaitingUserAck,
+    /// User acknowledged. Polite Cmd-Q will be sent at `quit_at`.
+    PreQuit { quit_at: Instant },
+    /// Polite Cmd-Q has been sent. SIGKILL at `kill_at` if still alive.
+    PostQuit { kill_at: Instant },
 }
 
 #[derive(Debug)]
@@ -317,28 +328,47 @@ struct PidEntry {
     /// blocklist (we still need to honour the in-flight warning).
     matched_name: String,
     phase: PidPhase,
+    /// `true` iff this PID's lifecycle started with a `warning-show`
+    /// (block-start path). Mid-block sightings go straight to PostQuit
+    /// without raising a warning, and they must NOT emit
+    /// `warning-hide` later — the refcount inside `blocking_warning_*`
+    /// would underflow / falsely tear down panel mode while a
+    /// concurrent block-start warning is still up.
+    warning_raised: bool,
 }
 
 // ---- Run loop -------------------------------------------------------------
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
-fn run(app: Option<AppHandle>, apps: BlockedApps, stop: Arc<AtomicBool>) {
+fn run(
+    app: Option<AppHandle>,
+    apps: BlockedApps,
+    pending_warning_apps: PendingWarningApps,
+    stop: Arc<AtomicBool>,
+) {
     let mut entries: HashMap<sysinfo::Pid, PidEntry> = HashMap::new();
     while !stop.load(Ordering::SeqCst) {
-        sweep(app.as_ref(), &apps, &mut entries);
+        sweep(app.as_ref(), &apps, &pending_warning_apps, &mut entries);
         std::thread::sleep(POLL_INTERVAL);
     }
     // On stop: clear any in-flight warnings so the UI doesn't keep
-    // showing a stale modal after the watcher's gone.
+    // showing a stale modal after the watcher's gone. Mid-block PIDs
+    // (warning_raised=false) never emitted a show, so they don't
+    // emit a hide either — keeps the panel-mode refcount balanced.
     for (pid, entry) in entries.drain() {
-        if matches!(entry.phase, PidPhase::Warning { .. }) {
+        if entry.warning_raised {
             emit_warning_hide(app.as_ref(), pid.as_u32(), &entry.matched_name, HideReason::Resolved);
         }
     }
 }
 
 #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-fn run(_app: Option<AppHandle>, _apps: BlockedApps, _stop: Arc<AtomicBool>) {
+fn run(
+    _app: Option<AppHandle>,
+    _apps: BlockedApps,
+    _pending_warning_apps: PendingWarningApps,
+    _stop: Arc<AtomicBool>,
+) {
     // Linux has no in-process watcher; blocking apps would need a
     // distro-specific approach (e.g. cgroup freezer) — out of scope.
 }
@@ -347,6 +377,7 @@ fn run(_app: Option<AppHandle>, _apps: BlockedApps, _stop: Arc<AtomicBool>) {
 fn sweep(
     app: Option<&AppHandle>,
     apps: &BlockedApps,
+    pending_warning_apps: &PendingWarningApps,
     entries: &mut HashMap<sysinfo::Pid, PidEntry>,
 ) {
     use sysinfo::{ProcessesToUpdate, System};
@@ -355,12 +386,23 @@ fn sweep(
         Ok(g) => g.iter().cloned().collect(),
         Err(_) => return,
     };
+
+    // One-shot snapshot — the names in here are eligible for the
+    // AwaitingUserAck warning on this sweep's first-sighting. Drained
+    // so subsequent sweeps see an empty set and route mid-block app
+    // launches straight to the silent Cmd-Q path.
+    let pending_warn: HashSet<String> = match pending_warning_apps.lock() {
+        Ok(mut p) => p.drain().collect(),
+        Err(_) => HashSet::new(),
+    };
     if blocked.is_empty() {
         if !entries.is_empty() {
             // Block ended (e.g. user paused / cleared) — clear any
-            // in-flight warnings so the UI stops showing them.
+            // in-flight warnings so the UI stops showing them. Skip
+            // hide-emit for mid-block PIDs (warning_raised=false)
+            // since they never had a corresponding show.
             for (pid, entry) in entries.drain() {
-                if matches!(entry.phase, PidPhase::Warning { .. }) {
+                if entry.warning_raised {
                     emit_warning_hide(
                         app,
                         pid.as_u32(),
@@ -377,8 +419,23 @@ fn sweep(
     sys.refresh_processes(ProcessesToUpdate::All, true);
 
     let now = Instant::now();
-    let idle = system_idle_seconds();
     let mut still_alive: HashSet<sysinfo::Pid> = HashSet::new();
+
+    // If the user clicked "Let's go!" since the last sweep, transition
+    // every PID currently in `AwaitingUserAck` into `PreQuit`. Atomic
+    // swap so we consume the signal exactly once.
+    let user_acked = USER_ACK_PENDING.swap(false, Ordering::SeqCst);
+    if user_acked {
+        for entry in entries.values_mut() {
+            if matches!(entry.phase, PidPhase::AwaitingUserAck) {
+                log::info!(
+                    "app_watcher: user ack received for '{}'; entering PreQuit",
+                    entry.matched_name
+                );
+                entry.phase = PidPhase::PreQuit { quit_at: now + PREQUIT_DURATION };
+            }
+        }
+    }
 
     for (pid, proc_) in sys.processes() {
         let name = proc_.name().to_string_lossy().to_string();
@@ -397,93 +454,98 @@ fn sweep(
 
         match entries.entry(*pid) {
             Entry::Vacant(slot) => {
-                // First sighting — fire the polite Cmd-Q.
-                log::info!(
-                    "app_watcher: graceful-quit pid={pid} name='{name}' (first sighting)"
-                );
-                request_graceful_quit(*pid, &name, proc_);
-                slot.insert(PidEntry {
-                    matched_name,
-                    phase: PidPhase::Quitting {
-                        last_attempt: now,
-                    },
-                });
+                if pending_warn.contains(&matched_name) {
+                    // Block-just-starting path: raise the user-ack
+                    // warning and wait for the "Let's go!" click. No
+                    // quit signal sent yet — the user gets a clean
+                    // 30-second wrap-up window once they acknowledge.
+                    log::info!(
+                        "app_watcher: block-start sighting pid={pid} name='{name}'; raising user-ack warning"
+                    );
+                    emit_warning_show(
+                        app,
+                        pid.as_u32(),
+                        &matched_name,
+                        PREQUIT_DURATION.as_secs(),
+                    );
+                    slot.insert(PidEntry {
+                        matched_name,
+                        phase: PidPhase::AwaitingUserAck,
+                        warning_raised: true,
+                    });
+                } else {
+                    // Mid-block app launch — the user opened a
+                    // blocked app while a block was already running,
+                    // so they already saw the warning at block start
+                    // (or chose to launch it knowing the consequences).
+                    // Fast SIGTERM (no activation flash, no Apple
+                    // Event roundtrip) + 10s grace + SIGKILL. No
+                    // overlay, no banner.
+                    log::info!(
+                        "app_watcher: mid-block sighting pid={pid} name='{name}'; SIGTERM (no warning)"
+                    );
+                    request_silent_quit(*pid, &name, proc_);
+                    slot.insert(PidEntry {
+                        matched_name,
+                        phase: PidPhase::PostQuit { kill_at: now + POSTQUIT_GRACE },
+                        warning_raised: false,
+                    });
+                }
             }
             Entry::Occupied(slot) => {
-                // Compute the next phase from the current one. We
-                // pull copyable fields out so we don't hold a borrow
-                // across `proc_.kill()` / event emits.
                 let current = slot.get();
                 let next_phase = match &current.phase {
-                    PidPhase::Quitting {
-                        last_attempt,
-                    } => {
-                        let last_attempt = *last_attempt;
-                        if now.duration_since(last_attempt) < QUIT_TO_WARNING_GRACE {
-                            // Inside grace window — let save sheets play out.
-                            continue_phase(&slot)
+                    PidPhase::AwaitingUserAck => {
+                        // Sit tight until the user clicks Let's go.
+                        // (Or until the PID disappears — handled below
+                        // in the dropped-pids cleanup.)
+                        PidPhase::AwaitingUserAck
+                    }
+                    PidPhase::PreQuit { quit_at } => {
+                        let quit_at = *quit_at;
+                        if now < quit_at {
+                            // Still inside the user's wrap-up window.
+                            PidPhase::PreQuit { quit_at }
                         } else {
                             log::info!(
-                                "app_watcher: pid={pid} name='{name}' still running after polite quit + grace; raising warning overlay"
+                                "app_watcher: PreQuit elapsed for pid={pid} name='{name}'; sending polite quit"
                             );
-                            emit_warning_show(
-                                app,
-                                pid.as_u32(),
-                                &current.matched_name,
-                                WARNING_COUNTDOWN.as_secs(),
-                            );
-                            PidPhase::Warning {
-                                remaining: WARNING_COUNTDOWN,
-                                was_idle_last_tick: idle >= IDLE_THRESHOLD_SECS,
-                            }
+                            request_graceful_quit(*pid, &name, proc_);
+                            PidPhase::PostQuit { kill_at: now + POSTQUIT_GRACE }
                         }
                     }
-                    PidPhase::Warning {
-                        remaining,
-                        was_idle_last_tick,
-                    } => {
-                        let mut remaining = *remaining;
-                        let _ = *was_idle_last_tick; // tracked for emit-paused only
-                        let is_idle = idle >= IDLE_THRESHOLD_SECS;
-                        if !is_idle {
-                            // Countdown only decrements while the user is
-                            // active. Returning from idle resumes from
-                            // where we paused — we deliberately do NOT
-                            // reset back to the full window, so a user
-                            // who walks away mid-countdown can't game
-                            // the timer by stepping away.
-                            remaining = remaining.saturating_sub(POLL_INTERVAL);
-                        }
-                        emit_warning_update(
-                            app,
-                            pid.as_u32(),
-                            &current.matched_name,
-                            remaining.as_secs(),
-                            WARNING_COUNTDOWN.as_secs(),
-                            is_idle,
-                        );
-                        if remaining.is_zero() && !is_idle {
+                    PidPhase::PostQuit { kill_at } => {
+                        let kill_at = *kill_at;
+                        if now < kill_at {
+                            // Polite quit dispatched; let the save
+                            // sheet (if any) play out.
+                            PidPhase::PostQuit { kill_at }
+                        } else {
                             log::info!(
-                                "app_watcher: warning countdown elapsed for pid={pid} name='{}'; SIGKILL",
+                                "app_watcher: PostQuit grace elapsed for pid={pid} name='{}'; SIGKILL",
                                 current.matched_name
                             );
                             if proc_.kill() {
-                                emit_warning_hide(
-                                    app,
-                                    pid.as_u32(),
-                                    &current.matched_name,
-                                    HideReason::ForceKilled,
-                                );
+                                // Mid-block PIDs (warning_raised=false)
+                                // never showed a warning; suppress the
+                                // hide event for them so the panel-mode
+                                // refcount stays balanced with the
+                                // shows.
+                                if current.warning_raised {
+                                    emit_warning_hide(
+                                        app,
+                                        pid.as_u32(),
+                                        &current.matched_name,
+                                        HideReason::ForceKilled,
+                                    );
+                                }
                                 slot.remove();
                                 continue;
                             }
                             log::warn!(
                                 "app_watcher: SIGKILL failed for pid={pid} name='{name}' — will retry"
                             );
-                        }
-                        PidPhase::Warning {
-                            remaining,
-                            was_idle_last_tick: is_idle,
+                            PidPhase::PostQuit { kill_at }
                         }
                     }
                 };
@@ -493,8 +555,11 @@ fn sweep(
     }
 
     // PIDs we were tracking that are no longer alive — they exited
-    // (cleanly via the user saving + quitting, or watcher SIGKILL when
-    // the idle-aware countdown finished). Clear any active warning UI.
+    // (cleanly via the user saving + quitting, or via SIGKILL when the
+    // PostQuit grace elapsed). Hide any in-flight warning UI for them.
+    // Mid-block PIDs (warning_raised=false) get cleaned up silently —
+    // they never had a show event, so a hide would unbalance the
+    // panel-mode refcount.
     let dropped: Vec<_> = entries
         .keys()
         .filter(|pid| !still_alive.contains(pid))
@@ -506,7 +571,7 @@ fn sweep(
                 "app_watcher: pid={pid} name='{}' is gone",
                 entry.matched_name
             );
-            if matches!(entry.phase, PidPhase::Warning { .. }) {
+            if entry.warning_raised {
                 emit_warning_hide(app, pid.as_u32(), &entry.matched_name, HideReason::Resolved);
             }
         }
@@ -519,98 +584,6 @@ fn sweep(
     _apps: &BlockedApps,
     _entries: &mut HashMap<u32, PidEntry>,
 ) {
-}
-
-/// Dummy returned by the "no transition this tick" branch. Cloning
-/// out of `slot.get()` would require `PidPhase: Clone`, which is
-/// noisy for a single use. We just rebuild the same variant by hand
-/// — cheap because `Quitting` holds a `Copy` field.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-fn continue_phase(slot: &std::collections::hash_map::OccupiedEntry<sysinfo::Pid, PidEntry>) -> PidPhase {
-    match &slot.get().phase {
-        PidPhase::Quitting {
-            last_attempt,
-        } => PidPhase::Quitting {
-            last_attempt: *last_attempt,
-        },
-        PidPhase::Warning {
-            remaining,
-            was_idle_last_tick,
-        } => PidPhase::Warning {
-            remaining: *remaining,
-            was_idle_last_tick: *was_idle_last_tick,
-        },
-    }
-}
-
-// ---- System idle ----------------------------------------------------------
-
-/// Seconds since the last user input event (mouse / keyboard /
-/// trackpad / etc.). Used to gate the warning countdown so AFK time
-/// never counts toward force-quit. Returns 0.0 on platforms or
-/// failures we can't read — failing closed (treating the user as
-/// active) is correct here: it means the countdown ticks, but the
-/// user is the one responsible for being there to see the warning.
-#[cfg(target_os = "macos")]
-fn system_idle_seconds() -> f64 {
-    // CGEventSourceSecondsSinceLastEventType is the canonical macOS
-    // API for "system-wide idle time". Public, doesn't need any TCC
-    // entitlement (unlike Accessibility-based equivalents). Lives in
-    // CoreGraphics; we link the framework directly so we don't have
-    // to add another crate dep.
-    #[link(name = "CoreGraphics", kind = "framework")]
-    extern "C" {
-        fn CGEventSourceSecondsSinceLastEventType(
-            source_state_id: u32,
-            event_type: u32,
-        ) -> f64;
-    }
-    // kCGEventSourceStateCombinedSessionState = 0 — covers the whole
-    // login session (HID + WindowServer-synthesised events), which is
-    // what we want.
-    const COMBINED_SESSION_STATE: u32 = 0;
-    // kCGAnyInputEventType = ~0u32 — match any input.
-    const ANY_INPUT_EVENT_TYPE: u32 = u32::MAX;
-    unsafe { CGEventSourceSecondsSinceLastEventType(COMBINED_SESSION_STATE, ANY_INPUT_EVENT_TYPE) }
-}
-
-#[cfg(target_os = "windows")]
-fn system_idle_seconds() -> f64 {
-    // GetLastInputInfo + GetTickCount is the Win32 equivalent. Both
-    // are user32/kernel32 entry points that need no special permissions.
-    #[repr(C)]
-    struct LastInputInfo {
-        cb_size: u32,
-        dw_time: u32,
-    }
-    #[link(name = "user32")]
-    extern "system" {
-        fn GetLastInputInfo(info: *mut LastInputInfo) -> i32;
-    }
-    #[link(name = "kernel32")]
-    extern "system" {
-        fn GetTickCount() -> u32;
-    }
-    let mut info = LastInputInfo {
-        cb_size: std::mem::size_of::<LastInputInfo>() as u32,
-        dw_time: 0,
-    };
-    unsafe {
-        if GetLastInputInfo(&mut info) != 0 {
-            // GetTickCount wraps every ~49.7 days, so use
-            // wrapping_sub to stay correct across the wrap.
-            let elapsed_ms = GetTickCount().wrapping_sub(info.dw_time);
-            f64::from(elapsed_ms) / 1000.0
-        } else {
-            0.0
-        }
-    }
-}
-
-#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
-#[allow(dead_code)]
-fn system_idle_seconds() -> f64 {
-    0.0
 }
 
 // ---- Graceful quit primitive ----------------------------------------------
@@ -690,6 +663,34 @@ fn request_graceful_quit(pid: sysinfo::Pid, name: &str, _proc: &sysinfo::Process
 #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
 #[allow(dead_code)]
 fn request_graceful_quit(_pid: sysinfo::Pid, _name: &str, _proc: &sysinfo::Process) {}
+
+/// Mid-block-launch fast path. The user already saw the warning when
+/// the block started — opening a blocked app while the block is
+/// already running is a deliberate act, so we skip the activation
+/// flash + Apple-Event roundtrip that `request_graceful_quit` does and
+/// just send SIGTERM directly. Modern Cocoa apps treat SIGTERM as a
+/// normal exit (cleanup runs, no UI prompt). Apps that trap SIGTERM
+/// still get caught by the 10-second SIGKILL grace.
+///
+/// On Windows there's no SIGTERM equivalent that's faster than the
+/// graceful-close path; we just `proc_.kill()` directly (TerminateProcess)
+/// since the user has already opted in by launching the blocked app.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn request_silent_quit(pid: sysinfo::Pid, name: &str, proc_: &sysinfo::Process) {
+    log::info!("app_watcher: silent quit pid={pid} name='{name}'");
+    match proc_.kill_with(sysinfo::Signal::Term) {
+        Some(true) => {}
+        Some(false) | None => {
+            // SIGTERM dispatch failed (or unsupported, i.e. Windows).
+            // Fall straight to TerminateProcess — instant kill.
+            let _ = proc_.kill();
+        }
+    }
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+#[allow(dead_code)]
+fn request_silent_quit(_pid: sysinfo::Pid, _name: &str, _proc: &sysinfo::Process) {}
 
 // ---- Imperative actions for the warning modal ---------------------------
 //

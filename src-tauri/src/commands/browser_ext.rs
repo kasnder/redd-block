@@ -340,9 +340,16 @@ fn apply_macos_blocking_warning_panel_mode(app: &AppHandle, active: bool) {
     }
 }
 
-/// Shrinks the main window to the warning-card footprint and strips the
-/// normal app chrome (CSS toggle via JS `eval`). Snapshots geometry on the
-/// first transition so [`leave_blocking_warning_compact_window`] can restore.
+/// Expands the main window to cover the full display (NOT macOS native
+/// fullscreen — no Space change, no menu-bar hide; just sized to the
+/// monitor's logical width × height) and toggles the warning CSS mode.
+/// Snapshots prior geometry so [`leave_blocking_warning_compact_window`]
+/// can restore the user's previous window size on exit.
+///
+/// The function name still says "compact" for now to keep the call sites
+/// in `app_watcher` untouched — the warning UX it powers has flipped
+/// from "tiny floating card" to "full-screen take-over", but the
+/// enter/leave protocol is the same.
 #[cfg(not(target_os = "ios"))]
 pub fn enter_blocking_warning_compact_window(app: &AppHandle) {
     let Some(w) = app.get_webview_window("main") else {
@@ -366,7 +373,7 @@ pub fn enter_blocking_warning_compact_window(app: &AppHandle) {
                 }
                 _ => {
                     log::warn!(
-                        "blocking warning: could not read window geometry — compact shell skipped"
+                        "blocking warning: could not read window geometry — full-screen shell skipped"
                     );
                     return;
                 }
@@ -382,15 +389,34 @@ pub fn enter_blocking_warning_compact_window(app: &AppHandle) {
 })();"#;
 
     let _ = w.eval(MODE_ON);
-    let _ = w.set_min_size(Some(LogicalSize::new(
-        WARNING_SHELL_MIN_W,
-        WARNING_SHELL_MIN_H,
-    )));
-    let _ = w.set_size(LogicalSize::new(
-        WARNING_COMPACT_W,
-        WARNING_COMPACT_BOOTSTRAP_H,
-    ));
-    let _ = w.center();
+
+    // Resolve the monitor the window currently sits on (or the primary
+    // if we can't pin it down) and size the window to its full logical
+    // dimensions. NOT native fullscreen — just an oversized borderless
+    // panel that physically covers the screen, so the user can't ignore
+    // the warning by dragging another window over it.
+    let monitor = w
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| w.primary_monitor().ok().flatten());
+
+    if let Some(m) = monitor {
+        let scale = m.scale_factor();
+        let size = m.size();
+        let pos = m.position();
+        let logical_w = size.width as f64 / scale;
+        let logical_h = size.height as f64 / scale;
+        let _ = w.set_min_size(Some(LogicalSize::new(WARNING_SHELL_MIN_W, WARNING_SHELL_MIN_H)));
+        let _ = w.set_size(LogicalSize::new(logical_w, logical_h));
+        let _ = w.set_position(PhysicalPosition::new(pos.x, pos.y));
+    } else {
+        // Fall back to a generous fixed size if monitor metadata isn't
+        // available — better than rendering tiny.
+        let _ = w.set_min_size(Some(LogicalSize::new(WARNING_SHELL_MIN_W, WARNING_SHELL_MIN_H)));
+        let _ = w.set_size(LogicalSize::new(1440.0, 900.0));
+        let _ = w.center();
+    }
 }
 
 /// Sets main window **inner** logical size from measured webview content (no

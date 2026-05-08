@@ -107,9 +107,10 @@ pub async fn block_websites(app: tauri::AppHandle) -> HelperResult {
 pub fn set_blocked_apps_via_helper(
     app: tauri::AppHandle,
     apps: Vec<String>,
+    newly_added: Vec<String>,
     state: State<AppWatcherState>,
 ) -> HelperResult {
-    super::app_blocking::set_blocked_apps(app, apps, state);
+    super::app_blocking::set_blocked_apps(app, apps, newly_added, state);
     HelperResult::ok()
 }
 
