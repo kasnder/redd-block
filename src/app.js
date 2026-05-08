@@ -240,7 +240,7 @@ const WEBSITES_PRESET_LISTS = {
 
 // Schedule mode state
 let isScheduleMode = false; // false = instant mode, true = schedule mode
-let isAlwaysOnMode = true; // false = timed block, true = always-on (permanent) block
+let isAlwaysOnMode = false; // false = timed block, true = always-on (permanent) block
 let scheduleSegments = getDefaultScheduleSegments(); // Array of time segments with per-segment days
 
 // Far-future timestamp used for "always on" blocks (year 9999)
@@ -5125,7 +5125,7 @@ function initializeTimeInputs() {
 
     // Restore always-on mode preference for this blocklist
     const savedAlwaysOn = selectedBlocklistId && appData.settings?.alwaysOnMode?.[selectedBlocklistId];
-    setAlwaysOnMode(savedAlwaysOn !== undefined ? !!savedAlwaysOn : true);
+    setAlwaysOnMode(savedAlwaysOn !== undefined ? !!savedAlwaysOn : false);
 
     if (selectedBlocklistId && appData.settings?.instantBlockDuration?.[selectedBlocklistId] !== undefined) {
         targetDurationMinutes = appData.settings.instantBlockDuration[selectedBlocklistId];
