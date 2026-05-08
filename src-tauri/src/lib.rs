@@ -106,6 +106,8 @@ pub mod native_host_install;
 pub mod extension_install;
 #[cfg(not(target_os = "ios"))]
 pub mod profile_scan;
+#[cfg(target_os = "macos")]
+pub mod safari_services;
 #[cfg(target_os = "windows")]
 pub mod watchdog;
 #[cfg(target_os = "windows")]
