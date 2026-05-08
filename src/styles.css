@@ -1587,6 +1587,11 @@ body.dark-mode .day-row.weekend {
     overflow: visible;
 }
 
+/* NOW-mode previews can only be end-resized, not dragged — use default cursor */
+.calendar-block.preview.interactive.instant-preview {
+    cursor: default;
+}
+
 .calendar-block.preview.interactive:hover {
     opacity: 0.85;
 }

@@ -7005,7 +7005,7 @@ function renderInstantPreviewBlock(blockStart, blockEnd, blocklist) {
                 const layout = getCalendarSegmentLayout(sliceStartMs, sliceEndMs, dayStartMs, dayEndMs);
                 const previewEl = document.createElement('div');
                 const isHead = isFirstSlice;
-                previewEl.className = 'calendar-block preview' + (isHead ? ' interactive' : ' overnight-continuation');
+                previewEl.className = 'calendar-block preview' + (isHead ? ' interactive instant-preview' : ' overnight-continuation');
                 previewEl.style.left = `${layout.leftPercent}%`;
                 previewEl.style.width = `${layout.widthPercent}%`;
                 previewEl.dataset.previewGroupId = 'preview-instant';
