@@ -4970,8 +4970,8 @@ function setupOverrideModalListeners() {
         const progress = (correctChars / target.length) * 100;
         progressBar.style.width = `${progress}%`;
 
-        // Clear error highlighting while typing
-        renderChallengeText(-1);
+        // Show red highlight on the reference text at the first mismatch (-1 clears)
+        renderChallengeText(firstErrorIndex);
     });
 
     // Enter key submits the override
