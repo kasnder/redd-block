@@ -110,7 +110,7 @@
                     <rect x="11" y="10" width="2" height="8" rx="1" fill="white"></rect>
                 </svg>
                 <div class="setup-banner-message">
-                    <strong class="setup-banner-headline">Set up ReDD Focus in your browsers</strong>
+                    <strong id="setup-banner-headline" class="setup-banner-headline">Set up ReDD Focus in your browsers</strong>
                     <!-- Body is filled in dynamically by
                          updateBehaviourChangeBanner() with a per-
                          browser action summary (e.g. "Install in
@@ -120,8 +120,7 @@
                          of empty state. -->
                     <span id="behaviour-change-text" class="setup-banner-body"></span>
                     <div class="setup-banner-actions-row">
-                        <button id="behaviour-change-help" class="update-banner-btn" type="button">Set up
-                            extension</button>
+                        <button id="behaviour-change-help" class="update-banner-btn" type="button">Set up extension</button>
                     </div>
                 </div>
             </div>
@@ -182,19 +181,19 @@
 
                 <!-- Phase: pre-cleanup. Shown when migration_pending=true. -->
                 <div id="migration-phase-pre" class="migration-phase">
-                    <h1>Welcome to ReDD Block 2.0</h1>
-                    <p class="legal-onboarding-subtitle">A one-time cleanup is needed to finish your upgrade.</p>
+                    <h1 id="migration-pre-title">Welcome to ReDD Block 2.0</h1>
+                    <p id="migration-pre-subtitle" class="legal-onboarding-subtitle">A one-time cleanup is needed to finish your upgrade.</p>
                     <div class="onboarding-focus-card migration-card">
-                        <p class="migration-explainer">
+                        <p id="migration-pre-explainer" class="migration-explainer">
                             ReDD Block now blocks websites through a browser extension instead of a system-level helper.
                             We need to:
                         </p>
                         <ul class="migration-bullets">
-                            <li>Stop and remove the old privileged helper</li>
-                            <li>Restore your <code>/etc/hosts</code> file (a backup is kept)</li>
-                            <li>Keep all your existing blocklists intact</li>
+                            <li id="migration-pre-bullet-1">Stop and remove the old privileged helper</li>
+                            <li id="migration-pre-bullet-2">Restore your <code>/etc/hosts</code> file (a backup is kept)</li>
+                            <li id="migration-pre-bullet-3">Keep all your existing blocklists intact</li>
                         </ul>
-                        <p class="migration-explainer migration-explainer-warn">
+                        <p id="migration-pre-warn" class="migration-explainer migration-explainer-warn">
                             You'll see <strong>one</strong> admin password prompt. Blocking will pause briefly during
                             the changeover. After cleanup, you'll need to install the <strong>ReDD Focus</strong>
                             browser extension.
@@ -218,27 +217,27 @@
                         <ul id="migration-checklist" class="migration-checklist">
                             <li class="checklist-done migration-cleanup-only">
                                 <span class="checklist-mark">✓</span>
-                                <span>Old version cleaned up</span>
+                                <span id="migration-checklist-cleaned-label">Old version cleaned up</span>
                             </li>
                             <li class="checklist-done migration-cleanup-only">
                                 <span class="checklist-mark">✓</span>
-                                <span>Your blocklists are preserved</span>
+                                <span id="migration-checklist-blocks-label">Your blocklists are preserved</span>
                             </li>
                             <li id="migration-checklist-ext" class="checklist-todo">
-                                <span>Install the ReDD Focus browser extension<br><span
+                                <span id="migration-checklist-ext-lines">Install the ReDD Focus browser extension<br><span
                                         style="font-weight:400;opacity:0.7">and allow it in private/incognito
                                         tabs</span></span>
                             </li>
                         </ul>
 
                         <div id="migration-howto" class="migration-howto hidden">
-                            <h3>How to install</h3>
+                            <h3 id="migration-howto-title">How to install</h3>
                             <ol>
-                                <li>Click <strong>Install</strong> next to a browser below — the extension
+                                <li id="migration-howto-li1">Click <strong>Install</strong> next to a browser below — the extension
                                     store opens automatically.</li>
-                                <li>Click <strong>Add to Chrome</strong> / <strong>Add to Firefox</strong> /
+                                <li id="migration-howto-li2">Click <strong>Add to Chrome</strong> / <strong>Add to Firefox</strong> /
                                     <strong>Get</strong> on the page that loads.</li>
-                                <li><strong>Allow in private/incognito</strong> tabs — see each browser's row below
+                                <li id="migration-howto-li3"><strong>Allow in private/incognito</strong> tabs — see each browser's row below
                                     for the exact steps.</li>
                             </ol>
                         </div>
@@ -259,9 +258,9 @@
                                         <svg class="enforcement-toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
                                         </svg>
-                                        Browser enforcement
+                                        <span id="enforcement-toggle-headline-text">Browser protection</span>
                                     </strong>
-                                    <span class="enforcement-toggle-desc">When enabled, ReDD Block will auto-close browsers that don't have ReDD Focus properly set up while a block is running.</span>
+                                    <span id="enforcement-toggle-desc-text" class="enforcement-toggle-desc">While a block is active, this gently backs your own choice: browsers that aren't fully covered by ReDD Focus yet get a short heads-up—then the window may close—so quiet loopholes don't undo the attention you asked for.</span>
                                 </div>
                                 <label class="enforcement-switch" for="enforcement-toggle-input">
                                     <input type="checkbox" id="enforcement-toggle-input" />
@@ -273,7 +272,7 @@
                                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
                                     <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                                 </svg>
-                                Can't be turned off while a block is running.
+                                <span id="enforcement-toggle-locked-text">This stays on for the rest of this block—you can change it again when the block ends.</span>
                             </p>
                         </div>
 
@@ -1196,7 +1195,7 @@
                              escape hatches. -->
                         <div class="grace-setting-row" style="margin-top: 12px;">
                             <label class="toggle-label" for="grace-seconds-input">
-                                <span>Seconds before a non-compliant browser is closed</span>
+                                <span id="grace-period-label-text">Seconds of heads-up before a browser that isn't protected by ReDD Focus may close</span>
                                 <span id="grace-locked-hint" class="grace-locked-hint hidden">Locked while a block is
                                     active — only decreases allowed.</span>
                             </label>

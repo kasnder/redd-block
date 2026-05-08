@@ -1240,6 +1240,8 @@ let migrationOnboardingDismissed = false;
 let migrationPollIntervalId = null;
 /** Preserves "Show me how" across `renderBrowserInstallButtons` poll refreshes. */
 const migrationShowMeHowExpandedKeys = new Set();
+/** Snapshot for re-rendering localized browser rows when language changes mid-overlay. */
+let lastMigrationBrowserState = null;
 const MIGRATION_POLL_MS = 2500;
 const EXT_ONBOARDING_DISMISSED_KEY = 'reddBlockExtOnboardingDismissed';
 
@@ -1304,6 +1306,8 @@ async function showMigrationOnboarding(phase, state, opts = {}) {
     const main = document.getElementById('main-content');
     if (!screen || !pre || !post) return;
 
+    applyMigrationOverlayStaticCopy();
+
     migrationOnboardingActive = true;
     startMigrationPolling();
     if (main) main.classList.add('hidden');
@@ -1320,8 +1324,8 @@ async function showMigrationOnboarding(phase, state, opts = {}) {
         const subtitle = document.getElementById('migration-post-subtitle');
         const cleanupItems = post.querySelectorAll('.migration-cleanup-only');
         if (mode === 'after-cleanup') {
-            if (title) title.textContent = 'Cleanup complete';
-            if (subtitle) subtitle.textContent = 'One step left: install ReDD Focus in each browser you use.';
+            if (title) title.textContent = tSettings('migrationPostTitleCleanup');
+            if (subtitle) subtitle.textContent = tSettings('migrationPostSubtitleCleanup');
             cleanupItems.forEach(el => el.classList.remove('hidden'));
         } else {
             if (title) title.classList.add('hidden');
@@ -1362,6 +1366,7 @@ function hideMigrationOnboarding() {
     migrationOnboardingActive = false;
     migrationOnboardingDismissed = true;
     migrationShowMeHowExpandedKeys.clear();
+    lastMigrationBrowserState = null;
     stopMigrationPolling();
 }
 
@@ -1376,7 +1381,7 @@ function wireMigrationPrePhase() {
     // this, btn.disabled / btn.textContent / status would carry over
     // from the previous click and the user would be locked out.
     btn.disabled = false;
-    btn.textContent = 'Continue';
+    btn.textContent = tSettings('migrationContinue');
     if (status) {
         status.textContent = '';
         status.classList.add('hidden');
@@ -1390,13 +1395,13 @@ function wireMigrationPrePhase() {
         if (btn.disabled) return;
         btn.disabled = true;
         if (status) {
-            status.textContent = 'Approve the admin prompt to continue…';
+            status.textContent = tSettings('migrationApproveAdminPrompt');
             status.classList.remove('hidden', 'error');
         }
 
         const failTryAgain = (msg) => {
             btn.disabled = false;
-            btn.textContent = 'Try again';
+            btn.textContent = tSettings('migrationTryAgain');
             if (status) {
                 status.textContent = msg;
                 status.classList.add('error');
@@ -1434,11 +1439,11 @@ function wireMigrationPrePhase() {
                 // there → user cancelled / cleanup failed. Don't make
                 // them wait for the polling timeout.
                 if (invokeSettled) {
-                    failTryAgain("We need that admin permission to finish — your blocklists are safe.");
+                    failTryAgain(tSettings('migrationCleanupNeedAdmin'));
                     return;
                 }
                 if (Date.now() - start > TIMEOUT_MS) {
-                    failTryAgain("Something went wrong. Click to retry.");
+                    failTryAgain(tSettings('migrationCleanupRetryGeneric'));
                     return;
                 }
             }
@@ -1446,7 +1451,7 @@ function wireMigrationPrePhase() {
             await showMigrationOnboarding('post', fresh);
         } catch (e) {
             console.warn('[migration] poll failed:', e);
-            failTryAgain("Something went wrong. Click to retry.");
+            failTryAgain(tSettings('migrationCleanupRetryGeneric'));
         }
     });
 }
@@ -1672,19 +1677,22 @@ function browserComplianceStatus(key, b) {
 
 function statusLabel(key, status) {
     switch (status) {
-        case 'compliant': return '✓ Installed & allowed in private tabs';
-        case 'needs-fda': return 'Grant Full Disk Access';
-        case 'needs-website-access': return 'Allow on all websites';
-        case 'needs-private': return 'Allow in private browsing';
-        case 'needs-enable': return 'Enable extension';
-        case 'needs-install': return 'Install';
-        default: return 'Install';
+        case 'compliant': return tSettings('migrationComplianceOk');
+        case 'needs-fda': return tSettings('migrationStatusGrantFda');
+        case 'needs-website-access': return tSettings('migrationStatusAllowAllWebsites');
+        case 'needs-private': return tSettings('migrationStatusAllowPrivate');
+        case 'needs-enable': return tSettings('migrationStatusEnableExtension');
+        case 'needs-install': return tSettings('migrationStatusInstall');
+        default: return tSettings('migrationStatusInstall');
     }
 }
 
 function safariProfileLabel(profile) {
     const name = String(profile && profile.name ? profile.name : '').trim();
-    if (!name || name === '(Default Safari profile)') return 'Default Safari profile';
+    const legacyDefault = SETTINGS_TRANSLATIONS.en.migrationSafariProfileDefaultName;
+    if (!name || name === legacyDefault || name === '(Default Safari profile)') {
+        return tSettings('migrationSafariProfileDefaultName');
+    }
     return name;
 }
 
@@ -1705,8 +1713,10 @@ function safariProfileStatusHint(b, status) {
     if (!failing.length) return null;
 
     const labels = failing.slice(0, 3).map(safariProfileLabel);
-    const suffix = failing.length > labels.length ? `, +${failing.length - labels.length} more` : '';
-    return `Affected Safari profiles: ${labels.join(', ')}${suffix}.`;
+    const more = failing.length > labels.length
+        ? tSettingsFmt('migrationSafariProfilesMore', { n: failing.length - labels.length })
+        : '';
+    return `${tSettings('migrationSafariProfilesAffected')} ${labels.join(', ')}${more}.`;
 }
 
 function extensionsUrl(key) {
@@ -1715,7 +1725,7 @@ function extensionsUrl(key) {
         case 'edge': return 'edge://extensions';
         case 'brave': return 'brave://extensions';
         case 'firefox': return 'about:addons';
-        case 'safari': return 'Safari → Settings → Extensions';
+        case 'safari': return tSettings('migrationSafariSettingsPath');
         default: return 'extensions';
     }
 }
@@ -1740,7 +1750,7 @@ function attachCopyChipHandlers(root) {
                 await navigator.clipboard.writeText(url);
                 btn.classList.add('copied');
                 const orig = btn.innerHTML;
-                btn.innerHTML = 'Copied! ✓';
+                btn.innerHTML = tSettings('migrationCopied');
                 setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('copied'); }, 1500);
             } catch (e) {
                 console.warn('[migration] clipboard copy failed:', e);
@@ -1751,12 +1761,12 @@ function attachCopyChipHandlers(root) {
 
 function privateModeNoun(key) {
     switch (key) {
-        case 'chrome': return 'Incognito';
-        case 'edge': return 'InPrivate';
-        case 'brave': return 'Incognito';
-        case 'firefox': return 'Private Windows';
-        case 'safari': return 'Private Browsing';
-        default: return 'private/incognito';
+        case 'chrome': return tSettings('migrationPrivateIncognitoChrome');
+        case 'edge': return tSettings('migrationPrivateIncognitoEdge');
+        case 'brave': return tSettings('migrationPrivateIncognitoBrave');
+        case 'firefox': return tSettings('migrationPrivateIncognitoFirefox');
+        case 'safari': return tSettings('migrationPrivateIncognitoSafari');
+        default: return tSettings('migrationPrivateIncognito');
     }
 }
 
@@ -1788,31 +1798,32 @@ async function openExtensionSettings(key) {
 function browserStatusHint(key, entry, b, status) {
     const hasMultipleSafariProfiles = key === 'safari' && Array.isArray(b && b.profiles) && b.profiles.length > 1;
     const safariSuffix = key === 'safari'
-        ? ` ${safariProfileStatusHint(b, status) || 'Check every Safari profile.'}`
+        ? ` ${safariProfileStatusHint(b, status) || tSettings('migrationSafariCheckEveryProfile')}`
         : '';
     switch (status) {
         case 'needs-enable':
             return key === 'safari'
                 ? hasMultipleSafariProfiles
-                    ? `Enable ReDD Focus in Safari's extension settings for every Safari profile.${safariSuffix}`
-                    : `Enable ReDD Focus in Safari's extension settings.`
-                : `Enable ReDD Focus in ${entry.label}'s extensions settings.`;
+                    ? tSettingsFmt('migrationHintEnableSafariMulti', { SUFFIX: safariSuffix })
+                    : tSettings('migrationHintEnableSafariOne')
+                : tSettingsFmt('migrationHintEnableBrowser', { BROWSER: entry.label });
         case 'needs-private':
             return key === 'safari'
                 ? hasMultipleSafariProfiles
-                    ? `Allow ReDD Focus in Private Browsing for every Safari profile.${safariSuffix}`
-                    : `Allow ReDD Focus in Private Browsing in Safari's extension settings.`
-                : `Allow ReDD Focus in private/incognito browsing in ${entry.label}'s extensions settings.`;
+                    ? tSettingsFmt('migrationHintPrivateSafariMulti', { SUFFIX: safariSuffix })
+                    : tSettings('migrationHintPrivateSafariOne')
+                : tSettingsFmt('migrationHintPrivateBrowser', { BROWSER: entry.label });
         case 'needs-website-access':
             return hasMultipleSafariProfiles
-                ? `Allow ReDD Focus on all websites for every Safari profile.${safariSuffix}`
-                : `Allow ReDD Focus on all websites in Safari's extension settings.`;
+                ? tSettingsFmt('migrationHintWebsitesSafariMulti', { SUFFIX: safariSuffix })
+                : tSettings('migrationHintWebsitesSafariOne');
         default:
             return '';
     }
 }
 
 function renderBrowserInstallButtons(state) {
+    lastMigrationBrowserState = state;
     const container = document.getElementById('migration-browser-buttons');
     const checklistItem = document.getElementById('migration-checklist-ext');
     if (!container) return;
@@ -1867,12 +1878,12 @@ function renderBrowserInstallButtons(state) {
         badge.className = `migration-browser-badge ${status}`;
         switch (status) {
             case 'compliant': badge.textContent = statusLabel(key, status); break;
-            case 'needs-install': badge.textContent = 'Not installed'; break;
-            case 'needs-enable': badge.textContent = 'Disabled'; break;
-            case 'needs-private': badge.textContent = 'Not allowed in private tabs'; break;
-            case 'needs-website-access': badge.textContent = 'No website access'; break;
-            case 'needs-fda': badge.textContent = 'Needs access'; break;
-            default: badge.textContent = 'Not installed';
+            case 'needs-install': badge.textContent = tSettings('migrationBadgeNotInstalled'); break;
+            case 'needs-enable': badge.textContent = tSettings('migrationBadgeDisabled'); break;
+            case 'needs-private': badge.textContent = tSettings('migrationBadgeNotPrivate'); break;
+            case 'needs-website-access': badge.textContent = tSettings('migrationBadgeNoWebsiteAccess'); break;
+            case 'needs-fda': badge.textContent = tSettings('migrationBadgeNeedsAccess'); break;
+            default: badge.textContent = tSettings('migrationBadgeNotInstalled');
         }
         header.appendChild(badge);
 
@@ -1881,7 +1892,7 @@ function renderBrowserInstallButtons(state) {
         if (status === 'needs-fda') {
             const hint = document.createElement('div');
             hint.className = 'migration-browser-hint';
-            hint.textContent = 'Grant ReDD Block Full Disk Access so it can verify Safari extension settings. Safari will be closed during active enforcement until this is fixed.';
+            hint.textContent = tSettings('migrationSafariFdaHint');
             row.appendChild(hint);
 
             const action = document.createElement('div');
@@ -1890,17 +1901,17 @@ function renderBrowserInstallButtons(state) {
             const settingsBtn = document.createElement('button');
             settingsBtn.type = 'button';
             settingsBtn.className = 'migration-browser-copy';
-            settingsBtn.textContent = 'Open Settings';
-            settingsBtn.title = 'Open Full Disk Access settings';
+            settingsBtn.textContent = tSettings('migrationOpenSettings');
+            settingsBtn.title = tSettings('migrationOpenFdaTitle');
             settingsBtn.addEventListener('click', async () => {
                 try {
                     await invoke('open_safari_fda_settings');
-                    settingsBtn.textContent = 'Opened';
-                    setTimeout(() => { settingsBtn.textContent = 'Open Settings'; }, 1500);
+                    settingsBtn.textContent = tSettings('migrationOpened');
+                    setTimeout(() => { settingsBtn.textContent = tSettings('migrationOpenSettings'); }, 1500);
                 } catch (e) {
                     console.warn('[migration] open Full Disk Access settings failed:', e);
-                    settingsBtn.textContent = 'Failed';
-                    setTimeout(() => { settingsBtn.textContent = 'Open Settings'; }, 1500);
+                    settingsBtn.textContent = tSettings('migrationFailed');
+                    setTimeout(() => { settingsBtn.textContent = tSettings('migrationOpenSettings'); }, 1500);
                 }
             });
             action.appendChild(settingsBtn);
@@ -1908,8 +1919,8 @@ function renderBrowserInstallButtons(state) {
             const refreshBtn = document.createElement('button');
             refreshBtn.type = 'button';
             refreshBtn.className = 'migration-browser-copy secondary';
-            refreshBtn.textContent = 'Check again';
-            refreshBtn.title = 'Refresh Safari access status';
+            refreshBtn.textContent = tSettings('migrationCheckAgain');
+            refreshBtn.title = tSettings('migrationRefreshSafariTitle');
             refreshBtn.addEventListener('click', pollMigrationCompliance);
             action.appendChild(refreshBtn);
 
@@ -1921,9 +1932,13 @@ function renderBrowserInstallButtons(state) {
             afterHint.className = 'migration-browser-hint migration-browser-after-hint';
             const privNoun = privateModeNoun(key);
             if (key === 'firefox') {
-                afterHint.innerHTML = `After clicking <strong>Add to Firefox</strong>, check <strong>Allow extension to run in private windows</strong> before clicking Add.`;
+                afterHint.innerHTML = tSettings('migrationPostInstallFirefoxHtml');
             } else {
-                afterHint.innerHTML = `After installing, open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${entry.label}'s address bar) → click <strong>Details</strong> on ReDD Focus → turn on <strong>Allow in ${privNoun}</strong>.`;
+                const tpl = tSettings('migrationPostInstallChromiumHtml');
+                afterHint.innerHTML = tpl
+                    .replace('{URL_CHIP}', extensionsUrlChipHtml(key))
+                    .replace(/{BROWSER}/g, entry.label)
+                    .replace(/{PRIV}/g, privNoun);
                 attachCopyChipHandlers(afterHint);
             }
             row.appendChild(afterHint);
@@ -1931,22 +1946,22 @@ function renderBrowserInstallButtons(state) {
             const installBtn = document.createElement('button');
             installBtn.type = 'button';
             installBtn.className = 'migration-browser-copy';
-            installBtn.textContent = 'Install';
-            installBtn.title = `Open ${entry.label} extension store page`;
+            installBtn.textContent = tSettings('migrationInstallButton');
+            installBtn.title = tSettingsFmt('migrationInstallStoreTitle', { browser: entry.label });
             installBtn.addEventListener('click', async () => {
                 try {
                     await invoke('open_url_in_browser', { browser: key, url: entry.url });
-                    installBtn.textContent = 'Opened';
-                    setTimeout(() => { installBtn.textContent = 'Install'; }, 2000);
+                    installBtn.textContent = tSettings('migrationInstallOpened');
+                    setTimeout(() => { installBtn.textContent = tSettings('migrationInstallButton'); }, 2000);
                 } catch (e) {
                     console.warn('[migration] open_url_in_browser failed, falling back to clipboard:', e);
                     try {
                         await navigator.clipboard.writeText(entry.url);
-                        installBtn.textContent = 'URL Copied';
-                        setTimeout(() => { installBtn.textContent = 'Install'; }, 2000);
+                        installBtn.textContent = tSettings('migrationUrlCopied');
+                        setTimeout(() => { installBtn.textContent = tSettings('migrationInstallButton'); }, 2000);
                     } catch (e2) {
-                        installBtn.textContent = 'Failed';
-                        setTimeout(() => { installBtn.textContent = 'Install'; }, 2000);
+                        installBtn.textContent = tSettings('migrationFailed');
+                        setTimeout(() => { installBtn.textContent = tSettings('migrationInstallButton'); }, 2000);
                     }
                 }
             });
@@ -1974,41 +1989,26 @@ function renderBrowserInstallButtons(state) {
             if (isSafari || status !== 'needs-enable') {
                 const extInstalledLine = document.createElement('div');
                 extInstalledLine.className = 'migration-checklist-line migration-checklist-done';
-                extInstalledLine.innerHTML = `<span class="migration-check-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#047857" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span> Extension installed`;
+                extInstalledLine.innerHTML = `<span class="migration-check-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#047857" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span> ${tSettings('migrationExtensionInstalledMark')}`;
                 row.appendChild(extInstalledLine);
             }
 
-            const extUrl = extensionsUrl(key);
             const privNoun = privateModeNoun(key);
             const steps = enforcerScreenshotSteps(key);
             const hasSteps = steps && steps.length;
 
             if (isSafari) {
-                // Safari needs three explicit user actions in Settings →
-                // Extensions: enable the extension, allow in Private
-                // Browsing, allow on every website. Surfacing all three
-                // upfront — with green ✓ on the ones already done — is
-                // both more accurate (the old "click Details on ReDD
-                // Focus" hint references a button macOS 26 no longer
-                // shows) and a much clearer mental model than feeding
-                // the user one instruction at a time as they progress.
                 const safariBrowser = browsers[key];
                 const profiles = (safariBrowser && Array.isArray(safariBrowser.profiles)) ? safariBrowser.profiles : [];
-                // Aggregate across profiles: a step is "done" only if
-                // every Safari profile has it. Matches how
-                // browserComplianceStatus computes the overall status.
                 const allEnabled = profiles.length > 0 && profiles.every(p => p.enabled === true);
                 const allPrivate = profiles.length > 0 && profiles.every(p => p.privateBrowsing === true);
                 const allAllSites = profiles.length > 0 && profiles.every(p => p.websiteAccessAll === true);
 
                 const stepDefs = [
-                    { label: 'Enable the extension', done: allEnabled },
-                    { label: 'Allow in Private Browsing', done: allPrivate },
-                    { label: 'Allow on Every Website', done: allAllSites },
+                    { label: tSettings('migrationSafariStepEnable'), done: allEnabled },
+                    { label: tSettings('migrationSafariStepPrivate'), done: allPrivate },
+                    { label: tSettings('migrationSafariStepEveryWebsite'), done: allAllSites },
                 ];
-                // The "active" step is the first not-done one — what we
-                // want the user to focus on next. Earlier steps are
-                // green-strike done; later ones are muted "pending".
                 const activeIdx = stepDefs.findIndex(s => !s.done);
 
                 const checklist = document.createElement('div');
@@ -2023,19 +2023,14 @@ function renderBrowserInstallButtons(state) {
                         iconHtml = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#047857" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
                     } else if (i === activeIdx) {
                         klass += ' migration-checklist-active';
-                        // Right-pointing chevron in amber matches the
-                        // "No website access" badge colour and reads as
-                        // "this is the next thing to do".
                         iconHtml = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>`;
                     } else {
                         klass += ' migration-checklist-pending';
-                        // Empty circle keeps the row alignment tidy
-                        // without drawing the eye away from the active
-                        // step above it.
                         iconHtml = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8" opacity="0.4"/></svg>`;
                     }
                     line.className = klass;
-                    line.innerHTML = `<span class="migration-check-icon">${iconHtml}</span> Step ${i + 1} — ${step.label}`;
+                    const lineLabel = tSettingsFmt('migrationSafariChecklistLine', { n: String(i + 1), label: step.label });
+                    line.innerHTML = `<span class="migration-check-icon">${iconHtml}</span> ${lineLabel}`;
                     checklist.appendChild(line);
                 });
 
@@ -2043,17 +2038,21 @@ function renderBrowserInstallButtons(state) {
             } else {
                 const instructionLine = document.createElement('div');
                 instructionLine.className = 'migration-instruction';
-                let actionText;
+                let tplKey;
                 if (status === 'needs-enable') {
-                    actionText = `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${entry.label}'s address bar) → find <strong>ReDD Focus</strong> → enable the extension.`;
+                    tplKey = 'migrationInstructionEnableHtml';
                 } else if (status === 'needs-website-access') {
-                    actionText = `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${entry.label}'s address bar) → click <strong>Details</strong> on ReDD Focus → allow on <strong>all websites</strong>.`;
+                    tplKey = 'migrationInstructionWebsiteAccessHtml';
                 } else if (key === 'firefox') {
-                    actionText = `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${entry.label}'s address bar) → click <strong>ReDD Focus</strong> → turn on <strong>Run in ${privNoun}</strong>.`;
+                    tplKey = 'migrationInstructionFirefoxPrivateHtml';
                 } else {
-                    actionText = `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${entry.label}'s address bar) → click <strong>Details</strong> on ReDD Focus → turn on <strong>Allow in ${privNoun}</strong>.`;
+                    tplKey = 'migrationInstructionChromiumPrivateHtml';
                 }
-                instructionLine.innerHTML = actionText;
+                const chip = extensionsUrlChipHtml(key);
+                instructionLine.innerHTML = tSettings(tplKey)
+                    .replace('{URL_CHIP}', chip)
+                    .replace(/{BROWSER}/g, entry.label)
+                    .replace(/{PRIV}/g, privNoun);
                 attachCopyChipHandlers(instructionLine);
                 row.appendChild(instructionLine);
             }
@@ -2064,7 +2063,7 @@ function renderBrowserInstallButtons(state) {
             const primaryBtn = document.createElement('button');
             primaryBtn.type = 'button';
             primaryBtn.className = 'migration-primary-btn';
-            primaryBtn.innerHTML = `Open Extension Settings`;
+            primaryBtn.textContent = tSettings('migrationOpenExtensionSettings');
             primaryBtn.addEventListener('click', () => {
                 openExtensionSettings(key).catch(e => console.warn('[migration] open ext settings:', e));
             });
@@ -2076,7 +2075,7 @@ function renderBrowserInstallButtons(state) {
                 showMeBtn.type = 'button';
                 showMeBtn.className = 'migration-show-me-btn';
                 showMeBtn.setAttribute('aria-expanded', 'false');
-                showMeBtn.innerHTML = `<span>Show me how</span><svg class="migration-show-me-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>`;
+                showMeBtn.innerHTML = `<span>${tSettings('migrationShowMeHow')}</span><svg class="migration-show-me-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>`;
                 actionsRow.appendChild(showMeBtn);
             }
 
@@ -2084,7 +2083,7 @@ function renderBrowserInstallButtons(state) {
 
             const delayNote = document.createElement('div');
             delayNote.className = 'migration-browser-hint migration-delay-note';
-            delayNote.textContent = 'It may take up to 10 seconds for changes to be detected.';
+            delayNote.textContent = tSettings('migrationDelayDetectionNote');
             row.appendChild(delayNote);
 
             if (hasSteps) {
@@ -2105,8 +2104,7 @@ function renderBrowserInstallButtons(state) {
                     const figure = document.createElement('figure');
                     figure.className = 'extension-enforcer-step';
                     const cap = formatExtensionScreenshotCaption(step, i);
-                    const captionEl = step.caption || step.label;
-                    if (captionEl) {
+                    if (cap) {
                         const caption = document.createElement('figcaption');
                         caption.className = 'extension-enforcer-step-label';
                         caption.textContent = cap;
@@ -2115,7 +2113,7 @@ function renderBrowserInstallButtons(state) {
                     const img = document.createElement('img');
                     img.className = 'extension-enforcer-screenshot';
                     img.src = step.src;
-                    img.alt = step.caption || step.label || `Step ${i + 1}`;
+                    img.alt = cap || tSettingsFmt('migrationScreenshotStepOnly', { n: String(i + 1) });
                     figure.appendChild(img);
                     screenshotsContainer.appendChild(figure);
                 });
@@ -2288,7 +2286,7 @@ async function updateBehaviourChangeBanner(state) {
     const parts = [];
     const actionSummary = buildBannerActionSummary(browsers, detectedKeys);
     if (actionSummary) parts.push(actionSummary);
-    if (!enforcementEnabled) parts.push('Browser enforcement: off');
+    if (!enforcementEnabled) parts.push(tSettings('browserEnforcementOff'));
 
     const bodyEl = document.getElementById('behaviour-change-text');
     if (bodyEl) {
@@ -2346,22 +2344,33 @@ function buildBannerActionSummary(browsers, detectedKeys) {
 
 function bannerActionPhrase(status) {
     switch (status) {
-        case 'needs-install': return 'Install in';
-        case 'needs-enable': return 'Enable in';
-        case 'needs-private': return 'Allow in private browsing in';
-        case 'needs-website-access': return 'Allow on all websites in';
-        case 'needs-fda': return 'Grant Full Disk Access for';
-        default: return 'Set up in';
+        case 'needs-install':
+            return tSettings('bannerActionInstallIn');
+        case 'needs-enable':
+            return tSettings('bannerActionEnableIn');
+        case 'needs-private':
+            return tSettings('bannerActionPrivateBrowsingIn');
+        case 'needs-website-access':
+            return tSettings('bannerActionAllWebsitesIn');
+        case 'needs-fda':
+            return tSettings('bannerActionFullDiskAccessFor');
+        default:
+            return tSettings('bannerActionSetUpIn');
     }
 }
 
 // Natural-language join: "Chrome", "Chrome and Edge",
-// "Chrome, Edge, and Brave" (Oxford comma).
+// "Chrome, Edge, and Brave" (Oxford comma in English).
+// Danish: no comma before the final conjunction.
 function joinBrowserNames(list) {
     if (list.length === 0) return '';
     if (list.length === 1) return list[0];
-    if (list.length === 2) return `${list[0]} and ${list[1]}`;
-    return `${list.slice(0, -1).join(', ')}, and ${list[list.length - 1]}`;
+    const and = tSettings('andWord');
+    if (list.length === 2) return `${list[0]} ${and} ${list[1]}`;
+    if (getSettingsLanguage() === 'da') {
+        return `${list.slice(0, -1).join(', ')} ${and} ${list[list.length - 1]}`;
+    }
+    return `${list.slice(0, -1).join(', ')}, ${and} ${list[list.length - 1]}`;
 }
 
 // Re-opens the post-cleanup migration overlay (the per-browser
@@ -2459,104 +2468,111 @@ function browserIconUrl(key) {
 }
 
 function formatExtensionScreenshotCaption(step, index) {
+    if (step.captionKey) return tSettings(step.captionKey);
+    if (step.labelKey) {
+        const label = tSettings(step.labelKey);
+        return tSettingsFmt('migrationScreenshotCaptionStep', { n: String(index + 1), label });
+    }
     if (step.caption) return step.caption;
-    if (step.label) return `Step ${index + 1}: ${step.label}`;
-    return `Step ${index + 1}`;
+    if (step.label) return tSettingsFmt('migrationScreenshotCaptionStep', { n: String(index + 1), label: step.label });
+    return tSettingsFmt('migrationScreenshotStepOnly', { n: String(index + 1) });
 }
 
 function enforcerScreenshotSteps(key) {
     if (key === 'chrome') return [
-        { src: screenshotChromeStep1, label: 'Open Chrome extension settings' },
-        { src: screenshotChromeStep2, label: 'Open Details for ReDD Focus and allow it in Incognito windows' },
+        { src: screenshotChromeStep1, labelKey: 'migrationShotChromeStep1' },
+        { src: screenshotChromeStep2, labelKey: 'migrationShotChromeStep2' },
     ];
     if (key === 'edge') return [
-        { src: screenshotEdgeStep1, label: 'Open Edge extension settings' },
-        { src: screenshotEdgeStep2, label: 'Open Details for ReDD Focus and allow it in InPrivate windows' },
+        { src: screenshotEdgeStep1, labelKey: 'migrationShotEdgeStep1' },
+        { src: screenshotEdgeStep2, labelKey: 'migrationShotEdgeStep2' },
     ];
     if (key === 'firefox') return [
-        { src: screenshotFirefoxStep1, label: 'Find ReDD Focus' },
-        { src: screenshotFirefoxStep2, label: 'Allow in Private Windows' },
+        { src: screenshotFirefoxStep1, labelKey: 'migrationShotFirefoxStep1' },
+        { src: screenshotFirefoxStep2, labelKey: 'migrationShotFirefoxStep2' },
     ];
     if (key === 'safari') return [
-        {
-            src: screenshotSafariStep1,
-            caption: 'First open Safari\'s Extension settings...',
-        },
-        {
-            src: screenshotSafariStep2,
-            caption: 'Then i) enable ReDD Focus, ii) allow in private browsing, iii) allow it to block on all websites',
-        },
+        { src: screenshotSafariStep1, captionKey: 'migrationShotSafariCap1' },
+        { src: screenshotSafariStep2, captionKey: 'migrationShotSafariCap2' },
     ];
     return null;
 }
 
 function enforcerCopy(payload) {
-    const browser = payload.label || payload.browser || 'your browser';
+    const browserRaw = payload.label || payload.browser;
+    const browser = browserRaw || tSettings('enforcerBrowserFallback');
     const seconds = Math.max(0, Number(payload.remaining_secs ?? payload.remainingSecs ?? 0));
     const issue = payload.issue || 'unknown';
+    const countdownStr = () => tSettingsFmt('enforcerCountdown', { seconds: String(seconds), browser });
 
     if (issue === 'missing') {
         return {
-            headline: `ReDD Focus isn't installed in ${browser}.`,
-            countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
-            instruction: `Install ReDD Focus for ${browser}.`,
-            action: 'Install ReDD Focus',
+            headline: tSettingsFmt('enforcerHeadlineMissing', { browser }),
+            countdown: countdownStr(),
+            instruction: tSettingsFmt('enforcerInstrMissing', { browser }),
+            action: tSettings('enforcerActionInstall'),
         };
     }
     if (issue === 'disabled') {
         const key = browserKeyFromLabel(browser);
-        const extUrl = extensionsUrl(key);
         const screenshotSteps = enforcerScreenshotSteps(key);
         return {
-            headline: `ReDD Focus is turned off in ${browser}`,
-            countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
-            instructionHtml: `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${browser}'s address bar) → find <strong>ReDD Focus</strong> → enable the extension.`,
-            note: 'It may take up to 10 seconds for changes to be detected.',
-            action: `Open ${browser} Extensions`,
-            actionHtml: `Open Extension Settings`,
+            headline: tSettingsFmt('enforcerHeadlineDisabled', { browser }),
+            countdown: countdownStr(),
+            instructionHtml: tSettings('migrationInstructionEnableHtml')
+                .replace('{URL_CHIP}', extensionsUrlChipHtml(key))
+                .replace(/{BROWSER}/g, browser),
+            note: tSettings('migrationDelayDetectionNote'),
+            action: tSettingsFmt('enforcerActionOpenExtensions', { browser }),
+            actionHtml: tSettings('migrationOpenExtensionSettings'),
             screenshotSteps,
         };
     }
     if (issue === 'private') {
         const key = browserKeyFromLabel(browser);
-        const extUrl = extensionsUrl(key);
         const privNoun = privateModeNoun(key);
         const screenshotSteps = enforcerScreenshotSteps(key);
+        const tplKey = key === 'firefox'
+            ? 'migrationInstructionFirefoxPrivateHtml'
+            : 'migrationInstructionChromiumPrivateHtml';
         return {
-            headline: `ReDD Focus isn't allowed in private tabs`,
-            countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
-            instructionHtml: key === 'firefox'
-                ? `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${browser}'s address bar) → click <strong>ReDD Focus</strong> → turn on <strong>Run in ${privNoun}</strong>.`
-                : `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${browser}'s address bar) → click <strong>Details</strong> on ReDD Focus → turn on <strong>Allow in ${privNoun}</strong>.`,
-            note: 'It may take up to 10 seconds for changes to be detected.',
-            action: `Open ${browser} Extensions`,
-            actionHtml: `Open Extension Settings`,
+            headline: tSettingsFmt('enforcerHeadlinePrivate', { browser }),
+            countdown: countdownStr(),
+            instructionHtml: tSettings(tplKey)
+                .replace('{URL_CHIP}', extensionsUrlChipHtml(key))
+                .replace(/{BROWSER}/g, browser)
+                .replace(/{PRIV}/g, privNoun),
+            note: tSettings('migrationDelayDetectionNote'),
+            action: tSettingsFmt('enforcerActionOpenExtensions', { browser }),
+            actionHtml: tSettings('migrationOpenExtensionSettings'),
             screenshotSteps,
         };
     }
     if (issue === 'websiteaccess') {
         return {
-            headline: `ReDD Focus isn't allowed on all websites in ${browser}.`,
-            countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
-            instruction: `In ${browser} extension settings, allow ReDD Focus on all websites.`,
-            action: `Open ${browser} Extensions`,
+            headline: tSettingsFmt('enforcerHeadlineWebsiteAccess', { browser }),
+            countdown: countdownStr(),
+            instruction: tSettingsFmt('enforcerInstrWebsiteAccessPlain', { browser }),
+            action: tSettingsFmt('enforcerActionOpenExtensions', { browser }),
         };
     }
     if (issue === 'access') {
         return {
-            headline: `ReDD Block can't verify ReDD Focus in ${browser}.`,
-            countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
+            headline: tSettingsFmt('enforcerHeadlineAccess', { browser }),
+            countdown: countdownStr(),
             instruction: browser === 'Safari'
-                ? 'Grant ReDD Block Full Disk Access.'
-                : `Grant access so ReDD Block can verify ${browser}.`,
-            action: browser === 'Safari' ? 'Open Full Disk Access' : `Open ${browser} Settings`,
+                ? tSettings('enforcerInstrAccessSafari')
+                : tSettingsFmt('enforcerInstrAccessBrowser', { browser }),
+            action: browser === 'Safari'
+                ? tSettings('migrationOpenFdaTitle')
+                : tSettingsFmt('enforcerActionOpenBrowserSettings', { browser }),
         };
     }
     return {
-        headline: `ReDD Focus isn't ready in ${browser}.`,
-        countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
-        instruction: `Fix ReDD Focus in ${browser} extensions.`,
-        action: `Open ${browser} Extensions`,
+        headline: tSettingsFmt('enforcerHeadlineDefault', { browser }),
+        countdown: countdownStr(),
+        instruction: tSettingsFmt('enforcerInstrDefault', { browser }),
+        action: tSettingsFmt('enforcerActionOpenExtensions', { browser }),
     };
 }
 
@@ -2613,8 +2629,7 @@ function renderEnforcerActionCopy(banner, payload, copy) {
                     const figure = document.createElement('figure');
                     figure.className = 'extension-enforcer-step';
                     const cap = formatExtensionScreenshotCaption(step, i);
-                    const captionEl = step.caption || step.label;
-                    if (captionEl) {
+                    if (cap) {
                         const caption = document.createElement('figcaption');
                         caption.className = 'extension-enforcer-step-label';
                         caption.textContent = cap;
@@ -2623,7 +2638,7 @@ function renderEnforcerActionCopy(banner, payload, copy) {
                     const img = document.createElement('img');
                     img.className = 'extension-enforcer-screenshot';
                     img.src = step.src;
-                    img.alt = step.caption || step.label || `Step ${i + 1}`;
+                    img.alt = cap || tSettingsFmt('migrationScreenshotStepOnly', { n: String(i + 1) });
                     figure.appendChild(img);
                     container.appendChild(figure);
                 });
@@ -2730,62 +2745,63 @@ function ensureEnforcerActionBanner(payload) {
 }
 
 function enforcerClosedCopy(payload) {
-    const browser = payload.label || payload.browser || 'your browser';
+    const browserRaw = payload.label || payload.browser;
+    const browser = browserRaw || tSettings('enforcerBrowserFallback');
     const issue = payload.issue || 'unknown';
     if (issue === 'private') {
         const key = browserKeyFromLabel(browser);
-        const extUrl = extensionsUrl(key);
         const instruction = key === 'chrome'
-            ? 'In Chrome, find ReDD Focus \u003e Details \u003e Allow in Incognito.'
+            ? tSettings('enforcerClosedInstrPrivateChrome')
             : key === 'firefox'
-            ? 'In Firefox extension settings, click ReDD Focus \u003e Run in Private Windows \u003e Allow.'
+            ? tSettings('enforcerClosedInstrPrivateFirefox')
             : '';
         const screenshotSteps = enforcerScreenshotSteps(key);
         return {
-            headline: `${browser} was closed because ReDD Focus can't block in private/incognito windows.`,
+            headline: tSettingsFmt('enforcerClosedPrivate', { browser }),
             instruction: instruction.trim(),
-            action: `Open ${browser} Extensions`,
-            actionHtml: `Open Extension Settings`,
+            action: tSettingsFmt('enforcerActionOpenExtensions', { browser }),
+            actionHtml: tSettings('migrationOpenExtensionSettings'),
             screenshotSteps,
         };
     }
     if (issue === 'disabled') {
         const key = browserKeyFromLabel(browser);
-        const extUrl = extensionsUrl(key);
         const screenshotSteps = enforcerScreenshotSteps(key);
         return {
-            headline: `${browser} was closed because ReDD Focus is turned off.`,
-            instruction: `In ${browser} extensions, turn ReDD Focus back on.`,
-            action: `Open ${browser} Extensions`,
-            actionHtml: `Open Extension Settings`,
+            headline: tSettingsFmt('enforcerClosedDisabled', { browser }),
+            instruction: tSettingsFmt('enforcerClosedInstrDisabled', { browser }),
+            action: tSettingsFmt('enforcerActionOpenExtensions', { browser }),
+            actionHtml: tSettings('migrationOpenExtensionSettings'),
             screenshotSteps,
         };
     }
     if (issue === 'missing') {
         return {
-            headline: `${browser} was closed because ReDD Focus isn't installed.`,
-            instruction: `Install ReDD Focus for ${browser}.`,
-            action: 'Install ReDD Focus',
+            headline: tSettingsFmt('enforcerClosedMissing', { browser }),
+            instruction: tSettingsFmt('enforcerClosedInstrMissing', { browser }),
+            action: tSettings('enforcerActionInstall'),
         };
     }
     if (issue === 'websiteaccess') {
         return {
-            headline: `${browser} was closed because ReDD Focus isn't allowed on all websites.`,
-            instruction: `In ${browser} extension settings, allow ReDD Focus on all websites.`,
-            action: `Open ${browser} Extensions`,
+            headline: tSettingsFmt('enforcerClosedWebsiteAccess', { browser }),
+            instruction: tSettingsFmt('enforcerClosedInstrWebsiteAccess', { browser }),
+            action: tSettingsFmt('enforcerActionOpenExtensions', { browser }),
         };
     }
     if (issue === 'access') {
         return {
-            headline: `${browser} was closed because ReDD Block can't verify ReDD Focus.`,
-            instruction: browser === 'Safari' ? 'Grant ReDD Block Full Disk Access.' : '',
-            action: browser === 'Safari' ? 'Open Full Disk Access' : `Open ${browser} Settings`,
+            headline: tSettingsFmt('enforcerClosedAccess', { browser }),
+            instruction: browser === 'Safari' ? tSettings('enforcerClosedInstrAccessSafari') : '',
+            action: browser === 'Safari'
+                ? tSettings('migrationOpenFdaTitle')
+                : tSettingsFmt('enforcerActionOpenBrowserSettings', { browser }),
         };
     }
     return {
-        headline: `${browser} was closed because ReDD Focus isn't ready.`,
-        instruction: `Fix ReDD Focus in ${browser} extensions.`,
-        action: `Open ${browser} Extensions`,
+        headline: tSettingsFmt('enforcerClosedDefault', { browser }),
+        instruction: tSettingsFmt('enforcerClosedInstrDefault', { browser }),
+        action: tSettingsFmt('enforcerActionOpenExtensions', { browser }),
     };
 }
 
@@ -11847,6 +11863,141 @@ const SETTINGS_TRANSLATIONS = {
         nowBlockingMenuPause: 'Pause',
         nowBlockingMenuStop: 'Stop',
         scheduleFooterHint: 'Click any block to edit',
+        setupBrowsersBannerHeadline: 'Set up ReDD Focus in your browsers',
+        setupBrowsersBannerCta: 'Set up extension',
+        setupBrowsersBannerDismissTitle: 'Dismiss for this session',
+        browserEnforcementOff: 'Browser protection: off',
+        bannerActionInstallIn: 'Install in',
+        bannerActionEnableIn: 'Enable in',
+        bannerActionPrivateBrowsingIn: 'Allow in private browsing in',
+        bannerActionAllWebsitesIn: 'Allow on all websites in',
+        bannerActionFullDiskAccessFor: 'Grant Full Disk Access for',
+        bannerActionSetUpIn: 'Set up in',
+        // Migration / extension onboarding overlay
+        migrationPreWelcomeTitle: 'Welcome to ReDD Block 2.0',
+        migrationPreSubtitle: 'A one-time cleanup is needed to finish your upgrade.',
+        migrationPreExplainerHtml: 'ReDD Block now blocks websites through a browser extension instead of a system-level helper.<br>We need to:',
+        migrationPreBulletHelper: 'Stop and remove the old privileged helper',
+        migrationPreBulletHostsHtml: 'Restore your <code>/etc/hosts</code> file (a backup is kept)',
+        migrationPreBulletBlocklists: 'Keep all your existing blocklists intact',
+        migrationPreWarnHtml: 'You\'ll see <strong>one</strong> admin password prompt. Blocking will pause briefly during the changeover. After cleanup, you\'ll need to install the <strong>ReDD Focus</strong> browser extension.',
+        migrationContinue: 'Continue',
+        migrationPostTitleCleanup: 'Cleanup complete',
+        migrationPostSubtitleCleanup: 'One step left: install ReDD Focus in each browser you use.',
+        migrationChecklistCleanedOld: 'Old version cleaned up',
+        migrationChecklistBlocklistsPreserved: 'Your blocklists are preserved',
+        migrationChecklistExtLinesHtml: 'Install the ReDD Focus browser extension<br><span style="font-weight:400;opacity:0.7">and allow it in private/incognito tabs</span>',
+        migrationHowtoHeading: 'How to install',
+        migrationHowtoLi1Html: 'Click <strong>Install</strong> next to a browser below — the extension store opens automatically.',
+        migrationHowtoLi2Html: 'Click <strong>Add to Chrome</strong> / <strong>Add to Firefox</strong> / <strong>Get</strong> on the page that loads.',
+        migrationHowtoLi3Html: '<strong>Allow in private/incognito</strong> tabs — see each browser\'s row below for the exact steps.',
+        migrationDone: 'I\'m all set up',
+        migrationSkip: 'Skip for now',
+        migrationEnforcementHeadline: 'Browser protection',
+        migrationEnforcementDesc: 'While a block is active, this gently backs your own choice: browsers that aren\'t fully covered by ReDD Focus yet get a short heads-up—then the window may close—so quiet loopholes don\'t undo the attention you asked for.',
+        migrationEnforcementLocked: 'This stays on for the rest of this block so your protection stays consistent—you can change it again when the block ends.',
+        migrationApproveAdminPrompt: 'Approve the admin prompt to continue…',
+        migrationTryAgain: 'Try again',
+        migrationCleanupNeedAdmin: 'We need that admin permission to finish — your blocklists are safe.',
+        migrationCleanupRetryGeneric: 'Something went wrong. Click to retry.',
+        migrationCopied: 'Copied! ✓',
+        migrationSafariSettingsPath: 'Safari → Settings → Extensions',
+        migrationPrivateIncognito: 'private/incognito',
+        migrationPrivateIncognitoChrome: 'Incognito',
+        migrationPrivateIncognitoEdge: 'InPrivate',
+        migrationPrivateIncognitoBrave: 'Incognito',
+        migrationPrivateIncognitoFirefox: 'Private Windows',
+        migrationPrivateIncognitoSafari: 'Private Browsing',
+        migrationComplianceOk: '✓ Installed & allowed in private tabs',
+        migrationBadgeNotInstalled: 'Not installed',
+        migrationBadgeDisabled: 'Disabled',
+        migrationBadgeNotPrivate: 'Not allowed in private tabs',
+        migrationBadgeNoWebsiteAccess: 'No website access',
+        migrationBadgeNeedsAccess: 'Needs access',
+        migrationStatusGrantFda: 'Grant Full Disk Access',
+        migrationStatusAllowAllWebsites: 'Allow on all websites',
+        migrationStatusAllowPrivate: 'Allow in private browsing',
+        migrationStatusEnableExtension: 'Enable extension',
+        migrationStatusInstall: 'Install',
+        migrationInstallButton: 'Install',
+        migrationInstallStoreTitle: 'Open {browser} extension store page',
+        migrationUrlCopied: 'URL Copied',
+        migrationFailed: 'Failed',
+        migrationSafariFdaHint: 'Grant ReDD Block Full Disk Access so it can read Safari’s extension settings and help you finish ReDD Focus setup. Until that’s done, Safari may stay closed when browser protection needs a clear yes/no.',
+        migrationOpenSettings: 'Open Settings',
+        migrationOpened: 'Opened',
+        migrationOpenFdaTitle: 'Open Full Disk Access settings',
+        migrationCheckAgain: 'Check again',
+        migrationRefreshSafariTitle: 'Refresh Safari access status',
+        migrationDelayDetectionNote: 'It may take up to 10 seconds for changes to be detected.',
+        migrationExtensionInstalledMark: 'Extension installed',
+        migrationSafariStepEnable: 'Enable the extension',
+        migrationSafariStepPrivate: 'Allow in Private Browsing',
+        migrationSafariStepEveryWebsite: 'Allow on Every Website',
+        migrationSafariChecklistLine: 'Step {n} — {label}',
+        migrationOpenExtensionSettings: 'Open Extension Settings',
+        migrationShowMeHow: 'Show me how',
+        migrationPostInstallFirefoxHtml: 'After clicking <strong>Add to Firefox</strong>, check <strong>Allow extension to run in private windows</strong> before clicking Add.',
+        migrationPostInstallChromiumHtml: 'After installing, open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → click <strong>Details</strong> on ReDD Focus → turn on <strong>Allow in {PRIV}</strong>.',
+        migrationInstructionEnableHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → find <strong>ReDD Focus</strong> → enable the extension.',
+        migrationInstructionWebsiteAccessHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → click <strong>Details</strong> on ReDD Focus → allow on <strong>all websites</strong>.',
+        migrationInstructionFirefoxPrivateHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → click <strong>ReDD Focus</strong> → turn on <strong>Run in {PRIV}</strong>.',
+        migrationInstructionChromiumPrivateHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → click <strong>Details</strong> on ReDD Focus → turn on <strong>Allow in {PRIV}</strong>.',
+        migrationHintEnableSafariMulti: 'Enable ReDD Focus in Safari\'s extension settings for every Safari profile.{SUFFIX}',
+        migrationHintEnableSafariOne: 'Enable ReDD Focus in Safari\'s extension settings.',
+        migrationHintEnableBrowser: 'Enable ReDD Focus in {BROWSER}\'s extensions settings.',
+        migrationHintPrivateSafariMulti: 'Allow ReDD Focus in Private Browsing for every Safari profile.{SUFFIX}',
+        migrationHintPrivateSafariOne: 'Allow ReDD Focus in Private Browsing in Safari\'s extension settings.',
+        migrationHintPrivateBrowser: 'Allow ReDD Focus in private/incognito browsing in {BROWSER}\'s extensions settings.',
+        migrationHintWebsitesSafariMulti: 'Allow ReDD Focus on all websites for every Safari profile.{SUFFIX}',
+        migrationHintWebsitesSafariOne: 'Allow ReDD Focus on all websites in Safari\'s extension settings.',
+        migrationSafariCheckEveryProfile: 'Check every Safari profile.',
+        migrationSafariProfilesAffected: 'Affected Safari profiles:',
+        migrationSafariProfilesMore: ', +{n} more',
+        migrationSafariProfileDefaultName: '(Default Safari profile)',
+        migrationScreenshotCaptionStep: 'Step {n}: {label}',
+        migrationScreenshotStepOnly: 'Step {n}',
+        migrationShotChromeStep1: 'Open Chrome extension settings',
+        migrationShotChromeStep2: 'Open Details for ReDD Focus and allow it in Incognito windows',
+        migrationShotEdgeStep1: 'Open Edge extension settings',
+        migrationShotEdgeStep2: 'Open Details for ReDD Focus and allow it in InPrivate windows',
+        migrationShotFirefoxStep1: 'Find ReDD Focus',
+        migrationShotFirefoxStep2: 'Allow in Private Windows',
+        migrationShotSafariCap1: 'First open Safari\'s Extension settings...',
+        migrationShotSafariCap2: 'Then i) enable ReDD Focus, ii) allow in private browsing, iii) allow it to block on all websites',
+        // Browser protection — grace banners (countdown / post-close)
+        enforcerCountdown: '{seconds}s to finish ReDD Focus in {browser}—then this window closes to support the block you chose.',
+        enforcerHeadlineMissing: 'ReDD Focus isn’t set up in {browser} yet.',
+        enforcerInstrMissing: 'Install ReDD Focus for {browser}.',
+        enforcerHeadlineDisabled: 'ReDD Focus is off in {browser}.',
+        enforcerHeadlinePrivate: 'Private windows in {browser} aren’t covered by ReDD Focus yet.',
+        enforcerHeadlineWebsiteAccess: '{browser} hasn’t given ReDD Focus access on every website yet.',
+        enforcerInstrWebsiteAccessPlain: 'In {browser} extension settings, allow ReDD Focus on all websites.',
+        enforcerHeadlineAccess: 'ReDD Block can’t verify ReDD Focus in {browser}.',
+        enforcerInstrAccessSafari: 'Grant ReDD Block Full Disk Access so we can help with Safari.',
+        enforcerInstrAccessBrowser: 'Grant access so ReDD Block can help verify {browser}.',
+        enforcerHeadlineDefault: 'ReDD Focus isn’t ready in {browser} yet.',
+        enforcerInstrDefault: 'Finish ReDD Focus setup in {browser} extensions.',
+        enforcerActionInstall: 'Install ReDD Focus',
+        enforcerActionOpenExtensions: 'Open {browser} extensions',
+        enforcerActionOpenBrowserSettings: 'Open {browser} settings',
+        enforcerClosedMissing: '{browser} was closed to support your block—ReDD Focus wasn’t installed yet.',
+        enforcerClosedDisabled: '{browser} was closed to support your block—ReDD Focus was turned off.',
+        enforcerClosedPrivate: '{browser} was closed to support your block—private windows were still a loophole.',
+        enforcerClosedWebsiteAccess: '{browser} was closed to support your block—ReDD Focus couldn’t cover every site yet.',
+        enforcerClosedAccess: '{browser} was closed so your protection could stay clear—ReDD Block couldn’t verify ReDD Focus.',
+        enforcerClosedDefault: '{browser} was closed to support your block—ReDD Focus wasn’t fully ready.',
+        enforcerClosedInstrPrivateChrome: 'In Chrome: ReDD Focus → Details → Allow in Incognito.',
+        enforcerClosedInstrPrivateFirefox: 'In Firefox: ReDD Focus → Run in Private Windows → Allow.',
+        enforcerClosedInstrDisabled: 'In {browser} extensions, turn ReDD Focus back on.',
+        enforcerClosedInstrMissing: 'Install ReDD Focus for {browser}.',
+        enforcerClosedInstrWebsiteAccess: 'In {browser} extension settings, allow ReDD Focus on all websites.',
+        enforcerClosedInstrAccessSafari: 'Grant ReDD Block Full Disk Access.',
+        enforcerClosedInstrDefault: 'Finish ReDD Focus setup in {browser} extensions.',
+        enforcerBrowserFallback: 'your browser',
+        gracePeriodLabel: 'Seconds of heads-up before a browser that isn’t protected by ReDD Focus may close',
+        gracePeriodLockedHint: 'Locked while a block is active—only shorter times allowed.',
+        settingsGraceChangeBlockedAlert: 'Stop all running blocks and schedules before changing this setting.',
         madeWith: 'Made with',
         by: 'by',
         andWord: 'and',
@@ -12029,6 +12180,141 @@ const SETTINGS_TRANSLATIONS = {
         nowBlockingMenuPause: 'Pause',
         nowBlockingMenuStop: 'Stop',
         scheduleFooterHint: 'Klik på en blok for at redigere',
+        setupBrowsersBannerHeadline: 'Opsæt ReDD Focus i dine browsere',
+        setupBrowsersBannerCta: 'Opsæt udvidelse',
+        setupBrowsersBannerDismissTitle: 'Skjul for denne session',
+        browserEnforcementOff: 'Browser-beskyttelse: fra',
+        bannerActionInstallIn: 'Installer i',
+        bannerActionEnableIn: 'Aktivér i',
+        bannerActionPrivateBrowsingIn: 'Tillad privat browsing i',
+        bannerActionAllWebsitesIn: 'Tillad på alle websites i',
+        bannerActionFullDiskAccessFor: 'Giv fuld diskadgang til',
+        bannerActionSetUpIn: 'Opsæt i',
+        // Migration / extension onboarding overlay
+        migrationPreWelcomeTitle: 'Velkommen til ReDD Block 2.0',
+        migrationPreSubtitle: 'Et engangskridt er nødvendigt for at afslutte opgraderingen.',
+        migrationPreExplainerHtml: 'ReDD Block blokerer nu websites via en browserudvidelse i stedet for et systemværktøj.<br>Vi skal:',
+        migrationPreBulletHelper: 'Stoppe og fjerne det gamle privilegerede hjælpeprogram',
+        migrationPreBulletHostsHtml: 'Gendanne din <code>/etc/hosts</code>-fil (en backup beholdes)',
+        migrationPreBulletBlocklists: 'Beholde alle dine eksisterende bloklister',
+        migrationPreWarnHtml: 'Du vil få <strong>én</strong> prompt om administratoradgang. Under skiftet sættes blokering kortvarigt på pause. Derefter skal du installere browserudvidelsen <strong>ReDD Focus</strong>.',
+        migrationContinue: 'Fortsæt',
+        migrationPostTitleCleanup: 'Oprydning fuldført',
+        migrationPostSubtitleCleanup: 'Et trin tilbage: Installer ReDD Focus i hver browser, du bruger.',
+        migrationChecklistCleanedOld: 'Gammel version fjernet',
+        migrationChecklistBlocklistsPreserved: 'Dine bloklister er bevaret',
+        migrationChecklistExtLinesHtml: 'Installer ReDD Focus-browserudvidelsen<br><span style="font-weight:400;opacity:0.7">og tillad den i privat- eller inkognitofaner</span>',
+        migrationHowtoHeading: 'Sådan installerer du',
+        migrationHowtoLi1Html: 'Klik på <strong>Installer</strong> ved en browser nedenfor — udvidelsesbutikken åbner automatisk.',
+        migrationHowtoLi2Html: 'Klik på <strong>Add to Chrome</strong> / <strong>Add to Firefox</strong> / <strong>Get</strong> på siden der åbner.',
+        migrationHowtoLi3Html: '<strong>Tillad privat/inkognito</strong> — se hver browsers række nedenfor for de konkrete trin.',
+        migrationDone: 'Jeg er klar med opsætningen',
+        migrationSkip: 'Spring over for nu',
+        migrationEnforcementHeadline: 'Browser-beskyttelse',
+        migrationEnforcementDesc: 'Mens en blokering kører, støtter det her dit eget valg: browsere der endnu ikke er dækket af ReDD Focus, får et kort øjeblik til at rette det—derefter kan vinduet lukkes—så der ikke sniger sig en stille genvej uden om den opmærksomhed du bad om.',
+        migrationEnforcementLocked: 'Det bliver slået til for resten af blokeringen, så din beskyttelse hænger sammen—du kan ændre det igen, når blokeringen stopper.',
+        migrationApproveAdminPrompt: 'Godkend administratorprompt for at fortsætte …',
+        migrationTryAgain: 'Prøv igen',
+        migrationCleanupNeedAdmin: 'Vi har brug for den administrators tilladelse for at afslutte — dine bloklister er i sikkerhed.',
+        migrationCleanupRetryGeneric: 'Noget gik galt. Klik for at prøve igen.',
+        migrationCopied: 'Kopieret! ✓',
+        migrationSafariSettingsPath: 'Safari → Indstillinger → Udvidelser',
+        migrationPrivateIncognito: 'privat/inkognito',
+        migrationPrivateIncognitoChrome: 'Inkognito',
+        migrationPrivateIncognitoEdge: 'InPrivate',
+        migrationPrivateIncognitoBrave: 'Inkognito',
+        migrationPrivateIncognitoFirefox: 'private vinduer',
+        migrationPrivateIncognitoSafari: 'Privat browsing',
+        migrationComplianceOk: '✓ Installeret og tilladt i private faner',
+        migrationBadgeNotInstalled: 'Ikke installeret',
+        migrationBadgeDisabled: 'Deaktiveret',
+        migrationBadgeNotPrivate: 'Ikke tilladt i private faner',
+        migrationBadgeNoWebsiteAccess: 'Ingen webadgang',
+        migrationBadgeNeedsAccess: 'Kræver adgang',
+        migrationStatusGrantFda: 'Giv fuld diskadgang',
+        migrationStatusAllowAllWebsites: 'Tillad på alle websites',
+        migrationStatusAllowPrivate: 'Tillad privat browsing',
+        migrationStatusEnableExtension: 'Aktivér udvidelse',
+        migrationStatusInstall: 'Installer',
+        migrationInstallButton: 'Installer',
+        migrationInstallStoreTitle: 'Åbn udvidelsesbutikken for {browser}',
+        migrationUrlCopied: 'URL kopieret',
+        migrationFailed: 'Mislykkedes',
+        migrationSafariFdaHint: 'Giv ReDD Block fuld diskadgang, så appen kan læse Safaris udvidelsesindstillinger og hjælpe dig med at færdiggøre ReDD Focus. Indtil det er på plads, kan Safari blive lukket, når browser-beskyttelsen mangler et klart svar.',
+        migrationOpenSettings: 'Åbn Indstillinger',
+        migrationOpened: 'Åbnet',
+        migrationOpenFdaTitle: 'Åbn Indstillinger for Fuld diskadgang',
+        migrationCheckAgain: 'Tjek igen',
+        migrationRefreshSafariTitle: 'Opdater Safari-status',
+        migrationDelayDetectionNote: 'Der kan gå op til 10 sekunder, før ændringer registreres.',
+        migrationExtensionInstalledMark: 'Udvidelse installeret',
+        migrationSafariStepEnable: 'Aktivér udvidelsen',
+        migrationSafariStepPrivate: 'Tillad privat browsing',
+        migrationSafariStepEveryWebsite: 'Tillad på alle websites',
+        migrationSafariChecklistLine: 'Trin {n} — {label}',
+        migrationOpenExtensionSettings: 'Åbn udvidelsesindstillinger',
+        migrationShowMeHow: 'Vis mig hvordan',
+        migrationPostInstallFirefoxHtml: 'Efter du har klikket på <strong>Add to Firefox</strong>, skal du markere <strong>Allow extension to run in private windows</strong>, inden du klikker på Add.',
+        migrationPostInstallChromiumHtml: 'Når udvidelsen er installeret, åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → klik på <strong>Details</strong> ved ReDD Focus → slå <strong>Allow in {PRIV}</strong> til.',
+        migrationInstructionEnableHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → find <strong>ReDD Focus</strong> → aktivér udvidelsen.',
+        migrationInstructionWebsiteAccessHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → klik på <strong>Details</strong> ved ReDD Focus → tillad på <strong>alle websites</strong>.',
+        migrationInstructionFirefoxPrivateHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → klik på <strong>ReDD Focus</strong> → slå <strong>Run in {PRIV}</strong> til.',
+        migrationInstructionChromiumPrivateHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → klik på <strong>Details</strong> ved ReDD Focus → slå <strong>Allow in {PRIV}</strong> til.',
+        migrationHintEnableSafariMulti: 'Aktivér ReDD Focus i Safaris udvidelsesindstillinger for hver Safari-profil.{SUFFIX}',
+        migrationHintEnableSafariOne: 'Aktivér ReDD Focus i Safaris udvidelsesindstillinger.',
+        migrationHintEnableBrowser: 'Aktivér ReDD Focus i udvidelsesindstillingerne for {BROWSER}.',
+        migrationHintPrivateSafariMulti: 'Tillad ReDD Focus i privat browsing for hver Safari-profil.{SUFFIX}',
+        migrationHintPrivateSafariOne: 'Tillad ReDD Focus i privat browsing i Safaris udvidelsesindstillinger.',
+        migrationHintPrivateBrowser: 'Tillad ReDD Focus i privat eller inkognito-browsing i udvidelsesindstillingerne for {BROWSER}.',
+        migrationHintWebsitesSafariMulti: 'Tillad ReDD Focus på alle websites for hver Safari-profil.{SUFFIX}',
+        migrationHintWebsitesSafariOne: 'Tillad ReDD Focus på alle websites i Safaris udvidelsesindstillinger.',
+        migrationSafariCheckEveryProfile: 'Tjek alle Safari-profiler.',
+        migrationSafariProfilesAffected: 'Berørte Safari-profiler:',
+        migrationSafariProfilesMore: ', +{n} flere',
+        migrationSafariProfileDefaultName: '(Standard Safari-profil)',
+        migrationScreenshotCaptionStep: 'Trin {n}: {label}',
+        migrationScreenshotStepOnly: 'Trin {n}',
+        migrationShotChromeStep1: 'Åbn Chromes udvidelsesindstillinger',
+        migrationShotChromeStep2: 'Åbn Details for ReDD Focus og tillad udvidelsen i Inkognito-vinduer',
+        migrationShotEdgeStep1: 'Åbn Edges udvidelsesindstillinger',
+        migrationShotEdgeStep2: 'Åbn Details for ReDD Focus og tillad udvidelsen i InPrivate-vinduer',
+        migrationShotFirefoxStep1: 'Find ReDD Focus',
+        migrationShotFirefoxStep2: 'Tillad i private vinduer',
+        migrationShotSafariCap1: 'Åbn først Safaris udvidelsesindstillinger …',
+        migrationShotSafariCap2: 'Derefter: i) aktivér ReDD Focus, ii) tillad privat browsing, iii) tillad blokering på alle websites',
+        // Browser-beskyttelse — banner under aktiv blokering
+        enforcerCountdown: '{seconds}s til at færdiggøre ReDD Focus i {browser}—så lukkes vinduet for at bakke op om den blok, du selv valgte.',
+        enforcerHeadlineMissing: 'ReDD Focus er ikke sat op i {browser} endnu.',
+        enforcerInstrMissing: 'Installer ReDD Focus til {browser}.',
+        enforcerHeadlineDisabled: 'ReDD Focus er slået fra i {browser}.',
+        enforcerHeadlinePrivate: 'Privat browsing i {browser} er ikke dækket af ReDD Focus endnu.',
+        enforcerHeadlineWebsiteAccess: '{browser} har ikke givet ReDD Focus adgang på alle websites endnu.',
+        enforcerInstrWebsiteAccessPlain: 'I {browser}s udvidelsesindstillinger: tillad ReDD Focus på alle websites.',
+        enforcerHeadlineAccess: 'ReDD Block kan ikke bekræfte ReDD Focus i {browser}.',
+        enforcerInstrAccessSafari: 'Giv ReDD Block fuld diskadgang, så vi kan hjælpe med Safari.',
+        enforcerInstrAccessBrowser: 'Giv adgang, så ReDD Block kan hjælpe med at tjekke {browser}.',
+        enforcerHeadlineDefault: 'ReDD Focus er ikke helt klar i {browser} endnu.',
+        enforcerInstrDefault: 'Færdiggør ReDD Focus i {browser}s udvidelsesindstillinger.',
+        enforcerActionInstall: 'Installer ReDD Focus',
+        enforcerActionOpenExtensions: 'Åbn {browser}-udvidelser',
+        enforcerActionOpenBrowserSettings: 'Åbn Indstillinger for {browser}',
+        enforcerClosedMissing: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke installeret endnu.',
+        enforcerClosedDisabled: '{browser} blev lukket for at bakke din blok op—ReDD Focus var slået fra.',
+        enforcerClosedPrivate: '{browser} blev lukket for at bakke din blok op—private faner var stadig en åbning.',
+        enforcerClosedWebsiteAccess: '{browser} blev lukket for at bakke din blok op—ReDD Focus kunne ikke dække alle websites endnu.',
+        enforcerClosedAccess: '{browser} blev lukket, så din beskyttelse kunne være tydelig—ReDD Block kunne ikke bekræfte ReDD Focus.',
+        enforcerClosedDefault: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke helt klar.',
+        enforcerClosedInstrPrivateChrome: 'I Chrome: ReDD Focus → Details → Allow in Incognito.',
+        enforcerClosedInstrPrivateFirefox: 'I Firefox: ReDD Focus → Run in Private Windows → Allow.',
+        enforcerClosedInstrDisabled: 'I {browser}s udvidelsesindstillinger: slå ReDD Focus til igen.',
+        enforcerClosedInstrMissing: 'Installer ReDD Focus til {browser}.',
+        enforcerClosedInstrWebsiteAccess: 'I {browser}s udvidelsesindstillinger: tillad ReDD Focus på alle websites.',
+        enforcerClosedInstrAccessSafari: 'Giv ReDD Block fuld diskadgang.',
+        enforcerClosedInstrDefault: 'Færdiggør ReDD Focus i {browser}s udvidelsesindstillinger.',
+        enforcerBrowserFallback: 'din browser',
+        gracePeriodLabel: 'Sekunders forvarsel før en browser uden fuld ReDD Focus-dækning må lukkes',
+        gracePeriodLockedHint: 'Låst mens en blokering er aktiv—kun kortere tider tilladt.',
+        settingsGraceChangeBlockedAlert: 'Du skal først stoppe alle kørende blokeringer og skemaer, før du kan ændre denne indstilling.',
         madeWith: 'Lavet med',
         by: 'af',
         andWord: 'og',
@@ -12193,6 +12479,52 @@ function tSettings(key) {
     return SETTINGS_TRANSLATIONS[lang][key] || SETTINGS_TRANSLATIONS.en[key] || key;
 }
 
+/** Replace `{placeholder}` segments in a translated template string. */
+function tSettingsFmt(key, vars = {}) {
+    let s = tSettings(key);
+    for (const [k, v] of Object.entries(vars)) {
+        s = String(s).split(`{${k}}`).join(String(v));
+    }
+    return s;
+}
+
+/** Static copy on the migration / extension-setup overlay — call when language changes. */
+function applyMigrationOverlayStaticCopy() {
+    const setHtml = (id, html) => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = html;
+    };
+    const setText = (id, text) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+    };
+    setText('migration-pre-title', tSettings('migrationPreWelcomeTitle'));
+    setText('migration-pre-subtitle', tSettings('migrationPreSubtitle'));
+    setHtml('migration-pre-explainer', tSettings('migrationPreExplainerHtml'));
+    setText('migration-pre-bullet-1', tSettings('migrationPreBulletHelper'));
+    setHtml('migration-pre-bullet-2', tSettings('migrationPreBulletHostsHtml'));
+    setText('migration-pre-bullet-3', tSettings('migrationPreBulletBlocklists'));
+    setHtml('migration-pre-warn', tSettings('migrationPreWarnHtml'));
+    setText('migration-checklist-cleaned-label', tSettings('migrationChecklistCleanedOld'));
+    setText('migration-checklist-blocks-label', tSettings('migrationChecklistBlocklistsPreserved'));
+    setHtml('migration-checklist-ext-lines', tSettings('migrationChecklistExtLinesHtml'));
+    setText('migration-howto-title', tSettings('migrationHowtoHeading'));
+    setHtml('migration-howto-li1', tSettings('migrationHowtoLi1Html'));
+    setHtml('migration-howto-li2', tSettings('migrationHowtoLi2Html'));
+    setHtml('migration-howto-li3', tSettings('migrationHowtoLi3Html'));
+    setText('migration-done-btn', tSettings('migrationDone'));
+    setText('migration-skip-btn', tSettings('migrationSkip'));
+    setText('enforcement-toggle-headline-text', tSettings('migrationEnforcementHeadline'));
+    setText('enforcement-toggle-desc-text', tSettings('migrationEnforcementDesc'));
+    setText('enforcement-toggle-locked-text', tSettings('migrationEnforcementLocked'));
+    const continueBtn = document.getElementById('migration-continue-btn');
+    if (continueBtn && !continueBtn.disabled) {
+        continueBtn.textContent = tSettings('migrationContinue');
+    }
+    setText('migration-post-title', tSettings('migrationPostTitleCleanup'));
+    setText('migration-post-subtitle', tSettings('migrationPostSubtitleCleanup'));
+}
+
 function websiteWord(count) {
     if (getSettingsLanguage() === 'da') {
         return count === 1 ? 'hjemmeside' : 'hjemmesider';
@@ -12218,6 +12550,12 @@ function applySettingsLanguage() {
     setText('update-banner-prefix', tSettings('updateBannerPrefix'));
     setText('update-banner-suffix', tSettings('updateBannerSuffix'));
     setText('update-banner-link', tSettings('updateBannerCta'));
+    setText('setup-banner-headline', tSettings('setupBrowsersBannerHeadline'));
+    setText('behaviour-change-help', tSettings('setupBrowsersBannerCta'));
+    const behaviourDismissBtn = document.getElementById('behaviour-change-dismiss');
+    if (behaviourDismissBtn) {
+        behaviourDismissBtn.title = tSettings('setupBrowsersBannerDismissTitle');
+    }
     setText('main-start-block-title', tSettings('mainStartBlockTitle'));
     setText('instant-mode-tab-label', tSettings('modeNow'));
     setText('schedule-mode-tab-label', tSettings('modeSchedule'));
@@ -12374,7 +12712,9 @@ function applySettingsLanguage() {
     setText('settings-clean-hosts-label', tSettings('cleanHostsFile'));
     setText('settings-helper-hint', tSettings('helperHint'));
     setText('close-settings-btn', tSettings('close'));
-
+    setText('grace-period-label-text', tSettings('gracePeriodLabel'));
+    const graceLockedHint = document.getElementById('grace-locked-hint');
+    if (graceLockedHint) graceLockedHint.textContent = tSettings('gracePeriodLockedHint');
     const currentVersionEl = document.getElementById('current-app-version');
     if (currentVersionEl) {
         const raw = currentVersionEl.textContent || '';
@@ -12411,6 +12751,11 @@ function applySettingsLanguage() {
             'Ukendt': tSettings('helperStatusUnknown'),
         };
         if (statusMap[raw]) helperStatusText.textContent = statusMap[raw];
+    }
+
+    applyMigrationOverlayStaticCopy();
+    if (migrationOnboardingActive && lastMigrationBrowserState) {
+        renderBrowserInstallButtons(lastMigrationBrowserState);
     }
 
     // Re-render pieces with dynamic language-dependent text.
@@ -12544,6 +12889,7 @@ function setupTheme() {
             appData.settings.language = e.target.value === 'da' ? 'da' : 'en';
             applySettingsLanguage();
             saveData();
+            if (!isIOS) void refreshBehaviourBannerIfStale({ force: true });
         });
     }
 
@@ -13499,7 +13845,7 @@ function setupGraceSetting() {
         const now = Date.now();
         const nowDate = new Date(now);
         if (hasAnyEnforcedBlocks(now, nowDate)) {
-            alert('Stop all running blocks and schedules before changing this setting.');
+            alert(tSettings('settingsGraceChangeBlockedAlert'));
             input.value = lastGood;
             return;
         }
