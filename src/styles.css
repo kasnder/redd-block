@@ -6517,6 +6517,9 @@ body.app-blocking-warning-window-mode #app-blocking-warning-overlay {
     background: var(--panel-bg);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
+    /* WebView2/Windows: without this, transparent-to-drag heuristics can
+       still allow moving the frame; keep the shell a fixed fullscreen. */
+    -webkit-app-region: no-drag;
 }
 
 body.app-blocking-warning-window-mode #app-blocking-warning-overlay.hidden {
@@ -6532,7 +6535,9 @@ body.app-blocking-warning-window-mode #app-blocking-warning-overlay.hidden {
     display: flex;
     align-items: center;
     justify-content: center;
-    -webkit-app-region: drag;
+    /* Must not use drag here: blocking-warning window is sized to the
+       full display; drag would let users move the frame off-center (esp. Windows). */
+    -webkit-app-region: no-drag;
 }
 
 .app-blocking-warning-card {
