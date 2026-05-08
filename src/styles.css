@@ -3577,11 +3577,11 @@ body.ios .blocklists-container {
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    gap: 12px;
+    gap: 11px;
     padding: 0 0 18px 20px;
     margin-top: -30px;
     color: var(--text-muted);
-    font-size: 18px;
+    font-size: 16px;
     font-weight: 500;
     border: none;
     border-radius: 8px;
@@ -3591,13 +3591,13 @@ body.ios .blocklists-container {
 .selection-prompt svg {
     display: block;
     flex-shrink: 0;
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     opacity: 0.55;
 }
 
 body.ios .selection-prompt {
-    font-size: 19px;
+    font-size: 17px;
 }
 
 @media (min-width: 769px) {
