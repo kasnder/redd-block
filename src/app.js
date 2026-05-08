@@ -9808,20 +9808,20 @@ function render() {
     //     shows Stop / pause controls in those states).
     //   - Otherwise, fall back to the prior behaviour of selecting
     //     when exactly one blocklist is *not* currently active.
-    if (!selectedBlocklistId) {
-        let blocklistToSelect = null;
-        if (appData.blocklists.length === 1) {
-            blocklistToSelect = appData.blocklists[0];
-        } else {
-            const activeIds = appData.activeBlocks.map(b => b.blocklistId);
-            const availableBlocklists = appData.blocklists.filter(bl => !activeIds.includes(bl.id));
-            if (availableBlocklists.length === 1) {
-                blocklistToSelect = availableBlocklists[0];
-            }
-        }
-        if (blocklistToSelect) {
+    if (appData.blocklists.length === 1) {
+        // Only one blocklist — always keep it selected
+        const only = appData.blocklists[0];
+        if (selectedBlocklistId !== only.id) {
             const dropdown = document.getElementById('blocklist-select');
-            dropdown.value = blocklistToSelect.id;
+            dropdown.value = only.id;
+            handleBlocklistSelect({ target: dropdown });
+        }
+    } else if (!selectedBlocklistId) {
+        const activeIds = appData.activeBlocks.map(b => b.blocklistId);
+        const availableBlocklists = appData.blocklists.filter(bl => !activeIds.includes(bl.id));
+        if (availableBlocklists.length === 1) {
+            const dropdown = document.getElementById('blocklist-select');
+            dropdown.value = availableBlocklists[0].id;
             handleBlocklistSelect({ target: dropdown });
         }
     }

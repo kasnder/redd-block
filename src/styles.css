@@ -1064,7 +1064,7 @@ body.ios .section-header h2 {
 .week-calendar-section {
     display: flex;
     flex-direction: column;
-    margin-top: 24px;
+    margin-top: 14px;
 }
 
 /* iPhone / iPod only: no room for week calendar — hide entire Schedule section (iPad keeps it) */
@@ -1422,7 +1422,7 @@ body.dark-mode .now-blocking-chip-menu-item.danger {
 
 .day-row {
     display: flex;
-    height: 48px;
+    height: 38px;
     border-bottom: 1px solid var(--border-color);
 }
 
