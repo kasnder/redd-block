@@ -791,6 +791,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::get_helper_diagnostics,
         commands::check_safari_fda_access,
         commands::open_safari_fda_settings,
+        commands::open_safari_extension_settings,
         commands::open_browser_extension_settings,
         commands::open_url_in_browser,
         commands::uninstall_self_macos,

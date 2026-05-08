@@ -33,7 +33,10 @@
       "entitlements": "entitlements.macos.plist",
       "signingIdentity": "Developer ID Application: Reduce Digital Distraction Ltd (JD647S9RT6)",
       "hardenedRuntime": true,
-      "minimumSystemVersion": "11.0"
+      "minimumSystemVersion": "11.0",
+      "frameworks": [
+        "target/safari-bridge/libsafari_bridge.dylib"
+      ]
     }
   }
 }

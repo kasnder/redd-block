@@ -18,6 +18,12 @@ use serde_json::json;
 pub const HOST_NAME: &str = "com.ulriklyngs.mindshield";
 pub const FIREFOX_EXT_ID: &str = "mindshield@example.com";
 pub const CHROMIUM_EXT_ID: &str = "hhblkhfdjijdinijakbmcpkmdfhoadcd";
+/// Bundle identifier of the Safari Web Extension target embedded
+/// inside `ReDD Block.app/Contents/PlugIns/`. Set by
+/// `scripts/build-safari-extension.sh` via the
+/// `PRODUCT_BUNDLE_IDENTIFIER` xcodebuild override — keep these in
+/// sync.
+pub const SAFARI_EXT_ID: &str = "com.reddblock.SafariExtension";
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub enum BrowserTarget { Chrome, Brave, Edge, Firefox }

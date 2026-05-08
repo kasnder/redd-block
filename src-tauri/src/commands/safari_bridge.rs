@@ -64,3 +64,34 @@ pub fn open_safari_fda_settings() -> Result<(), String> {
         Ok(())
     }
 }
+
+/// Deep-link Safari to the row for the bundled ReDD Focus extension
+/// in Settings → Extensions, via SafariServices'
+/// `SFSafariApplication.showPreferencesForExtension`.
+///
+/// Used in place of the older AppleScript-driven approach
+/// (`commands::browser_ext::open_browser_extension_settings`'s
+/// Safari branch), which sends Cmd+, plus a UI-element click and
+/// therefore needs Accessibility permission. SafariServices needs
+/// neither Accessibility nor Full Disk Access — it's the API Apple
+/// designed for host apps to surface their own extension's prefs.
+///
+/// Only works when called from the registered main executable of
+/// the host bundle (i.e. the `redd-block` binary inside the bundled
+/// `.app`). Running outside an installed `.app` (e.g. `cargo tauri
+/// dev`) returns `extensionNotFound` — the frontend falls back to
+/// the AppleScript path in that case.
+#[tauri::command]
+pub fn open_safari_extension_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        crate::safari_services::open_extension_settings(
+            crate::native_host_install::SAFARI_EXT_ID,
+        )
+        .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("Safari is macOS-only".to_string())
+    }
+}

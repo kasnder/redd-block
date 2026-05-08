@@ -1535,13 +1535,26 @@ function browserComplianceStatus(key, b) {
     const profiles = b.profiles || [];
     const def = profiles.find(p => p.isDefault) || profiles[0];
     if (key === 'safari') {
-        if (profiles.some(p => /Full Disk Access|extension settings plist|Safari extension settings/i.test(p.note || ''))) {
-            return 'needs-fda';
-        }
+        // Safari status, post-bridge:
+        //
+        // The Swift bridge (SFSafariExtensionManager) gives us a
+        // definitive `enabled` value without Full Disk Access — that's
+        // the critical step, the one that gates whether the extension
+        // does anything at all.
+        //
+        // privateBrowsing and websiteAccessAll still come from the
+        // FDA-protected plist; SafariServices doesn't expose them.
+        // When plist reading fails (no FDA), those fields are null
+        // ("unknown"). Rather than dragging the user through an FDA
+        // prompt for fields they can verify themselves in Safari,
+        // we treat null as "trust the user" — only flag needs-private
+        // / needs-website-access when we can definitively see the
+        // toggle is off. The 3-step Safari onboarding card still
+        // surfaces all three steps so the user knows what to do.
         if (!profiles.length || profiles.some(p => !p.installed)) return 'needs-install';
-        if (profiles.some(p => p.enabled === false)) return 'needs-enable';
-        if (profiles.some(p => p.privateBrowsing !== true)) return 'needs-private';
-        if (profiles.some(p => p.websiteAccessAll !== true)) return 'needs-website-access';
+        if (profiles.some(p => p.enabled !== true)) return 'needs-enable';
+        if (profiles.some(p => p.privateBrowsing === false)) return 'needs-private';
+        if (profiles.some(p => p.websiteAccessAll === false)) return 'needs-website-access';
         return 'compliant';
     }
     if (!def || !def.installed) return 'needs-install';
@@ -1640,6 +1653,31 @@ function privateModeNoun(key) {
         case 'safari': return 'Private Browsing';
         default: return 'private/incognito';
     }
+}
+
+// Open the user's extension settings for a given browser. For Safari
+// we prefer SafariServices'  SFSafariApplication.showPreferencesForExtension
+// (via the in-process Swift bridge) which deep-links straight to
+// ReDD Focus's row in Safari → Settings → Extensions — no Accessibility
+// permission, no Cmd+, keystroke, no UI-element clicking. The bridge
+// only works when the call comes from the registered main executable
+// of the host bundle (the production `.app`), so dev mode (cargo
+// tauri dev) falls through to the older AppleScript path. Other
+// browsers just go to open_browser_extension_settings as before.
+async function openExtensionSettings(key) {
+    if (key === 'safari') {
+        try {
+            await invoke('open_safari_extension_settings');
+            return;
+        } catch (e) {
+            console.warn('[migration] safari deep-link failed, falling back:', e);
+            // Fall through to the AppleScript path. It needs
+            // Accessibility permission to send Cmd+, and click the
+            // Extensions tab; if that's also missing, the backend
+            // command at least activates Safari.
+        }
+    }
+    return invoke('open_browser_extension_settings', { browser: key });
 }
 
 function browserStatusHint(key, entry, b, status) {
@@ -1923,7 +1961,7 @@ function renderBrowserInstallButtons(state) {
             primaryBtn.className = 'migration-primary-btn';
             primaryBtn.innerHTML = `Open Extension Settings`;
             primaryBtn.addEventListener('click', () => {
-                invoke('open_browser_extension_settings', { browser: key }).catch(e => console.warn('[migration] open ext settings:', e));
+                openExtensionSettings(key).catch(e => console.warn('[migration] open ext settings:', e));
             });
             actionsRow.appendChild(primaryBtn);
 
@@ -1949,7 +1987,8 @@ function renderBrowserInstallButtons(state) {
                 screenshotsWrap.className = 'migration-screenshots-wrap hidden';
 
                 const screenshotsContainer = document.createElement('div');
-                screenshotsContainer.className = `extension-enforcer-screenshots ${steps.length >= 3 ? 'screenshots-grid' : 'screenshots-row'}`;
+                const safariTwoUp = key === 'safari' && steps.length === 2;
+                screenshotsContainer.className = `extension-enforcer-screenshots ${steps.length >= 3 ? 'screenshots-grid' : 'screenshots-row'}${safariTwoUp ? ' safari-screenshots-asymmetric' : ''}`;
 
                 steps.forEach((step, i) => {
                     if (i > 0 && steps.length < 3) {
@@ -1960,16 +1999,18 @@ function renderBrowserInstallButtons(state) {
                     }
                     const figure = document.createElement('figure');
                     figure.className = 'extension-enforcer-step';
-                    if (step.label) {
+                    const cap = formatExtensionScreenshotCaption(step, i);
+                    const captionEl = step.caption || step.label;
+                    if (captionEl) {
                         const caption = document.createElement('figcaption');
                         caption.className = 'extension-enforcer-step-label';
-                        caption.textContent = `Step ${i + 1}: ${step.label}`;
+                        caption.textContent = cap;
                         figure.appendChild(caption);
                     }
                     const img = document.createElement('img');
                     img.className = 'extension-enforcer-screenshot';
                     img.src = step.src;
-                    img.alt = step.label || `Step ${i + 1}`;
+                    img.alt = step.caption || step.label || `Step ${i + 1}`;
                     figure.appendChild(img);
                     screenshotsContainer.appendChild(figure);
                 });
@@ -2283,6 +2324,12 @@ function browserIconUrl(key) {
     }
 }
 
+function formatExtensionScreenshotCaption(step, index) {
+    if (step.caption) return step.caption;
+    if (step.label) return `Step ${index + 1}: ${step.label}`;
+    return `Step ${index + 1}`;
+}
+
 function enforcerScreenshotSteps(key) {
     if (key === 'chrome') return [
         { src: screenshotChromeStep1, label: 'Open Chrome extension settings' },
@@ -2297,8 +2344,14 @@ function enforcerScreenshotSteps(key) {
         { src: screenshotFirefoxStep2, label: 'Allow in Private Windows' },
     ];
     if (key === 'safari') return [
-        { src: screenshotSafariStep1, label: 'Find ReDD Focus' },
-        { src: screenshotSafariStep2, label: 'Enable in Private Browsing' },
+        {
+            src: screenshotSafariStep1,
+            caption: 'First open Safari\'s Extension settings...',
+        },
+        {
+            src: screenshotSafariStep2,
+            caption: 'Then i) enable ReDD Focus, ii) allow in private browsing, iii) allow it to block on all websites',
+        },
     ];
     return null;
 }
@@ -2425,26 +2478,33 @@ function renderEnforcerActionCopy(banner, payload, copy) {
                     }
                     const figure = document.createElement('figure');
                     figure.className = 'extension-enforcer-step';
-                    if (step.label) {
+                    const cap = formatExtensionScreenshotCaption(step, i);
+                    const captionEl = step.caption || step.label;
+                    if (captionEl) {
                         const caption = document.createElement('figcaption');
                         caption.className = 'extension-enforcer-step-label';
-                        caption.textContent = `Step ${i + 1}: ${step.label}`;
+                        caption.textContent = cap;
                         figure.appendChild(caption);
                     }
                     const img = document.createElement('img');
                     img.className = 'extension-enforcer-screenshot';
                     img.src = step.src;
-                    img.alt = step.label || `Step ${i + 1}`;
+                    img.alt = step.caption || step.label || `Step ${i + 1}`;
                     figure.appendChild(img);
                     container.appendChild(figure);
                 });
             }
+            container.classList.toggle(
+                'safari-screenshots-asymmetric',
+                (banner.dataset.browser === 'safari' && steps.length === 2),
+            );
             showMeBtn.classList.remove('hidden');
         } else {
             showMeBtn.classList.add('hidden');
             showMeBtn.classList.remove('open');
             showMeBtn.setAttribute('aria-expanded', 'false');
             screenshotsWrap.classList.add('hidden');
+            container.classList.remove('safari-screenshots-asymmetric');
         }
     }
 }
@@ -2614,8 +2674,10 @@ async function openEnforcerFix(payload) {
             return;
         }
         // For disabled/private/websiteaccess issues, open the extension
-        // settings page inside the correct browser.
-        await invoke('open_browser_extension_settings', { browser: key || browser });
+        // settings page inside the correct browser. Goes through the
+        // helper so Safari uses the SafariServices deep-link rather
+        // than the Accessibility-gated AppleScript path.
+        await openExtensionSettings(key || browser);
     } catch (e) {
         console.warn('[enforcer-ui] fix action failed:', e);
     }
