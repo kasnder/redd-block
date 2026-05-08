@@ -185,7 +185,7 @@ const UI_ZOOM_MIN = 0.8;
 const UI_ZOOM_MAX = 1.8;
 const UI_ZOOM_MAX_DESKTOP = 1.5;  // cap on macOS/Windows (native webview zoom)
 const UI_ZOOM_STEP = 0.1;
-const DEFAULT_UI_ZOOM = 1.1;
+const DEFAULT_UI_ZOOM = 1.2;
 let zoomToastHideTimeout = null;
 let nativeWebviewZoomSupported = null;
 
@@ -12851,7 +12851,9 @@ function setupTheme() {
     applyTheme();
 
     // Setup settings modal
-    const settingsBtn = document.getElementById('settings-btn');
+    const settingsTriggers = ['settings-btn', 'settings-btn-stack']
+        .map((id) => document.getElementById(id))
+        .filter(Boolean);
     const settingsModal = document.getElementById('settings-modal');
     const closeSettingsBtn = document.getElementById('close-settings-btn');
     const themeSelect = document.getElementById('theme-select');
@@ -12860,8 +12862,9 @@ function setupTheme() {
     // Apply language immediately on startup.
     applySettingsLanguage();
 
-    if (settingsBtn && settingsModal) {
-        settingsBtn.addEventListener('click', () => {
+    if (settingsTriggers.length && settingsModal) {
+        settingsTriggers.forEach((settingsBtn) => {
+            settingsBtn.addEventListener('click', () => {
             settingsModal.classList.remove('hidden');
             // Re-evaluate the in-app Uninstall button (Mac only): a
             // schedule could have fired since the modal was last open,
@@ -12921,6 +12924,7 @@ function setupTheme() {
                     }
                 }
             })();
+            });
         });
     }
 
@@ -13159,14 +13163,16 @@ function setupHelperSettings() {
     const cleanHostsBtn = document.getElementById('clean-hosts-btn');
 
     // Update helper status when settings modal opens
-    const settingsBtn = document.getElementById('settings-btn');
-    if (settingsBtn) {
-        settingsBtn.addEventListener('click', () => {
-            updateHelperStatusIndicator();
-            updateCleanHostsBtnState();
-            startHelperUiRefreshLoop();
+    ['settings-btn', 'settings-btn-stack']
+        .map((id) => document.getElementById(id))
+        .filter(Boolean)
+        .forEach((settingsBtn) => {
+            settingsBtn.addEventListener('click', () => {
+                updateHelperStatusIndicator();
+                updateCleanHostsBtnState();
+                startHelperUiRefreshLoop();
+            });
         });
-    }
 
     // Clean hosts file button
     if (cleanHostsBtn && !cleanHostsBtn._listenerAdded) {

@@ -943,6 +943,11 @@ body.dark-mode .app-blocking-closedown-banner {
     flex-shrink: 0;
 }
 
+/* Stack-only settings control (My Blocklists row); hidden in two-column layout. */
+#settings-btn-stack {
+    display: none;
+}
+
 /* Stack on small screens (md breakpoint) */
 @media (max-width: 768px) {
     .grid-top-row {
@@ -960,6 +965,25 @@ body.dark-mode .app-blocking-closedown-banner {
         height: 22px;
     }
 
+    /* Settings gear on My Blocklists row — keeps Now/Schedule full width below. */
+    #settings-btn-stack {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        padding: 0;
+    }
+
+    #settings-btn-stack svg {
+        width: 22px;
+        height: 22px;
+    }
+
+    .scheduler-section .section-header #settings-btn {
+        display: none !important;
+    }
+
     .main-content {
         padding-left: 18px;
         padding-right: 18px;
@@ -967,10 +991,9 @@ body.dark-mode .app-blocking-closedown-banner {
 }
 
 /* Cramped two-column zone (above the stack breakpoint, below comfortable
-   desktop). The settings gear is absolutely-positioned in the top-right of
-   the scheduler column, so when the column is narrow the "Schedule" tab
-   text crashes into the gear, and the "Stop Schedule: 🌙 No Twitter" button
-   wraps onto multiple lines. In this zone we:
+   desktop). Previously the gear was anchored to the grid edge and could spill
+   over the tab pill; tabs + inline settings are laid out from the scheduler
+   header flex now. Here we still:
      - drop the mode-tab text and rely on the icons + tooltips
      - tighten the blocklists column so the scheduler has more breathing room
      - collapse Start/Stop/Edit buttons to just the verb ("Start" / "Stop") */
@@ -1066,6 +1089,20 @@ body.dark-mode .app-blocking-closedown-banner {
 /* Keep "Start a Block" and "My Blocklists" titles aligned in the top row */
 .grid-top-row .section-header {
     min-height: 40px;
+}
+
+/* Scheduler: tabs span the middle flex slot so inline settings sits clear of Now/Schedule. */
+.scheduler-section > .section-header .scheduler-mode-tabs {
+    flex: 1 1 0%;
+    min-width: 0;
+}
+
+.scheduler-section > .section-header .settings-top-btn {
+    flex-shrink: 0;
+}
+
+.scheduler-section > .section-header h2 {
+    flex-shrink: 0;
 }
 
 .section-header h2 {
@@ -3433,6 +3470,13 @@ body.ios .day-toggle {
     /* Move to left column */
     flex: 1;
     min-height: 0;
+}
+
+.blocklists-heading-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
 }
 
 .blocklists-container {
@@ -5944,10 +5988,8 @@ body.ios.ios-phone .footer-zoom-control {
 }
 
 .settings-top-btn {
-    position: absolute;
-    top: 2px;
-    right: -4px;
-    z-index: 10;
+    position: relative;
+    z-index: 1;
     opacity: 0.8;
     transition: opacity 0.2s ease;
     background: none;
@@ -5955,6 +5997,11 @@ body.ios.ios-phone .footer-zoom-control {
     cursor: pointer;
     color: #5f5e5e;
     padding: 4px;
+    flex-shrink: 0;
+}
+
+body.dark-mode .settings-top-btn {
+    color: var(--icon-btn-color);
 }
 
 .settings-top-btn:hover {
