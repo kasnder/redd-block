@@ -1007,6 +1007,39 @@ fn scan_safari() -> BrowserStatus {
         // notes stay so the UI can still surface "FDA needed for
         // enabled-state details" if it cares.
         error = None;
+
+        // Ask SafariServices for the live `enabled` state via the
+        // Swift bridge. Bypasses the FDA-protected plist entirely
+        // for this one field. Bridge only succeeds when called from
+        // the registered main executable of the host bundle (i.e.
+        // the bundled `.app`); during `cargo tauri dev` it returns
+        // `extensionNotFound`, in which case we leave whatever the
+        // plist scan already reported (or None if FDA was missing).
+        // SafariServices doesn't expose private-browsing or per-site
+        // permission state at all — those still come from the plist.
+        match crate::safari_services::extension_state(
+            crate::native_host_install::SAFARI_EXT_ID,
+        ) {
+            Ok(state) => {
+                for profile in profiles.iter_mut() {
+                    profile.enabled = Some(state.enabled);
+                    // If the plist couldn't be read, the bridge gave
+                    // us a definitive `enabled` answer that supersedes
+                    // the "FDA needed" note for that one field. Keep
+                    // the note around for private-browsing and
+                    // all-sites, which the bridge can't introspect.
+                }
+                log::debug!(
+                    "safari: bridge reports enabled={}",
+                    state.enabled
+                );
+            }
+            Err(e) => {
+                log::debug!(
+                    "safari: bridge state query failed (expected outside .app): {e}"
+                );
+            }
+        }
     }
 
     BrowserStatus {
@@ -1078,10 +1111,18 @@ pub fn compliant(result: &ScanResult) -> bool {
 }
 
 fn safari_profile_passes(p: &ProfileStatus) -> bool {
+    // Mirrors the post-bridge JS browserComplianceStatus logic in
+    // src/app.js: the Swift bridge gives us a definitive `enabled`
+    // (the gating step), but private-browsing and all-sites access
+    // are only knowable via the FDA-protected plist. Treat null as
+    // "trust the user has done it" so we don't keep dragging users
+    // through a Full Disk Access prompt for fields they can verify
+    // themselves in Safari Settings → Extensions. Definitive `false`
+    // still fails the check.
     p.installed
         && p.enabled == Some(true)
-        && p.private_browsing == Some(true)
-        && p.website_access_all == Some(true)
+        && p.private_browsing != Some(false)
+        && p.website_access_all != Some(false)
 }
 
 #[cfg(all(test, target_os = "macos"))]
