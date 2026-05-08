@@ -6768,6 +6768,7 @@ body.dark-mode .app-blocking-warning-card {
     background: var(--accent-color);
     color: white;
     border: 1px solid var(--accent-color);
+    white-space: nowrap;
 }
 
 .app-picker-actions .confirm-btn:hover {
