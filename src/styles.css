@@ -4149,6 +4149,16 @@ body.dark-mode .onboarding-focus-card {
     border-color: rgba(0, 0, 0, 0.2);
 }
 
+.migration-copy-chip {
+    cursor: copy;
+}
+
+.migration-copy-chip.copied {
+    background: hsl(152, 60%, 92%);
+    border-color: hsl(152, 40%, 70%);
+    color: hsl(152, 50%, 25%);
+}
+
 .enforcer-inline-url-btn {
     background: rgba(255, 255, 255, 0.25);
     border-color: rgba(255, 255, 255, 0.3);
