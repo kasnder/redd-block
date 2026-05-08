@@ -37,6 +37,17 @@
 //   limitation, and the leftover plist entries would otherwise
 //   show forever in `chrome://policy` as ignored Recommended hints.
 //
+//   We also do a one-shot scrub of the `extensions.external_uninstalls`
+//   tombstone in each Chromium profile's `Preferences` file. Chrome
+//   adds an entry there whenever the user removes an externally-
+//   installed extension, and from that point on the External
+//   Extensions hint becomes a permanent no-op for that ID. The scrub
+//   is gated by a marker file in the app-data dir so it runs exactly
+//   once per ReDD Block install — re-installs after a deliberate user
+//   removal are respected, but a fresh install (or a recovery from
+//   an earlier failed-policy pass that left the user mid-loop) gets
+//   a clean slate.
+//
 // - **Firefox** (macOS only): write an `ExtensionSettings` entry to
 //   `/Applications/Firefox.app/Contents/Resources/distribution/policies.json`.
 //   Firefox treats this as a managed enterprise policy: on next launch
@@ -176,6 +187,8 @@ pub fn install() -> std::io::Result<()> {
             log::warn!("extension-install hint for {browser:?} failed: {e}");
         }
     }
+    #[cfg(not(target_os = "windows"))]
+    maybe_scrub_external_uninstalls_once();
     #[cfg(target_os = "macos")]
     if let Err(e) = install_firefox_policy() {
         log::warn!("extension-install Firefox policy failed: {e}");
@@ -346,6 +359,131 @@ fn cleanup_failed_policy_plist_entry(browser: BrowserTarget) {
 
 #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
 fn cleanup_failed_policy_plist_entry(_browser: BrowserTarget) {}
+
+// ---- External-uninstalls tombstone scrub (macOS / Linux Chromium) ----------
+
+/// Chromium adds the extension's ID to `extensions.external_uninstalls`
+/// in a profile's `Preferences` file when the user removes an
+/// extension that was installed via the External Extensions hint.
+/// Once present, the tombstone makes the hint a permanent no-op for
+/// that ID — Chrome silently refuses to ever re-install it from the
+/// same external source.
+///
+/// At ReDD Block install time we want a one-shot scrub: clear the
+/// tombstone (if any) from every Chromium profile so the hint can do
+/// its job. We deliberately do NOT scrub on every launch — once the
+/// user has actively removed the extension after install, that's a
+/// signal we should respect, not fight.
+///
+/// "One-shot" is enforced via a marker file in our app-data dir. If
+/// the marker is absent, we run the scrub for every supported browser
+/// and then create the marker. Future launches see the marker and skip.
+/// Bumping the marker name (`v1` → `v2`) re-runs the scrub for everyone
+/// — handy if we ever need to recover from another mass-tombstoning
+/// scenario in the wild.
+///
+/// No admin rights required: Preferences lives in the user's profile
+/// dir under `~/Library/Application Support/<browser>/<profile>/`.
+#[cfg(not(target_os = "windows"))]
+fn maybe_scrub_external_uninstalls_once() {
+    let Some(marker) = scrub_marker_path() else {
+        return;
+    };
+    if marker.exists() {
+        return;
+    }
+    for browser in BrowserTarget::all() {
+        scrub_external_uninstalls_tombstone(browser);
+    }
+    if let Some(parent) = marker.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    // Best-effort marker creation. If this fails (e.g. read-only
+    // filesystem) we'll re-scrub next launch — harmless idempotent.
+    let _ = std::fs::write(&marker, b"");
+}
+
+#[cfg(not(target_os = "windows"))]
+fn scrub_marker_path() -> Option<PathBuf> {
+    // `data_local_dir()` is `~/Library/Application Support` on macOS
+    // and `~/.local/share` on Linux. We park our marker under the
+    // app's bundle id so we don't pollute the parent dir.
+    let base = dirs::data_local_dir()?;
+    Some(
+        base.join("com.reddblock")
+            .join("external-uninstalls-scrubbed.v1"),
+    )
+}
+
+#[cfg(not(target_os = "windows"))]
+fn scrub_external_uninstalls_tombstone(browser: BrowserTarget) {
+    let Some(ext_dir) = browser.external_extensions_dir() else {
+        return;
+    };
+    // The user-data dir is the parent of `External Extensions/`. Each
+    // profile under it (Default, Profile 1, Profile 2, …) has its own
+    // Preferences file; we visit them all.
+    let Some(user_data_dir) = ext_dir.parent() else {
+        return;
+    };
+    let Ok(entries) = std::fs::read_dir(user_data_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let prefs_path = entry.path().join("Preferences");
+        if !prefs_path.is_file() {
+            continue;
+        }
+        if let Err(e) = strip_tombstone_from_prefs(&prefs_path) {
+            log::warn!(
+                "extension-install: tombstone scrub failed for {}: {e}",
+                prefs_path.display()
+            );
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn strip_tombstone_from_prefs(prefs_path: &std::path::Path) -> std::io::Result<()> {
+    let raw = std::fs::read_to_string(prefs_path)?;
+    let mut data: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let mut changed = false;
+    if let Some(arr) = data
+        .pointer_mut("/extensions/external_uninstalls")
+        .and_then(|v| v.as_array_mut())
+    {
+        let before = arr.len();
+        arr.retain(|v| v.as_str() != Some(CHROMIUM_EXT_ID));
+        if arr.len() != before {
+            changed = true;
+        }
+    }
+    if changed {
+        // Write atomically (temp file + rename) — Chrome does the
+        // same when persisting Preferences, so a partial-write that
+        // gets read mid-update would otherwise corrupt the profile.
+        //
+        // Race with a live Chrome process: if Chrome is running our
+        // edit can be clobbered the next time it flushes Preferences,
+        // and the marker has now been written so we won't retry. The
+        // documented expectation is that this scrub fires before the
+        // user opens Chrome at login — the typical case for a launch-
+        // at-login app. If the race ever bites in practice we can
+        // bump the marker to `v2` and re-scrub everyone.
+        let tmp = prefs_path.with_extension("reddblock.tmp");
+        std::fs::write(&tmp, serde_json::to_vec(&data)?)?;
+        std::fs::rename(&tmp, prefs_path)?;
+        log::info!(
+            "extension-install: cleared external-uninstalls tombstone for {CHROMIUM_EXT_ID} at {}",
+            prefs_path.display()
+        );
+    }
+    Ok(())
+}
 
 // ---- Firefox (enterprise policies, macOS only) -----------------------------
 
