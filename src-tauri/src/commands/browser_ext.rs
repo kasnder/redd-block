@@ -126,9 +126,11 @@ pub fn activate_external_process_by_pid(pid: u32) {
 
 #[cfg(target_os = "windows")]
 pub fn activate_external_process_by_pid(target_pid: u32) {
-    use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
+    use windows::core::BOOL;
+    use windows::Win32::Foundation::{HWND, LPARAM};
+    use windows::Win32::System::Threading::AttachThreadInput;
     use windows::Win32::UI::WindowsAndMessaging::{
-        AttachThreadInput, EnumWindows, GetForegroundWindow, GetWindow,
+        EnumWindows, GetForegroundWindow, GetWindow,
         GetWindowThreadProcessId, IsIconic, IsWindowVisible, SetForegroundWindow, ShowWindow,
         GW_OWNER, SW_RESTORE,
     };
@@ -141,19 +143,19 @@ pub fn activate_external_process_by_pid(target_pid: u32) {
     unsafe extern "system" fn pick_top_level(hwnd: HWND, lparam: LPARAM) -> BOOL {
         let ctx = &mut *(lparam.0 as *mut FindCtx);
         if !IsWindowVisible(hwnd).as_bool() {
-            return windows::Win32::Foundation::TRUE;
+            return BOOL(1); // continue enumeration
         }
-        let owner = GetWindow(hwnd, GW_OWNER);
-        if !owner.is_invalid() && owner != HWND::default() {
-            return windows::Win32::Foundation::TRUE;
+        let owner = GetWindow(hwnd, GW_OWNER).unwrap_or(HWND::default());
+        if owner != HWND::default() {
+            return BOOL(1); // continue enumeration
         }
         let mut pid = 0u32;
         GetWindowThreadProcessId(hwnd, Some(&mut pid));
         if pid != ctx.target_pid {
-            return windows::Win32::Foundation::TRUE;
+            return BOOL(1); // continue enumeration
         }
         ctx.hwnd = Some(hwnd);
-        windows::Win32::Foundation::FALSE // stop enumeration
+        BOOL(0) // stop enumeration
     }
 
     unsafe {
@@ -174,7 +176,7 @@ pub fn activate_external_process_by_pid(target_pid: u32) {
         }
 
         let fg = GetForegroundWindow();
-        if fg.is_invalid() {
+        if fg == HWND::default() {
             let _ = SetForegroundWindow(hwnd);
             return;
         }
@@ -183,9 +185,9 @@ pub fn activate_external_process_by_pid(target_pid: u32) {
         let fg_tid = GetWindowThreadProcessId(fg, Some(&mut _fg_pid));
         let mut _win_pid = 0u32;
         let tgt_tid = GetWindowThreadProcessId(hwnd, Some(&mut _win_pid));
-        let _ = AttachThreadInput(fg_tid, tgt_tid, true.into());
+        let _ = AttachThreadInput(fg_tid, tgt_tid, true);
         let _ = SetForegroundWindow(hwnd);
-        let _ = AttachThreadInput(fg_tid, tgt_tid, false.into());
+        let _ = AttachThreadInput(fg_tid, tgt_tid, false);
     }
 }
 
@@ -240,7 +242,7 @@ pub fn show_blocking_warning_shell_without_stealing_focus(app: &AppHandle) {
         Ok(hwnd) => unsafe {
             let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
             let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE;
-            let _ = SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, flags);
+            let _ = SetWindowPos(hwnd, Some(HWND_TOP), 0, 0, 0, 0, flags);
         },
         Err(_) => {
             let _ = win.unminimize();

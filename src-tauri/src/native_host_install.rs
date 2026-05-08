@@ -233,7 +233,7 @@ fn write_hkcu_default(path: &str, value: &str) -> std::io::Result<()> {
         let status = RegCreateKeyExW(
             HKEY_CURRENT_USER,
             PCWSTR(subkey.as_ptr()),
-            0,
+            Some(0),
             PCWSTR::null(),
             REG_OPTION_NON_VOLATILE,
             KEY_SET_VALUE,
@@ -254,7 +254,7 @@ fn write_hkcu_default(path: &str, value: &str) -> std::io::Result<()> {
             bytes_len as usize,
         );
         let _ = w!("");
-        let status = RegSetValueExW(hkey, PCWSTR::null(), 0, REG_SZ, Some(data_bytes));
+        let status = RegSetValueExW(hkey, PCWSTR::null(), Some(0), REG_SZ, Some(data_bytes));
         let _ = RegCloseKey(hkey);
         if status != ERROR_SUCCESS {
             return Err(std::io::Error::new(
