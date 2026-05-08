@@ -16,7 +16,20 @@ use serde_json::Value;
 const FIREFOX_ID: &str = "mindshield@example.com";
 const CHROMIUM_ID: &str = "hhblkhfdjijdinijakbmcpkmdfhoadcd";
 #[cfg(target_os = "macos")]
-const SAFARI_EXTENSION_KEYS: &[&str] = &["com.ulriklyngs.mind-shield.mind-shield (JD647S9RT6)"];
+const SAFARI_EXTENSION_KEYS: &[&str] = &[
+    // Embedded inside this ReDD Block.app — the bundled Safari Web
+    // Extension target from redd-focus-web/, signed under our team.
+    // This is the path most users will hit going forward, since
+    // installing ReDD Block automatically lights up the extension
+    // in Safari without any separate App-Store install.
+    "com.reddblock.SafariExtension (JD647S9RT6)",
+    // Legacy: standalone "ReDD Focus" macOS app from the App Store.
+    // Still recognised so users who installed it before we bundled
+    // don't see a regression. The two installs can coexist; Safari
+    // shows them as two separate listings under Settings → Extensions
+    // and the scanner accepts either as "ReDD Focus is here".
+    "com.ulriklyngs.mind-shield.mind-shield (JD647S9RT6)",
+];
 
 /// Chromium IDs the scanner will accept as "ReDD Focus is here".
 /// Production ID is always included. In debug builds, comma-separated
@@ -691,6 +704,37 @@ fn safari_profiles_dir() -> Option<PathBuf> {
     ))
 }
 
+/// True when this ReDD Block.app has the bundled Safari Web
+/// Extension `.appex` in its `Contents/PlugIns/` — i.e. when the
+/// build pipeline that runs scripts/embed-safari-extension.sh has
+/// taken effect for this binary.
+///
+/// We use this to short-circuit the plist-based "is the extension
+/// installed?" check on every Safari profile: if the host app
+/// embeds the extension, it's structurally guaranteed to be there
+/// regardless of FDA, regardless of whether Safari has written its
+/// `WebExtensions/Extensions.plist` entry yet, and regardless of
+/// whether the user has actively enabled it. State checks (enabled
+/// / private-browsing / all-websites) still come from the plist,
+/// because Safari is the source of truth for those.
+#[cfg(target_os = "macos")]
+fn embedded_safari_extension_present() -> bool {
+    // current_exe() resolves to .../ReDD Block.app/Contents/MacOS/redd-block.
+    // Walk up two levels to reach .../Contents and look for our .appex.
+    let Ok(exe) = std::env::current_exe() else {
+        return false;
+    };
+    let Some(macos_dir) = exe.parent() else {
+        return false;
+    };
+    let Some(contents_dir) = macos_dir.parent() else {
+        return false;
+    };
+    contents_dir
+        .join("PlugIns/ReDD Focus Extension.appex")
+        .is_dir()
+}
+
 #[cfg(target_os = "macos")]
 fn safari_extensions_plist_paths() -> (
     Vec<(String, bool, PathBuf)>,
@@ -867,6 +911,7 @@ fn scan_safari() -> BrowserStatus {
     let running = is_process_running(&["Safari"]);
     let mut profiles = Vec::new();
     let mut error = None;
+    let embedded = embedded_safari_extension_present();
 
     let (plist_paths, profile_list_error) = safari_extensions_plist_paths();
     for (name, is_default, path) in plist_paths {
@@ -925,6 +970,43 @@ fn scan_safari() -> BrowserStatus {
             website_access_all: Some(false),
             note: Some(note),
         });
+    }
+
+    // If the bundled Safari Web Extension lives inside this very
+    // .app, force `installed=true` on every profile entry — the
+    // plist-based check would otherwise miss it whenever the user
+    // hasn't granted Full Disk Access (the FDA branch already wrote
+    // installed=false above) or whenever Safari hasn't flushed its
+    // Extensions.plist entry yet (fresh install before the user
+    // visits Settings → Extensions). Enabled / private / all-sites
+    // state remain plist-driven; we don't synthesise them here
+    // because Safari is the source of truth and the user can
+    // legitimately have the extension toggled off. Once we wire up
+    // SFSafariExtensionManager (Phase 4), even those state fields
+    // become independent of FDA.
+    if embedded {
+        for profile in profiles.iter_mut() {
+            if profile.installed {
+                continue;
+            }
+            profile.installed = true;
+            // Plist read failed (no FDA, missing file, etc.) and the
+            // existing handler stamped `Some(false)` on each state
+            // field as a placeholder. Now that we know the extension
+            // IS installed, demote those to None — "unknown" is more
+            // accurate than "definitely off".
+            if profile.note.is_some() {
+                profile.enabled = None;
+                profile.private_browsing = None;
+                profile.website_access_all = None;
+            }
+        }
+        // Drop the top-level error if the only thing it was
+        // reporting was an FDA-style plist failure — we no longer
+        // need FDA to know the extension is there. Per-profile
+        // notes stay so the UI can still surface "FDA needed for
+        // enabled-state details" if it cares.
+        error = None;
     }
 
     BrowserStatus {

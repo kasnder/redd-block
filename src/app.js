@@ -57,6 +57,7 @@ const tauriAPI = {
 
     // App operations
     openAppPicker: () => invoke('open_app_picker'),
+    listInstalledApps: () => invoke('list_installed_apps'),
     blockWebsites: (domains) => invoke('block_websites', { domains }),
 
     // App blocking via helper daemon (persistent, survives app close)
@@ -2935,6 +2936,12 @@ function updateOnboardingVisibility() {
     eulaOverlay?.classList.toggle('hidden', !showEula);
     screentimeOverlay?.classList.toggle('hidden', !showScreentime);
     main?.classList.toggle('hidden', showEula || showScreentime);
+
+    // Hide the BLOCKING NOW title-bar row on onboarding screens
+    const nowBlockingRow = document.getElementById('now-blocking-row');
+    if (nowBlockingRow) {
+        nowBlockingRow.classList.toggle('hidden', showEula || showScreentime);
+    }
 }
 
 async function acceptEula() {
@@ -4098,30 +4105,8 @@ function setupModalListeners() {
         });
     } else if (modalBrowseBtn) {
         modalBrowseBtn.addEventListener('click', async () => {
-            const appNames = await tauriAPI.openAppPicker();
-            if (appNames && appNames.length > 0) {
-                const toAdd = appNames.filter(n => !modalApps.includes(n));
-                if (toAdd.length > 0) {
-                    const toAddCopy = [...toAdd];
-                    pushModalUndo('app', () => {
-                        toAddCopy.forEach(a => {
-                            const i = modalApps.indexOf(a);
-                            if (i !== -1) modalApps.splice(i, 1);
-                        });
-                        window.renderModalTags();
-                    });
-                }
-                let added = false;
-                for (const appName of appNames) {
-                    if (!modalApps.includes(appName)) {
-                        modalApps.push(appName);
-                        added = true;
-                    }
-                }
-                if (added) {
-                    window.renderModalTags();
-                }
-            }
+            // Open the in-app installed apps picker instead of the OS file picker
+            openInstalledAppsPicker();
         });
     }
     // Override type
@@ -9823,20 +9808,20 @@ function render() {
     //     shows Stop / pause controls in those states).
     //   - Otherwise, fall back to the prior behaviour of selecting
     //     when exactly one blocklist is *not* currently active.
-    if (!selectedBlocklistId) {
-        let blocklistToSelect = null;
-        if (appData.blocklists.length === 1) {
-            blocklistToSelect = appData.blocklists[0];
-        } else {
-            const activeIds = appData.activeBlocks.map(b => b.blocklistId);
-            const availableBlocklists = appData.blocklists.filter(bl => !activeIds.includes(bl.id));
-            if (availableBlocklists.length === 1) {
-                blocklistToSelect = availableBlocklists[0];
-            }
-        }
-        if (blocklistToSelect) {
+    if (appData.blocklists.length === 1) {
+        // Only one blocklist — always keep it selected
+        const only = appData.blocklists[0];
+        if (selectedBlocklistId !== only.id) {
             const dropdown = document.getElementById('blocklist-select');
-            dropdown.value = blocklistToSelect.id;
+            dropdown.value = only.id;
+            handleBlocklistSelect({ target: dropdown });
+        }
+    } else if (!selectedBlocklistId) {
+        const activeIds = appData.activeBlocks.map(b => b.blocklistId);
+        const availableBlocklists = appData.blocklists.filter(bl => !activeIds.includes(bl.id));
+        if (availableBlocklists.length === 1) {
+            const dropdown = document.getElementById('blocklist-select');
+            dropdown.value = availableBlocklists[0].id;
             handleBlocklistSelect({ target: dropdown });
         }
     }
@@ -10030,11 +10015,8 @@ function renderWeekBlocks() {
     const hasSchedules = appData.schedules && appData.schedules.length > 0;
     const hasAlwaysOnBlocks = appData.activeBlocks.some(b => isBlockAlwaysOn(b));
 
-    if (visibleBlocks.length === 0 && !hasSchedules && !hasAlwaysOnBlocks) {
-        noBlocksMsg?.classList.remove('hidden');
-    } else {
-        noBlocksMsg?.classList.add('hidden');
-    }
+    // Hide the "No active blocks" overlay — empty calendar is self-explanatory.
+    noBlocksMsg?.classList.add('hidden');
 
     visibleBlocks.forEach(block => {
         const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
@@ -10423,7 +10405,21 @@ function renderNowBlockingRow(nowMs = Date.now()) {
         if (entry.isAlwaysOn) {
             untilText = tSettings('nowBlockingAlways');
         } else if (entry.until) {
-            untilText = `${tSettings('nowBlockingUntil')} ${formatTime(entry.until)}`;
+            const remainMs = entry.until - nowMs;
+            if (remainMs > 0) {
+                const totalMins = Math.ceil(remainMs / 60000);
+                const hrs = Math.floor(totalMins / 60);
+                const mins = totalMins % 60;
+                if (hrs > 0 && mins > 0) {
+                    untilText = `${hrs}h ${mins}m left`;
+                } else if (hrs > 0) {
+                    untilText = `${hrs}h left`;
+                } else {
+                    untilText = `${mins}m left`;
+                }
+            } else {
+                untilText = '';
+            }
         } else {
             untilText = '';
         }
@@ -11543,7 +11539,7 @@ const SETTINGS_TRANSLATIONS = {
         today: 'Today',
         noActiveBlocks: 'No active blocks',
         alwaysOnRowLead: 'Always on',
-        alwaysOnRowTimelineHint: 'not shown in timeline',
+        alwaysOnRowTimelineHint: 'not shown',
         nowBlockingLabel: 'BLOCKING NOW',
         nowBlockingUntil: 'until',
         nowBlockingAlways: 'always',
@@ -13004,6 +13000,173 @@ let overrideAllChallengeText = '';
 // Backend reads `settings.extensionGraceSeconds` from the data file
 // on every grace-start (no app restart needed). Backend rejects
 // increases when at least one block is currently active.
+// ---- Installed Apps Picker Modal ------------------------------------------
+// Shows a searchable list of installed apps (scanned from Start Menu on
+// Windows, /Applications on macOS) so users don't have to navigate the
+// OS file picker to find executables.
+
+let installedAppsCache = null; // Cache the list so we don't re-scan every open
+
+async function openInstalledAppsPicker() {
+    const modal = document.getElementById('app-picker-modal');
+    const listEl = document.getElementById('app-picker-list');
+    const searchInput = document.getElementById('app-picker-search');
+    const addBtn = document.getElementById('app-picker-add-btn');
+    const cancelBtn = document.getElementById('app-picker-cancel-btn');
+    const browseBtn = document.getElementById('app-picker-browse-btn');
+
+    if (!modal || !listEl) return;
+
+    // Show modal with loading state
+    modal.classList.remove('hidden');
+    searchInput.value = '';
+    listEl.innerHTML = '<div class="app-picker-loading">Scanning installed apps...</div>';
+
+    // Fetch installed apps (cached after first call)
+    if (!installedAppsCache) {
+        try {
+            installedAppsCache = await tauriAPI.listInstalledApps();
+        } catch (e) {
+            console.error('[app-picker] Failed to list installed apps:', e);
+            listEl.innerHTML = '<div class="app-picker-empty">Could not scan installed apps. Use "Browse manually..." below.</div>';
+            installedAppsCache = null;
+        }
+    }
+
+    const apps = installedAppsCache || [];
+    const selectedProcessNames = new Set();
+
+    function renderAppList(filter = '') {
+        const lowerFilter = filter.toLowerCase();
+        const filtered = filter
+            ? apps.filter(a =>
+                a.display_name.toLowerCase().includes(lowerFilter) ||
+                a.process_name.toLowerCase().includes(lowerFilter))
+            : apps;
+
+        if (filtered.length === 0) {
+            listEl.innerHTML = filter
+                ? '<div class="app-picker-empty">No apps match your search</div>'
+                : '<div class="app-picker-empty">No installed apps found</div>';
+            return;
+        }
+
+        listEl.innerHTML = filtered.map(app => {
+            const alreadyAdded = modalApps.some(a => a.toLowerCase() === app.process_name.toLowerCase());
+            const isChecked = selectedProcessNames.has(app.process_name) || alreadyAdded;
+            const checkedClass = isChecked ? ' checked' : '';
+            const checkedAttr = isChecked ? ' checked' : '';
+            const disabledAttr = alreadyAdded ? ' disabled' : '';
+            const dimStyle = alreadyAdded ? ' style="opacity: 0.5;"' : '';
+
+            return `<label class="app-picker-item${checkedClass}"${dimStyle}>
+                <input type="checkbox" data-process="${escapeHtml(app.process_name)}"${checkedAttr}${disabledAttr}>
+                <div class="app-picker-item-info">
+                    <div class="app-picker-item-name">${escapeHtml(app.display_name)}</div>
+                    <div class="app-picker-item-process">${escapeHtml(app.process_name)}</div>
+                </div>
+            </label>`;
+        }).join('');
+
+        // Attach checkbox handlers
+        listEl.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            if (cb.disabled) return;
+            cb.addEventListener('change', () => {
+                const proc = cb.dataset.process;
+                if (cb.checked) {
+                    selectedProcessNames.add(proc);
+                } else {
+                    selectedProcessNames.delete(proc);
+                }
+                cb.closest('.app-picker-item').classList.toggle('checked', cb.checked);
+                updateAddButton();
+            });
+        });
+    }
+
+    function updateAddButton() {
+        const newCount = [...selectedProcessNames].filter(
+            p => !modalApps.some(a => a.toLowerCase() === p.toLowerCase())
+        ).length;
+        addBtn.textContent = newCount > 0 ? `Add Selected (${newCount})` : 'Add Selected';
+        addBtn.disabled = newCount === 0;
+    }
+
+    renderAppList();
+    updateAddButton();
+
+    // Search filtering
+    const onSearch = () => renderAppList(searchInput.value);
+    searchInput.addEventListener('input', onSearch);
+
+    // Clean up and close
+    function closePickerModal() {
+        modal.classList.add('hidden');
+        searchInput.removeEventListener('input', onSearch);
+    }
+
+    // Cancel
+    const onCancel = () => closePickerModal();
+    cancelBtn.onclick = onCancel;
+
+    // Click overlay to close
+    const onOverlayClick = (e) => {
+        if (e.target === modal) closePickerModal();
+    };
+    modal.addEventListener('click', onOverlayClick);
+
+    // Add Selected
+    addBtn.onclick = () => {
+        const toAdd = [...selectedProcessNames].filter(
+            p => !modalApps.some(a => a.toLowerCase() === p.toLowerCase())
+        );
+        if (toAdd.length > 0) {
+            const toAddCopy = [...toAdd];
+            pushModalUndo('app', () => {
+                toAddCopy.forEach(a => {
+                    const i = modalApps.indexOf(a);
+                    if (i !== -1) modalApps.splice(i, 1);
+                });
+                window.renderModalTags();
+            });
+            for (const appName of toAdd) {
+                modalApps.push(appName);
+            }
+            window.renderModalTags();
+        }
+        closePickerModal();
+    };
+
+    // Browse manually — fall back to the OS file picker
+    browseBtn.onclick = async () => {
+        closePickerModal();
+        const appNames = await tauriAPI.openAppPicker();
+        if (appNames && appNames.length > 0) {
+            const toAdd = appNames.filter(n => !modalApps.includes(n));
+            if (toAdd.length > 0) {
+                const toAddCopy = [...toAdd];
+                pushModalUndo('app', () => {
+                    toAddCopy.forEach(a => {
+                        const i = modalApps.indexOf(a);
+                        if (i !== -1) modalApps.splice(i, 1);
+                    });
+                    window.renderModalTags();
+                });
+            }
+            for (const appName of appNames) {
+                if (!modalApps.includes(appName)) {
+                    modalApps.push(appName);
+                }
+            }
+            window.renderModalTags();
+        }
+    };
+
+    // Focus search input
+    requestAnimationFrame(() => searchInput.focus());
+}
+
+// Setup the configurable browser-extension grace period.
 function setupGraceSetting() {
     const input = document.getElementById('grace-seconds-input');
     const errorEl = document.getElementById('grace-error');

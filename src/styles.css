@@ -1064,7 +1064,7 @@ body.ios .section-header h2 {
 .week-calendar-section {
     display: flex;
     flex-direction: column;
-    margin-top: 24px;
+    margin-top: 14px;
 }
 
 /* iPhone / iPod only: no room for week calendar — hide entire Schedule section (iPad keeps it) */
@@ -1157,7 +1157,7 @@ body.ios.ios-phone .week-calendar-section {
 .now-blocking-chip {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
     padding: 0 2px 0 9px;
     line-height: 1;
     border-radius: 999px;
@@ -1182,7 +1182,8 @@ body.ios.ios-phone .week-calendar-section {
 .now-blocking-chip-until {
     color: var(--text-muted);
     font-size: 12px;
-    line-height: 1;
+    line-height: 1.2;
+    white-space: nowrap;
 }
 
 .now-blocking-chip-menu-btn {
@@ -1421,7 +1422,7 @@ body.dark-mode .now-blocking-chip-menu-item.danger {
 
 .day-row {
     display: flex;
-    height: 48px;
+    height: 38px;
     border-bottom: 1px solid var(--border-color);
 }
 
@@ -4973,7 +4974,7 @@ body.dark-mode .websites-import-menu {
 /* Modal Styles */
 .modal-overlay {
     position: fixed;
-    top: 0;
+    top: var(--title-bar-height);
     left: 0;
     right: 0;
     bottom: 0;
@@ -6124,7 +6125,7 @@ body.mac .macos-only { display: block; }
 /* Blocklist entry emoji */
 .blocklist-emoji {
     font-size: 17px;
-    margin-right: 6px;
+    margin-right: 3px;
 }
 
 /* Undo Toast */
@@ -6613,5 +6614,164 @@ body.app-blocking-warning-window-mode #app-blocking-warning-overlay.hidden {
 body.dark-mode .app-blocking-warning-card {
     background: rgba(255, 255, 255, 0.04);
     box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+}
+
+/* ====================================================================
+   Installed Apps Picker Modal
+   ==================================================================== */
+
+.app-picker-modal-content {
+    max-width: 420px;
+    width: 100%;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.app-picker-modal-content h3 {
+    margin: 0 0 12px 0;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.app-picker-search-wrap {
+    position: relative;
+    margin-bottom: 10px;
+}
+
+.app-picker-search-wrap .form-input {
+    width: 100%;
+    padding-left: 34px;
+    box-sizing: border-box;
+}
+
+.app-picker-search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    opacity: 0.4;
+    pointer-events: none;
+}
+
+.app-picker-list {
+    flex: 1;
+    overflow-y: auto;
+    border: 1px solid var(--border-color-light);
+    border-radius: 8px;
+    max-height: 340px;
+    min-height: 120px;
+    background: var(--input-bg);
+}
+
+.app-picker-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+.app-picker-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    color: var(--text-muted);
+    font-size: 14px;
+    font-style: italic;
+}
+
+.app-picker-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background 0.1s ease;
+    border-bottom: 1px solid var(--border-color-light);
+    user-select: none;
+}
+
+.app-picker-item:last-child {
+    border-bottom: none;
+}
+
+.app-picker-item:hover {
+    background: var(--hover-bg);
+}
+
+.app-picker-item.checked {
+    background: color-mix(in srgb, var(--accent-color) 8%, transparent);
+}
+
+.app-picker-item input[type="checkbox"] {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    accent-color: var(--accent-color);
+    cursor: pointer;
+}
+
+.app-picker-item-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.app-picker-item-name {
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-primary);
+}
+
+.app-picker-item-process {
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.app-picker-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 12px;
+    gap: 8px;
+}
+
+.app-picker-browse-link {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 13px;
+    cursor: pointer;
+    text-decoration: underline;
+    padding: 4px 0;
+    transition: color 0.15s ease;
+}
+
+.app-picker-browse-link:hover {
+    color: var(--accent-color);
+}
+
+.app-picker-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.app-picker-actions .confirm-btn {
+    background: var(--accent-color);
+    color: white;
+    border: 1px solid var(--accent-color);
+    white-space: nowrap;
+}
+
+.app-picker-actions .confirm-btn:hover {
+    filter: brightness(1.1);
 }
 
