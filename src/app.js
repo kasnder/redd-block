@@ -1602,6 +1602,35 @@ function extensionsUrl(key) {
     }
 }
 
+// Renders an inline URL chip with a small copy-to-clipboard icon.
+// Clicking the chip copies the URL so the user can paste it into
+// the browser's address bar.
+const COPY_ICON_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-left:4px;opacity:0.7"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+
+function extensionsUrlChipHtml(key) {
+    const url = extensionsUrl(key);
+    return `<button type="button" class="migration-inline-url-btn migration-copy-chip" data-copy-url="${url}">${url}${COPY_ICON_SVG}</button>`;
+}
+
+// Attach clipboard copy behaviour to any .migration-copy-chip inside
+// the given root element.
+function attachCopyChipHandlers(root) {
+    root.querySelectorAll('.migration-copy-chip').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const url = btn.dataset.copyUrl;
+            try {
+                await navigator.clipboard.writeText(url);
+                btn.classList.add('copied');
+                const orig = btn.innerHTML;
+                btn.innerHTML = 'Copied! ✓';
+                setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('copied'); }, 1500);
+            } catch (e) {
+                console.warn('[migration] clipboard copy failed:', e);
+            }
+        });
+    });
+}
+
 function privateModeNoun(key) {
     switch (key) {
         case 'chrome': return 'Incognito';
@@ -1743,45 +1772,46 @@ function renderBrowserInstallButtons(state) {
 
             row.appendChild(action);
         } else if (status === 'needs-install') {
-            const action = document.createElement('div');
-            action.className = 'migration-browser-action';
-
-            const urlText = document.createElement('code');
-            urlText.className = 'migration-browser-url';
-            urlText.textContent = entry.url;
-            urlText.title = entry.url;
-            action.appendChild(urlText);
-
-            const copyBtn = document.createElement('button');
-            copyBtn.type = 'button';
-            copyBtn.className = 'migration-browser-copy';
-            copyBtn.textContent = 'Copy URL';
-            copyBtn.title = `Copy URL — paste into ${entry.label} to install`;
-            copyBtn.addEventListener('click', async () => {
-                try {
-                    await navigator.clipboard.writeText(entry.url);
-                    copyBtn.textContent = 'Copied';
-                    setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
-                } catch (e) {
-                    console.warn('[migration] clipboard write failed:', e);
-                    copyBtn.textContent = 'Failed';
-                    setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
-                }
-            });
-            action.appendChild(copyBtn);
-
-            row.appendChild(action);
-
-            // After-install hint: tell users about private tabs
+            // Instruction hint first, then Install button below (matching
+            // the needs-enable/private layout where instruction precedes action).
             const afterHint = document.createElement('div');
             afterHint.className = 'migration-browser-hint migration-browser-after-hint';
-            const extUrl = extensionsUrl(key);
             const privNoun = privateModeNoun(key);
-            afterHint.innerHTML = `After installing, open <button type="button" class="migration-inline-url-btn">${extUrl}</button> → click <strong>Details</strong> on ReDD Focus → turn on <strong>Allow in ${privNoun}</strong>.`;
-            afterHint.querySelector('.migration-inline-url-btn').addEventListener('click', () => {
-                invoke('open_browser_extension_settings', { browser: key }).catch(e => console.warn('[migration] open ext settings:', e));
-            });
+            if (key === 'firefox') {
+                afterHint.innerHTML = `After clicking <strong>Add to Firefox</strong>, check <strong>Allow extension to run in private windows</strong> before clicking Add.`;
+            } else {
+                afterHint.innerHTML = `After installing, open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${entry.label}'s address bar) → click <strong>Details</strong> on ReDD Focus → turn on <strong>Allow in ${privNoun}</strong>.`;
+                attachCopyChipHandlers(afterHint);
+            }
             row.appendChild(afterHint);
+
+            const installBtn = document.createElement('button');
+            installBtn.type = 'button';
+            installBtn.className = 'migration-browser-copy';
+            installBtn.textContent = 'Install';
+            installBtn.title = `Open ${entry.label} extension store page`;
+            installBtn.addEventListener('click', async () => {
+                try {
+                    await invoke('open_url_in_browser', { browser: key, url: entry.url });
+                    installBtn.textContent = 'Opened';
+                    setTimeout(() => { installBtn.textContent = 'Install'; }, 2000);
+                } catch (e) {
+                    console.warn('[migration] open_url_in_browser failed, falling back to clipboard:', e);
+                    try {
+                        await navigator.clipboard.writeText(entry.url);
+                        installBtn.textContent = 'URL Copied';
+                        setTimeout(() => { installBtn.textContent = 'Install'; }, 2000);
+                    } catch (e2) {
+                        installBtn.textContent = 'Failed';
+                        setTimeout(() => { installBtn.textContent = 'Install'; }, 2000);
+                    }
+                }
+            });
+
+            const actionsRow = document.createElement('div');
+            actionsRow.className = 'migration-actions-row';
+            actionsRow.appendChild(installBtn);
+            row.appendChild(actionsRow);
         } else if (status === 'needs-enable' || status === 'needs-private' || status === 'needs-website-access') {
             // Mirror the notification-banner layout for clarity:
             // [optional ✓ Extension installed]
@@ -1805,16 +1835,16 @@ function renderBrowserInstallButtons(state) {
             instructionLine.className = 'migration-instruction';
             let actionText;
             if (status === 'needs-enable') {
-                actionText = `Open <button type="button" class="migration-inline-url-btn">${extUrl}</button> → find <strong>ReDD Focus</strong> → enable the extension.`;
+                actionText = `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${entry.label}'s address bar) → find <strong>ReDD Focus</strong> → enable the extension.`;
             } else if (status === 'needs-website-access') {
-                actionText = `Open <button type="button" class="migration-inline-url-btn">${extUrl}</button> → click <strong>Details</strong> on ReDD Focus → allow on <strong>all websites</strong>.`;
+                actionText = `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${entry.label}'s address bar) → click <strong>Details</strong> on ReDD Focus → allow on <strong>all websites</strong>.`;
+            } else if (key === 'firefox') {
+                actionText = `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${entry.label}'s address bar) → click <strong>ReDD Focus</strong> → turn on <strong>Run in ${privNoun}</strong>.`;
             } else {
-                actionText = `Open <button type="button" class="migration-inline-url-btn">${extUrl}</button> → click <strong>Details</strong> on ReDD Focus → turn on <strong>Allow in ${privNoun}</strong>.`;
+                actionText = `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${entry.label}'s address bar) → click <strong>Details</strong> on ReDD Focus → turn on <strong>Allow in ${privNoun}</strong>.`;
             }
             instructionLine.innerHTML = actionText;
-            instructionLine.querySelector('.migration-inline-url-btn').addEventListener('click', () => {
-                invoke('open_browser_extension_settings', { browser: key }).catch(e => console.warn('[migration] open ext settings:', e));
-            });
+            attachCopyChipHandlers(instructionLine);
             row.appendChild(instructionLine);
 
             const actionsRow = document.createElement('div');
@@ -1823,7 +1853,7 @@ function renderBrowserInstallButtons(state) {
             const primaryBtn = document.createElement('button');
             primaryBtn.type = 'button';
             primaryBtn.className = 'migration-primary-btn';
-            primaryBtn.innerHTML = `Open <code class="migration-primary-btn-url">${extUrl}</code>`;
+            primaryBtn.innerHTML = `Open Extension Settings`;
             primaryBtn.addEventListener('click', () => {
                 invoke('open_browser_extension_settings', { browser: key }).catch(e => console.warn('[migration] open ext settings:', e));
             });
@@ -2225,10 +2255,10 @@ function enforcerCopy(payload) {
         return {
             headline: `ReDD Focus is turned off in ${browser}`,
             countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
-            instructionHtml: `Open <button type="button" class="migration-inline-url-btn enforcer-inline-url-btn">${extUrl}</button> → find <strong>ReDD Focus</strong> → enable the extension.`,
+            instructionHtml: `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${browser}'s address bar) → find <strong>ReDD Focus</strong> → enable the extension.`,
             note: 'It may take up to 10 seconds for changes to be detected.',
             action: `Open ${browser} Extensions`,
-            actionHtml: `Open <code class="extension-enforcer-action-btn-url">${extUrl}</code>`,
+            actionHtml: `Open Extension Settings`,
             screenshotSteps,
         };
     }
@@ -2240,10 +2270,12 @@ function enforcerCopy(payload) {
         return {
             headline: `ReDD Focus isn't allowed in private tabs`,
             countdown: `Auto-closing ${browser} in ${seconds}s if not fixed`,
-            instructionHtml: `Open <button type="button" class="migration-inline-url-btn enforcer-inline-url-btn">${extUrl}</button> → click <strong>Details</strong> on ReDD Focus → turn on <strong>Allow in ${privNoun}</strong>.`,
+            instructionHtml: key === 'firefox'
+                ? `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${browser}'s address bar) → click <strong>ReDD Focus</strong> → turn on <strong>Run in ${privNoun}</strong>.`
+                : `Open your extension settings (copy ${extensionsUrlChipHtml(key)} and paste into ${browser}'s address bar) → click <strong>Details</strong> on ReDD Focus → turn on <strong>Allow in ${privNoun}</strong>.`,
             note: 'It may take up to 10 seconds for changes to be detected.',
             action: `Open ${browser} Extensions`,
-            actionHtml: `Open <code class="extension-enforcer-action-btn-url">${extUrl}</code>`,
+            actionHtml: `Open Extension Settings`,
             screenshotSteps,
         };
     }
@@ -2292,12 +2324,7 @@ function renderEnforcerActionCopy(banner, payload, copy) {
     if (instruction) {
         if (copy.instructionHtml) {
             instruction.innerHTML = copy.instructionHtml;
-            const urlBtn = instruction.querySelector('.enforcer-inline-url-btn');
-            if (urlBtn) {
-                urlBtn.addEventListener('click', () => {
-                    invoke('open_browser_extension_settings', { browser: key }).catch(e => console.warn('[enforcer] open ext settings:', e));
-                });
-            }
+            attachCopyChipHandlers(instruction);
         } else {
             instruction.textContent = copy.instruction || '';
         }
@@ -2456,7 +2483,7 @@ function enforcerClosedCopy(payload) {
             headline: `${browser} was closed because ReDD Focus can't block in private/incognito windows.`,
             instruction: instruction.trim(),
             action: `Open ${browser} Extensions`,
-            actionHtml: `Open <code class="extension-enforcer-action-btn-url">${extUrl}</code>`,
+            actionHtml: `Open Extension Settings`,
             screenshotSteps,
         };
     }
@@ -2468,7 +2495,7 @@ function enforcerClosedCopy(payload) {
             headline: `${browser} was closed because ReDD Focus is turned off.`,
             instruction: `In ${browser} extensions, turn ReDD Focus back on.`,
             action: `Open ${browser} Extensions`,
-            actionHtml: `Open <code class="extension-enforcer-action-btn-url">${extUrl}</code>`,
+            actionHtml: `Open Extension Settings`,
             screenshotSteps,
         };
     }
