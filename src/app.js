@@ -13035,6 +13035,15 @@ function setupGraceSetting() {
 
     let lastGood = parseInt(input.value, 10) || 60;
     input.addEventListener('change', async () => {
+        // Prevent changes while any block or schedule is active
+        const now = Date.now();
+        const nowDate = new Date(now);
+        if (hasAnyEnforcedBlocks(now, nowDate)) {
+            alert('Stop all running blocks and schedules before changing this setting.');
+            input.value = lastGood;
+            return;
+        }
+
         const raw = parseInt(input.value, 10);
         if (!Number.isFinite(raw)) {
             input.value = lastGood;
