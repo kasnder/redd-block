@@ -3550,47 +3550,49 @@ function setupEventListeners() {
     });
     eulaContinueBtn?.addEventListener('click', async () => {
         if (!eulaCheckbox?.checked || !eulaContinueBtn) return;
-        const originalText = eulaContinueBtn.textContent;
         eulaContinueBtn.disabled = true;
-        eulaContinueBtn.textContent = 'Continuing...';
+        eulaContinueBtn.textContent = tSettings('eulaContinueBusy');
         try {
             await acceptEula();
         } catch (err) {
             console.error('Failed to accept EULA:', err);
-            alert('Could not save your agreement. Please try again.');
+            alert(tSettings('eulaAcceptSaveFailedAlert'));
             eulaContinueBtn.disabled = !eulaCheckbox.checked;
-            eulaContinueBtn.textContent = originalText;
+            eulaContinueBtn.textContent = tSettings('eulaContinueBtn');
             return;
         }
-        eulaContinueBtn.textContent = originalText;
+        eulaContinueBtn.textContent = tSettings('eulaContinueBtn');
     });
 
-    document.querySelectorAll('#eula-onboarding a[data-external-url]').forEach((link) => {
-        link.addEventListener(
+    // EULA onboarding: delegated listeners so localized HTML can rebuild links/text without losing handlers.
+    const eulaRoot = document.getElementById('eula-onboarding');
+    if (eulaRoot) {
+        eulaRoot.addEventListener(
             'click',
             (event) => {
-                const url = link.dataset.externalUrl;
-                if (!url) return;
-                event.preventDefault();
-                event.stopImmediatePropagation();
-                openUrl(url).catch((err) => {
-                    console.warn('[eula] open in browser failed:', err);
-                    window.open(url, '_blank', 'noopener,noreferrer');
-                });
+                const anchor = event.target.closest('a[data-external-url]');
+                if (anchor && eulaRoot.contains(anchor)) {
+                    const url = anchor.dataset.externalUrl;
+                    if (!url) return;
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    openUrl(url).catch((err) => {
+                        console.warn('[eula] open in browser failed:', err);
+                        window.open(url, '_blank', 'noopener,noreferrer');
+                    });
+                    return;
+                }
+                const toggleHost = event.target.closest('[data-toggle-target]');
+                if (toggleHost && eulaRoot.contains(toggleHost) && !event.target.closest('a')) {
+                    const target = document.getElementById(toggleHost.dataset.toggleTarget);
+                    if (!target) return;
+                    target.checked = !target.checked;
+                    target.dispatchEvent(new Event('change', { bubbles: true }));
+                }
             },
             true
         );
-    });
-
-    document.querySelectorAll('#eula-onboarding [data-toggle-target]').forEach((el) => {
-        el.addEventListener('click', (event) => {
-            if (event.target.closest('a')) return;
-            const target = document.getElementById(el.dataset.toggleTarget);
-            if (!target) return;
-            target.checked = !target.checked;
-            target.dispatchEvent(new Event('change', { bubbles: true }));
-        });
-    });
+    }
 
     document.getElementById('ios-screentime-grant-btn')?.addEventListener('click', async () => {
         const btn = document.getElementById('ios-screentime-grant-btn');
@@ -9807,7 +9809,12 @@ function updateOverridePreview() {
     const estimatedMins = getOverrideEstimatedMinutes(type, count, customText);
     const previewText = getOverridePreviewText(type, count, customText);
 
-    timeLineEl.textContent = `Takes ~${estimatedMins} min${estimatedMins !== 1 ? 's' : ''} to type and will look something like:`;
+    const lang = getSettingsLanguage();
+    const timeVars = lang === 'da'
+        ? { minutes: estimatedMins, unit: estimatedMins === 1 ? 'minut' : 'minutter' }
+        : { minutes: estimatedMins, minuteSuffix: estimatedMins === 1 ? '' : 's' };
+    timeLineEl.textContent = tSettingsFmt('overridePreviewTimeLine', timeVars);
+
     previewEl.textContent = previewText;
     previewEl.title = previewText;
 }
@@ -11873,6 +11880,19 @@ const SETTINGS_TRANSLATIONS = {
         bannerActionAllWebsitesIn: 'Allow on all websites in',
         bannerActionFullDiskAccessFor: 'Grant Full Disk Access for',
         bannerActionSetUpIn: 'Set up in',
+        // First-run EULA gate
+        eulaWelcomeTitle: 'Welcome to ReDD Block',
+        eulaAgreeAria: 'I agree to the End User License Agreement and Privacy Policy',
+        eulaWelcomeIconAlt: 'ReDD Block app icon',
+        eulaAgreeLineHtml:
+            'I agree to the ReDD Project\'s <a href="https://reddfocus.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/eula">End User License Agreement</a>',
+        eulaNoteHtml:
+            'Note that we do not collect any user data, as per our <a href="https://reddfocus.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/privacy-policy">Privacy Policy</a>.',
+        eulaContinueBtn: 'Continue',
+        eulaContinueBusy: 'Continuing…',
+        eulaAcceptSaveFailedAlert: 'Could not save your agreement. Please try again.',
+        eulaProjectBlurb:
+            'ReDD Block is developed by the Reduce Digital Distraction Project, in collaboration with researchers at the University of Oxford and University of Maastricht. The ReDD Project is a not-for-profit creating insights & open-source digital focus tools for everyone to thrive in the digital world.',
         // Migration / extension onboarding overlay
         migrationPreWelcomeTitle: 'Welcome to ReDD Block 2.0',
         migrationPreSubtitle: 'A one-time cleanup is needed to finish your upgrade.',
@@ -11888,13 +11908,13 @@ const SETTINGS_TRANSLATIONS = {
         migrationChecklistBlocklistsPreserved: 'Your blocklists are preserved',
         migrationChecklistExtLinesHtml: 'Set up ReDD Focus in your browsers<br><span style="font-weight:400;opacity:0.7">and allow it in private/incognito tabs</span>',
         migrationHowtoHeading: 'Setting up ReDD Focus',
-        migrationHowtoLi1Html: 'ReDD Block tried to add ReDD Focus to your installed browsers automatically — <strong>restart each browser</strong> to pick it up.',
+        migrationHowtoLi1Html: 'ReDD Block has tried to install ReDD Focus in your browsers automatically. If you don’t see it, try restarting your browser.',
         migrationHowtoLi2Html: 'Got tabs open you don\'t want to lose? Click <strong>Install</strong> next to a browser to add it manually instead.',
         migrationHowtoLi3Html: 'Once it\'s there, <strong>allow it in private/incognito tabs</strong> so blocking covers private windows too — see each browser\'s row below.',
         migrationDone: 'I\'m all set up',
         migrationSkip: 'Skip for now',
         migrationEnforcementHeadline: 'Browser protection',
-        migrationEnforcementDesc: 'While a block is active, this gently backs your own choice: browsers that aren\'t fully covered by ReDD Focus yet get a short heads-up—then the window may close—so quiet loopholes don\'t undo the attention you asked for.',
+        migrationEnforcementDesc: 'To help you stay focused, your browser is automatically closed if you turn off ReDD Focus while a block is running.',
         migrationEnforcementLocked: 'This stays on for the rest of this block so your protection stays consistent—you can change it again when the block ends.',
         migrationApproveAdminPrompt: 'Approve the admin prompt to continue…',
         migrationTryAgain: 'Try again',
@@ -11990,13 +12010,15 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedInstrPrivateChrome: 'In Chrome: ReDD Focus → Details → Allow in Incognito.',
         enforcerClosedInstrPrivateFirefox: 'In Firefox: ReDD Focus → Run in Private Windows → Allow.',
         enforcerClosedInstrDisabled: 'In {browser} extensions, turn ReDD Focus back on.',
-        enforcerClosedInstrMissing: 'Install ReDD Focus for {browser}.',
+        enforcerClosedInstrMissing: 'Reopen {browser} — ReDD Focus will install automatically. (Or click Install below to add it manually.)',
         enforcerClosedInstrWebsiteAccess: 'In {browser} extension settings, allow ReDD Focus on all websites.',
         enforcerClosedInstrAccessSafari: 'Grant ReDD Block Full Disk Access.',
         enforcerClosedInstrDefault: 'Finish ReDD Focus setup in {browser} extensions.',
         enforcerBrowserFallback: 'your browser',
         gracePeriodLabel: 'Seconds of heads-up before a browser that isn’t protected by ReDD Focus may close',
         gracePeriodLockedHint: 'Locked while a block is active—only shorter times allowed.',
+        settingsFeedbackFooterHtml:
+            'Have feedback or suggestions? Email us at <a href="mailto:team@reddfocus.org" style="color: var(--accent-color); text-decoration: underline;">team@reddfocus.org</a> or <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer" style="color: var(--accent-color); text-decoration: underline;">open an issue on GitHub</a>',
         settingsGraceChangeBlockedAlert: 'Stop all running blocks and schedules before changing this setting.',
         madeWith: 'Made with',
         by: 'by',
@@ -12041,16 +12063,18 @@ const SETTINGS_TRANSLATIONS = {
         websitesTooltip: 'Blocking applies to entire domains. For example, typing "facebook.com" blocks all of Facebook, not just specific pages.',
         apps: 'Apps',
         appsTooltip: 'Enter the exact name of the application (e.g. \'Safari\'). You can also use the folder button to find the app.',
+        appsBrowserTabsRestoreHint: 'Note: when a browser is automatically closed, you may need to manually restore your tabs. On Mac, open the browser and click History → Reopen All Tabs / Reopen All Windows From Last Session.',
         overrideDifficulty: 'Override Difficulty',
         overrideRandomWords: 'Random Words',
         overrideGibberish: 'Random Gibberish',
         overrideCustomText: 'Custom Text',
         overrideMaxDifficulty: 'Max difficulty',
         totalCharacters: 'total characters',
+        overridePreviewTimeLine: 'Takes ~{minutes} min{minuteSuffix} to type and will look something like:',
         color: 'Color',
         emoji: 'Emoji',
         advancedOptions: 'Advanced options',
-        listBlockedOnCard: 'List blocked websites & apps on card',
+        listBlockedOnCard: 'Show names of blocked websites & apps in the overview',
         importWebsitesTitle: 'Import websites',
         importWebsitesPickFileTitle: 'Select a file with one domain per line',
         importWebsitesFromFile: 'From text file…',
@@ -12190,6 +12214,19 @@ const SETTINGS_TRANSLATIONS = {
         bannerActionAllWebsitesIn: 'Tillad på alle websites i',
         bannerActionFullDiskAccessFor: 'Giv fuld diskadgang til',
         bannerActionSetUpIn: 'Opsæt i',
+        // First-run EULA gate
+        eulaWelcomeTitle: 'Velkommen til ReDD Block',
+        eulaAgreeAria: 'Jeg accepterer slutbrugerlicensaftalen og privatlivspolitikken',
+        eulaWelcomeIconAlt: 'ReDD Block-appikon',
+        eulaAgreeLineHtml:
+            'Jeg accepterer ReDD Projektets <a href="https://reddfocus.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/eula">slutbrugerlicensaftale</a>',
+        eulaNoteHtml:
+            'Bemærk, at vi ikke indsamler brugerdata — som beskrevet i vores <a href="https://reddfocus.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/privacy-policy">privatlivspolitik</a>.',
+        eulaContinueBtn: 'Fortsæt',
+        eulaContinueBusy: 'Arbejder…',
+        eulaAcceptSaveFailedAlert: 'Vi kunne ikke gemme din godkendelse. Prøv igen.',
+        eulaProjectBlurb:
+            'ReDD Block er udviklet af Reduce Digital Distraction Project i samarbejde med forskere ved University of Oxford og University of Maastricht. ReDD Project er en nonprofit-organisation, der udvikler indsigter og open source-redskaber til digitalt fokus, så alle kan trives i den digitale verden.',
         // Migration / extension onboarding overlay
         migrationPreWelcomeTitle: 'Velkommen til ReDD Block 2.0',
         migrationPreSubtitle: 'Et engangskridt er nødvendigt for at afslutte opgraderingen.',
@@ -12205,13 +12242,13 @@ const SETTINGS_TRANSLATIONS = {
         migrationChecklistBlocklistsPreserved: 'Dine bloklister er bevaret',
         migrationChecklistExtLinesHtml: 'Sæt ReDD Focus op i dine browsere<br><span style="font-weight:400;opacity:0.7">og tillad den i privat- eller inkognitofaner</span>',
         migrationHowtoHeading: 'Sådan sætter du ReDD Focus op',
-        migrationHowtoLi1Html: 'ReDD Block har forsøgt at tilføje ReDD Focus til dine installerede browsere automatisk — <strong>genstart hver browser</strong> for at hente den ind.',
-        migrationHowtoLi2Html: 'Vil du ikke miste dine åbne faner? Klik på <strong>Installer</strong> ved en browser nedenfor for at tilføje den manuelt i stedet.',
+        migrationHowtoLi1Html: 'ReDD Block har forsøgt at installere ReDD Focus i dine browsere automatisk. Hvis ikke du ser den, så prøv at genstarte din browser.',
+        migrationHowtoLi2Html: 'Vil du ikke miste dine åbne faner? Klik <strong>Installer</strong> ved en browser nedenfor for at tilføje ReDD Focus manuelt i stedet.',
         migrationHowtoLi3Html: 'Når den er der, <strong>tillad den i privat/inkognito-faner</strong>, så blokering også dækker private vinduer — se hver browsers række nedenfor.',
-        migrationDone: 'Jeg er klar med opsætningen',
+        migrationDone: 'Jeg er klar',
         migrationSkip: 'Spring over for nu',
         migrationEnforcementHeadline: 'Browser-beskyttelse',
-        migrationEnforcementDesc: 'Mens en blokering kører, støtter det her dit eget valg: browsere der endnu ikke er dækket af ReDD Focus, får et kort øjeblik til at rette det—derefter kan vinduet lukkes—så der ikke sniger sig en stille genvej uden om den opmærksomhed du bad om.',
+        migrationEnforcementDesc: 'For at støtte dig i at fokusere, bliver din browser automatisk lukket ned hvis du slukker for ReDD Focus mens en blokering kører.',
         migrationEnforcementLocked: 'Det bliver slået til for resten af blokeringen, så din beskyttelse hænger sammen—du kan ændre det igen, når blokeringen stopper.',
         migrationApproveAdminPrompt: 'Godkend administratorprompt for at fortsætte …',
         migrationTryAgain: 'Prøv igen',
@@ -12307,13 +12344,15 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedInstrPrivateChrome: 'I Chrome: ReDD Focus → Details → Allow in Incognito.',
         enforcerClosedInstrPrivateFirefox: 'I Firefox: ReDD Focus → Run in Private Windows → Allow.',
         enforcerClosedInstrDisabled: 'I {browser}s udvidelsesindstillinger: slå ReDD Focus til igen.',
-        enforcerClosedInstrMissing: 'Installer ReDD Focus til {browser}.',
+        enforcerClosedInstrMissing: 'Genåbn {browser} — ReDD Focus installeres automatisk. (Eller klik på Installer nedenfor for at tilføje den manuelt.)',
         enforcerClosedInstrWebsiteAccess: 'I {browser}s udvidelsesindstillinger: tillad ReDD Focus på alle websites.',
         enforcerClosedInstrAccessSafari: 'Giv ReDD Block fuld diskadgang.',
         enforcerClosedInstrDefault: 'Færdiggør ReDD Focus i {browser}s udvidelsesindstillinger.',
         enforcerBrowserFallback: 'din browser',
-        gracePeriodLabel: 'Sekunders forvarsel før en browser uden fuld ReDD Focus-dækning må lukkes',
+        gracePeriodLabel: 'Sekunders varsel før en browser uden ReDD Focus lukkes ned når en blokering kører',
         gracePeriodLockedHint: 'Låst mens en blokering er aktiv—kun kortere tider tilladt.',
+        settingsFeedbackFooterHtml:
+            'Har du feedback eller forslag? Skriv til os på <a href="mailto:team@reddfocus.org" style="color: var(--accent-color); text-decoration: underline;">team@reddfocus.org</a> eller <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer" style="color: var(--accent-color); text-decoration: underline;">opret et issue på GitHub</a>',
         settingsGraceChangeBlockedAlert: 'Du skal først stoppe alle kørende blokeringer og skemaer, før du kan ændre denne indstilling.',
         madeWith: 'Lavet med',
         by: 'af',
@@ -12358,16 +12397,18 @@ const SETTINGS_TRANSLATIONS = {
         websitesTooltip: 'Blokering gælder hele domæner. Hvis du fx skriver "facebook.com", blokeres hele Facebook, ikke kun specifikke sider.',
         apps: 'Apps',
         appsTooltip: 'Indtast det præcise navn på appen (fx "Safari"). Du kan også bruge mappeknappen til at finde appen.',
+        appsBrowserTabsRestoreHint: 'Bemærk: Hvis en browser lukkes automatisk, kan du få brug for at gendanne dine faner manuelt. På Mac åbner du browseren og vælger Historik → Genåbn alle faner / Åbn alle vinduer fra sidste session.',
         overrideDifficulty: 'Sværhedsgrad',
         overrideRandomWords: 'Tilfældige ord',
-        overrideGibberish: 'Tilfældig gibberish',
+        overrideGibberish: 'Tilfældig volapyk',
         overrideCustomText: 'Egen tekst',
-        overrideMaxDifficulty: 'Maksimal sværhedsgrad',
+        overrideMaxDifficulty: 'Max sværhed',
         totalCharacters: 'tegn i alt',
+        overridePreviewTimeLine: 'Tager cirka {minutes} {unit} at taste og ser nogenlunde sådan her ud:',
         color: 'Farve',
         emoji: 'Emoji',
         advancedOptions: 'Avancerede indstillinger',
-        listBlockedOnCard: 'Vis blokerede websites og apps på kortet',
+        listBlockedOnCard: 'Vis navnet på blokerede websites og apps i oversigten',
         importWebsitesTitle: 'Importér websites',
         importWebsitesPickFileTitle: 'Vælg en fil med ét domæne pr. linje',
         importWebsitesFromFile: 'Fra tekstfil…',
@@ -12429,7 +12470,7 @@ const SETTINGS_TRANSLATIONS = {
         settingsTitle: 'Indstillinger',
         yourVersionPrefix: 'Din version:',
         latestVersionPrefix: 'Nyeste version:',
-        lightDarkMode: 'Lys/mørk tilstand',
+        lightDarkMode: 'Lyst / mørkt tema',
         language: 'Sprog',
         themeAuto: 'Auto',
         themeLight: 'Lys',
@@ -12471,7 +12512,13 @@ const SETTINGS_TRANSLATIONS = {
 };
 
 function getSettingsLanguage() {
-    return appData.settings?.language === 'da' ? 'da' : 'en';
+    const saved = appData.settings?.language;
+    if (saved === 'da' || saved === 'en') return saved;
+    try {
+        return navigator.language.toLowerCase().startsWith('da') ? 'da' : 'en';
+    } catch (_) {
+        return 'en';
+    }
 }
 
 function tSettings(key) {
@@ -12525,6 +12572,30 @@ function applyMigrationOverlayStaticCopy() {
     setText('migration-post-subtitle', tSettings('migrationPostSubtitleCleanup'));
 }
 
+/** First-run EULA screen — localized from current UI language / saved preference / browser locale (da). */
+function applyEulaOnboardingLanguage() {
+    const heading = document.getElementById('eula-welcome-title');
+    if (heading) heading.textContent = tSettings('eulaWelcomeTitle');
+
+    const icon = document.getElementById('eula-onboarding-app-icon');
+    if (icon) icon.setAttribute('alt', tSettings('eulaWelcomeIconAlt'));
+
+    const agreeInner = document.getElementById('eula-agree-line-inner');
+    if (agreeInner) agreeInner.innerHTML = tSettings('eulaAgreeLineHtml');
+
+    const note = document.getElementById('eula-note');
+    if (note) note.innerHTML = tSettings('eulaNoteHtml');
+
+    const blurp = document.getElementById('eula-project-blurb');
+    if (blurp) blurp.textContent = tSettings('eulaProjectBlurb');
+
+    const cb = document.getElementById('eula-agree-checkbox');
+    if (cb) cb.setAttribute('aria-label', tSettings('eulaAgreeAria'));
+
+    const continueBtn = document.getElementById('eula-continue-btn');
+    if (continueBtn) continueBtn.textContent = tSettings('eulaContinueBtn');
+}
+
 function websiteWord(count) {
     if (getSettingsLanguage() === 'da') {
         return count === 1 ? 'hjemmeside' : 'hjemmesider';
@@ -12544,6 +12615,10 @@ function applySettingsLanguage() {
     const setText = (id, text) => {
         const el = document.getElementById(id);
         if (el) el.textContent = text;
+    };
+    const setHtml = (id, html) => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = html;
     };
 
     // Main shell / scheduler
@@ -12625,6 +12700,7 @@ function applySettingsLanguage() {
     setText('blocklist-websites-tooltip', tSettings('websitesTooltip'));
     setText('blocklist-apps-label', tSettings('apps'));
     setText('blocklist-apps-tooltip', tSettings('appsTooltip'));
+    setText('blocklist-apps-browser-hint', tSettings('appsBrowserTabsRestoreHint'));
     setText('override-difficulty-label', tSettings('overrideDifficulty'));
     setText('override-option-random-words', tSettings('overrideRandomWords'));
     setText('override-option-gibberish', tSettings('overrideGibberish'));
@@ -12713,6 +12789,7 @@ function applySettingsLanguage() {
     setText('settings-helper-hint', tSettings('helperHint'));
     setText('close-settings-btn', tSettings('close'));
     setText('grace-period-label-text', tSettings('gracePeriodLabel'));
+    setHtml('settings-feedback-footer', tSettings('settingsFeedbackFooterHtml'));
     const graceLockedHint = document.getElementById('grace-locked-hint');
     if (graceLockedHint) graceLockedHint.textContent = tSettings('gracePeriodLockedHint');
     const currentVersionEl = document.getElementById('current-app-version');
@@ -12754,6 +12831,7 @@ function applySettingsLanguage() {
     }
 
     applyMigrationOverlayStaticCopy();
+    applyEulaOnboardingLanguage();
     if (migrationOnboardingActive && lastMigrationBrowserState) {
         renderBrowserInstallButtons(lastMigrationBrowserState);
     }
@@ -12764,6 +12842,7 @@ function applySettingsLanguage() {
     if (typeof updateScheduleButtonState === 'function') updateScheduleButtonState();
     if (typeof updateWeekCalendar === 'function') updateWeekCalendar();
     renderNowBlockingRow();
+    if (typeof updateOverridePreview === 'function') updateOverridePreview();
 }
 
 // Theme Handling

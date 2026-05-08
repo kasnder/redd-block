@@ -137,35 +137,22 @@
         <div id="eula-onboarding" class="onboarding-screen hidden">
             <div class="onboarding-content legal-onboarding-content">
                 <div class="onboarding-icon">
-                    <img src="/reddblock-icon.svg" alt="ReDD Block app icon" class="onboarding-app-icon">
+                    <img id="eula-onboarding-app-icon" src="/reddblock-icon.svg" alt="ReDD Block app icon"
+                        class="onboarding-app-icon">
                 </div>
-                <h1>Welcome to ReDD Block</h1>
+                <h1 id="eula-welcome-title">Welcome to ReDD Block</h1>
                 <div class="onboarding-focus-card legal-onboarding-card">
                     <div class="legal-onboarding-checkbox-row">
                         <input type="checkbox" id="eula-agree-checkbox"
                             aria-label="I agree to the End User License Agreement and Privacy Policy">
-                        <span class="legal-onboarding-checkbox-text" data-toggle-target="eula-agree-checkbox">
-                            I agree to the ReDD Project's
-                            <a href="https://reddfocus.org/eula" target="_blank" rel="noopener noreferrer"
-                                class="legal-onboarding-link" data-external-url="https://reddfocus.org/eula">End User
-                                License Agreement</a>
-                        </span>
+                        <span class="legal-onboarding-checkbox-text" data-toggle-target="eula-agree-checkbox"><span
+                                id="eula-agree-line-inner"></span></span>
                     </div>
-                    <p class="legal-onboarding-note">
-                        Note that we do not collect any user data, as per our
-                        <a href="https://reddfocus.org/privacy-policy" target="_blank" rel="noopener noreferrer"
-                            class="legal-onboarding-link"
-                            data-external-url="https://reddfocus.org/privacy-policy">Privacy Policy</a>.
-                    </p>
+                    <p id="eula-note" class="legal-onboarding-note"></p>
                     <button id="eula-continue-btn" class="modal-btn primary-btn onboarding-primary-btn"
                         disabled>Continue</button>
                 </div>
-                <p class="legal-onboarding-body">
-                    ReDD Block is developed by the Reduce Digital Distraction Project, in collaboration with
-                    researchers at the University of Oxford and University of Maastricht. The ReDD Project is a
-                    not-for-profit creating insights &amp; open-source digital focus tools for everyone to thrive in
-                    the digital world.
-                </p>
+                <p id="eula-project-blurb" class="legal-onboarding-body"></p>
             </div>
         </div>
 
@@ -865,11 +852,8 @@
                             </button>
                         </div>
                     </div>
-                    <span id="blocklist-apps-browser-hint" class="form-hint hidden" style="font-style: italic;">
-                        Note: when a browser is automatically closed, you may need to manually
-                        restore your tabs. On Mac, open the browser and click
-                        History&nbsp;→&nbsp;Reopen All Tabs / Reopen All Windows From Last Session.
-                    </span>
+                    <span id="blocklist-apps-browser-hint" class="form-hint hidden"
+                        style="font-style: italic;">Note: when a browser is automatically closed, you may need to manually restore your tabs. On Mac, open the browser and click History → Reopen All Tabs / Reopen All Windows From Last Session.</span>
                 </div>
 
                 <div class="form-group">
@@ -890,8 +874,7 @@
                         <span class="input-suffix" id="override-total-characters-label">total characters</span>
                     </div>
                     <div id="override-preview-block" class="override-preview-block">
-                        <p id="override-preview-time-line" class="override-preview-time-line">Takes ~0mins to type and
-                            will look something like:</p>
+                        <p id="override-preview-time-line" class="override-preview-time-line">Takes ~0 mins to type and will look something like:</p>
                         <div id="override-preview-text" class="override-preview-text" title=""></div>
                     </div>
                     <textarea id="custom-override-text" class="form-textarea hidden"
@@ -910,7 +893,7 @@
                 <div class="blocklist-advanced-content hidden" id="blocklist-advanced-content">
                     <label class="checkbox-option">
                         <input type="checkbox" id="show-item-details-checkbox" checked>
-                        <span id="show-item-details-label">List blocked websites &amp; apps on card</span>
+                        <span id="show-item-details-label">Show names of blocked websites &amp; apps in the overview</span>
                     </label>
                 </div>
 
@@ -1250,15 +1233,8 @@
                     </div>
                 </div>
 
-                <div
-                    style="text-align: center; font-size: 14px; color: var(--text-secondary); line-height: 1.5; margin-top: 12px;">
-                    Have feedback or suggestions? Email us at
-                    <a href="mailto:team@reddfocus.org"
-                        style="color: var(--accent-color); text-decoration: underline;">team@reddfocus.org</a>
-                    or
-                    <a href="https://github.com/ulyngs/redd-block/issues" target="_blank"
-                        style="color: var(--accent-color); text-decoration: underline;">open an issue on GitHub</a>
-                </div>
+                <div id="settings-feedback-footer"
+                    style="text-align: center; font-size: 14px; color: var(--text-secondary); line-height: 1.5; margin-top: 12px;"></div>
 
                 <!-- Version Info -->
                 <div id="settings-latest-version-wrap" class="version-info"
