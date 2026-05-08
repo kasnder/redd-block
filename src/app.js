@@ -10015,11 +10015,8 @@ function renderWeekBlocks() {
     const hasSchedules = appData.schedules && appData.schedules.length > 0;
     const hasAlwaysOnBlocks = appData.activeBlocks.some(b => isBlockAlwaysOn(b));
 
-    if (visibleBlocks.length === 0 && !hasSchedules && !hasAlwaysOnBlocks) {
-        noBlocksMsg?.classList.remove('hidden');
-    } else {
-        noBlocksMsg?.classList.add('hidden');
-    }
+    // Hide the "No active blocks" overlay — empty calendar is self-explanatory.
+    noBlocksMsg?.classList.add('hidden');
 
     visibleBlocks.forEach(block => {
         const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
