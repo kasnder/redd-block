@@ -58,6 +58,26 @@ fn website_blocking_active(app: &AppHandle) -> bool {
     !domains.is_empty()
 }
 
+/// True if the user has explicitly opted in to browser enforcement
+/// (force-closing non-compliant browsers during active blocks).
+/// Defaults to `false` so new users aren't surprised by automatic
+/// browser force-closes. The user toggles this in the extension
+/// setup dialog.
+fn enforcement_enabled(app: &AppHandle) -> bool {
+    let path = match crate::commands::canonical_data_path(app) {
+        Some(p) => p,
+        None => return false,
+    };
+    let data: serde_json::Value = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or(serde_json::Value::Null);
+    data.get("settings")
+        .and_then(|s| s.get("enforcementEnabled"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
 // User-configurable grace period before a non-compliant browser is
 // quit. Read from settings.extensionGraceSeconds on every grace-start
 // so changes take effect on the *next* timer (active timers keep
@@ -241,6 +261,18 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
     // got killed anyway). Resolve any in-flight grace timers so the
     // UI banner clears if a block just expired or got paused mid-grace.
     if !website_blocking_active(app) {
+        for key in BrowserKey::all() {
+            cancel_timer(app, state, key, true);
+        }
+        return;
+    }
+
+    // Don't force-close browsers unless the user has explicitly opted
+    // in. Enforcement is powerful but jarring for new users who don't
+    // understand why their browser was killed. Default is OFF; the
+    // user enables it in the extension setup dialog once they've
+    // understood the behaviour.
+    if !enforcement_enabled(app) {
         for key in BrowserKey::all() {
             cancel_timer(app, state, key, true);
         }

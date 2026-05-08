@@ -4397,6 +4397,124 @@ body.dark-mode .onboarding-focus-card {
     opacity: 0.9;
 }
 
+/* ── Enforcement opt-in toggle ──────────────────────────────────── */
+.enforcement-toggle-section {
+    margin: 18px 0 4px;
+    padding: 14px 16px;
+    background: rgba(10, 45, 123, 0.04);
+    border: 1px solid rgba(10, 45, 123, 0.10);
+    border-radius: 10px;
+}
+
+.enforcement-toggle-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.enforcement-toggle-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.enforcement-toggle-headline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: hsl(222, 25%, 22%);
+}
+
+.enforcement-toggle-icon {
+    flex-shrink: 0;
+    color: hsl(222, 25%, 45%);
+}
+
+.enforcement-toggle-desc {
+    display: block;
+    margin-top: 4px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: hsl(222, 18%, 42%);
+}
+
+/* iOS-style toggle switch */
+.enforcement-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    flex-shrink: 0;
+    margin-top: 2px;
+    cursor: pointer;
+}
+
+.enforcement-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.enforcement-slider {
+    position: absolute;
+    inset: 0;
+    background: hsl(222, 15%, 82%);
+    border-radius: 24px;
+    transition: background 0.25s ease;
+}
+
+.enforcement-slider::before {
+    content: "";
+    position: absolute;
+    left: 2px;
+    top: 2px;
+    width: 20px;
+    height: 20px;
+    background: white;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+    transition: transform 0.25s ease;
+}
+
+.enforcement-switch input:checked + .enforcement-slider {
+    background: #2563eb;
+}
+
+.enforcement-switch input:checked + .enforcement-slider::before {
+    transform: translateX(20px);
+}
+
+/* Locked state (block is active) */
+.enforcement-switch input:disabled + .enforcement-slider {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.enforcement-switch:has(input:disabled) {
+    cursor: not-allowed;
+}
+
+.enforcement-locked-msg {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin: 8px 0 0;
+    font-size: 12px;
+    color: hsl(222, 18%, 50%);
+    line-height: 1.4;
+}
+
+.enforcement-locked-msg.hidden {
+    display: none;
+}
+
+.enforcement-locked-msg svg {
+    flex-shrink: 0;
+    color: hsl(222, 18%, 55%);
+}
+
 .migration-skip-btn {
     margin-top: 8px;
     background: transparent;

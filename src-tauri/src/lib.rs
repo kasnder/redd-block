@@ -633,7 +633,11 @@ pub fn run() {
             // user disabled or deleted it (or the install dir moved),
             // this rewrites the wrapper script with the current exe
             // path and re-registers the task. Idempotent.
-            #[cfg(target_os = "windows")]
+            //
+            // Gated on release builds only — in `tauri dev` the
+            // watchdog would respawn the debug binary, lock the build
+            // artifact, and interfere with `cargo` rebuilds.
+            #[cfg(all(target_os = "windows", not(debug_assertions)))]
             watchdog::register();
 
             // Self-heal launch-at-login on every startup. For ReDD
@@ -776,6 +780,8 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::user_came_from_v1x,
         commands::get_extension_grace_seconds,
         commands::set_extension_grace_seconds,
+        commands::get_enforcement_enabled,
+        commands::set_enforcement_enabled,
         commands::get_system_diagnostics,
         commands::onboarding_state,
         commands::check_helper_status,
@@ -833,6 +839,8 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::user_came_from_v1x,
         commands::get_extension_grace_seconds,
         commands::set_extension_grace_seconds,
+        commands::get_enforcement_enabled,
+        commands::set_enforcement_enabled,
         commands::get_system_diagnostics,
         commands::onboarding_state,
         commands::check_helper_status,

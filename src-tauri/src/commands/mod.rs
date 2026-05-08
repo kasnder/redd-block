@@ -15,6 +15,8 @@ pub mod migration;
 #[cfg(not(target_os = "ios"))]
 pub mod grace;
 #[cfg(not(target_os = "ios"))]
+pub mod enforcement_toggle;
+#[cfg(not(target_os = "ios"))]
 pub mod diagnostics;
 #[cfg(not(target_os = "ios"))]
 pub mod safari_bridge;
@@ -37,6 +39,8 @@ pub use helper_shim::*;
 pub use migration::*;
 #[cfg(not(target_os = "ios"))]
 pub use grace::*;
+#[cfg(not(target_os = "ios"))]
+pub use enforcement_toggle::*;
 #[cfg(not(target_os = "ios"))]
 pub use diagnostics::*;
 #[cfg(not(target_os = "ios"))]
