@@ -2936,6 +2936,12 @@ function updateOnboardingVisibility() {
     eulaOverlay?.classList.toggle('hidden', !showEula);
     screentimeOverlay?.classList.toggle('hidden', !showScreentime);
     main?.classList.toggle('hidden', showEula || showScreentime);
+
+    // Hide the BLOCKING NOW title-bar row on onboarding screens
+    const nowBlockingRow = document.getElementById('now-blocking-row');
+    if (nowBlockingRow) {
+        nowBlockingRow.classList.toggle('hidden', showEula || showScreentime);
+    }
 }
 
 async function acceptEula() {
@@ -10402,7 +10408,21 @@ function renderNowBlockingRow(nowMs = Date.now()) {
         if (entry.isAlwaysOn) {
             untilText = tSettings('nowBlockingAlways');
         } else if (entry.until) {
-            untilText = `${tSettings('nowBlockingUntil')} ${formatTime(entry.until)}`;
+            const remainMs = entry.until - nowMs;
+            if (remainMs > 0) {
+                const totalMins = Math.ceil(remainMs / 60000);
+                const hrs = Math.floor(totalMins / 60);
+                const mins = totalMins % 60;
+                if (hrs > 0 && mins > 0) {
+                    untilText = `${hrs}h ${mins}m left`;
+                } else if (hrs > 0) {
+                    untilText = `${hrs}h left`;
+                } else {
+                    untilText = `${mins}m left`;
+                }
+            } else {
+                untilText = '';
+            }
         } else {
             untilText = '';
         }
@@ -11522,7 +11542,7 @@ const SETTINGS_TRANSLATIONS = {
         today: 'Today',
         noActiveBlocks: 'No active blocks',
         alwaysOnRowLead: 'Always on',
-        alwaysOnRowTimelineHint: 'not shown in timeline',
+        alwaysOnRowTimelineHint: 'not shown',
         nowBlockingLabel: 'BLOCKING NOW',
         nowBlockingUntil: 'until',
         nowBlockingAlways: 'always',

@@ -1157,7 +1157,7 @@ body.ios.ios-phone .week-calendar-section {
 .now-blocking-chip {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
     padding: 0 2px 0 9px;
     line-height: 1;
     border-radius: 999px;
@@ -1182,7 +1182,8 @@ body.ios.ios-phone .week-calendar-section {
 .now-blocking-chip-until {
     color: var(--text-muted);
     font-size: 12px;
-    line-height: 1;
+    line-height: 1.2;
+    white-space: nowrap;
 }
 
 .now-blocking-chip-menu-btn {
@@ -4973,7 +4974,7 @@ body.dark-mode .websites-import-menu {
 /* Modal Styles */
 .modal-overlay {
     position: fixed;
-    top: 0;
+    top: var(--title-bar-height);
     left: 0;
     right: 0;
     bottom: 0;
@@ -6124,7 +6125,7 @@ body.mac .macos-only { display: block; }
 /* Blocklist entry emoji */
 .blocklist-emoji {
     font-size: 17px;
-    margin-right: 6px;
+    margin-right: 3px;
 }
 
 /* Undo Toast */
