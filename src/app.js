@@ -1437,6 +1437,7 @@ function wireMigrationPrePhase() {
 
 function wireMigrationPostPhase(state) {
     renderBrowserInstallButtons(state);
+    wireEnforcementToggle();
     const doneBtn = document.getElementById('migration-done-btn');
     const skipBtn = document.getElementById('migration-skip-btn');
 
@@ -1466,6 +1467,83 @@ function wireMigrationPostPhase(state) {
     if (skipBtn && !skipBtn._listenerAdded) {
         skipBtn._listenerAdded = true;
         skipBtn.addEventListener('click', finish);
+    }
+}
+
+// ---- Enforcement opt-in toggle -------------------------------------------
+// Reads the current enforcement-enabled setting from the backend and
+// wires the toggle in the extension setup dialog. When a block is
+// active and enforcement is ON, the toggle is locked (disabled) so
+// the user can't weaken enforcement mid-session. The server-side
+// guard in enforcement_toggle.rs is the ultimate backstop.
+
+async function wireEnforcementToggle() {
+    const toggle = document.getElementById('enforcement-toggle-input');
+    const lockedMsg = document.getElementById('enforcement-toggle-locked-msg');
+    if (!toggle) return;
+
+    // Read current state from backend
+    try {
+        const enabled = await invoke('get_enforcement_enabled');
+        toggle.checked = !!enabled;
+    } catch (e) {
+        console.warn('[enforcement-toggle] read failed:', e);
+        toggle.checked = false;
+    }
+
+    // Check if any block is currently active (to lock the toggle)
+    await updateEnforcementToggleLock(toggle, lockedMsg);
+
+    // Wire the change handler (only once)
+    if (!toggle._listenerAdded) {
+        toggle._listenerAdded = true;
+        toggle.addEventListener('change', async () => {
+            const desired = toggle.checked;
+            try {
+                await invoke('set_enforcement_enabled', { enabled: desired });
+            } catch (e) {
+                console.warn('[enforcement-toggle] set failed:', e);
+                // Revert the checkbox — the backend rejected it
+                toggle.checked = !desired;
+                // Flash the locked message if it was a block-active rejection
+                if (lockedMsg) {
+                    lockedMsg.classList.remove('hidden');
+                    setTimeout(() => updateEnforcementToggleLock(toggle, lockedMsg), 3000);
+                }
+            }
+        });
+    }
+}
+
+async function updateEnforcementToggleLock(toggle, lockedMsg) {
+    if (!toggle) return;
+    try {
+        // Try a no-op read to check current state; the real lock check
+        // is whether turning OFF would be rejected. We approximate by
+        // checking if enforcement is ON and the backend would reject
+        // disabling it. Simplest: try a dry-run disable, catch the
+        // error. But that's ugly — instead, check if any block is
+        // active by reading from the data file the same way the
+        // backend does. For simplicity, we just check if the toggle
+        // is ON and read the active-block state via the data.
+        const data = await invoke('load_data');
+        const activeBlocks = (data && data.activeBlocks) || [];
+        const nowMs = Date.now();
+        const anyActive = activeBlocks.some(b => {
+            const start = b.startTime || Infinity;
+            const end = b.endTime;
+            const paused = b.isPaused || false;
+            const isAlways = end === null || end === undefined;
+            return start <= nowMs && (isAlways || end > nowMs) && !paused;
+        });
+
+        const isLocked = toggle.checked && anyActive;
+        toggle.disabled = isLocked;
+        if (lockedMsg) lockedMsg.classList.toggle('hidden', !isLocked);
+    } catch (e) {
+        // Can't determine lock state — leave unlocked
+        toggle.disabled = false;
+        if (lockedMsg) lockedMsg.classList.add('hidden');
     }
 }
 
@@ -2002,24 +2080,33 @@ async function updateBehaviourChangeBanner(state) {
     const allCompliant = detectedKeys.length > 0
         && detectedKeys.every(k => browserComplianceStatus(k, browsers[k]) === 'compliant');
 
+    // Also check enforcement status — the banner should nudge users
+    // to enable enforcement even if all browsers are compliant.
+    let enforcementEnabled = false;
+    try {
+        enforcementEnabled = await invoke('get_enforcement_enabled');
+    } catch (_) { /* non-desktop or command not available */ }
+
+    const hasBrowserIssues = detectedKeys.length > 0 && !allCompliant;
     const shouldShow = !behaviourBannerDismissedThisSession
         && detectedKeys.length > 0
-        && !allCompliant;
+        && (hasBrowserIssues || !enforcementEnabled);
     if (!shouldShow) {
         banner.classList.add('hidden');
         return;
     }
     banner.classList.remove('hidden');
 
-    const summary = buildBannerActionSummary(browsers, detectedKeys);
+    // Build the body text: browser actions + enforcement status
+    const parts = [];
+    const actionSummary = buildBannerActionSummary(browsers, detectedKeys);
+    if (actionSummary) parts.push(actionSummary);
+    if (!enforcementEnabled) parts.push('Browser enforcement: off');
+
     const bodyEl = document.getElementById('behaviour-change-text');
     if (bodyEl) {
-        // `summary` is built from a fixed vocabulary of phrases plus
-        // BROWSER_STORE_LINKS labels — both are app-controlled
-        // constants, no user input — so plain textContent is safe
-        // and avoids any XSS surface even if a future label gains
-        // unusual characters.
-        bodyEl.textContent = summary;
+        // All phrases are from a fixed vocabulary — textContent is safe.
+        bodyEl.textContent = parts.join(' · ');
     }
 
     const helpBtn = document.getElementById('behaviour-change-help');

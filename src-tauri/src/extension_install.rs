@@ -88,11 +88,18 @@ use serde_json::json;
 use crate::native_host_install::{CHROMIUM_EXT_ID, FIREFOX_EXT_ID};
 
 /// Update URL the browser fetches the extension `.crx` from. The Chrome
-/// Web Store URL works for Chrome and Brave directly; Edge accepts it
-/// when the user has "Allow extensions from other stores" toggled
-/// on. Worst case for Edge users without that toggle: nothing happens
-/// and the existing per-browser onboarding step still runs.
+/// Web Store URL works for Chrome and Brave directly.
 pub const CHROMIUM_UPDATE_URL: &str = "https://clients2.google.com/service/update2/crx";
+
+/// Edge Add-ons store update URL. Once the extension is published on the
+/// Edge store, this lets force-install work without the user toggling
+/// "Allow extensions from other stores" in `edge://extensions`.
+// TODO: publish ReDD Focus on the Edge Add-ons store and replace this
+//       with the real Edge update URL. Until then, we fall back to the
+//       Chrome Web Store URL (requires the "other stores" toggle).
+pub const EDGE_UPDATE_URL: &str = CHROMIUM_UPDATE_URL;
+// When published, replace the line above with:
+// pub const EDGE_UPDATE_URL: &str = "https://edge.microsoft.com/extensionwebstorebase/v1/crx";
 
 /// AMO URL Firefox fetches the XPI from when the policy is in place.
 /// Always-redirects to the latest signed release.
@@ -311,8 +318,12 @@ fn install_chromium(browser: BrowserTarget) -> std::io::Result<()> {
         browser.policy_extension_settings_root(),
         CHROMIUM_EXT_ID
     );
+    let update_url = match browser {
+        BrowserTarget::Edge => EDGE_UPDATE_URL,
+        _ => CHROMIUM_UPDATE_URL,
+    };
     write_hkcu_named_value(&our_key, "installation_mode", "force_installed")?;
-    write_hkcu_named_value(&our_key, "update_url", CHROMIUM_UPDATE_URL)?;
+    write_hkcu_named_value(&our_key, "update_url", update_url)?;
     log::info!(
         "extension-install: ExtensionSettings policy written for {browser:?} at HKCU\\{our_key}"
     );
