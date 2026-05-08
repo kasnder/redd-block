@@ -48,25 +48,32 @@
 //   an earlier failed-policy pass that left the user mid-loop) gets
 //   a clean slate.
 //
-// - **Firefox** (macOS only): write an `ExtensionSettings` entry to
-//   `/Applications/Firefox.app/Contents/Resources/distribution/policies.json`.
-//   Firefox treats this as a managed enterprise policy: on next launch
-//   it silently force-installs the extension from AMO; the user sees
-//   "Managed by your administrator" in `about:addons` and can't
-//   disable / remove it from the UI. The policy ALSO auto-grants
-//   private-browsing access via `private_browsing: true` (Firefox's
-//   schema has this; Chromium's doesn't).
+// - **Firefox**:
+//   - macOS: write an `ExtensionSettings` entry to
+//     `/Applications/Firefox.app/Contents/Resources/distribution/policies.json`.
+//     Firefox treats this as a managed enterprise policy: on next launch
+//     it silently force-installs the extension from AMO; the user sees
+//     "Managed by your administrator" in `about:addons` and can't
+//     disable / remove it from the UI. The policy ALSO auto-grants
+//     private-browsing access via `private_browsing: true` (Firefox's
+//     schema has this; Chromium's doesn't).
 //
-//   Earlier versions of this module sideloaded a signed XPI into
-//   `~/Library/Application Support/Mozilla/Extensions/{guid}/`, but
-//   Mozilla removed that mechanism in Firefox 74 (Oct 2019); the
-//   directory still exists but Firefox no longer reads it.
+//     Earlier versions of this module sideloaded a signed XPI into
+//     `~/Library/Application Support/Mozilla/Extensions/{guid}/`, but
+//     Mozilla removed that mechanism in Firefox 74 (Oct 2019); the
+//     directory still exists but Firefox no longer reads it.
 //
-//   On Windows, the equivalent path
-//   (`C:\Program Files\Mozilla Firefox\distribution\policies.json`)
-//   requires admin elevation, so the Firefox auto-install is currently
-//   macOS-only. Windows / Linux Firefox falls back to the existing
-//   onboarding "Install in Firefox" link.
+//     On Windows, the `policies.json` equivalent lives at
+//     `C:\Program Files\Mozilla Firefox\distribution\policies.json`
+//     which requires admin elevation — so we don't use that path.
+//   - Windows: nested registry keys under
+//     `HKCU\Software\Policies\Mozilla\Firefox\ExtensionSettings\<addon-id>`.
+//     Same mechanism as Chromium: HKCU\Software\Policies\* is
+//     Mandatory-scope without admin. Firefox reads these keys on
+//     launch, silently force-installs the extension from AMO, and
+//     shows "Managed by your organization" in `about:addons`.
+//     Unlike Chromium, Firefox's ExtensionSettings schema supports
+//     `private_browsing` to auto-grant private-window access.
 //
 // Mirrors the structure of `native_host_install.rs` so the install /
 // uninstall lifecycle hooks are symmetric.
@@ -193,6 +200,10 @@ pub fn install() -> std::io::Result<()> {
     if let Err(e) = install_firefox_policy() {
         log::warn!("extension-install Firefox policy failed: {e}");
     }
+    #[cfg(target_os = "windows")]
+    if let Err(e) = install_firefox_registry() {
+        log::warn!("extension-install Firefox registry policy failed: {e}");
+    }
     Ok(())
 }
 
@@ -207,6 +218,10 @@ pub fn uninstall() -> std::io::Result<()> {
     #[cfg(target_os = "macos")]
     if let Err(e) = uninstall_firefox_policy() {
         log::warn!("extension-uninstall Firefox policy failed: {e}");
+    }
+    #[cfg(target_os = "windows")]
+    if let Err(e) = uninstall_firefox_registry() {
+        log::warn!("extension-uninstall Firefox registry policy failed: {e}");
     }
     Ok(())
 }
@@ -734,6 +749,46 @@ fn delete_hkcu_key(path: &str) -> std::io::Result<()> {
 fn to_wide(s: &str) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
     std::ffi::OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+}
+
+// ---- Firefox (Windows registry policy) --------------------------------------
+
+/// Force-install the ReDD Focus extension in Firefox via Windows
+/// registry policies. Firefox reads `ExtensionSettings` from
+/// `HKCU\Software\Policies\Mozilla\Firefox\ExtensionSettings\<addon-id>`
+/// on launch — same Mandatory-scope mechanism as Chromium on Windows.
+/// Unlike Chromium, Firefox's schema supports `private_browsing` to
+/// auto-grant private-window access (no manual toggle needed).
+///
+/// Idempotent: re-running overwrites the same keys with the same values.
+#[cfg(target_os = "windows")]
+fn install_firefox_registry() -> std::io::Result<()> {
+    let our_key = format!(
+        r"Software\Policies\Mozilla\Firefox\ExtensionSettings\{}",
+        FIREFOX_EXT_ID
+    );
+    write_hkcu_named_value(&our_key, "installation_mode", "force_installed")?;
+    write_hkcu_named_value(&our_key, "install_url", FIREFOX_AMO_XPI_URL)?;
+    // Auto-grant private-browsing access so the extension works in
+    // private windows without the user toggling it in about:addons.
+    // Firefox treats any non-empty REG_SZ as truthy for boolean policy
+    // fields; "true" is the canonical spelling.
+    write_hkcu_named_value(&our_key, "private_browsing", "true")?;
+    log::info!(
+        "extension-install: Firefox registry policy written at HKCU\\{our_key}"
+    );
+    Ok(())
+}
+
+/// Remove the Firefox extension policy keys from the registry.
+#[cfg(target_os = "windows")]
+fn uninstall_firefox_registry() -> std::io::Result<()> {
+    let our_key = format!(
+        r"Software\Policies\Mozilla\Firefox\ExtensionSettings\{}",
+        FIREFOX_EXT_ID
+    );
+    let _ = delete_hkcu_key(&our_key);
+    Ok(())
 }
 
 /// Tauri command — exposed for manual re-trigger from the UI (e.g. an
