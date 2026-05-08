@@ -1,14 +1,65 @@
 # Force-installing the ReDD Focus extension at ReDD Block install time
 
 > Branch: `explore-force-install-extensions`
-> Status: implemented. Chrome / Brave / Edge use the user-level
-> External Extensions hint mechanism. Firefox on macOS uses an
-> enterprise `policies.json` written into the Firefox bundle.
-> Firefox on Windows / Linux falls back to the existing onboarding
-> "Install in Firefox" link (no admin-less force-install path is
-> available there).
+> Status: implemented. The mechanism per browser ended up being
+> different by platform once we discovered the OS-level constraints
+> empirically:
+> - **Chromium-family on macOS**: External Extensions hint (per-user
+>   JSON in the browser's user data dir). User-removable; no
+>   auto-uninstall.
+> - **Chromium-family on Windows**: `ExtensionSettings` policy via
+>   HKCU\Software\Policies\* — Mandatory scope, locked install,
+>   auto-uninstall.
+> - **Firefox on macOS**: `policies.json` inside `Firefox.app` —
+>   Mandatory scope, locked install, auto-uninstall, plus auto-grant
+>   private-browsing access.
+> - **Firefox on Windows / Linux**: existing onboarding "Install in
+>   Firefox" link (no admin-less force-install path).
 > See `src-tauri/src/extension_install.rs`.
 > Out of scope: Safari (handled by the bundled `SafariWebExtensionHandler`).
+
+## Why Chromium on macOS is "External Extensions" and not policy
+
+We initially shipped the `ExtensionSettings` policy approach for
+Chromium on macOS (writing to `~/Library/Preferences/<bundle-id>.plist`)
+to match Firefox. The plist write succeeded and `chrome://policy`
+showed our entry — but with **Source: Platform / Level:
+Recommended**. Chromium's macOS policy loader reads user-level
+CFPreferences only at Recommended scope; `installation_mode: force_installed`
+needs Mandatory scope to take effect, so Chromium silently ignored
+the directive and the extension never installed.
+
+The only Mandatory-scope paths on macOS are:
+- `/Library/Managed Preferences/<bundle-id>.plist` — admin-only
+- Configuration Profiles (`.mobileconfig` installed via System
+  Settings → Profiles) — require user UI interaction + admin on
+  macOS Sonoma+
+
+We're a no-admin / no-helper app, so neither fits. We reverted to
+External Extensions on macOS — same mechanism that's been working
+since the earliest commits on this branch. The Windows path stays
+on `ExtensionSettings` policy because `HKCU\Software\Policies\*` IS
+Mandatory scope without admin on Windows.
+
+The leftover plist entry from that brief release is cleaned up on
+install + uninstall by `cleanup_failed_policy_plist_entry` so users
+upgrading don't see a stale ignored Recommended entry forever in
+`chrome://policy`.
+
+## Known limitation: Chromium has no incognito policy field
+
+Firefox's `ExtensionSettings` schema has a `private_browsing: true`
+field that auto-grants the extension access to private windows AND
+locks the toggle. Chromium's equivalent schema does NOT have an
+incognito field — there's been an [open Chromium request since
+2018](https://bugs.chromium.org/p/chromium/issues/detail?id=826712)
+that hasn't shipped. Even when an extension is fully managed (e.g.
+on Windows where our policy approach actually does take effect),
+the "Allow in Incognito" toggle in `chrome://extensions` remains
+user-controlled.
+
+So onboarding still has to nag once for "Allow in Incognito" on
+Chrome / Brave / Edge. Firefox onboarding is fully automated.
 
 ## Note: the original Firefox plan (XPI sideload) doesn't work
 
@@ -60,76 +111,72 @@ ones we can rely on without an installer-time UAC / sudo prompt.
 
 ### Chromium-family (Chrome, Edge, Brave, Vivaldi, Opera, Arc)
 
-Three viable mechanisms, in increasing intrusiveness:
+Two viable user-level mechanisms; we use the first.
 
-#### 1. External Extensions / external preferences (user-level, recommended starting point)
+#### 1. ExtensionSettings policy (user-level, locked install) — what we ship
 
-Browser checks a per-profile JSON manifest at startup; if it points at
-a Web Store extension it auto-fetches and installs it. The JSON lives
-inside the user's data directory — no admin, no policy.
-
-- **macOS**:
-  `~/Library/Application Support/<Browser>/External Extensions/<ext-id>.json`
-  e.g. `~/Library/Application Support/Google/Chrome/External Extensions/hhblkhfdjijdinijakbmcpkmdfhoadcd.json`
-- **Windows**:
-  `HKCU\Software\Google\Chrome\Extensions\<ext-id>` registry key with an
-  `update_url` value of `https://clients2.google.com/service/update2/crx`
-  (or the JSON file under `%LOCALAPPDATA%\Google\Chrome\User Data\External Extensions\`).
-
-Contents (cross-platform, JSON variant):
-```json
-{
-  "external_update_url": "https://clients2.google.com/service/update2/crx"
-}
-```
-
-What the user sees: on next browser launch the extension auto-installs
-silently. The extension shows up in `chrome://extensions` like any
-other store install. The user **can** disable or remove it from the
-extensions UI. If we re-write the External Extensions entry on every
-ReDD Block launch, a user-removed extension reinstalls on the
-following browser launch — but Chrome remembers a "user uninstalled"
-flag and will refuse to auto-reinstall over that for a window of
-~24 hours (per Chromium docs). Acceptable for our use case, since
-the scanner picks that up and re-prompts.
-
-Per-browser registry / data dir paths follow the slugs we already use
-in `native_host_install.rs` — the parent directories are the same.
-
-#### 2. ExtensionInstallForcelist policy (user-level, stickier)
-
-Sets the Chromium policy `ExtensionInstallForcelist` on the user. Once
-in this list:
-
-- The extension auto-installs on next browser launch.
-- The extension **cannot be disabled or removed** from the browser UI
-  (`chrome://extensions` shows a "Installed by your administrator" pill
-  with the Disable / Remove controls greyed out).
-- Survives "user uninstalled" flag — overrides it.
+Chromium's modern enterprise-policy schema. Per-extension dict with
+`installation_mode: "force_installed"` + `update_url` causes the
+browser to silently auto-install the extension on next launch and
+lock it ("Managed by your organization" pill, disable / remove
+controls greyed out). Same role as Firefox's `policies.json`
+`ExtensionSettings` entry — same field name, same shape, just
+different transport.
 
 User-level paths:
-- **macOS**: `~/Library/Preferences/com.google.Chrome.plist` etc.
-  with key `ExtensionInstallForcelist` = array of `<ext-id>;<update-url>`.
-  Set via `defaults write com.google.Chrome ExtensionInstallForcelist -array '<id>;<url>'`.
-- **Windows**: `HKCU\Software\Policies\Google\Chrome\ExtensionInstallForcelist`,
-  values `1`, `2`, ... = `<ext-id>;<url>`.
+- **macOS**: per-browser `~/Library/Preferences/<bundle-id>.plist`
+  (Chromium reads enterprise policies from here alongside its user
+  prefs). We write a top-level `ExtensionSettings` dict via the
+  `plist` crate and merge into anything already in the file.
+  Bundle IDs: `com.google.Chrome`, `com.brave.Browser`,
+  `com.microsoft.Edge`.
+- **Windows**: nested registry keys at
+  `HKCU\Software\Policies\<vendor>\<browser>\ExtensionSettings\<ext-id>`
+  with `installation_mode` + `update_url` REG_SZ values.
 
-Same shape on Brave (`com.brave.Browser` / `BraveSoftware\Brave-Browser`),
-Edge (`com.microsoft.Edge` / `Microsoft\Edge`), Vivaldi, Opera. The
-policy schema is shared across the Chromium family.
+Auto-uninstall: when ReDD Block uninstalls, our uninstall hook
+strips the `ExtensionSettings.<ext-id>` entry — Chromium then
+auto-uninstalls the extension on next launch. Same lifecycle
+ownership as Firefox.
 
-What the user sees: extension installed, locked, "managed by your
-administrator" disclaimer in the browser UI. Some users will find
-this aggressive — it implies more authority than ReDD Block actually
-has. Not the right default; offer it as a "stricter mode" later if
-ever.
+**Known gap: incognito access can't be auto-granted.** Chromium's
+`ExtensionSettings` schema doesn't have a `private_browsing` /
+`incognito_enabled` field (Firefox does). The "Allow in Incognito"
+toggle in `chrome://extensions` remains user-controlled even for
+fully-managed installs. There's an [open Chromium feature request
+since 2018](https://bugs.chromium.org/p/chromium/issues/detail?id=826712)
+that hasn't shipped. So onboarding still has to nag once for
+"Allow in Incognito" on Chrome / Brave / Edge.
+
+#### 2. External Extensions hint (user-level, lighter touch) — superseded
+
+Earlier ReDD Block versions used this. Browser checks a per-profile
+JSON manifest at startup; if it points at a Web Store extension it
+auto-fetches and installs it. JSON lives inside the user data dir;
+no admin needed; no policy lock-in.
+
+- **macOS**: `~/Library/Application Support/<Browser>/External Extensions/<ext-id>.json`
+- **Windows**: `HKCU\Software\<vendor>\<browser>\Extensions\<ext-id>`
+
+Contents:
+```json
+{ "external_update_url": "https://clients2.google.com/service/update2/crx" }
+```
+
+UX is lighter — extension shows up in `chrome://extensions` like a
+normal store install, user can disable or remove it from the UI.
+Trade-off: no auto-uninstall when ReDD Block goes away (extension
+stays unless user removes it). We replaced this with the policy
+approach for symmetry with Firefox, locked install, and clean
+uninstall hygiene. The current install path also cleans up any
+stale External Extensions hints from earlier ReDD Block versions.
 
 #### 3. Sideload an unpacked / packed CRX (user-level, fragile)
 
-Drop a `.crx` into a directory and point a registry key at it. Modern
-Chrome blocks this for non-Web-Store extensions unless the extension
-is whitelisted. Our extension IS on the Web Store, so the External
-Extensions path (#1) is the cleaner version of this — skip.
+Drop a `.crx` into a directory and point a registry key at it.
+Modern Chrome blocks this for non-Web-Store extensions unless the
+extension is whitelisted. Our extension IS on the Web Store, so the
+policy path (#1) is the right answer — skip.
 
 ### Firefox
 
@@ -210,19 +257,24 @@ ReDD Block ever ships a privileged installer.
 
 **Tier-1 default (covered by this work):**
 
-| Browser              | Mechanism                                  | UX cost                                     | Auto-uninstall? |
-|----------------------|--------------------------------------------|---------------------------------------------|-----------------|
-| Chrome / Brave / Edge | External Extensions hint (user-level)     | Chrome safety dialog: "Enable Extension"   | ❌ user removes  |
-| Firefox (macOS)      | `policies.json` in `Firefox.app` Resources | Silent + "Managed" badge in `about:addons` | ✅ auto          |
-| Firefox (Win / Linux) | (No no-admin path — fall back to AMO link) | One "Add to Firefox" click                 | ❌ user removes  |
+| Browser                       | Mechanism                                                                          | UX cost                                                                                            | Auto-uninstall? |
+|-------------------------------|------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------|-----------------|
+| Chrome / Brave / Edge (macOS)   | External Extensions hint JSON (per-user, in browser user-data dir)                | Chrome safety dialog: "Enable Extension"; manual "Allow in Incognito"                              | ❌ user removes  |
+| Chrome / Brave / Edge (Windows) | `ExtensionSettings` policy (`HKCU\Software\Policies\<vendor>\<browser>\...`)      | Silent + "Managed by your organization" in `chrome://extensions`; manual "Allow in Incognito"     | ✅ auto          |
+| Firefox (macOS)                 | `policies.json` in `Firefox.app` Resources                                        | Silent + "Managed" badge in `about:addons`; private-browsing auto-granted                          | ✅ auto          |
+| Firefox (Windows / Linux)       | (No no-admin path — fall back to AMO link)                                        | One "Add to Firefox" click                                                                         | ❌ user removes  |
 
 **Tier-2 (defer):**
-- ExtensionInstallForcelist on Chromium (matches Firefox's lock-down
-  + auto-uninstall behavior) — opt-in setting later.
 - Firefox `policies.json` on Windows — needs admin / privileged
   installer.
-- Vivaldi / Opera / Arc — same code path as Chrome; just need
+- Chromium force-install on macOS — needs Configuration Profile
+  installed via System Settings + admin (or MDM enrollment); not
+  feasible from a no-helper user-mode app.
+- Vivaldi / Opera / Arc — same code path as Chromium; just need
   detection in `profile_scan` to also opt them in.
+- Auto-grant Chromium incognito access — pending [Chromium feature
+  request](https://bugs.chromium.org/p/chromium/issues/detail?id=826712);
+  no shippable workaround.
 
 ## Implementation sketch
 

@@ -1,23 +1,52 @@
-// Force-install hints for the ReDD Focus browser extension.
+// Force-install policies for the ReDD Focus browser extension.
 //
-// Two install surfaces, one per browser family:
+// - **Chromium-family** (Chrome / Brave / Edge):
+//   - macOS / Linux: drop a per-user "External Extensions" hint
+//     (one-line JSON file under the browser's user data dir) — the
+//     browser auto-installs from the Chrome Web Store on next launch.
+//     Light touch: extension shows up in `chrome://extensions` like
+//     a normal store install; user can disable / remove from the UI.
+//     Trade-off: no auto-uninstall when ReDD Block goes away (user
+//     keeps the extension until they remove it themselves).
+//   - Windows: nested registry keys under
+//     `HKCU\Software\Policies\<vendor>\<browser>\ExtensionSettings\<ext-id>`.
+//     This IS a Mandatory-scope enterprise policy: silent force-
+//     install, locked, "Managed by your organization" badge. ReDD
+//     Block uninstall strips the keys and the browser auto-uninstalls
+//     the extension on its next launch.
 //
-// - **Chromium-family** (Chrome / Brave / Edge): drop a per-user
-//   External-Extensions hint pointing at the Chrome Web Store. Browser
-//   auto-installs on next launch. macOS / Linux: a one-line JSON file
-//   under the browser's user data dir. Windows: `HKCU\Software\<vendor>\<browser>\Extensions\<ext-id>`
-//   registry key with an `update_url` value.
+//   Why the asymmetry: Chromium's macOS policy loader treats user-
+//   level CFPreferences (`~/Library/Preferences/<bundle-id>.plist`)
+//   as Recommended-scope only. `installation_mode: force_installed`
+//   requires Mandatory scope. The only Mandatory paths on macOS are
+//   `/Library/Managed Preferences/...` (admin-only) and Configuration
+//   Profiles (require System-Settings UI install + admin on Sonoma+).
+//   We're a no-admin / no-helper app, so we fall back to External
+//   Extensions on macOS. On Windows, HKCU\Software\Policies\* IS
+//   Mandatory scope without admin, so the policy approach works.
+//
+//   ExtensionSettings doesn't have a field to auto-grant incognito
+//   access — Chromium leaves that toggle user-controlled even for
+//   fully-managed installs (open [Chromium bug since 2018](https://bugs.chromium.org/p/chromium/issues/detail?id=826712);
+//   no fix shipped). Onboarding still has to nag once for "Allow in
+//   Incognito" on Chromium browsers.
+//
+//   We clean up any stale ExtensionSettings entries from the prior
+//   ReDD Block release on macOS install — that release tried the
+//   policy approach before we discovered the Recommended-scope
+//   limitation, and the leftover plist entries would otherwise
+//   show forever in `chrome://policy` as ignored Recommended hints.
 //
 // - **Firefox** (macOS only): write an `ExtensionSettings` entry to
 //   `/Applications/Firefox.app/Contents/Resources/distribution/policies.json`.
 //   Firefox treats this as a managed enterprise policy: on next launch
 //   it silently force-installs the extension from AMO; the user sees
 //   "Managed by your administrator" in `about:addons` and can't
-//   disable / remove it from the UI. On uninstall we strip our entry
-//   from the policy and Firefox auto-uninstalls the extension on its
-//   next launch — full install + uninstall hygiene.
+//   disable / remove it from the UI. The policy ALSO auto-grants
+//   private-browsing access via `private_browsing: true` (Firefox's
+//   schema has this; Chromium's doesn't).
 //
-//   Earlier versions of this module sideloaded the signed XPI into
+//   Earlier versions of this module sideloaded a signed XPI into
 //   `~/Library/Application Support/Mozilla/Extensions/{guid}/`, but
 //   Mozilla removed that mechanism in Firefox 74 (Oct 2019); the
 //   directory still exists but Firefox no longer reads it.
@@ -64,9 +93,45 @@ impl BrowserTarget {
         [BrowserTarget::Chrome, BrowserTarget::Brave, BrowserTarget::Edge]
     }
 
-    /// User-data-dir-relative External Extensions directory on macOS /
-    /// Linux. On Windows the registry path is the install surface (see
-    /// `registry_extension_key`).
+    /// macOS bundle id — used as the basename of the per-browser plist
+    /// file at `~/Library/Preferences/<bundle-id>.plist` where Chromium
+    /// reads enterprise policies (alongside its own user prefs).
+    #[cfg(target_os = "macos")]
+    fn bundle_id(self) -> &'static str {
+        match self {
+            BrowserTarget::Chrome => "com.google.Chrome",
+            BrowserTarget::Brave => "com.brave.Browser",
+            BrowserTarget::Edge => "com.microsoft.Edge",
+        }
+    }
+
+    /// Per-browser policy plist path on macOS.
+    #[cfg(target_os = "macos")]
+    fn policy_plist_path(self) -> Option<PathBuf> {
+        let home = dirs::home_dir()?;
+        Some(
+            home.join("Library/Preferences")
+                .join(format!("{}.plist", self.bundle_id())),
+        )
+    }
+
+    /// HKCU registry path of the parent `ExtensionSettings` policy key
+    /// on Windows. We write a child key per extension, so the full
+    /// path for our entry is `<this>\<ext-id>` with `installation_mode`
+    /// + `update_url` named values.
+    #[cfg(target_os = "windows")]
+    fn policy_extension_settings_root(self) -> &'static str {
+        match self {
+            BrowserTarget::Chrome => r"Software\Policies\Google\Chrome\ExtensionSettings",
+            BrowserTarget::Brave => r"Software\Policies\BraveSoftware\Brave-Browser\ExtensionSettings",
+            BrowserTarget::Edge => r"Software\Policies\Microsoft\Edge\ExtensionSettings",
+        }
+    }
+
+    /// External Extensions hint dir on macOS / Linux (the active
+    /// install path on those platforms — see file-level doc for why
+    /// we don't use ExtensionSettings here). One JSON file per
+    /// extension; browser auto-installs from the Web Store on launch.
     #[cfg(not(target_os = "windows"))]
     fn external_extensions_dir(self) -> Option<PathBuf> {
         let home = dirs::home_dir()?;
@@ -81,29 +146,12 @@ impl BrowserTarget {
         }
         #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
         {
-            // Linux Chromium-family: External Extensions dir lives
-            // alongside the user-data-dir at `~/.config/<browser>/External Extensions/`.
-            // Not officially supported (no helper / no in-process
-            // watcher on Linux either), but we fill the matching path
-            // to keep the cfg surface honest.
             let p = match self {
                 BrowserTarget::Chrome => ".config/google-chrome/External Extensions",
                 BrowserTarget::Brave => ".config/BraveSoftware/Brave-Browser/External Extensions",
                 BrowserTarget::Edge => ".config/microsoft-edge/External Extensions",
             };
             Some(home.join(p))
-        }
-    }
-
-    /// HKCU registry key path for the browser's per-extension hint on
-    /// Windows. The browser reads `update_url` from this key on launch
-    /// and, if absent, fetches + installs the extension from the store.
-    #[cfg(target_os = "windows")]
-    fn registry_extension_key(self, ext_id: &str) -> String {
-        match self {
-            BrowserTarget::Chrome => format!(r"Software\Google\Chrome\Extensions\{ext_id}"),
-            BrowserTarget::Brave => format!(r"Software\BraveSoftware\Brave-Browser\Extensions\{ext_id}"),
-            BrowserTarget::Edge => format!(r"Software\Microsoft\Edge\Extensions\{ext_id}"),
         }
     }
 }
@@ -154,6 +202,11 @@ pub fn uninstall() -> std::io::Result<()> {
 
 #[cfg(not(target_os = "windows"))]
 fn install_chromium(browser: BrowserTarget) -> std::io::Result<()> {
+    // External Extensions hint: per-user JSON file under the browser's
+    // user data dir. Browser auto-installs from the Chrome Web Store
+    // on next launch. See the file-level doc for why we don't use
+    // ExtensionSettings / `~/Library/Preferences/<bundle>.plist` on
+    // macOS (Recommended-scope only; force-install needs Mandatory).
     let dir = browser.external_extensions_dir().ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::Other,
@@ -161,11 +214,12 @@ fn install_chromium(browser: BrowserTarget) -> std::io::Result<()> {
         )
     })?;
 
-    // Skip if the parent (user-data-dir) doesn't exist — no point
-    // populating a hint for a browser that's never been launched.
-    // The browser creates `External Extensions/` lazily on first
-    // launch, so we may need to create it here. The parent dir is
-    // proxy for "browser has profile state on this machine".
+    // Skip if the parent (browser user-data dir) doesn't exist — no
+    // point populating a hint for a browser that's never been
+    // launched. The browser creates `External Extensions/` lazily on
+    // first launch, so we may need to create it here. The parent
+    // dir's existence is a good proxy for "browser has profile state
+    // on this machine".
     let Some(parent) = dir.parent() else {
         return Err(std::io::Error::new(
             std::io::ErrorKind::Other,
@@ -177,6 +231,9 @@ fn install_chromium(browser: BrowserTarget) -> std::io::Result<()> {
             "extension-install: skipping {browser:?} — no profile dir at {}",
             parent.display()
         );
+        // Still try to clean up any stale failed-policy plist entry
+        // — see comment on `cleanup_failed_policy_plist_entry`.
+        cleanup_failed_policy_plist_entry(browser);
         return Ok(());
     }
 
@@ -184,7 +241,12 @@ fn install_chromium(browser: BrowserTarget) -> std::io::Result<()> {
     let path = dir.join(format!("{CHROMIUM_EXT_ID}.json"));
     let body = json!({ "external_update_url": CHROMIUM_UPDATE_URL });
     std::fs::write(&path, serde_json::to_vec_pretty(&body)?)?;
-    log::info!("extension-install: hint written for {browser:?} at {}", path.display());
+    log::info!(
+        "extension-install: External Extensions hint written for {browser:?} at {}",
+        path.display()
+    );
+
+    cleanup_failed_policy_plist_entry(browser);
     Ok(())
 }
 
@@ -199,27 +261,91 @@ fn uninstall_chromium(browser: BrowserTarget) -> std::io::Result<()> {
     let path = dir.join(format!("{CHROMIUM_EXT_ID}.json"));
     if path.exists() {
         std::fs::remove_file(&path)?;
-        log::info!("extension-uninstall: hint removed for {browser:?}");
+        log::info!(
+            "extension-uninstall: External Extensions hint removed for {browser:?} at {}",
+            path.display()
+        );
     }
-    // Leave the External Extensions directory itself alone — the
-    // browser may have other entries we shouldn't touch.
+    cleanup_failed_policy_plist_entry(browser);
     Ok(())
 }
 
 #[cfg(target_os = "windows")]
 fn install_chromium(browser: BrowserTarget) -> std::io::Result<()> {
-    let key_path = browser.registry_extension_key(CHROMIUM_EXT_ID);
-    write_hkcu_named_value(&key_path, "update_url", CHROMIUM_UPDATE_URL)?;
-    log::info!("extension-install: hint written for {browser:?} at HKCU\\{key_path}");
+    // ExtensionSettings policy: HKCU\Software\Policies\<vendor>\<browser>\ExtensionSettings\<ext-id>.
+    // Mandatory-scope on Windows (HKCU\Software\Policies\* counts as
+    // Mandatory without admin), so we get force-install + locked
+    // install + auto-uninstall hygiene. On macOS the same approach
+    // tops out at Recommended scope and Chromium ignores the
+    // force-install directive — see `install_chromium` above.
+    let our_key = format!(
+        r"{}\{}",
+        browser.policy_extension_settings_root(),
+        CHROMIUM_EXT_ID
+    );
+    write_hkcu_named_value(&our_key, "installation_mode", "force_installed")?;
+    write_hkcu_named_value(&our_key, "update_url", CHROMIUM_UPDATE_URL)?;
+    log::info!(
+        "extension-install: ExtensionSettings policy written for {browser:?} at HKCU\\{our_key}"
+    );
     Ok(())
 }
 
 #[cfg(target_os = "windows")]
 fn uninstall_chromium(browser: BrowserTarget) -> std::io::Result<()> {
-    let key_path = browser.registry_extension_key(CHROMIUM_EXT_ID);
-    let _ = delete_hkcu_key(&key_path);
+    let our_key = format!(
+        r"{}\{}",
+        browser.policy_extension_settings_root(),
+        CHROMIUM_EXT_ID
+    );
+    let _ = delete_hkcu_key(&our_key);
     Ok(())
 }
+
+/// Strip the `ExtensionSettings.<ext-id>` entry from the per-browser
+/// policy plist on macOS — only relevant for users upgrading from the
+/// brief ReDD Block release that tried the policy approach before we
+/// discovered Chromium treats user-level CFPreferences as Recommended
+/// scope only. Without this cleanup, the entry would linger forever
+/// in the user's plist, showing in `chrome://policy` as an ignored
+/// Recommended hint. New installs are no-op (entry doesn't exist).
+#[cfg(target_os = "macos")]
+fn cleanup_failed_policy_plist_entry(browser: BrowserTarget) {
+    let Some(plist_path) = browser.policy_plist_path() else {
+        return;
+    };
+    if !plist_path.exists() {
+        return;
+    }
+    let Ok(mut data) = plist::Value::from_file(&plist_path) else {
+        return;
+    };
+    let mut changed = false;
+    if let Some(root) = data.as_dictionary_mut() {
+        if let Some(ext_settings) = root
+            .get_mut("ExtensionSettings")
+            .and_then(|v| v.as_dictionary_mut())
+        {
+            if ext_settings.remove(CHROMIUM_EXT_ID).is_some() {
+                changed = true;
+                if ext_settings.is_empty() {
+                    root.remove("ExtensionSettings");
+                }
+            }
+        }
+    }
+    if changed {
+        if plist::to_file_binary(&plist_path, &data).is_ok() {
+            log::info!(
+                "extension-install: stripped stale (ignored) policy entry for {browser:?} from {}",
+                plist_path.display()
+            );
+        }
+    }
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+fn cleanup_failed_policy_plist_entry(_browser: BrowserTarget) {}
 
 // ---- Firefox (enterprise policies, macOS only) -----------------------------
 
