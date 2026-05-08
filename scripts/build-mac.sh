@@ -1,5 +1,8 @@
 #!/bin/bash
-# Build the macOS desktop app as a bundle + DMG.
+# Build the macOS desktop app bundle (.app) and embed the Safari
+# Web Extension. Output is `for-distribution/ReDD Block.app`. For a
+# shippable installer, run `scripts/build-mac-pkg.sh --release` next
+# (or `npm run build:mac-all` for both in one go).
 
 set -euo pipefail
 
@@ -40,33 +43,34 @@ fi
 TARGET_DIR="${PROJECT_ROOT}/src-tauri/target/${BUILD_TARGET}/release/bundle"
 
 echo "Building ReDD Block for macOS (${BUILD_TARGET})..."
+# `--bundles app` tells Tauri to produce only the .app, skipping its
+# own .dmg target. Two reasons:
+#  1. We modify the .app after Tauri's bundling step (embed the Safari
+#     Web Extension + re-sign + re-notarize). Tauri's .dmg, which is
+#     packed BEFORE that modification, would contain a stale pre-embed
+#     copy — shipping it would silently break Safari integration for
+#     anyone who installed via .dmg.
+#  2. The .pkg from scripts/build-mac-pkg.sh re-reads the post-embed
+#     .app and is what we actually distribute (it also runs our
+#     migration pre/post-install scripts, which a .dmg can't).
+# If we ever need a .dmg again, the right path is to rebuild it with
+# hdiutil + sign + notarize + staple AFTER embed-safari-extension.sh
+# runs — see SAFARI_BUNDLE_HANDOFF.md item #2.
 CARGO_TARGET_DIR="${PROJECT_ROOT}/src-tauri/target" \
 CI="${TAURI_CI:-false}" \
-npm run tauri -- build --target "${BUILD_TARGET}" ${CONFIG_ARGS[@]+"${CONFIG_ARGS[@]}"}
+npm run tauri -- build --bundles app --target "${BUILD_TARGET}" ${CONFIG_ARGS[@]+"${CONFIG_ARGS[@]}"}
 
 VERSION=$(node -p "require('./package.json').version")
 APP_SOURCE="${TARGET_DIR}/macos/ReDD Block.app"
 
 # Embed the bundled Safari Web Extension (ReDD Focus) into the
-# freshly-built .app, then re-sign. Set SKIP_SAFARI_EXTENSION=1 to
-# bail out (useful for smoke tests / cross-build experiments where
-# you don't want a 30s xcodebuild round-trip).
-#
-# NOTE: this breaks the .dmg Tauri just created — the .dmg still
-# contains the pre-embed .app. The for-distribution/ReDD Block.app
-# we copy below is the right one to drag to /Applications for
-# manual testing. Distribution-quality pipeline (re-notarize the
-# embedded .app + recreate + re-sign + re-notarize the .dmg) is a
-# follow-up; until that lands, treat the .dmg from this branch as
-# unfit for shipping.
+# freshly-built .app, then re-sign + re-notarize + staple. Set
+# SKIP_SAFARI_EXTENSION=1 to bail out (useful for smoke tests /
+# cross-build experiments where you don't want the xcodebuild +
+# notary round-trip).
 if [ "${SKIP_SAFARI_EXTENSION:-}" != "1" ] && [ -d "$APP_SOURCE" ]; then
   bash "${PROJECT_ROOT}/scripts/embed-safari-extension.sh" "$APP_SOURCE"
 fi
-DMG_SOURCE="${TARGET_DIR}/dmg/ReDD Block_${VERSION}_$(basename "${BUILD_TARGET%%-*}")".dmg
-if [ "${BUILD_TARGET}" = "universal-apple-darwin" ]; then
-  DMG_SOURCE="${TARGET_DIR}/dmg/ReDD Block_${VERSION}_universal.dmg"
-fi
-DMG_TARGET="${TARGET_DIR}/dmg/reddblock-${VERSION}-${BUILD_TARGET}.dmg"
 
 mkdir -p for-distribution
 
@@ -75,24 +79,9 @@ if [ -d "$APP_SOURCE" ]; then
   cp -R "$APP_SOURCE" "for-distribution/ReDD Block.app"
 fi
 
-if [ -f "$DMG_SOURCE" ]; then
-  mv "$DMG_SOURCE" "$DMG_TARGET"
-elif [ ! -f "$DMG_TARGET" ]; then
-  FALLBACK_DMG=$(find "${TARGET_DIR}/dmg" -maxdepth 1 -name "*.dmg" -print 2>/dev/null | head -n 1)
-  if [ -n "$FALLBACK_DMG" ] && [ "$FALLBACK_DMG" != "$DMG_TARGET" ]; then
-    mv "$FALLBACK_DMG" "$DMG_TARGET"
-  fi
-fi
-
-if [ -f "$DMG_TARGET" ]; then
-  cp "$DMG_TARGET" "for-distribution/reddblock-${VERSION}-${BUILD_TARGET}.dmg"
-fi
-
 echo ""
 echo "Build complete."
 if [ -d "for-distribution/ReDD Block.app" ]; then
   echo "  App: for-distribution/ReDD Block.app"
 fi
-if [ -f "for-distribution/reddblock-${VERSION}-${BUILD_TARGET}.dmg" ]; then
-  echo "  DMG: for-distribution/reddblock-${VERSION}-${BUILD_TARGET}.dmg"
-fi
+echo "  (Run scripts/build-mac-pkg.sh --release for a shippable .pkg.)"

@@ -194,8 +194,15 @@ The app will open automatically. Hot-reloading is enabled for both frontend (Vit
 ### Building
 
 ```bash
-# macOS: Universal binary (Intel + Apple Silicon) → DMG
+# macOS: Universal binary (Intel + Apple Silicon) → .app
+# (embeds the Safari Web Extension, signs + notarizes + staples)
 npm run build:mac
+
+# macOS: Wrap the .app into a signed/notarized .pkg installer
+npm run build:mac-pkg -- --release
+
+# macOS: Both in one go
+npm run build:mac-all
 
 # Windows: NSIS/MSI installers (x64 + ARM64)
 npm run build:win

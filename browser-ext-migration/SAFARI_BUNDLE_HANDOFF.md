@@ -55,26 +55,20 @@ Commits on this branch (oldest → newest):
 
 ## Open items
 
-### 1. `.dmg` is stale after embed
+### 1. `.dmg` is stale after embed — **DONE**
 
-**Status:** known, deferred.
+`scripts/build-mac.sh` now passes `--bundles app` to Tauri, which
+skips the `.dmg` target entirely. `.pkg` from
+`scripts/build-mac-pkg.sh` is the shippable installer; the `.app`
+in `for-distribution/` is the right one for ad-hoc testing.
 
-**Symptoms:** `for-distribution/reddblock-X-universal-apple-darwin.dmg`
-contains the *pre-embed* `.app` because Tauri packages the `.dmg`
-before our embed step runs. The `.pkg` from `build:mac-pkg` is fine
-(re-reads from `target/.../macos/`).
-
-**Fix options:**
-- a) Rebuild the `.dmg` ourselves with `hdiutil create` after embed,
-     then sign + notarize + staple it. Add to `embed-safari-extension.sh`
-     or a new `scripts/build-mac-dmg.sh`.
-- b) Just stop emitting a `.dmg` and ship `.pkg` only — the `.pkg`
-     is what `build:mac-all` already produces.
-- c) Tell Tauri not to bundle the `.dmg` (`--bundles app` only),
-     do everything ourselves after embed.
-
-I'd lean (b) — fewer moving parts, and `.pkg` runs your existing
-pre-/postinstall scripts which the `.dmg` can't.
+If a `.dmg` is ever wanted again (e.g. for a "drag to /Applications"
+install option), the right path is to add it AFTER
+`embed-safari-extension.sh` runs — `hdiutil create` from the
+post-embed `.app` + sign + `notarize-app.sh` (which already handles
+`.pkg`/`.dmg` the same way as `.app`). Don't go back to letting
+Tauri build the `.dmg` pre-embed — that was the source of the
+stale-artifact bug.
 
 ### 2. Onboarding UI copy still says "click Details on ReDD Focus"
 
