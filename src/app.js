@@ -7840,20 +7840,19 @@ async function updateBlockedApps() {
     }
 }
 
-// Tint the websites and apps inputs in the Edit Blocklist modal with
-// the blocklist's currently-selected colour. The CSS rule reads
-// --blocklist-tint via color-mix() and softens the pastel down so it
-// reads as a wash in light mode and as a subtle hint of colour in
-// dark mode. Called when the modal opens, when the user picks a
-// preset colour swatch, and when the user picks a custom colour.
-// Pass null on close to drop the inline style cleanly.
+// Blocklist modal: --blocklist-tint colours the website/app tag chips;
+// --blocklist-tag-text is black or white for readable labels (from the
+// picker / swatch handlers). The input well stays the normal input bg.
+// Pass null on close to clear the custom properties.
 function applyModalBlocklistTint(hexColor) {
     const modal = document.getElementById('blocklist-modal');
     if (!modal) return;
     if (typeof hexColor === 'string' && hexColor.startsWith('#')) {
         modal.style.setProperty('--blocklist-tint', hexColor);
+        modal.style.setProperty('--blocklist-tag-text', getContrastTextColor(hexColor));
     } else {
         modal.style.removeProperty('--blocklist-tint');
+        modal.style.removeProperty('--blocklist-tag-text');
     }
 }
 

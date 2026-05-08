@@ -4657,20 +4657,25 @@ body.ios.ios-phone .legal-onboarding-note {
     box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
 }
 
-/* Inside the Edit Blocklist modal, the websites and apps inputs are
-   softly tinted with the blocklist's currently-selected colour so the
-   identity of the blocklist is visible while editing it. The colour
-   is set as a CSS custom property by openBlocklistModal() and the
-   colour-swatch / custom-picker handlers; light mode mixes the pastel
-   with the white input bg, dark mode mixes a smaller share with the
-   solid card colour (--input-bg is translucent in dark mode and
-   would wash out under color-mix). */
+/* Inside the Edit Blocklist modal, keep websites/apps wells on the usual
+   input surface. Unlocked chips use the picked blocklist colour via
+   --blocklist-tint / --blocklist-tag-text (JS: applyModalBlocklistTint). */
 #blocklist-modal .tags-input-container {
-    background: color-mix(in srgb, var(--blocklist-tint, transparent) 55%, var(--input-bg));
+    background: var(--input-bg);
 }
 
-body.dark-mode #blocklist-modal .tags-input-container {
-    background: color-mix(in srgb, var(--blocklist-tint, transparent) 38%, var(--redd-card));
+#blocklist-modal .tags-input-container .tag:not(.locked) {
+    background: var(--blocklist-tint, var(--accent-color));
+    color: var(--blocklist-tag-text, white);
+}
+
+#blocklist-modal .tags-input-container .tag:not(.locked) .tag-remove {
+    color: inherit;
+    opacity: 0.55;
+}
+
+#blocklist-modal .tags-input-container .tag:not(.locked) .tag-remove:hover {
+    opacity: 1;
 }
 
 .tags-input-container .form-input {
