@@ -816,6 +816,21 @@ body.dark-mode .app-blocking-closedown-banner {
     flex: 1 1 0;
 }
 
+/* Safari 2-up how-to: narrow menu bar shot, wide Extensions pane (1:2) */
+.extension-enforcer-screenshots.screenshots-row.safari-screenshots-asymmetric
+    .extension-enforcer-step:first-of-type {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+}
+
+.extension-enforcer-screenshots.screenshots-row.safari-screenshots-asymmetric
+    .extension-enforcer-step:last-of-type {
+    flex: 2 1 0;
+    min-width: 0;
+    max-width: none;
+}
+
 .extension-enforcer-screenshot-arrow {
     font-size: 22px;
     font-weight: 600;
