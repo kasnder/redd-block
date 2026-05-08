@@ -7832,6 +7832,18 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
     }
 }
 
+/** Start-a-block heading + Now/Schedule tabs — only meaningful once a blocklist is chosen. */
+function syncSchedulerChromeVisibility() {
+    const modeTabs = document.querySelector('.scheduler-mode-tabs');
+    const mainTitle = document.getElementById('main-start-block-title');
+    const sectionHeader = document.querySelector('#scheduler-section > .section-header');
+    const hasLists = (appData.blocklists?.length || 0) > 0;
+    const show = hasLists && !!selectedBlocklistId;
+    if (mainTitle) mainTitle.classList.toggle('hidden', !show);
+    if (modeTabs) modeTabs.classList.toggle('hidden', !show);
+    if (sectionHeader) sectionHeader.classList.toggle('scheduler-header-compact', !show);
+}
+
 // Handle blocklist selection
 function handleBlocklistSelect(e) {
     const newBlocklistId = e.target.value || null;
@@ -7883,7 +7895,6 @@ function handleBlocklistSelect(e) {
     const selectionPrompt = document.getElementById('selection-prompt');
     const startBlockBtn = document.getElementById('start-block-btn');
     const startScheduleBtn = document.getElementById('start-schedule-btn');
-    const modeTabs = document.querySelector('.scheduler-mode-tabs');
 
     if (selectedBlocklistId) {
         // Determine which mode to show based on active blocks/schedules
@@ -7914,11 +7925,10 @@ function handleBlocklistSelect(e) {
             setScheduleMode(preferredSchedule === true);
         }
 
-        // Hide selection prompt, show time picker, hint, tabs, and appropriate button
+        // Hide selection prompt, show time picker, hint, and appropriate button
         if (selectionPrompt) selectionPrompt.classList.add('hidden');
         timePicker.classList.remove('hidden');
         if (passwordHint) passwordHint.classList.remove('hidden');
-        if (modeTabs) modeTabs.classList.remove('hidden');
 
         // Show the appropriate button based on mode
         if (isScheduleMode) {
@@ -8008,16 +8018,17 @@ function handleBlocklistSelect(e) {
         }
         initializeTimeInputs();
     } else {
-        // Show selection prompt, hide time picker, hint, tabs, and both buttons
+        // Show selection prompt, hide time picker, hint, and both buttons
         if (selectionPrompt) selectionPrompt.classList.remove('hidden');
         timePicker.classList.add('hidden');
         if (passwordHint) passwordHint.classList.add('hidden');
-        if (modeTabs) modeTabs.classList.add('hidden');
         if (startBlockBtn) startBlockBtn.classList.add('hidden');
         if (startScheduleBtn) startScheduleBtn.classList.add('hidden');
         const pauseBtn = document.getElementById('pause-block-btn');
         if (pauseBtn) pauseBtn.classList.add('hidden');
     }
+
+    syncSchedulerChromeVisibility();
 
     // Update visual selection state on blocklist cards
     renderBlocklists();
@@ -10157,6 +10168,8 @@ function render() {
             selectionPrompt.classList.remove('hidden');
         }
     }
+
+    syncSchedulerChromeVisibility();
 
     // Adjust window height to fit content
     updateWindowHeight();

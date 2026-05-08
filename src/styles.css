@@ -1092,6 +1092,24 @@ body.dark-mode .app-blocking-closedown-banner {
 }
 
 /* Scheduler: tabs span the middle flex slot so inline settings sits clear of Now/Schedule. */
+.scheduler-section > .section-header.scheduler-header-compact {
+    justify-content: flex-end;
+}
+
+/* Stacked layout: minimal gap under lone settings row — prompt sits highest */
+@media (max-width: 768px) {
+    .scheduler-section > .section-header.scheduler-header-compact {
+        margin-bottom: 2px;
+    }
+}
+
+/* Two-column: a touch more breathing room under compact header vs tighter prior pass */
+@media (min-width: 769px) {
+    .scheduler-section > .section-header.scheduler-header-compact {
+        margin-bottom: 12px;
+    }
+}
+
 .scheduler-section > .section-header .scheduler-mode-tabs {
     flex: 1 1 0%;
     min-width: 0;
@@ -3554,15 +3572,17 @@ body.ios .blocklists-container {
     transform: translateY(-1px);
 }
 
-/* Selection Prompt */
+/* Selection Prompt — pull nearer the pane top; stacked layout sits highest */
 .selection-prompt {
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    gap: 10px;
-    padding: 24px 0;
+    gap: 12px;
+    padding: 0 0 18px 20px;
+    margin-top: -30px;
     color: var(--text-muted);
-    font-size: 15px;
+    font-size: 18px;
+    font-weight: 500;
     border: none;
     border-radius: 8px;
     background: transparent;
@@ -3571,22 +3591,26 @@ body.ios .blocklists-container {
 .selection-prompt svg {
     display: block;
     flex-shrink: 0;
-    opacity: 0.5;
+    width: 28px;
+    height: 28px;
+    opacity: 0.55;
+}
+
+body.ios .selection-prompt {
+    font-size: 19px;
 }
 
 @media (min-width: 769px) {
+    /* Two-column: slightly lower than prior 10px top — settles under header a bit */
     .selection-prompt {
-        padding: 26px 0;
+        padding: 16px 0 26px 0;
+        margin-top: 0;
     }
 }
 
 @media (max-width: 768px) {
     .selection-prompt svg {
         transform: rotate(90deg);
-    }
-
-    .selection-prompt {
-        padding: 10px 0 20px 20px;
     }
 }
 
@@ -5920,7 +5944,7 @@ body.dark-mode .modal-btn.black-btn:hover {
     grid-column: 2;
     text-align: center;
     font-size: 13px;
-    padding-bottom: 6px;
+    padding-bottom: 2px;
 }
 
 .footer-zoom-control {
