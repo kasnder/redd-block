@@ -128,16 +128,16 @@ body.dark-mode {
     --redd-border: rgba(255, 255, 255, 0.10);
     --redd-coral: #e07b75;
     --redd-coral-soft: rgba(212, 96, 90, 0.16);
-    --redd-teal: #4ec0b0;
-    --redd-teal-hover: #6ad0c1;
-    --redd-teal-soft: rgba(78, 192, 176, 0.14);
+    --redd-teal: #399e90;
+    --redd-teal-hover: #4ec0b0;
+    --redd-teal-soft: rgba(57, 158, 144, 0.16);
     --redd-blue: #6aa9ea;
     --redd-blue-soft: rgba(106, 169, 234, 0.14);
     --redd-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2);
     --redd-shadow-card-hover: 0 8px 24px rgba(0, 0, 0, 0.35);
 
     --primary-btn-bg: var(--redd-teal);
-    --primary-btn-bg-hover: #6ad0c1;
+    --primary-btn-bg-hover: var(--redd-teal-hover);
     --primary-btn-text: #0c1620;
 
     --app-bg: var(--redd-cream);
@@ -495,6 +495,35 @@ body.dark-mode .title-bar {
 .setup-banner .update-banner-btn:hover {
     background: var(--button-hover);
     border-color: var(--button-hover);
+}
+
+body.dark-mode .setup-banner {
+    --setup-bg: var(--redd-card);
+    --setup-border: rgba(78, 192, 176, 0.22);
+    --setup-accent: var(--redd-teal);
+    --setup-headline: var(--text-primary);
+    --setup-text: var(--text-secondary);
+    --setup-muted: var(--text-muted);
+
+    background: linear-gradient(
+        165deg,
+        rgba(35, 50, 68, 0.96),
+        rgba(28, 40, 54, 0.98)
+    );
+    box-shadow: 0 2px 14px rgba(0, 0, 0, 0.35);
+}
+
+body.dark-mode .setup-banner .update-banner-dismiss:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+body.dark-mode .setup-banner .update-banner-btn {
+    color: #ffffff;
+}
+
+body.dark-mode .setup-banner .update-banner-btn:hover {
+    color: #ffffff;
 }
 
 /* ---- App-blocking close-down banner (rose-tint, urgency variant) ------- */
@@ -3764,6 +3793,16 @@ body.ios .blocklist-action-btn svg {
     background: var(--button-hover);
 }
 
+body.dark-mode .onboarding-screen .primary-btn,
+body.dark-mode .onboarding-screen .modal-btn.primary-btn {
+    color: #ffffff;
+}
+
+body.dark-mode .onboarding-screen .primary-btn:hover:not(:disabled),
+body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
+    color: #ffffff;
+}
+
 .onboarding-content {
     max-width: 360px;
     text-align: center;
@@ -4513,6 +4552,48 @@ body.dark-mode .onboarding-focus-card {
 .enforcement-locked-msg svg {
     flex-shrink: 0;
     color: hsl(222, 18%, 55%);
+}
+
+body.dark-mode .enforcement-toggle-section {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: var(--redd-border);
+}
+
+body.dark-mode .enforcement-toggle-headline {
+    color: var(--text-primary);
+}
+
+body.dark-mode .enforcement-toggle-icon {
+    color: var(--text-muted);
+}
+
+body.dark-mode .enforcement-toggle-desc {
+    color: var(--text-secondary);
+}
+
+body.dark-mode .enforcement-locked-msg {
+    color: var(--text-muted);
+}
+
+body.dark-mode .enforcement-locked-msg svg {
+    color: var(--text-muted);
+}
+
+body.dark-mode .enforcement-slider {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+body.dark-mode .enforcement-slider::before {
+    background: var(--text-primary);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+body.dark-mode .enforcement-switch input:checked + .enforcement-slider {
+    background: var(--redd-teal);
+}
+
+body.dark-mode .enforcement-switch input:checked + .enforcement-slider::before {
+    background: var(--primary-btn-text);
 }
 
 .migration-skip-btn {
