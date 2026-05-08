@@ -4413,6 +4413,188 @@ body.dark-mode .onboarding-focus-card {
     background: rgba(10, 45, 123, 0.04);
 }
 
+/*
+ * Migration / browser-extension setup overlay — dark mode.
+ * Panels use --redd-card; light-theme hsl() body copy would match the
+ * background and disappear.
+ */
+body.dark-mode #migration-onboarding .onboarding-content h1 {
+    color: var(--text-primary);
+}
+
+body.dark-mode #migration-onboarding .legal-onboarding-subtitle {
+    color: var(--text-secondary);
+}
+
+body.dark-mode #migration-onboarding .onboarding-focus-card .onboarding-primary-copy {
+    color: var(--text-secondary);
+}
+
+body.dark-mode #migration-onboarding .migration-explainer,
+body.dark-mode #migration-onboarding .migration-explainer-warn {
+    color: var(--text-secondary);
+}
+
+body.dark-mode #migration-onboarding .migration-bullets {
+    color: var(--text-muted);
+}
+
+body.dark-mode #migration-onboarding .migration-bullets code {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-secondary);
+}
+
+body.dark-mode #migration-onboarding .migration-status:not(.error) {
+    color: var(--text-muted);
+}
+
+body.dark-mode #migration-onboarding .migration-checklist .checklist-todo {
+    color: var(--text-primary);
+}
+
+body.dark-mode #migration-onboarding .migration-checklist .checklist-todo .checklist-mark {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-muted);
+}
+
+body.dark-mode #migration-onboarding .migration-checklist .checklist-done {
+    color: #6ee7b7;
+}
+
+body.dark-mode #migration-onboarding .migration-howto {
+    background: rgba(106, 169, 234, 0.12);
+    border-color: rgba(106, 169, 234, 0.28);
+}
+
+body.dark-mode #migration-onboarding .migration-howto h3 {
+    color: var(--text-primary);
+}
+
+body.dark-mode #migration-onboarding .migration-howto ol {
+    color: var(--text-secondary);
+}
+
+body.dark-mode #migration-onboarding .migration-howto ol li strong {
+    color: var(--text-primary);
+}
+
+body.dark-mode #migration-onboarding .migration-browser-row {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--redd-border);
+}
+
+body.dark-mode #migration-onboarding .migration-browser-row.compliant {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(52, 211, 153, 0.32);
+}
+
+body.dark-mode #migration-onboarding .migration-browser-row.needs-enable,
+body.dark-mode #migration-onboarding .migration-browser-row.needs-private,
+body.dark-mode #migration-onboarding .migration-browser-row.needs-website-access,
+body.dark-mode #migration-onboarding .migration-browser-row.needs-fda {
+    background: rgba(245, 158, 11, 0.14);
+    border-color: rgba(251, 191, 36, 0.35);
+}
+
+body.dark-mode #migration-onboarding .migration-browser-name {
+    color: var(--text-primary);
+}
+
+body.dark-mode #migration-onboarding .migration-browser-hint {
+    color: var(--text-muted);
+}
+
+body.dark-mode #migration-onboarding .migration-browser-badge.compliant {
+    color: #6ee7b7;
+}
+
+body.dark-mode #migration-onboarding .migration-browser-badge.needs-install {
+    color: var(--text-muted);
+}
+
+body.dark-mode #migration-onboarding .migration-browser-badge.needs-enable,
+body.dark-mode #migration-onboarding .migration-browser-badge.needs-private,
+body.dark-mode #migration-onboarding .migration-browser-badge.needs-website-access,
+body.dark-mode #migration-onboarding .migration-browser-badge.needs-fda {
+    color: #fbbf24;
+}
+
+body.dark-mode #migration-onboarding .migration-checklist-line {
+    color: var(--text-secondary);
+}
+
+body.dark-mode #migration-onboarding .migration-checklist-active {
+    color: #fcd34d;
+}
+
+body.dark-mode #migration-onboarding .migration-checklist-pending {
+    color: var(--text-muted);
+}
+
+body.dark-mode #migration-onboarding .migration-inline-url-btn {
+    background: rgba(255, 255, 255, 0.07);
+    border-color: var(--redd-border);
+    color: var(--text-secondary);
+}
+
+body.dark-mode #migration-onboarding .migration-inline-url-btn:hover {
+    background: rgba(255, 255, 255, 0.11);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+body.dark-mode #migration-onboarding .migration-show-me-link {
+    color: var(--redd-blue);
+}
+
+body.dark-mode #migration-onboarding .migration-show-me-link:hover {
+    color: #93c5fd;
+}
+
+body.dark-mode #migration-onboarding .migration-instruction {
+    color: var(--text-secondary);
+}
+
+body.dark-mode #migration-onboarding .migration-instruction strong {
+    color: var(--text-primary);
+}
+
+body.dark-mode #migration-onboarding .migration-show-me-btn:hover {
+    background: rgba(251, 191, 36, 0.12);
+}
+
+body.dark-mode #migration-onboarding .migration-screenshots-wrap {
+    background: var(--redd-card);
+    border: 1px solid var(--redd-border);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+body.dark-mode #migration-onboarding .migration-browser-url {
+    color: var(--text-muted);
+    background: rgba(0, 0, 0, 0.28);
+    border-color: var(--redd-border);
+}
+
+body.dark-mode #migration-onboarding .migration-delay-note {
+    color: var(--text-muted);
+    opacity: 0.9;
+}
+
+body.dark-mode #migration-onboarding .migration-skip-btn {
+    color: var(--text-muted);
+    border-color: var(--redd-border);
+}
+
+body.dark-mode #migration-onboarding .migration-skip-btn:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-secondary);
+}
+
+body.dark-mode #migration-onboarding .migration-copy-chip.copied {
+    background: rgba(16, 185, 129, 0.22);
+    border-color: rgba(52, 211, 153, 0.45);
+    color: #a7f3d0;
+}
+
 .legal-onboarding-subtitle {
     font-size: 18px;
     color: var(--text-subtle);
