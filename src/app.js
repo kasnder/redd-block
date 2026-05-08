@@ -11342,7 +11342,7 @@ function renderBlocklists() {
         // Check if this blocklist is selected
         const isSelected = bl.id === selectedBlocklistId;
         const selectedClass = isSelected ? ' selected' : '';
-        const selectedStyle = isSelected ? `style="box-shadow: 0 0 0 3px ${bl.color || '#667eea'}, 0 4px 8px rgba(0, 0, 0, 0.1);"` : '';
+        const selectedStyle = isSelected ? `style="box-shadow: 0 0 0 4px ${bl.color || '#667eea'}, 0 4px 8px rgba(0, 0, 0, 0.1);"` : '';
 
         // Dim if something is selected but this one isn't
         const isDimmed = selectedBlocklistId && !isSelected;

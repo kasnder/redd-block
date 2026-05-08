@@ -3626,7 +3626,7 @@ body.ios .selection-prompt {
     left: 0;
     top: 0;
     bottom: 0;
-    width: 9px;
+    width: 7px;
     z-index: 1;
     border-top-left-radius: 10px;
     border-bottom-left-radius: 10px;
