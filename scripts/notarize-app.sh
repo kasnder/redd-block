@@ -34,6 +34,22 @@ if [ "${SAFARI_EXT_SKIP_NOTARIZE:-}" = "1" ]; then
   exit 0
 fi
 
+# Fast path: if Apple's notary service already has a ticket for this
+# bundle's CDHash — e.g., a previous run uploaded successfully but
+# died before stapler could write the ticket to disk (OOM kill,
+# closed terminal, network drop) — `stapler staple` will fetch it
+# directly without re-uploading. Saves a 5-min notary round-trip on
+# any build resumed after an interrupted notarize.
+#
+# stapler returns non-zero when no ticket is on file (fresh build),
+# so we suppress its output and fall through to the full submit.
+if xcrun stapler staple "$APP_PATH" >/dev/null 2>&1; then
+  echo "notarize-app: existing ticket found on Apple's servers — stapled without re-submitting"
+  spctl --assess --type execute --verbose=4 "$APP_PATH" 2>&1 | sed 's/^/  /'
+  echo "notarize-app: done."
+  exit 0
+fi
+
 : "${APPLE_ID:?APPLE_ID env var required for notarization}"
 : "${APPLE_APP_SPECIFIC_PASSWORD:?APPLE_APP_SPECIFIC_PASSWORD env var required for notarization}"
 : "${APPLE_TEAM_ID:?APPLE_TEAM_ID env var required for notarization}"
