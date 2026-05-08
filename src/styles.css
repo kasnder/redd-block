@@ -344,7 +344,7 @@ body.dark-mode .title-bar {
 }
 
 /* When banner is visible, remove margin-top from main-content */
-.update-banner:not(.hidden)+.main-content {
+.update-banner:not(.hidden)~.main-content {
     margin-top: 0;
 }
 
