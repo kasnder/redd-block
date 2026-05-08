@@ -13,6 +13,14 @@
         <!-- Title Bar -->
         <div class="title-bar">
             <div data-tauri-drag-region></div>
+            <!-- Blocking row: "BLOCKING NOW" + chips when something is enforcing; idle copy
+                 in the chips slot when nothing is active (may show next scheduled start). -->
+            <div id="now-blocking-row" class="now-blocking-row hidden" role="status"
+                aria-labelledby="now-blocking-label-text">
+                <span id="now-blocking-label-text" class="now-blocking-heading">BLOCKING NOW</span>
+                <span class="now-blocking-dot" aria-hidden="true"></span>
+                <div class="now-blocking-chips" id="now-blocking-chips"></div>
+            </div>
             <div id="window-controls" class="window-controls hidden">
                 <button id="titlebar-minimize" class="win-btn" title="Minimize">
                     <!-- Windows minimize icon: horizontal line -->
@@ -236,20 +244,11 @@
             </div>
         </div>
 
-        <!-- Main Content - Grid Layout (hidden until JS clears onboarding gate; avoids flash before EULA on iOS) -->
+        <!-- Main Content - Grid Layout (hidden until JS clears onboarding gate; avoids flash before EULA on iOS).
+             The "BLOCKING NOW" row that used to live here has moved into
+             the title bar (see `#now-blocking-row` near the top of body),
+             so the active blocklists are visible from anywhere in the app. -->
         <div id="main-content" class="main-content hidden">
-            <!-- BLOCKING NOW row: shows everything that's actively blocking right
-                 now (one-off blocks + currently-active schedule segments). Each
-                 chip exposes an Edit / Pause / Stop menu via the ⋯ button. The
-                 row hides itself when nothing is blocking. -->
-            <div id="now-blocking-row" class="now-blocking-row hidden">
-                <span class="now-blocking-label">
-                    <span class="now-blocking-dot" aria-hidden="true"></span>
-                    <span id="now-blocking-label-text">BLOCKING NOW</span>
-                </span>
-                <div class="now-blocking-chips" id="now-blocking-chips"></div>
-            </div>
-
             <!-- Top Row: Scheduler + Blocklists -->
             <div class="grid-top-row">
                 <!-- Settings Button -->
@@ -574,7 +573,7 @@
             <!-- Bottom Row: Week Calendar (spans full width) -->
             <div class="week-calendar-section">
                 <!-- Header: SCHEDULE title (left) + chips (far right). The chips are
-                     visibility-toggle chips per blocklist + "Always on:" chips for blocks
+                     visibility-toggle chips per blocklist + always-on chips for blocks
                      that aren't drawn in the timeline below. Both groups flow inline using
                      display: contents on their wrappers. -->
                 <div class="section-header schedule-header-row">
@@ -582,9 +581,10 @@
                     <div class="schedule-status-row" id="schedule-status-row">
                         <div class="schedule-visibility-chips hidden" id="schedule-visibility-chips"></div>
                         <div class="schedule-always-on-row hidden" id="schedule-always-on-row">
-                            <span class="always-on-label" id="always-on-row-label">Always on:</span>
+                            <span class="always-on-label"><span class="always-on-label-lead"
+                                    id="always-on-row-label-lead">Always on</span><span class="always-on-label-hint"
+                                    id="always-on-row-label-hint"> (not shown in timeline):</span></span>
                             <div class="always-on-chips" id="schedule-always-on-chips"></div>
-                            <span class="always-on-note" id="always-on-row-note">· not shown in timeline</span>
                         </div>
                     </div>
                 </div>

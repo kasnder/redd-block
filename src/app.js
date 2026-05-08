@@ -784,6 +784,125 @@ function scheduleCanStillBecomeActive(schedule, nowDate = new Date()) {
     return scheduleHasFutureSingleOccurrence(schedule, nowDate);
 }
 
+function getTitleBarScheduleSearchFloorMs(schedule, nowMs = Date.now()) {
+    if (!schedule) return nowMs;
+    if (schedule.isPaused && schedule.pauseEndTime > nowMs) {
+        return Math.max(nowMs, schedule.pauseEndTime);
+    }
+    return nowMs;
+}
+
+function dayIndexMonday0FromDate(dt) {
+    const d = dt.getDay();
+    return d === 0 ? 6 : d - 1;
+}
+
+function getRepeatScheduleLastDayInclusiveMs(schedule) {
+    if (schedule.repeatType === 'date' && schedule.repeatDate) {
+        const endDate = new Date(schedule.repeatDate);
+        endDate.setHours(23, 59, 59, 999);
+        return endDate.getTime();
+    }
+    return null;
+}
+
+function computeNextOneShotOccurrenceMs(schedule, floorMs) {
+    let best = null;
+    for (const occ of resolveOneShotOccurrences(schedule)) {
+        const s = occ.start.getTime();
+        const e = occ.end.getTime();
+        if (e <= floorMs) continue;
+        if (s > floorMs) {
+            if (best === null || s < best) best = s;
+        }
+    }
+    return best;
+}
+
+function computeNextRepeatingOccurrenceMs(schedule, floorMs) {
+    if (!schedule.segments || schedule.segments.length === 0) return null;
+    const lastMs = getRepeatScheduleLastDayInclusiveMs(schedule);
+    const floorDate = new Date(floorMs);
+
+    let best = null;
+    const y0 = floorDate.getFullYear();
+    const m0 = floorDate.getMonth();
+    const d0 = floorDate.getDate();
+
+    for (let i = 0; i < 370; i++) {
+        const calMidnight = new Date(y0, m0, d0 + i, 0, 0, 0, 0);
+        if (lastMs !== null && calMidnight.getTime() > lastMs) break;
+
+        const dayIx = dayIndexMonday0FromDate(calMidnight);
+
+        for (const seg of schedule.segments) {
+            const segmentDays = Array.isArray(seg.days) && seg.days.length > 0 ? seg.days : null;
+            if (!segmentDays || !segmentDays.includes(dayIx)) continue;
+
+            const startMins = seg.startHour * 60 + seg.startMinute;
+            const endMins = seg.endHour * 60 + seg.endMinute;
+
+            if (startMins === endMins) {
+                const candMs = calMidnight.getTime();
+                if (candMs > floorMs && (lastMs === null || candMs <= lastMs)) {
+                    if (best === null || candMs < best) best = candMs;
+                }
+                continue;
+            }
+
+            const cand = new Date(calMidnight);
+            cand.setHours(seg.startHour, seg.startMinute, 0, 0);
+            const candMs = cand.getTime();
+            if (candMs > floorMs && (lastMs === null || candMs <= lastMs)) {
+                if (best === null || candMs < best) best = candMs;
+            }
+        }
+    }
+
+    return best;
+}
+
+/**
+ * Among schedules that can still run, earliest segment start strictly after pause/search floor.
+ */
+function pickEarliestUpcomingScheduledBlock(nowMs = Date.now()) {
+    let best = null;
+    for (const schedule of appData.schedules || []) {
+        if (!schedule.segments || schedule.segments.length === 0) continue;
+        if (!scheduleCanStillBecomeActive(schedule, new Date(nowMs))) continue;
+
+        const floorMs = getTitleBarScheduleSearchFloorMs(schedule, nowMs);
+        let nextMs = null;
+
+        if (isNonRepeatingSchedule(schedule)) {
+            nextMs = computeNextOneShotOccurrenceMs(schedule, floorMs);
+        } else {
+            nextMs = computeNextRepeatingOccurrenceMs(schedule, floorMs);
+        }
+
+        if (nextMs == null) continue;
+
+        const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+        if (!blocklist) continue;
+
+        if (best === null || nextMs < best.startMs) {
+            best = { startMs: nextMs, blocklist, schedule };
+        }
+    }
+    return best;
+}
+
+function formatTitleBarScheduleStartWhen(date, nowMs = Date.now()) {
+    const n = new Date(nowMs);
+    const dMid = new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
+    const targetMid = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    const dd = Math.round((targetMid - dMid) / 86400000);
+    const timeStr = formatTime(date);
+    if (dd === 0) return `${tSettings('scheduleStartsToday')} ${timeStr}`;
+    if (dd === 1) return `${tSettings('scheduleStartsTomorrow')} ${timeStr}`;
+    return `${formatDateForDisplay(date)} · ${timeStr}`;
+}
+
 function hasAnyBlockingStateToClear(now = Date.now(), nowDate = new Date(now)) {
     const hasOneOffState = appData.activeBlocks.some(block => isOneOffBlockStillActive(block, now));
     if (hasOneOffState) return true;
@@ -9710,20 +9829,45 @@ function handleNowBlockingStop(entry) {
     }
 }
 
-// Render the BLOCKING NOW row at the top of the app. Hidden when nothing is blocking.
-function renderNowBlockingRow() {
+// Render the title-bar status row: active chips — or idle copy showing the next scheduled start when applicable.
+function renderNowBlockingRow(nowMs = Date.now()) {
     const row = document.getElementById('now-blocking-row');
     const chipsEl = document.getElementById('now-blocking-chips');
     if (!row || !chipsEl) return;
 
-    const entries = collectNowBlockingEntries();
+    row.classList.remove('hidden');
+
+    const entries = collectNowBlockingEntries(nowMs);
 
     if (entries.length === 0) {
-        row.classList.add('hidden');
-        chipsEl.innerHTML = '';
         closeNowBlockingChipMenus();
+        row.classList.add('idle');
+        row.setAttribute('aria-labelledby', 'now-blocking-idle-msg');
+
+        chipsEl.innerHTML = '';
+        const idleSpan = document.createElement('span');
+        idleSpan.id = 'now-blocking-idle-msg';
+        idleSpan.className = 'now-blocking-idle-msg';
+
+        const upcoming = pickEarliestUpcomingScheduledBlock(nowMs);
+        if (!upcoming) {
+            idleSpan.textContent = tSettings('titleBarNoActiveBlocks');
+        } else {
+            const whenPhrase = formatTitleBarScheduleStartWhen(new Date(upcoming.startMs), nowMs);
+            const emojiRaw = upcoming.blocklist.emoji != null ? String(upcoming.blocklist.emoji).trim() : '';
+            const emoji = emojiRaw || '🚫';
+            idleSpan.textContent = tSettings('titleBarNextScheduleStarts')
+                .replace('{emoji}', emoji)
+                .replace('{name}', upcoming.blocklist.name || '')
+                .replace('{when}', whenPhrase);
+        }
+
+        chipsEl.appendChild(idleSpan);
         return;
     }
+
+    row.classList.remove('idle');
+    row.setAttribute('aria-labelledby', 'now-blocking-label-text');
 
     chipsEl.innerHTML = '';
     const dotsIcon = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
@@ -9772,12 +9916,10 @@ function renderNowBlockingRow() {
 
         chipsEl.appendChild(chip);
     });
-
-    row.classList.remove('hidden');
 }
 
 
-/// Render the "Always on: <chip> <chip> · not shown in timeline" row above the calendar.
+/// Render the "Always on (not shown in timeline): <chip> <chip>" row above the calendar.
 /// Always-on active blocks aren't drawn as bars in the timeline because they would cover
 /// every day in full; this row makes their existence clear instead.
 function renderScheduleAlwaysOnRow() {
@@ -10720,6 +10862,10 @@ function startTickInterval() {
             syncSelectedControlState();
         }
 
+        if (collectNowBlockingEntries(now).length === 0) {
+            renderNowBlockingRow(now);
+        }
+
         // Update remaining times in UI
         document.querySelectorAll('.entry-remaining').forEach((el, idx) => {
             const block = appData.activeBlocks[idx];
@@ -10857,12 +11003,16 @@ const SETTINGS_TRANSLATIONS = {
         scheduleTitle: 'Weekly Schedule',
         today: 'Today',
         noActiveBlocks: 'No active blocks',
-        alwaysOnRowLabel: 'Always on:',
-        alwaysOnRowNote: '· not shown in timeline',
+        alwaysOnRowLead: 'Always on',
+        alwaysOnRowTimelineHint: 'not shown in timeline',
         nowBlockingLabel: 'BLOCKING NOW',
         nowBlockingUntil: 'until',
         nowBlockingAlways: 'always on',
         nowBlockingMenuAria: 'Block actions',
+        titleBarNoActiveBlocks: 'No active blocks right now',
+        titleBarNextScheduleStarts: '{emoji} {name} starts {when}',
+        scheduleStartsToday: 'today at',
+        scheduleStartsTomorrow: 'tomorrow at',
         nowBlockingMenuEdit: 'Edit',
         nowBlockingMenuPause: 'Pause',
         nowBlockingMenuStop: 'Stop',
@@ -11034,12 +11184,16 @@ const SETTINGS_TRANSLATIONS = {
         scheduleTitle: 'Ugentligt skema',
         today: 'I dag',
         noActiveBlocks: 'Ingen aktive blokeringer',
-        alwaysOnRowLabel: 'Altid tændt:',
-        alwaysOnRowNote: '· vises ikke i tidslinjen',
+        alwaysOnRowLead: 'Altid tændt',
+        alwaysOnRowTimelineHint: 'vises ikke i tidslinjen',
         nowBlockingLabel: 'BLOKERER NU',
         nowBlockingUntil: 'indtil',
         nowBlockingAlways: 'altid tændt',
         nowBlockingMenuAria: 'Handlinger for blok',
+        titleBarNoActiveBlocks: 'Ingen aktive blokeringer lige nu',
+        titleBarNextScheduleStarts: '{emoji} {name} starter {when}',
+        scheduleStartsToday: 'i dag kl.',
+        scheduleStartsTomorrow: 'i morgen kl.',
         nowBlockingMenuEdit: 'Rediger',
         nowBlockingMenuPause: 'Pause',
         nowBlockingMenuStop: 'Stop',
@@ -11243,8 +11397,11 @@ function applySettingsLanguage() {
     setText('main-blocklists-title', tSettings('yourBlocklists'));
     setText('main-schedule-title', tSettings('scheduleTitle'));
     setText('no-active-blocks-label', tSettings('noActiveBlocks'));
-    setText('always-on-row-label', tSettings('alwaysOnRowLabel'));
-    setText('always-on-row-note', tSettings('alwaysOnRowNote'));
+    setText('always-on-row-label-lead', tSettings('alwaysOnRowLead'));
+    setText(
+        'always-on-row-label-hint',
+        ` (${tSettings('alwaysOnRowTimelineHint')}):`
+    );
     setText('now-blocking-label-text', tSettings('nowBlockingLabel'));
     setText('schedule-footer-hint', tSettings('scheduleFooterHint'));
     setText('duration-quick-btn-always-label', tSettings('durationQuickAlways'));
@@ -11429,6 +11586,7 @@ function applySettingsLanguage() {
     if (document.getElementById('blocklist-select')) renderBlocklistSelector();
     if (typeof updateScheduleButtonState === 'function') updateScheduleButtonState();
     if (typeof updateWeekCalendar === 'function') updateWeekCalendar();
+    renderNowBlockingRow();
 }
 
 // Theme Handling
