@@ -46,6 +46,22 @@ npm run tauri -- build --target "${BUILD_TARGET}" ${CONFIG_ARGS[@]+"${CONFIG_ARG
 
 VERSION=$(node -p "require('./package.json').version")
 APP_SOURCE="${TARGET_DIR}/macos/ReDD Block.app"
+
+# Embed the bundled Safari Web Extension (ReDD Focus) into the
+# freshly-built .app, then re-sign. Set SKIP_SAFARI_EXTENSION=1 to
+# bail out (useful for smoke tests / cross-build experiments where
+# you don't want a 30s xcodebuild round-trip).
+#
+# NOTE: this breaks the .dmg Tauri just created — the .dmg still
+# contains the pre-embed .app. The for-distribution/ReDD Block.app
+# we copy below is the right one to drag to /Applications for
+# manual testing. Distribution-quality pipeline (re-notarize the
+# embedded .app + recreate + re-sign + re-notarize the .dmg) is a
+# follow-up; until that lands, treat the .dmg from this branch as
+# unfit for shipping.
+if [ "${SKIP_SAFARI_EXTENSION:-}" != "1" ] && [ -d "$APP_SOURCE" ]; then
+  bash "${PROJECT_ROOT}/scripts/embed-safari-extension.sh" "$APP_SOURCE"
+fi
 DMG_SOURCE="${TARGET_DIR}/dmg/ReDD Block_${VERSION}_$(basename "${BUILD_TARGET%%-*}")".dmg
 if [ "${BUILD_TARGET}" = "universal-apple-darwin" ]; then
   DMG_SOURCE="${TARGET_DIR}/dmg/ReDD Block_${VERSION}_universal.dmg"
