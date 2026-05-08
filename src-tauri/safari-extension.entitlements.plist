@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Entitlements applied to the embedded Safari Web Extension when
+  ReDD Block is built and signed. Used by scripts/embed-safari-
+  extension.sh, NOT by the standalone ReDD Focus Xcode build (which
+  has its own entitlements at redd-focus-web/macOS (Extension)/
+  MindShield.entitlements).
+
+  app-sandbox is mandatory for app extensions on macOS 26 (Tahoe) —
+  pkd silently rejects unsandboxed .appex with the message
+  "plug-ins must be sandboxed". The upstream entitlements file
+  predates that enforcement and is missing this key.
+
+  application-groups lets the extension and ReDD Block share state
+  via the group.com.reddblock.shared App Group container (already
+  declared in src-tauri/entitlements.macos.plist for the parent .app).
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.com.reddblock.shared</string>
+    </array>
+</dict>
+</plist>

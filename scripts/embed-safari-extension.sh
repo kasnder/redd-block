@@ -38,7 +38,13 @@ DEFAULT_SIGNING_IDENTITY="Developer ID Application: Reduce Digital Distraction L
 SIGNING_IDENTITY="${SAFARI_EXT_SIGNING_IDENTITY:-$DEFAULT_SIGNING_IDENTITY}"
 
 APP_ENTITLEMENTS="$PROJECT_ROOT/src-tauri/entitlements.macos.plist"
-EXT_ENTITLEMENTS="$PROJECT_ROOT/redd-focus-web/macOS (Extension)/MindShield.entitlements"
+# Use our own entitlements file rather than the one inside
+# redd-focus-web/. Upstream's entitlements are missing
+# com.apple.security.app-sandbox, which pkd on macOS 26 hard-rejects:
+# "plug-ins must be sandboxed". Keeping the override out-of-tree
+# also lets the standalone ReDD Focus Xcode build keep its own
+# settings untouched.
+EXT_ENTITLEMENTS="$PROJECT_ROOT/src-tauri/safari-extension.entitlements.plist"
 
 # 1. Build the .appex (unsigned). Last stdout line is the .appex path.
 echo "embed-safari-extension: building .appex..."
@@ -91,5 +97,13 @@ codesign \
 # --deep walks the bundle tree to also verify the embedded .appex.
 echo "embed-safari-extension: verifying signature..."
 codesign --verify --strict --deep --verbose=2 "$APP_PATH" 2>&1 | sed 's/^/  /'
+
+# 6. Re-notarize and staple. Required on macOS 26 for pluginkit to
+# register the embedded Safari Web Extension — without a stapled
+# ticket the host app reads as "Unnotarized Developer ID" and the
+# .appex is silently dropped from Safari → Settings → Extensions.
+# The notarize-app.sh script honours SAFARI_EXT_SKIP_NOTARIZE=1 for
+# fast dev iteration.
+bash "$PROJECT_ROOT/scripts/notarize-app.sh" "$APP_PATH"
 
 echo "embed-safari-extension: done."
