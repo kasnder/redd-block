@@ -5175,12 +5175,6 @@ function setupOverrideModalListeners() {
                 await syncSchedulesToHelper();
                 await updateBlockedApps();
 
-                // Reset modal title
-                const titleEl = document.getElementById('override-modal-title');
-                if (titleEl) {
-                    titleEl.textContent = 'Override Block?';
-                }
-
                 delete window.overrideScheduleId;
             }
 
@@ -6862,6 +6856,9 @@ function closeScheduleConfirmModal() {
 // to one-off blocks (no per-instance skip).
 function openScheduleOverrideModal(schedule) {
     window.overrideScheduleId = schedule.id || schedule.blocklistId;
+
+    const confirmBtn = document.getElementById('confirm-override-btn');
+    if (confirmBtn) confirmBtn.textContent = tSettings('stopSchedule');
 
     const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
     const blocklistName = blocklist ? blocklist.name : 'Schedule';
@@ -8960,6 +8957,7 @@ function closeBlocklistModal() {
 
 // Open override modal
 function openOverrideModal(blockId) {
+    delete window.overrideScheduleId;
     overrideBlockId = blockId;
     const block = appData.activeBlocks.find(b => b.id === blockId);
     overrideBlocklistIdForHelper = block ? block.blocklistId : null;
@@ -8967,6 +8965,9 @@ function openOverrideModal(blockId) {
     const blocklist = appData.blocklists.find(bl => bl.id === block?.blocklistId);
 
     if (!blocklist) return;
+
+    const confirmBtn = document.getElementById('confirm-override-btn');
+    if (confirmBtn) confirmBtn.textContent = tSettings('stopBlock');
 
     // Set modal title with blocklist name
     document.getElementById('override-modal-title').textContent = `Override ${blocklist.name}?`;
@@ -9037,6 +9038,9 @@ function closeOverrideModal() {
     overrideBlockId = null;
     overrideBlocklistIdForHelper = null;
     challengeText = '';
+    delete window.overrideScheduleId;
+    const confirmBtn = document.getElementById('confirm-override-btn');
+    if (confirmBtn) confirmBtn.textContent = tSettings('stopBlock');
 }
 
 // ── Pause/Resume Block ──
@@ -11912,7 +11916,8 @@ const SETTINGS_TRANSLATIONS = {
         // Override / pause / confirmation modals
         overrideBlockTitle: 'Override Block?',
         overrideInstruction: 'To cancel this block early, type the following:',
-        override: 'Override',
+        stopBlock: 'Stop Block',
+        stopSchedule: 'Stop Schedule',
         pauseBlockTitle: 'Pause Block',
         pauseFor: 'PAUSE FOR',
         restartsAt: 'RESTARTS AT',
@@ -12093,7 +12098,8 @@ const SETTINGS_TRANSLATIONS = {
         // Override / pause / confirmation modals
         overrideBlockTitle: 'Overstyr blokering?',
         overrideInstruction: 'For at annullere denne blokering tidligt, skriv følgende:',
-        override: 'Overstyr',
+        stopBlock: 'Stop blokering',
+        stopSchedule: 'Stop skema',
         pauseBlockTitle: 'Sæt blokering på pause',
         pauseFor: 'PAUSE I',
         restartsAt: 'STARTER IGEN KL.',
@@ -12312,7 +12318,7 @@ function applySettingsLanguage() {
     setText('override-modal-title', tSettings('overrideBlockTitle'));
     setText('override-modal-instruction', tSettings('overrideInstruction'));
     setText('cancel-override-btn', tSettings('cancel'));
-    setText('confirm-override-btn', tSettings('override'));
+    setText('confirm-override-btn', tSettings('stopBlock'));
     setText('pause-modal-title', tSettings('pauseBlockTitle'));
     setText('pause-for-label', tSettings('pauseFor'));
     setText('pause-restarts-at-label', tSettings('restartsAt'));
