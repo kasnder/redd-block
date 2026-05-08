@@ -1229,6 +1229,16 @@ async function checkForAppUpdate() {
 // launch). We resume it explicitly when the user dismisses post.
 let migrationOnboardingActive = false;
 let migrationOnboardingDismissed = false;
+// While the migration post-phase is on screen, the user is bouncing
+// between this window and Safari (or Chrome/Firefox/etc.) toggling
+// extension settings. The window-`focus` listener below already
+// re-polls on tab-back, but a user who has Safari and ReDD Block
+// side-by-side never triggers focus events as they click toggles.
+// Run a low-frequency poll so the checklist ticks itself off within
+// the "up to 10 seconds" window the UI already promises. Cleared
+// when the overlay is dismissed.
+let migrationPollIntervalId = null;
+const MIGRATION_POLL_MS = 2500;
 const EXT_ONBOARDING_DISMISSED_KEY = 'reddBlockExtOnboardingDismissed';
 
 async function runDesktopOnboarding() {
@@ -1293,6 +1303,7 @@ async function showMigrationOnboarding(phase, state, opts = {}) {
     if (!screen || !pre || !post) return;
 
     migrationOnboardingActive = true;
+    startMigrationPolling();
     if (main) main.classList.add('hidden');
     screen.classList.remove('hidden');
     pre.classList.toggle('hidden', phase !== 'pre');
@@ -1348,6 +1359,7 @@ function hideMigrationOnboarding() {
     if (main) main.classList.remove('hidden');
     migrationOnboardingActive = false;
     migrationOnboardingDismissed = true;
+    stopMigrationPolling();
 }
 
 function wireMigrationPrePhase() {
@@ -2066,6 +2078,18 @@ async function pollMigrationCompliance() {
         const fresh = await invoke('onboarding_state');
         renderBrowserInstallButtons(fresh);
     } catch (e) { /* no-op */ }
+}
+
+function startMigrationPolling() {
+    if (migrationPollIntervalId) return;
+    migrationPollIntervalId = setInterval(pollMigrationCompliance, MIGRATION_POLL_MS);
+}
+
+function stopMigrationPolling() {
+    if (migrationPollIntervalId) {
+        clearInterval(migrationPollIntervalId);
+        migrationPollIntervalId = null;
+    }
 }
 window.addEventListener('focus', () => {
     if (migrationOnboardingActive) {
