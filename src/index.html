@@ -572,8 +572,10 @@
                                     <span class="btn-label" id="start-block-btn-label"><span
                                             class="btn-label-action">Start</span><span class="btn-label-context">
                                             Block:</span></span>
-                                    <span class="btn-emoji" aria-hidden="true"></span>
-                                    <span class="btn-name"></span>
+                                    <span class="btn-blocklist-meta">
+                                        <span class="btn-emoji" aria-hidden="true"></span>
+                                        <span class="btn-name"></span>
+                                    </span>
                                 </button>
 
                                 <!-- Start Schedule Button (for schedule mode) -->
@@ -591,8 +593,10 @@
                                     <span class="btn-label" id="start-schedule-btn-label"><span
                                             class="btn-label-action">Start</span><span class="btn-label-context">
                                             Schedule:</span></span>
-                                    <span class="btn-emoji" aria-hidden="true"></span>
-                                    <span class="btn-name"></span>
+                                    <span class="btn-blocklist-meta">
+                                        <span class="btn-emoji" aria-hidden="true"></span>
+                                        <span class="btn-name"></span>
+                                    </span>
                                 </button>
                             </div>
                         </div>
@@ -603,14 +607,14 @@
                 <div id="blocklists-section" class="blocklists-section">
                     <div class="section-header blocklists-section-header">
                         <h2 id="main-blocklists-title">My Blocklists</h2>
+                        <button id="add-blocklist-btn" class="icon-btn" title="Add blocklist">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                        </button>
                         <div class="blocklists-heading-controls">
-                            <button id="add-blocklist-btn" class="icon-btn" title="Add blocklist">
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                                </svg>
-                            </button>
                             <button id="settings-btn-stack" type="button" class="settings-top-btn icon-btn"
                                 title="Settings">
                                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -695,7 +699,8 @@
 
                 <div class="form-group">
                     <label for="blocklist-name" id="blocklist-name-label">Name</label>
-                    <input type="text" id="blocklist-name" placeholder="e.g., Social Media" class="form-input">
+                    <input type="text" id="blocklist-name" maxlength="60"
+                        placeholder="e.g., Social Media" class="form-input">
                 </div>
 
                 <div class="form-group">

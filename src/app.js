@@ -179,6 +179,10 @@ const DEFAULT_OVERRIDE_COUNT = 10;
 const TARGET_MAX_OVERRIDE_MINUTES = 30;
 /** When character count >= this, preview text is frozen (no more regeneration) for random words and gibberish. */
 const OVERRIDE_PREVIEW_TRUNCATE_AT = 50;
+/** Max length for blocklist display name (add/edit modal + persisted saves). */
+const BLOCKLIST_NAME_MAX_LENGTH = 60;
+/** Past this length the card title row usually ellipsizes; use "in 11h" instead of "starts in 11h". */
+const BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS = 26;
 let overridePreviewFrozenByType = { 'random-words': null, 'gibberish': null };
 let lastOverridePreviewType = null;
 const UI_ZOOM_MIN = 0.8;
@@ -4623,7 +4627,7 @@ function setupModalListeners() {
     // Save button
     document.getElementById('save-blocklist-btn').addEventListener('click', () => {
         const nameInput = document.getElementById('blocklist-name');
-        const name = nameInput.value.trim();
+        const name = truncateBlocklistName(nameInput.value.trim());
         const nameEmpty = !name;
         if (nameEmpty) {
             nameInput.classList.add('input-error');
@@ -4677,6 +4681,8 @@ function setupModalListeners() {
         }
 
         if (nameEmpty || websiteInvalid) return;
+
+        nameInput.value = name;
 
         const pendingApp = modalAppInput.value.trim();
         if (pendingApp && !isProtectedApp(pendingApp) && !modalApps.includes(pendingApp)) {
@@ -8405,7 +8411,7 @@ async function proceedWithBlock() {
     handleBlocklistSelect({ target: blocklistSelect });
 }
 
-// Helper function for start block button HTML (includes .btn-label, .btn-emoji and .btn-name for updateability)
+// Helper function for start block button HTML (includes .btn-label and .btn-blocklist-meta wrapper)
 function getStartBlockButtonHTML() {
     return `
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -8413,8 +8419,10 @@ function getStartBlockButtonHTML() {
             <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
         </svg>
         <span class="btn-label">${getActionLabelHTML(tSettings('startBlockButton'))}</span>
-        <span class="btn-emoji" aria-hidden="true"></span>
-        <span class="btn-name"></span>
+        <span class="btn-blocklist-meta">
+            <span class="btn-emoji" aria-hidden="true"></span>
+            <span class="btn-name"></span>
+        </span>
     `;
 }
 
@@ -8704,9 +8712,10 @@ function openBlocklistModal(blocklist = null) {
 
     document.getElementById('modal-title').textContent = blocklist ? tSettings('editBlocklist') : tSettings('createBlocklist');
 
-    document.getElementById('blocklist-name').value = blocklist?.name || '';
+    const modalName = truncateBlocklistName(blocklist?.name || '');
+    document.getElementById('blocklist-name').value = modalName;
     document.getElementById('blocklist-name').classList.remove('input-error');
-    lastBlocklistNameValue = blocklist?.name || '';
+    lastBlocklistNameValue = modalName;
 
     const normalizedDifficulty = cloneOverrideDifficulty(blocklist?.overrideDifficulty, 10);
     document.getElementById('override-type').value = normalizedDifficulty.type;
@@ -9883,6 +9892,11 @@ function cloneOverrideDifficulty(raw, fallbackCount = 50) {
     return cloned;
 }
 
+function truncateBlocklistName(raw) {
+    const s = String(raw ?? '');
+    return s.length <= BLOCKLIST_NAME_MAX_LENGTH ? s : s.slice(0, BLOCKLIST_NAME_MAX_LENGTH);
+}
+
 // Duplicate naming (localized suffix): EN "copy", DA "kopi"; parses both so chains gap-fill correctly.
 
 /** Returns chain root if name ends with localized or legacy "copy" / "kopi" (+ optional number), else null. */
@@ -9951,7 +9965,7 @@ function getNextCopyName(blocklist) {
     const used = collectUsedDuplicateSuffixSlots(base);
     let n = 1;
     while (used.has(n)) n++;
-    return n === 1 ? `${base} ${suffix}` : `${base} ${suffix} ${n}`;
+    return truncateBlocklistName(n === 1 ? `${base} ${suffix}` : `${base} ${suffix} ${n}`);
 }
 
 /** True if the blocklist has an active one-off block or a schedule currently in an active segment (and not paused). */
@@ -11293,6 +11307,8 @@ function renderBlocklists() {
         // Schedule badge (blue with calendar-sync)
         let scheduleSegmentRunning = false;
         if (hasSchedule) {
+            const compactScheduleUpcomingLabel =
+                (bl.name || '').trim().length > BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS;
             const schedule = appData.schedules.find(s => s.blocklistId === bl.id);
             let scheduleTimeText = '';
             if (schedule && schedule.segments) {
@@ -11361,26 +11377,36 @@ function renderBlocklists() {
                                 // Same formula works whether dayOffset is 0 (today) or further out.
                                 const minsUntil = (dayOffset * 24 * 60) + segStartMins - currentMins;
 
+                                const nMinutes = String(minsUntil);
+                                const nHours = String(Math.floor(minsUntil / 60));
+                                const nDays = String(Math.floor(minsUntil / (24 * 60)));
                                 if (minsUntil < 60) {
-                                    scheduleTimeText = `starts in ${minsUntil}m`;
+                                    scheduleTimeText = compactScheduleUpcomingLabel
+                                        ? tSettingsFmt('blocklistScheduleCompactMinutesFmt', { n: nMinutes })
+                                        : tSettingsFmt('blocklistScheduleStartsInMinutesFmt', { n: nMinutes });
                                 } else if (minsUntil < 24 * 60) {
-                                    scheduleTimeText = `starts in ${Math.floor(minsUntil / 60)}h`;
+                                    scheduleTimeText = compactScheduleUpcomingLabel
+                                        ? tSettingsFmt('blocklistScheduleCompactHoursFmt', { n: nHours })
+                                        : tSettingsFmt('blocklistScheduleStartsInHoursFmt', { n: nHours });
                                 } else {
-                                    const days = Math.floor(minsUntil / (24 * 60));
-                                    scheduleTimeText = `starts in ${days}d`;
+                                    scheduleTimeText = compactScheduleUpcomingLabel
+                                        ? tSettingsFmt('blocklistScheduleCompactDaysFmt', { n: nDays })
+                                        : tSettingsFmt('blocklistScheduleStartsInDaysFmt', { n: nDays });
                                 }
                                 nextStart = true;
                                 break;
                             }
                             if (nextStart) break;
                         }
-                        if (!scheduleTimeText) scheduleTimeText = 'scheduled';
+                        if (!scheduleTimeText) scheduleTimeText = tSettings('blocklistScheduleFallback');
                     }
                 }
             }
-            // Calendar icon for scheduled blocklists
+            // Calendar icon for scheduled blocklists (calendar, then live dot when segment is running)
+            const calendarIcon =
+                '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>';
             const scheduleDot = scheduleSegmentRunning ? runningDot : '';
-            scheduleBadge = `<span class="schedule-badge">${scheduleDot}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg> ${scheduleTimeText}</span>`;
+            scheduleBadge = `<span class="schedule-badge">${calendarIcon}${scheduleDot} ${scheduleTimeText}</span>`;
         }
 
         const activeBadge = oneOffBadge + scheduleBadge;
@@ -11398,7 +11424,11 @@ function renderBlocklists() {
       <div class="blocklist-card${activeClass}${selectedClass}${dimmedClass}" data-id="${bl.id}" data-active="${isActive}" ${selectedStyle}>
         <div class="blocklist-stripe" style="background: ${borderColor}"></div>
         <div class="blocklist-info">
-          <div class="blocklist-name"><span class="blocklist-emoji">${bl.emoji || '🚫'}</span>${escapeHtml(bl.name)}${activeBadge}</div>
+          <div class="blocklist-name">
+            <span class="blocklist-emoji">${bl.emoji || '🚫'}</span>
+            <span class="blocklist-title-text">${escapeHtml(bl.name)}</span>
+            <span class="blocklist-name-badges">${activeBadge}</span>
+          </div>
           <div class="blocklist-meta">${escapeHtml(metaText)}</div>
         </div>
         <div class="blocklist-actions">
@@ -11931,6 +11961,13 @@ const SETTINGS_TRANSLATIONS = {
         blocklistCardDuplicate: 'Duplicate',
         blocklistCardDelete: 'Delete',
         blocklistCardEditTooltip: 'Edit',
+        blocklistScheduleStartsInMinutesFmt: 'starts in {n}m',
+        blocklistScheduleStartsInHoursFmt: 'starts in {n}h',
+        blocklistScheduleStartsInDaysFmt: 'starts in {n}d',
+        blocklistScheduleCompactMinutesFmt: 'in {n}m',
+        blocklistScheduleCompactHoursFmt: 'in {n}h',
+        blocklistScheduleCompactDaysFmt: 'in {n}d',
+        blocklistScheduleFallback: 'scheduled',
         deleteBlocklistDeniedActiveBlockFmt:
             'Cannot delete "{name}" while a block is running. Stop the block first.',
         deleteBlocklistDeniedActiveScheduleFmt:
@@ -12285,6 +12322,13 @@ const SETTINGS_TRANSLATIONS = {
         blocklistCardDuplicate: 'Duplikér',
         blocklistCardDelete: 'Slet',
         blocklistCardEditTooltip: 'Rediger',
+        blocklistScheduleStartsInMinutesFmt: 'starter om {n}m',
+        blocklistScheduleStartsInHoursFmt: 'starter om {n}t',
+        blocklistScheduleStartsInDaysFmt: 'starter om {n}d',
+        blocklistScheduleCompactMinutesFmt: 'om {n}m',
+        blocklistScheduleCompactHoursFmt: 'om {n}t',
+        blocklistScheduleCompactDaysFmt: 'om {n}d',
+        blocklistScheduleFallback: 'planlagt',
         deleteBlocklistDeniedActiveBlockFmt:
             'Kan ikke slette "{name}", mens en blokering kører. Stop blokeringen først.',
         deleteBlocklistDeniedActiveScheduleFmt:

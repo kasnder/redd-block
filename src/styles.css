@@ -1011,6 +1011,10 @@ body.dark-mode .app-blocking-closedown-banner {
         gap: 0;
     }
 
+    .mode-tab.active {
+        padding: 8px 12px;
+    }
+
     /* Visually hide the label but keep it in the accessibility tree, so the
        button still has a clear accessible name ("Now" / "Schedule"). */
     .mode-tab-label {
@@ -1035,8 +1039,7 @@ body.dark-mode .app-blocking-closedown-banner {
        are hidden; the icon + verb still convey the action, and the
        selected blocklist card to the left supplies the "what". */
     .start-block-btn .btn-label-context,
-    .start-block-btn .btn-emoji,
-    .start-block-btn .btn-name {
+    .start-block-btn .btn-blocklist-meta {
         display: none;
     }
 }
@@ -1091,7 +1094,7 @@ body.dark-mode .app-blocking-closedown-banner {
     min-height: 40px;
 }
 
-/* Scheduler: tabs span the middle flex slot so inline settings sits clear of Now/Schedule. */
+/* Scheduler: settings stays on the far right; title + Now/Schedule sit on the left. */
 .scheduler-section > .section-header.scheduler-header-compact {
     justify-content: flex-end;
 }
@@ -1110,13 +1113,19 @@ body.dark-mode .app-blocking-closedown-banner {
     }
 }
 
+.scheduler-section > .section-header {
+    width: 100%;
+}
+
 .scheduler-section > .section-header .scheduler-mode-tabs {
-    flex: 1 1 0%;
+    flex: 0 1 auto;
+    max-width: 200px;
     min-width: 0;
 }
 
 .scheduler-section > .section-header .settings-top-btn {
     flex-shrink: 0;
+    margin-left: auto;
 }
 
 .scheduler-section > .section-header h2 {
@@ -2575,6 +2584,46 @@ body.dark-mode .tag.locked {
 
 .start-block-btn .btn-name {
     font-weight: 400;
+    text-align: start;
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+/* Emoji + blocklist name share one flex item so wrapping the label doesn’t
+   strand space between emoji and title. */
+.start-block-btn .btn-blocklist-meta {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    flex: 0 1 auto;
+    flex-grow: 0;
+    min-width: 0;
+    width: fit-content;
+    max-width: 100%;
+}
+
+.start-block-btn .btn-emoji {
+    flex: 0 0 auto;
+    text-align: center;
+}
+
+.start-block-btn .btn-label {
+    flex: 0 1 auto;
+    min-width: 0;
+    text-align: start;
+}
+
+/* Keep the lock/unlock SVG at a stable size when label + blocklist name wrap. */
+.start-block-btn > svg {
+    flex: 0 0 18px;
+    width: 18px;
+    height: 18px;
+    min-width: 18px;
+    min-height: 18px;
+    max-width: 18px;
+    max-height: 18px;
+    align-self: center;
 }
 
 /* Stop Block / Stop Schedule Button — filled secondary. Stop is the more
@@ -2588,6 +2637,14 @@ body.dark-mode .tag.locked {
     background: var(--redd-warm-grey);
     color: var(--text-primary);
     border: 1px solid var(--border-color);
+    width: auto;
+    max-width: 350px;
+    min-width: 0;
+    justify-content: center;
+    padding: 14px 18px;
+    /* text-align:start avoids UA button centring on wrapped .btn-name lines
+       (emoji–title gap); justify-content centers the whole row in the chip. */
+    text-align: start;
 }
 
 .start-block-btn.stop-block:hover:not(:disabled) {
@@ -2627,6 +2684,11 @@ body.dark-mode .start-block-btn.stop-schedule:hover:not(:disabled) {
 
 .block-action-buttons .start-block-btn {
     flex: 1;
+}
+
+.block-action-buttons .start-block-btn.stop-block,
+.block-action-buttons .start-block-btn.stop-schedule {
+    flex: 0 1 auto;
 }
 
 /* Pause Block Button — ghost button. Pause is the gentler, undoable action,
@@ -2772,11 +2834,13 @@ body.dark-mode .pause-block-btn.resume-mode:hover {
 
 /* Scheduler Mode Tabs */
 .scheduler-mode-tabs {
-    display: flex;
+    display: inline-flex;
     gap: 2px;
     background: rgba(0, 0, 0, 0.05);
     padding: 4px;
     border-radius: 10px;
+    max-width: 250px;
+    min-width: 0;
 }
 
 body.dark-mode .scheduler-mode-tabs {
@@ -2816,6 +2880,10 @@ body.ios .mode-tab {
     font-size: 16px;
 }
 
+body.ios .mode-tab.active {
+    padding: 10px 16px;
+}
+
 .mode-tab:hover {
     color: var(--text-secondary);
 }
@@ -2824,6 +2892,7 @@ body.ios .mode-tab {
     background: white;
     color: var(--text-primary);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    padding: 8px 14px;
 }
 
 body.dark-mode .mode-tab.active {
@@ -3679,6 +3748,7 @@ body.ios .selection-prompt {
     color: var(--text-secondary);
     border: none;
     vertical-align: middle;
+    white-space: nowrap;
 }
 
 .active-badge svg,
@@ -3687,8 +3757,8 @@ body.ios .selection-prompt {
     opacity: 0.7;
 }
 
-/* Green "live" dot before the time-left text on currently-running blocks —
-   matches the BLOCKING NOW row dot for visual rhyme. */
+/* Green "live" dot: after the calendar on schedule badges; before the icon
+   text on one-off active badges — rhymes with BLOCKING NOW row styling. */
 .badge-running-dot {
     width: 7px;
     height: 7px;
@@ -3728,13 +3798,46 @@ body.ios .selection-prompt {
 }
 
 .blocklist-name {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    min-width: 0;
     font-weight: 600;
     font-size: 17px;
     color: var(--text-secondary);
     margin-bottom: 2px;
-    white-space: nowrap;
+}
+
+.blocklist-name .blocklist-emoji {
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+/* flex-grow must stay off so short titles don't swallow the row and shove badges to the edge. */
+.blocklist-title-text {
+    flex: 0 1 auto;
+    max-width: 100%;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.blocklist-name-badges {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    flex-shrink: 0;
+}
+
+.blocklist-name-badges > .active-badge,
+.blocklist-name-badges > .schedule-badge {
+    margin-left: 0;
+}
+
+.blocklist-name-badges > * + * {
+    margin-left: 8px;
 }
 
 .blocklist-meta {
