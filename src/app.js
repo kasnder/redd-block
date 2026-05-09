@@ -12630,7 +12630,7 @@ const SETTINGS_TRANSLATIONS = {
         themeAuto: 'Auto',
         themeLight: 'Lys',
         themeDark: 'Mørk',
-        languageEnglish: 'Engelsk',
+        languageEnglish: 'English',
         languageDanish: 'Dansk',
         overrideAllBlocks: 'Stop alle blokeringer (med udfordring)',
         // In-app uninstall (macOS only)
