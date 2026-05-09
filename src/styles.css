@@ -1234,6 +1234,13 @@ body.ios.ios-phone .week-calendar-section {
     display: none;
 }
 
+/* Omit "BLOCKING NOW" / localized heading on narrow widths so centred chips aren’t cramped. */
+@media (max-width: 800px) {
+    .now-blocking-row:not(.idle) .now-blocking-heading {
+        display: none;
+    }
+}
+
 .now-blocking-idle-msg {
     -webkit-app-region: drag;
     font-size: 13px;
@@ -1248,6 +1255,11 @@ body.ios.ios-phone .week-calendar-section {
     /* Italic extends past advance width; reserve space so `overflow:hidden` doesn’t clip the last glyph. */
     padding-inline-start: 0.05em;
     padding-inline-end: 0.35em;
+}
+
+/* Many simultaneous blocks — hide per-chip names; emoji + countdown stay visible. */
+.now-blocking-row.many-active-chips .now-blocking-chip-name {
+    display: none;
 }
 
 /* Each "blocking now" chip: rounded pill containing emoji, name, "until HH:MM",
@@ -2881,7 +2893,7 @@ body.dark-mode .mode-tab.active {
     font-size: 15px;
     cursor: pointer;
     transition: all 0.15s ease;
-    width: 212px;
+    width: 134px;
     box-sizing: border-box;
 }
 
@@ -2889,6 +2901,11 @@ body.dark-mode .mode-tab.active {
     border-color: var(--accent-color);
     color: var(--accent-color);
     background: rgba(42, 157, 143, 0.05);
+}
+
+body.dark-mode .add-segment-btn {
+    /* Dashed strokes read thinner than solids; bump vs --border-color (0.10) for readability */
+    border-color: rgba(255, 255, 255, 0.17);
 }
 
 /* Segment Row - contains time pickers and day toggles inline. Wraps so the days group
@@ -3032,7 +3049,6 @@ body.ios .segment-day-toggle {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-top: 12px;
 }
 
 .repeat-label {

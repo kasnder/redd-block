@@ -4827,6 +4827,8 @@ function setupModalListeners() {
         renderBlocklists();
         renderBlocklistSelector();
         renderWeekBlocks(); // Refresh calendar so colour / emoji / name changes propagate
+        renderNowBlockingRow(); // Title-bar chips read emoji/name from freshly saved blocklist
+        renderScheduleAlwaysOnRow();
 
         // Re-trigger blocklist selection to update button text (name may have changed)
         if (selectedBlocklistId) {
@@ -6351,7 +6353,10 @@ function rebuildScheduleSegments() {
     const container = document.getElementById('schedule-segments');
     container.innerHTML = '';
 
-    const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const dayLabels = weekdayAbbrevMon0List();
+    const labelStart = tSettings('start');
+    const labelEnd = tSettings('end');
+    const labelDays = tSettings('days');
 
     scheduleSegments.forEach((seg, index) => {
         const segment = document.createElement('div');
@@ -6373,7 +6378,7 @@ function rebuildScheduleSegments() {
             <div class="segment-row">
                 <div class="time-pickers-row">
                     <div class="time-picker-group">
-                        ${showLabels ? '<label class="time-label">Start</label>' : ''}
+                        ${showLabels ? `<label class="time-label">${labelStart}</label>` : ''}
                         <div class="time-picker-row">
                             <div class="time-display schedule-start-display">
                                 <div class="time-part-wrapper">
@@ -6396,7 +6401,7 @@ function rebuildScheduleSegments() {
                     </div>
                     <span class="time-separator">→</span>
                     <div class="time-picker-group">
-                        ${showLabels ? '<label class="time-label">End</label>' : ''}
+                        ${showLabels ? `<label class="time-label">${labelEnd}</label>` : ''}
                         <div class="time-picker-row">
                             <div class="time-display schedule-end-display">
                                 <div class="time-part-wrapper">
@@ -6419,7 +6424,7 @@ function rebuildScheduleSegments() {
                     </div>
                 </div>
                 <div class="segment-days-group">
-                    ${showLabels ? '<label class="time-label">Days</label>' : ''}
+                    ${showLabels ? `<label class="time-label">${labelDays}</label>` : ''}
                     <div class="segment-days" data-segment-index="${index}">
                         ${dayTogglesHtml}
                     </div>
@@ -6776,9 +6781,7 @@ async function startSchedule() {
 
 // Show schedule confirmation modal
 function showScheduleConfirmModal(blocklist) {
-    const dayNames = tSettings('dayAbbrevMon0');
-
-    // Blocklist name
+    const dayNames = weekdayAbbrevMon0List();
     document.getElementById('schedule-confirm-name').textContent = blocklist.name;
 
     // Websites
@@ -6952,7 +6955,7 @@ function openScheduledBlockEdit(schedule) {
 
 // Show confirmation modal for editing (adding segments to) an existing schedule
 function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) {
-    const dayNames = tSettings('dayAbbrevMon0');
+    const dayNames = weekdayAbbrevMon0List();
 
     // Store references for the proceed function
     window.editScheduleData = {
@@ -10342,7 +10345,7 @@ function updateWeekCalendar() {
 
     dayRows.innerHTML = '';
     // Day names in our internal order: 0=Mon, 1=Tue, ... 6=Sun.
-    const dayNamesMon0 = tSettings('dayAbbrevMon0');
+    const dayNamesMon0 = weekdayAbbrevMon0List();
     const todayJsDay = new Date().getDay(); // 0=Sun..6=Sat
     const todayDayIndex = todayJsDay === 0 ? 6 : todayJsDay - 1;
 
@@ -10790,6 +10793,7 @@ function renderNowBlockingRow(nowMs = Date.now()) {
     if (entries.length === 0) {
         closeNowBlockingChipMenus();
         row.classList.add('idle');
+        row.classList.remove('many-active-chips');
         row.setAttribute('aria-labelledby', 'now-blocking-idle-msg');
 
         chipsEl.innerHTML = '';
@@ -10815,6 +10819,7 @@ function renderNowBlockingRow(nowMs = Date.now()) {
     }
 
     row.classList.remove('idle');
+    row.classList.toggle('many-active-chips', entries.length > 2);
     row.setAttribute('aria-labelledby', 'now-blocking-label-text');
 
     chipsEl.innerHTML = '';
@@ -10835,15 +10840,7 @@ function renderNowBlockingRow(nowMs = Date.now()) {
             const remainMs = entry.until - nowMs;
             if (remainMs > 0) {
                 const totalMins = Math.ceil(remainMs / 60000);
-                const hrs = Math.floor(totalMins / 60);
-                const mins = totalMins % 60;
-                if (hrs > 0 && mins > 0) {
-                    untilText = `${hrs}h ${mins}m left`;
-                } else if (hrs > 0) {
-                    untilText = `${hrs}h left`;
-                } else {
-                    untilText = `${mins}m left`;
-                }
+                untilText = formatBlockTimeRemainingShort(totalMins);
             } else {
                 untilText = '';
             }
@@ -10856,6 +10853,12 @@ function renderNowBlockingRow(nowMs = Date.now()) {
             <span class="now-blocking-chip-name">${escapeHtml(name)}</span>
             ${untilText ? `<span class="now-blocking-chip-until">${escapeHtml(untilText)}</span>` : ''}
         `;
+
+        if (entries.length > 2) {
+            const namePart = String(name || '').trim() || emoji;
+            const labelBits = untilText ? [namePart, untilText] : [namePart];
+            chip.setAttribute('aria-label', labelBits.join('. '));
+        }
 
         const menuBtn = document.createElement('button');
         menuBtn.type = 'button';
@@ -11334,9 +11337,8 @@ function renderBlocklists() {
             } else {
                 const remaining = activeBlock.endTime - now;
                 const mins = Math.ceil(remaining / 60000);
-                const timeText = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
                 // Hourglass icon
-                oneOffBadge = `<span class="active-badge">${runningDot}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg> ${timeText} left</span>`;
+                oneOffBadge = `<span class="active-badge">${runningDot}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg> ${formatBlockTimeRemainingShort(mins)}</span>`;
             }
         }
 
@@ -11394,7 +11396,7 @@ function renderBlocklists() {
                                 minsLeft = endMins - currentMins;
                             }
                         }
-                        scheduleTimeText = minsLeft >= 60 ? `${Math.floor(minsLeft / 60)}h ${minsLeft % 60}m left` : `${minsLeft}m left`;
+                        scheduleTimeText = formatBlockTimeRemainingShort(minsLeft);
                     } else {
                         // Find next upcoming segment
                         let nextStart = null;
@@ -11895,6 +11897,21 @@ function formatDuration(minutes) {
     return `${hours}h ${mins}m`;
 }
 
+/** Remaining time chip, e.g. EN "1h 39m left", DA "1t 39m endnu" (`totalMins` = full minutes). */
+function formatBlockTimeRemainingShort(totalMins) {
+    const n = Math.max(0, Math.floor(totalMins));
+    const hrs = Math.floor(n / 60);
+    const mins = n % 60;
+    if (getSettingsLanguage() === 'da') {
+        if (hrs > 0 && mins > 0) return `${hrs}t ${mins}m endnu`;
+        if (hrs > 0) return `${hrs}t endnu`;
+        return `${mins}m endnu`;
+    }
+    if (hrs > 0 && mins > 0) return `${hrs}h ${mins}m left`;
+    if (hrs > 0) return `${hrs}h left`;
+    return `${mins}m left`;
+}
+
 function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str;
@@ -11970,7 +11987,7 @@ const SETTINGS_TRANSLATIONS = {
             'Cannot delete "{name}" while a block is running. Stop the block first.',
         deleteBlocklistDeniedActiveScheduleFmt:
             'Cannot delete "{name}" while a schedule is active. Stop the schedule first.',
-        scheduleTitle: 'Weekly Schedule',
+        scheduleTitle: 'Week Schedule',
         today: 'Today',
         noActiveBlocks: 'No active blocks',
         alwaysOnRowLead: 'Always on',
@@ -12162,7 +12179,7 @@ const SETTINGS_TRANSLATIONS = {
         start: 'Start',
         days: 'Days',
         add: 'Add',
-        repeat: 'Repeat:',
+        repeat: 'Repeat week:',
         repeatNo: 'No',
         repeatForever: 'Forever',
         repeatUntilDate: 'Until date',
@@ -12238,7 +12255,7 @@ const SETTINGS_TRANSLATIONS = {
         alwaysUntilOff: 'Always (until turned off)',
         scheduleResumingSegment: 'Schedule (resuming current segment)',
         startThisSchedule: 'Start this schedule?',
-        repeatLabel: 'Repeat:',
+        repeatLabel: 'Repeat week:',
         confirmScheduleOverrideNeed: 'To cancel blocks in this schedule, you\'ll need to:',
         /** Start/resume confirmation: friction description — placeholders {count},{charUnit},{minutes} */
         confirmOverrideRandomWordsFmt:
@@ -12325,7 +12342,7 @@ const SETTINGS_TRANSLATIONS = {
             'Kan ikke slette "{name}", mens en blokering kører. Stop blokeringen først.',
         deleteBlocklistDeniedActiveScheduleFmt:
             'Kan ikke slette "{name}", mens et skema er aktivt. Stop skemaet først.',
-        scheduleTitle: 'Ugentligt skema',
+        scheduleTitle: 'Ugeskema',
         today: 'I dag',
         noActiveBlocks: 'Ingen aktive blokeringer',
         alwaysOnRowLead: 'Altid tændt',
@@ -12517,7 +12534,7 @@ const SETTINGS_TRANSLATIONS = {
         start: 'Start',
         days: 'Dage',
         add: 'Tilføj',
-        repeat: 'Gentag:',
+        repeat: 'Gentag ugeskema:',
         repeatNo: 'Nej',
         repeatForever: 'For evigt',
         repeatUntilDate: 'Indtil dato',
@@ -12593,7 +12610,7 @@ const SETTINGS_TRANSLATIONS = {
         alwaysUntilOff: 'Altid (indtil den slås fra)',
         scheduleResumingSegment: 'Skema (genoptager nuværende segment)',
         startThisSchedule: 'Start dette skema?',
-        repeatLabel: 'Gentag:',
+        repeatLabel: 'Gentag ugeskema:',
         confirmScheduleOverrideNeed: 'For at annullere blokeringer i dette skema skal du:',
         confirmOverrideRandomWordsFmt:
             'Skrive {count} {charUnit}, vist som tilfældige ord, præcis som der står (~{minutes} min).',
@@ -12668,6 +12685,14 @@ function getSettingsLanguage() {
     } catch (_) {
         return 'en';
     }
+}
+
+/** Abbreviated weekday labels for internal Mon..Sun indexing (Mon=0..Sun=6). */
+function weekdayAbbrevMon0List() {
+    const lang = getSettingsLanguage();
+    const row = SETTINGS_TRANSLATIONS[lang]?.dayAbbrevMon0;
+    if (Array.isArray(row) && row.length === 7) return row;
+    return SETTINGS_TRANSLATIONS.en.dayAbbrevMon0;
 }
 
 function tSettings(key) {
@@ -13013,6 +13038,7 @@ function applySettingsLanguage() {
     if (document.getElementById('blocklist-select')) renderBlocklistSelector();
     if (typeof updateScheduleButtonState === 'function') updateScheduleButtonState();
     if (typeof updateWeekCalendar === 'function') updateWeekCalendar();
+    if (typeof rebuildScheduleSegments === 'function') rebuildScheduleSegments();
     renderNowBlockingRow();
     if (typeof updateOverridePreview === 'function') updateOverridePreview();
 }
