@@ -737,13 +737,14 @@
         const internals = getInternals();
         const duplicateBlocklist = internals?.duplicateBlocklist;
         assertOrThrow(typeof duplicateBlocklist === 'function', 'G1: duplicateBlocklist not available');
+        assertOrThrow(typeof internals.getNextCopyName === 'function', 'G1: getNextCopyName not available');
 
         const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'G1' });
+        const expectedDupName = internals.getNextCopyName(bl);
         duplicateBlocklist(bl.id);
 
         const appData = getAppData();
-        // Correctly find the duplicated blocklist (it has ' copy' appended to the name)
-        const duplicated = appData.blocklists.find(b => b.name === bl.name + ' copy');
+        const duplicated = appData.blocklists.find(b => b.name === expectedDupName);
         assertOrThrow(duplicated, 'G1: duplicated blocklist not found');
 
         addActiveBlock(duplicated.id, { durationMs: 120000 });

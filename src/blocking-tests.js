@@ -15,7 +15,7 @@
  * - T38c-T38e: Max difficulty (effective count)
  * - T43-T47: Self-Block Prevention
  * - T48-T50: Protected Domain Prevention
- * - T51-T53: Blocklist duplication
+ * - T51-T54, T51da: Blocklist duplication (schedules copy as pending drafts; DA uses "kopi")
  */
 
 (function () {
@@ -1143,6 +1143,14 @@
             }
         }
 
+        /** force settings.language so duplicate suffix is deterministic ('en' default). */
+        function duplicationTestAppData(overrides, lang) {
+            const mockData = createMockAppData(overrides || {});
+            if (!mockData.settings) mockData.settings = {};
+            mockData.settings.language = lang === undefined ? 'en' : lang;
+            return mockData;
+        }
+
         // T51: Duplicate blocklist
         (function T51() {
             const blocklist = createMockBlocklist({
@@ -1156,7 +1164,7 @@
                     typeBeforeMax: 'gibberish'
                 }
             });
-            const mockData = createMockAppData({ blocklists: [blocklist], activeBlocks: [], schedules: [] });
+            const mockData = duplicationTestAppData({ blocklists: [blocklist], activeBlocks: [], schedules: [] });
             withIsolatedAppData(mockData, function() {
                 internals.duplicateBlocklist(blocklist.id);
                 assertEqual(mockData.blocklists.length, 2, 'T51: Two blocklists after duplicate');
@@ -1172,14 +1180,26 @@
             });
         })();
 
-        // T52: Duplicate with inactive schedule copies the schedule
+        // T51da: Danish UI uses "kopi" as duplicate suffix
+        (function T51da() {
+            const blocklist = createMockBlocklist({ name: 'DanskListe', websites: ['x.dk'] });
+            const mockData = duplicationTestAppData({ blocklists: [blocklist], activeBlocks: [], schedules: [] }, 'da');
+            withIsolatedAppData(mockData, function() {
+                internals.duplicateBlocklist(blocklist.id);
+                const dup = mockData.blocklists.find(function(bl) { return bl.id !== blocklist.id; });
+                assert(dup !== undefined, 'T51da: Duplicate blocklist present');
+                assertEqual(dup.name, 'DanskListe kopi', 'T51da: Name uses Danish kopi suffix');
+            });
+        })();
+
+        // T52: Duplicate copies source schedule as pending draft only (not committed / not enforcing)
         (function T52() {
             const blocklist = createMockBlocklist({ name: 'DupSched', websites: ['a.com'] });
             const now = new Date();
             const inactiveDay = (now.getDay() === 0 ? 6 : now.getDay() - 1) === 0 ? 1 : 0; // Pick a different Mon=0 day
             const segment = createMockSegment(9, 0, 17, 0, [inactiveDay]);
             const schedule = createMockSchedule(blocklist.id, [segment]);
-            const mockData = createMockAppData({
+            const mockData = duplicationTestAppData({
                 blocklists: [blocklist],
                 schedules: [schedule],
                 activeBlocks: []
@@ -1190,15 +1210,17 @@
                 assert(dup !== undefined, 'T52: Duplicate blocklist present');
                 if (!dup) return;
                 const dupSchedule = (mockData.schedules || []).find(function(s) { return s.blocklistId === dup.id; });
-                assert(dupSchedule !== undefined, 'T52: Schedule copied for duplicate');
-                if (!dupSchedule) return;
-                assert(dupSchedule.id !== schedule.id, 'T52: Schedule has new id');
-                assertEqual(dupSchedule.blocklistId, dup.id, 'T52: Schedule points to duplicate blocklist');
-                assert(dupSchedule.segments && dupSchedule.segments.length === 1, 'T52: Segments copied');
+                assert(dupSchedule === undefined, 'T52: Duplicate has no committed schedule');
+                const pending = mockData.settings.pendingScheduleSegments[dup.id];
+                assert(pending && pending.length === 1, 'T52: Pending segments copied for duplicate');
+                assertEqual(JSON.stringify(pending[0]), JSON.stringify(segment), 'T52: Segment fields match');
+                const repeat = mockData.settings.pendingScheduleRepeatOptions[dup.id];
+                assert(repeat && repeat.repeatType === 'forever', 'T52: Repeat options copied as draft');
+                assertEqual(mockData.schedules.length, 1, 'T52: Original schedule list unchanged');
             });
         })();
 
-        // T53: Duplicate with active schedule does not copy the schedule
+        // T53: Duplicate with active schedule still copies draft only (never auto-enforcing)
         (function T53() {
             const blocklist = createMockBlocklist({ name: 'DupSchedActive', websites: ['active.com'] });
             const now = new Date();
@@ -1207,7 +1229,7 @@
             const endHour = (startHour + 1) % 24;
             const segment = createMockSegment(startHour, 0, endHour, 0, [currentDayMon0]);
             const schedule = createMockSchedule(blocklist.id, [segment]);
-            const mockData = createMockAppData({
+            const mockData = duplicationTestAppData({
                 blocklists: [blocklist],
                 schedules: [schedule],
                 activeBlocks: []
@@ -1219,7 +1241,43 @@
                 assert(dup !== undefined, 'T53: Duplicate blocklist present');
                 if (!dup) return;
                 const dupSchedule = (mockData.schedules || []).find(function(s) { return s.blocklistId === dup.id; });
-                assert(dupSchedule === undefined, 'T53: Active schedule is not copied to the duplicate');
+                assert(dupSchedule === undefined, 'T53: No committed schedule on duplicate');
+                const pending = mockData.settings.pendingScheduleSegments[dup.id];
+                assert(pending && pending.length === 1, 'T53: Active source schedule copied as pending draft');
+                assertEqual(JSON.stringify(pending[0]), JSON.stringify(segment), 'T53: Segment fields match');
+                assertEqual(mockData.schedules.length, 1, 'T53: Only original remains committed');
+            });
+        })();
+
+        // T53b: Duplicate with paused schedule copies draft only (pause does not carry over)
+        (function T53b() {
+            const blocklist = createMockBlocklist({ name: 'DupSchedPaused', websites: ['pause.com'] });
+            const now = new Date();
+            const currentDayMon0 = now.getDay() === 0 ? 6 : now.getDay() - 1;
+            const startHour = now.getHours();
+            const endHour = (startHour + 1) % 24;
+            const segment = createMockSegment(startHour, 0, endHour, 0, [currentDayMon0]);
+            const schedule = createMockSchedule(blocklist.id, [segment], {
+                isPaused: true,
+                pauseEndTime: Date.now() + 3600000
+            });
+            const mockData = duplicationTestAppData({
+                blocklists: [blocklist],
+                schedules: [schedule],
+                activeBlocks: []
+            });
+
+            withIsolatedAppData(mockData, function() {
+                internals.duplicateBlocklist(blocklist.id);
+                const dup = mockData.blocklists.find(function(bl) { return bl.id !== blocklist.id; });
+                assert(dup !== undefined, 'T53b: Duplicate blocklist present');
+                if (!dup) return;
+                const dupSchedule = (mockData.schedules || []).find(function(s) { return s.blocklistId === dup.id; });
+                assert(dupSchedule === undefined, 'T53b: No committed schedule on duplicate');
+                const pending = mockData.settings.pendingScheduleSegments[dup.id];
+                assert(pending && pending.length === 1, 'T53b: Paused source schedule copied as pending draft');
+                assertEqual(JSON.stringify(pending[0]), JSON.stringify(segment), 'T53b: Segment fields match');
+                assertEqual(mockData.schedules.length, 1, 'T53b: Only original remains committed');
             });
         })();
 
@@ -1228,7 +1286,7 @@
             const original = createMockBlocklist({ name: 'ChainTest', websites: ['example.com'] });
             const firstCopy = createMockBlocklist({ name: 'ChainTest copy', websites: ['example.com'] });
             const thirdCopy = createMockBlocklist({ name: 'ChainTest copy 3', websites: ['example.com'] });
-            const mockData = createMockAppData({
+            const mockData = duplicationTestAppData({
                 blocklists: [original, firstCopy, thirdCopy],
                 activeBlocks: [],
                 schedules: []

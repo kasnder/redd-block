@@ -5859,8 +5859,8 @@ function setScheduleMode(isSchedule) {
                         saveData();
                     }
                 } else {
-                    if (appData.settings.pendingScheduleSegments[selectedBlocklistId]) {
-                        delete appData.settings.pendingScheduleSegments[selectedBlocklistId];
+                    if (appData.settings.pendingScheduleSegments?.[selectedBlocklistId]) {
+                        clearPendingScheduleDraft(selectedBlocklistId);
                         saveData();
                     }
                 }
@@ -5870,9 +5870,22 @@ function setScheduleMode(isSchedule) {
             const pendingSegments = appData.settings?.pendingScheduleSegments?.[selectedBlocklistId];
             if (pendingSegments && pendingSegments.length > 0) {
                 scheduleSegments = pendingSegments.map(seg => ({ ...seg }));
+                const repeatOpts = appData.settings?.pendingScheduleRepeatOptions?.[selectedBlocklistId];
+                if (repeatOpts && typeof repeatOpts.repeatType === 'string') {
+                    scheduleRepeatType = repeatOpts.repeatType;
+                    scheduleRepeatDate =
+                        repeatOpts.repeatType === 'date' && repeatOpts.repeatDate != null
+                            ? new Date(repeatOpts.repeatDate)
+                            : null;
+                } else {
+                    scheduleRepeatType = 'forever';
+                    scheduleRepeatDate = null;
+                }
             } else {
                 // Reset schedule segments to fresh default times
                 scheduleSegments = getDefaultScheduleSegments();
+                scheduleRepeatType = 'forever';
+                scheduleRepeatDate = null;
             }
             activeScheduleSegmentCount = 0;
         }
@@ -6847,17 +6860,27 @@ function showScheduleConfirmModal(blocklist) {
 
     // Override info
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-    const charCount = difficulty.count || 50;
-    const charsPerMinute = 100;
-    const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
-    const charWord = charCount === 1 ? 'character' : 'characters';
+    let charCount = difficulty.count || 50;
+    let charsPerMinute = 100;
 
-    let overrideText;
-    if (difficulty.type === 'random') {
-        overrideText = `Type ${charCount} random ${charWord} (letters and numbers) exactly as shown (~${estimatedMinutes} min).`;
-    } else {
-        overrideText = `Type ${charCount} ${charWord} (displayed as random words) exactly as shown (~${estimatedMinutes} min).`;
+    if (difficulty.type === 'custom' && difficulty.customText) {
+        charCount = difficulty.customText.length;
+        charsPerMinute = 200;
     }
+
+    const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
+
+    const schedType =
+        difficulty.type === 'custom' && difficulty.customText
+            ? 'custom'
+            : difficulty.type === 'gibberish'
+              ? 'gibberish'
+              : 'random-words';
+    const overrideText = formatConfirmModalOverrideTypingLine({
+        type: schedType,
+        count: charCount,
+        estimatedMinutes
+    });
 
     document.getElementById('schedule-confirm-override-text').textContent = overrideText;
 
@@ -7004,10 +7027,7 @@ async function proceedWithScheduleEdit() {
     activeScheduleSegmentCount = schedule.segments.length;
     scheduleSegments = schedule.segments.map(seg => ({ ...seg }));
 
-    // Clear pending segments for this blocklist (they're now committed)
-    if (appData.settings?.pendingScheduleSegments?.[selectedBlocklistId]) {
-        delete appData.settings.pendingScheduleSegments[selectedBlocklistId];
-    }
+    clearPendingScheduleDraft(selectedBlocklistId);
 
     // Save
     await saveData();
@@ -7066,10 +7086,7 @@ async function proceedWithSchedule() {
     // Save to appData
     appData.schedules.push(schedule);
 
-    // Clear pending segments for this blocklist (they're now committed)
-    if (appData.settings?.pendingScheduleSegments?.[selectedBlocklistId]) {
-        delete appData.settings.pendingScheduleSegments[selectedBlocklistId];
-    }
+    clearPendingScheduleDraft(selectedBlocklistId);
 
     await saveData();
 
@@ -7129,11 +7146,26 @@ function handleTimeChange() {
             const existingSchedule = appData.schedules?.find(s => s.blocklistId === selectedBlocklistId);
 
             if (!existingSchedule) {
-                // No active schedule - save all pending segments
+                // No active schedule - save draft segments + repeat together
                 const currentPending = JSON.stringify(appData.settings.pendingScheduleSegments[selectedBlocklistId] || []);
                 const newPending = JSON.stringify(scheduleSegments);
+                const nextRepeat = {
+                    repeatType: scheduleRepeatType,
+                    repeatDate:
+                        scheduleRepeatType === 'date' && scheduleRepeatDate
+                            ? scheduleRepeatDate.getTime()
+                            : null
+                };
+                const prevRepeat = JSON.stringify(appData.settings.pendingScheduleRepeatOptions?.[selectedBlocklistId] ?? null);
+                const nextRepeatJson = JSON.stringify(nextRepeat);
                 if (currentPending !== newPending) {
                     appData.settings.pendingScheduleSegments[selectedBlocklistId] = scheduleSegments.map(seg => ({ ...seg }));
+                }
+                if (!appData.settings.pendingScheduleRepeatOptions) appData.settings.pendingScheduleRepeatOptions = {};
+                if (prevRepeat !== nextRepeatJson) {
+                    appData.settings.pendingScheduleRepeatOptions[selectedBlocklistId] = nextRepeat;
+                }
+                if (currentPending !== newPending || prevRepeat !== nextRepeatJson) {
                     saveData();
                 }
             } else {
@@ -7149,8 +7181,8 @@ function handleTimeChange() {
                     }
                 } else {
                     // No new segments - clear any pending segments
-                    if (appData.settings.pendingScheduleSegments[selectedBlocklistId]) {
-                        delete appData.settings.pendingScheduleSegments[selectedBlocklistId];
+                    if (appData.settings.pendingScheduleSegments?.[selectedBlocklistId]) {
+                        clearPendingScheduleDraft(selectedBlocklistId);
                         saveData();
                     }
                 }
@@ -7871,8 +7903,8 @@ function handleBlocklistSelect(e) {
                     saveData();
                 } else {
                     // No new segments - clear any pending segments
-                    if (appData.settings.pendingScheduleSegments[selectedBlocklistId]) {
-                        delete appData.settings.pendingScheduleSegments[selectedBlocklistId];
+                    if (appData.settings.pendingScheduleSegments?.[selectedBlocklistId]) {
+                        clearPendingScheduleDraft(selectedBlocklistId);
                         saveData();
                     }
                 }
@@ -8062,12 +8094,13 @@ function deselectBlocklist() {
                 const newSegments = scheduleSegments.slice(committedSegmentCount);
                 appData.settings.pendingScheduleSegments[currentBlocklistId] = newSegments.map(seg => ({ ...seg }));
                 saveData();
-            } else {
-                if (appData.settings.pendingScheduleSegments[currentBlocklistId]) {
-                    delete appData.settings.pendingScheduleSegments[currentBlocklistId];
-                    saveData();
+                } else {
+                    // No new segments - clear any pending segments
+                    if (appData.settings.pendingScheduleSegments?.[currentBlocklistId]) {
+                        clearPendingScheduleDraft(currentBlocklistId);
+                        saveData();
+                    }
                 }
-            }
         }
     } else {
         if (!appData.settings) appData.settings = {};
@@ -8196,27 +8229,29 @@ function startBlock() {
 
     // Build override difficulty text with time estimate
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-    let overrideText = '';
-
-    // Estimate typing time: ~20 chars/min for random/gibberish (it's slow!), ~30 for custom text
     let charCount = difficulty.count;
-    let charsPerMinute = 150; // Conservative for random words (average typing is ~200 chars/min)
+    let charsPerMinute = 150;
 
     if (difficulty.type === 'custom' && difficulty.customText) {
         charCount = difficulty.customText.length;
-        charsPerMinute = 200; // Custom text is slightly easier (you can see the pattern)
-        const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
-        overrideText = `Type a specific ${charCount}-character phrase exactly as shown (~${estimatedMinutes} min).`;
+        charsPerMinute = 200;
     } else if (difficulty.type === 'gibberish') {
-        charsPerMinute = 100; // Gibberish is the hardest
-        const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
-        const charWord = charCount === 1 ? 'character' : 'characters';
-        overrideText = `Type ${charCount} random ${charWord} (letters and numbers) exactly as shown (~${estimatedMinutes} min).`;
-    } else {
-        const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
-        const charWord = charCount === 1 ? 'character' : 'characters';
-        overrideText = `Type ${charCount} ${charWord} (displayed as random words) exactly as shown (~${estimatedMinutes} min).`;
+        charsPerMinute = 100;
     }
+
+    const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
+    const startType =
+        difficulty.type === 'custom' && difficulty.customText
+            ? 'custom'
+            : difficulty.type === 'gibberish'
+              ? 'gibberish'
+              : 'random-words';
+
+    const overrideText = formatConfirmModalOverrideTypingLine({
+        type: startType,
+        count: charCount,
+        estimatedMinutes
+    });
 
     document.getElementById('start-confirm-override-text').textContent = overrideText;
 
@@ -8230,7 +8265,7 @@ function closeStartBlockConfirmModal() {
     // Reset resume state and restore default text
     if (resumeData) {
         resumeData = null;
-        document.querySelector('#start-block-confirm-modal .modal-content h3').textContent = 'Start this block?';
+        document.getElementById('start-block-confirm-title').textContent = tSettings('startThisBlock');
         document.getElementById('proceed-start-confirm-btn').textContent = tSettings('startBlock');
     }
 }
@@ -9109,7 +9144,7 @@ function openResumeConfirmation(blocklistId, type, blockId) {
     resumeData = { blocklistId, type, blockId };
 
     // Set heading
-    document.querySelector('#start-block-confirm-modal .modal-content h3').textContent = 'Resume this block?';
+    document.getElementById('start-block-confirm-title').textContent = tSettings('resumeThisBlock');
 
     // Set blocklist name
     document.getElementById('start-confirm-name').textContent = blocklist.name;
@@ -9181,20 +9216,28 @@ function openResumeConfirmation(blocklistId, type, blockId) {
 
     // Override info
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-    let overrideText = '';
     let charCount = difficulty.count;
+    let estimatedMinutes;
+    let resumeType;
 
     if (difficulty.type === 'custom' && difficulty.customText) {
         charCount = difficulty.customText.length;
-        const estimatedMinutes = Math.ceil(charCount / 200);
-        overrideText = `Type a specific ${charCount}-character phrase exactly as shown (~${estimatedMinutes} min).`;
+        estimatedMinutes = Math.ceil(charCount / 200);
+        resumeType = 'custom';
     } else if (difficulty.type === 'gibberish') {
-        const estimatedMinutes = Math.ceil(charCount / 100);
-        overrideText = `Type ${charCount} random characters exactly as shown (~${estimatedMinutes} min).`;
+        estimatedMinutes = Math.ceil(charCount / 100);
+        resumeType = 'gibberish';
     } else {
-        const estimatedMinutes = Math.ceil(charCount / 150);
-        overrideText = `Type ${charCount} characters (displayed as random words) exactly as shown (~${estimatedMinutes} min).`;
+        estimatedMinutes = Math.ceil(charCount / 150);
+        resumeType = 'random-words';
     }
+
+    const overrideText = formatConfirmModalOverrideTypingLine({
+        type: resumeType,
+        count: charCount,
+        estimatedMinutes,
+        resumeShortGibberish: resumeType === 'gibberish'
+    });
     document.getElementById('start-confirm-override-text').textContent = overrideText;
 
     // Change confirm button text
@@ -9889,12 +9932,31 @@ function cloneOverrideDifficulty(raw, fallbackCount = 50) {
     return cloned;
 }
 
-// macOS-style duplicate naming: "test" -> "test copy", "test copy 2", ... gap-fill; content-based chain.
+// Duplicate naming (localized suffix): EN "copy", DA "kopi"; parses both so chains gap-fill correctly.
 
-/** Returns chain root if name is "X copy" or "X copy N", else null. */
+/** Returns chain root if name ends with localized or legacy "copy" / "kopi" (+ optional number), else null. */
 function parseCopyRoot(name) {
-    const m = /^(.+?) copy(?: (\d+))?$/.exec(name);
+    let m = /^(.+?) copy(?: (\d+))?$/.exec(name);
+    if (m) return m[1];
+    m = /^(.+?) kopi(?: (\d+))?$/i.exec(name);
     return m ? m[1] : null;
+}
+
+function getBlocklistDuplicateSuffix() {
+    return tSettings('blocklistDuplicateSuffix');
+}
+
+/** Slot numbers already used for base (counts both "copy" and "kopi" names — one chain per base). */
+function collectUsedDuplicateSuffixSlots(base) {
+    const used = new Set();
+    const esc = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`^${esc} (copy|kopi)(?: (\\d+))?$`, 'i');
+    for (const bl of appData.blocklists) {
+        const m = re.exec(bl.name);
+        if (!m) continue;
+        used.add(m[2] ? parseInt(m[2], 10) : 1);
+    }
+    return used;
 }
 
 /** Comparable string for content (websites, apps only). Only these + name affect duplicate copy-number chain. */
@@ -9915,15 +9977,17 @@ function contentKey(blocklistId) {
 
 function sameBlocklistContent(idA, idB) { return contentKey(idA) === contentKey(idB); }
 
-/** True if name is root, "root copy", or "root copy N". */
+/** True if name is root, "root copy|kopi", or "root copy|kopi N". */
 function nameInChain(name, root) {
-    if (name === root || name === root + ' copy') return true;
-    const p = root + ' copy ';
-    return name.startsWith(p) && /^\d+$/.test(name.slice(p.length));
+    if (name === root) return true;
+    const esc = root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`^${esc} (copy|kopi)(?: (\\d+))?$`, 'i');
+    return re.test(name);
 }
 
-/** Next copy name: "X copy" or "X copy N" with gap-fill; same chain if unedited, else new chain from current name. */
+/** Next duplicate name using current locale suffix; gap-fill; same chain if unedited, else new chain from current name. */
 function getNextCopyName(blocklist) {
+    const suffix = getBlocklistDuplicateSuffix();
     const name = blocklist.name;
     const root = parseCopyRoot(name);
     let base = name;
@@ -9933,16 +9997,10 @@ function getNextCopyName(blocklist) {
         );
         if (otherInChainSameContent) base = root;
     }
-    const used = new Set();
-    const p1 = base + ' copy';
-    const p2 = base + ' copy ';
-    for (const bl of appData.blocklists) {
-        if (bl.name === p1) used.add(1);
-        else if (bl.name.startsWith(p2) && /^\d+$/.test(bl.name.slice(p2.length))) used.add(parseInt(bl.name.slice(p2.length), 10));
-    }
+    const used = collectUsedDuplicateSuffixSlots(base);
     let n = 1;
     while (used.has(n)) n++;
-    return n === 1 ? p1 : p2 + n;
+    return n === 1 ? `${base} ${suffix}` : `${base} ${suffix} ${n}`;
 }
 
 /** True if the blocklist has an active one-off block or a schedule currently in an active segment (and not paused). */
@@ -9955,6 +10013,16 @@ function isBlocklistCurrentlyActive(blocklistId) {
     const schedule = appData.schedules?.find(s => s.blocklistId === blocklistId);
     if (!schedule?.segments?.length) return false;
     return isScheduleSegmentActiveNow(schedule, new Date(now));
+}
+
+function clearPendingScheduleDraft(blocklistId) {
+    if (!blocklistId || !appData.settings) return;
+    if (appData.settings.pendingScheduleSegments?.[blocklistId]) {
+        delete appData.settings.pendingScheduleSegments[blocklistId];
+    }
+    if (appData.settings.pendingScheduleRepeatOptions?.[blocklistId]) {
+        delete appData.settings.pendingScheduleRepeatOptions[blocklistId];
+    }
 }
 
 function duplicateBlocklist(id) {
@@ -9980,29 +10048,57 @@ function duplicateBlocklist(id) {
 
     appData.blocklists.push(duplicate);
 
-    // Copy schedule only when the original is not currently active, so the duplicate starts inactive.
-    const originalIsActive = isBlocklistCurrentlyActive(id);
+    // Always copy schedule configuration as a draft on the new blocklist so duplicates never
+    // enforce until the user runs Start schedule (committed schedules sync to the helper and
+    // can activate immediately; pause/live-session state must not carry over).
     const existingSchedule = appData.schedules?.find(s => s.blocklistId === id);
-    if (!originalIsActive && existingSchedule && existingSchedule.segments && existingSchedule.segments.length > 0) {
-        const newSchedule = {
-            id: crypto.randomUUID(),
-            blocklistId: newId,
-            segments: existingSchedule.segments.map(seg => ({
-                startHour: seg.startHour,
-                startMinute: seg.startMinute,
-                endHour: seg.endHour,
-                endMinute: seg.endMinute,
-                days: [...(seg.days || [])]
-            })),
-            repeatType: existingSchedule.repeatType || 'no',
-            repeatDate: existingSchedule.repeatType === 'date' && existingSchedule.repeatDate
-                ? new Date(existingSchedule.repeatDate.getTime ? existingSchedule.repeatDate.getTime() : existingSchedule.repeatDate)
-                : null,
-            createdAt: Date.now()
+    const pendingSegs = appData.settings?.pendingScheduleSegments?.[id];
+    const pendingRepeat = appData.settings?.pendingScheduleRepeatOptions?.[id];
+
+    let draftSegments = null;
+    let draftRepeat = null;
+
+    if (existingSchedule?.segments?.length) {
+        draftSegments = existingSchedule.segments.map(seg => ({
+            startHour: seg.startHour,
+            startMinute: seg.startMinute,
+            endHour: seg.endHour,
+            endMinute: seg.endMinute,
+            days: [...(seg.days || [])]
+        }));
+        const repeatType = existingSchedule.repeatType || 'no';
+        let repeatDate = null;
+        if (repeatType === 'date' && existingSchedule.repeatDate) {
+            const rd = existingSchedule.repeatDate;
+            repeatDate =
+                typeof rd === 'number'
+                    ? rd
+                    : new Date(rd.getTime ? rd.getTime() : rd).getTime();
+        }
+        draftRepeat = { repeatType, repeatDate };
+    } else if (pendingSegs && pendingSegs.length > 0) {
+        draftSegments = pendingSegs.map(seg => ({ ...seg }));
+        draftRepeat =
+            pendingRepeat && typeof pendingRepeat.repeatType === 'string'
+                ? {
+                      repeatType: pendingRepeat.repeatType,
+                      repeatDate:
+                          pendingRepeat.repeatType === 'date' && pendingRepeat.repeatDate != null
+                              ? pendingRepeat.repeatDate
+                              : null
+                  }
+                : { repeatType: 'forever', repeatDate: null };
+    }
+
+    if (draftSegments && draftSegments.length > 0) {
+        if (!appData.settings) appData.settings = {};
+        if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
+        if (!appData.settings.pendingScheduleRepeatOptions) appData.settings.pendingScheduleRepeatOptions = {};
+        appData.settings.pendingScheduleSegments[newId] = draftSegments;
+        appData.settings.pendingScheduleRepeatOptions[newId] = draftRepeat || {
+            repeatType: 'forever',
+            repeatDate: null
         };
-        if (!appData.schedules) appData.schedules = [];
-        appData.schedules.push(newSchedule);
-        syncSchedulesToHelper();
     }
 
     saveData();
@@ -10036,12 +10132,12 @@ async function deleteBlocklist(id) {
     );
 
     if (hasActiveBlock) {
-        alert(`Cannot delete "${blocklist.name}" while a block is running. Stop the block first.`);
+        alert(tSettingsFmt('deleteBlocklistDeniedActiveBlockFmt', { name: blocklist.name }));
         return;
     }
 
     if (hasActiveSchedule) {
-        alert(`Cannot delete "${blocklist.name}" while a schedule is active. Stop the schedule first.`);
+        alert(tSettingsFmt('deleteBlocklistDeniedActiveScheduleFmt', { name: blocklist.name }));
         return;
     }
 
@@ -10071,7 +10167,7 @@ async function deleteBlocklist(id) {
     // Show undo toast
     const toast = document.getElementById('undo-toast');
     const message = document.getElementById('undo-toast-message');
-    message.textContent = `Deleted "${blocklist.name}"`;
+    message.textContent = tSettingsFmt('deleteUndoToastFmt', { name: blocklist.name });
     toast.classList.remove('hidden');
 
     // Set up auto-commit after 5 seconds
@@ -11357,7 +11453,7 @@ function renderBlocklists() {
         </div>
         <div class="blocklist-actions">
           <div class="blocklist-menu-wrapper">
-            <button class="blocklist-action-btn blocklist-menu-btn" title="Blocklist options">
+            <button class="blocklist-action-btn blocklist-menu-btn" title="${tSettings('blocklistCardMenuTitle')}" aria-label="${tSettings('blocklistCardMenuTitle')}">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="1"></circle>
                 <circle cx="5" cy="12" r="1"></circle>
@@ -11365,26 +11461,26 @@ function renderBlocklists() {
               </svg>
             </button>
             <div class="blocklist-menu hidden">
-              <button class="blocklist-menu-item duplicate-blocklist-item" title="Duplicate">
+              <button class="blocklist-menu-item duplicate-blocklist-item" title="${tSettings('blocklistCardDuplicate')}" aria-label="${tSettings('blocklistCardDuplicate')}">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <line x1="15" x2="15" y1="12" y2="18"/>
                   <line x1="12" x2="18" y1="15" y2="15"/>
                   <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
                   <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
                 </svg>
-                Duplicate
+                ${tSettings('blocklistCardDuplicate')}
               </button>
-              <button class="blocklist-menu-item delete-blocklist-item" title="Delete">
+              <button class="blocklist-menu-item delete-blocklist-item" title="${tSettings('blocklistCardDelete')}" aria-label="${tSettings('blocklistCardDelete')}">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M3 6h18"></path>
                   <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
                   <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
                 </svg>
-                Delete
+                ${tSettings('blocklistCardDelete')}
               </button>
             </div>
           </div>
-          <button class="blocklist-action-btn edit-btn" title="Edit">
+          <button class="blocklist-action-btn edit-btn" title="${tSettings('blocklistCardEditTooltip')}" aria-label="${tSettings('blocklistCardEditTooltip')}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
               <path d="m15 5 4 4"/>
@@ -11866,6 +11962,14 @@ const SETTINGS_TRANSLATIONS = {
         selectionPrompt: 'Select a blocklist',
         selectionPromptOption: 'Select a blocklist...',
         yourBlocklists: 'My Blocklists',
+        blocklistCardMenuTitle: 'Blocklist options',
+        blocklistCardDuplicate: 'Duplicate',
+        blocklistCardDelete: 'Delete',
+        blocklistCardEditTooltip: 'Edit',
+        deleteBlocklistDeniedActiveBlockFmt:
+            'Cannot delete "{name}" while a block is running. Stop the block first.',
+        deleteBlocklistDeniedActiveScheduleFmt:
+            'Cannot delete "{name}" while a schedule is active. Stop the schedule first.',
         scheduleTitle: 'Weekly Schedule',
         today: 'Today',
         noActiveBlocks: 'No active blocks',
@@ -12130,11 +12234,21 @@ const SETTINGS_TRANSLATIONS = {
         confirmOverrideNeed: 'To cancel this block early, you\'ll need to:',
         startBlock: 'Start Block',
         resumeBlock: 'Resume Block',
+        resumeThisBlock: 'Resume this block?',
         alwaysUntilOff: 'Always (until turned off)',
         scheduleResumingSegment: 'Schedule (resuming current segment)',
         startThisSchedule: 'Start this schedule?',
         repeatLabel: 'Repeat:',
         confirmScheduleOverrideNeed: 'To cancel blocks in this schedule, you\'ll need to:',
+        /** Start/resume confirmation: friction description — placeholders {count},{charUnit},{minutes} */
+        confirmOverrideRandomWordsFmt:
+            'Type {count} {charUnit} (displayed as random words) exactly as shown (~{minutes} min).',
+        confirmOverrideGibberishLettersFmt:
+            'Type {count} random {charUnit} (letters and numbers) exactly as shown (~{minutes} min).',
+        confirmOverrideGibberishShortFmt:
+            'Type {count} random characters exactly as shown (~{minutes} min).',
+        confirmOverrideCustomPhraseFmt:
+            'Type a specific {count}-character phrase exactly as shown (~{minutes} min).',
         startSchedule: 'Start Schedule',
         noDaysSelected: 'No days selected',
         runningSuffix: ' (Running)',
@@ -12144,6 +12258,7 @@ const SETTINGS_TRANSLATIONS = {
         overrideAllWarningBody: 'This will stop ANY currently running blocks for any website and app. It will also stop any future scheduled blocking.',
         overrideAllInstruction: 'To do this, type the following:',
         overrideAll: 'Override All',
+        deleteUndoToastFmt: 'Deleted "{name}"',
         undo: 'Undo',
         // Settings
         settingsTitle: 'Settings',
@@ -12188,6 +12303,8 @@ const SETTINGS_TRANSLATIONS = {
         dayAbbrev: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
         dayAbbrevMon0: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
         locale: 'en-US',
+        // Duplicate naming: localized via blocklistDuplicateSuffix
+        blocklistDuplicateSuffix: 'copy',
     },
     da: {
         // Main shell
@@ -12200,6 +12317,14 @@ const SETTINGS_TRANSLATIONS = {
         selectionPrompt: 'Vælg en blokeringsliste',
         selectionPromptOption: 'Vælg en blokeringsliste...',
         yourBlocklists: 'Mine blokeringlister',
+        blocklistCardMenuTitle: 'Valgmuligheder for blokliste',
+        blocklistCardDuplicate: 'Duplikér',
+        blocklistCardDelete: 'Slet',
+        blocklistCardEditTooltip: 'Rediger',
+        deleteBlocklistDeniedActiveBlockFmt:
+            'Kan ikke slette "{name}", mens en blokering kører. Stop blokeringen først.',
+        deleteBlocklistDeniedActiveScheduleFmt:
+            'Kan ikke slette "{name}", mens et skema er aktivt. Stop skemaet først.',
         scheduleTitle: 'Ugentligt skema',
         today: 'I dag',
         noActiveBlocks: 'Ingen aktive blokeringer',
@@ -12461,14 +12586,23 @@ const SETTINGS_TRANSLATIONS = {
         blockedApps: 'Blokerede apps:',
         showAll: 'vis alle',
         confirmDuration: 'Varighed:',
-        confirmOverrideNeed: 'For at annullere denne blokering tidligt skal du:',
+        confirmOverrideNeed: 'For at stoppe denne blokering tidligt skal du:',
         startBlock: 'Start blokering',
         resumeBlock: 'Genoptag blokering',
+        resumeThisBlock: 'Genoptag blokering?',
         alwaysUntilOff: 'Altid (indtil den slås fra)',
         scheduleResumingSegment: 'Skema (genoptager nuværende segment)',
         startThisSchedule: 'Start dette skema?',
         repeatLabel: 'Gentag:',
         confirmScheduleOverrideNeed: 'For at annullere blokeringer i dette skema skal du:',
+        confirmOverrideRandomWordsFmt:
+            'Skrive {count} {charUnit}, vist som tilfældige ord, præcis som der står (~{minutes} min).',
+        confirmOverrideGibberishLettersFmt:
+            'Skrive {count} tilfældige tegn (bogstaver og tal), præcis som der står (~{minutes} min).',
+        confirmOverrideGibberishShortFmt:
+            'Skrive {count} tilfældige tegn præcis som der står (~{minutes} min).',
+        confirmOverrideCustomPhraseFmt:
+            'Skrive et bestemt udtryk på {count} tegn præcis som der står (~{minutes} min).',
         startSchedule: 'Start skema',
         noDaysSelected: 'Ingen dage valgt',
         runningSuffix: ' (Kører)',
@@ -12478,6 +12612,7 @@ const SETTINGS_TRANSLATIONS = {
         overrideAllWarningBody: 'Dette stopper ALLE nuværende blokeringer af websites og apps. Det stopper også alle fremtidige planlagte blokeringer.',
         overrideAllInstruction: 'For at gøre dette, skriv følgende:',
         overrideAll: 'Overstyr alle',
+        deleteUndoToastFmt: 'Slettet "{name}"',
         undo: 'Fortryd',
         // Settings
         settingsTitle: 'Indstillinger',
@@ -12521,6 +12656,7 @@ const SETTINGS_TRANSLATIONS = {
         dayAbbrev: ['Søn', 'Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør'],
         dayAbbrevMon0: ['Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør', 'Søn'],
         locale: 'da-DK',
+        blocklistDuplicateSuffix: 'kopi',
     },
 };
 
@@ -12546,6 +12682,25 @@ function tSettingsFmt(key, vars = {}) {
         s = String(s).split(`{${k}}`).join(String(v));
     }
     return s;
+}
+
+/** Confirmation modals — describe typing challenge count + time estimate */
+function formatConfirmModalOverrideTypingLine({ type, count, estimatedMinutes, resumeShortGibberish = false }) {
+    const minutes = estimatedMinutes;
+    const charUnitDa = 'tegn';
+    const charUnitEn = count === 1 ? 'character' : 'characters';
+    const charUnit = getSettingsLanguage() === 'da' ? charUnitDa : charUnitEn;
+
+    if (type === 'custom') {
+        return tSettingsFmt('confirmOverrideCustomPhraseFmt', { count, minutes });
+    }
+    if (type === 'gibberish') {
+        if (resumeShortGibberish) {
+            return tSettingsFmt('confirmOverrideGibberishShortFmt', { count, minutes });
+        }
+        return tSettingsFmt('confirmOverrideGibberishLettersFmt', { count, charUnit, minutes });
+    }
+    return tSettingsFmt('confirmOverrideRandomWordsFmt', { count, charUnit, minutes });
 }
 
 /** Static copy on the migration / extension-setup overlay — call when language changes. */
@@ -12772,6 +12927,10 @@ function applySettingsLanguage() {
     setText('cancel-schedule-confirm-btn', tSettings('cancel'));
     setText('proceed-schedule-confirm-btn', tSettings('startSchedule'));
     setText('undo-toast-btn', tSettings('undo'));
+    const undoToastMsg = document.getElementById('undo-toast-message');
+    if (undoToastMsg && pendingDelete?.blocklist) {
+        undoToastMsg.textContent = tSettingsFmt('deleteUndoToastFmt', { name: pendingDelete.blocklist.name });
+    }
     setText('override-all-title', tSettings('overrideAllTitle'));
     setText('override-all-warning-strong', tSettings('overrideAllWarningStrong'));
     setText('override-all-warning-body', tSettings('overrideAllWarningBody'));
