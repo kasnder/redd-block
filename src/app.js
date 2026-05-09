@@ -12845,8 +12845,8 @@ function applySettingsLanguage() {
     setText('override-option-custom', tSettings('overrideCustomText'));
     setText('override-max-difficulty-label', tSettings('overrideMaxDifficulty'));
     setText('override-total-characters-label', tSettings('totalCharacters'));
-    setText('blocklist-color-label', tSettings('color'));
     setText('blocklist-emoji-label', tSettings('emoji'));
+    setText('blocklist-color-label', tSettings('color'));
     setText('blocklist-advanced-options-label', tSettings('advancedOptions'));
     setText('show-item-details-label', tSettings('listBlockedOnCard'));
     setText('websites-import-menu-text-file-label', tSettings('importWebsitesFromFile'));

@@ -699,6 +699,31 @@
                 </div>
 
                 <div class="form-group">
+                    <label id="blocklist-emoji-label">Emoji</label>
+                    <div class="emoji-picker-container">
+                        <div class="emoji-swatches" id="emoji-swatches">
+                            <button type="button" class="emoji-swatch selected" data-emoji="🎯">🎯</button>
+                            <button type="button" class="emoji-swatch" data-emoji="💪">💪</button>
+                            <button type="button" class="emoji-swatch" data-emoji="📚">📚</button>
+                            <button type="button" class="emoji-swatch" data-emoji="🚫">🚫</button>
+                            <button type="button" class="emoji-swatch" data-emoji="🌳">🌳</button>
+                            <button type="button" class="emoji-swatch" data-emoji="🎉">🎉</button>
+                            <button type="button" class="emoji-swatch" data-emoji="🛏️">🛏️</button>
+                            <button type="button" class="emoji-swatch" data-emoji="🎹">🎹</button>
+                            <!-- Custom emoji selector -->
+                            <div class="custom-emoji-wrapper">
+                                <button type="button" class="emoji-swatch custom-emoji-swatch" id="custom-emoji-swatch">
+                                    <span class="custom-icon">+</span>
+                                </button>
+                                <div id="emoji-picker-popover" class="emoji-picker-popover hidden">
+                                    <emoji-picker></emoji-picker>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
                     <label id="blocklist-color-label">Color</label>
                     <div class="color-picker-container">
                         <div class="color-swatches" id="color-swatches">
@@ -732,31 +757,6 @@
                                     data-color="custom" style="background: #B8D1DE">
                                     <span class="custom-icon">+</span>
                                 </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label id="blocklist-emoji-label">Emoji</label>
-                    <div class="emoji-picker-container">
-                        <div class="emoji-swatches" id="emoji-swatches">
-                            <button type="button" class="emoji-swatch selected" data-emoji="🎯">🎯</button>
-                            <button type="button" class="emoji-swatch" data-emoji="💪">💪</button>
-                            <button type="button" class="emoji-swatch" data-emoji="📚">📚</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🚫">🚫</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🌳">🌳</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🎉">🎉</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🛏️">🛏️</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🎹">🎹</button>
-                            <!-- Custom emoji selector -->
-                            <div class="custom-emoji-wrapper">
-                                <button type="button" class="emoji-swatch custom-emoji-swatch" id="custom-emoji-swatch">
-                                    <span class="custom-icon">+</span>
-                                </button>
-                                <div id="emoji-picker-popover" class="emoji-picker-popover hidden">
-                                    <emoji-picker></emoji-picker>
-                                </div>
                             </div>
                         </div>
                     </div>

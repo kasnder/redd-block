@@ -2580,7 +2580,9 @@ body.dark-mode .tag.locked {
 /* Stop Block / Stop Schedule Button — filled secondary. Stop is the more
    drastic action (ends the block / schedule entirely) and carries the
    blocklist context, so it gets visual weight: warm-grey fill, navy text,
-   subtle border. Pause sits as a quieter ghost beside it. */
+   subtle border. Pause sits as a quieter ghost beside it.
+   Stop Schedule hover intentionally matches the canvas in light mode; in dark
+   mode its hover is a hair lighter than the chip (subtle lift). */
 .start-block-btn.stop-block,
 .start-block-btn.stop-schedule {
     background: var(--redd-warm-grey);
@@ -2588,9 +2590,15 @@ body.dark-mode .tag.locked {
     border: 1px solid var(--border-color);
 }
 
-.start-block-btn.stop-block:hover:not(:disabled),
-.start-block-btn.stop-schedule:hover:not(:disabled) {
+.start-block-btn.stop-block:hover:not(:disabled) {
     background: rgba(30, 45, 62, 0.06);
+    transform: none;
+    box-shadow: none;
+}
+
+/* Stop schedule hover: melt into canvas (light); stop block keeps grey-chip lift */
+.start-block-btn.stop-schedule:hover:not(:disabled) {
+    background: var(--app-bg);
     transform: none;
     box-shadow: none;
 }
@@ -2602,9 +2610,12 @@ body.dark-mode .start-block-btn.stop-schedule {
     border-color: var(--border-color);
 }
 
-body.dark-mode .start-block-btn.stop-block:hover:not(:disabled),
-body.dark-mode .start-block-btn.stop-schedule:hover:not(:disabled) {
+body.dark-mode .start-block-btn.stop-block:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.06);
+}
+
+body.dark-mode .start-block-btn.stop-schedule:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--redd-warm-grey) 97.5%, white 2.5%);
 }
 
 /* Block action buttons wrapper (pause + stop side by side) */
