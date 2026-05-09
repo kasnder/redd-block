@@ -178,7 +178,7 @@ const MIN_OVERRIDE_CHARS = 5;
 const DEFAULT_OVERRIDE_COUNT = 10;
 const TARGET_MAX_OVERRIDE_MINUTES = 30;
 /** When character count >= this, preview text is frozen (no more regeneration) for random words and gibberish. */
-const OVERRIDE_PREVIEW_TRUNCATE_AT = 37;
+const OVERRIDE_PREVIEW_TRUNCATE_AT = 50;
 let overridePreviewFrozenByType = { 'random-words': null, 'gibberish': null };
 let lastOverridePreviewType = null;
 const UI_ZOOM_MIN = 0.8;
@@ -1589,49 +1589,6 @@ const BROWSER_STORE_LINKS = {
     firefox: { label: 'Firefox', url: 'https://addons.mozilla.org/en-US/firefox/addon/reddfocus/' },
     safari: { label: 'Safari', url: 'https://apps.apple.com/us/app/redd-focus-hide-distractions/id1660218371' },
 };
-
-// Names users typically end up with in the app blocklist when they pick
-// a browser via "Browse Applications" or type one in by hand. Values are
-// normalized — lowercased, with `.app` / `.exe` stripped — so the
-// comparison in `isBrowserAppName` is a flat Set lookup.
-//
-// Used by the blocklist editor to surface a tab-restore hint when the
-// user's apps list contains a browser, since the force-close path can
-// drop unsaved form data + open tabs.
-const BROWSER_APP_NORMALIZED_NAMES = new Set([
-    'safari',
-    'google chrome',
-    'chrome',
-    'chromium',
-    'firefox',
-    'firefox developer edition',
-    'firefox nightly',
-    'microsoft edge',
-    'edge',
-    'msedge',
-    'brave browser',
-    'brave',
-    'arc',
-    'opera',
-    'opera gx',
-    'vivaldi',
-    'tor browser',
-    'duckduckgo',
-    'duckduckgo browser',
-    'librewolf',
-    'waterfox',
-    'zen',
-    'zen browser',
-]);
-
-function isBrowserAppName(name) {
-    if (!name) return false;
-    const normalized = String(name)
-        .trim()
-        .toLowerCase()
-        .replace(/\.(app|exe)$/, '');
-    return BROWSER_APP_NORMALIZED_NAMES.has(normalized);
-}
 
 // Compute per-step status for the migration UI:
 //   - 'compliant': extension installed, enabled, allowed in private, allowed on all websites
@@ -4912,15 +4869,6 @@ function setupModalListeners() {
             }
         });
 
-        // Show a tab-restore hint when the user has any browser in the apps
-        // list. The force-close path can drop unsaved form data + open tabs,
-        // so it's worth flagging up-front rather than only mentioning it in
-        // the countdown — by the time that fires it's usually too late.
-        const browserHint = document.getElementById('blocklist-apps-browser-hint');
-        if (browserHint) {
-            const hasBrowser = modalApps.some(isBrowserAppName);
-            browserHint.classList.toggle('hidden', !hasBrowser);
-        }
     };
 
     // Esc inside the modal clears any active tag selection (it does NOT close
@@ -12197,7 +12145,6 @@ const SETTINGS_TRANSLATIONS = {
         websitesTooltip: 'Blocking applies to entire domains. For example, typing "facebook.com" blocks all of Facebook, not just specific pages.',
         apps: 'Apps',
         appsTooltip: 'Enter the exact name of the application (e.g. \'Safari\'). You can also use the folder button to find the app.',
-        appsBrowserTabsRestoreHint: 'Note: when a browser is automatically closed, you may need to manually restore your tabs. On Mac, open the browser and click History → Reopen All Tabs / Reopen All Windows From Last Session.',
         overrideDifficulty: 'Override Difficulty',
         overrideRandomWords: 'Random Words',
         overrideGibberish: 'Random Gibberish',
@@ -12552,7 +12499,6 @@ const SETTINGS_TRANSLATIONS = {
         websitesTooltip: 'Blokering gælder hele domæner. Hvis du fx skriver "facebook.com", blokeres hele Facebook, ikke kun specifikke sider.',
         apps: 'Apps',
         appsTooltip: 'Indtast det præcise navn på appen (fx "Safari"). Du kan også bruge mappeknappen til at finde appen.',
-        appsBrowserTabsRestoreHint: 'Bemærk: Hvis en browser lukkes automatisk, kan du få brug for at gendanne dine faner manuelt. På Mac åbner du browseren og vælger Historik → Genåbn alle faner / Åbn alle vinduer fra sidste session.',
         overrideDifficulty: 'Sværhedsgrad',
         overrideRandomWords: 'Tilfældige ord',
         overrideGibberish: 'Tilfældig volapyk',
@@ -12893,7 +12839,6 @@ function applySettingsLanguage() {
     setText('blocklist-websites-tooltip', tSettings('websitesTooltip'));
     setText('blocklist-apps-label', tSettings('apps'));
     setText('blocklist-apps-tooltip', tSettings('appsTooltip'));
-    setText('blocklist-apps-browser-hint', tSettings('appsBrowserTabsRestoreHint'));
     setText('override-difficulty-label', tSettings('overrideDifficulty'));
     setText('override-option-random-words', tSettings('overrideRandomWords'));
     setText('override-option-gibberish', tSettings('overrideGibberish'));
