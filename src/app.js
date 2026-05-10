@@ -2152,6 +2152,9 @@ function stopMigrationPolling() {
     }
 }
 window.addEventListener('focus', () => {
+    // Repaint time-dependent UI and restart the per-second tick.
+    // See kickClockNow() for the why.
+    if (typeof kickClockNow === 'function') kickClockNow();
     if (migrationOnboardingActive) {
         pollMigrationCompliance();
     } else {
@@ -2175,6 +2178,9 @@ window.addEventListener('focus', () => {
 // user's mental model: closing the window ends the session.
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
+    // Repaint time-dependent UI and restart the per-second tick.
+    // See kickClockNow() for the why.
+    if (typeof kickClockNow === 'function') kickClockNow();
     const wasDismissed = behaviourBannerDismissedThisSession;
     behaviourBannerDismissedThisSession = false;
     if (!wasDismissed) return;
@@ -11619,7 +11625,7 @@ function startTickInterval() {
     updateBlockedApps();
     startTickInterval._lastScheduleStateSignature = getScheduleStateSignature();
 
-    setInterval(async () => {
+    startTickInterval._tickFn = async () => {
         const now = Date.now();
         let shouldSyncControls = false;
 
@@ -11775,7 +11781,7 @@ function startTickInterval() {
 
         // Only re-render if blocks actually expired
         if (appData.activeBlocks.length < previousCount) {
-            saveData();
+            await saveData();
             render();
 
             // Sync blocking rules now that blocks have been removed.
@@ -11832,7 +11838,24 @@ function startTickInterval() {
             updateTimeDisplay();
             // Don't call handleTimeChange here to avoid circular updates
         }
-    }, 1000);
+    };
+    startTickInterval._intervalId = setInterval(startTickInterval._tickFn, 1000);
+}
+
+// Force an immediate re-render and restart the per-second tick. Called when
+// the window becomes visible or regains focus — macOS can pause/throttle
+// WKWebView's JS timers while the window is hidden or the system sleeps,
+// and the existing setInterval may not resume cleanly. Without this hook
+// the title-bar countdown and schedule "now" line could sit frozen on the
+// last-rendered timestamp until the process was killed.
+function kickClockNow() {
+    try { render(); } catch (e) { console.error('kickClockNow render failed', e); }
+    if (typeof startTickInterval._tickFn === 'function') {
+        if (startTickInterval._intervalId) {
+            clearInterval(startTickInterval._intervalId);
+        }
+        startTickInterval._intervalId = setInterval(startTickInterval._tickFn, 1000);
+    }
 }
 
 function getScheduleStateSignature(now = Date.now()) {
