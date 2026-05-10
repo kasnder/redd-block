@@ -8903,6 +8903,19 @@ function startTickInterval() {
     updateBlockedApps();
     startTickInterval._lastScheduleStateSignature = getScheduleStateSignature();
 
+    // Re-render when the window becomes visible again. The schedule's "now"
+    // line and blocklist countdowns are computed at render time, so without
+    // this they stay frozen at whatever was shown when the WebView was last
+    // active (e.g. after the Mac slept for hours).
+    if (!startTickInterval._visibilityListenerAttached) {
+        startTickInterval._visibilityListenerAttached = true;
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                render();
+            }
+        });
+    }
+
     setInterval(async () => {
         const now = Date.now();
         let shouldSyncControls = false;
@@ -9086,6 +9099,18 @@ function startTickInterval() {
         }
         if (shouldSyncControls) {
             syncSelectedControlState();
+        }
+
+        // Periodic re-render so the schedule "now" line and blocklist
+        // countdowns ("starts in Xh") don't go stale when no state has
+        // changed. Without this, after the WebView is idle for a while
+        // (e.g. system sleep) those displays remain frozen at the last
+        // render's timestamp until something else triggers render().
+        if (!startTickInterval._uiRefreshTickCount) startTickInterval._uiRefreshTickCount = 0;
+        startTickInterval._uiRefreshTickCount++;
+        if (startTickInterval._uiRefreshTickCount >= 60) {
+            startTickInterval._uiRefreshTickCount = 0;
+            render();
         }
 
         // Update remaining times in UI
