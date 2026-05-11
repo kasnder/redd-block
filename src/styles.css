@@ -207,6 +207,8 @@ body.ios {
     padding-top: env(safe-area-inset-top, 20px);
     padding-bottom: 0;
     overflow: hidden;
+    overflow-x: hidden;
+    max-width: 100%;
     /* Avoid Safari boosting text / chrome when rotating to landscape (narrow height, wide width) */
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
@@ -215,15 +217,35 @@ body.ios {
 body.ios .main-content {
     margin-top: 0;
     overflow-y: auto;
+    overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
     min-height: 0;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
 /* iPhone */
 body.ios .app-container {
+    /* 100vw can exceed the visible width (scrollbars / WebKit); % tracks the body box. */
+    width: 100%;
+    max-width: 100%;
     height: calc(100vh - env(safe-area-inset-top, 20px));
     padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
     overflow: hidden;
+    box-sizing: border-box;
+}
+
+/* Let grid columns shrink below intrinsic content width on narrow iOS / split-view. */
+body.ios .grid-top-row {
+    min-width: 0;
+    max-width: 100%;
+}
+
+body.ios .scheduler-section,
+body.ios .blocklists-section {
+    min-width: 0;
+    max-width: 100%;
 }
 
 /* iPad only — iPhone landscape is often ≥768px wide; must not use iPad padding */
@@ -1142,7 +1164,9 @@ body.dark-mode .app-blocking-closedown-banner {
 }
 
 body.ios .section-header h2 {
-    font-size: 19px;
+    /* Slightly above desktop (16px); 19px read too heavy after layout fixes. */
+    font-size: 17px;
+    letter-spacing: 0.05em;
 }
 
 /* Icon Button */
@@ -2084,11 +2108,6 @@ body.dark-mode .day-row.weekend {
     color: var(--text-subtle);
     cursor: pointer;
     transition: all 0.15s ease;
-}
-
-body.ios .duration-quick-btn {
-    padding: 6px 10px;
-    font-size: 15px;
 }
 
 .duration-quick-btn:hover {

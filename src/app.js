@@ -189,7 +189,10 @@ const UI_ZOOM_MIN = 0.8;
 const UI_ZOOM_MAX = 1.8;
 const UI_ZOOM_MAX_DESKTOP = 1.5;  // cap on macOS/Windows (native webview zoom)
 const UI_ZOOM_STEP = 0.1;
+/** Desktop default — slightly larger for monitor distance. */
 const DEFAULT_UI_ZOOM = 1.2;
+/** iOS uses CSS zoom on `html`; 1.0 matches the layout viewport and avoids horizontal overflow. */
+const DEFAULT_UI_ZOOM_IOS = 1.0;
 let zoomToastHideTimeout = null;
 let nativeWebviewZoomSupported = null;
 
@@ -13226,9 +13229,13 @@ function clampUiZoom(scale) {
     return Math.min(getUiZoomMax(), Math.max(UI_ZOOM_MIN, scale));
 }
 
+function getDefaultUiZoom() {
+    return isIOS ? DEFAULT_UI_ZOOM_IOS : DEFAULT_UI_ZOOM;
+}
+
 function getSavedUiZoom() {
     const parsed = Number(appData.settings?.uiZoom);
-    if (!Number.isFinite(parsed)) return DEFAULT_UI_ZOOM;
+    if (!Number.isFinite(parsed)) return getDefaultUiZoom();
     return clampUiZoom(parsed);
 }
 
@@ -13318,7 +13325,7 @@ function zoomUiOut(options = {}) {
 }
 
 function resetUiZoom(options = {}) {
-    setUiZoom(DEFAULT_UI_ZOOM, options);
+    setUiZoom(getDefaultUiZoom(), options);
 }
 
 function setupUiZoomShortcuts() {
