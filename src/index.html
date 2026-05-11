@@ -232,28 +232,6 @@
 
                         <div id="migration-browser-buttons" class="migration-browser-buttons"></div>
 
-                        <!-- Active-block surfacing. Shown when the user has a
-                             block already running (carried over from v1.x in
-                             the after-cleanup case, or just started in the
-                             fresh case). Sits directly above the Browser
-                             protection toggle so users see *why* turning it
-                             on locks it for the block duration — without
-                             this banner the locking behaviour came as a
-                             surprise. JS populates the list from
-                             appData.activeBlocks. -->
-                        <div id="migration-active-block-banner" class="migration-active-block-banner hidden" role="status">
-                            <svg class="migration-active-block-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <circle cx="12" cy="12" r="10"></circle>
-                                <line x1="12" y1="8" x2="12" y2="12"></line>
-                                <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                            </svg>
-                            <div class="migration-active-block-content">
-                                <div id="migration-active-block-headline-text" class="migration-active-block-headline">A block is currently running</div>
-                                <div id="migration-active-block-list" class="migration-active-block-list"></div>
-                                <div id="migration-active-block-note" class="migration-active-block-note">If you turn Browser protection on, it will stay on until this block ends.</div>
-                            </div>
-                        </div>
-
                         <!-- Enforcement opt-in toggle. OFF by default so new
                              users aren't surprised by automatic browser force-
                              closes. Once enabled and a block is running, the
@@ -268,9 +246,17 @@
                                         <svg class="enforcement-toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
                                         </svg>
-                                        <span id="enforcement-toggle-headline-text">Browser protection</span>
+                                        <span id="enforcement-toggle-headline-text">Browser enforcement</span>
                                     </strong>
                                     <span id="enforcement-toggle-desc-text" class="enforcement-toggle-desc">While a block is active, this gently backs your own choice: browsers that aren't fully covered by ReDD Focus yet get a short heads-up—then the window may close—so quiet loopholes don't undo the attention you asked for.</span>
+                                    <p class="enforcement-toggle-disable-note">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                        </svg>
+                                        <span id="enforcement-toggle-disable-note-text">To turn off browser enforcement again, you need to stop all running blocks.</span>
+                                    </p>
                                 </div>
                                 <label class="enforcement-switch" for="enforcement-toggle-input">
                                     <input type="checkbox" id="enforcement-toggle-input" />

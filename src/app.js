@@ -1474,7 +1474,6 @@ function wireMigrationPrePhase() {
 
 function wireMigrationPostPhase(state) {
     renderBrowserInstallButtons(state);
-    renderMigrationActiveBlockBanner();
     wireEnforcementToggle();
     const doneBtn = document.getElementById('migration-done-btn');
     const skipBtn = document.getElementById('migration-skip-btn');
@@ -1506,63 +1505,6 @@ function wireMigrationPostPhase(state) {
         skipBtn._listenerAdded = true;
         skipBtn.addEventListener('click', finish);
     }
-}
-
-// Surface the user's currently-running block(s) on the migration post
-// screen so they see *why* turning Browser protection on locks it for
-// the duration. Without this banner the lock came as a surprise to
-// v1.x upgraders whose pre-existing block carried over silently (we
-// migrate active blocks across the upgrade, but the post screen never
-// mentioned them, so the toggle's locking behaviour looked broken).
-//
-// Re-uses the same active-block predicate as
-// updateEnforcementToggleLock — they're conceptually paired (this
-// banner explains the consequence the toggle enforces).
-function renderMigrationActiveBlockBanner() {
-    const banner = document.getElementById('migration-active-block-banner');
-    const list = document.getElementById('migration-active-block-list');
-    if (!banner || !list) return;
-    const now = Date.now();
-    const active = (appData.activeBlocks || []).filter(b => {
-        const startOk = !b.startTime || b.startTime <= now;
-        const endOk = b.endTime == null || b.endTime > now;
-        return startOk && endOk && !b.isPaused;
-    });
-    if (active.length === 0) {
-        banner.classList.add('hidden');
-        list.innerHTML = '';
-        return;
-    }
-    banner.classList.remove('hidden');
-    list.innerHTML = '';
-    const fallbackName = tSettings('migrationActiveBlockNameFallback');
-    const alwaysOnLabel = tSettings('migrationActiveBlockUntilAlways');
-    active.forEach(b => {
-        const bl = (appData.blocklists || []).find(x => x.id === b.blocklistId);
-        const emojiRaw = bl && bl.emoji != null ? String(bl.emoji).trim() : '';
-        const emoji = emojiRaw || '🚫';
-        const name = (bl && bl.name) ? bl.name : fallbackName;
-        let until;
-        if (isBlockAlwaysOn(b)) {
-            until = alwaysOnLabel;
-        } else {
-            const remainingMins = Math.max(0, Math.ceil((b.endTime - now) / 60000));
-            until = formatBlockTimeRemainingShort(remainingMins);
-        }
-        const row = document.createElement('div');
-        row.className = 'migration-active-block-row';
-        const emojiSpan = document.createElement('span');
-        emojiSpan.className = 'migration-active-block-emoji';
-        emojiSpan.textContent = emoji;
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'migration-active-block-name';
-        nameSpan.textContent = name;
-        const untilSpan = document.createElement('span');
-        untilSpan.className = 'migration-active-block-until';
-        untilSpan.textContent = until;
-        row.append(emojiSpan, nameSpan, untilSpan);
-        list.appendChild(row);
-    });
 }
 
 // ---- Enforcement opt-in toggle -------------------------------------------
@@ -12125,13 +12067,10 @@ const SETTINGS_TRANSLATIONS = {
         migrationHowtoLi3Html: 'Once it\'s there, <strong>allow it in private/incognito tabs</strong> so blocking covers private windows too — see each browser\'s row below.',
         migrationDone: 'I\'m all set up',
         migrationSkip: 'Skip for now',
-        migrationEnforcementHeadline: 'Browser protection',
+        migrationEnforcementHeadline: 'Browser enforcement',
         migrationEnforcementDesc: 'To help you stay focused, your browser is automatically closed if you turn off ReDD Focus while a block is running.',
         migrationEnforcementLocked: 'This stays on for the rest of this block so your protection stays consistent—you can change it again when the block ends.',
-        migrationActiveBlockHeadline: 'A block is currently running',
-        migrationActiveBlockNote: 'If you turn Browser protection on, it will stay on until this block ends.',
-        migrationActiveBlockUntilAlways: 'Always on',
-        migrationActiveBlockNameFallback: 'Blocklist',
+        migrationEnforcementDisableNote: 'To turn off browser enforcement again, you need to stop all running blocks.',
         migrationApproveAdminPrompt: 'Approve the admin prompt to continue…',
         migrationTryAgain: 'Try again',
         migrationCleanupNeedAdmin: 'We need that admin permission to finish — your blocklists are safe.',
@@ -12493,10 +12432,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationEnforcementHeadline: 'Browser-beskyttelse',
         migrationEnforcementDesc: 'For at støtte dig i at fokusere, bliver din browser automatisk lukket ned hvis du slukker for ReDD Focus mens en blokering kører.',
         migrationEnforcementLocked: 'Det bliver slået til for resten af blokeringen, så din beskyttelse hænger sammen—du kan ændre det igen, når blokeringen stopper.',
-        migrationActiveBlockHeadline: 'En blokering kører lige nu',
-        migrationActiveBlockNote: 'Slår du browser-beskyttelse til, bliver den slået til indtil blokeringen slutter.',
-        migrationActiveBlockUntilAlways: 'Altid slået til',
-        migrationActiveBlockNameFallback: 'Blokliste',
+        migrationEnforcementDisableNote: 'For at slå det fra igen skal du stoppe alle kørende blokeringer.',
         migrationApproveAdminPrompt: 'Godkend administratorprompt for at fortsætte …',
         migrationTryAgain: 'Prøv igen',
         migrationCleanupNeedAdmin: 'Vi har brug for den administrators tilladelse for at afslutte — dine bloklister er i sikkerhed.',
@@ -12848,8 +12784,7 @@ function applyMigrationOverlayStaticCopy() {
     setText('enforcement-toggle-headline-text', tSettings('migrationEnforcementHeadline'));
     setText('enforcement-toggle-desc-text', tSettings('migrationEnforcementDesc'));
     setText('enforcement-toggle-locked-text', tSettings('migrationEnforcementLocked'));
-    setText('migration-active-block-headline-text', tSettings('migrationActiveBlockHeadline'));
-    setText('migration-active-block-note', tSettings('migrationActiveBlockNote'));
+    setText('enforcement-toggle-disable-note-text', tSettings('migrationEnforcementDisableNote'));
     const continueBtn = document.getElementById('migration-continue-btn');
     if (continueBtn && !continueBtn.disabled) {
         continueBtn.textContent = tSettings('migrationContinue');
