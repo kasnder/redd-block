@@ -14510,6 +14510,11 @@ async function openInstalledAppsPicker() {
     const apps = installedAppsCache || [];
     const selectedProcessNames = new Set();
 
+    function sameAppPickerName(displayName, processName) {
+        const normalize = (value) => String(value || '').trim().toLocaleLowerCase();
+        return normalize(displayName) === normalize(processName);
+    }
+
     function renderAppList(filter = '') {
         const lowerFilter = filter.toLowerCase();
         const filtered = filter
@@ -14532,12 +14537,15 @@ async function openInstalledAppsPicker() {
             const checkedAttr = isChecked ? ' checked' : '';
             const disabledAttr = alreadyAdded ? ' disabled' : '';
             const dimStyle = alreadyAdded ? ' style="opacity: 0.5;"' : '';
+            const processLine = sameAppPickerName(app.display_name, app.process_name)
+                ? ''
+                : `<div class="app-picker-item-process">${escapeHtml(app.process_name)}</div>`;
 
             return `<label class="app-picker-item${checkedClass}"${dimStyle}>
                 <input type="checkbox" data-process="${escapeHtml(app.process_name)}"${checkedAttr}${disabledAttr}>
                 <div class="app-picker-item-info">
                     <div class="app-picker-item-name">${escapeHtml(app.display_name)}</div>
-                    <div class="app-picker-item-process">${escapeHtml(app.process_name)}</div>
+                    ${processLine}
                 </div>
             </label>`;
         }).join('');
