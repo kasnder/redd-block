@@ -339,21 +339,31 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
                 // configurable — a 5s setting still gave 5s on
                 // repeats, a 300s setting still gave 300s.
                 let grace = current_grace(app);
+                let deadline = Instant::now() + grace;
                 s.timers.insert(
                     key,
                     TimerState {
-                        deadline: Instant::now() + grace,
+                        deadline,
                         total: grace,
                         offense_count: offenses,
                         issue,
                     },
                 );
+                // If several browsers become non-compliant during the
+                // same active block, treat them as one enforcement moment:
+                // the newest grace window becomes the shared close time.
+                for timer in s.timers.values_mut() {
+                    if timer.deadline < deadline {
+                        timer.deadline = deadline;
+                        timer.total = grace;
+                    }
+                }
                 (false, true)
             }
         };
 
         if fresh {
-            emit_update(app, state, key);
+            emit_all_updates(app, state);
             crate::commands::reveal_app(app);
             continue;
         }
@@ -473,6 +483,12 @@ fn emit_update(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>, key: BrowserK
             issue,
         },
     );
+}
+
+fn emit_all_updates(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
+    for key in BrowserKey::all() {
+        emit_update(app, state, key);
+    }
 }
 
 fn emit_browser_closed(app: &AppHandle, key: BrowserKey, issue: ExtensionIssue) {

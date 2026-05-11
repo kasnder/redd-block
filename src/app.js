@@ -1701,6 +1701,10 @@ function extensionsUrl(key) {
     }
 }
 
+function isCopyableExtensionsTarget(key) {
+    return key !== 'safari';
+}
+
 // Renders an inline URL chip with a small copy-to-clipboard icon.
 // Clicking the chip copies the URL so the user can paste it into
 // the browser's address bar.
@@ -1708,6 +1712,9 @@ const COPY_ICON_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="non
 
 function extensionsUrlChipHtml(key) {
     const url = extensionsUrl(key);
+    if (!isCopyableExtensionsTarget(key)) {
+        return `<span class="migration-inline-url-btn migration-copy-chip-static">${url}</span>`;
+    }
     return `<button type="button" class="migration-inline-url-btn migration-copy-chip" data-copy-url="${url}">${url}${COPY_ICON_SVG}</button>`;
 }
 
@@ -2396,7 +2403,10 @@ async function refreshBehaviourBannerIfStale({ force = false } = {}) {
 // banners with a live countdown when a browser is about to be closed.
 
 let enforcerUiAlertsAttached = false;
+const ENFORCER_ACTIVE_BANNER_ID = 'extension-enforcer-action-banner-active';
+const ENFORCER_CLOSED_BANNER_ID = 'extension-enforcer-action-banner-closed';
 const enforcerActionBannerStates = new Map();
+const enforcerClosedBannerStates = new Map();
 let enforcerActionBannerInterval = null;
 
 function setupEnforcerUiAlerts() {
@@ -2480,12 +2490,15 @@ function enforcerCopy(payload) {
     const browser = browserRaw || tSettings('enforcerBrowserFallback');
     const seconds = Math.max(0, Number(payload.remaining_secs ?? payload.remainingSecs ?? 0));
     const issue = payload.issue || 'unknown';
-    const countdownStr = () => tSettingsFmt('enforcerCountdown', { seconds: String(seconds), browser });
+    const closeHeadline = tSettingsFmt('enforcerClosingHeadline', { browser });
+    const countdownStr = (key = 'enforcerCountdownDefault') => tSettingsFmt(key, { seconds: String(seconds), browser });
 
     if (issue === 'missing') {
         return {
             headline: tSettingsFmt('enforcerHeadlineMissing', { browser }),
-            countdown: countdownStr(),
+            countdownHeadline: closeHeadline,
+            countdownInstruction: tSettings('enforcerCountdownInstrMissing'),
+            countdown: countdownStr('enforcerCountdownMissing'),
             instruction: tSettingsFmt('enforcerInstrMissing', { browser }),
             action: tSettings('enforcerActionInstall'),
         };
@@ -2495,7 +2508,9 @@ function enforcerCopy(payload) {
         const screenshotSteps = enforcerScreenshotSteps(key);
         return {
             headline: tSettingsFmt('enforcerHeadlineDisabled', { browser }),
-            countdown: countdownStr(),
+            countdownHeadline: closeHeadline,
+            countdownInstruction: tSettings('enforcerCountdownInstrDisabled'),
+            countdown: countdownStr('enforcerCountdownDisabled'),
             instructionHtml: tSettings('migrationInstructionEnableHtml')
                 .replace('{URL_CHIP}', extensionsUrlChipHtml(key))
                 .replace(/{BROWSER}/g, browser),
@@ -2514,7 +2529,9 @@ function enforcerCopy(payload) {
             : 'migrationInstructionChromiumPrivateHtml';
         return {
             headline: tSettingsFmt('enforcerHeadlinePrivate', { browser }),
-            countdown: countdownStr(),
+            countdownHeadline: closeHeadline,
+            countdownInstruction: tSettings('enforcerCountdownInstrPrivate'),
+            countdown: countdownStr('enforcerCountdownPrivate'),
             instructionHtml: tSettings(tplKey)
                 .replace('{URL_CHIP}', extensionsUrlChipHtml(key))
                 .replace(/{BROWSER}/g, browser)
@@ -2528,7 +2545,9 @@ function enforcerCopy(payload) {
     if (issue === 'websiteaccess') {
         return {
             headline: tSettingsFmt('enforcerHeadlineWebsiteAccess', { browser }),
-            countdown: countdownStr(),
+            countdownHeadline: closeHeadline,
+            countdownInstruction: tSettings('enforcerCountdownInstrWebsiteAccess'),
+            countdown: countdownStr('enforcerCountdownWebsiteAccess'),
             instruction: tSettingsFmt('enforcerInstrWebsiteAccessPlain', { browser }),
             action: tSettingsFmt('enforcerActionOpenExtensions', { browser }),
         };
@@ -2536,7 +2555,9 @@ function enforcerCopy(payload) {
     if (issue === 'access') {
         return {
             headline: tSettingsFmt('enforcerHeadlineAccess', { browser }),
-            countdown: countdownStr(),
+            countdownHeadline: closeHeadline,
+            countdownInstruction: tSettings('enforcerCountdownInstrAccess'),
+            countdown: countdownStr('enforcerCountdownAccess'),
             instruction: browser === 'Safari'
                 ? tSettings('enforcerInstrAccessSafari')
                 : tSettingsFmt('enforcerInstrAccessBrowser', { browser }),
@@ -2547,6 +2568,8 @@ function enforcerCopy(payload) {
     }
     return {
         headline: tSettingsFmt('enforcerHeadlineDefault', { browser }),
+        countdownHeadline: closeHeadline,
+        countdownInstruction: tSettings('enforcerCountdownInstrDefault'),
         countdown: countdownStr(),
         instruction: tSettingsFmt('enforcerInstrDefault', { browser }),
         action: tSettingsFmt('enforcerActionOpenExtensions', { browser }),
@@ -2555,22 +2578,45 @@ function enforcerCopy(payload) {
 
 function renderEnforcerActionCopy(banner, payload, copy) {
     const key = enforcerBannerKey(payload);
+    const isClosed = banner.classList.contains('extension-enforcer-action-banner-closed');
+    const isActiveCountdown = !!copy.countdown && !isClosed;
     const icon = banner.querySelector('.extension-enforcer-browser-icon');
     const headlineText = banner.querySelector('.extension-enforcer-action-headline-text');
     const countdown = banner.querySelector('.extension-enforcer-action-countdown');
     const countdownRow = banner.querySelector('.extension-enforcer-action-countdown-row');
     const instruction = banner.querySelector('.extension-enforcer-action-instruction');
+    const closedStatus = banner.querySelector('.extension-enforcer-closed-status');
 
     if (icon) {
         icon.src = browserIconUrl(key);
         icon.alt = '';
         icon.title = payload.label || payload.browser || key;
     }
-    if (headlineText) headlineText.textContent = copy.headline || '';
-    if (countdown) countdown.textContent = copy.countdown || '';
-    if (countdownRow) countdownRow.classList.toggle('hidden', !copy.countdown);
+    if (headlineText) headlineText.textContent = isActiveCountdown ? (copy.countdownHeadline || '') : (copy.headline || '');
+    if (countdown) {
+        const seconds = Math.max(0, Number(payload.remaining_secs ?? payload.remainingSecs ?? 0));
+        countdown.replaceChildren();
+        if (isActiveCountdown) {
+            const mins = Math.floor(seconds / 60);
+            const secs = String(seconds % 60).padStart(2, '0');
+            const time = document.createElement('strong');
+            time.className = 'extension-enforcer-countdown-time';
+            time.textContent = `${mins}:${secs}`;
+            const label = document.createElement('span');
+            label.className = 'extension-enforcer-countdown-label';
+            label.textContent = tSettings('enforcerCountdownRemaining');
+            countdown.append(time, label);
+        }
+    }
+    if (countdownRow) countdownRow.classList.toggle('hidden', !isActiveCountdown);
+    if (closedStatus) {
+        closedStatus.textContent = tSettings('enforcerClosedStatus');
+        closedStatus.classList.toggle('hidden', !isClosed);
+    }
     if (instruction) {
-        if (copy.instructionHtml) {
+        if (isActiveCountdown) {
+            instruction.textContent = copy.countdownInstruction || '';
+        } else if (copy.instructionHtml) {
             instruction.innerHTML = copy.instructionHtml;
             attachCopyChipHandlers(instruction);
         } else {
@@ -2580,8 +2626,33 @@ function renderEnforcerActionCopy(banner, payload, copy) {
 
     const note = banner.querySelector('.extension-enforcer-action-note');
     if (note) {
-        note.textContent = copy.note || '';
-        note.classList.toggle('hidden', !copy.note);
+        note.textContent = isActiveCountdown ? '' : (copy.note || '');
+        note.classList.toggle('hidden', isActiveCountdown || !copy.note);
+    }
+
+    const url = banner.querySelector('.extension-enforcer-action-url');
+    if (url) {
+        const href = extensionsUrl(key);
+        const showUrl = (isActiveCountdown || isClosed) && !!href;
+        url.replaceChildren();
+        if (showUrl) {
+            populateEnforcerUrlChip(url, key);
+        } else {
+            delete url.dataset.copyUrl;
+            delete url.dataset.copiedUntil;
+            url.classList.remove('copied');
+            url.disabled = false;
+        }
+        url.classList.toggle('hidden', !showUrl);
+    }
+
+    const progress = banner.querySelector('.extension-enforcer-progress-bar');
+    if (progress) {
+        const remaining = Math.max(0, Number(payload.remaining_secs ?? payload.remainingSecs ?? 0));
+        const totalRaw = payload.total_secs ?? payload.totalSecs ?? remaining;
+        const total = Math.max(1, Number(totalRaw || 1));
+        const pct = Math.max(0, Math.min(100, (remaining / total) * 100));
+        progress.style.width = isActiveCountdown ? `${pct}%` : '0%';
     }
 
     const showMeBtn = banner.querySelector('.extension-enforcer-show-me-btn');
@@ -2643,6 +2714,113 @@ function enforcerBannerId(key) {
     return `extension-enforcer-action-banner-${key}`;
 }
 
+function formatBrowserList(labels) {
+    const clean = labels.filter(Boolean);
+    if (clean.length <= 1) return clean[0] || tSettings('enforcerBrowserFallback');
+    if (clean.length === 2) return `${clean[0]} and ${clean[1]}`;
+    return `${clean.slice(0, -1).join(', ')}, and ${clean[clean.length - 1]}`;
+}
+
+function ensureActiveEnforcerActionBanner() {
+    let banner = document.getElementById(ENFORCER_ACTIVE_BANNER_ID);
+    if (banner) return banner;
+
+    banner = document.createElement('div');
+    banner.id = ENFORCER_ACTIVE_BANNER_ID;
+    banner.className = 'update-banner extension-enforcer-action-banner';
+    banner.innerHTML = `
+        <div class="extension-enforcer-progress-track" aria-hidden="true">
+            <div class="extension-enforcer-progress-bar"></div>
+        </div>
+        <div class="extension-enforcer-banner-top">
+            <div class="update-banner-content">
+                <svg class="extension-enforcer-alert-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="11" fill="currentColor"></circle>
+                    <rect x="11" y="6" width="2" height="8" rx="1" fill="white"></rect>
+                    <circle cx="12" cy="17" r="1.3" fill="white"></circle>
+                </svg>
+                <div class="extension-enforcer-message">
+                    <strong class="extension-enforcer-action-headline">
+                        <span class="extension-enforcer-action-headline-text"></span>
+                    </strong>
+                    <em class="extension-enforcer-action-instruction"></em>
+                </div>
+                <div class="extension-enforcer-action-right">
+                    <div class="extension-enforcer-action-countdown-row">
+                        <span class="extension-enforcer-action-countdown"></span>
+                    </div>
+                </div>
+            </div>
+            <button class="update-banner-dismiss extension-enforcer-action-dismiss" title="Dismiss" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+        </div>
+        <div class="extension-enforcer-action-strip">
+            <div class="extension-enforcer-actions-row extension-enforcer-active-actions"></div>
+        </div>
+        <div class="extension-enforcer-screenshots-wrap hidden">
+            <div class="extension-enforcer-screenshots"></div>
+        </div>
+    `;
+
+    banner.querySelector('.extension-enforcer-action-dismiss')?.addEventListener('click', () => {
+        banner.classList.add('hidden');
+    });
+
+    const setupBanner = document.getElementById('behaviour-change-banner');
+    if (setupBanner) {
+        setupBanner.insertAdjacentElement('beforebegin', banner);
+    } else {
+        document.querySelector('.app-container')?.prepend(banner);
+    }
+    return banner;
+}
+
+function ensureClosedEnforcerActionBanner() {
+    let banner = document.getElementById(ENFORCER_CLOSED_BANNER_ID);
+    if (banner) return banner;
+
+    banner = document.createElement('div');
+    banner.id = ENFORCER_CLOSED_BANNER_ID;
+    banner.className = 'update-banner extension-enforcer-action-banner extension-enforcer-action-banner-closed hidden';
+    banner.innerHTML = `
+        <div class="extension-enforcer-banner-top">
+            <div class="update-banner-content">
+                <div class="extension-enforcer-message">
+                    <strong class="extension-enforcer-action-headline">
+                        <span class="extension-enforcer-action-headline-text"></span>
+                    </strong>
+                    <em class="extension-enforcer-action-instruction"></em>
+                </div>
+                <div class="extension-enforcer-action-right">
+                    <div class="extension-enforcer-closed-status"></div>
+                </div>
+            </div>
+            <button class="update-banner-dismiss extension-enforcer-action-dismiss" title="Dismiss" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+        </div>
+        <div class="extension-enforcer-action-strip">
+            <div class="extension-enforcer-actions-row extension-enforcer-closed-actions"></div>
+        </div>
+        <div class="extension-enforcer-screenshots-wrap hidden">
+            <div class="extension-enforcer-screenshots"></div>
+        </div>
+    `;
+
+    banner.querySelector('.extension-enforcer-action-dismiss')?.addEventListener('click', () => {
+        banner.classList.add('hidden');
+        enforcerClosedBannerStates.clear();
+    });
+
+    const activeBanner = document.getElementById(ENFORCER_ACTIVE_BANNER_ID);
+    const setupBanner = document.getElementById('behaviour-change-banner');
+    if (activeBanner) {
+        activeBanner.insertAdjacentElement('afterend', banner);
+    } else if (setupBanner) {
+        setupBanner.insertAdjacentElement('beforebegin', banner);
+    } else {
+        document.querySelector('.app-container')?.prepend(banner);
+    }
+    return banner;
+}
+
 function ensureEnforcerActionBanner(payload) {
     const key = enforcerBannerKey(payload);
     let banner = document.getElementById(enforcerBannerId(key));
@@ -2653,6 +2831,9 @@ function ensureEnforcerActionBanner(payload) {
     banner.className = 'update-banner extension-enforcer-action-banner';
     banner.dataset.browser = key;
     banner.innerHTML = `
+        <div class="extension-enforcer-progress-track" aria-hidden="true">
+            <div class="extension-enforcer-progress-bar"></div>
+        </div>
         <div class="extension-enforcer-banner-top">
             <div class="update-banner-content">
                 <svg class="extension-enforcer-alert-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
@@ -2666,28 +2847,25 @@ function ensureEnforcerActionBanner(payload) {
                         <span class="extension-enforcer-action-headline-text"></span>
                     </strong>
                     <em class="extension-enforcer-action-instruction"></em>
-                    <div class="extension-enforcer-actions-row">
-                        <button class="update-banner-btn extension-enforcer-action-btn" type="button"></button>
-                        <button class="extension-enforcer-show-me-btn hidden" type="button" aria-expanded="false">
-                            <span>Show me how</span>
-                            <svg class="extension-enforcer-show-me-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <polyline points="9 6 15 12 9 18"></polyline>
-                            </svg>
-                        </button>
-                    </div>
                 </div>
                 <div class="extension-enforcer-action-right">
                     <div class="extension-enforcer-action-countdown-row">
-                        <svg class="extension-enforcer-clock-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <circle cx="12" cy="12" r="10"></circle>
-                            <polyline points="12 6 12 12 16 14"></polyline>
-                        </svg>
                         <span class="extension-enforcer-action-countdown"></span>
                     </div>
                     <small class="extension-enforcer-action-note hidden"></small>
+                    <div class="extension-enforcer-closed-status hidden"></div>
                 </div>
             </div>
             <button class="update-banner-dismiss extension-enforcer-action-dismiss" title="Dismiss" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+        </div>
+        <div class="extension-enforcer-action-strip">
+            <div class="extension-enforcer-actions-row">
+                <button class="update-banner-btn extension-enforcer-action-btn" type="button"></button>
+                <button class="extension-enforcer-show-me-btn hidden" type="button" aria-expanded="false">
+                    <span>Show me how</span>
+                </button>
+            </div>
+            <button type="button" class="extension-enforcer-action-url hidden"></button>
         </div>
         <div class="extension-enforcer-screenshots-wrap hidden">
             <div class="extension-enforcer-screenshots"></div>
@@ -2703,6 +2881,25 @@ function ensureEnforcerActionBanner(payload) {
             showMeBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
         });
     }
+    const urlBtn = banner.querySelector('.extension-enforcer-action-url');
+    if (urlBtn) {
+        urlBtn.addEventListener('click', async () => {
+            const url = urlBtn.dataset.copyUrl;
+            if (!url) return;
+            try {
+                await navigator.clipboard.writeText(url);
+                urlBtn.dataset.copiedUntil = String(Date.now() + 1500);
+                urlBtn.classList.add('copied');
+                urlBtn.textContent = tSettings('migrationCopied');
+                setTimeout(() => {
+                    delete urlBtn.dataset.copiedUntil;
+                    urlBtn.classList.remove('copied');
+                }, 1500);
+            } catch (e) {
+                console.warn('[enforcer-ui] copy URL failed:', e);
+            }
+        });
+    }
 
     const setupBanner = document.getElementById('behaviour-change-banner');
     const existingBanners = document.querySelectorAll('.extension-enforcer-action-banner');
@@ -2710,7 +2907,7 @@ function ensureEnforcerActionBanner(payload) {
     if (lastExistingBanner) {
         lastExistingBanner.insertAdjacentElement('afterend', banner);
     } else if (setupBanner) {
-        setupBanner.insertAdjacentElement('afterend', banner);
+        setupBanner.insertAdjacentElement('beforebegin', banner);
     } else {
         document.querySelector('.app-container')?.prepend(banner);
     }
@@ -2810,6 +3007,259 @@ async function openEnforcerFix(payload) {
     }
 }
 
+function populateEnforcerUrlChip(button, key) {
+    const href = extensionsUrl(key);
+    button.replaceChildren();
+    button.dataset.browserKey = key;
+    button.classList.toggle('extension-enforcer-action-url-static', !isCopyableExtensionsTarget(key));
+    delete button.dataset.copyUrl;
+    button.disabled = !isCopyableExtensionsTarget(key);
+    if (!isCopyableExtensionsTarget(key)) {
+        button.classList.remove('copied');
+        button.textContent = href;
+        return;
+    }
+    button.dataset.copyUrl = href;
+    const copied = Number(button.dataset.copiedUntil || 0) > Date.now();
+    button.classList.toggle('copied', copied);
+    if (copied) {
+        button.textContent = tSettings('migrationCopied');
+        return;
+    }
+
+    const text = document.createElement('span');
+    text.textContent = href;
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.setAttribute('width', '13');
+    icon.setAttribute('height', '13');
+    icon.setAttribute('viewBox', '0 0 24 24');
+    icon.setAttribute('fill', 'none');
+    icon.setAttribute('stroke', 'currentColor');
+    icon.setAttribute('stroke-width', '2');
+    icon.setAttribute('stroke-linecap', 'round');
+    icon.setAttribute('stroke-linejoin', 'round');
+    icon.setAttribute('aria-hidden', 'true');
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', '9');
+    rect.setAttribute('y', '9');
+    rect.setAttribute('width', '13');
+    rect.setAttribute('height', '13');
+    rect.setAttribute('rx', '2');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1');
+    icon.append(rect, path);
+    button.append(text, icon);
+}
+
+async function copyEnforcerUrlChip(button) {
+    const url = button.dataset.copyUrl;
+    if (!url || button.disabled) return;
+    try {
+        await navigator.clipboard.writeText(url);
+        button.dataset.copiedUntil = String(Date.now() + 1500);
+        button.classList.add('copied');
+        button.textContent = tSettings('migrationCopied');
+        setTimeout(() => {
+            delete button.dataset.copiedUntil;
+            button.classList.remove('copied');
+            populateEnforcerUrlChip(button, button.dataset.browserKey || '');
+        }, 1500);
+    } catch (e) {
+        console.warn('[enforcer-ui] copy URL failed:', e);
+    }
+}
+
+function renderEnforcerScreenshots(container, steps, browserKey) {
+    if (!container || !steps?.length) return;
+    const stepsKey = `${browserKey}:${steps.map(s => s.src).join(',')}`;
+    if (container.dataset.stepsKey === stepsKey) return;
+    container.dataset.stepsKey = stepsKey;
+    container.innerHTML = '';
+    container.classList.toggle('screenshots-grid', steps.length >= 3);
+    container.classList.toggle('screenshots-row', steps.length < 3);
+    steps.forEach((step, i) => {
+        if (i > 0 && steps.length < 3) {
+            const arrow = document.createElement('span');
+            arrow.className = 'extension-enforcer-screenshot-arrow';
+            arrow.textContent = '→';
+            container.appendChild(arrow);
+        }
+        const figure = document.createElement('figure');
+        figure.className = 'extension-enforcer-step';
+        const cap = formatExtensionScreenshotCaption(step, i);
+        if (cap) {
+            const caption = document.createElement('figcaption');
+            caption.className = 'extension-enforcer-step-label';
+            caption.textContent = cap;
+            figure.appendChild(caption);
+        }
+        const img = document.createElement('img');
+        img.className = 'extension-enforcer-screenshot';
+        img.src = step.src;
+        img.alt = cap || tSettingsFmt('migrationScreenshotStepOnly', { n: String(i + 1) });
+        figure.appendChild(img);
+        container.appendChild(figure);
+    });
+    container.classList.toggle('safari-screenshots-asymmetric', browserKey === 'safari' && steps.length === 2);
+}
+
+function closedIssueCopyKey(issue) {
+    switch (issue) {
+        case 'missing': return 'enforcerClosedCombinedMissing';
+        case 'disabled': return 'enforcerClosedCombinedDisabled';
+        case 'private': return 'enforcerClosedCombinedPrivate';
+        case 'websiteaccess': return 'enforcerClosedCombinedWebsiteAccess';
+        case 'access': return 'enforcerClosedCombinedAccess';
+        default: return 'enforcerClosedCombinedDefault';
+    }
+}
+
+function closedInstructionCopyKey(issue) {
+    switch (issue) {
+        case 'missing': return 'enforcerClosedInstrMissing';
+        case 'disabled': return 'enforcerClosedInstrDisabled';
+        case 'private': return 'enforcerClosedInstrPrivateGeneric';
+        case 'websiteaccess': return 'enforcerClosedInstrWebsiteAccess';
+        case 'access': return 'enforcerClosedInstrDefault';
+        default: return 'enforcerClosedInstrDefault';
+    }
+}
+
+function renderEnforcerBrowserActionRow(state, mode) {
+    const row = document.createElement('div');
+    row.className = 'extension-enforcer-browser-action-row';
+
+    const icon = document.createElement('img');
+    icon.className = 'extension-enforcer-browser-action-icon';
+    icon.src = browserIconUrl(state.key);
+    icon.alt = '';
+    row.appendChild(icon);
+
+    const action = document.createElement('button');
+    action.className = 'update-banner-btn extension-enforcer-action-btn';
+    action.type = 'button';
+    if (state.copy.actionHtml) {
+        action.innerHTML = state.copy.actionHtml;
+    } else {
+        action.textContent = state.copy.action || tSettingsFmt('enforcerActionOpenExtensions', { browser: state.payload.label || state.payload.browser || state.key });
+    }
+    action.onclick = () => openEnforcerFix(state.payload);
+    row.appendChild(action);
+
+    const showMe = document.createElement('button');
+    showMe.className = 'extension-enforcer-show-me-btn';
+    showMe.type = 'button';
+    showMe.textContent = tSettings('migrationShowMeHow');
+    const steps = state.copy.screenshotSteps;
+    showMe.classList.toggle('hidden', !steps?.length);
+    showMe.onclick = () => {
+        const banner = mode === 'closed'
+            ? ensureClosedEnforcerActionBanner()
+            : ensureActiveEnforcerActionBanner();
+        const screenshotsWrap = banner.querySelector('.extension-enforcer-screenshots-wrap');
+        const screenshots = banner.querySelector('.extension-enforcer-screenshots');
+        if (!steps?.length || !screenshotsWrap || !screenshots) return;
+        const isSameOpen = !screenshotsWrap.classList.contains('hidden')
+            && screenshots.dataset.stepsKey?.startsWith(`${state.key}:`);
+        screenshotsWrap.classList.toggle('hidden', isSameOpen);
+        if (!isSameOpen) renderEnforcerScreenshots(screenshots, steps, state.key);
+    };
+    row.appendChild(showMe);
+
+    const url = document.createElement('button');
+    url.type = 'button';
+    url.className = 'extension-enforcer-action-url';
+    if (state.urlCopiedUntil) url.dataset.copiedUntil = String(state.urlCopiedUntil);
+    populateEnforcerUrlChip(url, state.key);
+    url.onclick = async () => {
+        await copyEnforcerUrlChip(url);
+        const store = mode === 'closed' ? enforcerClosedBannerStates : enforcerActionBannerStates;
+        const stored = store.get(state.key);
+        if (stored) stored.urlCopiedUntil = Number(url.dataset.copiedUntil || 0);
+    };
+    row.appendChild(url);
+
+    return row;
+}
+
+function hasActiveEnforcerCountdown() {
+    const now = Date.now();
+    return [...enforcerActionBannerStates.values()].some(state => state.deadline > now);
+}
+
+function renderCombinedEnforcerActionBanner() {
+    const banner = ensureActiveEnforcerActionBanner();
+    const states = [...enforcerActionBannerStates.entries()].map(([key, state]) => ({ key, ...state }));
+    if (states.length === 0) {
+        banner.classList.add('hidden');
+        renderCombinedEnforcerClosedBanner();
+        return;
+    }
+
+    const activeStates = states
+        .map(state => {
+            const remainingSecs = Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000));
+            const payload = { ...state.payload, remaining_secs: remainingSecs, remainingSecs };
+            return { ...state, payload, remainingSecs, copy: enforcerCopy(payload) };
+        })
+        .filter(state => state.remainingSecs > 0);
+
+    if (activeStates.length === 0) {
+        banner.classList.add('hidden');
+        renderCombinedEnforcerClosedBanner();
+        return;
+    }
+
+    const timerState = activeStates.reduce((max, state) => (
+        state.remainingSecs > max.remainingSecs ? state : max
+    ), activeStates[0]);
+    const labels = activeStates.map(state => state.payload.label || state.payload.browser || BROWSER_STORE_LINKS[state.key]?.label || state.key);
+    const browserList = formatBrowserList(labels);
+
+    const headline = banner.querySelector('.extension-enforcer-action-headline-text');
+    if (headline) headline.textContent = tSettingsFmt('enforcerClosingHeadline', { browser: browserList });
+
+    const instruction = banner.querySelector('.extension-enforcer-action-instruction');
+    if (instruction) {
+        instruction.textContent = activeStates.length > 1
+            ? tSettings('enforcerCountdownInstrMultiple')
+            : (timerState.copy.countdownInstruction || '');
+    }
+
+    const countdown = banner.querySelector('.extension-enforcer-action-countdown');
+    if (countdown) {
+        const mins = Math.floor(timerState.remainingSecs / 60);
+        const secs = String(timerState.remainingSecs % 60).padStart(2, '0');
+        countdown.replaceChildren();
+        const time = document.createElement('strong');
+        time.className = 'extension-enforcer-countdown-time';
+        time.textContent = `${mins}:${secs}`;
+        const label = document.createElement('span');
+        label.className = 'extension-enforcer-countdown-label';
+        label.textContent = tSettings('enforcerCountdownRemaining');
+        countdown.append(time, label);
+    }
+
+    const progress = banner.querySelector('.extension-enforcer-progress-bar');
+    if (progress) {
+        const totalRaw = timerState.payload.total_secs ?? timerState.payload.totalSecs ?? timerState.remainingSecs;
+        const total = Math.max(1, Number(totalRaw || 1));
+        const pct = Math.max(0, Math.min(100, (timerState.remainingSecs / total) * 100));
+        progress.style.width = `${pct}%`;
+    }
+
+    const actions = banner.querySelector('.extension-enforcer-active-actions');
+    if (actions) {
+        actions.innerHTML = '';
+        activeStates.forEach(state => {
+            actions.appendChild(renderEnforcerBrowserActionRow(state, 'active'));
+        });
+    }
+
+    banner.classList.remove('hidden', 'extension-enforcer-action-banner-closed');
+    document.getElementById(ENFORCER_CLOSED_BANNER_ID)?.classList.add('hidden');
+}
+
 function updateEnforcerActionBannerCountdown() {
     if (enforcerActionBannerStates.size === 0) return;
     for (const [key, state] of enforcerActionBannerStates) {
@@ -2821,14 +3271,11 @@ function updateEnforcerActionBannerCountdown() {
         };
         state.payload = payload;
 
-        const banner = document.getElementById(enforcerBannerId(key));
-        const copy = enforcerCopy(payload);
-        if (banner) renderEnforcerActionCopy(banner, payload, copy);
-
         if (remainingSecs <= 0) {
             enforcerActionBannerStates.delete(key);
         }
     }
+    renderCombinedEnforcerActionBanner();
     if (enforcerActionBannerStates.size === 0 && enforcerActionBannerInterval) {
         clearInterval(enforcerActionBannerInterval);
         enforcerActionBannerInterval = null;
@@ -2837,62 +3284,95 @@ function updateEnforcerActionBannerCountdown() {
 
 function renderEnforcerActionBanner(payload) {
     if (!payload || !payload.browser) return;
-    const { banner, key } = ensureEnforcerActionBanner(payload);
+    const key = enforcerBannerKey(payload);
 
     const remainingSecs = Math.max(0, Number(payload.remaining_secs ?? payload.remainingSecs ?? 0));
+    const existing = enforcerActionBannerStates.get(key);
     enforcerActionBannerStates.set(key, {
         payload: { ...payload, remaining_secs: remainingSecs, remainingSecs },
         deadline: Date.now() + remainingSecs * 1000,
+        urlCopiedUntil: existing?.urlCopiedUntil,
     });
 
-    const copy = enforcerCopy(payload);
-    const action = banner.querySelector('.extension-enforcer-action-btn');
-    renderEnforcerActionCopy(banner, payload, copy);
-    if (action) {
-        if (copy.actionHtml) {
-            action.innerHTML = copy.actionHtml;
-        } else {
-            action.textContent = copy.action;
-        }
-        action.onclick = () => openEnforcerFix(payload);
-    }
+    renderCombinedEnforcerActionBanner();
+    document.getElementById(ENFORCER_CLOSED_BANNER_ID)?.classList.add('hidden');
     if (!enforcerActionBannerInterval) {
         enforcerActionBannerInterval = setInterval(updateEnforcerActionBannerCountdown, 1000);
     }
+}
+
+function renderCombinedEnforcerClosedBanner() {
+    const banner = ensureClosedEnforcerActionBanner();
+    if (hasActiveEnforcerCountdown()) {
+        banner.classList.add('hidden');
+        return;
+    }
+
+    const states = [...enforcerClosedBannerStates.entries()]
+        .map(([key, state]) => ({ key, ...state, copy: enforcerClosedCopy(state.payload) }));
+
+    if (states.length === 0) {
+        banner.classList.add('hidden');
+        return;
+    }
+
+    const browserList = formatBrowserList(states.map(state => (
+        state.payload.label || state.payload.browser || BROWSER_STORE_LINKS[state.key]?.label || state.key
+    )));
+    const issue = states.every(state => state.payload.issue === states[0].payload.issue)
+        ? states[0].payload.issue
+        : 'unknown';
+
+    const headline = banner.querySelector('.extension-enforcer-action-headline-text');
+    if (headline) {
+        headline.textContent = states.length === 1
+            ? states[0].copy.headline
+            : tSettingsFmt(closedIssueCopyKey(issue), { browser: browserList });
+    }
+
+    const instruction = banner.querySelector('.extension-enforcer-action-instruction');
+    if (instruction) {
+        instruction.textContent = states.length > 1
+            ? tSettings('enforcerClosedInstrMultiple')
+            : tSettings(closedInstructionCopyKey(issue));
+    }
+
+    const status = banner.querySelector('.extension-enforcer-closed-status');
+    if (status) status.textContent = tSettings('enforcerClosedStatus');
+
+    const actions = banner.querySelector('.extension-enforcer-closed-actions');
+    if (actions) {
+        actions.innerHTML = '';
+        states.forEach(state => {
+            actions.appendChild(renderEnforcerBrowserActionRow(state, 'closed'));
+        });
+    }
+
     banner.classList.remove('hidden');
 }
 
 function renderEnforcerClosedBanner(payload) {
     if (!payload || !payload.browser) return;
-    const { banner, key } = ensureEnforcerActionBanner(payload);
+    const key = enforcerBannerKey(payload);
     enforcerActionBannerStates.delete(key);
+    renderCombinedEnforcerActionBanner();
     if (enforcerActionBannerStates.size === 0 && enforcerActionBannerInterval) {
         clearInterval(enforcerActionBannerInterval);
         enforcerActionBannerInterval = null;
     }
-
-    const copy = enforcerClosedCopy(payload);
-    const action = banner.querySelector('.extension-enforcer-action-btn');
-    renderEnforcerActionCopy(banner, payload, {
-        ...copy,
-        countdown: '',
+    const stored = enforcerClosedBannerStates.get(key) || {};
+    enforcerClosedBannerStates.set(key, {
+        ...stored,
+        payload,
+        closedAt: Date.now()
     });
-    if (action) {
-        if (copy.actionHtml) {
-            action.innerHTML = copy.actionHtml;
-        } else {
-            action.textContent = copy.action;
-        }
-        action.onclick = () => openEnforcerFix(payload);
-    }
-    banner.classList.remove('hidden');
+    renderCombinedEnforcerClosedBanner();
 }
 
 function hideEnforcerActionBanner(browser) {
     const key = browserKeyFromLabel(browser);
-    const banner = document.getElementById(enforcerBannerId(key));
-    if (banner) banner.classList.add('hidden');
     enforcerActionBannerStates.delete(key);
+    renderCombinedEnforcerActionBanner();
     if (enforcerActionBannerStates.size === 0 && enforcerActionBannerInterval) {
         clearInterval(enforcerActionBannerInterval);
         enforcerActionBannerInterval = null;
@@ -12138,7 +12618,22 @@ const SETTINGS_TRANSLATIONS = {
         migrationShotSafariCap1: 'First open Safari\'s Extension settings...',
         migrationShotSafariCap2: 'Then i) enable ReDD Focus, ii) allow in private browsing, iii) allow it to block on all websites',
         // Browser protection — grace banners (countdown / post-close)
-        enforcerCountdown: '{seconds}s to finish ReDD Focus in {browser}—then this window closes to support the block you chose.',
+        enforcerClosingHeadline: 'Browser enforcement is closing {browser} soon',
+        enforcerCountdownRemaining: 'remaining',
+        enforcerClosedStatus: 'closed',
+        enforcerCountdownInstrMissing: 'ReDD Focus is not installed. Install it to stop the countdown.',
+        enforcerCountdownInstrDisabled: 'ReDD Focus is turned off. Enable it to stop the countdown.',
+        enforcerCountdownInstrPrivate: 'Private windows aren’t covered by ReDD Focus. Enable Allow in Incognito to stop the countdown.',
+        enforcerCountdownInstrWebsiteAccess: 'ReDD Focus is not allowed on all websites. Allow all websites to stop the countdown.',
+        enforcerCountdownInstrAccess: 'ReDD Block can’t verify ReDD Focus. Grant access to stop the countdown.',
+        enforcerCountdownInstrDefault: 'ReDD Focus is not ready. Finish setup to stop the countdown.',
+        enforcerCountdownInstrMultiple: 'Fix ReDD Focus in each browser below to stop the countdown.',
+        enforcerCountdownDefault: '{browser} will be auto-closed if ReDD Focus is not ready, to support your blocking.',
+        enforcerCountdownMissing: '{browser} will be auto-closed if ReDD Focus is not installed, to support your blocking.',
+        enforcerCountdownDisabled: '{browser} will be auto-closed if ReDD Focus is not enabled, to support your blocking.',
+        enforcerCountdownPrivate: '{browser} will be auto-closed if ReDD Focus is not enabled in private windows, to support your blocking.',
+        enforcerCountdownWebsiteAccess: '{browser} will be auto-closed if ReDD Focus is not allowed on all websites, to support your blocking.',
+        enforcerCountdownAccess: '{browser} will be auto-closed if ReDD Focus cannot be verified, to support your blocking.',
         enforcerHeadlineMissing: 'ReDD Focus isn’t set up in {browser} yet.',
         enforcerInstrMissing: 'Install ReDD Focus for {browser}.',
         enforcerHeadlineDisabled: 'ReDD Focus is off in {browser}.',
@@ -12159,8 +12654,16 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedWebsiteAccess: '{browser} was closed to support your block—ReDD Focus couldn’t cover every site yet.',
         enforcerClosedAccess: '{browser} was closed so your protection could stay clear—ReDD Block couldn’t verify ReDD Focus.',
         enforcerClosedDefault: '{browser} was closed to support your block—ReDD Focus wasn’t fully ready.',
+        enforcerClosedCombinedMissing: '{browser} were closed to support your block—ReDD Focus wasn’t installed yet.',
+        enforcerClosedCombinedDisabled: '{browser} were closed to support your block—ReDD Focus was turned off.',
+        enforcerClosedCombinedPrivate: '{browser} were closed to support your block—private windows were still a loophole.',
+        enforcerClosedCombinedWebsiteAccess: '{browser} were closed to support your block—ReDD Focus couldn’t cover every site yet.',
+        enforcerClosedCombinedAccess: '{browser} were closed so your protection could stay clear—ReDD Block couldn’t verify ReDD Focus.',
+        enforcerClosedCombinedDefault: '{browser} were closed to support your block—ReDD Focus wasn’t fully ready.',
         enforcerClosedInstrPrivateChrome: 'In Chrome: ReDD Focus → Details → Allow in Incognito.',
         enforcerClosedInstrPrivateFirefox: 'In Firefox: ReDD Focus → Run in Private Windows → Allow.',
+        enforcerClosedInstrPrivateGeneric: 'Enable private-window access before reopening.',
+        enforcerClosedInstrMultiple: 'Fix ReDD Focus in each browser below before reopening them.',
         enforcerClosedInstrDisabled: 'In {browser} extensions, turn ReDD Focus back on.',
         enforcerClosedInstrMissing: 'Reopen {browser} — ReDD Focus will install automatically. (Or click Install below to add it manually.)',
         enforcerClosedInstrWebsiteAccess: 'In {browser} extension settings, allow ReDD Focus on all websites.',
@@ -12499,7 +13002,22 @@ const SETTINGS_TRANSLATIONS = {
         migrationShotSafariCap1: 'Åbn først Safaris udvidelsesindstillinger …',
         migrationShotSafariCap2: 'Derefter: i) aktivér ReDD Focus, ii) tillad privat browsing, iii) tillad blokering på alle websites',
         // Browser-beskyttelse — banner under aktiv blokering
-        enforcerCountdown: '{seconds}s til at færdiggøre ReDD Focus i {browser}—så lukkes vinduet for at bakke op om den blok, du selv valgte.',
+        enforcerClosingHeadline: 'Browser enforcement lukker snart {browser}',
+        enforcerCountdownRemaining: 'tilbage',
+        enforcerClosedStatus: 'lukket',
+        enforcerCountdownInstrMissing: 'ReDD Focus er ikke installeret. Installer den for at stoppe nedtællingen.',
+        enforcerCountdownInstrDisabled: 'ReDD Focus er slået fra. Aktivér den for at stoppe nedtællingen.',
+        enforcerCountdownInstrPrivate: 'Private vinduer er ikke dækket af ReDD. Aktivér privat browsing for at stoppe nedtællingen.',
+        enforcerCountdownInstrWebsiteAccess: 'ReDD Focus er ikke tilladt på alle websites. Tillad alle websites for at stoppe nedtællingen.',
+        enforcerCountdownInstrAccess: 'ReDD Block kan ikke bekræfte ReDD Focus. Giv adgang for at stoppe nedtællingen.',
+        enforcerCountdownInstrDefault: 'ReDD Focus er ikke klar. Færdiggør opsætningen for at stoppe nedtællingen.',
+        enforcerCountdownInstrMultiple: 'Ret ReDD Focus i hver browser nedenfor for at stoppe nedtællingen.',
+        enforcerCountdownDefault: '{browser} lukkes automatisk hvis ReDD Focus ikke er klar, for at understøtte din blokering.',
+        enforcerCountdownMissing: '{browser} lukkes automatisk hvis ReDD Focus ikke er installeret, for at understøtte din blokering.',
+        enforcerCountdownDisabled: '{browser} lukkes automatisk hvis ReDD Focus ikke er aktiveret, for at understøtte din blokering.',
+        enforcerCountdownPrivate: '{browser} lukkes automatisk hvis ReDD Focus ikke er aktiveret i private vinduer, for at understøtte din blokering.',
+        enforcerCountdownWebsiteAccess: '{browser} lukkes automatisk hvis ReDD Focus ikke er tilladt på alle websites, for at understøtte din blokering.',
+        enforcerCountdownAccess: '{browser} lukkes automatisk hvis ReDD Focus ikke kan bekræftes, for at understøtte din blokering.',
         enforcerHeadlineMissing: 'ReDD Focus er ikke sat op i {browser} endnu.',
         enforcerInstrMissing: 'Installer ReDD Focus til {browser}.',
         enforcerHeadlineDisabled: 'ReDD Focus er slået fra i {browser}.',
@@ -12520,8 +13038,16 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedWebsiteAccess: '{browser} blev lukket for at bakke din blok op—ReDD Focus kunne ikke dække alle websites endnu.',
         enforcerClosedAccess: '{browser} blev lukket, så din beskyttelse kunne være tydelig—ReDD Block kunne ikke bekræfte ReDD Focus.',
         enforcerClosedDefault: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke helt klar.',
+        enforcerClosedCombinedMissing: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke installeret endnu.',
+        enforcerClosedCombinedDisabled: '{browser} blev lukket for at bakke din blok op—ReDD Focus var slået fra.',
+        enforcerClosedCombinedPrivate: '{browser} blev lukket for at bakke din blok op—private faner var stadig en åbning.',
+        enforcerClosedCombinedWebsiteAccess: '{browser} blev lukket for at bakke din blok op—ReDD Focus kunne ikke dække alle websites endnu.',
+        enforcerClosedCombinedAccess: '{browser} blev lukket, så din beskyttelse kunne være tydelig—ReDD Block kunne ikke bekræfte ReDD Focus.',
+        enforcerClosedCombinedDefault: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke helt klar.',
         enforcerClosedInstrPrivateChrome: 'I Chrome: ReDD Focus → Details → Allow in Incognito.',
         enforcerClosedInstrPrivateFirefox: 'I Firefox: ReDD Focus → Run in Private Windows → Allow.',
+        enforcerClosedInstrPrivateGeneric: 'Slå adgang i private vinduer til, før du åbner browseren igen.',
+        enforcerClosedInstrMultiple: 'Ret ReDD Focus i hver browser nedenfor, før du åbner dem igen.',
         enforcerClosedInstrDisabled: 'I {browser}s udvidelsesindstillinger: slå ReDD Focus til igen.',
         enforcerClosedInstrMissing: 'Genåbn {browser} — ReDD Focus installeres automatisk. (Eller klik på Installer nedenfor for at tilføje den manuelt.)',
         enforcerClosedInstrWebsiteAccess: 'I {browser}s udvidelsesindstillinger: tillad ReDD Focus på alle websites.',
