@@ -1452,7 +1452,19 @@ function wireMigrationPrePhase() {
                 }
             }
             const fresh = await invoke('onboarding_state');
-            await showMigrationOnboarding('post', fresh);
+            // Explicit after-cleanup framing: we just finished the
+            // pre-phase elevated cleanup, so the post screen must
+            // surface the "Old version cleaned up / Your blocklists
+            // are preserved" rows and the cleanup-flavoured title.
+            // Without this, the post phase renders in the default
+            // 'fresh' mode for a frame, gets immediately overwritten
+            // by the window-focus handler at the bottom of
+            // setupEventListeners() (which re-runs runDesktopOnboarding
+            // and re-enters with mode: 'after-cleanup' because
+            // migration_was_pending_at_launch is still true) — visible
+            // on Windows as a flash of the fresh framing right before
+            // the cleanup framing settles.
+            await showMigrationOnboarding('post', fresh, { mode: 'after-cleanup' });
         } catch (e) {
             console.warn('[migration] poll failed:', e);
             failTryAgain(tSettings('migrationCleanupRetryGeneric'));
