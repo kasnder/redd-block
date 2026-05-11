@@ -8954,6 +8954,24 @@ function syncStartBtnBlocklistMetaLead(btn) {
     lead.textContent = '';
 }
 
+function measureStopBtnExpandedWidth(btn) {
+    if (!btn) return 0;
+    const clone = btn.cloneNode(true);
+    clone.classList.remove('hidden', 'stop-meta-collapsed');
+    clone.style.position = 'absolute';
+    clone.style.visibility = 'hidden';
+    clone.style.pointerEvents = 'none';
+    clone.style.width = 'auto';
+    clone.style.maxWidth = 'none';
+    clone.style.minWidth = '0';
+    clone.style.left = '-99999px';
+    clone.style.top = '0';
+    document.body.appendChild(clone);
+    const width = clone.getBoundingClientRect().width;
+    clone.remove();
+    return width;
+}
+
 function syncStopBtnLabelFit(btn) {
     if (!btn) return;
     btn.classList.remove('stop-meta-collapsed');
@@ -8962,7 +8980,22 @@ function syncStopBtnLabelFit(btn) {
     const isStopBtn = btn.classList.contains('stop-block') || btn.classList.contains('stop-schedule');
     if (!isStopBtn || btn.classList.contains('hidden') || btn.clientWidth <= 0) return;
 
-    if (btn.scrollWidth > btn.clientWidth + 1) {
+    const buttonRow = btn.parentElement;
+    const rowStyle = buttonRow ? window.getComputedStyle(buttonRow) : null;
+    const rowGap = rowStyle ? (parseFloat(rowStyle.columnGap || rowStyle.gap) || 0) : 0;
+    const visibleButtons = buttonRow
+        ? Array.from(buttonRow.children).filter(el => el instanceof HTMLElement && !el.classList.contains('hidden') && el.getClientRects().length > 0)
+        : [btn];
+    const otherButtonsWidth = visibleButtons
+        .filter(el => el !== btn)
+        .reduce((total, el) => total + el.getBoundingClientRect().width, 0);
+    const availableBtnWidth = buttonRow
+        ? buttonRow.clientWidth - otherButtonsWidth - (Math.max(0, visibleButtons.length - 1) * rowGap)
+        : btn.clientWidth;
+    const expandedBtnWidth = !isIOS ? measureStopBtnExpandedWidth(btn) : 0;
+    const shouldCollapseForDesktopWidth = !isIOS && expandedBtnWidth > availableBtnWidth + 1;
+
+    if (shouldCollapseForDesktopWidth || btn.scrollWidth > btn.clientWidth + 1) {
         btn.classList.add('stop-meta-collapsed');
     }
 }

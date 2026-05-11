@@ -2342,6 +2342,7 @@ body.dark-mode .day-row.weekend {
 .scheduler-section {
     order: 2;
     /* Move to right column */
+    min-width: 0;
 }
 
 .scheduler-content {
@@ -2404,6 +2405,7 @@ body.dark-mode .day-row.weekend {
     flex-direction: column;
     gap: 16px;
     margin-bottom: 8px;
+    min-width: 0;
     background: var(--panel-bg);
     border-radius: 12px;
     padding: 16px;
@@ -3020,7 +3022,7 @@ body.dark-mode .tag.locked {
     color: var(--text-primary);
     border: 1px solid var(--border-color);
     width: auto;
-    max-width: 350px;
+    max-width: 100%;
     min-width: 0;
     justify-content: center;
     padding: 14px 18px;
