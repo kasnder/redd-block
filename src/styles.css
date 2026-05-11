@@ -4643,6 +4643,108 @@ body.dark-mode .onboarding-focus-card {
     border-radius: 10px;
 }
 
+/* Active-block banner shown above the Browser protection toggle when
+   the user has a block already running. Mirrors the toggle-section's
+   shape; uses a neutral blue/info palette so it reads as a heads-up
+   rather than a warning. */
+.migration-active-block-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 18px 0 0;
+    padding: 12px 14px;
+    background: rgba(59, 130, 246, 0.07);
+    border: 1px solid rgba(59, 130, 246, 0.18);
+    border-radius: 10px;
+}
+
+.migration-active-block-banner.hidden {
+    display: none;
+}
+
+.migration-active-block-icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: #1d4ed8;
+}
+
+.migration-active-block-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.migration-active-block-headline {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: hsl(222, 25%, 22%);
+}
+
+.migration-active-block-list {
+    margin-top: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.migration-active-block-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 12.5px;
+    color: hsl(222, 18%, 28%);
+}
+
+.migration-active-block-emoji {
+    flex-shrink: 0;
+    font-size: 13px;
+    line-height: 1;
+}
+
+.migration-active-block-name {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.migration-active-block-until {
+    margin-left: auto;
+    flex-shrink: 0;
+    font-size: 11.5px;
+    color: hsl(222, 18%, 48%);
+    font-variant-numeric: tabular-nums;
+}
+
+.migration-active-block-note {
+    margin-top: 6px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: hsl(222, 18%, 42%);
+}
+
+body.dark-mode #migration-onboarding .migration-active-block-banner {
+    background: rgba(59, 130, 246, 0.14);
+    border-color: rgba(96, 165, 250, 0.35);
+}
+
+body.dark-mode #migration-onboarding .migration-active-block-icon {
+    color: #93c5fd;
+}
+
+body.dark-mode #migration-onboarding .migration-active-block-headline {
+    color: hsl(0, 0%, 92%);
+}
+
+body.dark-mode #migration-onboarding .migration-active-block-row {
+    color: hsl(0, 0%, 88%);
+}
+
+body.dark-mode #migration-onboarding .migration-active-block-until,
+body.dark-mode #migration-onboarding .migration-active-block-note {
+    color: hsl(0, 0%, 70%);
+}
+
 .enforcement-toggle-section.enforcement-off {
     background: rgba(245, 158, 11, 0.08);
     border-color: rgba(245, 158, 11, 0.20);
