@@ -5874,7 +5874,7 @@ function setScheduleMode(isSchedule) {
                 // Also update button to show Stop state
                 const btnLabel = startBlockBtn.querySelector('.btn-label');
                 const btnIcon = startBlockBtn.querySelector('svg');
-                setBtnActionLabel(btnLabel, 'Stop Block:');
+                setBtnActionLabel(btnLabel, tSettings('stopBlock'));
                 setStartBtnBlocklistInfo(startBlockBtn, blocklist);
                 startBlockBtn.classList.add('stop-block');
                 startBlockBtn.disabled = false;
@@ -6866,7 +6866,7 @@ function openScheduleOverrideModal(schedule) {
 
     const titleEl = document.getElementById('override-modal-title');
     if (titleEl) {
-        titleEl.textContent = `Stop Schedule: ${blocklistName}`;
+        titleEl.textContent = `${tSettings('stopSchedule')} ${blocklistName}`;
     }
 
     const challengeTextEl = document.getElementById('challenge-text');
@@ -7947,7 +7947,7 @@ function handleBlocklistSelect(e) {
 
                     if (activeBlock) {
                         // Active block - show Stop Block button (grey) with unlock icon
-                        setBtnActionLabel(btnLabel, 'Stop Block:');
+                        setBtnActionLabel(btnLabel, tSettings('stopBlock'));
                         setStartBtnBlocklistInfo(startBlockBtn, blocklist);
                         startBlockBtn.classList.add('stop-block');
                         startBlockBtn.disabled = false;
@@ -10260,7 +10260,7 @@ function syncSelectedControlState() {
     startBlockBtn.classList.remove('stop-block');
     setStartBtnBlocklistInfo(startBlockBtn, blocklist);
     if (activeBlock) {
-        setBtnActionLabel(btnLabel, 'Stop Block:');
+                        setBtnActionLabel(btnLabel, tSettings('stopBlock'));
         startBlockBtn.classList.add('stop-block');
         startBlockBtn.dataset.activeBlockId = activeBlock.id;
         if (btnIcon) btnIcon.innerHTML = `<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path>`;
@@ -12183,7 +12183,7 @@ const SETTINGS_TRANSLATIONS = {
         pause: 'Pause',
         startBlockButton: 'Start Block:',
         startScheduleButton: 'Start Schedule:',
-        stopScheduleButton: 'Stop Schedule:',
+        stopScheduleButton: 'Stop Schedule',
         editScheduleButton: 'Edit Schedule:',
         // Blocklist modal
         createBlocklist: 'Create Blocklist',
@@ -12548,7 +12548,7 @@ const SETTINGS_TRANSLATIONS = {
         pause: 'Pause',
         startBlockButton: 'Start blokering:',
         startScheduleButton: 'Start skema:',
-        stopScheduleButton: 'Stop skema:',
+        stopScheduleButton: 'Stop skema',
         editScheduleButton: 'Rediger skema:',
         // Blocklist modal
         createBlocklist: 'Opret blokliste',
