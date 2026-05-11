@@ -1018,7 +1018,8 @@ body.dark-mode .app-blocking-closedown-banner {
    header flex now. Here we still:
      - drop the mode-tab text and rely on the icons + tooltips
      - tighten the blocklists column so the scheduler has more breathing room
-     - collapse Start/Stop/Edit buttons to just the verb ("Start" / "Stop") */
+     - collapse Start/Edit buttons to just the verb ("Start" / "Edit")
+       while Stop buttons decide from their own rendered width */
 @media (min-width: 769px) and (max-width: 1024px) {
     .grid-top-row {
         grid-template-columns: 380px minmax(0, 1fr);
@@ -1056,12 +1057,12 @@ body.dark-mode .app-blocking-closedown-banner {
         height: 16px;
     }
 
-    /* Collapse Start / Stop / Edit buttons to just the verb so the row
-       doesn't wrap. The trailing " Block:" / " Schedule:" + emoji + name
-       are hidden; the icon + verb still convey the action, and the
-       selected blocklist card to the left supplies the "what". */
-    .start-block-btn .btn-label-context,
-    .start-block-btn .btn-blocklist-meta {
+    /* Keep Start buttons full. Only the edit-schedule action still collapses
+       to just the verb here; Stop buttons use JS to decide from their actual
+       rendered width whether to keep "Stop Block/Schedule: [name]" or
+       shorten to "Stop Block/Schedule". */
+    .start-block-btn.edit-schedule .btn-label-context,
+    .start-block-btn.edit-schedule .btn-blocklist-meta {
         display: none;
     }
 }
@@ -2640,7 +2641,7 @@ body.dark-mode .tag.locked {
 }
 
 .start-block-btn .btn-name {
-    font-weight: 400;
+    font-weight: inherit;
     text-align: start;
     flex: 0 1 auto;
     min-width: 0;
@@ -2658,6 +2659,10 @@ body.dark-mode .tag.locked {
     min-width: 0;
     width: fit-content;
     max-width: 100%;
+}
+
+.start-block-btn .btn-blocklist-lead {
+    display: none;
 }
 
 .start-block-btn .btn-emoji {
@@ -2702,6 +2707,7 @@ body.dark-mode .tag.locked {
     /* text-align:start avoids UA button centring on wrapped .btn-name lines
        (emoji–title gap); justify-content centers the whole row in the chip. */
     text-align: start;
+    white-space: nowrap;
 }
 
 .start-block-btn.stop-block:hover:not(:disabled) {
@@ -2748,16 +2754,14 @@ body.dark-mode .start-block-btn.stop-schedule:hover:not(:disabled) {
     flex: 0 1 auto;
 }
 
-/* Same idea as the cramped-desktop breakpoint (769–1024px): hide the trailing
-   label slice (" Block:" / " Schedule:" — includes the colon) and emoji + name
-   on iPhone portrait stop buttons so only the verb ("Stop") shows. */
-@media (orientation: portrait) {
-    body.ios.ios-phone .start-block-btn.stop-block .btn-label-context,
-    body.ios.ios-phone .start-block-btn.stop-schedule .btn-label-context,
-    body.ios.ios-phone .start-block-btn.stop-block .btn-blocklist-meta,
-    body.ios.ios-phone .start-block-btn.stop-schedule .btn-blocklist-meta {
-        display: none;
-    }
+.start-block-btn.stop-block:not(.stop-meta-collapsed) .btn-label-context::after,
+.start-block-btn.stop-schedule:not(.stop-meta-collapsed) .btn-label-context::after {
+    content: ':';
+}
+
+.start-block-btn.stop-block.stop-meta-collapsed .btn-blocklist-meta,
+.start-block-btn.stop-schedule.stop-meta-collapsed .btn-blocklist-meta {
+    display: none;
 }
 
 /* Pause Block Button — ghost button. Pause is the gentler, undoable action,
@@ -3157,6 +3161,12 @@ body.ios .segment-day-toggle {
     height: 32px;
     padding: 0 10px;
     font-size: 15px;
+}
+
+/* Only the compact single-letter fallback gets tighter horizontal sizing. */
+body.ios .segment-days.compact-day-labels .segment-day-toggle {
+    min-width: 32px;
+    padding: 0 4px;
 }
 
 .segment-day-toggle:disabled,
@@ -3846,10 +3856,6 @@ body.ios .selection-prompt {
     color: var(--redd-coral);
     border: 1px solid color-mix(in srgb, var(--redd-coral) 25%, transparent);
     border-radius: 4px;
-}
-
-.blocklist-card-scheduled {
-    /* No special border for scheduled cards */
 }
 
 .time-remaining {
