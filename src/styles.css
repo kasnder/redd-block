@@ -207,6 +207,8 @@ body.ios {
     padding-top: env(safe-area-inset-top, 20px);
     padding-bottom: 0;
     overflow: hidden;
+    overflow-x: hidden;
+    max-width: 100%;
     /* Avoid Safari boosting text / chrome when rotating to landscape (narrow height, wide width) */
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
@@ -215,15 +217,35 @@ body.ios {
 body.ios .main-content {
     margin-top: 0;
     overflow-y: auto;
+    overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
     min-height: 0;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
 /* iPhone */
 body.ios .app-container {
+    /* 100vw can exceed the visible width (scrollbars / WebKit); % tracks the body box. */
+    width: 100%;
+    max-width: 100%;
     height: calc(100vh - env(safe-area-inset-top, 20px));
     padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
     overflow: hidden;
+    box-sizing: border-box;
+}
+
+/* Let grid columns shrink below intrinsic content width on narrow iOS / split-view. */
+body.ios .grid-top-row {
+    min-width: 0;
+    max-width: 100%;
+}
+
+body.ios .scheduler-section,
+body.ios .blocklists-section {
+    min-width: 0;
+    max-width: 100%;
 }
 
 /* iPad only — iPhone landscape is often ≥768px wide; must not use iPad padding */
@@ -1316,7 +1338,8 @@ body.dark-mode .app-blocking-closedown-banner {
    header flex now. Here we still:
      - drop the mode-tab text and rely on the icons + tooltips
      - tighten the blocklists column so the scheduler has more breathing room
-     - collapse Start/Stop/Edit buttons to just the verb ("Start" / "Stop") */
+     - collapse Start/Edit buttons to just the verb ("Start" / "Edit")
+       while Stop buttons decide from their own rendered width */
 @media (min-width: 769px) and (max-width: 1024px) {
     .grid-top-row {
         grid-template-columns: 380px minmax(0, 1fr);
@@ -1354,12 +1377,12 @@ body.dark-mode .app-blocking-closedown-banner {
         height: 16px;
     }
 
-    /* Collapse Start / Stop / Edit buttons to just the verb so the row
-       doesn't wrap. The trailing " Block:" / " Schedule:" + emoji + name
-       are hidden; the icon + verb still convey the action, and the
-       selected blocklist card to the left supplies the "what". */
-    .start-block-btn .btn-label-context,
-    .start-block-btn .btn-blocklist-meta {
+    /* Keep Start buttons full. Only the edit-schedule action still collapses
+       to just the verb here; Stop buttons use JS to decide from their actual
+       rendered width whether to keep "Stop Block/Schedule: [name]" or
+       shorten to "Stop Block/Schedule". */
+    .start-block-btn.edit-schedule .btn-label-context,
+    .start-block-btn.edit-schedule .btn-blocklist-meta {
         display: none;
     }
 }
@@ -1435,11 +1458,49 @@ body.dark-mode .app-blocking-closedown-banner {
 
 .scheduler-section > .section-header {
     width: 100%;
+    /* Size-based Now / Schedule chrome: icon-only when this row is too narrow for text + padding. */
+    container-type: inline-size;
+    container-name: sched-header;
+}
+
+/* Very narrow header only: icon-only tabs. Above ~200px (e.g. phone landscape) keep Now/Schedule text. */
+@container sched-header (max-width: 420px) {
+    .scheduler-section > .section-header .scheduler-mode-tabs {
+        max-width: none;
+    }
+
+    .scheduler-section > .section-header .mode-tab {
+        padding: 8px 11px;
+        gap: 0;
+        font-size: 15px;
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+
+    .scheduler-section > .section-header .mode-tab.active {
+        padding: 10px 11px;
+    }
+
+    .scheduler-section > .section-header .mode-tab-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+
+    .scheduler-section > .section-header .mode-tab-icon {
+        width: 18px;
+        height: 18px;
+    }
 }
 
 .scheduler-section > .section-header .scheduler-mode-tabs {
     flex: 0 1 auto;
-    max-width: 200px;
     min-width: 0;
 }
 
@@ -1462,7 +1523,9 @@ body.dark-mode .app-blocking-closedown-banner {
 }
 
 body.ios .section-header h2 {
-    font-size: 19px;
+    /* Slightly above desktop (16px); 19px read too heavy after layout fixes. */
+    font-size: 17px;
+    letter-spacing: 0.05em;
 }
 
 /* Icon Button */
@@ -2406,11 +2469,6 @@ body.dark-mode .day-row.weekend {
     transition: all 0.15s ease;
 }
 
-body.ios .duration-quick-btn {
-    padding: 6px 10px;
-    font-size: 15px;
-}
-
 .duration-quick-btn:hover {
     border-color: var(--accent-color);
     color: var(--accent-color);
@@ -2903,7 +2961,7 @@ body.dark-mode .tag.locked {
 }
 
 .start-block-btn .btn-name {
-    font-weight: 400;
+    font-weight: inherit;
     text-align: start;
     flex: 0 1 auto;
     min-width: 0;
@@ -2921,6 +2979,10 @@ body.dark-mode .tag.locked {
     min-width: 0;
     width: fit-content;
     max-width: 100%;
+}
+
+.start-block-btn .btn-blocklist-lead {
+    display: none;
 }
 
 .start-block-btn .btn-emoji {
@@ -2965,6 +3027,7 @@ body.dark-mode .tag.locked {
     /* text-align:start avoids UA button centring on wrapped .btn-name lines
        (emoji–title gap); justify-content centers the whole row in the chip. */
     text-align: start;
+    white-space: nowrap;
 }
 
 .start-block-btn.stop-block:hover:not(:disabled) {
@@ -3009,6 +3072,16 @@ body.dark-mode .start-block-btn.stop-schedule:hover:not(:disabled) {
 .block-action-buttons .start-block-btn.stop-block,
 .block-action-buttons .start-block-btn.stop-schedule {
     flex: 0 1 auto;
+}
+
+.start-block-btn.stop-block:not(.stop-meta-collapsed) .btn-label-context::after,
+.start-block-btn.stop-schedule:not(.stop-meta-collapsed) .btn-label-context::after {
+    content: ':';
+}
+
+.start-block-btn.stop-block.stop-meta-collapsed .btn-blocklist-meta,
+.start-block-btn.stop-schedule.stop-meta-collapsed .btn-blocklist-meta {
+    display: none;
 }
 
 /* Pause Block Button — ghost button. Pause is the gentler, undoable action,
@@ -3408,6 +3481,12 @@ body.ios .segment-day-toggle {
     height: 32px;
     padding: 0 10px;
     font-size: 15px;
+}
+
+/* Only the compact single-letter fallback gets tighter horizontal sizing. */
+body.ios .segment-days.compact-day-labels .segment-day-toggle {
+    min-width: 32px;
+    padding: 0 4px;
 }
 
 .segment-day-toggle:disabled,
@@ -4097,10 +4176,6 @@ body.ios .selection-prompt {
     color: var(--redd-coral);
     border: 1px solid color-mix(in srgb, var(--redd-coral) 25%, transparent);
     border-radius: 4px;
-}
-
-.blocklist-card-scheduled {
-    /* No special border for scheduled cards */
 }
 
 .time-remaining {
@@ -5871,6 +5946,55 @@ body.dark-mode .websites-import-menu {
     border-color: transparent;
 }
 
+/* Blocklist modal: full-width stacked row on iOS; captions only on iOS (desktop stays icon-only). */
+body:not(.ios) #blocklist-modal .browse-btn-caption {
+    display: none;
+}
+
+body.ios #blocklist-modal .tags-input-container {
+    align-items: stretch;
+}
+
+body.ios #blocklist-modal .tags-input-container > .tags-container {
+    flex: 1 1 100%;
+    width: 100%;
+}
+
+/* Empty chip wells still participate in flex gap — removes the extra space above the apps/websites row until tags exist. */
+body.ios #blocklist-modal .tags-input-container > .tags-container:empty {
+    display: none;
+}
+
+body.ios #blocklist-modal .tags-input-container > .input-with-button {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+}
+
+body.ios #blocklist-modal .tags-input-container > .input-with-button .form-input {
+    width: 100%;
+    min-width: 0;
+    flex: 0 0 auto;
+    box-sizing: border-box;
+}
+
+body.ios #blocklist-modal .tags-input-container .browse-btn {
+    width: 100%;
+    box-sizing: border-box;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 12px;
+}
+
+body.ios #blocklist-modal .tags-input-container .browse-btn-caption {
+    font-size: 13px;
+    font-weight: 500;
+}
+
 .tags-container {
     display: flex;
     flex-wrap: wrap;
@@ -6021,6 +6145,10 @@ body.ios .modal-content {
 #blocklist-modal .modal-content {
     max-width: 480px;
     overscroll-behavior-y: none;
+}
+
+body.ios #blocklist-modal {
+    padding-top: env(safe-area-inset-top, 20px);
 }
 
 .modal-content h3 {
@@ -6462,6 +6590,12 @@ body.ios.ios-phone .footer-text {
    via cmd/ctrl shortcuts and the system menu. */
 body.ios.ios-phone .footer-zoom-control {
     display: none;
+}
+
+/* iPad — pull zoom controls in from the right edge and add breathing room
+   above the home indicator / bottom edge */
+body.ios:not(.ios-phone) .footer-zoom-control {
+    padding-right: calc(36px + env(safe-area-inset-right, 0px));
 }
 
 .settings-top-btn {

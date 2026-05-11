@@ -189,7 +189,10 @@ const UI_ZOOM_MIN = 0.8;
 const UI_ZOOM_MAX = 1.8;
 const UI_ZOOM_MAX_DESKTOP = 1.5;  // cap on macOS/Windows (native webview zoom)
 const UI_ZOOM_STEP = 0.1;
+/** Desktop default — slightly larger for monitor distance. */
 const DEFAULT_UI_ZOOM = 1.2;
+/** iOS uses CSS zoom on `html`; 1.0 matches the layout viewport and avoids horizontal overflow. */
+const DEFAULT_UI_ZOOM_IOS = 1.0;
 let zoomToastHideTimeout = null;
 let nativeWebviewZoomSupported = null;
 
@@ -3900,22 +3903,7 @@ function detectPlatform() {
             if (modalTooltip) modalTooltip.textContent = 'On iOS, apps are selected using Apple\'s Screen Time picker. Tap the button to choose which apps to block.';
         }
 
-        // Make the browse buttons more prominent (full-width) since they're the only option
-        document.querySelectorAll('.browse-btn').forEach(btn => {
-            btn.style.width = '100%';
-            btn.style.justifyContent = 'center';
-            btn.style.padding = '10px';
-            btn.title = 'Select Apps (Screen Time)';
-            // Add text label next to the icon
-            if (!btn.querySelector('.browse-label')) {
-                const label = document.createElement('span');
-                label.className = 'browse-label';
-                label.textContent = ' Select Apps';
-                label.style.marginLeft = '6px';
-                label.style.fontSize = '13px';
-                btn.appendChild(label);
-            }
-        });
+        /* Browse buttons in #blocklist-modal: layout + captions from CSS (body.ios …) and applySettingsLanguage(). */
     } else {
         const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
         if (isMac) {
@@ -5371,6 +5359,7 @@ function setupModalListeners() {
             }
         });
 
+        syncModalWebsitePlaceholder();
     };
 
     // Esc inside the modal clears any active tag selection (it does NOT close
@@ -5548,6 +5537,15 @@ function setupOverrideModalListeners() {
         pauseDurationRo.observe(pauseDurationSection);
     }
     window.addEventListener('resize', () => syncPauseDurationRowLayout());
+
+    const blockActionButtons = document.getElementById('block-action-buttons');
+    if (blockActionButtons && typeof ResizeObserver !== 'undefined') {
+        const stopButtonFitRo = new ResizeObserver(() => syncAllStopBtnLabelFits());
+        stopButtonFitRo.observe(blockActionButtons);
+    }
+    window.addEventListener('resize', () => syncAllStopBtnLabelFits());
+    window.addEventListener('resize', () => syncIosScheduleDayLabelsViewportMode());
+    window.visualViewport?.addEventListener('resize', syncIosScheduleDayLabelsViewportMode);
 
     document.getElementById('confirm-override-btn').addEventListener('click', async () => {
         const typed = challengeInput.value;
@@ -6375,9 +6373,9 @@ function setScheduleMode(isSchedule) {
                 // Also update button to show Stop state
                 const btnLabel = startBlockBtn.querySelector('.btn-label');
                 const btnIcon = startBlockBtn.querySelector('svg');
-                setBtnActionLabel(btnLabel, 'Stop Block:');
-                setStartBtnBlocklistInfo(startBlockBtn, blocklist);
                 startBlockBtn.classList.add('stop-block');
+                setBtnActionLabel(btnLabel, tSettings('stopBlock'));
+                setStartBtnBlocklistInfo(startBlockBtn, blocklist);
                 startBlockBtn.disabled = false;
                 startBlockBtn.dataset.activeBlockId = activeBlock.id;
                 if (btnIcon) {
@@ -6631,9 +6629,9 @@ function updateScheduleButtonState() {
 
     if (activeSchedule && !hasNewSegments) {
         // Active schedule with no pending changes - show Stop button (grey/secondary style)
+        startScheduleBtn.classList.add('stop-schedule');
         setBtnActionLabel(btnLabel, tSettings('stopScheduleButton'));
         setStartBtnBlocklistInfo(startScheduleBtn, blocklist);
-        startScheduleBtn.classList.add('stop-schedule');
         startScheduleBtn.classList.remove('edit-schedule');
         startScheduleBtn.disabled = false;
         startScheduleBtn.dataset.activeScheduleId = activeSchedule.id || activeSchedule.blocklistId;
@@ -6652,9 +6650,9 @@ function updateScheduleButtonState() {
         disableScheduleControls(true);
     } else if (activeSchedule && hasNewSegments) {
         // Existing schedule not currently active (or has pending changes) - show Edit button
+        startScheduleBtn.classList.remove('stop-schedule');
         setBtnActionLabel(btnLabel, tSettings('editScheduleButton'));
         setStartBtnBlocklistInfo(startScheduleBtn, blocklist);
-        startScheduleBtn.classList.remove('stop-schedule');
         startScheduleBtn.classList.add('edit-schedule');
         startScheduleBtn.disabled = false;
         startScheduleBtn.dataset.activeScheduleId = activeSchedule.id || activeSchedule.blocklistId;
@@ -6673,9 +6671,9 @@ function updateScheduleButtonState() {
         disableScheduleControls(true);
     } else {
         // No active schedule - show Start button (normal)
+        startScheduleBtn.classList.remove('stop-schedule');
         setBtnActionLabel(btnLabel, tSettings('startScheduleButton'));
         setStartBtnBlocklistInfo(startScheduleBtn, blocklist);
-        startScheduleBtn.classList.remove('stop-schedule');
         startScheduleBtn.classList.remove('edit-schedule');
         delete startScheduleBtn.dataset.activeScheduleId;
 
@@ -6803,10 +6801,14 @@ function rebuildScheduleSegments() {
     const container = document.getElementById('schedule-segments');
     container.innerHTML = '';
 
-    const dayLabels = weekdayAbbrevMon0List();
+    const fullDayLabels = weekdayAbbrevMon0List();
+    const useCompactDayLabels = shouldUseCompactIosScheduleDayLabels();
+    const dayLabels = useCompactDayLabels ? weekdayLetterMon0List() : fullDayLabels;
     const labelStart = tSettings('start');
     const labelEnd = tSettings('end');
     const labelDays = tSettings('days');
+
+    iosCompactScheduleDayLabelsActive = useCompactDayLabels;
 
     scheduleSegments.forEach((seg, index) => {
         const segment = document.createElement('div');
@@ -6818,7 +6820,7 @@ function rebuildScheduleSegments() {
 
         // Generate day toggles HTML
         const dayTogglesHtml = dayLabels.map((label, i) =>
-            `<button type="button" class="segment-day-toggle${segmentDays.includes(i) ? ' active' : ''}" data-day="${i}">${label}</button>`
+            `<button type="button" class="segment-day-toggle${segmentDays.includes(i) ? ' active' : ''}" data-day="${i}" aria-label="${fullDayLabels[i]}">${label}</button>`
         ).join('');
 
         // Only show labels on the first segment
@@ -6875,7 +6877,7 @@ function rebuildScheduleSegments() {
                 </div>
                 <div class="segment-days-group">
                     ${showLabels ? `<label class="time-label">${labelDays}</label>` : ''}
-                    <div class="segment-days" data-segment-index="${index}">
+                    <div class="segment-days${useCompactDayLabels ? ' compact-day-labels' : ''}" data-segment-index="${index}">
                         ${dayTogglesHtml}
                     </div>
                 </div>
@@ -7367,7 +7369,7 @@ function openScheduleOverrideModal(schedule) {
 
     const titleEl = document.getElementById('override-modal-title');
     if (titleEl) {
-        titleEl.textContent = `Stop Schedule: ${blocklistName}`;
+        titleEl.textContent = `${tSettings('stopSchedule')} ${blocklistName}`;
     }
 
     const challengeTextEl = document.getElementById('challenge-text');
@@ -8448,9 +8450,9 @@ function handleBlocklistSelect(e) {
 
                     if (activeBlock) {
                         // Active block - show Stop Block button (grey) with unlock icon
-                        setBtnActionLabel(btnLabel, 'Stop Block:');
-                        setStartBtnBlocklistInfo(startBlockBtn, blocklist);
                         startBlockBtn.classList.add('stop-block');
+                        setBtnActionLabel(btnLabel, tSettings('stopBlock'));
+                        setStartBtnBlocklistInfo(startBlockBtn, blocklist);
                         startBlockBtn.disabled = false;
                         startBlockBtn.dataset.activeBlockId = activeBlock.id;
 
@@ -8916,6 +8918,7 @@ function getStartBlockButtonHTML() {
         </svg>
         <span class="btn-label">${getActionLabelHTML(tSettings('startBlockButton'))}</span>
         <span class="btn-blocklist-meta">
+            <span class="btn-blocklist-lead" aria-hidden="true"></span>
             <span class="btn-emoji" aria-hidden="true"></span>
             <span class="btn-name"></span>
         </span>
@@ -8941,6 +8944,35 @@ function setBtnActionLabel(el, fullText) {
     el.innerHTML = getActionLabelHTML(fullText);
 }
 
+// The visible colon is added in CSS on .btn-label-context when the full stop
+// label fits. Keep this spacer empty so punctuation stays visually attached to
+// "Block"/"Schedule" rather than becoming a separate flex item.
+function syncStartBtnBlocklistMetaLead(btn) {
+    if (!btn) return;
+    const lead = btn.querySelector('.btn-blocklist-lead');
+    if (!lead) return;
+    lead.textContent = '';
+}
+
+function syncStopBtnLabelFit(btn) {
+    if (!btn) return;
+    btn.classList.remove('stop-meta-collapsed');
+    syncStartBtnBlocklistMetaLead(btn);
+
+    const isStopBtn = btn.classList.contains('stop-block') || btn.classList.contains('stop-schedule');
+    if (!isStopBtn || btn.classList.contains('hidden') || btn.clientWidth <= 0) return;
+
+    if (btn.scrollWidth > btn.clientWidth + 1) {
+        btn.classList.add('stop-meta-collapsed');
+    }
+}
+
+function syncAllStopBtnLabelFits() {
+    document
+        .querySelectorAll('.start-block-btn.stop-block, .start-block-btn.stop-schedule')
+        .forEach(syncStopBtnLabelFit);
+}
+
 // Update both the emoji and name on a start/stop button so they stay in sync.
 function setStartBtnBlocklistInfo(btn, blocklist) {
     if (!btn) return;
@@ -8948,6 +8980,7 @@ function setStartBtnBlocklistInfo(btn, blocklist) {
     const btnName = btn.querySelector('.btn-name');
     if (btnEmoji) btnEmoji.textContent = blocklist ? (blocklist.emoji || '🚫') : '';
     if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
+    syncStopBtnLabelFit(btn);
 }
 
 
@@ -10759,10 +10792,10 @@ function syncSelectedControlState() {
     const alwaysOnMsg = document.getElementById('always-on-message');
     delete startBlockBtn.dataset.activeBlockId;
     startBlockBtn.classList.remove('stop-block');
-    setStartBtnBlocklistInfo(startBlockBtn, blocklist);
     if (activeBlock) {
-        setBtnActionLabel(btnLabel, 'Stop Block:');
         startBlockBtn.classList.add('stop-block');
+        setBtnActionLabel(btnLabel, tSettings('stopBlock'));
+        setStartBtnBlocklistInfo(startBlockBtn, blocklist);
         startBlockBtn.dataset.activeBlockId = activeBlock.id;
         if (btnIcon) btnIcon.innerHTML = `<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path>`;
         if (pauseBtn) {
@@ -10773,6 +10806,7 @@ function syncSelectedControlState() {
         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
     } else {
         setBtnActionLabel(btnLabel, tSettings('startBlockButton'));
+        setStartBtnBlocklistInfo(startBlockBtn, blocklist);
         if (btnIcon) btnIcon.innerHTML = `<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path>`;
         if (pauseBtn) pauseBtn.classList.add('hidden');
         disableTimeControls(false);
@@ -12707,7 +12741,10 @@ const SETTINGS_TRANSLATIONS = {
         pause: 'Pause',
         startBlockButton: 'Start Block:',
         startScheduleButton: 'Start Schedule:',
-        stopScheduleButton: 'Stop Schedule:',
+        stopScheduleButton: 'Stop Schedule',
+        /** Shown inside .btn-blocklist-meta before emoji+name when Stop is shown; hidden with meta on narrow layouts. */
+        stopBlockMetaColon: ':',
+        stopScheduleMetaColon: ':',
         editScheduleButton: 'Edit Schedule:',
         // Blocklist modal
         createBlocklist: 'Create Blocklist',
@@ -12730,6 +12767,10 @@ const SETTINGS_TRANSLATIONS = {
         advancedOptions: 'Advanced options',
         listBlockedOnCard: 'Show names of blocked websites & apps in the overview',
         importWebsitesTitle: 'Import websites',
+        browseApplicationsTitle: 'Browse Applications',
+        modalPremadeListsCaption: 'Pre-made lists',
+        modalBrowseAppsCaption: 'Select Apps',
+        modalBrowseAppsTitleIos: 'Select Apps (Screen Time)',
         importWebsitesPickFileTitle: 'Select a file with one domain per line',
         importWebsitesFromFile: 'From text file…',
         importWebsitesPreMadeList: 'Pre-made list',
@@ -12839,6 +12880,8 @@ const SETTINGS_TRANSLATIONS = {
         // Time/date words
         dayAbbrev: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
         dayAbbrevMon0: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        /** Single-letter row for schedule day toggles when the three-letter row does not fit (Mon..Sun). */
+        dayLetterMon0: ['M', 'T', 'W', 'T', 'F', 'S', 'S'],
         locale: 'en-US',
         // Duplicate naming: localized via blocklistDuplicateSuffix
         blocklistDuplicateSuffix: 'copy',
@@ -13091,7 +13134,9 @@ const SETTINGS_TRANSLATIONS = {
         pause: 'Pause',
         startBlockButton: 'Start blokering:',
         startScheduleButton: 'Start skema:',
-        stopScheduleButton: 'Stop skema:',
+        stopScheduleButton: 'Stop skema',
+        stopBlockMetaColon: ':',
+        stopScheduleMetaColon: ':',
         editScheduleButton: 'Rediger skema:',
         // Blocklist modal
         createBlocklist: 'Opret blokliste',
@@ -13114,6 +13159,10 @@ const SETTINGS_TRANSLATIONS = {
         advancedOptions: 'Avancerede indstillinger',
         listBlockedOnCard: 'Vis navnet på blokerede websites og apps i oversigten',
         importWebsitesTitle: 'Importér websites',
+        browseApplicationsTitle: 'Gennemse programmer',
+        modalPremadeListsCaption: 'Færdiglavede lister',
+        modalBrowseAppsCaption: 'Vælg apps',
+        modalBrowseAppsTitleIos: 'Vælg apps (Screen Time)',
         importWebsitesPickFileTitle: 'Vælg en fil med ét domæne pr. linje',
         importWebsitesFromFile: 'Fra tekstfil…',
         importWebsitesPreMadeList: 'Færdiglavet liste',
@@ -13221,6 +13270,7 @@ const SETTINGS_TRANSLATIONS = {
         // Time/date words
         dayAbbrev: ['Søn', 'Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør'],
         dayAbbrevMon0: ['Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør', 'Søn'],
+        dayLetterMon0: ['M', 'T', 'O', 'T', 'F', 'L', 'S'],
         locale: 'da-DK',
         blocklistDuplicateSuffix: 'kopi',
     },
@@ -13242,6 +13292,41 @@ function weekdayAbbrevMon0List() {
     const row = SETTINGS_TRANSLATIONS[lang]?.dayAbbrevMon0;
     if (Array.isArray(row) && row.length === 7) return row;
     return SETTINGS_TRANSLATIONS.en.dayAbbrevMon0;
+}
+
+/** Single-letter weekday labels (Mon=0..Sun=6) for compact iOS schedule day toggles. */
+function weekdayLetterMon0List() {
+    const lang = getSettingsLanguage();
+    const row = SETTINGS_TRANSLATIONS[lang]?.dayLetterMon0;
+    if (Array.isArray(row) && row.length === 7) return row;
+    return SETTINGS_TRANSLATIONS.en.dayLetterMon0;
+}
+
+const IOS_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH = 1024;
+let iosCompactScheduleDayLabelsActive = null;
+
+/** Smaller iOS viewports, including iPad portrait, use single-letter day pills from first render. */
+function shouldUseCompactIosScheduleDayLabels() {
+    if (!document.body.classList.contains('ios')) return false;
+    const viewportWidth = Math.round(
+        window.visualViewport?.width
+        || window.innerWidth
+        || document.documentElement?.clientWidth
+        || 0
+    );
+    return viewportWidth > 0 && viewportWidth <= IOS_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH;
+}
+
+function syncIosScheduleDayLabelsViewportMode() {
+    if (!document.body.classList.contains('ios')) return;
+    const nextCompact = shouldUseCompactIosScheduleDayLabels();
+    if (nextCompact === iosCompactScheduleDayLabelsActive) return;
+    iosCompactScheduleDayLabelsActive = nextCompact;
+
+    const schedulePanel = document.getElementById('schedule-block-panel');
+    if (isScheduleMode && schedulePanel && !schedulePanel.classList.contains('hidden')) {
+        rebuildScheduleSegments();
+    }
 }
 
 function tSettings(key) {
@@ -13353,6 +13438,15 @@ function formatLatestVersionText(version) {
     return `${tSettings('latestVersionPrefix')} ${version || 'Unknown'}`;
 }
 
+/** Blocklist modal: show example placeholder only when there are no website tags yet. */
+function syncModalWebsitePlaceholder() {
+    const el = document.getElementById('modal-website-input');
+    if (!el) return;
+    const list = window.modalWebsites;
+    el.placeholder =
+        Array.isArray(list) && list.length > 0 ? '' : tSettings('placeholderWebsiteExample');
+}
+
 function applySettingsLanguage() {
     const setText = (id, text) => {
         const el = document.getElementById(id);
@@ -13424,8 +13518,8 @@ function applySettingsLanguage() {
         if (el) el.placeholder = text;
     };
     setPlaceholder('blocklist-name', tSettings('placeholderNameExample'));
-    setPlaceholder('modal-website-input', tSettings('placeholderWebsiteExample'));
     setPlaceholder('modal-app-input', tSettings('placeholderAppExample'));
+    syncModalWebsitePlaceholder();
     setPlaceholder('challenge-input', tSettings('typeHere'));
     setPlaceholder('pause-challenge-input', tSettings('typeHere'));
     setPlaceholder('override-all-challenge-input', tSettings('typeHere'));
@@ -13465,6 +13559,15 @@ function applySettingsLanguage() {
     if (importWebsitesBtn) {
         importWebsitesBtn.title = tSettings('importWebsitesTitle');
         importWebsitesBtn.setAttribute('aria-label', tSettings('importWebsitesTitle'));
+    }
+    setText('modal-import-websites-caption', tSettings('modalPremadeListsCaption'));
+    setText('modal-browse-apps-caption', tSettings('modalBrowseAppsCaption'));
+    const modalBrowseAppsBtn = document.getElementById('modal-browse-apps-btn');
+    if (modalBrowseAppsBtn) {
+        const ios = document.body.classList.contains('ios');
+        const browseTitle = ios ? tSettings('modalBrowseAppsTitleIos') : tSettings('browseApplicationsTitle');
+        modalBrowseAppsBtn.title = browseTitle;
+        modalBrowseAppsBtn.setAttribute('aria-label', browseTitle);
     }
     setText('cancel-blocklist-btn', tSettings('cancel'));
     setText('save-blocklist-btn', tSettings('save'));
@@ -13762,9 +13865,13 @@ function clampUiZoom(scale) {
     return Math.min(getUiZoomMax(), Math.max(UI_ZOOM_MIN, scale));
 }
 
+function getDefaultUiZoom() {
+    return isIOS ? DEFAULT_UI_ZOOM_IOS : DEFAULT_UI_ZOOM;
+}
+
 function getSavedUiZoom() {
     const parsed = Number(appData.settings?.uiZoom);
-    if (!Number.isFinite(parsed)) return DEFAULT_UI_ZOOM;
+    if (!Number.isFinite(parsed)) return getDefaultUiZoom();
     return clampUiZoom(parsed);
 }
 
@@ -13854,7 +13961,7 @@ function zoomUiOut(options = {}) {
 }
 
 function resetUiZoom(options = {}) {
-    setUiZoom(DEFAULT_UI_ZOOM, options);
+    setUiZoom(getDefaultUiZoom(), options);
 }
 
 function setupUiZoomShortcuts() {
