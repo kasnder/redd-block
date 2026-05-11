@@ -5824,6 +5824,10 @@ body.ios .modal-content {
     overscroll-behavior-y: none;
 }
 
+body.ios #blocklist-modal {
+    padding-top: env(safe-area-inset-top, 20px);
+}
+
 .modal-content h3 {
     font-size: 22px;
     font-weight: 700;
