@@ -5,7 +5,9 @@
 // enforcement and these commands aren't registered.
 
 use std::sync::Mutex;
-use tauri::{AppHandle, LogicalSize, Manager, PhysicalPosition};
+use tauri::{
+    AppHandle, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder,
+};
 
 use crate::profile_scan;
 
@@ -20,6 +22,7 @@ struct SavedWindowGeom {
 }
 
 static BLOCKING_WARNING_SAVED_GEOM: Mutex<Option<SavedWindowGeom>> = Mutex::new(None);
+static BLOCKING_WARNING_AUX_WINDOWS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 /// Matches `WebviewWindowBuilder` min on macOS / Windows.
 const MAIN_RESTORE_MIN_W: f64 = 600.0;
@@ -418,11 +421,6 @@ pub fn enter_blocking_warning_compact_window(app: &AppHandle) {
 
     let _ = w.eval(MODE_ON);
 
-    // Resolve the monitor the window currently sits on (or the primary
-    // if we can't pin it down) and size the window to its full logical
-    // dimensions. NOT native fullscreen — just an oversized borderless
-    // panel that physically covers the screen, so the user can't ignore
-    // the warning by dragging another window over it.
     let monitor = w
         .current_monitor()
         .ok()
@@ -430,16 +428,12 @@ pub fn enter_blocking_warning_compact_window(app: &AppHandle) {
         .or_else(|| w.primary_monitor().ok().flatten());
 
     if let Some(m) = monitor {
-        let scale = m.scale_factor();
-        let size = m.size();
-        let pos = m.position();
-        let logical_w = size.width as f64 / scale;
-        let logical_h = size.height as f64 / scale;
-        let warning_size = LogicalSize::new(logical_w, logical_h);
+        let warning_size = monitor_logical_size(&m);
         let _ = w.set_size(warning_size);
         let _ = w.set_min_size(Some(warning_size));
         let _ = w.set_max_size(Some(warning_size));
-        let _ = w.set_position(PhysicalPosition::new(pos.x, pos.y));
+        let _ = w.set_position(PhysicalPosition::new(m.position().x, m.position().y));
+        create_aux_blocking_warning_windows(app, m.position().x, m.position().y);
     } else {
         // Fall back to a generous fixed size if monitor metadata isn't
         // available — better than rendering tiny.
@@ -449,6 +443,127 @@ pub fn enter_blocking_warning_compact_window(app: &AppHandle) {
         let _ = w.set_max_size(Some(warning_size));
         let _ = w.center();
     }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn monitor_logical_size(monitor: &tauri::Monitor) -> LogicalSize<f64> {
+    let scale = monitor.scale_factor();
+    let size = monitor.size();
+    LogicalSize::new(size.width as f64 / scale, size.height as f64 / scale)
+}
+
+#[cfg(not(target_os = "ios"))]
+fn create_aux_blocking_warning_windows(app: &AppHandle, main_x: i32, main_y: i32) {
+    close_aux_blocking_warning_windows(app);
+
+    let Some(main_window) = app.get_webview_window("main") else {
+        return;
+    };
+    let Ok(monitors) = main_window.available_monitors() else {
+        return;
+    };
+
+    let mut labels = Vec::new();
+    for (idx, monitor) in monitors.iter().enumerate() {
+        let pos = monitor.position();
+        if pos.x == main_x && pos.y == main_y {
+            continue;
+        }
+
+        let label = format!("blocking-warning-aux-{idx}");
+        let warning_size = monitor_logical_size(monitor);
+        let html = aux_blocking_warning_html();
+        let url = WebviewUrl::External("about:blank".parse().unwrap());
+        let builder = WebviewWindowBuilder::new(app, &label, url)
+            .title("")
+            .decorations(false)
+            .resizable(false)
+            .always_on_top(true)
+            .visible_on_all_workspaces(true)
+            .inner_size(warning_size.width, warning_size.height)
+            .position(pos.x as f64, pos.y as f64)
+            .initialization_script(format!(
+                r#"
+                window.addEventListener('DOMContentLoaded', () => {{
+                    document.open();
+                    document.write({html:?});
+                    document.close();
+                }});
+                "#
+            ));
+
+        match builder.build() {
+            Ok(window) => {
+                let _ = window.set_position(PhysicalPosition::new(pos.x, pos.y));
+                labels.push(label);
+            }
+            Err(e) => log::warn!("blocking warning: aux display window failed: {e:?}"),
+        }
+    }
+
+    if let Ok(mut slot) = BLOCKING_WARNING_AUX_WINDOWS.lock() {
+        *slot = labels;
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn close_aux_blocking_warning_windows(app: &AppHandle) {
+    let labels = BLOCKING_WARNING_AUX_WINDOWS
+        .lock()
+        .ok()
+        .map(|mut g| std::mem::take(&mut *g))
+        .unwrap_or_default();
+
+    for label in labels {
+        if let Some(window) = app.get_webview_window(&label) {
+            let _ = window.close();
+        }
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn aux_blocking_warning_html() -> &'static str {
+    r#"<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #ffffff;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.card {
+  width: min(560px, calc(100vw - 96px));
+  box-sizing: border-box;
+  padding: 40px 48px;
+  border-radius: 24px;
+  background: #ffffff;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18);
+  color: #1f2937;
+  text-align: center;
+}
+.emoji { font-size: 56px; line-height: 1; margin-bottom: 18px; }
+h1 { margin: 0 0 14px; font-size: 32px; line-height: 1.15; }
+p { margin: 0; font-size: 15px; line-height: 1.5; font-weight: 650; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="emoji">💪</div>
+    <h1>Downtime is starting</h1>
+    <p>Use the main ReDD Block warning and click <strong>Let's go!</strong> to start your wrap-up time.</p>
+  </div>
+</body>
+</html>"#
 }
 
 /// Sets main window **inner** logical size from measured webview content (no
@@ -508,6 +623,7 @@ pub fn leave_blocking_warning_compact_window(app: &AppHandle) {
     let Some(w) = app.get_webview_window("main") else {
         return;
     };
+    close_aux_blocking_warning_windows(app);
 
     const MODE_OFF: &str = r#"(function(){
   try {
