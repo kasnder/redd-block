@@ -332,13 +332,39 @@ fn apply_macos_blocking_warning_panel_mode(app: &AppHandle, active: bool) {
                     .ignores_cycle()
                     .into(),
             );
+            set_macos_traffic_lights_visible(&handle, false);
         } else {
             panel.set_style_mask(base_mask);
             panel.set_level(PanelLevel::Normal.value());
             panel.set_collection_behavior(CollectionBehavior::new().into());
+            set_macos_traffic_lights_visible(&handle, true);
         }
     }) {
         log::warn!("apply_macos_blocking_warning_panel_mode: main thread: {e:?}");
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn set_macos_traffic_lights_visible(app: &AppHandle, visible: bool) {
+    use cocoa::base::{id, nil, NO, YES};
+    use objc::{msg_send, sel, sel_impl};
+
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let Ok(raw_window) = window.ns_window() else {
+        return;
+    };
+
+    unsafe {
+        let ns_window = raw_window as id;
+        let hidden = if visible { NO } else { YES };
+        for button_kind in [0usize, 1, 2] {
+            let button: id = msg_send![ns_window, standardWindowButton: button_kind];
+            if button != nil {
+                let _: () = msg_send![button, setHidden: hidden];
+            }
+        }
     }
 }
 
