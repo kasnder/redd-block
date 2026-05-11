@@ -5610,6 +5610,10 @@ body:not(.ios) #blocklist-modal .browse-btn-caption {
     display: none;
 }
 
+body.ios #blocklist-modal .tags-input-container {
+    align-items: stretch;
+}
+
 body.ios #blocklist-modal .tags-input-container > .tags-container {
     flex: 1 1 100%;
     width: 100%;
@@ -5627,7 +5631,7 @@ body.ios #blocklist-modal .tags-input-container > .input-with-button {
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    gap: 8px;
+    gap: 6px;
 }
 
 body.ios #blocklist-modal .tags-input-container > .input-with-button .form-input {
