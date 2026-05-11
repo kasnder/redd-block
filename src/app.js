@@ -1524,7 +1524,6 @@ function syncEnforcementToggleSectionVisual(toggle) {
 
 async function wireEnforcementToggle() {
     const toggle = document.getElementById('enforcement-toggle-input');
-    const lockedMsg = document.getElementById('enforcement-toggle-locked-msg');
     if (!toggle) return;
 
     // Read current state from backend
@@ -1539,7 +1538,7 @@ async function wireEnforcementToggle() {
     syncEnforcementToggleSectionVisual(toggle);
 
     // Check if any block is currently active (to lock the toggle)
-    await updateEnforcementToggleLock(toggle, lockedMsg);
+    await updateEnforcementToggleLock(toggle);
 
     // Wire the change handler (only once)
     if (!toggle._listenerAdded) {
@@ -1548,23 +1547,22 @@ async function wireEnforcementToggle() {
             const desired = toggle.checked;
             syncEnforcementToggleSectionVisual(toggle);
             try {
-                await invoke('set_enforcement_enabled', { enabled: desired });
+                const saved = await invoke('set_enforcement_enabled', { enabled: desired });
+                toggle.checked = !!saved;
+                syncEnforcementToggleSectionVisual(toggle);
+                await updateEnforcementToggleLock(toggle);
             } catch (e) {
                 console.warn('[enforcement-toggle] set failed:', e);
                 // Revert the checkbox — the backend rejected it
                 toggle.checked = !desired;
                 syncEnforcementToggleSectionVisual(toggle);
-                // Flash the locked message if it was a block-active rejection
-                if (lockedMsg) {
-                    lockedMsg.classList.remove('hidden');
-                    setTimeout(() => updateEnforcementToggleLock(toggle, lockedMsg), 3000);
-                }
+                await updateEnforcementToggleLock(toggle);
             }
         });
     }
 }
 
-async function updateEnforcementToggleLock(toggle, lockedMsg) {
+async function updateEnforcementToggleLock(toggle) {
     if (!toggle) return;
     try {
         // Try a no-op read to check current state; the real lock check
@@ -1577,22 +1575,22 @@ async function updateEnforcementToggleLock(toggle, lockedMsg) {
         // is ON and read the active-block state via the data.
         const data = await invoke('load_data');
         const activeBlocks = (data && data.activeBlocks) || [];
+        const schedules = (data && data.schedules) || [];
         const nowMs = Date.now();
+        const nowDate = new Date(nowMs);
         const anyActive = activeBlocks.some(b => {
             const start = b.startTime || Infinity;
             const end = b.endTime;
             const paused = b.isPaused || false;
             const isAlways = end === null || end === undefined;
             return start <= nowMs && (isAlways || end > nowMs) && !paused;
-        });
+        }) || schedules.some(schedule => isScheduleSegmentActiveNow(schedule, nowDate));
 
         const isLocked = toggle.checked && anyActive;
         toggle.disabled = isLocked;
-        if (lockedMsg) lockedMsg.classList.toggle('hidden', !isLocked);
     } catch (e) {
         // Can't determine lock state — leave unlocked
         toggle.disabled = false;
-        if (lockedMsg) lockedMsg.classList.add('hidden');
     }
 }
 
@@ -12069,7 +12067,6 @@ const SETTINGS_TRANSLATIONS = {
         migrationSkip: 'Skip for now',
         migrationEnforcementHeadline: 'Browser enforcement',
         migrationEnforcementDesc: 'To help you stay focused, your browser is automatically closed if you turn off ReDD Focus while a block is running.',
-        migrationEnforcementLocked: 'This stays on for the rest of this block so your protection stays consistent—you can change it again when the block ends.',
         migrationEnforcementDisableNote: 'To turn off browser enforcement again, you need to stop all running blocks.',
         migrationApproveAdminPrompt: 'Approve the admin prompt to continue…',
         migrationTryAgain: 'Try again',
@@ -12431,7 +12428,6 @@ const SETTINGS_TRANSLATIONS = {
         migrationSkip: 'Spring over for nu',
         migrationEnforcementHeadline: 'Browser-beskyttelse',
         migrationEnforcementDesc: 'For at støtte dig i at fokusere, bliver din browser automatisk lukket ned hvis du slukker for ReDD Focus mens en blokering kører.',
-        migrationEnforcementLocked: 'Det bliver slået til for resten af blokeringen, så din beskyttelse hænger sammen—du kan ændre det igen, når blokeringen stopper.',
         migrationEnforcementDisableNote: 'For at slå det fra igen skal du stoppe alle kørende blokeringer.',
         migrationApproveAdminPrompt: 'Godkend administratorprompt for at fortsætte …',
         migrationTryAgain: 'Prøv igen',
@@ -12783,7 +12779,6 @@ function applyMigrationOverlayStaticCopy() {
     setText('migration-skip-btn', tSettings('migrationSkip'));
     setText('enforcement-toggle-headline-text', tSettings('migrationEnforcementHeadline'));
     setText('enforcement-toggle-desc-text', tSettings('migrationEnforcementDesc'));
-    setText('enforcement-toggle-locked-text', tSettings('migrationEnforcementLocked'));
     setText('enforcement-toggle-disable-note-text', tSettings('migrationEnforcementDisableNote'));
     const continueBtn = document.getElementById('migration-continue-btn');
     if (continueBtn && !continueBtn.disabled) {

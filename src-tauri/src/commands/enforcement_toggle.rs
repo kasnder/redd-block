@@ -39,7 +39,7 @@ pub fn set_enforcement_enabled(app: tauri::AppHandle, enabled: bool) -> Result<b
     let mut data = read_data(&app).unwrap_or_else(|| Value::Object(serde_json::Map::new()));
 
     // Can't disable enforcement while a block is running.
-    if !enabled && any_block_currently_active(&data) {
+    if !enabled && (any_block_currently_active(&data) || any_schedule_currently_active(&path)) {
         return Err(
             "Can't turn off browser enforcement while a block is active."
                 .to_string(),
@@ -84,6 +84,14 @@ fn any_block_currently_active(data: &Value) -> bool {
         let is_always = b.get("endTime").map_or(true, |v| v.is_null());
         start <= now_ms && (is_always || end > now_ms) && !paused
     })
+}
+
+/// True if any schedule segment is actively feeding the browser extension.
+/// `native_host::derive_payload` is the source of truth used by the
+/// extension itself, so this catches schedule-driven website blocks.
+fn any_schedule_currently_active(data_path: &std::path::Path) -> bool {
+    let (_domains, blocks) = crate::native_host::derive_payload(data_path);
+    blocks.iter().any(|b| b.source == "schedule")
 }
 
 fn read_data(app: &tauri::AppHandle) -> Option<Value> {
