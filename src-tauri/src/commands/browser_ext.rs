@@ -435,14 +435,18 @@ pub fn enter_blocking_warning_compact_window(app: &AppHandle) {
         let pos = m.position();
         let logical_w = size.width as f64 / scale;
         let logical_h = size.height as f64 / scale;
-        let _ = w.set_min_size(Some(LogicalSize::new(WARNING_SHELL_MIN_W, WARNING_SHELL_MIN_H)));
-        let _ = w.set_size(LogicalSize::new(logical_w, logical_h));
+        let warning_size = LogicalSize::new(logical_w, logical_h);
+        let _ = w.set_size(warning_size);
+        let _ = w.set_min_size(Some(warning_size));
+        let _ = w.set_max_size(Some(warning_size));
         let _ = w.set_position(PhysicalPosition::new(pos.x, pos.y));
     } else {
         // Fall back to a generous fixed size if monitor metadata isn't
         // available — better than rendering tiny.
-        let _ = w.set_min_size(Some(LogicalSize::new(WARNING_SHELL_MIN_W, WARNING_SHELL_MIN_H)));
-        let _ = w.set_size(LogicalSize::new(1440.0, 900.0));
+        let warning_size = LogicalSize::new(1440.0, 900.0);
+        let _ = w.set_size(warning_size);
+        let _ = w.set_min_size(Some(warning_size));
+        let _ = w.set_max_size(Some(warning_size));
         let _ = w.center();
     }
 }
@@ -513,6 +517,7 @@ pub fn leave_blocking_warning_compact_window(app: &AppHandle) {
 })();"#;
 
     let _ = w.eval(MODE_OFF);
+    let _ = w.set_max_size(None::<LogicalSize<f64>>);
 
     let saved = BLOCKING_WARNING_SAVED_GEOM
         .lock()
