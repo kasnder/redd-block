@@ -2748,6 +2748,18 @@ body.dark-mode .start-block-btn.stop-schedule:hover:not(:disabled) {
     flex: 0 1 auto;
 }
 
+/* Same idea as the cramped-desktop breakpoint (769–1024px): hide the trailing
+   label slice (" Block:" / " Schedule:" — includes the colon) and emoji + name
+   on iPhone portrait stop buttons so only the verb ("Stop") shows. */
+@media (orientation: portrait) {
+    body.ios.ios-phone .start-block-btn.stop-block .btn-label-context,
+    body.ios.ios-phone .start-block-btn.stop-schedule .btn-label-context,
+    body.ios.ios-phone .start-block-btn.stop-block .btn-blocklist-meta,
+    body.ios.ios-phone .start-block-btn.stop-schedule .btn-blocklist-meta {
+        display: none;
+    }
+}
+
 /* Pause Block Button — ghost button. Pause is the gentler, undoable action,
    so it steps back to a transparent fill with a faint border-on-hover. The
    Stop secondary next to it carries the visual weight. The Resume state
