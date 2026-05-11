@@ -3413,22 +3413,7 @@ function detectPlatform() {
             if (modalTooltip) modalTooltip.textContent = 'On iOS, apps are selected using Apple\'s Screen Time picker. Tap the button to choose which apps to block.';
         }
 
-        // Make the browse buttons more prominent (full-width) since they're the only option
-        document.querySelectorAll('.browse-btn').forEach(btn => {
-            btn.style.width = '100%';
-            btn.style.justifyContent = 'center';
-            btn.style.padding = '10px';
-            btn.title = 'Select Apps (Screen Time)';
-            // Add text label next to the icon
-            if (!btn.querySelector('.browse-label')) {
-                const label = document.createElement('span');
-                label.className = 'browse-label';
-                label.textContent = ' Select Apps';
-                label.style.marginLeft = '6px';
-                label.style.fontSize = '13px';
-                btn.appendChild(label);
-            }
-        });
+        /* Browse buttons in #blocklist-modal: layout + captions from CSS (body.ios …) and applySettingsLanguage(). */
     } else {
         const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
         if (isMac) {
@@ -12220,6 +12205,10 @@ const SETTINGS_TRANSLATIONS = {
         advancedOptions: 'Advanced options',
         listBlockedOnCard: 'Show names of blocked websites & apps in the overview',
         importWebsitesTitle: 'Import websites',
+        browseApplicationsTitle: 'Browse Applications',
+        modalPremadeListsCaption: 'Pre-made lists',
+        modalBrowseAppsCaption: 'Select Apps',
+        modalBrowseAppsTitleIos: 'Select Apps (Screen Time)',
         importWebsitesPickFileTitle: 'Select a file with one domain per line',
         importWebsitesFromFile: 'From text file…',
         importWebsitesPreMadeList: 'Pre-made list',
@@ -12581,6 +12570,10 @@ const SETTINGS_TRANSLATIONS = {
         advancedOptions: 'Avancerede indstillinger',
         listBlockedOnCard: 'Vis navnet på blokerede websites og apps i oversigten',
         importWebsitesTitle: 'Importér websites',
+        browseApplicationsTitle: 'Gennemse programmer',
+        modalPremadeListsCaption: 'Færdiglavede lister',
+        modalBrowseAppsCaption: 'Vælg apps',
+        modalBrowseAppsTitleIos: 'Vælg apps (Screen Time)',
         importWebsitesPickFileTitle: 'Vælg en fil med ét domæne pr. linje',
         importWebsitesFromFile: 'Fra tekstfil…',
         importWebsitesPreMadeList: 'Færdiglavet liste',
@@ -12932,6 +12925,15 @@ function applySettingsLanguage() {
     if (importWebsitesBtn) {
         importWebsitesBtn.title = tSettings('importWebsitesTitle');
         importWebsitesBtn.setAttribute('aria-label', tSettings('importWebsitesTitle'));
+    }
+    setText('modal-import-websites-caption', tSettings('modalPremadeListsCaption'));
+    setText('modal-browse-apps-caption', tSettings('modalBrowseAppsCaption'));
+    const modalBrowseAppsBtn = document.getElementById('modal-browse-apps-btn');
+    if (modalBrowseAppsBtn) {
+        const ios = document.body.classList.contains('ios');
+        const browseTitle = ios ? tSettings('modalBrowseAppsTitleIos') : tSettings('browseApplicationsTitle');
+        modalBrowseAppsBtn.title = browseTitle;
+        modalBrowseAppsBtn.setAttribute('aria-label', browseTitle);
     }
     setText('cancel-blocklist-btn', tSettings('cancel'));
     setText('save-blocklist-btn', tSettings('save'));
