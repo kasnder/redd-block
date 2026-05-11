@@ -5054,6 +5054,8 @@ function setupOverrideModalListeners() {
         stopButtonFitRo.observe(blockActionButtons);
     }
     window.addEventListener('resize', () => syncAllStopBtnLabelFits());
+    window.addEventListener('resize', () => syncIosScheduleDayLabelsViewportMode());
+    window.visualViewport?.addEventListener('resize', syncIosScheduleDayLabelsViewportMode);
 
     document.getElementById('confirm-override-btn').addEventListener('click', async () => {
         const typed = challengeInput.value;
@@ -5856,12 +5858,6 @@ function setScheduleMode(isSchedule) {
             startScheduleBtn.classList.remove('hidden');
             updateScheduleButtonState();
         }
-        if (document.body.classList.contains('ios')) {
-            ensureIosScheduleDayLabelsResizeObserver();
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => syncIosScheduleSegmentDayToggleLabels());
-            });
-        }
     } else {
         instantPanel.classList.remove('hidden');
         schedulePanel.classList.add('hidden');
@@ -6315,10 +6311,14 @@ function rebuildScheduleSegments() {
     const container = document.getElementById('schedule-segments');
     container.innerHTML = '';
 
-    const dayLabels = weekdayAbbrevMon0List();
+    const fullDayLabels = weekdayAbbrevMon0List();
+    const useCompactDayLabels = shouldUseCompactIosScheduleDayLabels();
+    const dayLabels = useCompactDayLabels ? weekdayLetterMon0List() : fullDayLabels;
     const labelStart = tSettings('start');
     const labelEnd = tSettings('end');
     const labelDays = tSettings('days');
+
+    iosCompactScheduleDayLabelsActive = useCompactDayLabels;
 
     scheduleSegments.forEach((seg, index) => {
         const segment = document.createElement('div');
@@ -6330,7 +6330,7 @@ function rebuildScheduleSegments() {
 
         // Generate day toggles HTML
         const dayTogglesHtml = dayLabels.map((label, i) =>
-            `<button type="button" class="segment-day-toggle${segmentDays.includes(i) ? ' active' : ''}" data-day="${i}">${label}</button>`
+            `<button type="button" class="segment-day-toggle${segmentDays.includes(i) ? ' active' : ''}" data-day="${i}" aria-label="${fullDayLabels[i]}">${label}</button>`
         ).join('');
 
         // Only show labels on the first segment
@@ -6387,7 +6387,7 @@ function rebuildScheduleSegments() {
                 </div>
                 <div class="segment-days-group">
                     ${showLabels ? `<label class="time-label">${labelDays}</label>` : ''}
-                    <div class="segment-days" data-segment-index="${index}">
+                    <div class="segment-days${useCompactDayLabels ? ' compact-day-labels' : ''}" data-segment-index="${index}">
                         ${dayTogglesHtml}
                     </div>
                 </div>
@@ -6426,13 +6426,6 @@ function rebuildScheduleSegments() {
             });
         }
     });
-
-    if (document.body.classList.contains('ios')) {
-        ensureIosScheduleDayLabelsResizeObserver();
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => syncIosScheduleSegmentDayToggleLabels());
-        });
-    }
 }
 
 /** Parse `schedule-start-0` → { isStart, segmentIndex }. */
@@ -12773,72 +12766,31 @@ function weekdayLetterMon0List() {
     return SETTINGS_TRANSLATIONS.en.dayLetterMon0;
 }
 
-let iosScheduleDayLabelsResizeObserver = null;
-let iosScheduleDayLabelsObservedWidth = -1;
+const IOS_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH = 1024;
+let iosCompactScheduleDayLabelsActive = null;
 
-function scheduleSegmentDaysNeedsCompactDayLabels(containerEl) {
-    const buttons = containerEl.querySelectorAll('.segment-day-toggle');
-    if (buttons.length < 2) return false;
-    const top0 = buttons[0].offsetTop;
-    for (let i = 1; i < buttons.length; i++) {
-        if (buttons[i].offsetTop !== top0) return true;
+/** Smaller iOS viewports, including iPad portrait, use single-letter day pills from first render. */
+function shouldUseCompactIosScheduleDayLabels() {
+    if (!document.body.classList.contains('ios')) return false;
+    const viewportWidth = Math.round(
+        window.visualViewport?.width
+        || window.innerWidth
+        || document.documentElement?.clientWidth
+        || 0
+    );
+    return viewportWidth > 0 && viewportWidth <= IOS_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH;
+}
+
+function syncIosScheduleDayLabelsViewportMode() {
+    if (!document.body.classList.contains('ios')) return;
+    const nextCompact = shouldUseCompactIosScheduleDayLabels();
+    if (nextCompact === iosCompactScheduleDayLabelsActive) return;
+    iosCompactScheduleDayLabelsActive = nextCompact;
+
+    const schedulePanel = document.getElementById('schedule-block-panel');
+    if (isScheduleMode && schedulePanel && !schedulePanel.classList.contains('hidden')) {
+        rebuildScheduleSegments();
     }
-    // e.g. iOS phone landscape: flex-wrap nowrap with horizontal overflow
-    return containerEl.scrollWidth > containerEl.clientWidth + 1;
-}
-
-function applyScheduleSegmentDayToggleLabels(containerEl, labels, ariaAbbrevs) {
-    const buttons = containerEl.querySelectorAll('.segment-day-toggle');
-    buttons.forEach((btn, i) => {
-        if (i >= labels.length) return;
-        btn.textContent = labels[i];
-        btn.setAttribute('aria-label', ariaAbbrevs[i] || labels[i]);
-    });
-}
-
-/** iOS: use single-letter day toggles when the default abbrev row wraps or overflows. */
-function syncIosScheduleSegmentDayToggleLabels() {
-    if (!document.body.classList.contains('ios')) return;
-    const root = document.getElementById('schedule-segments');
-    if (!root || root.clientWidth === 0) return;
-
-    const abbrevs = weekdayAbbrevMon0List();
-    const letters = weekdayLetterMon0List();
-
-    root.querySelectorAll('.segment-days').forEach((row) => {
-        row.classList.remove('compact-day-labels');
-        applyScheduleSegmentDayToggleLabels(row, abbrevs, abbrevs);
-        void row.offsetHeight;
-        const compact = scheduleSegmentDaysNeedsCompactDayLabels(row);
-        row.classList.toggle('compact-day-labels', compact);
-        applyScheduleSegmentDayToggleLabels(row, compact ? letters : abbrevs, abbrevs);
-    });
-}
-
-function ensureIosScheduleDayLabelsResizeObserver() {
-    if (!document.body.classList.contains('ios')) return;
-    if (iosScheduleDayLabelsResizeObserver || typeof ResizeObserver === 'undefined') return;
-    const root = document.getElementById('schedule-segments');
-    if (!root) return;
-
-    iosScheduleDayLabelsObservedWidth = Math.round(root.getBoundingClientRect().width);
-
-    let raf = 0;
-    const run = () => {
-        if (raf) return;
-        raf = requestAnimationFrame(() => {
-            raf = 0;
-            syncIosScheduleSegmentDayToggleLabels();
-        });
-    };
-
-    iosScheduleDayLabelsResizeObserver = new ResizeObserver((entries) => {
-        const width = Math.round(entries[0]?.contentRect?.width ?? root.getBoundingClientRect().width);
-        if (width === iosScheduleDayLabelsObservedWidth) return;
-        iosScheduleDayLabelsObservedWidth = width;
-        run();
-    });
-    iosScheduleDayLabelsResizeObserver.observe(root);
 }
 
 function tSettings(key) {
