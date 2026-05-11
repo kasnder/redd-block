@@ -1137,11 +1137,49 @@ body.dark-mode .app-blocking-closedown-banner {
 
 .scheduler-section > .section-header {
     width: 100%;
+    /* Size-based Now / Schedule chrome: icon-only when this row is too narrow for text + padding. */
+    container-type: inline-size;
+    container-name: sched-header;
+}
+
+/* Very narrow header only: icon-only tabs. Above ~200px (e.g. phone landscape) keep Now/Schedule text. */
+@container sched-header (max-width: 420px) {
+    .scheduler-section > .section-header .scheduler-mode-tabs {
+        max-width: none;
+    }
+
+    .scheduler-section > .section-header .mode-tab {
+        padding: 8px 11px;
+        gap: 0;
+        font-size: 15px;
+        flex: 0 0 auto;
+        white-space: nowrap;
+    }
+
+    .scheduler-section > .section-header .mode-tab.active {
+        padding: 10px 11px;
+    }
+
+    .scheduler-section > .section-header .mode-tab-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
+
+    .scheduler-section > .section-header .mode-tab-icon {
+        width: 18px;
+        height: 18px;
+    }
 }
 
 .scheduler-section > .section-header .scheduler-mode-tabs {
     flex: 0 1 auto;
-    max-width: 200px;
     min-width: 0;
 }
 
