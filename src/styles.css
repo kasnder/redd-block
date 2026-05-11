@@ -6269,6 +6269,12 @@ body.ios.ios-phone .footer-zoom-control {
     display: none;
 }
 
+/* iPad — pull zoom controls in from the right edge and add breathing room
+   above the home indicator / bottom edge */
+body.ios:not(.ios-phone) .footer-zoom-control {
+    padding-right: calc(36px + env(safe-area-inset-right, 0px));
+}
+
 .settings-top-btn {
     position: relative;
     z-index: 1;
