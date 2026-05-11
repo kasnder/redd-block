@@ -4869,6 +4869,7 @@ function setupModalListeners() {
             }
         });
 
+        syncModalWebsitePlaceholder();
     };
 
     // Esc inside the modal clears any active tag selection (it does NOT close
@@ -12813,6 +12814,15 @@ function formatLatestVersionText(version) {
     return `${tSettings('latestVersionPrefix')} ${version || 'Unknown'}`;
 }
 
+/** Blocklist modal: show example placeholder only when there are no website tags yet. */
+function syncModalWebsitePlaceholder() {
+    const el = document.getElementById('modal-website-input');
+    if (!el) return;
+    const list = window.modalWebsites;
+    el.placeholder =
+        Array.isArray(list) && list.length > 0 ? '' : tSettings('placeholderWebsiteExample');
+}
+
 function applySettingsLanguage() {
     const setText = (id, text) => {
         const el = document.getElementById(id);
@@ -12884,8 +12894,8 @@ function applySettingsLanguage() {
         if (el) el.placeholder = text;
     };
     setPlaceholder('blocklist-name', tSettings('placeholderNameExample'));
-    setPlaceholder('modal-website-input', tSettings('placeholderWebsiteExample'));
     setPlaceholder('modal-app-input', tSettings('placeholderAppExample'));
+    syncModalWebsitePlaceholder();
     setPlaceholder('challenge-input', tSettings('typeHere'));
     setPlaceholder('pause-challenge-input', tSettings('typeHere'));
     setPlaceholder('override-all-challenge-input', tSettings('typeHere'));
