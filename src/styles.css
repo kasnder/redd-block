@@ -69,6 +69,7 @@
        strip reads as its own band without going flat white. */
     --title-bar-bg: #efede8;
     --title-bar-height: 44px;
+    --title-bar-center-safe-inset: 108px;
 
     /* --- Existing semantic tokens, repointed onto ReDD palette --- */
     --app-bg: var(--redd-cream);
@@ -1577,15 +1578,18 @@ body.ios.ios-phone .week-calendar-section {
 /* BLOCKING NOW row — heading, pulse dot, chips; centred in `.title-bar`. */
 .now-blocking-row {
     position: absolute;
-    left: 50%;
+    left: var(--title-bar-center-safe-inset);
+    right: var(--title-bar-center-safe-inset);
     top: 50%;
-    transform: translate(-50%, -50%);
+    transform: translateY(-50%);
     display: flex;
     align-items: center;
+    justify-content: center;
     flex-wrap: nowrap;
     gap: 8px;
     margin: 0;
     padding: 0;
+    min-width: 0;
     -webkit-app-region: drag;
 }
 
@@ -1619,6 +1623,24 @@ body.ios.ios-phone .week-calendar-section {
     display: flex;
     flex-wrap: nowrap;
     gap: 6px;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    -webkit-app-region: no-drag;
+}
+
+.now-blocking-chips::-webkit-scrollbar {
+    display: none;
+}
+
+.now-blocking-chips.can-horizontal-scroll {
+    cursor: grab;
+}
+
+.now-blocking-chips.can-horizontal-scroll.is-dragging {
+    cursor: grabbing;
 }
 
 .now-blocking-row.idle .now-blocking-heading,
@@ -1687,6 +1709,14 @@ body.ios.ios-phone .week-calendar-section {
     font-size: 12px;
     line-height: 1.2;
     white-space: nowrap;
+}
+
+.now-blocking-chip-emoji,
+.now-blocking-chip-name,
+.now-blocking-chip-until {
+    pointer-events: none;
+    -webkit-user-select: none;
+    user-select: none;
 }
 
 .now-blocking-chip-menu-btn {

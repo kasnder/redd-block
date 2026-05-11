@@ -1033,6 +1033,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadData();
     await resetDevOnlyEulaAcceptance();
     detectPlatform(); // Must run early so isIOS is set before other setup
+    setupNowBlockingChipScroll();
     setupEventListeners();
     setupTheme();
     setupUiZoomShortcuts();
@@ -1053,6 +1054,78 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
 });
+
+function setupNowBlockingChipScroll() {
+    const chipsEl = document.getElementById('now-blocking-chips');
+    if (!chipsEl) return;
+
+    let isPointerDown = false;
+    let isDragging = false;
+    let suppressClick = false;
+    let startX = 0;
+    let startScrollLeft = 0;
+
+    window.addEventListener('resize', () => syncNowBlockingChipsScrollability(), { passive: true });
+
+    chipsEl.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        if (e.target.closest('.now-blocking-chip-menu-btn')) return;
+        if (!chipsEl.classList.contains('can-horizontal-scroll')) return;
+
+        isPointerDown = true;
+        isDragging = false;
+        suppressClick = false;
+        startX = e.clientX;
+        startScrollLeft = chipsEl.scrollLeft;
+        chipsEl.classList.add('is-dragging');
+        e.preventDefault();
+    });
+
+    const stopDragging = () => {
+        suppressClick = isDragging;
+        isPointerDown = false;
+        isDragging = false;
+        chipsEl.classList.remove('is-dragging');
+    };
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isPointerDown) return;
+        const deltaX = e.clientX - startX;
+        if (Math.abs(deltaX) > 3) {
+            isDragging = true;
+        }
+        chipsEl.scrollLeft = startScrollLeft - deltaX;
+        e.preventDefault();
+    });
+
+    document.addEventListener('mouseup', stopDragging);
+    chipsEl.addEventListener('mouseleave', () => {
+        if (!isPointerDown) return;
+        stopDragging();
+    });
+
+    chipsEl.addEventListener('click', (e) => {
+        if (!suppressClick) return;
+        if (e.target.closest('.now-blocking-chip-menu-btn')) {
+            suppressClick = false;
+            return;
+        }
+        suppressClick = false;
+        e.preventDefault();
+        e.stopPropagation();
+    }, true);
+}
+
+function syncNowBlockingChipsScrollability() {
+    const chipsEl = document.getElementById('now-blocking-chips');
+    const row = document.getElementById('now-blocking-row');
+    if (!chipsEl || !row || row.classList.contains('hidden')) return;
+    if (row.classList.contains('idle')) {
+        chipsEl.classList.remove('can-horizontal-scroll');
+        return;
+    }
+    chipsEl.classList.toggle('can-horizontal-scroll', chipsEl.scrollWidth > chipsEl.clientWidth + 1);
+}
 
 function isLocalDevRun() {
     return ['http:', 'https:'].includes(window.location.protocol)
@@ -11340,6 +11413,7 @@ function renderNowBlockingRow(nowMs = Date.now()) {
         }
 
         chipsEl.appendChild(idleSpan);
+        requestAnimationFrame(() => syncNowBlockingChipsScrollability());
         return;
     }
 
@@ -11406,6 +11480,7 @@ function renderNowBlockingRow(nowMs = Date.now()) {
 
         chipsEl.appendChild(chip);
     });
+    requestAnimationFrame(() => syncNowBlockingChipsScrollability());
 }
 
 
