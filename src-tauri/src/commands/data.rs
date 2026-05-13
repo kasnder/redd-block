@@ -381,11 +381,22 @@ pub fn load_data(app: AppHandle) -> Result<AppData, String> {
 
 /// Save data to file
 #[tauri::command]
-pub fn save_data(app: AppHandle, data: AppData) -> Result<(), String> {
+pub fn save_data(app: AppHandle, mut data: AppData) -> Result<(), String> {
     let data_path = get_data_path(&app);
 
     // Ensure parent directory exists
     ensure_data_dir(&data_path)?;
+
+    // Backend-managed settings keys: these are owned by dedicated
+    // commands (set_enforcement_enabled, set_extension_grace_seconds)
+    // that read-modify-write the JSON directly. The frontend never
+    // touches them in `appData.settings`, so a blind round-trip here
+    // would drop a fresh-install user's toggle a few seconds after
+    // they enabled it (the next saveData() trigger — block edit,
+    // tick, etc. — serializes the stale `undefined` and clobbers
+    // the disk value written by the dedicated command). Preserve
+    // whatever is currently on disk for these keys.
+    preserve_backend_settings(&data_path, &mut data);
 
     let content = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
     fs::write(&data_path, &content).map_err(|e| e.to_string())?;
@@ -396,6 +407,33 @@ pub fn save_data(app: AppHandle, data: AppData) -> Result<(), String> {
         log::warn!("App Group mirror write failed: {}", e);
     }
     Ok(())
+}
+
+const BACKEND_MANAGED_SETTING_KEYS: &[&str] = &[
+    "enforcementEnabled",
+    "extensionGraceSeconds",
+];
+
+fn preserve_backend_settings(data_path: &std::path::Path, data: &mut AppData) {
+    let raw = match fs::read_to_string(data_path) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let disk: serde_json::Value = match serde_json::from_str(&raw) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    let disk_settings = match disk.get("settings").and_then(|s| s.as_object()) {
+        Some(s) => s,
+        None => return,
+    };
+    for key in BACKEND_MANAGED_SETTING_KEYS {
+        if let Some(value) = disk_settings.get(*key) {
+            data.settings.extra.insert((*key).to_string(), value.clone());
+        } else {
+            data.settings.extra.remove(*key);
+        }
+    }
 }
 
 /// Set window size (used after onboarding) - desktop only
