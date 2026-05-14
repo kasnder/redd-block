@@ -1040,6 +1040,26 @@ fn scan_safari() -> BrowserStatus {
                 );
             }
         }
+
+        // The Safari Web Extension reports its own incognito-access
+        // state into the App Group container on every periodic refresh.
+        // SafariServices can't introspect this field, so this self-
+        // report is our FDA-free source of truth. If we have a fresh
+        // value, overlay it on profiles whose private-browsing is
+        // currently unknown (None) so the enforcer and onboarding UI
+        // see accurate state. A stale or missing file leaves the
+        // existing None behaviour intact.
+        if let Some(private_browsing) = safari_extension_self_reported_private_browsing() {
+            for profile in profiles.iter_mut() {
+                if profile.private_browsing.is_none() {
+                    profile.private_browsing = Some(private_browsing);
+                }
+            }
+            log::debug!(
+                "safari: extension self-reports privateBrowsing={}",
+                private_browsing
+            );
+        }
     }
 
     BrowserStatus {
@@ -1048,6 +1068,42 @@ fn scan_safari() -> BrowserStatus {
         profiles,
         error,
     }
+}
+
+/// Read the extension's self-reported state from the App Group
+/// container. The Safari Web Extension writes
+/// `safari-extension-state.json` on every periodic refresh
+/// (`SafariWebExtensionHandler.persistExtensionState`). Returns the
+/// reported `privateBrowsing` value when the file is present and fresh,
+/// `None` when missing, malformed, or older than the staleness window.
+///
+/// Staleness window is 5 minutes. The extension refreshes every 15 s
+/// while Safari is running, so anything older than that means Safari
+/// hasn't been running recently (or the extension is broken) — in
+/// either case we'd rather return None and let the enforcer's leniency
+/// path kick in than serve a half-day-old reading as truth.
+#[cfg(target_os = "macos")]
+fn safari_extension_self_reported_private_browsing() -> Option<bool> {
+    const FRESHNESS_MS: u64 = 5 * 60 * 1000;
+
+    let home = dirs::home_dir()?;
+    let path = home
+        .join("Library")
+        .join("Group Containers")
+        .join("group.com.reddblock.shared")
+        .join("safari-extension-state.json");
+    let bytes = std::fs::read(&path).ok()?;
+    let v: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+
+    let reported_at = v.get("reportedAtMs").and_then(|x| x.as_u64()).unwrap_or(0);
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_millis() as u64;
+    if now_ms.saturating_sub(reported_at) > FRESHNESS_MS {
+        return None;
+    }
+    v.get("privateBrowsing").and_then(|x| x.as_bool())
 }
 
 #[cfg(target_os = "macos")]
