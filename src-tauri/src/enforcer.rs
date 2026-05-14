@@ -391,7 +391,12 @@ fn log_non_compliant(key: BrowserKey, b: &BrowserStatus) {
         .filter(|p| {
             !(p.installed
                 && p.enabled == Some(true)
-                && p.private_browsing == Some(true)
+                // Treat unknown private-browsing as "OK", not as "off" —
+                // the bundled Safari extension can't query this field
+                // from the host app without Full Disk Access, and the
+                // whole point of bundling is to be FDA-free. Only
+                // enforce when we positively know it's disabled.
+                && p.private_browsing != Some(false)
                 && p.website_access_all.unwrap_or(true))
         })
         .map(|p| {
@@ -426,7 +431,7 @@ fn default_profile_passes(b: &BrowserStatus) -> bool {
             && b.profiles.iter().all(|p| {
                 p.installed
                     && p.enabled == Some(true)
-                    && p.private_browsing == Some(true)
+                    && p.private_browsing != Some(false)
                     && p.website_access_all == Some(true)
             });
     }
@@ -439,7 +444,12 @@ fn default_profile_passes(b: &BrowserStatus) -> bool {
         Some(p) => {
             p.installed
                 && p.enabled == Some(true)
-                && p.private_browsing == Some(true)
+                // Unknown private-browsing state (None) passes; only
+                // a positive Some(false) reading triggers enforcement.
+                // The bundled Safari extension legitimately has None
+                // here when the user hasn't granted Full Disk Access,
+                // and force-closing on unmeasurable state is hostile.
+                && p.private_browsing != Some(false)
                 && p.website_access_all.unwrap_or(true)
         }
         None => false,
@@ -520,7 +530,7 @@ fn diagnose_issue(b: &BrowserStatus) -> ExtensionIssue {
         if b.profiles.iter().any(|p| p.enabled == Some(false) || p.enabled.is_none()) {
             return ExtensionIssue::Disabled;
         }
-        if b.profiles.iter().any(|p| p.private_browsing != Some(true)) {
+        if b.profiles.iter().any(|p| p.private_browsing == Some(false)) {
             return ExtensionIssue::Private;
         }
         if b.profiles.iter().any(|p| p.website_access_all != Some(true)) {
@@ -534,7 +544,7 @@ fn diagnose_issue(b: &BrowserStatus) -> ExtensionIssue {
         Some(p) => {
             if !p.installed { ExtensionIssue::Missing }
             else if p.enabled != Some(true) { ExtensionIssue::Disabled }
-            else if p.private_browsing != Some(true) { ExtensionIssue::Private }
+            else if p.private_browsing == Some(false) { ExtensionIssue::Private }
             else { ExtensionIssue::Unknown }
         }
         None => {
