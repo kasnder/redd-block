@@ -11536,6 +11536,7 @@ function renderNowBlockingRow(nowMs = Date.now()) {
         const idleSpan = document.createElement('span');
         idleSpan.id = 'now-blocking-idle-msg';
         idleSpan.className = 'now-blocking-idle-msg';
+        idleSpan.setAttribute('data-tauri-drag-region', '');
 
         const upcoming = pickEarliestUpcomingScheduledBlock(nowMs);
         if (!upcoming) {

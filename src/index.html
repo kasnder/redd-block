@@ -11,15 +11,17 @@
 <body>
     <div class="app-container">
         <!-- Title Bar -->
-        <div class="title-bar">
+        <div class="title-bar" data-tauri-drag-region>
             <div data-tauri-drag-region></div>
             <!-- Blocking row: "BLOCKING NOW" + chips when something is enforcing; idle copy
-                 in the chips slot when nothing is active (may show next scheduled start). -->
+                 in the chips slot when nothing is active (may show next scheduled start).
+                 Drag-region applied to non-interactive elements so the user can drag the
+                 window from the label/idle text; chips opt out via the chip class. -->
             <div id="now-blocking-row" class="now-blocking-row hidden" role="status"
-                aria-labelledby="now-blocking-label-text">
-                <span id="now-blocking-label-text" class="now-blocking-heading">BLOCKING NOW</span>
-                <span class="now-blocking-dot" aria-hidden="true"></span>
-                <div class="now-blocking-chips" id="now-blocking-chips"></div>
+                aria-labelledby="now-blocking-label-text" data-tauri-drag-region>
+                <span id="now-blocking-label-text" class="now-blocking-heading" data-tauri-drag-region>BLOCKING NOW</span>
+                <span class="now-blocking-dot" aria-hidden="true" data-tauri-drag-region></span>
+                <div class="now-blocking-chips" id="now-blocking-chips" data-tauri-drag-region></div>
             </div>
             <div id="window-controls" class="window-controls hidden">
                 <button id="titlebar-minimize" class="win-btn" title="Minimize">
