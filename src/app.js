@@ -3561,8 +3561,9 @@ function renderAppBlockingWarningOverlay() {
 
     /** @type {string[]} */
     const names = [];
+    const unknownApp = tSettings('appBlockingUnknownApp');
     for (const [, row] of appBlockingWarningRows) {
-        const n = (row.name || 'Unknown app').trim() || 'Unknown app';
+        const n = (row.name || unknownApp).trim() || unknownApp;
         names.push(n);
     }
 
@@ -3573,15 +3574,19 @@ function renderAppBlockingWarningOverlay() {
     const responsibleBlocklist = names
         .map(findBlocklistForBlockedAppName)
         .find((bl) => bl) || null;
-    const blocklistName = responsibleBlocklist?.name || 'this block';
+    const blocklistName = responsibleBlocklist?.name || tSettings('appBlockingFallbackBlocklistName');
     const blocklistEmoji = responsibleBlocklist?.emoji || '🎯';
 
+    const headingEl = document.getElementById('app-blocking-warning-heading');
     const summaryEl = document.getElementById('app-blocking-warning-summary');
-    const blocklistNameEl = document.getElementById('app-blocking-warning-blocklist-name');
     const emojiEl = document.getElementById('app-blocking-warning-emoji');
     const letsGoBtn = document.getElementById('app-blocking-lets-go-btn');
 
-    if (blocklistNameEl) blocklistNameEl.textContent = blocklistName;
+    if (headingEl) {
+        headingEl.innerHTML = tSettingsFmt('appBlockingWarningHeadingHtml', {
+            name: escapeHtml(blocklistName),
+        });
+    }
     if (emojiEl) emojiEl.textContent = blocklistEmoji;
 
     // Re-enable the button whenever we fresh-render — this is a new
@@ -3591,11 +3596,12 @@ function renderAppBlockingWarningOverlay() {
 
     if (summaryEl) {
         const apps = joinAppListWithLimit(names, 3);
-        const them = names.length === 1 ? 'it' : 'them';
-        summaryEl.innerHTML =
-            `<strong>${escapeHtml(blocklistName)}</strong> is starting — time to wrap up. `
-            + `When you click <strong>Let's go!</strong>, we'll give you 30 seconds to save your work in `
-            + `${apps}, then we'll close ${them} for you.`;
+        const bl = escapeHtml(blocklistName);
+        const letsGo = escapeHtml(tSettings('appBlockingLetsGo'));
+        const summaryKey = names.length === 1
+            ? 'appBlockingWarningSummarySingleHtml'
+            : 'appBlockingWarningSummaryMultiHtml';
+        summaryEl.innerHTML = tSettingsFmt(summaryKey, { blocklist: bl, letsGo, apps });
     }
 
     applyWarningOverlayPresence();
@@ -3642,20 +3648,26 @@ function renderAppBlockingClosedownBanner() {
         return;
     }
 
-    const names = acked.map((r) => (r.name || 'an app').trim() || 'an app');
+    const appFallback = tSettings('appBlockingBannerAppFallback');
+    const names = acked.map((r) => (r.name || appFallback).trim() || appFallback);
     const appsHtml = joinAppListWithLimit(names, 3);
-    const them = names.length === 1 ? 'it' : 'them';
     const soonestDeadline = Math.min(...acked.map((r) => r.ackedDeadlineMs));
     const remainingMs = Math.max(0, soonestDeadline - Date.now());
     const remainingSecs = Math.ceil(remainingMs / 1000);
 
     if (remainingSecs > 0) {
-        text.innerHTML = `Closing ${appsHtml} in <strong>${remainingSecs}s</strong> — save your work now.`;
+        text.innerHTML = tSettingsFmt('appBlockingClosedownCountdownHtml', {
+            apps: appsHtml,
+            seconds: String(remainingSecs),
+        });
     } else {
         // PreQuit elapsed — Rust is now sending Cmd-Q and waiting on
         // the 10s SIGKILL grace. Banner stays up until the watcher's
         // warning-hide event clears the row.
-        text.innerHTML = `Closing ${appsHtml} now${names.length === 1 ? '' : ` — saving any pending dialogs in ${them}`}…`;
+        const finalKey = names.length === 1
+            ? 'appBlockingClosedownFinalSingleHtml'
+            : 'appBlockingClosedownFinalMultiHtml';
+        text.innerHTML = tSettingsFmt(finalKey, { apps: appsHtml });
     }
 
     banner.classList.remove('hidden');
@@ -3684,14 +3696,16 @@ function joinAppListWithLimit(names, max = 3, { bold = true } = {}) {
         : (n) => escapeHtml(n);
     if (arr.length === 0) return '';
     if (arr.length === 1) return wrap(arr[0]);
+    const and = tSettings('andWord');
     if (arr.length <= max) {
         const head = arr.slice(0, -1).map(wrap).join(', ');
         const tail = wrap(arr[arr.length - 1]);
-        return `${head} and ${tail}`;
+        return `${head} ${and} ${tail}`;
     }
     const shown = arr.slice(0, max - 1).map(wrap).join(', ');
     const remaining = arr.length - (max - 1);
-    return `${shown} and ${wrap(`${remaining} more`)}`;
+    const moreLabel = tSettingsFmt('appBlockingListMoreFmt', { n: String(remaining) });
+    return `${shown} ${and} ${wrap(moreLabel)}`;
 }
 
 // Check if the helper daemon is available (desktop only)
@@ -12683,8 +12697,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationChecklistBlocklistsPreserved: 'Your blocklists are preserved',
         migrationChecklistExtLinesHtml: 'Set up ReDD Focus in your browsers<br><span style="font-weight:400;opacity:0.7">and allow it in private/incognito tabs</span>',
         migrationHowtoHeading: 'Setting up ReDD Focus',
-        migrationHowtoLi1Html: 'ReDD Block has tried to install ReDD Focus in your browsers automatically. If you don’t see it, try restarting your browser.',
-        migrationHowtoLi2Html: 'Got tabs open you don\'t want to lose? Click <strong>Install</strong> next to a browser to add it manually instead.',
+        migrationHowtoLi1Html: 'ReDD Block has tried to install ReDD Focus in your browsers. If a browser below shows it as not installed, restart that browser — or click its <strong>Install</strong> button to add it manually.',
         migrationHowtoLi3Html: 'Once it\'s there, <strong>allow it in private/incognito tabs</strong> so blocking covers private windows too — see each browser\'s row below.',
         migrationDone: 'I\'m all set up',
         migrationSkip: 'Skip for now',
@@ -12815,6 +12828,21 @@ const SETTINGS_TRANSLATIONS = {
         enforcerBrowserFallback: 'your browser',
         gracePeriodLabel: 'Seconds of heads-up before a browser that isn’t protected by ReDD Focus is closed',
         gracePeriodLockedHint: 'Locked while a block is active—only shorter times allowed.',
+        appBlockingLetsGo: 'Let’s go!',
+        appBlockingFallbackBlocklistName: 'this block',
+        appBlockingUnknownApp: 'Unknown app',
+        appBlockingBannerAppFallback: 'an app',
+        appBlockingWarningHeadingHtml: '<strong>{name}</strong> is starting',
+        appBlockingWarningSummarySingleHtml:
+            '<strong>{blocklist}</strong> is starting — time to wrap up. When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close it for you.',
+        appBlockingWarningSummaryMultiHtml:
+            '<strong>{blocklist}</strong> is starting — time to wrap up. When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close them for you.',
+        appBlockingClosedownCountdownHtml:
+            'Closing {apps} in <strong>{seconds}s</strong> — save your work now.',
+        appBlockingClosedownFinalSingleHtml: 'Closing {apps} now…',
+        appBlockingClosedownFinalMultiHtml:
+            'Closing {apps} now — saving any pending dialogs in them…',
+        appBlockingListMoreFmt: '{n} more',
         settingsFeedbackFooterHtml:
             'Have feedback or suggestions? <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer" style="color: var(--accent-color); text-decoration: underline;">Open an issue on GitHub</a>, or email us at <a href="mailto:team@reddfocus.org" style="color: var(--accent-color); text-decoration: underline;">team@reddfocus.org</a>',
         settingsGraceChangeBlockedAlert: 'Stop all running blocks and schedules before changing this setting.',
@@ -13078,8 +13106,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationChecklistBlocklistsPreserved: 'Dine bloklister er bevaret',
         migrationChecklistExtLinesHtml: 'Sæt ReDD Focus op i dine browsere<br><span style="font-weight:400;opacity:0.7">og tillad den i privat- eller inkognitofaner</span>',
         migrationHowtoHeading: 'Sådan sætter du ReDD Focus op',
-        migrationHowtoLi1Html: 'ReDD Block har forsøgt at installere ReDD Focus i dine browsere automatisk. Hvis ikke du ser den, så prøv at genstarte din browser.',
-        migrationHowtoLi2Html: 'Vil du ikke miste dine åbne faner? Klik <strong>Installer</strong> ved en browser nedenfor for at tilføje ReDD Focus manuelt i stedet.',
+        migrationHowtoLi1Html: 'ReDD Block har forsøgt at installere ReDD Focus i dine browsere. Hvis en browser nedenfor viser den som ikke installeret, så genstart browseren — eller klik på dens <strong>Installer</strong>-knap for at tilføje den manuelt.',
         migrationHowtoLi3Html: 'Når den er der, <strong>tillad den i privat/inkognito-faner</strong>, så blokering også dækker private vinduer — se hver browsers række nedenfor.',
         migrationDone: 'Jeg er klar',
         migrationSkip: 'Spring over for nu',
@@ -13210,6 +13237,21 @@ const SETTINGS_TRANSLATIONS = {
         enforcerBrowserFallback: 'din browser',
         gracePeriodLabel: 'Sekunders varsel før en browser uden ReDD Focus lukkes ned når en blokering kører',
         gracePeriodLockedHint: 'Låst mens en blokering er aktiv—kun kortere tider tilladt.',
+        appBlockingLetsGo: 'Fortsæt',
+        appBlockingFallbackBlocklistName: 'denne blokering',
+        appBlockingUnknownApp: 'Ukendt app',
+        appBlockingBannerAppFallback: 'en app',
+        appBlockingWarningHeadingHtml: '<strong>{name}</strong> starter',
+        appBlockingWarningSummarySingleHtml:
+            '<strong>{blocklist}</strong> starter — tid til at runde af. Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes den ned.',
+        appBlockingWarningSummaryMultiHtml:
+            '<strong>{blocklist}</strong> starter — tid til at runde af. Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes de ned.',
+        appBlockingClosedownCountdownHtml:
+            'Lukker {apps} om <strong>{seconds} sek.</strong> — gem dit arbejde nu.',
+        appBlockingClosedownFinalSingleHtml: 'Lukker {apps} nu…',
+        appBlockingClosedownFinalMultiHtml:
+            'Lukker {apps} nu — giver eventuelle åbne dialoger tid i dem…',
+        appBlockingListMoreFmt: '{n} flere',
         settingsFeedbackFooterHtml:
             'Har du feedback eller forslag? <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer" style="color: var(--accent-color); text-decoration: underline;">Opret et issue på GitHub</a>, eller skriv til os på <a href="mailto:team@reddfocus.org" style="color: var(--accent-color); text-decoration: underline;">team@reddfocus.org</a>',
         settingsGraceChangeBlockedAlert: 'Du skal først stoppe alle kørende blokeringer og skemaer, før du kan ændre denne indstilling.',
@@ -13589,7 +13631,6 @@ function applyMigrationOverlayStaticCopy() {
     setHtml('migration-checklist-ext-lines', tSettings('migrationChecklistExtLinesHtml'));
     setText('migration-howto-title', tSettings('migrationHowtoHeading'));
     setHtml('migration-howto-li1', tSettings('migrationHowtoLi1Html'));
-    setHtml('migration-howto-li2', tSettings('migrationHowtoLi2Html'));
     setHtml('migration-howto-li3', tSettings('migrationHowtoLi3Html'));
     setText('migration-done-btn', tSettings('migrationDone'));
     setText('migration-skip-btn', tSettings('migrationSkip'));
@@ -13841,6 +13882,7 @@ function applySettingsLanguage() {
     setText('settings-helper-hint', tSettings('helperHint'));
     setText('close-settings-btn', tSettings('close'));
     setText('grace-period-label-text', tSettings('gracePeriodLabel'));
+    setText('app-blocking-lets-go-btn', tSettings('appBlockingLetsGo'));
     setHtml('settings-feedback-footer', tSettings('settingsFeedbackFooterHtml'));
     const graceLockedHint = document.getElementById('grace-locked-hint');
     if (graceLockedHint) graceLockedHint.textContent = tSettings('gracePeriodLockedHint');
@@ -13889,6 +13931,8 @@ function applySettingsLanguage() {
     }
 
     // Re-render pieces with dynamic language-dependent text.
+    renderAppBlockingWarningOverlay();
+    renderAppBlockingClosedownBanner();
     renderBlocklists();
     if (document.getElementById('blocklist-select')) renderBlocklistSelector();
     if (typeof updateScheduleButtonState === 'function') updateScheduleButtonState();
