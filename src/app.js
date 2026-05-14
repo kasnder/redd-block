@@ -137,6 +137,11 @@ window.__REDDBLOCK_INTERNALS__ = {
 };
 
 let selectedBlocklistId = null;
+/** Session flag set when the user actively deselects (click-outside / ESC).
+ *  Read by the sole-blocklist auto-selector so it stops fighting an
+ *  intentional deselect — cleared again when the user picks anything via
+ *  the dropdown or creates a new blocklist. */
+let userExplicitlyDeselected = false;
 let editingBlocklistId = null;
 let blocklistModalPreviewSnapshot = null;
 /** Blocklist modal undo: session-scoped stack and "last" values for recording previous state. */
@@ -5396,6 +5401,12 @@ function setupModalListeners() {
         renderNowBlockingRow(); // Title-bar chips read emoji/name from freshly saved blocklist
         renderScheduleAlwaysOnRow();
 
+        // If this was the first blocklist created from the empty state,
+        // auto-select it so the user doesn't have to click it. `force`
+        // clears the deselect flag — creating a new blocklist is a
+        // strong "I want to use this" signal.
+        if (!editingBlocklistId) autoSelectSoleBlocklist({ force: true });
+
         // Re-trigger blocklist selection to update button text (name may have changed)
         if (selectedBlocklistId) {
             const dropdown = document.getElementById('blocklist-select');
@@ -8587,6 +8598,7 @@ function handleBlocklistSelect(e) {
     }
 
     selectedBlocklistId = newBlocklistId;
+    if (newBlocklistId) userExplicitlyDeselected = false;
 
     const timePicker = document.getElementById('time-picker-container');
     const passwordHint = document.getElementById('password-hint');
@@ -8743,6 +8755,7 @@ function handleBlocklistSelect(e) {
 // Used by click-outside handler and ESC key.
 function deselectBlocklist() {
     if (!selectedBlocklistId) return;
+    userExplicitlyDeselected = true;
     const currentBlocklistId = selectedBlocklistId;
     if (isScheduleMode) {
         const existingSchedule = appData.schedules?.find(s => s.blocklistId === currentBlocklistId);
@@ -10965,21 +10978,15 @@ function render() {
     updateWeekCalendar();
     renderBlocklistSelector();
 
-    // Auto-select a blocklist when the choice is unambiguous:
-    //   - Exactly one blocklist exists → always select it (even if it
-    //     is currently active or paused; the right pane gracefully
-    //     shows Stop / pause controls in those states).
-    //   - Otherwise, fall back to the prior behaviour of selecting
-    //     when exactly one blocklist is *not* currently active.
+    // Auto-select when the choice is unambiguous, but respect a user
+    // deselect so they can return to the empty "Select a blocklist"
+    // state if they want.
+    //   - Exactly one blocklist exists → default-select it.
+    //   - Otherwise, if nothing is selected, fall back to selecting
+    //     the lone non-active blocklist if there's exactly one.
     if (appData.blocklists.length === 1) {
-        // Only one blocklist — always keep it selected
-        const only = appData.blocklists[0];
-        if (selectedBlocklistId !== only.id) {
-            const dropdown = document.getElementById('blocklist-select');
-            dropdown.value = only.id;
-            handleBlocklistSelect({ target: dropdown });
-        }
-    } else if (!selectedBlocklistId) {
+        autoSelectSoleBlocklist();
+    } else if (!selectedBlocklistId && !userExplicitlyDeselected) {
         const activeIds = appData.activeBlocks.map(b => b.blocklistId);
         const availableBlocklists = appData.blocklists.filter(bl => !activeIds.includes(bl.id));
         if (availableBlocklists.length === 1) {
@@ -12339,6 +12346,22 @@ function renderBlocklists() {
             document.addEventListener('mouseup', onMouseUp);
         });
     });
+}
+
+/// Pre-select the sole blocklist as the default state. Skipped if the
+/// user has explicitly deselected this session (so click-outside / ESC
+/// stay sticky). Pass `force: true` to clear that flag — used when the
+/// user just *created* a new blocklist, which is a strong "I want to
+/// use this" signal.
+function autoSelectSoleBlocklist({ force = false } = {}) {
+    if (appData.blocklists.length !== 1) return;
+    if (selectedBlocklistId) return;
+    if (force) userExplicitlyDeselected = false;
+    if (userExplicitlyDeselected) return;
+    const dropdown = document.getElementById('blocklist-select');
+    if (!dropdown) return;
+    dropdown.value = appData.blocklists[0].id;
+    handleBlocklistSelect({ target: dropdown });
 }
 
 function closeAllBlocklistMenus() {
