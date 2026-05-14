@@ -137,7 +137,20 @@ pub fn uninstall_self_macos(app: tauri::AppHandle) -> Result<(), String> {
         }
     }
 
-    // 5. Exit on a short timer so the IPC reply lands on the frontend
+    // 5. Spawn a detached killer for any native-messaging host children
+    //    that browsers spawned from this bundle. These are siblings of
+    //    ours (parented to Chrome / Firefox / Edge / Brave), so quitting
+    //    the main app doesn't take them down — they linger in Activity
+    //    Monitor until the browser closes the stdio pipe. The killer
+    //    waits ~1 s for our own PID to exit first, so it's structurally
+    //    impossible for it to land on us; matches by full bundle path
+    //    so a parallel `cargo run` dev build at `target/debug/redd-block`
+    //    is left alone.
+    if let Err(e) = spawn_native_host_killer(&bundle) {
+        log::warn!("uninstall_self_macos: native-host killer spawn failed: {e}");
+    }
+
+    // 6. Exit on a short timer so the IPC reply lands on the frontend
     //    before this process disappears.
     std::thread::spawn(|| {
         std::thread::sleep(std::time::Duration::from_millis(200));
@@ -145,6 +158,72 @@ pub fn uninstall_self_macos(app: tauri::AppHandle) -> Result<(), String> {
         std::process::exit(0);
     });
 
+    Ok(())
+}
+
+/// Spawn a detached `bash` that waits for the GUI process to exit, then
+/// `pkill`s any remaining redd-block processes spawned from this bundle.
+/// These are browser-parented native-messaging host children (same
+/// binary, invoked by Chrome/Firefox/Edge/Brave via stdio); the main
+/// app's `std::process::exit` doesn't reach them.
+///
+/// Why deferred + path-matched:
+///   - Deferred so the kill runs only after our own PID is gone, which
+///     makes accidental self-kill impossible.
+///   - Path-matched (the bundle's MacOS dir, not just the `redd-block`
+///     basename) so a developer running `cargo run` from
+///     `target/debug/redd-block` isn't taken out alongside an installed
+///     copy. After NSFileManager moves the bundle to `~/.Trash/`, the
+///     child processes' argv still reflects their launched path
+///     (containing `ReDD Block.app/Contents/MacOS/redd-block`), so
+///     matching on that substring catches them whether the bundle has
+///     been trashed yet or not.
+#[cfg(target_os = "macos")]
+fn spawn_native_host_killer(bundle: &str) -> std::io::Result<()> {
+    // Pull just the bundle name (e.g. "ReDD Block.app") so the match
+    // works both pre- and post-trash. We don't want to pin to
+    // /Applications/ — users sometimes install elsewhere.
+    let bundle_name = std::path::Path::new(bundle)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("ReDD Block.app");
+    let match_pattern = format!("{bundle_name}/Contents/MacOS/redd-block");
+
+    let log_path = uninstall_log_path();
+    let log_q = log_path.replace('\'', r"'\''");
+    let pat_q = match_pattern.replace('\'', r"'\''");
+
+    let script = format!(
+        r#"exec >>'{log_q}' 2>&1
+echo ""
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] native-host killer starting; pattern='{pat_q}'"
+sleep 1
+PIDS=$(/usr/bin/pgrep -f '{pat_q}' || true)
+if [ -z "$PIDS" ]; then
+    echo "  no matching processes"
+    exit 0
+fi
+echo "  matched pids: $PIDS"
+/bin/kill $PIDS 2>>'{log_q}' || true
+sleep 1
+STRAGGLERS=$(/usr/bin/pgrep -f '{pat_q}' || true)
+if [ -n "$STRAGGLERS" ]; then
+    echo "  still alive after TERM: $STRAGGLERS; sending KILL"
+    /bin/kill -KILL $STRAGGLERS 2>>'{log_q}' || true
+fi
+echo "  done"
+exit 0
+"#,
+    );
+
+    Command::new("/bin/bash")
+        .arg("-c")
+        .arg(&script)
+        .arg("redd-block-host-killer")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
     Ok(())
 }
 
