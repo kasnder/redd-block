@@ -2,6 +2,22 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
+## v2.3.0
+
+- **Settings: language and appearance controls.** Language picker shows flags
+  and full language names in a custom menu; theme and language use matching
+  bordered controls with a double-chevron style. The control column sizes to
+  content; feedback links are left-aligned with GitHub issues listed first.
+- **Settings copy and migration setup.** Danish strings updated across
+  override-all, uninstall, grace-period, and extension-setup flows; the
+  “Setting up ReDD Focus” how-to list is shortened; miscellaneous wording tweaks
+  on the setup extension page.
+- **App-blocking warning (desktop).** The full-screen “Let’s go!” overlay and
+  the in-app close-down countdown are localized (English / Danish), including
+  app list phrasing.
+- **Diagnostics:** styling improvements on the diagnostics screen.
+- **Version:** 2.3.0.
+
 ## v2.0.1
 
 - **macOS: in-app uninstall no longer surfaces an unexplained
