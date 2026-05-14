@@ -547,6 +547,15 @@
                                         <span class="repeat-date-overlay" id="repeat-date-overlay"></span>
                                     </div>
                                 </div>
+
+                                <!-- Pending Changes Bar (shown when running schedule has unsaved new segments) -->
+                                <div class="schedule-pending-bar hidden" id="schedule-pending-bar">
+                                    <span class="schedule-pending-label" id="schedule-pending-label">Unsaved changes</span>
+                                    <div class="schedule-pending-actions">
+                                        <button type="button" class="schedule-pending-discard" id="schedule-pending-discard">Discard</button>
+                                        <button type="button" class="schedule-pending-save" id="schedule-pending-save">Save changes</button>
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- Block action buttons wrapper (footer of the card) -->
@@ -1122,7 +1131,7 @@
                             <line x1="12" y1="8" x2="12" y2="12"></line>
                             <line x1="12" y1="16" x2="12.01" y2="16"></line>
                         </svg>
-                        <span id="schedule-confirm-override-header">To cancel blocks in this schedule, you'll need
+                        <span id="schedule-confirm-override-header">To stop this blocking schedule, you'll need
                             to:</span>
                     </div>
                     <p id="schedule-confirm-override-text"></p>

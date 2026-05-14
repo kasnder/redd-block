@@ -4342,6 +4342,8 @@ function setupEventListeners() {
 
     // Start schedule button
     document.getElementById('start-schedule-btn')?.addEventListener('click', startSchedule);
+    document.getElementById('schedule-pending-save')?.addEventListener('click', saveSchedulePendingChanges);
+    document.getElementById('schedule-pending-discard')?.addEventListener('click', discardSchedulePendingChanges);
 
     // Repeat dropdown (renamed from Until)
     document.getElementById('repeat-dropdown-btn')?.addEventListener('click', toggleRepeatDropdown);
@@ -5909,13 +5911,13 @@ function disableScheduleControls(disabled) {
         }
     }
 
-    // Disable Add button when schedule is active (activeScheduleSegmentCount > 0)
+    // Add button stays enabled even when schedule is active — new segments append
+    // as unsaved drafts and are committed via the pending-changes bar.
     if (addSegmentBtn) {
-        const isScheduleActive = activeScheduleSegmentCount > 0;
-        addSegmentBtn.disabled = isScheduleActive;
-        addSegmentBtn.style.opacity = isScheduleActive ? '0.5' : '1';
-        addSegmentBtn.style.pointerEvents = isScheduleActive ? 'none' : 'auto';
-        addSegmentBtn.style.cursor = isScheduleActive ? 'not-allowed' : 'pointer';
+        addSegmentBtn.disabled = false;
+        addSegmentBtn.style.opacity = '1';
+        addSegmentBtn.style.pointerEvents = 'auto';
+        addSegmentBtn.style.cursor = 'pointer';
     }
 
     // Disable controls on EXISTING segments (those within activeScheduleSegmentCount)
@@ -6715,16 +6717,15 @@ function updateScheduleButtonState() {
         }
     }
 
-    if (activeSchedule && !hasNewSegments) {
-        // Active schedule with no pending changes - show Stop button (grey/secondary style)
+    if (activeSchedule) {
+        // Active schedule - keep Stop button visible regardless of pending changes.
+        // Pending segments are committed/discarded via the pending-changes bar.
         startScheduleBtn.classList.add('stop-schedule');
         setBtnActionLabel(btnLabel, tSettings('stopScheduleButton'));
         setStartBtnBlocklistInfo(startScheduleBtn, blocklist);
         startScheduleBtn.classList.remove('edit-schedule');
         startScheduleBtn.disabled = false;
         startScheduleBtn.dataset.activeScheduleId = activeSchedule.id || activeSchedule.blocklistId;
-
-
 
         // Change to unlock icon
         if (btnIcon) {
@@ -6734,28 +6735,7 @@ function updateScheduleButtonState() {
             `;
         }
 
-        // Disable controls for existing segments
-        disableScheduleControls(true);
-    } else if (activeSchedule && hasNewSegments) {
-        // Existing schedule not currently active (or has pending changes) - show Edit button
-        startScheduleBtn.classList.remove('stop-schedule');
-        setBtnActionLabel(btnLabel, tSettings('editScheduleButton'));
-        setStartBtnBlocklistInfo(startScheduleBtn, blocklist);
-        startScheduleBtn.classList.add('edit-schedule');
-        startScheduleBtn.disabled = false;
-        startScheduleBtn.dataset.activeScheduleId = activeSchedule.id || activeSchedule.blocklistId;
-
-        // Calendar icon for edit mode
-        if (btnIcon) {
-            btnIcon.innerHTML = `
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                <line x1="16" y1="2" x2="16" y2="6"></line>
-                <line x1="8" y1="2" x2="8" y2="6"></line>
-                <line x1="3" y1="10" x2="21" y2="10"></line>
-            `;
-        }
-
-        // Controls are mixed - existing segments disabled, new segments enabled
+        // Disable controls for existing (committed) segments; new ones stay editable
         disableScheduleControls(true);
     } else {
         // No active schedule - show Start button (normal)
@@ -6782,15 +6762,78 @@ function updateScheduleButtonState() {
     // Enable button if blocklist is selected
     const isValid = selectedBlocklistId;
     startScheduleBtn.disabled = !isValid;
+
+    // Show pending-changes bar only when an active schedule has unsaved new segments
+    updateSchedulePendingBar(!!(activeSchedule && hasNewSegments), activeSchedule);
+}
+
+// Show or hide the pending-changes bar at the bottom of the schedule panel.
+function updateSchedulePendingBar(visible, activeSchedule) {
+    const bar = document.getElementById('schedule-pending-bar');
+    if (!bar) return;
+
+    if (!visible) {
+        bar.classList.add('hidden');
+        return;
+    }
+
+    const label = document.getElementById('schedule-pending-label');
+    if (label) label.textContent = tSettings('pendingChangesLabel');
+
+    const saveBtn = document.getElementById('schedule-pending-save');
+    if (saveBtn) saveBtn.textContent = tSettings('pendingChangesSave');
+    const discardBtn = document.getElementById('schedule-pending-discard');
+    if (discardBtn) discardBtn.textContent = tSettings('pendingChangesDiscard');
+
+    bar.classList.remove('hidden');
+}
+
+// Commit any unsaved new segments to the active schedule (Save changes from pending bar).
+async function saveSchedulePendingChanges() {
+    if (!selectedBlocklistId) return;
+    const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+    const activeSchedule = appData.schedules
+        ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
+        : null;
+    if (!blocklist || !activeSchedule) return;
+
+    const committedCount = getCommittedScheduleSegmentCount(activeSchedule);
+    const newSegments = scheduleSegments.slice(committedCount);
+    if (newSegments.length === 0) return;
+
+    // Require at least one day per new segment, matching startSchedule's validation.
+    const allHaveDays = newSegments.every(seg => Array.isArray(seg.days) && seg.days.length > 0);
+    if (!allHaveDays) return;
+
+    showScheduleEditConfirmModal(blocklist, activeSchedule, newSegments);
+}
+
+// Discard any unsaved new segments and revert the panel to the committed schedule.
+function discardSchedulePendingChanges() {
+    if (!selectedBlocklistId) return;
+    const activeSchedule = appData.schedules
+        ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
+        : null;
+    if (!activeSchedule) return;
+
+    const committedCount = getCommittedScheduleSegmentCount(activeSchedule);
+    if (scheduleSegments.length <= committedCount) return;
+
+    // Truncate to committed segments only
+    scheduleSegments = scheduleSegments.slice(0, committedCount).map(seg => ({ ...seg }));
+
+    // Clear persisted pending draft so a reload doesn't resurrect them
+    clearPendingScheduleDraft(selectedBlocklistId);
+    saveData();
+
+    rebuildScheduleSegments();
+    disableScheduleControls(true);
+    handleTimeChange();
+    updateScheduleButtonState();
 }
 
 // Add a new time segment
 function addScheduleSegment() {
-    // Don't allow adding segments when schedule is active
-    if (activeScheduleSegmentCount > 0) {
-        return;
-    }
-
     // Get the previous segment's end time, round up to next full hour for new start
     const prevSegment = scheduleSegments[scheduleSegments.length - 1];
     let newStartHour;
@@ -6867,18 +6910,31 @@ function removeScheduleSegment(index) {
     // Rebuild DOM (simpler than updating indices)
     rebuildScheduleSegments();
 
-    // Update calendar preview
+    // Re-apply disabled state to locked segments if a schedule is active
+    if (activeScheduleSegmentCount > 0) {
+        disableScheduleControls(true);
+    }
+
+    // Update calendar preview and pending-bar visibility
     handleTimeChange();
+    updateScheduleButtonState();
 }
 
-// Sort schedule segments chronologically by start time
+// Sort schedule segments chronologically by start time.
+// When a schedule is running, the committed/pending split is tracked by array index
+// (segments before `activeScheduleSegmentCount` are committed, the rest are unsaved).
+// Sort within each partition independently so that invariant survives the sort —
+// otherwise a pending segment with an early time could swap places with a committed
+// one and corrupt subsequent saves.
 function sortScheduleSegments() {
-    scheduleSegments.sort((a, b) => {
-        // Compare by start hour first, then by start minute
-        const aMinutes = a.startHour * 60 + a.startMinute;
-        const bMinutes = b.startHour * 60 + b.startMinute;
-        return aMinutes - bMinutes;
-    });
+    const cmp = (a, b) => (a.startHour * 60 + a.startMinute) - (b.startHour * 60 + b.startMinute);
+    if (activeScheduleSegmentCount > 0 && scheduleSegments.length > activeScheduleSegmentCount) {
+        const committed = scheduleSegments.slice(0, activeScheduleSegmentCount).sort(cmp);
+        const pending = scheduleSegments.slice(activeScheduleSegmentCount).sort(cmp);
+        scheduleSegments = [...committed, ...pending];
+    } else {
+        scheduleSegments.sort(cmp);
+    }
 }
 
 // Rebuild schedule segments DOM from state
@@ -7281,35 +7337,27 @@ function showScheduleTimePopover(field, type, isStart, segmentIndex) {
     }, 10);
 }
 
-// Start a schedule - show confirmation modal first
+// Start a schedule - show confirmation modal first.
+// When a schedule is already active this acts as Stop; the persistent Stop button
+// behaves identically whether or not pending edits exist (those are committed/discarded
+// via the pending-changes bar, never via this button).
 async function startSchedule() {
     if (!selectedBlocklistId) return;
 
     const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
     if (!blocklist) return;
 
-    // Check if this blocklist already has an active schedule
     const activeSchedule = appData.schedules
         ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
         : null;
 
-    // Check if there are new segments beyond the locked count
-    const committedSegmentCount = getCommittedScheduleSegmentCount(activeSchedule);
-    const hasNewSegments = activeSchedule && scheduleSegments.length > committedSegmentCount;
-    if (activeSchedule && !hasNewSegments) {
+    if (activeSchedule) {
         // Stop mode - open override dialog for the schedule
         openScheduleOverrideModal(activeSchedule);
         return;
     }
 
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this schedule')) return;
-
-    if (activeSchedule && hasNewSegments) {
-        // Edit mode - show confirmation for adding new segments only
-        const newSegments = scheduleSegments.slice(committedSegmentCount);
-        showScheduleEditConfirmModal(blocklist, activeSchedule, newSegments);
-        return;
-    }
 
     // Normal start mode - check that at least one segment has days
     const hasAnyDays = scheduleSegments.some(seg => seg.days && seg.days.length > 0);
@@ -7434,6 +7482,20 @@ function showScheduleConfirmModal(blocklist) {
 // Close schedule confirmation modal
 function closeScheduleConfirmModal() {
     document.getElementById('start-schedule-confirm-modal').classList.add('hidden');
+
+    // Reset to start-flow defaults so a subsequent open isn't stuck in edit-mode UI.
+    // (No-op if it was already in the start-flow.)
+    const confirmBtn = document.getElementById('proceed-schedule-confirm-btn');
+    if (confirmBtn) {
+        confirmBtn.textContent = tSettings('startSchedule');
+        confirmBtn.onclick = proceedWithSchedule;
+    }
+    const titleEl = document.getElementById('start-schedule-confirm-title');
+    if (titleEl) titleEl.textContent = tSettings('startThisSchedule');
+    const repeatRow = document.getElementById('schedule-confirm-repeat');
+    if (repeatRow && repeatRow.parentElement) repeatRow.parentElement.classList.remove('hidden');
+
+    delete window.editScheduleData;
 }
 
 // Open override modal for stopping a schedule. Schedules now stop wholesale, identically
@@ -7503,8 +7565,12 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
         newSegments: newSegments
     };
 
-    // Blocklist name
-    document.getElementById('schedule-confirm-name').textContent = `Add to: ${blocklist.name}`;
+    // Re-title the modal for the edit case
+    const titleEl = document.getElementById('start-schedule-confirm-title');
+    if (titleEl) titleEl.textContent = tSettings('saveChangesTitle');
+
+    // Blocklist name (plain — the segments list is already labelled "Adding these time segments")
+    document.getElementById('schedule-confirm-name').textContent = blocklist.name;
 
     // Hide websites and apps rows (not changing those)
     document.getElementById('schedule-websites-row').classList.add('hidden');
@@ -7512,7 +7578,7 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
 
     // Show NEW segments only
     const segmentsEl = document.getElementById('schedule-confirm-segments');
-    segmentsEl.innerHTML = `<div class="edit-schedule-notice">${getSettingsLanguage() === 'da' ? 'Tilføjer disse tidssegmenter:' : 'Adding these time segments:'}</div>`;
+    segmentsEl.innerHTML = `<div class="edit-schedule-notice">${tSettings('addingTheseSegments')}</div>`;
 
     newSegments.forEach((seg, index) => {
         const segDays = (seg.days || []).map(d => dayNames[d]).join(', ');
@@ -7531,10 +7597,29 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
     // Hide repeat info (not changing)
     document.getElementById('schedule-confirm-repeat').parentElement.classList.add('hidden');
 
-    // Update modal button to say "Add Segments"
-    const confirmBtn = document.querySelector('#start-schedule-confirm-modal .confirm-btn');
+    // Populate override info — same computation as showScheduleConfirmModal so users see
+    // the actual barrier, not just the header.
+    const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
+    let charCount = difficulty.count || 50;
+    let charsPerMinute = 100;
+    if (difficulty.type === 'custom' && difficulty.customText) {
+        charCount = difficulty.customText.length;
+        charsPerMinute = 200;
+    }
+    const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
+    const schedType =
+        difficulty.type === 'custom' && difficulty.customText
+            ? 'custom'
+            : difficulty.type === 'gibberish'
+              ? 'gibberish'
+              : 'random-words';
+    document.getElementById('schedule-confirm-override-text').textContent =
+        formatConfirmModalOverrideTypingLine({ type: schedType, count: charCount, estimatedMinutes });
+
+    // Swap the proceed button to "Save changes" and route to the edit handler
+    const confirmBtn = document.getElementById('proceed-schedule-confirm-btn');
     if (confirmBtn) {
-        confirmBtn.textContent = 'Add Segments';
+        confirmBtn.textContent = tSettings('pendingChangesSave');
         confirmBtn.onclick = proceedWithScheduleEdit;
     }
 
@@ -7544,9 +7629,10 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
 
 // Add new segments to existing schedule
 async function proceedWithScheduleEdit() {
+    // Grab editData BEFORE closing the modal — closeScheduleConfirmModal clears it.
+    const editData = window.editScheduleData;
     closeScheduleConfirmModal();
 
-    const editData = window.editScheduleData;
     if (!editData) return;
 
     // Find the existing schedule
@@ -7577,22 +7663,36 @@ async function proceedWithScheduleEdit() {
 
     console.log('Schedule updated with new segments:', schedule);
 
-    // Restore the confirm button to normal
-    const confirmBtn = document.querySelector('#start-schedule-confirm-modal .confirm-btn');
+    // Restore the confirm button + title back to the start-flow defaults
+    const confirmBtn = document.getElementById('proceed-schedule-confirm-btn');
     if (confirmBtn) {
         confirmBtn.textContent = tSettings('startSchedule');
         confirmBtn.onclick = proceedWithSchedule;
     }
+    const titleEl = document.getElementById('start-schedule-confirm-title');
+    if (titleEl) titleEl.textContent = tSettings('startThisSchedule');
 
     // Restore hidden rows
     document.getElementById('schedule-confirm-repeat').parentElement.classList.remove('hidden');
+
+    // Rebuild the DOM so it matches the new scheduleSegments order and locks the
+    // formerly-pending segments. Without this, time-edit handlers attached to the
+    // pre-save DOM nodes could write to the wrong scheduleSegments index.
+    rebuildScheduleSegments();
+    disableScheduleControls(true);
 
     // Update UI
     updateScheduleButtonState();
     renderBlocklists();
     updateWeekCalendar();
-    // Sync updated schedule to helper daemon
-    syncSchedulesToHelper();
+
+    // If a newly committed segment covers the current moment, kick blocking on now
+    // rather than waiting for the next periodic tick.
+    await updateBlockedApps();
+    await updateHostsFile();
+    // Sync updated schedule to helper daemon so it picks up the new segments for
+    // future autonomous transitions.
+    await syncSchedulesToHelper();
 
     // Clean up
     delete window.editScheduleData;
@@ -12883,6 +12983,11 @@ const SETTINGS_TRANSLATIONS = {
         stopBlockMetaColon: ':',
         stopScheduleMetaColon: ':',
         editScheduleButton: 'Edit Schedule:',
+        pendingChangesLabel: 'Unsaved changes',
+        pendingChangesSave: 'Save changes',
+        pendingChangesDiscard: 'Discard',
+        saveChangesTitle: 'Save changes?',
+        addingTheseSegments: 'Adding these time segments:',
         // Blocklist modal
         createBlocklist: 'Create Blocklist',
         editBlocklist: 'Edit Blocklist',
@@ -12954,7 +13059,7 @@ const SETTINGS_TRANSLATIONS = {
         scheduleResumingSegment: 'Schedule (resuming current segment)',
         startThisSchedule: 'Start this schedule?',
         repeatLabel: 'Repeat week:',
-        confirmScheduleOverrideNeed: 'To cancel blocks in this schedule, you\'ll need to:',
+        confirmScheduleOverrideNeed: 'To stop this blocking schedule, you\'ll need to:',
         /** Start/resume confirmation: friction description — placeholders {count},{charUnit},{minutes} */
         confirmOverrideRandomWordsFmt:
             'Type {count} {charUnit} (displayed as random words) exactly as shown (~{minutes} min).',
@@ -13291,6 +13396,11 @@ const SETTINGS_TRANSLATIONS = {
         stopBlockMetaColon: ':',
         stopScheduleMetaColon: ':',
         editScheduleButton: 'Rediger skema:',
+        pendingChangesLabel: 'Ikke-gemte ændringer',
+        pendingChangesSave: 'Gem ændringer',
+        pendingChangesDiscard: 'Kassér',
+        saveChangesTitle: 'Gem ændringer?',
+        addingTheseSegments: 'Tilføjer disse tidssegmenter:',
         // Blocklist modal
         createBlocklist: 'Opret blokliste',
         editBlocklist: 'Rediger blokliste',
@@ -13362,7 +13472,7 @@ const SETTINGS_TRANSLATIONS = {
         scheduleResumingSegment: 'Skema (genoptager nuværende segment)',
         startThisSchedule: 'Start dette skema?',
         repeatLabel: 'Gentag ugeskema:',
-        confirmScheduleOverrideNeed: 'For at annullere blokeringer i dette skema skal du:',
+        confirmScheduleOverrideNeed: 'For at stoppe dette blokeringsskema skal du:',
         confirmOverrideRandomWordsFmt:
             'Skrive {count} {charUnit}, vist som tilfældige ord, præcis som der står (~{minutes} min).',
         confirmOverrideGibberishLettersFmt:

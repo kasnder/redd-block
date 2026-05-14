@@ -3999,6 +3999,73 @@ body.ios .day-toggle {
     pointer-events: none;
 }
 
+/* Pending Changes Bar (running schedule with new segments) */
+.schedule-pending-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px;
+    margin-top: 4px;
+    border: 1px solid rgba(42, 157, 143, 0.35);
+    background: rgba(42, 157, 143, 0.08);
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+.schedule-pending-bar.hidden {
+    display: none;
+}
+
+.schedule-pending-label {
+    color: var(--text-color);
+    font-weight: 500;
+}
+
+.schedule-pending-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.schedule-pending-discard,
+.schedule-pending-save {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.2;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: 1px solid transparent;
+}
+
+.schedule-pending-discard {
+    background: transparent;
+    color: var(--text-muted);
+    border-color: var(--border-color);
+}
+
+.schedule-pending-discard:hover {
+    color: hsl(0, 70%, 50%);
+    border-color: hsl(0, 70%, 50%);
+    background: hsl(0, 80%, 97%);
+}
+
+.schedule-pending-save {
+    background: var(--accent-color);
+    color: white;
+}
+
+.schedule-pending-save:hover {
+    filter: brightness(1.05);
+}
+
+body.dark-mode .schedule-pending-discard:hover {
+    background: rgba(255, 80, 80, 0.12);
+}
+
 .password-hint {
     display: block;
     font-size: 13px;
