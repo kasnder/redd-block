@@ -4,7 +4,7 @@
   "description": "ReDD Block - block distracting websites and apps to stay focused",
   "scripts": {
     "dev": "tauri dev",
-    "dev:ios": "PATH=\"$(pwd)/scripts:$PATH\" APPLE_DEVELOPMENT_TEAM=JD647S9RT6 tauri ios dev --host",
+    "dev:ios": "bash ./scripts/ios-dev.sh",
     "build": "tauri build",
     "build:mac": "bash ./scripts/build-mac.sh",
     "build:mac-pkg": "./scripts/build-mac-pkg.sh --release",
