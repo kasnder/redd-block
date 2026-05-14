@@ -3842,6 +3842,24 @@ async function loadData() {
     if (!appData.schedules) {
         appData.schedules = [];
     }
+    // A pre-fix bug could insert a duplicate schedule for the same blocklist when
+    // saving edits (both the start-flow and edit-flow proceed handlers fired). If
+    // that left two entries, keep the one with the most segments and drop the rest.
+    if (appData.schedules.length > 1) {
+        const byBlocklist = new Map();
+        for (const s of appData.schedules) {
+            const existing = byBlocklist.get(s.blocklistId);
+            const segCount = Array.isArray(s.segments) ? s.segments.length : 0;
+            const existingCount = existing && Array.isArray(existing.segments) ? existing.segments.length : -1;
+            if (!existing || segCount > existingCount) {
+                byBlocklist.set(s.blocklistId, s);
+            }
+        }
+        if (byBlocklist.size < appData.schedules.length) {
+            appData.schedules = [...byBlocklist.values()];
+            shouldSave = true;
+        }
+    }
     // Ensure settings exists
     if (!appData.settings) {
         appData.settings = {};
@@ -4329,9 +4347,20 @@ function setupEventListeners() {
     document.getElementById('cancel-start-confirm-btn')?.addEventListener('click', closeStartBlockConfirmModal);
     document.getElementById('proceed-start-confirm-btn')?.addEventListener('click', proceedWithBlock);
 
-    // Schedule confirmation modal buttons
+    // Schedule confirmation modal buttons.
+    // The proceed button routes between the start-flow and edit-flow handlers via
+    // window.editScheduleData (set by showScheduleEditConfirmModal). A single
+    // dispatch listener avoids a previous bug where both addEventListener and a
+    // per-flow .onclick fired, causing proceedWithSchedule to add a duplicate
+    // schedule after an edit-flow save.
     document.getElementById('cancel-schedule-confirm-btn')?.addEventListener('click', closeScheduleConfirmModal);
-    document.getElementById('proceed-schedule-confirm-btn')?.addEventListener('click', proceedWithSchedule);
+    document.getElementById('proceed-schedule-confirm-btn')?.addEventListener('click', () => {
+        if (window.editScheduleData) {
+            proceedWithScheduleEdit();
+        } else {
+            proceedWithSchedule();
+        }
+    });
 
     // Schedule mode tabs
     document.getElementById('instant-mode-tab')?.addEventListener('click', () => setScheduleMode(false));
@@ -7484,12 +7513,11 @@ function closeScheduleConfirmModal() {
     document.getElementById('start-schedule-confirm-modal').classList.add('hidden');
 
     // Reset to start-flow defaults so a subsequent open isn't stuck in edit-mode UI.
-    // (No-op if it was already in the start-flow.)
+    // (No-op if it was already in the start-flow.) The click handler routes via
+    // editScheduleData, so clearing that variable here is what actually flips the
+    // proceed action back to the start-flow.
     const confirmBtn = document.getElementById('proceed-schedule-confirm-btn');
-    if (confirmBtn) {
-        confirmBtn.textContent = tSettings('startSchedule');
-        confirmBtn.onclick = proceedWithSchedule;
-    }
+    if (confirmBtn) confirmBtn.textContent = tSettings('startSchedule');
     const titleEl = document.getElementById('start-schedule-confirm-title');
     if (titleEl) titleEl.textContent = tSettings('startThisSchedule');
     const repeatRow = document.getElementById('schedule-confirm-repeat');
@@ -7616,12 +7644,9 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
     document.getElementById('schedule-confirm-override-text').textContent =
         formatConfirmModalOverrideTypingLine({ type: schedType, count: charCount, estimatedMinutes });
 
-    // Swap the proceed button to "Save changes" and route to the edit handler
+    // Swap the proceed button label; the click handler routes via editScheduleData.
     const confirmBtn = document.getElementById('proceed-schedule-confirm-btn');
-    if (confirmBtn) {
-        confirmBtn.textContent = tSettings('pendingChangesSave');
-        confirmBtn.onclick = proceedWithScheduleEdit;
-    }
+    if (confirmBtn) confirmBtn.textContent = tSettings('pendingChangesSave');
 
     // Show modal
     document.getElementById('start-schedule-confirm-modal').classList.remove('hidden');
@@ -7663,12 +7688,10 @@ async function proceedWithScheduleEdit() {
 
     console.log('Schedule updated with new segments:', schedule);
 
-    // Restore the confirm button + title back to the start-flow defaults
+    // Restore the confirm button + title back to the start-flow defaults.
+    // The click handler itself routes via editScheduleData, which we clear below.
     const confirmBtn = document.getElementById('proceed-schedule-confirm-btn');
-    if (confirmBtn) {
-        confirmBtn.textContent = tSettings('startSchedule');
-        confirmBtn.onclick = proceedWithSchedule;
-    }
+    if (confirmBtn) confirmBtn.textContent = tSettings('startSchedule');
     const titleEl = document.getElementById('start-schedule-confirm-title');
     if (titleEl) titleEl.textContent = tSettings('startThisSchedule');
 
