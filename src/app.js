@@ -2445,6 +2445,7 @@ async function openExtensionSetupOverlay() {
         // Hide settings if it was the launch point — the migration
         // overlay needs the full window.
         document.getElementById('settings-modal')?.classList.add('hidden');
+        setLanguagePickerOpen(false);
         await showMigrationOnboarding('post', fresh, { mode: 'fresh' });
     } catch (e) {
         console.warn('[setup-overlay] reopen failed:', e);
@@ -12812,10 +12813,10 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedInstrAccessSafari: 'Grant ReDD Block Full Disk Access.',
         enforcerClosedInstrDefault: 'Finish ReDD Focus setup in {browser} extensions.',
         enforcerBrowserFallback: 'your browser',
-        gracePeriodLabel: 'Seconds of heads-up before a browser that isn’t protected by ReDD Focus may close',
+        gracePeriodLabel: 'Seconds of heads-up before a browser that isn’t protected by ReDD Focus is closed',
         gracePeriodLockedHint: 'Locked while a block is active—only shorter times allowed.',
         settingsFeedbackFooterHtml:
-            'Have feedback or suggestions? Email us at <a href="mailto:team@reddfocus.org" style="color: var(--accent-color); text-decoration: underline;">team@reddfocus.org</a> or <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer" style="color: var(--accent-color); text-decoration: underline;">open an issue on GitHub</a>',
+            'Have feedback or suggestions? <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer" style="color: var(--accent-color); text-decoration: underline;">Open an issue on GitHub</a>, or email us at <a href="mailto:team@reddfocus.org" style="color: var(--accent-color); text-decoration: underline;">team@reddfocus.org</a>',
         settingsGraceChangeBlockedAlert: 'Stop all running blocks and schedules before changing this setting.',
         madeWith: 'Made with',
         by: 'by',
@@ -12956,14 +12957,16 @@ const SETTINGS_TRANSLATIONS = {
         themeLight: 'Light',
         themeDark: 'Dark',
         languageEnglish: 'English',
-        languageDanish: 'Dansk',
+        languageDanish: 'Danish',
+        languagePickerCurrent: 'Current language',
+        languagePickerSwitch: 'Switch to',
         advancedOptions: 'Advanced options',
         overrideAllBlocks: 'Stop all blocks (with challenge)',
         // In-app uninstall (macOS only)
         uninstallApp: 'Uninstall ReDD Block',
         uninstallDisabledHint: 'Stop running blocks first before you can uninstall.',
         uninstallConfirmTitle: 'Uninstall ReDD Block?',
-        uninstallConfirmBody: 'ReDD Block will be moved to the Trash, and its launch-at-login entry will be removed. The ReDD Focus browser extensions will stay installed — they work independently and are unaffected. Your blocklists and schedules are kept on disk so they can be restored if you reinstall later.\n\nIf macOS asks you to allow ReDD Block to control Finder, please click Allow — that\u2019s how the app moves itself to the Trash on systems where it can\u2019t do it directly.',
+        uninstallConfirmBody: 'ReDD Block will be moved to the Trash. Your blocklists and schedules are kept on disk so they can be restored if you reinstall later.\n\nWhat happens to the ReDD Focus browser extensions:\n  • Chrome, Brave, Edge — stay installed. Remove them yourself from the browser\u2019s Extensions page if you no longer want them.\n  • Safari — the extension bundled with ReDD Block goes away with the app. If you also installed the standalone ReDD Focus Safari app from the App Store, that one is unaffected.\n  • Firefox — the install lock managed by ReDD Block is removed. Firefox normally auto-uninstalls the extension on next launch; if it remains, you can remove it from about:addons.\n\nIf macOS asks you to allow ReDD Block to control Finder, please click Allow — that\u2019s how the app moves itself to the Trash on systems where it can\u2019t do it directly.',
         uninstallConfirmOk: 'Uninstall',
         uninstallFailedTitle: 'Uninstall failed',
         uninstallFailed: 'Could not complete uninstall.',
@@ -13208,7 +13211,7 @@ const SETTINGS_TRANSLATIONS = {
         gracePeriodLabel: 'Sekunders varsel før en browser uden ReDD Focus lukkes ned når en blokering kører',
         gracePeriodLockedHint: 'Låst mens en blokering er aktiv—kun kortere tider tilladt.',
         settingsFeedbackFooterHtml:
-            'Har du feedback eller forslag? Skriv til os på <a href="mailto:team@reddfocus.org" style="color: var(--accent-color); text-decoration: underline;">team@reddfocus.org</a> eller <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer" style="color: var(--accent-color); text-decoration: underline;">opret et issue på GitHub</a>',
+            'Har du feedback eller forslag? <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer" style="color: var(--accent-color); text-decoration: underline;">Opret et issue på GitHub</a>, eller skriv til os på <a href="mailto:team@reddfocus.org" style="color: var(--accent-color); text-decoration: underline;">team@reddfocus.org</a>',
         settingsGraceChangeBlockedAlert: 'Du skal først stoppe alle kørende blokeringer og skemaer, før du kan ændre denne indstilling.',
         madeWith: 'Lavet med',
         by: 'af',
@@ -13332,9 +13335,9 @@ const SETTINGS_TRANSLATIONS = {
         // Override all
         overrideAllTitle: 'Overstyr alle blokeringer?',
         overrideAllWarningStrong: 'Er du sikker på, at du vil stoppe alle aktive blokeringer?',
-        overrideAllWarningBody: 'Dette stopper ALLE nuværende blokeringer af websites og apps. Det stopper også alle fremtidige planlagte blokeringer.',
+        overrideAllWarningBody: 'Dette stopper ALLE nuværende blokeringer af websites og apps. Det stopper også alle skemalagte blokeringer.',
         overrideAllInstruction: 'For at gøre dette, skriv følgende:',
-        overrideAll: 'Overstyr alle',
+        overrideAll: 'Stop alle',
         deleteUndoToastFmt: 'Slettet "{name}"',
         undo: 'Fortryd',
         // Settings
@@ -13346,14 +13349,16 @@ const SETTINGS_TRANSLATIONS = {
         themeAuto: 'Auto',
         themeLight: 'Lys',
         themeDark: 'Mørk',
-        languageEnglish: 'English',
+        languageEnglish: 'Engelsk',
         languageDanish: 'Dansk',
+        languagePickerCurrent: 'Nuværende sprog',
+        languagePickerSwitch: 'Skift til',
         overrideAllBlocks: 'Stop alle blokeringer (med udfordring)',
         // In-app uninstall (macOS only)
         uninstallApp: 'Afinstaller ReDD Block',
         uninstallDisabledHint: 'Stop kørende blokeringer først, før du kan afinstallere.',
         uninstallConfirmTitle: 'Afinstaller ReDD Block?',
-        uninstallConfirmBody: 'ReDD Block flyttes til papirkurven, og login-ved-opstart fjernes. ReDD Focus-browserudvidelserne forbliver installeret — de fungerer uafhængigt og påvirkes ikke. Dine blokeringslister og tidsplaner bevares på disken, så de kan gendannes, hvis du geninstallerer senere.\n\nHvis macOS spørger, om ReDD Block må styre Finder, skal du klikke Tillad — det er sådan, appen flytter sig selv til papirkurven på systemer, hvor den ikke kan gøre det direkte.',
+        uninstallConfirmBody: 'ReDD Block flyttes til papirkurven. Dine blokeringslister og skemaer bevares på harddisken, så de kan gendannes, hvis du geninstallerer senere.\n\nHvad sker der med ReDD Focus-browserudvidelserne:\n  • Chrome, Brave, Edge — forbliver installeret. Fjern dem selv fra browserens udvidelsesside, hvis du ikke længere ønsker dem.\n  • Safari — udvidelsen, der følger med ReDD Block, forsvinder sammen med appen. Hvis du også har installeret den selvstændige ReDD Focus Safari-app fra App Store, påvirkes den ikke.\n  • Firefox — installationslåsen, som ReDD Block har sat, fjernes. Firefox afinstallerer normalt udvidelsen ved næste opstart; hvis den stadig er der, kan du fjerne den selv fra about:addons.\n\nHvis macOS spørger, om ReDD Block må styre Finder, skal du klikke Tillad — det er sådan, appen flytter sig selv til papirkurven på systemer, hvor den ikke kan gøre det direkte.',
         uninstallConfirmOk: 'Afinstaller',
         uninstallFailedTitle: 'Afinstallation mislykkedes',
         uninstallFailed: 'Kunne ikke gennemføre afinstallation.',
@@ -13449,6 +13454,98 @@ function tSettingsFmt(key, vars = {}) {
         s = String(s).split(`{${k}}`).join(String(v));
     }
     return s;
+}
+
+const LANGUAGE_FLAG_SVG = {
+    en: '<svg class="language-flag-svg" viewBox="0 0 60 40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="#012169" d="M0 0h60v40H0z"/><path stroke="#FFF" stroke-width="8" d="M0 0l60 40M60 0L0 40"/><path stroke="#C8102E" stroke-width="5" d="M0 0l60 40M60 0L0 40"/><path stroke="#FFF" stroke-width="12" d="M30 0v40M0 20h60"/><path stroke="#C8102E" stroke-width="7" d="M30 0v40M0 20h60"/></svg>',
+    da: '<svg class="language-flag-svg" viewBox="0 0 37 28" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect width="37" height="28" fill="#C8102E" rx="2"/><rect x="13" y="0" width="4" height="28" fill="#fff"/><rect x="0" y="12" width="37" height="4" fill="#fff"/></svg>',
+};
+
+function setLanguagePickerOpen(open) {
+    const dd = document.getElementById('language-picker-dropdown');
+    const tr = document.getElementById('language-picker-trigger');
+    if (!dd || !tr) return;
+    if (open) {
+        dd.classList.remove('hidden');
+        tr.setAttribute('aria-expanded', 'true');
+    } else {
+        dd.classList.add('hidden');
+        tr.setAttribute('aria-expanded', 'false');
+    }
+}
+
+function syncLanguagePickerUI() {
+    const lang = getSettingsLanguage();
+    const other = lang === 'da' ? 'en' : 'da';
+    const triggerFlag = document.getElementById('language-picker-trigger-flag');
+    const triggerCode = document.getElementById('language-picker-trigger-code');
+    const currentName = document.getElementById('language-picker-current-name');
+    const currentFlag = document.getElementById('language-picker-current-flag');
+    const switchName = document.getElementById('language-picker-switch-name');
+    const switchFlag = document.getElementById('language-picker-switch-flag');
+    const curLabel = document.getElementById('language-picker-current-label');
+    const swLabel = document.getElementById('language-picker-switch-label');
+
+    if (triggerCode) {
+        triggerCode.textContent =
+            lang === 'da' ? tSettings('languageDanish') : tSettings('languageEnglish');
+    }
+    if (triggerFlag) triggerFlag.innerHTML = LANGUAGE_FLAG_SVG[lang] || '';
+    if (currentFlag) currentFlag.innerHTML = LANGUAGE_FLAG_SVG[lang] || '';
+    if (switchFlag) switchFlag.innerHTML = LANGUAGE_FLAG_SVG[other] || '';
+
+    const curLabelText = lang === 'da' ? tSettings('languageDanish') : tSettings('languageEnglish');
+    const othLabelText = other === 'da' ? tSettings('languageDanish') : tSettings('languageEnglish');
+    if (currentName) currentName.textContent = curLabelText;
+    if (switchName) switchName.textContent = othLabelText;
+    if (curLabel) curLabel.textContent = tSettings('languagePickerCurrent');
+    if (swLabel) swLabel.textContent = tSettings('languagePickerSwitch');
+}
+
+let languagePickerDocClickBound = false;
+
+function setupLanguagePicker() {
+    const picker = document.getElementById('language-picker');
+    const trigger = document.getElementById('language-picker-trigger');
+    const dd = document.getElementById('language-picker-dropdown');
+    const switchBtn = document.getElementById('language-picker-switch-btn');
+    if (!picker || !trigger || !dd || !switchBtn) return;
+    if (picker.dataset.bound === '1') return;
+    picker.dataset.bound = '1';
+
+    trigger.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const isOpen = trigger.getAttribute('aria-expanded') === 'true';
+        setLanguagePickerOpen(!isOpen);
+    });
+
+    dd.addEventListener('click', (e) => e.stopPropagation());
+
+    switchBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const cur = getSettingsLanguage();
+        const next = cur === 'da' ? 'en' : 'da';
+        if (!appData.settings) appData.settings = {};
+        appData.settings.language = next;
+        applySettingsLanguage();
+        saveData();
+        if (!isIOS) void refreshBehaviourBannerIfStale({ force: true });
+        setLanguagePickerOpen(false);
+    });
+
+    if (!languagePickerDocClickBound) {
+        languagePickerDocClickBound = true;
+        document.addEventListener('click', () => {
+            setLanguagePickerOpen(false);
+        });
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        if (trigger.getAttribute('aria-expanded') === 'true') setLanguagePickerOpen(false);
+    });
 }
 
 /** Confirmation modals — describe typing challenge count + time estimate */
@@ -13727,11 +13824,10 @@ function applySettingsLanguage() {
     setText('settings-modal-title', tSettings('settingsTitle'));
     setText('settings-theme-label', tSettings('lightDarkMode'));
     setText('settings-language-label', tSettings('language'));
+    syncLanguagePickerUI();
     setText('theme-option-system', tSettings('themeAuto'));
     setText('theme-option-light', tSettings('themeLight'));
     setText('theme-option-dark', tSettings('themeDark'));
-    setText('language-option-en', tSettings('languageEnglish'));
-    setText('language-option-da', tSettings('languageDanish'));
     setText('settings-advanced-options-label', tSettings('advancedOptions'));
     setText('settings-override-all-label', tSettings('overrideAllBlocks'));
     setText('settings-uninstall-label', tSettings('uninstallApp'));
@@ -13814,10 +13910,10 @@ function setupTheme() {
     const settingsModal = document.getElementById('settings-modal');
     const closeSettingsBtn = document.getElementById('close-settings-btn');
     const themeSelect = document.getElementById('theme-select');
-    const languageSelect = document.getElementById('language-select');
 
     // Apply language immediately on startup.
     applySettingsLanguage();
+    setupLanguagePicker();
 
     if (settingsTriggers.length && settingsModal) {
         settingsTriggers.forEach((settingsBtn) => {
@@ -13832,10 +13928,6 @@ function setupTheme() {
                 const currentTheme = appData.settings?.themeMode || 'system';
                 themeSelect.value = currentTheme;
             }
-            if (languageSelect) {
-                languageSelect.value = getSettingsLanguage();
-            }
-
             void (async () => {
                 applySettingsLanguage();
 
@@ -13887,6 +13979,7 @@ function setupTheme() {
 
     if (closeSettingsBtn && settingsModal) {
         closeSettingsBtn.addEventListener('click', () => {
+            setLanguagePickerOpen(false);
             settingsModal.classList.add('hidden');
             if (!isModalVisible('diagnostics-modal')) stopHelperUiRefreshLoop();
         });
@@ -13896,6 +13989,7 @@ function setupTheme() {
     if (settingsModal) {
         settingsModal.addEventListener('click', (e) => {
             if (e.target === settingsModal) {
+                setLanguagePickerOpen(false);
                 settingsModal.classList.add('hidden');
                 if (!isModalVisible('diagnostics-modal')) stopHelperUiRefreshLoop();
             }
@@ -13920,16 +14014,6 @@ function setupTheme() {
 
             applyTheme();
             saveData();
-        });
-    }
-
-    if (languageSelect) {
-        languageSelect.addEventListener('change', (e) => {
-            if (!appData.settings) appData.settings = {};
-            appData.settings.language = e.target.value === 'da' ? 'da' : 'en';
-            applySettingsLanguage();
-            saveData();
-            if (!isIOS) void refreshBehaviourBannerIfStale({ force: true });
         });
     }
 
@@ -14954,6 +15038,7 @@ function setupOverrideAll() {
         overrideAllBtn.addEventListener('click', () => {
             // Close settings modal first
             document.getElementById('settings-modal').classList.add('hidden');
+            setLanguagePickerOpen(false);
 
             const challengeTextEl = document.getElementById('override-all-challenge-text');
             const instructionEl = document.getElementById('override-all-instruction');
@@ -15122,6 +15207,7 @@ function setupInAppUninstall() {
         // Close settings so the user sees a clean window before the
         // process exits and the bundle disappears.
         document.getElementById('settings-modal')?.classList.add('hidden');
+        setLanguagePickerOpen(false);
 
         try {
             await tauriAPI.uninstallSelfMacos();
