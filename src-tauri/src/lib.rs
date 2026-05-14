@@ -615,13 +615,30 @@ pub fn run() {
             // Firefox (macOS only): write `policies.json` inside
             // Firefox.app → silent force-install via Firefox enterprise
             // policy on next launch. Saves the user a per-browser
-            // "Add to <browser>" walk-through during onboarding.
-            // Idempotent; safe to re-run on every startup. See
+            // "Add to <browser>" walk-through during onboarding. See
             // `browser-ext-migration/FORCE_INSTALL_EXTENSIONS.md` for
             // design rationale.
+            //
+            // Marker-gated so it runs once per machine, not every
+            // launch. Touching each browser's data dir triggers macOS
+            // Sonoma+ "ReDD Block would like to access data from other
+            // apps" TCC prompts; even with idempotent writes (no-op
+            // for existing-correct files), opening the dir alone
+            // sometimes prompts. Once the marker exists we skip the
+            // whole call. Force-rerun is still available via the
+            // `install_extension_hints` Tauri command if the user
+            // hits a "Reinstall hints" affordance.
             #[cfg(not(target_os = "ios"))]
-            if let Err(e) = extension_install::install() {
-                log::warn!("extension-install hint on startup failed: {e}");
+            if !extension_install::startup_install_already_done() {
+                if let Err(e) = extension_install::install() {
+                    log::warn!("extension-install hint on startup failed: {e}");
+                } else {
+                    extension_install::mark_startup_install_done();
+                }
+            } else {
+                log::debug!(
+                    "extension-install: startup auto-install skipped (marker present)"
+                );
             }
 
             #[cfg(target_os = "macos")]

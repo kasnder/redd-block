@@ -272,10 +272,28 @@ fn install_chromium(browser: BrowserTarget) -> std::io::Result<()> {
         return Ok(());
     }
 
-    std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("{CHROMIUM_EXT_ID}.json"));
     let body = json!({ "external_update_url": CHROMIUM_UPDATE_URL });
-    std::fs::write(&path, serde_json::to_vec_pretty(&body)?)?;
+    let desired = serde_json::to_vec_pretty(&body)?;
+
+    // Idempotency: if the file already has the bytes we'd write, do
+    // nothing. Avoids the macOS Sonoma+ "ReDD Block would like to
+    // access data from other apps" TCC prompt that fires on every
+    // write into another app's data dir, even when the write is a
+    // no-op.
+    if let Ok(existing) = std::fs::read(&path) {
+        if existing == desired {
+            log::info!(
+                "extension-install: External Extensions hint already current for {browser:?} at {} (skip)",
+                path.display()
+            );
+            cleanup_failed_policy_plist_entry(browser);
+            return Ok(());
+        }
+    }
+
+    std::fs::create_dir_all(&dir)?;
+    std::fs::write(&path, &desired)?;
     log::info!(
         "extension-install: External Extensions hint written for {browser:?} at {}",
         path.display()
@@ -612,6 +630,21 @@ fn install_firefox_policy() -> std::io::Result<()> {
     );
 
     let pretty = serde_json::to_string_pretty(&data)?;
+
+    // Idempotency: skip the write if existing file already matches.
+    // Writing into /Applications/Firefox.app/... requires the macOS
+    // App Management TCC permission; even a no-op write triggers the
+    // prompt. Reading does not.
+    if let Ok(existing) = std::fs::read_to_string(&policies_path) {
+        if existing == pretty {
+            log::info!(
+                "extension-install: Firefox policy already current at {} (skip)",
+                policies_path.display()
+            );
+            return Ok(());
+        }
+    }
+
     std::fs::write(&policies_path, pretty)?;
     log::info!(
         "extension-install: Firefox policy written at {}",
@@ -803,14 +836,53 @@ fn uninstall_firefox_registry() -> std::io::Result<()> {
 }
 
 /// Tauri command — exposed for manual re-trigger from the UI (e.g. an
-/// onboarding "Reinstall hints" button) and for tests. Production
-/// install also runs automatically on every app launch (`lib.rs::run`).
+/// onboarding "Reinstall hints" button) and for tests. The startup
+/// auto-install in `lib.rs::run` is marker-gated to one-shot per
+/// machine; this command always runs, ignoring the marker, and also
+/// re-drops the marker on success so a future startup stays silent.
 #[tauri::command]
 pub fn install_extension_hints() -> Result<(), String> {
-    install().map_err(|e| e.to_string())
+    let result = install().map_err(|e| e.to_string());
+    if result.is_ok() {
+        mark_startup_install_done();
+    }
+    result
 }
 
 #[tauri::command]
 pub fn uninstall_extension_hints() -> Result<(), String> {
     uninstall().map_err(|e| e.to_string())
+}
+
+/// Path of the marker file that gates the startup auto-install. Lives
+/// under our own app-data dir (not inside any other app's territory)
+/// so creating/reading it never touches another app's data and never
+/// triggers a TCC prompt.
+fn startup_install_marker_path() -> Option<PathBuf> {
+    let base = dirs::data_local_dir()?;
+    Some(
+        base.join("com.reddblock")
+            .join("extension-hints-installed.v1"),
+    )
+}
+
+/// `true` if the startup auto-install has already run (successfully)
+/// on this machine. Used by `lib.rs::run` to skip the full sweep on
+/// every launch.
+pub fn startup_install_already_done() -> bool {
+    startup_install_marker_path()
+        .map(|p| p.exists())
+        .unwrap_or(false)
+}
+
+/// Drop the marker after a successful startup auto-install. Best-effort
+/// — if the write fails (e.g. read-only filesystem) the next launch
+/// will retry the install, which is harmless since the per-browser
+/// writes are themselves idempotent.
+pub fn mark_startup_install_done() {
+    let Some(path) = startup_install_marker_path() else { return };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&path, b"");
 }
