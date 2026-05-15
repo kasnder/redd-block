@@ -9,6 +9,9 @@ private enum ShieldSnapshotPresenter {
     /// Apple warns slow shield configuration falls back to defaults — keep work bounded.
     private static let maxSubtitleCharacters = 360
 
+    /// Bundled in `ReddBlockShield.appex` (`Assets.xcassets` / `ShieldBrand`).
+    private static let brandIcon: UIImage? = UIImage(named: "ShieldBrand")
+
     private static let titleLabel = ShieldConfiguration.Label(
         text: "Blocked by ReDD Block",
         color: .label
@@ -22,7 +25,7 @@ private enum ShieldSnapshotPresenter {
     private static let fallbackConfiguration = ShieldConfiguration(
         backgroundBlurStyle: .systemMaterial,
         backgroundColor: .systemGroupedBackground,
-        icon: nil,
+        icon: brandIcon,
         title: titleLabel,
         subtitle: fallbackSubtitle,
         primaryButtonLabel: ShieldConfiguration.Label(text: "OK", color: .secondaryLabel),
@@ -120,7 +123,7 @@ private enum ShieldSnapshotPresenter {
         return ShieldConfiguration(
             backgroundBlurStyle: .systemMaterial,
             backgroundColor: .systemGroupedBackground,
-            icon: nil,
+            icon: brandIcon,
             title: titleLabel,
             subtitle: subtitle,
             primaryButtonLabel: ShieldConfiguration.Label(text: "OK", color: .secondaryLabel),
