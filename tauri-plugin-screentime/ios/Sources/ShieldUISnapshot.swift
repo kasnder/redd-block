@@ -246,6 +246,7 @@ enum ShieldScheduleSnapshotWriter {
         let startMs = startToday.timeIntervalSince1970 * 1000
         let nowMs = now.timeIntervalSince1970 * 1000
         if startMs <= nowMs { return startMs }
-        return cal.date(byAdding: .day, value: -1, to: startToday)?.timeIntervalSince1970 * 1000
+        guard let prevDay = cal.date(byAdding: .day, value: -1, to: startToday) else { return nil }
+        return prevDay.timeIntervalSince1970 * 1000
     }
 }
