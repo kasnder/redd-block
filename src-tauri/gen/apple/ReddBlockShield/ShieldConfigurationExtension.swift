@@ -26,16 +26,34 @@ private enum ShieldSnapshotPresenter {
         color: .label
     )
 
-    private static let fallbackConfiguration = ShieldConfiguration(
-        backgroundBlurStyle: .systemMaterial,
-        backgroundColor: .systemGroupedBackground,
-        icon: brandIcon,
-        title: titleLabel,
-        subtitle: fallbackSubtitle,
-        primaryButtonLabel: ShieldConfiguration.Label(text: "OK", color: .secondaryLabel),
-        primaryButtonBackgroundColor: nil,
-        secondaryButtonLabel: nil
-    )
+    /// Brand primary action on the system shield (`#2A9D8F` fill, `#FFFFFF` title). iOS may soften at rest on material.
+    private static let brandPrimaryActionFill = UIColor(red: 42 / 255, green: 157 / 255, blue: 143 / 255, alpha: 1)
+    private static let brandPrimaryActionTitle = UIColor(red: 1, green: 1, blue: 1, alpha: 1)
+
+    private static let fallbackConfiguration = shieldChromeConfiguration(subtitle: fallbackSubtitle)
+
+    private static func shieldChromeConfiguration(subtitle: ShieldConfiguration.Label) -> ShieldConfiguration {
+        let backgroundBlurStyle: UIBlurEffect.Style? = .systemMaterial
+        let backgroundColor: UIColor? = .systemGroupedBackground
+        let icon: UIImage? = brandIcon
+        let title: ShieldConfiguration.Label? = titleLabel
+        let primaryButtonLabel: ShieldConfiguration.Label? = ShieldConfiguration.Label(
+            text: "OK",
+            color: brandPrimaryActionTitle
+        )
+        let primaryButtonBackgroundColor: UIColor? = brandPrimaryActionFill
+        let secondaryButtonLabel: ShieldConfiguration.Label? = nil
+        return ShieldConfiguration(
+            backgroundBlurStyle: backgroundBlurStyle,
+            backgroundColor: backgroundColor,
+            icon: icon,
+            title: title,
+            subtitle: subtitle,
+            primaryButtonLabel: primaryButtonLabel,
+            primaryButtonBackgroundColor: primaryButtonBackgroundColor,
+            secondaryButtonLabel: secondaryButtonLabel
+        )
+    }
 
     static func configuration(
         shielding application: Application,
@@ -114,16 +132,7 @@ private enum ShieldSnapshotPresenter {
     private static func buildConfiguration(blockedName: String, attribution: ShieldAttribution) -> ShieldConfiguration {
         let subtitleText = truncate(makeSubtitle(blockedName: blockedName, attribution: attribution))
         let subtitle = ShieldConfiguration.Label(text: subtitleText, color: .label)
-        return ShieldConfiguration(
-            backgroundBlurStyle: .systemMaterial,
-            backgroundColor: .systemGroupedBackground,
-            icon: brandIcon,
-            title: titleLabel,
-            subtitle: subtitle,
-            primaryButtonLabel: ShieldConfiguration.Label(text: "OK", color: .secondaryLabel),
-            primaryButtonBackgroundColor: nil,
-            secondaryButtonLabel: nil
-        )
+        return shieldChromeConfiguration(subtitle: subtitle)
     }
 
     private static func makeSubtitle(blockedName: String, attribution: ShieldAttribution) -> String {
