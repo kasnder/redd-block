@@ -132,3 +132,120 @@ struct SharedShieldSnapshotStore {
         sharedDefaults?.removeObject(forKey: shieldUISnapshotKey)
     }
 }
+
+// MARK: - Schedule union → snapshot (DeviceActivityMonitor + plugin re-apply)
+
+/// Writes `ShieldUISnapshot.schedule` from schedules that are **active right now**, preserving `manual`.
+enum ShieldScheduleSnapshotWriter {
+    static func persistScheduleUnion(activeEntries: [(String, ScheduleBlockData)], now: Date = Date()) {
+        let nowMs = now.timeIntervalSince1970 * 1000
+        let previous = SharedShieldSnapshotStore.load()
+        let manual = previous?.manual
+
+        guard !activeEntries.isEmpty else {
+            let snap = ShieldUISnapshot(
+                schemaVersion: ShieldUISnapshot.currentSchemaVersion,
+                updatedAtMs: nowMs,
+                manual: manual,
+                schedule: nil
+            )
+            SharedShieldSnapshotStore.save(snap)
+            return
+        }
+
+        var domainMap: [String: ShieldAttribution] = [:]
+        let domainKeys = Set(activeEntries.flatMap { $0.1.domains.prefix(50).map { ShieldSnapshotNormalization.normalizedWebHost($0) } })
+        for key in domainKeys {
+            if let picked = pickBest(entries: activeEntries, now: now, matches: { d in
+                d.domains.prefix(50).contains { ShieldSnapshotNormalization.normalizedWebHost($0) == key }
+            }) {
+                domainMap[key] = attribution(scheduleId: picked.0, data: picked.1, enforcementMs: picked.2)
+            }
+        }
+
+        var appMap: [String: ShieldAttribution] = [:]
+        let appKeys = Set(activeEntries.flatMap { $0.1.appTokenData })
+        for token in appKeys {
+            if let picked = pickBest(entries: activeEntries, now: now, matches: { $0.appTokenData.contains(token) }) {
+                appMap[token] = attribution(scheduleId: picked.0, data: picked.1, enforcementMs: picked.2)
+            }
+        }
+
+        var categoryMap: [String: ShieldAttribution] = [:]
+        let categoryKeys = Set(activeEntries.flatMap { $0.1.categoryTokenData })
+        for token in categoryKeys {
+            if let picked = pickBest(entries: activeEntries, now: now, matches: { $0.categoryTokenData.contains(token) }) {
+                categoryMap[token] = attribution(scheduleId: picked.0, data: picked.1, enforcementMs: picked.2)
+            }
+        }
+
+        let scheduleSection: ShieldAttributionSection? =
+            domainMap.isEmpty && appMap.isEmpty && categoryMap.isEmpty
+            ? nil
+            : ShieldAttributionSection(
+                domainByNormalizedHost: domainMap,
+                appByTokenData: appMap,
+                categoryByTokenData: categoryMap
+            )
+        let snap = ShieldUISnapshot(
+            schemaVersion: ShieldUISnapshot.currentSchemaVersion,
+            updatedAtMs: nowMs,
+            manual: manual,
+            schedule: scheduleSection
+        )
+        SharedShieldSnapshotStore.save(snap)
+    }
+
+    private static func attribution(scheduleId: String, data: ScheduleBlockData, enforcementMs: Double) -> ShieldAttribution {
+        ShieldAttribution(
+            sourceId: "schedule:\(scheduleId)",
+            enforcementStartedAtMs: enforcementMs,
+            blocklistEmoji: data.blocklistEmoji,
+            blocklistName: data.blocklistName,
+            blocklistColorHex: data.blocklistColorHex,
+            blockStartedAtMs: enforcementMs,
+            blockEndsAtMs: data.activeUntilTimestampMs
+        )
+    }
+
+    private static func pickBest(
+        entries: [(String, ScheduleBlockData)],
+        now: Date,
+        matches: (ScheduleBlockData) -> Bool
+    ) -> (String, ScheduleBlockData, Double)? {
+        var best: (String, ScheduleBlockData, Double)?
+        for (id, data) in entries where matches(data) {
+            let ms = scheduleEnforcementAnchorMs(data, now: now)
+            if let cur = best {
+                if ms < cur.2 || (ms == cur.2 && id < cur.0) {
+                    best = (id, data, ms)
+                }
+            } else {
+                best = (id, data, ms)
+            }
+        }
+        return best
+    }
+
+    private static func scheduleEnforcementAnchorMs(_ data: ScheduleBlockData, now: Date) -> Double {
+        let nowMs = now.timeIntervalSince1970 * 1000
+        if let af = data.activeFromTimestampMs {
+            return af
+        }
+        return estimatedTodaySegmentStartMs(data, now: now) ?? nowMs
+    }
+
+    private static func estimatedTodaySegmentStartMs(_ data: ScheduleBlockData, now: Date) -> Double? {
+        guard let sh = data.startHour, let sm = data.startMinute else { return nil }
+        let cal = Calendar.current
+        var dc = cal.dateComponents([.year, .month, .day], from: now)
+        dc.hour = sh
+        dc.minute = sm
+        dc.second = 0
+        guard let startToday = cal.date(from: dc) else { return nil }
+        let startMs = startToday.timeIntervalSince1970 * 1000
+        let nowMs = now.timeIntervalSince1970 * 1000
+        if startMs <= nowMs { return startMs }
+        return cal.date(byAdding: .day, value: -1, to: startToday)?.timeIntervalSince1970 * 1000
+    }
+}

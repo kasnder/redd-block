@@ -124,6 +124,10 @@ pub struct ScheduleEntryRequest {
     pub is_paused: Option<bool>,
     /// Optional pause expiry for this schedule entry.
     pub pause_end_timestamp_ms: Option<f64>,
+    /// Optional blocklist presentation for shield snapshot.
+    pub blocklist_emoji: Option<String>,
+    pub blocklist_name: Option<String>,
+    pub blocklist_color_hex: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

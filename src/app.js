@@ -605,6 +605,10 @@ async function syncSchedulesToHelper() {
                 const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
                 const domains = blocklist?.websites || [];
                 const iosPayload = getBlocklistIOSPayload(blocklist);
+                const blocklistEmoji = blocklist?.emoji ?? null;
+                const blocklistName = blocklist?.name ?? null;
+                const bc = blocklist?.color;
+                const blocklistColorHex = typeof bc === 'string' && bc.length > 0 ? bc : null;
                 if (isNonRepeatingSchedule(schedule)) {
                     const occurrences = resolveOneShotOccurrences(schedule);
                     occurrences.forEach((occurrence, occurrenceIdx) => {
@@ -622,7 +626,10 @@ async function syncSchedulesToHelper() {
                             activeFromTimestampMs: occurrence.start.getTime(),
                             activeUntilTimestampMs: occurrence.end.getTime(),
                             isPaused: !!schedule.isPaused,
-                            pauseEndTimestampMs: schedule.pauseEndTime || null
+                            pauseEndTimestampMs: schedule.pauseEndTime || null,
+                            blocklistEmoji,
+                            blocklistName,
+                            blocklistColorHex
                         });
                     });
                     continue;
@@ -644,7 +651,10 @@ async function syncSchedulesToHelper() {
                         activeFromTimestampMs: window.activeFromTimestampMs,
                         activeUntilTimestampMs: window.activeUntilTimestampMs,
                         isPaused: !!schedule.isPaused,
-                        pauseEndTimestampMs: schedule.pauseEndTime || null
+                        pauseEndTimestampMs: schedule.pauseEndTime || null,
+                        blocklistEmoji,
+                        blocklistName,
+                        blocklistColorHex
                     });
                 }
             }

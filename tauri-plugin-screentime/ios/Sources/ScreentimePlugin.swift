@@ -68,6 +68,10 @@ class ScheduleEntry: Decodable {
     /// Optional pause state propagated from the JS schedule model.
     let isPaused: Bool?
     let pauseEndTimestampMs: Double?
+    /// Blocklist presentation for shield snapshot (optional).
+    let blocklistEmoji: String?
+    let blocklistName: String?
+    let blocklistColorHex: String?
 }
 
 class SetSchedulesArgs: Decodable {
@@ -738,6 +742,7 @@ class ScreentimePlugin: Plugin {
         // must be cleared for a complete "stop everything" action.
         let scheduleStore = ManagedSettingsStore(named: .init("schedule"))
         scheduleStore.clearAllSettings()
+        ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: [])
         
         // Note: We intentionally do NOT clear currentSelection here.
         // The selection should persist so the user doesn't have to re-pick
@@ -850,7 +855,10 @@ class ScreentimePlugin: Plugin {
                 activeFromTimestampMs: entry.activeFromTimestampMs,
                 activeUntilTimestampMs: entry.activeUntilTimestampMs,
                 isPaused: entry.isPaused,
-                pauseEndTimestampMs: entry.pauseEndTimestampMs
+                pauseEndTimestampMs: entry.pauseEndTimestampMs,
+                blocklistEmoji: entry.blocklistEmoji,
+                blocklistName: entry.blocklistName,
+                blocklistColorHex: entry.blocklistColorHex
             )
             SharedScheduleStore.save(id: entry.id, data: scheduleData)
             
@@ -873,9 +881,7 @@ class ScreentimePlugin: Plugin {
             }
         }
         
-        if !args.schedules.isEmpty {
-            reapplyActiveScheduleBlocksToStore(entries: args.schedules)
-        }
+        reapplyActiveScheduleBlocksToStore(entries: args.schedules)
         
         if errors.isEmpty {
             invoke.resolve([
@@ -914,6 +920,7 @@ class ScreentimePlugin: Plugin {
         // that were applied by the DeviceActivityMonitor extension.
         let scheduleStore = ManagedSettingsStore(named: .init("schedule"))
         scheduleStore.clearAllSettings()
+        ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: [])
         invoke.resolve(["success": true])
     }
     
@@ -1011,7 +1018,10 @@ class ScreentimePlugin: Plugin {
         activeFromTimestampMs: Double? = nil,
         activeUntilTimestampMs: Double? = nil,
         isPaused: Bool? = nil,
-        pauseEndTimestampMs: Double? = nil
+        pauseEndTimestampMs: Double? = nil,
+        blocklistEmoji: String? = nil,
+        blocklistName: String? = nil,
+        blocklistColorHex: String? = nil
     ) -> ScheduleBlockData {
         return ScheduleBlockData(
             domains: domains ?? [],
@@ -1025,7 +1035,10 @@ class ScreentimePlugin: Plugin {
             activeFromTimestampMs: activeFromTimestampMs,
             activeUntilTimestampMs: activeUntilTimestampMs,
             isPaused: isPaused,
-            pauseEndTimestampMs: pauseEndTimestampMs
+            pauseEndTimestampMs: pauseEndTimestampMs,
+            blocklistEmoji: blocklistEmoji,
+            blocklistName: blocklistName,
+            blocklistColorHex: blocklistColorHex
         )
     }
 
@@ -1143,11 +1156,14 @@ class ScreentimePlugin: Plugin {
     /// After clearing the schedule store, re-apply the union of blocks for all remaining
     /// segments that are currently in their active time window.
     private func reapplyActiveScheduleBlocksToStore(entries: [ScheduleEntry]) {
+        let now = Date()
         var allDomains = Set<WebDomain>()
         var allAppTokens = Set<ApplicationToken>()
         var allCategoryTokens = Set<ActivityCategoryToken>()
+        var activePairs: [(String, ScheduleBlockData)] = []
         for entry in entries where isSegmentActiveNow(entry: entry) {
             guard let data = SharedScheduleStore.load(id: entry.id) else { continue }
+            activePairs.append((entry.id, data))
             for domain in data.domains.prefix(50) {
                 allDomains.insert(WebDomain(domain: domain))
             }
@@ -1167,6 +1183,7 @@ class ScreentimePlugin: Plugin {
         let scheduleStore = ManagedSettingsStore(named: .init("schedule"))
         if allDomains.isEmpty && allAppTokens.isEmpty && allCategoryTokens.isEmpty {
             scheduleStore.clearAllSettings()
+            ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: [], now: now)
             return
         }
         let domainArray = Array(allDomains.prefix(50))
@@ -1185,6 +1202,7 @@ class ScreentimePlugin: Plugin {
         } else {
             scheduleStore.shield.applicationCategories = .specific(allCategoryTokens)
         }
+        ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: activePairs, now: now)
     }
     
     private func statusString(_ status: AuthorizationStatus) -> String {
