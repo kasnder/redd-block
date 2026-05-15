@@ -127,6 +127,7 @@ targets:
     platform: iOS
     sources:
       - path: ReddBlockShield
+      - path: Shared
     info:
       path: ReddBlockShield/Info.plist
       properties:
