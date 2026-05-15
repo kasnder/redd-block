@@ -10,7 +10,11 @@ private enum ShieldSnapshotPresenter {
     private static let maxSubtitleCharacters = 360
 
     /// Bundled in `ReddBlockShield.appex` (`Assets.xcassets` / `ShieldBrand`).
-    private static let brandIcon: UIImage? = UIImage(named: "ShieldBrand")
+    /// Keep catalog PNGs modest in pixel size: very large @3x rasters decode to big bitmaps and can jetsam this extension.
+    private static let brandIcon: UIImage? = {
+        let bundle = Bundle(for: ShieldConfigurationExtension.self)
+        return UIImage(named: "ShieldBrand", in: bundle, compatibleWith: nil) ?? UIImage(named: "ShieldBrand")
+    }()
 
     private static let titleLabel = ShieldConfiguration.Label(
         text: "Blocked by ReDD Block",
@@ -106,12 +110,9 @@ private enum ShieldSnapshotPresenter {
     }
 
     private static func bestAttribution(_ rows: [ShieldAttribution]) -> ShieldAttribution? {
-        rows.min { a, b in
-            if a.enforcementStartedAtMs != b.enforcementStartedAtMs {
-                return a.enforcementStartedAtMs < b.enforcementStartedAtMs
-            }
-            return a.sourceId < b.sourceId
-        }
+        rows.min(by: {
+            ($0.enforcementStartedAtMs, $0.sourceId) < ($1.enforcementStartedAtMs, $1.sourceId)
+        })
     }
 
     // MARK: - Shield.Configuration assembly
@@ -172,32 +173,24 @@ private enum ShieldSnapshotPresenter {
         if let endMs = attribution.blockEndsAtMs {
             let end = Date(timeIntervalSince1970: endMs / 1000)
             if endMs > nowMs {
-                let rel = relativeFormatter.localizedString(for: end, relativeTo: Date())
-                return "Ends \(rel)."
+                let rel = RelativeDateTimeFormatter()
+                rel.unitsStyle = .short
+                return "Ends \(rel.localizedString(for: end, relativeTo: Date()))."
             }
-            let abs = timeFormatter.string(from: end)
-            return "Ended \(abs)."
+            let tf = DateFormatter()
+            tf.timeStyle = .short
+            tf.dateStyle = .none
+            return "Ended \(tf.string(from: end))."
         }
         if let startMs = attribution.blockStartedAtMs {
             let start = Date(timeIntervalSince1970: startMs / 1000)
-            let abs = timeFormatter.string(from: start)
-            return "Started \(abs)."
+            let tf = DateFormatter()
+            tf.timeStyle = .short
+            tf.dateStyle = .none
+            return "Started \(tf.string(from: start))."
         }
         return nil
     }
-
-    private static let relativeFormatter: RelativeDateTimeFormatter = {
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .short
-        return f
-    }()
-
-    private static let timeFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.timeStyle = .short
-        f.dateStyle = .none
-        return f
-    }()
 
     private static func truncate(_ s: String) -> String {
         guard s.count > maxSubtitleCharacters else { return s }
