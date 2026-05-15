@@ -491,6 +491,72 @@ class ScreentimePlugin: Plugin {
         selection.categoryTokens = categoryTokens
         return selection
     }
+
+    // MARK: - Shield UI snapshot (default / manual ManagedSettingsStore)
+
+    /// Updates App Group `ShieldUISnapshot.manual` after the default store changes. Pass `nil` for an
+    /// axis to leave that axis’s prior snapshot entries unchanged (e.g. `blockApps` does not clear domains).
+    private func persistManualShieldSnapshot(
+        replaceDomains: [String]?,
+        replaceAppTokens: [String]?,
+        replaceCategoryTokens: [String]?
+    ) {
+        let previous = SharedShieldSnapshotStore.load()
+        let scheduleSection = previous?.schedule
+        var domainMap = previous?.manual?.domainByNormalizedHost ?? [:]
+        var appMap = previous?.manual?.appByTokenData ?? [:]
+        var categoryMap = previous?.manual?.categoryByTokenData ?? [:]
+
+        let nowMs = Date().timeIntervalSince1970 * 1000
+        let row = ShieldAttribution(
+            sourceId: "manual",
+            enforcementStartedAtMs: nowMs,
+            blocklistEmoji: nil,
+            blocklistName: nil,
+            blocklistColorHex: nil,
+            blockStartedAtMs: nowMs,
+            blockEndsAtMs: nil
+        )
+
+        if let hosts = replaceDomains {
+            domainMap = [:]
+            for raw in hosts {
+                let key = ShieldSnapshotNormalization.normalizedWebHost(raw)
+                domainMap[key] = row
+            }
+        }
+        if let appTokens = replaceAppTokens {
+            appMap = [:]
+            for t in appTokens {
+                appMap[t] = row
+            }
+        }
+        if let categoryTokens = replaceCategoryTokens {
+            categoryMap = [:]
+            for t in categoryTokens {
+                categoryMap[t] = row
+            }
+        }
+
+        let manualSection: ShieldAttributionSection?
+        if domainMap.isEmpty && appMap.isEmpty && categoryMap.isEmpty {
+            manualSection = nil
+        } else {
+            manualSection = ShieldAttributionSection(
+                domainByNormalizedHost: domainMap,
+                appByTokenData: appMap,
+                categoryByTokenData: categoryMap
+            )
+        }
+
+        let snapshot = ShieldUISnapshot(
+            schemaVersion: ShieldUISnapshot.currentSchemaVersion,
+            updatedAtMs: nowMs,
+            manual: manualSection,
+            schedule: scheduleSection
+        )
+        SharedShieldSnapshotStore.save(snapshot)
+    }
     
     /// Check if Screen Time authorization is granted
     private func isAuthorized() -> Bool {
@@ -510,6 +576,12 @@ class ScreentimePlugin: Plugin {
         let webDomains = Set(args.domains.prefix(50).map { WebDomain(domain: $0) })
         
         store.webContent.blockedByFilter = .specific(webDomains)
+
+        persistManualShieldSnapshot(
+            replaceDomains: Array(args.domains.prefix(50)),
+            replaceAppTokens: nil,
+            replaceCategoryTokens: nil
+        )
         
         var response: [String: Any] = [
             "success": true,
@@ -523,6 +595,7 @@ class ScreentimePlugin: Plugin {
     
     @objc public func unblockWebsites(_ invoke: Invoke) throws {
         store.webContent.blockedByFilter = nil
+        persistManualShieldSnapshot(replaceDomains: [], replaceAppTokens: nil, replaceCategoryTokens: nil)
         invoke.resolve(["success": true])
     }
     
@@ -559,6 +632,12 @@ class ScreentimePlugin: Plugin {
         }
         
         store.shield.applications = tokens
+
+        persistManualShieldSnapshot(
+            replaceDomains: nil,
+            replaceAppTokens: args.tokenData,
+            replaceCategoryTokens: nil
+        )
         
         var response: [String: Any] = [
             "success": true,
@@ -572,6 +651,7 @@ class ScreentimePlugin: Plugin {
     
     @objc public func unblockApps(_ invoke: Invoke) throws {
         store.shield.applications = nil
+        persistManualShieldSnapshot(replaceDomains: nil, replaceAppTokens: [], replaceCategoryTokens: nil)
         invoke.resolve(["success": true])
     }
     
@@ -606,6 +686,12 @@ class ScreentimePlugin: Plugin {
             days: nil
         )
         SharedManualBlockStore.saveManualBlockState(manualState)
+
+        persistManualShieldSnapshot(
+            replaceDomains: Array(args.domains.prefix(50)),
+            replaceAppTokens: args.appTokenData ?? [],
+            replaceCategoryTokens: args.categoryTokenData ?? []
+        )
         
         var response: [String: Any] = [
             "success": true,
@@ -628,6 +714,8 @@ class ScreentimePlugin: Plugin {
         
         // Clear manual block state in App Group so extension has no stale data
         SharedManualBlockStore.saveManualBlockState(ScheduleBlockData(domains: [], appTokenData: [], categoryTokenData: [], days: nil))
+
+        persistManualShieldSnapshot(replaceDomains: [], replaceAppTokens: [], replaceCategoryTokens: [])
         
         // Also clear the named "schedule" store used by DeviceActivityMonitor
         // Since we use separate stores for manual vs schedule blocks, both
