@@ -7,7 +7,7 @@ import UIKit
 @available(iOS 16.0, *)
 private enum ShieldSnapshotPresenter {
     /// Apple warns slow shield configuration falls back to defaults — keep work bounded.
-    private static let maxSubtitleCharacters = 360
+    private static let maxSubtitleCharacters = 420
 
     /// Bundled in `ReddBlockShield.appex` (`Assets.xcassets` / `ShieldBrand`).
     /// Keep catalog PNGs modest in pixel size: very large @3x rasters decode to big bitmaps and can jetsam this extension.
@@ -23,7 +23,7 @@ private enum ShieldSnapshotPresenter {
 
     private static let fallbackSubtitle = ShieldConfiguration.Label(
         text: "This content is restricted by ReDD Block.",
-        color: .secondaryLabel
+        color: .label
     )
 
     private static let fallbackConfiguration = ShieldConfiguration(
@@ -54,11 +54,8 @@ private enum ShieldSnapshotPresenter {
         guard let picked = bestAttribution(rows) else {
             return fallbackConfiguration
         }
-        return buildConfiguration(
-            contextLine: application.localizedDisplayName.map { "\($0) isn’t available right now." }
-                ?? "This app isn’t available right now.",
-            attribution: picked
-        )
+        let blockedName = application.localizedDisplayName ?? "This app"
+        return buildConfiguration(blockedName: blockedName, attribution: picked)
     }
 
     static func configuration(
@@ -80,10 +77,7 @@ private enum ShieldSnapshotPresenter {
         }
         let raw = webDomain.domain?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let displayHost = raw.isEmpty ? "This site" : raw
-        return buildConfiguration(
-            contextLine: "\(displayHost) isn’t available in Safari right now.",
-            attribution: picked
-        )
+        return buildConfiguration(blockedName: displayHost, attribution: picked)
     }
 
     // MARK: - Lookups (keys must match Pass 4–6 writers)
@@ -117,10 +111,9 @@ private enum ShieldSnapshotPresenter {
 
     // MARK: - Shield.Configuration assembly
 
-    private static func buildConfiguration(contextLine: String, attribution: ShieldAttribution) -> ShieldConfiguration {
-        let subtitleText = truncate(makeSubtitle(contextLine: contextLine, attribution: attribution))
-        let subtitleColor = colorFromHex(attribution.blocklistColorHex) ?? .secondaryLabel
-        let subtitle = ShieldConfiguration.Label(text: subtitleText, color: subtitleColor)
+    private static func buildConfiguration(blockedName: String, attribution: ShieldAttribution) -> ShieldConfiguration {
+        let subtitleText = truncate(makeSubtitle(blockedName: blockedName, attribution: attribution))
+        let subtitle = ShieldConfiguration.Label(text: subtitleText, color: .label)
         return ShieldConfiguration(
             backgroundBlurStyle: .systemMaterial,
             backgroundColor: .systemGroupedBackground,
@@ -133,16 +126,17 @@ private enum ShieldSnapshotPresenter {
         )
     }
 
-    private static func makeSubtitle(contextLine: String, attribution: ShieldAttribution) -> String {
-        var lines: [String] = [contextLine]
+    private static func makeSubtitle(blockedName: String, attribution: ShieldAttribution) -> String {
+        let opener = "\(blockedName) is on your current blocklist."
+        var blockInfo: [String] = ["Blocklist information:"]
         let pill = pillLine(attribution: attribution)
         if !pill.isEmpty {
-            lines.append(pill)
+            blockInfo.append(pill)
         }
         if let timing = timingLine(attribution: attribution), !timing.isEmpty {
-            lines.append(timing)
+            blockInfo.append(timing)
         }
-        return lines.joined(separator: "\n")
+        return [opener, blockInfo.joined(separator: "\n")].joined(separator: "\n\n")
     }
 
     private static func pillLine(attribution: ShieldAttribution) -> String {
@@ -198,16 +192,6 @@ private enum ShieldSnapshotPresenter {
         return String(s[..<idx]) + "…"
     }
 
-    /// `#RRGGBB` or `RRGGBB` → `UIColor`; invalid → nil
-    private static func colorFromHex(_ raw: String?) -> UIColor? {
-        guard var s = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty else { return nil }
-        if s.hasPrefix("#") { s.removeFirst() }
-        guard s.count == 6, let value = UInt32(s, radix: 16) else { return nil }
-        let r = CGFloat((value >> 16) & 0xff) / 255
-        let g = CGFloat((value >> 8) & 0xff) / 255
-        let b = CGFloat(value & 0xff) / 255
-        return UIColor(red: r, green: g, blue: b, alpha: 1)
-    }
 }
 
 /// Shield configuration: reads `ShieldUISnapshot` from the App Group and maps `shielding` to labels.
