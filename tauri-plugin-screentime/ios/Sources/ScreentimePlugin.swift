@@ -26,6 +26,11 @@ class StartBlockArgs: Decodable {
     let domains: [String]
     let appTokenData: [String]?
     let categoryTokenData: [String]?
+    let blocklistEmoji: String?
+    let blocklistName: String?
+    let blocklistColorHex: String?
+    let blockStartMs: Double?
+    let blockEndMs: Double?
 }
 
 class ScheduleBlockArgs: Decodable {
@@ -499,7 +504,12 @@ class ScreentimePlugin: Plugin {
     private func persistManualShieldSnapshot(
         replaceDomains: [String]?,
         replaceAppTokens: [String]?,
-        replaceCategoryTokens: [String]?
+        replaceCategoryTokens: [String]?,
+        blocklistEmoji: String? = nil,
+        blocklistName: String? = nil,
+        blocklistColorHex: String? = nil,
+        blockStartMs: Double? = nil,
+        blockEndMs: Double? = nil
     ) {
         let previous = SharedShieldSnapshotStore.load()
         let scheduleSection = previous?.schedule
@@ -508,14 +518,15 @@ class ScreentimePlugin: Plugin {
         var categoryMap = previous?.manual?.categoryByTokenData ?? [:]
 
         let nowMs = Date().timeIntervalSince1970 * 1000
+        let startedMs = blockStartMs ?? nowMs
         let row = ShieldAttribution(
             sourceId: "manual",
-            enforcementStartedAtMs: nowMs,
-            blocklistEmoji: nil,
-            blocklistName: nil,
-            blocklistColorHex: nil,
-            blockStartedAtMs: nowMs,
-            blockEndsAtMs: nil
+            enforcementStartedAtMs: startedMs,
+            blocklistEmoji: blocklistEmoji,
+            blocklistName: blocklistName,
+            blocklistColorHex: blocklistColorHex,
+            blockStartedAtMs: startedMs,
+            blockEndsAtMs: blockEndMs
         )
 
         if let hosts = replaceDomains {
@@ -690,7 +701,12 @@ class ScreentimePlugin: Plugin {
         persistManualShieldSnapshot(
             replaceDomains: Array(args.domains.prefix(50)),
             replaceAppTokens: args.appTokenData ?? [],
-            replaceCategoryTokens: args.categoryTokenData ?? []
+            replaceCategoryTokens: args.categoryTokenData ?? [],
+            blocklistEmoji: args.blocklistEmoji,
+            blocklistName: args.blocklistName,
+            blocklistColorHex: args.blocklistColorHex,
+            blockStartMs: args.blockStartMs,
+            blockEndMs: args.blockEndMs
         )
         
         var response: [String: Any] = [

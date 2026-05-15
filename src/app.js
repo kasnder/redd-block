@@ -442,10 +442,22 @@ function collectActiveIOSManualBlockPayload(now = Date.now()) {
     const appTokenData = new Set();
     const categoryTokenData = new Set();
 
+    let displayWinner = null;
+
     for (const block of appData.activeBlocks || []) {
         if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
         const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
         if (!blocklist) continue;
+
+        const bid = String(block.blocklistId ?? '');
+        if (
+            displayWinner == null
+            || block.startTime < displayWinner.block.startTime
+            || (block.startTime === displayWinner.block.startTime
+                && bid < String(displayWinner.block.blocklistId ?? ''))
+        ) {
+            displayWinner = { block, blocklist };
+        }
 
         for (const domain of blocklist.websites || []) {
             if (!isProtectedDomain(domain)) allDomains.add(domain);
@@ -456,11 +468,21 @@ function collectActiveIOSManualBlockPayload(now = Date.now()) {
         for (const token of iosPayload.categoryTokenData) categoryTokenData.add(token);
     }
 
-    return {
+    const out = {
         domains: Array.from(allDomains).sort(),
         appTokenData: Array.from(appTokenData),
         categoryTokenData: Array.from(categoryTokenData)
     };
+    if (displayWinner) {
+        const { block, blocklist } = displayWinner;
+        out.blocklistEmoji = blocklist.emoji ?? null;
+        out.blocklistName = blocklist.name ?? null;
+        const c = blocklist.color;
+        out.blocklistColorHex = typeof c === 'string' && c.length > 0 ? c : null;
+        out.blockStartMs = block.startTime;
+        out.blockEndMs = block.endTime;
+    }
+    return out;
 }
 
 function isNonRepeatingSchedule(schedule) {
