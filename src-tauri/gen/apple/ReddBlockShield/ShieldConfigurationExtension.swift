@@ -137,7 +137,7 @@ private enum ShieldSnapshotPresenter {
 
     private static func makeSubtitle(blockedName: String, attribution: ShieldAttribution) -> String {
         let opener = "\(blockedName) is on your current blocklist."
-        var blockInfo: [String] = ["Blocklist information:"]
+        var blockInfo: [String] = [detailSectionHeading(sourceId: attribution.sourceId)]
         let pill = pillLine(attribution: attribution)
         if !pill.isEmpty {
             blockInfo.append(pill)
@@ -146,6 +146,16 @@ private enum ShieldSnapshotPresenter {
             blockInfo.append(timing)
         }
         return [opener, blockInfo.joined(separator: "\n")].joined(separator: "\n\n")
+    }
+
+    private static func detailSectionHeading(sourceId: String) -> String {
+        if sourceId == "manual" {
+            return "Block information:"
+        }
+        if sourceId.hasPrefix("schedule:") {
+            return "Schedule information:"
+        }
+        return "Blocklist information:"
     }
 
     private static func pillLine(attribution: ShieldAttribution) -> String {
