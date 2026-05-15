@@ -72,7 +72,8 @@ const tauriAPI = {
     screentimeCheckAuth: () => invoke('plugin:screentime|check_authorization'),
     screentimeBlockWebsites: (domains) => invoke('plugin:screentime|block_websites', { domains }),
     screentimeUnblockWebsites: () => invoke('plugin:screentime|unblock_websites'),
-    screentimeStartBlock: (payload) => invoke('plugin:screentime|screentime_start_block', payload),
+    screentimeStartBlock: (payload) =>
+        invoke('plugin:screentime|screentime_start_block', { payload }),
     screentimeClearBlock: () => invoke('plugin:screentime|screentime_clear_block'),
     showActivityPicker: (payload = {}) => invoke('plugin:screentime|show_activity_picker', payload),
     setSchedulesPlugin: (schedules) => invoke('plugin:screentime|set_schedules', { schedules }),
