@@ -159,7 +159,7 @@ enum ShieldScheduleSnapshotWriter {
             if let picked = pickBest(entries: activeEntries, now: now, matches: { d in
                 d.domains.prefix(50).contains { ShieldSnapshotNormalization.normalizedWebHost($0) == key }
             }) {
-                domainMap[key] = attribution(scheduleId: picked.0, data: picked.1, enforcementMs: picked.2)
+                domainMap[key] = attribution(scheduleId: picked.0, data: picked.1, enforcementMs: picked.2, now: now)
             }
         }
 
@@ -167,7 +167,7 @@ enum ShieldScheduleSnapshotWriter {
         let appKeys = Set(activeEntries.flatMap { $0.1.appTokenData })
         for token in appKeys {
             if let picked = pickBest(entries: activeEntries, now: now, matches: { $0.appTokenData.contains(token) }) {
-                appMap[token] = attribution(scheduleId: picked.0, data: picked.1, enforcementMs: picked.2)
+                appMap[token] = attribution(scheduleId: picked.0, data: picked.1, enforcementMs: picked.2, now: now)
             }
         }
 
@@ -175,7 +175,7 @@ enum ShieldScheduleSnapshotWriter {
         let categoryKeys = Set(activeEntries.flatMap { $0.1.categoryTokenData })
         for token in categoryKeys {
             if let picked = pickBest(entries: activeEntries, now: now, matches: { $0.categoryTokenData.contains(token) }) {
-                categoryMap[token] = attribution(scheduleId: picked.0, data: picked.1, enforcementMs: picked.2)
+                categoryMap[token] = attribution(scheduleId: picked.0, data: picked.1, enforcementMs: picked.2, now: now)
             }
         }
 
@@ -196,15 +196,25 @@ enum ShieldScheduleSnapshotWriter {
         SharedShieldSnapshotStore.save(snap)
     }
 
-    private static func attribution(scheduleId: String, data: ScheduleBlockData, enforcementMs: Double) -> ShieldAttribution {
-        ShieldAttribution(
+    private static func attribution(scheduleId: String, data: ScheduleBlockData, enforcementMs: Double, now: Date) -> ShieldAttribution {
+        let (blockStartedAtMs, blockEndsAtMs): (Double?, Double?) = {
+            if let (ws, we) = scheduleDisplayWindowMs(data: data, now: now) {
+                var ws2 = ws
+                var we2 = we
+                if let af = data.activeFromTimestampMs { ws2 = max(ws2, af) }
+                if let au = data.activeUntilTimestampMs { we2 = min(we2, au) }
+                if we2 > ws2 { return (ws2, we2) }
+            }
+            return (enforcementMs, data.activeUntilTimestampMs)
+        }()
+        return ShieldAttribution(
             sourceId: "schedule:\(scheduleId)",
             enforcementStartedAtMs: enforcementMs,
             blocklistEmoji: data.blocklistEmoji,
             blocklistName: data.blocklistName,
             blocklistColorHex: data.blocklistColorHex,
-            blockStartedAtMs: enforcementMs,
-            blockEndsAtMs: data.activeUntilTimestampMs
+            blockStartedAtMs: blockStartedAtMs,
+            blockEndsAtMs: blockEndsAtMs
         )
     }
 
@@ -248,5 +258,102 @@ enum ShieldScheduleSnapshotWriter {
         if startMs <= nowMs { return startMs }
         guard let prevDay = cal.date(byAdding: .day, value: -1, to: startToday) else { return nil }
         return prevDay.timeIntervalSince1970 * 1000
+    }
+
+    // MARK: - Shield display window (epoch ms, local calendar; mirrors schedule “active now” geometry)
+
+    private static func weekdayMon0(from date: Date) -> Int {
+        let weekday = Calendar.current.component(.weekday, from: date)
+        return (weekday - 2 + 7) % 7
+    }
+
+    private static func isPauseActiveSchedule(_ data: ScheduleBlockData, nowMs: Double) -> Bool {
+        guard data.isPaused == true else { return false }
+        guard let pauseEnd = data.pauseEndTimestampMs else { return true }
+        return pauseEnd > nowMs
+    }
+
+    /// Start/end of the **current** segment occurrence for `now`, aligned with `DeviceActivityMonitor`’s
+    /// `isScheduleDataActiveNow` / desktop `match_schedule_now` geometry. Used only for shield copy.
+    private static func scheduleDisplayWindowMs(data: ScheduleBlockData, now: Date) -> (Double, Double)? {
+        let nowMs = now.timeIntervalSince1970 * 1000
+        if isPauseActiveSchedule(data, nowMs: nowMs) { return nil }
+        if let af = data.activeFromTimestampMs, nowMs < af { return nil }
+        if let au = data.activeUntilTimestampMs, nowMs > au { return nil }
+
+        guard let sh = data.startHour, let sm = data.startMinute,
+              let eh = data.endHour, let em = data.endMinute else { return nil }
+
+        let cal = Calendar.current
+        let todayStart = cal.startOfDay(for: now)
+        let midnightTodayMs = todayStart.timeIntervalSince1970 * 1000
+        guard let yesterdayStart = cal.date(byAdding: .day, value: -1, to: todayStart) else { return nil }
+        let midnightYesterdayMs = yesterdayStart.timeIntervalSince1970 * 1000
+
+        let wd = weekdayMon0(from: now)
+        let comps = cal.dateComponents([.hour, .minute], from: now)
+        let currentMins = (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
+
+        let startMins = sh * 60 + sm
+        let endMins = eh * 60 + em
+        let hasDayFilter = !(data.days?.isEmpty ?? true)
+        let includesToday = data.days?.contains(wd) ?? true
+        let yesterday = wd == 0 ? 6 : wd - 1
+        let includesYesterday = data.days?.contains(yesterday) ?? true
+
+        // Full 24h at one clock: start == end (e.g. 09:00–09:00) => [that clock today, same clock tomorrow).
+        // Also try anchor on yesterday so "now" before today's start is still inside yesterday's 24h run.
+        if startMins == endMins {
+            let attempt: (Date) -> (Double, Double)? = { anchorDay in
+                guard let s = cal.date(bySettingHour: sh, minute: sm, second: 0, of: anchorDay),
+                      let e = cal.date(byAdding: .day, value: 1, to: s) else { return nil }
+                let sMs = s.timeIntervalSince1970 * 1000
+                let eMs = e.timeIntervalSince1970 * 1000
+                guard nowMs >= sMs && nowMs < eMs else { return nil }
+                if hasDayFilter {
+                    let d0 = weekdayMon0(from: s)
+                    guard data.days?.contains(d0) == true else { return nil }
+                }
+                return (sMs, eMs)
+            }
+            if let w = attempt(todayStart) { return w }
+            if let w = attempt(yesterdayStart) { return w }
+            return nil
+        }
+
+        if endMins > startMins {
+            if hasDayFilter, !includesToday { return nil }
+            guard currentMins >= startMins && currentMins < endMins else { return nil }
+            let startMs = midnightTodayMs + Double(startMins) * 60_000
+            let endMs = midnightTodayMs + Double(endMins) * 60_000
+            return (startMs, endMs)
+        }
+
+        // Cross-midnight segment.
+        if !hasDayFilter {
+            if currentMins >= startMins {
+                let startMs = midnightTodayMs + Double(startMins) * 60_000
+                let endMs = midnightTodayMs + 86_400_000 + Double(endMins) * 60_000
+                return (startMs, endMs)
+            }
+            if currentMins < endMins {
+                let startMs = midnightYesterdayMs + Double(startMins) * 60_000
+                let endMs = midnightTodayMs + Double(endMins) * 60_000
+                return (startMs, endMs)
+            }
+            return nil
+        }
+
+        if includesToday && currentMins >= startMins {
+            let startMs = midnightTodayMs + Double(startMins) * 60_000
+            let endMs = midnightTodayMs + 86_400_000 + Double(endMins) * 60_000
+            return (startMs, endMs)
+        }
+        if includesYesterday && currentMins < endMins {
+            let startMs = midnightYesterdayMs + Double(startMins) * 60_000
+            let endMs = midnightTodayMs + Double(endMins) * 60_000
+            return (startMs, endMs)
+        }
+        return nil
     }
 }

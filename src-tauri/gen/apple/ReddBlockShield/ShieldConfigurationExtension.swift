@@ -166,8 +166,26 @@ private enum ShieldSnapshotPresenter {
     /// `RelativeDateTimeFormatter` for those so the shield does not show absurd spans like “in 7000y”.
     private static let manualIndefiniteEndMinRemainingMs: Double = 50 * 365.25 * 24 * 60 * 60 * 1000
 
+    private static func scheduleClockLabel(_ epochMs: Double) -> String {
+        let tf = DateFormatter()
+        tf.timeStyle = .short
+        tf.dateStyle = .none
+        tf.locale = .current
+        return tf.string(from: Date(timeIntervalSince1970: epochMs / 1000))
+    }
+
     private static func timingLine(attribution: ShieldAttribution) -> String? {
         let nowMs = Date().timeIntervalSince1970 * 1000
+
+        if attribution.sourceId.hasPrefix("schedule:"),
+           let sMs = attribution.blockStartedAtMs,
+           let eMs = attribution.blockEndsAtMs {
+            if eMs > nowMs {
+                return "Started: \(scheduleClockLabel(sMs))\nEnds: \(scheduleClockLabel(eMs))"
+            }
+            return "Started: \(scheduleClockLabel(sMs))\nEnded: \(scheduleClockLabel(eMs))"
+        }
+
         if let endMs = attribution.blockEndsAtMs {
             let end = Date(timeIntervalSince1970: endMs / 1000)
             if endMs > nowMs {
