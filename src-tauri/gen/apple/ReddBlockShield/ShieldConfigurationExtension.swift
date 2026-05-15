@@ -162,11 +162,18 @@ private enum ShieldSnapshotPresenter {
         return sourceId
     }
 
+    /// Manual “always on” blocks use a far-future `blockEndsAtMs` (see JS `ALWAYS_ON_END_TIME`). Skip
+    /// `RelativeDateTimeFormatter` for those so the shield does not show absurd spans like “in 7000y”.
+    private static let manualIndefiniteEndMinRemainingMs: Double = 50 * 365.25 * 24 * 60 * 60 * 1000
+
     private static func timingLine(attribution: ShieldAttribution) -> String? {
         let nowMs = Date().timeIntervalSince1970 * 1000
         if let endMs = attribution.blockEndsAtMs {
             let end = Date(timeIntervalSince1970: endMs / 1000)
             if endMs > nowMs {
+                if attribution.sourceId == "manual", endMs - nowMs >= manualIndefiniteEndMinRemainingMs {
+                    return "Always on"
+                }
                 let rel = RelativeDateTimeFormatter()
                 rel.unitsStyle = .short
                 return "Ends \(rel.localizedString(for: end, relativeTo: Date()))."
