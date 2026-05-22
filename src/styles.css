@@ -4661,6 +4661,37 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
     box-shadow: 0 6px 18px rgba(10, 45, 123, 0.12);
 }
 
+/* Welcome-screen hero video. Replaces the small static app icon —
+   sized to fill the legal-onboarding-content (560px) at full width
+   on desktop, with the same rounded-corner / soft-shadow treatment
+   as the rest of the onboarding cards so it visually belongs. */
+.welcome-onboarding-video {
+    display: block;
+    width: 100%;
+    max-width: 560px;
+    height: auto;
+    margin: 0 auto 24px;
+    border-radius: 14px;
+    box-shadow: 0 12px 32px rgba(10, 45, 123, 0.12);
+    background: var(--redd-card, #f5f5f5);
+    /* Slight outline keeps the rounded corners visible against the
+       page background in both light and dark themes. */
+    outline: 1px solid rgba(0, 0, 0, 0.04);
+    outline-offset: -1px;
+}
+
+body.dark-mode .welcome-onboarding-video {
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+    outline: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+@media (max-width: 640px) {
+    .welcome-onboarding-video {
+        margin-bottom: 18px;
+        border-radius: 10px;
+    }
+}
+
 .onboarding-content h1 {
     font-size: 24px;
     font-weight: 700;

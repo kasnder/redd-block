@@ -183,9 +183,20 @@
              `ensureWelcomeOnboardingComplete` after Get started). -->
         <div id="welcome-onboarding" class="onboarding-screen hidden">
             <div class="onboarding-content legal-onboarding-content">
-                <div class="onboarding-icon">
-                    <img src="/reddblock-icon.svg" alt="ReDD Block app icon" class="onboarding-app-icon">
-                </div>
+                <!-- Demo video used as the welcome hero instead of the
+                     static app icon. Muted + autoplay + loop +
+                     playsinline keeps it browser-friendly across
+                     desktop WKWebView and matches the silent-hero
+                     pattern used on landing pages (no surprise audio).
+                     `preload="auto"` lets the WKWebView prefetch the
+                     ~1.7 MB file while the EULA is still on screen so
+                     this screen renders without a black flash. -->
+                <video id="welcome-onboarding-video"
+                       class="welcome-onboarding-video"
+                       autoplay muted loop playsinline preload="auto"
+                       aria-label="ReDD Block demo video">
+                    <source src="/reddblock-video.mp4" type="video/mp4">
+                </video>
                 <h1 id="welcome-onboarding-title">Welcome to ReDD Block</h1>
                 <div class="onboarding-focus-card legal-onboarding-card">
                     <p id="welcome-onboarding-intro" class="migration-explainer">
