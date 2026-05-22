@@ -627,10 +627,12 @@ pub fn run() {
             {
                 use tauri_plugin_notification::NotificationExt;
                 let n = app.notification();
-                log::info!("notification permission_state: {:?}", n.permission_state());
+                log::info!("tcc-probe: about to check notification permission_state");
+                log::info!("tcc-probe: notification permission_state: {:?}", n.permission_state());
+                log::info!("tcc-probe: about to call notification request_permission");
                 match n.request_permission() {
-                    Ok(state) => log::info!("notification request_permission -> {state:?}"),
-                    Err(e) => log::warn!("notification request_permission failed: {e}"),
+                    Ok(state) => log::info!("tcc-probe: notification request_permission -> {state:?}"),
+                    Err(e) => log::warn!("tcc-probe: notification request_permission failed: {e}"),
                 }
             }
 
@@ -779,11 +781,12 @@ pub fn run() {
             #[cfg(all(not(target_os = "ios"), not(debug_assertions)))]
             {
                 use tauri_plugin_autostart::ManagerExt;
+                log::info!("tcc-probe: about to call autolaunch().enable() (LaunchAgent plist write)");
                 if let Err(e) = app.autolaunch().enable() {
                     log::warn!("autostart enable failed: {e}");
                 } else {
                     log::info!(
-                        "autostart: pointed launch-at-login at {:?}",
+                        "tcc-probe: autolaunch().enable() returned ok; exe={:?}",
                         std::env::current_exe().ok()
                     );
                 }

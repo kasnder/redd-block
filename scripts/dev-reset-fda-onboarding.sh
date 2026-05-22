@@ -164,15 +164,9 @@ cat <<EOF
        npm run tauri dev
 
   Expected:
-    - The 'tcc-probe: deferring native_host_install::install …' line
-      appears at startup (no cross-app writes yet).
-    - Welcome intro screen (first launch after reset).
-    - EULA screen (only if you passed --eula).
-    - FDA onboarding overlay appears.
-    - If you click 'Open Full Disk Access settings' and toggle ReDD
-      Block on, the overlay auto-advances; no TCC prompts fire.
-    - If you click 'Continue without', the deferred installs run NOW
-      (you'll see 3 prompts: Chrome, Edge, Mozilla — Brave skipped
-      if not installed) and the persistent banner appears on the
-      main UI.
+    - Welcome (explains ReDD Focus + FDA on Mac) → EULA (if --eula) →
+      FDA overlay (Mac only, required — no skip).
+    - Zero cross-app prompts until FDA is granted.
+    - After FDA grant, ReDD Focus is installed in browsers; extension
+      setup overlay may follow.
 EOF

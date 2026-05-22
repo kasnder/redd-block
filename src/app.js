@@ -5,10 +5,14 @@ import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ask, message, open as openDialog } from '@tauri-apps/plugin-dialog';
 import { readTextFile } from '@tauri-apps/plugin-fs';
+import logoReddFocusUrl from './images/logo-reddfocus.svg';
+import logoReddShieldUrl from './images/logo-redd-shield.svg';
+import appleLogoUrl from './images/apple-logo.svg';
 import iconChromeUrl from './images/icon-chrome.svg';
 import iconEdgeUrl from './images/icon-edge.svg';
 import iconFirefoxUrl from './images/icon-firefox.svg';
 import iconSafariUrl from './images/icon-safari.svg';
+import screenshotEnableFda from './images/enable-fda.png';
 import screenshotChromeStep1 from './images/toggle-chrome-incognito-windows-1.png';
 import screenshotChromeStep2 from './images/toggle-chrome-incognito-windows-2.png';
 import screenshotEdgeStep1 from './images/toggle-edge-incognito-windows-1.png';
@@ -1395,6 +1399,7 @@ function showWelcomeOnboardingOverlay() {
         document.getElementById('main-content')?.classList.add('hidden');
         document.getElementById('now-blocking-row')?.classList.add('hidden');
         overlay.classList.remove('hidden');
+        applyWelcomeOnboardingLanguage();
 
         const onClick = () => {
             btn.removeEventListener('click', onClick);
@@ -1407,86 +1412,37 @@ function showWelcomeOnboardingOverlay() {
 
 // ---- macOS Full Disk Access onboarding -------------------------------------
 //
-// Goal: on macOS, give the user a clear one-time choice about Full Disk
-// Access before ReDD Block does any of its cross-app file writes
-// (native-messaging manifest install, extension-install hints, Safari
-// container reads). Without this, the user gets ambushed by 1-3+
-// "ReDD Block would like to access data from other apps" TCC prompts
-// at first launch with no context — and on macOS Sequoia those
-// prompts can re-fire across launches even after Allow.
-//
-// Flow:
-//   1. `ensureFdaOnboardingComplete` is awaited inside
-//      `runPostAcceptanceStartup` before `runDesktopOnboarding` and
-//      before any other code that calls `onboarding_state` (which
-//      triggers a profile scan).
-//   2. If FDA is already granted, we silently mark the user as
-//      onboarded (so the overlay never shows on this machine again)
-//      and call `complete_fda_onboarding` to run the deferred
-//      native-host install. Returns immediately.
-//   3. If the user has already been through the overlay before (the
-//      Rust-side `fda-onboarded.v1` marker exists), skip and return.
-//   4. Otherwise show the overlay and wait until the user dismisses
-//      it. Two dismiss paths:
-//        a. Grant: button opens System Settings → Privacy & Security
-//           → Full Disk Access. We poll `check_full_disk_access` every
-//           1.5 s while the overlay is open; once granted, we
-//           auto-advance.
-//        b. Skip: explicit "Continue without" button. We call
-//           `complete_fda_onboarding('skipped')` which both writes the
-//           marker AND force-runs the deferred install (so the prompts
-//           the user just opted into fire here, in context, rather
-//           than at next launch).
+// FDA is required on macOS — no skip path. After EULA acceptance the
+// user must grant Full Disk Access before ReDD Block installs ReDD
+// Focus in their browsers. Cross-app work stays deferred until the
+// marker is written with a "granted" choice via
+// `complete_fda_onboarding`.
 async function ensureFdaOnboardingComplete() {
     if (!isMacOSDesktop) return;
     try {
-        // Marker-only gate. We deliberately do NOT probe FDA here
-        // (via `check_full_disk_access`) because the probe opens
-        // `/Library/Application Support/com.apple.TCC/TCC.db`, which
-        // itself fires the macOS Sequoia "data from other apps" TCC
-        // prompt for an app that doesn't yet have FDA — i.e. the
-        // exact prompt this overlay exists to pre-empt. The overlay
-        // will show even for users who already have FDA granted; in
-        // that case the polling on "Open Full Disk Access settings"
-        // will detect FDA within ~1.5 s and auto-advance, so the
-        // friction is minimal.
-        const alreadyOnboarded = await invoke('check_fda_onboarded');
-        if (alreadyOnboarded) {
-            // User has previously dismissed the overlay (Grant or
-            // Skip). Don't pester them again — the persistent banner
-            // on the main UI is the ongoing nudge.
+        const alreadyGranted = await invoke('check_fda_onboarded');
+        if (alreadyGranted) {
             return;
         }
         await showFdaOnboardingOverlay();
     } catch (e) {
-        // Don't block startup on marker-read errors — fall through
-        // to runDesktopOnboarding (which may then trigger prompts,
-        // but at least the app isn't stuck).
         console.warn('[fda-onboarding] check failed, proceeding without overlay:', e);
     }
 }
 
-// Show the FDA onboarding overlay and resolve when the user
-// dismisses it (either by granting FDA or by clicking "Continue
-// without"). All visibility / button state is owned by this function
-// so callers don't need to manage it.
+// Block until the user grants Full Disk Access. Polls after they open
+// System Settings; auto-advances and runs deferred installs on grant.
 function showFdaOnboardingOverlay() {
     return new Promise((resolve) => {
         const overlay = document.getElementById('fda-onboarding');
         const grantBtn = document.getElementById('fda-onboarding-grant-btn');
-        const skipBtn = document.getElementById('fda-onboarding-skip-btn');
         const statusEl = document.getElementById('fda-onboarding-status');
-        if (!overlay || !grantBtn || !skipBtn) {
-            // HTML missing somehow — bail rather than blocking startup.
+        if (!overlay || !grantBtn) {
             console.warn('[fda-onboarding] overlay elements missing, skipping');
             resolve();
             return;
         }
 
-        // Hide the other onboarding screens that might be active —
-        // the FDA overlay needs to be the only visible surface until
-        // dismissed. updateOnboardingVisibility will resync once we
-        // resolve.
         document.getElementById('eula-onboarding')?.classList.add('hidden');
         document.getElementById('migration-onboarding')?.classList.add('hidden');
         document.getElementById('main-content')?.classList.add('hidden');
@@ -1501,7 +1457,6 @@ function showFdaOnboardingOverlay() {
                 pollHandle = null;
             }
             grantBtn.removeEventListener('click', onGrant);
-            skipBtn.removeEventListener('click', onSkip);
         };
 
         const onGrant = async () => {
@@ -1509,9 +1464,9 @@ function showFdaOnboardingOverlay() {
             const originalLabel = grantBtn.textContent;
             grantBtn.textContent = 'Opening settings…';
             try {
-                // Existing Tauri command — opens System Settings →
-                // Privacy & Security → Full Disk Access via the
-                // x-apple.systempreferences: URL scheme.
+                await invoke('check_full_disk_access');
+            } catch (_) { /* register bundle with TCC */ }
+            try {
                 await invoke('open_safari_fda_settings');
             } catch (e) {
                 console.warn('[fda-onboarding] open settings failed:', e);
@@ -1522,16 +1477,13 @@ function showFdaOnboardingOverlay() {
                 statusEl.classList.remove('hidden');
                 statusEl.textContent = 'Waiting for Full Disk Access… leave this window open while you grant it.';
             }
-            // Begin polling. 1.5 s feels responsive without being a
-            // CPU hog — `check_full_disk_access` is cheap (a stat()
-            // syscall) so the cost is negligible either way.
             if (!pollHandle) {
                 pollHandle = setInterval(async () => {
                     try {
                         const granted = await invoke('check_full_disk_access');
                         if (granted) {
                             if (statusEl) {
-                                statusEl.textContent = 'Full Disk Access granted — finishing setup…';
+                                statusEl.textContent = 'Full Disk Access granted — installing ReDD Focus…';
                             }
                             try {
                                 await invoke('complete_fda_onboarding', { choice: 'granted' });
@@ -1541,33 +1493,12 @@ function showFdaOnboardingOverlay() {
                             cleanup();
                             resolve();
                         }
-                    } catch (_) {
-                        // Ignore individual poll errors — they're
-                        // overwhelmingly transient (e.g. command not
-                        // yet registered on first paint).
-                    }
+                    } catch (_) { /* transient */ }
                 }, 1500);
             }
         };
 
-        const onSkip = async () => {
-            // User explicitly chose to proceed without FDA. Mark them
-            // as onboarded AND force-run the deferred cross-app
-            // installs now — the per-prompt dialogs that fire here
-            // are an expected consequence of their choice rather
-            // than ambush behaviour at next launch.
-            skipBtn.disabled = true;
-            try {
-                await invoke('complete_fda_onboarding', { choice: 'skipped' });
-            } catch (e) {
-                console.warn('[fda-onboarding] complete (skip) failed:', e);
-            }
-            cleanup();
-            resolve();
-        };
-
         grantBtn.addEventListener('click', onGrant);
-        skipBtn.addEventListener('click', onSkip);
     });
 }
 
@@ -2556,14 +2487,11 @@ window.addEventListener('focus', () => {
         //      time updateBehaviourChangeBanner runs, no fetch
         //      needed. Cheap.
         //
-        //   2. Throttled (30s) full refresh that re-runs
-        //      `onboarding_state` to pick up new browser-side state
-        //      (user just installed the extension in Chrome and
-        //      tabbed back, etc.). Throttled because that call does
-        //      a full profile scan which is expensive AND can fire
-        //      cross-app TCC prompts when FDA isn't granted.
+        //   2. Throttled (~5 s, same as enforcer) full refresh via
+        //      `onboarding_state` to pick up browser-side changes
+        //      (user just allowed incognito in Edge and tabbed back).
         updateBehaviourChangeBanner(null).catch(() => {});
-        refreshBehaviourBannerIfStale();
+        refreshBehaviourBannerIfStale({ force: true });
     }
 });
 
@@ -2584,11 +2512,9 @@ document.addEventListener('visibilitychange', () => {
     const wasDismissed = behaviourBannerDismissedThisSession;
     behaviourBannerDismissedThisSession = false;
     if (!wasDismissed) return;
-    // Force a refresh that bypasses the 30 s throttle: the user
-    // just deliberately re-opened the window, so the focus-based
-    // throttle (which exists to absorb rapid app-switching) is
-    // exactly wrong here — they expect the banner state they see
-    // now to reflect right now, not 30 s ago.
+    // Force a refresh when the user re-opens the window after dismissing
+    // the banner — they expect current browser setup state, not a stale
+    // cached snapshot.
     refreshBehaviourBannerIfStale({ force: true });
 });
 
@@ -2657,69 +2583,21 @@ async function updateBehaviourChangeBanner(state) {
         enforcementEnabled = await invoke('get_enforcement_enabled');
     } catch (_) { /* non-desktop or command not available */ }
 
-    // ---- macOS FDA status -------------------------------------------
-    // Folded into THIS banner (rather than a parallel one) so users
-    // don't get two stacked "something's wrong with Safari" surfaces.
-    // Layout: when the user previously chose to SKIP FDA, the "Grant
-    // Full Disk Access" button is the primary CTA and any extension-
-    // setup affordance demotes to a ghost button. When the user
-    // chose Grant during onboarding (or the user is on Windows /
-    // Linux), behaviour is unchanged from before this change.
-    //
-    // We read the user's recorded ONBOARDING CHOICE rather than
-    // probing live FDA state — the probe itself fires the very
-    // "data from other apps" prompt this banner exists to warn
-    // about. Trade-off: a user who originally chose Grant but later
-    // revoked FDA in System Settings won't see the banner. Rare and
-    // acceptable for now; a future Settings affordance can let them
-    // re-trigger onboarding.
-    let fdaMissing = false;
-    if (isMacOSDesktop) {
-        try {
-            const choice = await invoke('get_fda_user_choice');
-            // 'skipped' = user explicitly chose to continue without
-            // FDA → banner shown. 'granted' / '' (not yet onboarded)
-            // / anything else → banner hidden (during onboarding the
-            // overlay is the right surface, post-grant no nag).
-            fdaMissing = choice === 'skipped';
-        } catch (_) { /* command unavailable — treat as not-missing */ }
-    }
-
     const shouldShow = !behaviourBannerDismissedThisSession
-        && (fdaMissing || (detectedKeys.length > 0 && (hasBrowserIssues || !enforcementEnabled)));
+        && detectedKeys.length > 0
+        && (hasBrowserIssues || !enforcementEnabled);
     if (!shouldShow) {
         banner.classList.add('hidden');
         return;
     }
     banner.classList.remove('hidden');
 
-    const extensionSetupNeeded = hasBrowserIssues
-        || (!enforcementEnabled && detectedKeys.length > 0);
-
-    // ---- Headline ----------------------------------------------------
-    // FDA missing dominates the headline since it's the foundational
-    // step — once granted, all the browser-side surfaces become
-    // accurate. When both FDA and extension setup are outstanding,
-    // say so explicitly. When FDA is fine we use the existing setup framing.
     const headlineEl = document.getElementById('setup-banner-headline');
     if (headlineEl) {
-        if (fdaMissing && extensionSetupNeeded) {
-            headlineEl.textContent = tSettings('setupBannerFdaAndExtensionHeadline');
-        } else if (fdaMissing) {
-            headlineEl.textContent = tSettings('setupBannerFdaHeadline');
-        } else {
-            headlineEl.textContent = tSettings('setupBrowsersBannerHeadline');
-        }
+        headlineEl.textContent = tSettings('setupBrowsersBannerHeadline');
     }
 
-    // ---- Body --------------------------------------------------------
-    // Body composes available signals — FDA explanation (if missing),
-    // per-browser action summary (if any), enforcement nudge (if off).
-    // " · " separator is the existing convention.
     const parts = [];
-    if (fdaMissing) {
-        parts.push(tSettings('setupBannerFdaBody'));
-    }
     const actionSummary = buildBannerActionSummary(browsers, detectedKeys);
     if (actionSummary) parts.push(actionSummary);
     if (!enforcementEnabled && detectedKeys.length > 0) {
@@ -2728,39 +2606,14 @@ async function updateBehaviourChangeBanner(state) {
 
     const bodyEl = document.getElementById('behaviour-change-text');
     if (bodyEl) {
-        // All phrases are from a fixed vocabulary — textContent is safe.
         bodyEl.textContent = parts.join(' · ');
     }
 
-    // ---- Buttons -----------------------------------------------------
-    const fdaBtn = document.getElementById('behaviour-change-fda');
     const helpBtn = document.getElementById('behaviour-change-help');
     const dismissBtn = document.getElementById('behaviour-change-dismiss');
 
-    if (fdaBtn) {
-        fdaBtn.classList.toggle('hidden', !fdaMissing);
-        if (!fdaBtn._listenerAdded) {
-            fdaBtn._listenerAdded = true;
-            fdaBtn.addEventListener('click', async () => {
-                try {
-                    await invoke('open_safari_fda_settings');
-                } catch (e) {
-                    console.warn('[banner-fda] open settings failed:', e);
-                }
-            });
-        }
-    }
-
     if (helpBtn) {
-        // The "Set up extension" affordance is only useful when there's
-        // a per-browser issue to fix. If the only reason the banner is
-        // showing is FDA, hide it entirely so the FDA button is the
-        // only action — clearer than offering an action the user
-        // can't usefully take yet.
-        const showHelp = extensionSetupNeeded;
-        helpBtn.classList.toggle('hidden', !showHelp);
-        // Ghost-demote when FDA is the primary action sharing the row.
-        helpBtn.classList.toggle('ghost', fdaMissing && showHelp);
+        helpBtn.classList.remove('hidden', 'ghost');
         if (!helpBtn._listenerAdded) {
             helpBtn._listenerAdded = true;
             helpBtn.addEventListener('click', openExtensionSetupOverlay);
@@ -2861,31 +2714,16 @@ async function openExtensionSetupOverlay() {
 
 // Re-poll extension compliance so the slim banner reflects reality
 // if the user just finished setting up an extension in another
-// browser and tabbed back. Throttled by default to avoid hammering
-// `onboarding_state` (which does a full profile scan that touches
-// each browser's data folder — expensive and, on macOS Sequoia,
-// the source of the "ReDD Block would like to access data from
-// other apps" prompts) on rapid focus toggling. Pass `force: true`
-// to bypass the throttle when the trigger is a deliberate user
-// action (e.g. window hide → show transition).
+// browser and tabbed back. Throttled to match the enforcer tick (~5 s)
+// so it stays in sync with the countdown banner without hammering
+// `onboarding_state` on rapid focus toggling. Pass `force: true` to
+// bypass the throttle when compliance clearly changed (enforcer
+// grace-resolved, window hide → show, etc.).
 let lastBannerRefreshAt = 0;
-const BANNER_REFRESH_THROTTLE_MS = 30_000;
+const BANNER_REFRESH_THROTTLE_MS = 5_000;
 async function refreshBehaviourBannerIfStale({ force = false } = {}) {
     if (isIOS) return;
     if (migrationOnboardingActive) return; // overlay is the source of truth
-    // Don't fire the underlying `onboarding_state` browser scan while
-    // the user is on the welcome or FDA onboarding screens — those
-    // screens exist precisely so the user can make a permission
-    // choice BEFORE we go poking around in browser data dirs.
-    // `onboarding_state` calls profile_scan::scan() which reads each
-    // Chromium browser's user-data dir (Local State + Preferences),
-    // every one of which fires the "ReDD Block would like to access
-    // data from other apps" TCC prompt under macOS Sequoia without
-    // FDA. `startupInitializationComplete` flips to true at the END
-    // of `runPostAcceptanceStartup`, i.e. after welcome + FDA + first
-    // runDesktopOnboarding scan have all already happened — at which
-    // point any prompts that fire are an expected consequence of the
-    // user's earlier FDA-skip choice, not an ambush.
     if (!startupInitializationComplete) return;
     const now = Date.now();
     if (!force && now - lastBannerRefreshAt < BANNER_REFRESH_THROTTLE_MS) return;
@@ -2921,6 +2759,11 @@ function setupEnforcerUiAlerts() {
     tauriAPI.onEnforcerGraceResolved((event) => {
         const payload = event?.payload || {};
         hideEnforcerActionBanner(payload.browser || payload.label);
+        // Enforcer just re-scanned and found this browser compliant —
+        // refresh the setup banner immediately so it doesn't lag up
+        // to 30 s behind the countdown banner (same profile scan,
+        // but the setup banner was on a separate throttle).
+        void refreshBehaviourBannerIfStale({ force: true });
     }).catch((e) => {
         console.warn('[enforcer-ui] failed to attach grace-resolved listener:', e);
     });
@@ -13393,9 +13236,7 @@ const SETTINGS_TRANSLATIONS = {
         bannerActionFullDiskAccessFor: 'Grant Full Disk Access for',
         bannerActionSetUpIn: 'Set up in',
         // First-run EULA gate
-        eulaWelcomeTitle: 'Welcome to ReDD Block',
         eulaAgreeAria: 'I agree to the End User License Agreement and Privacy Policy',
-        eulaWelcomeIconAlt: 'ReDD Block app icon',
         eulaAgreeLineHtml:
             'I agree to the ReDD Project\'s <a href="https://reddfocus.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/eula">End User License Agreement</a>',
         eulaNoteHtml:
@@ -13403,12 +13244,23 @@ const SETTINGS_TRANSLATIONS = {
         eulaContinueBtn: 'Continue',
         eulaContinueBusy: 'Continuing…',
         eulaAcceptSaveFailedAlert: 'Could not save your agreement. Please try again.',
-        eulaProjectBlurb:
-            'ReDD Block is developed by the Reduce Digital Distraction Project, in collaboration with researchers at the University of Oxford and University of Maastricht. The ReDD Project is a not-for-profit creating insights & open-source digital focus tools for everyone to thrive in the digital world.',
-        // Welcome onboarding (post-EULA, pre-FDA)
+        // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Welcome to ReDD Block',
-        welcomeOnboardingIntroHtml:
-            'ReDD Block is an open-source tool for blocking distracting websites and apps. You can find the source code <a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">here</a>.',
+        welcomeOnboardingSubtitle:
+            'An open-source tool for blocking the websites and apps that pull you away from your focus.',
+        welcomeHowHeading: 'How it works',
+        welcomeStep1Html:
+            'ReDD Block pairs with the {LOGO}<strong>ReDD Focus</strong> browser extension to block distracting sites in Chrome, Edge, Firefox, Safari, and more.',
+        welcomeStep2Html:
+            'You need to install the extension in your browsers, and allow it in private/incognito tabs.',
+        welcomeStep3Html:
+            'Afterwards, you set your blocklists and schedules; ReDD Block enforces them in the background.',
+        welcomeMacosNoteHtml:
+            'On Mac, you\'ll also need to grant <strong>Full Disk Access</strong> so ReDD Block is able to see if ReDD Focus is enabled in your browsers.',
+        welcomeFooter1Html:
+            'Built by the <a href="https://reddfocus.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Reduce Digital Distraction Project</a>, in collaboration with researchers at the University of Oxford and University of Maastricht. <a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">View the source code on GitHub</a>.',
+        welcomeFooter2Html:
+            'The ReDD Project is a not-for-profit creating insights and open-source focus tools to help everyone thrive in the digital world.',
         welcomeOnboardingContinueBtn: 'Get started',
         // Migration / extension onboarding overlay
         migrationPreWelcomeTitle: 'Welcome to ReDD Block 2.0',
@@ -13508,7 +13360,7 @@ const SETTINGS_TRANSLATIONS = {
         enforcerCountdownInstrMissing: 'ReDD Focus is not installed. Install it to stop the countdown.',
         enforcerCountdownInstrDisabled: 'ReDD Focus is turned off. Enable it to stop the countdown.',
         enforcerCountdownDelayNote: '(changes can take up to 20 seconds to detect).',
-        enforcerCountdownInstrPrivate: 'Private windows aren’t covered by ReDD Focus. Enable Allow in Incognito to stop the countdown.',
+        enforcerCountdownInstrPrivate: 'Blocking is not enabled in private windows. Enable Allow in incognito for ReDD Focus to stop the countdown.',
         enforcerCountdownInstrWebsiteAccess: 'ReDD Focus is not allowed on all websites. Allow all websites to stop the countdown.',
         enforcerCountdownInstrAccess: 'ReDD Block can’t verify ReDD Focus. Grant access to stop the countdown.',
         enforcerCountdownInstrDefault: 'ReDD Focus is not ready. Finish setup to stop the countdown.',
@@ -13817,9 +13669,7 @@ const SETTINGS_TRANSLATIONS = {
         bannerActionFullDiskAccessFor: 'Giv fuld diskadgang til',
         bannerActionSetUpIn: 'Opsæt i',
         // First-run EULA gate
-        eulaWelcomeTitle: 'Velkommen til ReDD Block',
         eulaAgreeAria: 'Jeg accepterer slutbrugerlicensaftalen og privatlivspolitikken',
-        eulaWelcomeIconAlt: 'ReDD Block-appikon',
         eulaAgreeLineHtml:
             'Jeg accepterer ReDD Projektets <a href="https://reddfocus.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/eula">slutbrugerlicensaftale</a>',
         eulaNoteHtml:
@@ -13827,12 +13677,23 @@ const SETTINGS_TRANSLATIONS = {
         eulaContinueBtn: 'Fortsæt',
         eulaContinueBusy: 'Arbejder…',
         eulaAcceptSaveFailedAlert: 'Vi kunne ikke gemme din godkendelse. Prøv igen.',
-        eulaProjectBlurb:
-            'ReDD Block er udviklet af Reduce Digital Distraction Project i samarbejde med forskere ved University of Oxford og University of Maastricht. ReDD Project er en nonprofit-organisation, der udvikler indsigter og open source-redskaber til digitalt fokus, så alle kan trives i den digitale verden.',
-        // Welcome onboarding (post-EULA, pre-FDA)
+        // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Velkommen til ReDD Block',
-        welcomeOnboardingIntroHtml:
-            'ReDD Block er et open source-værktøj til at blokere distraherende hjemmesider og apps. Du kan finde kildekoden <a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">her</a>.',
+        welcomeOnboardingSubtitle:
+            'Et open source-værktøj til at blokere de hjemmesider og apps, der trækker dig væk fra dit fokus.',
+        welcomeHowHeading: 'Sådan virker det',
+        welcomeStep1Html:
+            'ReDD Block arbejder sammen med browserudvidelsen {LOGO}<strong>ReDD Focus</strong> for at blokere distraherende sider i Chrome, Edge, Firefox, Safari og flere.',
+        welcomeStep2Html:
+            'Du skal installere udvidelsen i dine browsere og tillade den i private/incognito-faner.',
+        welcomeStep3Html:
+            'Derefter sætter du dine blocklists og tidsplaner; ReDD Block håndhæver dem i baggrunden.',
+        welcomeMacosNoteHtml:
+            'På Mac skal du også give <strong>fuld diskadgang</strong>, så ReDD Block kan se, om ReDD Focus er aktiveret i dine browsere.',
+        welcomeFooter1Html:
+            'Bygget af <a href="https://reddfocus.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Reduce Digital Distraction Project</a> i samarbejde med forskere ved University of Oxford og Maastricht University. <a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Se kildekoden på GitHub</a>.',
+        welcomeFooter2Html:
+            'ReDD Project er en non-profit, der skaber indsigt og open source-fokusværktøjer, så alle kan trives i den digitale verden.',
         welcomeOnboardingContinueBtn: 'Kom i gang',
         // Migration / extension onboarding overlay
         migrationPreWelcomeTitle: 'Velkommen til ReDD Block 2.0',
@@ -13932,7 +13793,7 @@ const SETTINGS_TRANSLATIONS = {
         enforcerCountdownInstrMissing: 'ReDD Focus er ikke installeret. Installer den for at stoppe nedtællingen.',
         enforcerCountdownInstrDisabled: 'ReDD Focus er slået fra. Aktivér den for at stoppe nedtællingen.',
         enforcerCountdownDelayNote: '(ændringer kan tage op til 20 sekunder at registrere).',
-        enforcerCountdownInstrPrivate: 'Private vinduer er ikke dækket af ReDD. Aktivér privat browsing for at stoppe nedtællingen.',
+        enforcerCountdownInstrPrivate: 'Blokering er ikke aktiveret i private vinduer. Aktivér Tillad i privat browsing for ReDD Focus for at stoppe nedtællingen.',
         enforcerCountdownInstrWebsiteAccess: 'ReDD Focus er ikke tilladt på alle websites. Tillad alle websites for at stoppe nedtællingen.',
         enforcerCountdownInstrAccess: 'ReDD Block kan ikke bekræfte ReDD Focus. Giv adgang for at stoppe nedtællingen.',
         enforcerCountdownInstrDefault: 'ReDD Focus er ikke klar. Færdiggør opsætningen for at stoppe nedtællingen.',
@@ -14396,11 +14257,17 @@ function applyMigrationOverlayStaticCopy() {
 
 /** First-run EULA screen — localized from current UI language / saved preference / browser locale (da). */
 function applyEulaOnboardingLanguage() {
-    const heading = document.getElementById('eula-welcome-title');
-    if (heading) heading.textContent = tSettings('eulaWelcomeTitle');
+    const shieldLogo = document.getElementById('eula-onboarding-shield-logo');
+    if (shieldLogo) {
+        shieldLogo.src = logoReddShieldUrl;
+        shieldLogo.alt = '';
+    }
 
-    const icon = document.getElementById('eula-onboarding-app-icon');
-    if (icon) icon.setAttribute('alt', tSettings('eulaWelcomeIconAlt'));
+    const heading = document.getElementById('eula-welcome-title');
+    if (heading) heading.textContent = tSettings('welcomeOnboardingTitle');
+
+    const subtitle = document.getElementById('eula-onboarding-subtitle');
+    if (subtitle) subtitle.textContent = tSettings('welcomeOnboardingSubtitle');
 
     const agreeInner = document.getElementById('eula-agree-line-inner');
     if (agreeInner) agreeInner.innerHTML = tSettings('eulaAgreeLineHtml');
@@ -14408,8 +14275,11 @@ function applyEulaOnboardingLanguage() {
     const note = document.getElementById('eula-note');
     if (note) note.innerHTML = tSettings('eulaNoteHtml');
 
-    const blurp = document.getElementById('eula-project-blurb');
-    if (blurp) blurp.textContent = tSettings('eulaProjectBlurb');
+    const footer1 = document.getElementById('eula-onboarding-footer-1');
+    if (footer1) footer1.innerHTML = tSettings('welcomeFooter1Html');
+
+    const footer2 = document.getElementById('eula-onboarding-footer-2');
+    if (footer2) footer2.innerHTML = tSettings('welcomeFooter2Html');
 
     const cb = document.getElementById('eula-agree-checkbox');
     if (cb) cb.setAttribute('aria-label', tSettings('eulaAgreeAria'));
@@ -14418,20 +14288,54 @@ function applyEulaOnboardingLanguage() {
     if (continueBtn) continueBtn.textContent = tSettings('eulaContinueBtn');
 }
 
-/** Welcome onboarding screen — localized in the same way as the EULA
- * screen. Project blurb reuses the EULA's `eulaProjectBlurb` string. */
+/** Welcome onboarding screen — localized in the same way as the EULA screen. */
 function applyWelcomeOnboardingLanguage() {
+    const shieldLogo = document.getElementById('welcome-onboarding-shield-logo');
+    if (shieldLogo) {
+        shieldLogo.src = logoReddShieldUrl;
+        shieldLogo.alt = '';
+    }
+
     const heading = document.getElementById('welcome-onboarding-title');
     if (heading) heading.textContent = tSettings('welcomeOnboardingTitle');
 
-    const intro = document.getElementById('welcome-onboarding-intro');
-    if (intro) intro.innerHTML = tSettings('welcomeOnboardingIntroHtml');
+    const subtitle = document.getElementById('welcome-onboarding-subtitle');
+    if (subtitle) subtitle.textContent = tSettings('welcomeOnboardingSubtitle');
+
+    const howHeading = document.getElementById('welcome-how-heading');
+    if (howHeading) howHeading.textContent = tSettings('welcomeHowHeading');
+
+    const focusLogoHtml =
+        `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
+
+    const step1 = document.getElementById('welcome-step-1');
+    if (step1) {
+        step1.innerHTML = tSettings('welcomeStep1Html').replace('{LOGO}', focusLogoHtml);
+    }
+
+    const step2 = document.getElementById('welcome-step-2');
+    if (step2) step2.innerHTML = tSettings('welcomeStep2Html');
+
+    const step3 = document.getElementById('welcome-step-3');
+    if (step3) step3.innerHTML = tSettings('welcomeStep3Html');
+
+    const macosNote = document.getElementById('welcome-onboarding-macos-note');
+    const macosIcon = document.getElementById('welcome-macos-icon');
+    const macosText = document.getElementById('welcome-macos-note-text');
+    if (macosIcon) macosIcon.src = appleLogoUrl;
+    if (macosNote && macosText) {
+        macosText.innerHTML = tSettings('welcomeMacosNoteHtml');
+        macosNote.classList.toggle('hidden', !isMacOSDesktop);
+    }
 
     const continueBtn = document.getElementById('welcome-onboarding-continue-btn');
     if (continueBtn) continueBtn.textContent = tSettings('welcomeOnboardingContinueBtn');
 
-    const blurp = document.getElementById('welcome-onboarding-project-blurb');
-    if (blurp) blurp.textContent = tSettings('eulaProjectBlurb');
+    const footer1 = document.getElementById('welcome-onboarding-footer-1');
+    if (footer1) footer1.innerHTML = tSettings('welcomeFooter1Html');
+
+    const footer2 = document.getElementById('welcome-onboarding-footer-2');
+    if (footer2) footer2.innerHTML = tSettings('welcomeFooter2Html');
 }
 
 function websiteWord(count) {
@@ -14692,6 +14596,15 @@ function applySettingsLanguage() {
     applyMigrationOverlayStaticCopy();
     applyEulaOnboardingLanguage();
     applyWelcomeOnboardingLanguage();
+
+    const fdaShieldLogo = document.getElementById('fda-onboarding-shield-logo');
+    if (fdaShieldLogo) {
+        fdaShieldLogo.src = logoReddShieldUrl;
+        fdaShieldLogo.alt = '';
+    }
+
+    const fdaScreenshot = document.getElementById('fda-onboarding-screenshot');
+    if (fdaScreenshot) fdaScreenshot.src = screenshotEnableFda;
     if (migrationOnboardingActive && lastMigrationBrowserState) {
         renderBrowserInstallButtons(lastMigrationBrowserState);
     }

@@ -104,13 +104,8 @@
             </div>
         </div>
 
-        <!-- Combined setup banner: covers both "Set up ReDD Focus in
-             your browsers" (per-browser compliance) AND "Full Disk
-             Access not granted" (macOS-only). One surface, dynamic
-             headline + body + button layout — see
-             updateBehaviourChangeBanner() in app.js for the state
-             machine. When both apply: the FDA button is primary and
-             the extension-setup button demotes to a ghost variant. -->
+        <!-- Combined setup banner: extension compliance only (FDA is
+             required during onboarding on macOS, not nagged here). -->
         <div id="behaviour-change-banner" class="update-banner setup-banner hidden">
             <div class="update-banner-content">
                 <svg class="setup-banner-info-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
@@ -120,23 +115,8 @@
                 </svg>
                 <div class="setup-banner-message">
                     <strong id="setup-banner-headline" class="setup-banner-headline">Enable ReDD Focus in your browsers</strong>
-                    <!-- Body filled in dynamically. May concatenate
-                         the FDA explanation (when missing) and the
-                         per-browser action summary (e.g. "Install in
-                         Chrome and Edge · Allow in private browsing
-                         in Brave"). The banner stays hidden until the
-                         summary is computed, so there's no flash of
-                         empty state. -->
                     <span id="behaviour-change-text" class="setup-banner-body"></span>
                     <div class="setup-banner-actions-row">
-                        <!-- Order matters visually: the macOS-only FDA
-                             button comes first so it reads as the
-                             primary call to action whenever both are
-                             present. When only the extension-setup
-                             button is needed (FDA granted), the FDA
-                             button is hidden and the extension button
-                             promotes back to the primary slot. -->
-                        <button id="behaviour-change-fda" class="update-banner-btn hidden" type="button">Grant Full Disk Access</button>
                         <button id="behaviour-change-help" class="update-banner-btn" type="button">Set up extension</button>
                     </div>
                 </div>
@@ -152,13 +132,22 @@
 
 
         <div id="eula-onboarding" class="onboarding-screen hidden">
-            <div class="onboarding-content legal-onboarding-content">
-                <div class="onboarding-icon">
-                    <img id="eula-onboarding-app-icon" src="/reddblock-icon.svg" alt="ReDD Block app icon"
-                        class="onboarding-app-icon">
-                </div>
-                <h1 id="eula-welcome-title">Welcome to ReDD Block</h1>
-                <div class="onboarding-focus-card legal-onboarding-card">
+            <div class="welcome-onboarding-layout">
+                <header class="welcome-onboarding-header">
+                    <div class="welcome-onboarding-title-row">
+                        <img id="eula-onboarding-shield-logo"
+                             class="welcome-shield-logo"
+                             src=""
+                             alt=""
+                             aria-hidden="true">
+                        <h1 id="eula-welcome-title">Welcome to ReDD Block</h1>
+                    </div>
+                    <p id="eula-onboarding-subtitle" class="welcome-onboarding-subtitle">
+                        An open-source tool for blocking the websites and apps that pull you away from your focus.
+                    </p>
+                </header>
+
+                <div class="welcome-onboarding-card legal-onboarding-card">
                     <div class="legal-onboarding-checkbox-row">
                         <input type="checkbox" id="eula-agree-checkbox"
                             aria-label="I agree to the End User License Agreement and Privacy Policy">
@@ -166,71 +155,102 @@
                                 id="eula-agree-line-inner"></span></span>
                     </div>
                     <p id="eula-note" class="legal-onboarding-note"></p>
-                    <button id="eula-continue-btn" class="modal-btn primary-btn onboarding-primary-btn"
-                        disabled>Continue</button>
+                    <button id="eula-continue-btn"
+                            class="modal-btn primary-btn onboarding-primary-btn eula-continue-btn"
+                            type="button"
+                            disabled>Continue</button>
                 </div>
-                <p id="eula-project-blurb" class="legal-onboarding-body"></p>
+
+                <footer class="welcome-onboarding-footer">
+                    <p id="eula-onboarding-footer-1" class="welcome-footer-line"></p>
+                    <p id="eula-onboarding-footer-2" class="welcome-footer-line"></p>
+                </footer>
             </div>
         </div>
 
         <!-- Friendly project intro shown once per machine, before the
-             EULA. Users land here first, see who built ReDD Block and
-             that it's open-source, then click "Get started" to move
-             on to legal acceptance. Gated by
-             `appData.settings.welcomeOnboardingShown`. -->
+             EULA. Gated by `appData.settings.welcomeOnboardingShown`. -->
         <div id="welcome-onboarding" class="onboarding-screen hidden">
-            <div class="onboarding-content legal-onboarding-content">
-                <div class="onboarding-icon">
-                    <img src="/reddblock-icon.svg" alt="ReDD Block app icon" class="onboarding-app-icon">
-                </div>
-                <h1 id="welcome-onboarding-title">Welcome to ReDD Block</h1>
-                <div class="onboarding-focus-card legal-onboarding-card">
-                    <p id="welcome-onboarding-intro" class="migration-explainer">
-                        ReDD Block is an open-source tool for blocking distracting websites and apps. You can find the source code <a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">here</a>.
+            <div class="welcome-onboarding-layout">
+                <header class="welcome-onboarding-header">
+                    <div class="welcome-onboarding-title-row">
+                        <img id="welcome-onboarding-shield-logo"
+                             class="welcome-shield-logo"
+                             src=""
+                             alt=""
+                             aria-hidden="true">
+                        <h1 id="welcome-onboarding-title">Welcome to ReDD Block</h1>
+                    </div>
+                    <p id="welcome-onboarding-subtitle" class="welcome-onboarding-subtitle">
+                        An open-source tool for blocking the websites and apps that pull you away from your focus.
                     </p>
+                </header>
+
+                <div class="welcome-onboarding-card">
+                    <section class="welcome-how-it-works" aria-labelledby="welcome-how-heading">
+                        <h2 id="welcome-how-heading" class="welcome-how-heading">How it works</h2>
+                        <ol class="welcome-steps">
+                            <li class="welcome-step">
+                                <span class="welcome-step-num" aria-hidden="true">1</span>
+                                <p id="welcome-step-1" class="welcome-step-text"></p>
+                            </li>
+                            <li class="welcome-step">
+                                <span class="welcome-step-num" aria-hidden="true">2</span>
+                                <p id="welcome-step-2" class="welcome-step-text"></p>
+                            </li>
+                            <li class="welcome-step">
+                                <span class="welcome-step-num" aria-hidden="true">3</span>
+                                <p id="welcome-step-3" class="welcome-step-text"></p>
+                            </li>
+                        </ol>
+                    </section>
+
+                    <div id="welcome-onboarding-macos-note" class="welcome-macos-note hidden">
+                        <img id="welcome-macos-icon"
+                             class="welcome-macos-icon"
+                             src=""
+                             alt=""
+                             aria-hidden="true">
+                        <p id="welcome-macos-note-text" class="welcome-macos-note-text"></p>
+                    </div>
+
                     <button id="welcome-onboarding-continue-btn"
-                            class="modal-btn primary-btn onboarding-primary-btn"
+                            class="modal-btn primary-btn onboarding-primary-btn welcome-continue-btn"
                             type="button">
                         Get started
                     </button>
                 </div>
-                <!-- Demo video below the Get-started card. User-initiated
-                     playback only (no autoplay). Muted + playsinline keeps
-                     it friendly in WKWebView if they press play. -->
-                <p class="welcome-onboarding-video-label">Demo video</p>
-                <video id="welcome-onboarding-video"
-                       class="welcome-onboarding-video"
-                       muted playsinline preload="metadata" controls
-                       aria-label="ReDD Block demo video">
-                    <source src="/reddblock-video.mp4" type="video/mp4">
-                </video>
-                <p id="welcome-onboarding-project-blurb" class="legal-onboarding-body"></p>
+
+                <footer class="welcome-onboarding-footer">
+                    <p id="welcome-onboarding-footer-1" class="welcome-footer-line"></p>
+                    <p id="welcome-onboarding-footer-2" class="welcome-footer-line"></p>
+                </footer>
             </div>
         </div>
 
-        <!-- macOS-only: Full Disk Access onboarding. Shown after EULA
-             acceptance and before the migration / extension-install
-             overlay, exactly once per machine (gated by the
-             fda-onboarded.v1 marker file in our own app-data dir,
-             written by `complete_fda_onboarding`). The point is to
-             give the user one well-framed moment to decide between
-             "grant Full Disk Access once and never see prompts" vs
-             "skip and accept per-prompt dialogs from now on" — before
-             the Rust side does any cross-app file writes that would
-             otherwise ambush them with TCC prompts. JS auto-advances
-             this screen when FDA becomes granted while it's open. -->
+        <!-- macOS-only: Full Disk Access setup. Shown after EULA
+             acceptance, before extension install. FDA is required —
+             no skip path. The marker is written only once FDA is
+             granted; then deferred cross-app installs run. -->
         <div id="fda-onboarding" class="onboarding-screen hidden">
-            <div class="onboarding-content legal-onboarding-content">
-                <div class="onboarding-icon">
-                    <img src="/reddblock-icon.svg" alt="ReDD Block app icon" class="onboarding-app-icon">
-                </div>
-                <h1 id="fda-onboarding-title">One macOS permission to set up</h1>
-                <div class="onboarding-focus-card fda-onboarding-card">
+            <div class="welcome-onboarding-layout">
+                <header class="welcome-onboarding-header">
+                    <div class="welcome-onboarding-title-row">
+                        <img id="fda-onboarding-shield-logo"
+                             class="welcome-shield-logo"
+                             src=""
+                             alt=""
+                             aria-hidden="true">
+                        <h1 id="fda-onboarding-title">Grant Full Disk Access</h1>
+                    </div>
+                </header>
+
+                <div class="welcome-onboarding-card fda-onboarding-card">
                     <p id="fda-onboarding-why" class="migration-explainer">
-                        To function, ReDD Block needs to be able to read your browser settings.
+                        ReDD Block will attempt to install the <strong>ReDD Focus</strong> extension in your browsers and check that it stays enabled during your blocks.
                     </p>
                     <p id="fda-onboarding-why-2" class="migration-explainer">
-                        This requires that you allow 'Full Disk Access' in your Mac's settings.
+                        On Mac, this requires <strong>Full Disk Access</strong>. Click this button and toggle on for <strong>ReDD Block</strong> (if you don't see ReDD Block in the list, click + and add it manually).
                     </p>
                     <p id="fda-onboarding-status" class="migration-status hidden"></p>
                     <div class="fda-onboarding-actions">
@@ -239,15 +259,14 @@
                                 type="button">
                             Open Full Disk Access settings
                         </button>
-                        <button id="fda-onboarding-skip-btn"
-                                class="modal-btn onboarding-secondary-btn"
-                                type="button">
-                            Continue without — I'll see "access data" prompts
-                        </button>
                     </div>
                     <p id="fda-onboarding-howto" class="fda-onboarding-howto">
-                        In System Settings → Privacy &amp; Security → Full Disk Access, toggle <strong>ReDD Block</strong> on. This window will move on by itself once you do.
+                        System Settings → Privacy &amp; Security → Full Disk Access
                     </p>
+                    <img id="fda-onboarding-screenshot"
+                         class="fda-onboarding-screenshot"
+                         src=""
+                         alt="Full Disk Access settings with ReDD Block toggled on">
                 </div>
             </div>
         </div>
