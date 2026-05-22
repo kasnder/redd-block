@@ -83,7 +83,7 @@ else
         local_data="$APP_DATA_DIR/redd-block-data.json"
         if [[ -f "$local_data" ]] && command -v jq >/dev/null 2>&1; then
             tmp=$(mktemp /tmp/redd-block-data.XXXXXX.json)
-            jq 'if .settings then .settings |= (del(.eulaAcceptedRevision) | del(.eulaAcceptedAt) | del(.onboardingComplete)) else . end' \
+            jq 'if .settings then .settings |= (del(.eulaAcceptedRevision) | del(.eulaAcceptedAt) | del(.onboardingComplete) | del(.welcomeOnboardingShown)) else . end' \
                 "$local_data" > "$tmp"
             mv "$tmp" "$local_data"
             echo "  cleared EULA fields"

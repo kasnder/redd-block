@@ -1268,6 +1268,10 @@ async function runPostAcceptanceStartup() {
             // sandboxed container on first launch — firing the very
             // TCC prompts this overlay exists to pre-empt. No-op on
             // Windows / Linux.
+            // Friendly project-intro screen, shown once per machine,
+            // before we ask for any permissions. Cushions the FDA
+            // ask that follows.
+            await ensureWelcomeOnboardingComplete();
             await ensureFdaOnboardingComplete();
             // No explicit FDA-banner refresh here — the combined
             // setup banner re-evaluates FDA state every time
@@ -1334,6 +1338,65 @@ async function checkForAppUpdate() {
         // Silently fail if offline
         console.log('[Update] Could not check for updates:', e.message);
     }
+}
+
+// ---- Welcome screen --------------------------------------------------------
+//
+// Friendly one-screen intro shown once per machine, between EULA
+// acceptance and the FDA onboarding overlay. Purpose: cushion the
+// FDA permission ask. Without this screen, a fresh user accepts the
+// EULA and is immediately faced with a system-level "give us Full
+// Disk Access" prompt — accurate, but it reads as scary out of
+// context. The welcome screen sets context (ReDD Block is open-
+// source, here's who built it) before the permissions story.
+//
+// Persistence: `appData.settings.welcomeOnboardingShown` (boolean).
+// Same persistence channel as the EULA acceptance, which means it
+// survives reinstalls (lives in
+// ~/Library/Application Support/com.reddblock/redd-block-data.json)
+// AND is wiped by `scripts/dev-reset-fda-onboarding.sh --eula` for
+// re-testing.
+async function ensureWelcomeOnboardingComplete() {
+    if (isIOS) return;
+    if (appData?.settings?.welcomeOnboardingShown === true) return;
+    await showWelcomeOnboardingOverlay();
+    // Persist so we don't show again on this machine.
+    if (!appData.settings) appData.settings = {};
+    appData.settings.welcomeOnboardingShown = true;
+    try {
+        await saveData();
+    } catch (e) {
+        console.warn('[welcome-onboarding] persist failed:', e);
+    }
+}
+
+function showWelcomeOnboardingOverlay() {
+    return new Promise((resolve) => {
+        const overlay = document.getElementById('welcome-onboarding');
+        const btn = document.getElementById('welcome-onboarding-continue-btn');
+        if (!overlay || !btn) {
+            // HTML missing — bail rather than blocking startup.
+            console.warn('[welcome-onboarding] overlay elements missing, skipping');
+            resolve();
+            return;
+        }
+
+        // Hide other onboarding screens so this is the only visible
+        // surface. updateOnboardingVisibility will resync once we
+        // resolve.
+        document.getElementById('eula-onboarding')?.classList.add('hidden');
+        document.getElementById('fda-onboarding')?.classList.add('hidden');
+        document.getElementById('migration-onboarding')?.classList.add('hidden');
+        document.getElementById('main-content')?.classList.add('hidden');
+        overlay.classList.remove('hidden');
+
+        const onClick = () => {
+            btn.removeEventListener('click', onClick);
+            overlay.classList.add('hidden');
+            resolve();
+        };
+        btn.addEventListener('click', onClick);
+    });
 }
 
 // ---- macOS Full Disk Access onboarding -------------------------------------
@@ -3710,6 +3773,15 @@ function hasActiveEnforcerCountdown() {
     return [...enforcerActionBannerStates.values()].some(state => state.deadline > now);
 }
 
+function promoteEnforcerActionToClosed(key, payload) {
+    if (!payload) return;
+    enforcerClosedBannerStates.set(key, {
+        ...(enforcerClosedBannerStates.get(key) || {}),
+        payload,
+        closedAt: Date.now(),
+    });
+}
+
 function renderCombinedEnforcerActionBanner() {
     const banner = ensureActiveEnforcerActionBanner();
     const states = [...enforcerActionBannerStates.entries()].map(([key, state]) => ({ key, ...state }));
@@ -3728,6 +3800,10 @@ function renderCombinedEnforcerActionBanner() {
         .filter(state => state.remainingSecs > 0);
 
     if (activeStates.length === 0) {
+        for (const state of states) {
+            promoteEnforcerActionToClosed(state.key, state.payload);
+            enforcerActionBannerStates.delete(state.key);
+        }
         banner.classList.add('hidden');
         renderCombinedEnforcerClosedBanner();
         return;
@@ -3796,6 +3872,7 @@ function updateEnforcerActionBannerCountdown() {
         state.payload = payload;
 
         if (remainingSecs <= 0) {
+            promoteEnforcerActionToClosed(key, state.payload);
             enforcerActionBannerStates.delete(key);
         }
     }
@@ -3903,21 +3980,15 @@ function renderCombinedEnforcerClosedBanner() {
 }
 
 function renderEnforcerClosedBanner(payload) {
-    if (!payload || !payload.browser) return;
+    if (!payload || (!payload.browser && !payload.label)) return;
     const key = enforcerBannerKey(payload);
     enforcerActionBannerStates.delete(key);
-    renderCombinedEnforcerActionBanner();
     if (enforcerActionBannerStates.size === 0 && enforcerActionBannerInterval) {
         clearInterval(enforcerActionBannerInterval);
         enforcerActionBannerInterval = null;
     }
-    const stored = enforcerClosedBannerStates.get(key) || {};
-    enforcerClosedBannerStates.set(key, {
-        ...stored,
-        payload,
-        closedAt: Date.now()
-    });
-    renderCombinedEnforcerClosedBanner();
+    promoteEnforcerActionToClosed(key, payload);
+    renderCombinedEnforcerActionBanner();
 }
 
 function hideEnforcerActionBanner(browser) {
@@ -13303,6 +13374,11 @@ const SETTINGS_TRANSLATIONS = {
         eulaAcceptSaveFailedAlert: 'Could not save your agreement. Please try again.',
         eulaProjectBlurb:
             'ReDD Block is developed by the Reduce Digital Distraction Project, in collaboration with researchers at the University of Oxford and University of Maastricht. The ReDD Project is a not-for-profit creating insights & open-source digital focus tools for everyone to thrive in the digital world.',
+        // Welcome onboarding (post-EULA, pre-FDA)
+        welcomeOnboardingTitle: 'Welcome to ReDD Block',
+        welcomeOnboardingIntroHtml:
+            'ReDD Block is an open-source tool for blocking distracting websites and apps. You can find the source code <a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">here</a>.',
+        welcomeOnboardingContinueBtn: 'Get started',
         // Migration / extension onboarding overlay
         migrationPreWelcomeTitle: 'Welcome to ReDD Block 2.0',
         migrationPreSubtitle: 'A one-time cleanup is needed to finish your upgrade.',
@@ -13722,6 +13798,11 @@ const SETTINGS_TRANSLATIONS = {
         eulaAcceptSaveFailedAlert: 'Vi kunne ikke gemme din godkendelse. Prøv igen.',
         eulaProjectBlurb:
             'ReDD Block er udviklet af Reduce Digital Distraction Project i samarbejde med forskere ved University of Oxford og University of Maastricht. ReDD Project er en nonprofit-organisation, der udvikler indsigter og open source-redskaber til digitalt fokus, så alle kan trives i den digitale verden.',
+        // Welcome onboarding (post-EULA, pre-FDA)
+        welcomeOnboardingTitle: 'Velkommen til ReDD Block',
+        welcomeOnboardingIntroHtml:
+            'ReDD Block er et open source-værktøj til at blokere distraherende hjemmesider og apps. Du kan finde kildekoden <a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">her</a>.',
+        welcomeOnboardingContinueBtn: 'Kom i gang',
         // Migration / extension onboarding overlay
         migrationPreWelcomeTitle: 'Velkommen til ReDD Block 2.0',
         migrationPreSubtitle: 'Et engangskridt er nødvendigt for at afslutte opgraderingen.',
@@ -14306,6 +14387,22 @@ function applyEulaOnboardingLanguage() {
     if (continueBtn) continueBtn.textContent = tSettings('eulaContinueBtn');
 }
 
+/** Welcome onboarding screen — localized in the same way as the EULA
+ * screen. Project blurb reuses the EULA's `eulaProjectBlurb` string. */
+function applyWelcomeOnboardingLanguage() {
+    const heading = document.getElementById('welcome-onboarding-title');
+    if (heading) heading.textContent = tSettings('welcomeOnboardingTitle');
+
+    const intro = document.getElementById('welcome-onboarding-intro');
+    if (intro) intro.innerHTML = tSettings('welcomeOnboardingIntroHtml');
+
+    const continueBtn = document.getElementById('welcome-onboarding-continue-btn');
+    if (continueBtn) continueBtn.textContent = tSettings('welcomeOnboardingContinueBtn');
+
+    const blurp = document.getElementById('welcome-onboarding-project-blurb');
+    if (blurp) blurp.textContent = tSettings('eulaProjectBlurb');
+}
+
 function websiteWord(count) {
     if (getSettingsLanguage() === 'da') {
         return count === 1 ? 'hjemmeside' : 'hjemmesider';
@@ -14563,6 +14660,7 @@ function applySettingsLanguage() {
 
     applyMigrationOverlayStaticCopy();
     applyEulaOnboardingLanguage();
+    applyWelcomeOnboardingLanguage();
     if (migrationOnboardingActive && lastMigrationBrowserState) {
         renderBrowserInstallButtons(lastMigrationBrowserState);
     }
