@@ -173,6 +173,12 @@ let lastDesktopHelperStatus = null;
 let lastDesktopHelperStatusAt = 0;
 let draggedBlocklistId = null; // Track which blocklist is being dragged
 let isIOS = false; // Track if running on iOS
+// True on macOS desktop (i.e. Mac platform AND not the iOS Tauri
+// runtime). Set in `detectPlatform`. Used to gate macOS-only Tauri
+// commands like `check_full_disk_access` and the FDA onboarding flow
+// — calling those on Windows/Linux would 404 since the commands are
+// `#[cfg(target_os = "macos")]`-gated in the Rust side.
+let isMacOSDesktop = false;
 let screentimeAuthorized = false; // Track if Screen Time is authorized (iOS)
 let startupInitializationPromise = null; // Prevent duplicate post-onboarding startup runs
 let startupInitializationComplete = false; // Track whether post-onboarding startup already ran
@@ -1081,6 +1087,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupOverrideAll();
     setupInAppUninstall();
     setupGraceSetting();
+    setupFdaReminderBanner();
     if (isIOS && hasAcceptedEula()) {
         await checkScreentimeAuth();
     } else {
@@ -1255,6 +1262,18 @@ async function runPostAcceptanceStartup() {
             // a no-op on subsequent launches past the current version.
             setupEnforcerUiAlerts();
             setupAppBlockingWarningOverlay();
+            // macOS-only: surface the Full Disk Access onboarding
+            // overlay (if needed) BEFORE runDesktopOnboarding kicks
+            // off its profile scan via `onboarding_state`. If we
+            // didn't gate this here, the scan would hit Safari's
+            // sandboxed container on first launch — firing the very
+            // TCC prompts this overlay exists to pre-empt. No-op on
+            // Windows / Linux.
+            await ensureFdaOnboardingComplete();
+            // Refresh the persistent banner immediately after the
+            // overlay resolves so users who chose "Skip" see it right
+            // away and users who granted see it stay hidden.
+            updateFdaReminderBanner();
             await runDesktopOnboarding();
             await checkHelperStatus();
             console.log('[startup-sync] Desktop startup helperAvailable:', helperAvailable);
@@ -1316,6 +1335,205 @@ async function checkForAppUpdate() {
         // Silently fail if offline
         console.log('[Update] Could not check for updates:', e.message);
     }
+}
+
+// ---- macOS Full Disk Access onboarding -------------------------------------
+//
+// Goal: on macOS, give the user a clear one-time choice about Full Disk
+// Access before ReDD Block does any of its cross-app file writes
+// (native-messaging manifest install, extension-install hints, Safari
+// container reads). Without this, the user gets ambushed by 1-3+
+// "ReDD Block would like to access data from other apps" TCC prompts
+// at first launch with no context — and on macOS Sequoia those
+// prompts can re-fire across launches even after Allow.
+//
+// Flow:
+//   1. `ensureFdaOnboardingComplete` is awaited inside
+//      `runPostAcceptanceStartup` before `runDesktopOnboarding` and
+//      before any other code that calls `onboarding_state` (which
+//      triggers a profile scan).
+//   2. If FDA is already granted, we silently mark the user as
+//      onboarded (so the overlay never shows on this machine again)
+//      and call `complete_fda_onboarding` to run the deferred
+//      native-host install. Returns immediately.
+//   3. If the user has already been through the overlay before (the
+//      Rust-side `fda-onboarded.v1` marker exists), skip and return.
+//   4. Otherwise show the overlay and wait until the user dismisses
+//      it. Two dismiss paths:
+//        a. Grant: button opens System Settings → Privacy & Security
+//           → Full Disk Access. We poll `check_full_disk_access` every
+//           1.5 s while the overlay is open; once granted, we
+//           auto-advance.
+//        b. Skip: explicit "Continue without" button. We call
+//           `complete_fda_onboarding('skipped')` which both writes the
+//           marker AND force-runs the deferred install (so the prompts
+//           the user just opted into fire here, in context, rather
+//           than at next launch).
+async function ensureFdaOnboardingComplete() {
+    if (!isMacOSDesktop) return;
+    try {
+        const fdaGranted = await invoke('check_full_disk_access');
+        if (fdaGranted) {
+            // Already granted — silently mark the user as onboarded
+            // so future launches skip the overlay, and trigger the
+            // deferred install so they get their native-messaging
+            // manifests installed (silently, since FDA is granted).
+            await invoke('complete_fda_onboarding', { choice: 'granted-already' });
+            return;
+        }
+        const alreadyOnboarded = await invoke('check_fda_onboarded');
+        if (alreadyOnboarded) {
+            // User has already made a choice in a previous session.
+            // Don't pester them again — the persistent banner on the
+            // main UI is the ongoing nudge.
+            return;
+        }
+        await showFdaOnboardingOverlay();
+    } catch (e) {
+        // Don't block startup on FDA-detection errors — fall through
+        // to runDesktopOnboarding (which may then trigger prompts,
+        // but at least the app isn't stuck).
+        console.warn('[fda-onboarding] check failed, proceeding without overlay:', e);
+    }
+}
+
+// Show the FDA onboarding overlay and resolve when the user
+// dismisses it (either by granting FDA or by clicking "Continue
+// without"). All visibility / button state is owned by this function
+// so callers don't need to manage it.
+function showFdaOnboardingOverlay() {
+    return new Promise((resolve) => {
+        const overlay = document.getElementById('fda-onboarding');
+        const grantBtn = document.getElementById('fda-onboarding-grant-btn');
+        const skipBtn = document.getElementById('fda-onboarding-skip-btn');
+        const statusEl = document.getElementById('fda-onboarding-status');
+        if (!overlay || !grantBtn || !skipBtn) {
+            // HTML missing somehow — bail rather than blocking startup.
+            console.warn('[fda-onboarding] overlay elements missing, skipping');
+            resolve();
+            return;
+        }
+
+        // Hide the other onboarding screens that might be active —
+        // the FDA overlay needs to be the only visible surface until
+        // dismissed. updateOnboardingVisibility will resync once we
+        // resolve.
+        document.getElementById('eula-onboarding')?.classList.add('hidden');
+        document.getElementById('migration-onboarding')?.classList.add('hidden');
+        document.getElementById('main-content')?.classList.add('hidden');
+        overlay.classList.remove('hidden');
+
+        let pollHandle = null;
+        const cleanup = () => {
+            overlay.classList.add('hidden');
+            if (pollHandle) {
+                clearInterval(pollHandle);
+                pollHandle = null;
+            }
+            grantBtn.removeEventListener('click', onGrant);
+            skipBtn.removeEventListener('click', onSkip);
+        };
+
+        const onGrant = async () => {
+            grantBtn.disabled = true;
+            const originalLabel = grantBtn.textContent;
+            grantBtn.textContent = 'Opening settings…';
+            try {
+                // Existing Tauri command — opens System Settings →
+                // Privacy & Security → Full Disk Access via the
+                // x-apple.systempreferences: URL scheme.
+                await invoke('open_safari_fda_settings');
+            } catch (e) {
+                console.warn('[fda-onboarding] open settings failed:', e);
+            }
+            grantBtn.textContent = originalLabel;
+            grantBtn.disabled = false;
+            if (statusEl) {
+                statusEl.classList.remove('hidden');
+                statusEl.textContent = 'Waiting for Full Disk Access… leave this window open while you grant it.';
+            }
+            // Begin polling. 1.5 s feels responsive without being a
+            // CPU hog — `check_full_disk_access` is cheap (a stat()
+            // syscall) so the cost is negligible either way.
+            if (!pollHandle) {
+                pollHandle = setInterval(async () => {
+                    try {
+                        const granted = await invoke('check_full_disk_access');
+                        if (granted) {
+                            if (statusEl) {
+                                statusEl.textContent = 'Full Disk Access granted — finishing setup…';
+                            }
+                            try {
+                                await invoke('complete_fda_onboarding', { choice: 'granted' });
+                            } catch (e) {
+                                console.warn('[fda-onboarding] complete failed:', e);
+                            }
+                            cleanup();
+                            resolve();
+                        }
+                    } catch (_) {
+                        // Ignore individual poll errors — they're
+                        // overwhelmingly transient (e.g. command not
+                        // yet registered on first paint).
+                    }
+                }, 1500);
+            }
+        };
+
+        const onSkip = async () => {
+            // User explicitly chose to proceed without FDA. Mark them
+            // as onboarded AND force-run the deferred cross-app
+            // installs now — the per-prompt dialogs that fire here
+            // are an expected consequence of their choice rather
+            // than ambush behaviour at next launch.
+            skipBtn.disabled = true;
+            try {
+                await invoke('complete_fda_onboarding', { choice: 'skipped' });
+            } catch (e) {
+                console.warn('[fda-onboarding] complete (skip) failed:', e);
+            }
+            cleanup();
+            resolve();
+        };
+
+        grantBtn.addEventListener('click', onGrant);
+        skipBtn.addEventListener('click', onSkip);
+    });
+}
+
+// Toggle the persistent "Full Disk Access not granted" banner on
+// the main UI. Shown only when:
+//   - the user has been through FDA onboarding (so the overlay
+//     itself isn't going to fire — that'd be redundant), AND
+//   - FDA is currently not granted.
+// Re-call this on window focus so the banner disappears the moment
+// a user toggles FDA on in System Settings and tabs back.
+async function updateFdaReminderBanner() {
+    if (!isMacOSDesktop) return;
+    const banner = document.getElementById('fda-reminder-banner');
+    if (!banner) return;
+    try {
+        const [onboarded, granted] = await Promise.all([
+            invoke('check_fda_onboarded'),
+            invoke('check_full_disk_access'),
+        ]);
+        banner.classList.toggle('hidden', !(onboarded && !granted));
+    } catch (e) {
+        console.warn('[fda-banner] status check failed:', e);
+        banner.classList.add('hidden');
+    }
+}
+
+function setupFdaReminderBanner() {
+    const grantBtn = document.getElementById('fda-reminder-grant');
+    if (!grantBtn) return;
+    grantBtn.addEventListener('click', async () => {
+        try {
+            await invoke('open_safari_fda_settings');
+        } catch (e) {
+            console.warn('[fda-banner] open settings failed:', e);
+        }
+    });
 }
 
 // ---- Desktop onboarding (v1.1+) --------------------------------------------
@@ -2286,6 +2504,10 @@ window.addEventListener('focus', () => {
     // Repaint time-dependent UI and restart the per-second tick.
     // See kickClockNow() for the why.
     if (typeof kickClockNow === 'function') kickClockNow();
+    // Re-check FDA on every focus regain: the user may have just
+    // toggled it on in System Settings and tabbed back, in which
+    // case the persistent reminder banner should disappear.
+    updateFdaReminderBanner();
     if (migrationOnboardingActive) {
         pollMigrationCompliance();
     } else {
@@ -4052,6 +4274,7 @@ function detectPlatform() {
         const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
         if (isMac) {
             document.body.classList.add('mac');
+            isMacOSDesktop = true;
             // Hide controls on macOS - native traffic lights are used
             document.getElementById('window-controls')?.classList.add('hidden');
         } else {

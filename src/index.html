@@ -104,6 +104,32 @@
             </div>
         </div>
 
+        <!-- macOS-only: Full Disk Access reminder banner. Shown on
+             the main UI when the user has been through FDA onboarding
+             but did not actually grant FDA — they're seeing per-prompt
+             "data from other apps" dialogs from the OS. Non-dismissible
+             on purpose: the underlying nag stops only when FDA is
+             granted, so a "dismiss" button would just create silent
+             ongoing prompts. Hidden by default; JS toggles when
+             `check_full_disk_access` / `check_fda_onboarded` indicate
+             we should surface it. -->
+        <div id="fda-reminder-banner" class="update-banner setup-banner hidden">
+            <div class="update-banner-content">
+                <svg class="setup-banner-info-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="11" fill="currentColor"></circle>
+                    <circle cx="12" cy="7.5" r="1.3" fill="white"></circle>
+                    <rect x="11" y="10" width="2" height="8" rx="1" fill="white"></rect>
+                </svg>
+                <div class="setup-banner-message">
+                    <strong id="fda-reminder-headline" class="setup-banner-headline">Full Disk Access not granted</strong>
+                    <span id="fda-reminder-body" class="setup-banner-body">Without Full Disk Access, macOS will show permission prompts each time ReDD Block reaches into Chrome, Edge, Firefox, or Safari data folders.</span>
+                    <div class="setup-banner-actions-row">
+                        <button id="fda-reminder-grant" class="update-banner-btn" type="button">Grant Full Disk Access</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div id="behaviour-change-banner" class="update-banner setup-banner hidden">
             <div class="update-banner-content">
                 <svg class="setup-banner-info-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
@@ -155,6 +181,53 @@
                         disabled>Continue</button>
                 </div>
                 <p id="eula-project-blurb" class="legal-onboarding-body"></p>
+            </div>
+        </div>
+
+        <!-- macOS-only: Full Disk Access onboarding. Shown after EULA
+             acceptance and before the migration / extension-install
+             overlay, exactly once per machine (gated by the
+             fda-onboarded.v1 marker file in our own app-data dir,
+             written by `complete_fda_onboarding`). The point is to
+             give the user one well-framed moment to decide between
+             "grant Full Disk Access once and never see prompts" vs
+             "skip and accept per-prompt dialogs from now on" — before
+             the Rust side does any cross-app file writes that would
+             otherwise ambush them with TCC prompts. JS auto-advances
+             this screen when FDA becomes granted while it's open. -->
+        <div id="fda-onboarding" class="onboarding-screen hidden">
+            <div class="onboarding-content legal-onboarding-content">
+                <div class="onboarding-icon">
+                    <img src="/reddblock-icon.svg" alt="ReDD Block app icon" class="onboarding-app-icon">
+                </div>
+                <h1 id="fda-onboarding-title">One macOS permission to set up</h1>
+                <p id="fda-onboarding-subtitle" class="legal-onboarding-subtitle">
+                    Grant Full Disk Access once and you're done.
+                </p>
+                <div class="onboarding-focus-card fda-onboarding-card">
+                    <p id="fda-onboarding-why" class="migration-explainer">
+                        ReDD Block enforces blocks across all your browsers — Chrome, Brave, Edge, Firefox, and Safari. To do that, it has to read browser-extension settings and drop small helper files into each browser's data folder.
+                    </p>
+                    <p id="fda-onboarding-why-2" class="migration-explainer">
+                        macOS gates that with Full Disk Access. If you grant it now, the rest of setup is silent. If you skip, macOS will show a "ReDD Block would like to access data from other apps" prompt every time we reach into a different browser — and on macOS Sequoia those prompts can keep firing even after you click Allow.
+                    </p>
+                    <p id="fda-onboarding-status" class="migration-status hidden"></p>
+                    <div class="fda-onboarding-actions">
+                        <button id="fda-onboarding-grant-btn"
+                                class="modal-btn primary-btn onboarding-primary-btn"
+                                type="button">
+                            Open Full Disk Access settings
+                        </button>
+                        <button id="fda-onboarding-skip-btn"
+                                class="modal-btn onboarding-secondary-btn"
+                                type="button">
+                            Continue without — I'll see the prompts
+                        </button>
+                    </div>
+                    <p id="fda-onboarding-howto" class="fda-onboarding-howto">
+                        In System Settings → Privacy &amp; Security → Full Disk Access, toggle <strong>ReDD Block</strong> on. This window will move on by itself once you do.
+                    </p>
+                </div>
             </div>
         </div>
 
