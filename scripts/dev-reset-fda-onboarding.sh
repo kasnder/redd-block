@@ -78,20 +78,32 @@ else
         fi
     done
 
-    if [[ "$EULA" == "1" ]]; then
-        echo "==> --eula: wiping EULA acceptance from redd-block-data.json"
-        local_data="$APP_DATA_DIR/redd-block-data.json"
-        if [[ -f "$local_data" ]] && command -v jq >/dev/null 2>&1; then
-            tmp=$(mktemp /tmp/redd-block-data.XXXXXX.json)
+    # Clear the welcome-onboarding marker from redd-block-data.json
+    # even in the default (non-eula) mode. Conceptually it's just
+    # another onboarding marker — it only happens to live inside the
+    # JSON settings blob rather than as its own file because that's
+    # the simplest way to persist a JS-side boolean. Resetting markers
+    # but leaving welcomeOnboardingShown=true is the exact bug that
+    # makes "test the first-launch flow" fail to actually show the
+    # welcome screen.
+    local_data="$APP_DATA_DIR/redd-block-data.json"
+    if [[ -f "$local_data" ]] && command -v jq >/dev/null 2>&1; then
+        tmp=$(mktemp /tmp/redd-block-data.XXXXXX.json)
+        if [[ "$EULA" == "1" ]]; then
+            # --eula additionally clears EULA acceptance from JSON.
             jq 'if .settings then .settings |= (del(.eulaAcceptedRevision) | del(.eulaAcceptedAt) | del(.onboardingComplete) | del(.welcomeOnboardingShown)) else . end' \
                 "$local_data" > "$tmp"
-            mv "$tmp" "$local_data"
-            echo "  cleared EULA fields"
-        elif [[ ! -f "$local_data" ]]; then
-            echo "  $local_data not found, nothing to do"
+            echo "==> --eula: cleared EULA + welcome fields from redd-block-data.json"
         else
-            echo "  WARNING: jq not installed; install with 'brew install jq' or edit redd-block-data.json by hand"
+            jq 'if .settings then .settings |= del(.welcomeOnboardingShown) else . end' \
+                "$local_data" > "$tmp"
+            echo "==> Cleared welcomeOnboardingShown from redd-block-data.json"
         fi
+        mv "$tmp" "$local_data"
+    elif [[ ! -f "$local_data" ]]; then
+        : # nothing to do
+    else
+        echo "  WARNING: jq not installed; welcomeOnboardingShown not cleared (install with 'brew install jq')"
     fi
 fi
 

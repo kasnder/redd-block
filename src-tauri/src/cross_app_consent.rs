@@ -53,8 +53,18 @@ use std::path::PathBuf;
 #[cfg(target_os = "macos")]
 pub fn has_full_disk_access() -> bool {
     let path = PathBuf::from("/Library/Application Support/com.apple.TCC/TCC.db");
-    let granted = std::fs::read(&path).is_ok();
-    log::debug!("cross_app_consent: has_full_disk_access -> {granted}");
+    // `File::open` is intentional here, NOT `std::fs::read` — opening
+    // the descriptor is enough to tell us whether the OS will allow
+    // the read (EPERM means no FDA). Reading the full ~2 MB SQLite
+    // file is wasteful for a probe AND in some macOS versions has
+    // been reported to be more likely to surface a TCC prompt than
+    // a plain open. We never read the bytes.
+    log::info!(
+        "tcc-probe: about to open (FDA probe) {}",
+        path.display()
+    );
+    let granted = std::fs::File::open(&path).is_ok();
+    log::info!("tcc-probe: FDA probe -> granted={granted}");
     granted
 }
 
