@@ -3052,14 +3052,10 @@ body.dark-mode .tag.locked {
     align-self: center;
 }
 
-/* Stop Block / Stop Schedule Button — filled secondary. Stop is the more
-   drastic action (ends the block / schedule entirely) and carries the
-   blocklist context, so it gets visual weight: warm-grey fill, navy text,
-   subtle border. Pause sits as a quieter ghost beside it.
-   Stop Schedule hover intentionally matches the canvas in light mode; in dark
-   mode its hover is a hair lighter than the chip (subtle lift). */
-.start-block-btn.stop-block,
-.start-block-btn.stop-schedule {
+/* Stop Block Button — filled secondary. Stop is the more drastic action (ends
+   the block entirely) and carries the blocklist context. Pause sits beside it
+   with the same secondary weight in schedule mode; Stop Schedule is ghost. */
+.start-block-btn.stop-block {
     background: var(--redd-warm-grey);
     color: var(--text-primary);
     border: 1px solid var(--border-color);
@@ -3080,15 +3076,7 @@ body.dark-mode .tag.locked {
     box-shadow: none;
 }
 
-/* Stop schedule hover: melt into canvas (light); stop block keeps grey-chip lift */
-.start-block-btn.stop-schedule:hover:not(:disabled) {
-    background: var(--app-bg);
-    transform: none;
-    box-shadow: none;
-}
-
-body.dark-mode .start-block-btn.stop-block,
-body.dark-mode .start-block-btn.stop-schedule {
+body.dark-mode .start-block-btn.stop-block {
     background: var(--redd-warm-grey);
     color: var(--text-primary);
     border-color: var(--border-color);
@@ -3098,8 +3086,37 @@ body.dark-mode .start-block-btn.stop-block:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.06);
 }
 
+/* Stop Schedule Button — ghost. Ending a schedule is available but steps back
+   visually so Pause (secondary) carries the weight in the action row. */
+.start-block-btn.stop-schedule {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid transparent;
+    width: auto;
+    max-width: 100%;
+    min-width: 0;
+    justify-content: center;
+    padding: 14px 18px;
+    text-align: start;
+    white-space: nowrap;
+}
+
+.start-block-btn.stop-schedule:hover:not(:disabled) {
+    background: var(--element-hover-bg);
+    color: var(--text-primary);
+    transform: none;
+    box-shadow: none;
+}
+
+body.dark-mode .start-block-btn.stop-schedule {
+    background: transparent;
+    color: var(--text-secondary);
+    border-color: transparent;
+}
+
 body.dark-mode .start-block-btn.stop-schedule:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--redd-warm-grey) 97.5%, white 2.5%);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-primary);
 }
 
 /* Block action buttons wrapper (pause + stop side by side) */
@@ -3128,17 +3145,16 @@ body.dark-mode .start-block-btn.stop-schedule:hover:not(:disabled) {
     display: none;
 }
 
-/* Pause Block Button — ghost button. Pause is the gentler, undoable action,
-   so it steps back to a transparent fill with a faint border-on-hover. The
-   Stop secondary next to it carries the visual weight. The Resume state
-   lifts to teal-soft to signal "ready to go again" — same teal family as
-   the primary CTA. */
+/* Pause Block Button — filled secondary. Pause is the gentler, undoable action
+   but gets visual weight beside the ghost Stop Schedule. The Resume state lifts
+   to teal-soft to signal "ready to go again" — same teal family as the primary
+   CTA. */
 .pause-block-btn {
     padding: 14px 16px;
     border-radius: 10px;
-    background: transparent;
-    color: var(--text-secondary);
-    border: 1px solid transparent;
+    background: var(--redd-warm-grey);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
     font-size: 17px;
     font-weight: 600;
     cursor: pointer;
@@ -3151,8 +3167,14 @@ body.dark-mode .start-block-btn.stop-schedule:hover:not(:disabled) {
 }
 
 .pause-block-btn:hover {
-    background: var(--element-hover-bg);
+    background: rgba(30, 45, 62, 0.06);
     color: var(--text-primary);
+}
+
+body.dark-mode .pause-block-btn {
+    background: var(--redd-warm-grey);
+    color: var(--text-primary);
+    border-color: var(--border-color);
 }
 
 body.dark-mode .pause-block-btn:hover {
