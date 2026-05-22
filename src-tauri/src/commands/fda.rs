@@ -71,6 +71,17 @@ pub fn complete_fda_onboarding(_choice: String) -> Result<(), String> {
         if let Err(e) = crate::native_host_install::install_force() {
             log::warn!("post-FDA-onboarding native-host install failed: {e}");
         }
+        // Same goes for the extension-install hints (Chromium
+        // External Extensions JSON + Firefox policies.json) — these
+        // were also deferred at startup on macOS. Run them now while
+        // the user is still in the consent context.
+        if !crate::extension_install::startup_install_already_done() {
+            if let Err(e) = crate::extension_install::install() {
+                log::warn!("post-FDA-onboarding extension-install hint failed: {e}");
+            } else {
+                crate::extension_install::mark_startup_install_done();
+            }
+        }
     }
     Ok(())
 }

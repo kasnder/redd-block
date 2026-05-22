@@ -183,20 +183,9 @@
              `ensureWelcomeOnboardingComplete` after Get started). -->
         <div id="welcome-onboarding" class="onboarding-screen hidden">
             <div class="onboarding-content legal-onboarding-content">
-                <!-- Demo video used as the welcome hero instead of the
-                     static app icon. Muted + autoplay + loop +
-                     playsinline keeps it browser-friendly across
-                     desktop WKWebView and matches the silent-hero
-                     pattern used on landing pages (no surprise audio).
-                     `preload="auto"` lets the WKWebView prefetch the
-                     ~1.7 MB file while the EULA is still on screen so
-                     this screen renders without a black flash. -->
-                <video id="welcome-onboarding-video"
-                       class="welcome-onboarding-video"
-                       autoplay muted loop playsinline preload="auto"
-                       aria-label="ReDD Block demo video">
-                    <source src="/reddblock-video.mp4" type="video/mp4">
-                </video>
+                <div class="onboarding-icon">
+                    <img src="/reddblock-icon.svg" alt="ReDD Block app icon" class="onboarding-app-icon">
+                </div>
                 <h1 id="welcome-onboarding-title">Welcome to ReDD Block</h1>
                 <div class="onboarding-focus-card legal-onboarding-card">
                     <p id="welcome-onboarding-intro" class="migration-explainer">
@@ -208,6 +197,19 @@
                         Get started
                     </button>
                 </div>
+                <!-- Demo video below the Get-started card. Muted +
+                     autoplay + loop + playsinline keeps it browser-
+                     friendly across the WKWebView and avoids surprise
+                     audio. `preload="auto"` lets the runtime prefetch
+                     the ~1.7 MB file while the EULA is still on
+                     screen so this view renders without a black
+                     flash. -->
+                <video id="welcome-onboarding-video"
+                       class="welcome-onboarding-video"
+                       autoplay muted loop playsinline preload="auto"
+                       aria-label="ReDD Block demo video">
+                    <source src="/reddblock-video.mp4" type="video/mp4">
+                </video>
                 <p id="welcome-onboarding-project-blurb" class="legal-onboarding-body"></p>
             </div>
         </div>

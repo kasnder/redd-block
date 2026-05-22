@@ -2856,6 +2856,20 @@ const BANNER_REFRESH_THROTTLE_MS = 30_000;
 async function refreshBehaviourBannerIfStale({ force = false } = {}) {
     if (isIOS) return;
     if (migrationOnboardingActive) return; // overlay is the source of truth
+    // Don't fire the underlying `onboarding_state` browser scan while
+    // the user is on the welcome or FDA onboarding screens — those
+    // screens exist precisely so the user can make a permission
+    // choice BEFORE we go poking around in browser data dirs.
+    // `onboarding_state` calls profile_scan::scan() which reads each
+    // Chromium browser's user-data dir (Local State + Preferences),
+    // every one of which fires the "ReDD Block would like to access
+    // data from other apps" TCC prompt under macOS Sequoia without
+    // FDA. `startupInitializationComplete` flips to true at the END
+    // of `runPostAcceptanceStartup`, i.e. after welcome + FDA + first
+    // runDesktopOnboarding scan have all already happened — at which
+    // point any prompts that fire are an expected consequence of the
+    // user's earlier FDA-skip choice, not an ambush.
+    if (!startupInitializationComplete) return;
     const now = Date.now();
     if (!force && now - lastBannerRefreshAt < BANNER_REFRESH_THROTTLE_MS) return;
     lastBannerRefreshAt = now;

@@ -687,7 +687,37 @@ pub fn run() {
             // whole call. Force-rerun is still available via the
             // `install_extension_hints` Tauri command if the user
             // hits a "Reinstall hints" affordance.
-            #[cfg(not(target_os = "ios"))]
+            // Same FDA gate as native_host_install above. On macOS,
+            // extension_install::install writes External Extensions
+            // hints into Chrome/Brave/Edge user-data dirs and Firefox
+            // policies.json into /Applications/Firefox.app — every
+            // one of those is a cross-app touch that fires the "data
+            // from other apps" TCC prompt without Full Disk Access.
+            // The FDA onboarding overlay (commands::fda) calls
+            // install_force after the user makes a choice, so we
+            // don't lose the install on machines that skip FDA — it
+            // just happens after the explanation rather than before.
+            #[cfg(all(not(target_os = "ios"), target_os = "macos"))]
+            {
+                if cross_app_consent::should_run_cross_app_installs() {
+                    if !extension_install::startup_install_already_done() {
+                        if let Err(e) = extension_install::install() {
+                            log::warn!("extension-install hint on startup failed: {e}");
+                        } else {
+                            extension_install::mark_startup_install_done();
+                        }
+                    } else {
+                        log::debug!(
+                            "extension-install: startup auto-install skipped (marker present)"
+                        );
+                    }
+                } else {
+                    log::info!(
+                        "tcc-probe: deferring extension_install::install — user hasn't completed FDA onboarding yet"
+                    );
+                }
+            }
+            #[cfg(all(not(target_os = "ios"), not(target_os = "macos")))]
             if !extension_install::startup_install_already_done() {
                 if let Err(e) = extension_install::install() {
                     log::warn!("extension-install hint on startup failed: {e}");
