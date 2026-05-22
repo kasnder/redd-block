@@ -748,6 +748,10 @@ fn safari_extensions_plist_paths() -> (
     let Some(profiles_dir) = safari_profiles_dir() else {
         return (paths, None);
     };
+    log::info!(
+        "tcc-probe: about to read_dir (Safari profiles container) {}",
+        profiles_dir.display()
+    );
     let entries = match std::fs::read_dir(profiles_dir) {
         Ok(entries) => entries,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (paths, None),
@@ -811,6 +815,10 @@ pub fn scan_safari_extensions_plist() -> Result<Option<(bool, bool, bool)>, Safa
 
 #[cfg(target_os = "macos")]
 fn scan_safari_extensions_plist_at(path: &Path) -> Result<SafariPlistStatus, SafariPlistScanError> {
+    log::info!(
+        "tcc-probe: about to read (Safari WebExtensions plist) {}",
+        path.display()
+    );
     let bytes = std::fs::read(path).map_err(|e| safari_plist_io_error(e))?;
     parse_safari_extensions_plist(&bytes, &safari_extension_keys())
 }
@@ -908,6 +916,7 @@ fn parse_safari_extensions_plist(
 
 #[cfg(target_os = "macos")]
 fn scan_safari() -> BrowserStatus {
+    log::info!("tcc-probe: profile_scan::scan_safari() entered");
     let running = is_process_running(&["Safari"]);
     let mut profiles = Vec::new();
     let mut error = None;
@@ -1017,6 +1026,10 @@ fn scan_safari() -> BrowserStatus {
         // plist scan already reported (or None if FDA was missing).
         // SafariServices doesn't expose private-browsing or per-site
         // permission state at all — those still come from the plist.
+        log::info!(
+            "tcc-probe: about to call SFSafariExtensionManager.getStateOfSafariExtension({})",
+            crate::native_host_install::SAFARI_EXT_ID
+        );
         match crate::safari_services::extension_state(
             crate::native_host_install::SAFARI_EXT_ID,
         ) {
@@ -1029,14 +1042,14 @@ fn scan_safari() -> BrowserStatus {
                     // the note around for private-browsing and
                     // all-sites, which the bridge can't introspect.
                 }
-                log::debug!(
-                    "safari: bridge reports enabled={}",
+                log::info!(
+                    "tcc-probe: SFSafariExtensionManager returned enabled={}",
                     state.enabled
                 );
             }
             Err(e) => {
-                log::debug!(
-                    "safari: bridge state query failed (expected outside .app): {e}"
+                log::info!(
+                    "tcc-probe: SFSafariExtensionManager error (expected outside .app): {e}"
                 );
             }
         }
@@ -1062,6 +1075,7 @@ fn scan_safari() -> BrowserStatus {
         }
     }
 
+    log::info!("tcc-probe: profile_scan::scan_safari() exited (running={running}, embedded={embedded})");
     BrowserStatus {
         present: running,
         installed: true,
@@ -1092,6 +1106,10 @@ fn safari_extension_self_reported_private_browsing() -> Option<bool> {
         .join("Group Containers")
         .join("group.com.reddblock.shared")
         .join("safari-extension-state.json");
+    log::info!(
+        "tcc-probe: about to read (own App Group container) {}",
+        path.display()
+    );
     let bytes = std::fs::read(&path).ok()?;
     let v: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
 

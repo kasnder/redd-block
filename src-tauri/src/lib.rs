@@ -243,14 +243,45 @@ pub fn run() {
     let builder = builder.plugin(tauri_plugin_screentime::init());
 
     builder.setup(|app| {
-            // Set up logging in debug mode
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
+            // Initialise tauri-plugin-log on EVERY build, not just
+            // debug. Previously this block was gated on
+            // `cfg!(debug_assertions)`, which meant release builds —
+            // including the .pkg users actually install — produced no
+            // log output at all. We're currently investigating the
+            // macOS Sonoma+ "would like to access data from other
+            // apps" TCC prompt, which only reproduces under release
+            // builds installed from .pkg, so having a paper trail in
+            // release is essential for that work. Once that's fixed
+            // we can decide whether to lower the release verbosity
+            // back down, but Info-level with file output is cheap
+            // (rotated automatically) and helps any future user-
+            // reported issue.
+            //
+            // Targets:
+            //   - LogDir → ~/Library/Logs/com.reddblock/ReDD Block.log
+            //     (macOS), %LOCALAPPDATA%\com.reddblock\logs\... (Win).
+            //     `tail -F ~/Library/Logs/com.reddblock/ReDD\ Block.log`
+            //     to follow live.
+            //   - Stdout → useful when running `tauri dev` or from
+            //     Terminal; ignored when launched from Finder.
+            // Webview is intentionally NOT included as a target —
+            // log records bouncing through the JS layer add noise and
+            // can recurse if the frontend itself logs back into Rust.
+            use tauri_plugin_log::{Target, TargetKind};
+            app.handle().plugin(
+                tauri_plugin_log::Builder::default()
+                    .level(log::LevelFilter::Info)
+                    .targets([
+                        Target::new(TargetKind::LogDir { file_name: None }),
+                        Target::new(TargetKind::Stdout),
+                    ])
+                    .build(),
+            )?;
+            log::info!(
+                "tcc-probe: ===== ReDD Block launch (v{}, profile={}) =====",
+                env!("CARGO_PKG_VERSION"),
+                if cfg!(debug_assertions) { "debug" } else { "release" }
+            );
 
             // Pick the initial macOS activation policy based on whether
             // the window will be shown at launch (foreground use) or

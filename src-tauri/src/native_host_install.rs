@@ -113,30 +113,134 @@ pub fn current_binary_path() -> Option<String> {
 }
 
 /// Install the native-messaging manifest for every supported browser.
+///
+/// Marker-gated: if our own bookkeeping file says we already wrote
+/// manifests for the current binary path, skip the cross-app writes
+/// entirely. Each call to `install_one` does
+/// `create_dir_all` + `write` inside another app's data dir, which on
+/// macOS Sonoma+ fires the "ReDD Block would like to access data from
+/// other apps" TCC prompt — even when the write would be a no-op.
+/// Doing this on every launch was the dominant source of repeated
+/// prompts during build → install iteration.
+///
+/// The marker lives at
+/// `~/Library/Application Support/com.reddblock/native-host-install.v1`
+/// (our own data dir — no cross-app touch to check or write it). It
+/// stores the absolute binary path we last wrote manifests for. Any
+/// change to the path (.app moved, .pkg installed somewhere else,
+/// `tauri dev` vs installed) invalidates the marker and triggers a
+/// fresh write pass. The schema-version suffix in the filename
+/// (`v1`) lets us re-run for everyone if we ever change the manifest
+/// format itself: bump to `v2`.
+///
+/// For an explicit "reinstall manifests now" affordance (e.g. user
+/// hits a Reinstall hints button in the UI), use [`install_force`].
 pub fn install() -> std::io::Result<()> {
     let binary = current_binary_path().ok_or_else(|| {
         std::io::Error::new(std::io::ErrorKind::Other, "cannot resolve current exe")
     })?;
 
+    log::info!("tcc-probe: native_host_install::install() entered, binary={binary}");
+
+    if startup_install_already_done_for(&binary) {
+        log::info!(
+            "tcc-probe: native_host_install::install() marker matches binary path, skipping (no cross-app touches)"
+        );
+        return Ok(());
+    }
+
+    install_inner(&binary);
+    mark_startup_install_done_for(&binary);
+    log::info!("tcc-probe: native_host_install::install() exited (wrote manifests + dropped marker)");
+    Ok(())
+}
+
+/// Force-write the native-messaging manifest for every supported
+/// browser, ignoring the marker. Use for the user-driven "Reinstall
+/// hints" command — they're explicitly asking us to refresh, so the
+/// TCC prompt is contextually expected. Drops the marker on success
+/// so the next startup call stays silent.
+pub fn install_force() -> std::io::Result<()> {
+    let binary = current_binary_path().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::Other, "cannot resolve current exe")
+    })?;
+    log::info!("tcc-probe: native_host_install::install_force() entered, binary={binary}");
+    install_inner(&binary);
+    mark_startup_install_done_for(&binary);
+    log::info!("tcc-probe: native_host_install::install_force() exited");
+    Ok(())
+}
+
+fn install_inner(binary: &str) {
     for browser in BrowserTarget::all() {
-        if let Err(e) = install_one(browser, &binary) {
+        log::info!("tcc-probe: native_host_install::install_one({browser:?}) start");
+        if let Err(e) = install_one(browser, binary) {
             // Don't fail the whole operation for a single browser
             // (e.g. Firefox not installed). Log and continue.
             log::warn!("native-host install for {browser:?} failed: {e}");
         }
+        log::info!("tcc-probe: native_host_install::install_one({browser:?}) done");
     }
-    Ok(())
 }
 
 /// Remove the manifest for every supported browser. Safe to call even
-/// if install never ran.
+/// if install never ran. Also clears the install marker so the next
+/// `install()` call definitely re-writes (uninstall is rare and the
+/// re-write cost on the next install is acceptable).
 pub fn uninstall() -> std::io::Result<()> {
     for browser in BrowserTarget::all() {
         if let Err(e) = uninstall_one(browser) {
             log::warn!("native-host uninstall for {browser:?} failed: {e}");
         }
     }
+    clear_startup_install_marker();
     Ok(())
+}
+
+// ---- Marker bookkeeping ---------------------------------------------------
+
+/// Absolute path of the per-machine "we already wrote manifests for
+/// this binary path" marker. Lives in our own app-data dir so the
+/// stat/read/write to maintain it never touches another app's
+/// territory. Returns `None` when `dirs::data_local_dir` can't
+/// resolve (extremely rare; would imply a broken `$HOME`).
+fn startup_install_marker_path() -> Option<PathBuf> {
+    let base = dirs::data_local_dir()?;
+    Some(base.join("com.reddblock").join("native-host-install.v1"))
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct StartupInstallMarker {
+    binary_path: String,
+}
+
+/// `true` when the marker exists AND records the same binary path
+/// we're about to write for. Any mismatch — missing marker, parse
+/// failure, different binary path — returns `false` so we re-run the
+/// install. The asymmetric "default to re-run on any uncertainty"
+/// is deliberate: the failure mode for a needless re-run is at most
+/// one extra TCC prompt, but the failure mode for a wrongly-skipped
+/// install is broken native messaging until the user notices.
+fn startup_install_already_done_for(binary: &str) -> bool {
+    let Some(path) = startup_install_marker_path() else { return false };
+    let Ok(raw) = std::fs::read_to_string(&path) else { return false };
+    let Ok(marker) = serde_json::from_str::<StartupInstallMarker>(&raw) else { return false };
+    marker.binary_path == binary
+}
+
+fn mark_startup_install_done_for(binary: &str) {
+    let Some(path) = startup_install_marker_path() else { return };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let payload = StartupInstallMarker { binary_path: binary.to_string() };
+    let Ok(bytes) = serde_json::to_vec(&payload) else { return };
+    let _ = std::fs::write(&path, bytes);
+}
+
+fn clear_startup_install_marker() {
+    let Some(path) = startup_install_marker_path() else { return };
+    let _ = std::fs::remove_file(&path);
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -144,9 +248,17 @@ fn install_one(browser: BrowserTarget, binary: &str) -> std::io::Result<()> {
     let dir = browser.manifest_dir().ok_or_else(|| {
         std::io::Error::new(std::io::ErrorKind::Other, "cannot resolve manifest dir")
     })?;
+    log::info!(
+        "tcc-probe: about to create_dir_all (cross-app) {} [browser={browser:?}]",
+        dir.display()
+    );
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("{HOST_NAME}.json"));
     let body = manifest_body(browser, binary);
+    log::info!(
+        "tcc-probe: about to write (cross-app) {} [browser={browser:?}]",
+        path.display()
+    );
     std::fs::write(path, serde_json::to_vec_pretty(&body)?)?;
     Ok(())
 }
@@ -298,9 +410,16 @@ fn to_wide(s: &str) -> Vec<u16> {
 }
 
 /// Tauri command wrappers.
+///
+/// `install_native_host` is the explicit "Reinstall hints" affordance,
+/// so it bypasses the startup-install marker — the user clicked a
+/// button asking us to refresh, and they'll accept the TCC prompt
+/// (or have already granted it) as part of that action. The startup
+/// auto-install path in `lib.rs::run` uses [`install`] (marker-gated)
+/// instead.
 #[tauri::command]
 pub fn install_native_host() -> Result<(), String> {
-    install().map_err(|e| e.to_string())
+    install_force().map_err(|e| e.to_string())
 }
 
 #[tauri::command]

@@ -194,23 +194,35 @@ fn firefox_policies_json_path() -> PathBuf {
 /// running it on every app launch keeps the hints in place and
 /// re-creates them if the user removed any manually.
 pub fn install() -> std::io::Result<()> {
+    log::info!("tcc-probe: extension_install::install() entered");
     for browser in BrowserTarget::all() {
+        log::info!("tcc-probe: extension_install::install_chromium({browser:?}) start");
         if let Err(e) = install_chromium(browser) {
             // Don't fail the whole operation for a single browser
             // (e.g. browser not installed at all). Log + continue.
             log::warn!("extension-install hint for {browser:?} failed: {e}");
         }
+        log::info!("tcc-probe: extension_install::install_chromium({browser:?}) done");
     }
     #[cfg(not(target_os = "windows"))]
-    maybe_scrub_external_uninstalls_once();
+    {
+        log::info!("tcc-probe: extension_install::maybe_scrub_external_uninstalls_once() start");
+        maybe_scrub_external_uninstalls_once();
+        log::info!("tcc-probe: extension_install::maybe_scrub_external_uninstalls_once() done");
+    }
     #[cfg(target_os = "macos")]
-    if let Err(e) = install_firefox_policy() {
-        log::warn!("extension-install Firefox policy failed: {e}");
+    {
+        log::info!("tcc-probe: extension_install::install_firefox_policy() start");
+        if let Err(e) = install_firefox_policy() {
+            log::warn!("extension-install Firefox policy failed: {e}");
+        }
+        log::info!("tcc-probe: extension_install::install_firefox_policy() done");
     }
     #[cfg(target_os = "windows")]
     if let Err(e) = install_firefox_registry() {
         log::warn!("extension-install Firefox registry policy failed: {e}");
     }
+    log::info!("tcc-probe: extension_install::install() exited");
     Ok(())
 }
 
@@ -261,6 +273,10 @@ fn install_chromium(browser: BrowserTarget) -> std::io::Result<()> {
             "external-extensions dir has no parent",
         ));
     };
+    log::info!(
+        "tcc-probe: about to exists() (cross-app) {} [browser={browser:?}]",
+        parent.display()
+    );
     if !parent.exists() {
         log::info!(
             "extension-install: skipping {browser:?} — no profile dir at {}",
@@ -281,6 +297,10 @@ fn install_chromium(browser: BrowserTarget) -> std::io::Result<()> {
     // access data from other apps" TCC prompt that fires on every
     // write into another app's data dir, even when the write is a
     // no-op.
+    log::info!(
+        "tcc-probe: about to read (cross-app) {} [browser={browser:?}]",
+        path.display()
+    );
     if let Ok(existing) = std::fs::read(&path) {
         if existing == desired {
             log::info!(
@@ -292,7 +312,15 @@ fn install_chromium(browser: BrowserTarget) -> std::io::Result<()> {
         }
     }
 
+    log::info!(
+        "tcc-probe: about to create_dir_all (cross-app) {} [browser={browser:?}]",
+        dir.display()
+    );
     std::fs::create_dir_all(&dir)?;
+    log::info!(
+        "tcc-probe: about to write (cross-app) {} [browser={browser:?}]",
+        path.display()
+    );
     std::fs::write(&path, &desired)?;
     log::info!(
         "extension-install: External Extensions hint written for {browser:?} at {}",
@@ -371,9 +399,20 @@ fn cleanup_failed_policy_plist_entry(browser: BrowserTarget) {
     let Some(plist_path) = browser.policy_plist_path() else {
         return;
     };
+    // `~/Library/Preferences/<browser-bundle>.plist` is in OUR Preferences
+    // dir but is registered to another app's bundle id, so `exists()` is
+    // already a cross-app stat on Sonoma+.
+    log::info!(
+        "tcc-probe: about to exists() (cross-app plist) {} [browser={browser:?}]",
+        plist_path.display()
+    );
     if !plist_path.exists() {
         return;
     }
+    log::info!(
+        "tcc-probe: about to plist::Value::from_file (cross-app) {} [browser={browser:?}]",
+        plist_path.display()
+    );
     let Ok(mut data) = plist::Value::from_file(&plist_path) else {
         return;
     };
@@ -392,6 +431,10 @@ fn cleanup_failed_policy_plist_entry(browser: BrowserTarget) {
         }
     }
     if changed {
+        log::info!(
+            "tcc-probe: about to plist::to_file_binary (cross-app) {} [browser={browser:?}]",
+            plist_path.display()
+        );
         if plist::to_file_binary(&plist_path, &data).is_ok() {
             log::info!(
                 "extension-install: stripped stale (ignored) policy entry for {browser:?} from {}",
@@ -470,6 +513,10 @@ fn scrub_external_uninstalls_tombstone(browser: BrowserTarget) {
     let Some(user_data_dir) = ext_dir.parent() else {
         return;
     };
+    log::info!(
+        "tcc-probe: about to read_dir (cross-app) {} [browser={browser:?}]",
+        user_data_dir.display()
+    );
     let Ok(entries) = std::fs::read_dir(user_data_dir) else {
         return;
     };
@@ -478,6 +525,10 @@ fn scrub_external_uninstalls_tombstone(browser: BrowserTarget) {
             continue;
         }
         let prefs_path = entry.path().join("Preferences");
+        log::info!(
+            "tcc-probe: about to is_file() (cross-app) {} [browser={browser:?}]",
+            prefs_path.display()
+        );
         if !prefs_path.is_file() {
             continue;
         }
@@ -492,6 +543,10 @@ fn scrub_external_uninstalls_tombstone(browser: BrowserTarget) {
 
 #[cfg(not(target_os = "windows"))]
 fn strip_tombstone_from_prefs(prefs_path: &std::path::Path) -> std::io::Result<()> {
+    log::info!(
+        "tcc-probe: about to read_to_string (cross-app prefs) {}",
+        prefs_path.display()
+    );
     let raw = std::fs::read_to_string(prefs_path)?;
     let mut data: serde_json::Value = serde_json::from_str(&raw)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
@@ -519,7 +574,16 @@ fn strip_tombstone_from_prefs(prefs_path: &std::path::Path) -> std::io::Result<(
         // at-login app. If the race ever bites in practice we can
         // bump the marker to `v2` and re-scrub everyone.
         let tmp = prefs_path.with_extension("reddblock.tmp");
+        log::info!(
+            "tcc-probe: about to write (cross-app prefs tmp) {}",
+            tmp.display()
+        );
         std::fs::write(&tmp, serde_json::to_vec(&data)?)?;
+        log::info!(
+            "tcc-probe: about to rename (cross-app prefs) {} -> {}",
+            tmp.display(),
+            prefs_path.display()
+        );
         std::fs::rename(&tmp, prefs_path)?;
         log::info!(
             "extension-install: cleared external-uninstalls tombstone for {CHROMIUM_EXT_ID} at {}",
@@ -562,6 +626,10 @@ fn install_firefox_policy() -> std::io::Result<()> {
         ));
     };
 
+    log::info!(
+        "tcc-probe: about to exists() (Firefox bundle) {}",
+        resources_dir.display()
+    );
     if !resources_dir.exists() {
         log::info!(
             "extension-install: Firefox skipped — bundle Resources dir missing at {}",
@@ -573,6 +641,10 @@ fn install_firefox_policy() -> std::io::Result<()> {
     // Best-effort `mkdir -p distribution/`. Returns Err if we lack
     // permission (managed Mac, non-admin user) — log + skip rather
     // than fail the whole install round.
+    log::info!(
+        "tcc-probe: about to create_dir_all (Firefox bundle) {}",
+        distribution_dir.display()
+    );
     if let Err(e) = std::fs::create_dir_all(distribution_dir) {
         log::warn!(
             "extension-install: Firefox skipped — cannot create {}: {e}",
@@ -583,7 +655,15 @@ fn install_firefox_policy() -> std::io::Result<()> {
 
     // Read existing policies.json (if any) and merge in our entry.
     // Preserves anything else IT / a previous tool put there.
+    log::info!(
+        "tcc-probe: about to exists() (Firefox policies) {}",
+        policies_path.display()
+    );
     let mut data = if policies_path.exists() {
+        log::info!(
+            "tcc-probe: about to read_to_string (Firefox policies) {}",
+            policies_path.display()
+        );
         let raw = std::fs::read_to_string(&policies_path)?;
         serde_json::from_str::<serde_json::Value>(&raw).unwrap_or_else(|e| {
             log::warn!(
@@ -635,6 +715,10 @@ fn install_firefox_policy() -> std::io::Result<()> {
     // Writing into /Applications/Firefox.app/... requires the macOS
     // App Management TCC permission; even a no-op write triggers the
     // prompt. Reading does not.
+    log::info!(
+        "tcc-probe: about to read_to_string (Firefox policies, idempotency check) {}",
+        policies_path.display()
+    );
     if let Ok(existing) = std::fs::read_to_string(&policies_path) {
         if existing == pretty {
             log::info!(
@@ -645,6 +729,10 @@ fn install_firefox_policy() -> std::io::Result<()> {
         }
     }
 
+    log::info!(
+        "tcc-probe: about to write (Firefox policies) {}",
+        policies_path.display()
+    );
     std::fs::write(&policies_path, pretty)?;
     log::info!(
         "extension-install: Firefox policy written at {}",

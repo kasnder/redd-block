@@ -26,6 +26,10 @@ pub fn check_safari_fda_access() -> SafariFdaAccess {
                 error: Some("Could not resolve Safari extension settings path".to_string()),
             };
         };
+        log::info!(
+            "tcc-probe: about to read (Safari FDA probe) {}",
+            path.display()
+        );
         match std::fs::read(&path) {
             Ok(_) => SafariFdaAccess {
                 granted: true,

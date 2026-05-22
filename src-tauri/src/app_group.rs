@@ -71,21 +71,44 @@ pub fn start_sync_loop(source: PathBuf) {
 
 #[cfg(target_os = "macos")]
 fn resolve_group_dir() -> Option<PathBuf> {
-    resolve_group_dir_via_ffi().or_else(resolve_group_dir_by_scan)
+    log::info!("tcc-probe: app_group::resolve_group_dir() entered");
+    let result = resolve_group_dir_via_ffi().or_else(resolve_group_dir_by_scan);
+    log::info!(
+        "tcc-probe: app_group::resolve_group_dir() exited, result={:?}",
+        result.as_ref().map(|p| p.display().to_string())
+    );
+    result
 }
 
 #[cfg(target_os = "macos")]
 fn resolve_group_dir_via_ffi() -> Option<PathBuf> {
+    log::info!("tcc-probe: about to call containerURLForSecurityApplicationGroupIdentifier (group.com.reddblock.shared)");
     let manager = NSFileManager::defaultManager();
     let group_id = NSString::from_str(APP_GROUP_ID);
     let url = manager.containerURLForSecurityApplicationGroupIdentifier(&group_id)?;
     let path = url.path()?;
-    Some(PathBuf::from(path.to_string()))
+    let resolved = PathBuf::from(path.to_string());
+    log::info!(
+        "tcc-probe: containerURLForSecurityApplicationGroupIdentifier resolved to {}",
+        resolved.display()
+    );
+    Some(resolved)
 }
 
 #[cfg(target_os = "macos")]
 fn resolve_group_dir_by_scan() -> Option<PathBuf> {
     let root = dirs::home_dir()?.join("Library").join("Group Containers");
+    // This fallback only fires when the FFI primary path failed.
+    // `read_dir` on ~/Library/Group Containers/ enumerates EVERY
+    // group on disk — including groups that belong to other apps —
+    // so it can absolutely trigger the "data from other apps" TCC
+    // prompt for an unsandboxed binary. If this log line ever shows
+    // up in the wild, that's a strong signal we're using the wrong
+    // primary path for this user.
+    log::warn!(
+        "tcc-probe: FALLBACK app_group::resolve_group_dir_by_scan — about to read_dir {}",
+        root.display()
+    );
     let entries = fs::read_dir(root).ok()?;
     for entry in entries.flatten() {
         let path = entry.path();
