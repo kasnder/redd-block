@@ -634,6 +634,9 @@ body.dark-mode .app-blocking-closedown-banner {
     flex-direction: column;
     align-items: stretch;
     overflow: hidden;
+    position: relative;
+    /* Above fixed footer (made-with + zoom); below title bar (1000). */
+    z-index: 100;
 }
 
 .extension-enforcer-action-banner.extension-enforcer-action-banner-closed {
@@ -1194,6 +1197,10 @@ body.dark-mode .app-blocking-closedown-banner {
     letter-spacing: 0.01em;
 }
 
+.extension-enforcer-action-banner .extension-enforcer-step-label {
+    font-size: 14px;
+}
+
 /* ── Screenshot image ── */
 .extension-enforcer-screenshot {
     max-width: 420px;
@@ -1233,7 +1240,15 @@ body.dark-mode .app-blocking-closedown-banner {
     max-width: none;
     flex: 1 1 0;
     min-width: 0;
-    overflow: hidden;
+    align-items: flex-start;
+}
+
+.extension-enforcer-action-banner .screenshots-row:not(.safari-screenshots-asymmetric) .extension-enforcer-step:first-of-type {
+    flex: 0.82 1 0;
+}
+
+.extension-enforcer-action-banner .screenshots-row:not(.safari-screenshots-asymmetric) .extension-enforcer-step:last-of-type {
+    flex: 1.18 1 0;
 }
 
 .extension-enforcer-action-banner .extension-enforcer-screenshots.screenshots-row {
@@ -1241,11 +1256,10 @@ body.dark-mode .app-blocking-closedown-banner {
 }
 
 .extension-enforcer-action-banner .screenshots-row .extension-enforcer-screenshot {
-    max-height: min(36vh, 300px);
-    width: 100%;
+    max-width: 100%;
+    width: auto;
     height: auto;
-    object-fit: contain;
-    object-position: top center;
+    display: block;
 }
 
 .extension-enforcer-action-banner .extension-enforcer-screenshots-wrap:not(.hidden) {
@@ -1254,15 +1268,18 @@ body.dark-mode .app-blocking-closedown-banner {
 
 .extension-enforcer-action-banner .screenshots-grid .extension-enforcer-step {
     min-width: 0;
-    overflow: hidden;
+    align-items: flex-start;
 }
 
 .extension-enforcer-action-banner .screenshots-grid .extension-enforcer-screenshot {
-    max-height: min(36vh, 300px);
-    width: 100%;
+    max-width: 100%;
+    width: auto;
     height: auto;
-    object-fit: contain;
-    object-position: top center;
+    display: block;
+}
+
+.extension-enforcer-action-banner .extension-enforcer-screenshot-arrow {
+    display: none;
 }
 
 /* Safari 2-up how-to: narrow menu bar shot, wide Extensions pane (1:2) */
@@ -6769,6 +6786,7 @@ body.dark-mode .modal-btn.black-btn:hover {
     bottom: 0;
     left: 0;
     right: 0;
+    z-index: 10;
     /* 3-col grid keeps the made-with text genuinely centered in the viewport
        while the zoom control floats flush to the right edge. The two 1fr
        columns balance each other regardless of zoom-control width. */

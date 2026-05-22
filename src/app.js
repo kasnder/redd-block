@@ -2804,6 +2804,7 @@ const ENFORCER_CLOSED_BANNER_ID = 'extension-enforcer-action-banner-closed';
 const enforcerActionBannerStates = new Map();
 const enforcerClosedBannerStates = new Map();
 let enforcerActionBannerInterval = null;
+let enforcerScreenshotResizeTimer = null;
 
 function setupEnforcerUiAlerts() {
     if (isIOS || enforcerUiAlertsAttached) return;
@@ -2826,6 +2827,10 @@ function setupEnforcerUiAlerts() {
         renderEnforcerClosedBanner(payload);
     }).catch((e) => {
         console.warn('[enforcer-ui] failed to attach browser-closed listener:', e);
+    });
+    window.addEventListener('resize', () => {
+        clearTimeout(enforcerScreenshotResizeTimer);
+        enforcerScreenshotResizeTimer = setTimeout(syncAllEnforcerScreenshotHeights, 100);
     });
 }
 
@@ -2975,8 +2980,9 @@ function enforcerCopy(payload) {
 function renderEnforcerCountdownInstruction(el, baseText) {
     if (!el) return;
     el.replaceChildren();
-    const base = baseText || '';
+    let base = (baseText || '').trim();
     const delay = tSettings('enforcerCountdownDelayNote');
+    if (base.endsWith('.')) base = base.slice(0, -1);
     if (base) {
         el.append(document.createTextNode(`${base} `));
     }
@@ -3078,12 +3084,6 @@ function renderEnforcerActionCopy(banner, payload, copy) {
                 container.classList.toggle('screenshots-grid', steps.length >= 3);
                 container.classList.toggle('screenshots-row', steps.length < 3);
                 steps.forEach((step, i) => {
-                    if (i > 0 && steps.length < 3) {
-                        const arrow = document.createElement('span');
-                        arrow.className = 'extension-enforcer-screenshot-arrow';
-                        arrow.textContent = '→';
-                        container.appendChild(arrow);
-                    }
                     const figure = document.createElement('figure');
                     figure.className = 'extension-enforcer-step';
                     const cap = formatExtensionScreenshotCaption(step, i);
@@ -3106,6 +3106,9 @@ function renderEnforcerActionCopy(banner, payload, copy) {
                 (banner.dataset.browser === 'safari' && steps.length === 2),
             );
             showMeBtn.classList.remove('hidden');
+            if (!screenshotsWrap.classList.contains('hidden')) {
+                scheduleEnforcerScreenshotSync(screenshotsWrap);
+            }
         } else {
             showMeBtn.classList.add('hidden');
             showMeBtn.classList.remove('open');
@@ -3289,6 +3292,7 @@ function ensureEnforcerActionBanner(payload) {
             const isOpen = showMeBtn.classList.toggle('open');
             screenshotsWrap.classList.toggle('hidden', !isOpen);
             showMeBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            if (isOpen) scheduleEnforcerScreenshotSync(screenshotsWrap);
         });
     }
     const urlBtn = banner.querySelector('.extension-enforcer-action-url');
@@ -3479,6 +3483,91 @@ async function copyEnforcerUrlChip(button) {
     }
 }
 
+function scheduleEnforcerScreenshotSync(wrap) {
+    if (!wrap) return;
+    requestAnimationFrame(() => {
+        syncEnforcerScreenshotHeights(wrap);
+        requestAnimationFrame(() => syncEnforcerScreenshotHeights(wrap));
+        wrap.querySelectorAll('.extension-enforcer-screenshot').forEach(img => {
+            if (img.complete) return;
+            img.addEventListener('load', () => scheduleEnforcerScreenshotSync(wrap), { once: true });
+        });
+    });
+}
+
+function syncAllEnforcerScreenshotHeights() {
+    document.querySelectorAll('.extension-enforcer-screenshots-wrap:not(.hidden)')
+        .forEach(scheduleEnforcerScreenshotSync);
+}
+
+/** Size enforcer how-to screenshots to fill remaining viewport height. */
+function syncEnforcerScreenshotHeights(wrap) {
+    if (!wrap || wrap.classList.contains('hidden')) {
+        if (wrap) {
+            wrap.style.maxHeight = '';
+            wrap.style.overflowY = '';
+        }
+        return;
+    }
+
+    const container = wrap.querySelector('.extension-enforcer-screenshots');
+    if (!container) return;
+
+    const images = [...container.querySelectorAll('.extension-enforcer-screenshot')];
+    images.forEach(img => {
+        img.style.maxHeight = '';
+        img.style.width = '';
+        img.style.height = '';
+    });
+
+    const bottomPadding = 10;
+    const availableTotal = Math.max(
+        180,
+        window.innerHeight - wrap.getBoundingClientRect().top - bottomPadding,
+    );
+    wrap.style.maxHeight = `${availableTotal}px`;
+    wrap.style.overflowY = 'auto';
+
+    const containerStyle = getComputedStyle(container);
+    const panelOverhead = parseFloat(containerStyle.paddingTop)
+        + parseFloat(containerStyle.paddingBottom)
+        + 8;
+    const labels = [...container.querySelectorAll('.extension-enforcer-step-label')];
+    const labelOverhead = labels.length
+        ? Math.max(...labels.map(label => label.getBoundingClientRect().height)) + 6
+        : 0;
+    const maxImgHeight = Math.max(160, availableTotal - panelOverhead - labelOverhead);
+
+    images.forEach(img => {
+        const step = img.closest('.extension-enforcer-step');
+        const columnWidth = step?.getBoundingClientRect().width || 0;
+        const naturalW = img.naturalWidth;
+        const naturalH = img.naturalHeight;
+
+        img.style.maxHeight = '';
+        img.style.maxWidth = '';
+        img.style.width = '';
+        img.style.height = '';
+
+        if (naturalW > 0 && naturalH > 0 && columnWidth > 0) {
+            const heightAtFullWidth = (columnWidth / naturalW) * naturalH;
+            if (heightAtFullWidth <= maxImgHeight) {
+                img.style.width = `${Math.round(columnWidth)}px`;
+                img.style.height = `${Math.round(heightAtFullWidth)}px`;
+            } else {
+                img.style.width = `${Math.round((maxImgHeight / naturalH) * naturalW)}px`;
+                img.style.height = `${Math.round(maxImgHeight)}px`;
+            }
+            return;
+        }
+
+        img.style.maxHeight = `${maxImgHeight}px`;
+        img.style.maxWidth = columnWidth > 0 ? `${Math.round(columnWidth)}px` : '100%';
+        img.style.width = 'auto';
+        img.style.height = 'auto';
+    });
+}
+
 function renderEnforcerScreenshots(container, steps, browserKey) {
     if (!container || !steps?.length) return;
     const stepsKey = `${browserKey}:${steps.map(s => s.src).join(',')}`;
@@ -3488,12 +3577,6 @@ function renderEnforcerScreenshots(container, steps, browserKey) {
     container.classList.toggle('screenshots-grid', steps.length >= 3);
     container.classList.toggle('screenshots-row', steps.length < 3);
     steps.forEach((step, i) => {
-        if (i > 0 && steps.length < 3) {
-            const arrow = document.createElement('span');
-            arrow.className = 'extension-enforcer-screenshot-arrow';
-            arrow.textContent = '→';
-            container.appendChild(arrow);
-        }
         const figure = document.createElement('figure');
         figure.className = 'extension-enforcer-step';
         const cap = formatExtensionScreenshotCaption(step, i);
@@ -3511,6 +3594,10 @@ function renderEnforcerScreenshots(container, steps, browserKey) {
         container.appendChild(figure);
     });
     container.classList.toggle('safari-screenshots-asymmetric', browserKey === 'safari' && steps.length === 2);
+    const wrap = container.closest('.extension-enforcer-screenshots-wrap');
+    if (wrap && !wrap.classList.contains('hidden')) {
+        scheduleEnforcerScreenshotSync(wrap);
+    }
 }
 
 function closedIssueCopyKey(issue) {
@@ -3572,7 +3659,10 @@ function renderEnforcerBrowserActionRow(state, mode) {
         const isSameOpen = !screenshotsWrap.classList.contains('hidden')
             && screenshots.dataset.stepsKey?.startsWith(`${state.key}:`);
         screenshotsWrap.classList.toggle('hidden', isSameOpen);
-        if (!isSameOpen) renderEnforcerScreenshots(screenshots, steps, state.key);
+        if (!isSameOpen) {
+            renderEnforcerScreenshots(screenshots, steps, state.key);
+            scheduleEnforcerScreenshotSync(screenshotsWrap);
+        }
     };
     row.appendChild(showMe);
 
@@ -13262,8 +13352,8 @@ const SETTINGS_TRANSLATIONS = {
         migrationSafariProfileDefaultName: '(Default Safari profile)',
         migrationScreenshotCaptionStep: 'Step {n}: {label}',
         migrationScreenshotStepOnly: 'Step {n}',
-        migrationShotChromeStep1: 'Open Chrome extension settings',
-        migrationShotChromeStep2: 'Open Details for ReDD Focus and allow it in Incognito windows',
+        migrationShotChromeStep1: 'In Chrome extension settings, open details for ReDD Focus',
+        migrationShotChromeStep2: 'Enable ReDD Focus and allow it in Incognito windows',
         migrationShotEdgeStep1: 'Open Edge extension settings',
         migrationShotEdgeStep2: 'Open Details for ReDD Focus and allow it in InPrivate windows',
         migrationShotFirefoxStep1: 'Find ReDD Focus',
@@ -13276,7 +13366,7 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedStatus: 'closed',
         enforcerCountdownInstrMissing: 'ReDD Focus is not installed. Install it to stop the countdown.',
         enforcerCountdownInstrDisabled: 'ReDD Focus is turned off. Enable it to stop the countdown.',
-        enforcerCountdownDelayNote: '(Changes can take up to 20 seconds to detect.)',
+        enforcerCountdownDelayNote: '(changes can take up to 20 seconds to detect).',
         enforcerCountdownInstrPrivate: 'Private windows aren’t covered by ReDD Focus. Enable Allow in Incognito to stop the countdown.',
         enforcerCountdownInstrWebsiteAccess: 'ReDD Focus is not allowed on all websites. Allow all websites to stop the countdown.',
         enforcerCountdownInstrAccess: 'ReDD Block can’t verify ReDD Focus. Grant access to stop the countdown.',
@@ -13680,8 +13770,8 @@ const SETTINGS_TRANSLATIONS = {
         migrationSafariProfileDefaultName: '(Standard Safari-profil)',
         migrationScreenshotCaptionStep: 'Trin {n}: {label}',
         migrationScreenshotStepOnly: 'Trin {n}',
-        migrationShotChromeStep1: 'Åbn Chromes udvidelsesindstillinger',
-        migrationShotChromeStep2: 'Åbn Details for ReDD Focus og tillad udvidelsen i Inkognito-vinduer',
+        migrationShotChromeStep1: 'I Chromes udvidelsesindstillinger, åbn details for ReDD Focus',
+        migrationShotChromeStep2: 'Aktivér ReDD Focus og tillad udvidelsen i Inkognito-vinduer',
         migrationShotEdgeStep1: 'Åbn Edges udvidelsesindstillinger',
         migrationShotEdgeStep2: 'Åbn Details for ReDD Focus og tillad udvidelsen i InPrivate-vinduer',
         migrationShotFirefoxStep1: 'Find ReDD Focus',
@@ -13694,7 +13784,7 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedStatus: 'lukket',
         enforcerCountdownInstrMissing: 'ReDD Focus er ikke installeret. Installer den for at stoppe nedtællingen.',
         enforcerCountdownInstrDisabled: 'ReDD Focus er slået fra. Aktivér den for at stoppe nedtællingen.',
-        enforcerCountdownDelayNote: '(Ændringer kan tage op til 20 sekunder at registrere.)',
+        enforcerCountdownDelayNote: '(ændringer kan tage op til 20 sekunder at registrere).',
         enforcerCountdownInstrPrivate: 'Private vinduer er ikke dækket af ReDD. Aktivér privat browsing for at stoppe nedtællingen.',
         enforcerCountdownInstrWebsiteAccess: 'ReDD Focus er ikke tilladt på alle websites. Tillad alle websites for at stoppe nedtællingen.',
         enforcerCountdownInstrAccess: 'ReDD Block kan ikke bekræfte ReDD Focus. Giv adgang for at stoppe nedtællingen.',
