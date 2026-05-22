@@ -25,14 +25,13 @@
 //!    own app-data dir, so checking/writing it never touches another
 //!    app's territory.
 //!
-//! [`should_run_cross_app_installs`] combines the two: we run our
-//! startup cross-app writes when either FDA is granted (silent) or
-//! the user has explicitly chosen to proceed without it (so prompts
-//! are at least an expected consequence of their choice). Before
-//! either of those holds, `lib.rs::run` defers the install — the
-//! frontend invokes [`crate::commands::fda::complete_fda_onboarding`]
-//! after the user dismisses the onboarding overlay, which sets the
-//! marker and force-runs the deferred install in one step.
+//! [`should_run_cross_app_installs`] is true only once BOTH hold:
+//!   - the user has completed the FDA onboarding overlay (marker file), AND
+//!   - the EULA has been accepted in the canonical data file.
+//!
+//! The EULA check prevents a stale FDA marker (left over from a prior
+//! session while re-testing with `--eula`) from firing cross-app reads
+//! during the welcome / EULA screens.
 
 #[cfg(target_os = "macos")]
 use std::path::PathBuf;
@@ -177,13 +176,49 @@ pub fn mark_user_through_fda_onboarding(choice: FdaOnboardingChoice) {
 #[cfg(not(target_os = "macos"))]
 pub fn mark_user_through_fda_onboarding(_choice: ()) {}
 
+/// True when the canonical data file records EULA acceptance. Reads
+/// our own JSON only — never touches another app's data.
+///
+/// Uses the same path resolver as `commands::data::load_data` so a
+/// stale EULA flag in a legacy bundle-id file cannot unlock cross-app
+/// work while the UI is showing the welcome / EULA screens.
+#[cfg(target_os = "macos")]
+fn has_accepted_eula_in_data() -> bool {
+    let path = crate::commands::canonical_data_path_static();
+    if !path.exists() {
+        return false;
+    }
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return false;
+    };
+    let Some(settings) = json.get("settings") else {
+        return false;
+    };
+    if settings
+        .get("eulaAcceptedRevision")
+        .and_then(|v| v.as_u64().or_else(|| v.as_i64().map(|n| n.max(0) as u64)))
+        .map(|n| n > 0)
+        .unwrap_or(false)
+    {
+        return true;
+    }
+    settings
+        .get("eulaAccepted")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn has_accepted_eula_in_data() -> bool {
+    true
+}
+
 /// True when we're allowed to run startup cross-app writes
 /// (native-messaging manifest install, extension-install hints).
-/// The signal is purely the existence of the FDA-onboarding marker:
-/// once the user has dismissed the FDA overlay (either by granting
-/// FDA or by explicitly choosing to skip), we know it's appropriate
-/// to do the writes. Until then, we defer — there's no surface where
-/// the user has been told about permission prompts yet.
+/// Also gates browser profile scans and the enforcer tick loop.
 ///
 /// We deliberately do NOT probe Full Disk Access here, because the
 /// probe itself (opening
@@ -198,7 +233,14 @@ pub fn mark_user_through_fda_onboarding(_choice: ()) {}
 /// On non-macOS targets this always returns `true`.
 #[cfg(target_os = "macos")]
 pub fn should_run_cross_app_installs() -> bool {
-    has_user_been_through_fda_onboarding()
+    if !has_user_been_through_fda_onboarding() {
+        return false;
+    }
+    if !has_accepted_eula_in_data() {
+        log::info!("tcc-probe: deferring cross-app work — EULA not accepted in data file");
+        return false;
+    }
+    true
 }
 
 #[cfg(not(target_os = "macos"))]

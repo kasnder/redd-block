@@ -194,6 +194,14 @@ fn firefox_policies_json_path() -> PathBuf {
 /// running it on every app launch keeps the hints in place and
 /// re-creates them if the user removed any manually.
 pub fn install() -> std::io::Result<()> {
+    #[cfg(target_os = "macos")]
+    if !crate::cross_app_consent::should_run_cross_app_installs() {
+        log::info!(
+            "tcc-probe: extension_install::install() skipped — onboarding not complete"
+        );
+        return Ok(());
+    }
+
     log::info!("tcc-probe: extension_install::install() entered");
     for browser in BrowserTarget::all() {
         log::info!("tcc-probe: extension_install::install_chromium({browser:?}) start");

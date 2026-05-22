@@ -114,6 +114,16 @@ pub fn scan() -> ScanResult {
     scan_filter(|_| true)
 }
 
+fn empty_scan_result() -> ScanResult {
+    ScanResult {
+        firefox: empty("firefox"),
+        chrome: empty("chrome"),
+        brave: empty("brave"),
+        edge: empty("edge"),
+        safari: empty("safari"),
+    }
+}
+
 /// Scan only the browsers for which `should_scan` returns true; the
 /// rest are returned as empty stubs (`installed=false, present=false,
 /// profiles=[]`).
@@ -131,6 +141,12 @@ pub fn scan() -> ScanResult {
 /// The vendor labels passed to the predicate are the lowercase
 /// short names: "firefox", "chrome", "brave", "edge", "safari".
 pub fn scan_filter<F: Fn(&str) -> bool>(should_scan: F) -> ScanResult {
+    #[cfg(target_os = "macos")]
+    if !crate::cross_app_consent::should_run_cross_app_installs() {
+        log::info!("tcc-probe: profile_scan deferred — onboarding not complete");
+        return empty_scan_result();
+    }
+
     ScanResult {
         firefox: if should_scan("firefox") {
             scan_firefox().unwrap_or_else(|| empty("firefox"))

@@ -4665,19 +4665,85 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
    sized to fill the legal-onboarding-content (560px) at full width
    on desktop, with the same rounded-corner / soft-shadow treatment
    as the rest of the onboarding cards so it visually belongs. */
+.welcome-onboarding-video-label {
+    max-width: 560px;
+    width: 100%;
+    margin: 0 auto 6px;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text-muted);
+    text-align: center;
+}
+
 .welcome-onboarding-video {
     display: block;
     width: 100%;
     max-width: 560px;
+    max-height: min(38vh, 280px);
     height: auto;
-    margin: 0 auto 24px;
+    margin: 0 auto 12px;
     border-radius: 14px;
     box-shadow: 0 12px 32px rgba(10, 45, 123, 0.12);
     background: var(--redd-card, #f5f5f5);
+    object-fit: contain;
     /* Slight outline keeps the rounded corners visible against the
        page background in both light and dark themes. */
     outline: 1px solid rgba(0, 0, 0, 0.04);
     outline-offset: -1px;
+    /* Block ALL user interaction with the video element. WKWebView's
+       HTML5 video fullscreen path (triggered by double-click or the
+       native control overlay's fullscreen button) crashed the host
+       process in user testing on macOS Sequoia. There's no value in
+       letting a silent autoplaying onboarding loop be enlarged or
+       right-clicked anyway — `pointer-events: none` makes the video
+       purely decorative without disabling the looping playback. */
+    pointer-events: none;
+}
+
+#welcome-onboarding .legal-onboarding-content {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    max-height: calc(100dvh - var(--title-bar-height) - 32px);
+    overflow: hidden;
+}
+
+#welcome-onboarding .onboarding-icon {
+    flex-shrink: 0;
+    margin-bottom: 8px;
+}
+
+#welcome-onboarding h1 {
+    flex-shrink: 0;
+    margin-bottom: 10px;
+}
+
+#welcome-onboarding .legal-onboarding-card {
+    flex-shrink: 0;
+    margin-bottom: 10px;
+}
+
+#welcome-onboarding .welcome-onboarding-video-label {
+    flex-shrink: 0;
+}
+
+#welcome-onboarding .welcome-onboarding-video {
+    flex: 1 1 auto;
+    min-height: 120px;
+}
+
+#welcome-onboarding .legal-onboarding-body {
+    flex-shrink: 0;
+    margin-top: 0;
+    margin-bottom: 0;
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+#welcome-onboarding.onboarding-screen {
+    padding-top: 12px;
+    padding-bottom: 12px;
+    overflow: hidden;
 }
 
 body.dark-mode .welcome-onboarding-video {

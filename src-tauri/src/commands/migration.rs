@@ -315,7 +315,19 @@ pub async fn run_upgrade_migration(app: tauri::AppHandle) -> Result<bool, String
     if !migration_pending_sync() {
         // Nothing to do — but still install native-host manifests
         // (idempotent) and stamp the version so we don't keep
-        // checking.
+        // checking. Gated on macOS so we don't fire cross-app TCC
+        // prompts during welcome / EULA / FDA onboarding.
+        #[cfg(target_os = "macos")]
+        if crate::cross_app_consent::should_run_cross_app_installs() {
+            if let Err(e) = crate::native_host_install::install() {
+                log::warn!("native-host install during migration failed: {e}");
+            }
+        } else {
+            log::info!(
+                "tcc-probe: deferring native_host_install during migration — onboarding not complete"
+            );
+        }
+        #[cfg(not(target_os = "macos"))]
         if let Err(e) = crate::native_host_install::install() {
             log::warn!("native-host install during migration failed: {e}");
         }
@@ -339,6 +351,17 @@ pub async fn run_upgrade_migration(app: tauri::AppHandle) -> Result<bool, String
         return Ok(false);
     }
 
+    #[cfg(target_os = "macos")]
+    if crate::cross_app_consent::should_run_cross_app_installs() {
+        if let Err(e) = crate::native_host_install::install() {
+            log::warn!("native-host install during migration failed: {e}");
+        }
+    } else {
+        log::info!(
+            "tcc-probe: deferring native_host_install after migration — onboarding not complete"
+        );
+    }
+    #[cfg(not(target_os = "macos"))]
     if let Err(e) = crate::native_host_install::install() {
         log::warn!("native-host install during migration failed: {e}");
     }

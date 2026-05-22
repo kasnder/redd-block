@@ -173,6 +173,30 @@ pub fn canonical_data_path(app: &AppHandle) -> Option<PathBuf> {
     Some(get_data_path(app))
 }
 
+/// Same path selection as [`canonical_data_path`] but without an
+/// [`AppHandle`]. Used by macOS startup gating (`cross_app_consent`)
+/// before the frontend has loaded — must NOT scan legacy bundle-id
+/// paths, only the canonical shared or per-user location.
+#[cfg(not(target_os = "ios"))]
+pub fn canonical_data_path_static() -> PathBuf {
+    if should_use_shared_data_path() {
+        get_shared_data_path()
+    } else {
+        per_user_data_path_static()
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn per_user_data_path_static() -> PathBuf {
+    dirs::data_dir()
+        .map(|d| d.join("com.reddblock").join("redd-block-data.json"))
+        .unwrap_or_else(|| {
+            dirs::home_dir()
+                .unwrap_or_default()
+                .join("Library/Application Support/com.reddblock/redd-block-data.json")
+        })
+}
+
 fn get_data_path(app: &AppHandle) -> PathBuf {
     #[cfg(target_os = "ios")]
     {

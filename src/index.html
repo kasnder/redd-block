@@ -173,14 +173,11 @@
             </div>
         </div>
 
-        <!-- Friendly project intro shown once per machine, between
-             EULA acceptance and the FDA onboarding screen. Exists to
-             cushion the (legitimate but somewhat scary on first
-             read) FDA permission ask that comes next — users land
-             here, see who built ReDD Block and that it's open-source,
-             then click "Get started" to move on. Gated by
-             `appData.settings.welcomeOnboardingShown` (set true by
-             `ensureWelcomeOnboardingComplete` after Get started). -->
+        <!-- Friendly project intro shown once per machine, before the
+             EULA. Users land here first, see who built ReDD Block and
+             that it's open-source, then click "Get started" to move
+             on to legal acceptance. Gated by
+             `appData.settings.welcomeOnboardingShown`. -->
         <div id="welcome-onboarding" class="onboarding-screen hidden">
             <div class="onboarding-content legal-onboarding-content">
                 <div class="onboarding-icon">
@@ -197,16 +194,13 @@
                         Get started
                     </button>
                 </div>
-                <!-- Demo video below the Get-started card. Muted +
-                     autoplay + loop + playsinline keeps it browser-
-                     friendly across the WKWebView and avoids surprise
-                     audio. `preload="auto"` lets the runtime prefetch
-                     the ~1.7 MB file while the EULA is still on
-                     screen so this view renders without a black
-                     flash. -->
+                <!-- Demo video below the Get-started card. User-initiated
+                     playback only (no autoplay). Muted + playsinline keeps
+                     it friendly in WKWebView if they press play. -->
+                <p class="welcome-onboarding-video-label">Demo video</p>
                 <video id="welcome-onboarding-video"
                        class="welcome-onboarding-video"
-                       autoplay muted loop playsinline preload="auto"
+                       muted playsinline preload="metadata" controls
                        aria-label="ReDD Block demo video">
                     <source src="/reddblock-video.mp4" type="video/mp4">
                 </video>

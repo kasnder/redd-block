@@ -21,8 +21,15 @@ pub fn enforcer_start(app: AppHandle, state: State<EnforcerState>) {
     if slot.is_none() {
         *slot = Some(enforcer::start(app));
     }
+    #[cfg(target_os = "macos")]
+    let cross_app_ok = crate::cross_app_consent::should_run_cross_app_installs();
+    #[cfg(not(target_os = "macos"))]
+    let cross_app_ok = true;
     if let Some(h) = slot.as_ref() {
-        h.set_enabled(true);
+        h.set_enabled(cross_app_ok);
+        if !cross_app_ok {
+            log::info!("enforcer: enforcer_start ignored — onboarding not complete");
+        }
     }
 }
 
@@ -43,27 +50,32 @@ pub fn register<R: tauri::Runtime>(app: &tauri::App<R>) {
 /// every 5 s for missing/disabled extensions and quits the browser if
 /// the user doesn't fix it within the grace window.
 ///
-/// IMPORTANT: when a v1.x → 2.0 migration is pending or just completed,
-/// we start the enforcer **paused**. Otherwise the user upgrades, gets
-/// an admin prompt, accepts, hasn't yet installed the browser
-/// extension — and 30-60 s later the enforcer kills their browser with
-/// no context. The frontend resumes the enforcer (via
-/// `enforcer_start`) once the user has dismissed the post-migration
-/// onboarding screen. See migration UX in app.js.
+/// IMPORTANT: we start the enforcer **paused** when either:
+///   - a v1.x → 2.0 migration is pending (same rationale as before), or
+///   - on macOS, the user has not yet completed FDA onboarding.
+///
+/// The enforcer's tick loop reads each running browser's profile data
+/// to detect disabled extensions — every read can fire the macOS
+/// "access data from other apps" TCC prompt. Defer until the frontend
+/// has walked the user through welcome / EULA / FDA and calls
+/// `enforcer_start`. See migration UX and `runPostAcceptanceStartup`
+/// in app.js.
 pub fn auto_start(app: &tauri::AppHandle) {
     use tauri::Manager;
     let h = enforcer::start(app.clone());
 
-    // If there's v1.x residue on disk at startup, hold the enforcer
-    // until the frontend's migration onboarding completes and calls
-    // enforcer_start. Migration runs in-process during the same
-    // launch, so even after residue is cleaned the enforcer stays
-    // paused until the user dismisses the post-cleanup welcome
-    // screen.
     let pending = crate::commands::migration::migration_pending_sync();
-    h.set_enabled(!pending);
+    #[cfg(target_os = "macos")]
+    let cross_app_ok = crate::cross_app_consent::should_run_cross_app_installs();
+    #[cfg(not(target_os = "macos"))]
+    let cross_app_ok = true;
+
+    let enabled = !pending && cross_app_ok;
+    h.set_enabled(enabled);
     if pending {
         log::info!("enforcer: starting paused (migration onboarding pending)");
+    } else if !cross_app_ok {
+        log::info!("enforcer: starting paused (FDA onboarding not completed)");
     }
 
     let state = app.state::<EnforcerState>();

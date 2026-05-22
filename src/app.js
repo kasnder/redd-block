@@ -1089,6 +1089,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupGraceSetting();
     if (isIOS && hasAcceptedEula()) {
         await checkScreentimeAuth();
+    } else if (!isIOS) {
+        await runInitialDesktopOnboardingSequence();
     } else {
         updateOnboardingVisibility();
     }
@@ -1268,10 +1270,6 @@ async function runPostAcceptanceStartup() {
             // sandboxed container on first launch — firing the very
             // TCC prompts this overlay exists to pre-empt. No-op on
             // Windows / Linux.
-            // Friendly project-intro screen, shown once per machine,
-            // before we ask for any permissions. Cushions the FDA
-            // ask that follows.
-            await ensureWelcomeOnboardingComplete();
             await ensureFdaOnboardingComplete();
             // No explicit FDA-banner refresh here — the combined
             // setup banner re-evaluates FDA state every time
@@ -1285,6 +1283,13 @@ async function runPostAcceptanceStartup() {
             // Then sync schedules to helper so both enforcement sources are aligned.
             await syncSchedulesToHelper();
             console.log('[startup-sync] Startup helper reconciliation complete');
+            if (!migrationOnboardingActive) {
+                try {
+                    await invoke('enforcer_start');
+                } catch (e) {
+                    console.warn('[startup] enforcer_start failed:', e);
+                }
+            }
         }
         render();
         startTickInterval();
@@ -1342,25 +1347,17 @@ async function checkForAppUpdate() {
 
 // ---- Welcome screen --------------------------------------------------------
 //
-// Friendly one-screen intro shown once per machine, between EULA
-// acceptance and the FDA onboarding overlay. Purpose: cushion the
-// FDA permission ask. Without this screen, a fresh user accepts the
-// EULA and is immediately faced with a system-level "give us Full
-// Disk Access" prompt — accurate, but it reads as scary out of
-// context. The welcome screen sets context (ReDD Block is open-
-// source, here's who built it) before the permissions story.
+// Friendly one-screen intro shown once per machine, before the EULA.
+// Sets context (open-source, who built it) before legal acceptance
+// and the FDA permission ask.
 //
 // Persistence: `appData.settings.welcomeOnboardingShown` (boolean).
-// Same persistence channel as the EULA acceptance, which means it
-// survives reinstalls (lives in
-// ~/Library/Application Support/com.reddblock/redd-block-data.json)
-// AND is wiped by `scripts/dev-reset-fda-onboarding.sh --eula` for
-// re-testing.
-async function ensureWelcomeOnboardingComplete() {
-    if (isIOS) return;
-    if (appData?.settings?.welcomeOnboardingShown === true) return;
-    await showWelcomeOnboardingOverlay();
-    // Persist so we don't show again on this machine.
+// Wiped by `scripts/dev-reset-fda-onboarding.sh --eula` for re-testing.
+function hasWelcomeOnboardingBeenShown() {
+    return appData?.settings?.welcomeOnboardingShown === true;
+}
+
+async function persistWelcomeOnboardingShown() {
     if (!appData.settings) appData.settings = {};
     appData.settings.welcomeOnboardingShown = true;
     try {
@@ -1368,6 +1365,14 @@ async function ensureWelcomeOnboardingComplete() {
     } catch (e) {
         console.warn('[welcome-onboarding] persist failed:', e);
     }
+}
+
+async function runInitialDesktopOnboardingSequence() {
+    if (!hasWelcomeOnboardingBeenShown()) {
+        await showWelcomeOnboardingOverlay();
+        await persistWelcomeOnboardingShown();
+    }
+    updateOnboardingVisibility();
 }
 
 function showWelcomeOnboardingOverlay() {
@@ -1388,6 +1393,7 @@ function showWelcomeOnboardingOverlay() {
         document.getElementById('fda-onboarding')?.classList.add('hidden');
         document.getElementById('migration-onboarding')?.classList.add('hidden');
         document.getElementById('main-content')?.classList.add('hidden');
+        document.getElementById('now-blocking-row')?.classList.add('hidden');
         overlay.classList.remove('hidden');
 
         const onClick = () => {
@@ -1484,6 +1490,7 @@ function showFdaOnboardingOverlay() {
         document.getElementById('eula-onboarding')?.classList.add('hidden');
         document.getElementById('migration-onboarding')?.classList.add('hidden');
         document.getElementById('main-content')?.classList.add('hidden');
+        document.getElementById('now-blocking-row')?.classList.add('hidden');
         overlay.classList.remove('hidden');
 
         let pollHandle = null;
@@ -2534,6 +2541,10 @@ window.addEventListener('focus', () => {
     if (typeof kickClockNow === 'function') kickClockNow();
     if (migrationOnboardingActive) {
         pollMigrationCompliance();
+    } else if (!hasAcceptedEula() || !startupInitializationComplete) {
+        // During welcome / EULA / FDA, avoid any backend work that
+        // reads browser profile data — the enforcer is paused too,
+        // but the banner refresh path can still invoke onboarding_state.
     } else {
         // Two refreshes on focus, deliberately:
         //

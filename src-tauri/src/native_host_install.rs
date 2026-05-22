@@ -136,6 +136,14 @@ pub fn current_binary_path() -> Option<String> {
 /// For an explicit "reinstall manifests now" affordance (e.g. user
 /// hits a Reinstall hints button in the UI), use [`install_force`].
 pub fn install() -> std::io::Result<()> {
+    #[cfg(target_os = "macos")]
+    if !crate::cross_app_consent::should_run_cross_app_installs() {
+        log::info!(
+            "tcc-probe: native_host_install::install() skipped — onboarding not complete"
+        );
+        return Ok(());
+    }
+
     let binary = current_binary_path().ok_or_else(|| {
         std::io::Error::new(std::io::ErrorKind::Other, "cannot resolve current exe")
     })?;

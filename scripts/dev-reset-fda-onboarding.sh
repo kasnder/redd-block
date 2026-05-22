@@ -47,6 +47,7 @@ for arg in "$@"; do
 done
 
 APP_DATA_DIR="$HOME/Library/Application Support/com.reddblock"
+SHARED_DATA_DIR="/var/lib/redd-block"
 LOG_FILE="$HOME/Library/Logs/com.reddblock/ReDD Block.log"
 
 echo "==> Quitting any running ReDD Block process"
@@ -78,32 +79,53 @@ else
         fi
     done
 
-    # Clear the welcome-onboarding marker from redd-block-data.json
-    # even in the default (non-eula) mode. Conceptually it's just
-    # another onboarding marker — it only happens to live inside the
-    # JSON settings blob rather than as its own file because that's
-    # the simplest way to persist a JS-side boolean. Resetting markers
-    # but leaving welcomeOnboardingShown=true is the exact bug that
-    # makes "test the first-launch flow" fail to actually show the
-    # welcome screen.
-    local_data="$APP_DATA_DIR/redd-block-data.json"
-    if [[ -f "$local_data" ]] && command -v jq >/dev/null 2>&1; then
+    # Clear welcome / EULA flags from redd-block-data.json. On desktop
+    # the canonical file may live in either the per-user app-data dir
+    # or /var/lib/redd-block once shared storage is active — reset
+    # both so --eula actually re-shows the first-launch flow.
+    clear_onboarding_json_fields() {
+        local data_file="$1"
+        [[ -f "$data_file" ]] || return 0
+        if ! command -v jq >/dev/null 2>&1; then
+            echo "  WARNING: jq not installed; could not edit $data_file (install with 'brew install jq')"
+            return 0
+        fi
+        local tmp
         tmp=$(mktemp /tmp/redd-block-data.XXXXXX.json)
         if [[ "$EULA" == "1" ]]; then
-            # --eula additionally clears EULA acceptance from JSON.
-            jq 'if .settings then .settings |= (del(.eulaAcceptedRevision) | del(.eulaAcceptedAt) | del(.onboardingComplete) | del(.welcomeOnboardingShown)) else . end' \
-                "$local_data" > "$tmp"
-            echo "==> --eula: cleared EULA + welcome fields from redd-block-data.json"
+            jq 'if .settings then .settings |= (del(.eulaAcceptedRevision) | del(.eulaAcceptedAt) | del(.onboardingComplete) | del(.welcomeOnboardingShown) | if .extra then .extra |= del(.eulaAccepted) | del(.eulaAcceptedAt) | del(.eulaAcceptedRevision) else . end) else . end' \
+                "$data_file" > "$tmp"
+            echo "  cleared EULA + welcome fields in $data_file"
         else
             jq 'if .settings then .settings |= del(.welcomeOnboardingShown) else . end' \
-                "$local_data" > "$tmp"
-            echo "==> Cleared welcomeOnboardingShown from redd-block-data.json"
+                "$data_file" > "$tmp"
+            echo "  cleared welcomeOnboardingShown in $data_file"
         fi
-        mv "$tmp" "$local_data"
-    elif [[ ! -f "$local_data" ]]; then
-        : # nothing to do
+        if [[ -w "$data_file" ]]; then
+            mv "$tmp" "$data_file"
+        elif command -v sudo >/dev/null 2>&1; then
+            sudo mv "$tmp" "$data_file"
+            echo "  (wrote via sudo — $data_file is not user-writable)"
+        else
+            rm -f "$tmp"
+            echo "  WARNING: could not write $data_file (not writable and sudo unavailable)"
+        fi
+    }
+
+    for data_file in \
+        "$SHARED_DATA_DIR/redd-block-data.json" \
+        "$APP_DATA_DIR/redd-block-data.json" \
+        "$HOME/Library/Application Support/com.redd.block/redd-block-data.json" \
+        "$HOME/Library/Application Support/redd-block/redd-block-data.json"
+    do
+        clear_onboarding_json_fields "$data_file"
+    done
+
+    fda_marker="$APP_DATA_DIR/fda-onboarded.v1"
+    if [[ -f "$fda_marker" ]]; then
+        echo "  WARNING: fda-onboarded.v1 still present at $fda_marker (remove failed?)"
     else
-        echo "  WARNING: jq not installed; welcomeOnboardingShown not cleared (install with 'brew install jq')"
+        echo "  fda-onboarded.v1 absent (good — cross-app work stays deferred until FDA screen)"
     fi
 fi
 
@@ -133,12 +155,18 @@ cat <<EOF
   1. (In one terminal) follow the log:
        tail -F "$LOG_FILE" | grep tcc-probe
 
-  2. (Then) launch the app:
+  2. (Then) rebuild and launch (required — source fixes are not in
+     /Applications until you rebuild):
+       npm run tauri build
        open "/Applications/ReDD Block.app"
+
+  Or for dev:
+       npm run tauri dev
 
   Expected:
     - The 'tcc-probe: deferring native_host_install::install …' line
       appears at startup (no cross-app writes yet).
+    - Welcome intro screen (first launch after reset).
     - EULA screen (only if you passed --eula).
     - FDA onboarding overlay appears.
     - If you click 'Open Full Disk Access settings' and toggle ReDD
