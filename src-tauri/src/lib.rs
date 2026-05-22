@@ -59,6 +59,8 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 
 pub mod commands;
+#[cfg(target_os = "macos")]
+pub mod cross_app_consent;
 
 /// Custom NSPanel class for the main ReDD Block window. Most of the time
 /// this behaves indistinguishably from a regular NSWindow — but having
@@ -633,9 +635,35 @@ pub fn run() {
             }
 
             // Refresh per-browser native-messaging manifests on every
-            // launch. Idempotent — overwrites the JSON with the current
-            // exe path so a dragged or reinstalled app still resolves.
-            #[cfg(not(target_os = "ios"))]
+            // launch. Marker-gated inside install() so the cross-app
+            // writes happen only when the binary path actually
+            // changes.
+            //
+            // On macOS we ALSO gate the whole call on
+            // `cross_app_consent::should_run_cross_app_installs()`:
+            // until the user has either granted Full Disk Access or
+            // been through the FDA onboarding overlay, every cross-
+            // app write would fire a "ReDD Block would like to access
+            // data from other apps" TCC prompt — and on Sequoia those
+            // prompts re-fire across launches even after Allow.
+            // Deferring the writes lets the UI show its FDA
+            // explanation first; `commands::fda::complete_fda_onboarding`
+            // force-runs the install once the user dismisses the
+            // overlay (either by granting FDA or by explicitly
+            // choosing to continue with the per-prompt UX).
+            #[cfg(all(not(target_os = "ios"), target_os = "macos"))]
+            {
+                if cross_app_consent::should_run_cross_app_installs() {
+                    if let Err(e) = native_host_install::install() {
+                        log::warn!("native-host install on startup failed: {e}");
+                    }
+                } else {
+                    log::info!(
+                        "tcc-probe: deferring native_host_install::install — user hasn't completed FDA onboarding yet, UI will run it after the overlay dismisses"
+                    );
+                }
+            }
+            #[cfg(all(not(target_os = "ios"), not(target_os = "macos")))]
             if let Err(e) = native_host_install::install() {
                 log::warn!("native-host install on startup failed: {e}");
             }
@@ -848,6 +876,9 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::open_safari_extension_settings,
         commands::open_browser_extension_settings,
         commands::open_url_in_browser,
+        commands::check_full_disk_access,
+        commands::check_fda_onboarded,
+        commands::complete_fda_onboarding,
         commands::uninstall_self_macos,
     ]
 }
