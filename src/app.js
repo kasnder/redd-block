@@ -2972,6 +2972,20 @@ function enforcerCopy(payload) {
     };
 }
 
+function renderEnforcerCountdownInstruction(el, baseText) {
+    if (!el) return;
+    el.replaceChildren();
+    const base = baseText || '';
+    const delay = tSettings('enforcerCountdownDelayNote');
+    if (base) {
+        el.append(document.createTextNode(`${base} `));
+    }
+    const delaySpan = document.createElement('span');
+    delaySpan.className = 'extension-enforcer-countdown-delay-note';
+    delaySpan.textContent = delay;
+    el.appendChild(delaySpan);
+}
+
 function renderEnforcerActionCopy(banner, payload, copy) {
     const key = enforcerBannerKey(payload);
     const isClosed = banner.classList.contains('extension-enforcer-action-banner-closed');
@@ -3011,7 +3025,7 @@ function renderEnforcerActionCopy(banner, payload, copy) {
     }
     if (instruction) {
         if (isActiveCountdown) {
-            instruction.textContent = copy.countdownInstruction || '';
+            renderEnforcerCountdownInstruction(instruction, copy.countdownInstruction || '');
         } else if (copy.instructionHtml) {
             instruction.innerHTML = copy.instructionHtml;
             attachCopyChipHandlers(instruction);
@@ -3617,9 +3631,10 @@ function renderCombinedEnforcerActionBanner() {
 
     const instruction = banner.querySelector('.extension-enforcer-action-instruction');
     if (instruction) {
-        instruction.textContent = activeStates.length > 1
+        const base = activeStates.length > 1
             ? tSettings('enforcerCountdownInstrMultiple')
             : (timerState.copy.countdownInstruction || '');
+        renderEnforcerCountdownInstruction(instruction, base);
     }
 
     const countdown = banner.querySelector('.extension-enforcer-action-countdown');
@@ -3728,9 +3743,26 @@ function renderCombinedEnforcerClosedBanner() {
 
     const instruction = banner.querySelector('.extension-enforcer-action-instruction');
     if (instruction) {
-        instruction.textContent = states.length > 1
-            ? tSettings('enforcerClosedInstrMultiple')
-            : tSettings(closedInstructionCopyKey(issue));
+        if (states.length > 1) {
+            // Multi-browser case: `enforcerClosedInstrMultiple` has no
+            // `{browser}` placeholder — same copy for all browsers.
+            instruction.textContent = tSettings('enforcerClosedInstrMultiple');
+        } else {
+            // Single-browser case: pass the browser name in for
+            // `{browser}` substitution. Several of these instruction
+            // strings (enforcerClosedInstrDisabled / Missing /
+            // WebsiteAccess) contain `{browser}` — using tSettings()
+            // here left the literal placeholder visible in the UI.
+            const single = states[0];
+            const browser = single.payload.label
+                || single.payload.browser
+                || BROWSER_STORE_LINKS[single.key]?.label
+                || single.key;
+            instruction.textContent = tSettingsFmt(
+                closedInstructionCopyKey(issue),
+                { browser }
+            );
+        }
     }
 
     const status = banner.querySelector('.extension-enforcer-closed-status');
@@ -13244,6 +13276,7 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedStatus: 'closed',
         enforcerCountdownInstrMissing: 'ReDD Focus is not installed. Install it to stop the countdown.',
         enforcerCountdownInstrDisabled: 'ReDD Focus is turned off. Enable it to stop the countdown.',
+        enforcerCountdownDelayNote: '(Changes can take up to 20 seconds to detect.)',
         enforcerCountdownInstrPrivate: 'Private windows aren’t covered by ReDD Focus. Enable Allow in Incognito to stop the countdown.',
         enforcerCountdownInstrWebsiteAccess: 'ReDD Focus is not allowed on all websites. Allow all websites to stop the countdown.',
         enforcerCountdownInstrAccess: 'ReDD Block can’t verify ReDD Focus. Grant access to stop the countdown.',
@@ -13661,6 +13694,7 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedStatus: 'lukket',
         enforcerCountdownInstrMissing: 'ReDD Focus er ikke installeret. Installer den for at stoppe nedtællingen.',
         enforcerCountdownInstrDisabled: 'ReDD Focus er slået fra. Aktivér den for at stoppe nedtællingen.',
+        enforcerCountdownDelayNote: '(Ændringer kan tage op til 20 sekunder at registrere.)',
         enforcerCountdownInstrPrivate: 'Private vinduer er ikke dækket af ReDD. Aktivér privat browsing for at stoppe nedtællingen.',
         enforcerCountdownInstrWebsiteAccess: 'ReDD Focus er ikke tilladt på alle websites. Tillad alle websites for at stoppe nedtællingen.',
         enforcerCountdownInstrAccess: 'ReDD Block kan ikke bekræfte ReDD Focus. Giv adgang for at stoppe nedtællingen.',

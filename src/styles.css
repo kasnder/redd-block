@@ -953,6 +953,10 @@ body.dark-mode .app-blocking-closedown-banner {
     font-weight: 600;
 }
 
+.extension-enforcer-countdown-delay-note {
+    font-weight: 400;
+}
+
 .extension-enforcer-action-note {
     display: block;
     font-size: 12px;
@@ -1228,6 +1232,37 @@ body.dark-mode .app-blocking-closedown-banner {
 .extension-enforcer-action-banner .screenshots-row .extension-enforcer-step {
     max-width: none;
     flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.extension-enforcer-action-banner .extension-enforcer-screenshots.screenshots-row {
+    align-items: flex-start;
+}
+
+.extension-enforcer-action-banner .screenshots-row .extension-enforcer-screenshot {
+    max-height: min(36vh, 300px);
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+    object-position: top center;
+}
+
+.extension-enforcer-action-banner .extension-enforcer-screenshots-wrap:not(.hidden) {
+    padding: 0 14px 14px;
+}
+
+.extension-enforcer-action-banner .screenshots-grid .extension-enforcer-step {
+    min-width: 0;
+    overflow: hidden;
+}
+
+.extension-enforcer-action-banner .screenshots-grid .extension-enforcer-screenshot {
+    max-height: min(36vh, 300px);
+    width: 100%;
+    height: auto;
+    object-fit: contain;
+    object-position: top center;
 }
 
 /* Safari 2-up how-to: narrow menu bar shot, wide Extensions pane (1:2) */
