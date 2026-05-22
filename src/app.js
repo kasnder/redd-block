@@ -1535,7 +1535,7 @@ let migrationOnboardingDismissed = false;
 // re-polls on tab-back, but a user who has Safari and ReDD Block
 // side-by-side never triggers focus events as they click toggles.
 // Run a low-frequency poll so the checklist ticks itself off within
-// the "up to 10 seconds" window the UI already promises. Cleared
+// the "up to 20 seconds" window the UI already promises. Cleared
 // when the overlay is dismissed.
 let migrationPollIntervalId = null;
 /** Preserves "Show me how" across `renderBrowserInstallButtons` poll refreshes. */
@@ -2613,15 +2613,23 @@ async function updateBehaviourChangeBanner(state) {
     }
     banner.classList.remove('hidden');
 
+    const extensionSetupNeeded = hasBrowserIssues
+        || (!enforcementEnabled && detectedKeys.length > 0);
+
     // ---- Headline ----------------------------------------------------
     // FDA missing dominates the headline since it's the foundational
     // step — once granted, all the browser-side surfaces become
-    // accurate. When FDA is fine we use the existing setup framing.
+    // accurate. When both FDA and extension setup are outstanding,
+    // say so explicitly. When FDA is fine we use the existing setup framing.
     const headlineEl = document.getElementById('setup-banner-headline');
     if (headlineEl) {
-        headlineEl.textContent = fdaMissing
-            ? tSettings('setupBannerFdaHeadline')
-            : tSettings('setupBrowsersBannerHeadline');
+        if (fdaMissing && extensionSetupNeeded) {
+            headlineEl.textContent = tSettings('setupBannerFdaAndExtensionHeadline');
+        } else if (fdaMissing) {
+            headlineEl.textContent = tSettings('setupBannerFdaHeadline');
+        } else {
+            headlineEl.textContent = tSettings('setupBrowsersBannerHeadline');
+        }
     }
 
     // ---- Body --------------------------------------------------------
@@ -2669,7 +2677,7 @@ async function updateBehaviourChangeBanner(state) {
         // showing is FDA, hide it entirely so the FDA button is the
         // only action — clearer than offering an action the user
         // can't usefully take yet.
-        const showHelp = hasBrowserIssues || (!enforcementEnabled && detectedKeys.length > 0);
+        const showHelp = extensionSetupNeeded;
         helpBtn.classList.toggle('hidden', !showHelp);
         // Ghost-demote when FDA is the primary action sharing the row.
         helpBtn.classList.toggle('ghost', fdaMissing && showHelp);
@@ -3197,14 +3205,12 @@ function ensureClosedEnforcerActionBanner() {
     banner.innerHTML = `
         <div class="extension-enforcer-banner-top">
             <div class="update-banner-content">
+                <img class="extension-enforcer-browser-icon" aria-hidden="true">
                 <div class="extension-enforcer-message">
                     <strong class="extension-enforcer-action-headline">
                         <span class="extension-enforcer-action-headline-text"></span>
                     </strong>
                     <em class="extension-enforcer-action-instruction"></em>
-                </div>
-                <div class="extension-enforcer-action-right">
-                    <div class="extension-enforcer-closed-status"></div>
                 </div>
             </div>
             <button class="update-banner-dismiss extension-enforcer-action-dismiss" title="Dismiss" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
@@ -3622,15 +3628,32 @@ function closedInstructionCopyKey(issue) {
     }
 }
 
+function ensureClosedBannerBrowserIcon(banner) {
+    const content = banner.querySelector('.update-banner-content');
+    if (!content) return null;
+    let icon = content.querySelector('.extension-enforcer-browser-icon');
+    if (!icon) {
+        icon = document.createElement('img');
+        icon.className = 'extension-enforcer-browser-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        const message = content.querySelector('.extension-enforcer-message');
+        if (message) content.insertBefore(icon, message);
+        else content.prepend(icon);
+    }
+    return icon;
+}
+
 function renderEnforcerBrowserActionRow(state, mode) {
     const row = document.createElement('div');
     row.className = 'extension-enforcer-browser-action-row';
 
-    const icon = document.createElement('img');
-    icon.className = 'extension-enforcer-browser-action-icon';
-    icon.src = browserIconUrl(state.key);
-    icon.alt = '';
-    row.appendChild(icon);
+    if (mode !== 'closed') {
+        const icon = document.createElement('img');
+        icon.className = 'extension-enforcer-browser-action-icon';
+        icon.src = browserIconUrl(state.key);
+        icon.alt = '';
+        row.appendChild(icon);
+    }
 
     const action = document.createElement('button');
     action.className = 'update-banner-btn extension-enforcer-action-btn';
@@ -3817,6 +3840,8 @@ function renderCombinedEnforcerClosedBanner() {
         return;
     }
 
+    banner.querySelector('.extension-enforcer-action-right')?.remove();
+
     const browserList = formatBrowserList(states.map(state => (
         state.payload.label || state.payload.browser || BROWSER_STORE_LINKS[state.key]?.label || state.key
     )));
@@ -3829,6 +3854,17 @@ function renderCombinedEnforcerClosedBanner() {
         headline.textContent = states.length === 1
             ? states[0].copy.headline
             : tSettingsFmt(closedIssueCopyKey(issue), { browser: browserList });
+    }
+
+    const browserIcon = ensureClosedBannerBrowserIcon(banner);
+    if (browserIcon) {
+        if (states.length === 1) {
+            browserIcon.src = browserIconUrl(states[0].key);
+            browserIcon.alt = '';
+            browserIcon.style.visibility = 'visible';
+        } else {
+            browserIcon.style.visibility = 'hidden';
+        }
     }
 
     const instruction = banner.querySelector('.extension-enforcer-action-instruction');
@@ -3854,9 +3890,6 @@ function renderCombinedEnforcerClosedBanner() {
             );
         }
     }
-
-    const status = banner.querySelector('.extension-enforcer-closed-status');
-    if (status) status.textContent = tSettings('enforcerClosedStatus');
 
     const actions = banner.querySelector('.extension-enforcer-closed-actions');
     if (actions) {
@@ -13243,11 +13276,12 @@ const SETTINGS_TRANSLATIONS = {
         nowBlockingMenuPause: 'Pause',
         nowBlockingMenuStop: 'Stop',
         scheduleFooterHint: 'Click any block to edit',
-        setupBrowsersBannerHeadline: 'Set up ReDD Focus in your browsers',
+        setupBrowsersBannerHeadline: 'Enable ReDD Focus in your browsers',
         setupBrowsersBannerCta: 'Set up extension',
         setupBrowsersBannerDismissTitle: 'Dismiss for this session',
         setupBannerFdaHeadline: 'Full Disk Access not granted',
-        setupBannerFdaBody: 'Without Full Disk Access, macOS will show permission prompts each time ReDD Block reaches into Chrome, Edge, Firefox, or Safari data folders.',
+        setupBannerFdaAndExtensionHeadline: 'Full Disk Access not granted & extension not set up',
+        setupBannerFdaBody: 'Without Full Disk Access, macOS will show permission prompts each time ReDD Block reads browser settings.',
         setupBannerFdaCta: 'Grant Full Disk Access',
         bannerTurnOnBrowserProtection: 'Turn on browser protection',
         bannerActionInstallIn: 'Install in',
@@ -13282,10 +13316,10 @@ const SETTINGS_TRANSLATIONS = {
         migrationPostSubtitleCleanup: 'Almost done — finish setting up ReDD Focus in each browser you use.',
         migrationChecklistCleanedOld: 'Old version cleaned up',
         migrationChecklistBlocklistsPreserved: 'Your blocklists are preserved',
-        migrationChecklistExtLinesHtml: 'Set up ReDD Focus in your browsers<br><span style="font-weight:400;opacity:0.7">and allow it in private/incognito tabs</span>',
+        migrationChecklistExtLinesHtml: 'Enable ReDD Focus in your browsers<br><span style="font-weight:400;opacity:0.7">and allow it in private/incognito tabs</span>',
         migrationHowtoHeading: 'Setting up ReDD Focus',
-        migrationHowtoLi1Html: 'ReDD Block has tried to install ReDD Focus in your browsers. If a browser below shows it as not installed, restart that browser — or click its <strong>Install</strong> button to add it manually.',
-        migrationHowtoLi3Html: 'Once it\'s there, <strong>allow it in private/incognito tabs</strong> so blocking covers private windows too — see each browser\'s row below.',
+        migrationHowtoLi1Html: 'ReDD Block has tried to install ReDD Focus in your browsers. If it shows as not installed below, click the <strong>Install</strong> buttons to add it manually.',
+        migrationHowtoLi3Html: 'Once enabled, <strong>allow it in private/incognito tabs</strong> so blocking works in private windows too.',
         migrationDone: 'I\'m all set up',
         migrationSkip: 'Skip for now',
         migrationEnforcementHeadline: 'Browser enforcement',
@@ -13324,7 +13358,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationOpenFdaTitle: 'Open Full Disk Access settings',
         migrationCheckAgain: 'Check again',
         migrationRefreshSafariTitle: 'Refresh Safari access status',
-        migrationDelayDetectionNote: 'It may take up to 10 seconds for changes to be detected.',
+        migrationDelayDetectionNote: 'It may take up to 20 seconds for changes to be detected.',
         migrationExtensionInstalledMark: 'Extension installed',
         migrationSafariStepEnable: 'Enable the extension',
         migrationSafariStepPrivate: 'Allow in Private Browsing',
@@ -13661,11 +13695,12 @@ const SETTINGS_TRANSLATIONS = {
         nowBlockingMenuPause: 'Pause',
         nowBlockingMenuStop: 'Stop',
         scheduleFooterHint: 'Klik på en blok for at redigere',
-        setupBrowsersBannerHeadline: 'Opsæt ReDD Focus i dine browsere',
+        setupBrowsersBannerHeadline: 'Aktivér ReDD Focus i dine browsere',
         setupBrowsersBannerCta: 'Opsæt udvidelse',
         setupBrowsersBannerDismissTitle: 'Skjul for denne session',
         setupBannerFdaHeadline: 'Fuld diskadgang ikke givet',
-        setupBannerFdaBody: 'Uden fuld diskadgang viser macOS tilladelsesprompter, hver gang ReDD Block tilgår Chrome, Edge, Firefox eller Safaris datamapper.',
+        setupBannerFdaAndExtensionHeadline: 'Fuld diskadgang ikke givet og udvidelse ikke sat op',
+        setupBannerFdaBody: 'Uden fuld diskadgang viser macOS tilladelsesprompter, hver gang ReDD Block læser browserindstillinger.',
         setupBannerFdaCta: 'Giv fuld diskadgang',
         bannerTurnOnBrowserProtection: 'Slå browser-beskyttelse til',
         bannerActionInstallIn: 'Installer i',
@@ -13700,10 +13735,10 @@ const SETTINGS_TRANSLATIONS = {
         migrationPostSubtitleCleanup: 'Næsten færdig — afslut opsætningen af ReDD Focus i hver browser, du bruger.',
         migrationChecklistCleanedOld: 'Gammel version fjernet',
         migrationChecklistBlocklistsPreserved: 'Dine bloklister er bevaret',
-        migrationChecklistExtLinesHtml: 'Sæt ReDD Focus op i dine browsere<br><span style="font-weight:400;opacity:0.7">og tillad den i privat- eller inkognitofaner</span>',
+        migrationChecklistExtLinesHtml: 'Aktivér ReDD Focus i dine browsere<br><span style="font-weight:400;opacity:0.7">og tillad den i privat- eller inkognitofaner</span>',
         migrationHowtoHeading: 'Sådan sætter du ReDD Focus op',
-        migrationHowtoLi1Html: 'ReDD Block har forsøgt at installere ReDD Focus i dine browsere. Hvis en browser nedenfor viser den som ikke installeret, så genstart browseren — eller klik på dens <strong>Installer</strong>-knap for at tilføje den manuelt.',
-        migrationHowtoLi3Html: 'Når den er der, <strong>tillad den i privat/inkognito-faner</strong>, så blokering også dækker private vinduer — se hver browsers række nedenfor.',
+        migrationHowtoLi1Html: 'ReDD Block har forsøgt at installere ReDD Focus i dine browsere. Hvis den vises som ikke installeret nedenfor, klik på <strong>Installer</strong>-knapperne for at tilføje den manuelt.',
+        migrationHowtoLi3Html: 'Når den er aktiveret, <strong>tillad den i privat/inkognito-faner</strong>, så blokering også virker i private vinduer.',
         migrationDone: 'Jeg er klar',
         migrationSkip: 'Spring over for nu',
         migrationEnforcementHeadline: 'Browser-beskyttelse',
@@ -13742,7 +13777,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationOpenFdaTitle: 'Åbn Indstillinger for Fuld diskadgang',
         migrationCheckAgain: 'Tjek igen',
         migrationRefreshSafariTitle: 'Opdater Safari-status',
-        migrationDelayDetectionNote: 'Der kan gå op til 10 sekunder, før ændringer registreres.',
+        migrationDelayDetectionNote: 'Der kan gå op til 20 sekunder, før ændringer registreres.',
         migrationExtensionInstalledMark: 'Udvidelse installeret',
         migrationSafariStepEnable: 'Aktivér udvidelsen',
         migrationSafariStepPrivate: 'Tillad privat browsing',
