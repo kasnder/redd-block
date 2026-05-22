@@ -532,6 +532,36 @@ body.dark-mode .title-bar {
     border-color: var(--button-hover);
 }
 
+/* Ghost variant of the setup-banner button. Used when the banner is
+   surfacing TWO actions at once (FDA + extension setup) — the FDA
+   button keeps the primary filled style so it reads as the headline
+   action, and the secondary action demotes to outline-only so the
+   user's eye is drawn to the FDA path first. JS toggles `.ghost` on
+   `#behaviour-change-help` based on whether the FDA button is also
+   visible. */
+.setup-banner .update-banner-btn.ghost {
+    background: transparent;
+    color: var(--button-bg);
+}
+
+.setup-banner .update-banner-btn.ghost:hover {
+    background: rgba(0, 0, 0, 0.04);
+    border-color: var(--button-bg);
+    color: var(--button-bg);
+}
+
+body.dark-mode .setup-banner .update-banner-btn.ghost {
+    background: transparent;
+    color: var(--text-primary);
+    border-color: rgba(255, 255, 255, 0.24);
+}
+
+body.dark-mode .setup-banner .update-banner-btn.ghost:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.4);
+    color: var(--text-primary);
+}
+
 body.dark-mode .setup-banner {
     --setup-bg: var(--redd-card);
     --setup-border: rgba(78, 192, 176, 0.22);

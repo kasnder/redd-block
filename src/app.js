@@ -1087,7 +1087,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupOverrideAll();
     setupInAppUninstall();
     setupGraceSetting();
-    setupFdaReminderBanner();
     if (isIOS && hasAcceptedEula()) {
         await checkScreentimeAuth();
     } else {
@@ -1270,10 +1269,10 @@ async function runPostAcceptanceStartup() {
             // TCC prompts this overlay exists to pre-empt. No-op on
             // Windows / Linux.
             await ensureFdaOnboardingComplete();
-            // Refresh the persistent banner immediately after the
-            // overlay resolves so users who chose "Skip" see it right
-            // away and users who granted see it stay hidden.
-            updateFdaReminderBanner();
+            // No explicit FDA-banner refresh here — the combined
+            // setup banner re-evaluates FDA state every time
+            // updateBehaviourChangeBanner runs, which the
+            // runDesktopOnboarding flow below triggers.
             await runDesktopOnboarding();
             await checkHelperStatus();
             console.log('[startup-sync] Desktop startup helperAvailable:', helperAvailable);
@@ -1498,41 +1497,6 @@ function showFdaOnboardingOverlay() {
 
         grantBtn.addEventListener('click', onGrant);
         skipBtn.addEventListener('click', onSkip);
-    });
-}
-
-// Toggle the persistent "Full Disk Access not granted" banner on
-// the main UI. Shown only when:
-//   - the user has been through FDA onboarding (so the overlay
-//     itself isn't going to fire — that'd be redundant), AND
-//   - FDA is currently not granted.
-// Re-call this on window focus so the banner disappears the moment
-// a user toggles FDA on in System Settings and tabs back.
-async function updateFdaReminderBanner() {
-    if (!isMacOSDesktop) return;
-    const banner = document.getElementById('fda-reminder-banner');
-    if (!banner) return;
-    try {
-        const [onboarded, granted] = await Promise.all([
-            invoke('check_fda_onboarded'),
-            invoke('check_full_disk_access'),
-        ]);
-        banner.classList.toggle('hidden', !(onboarded && !granted));
-    } catch (e) {
-        console.warn('[fda-banner] status check failed:', e);
-        banner.classList.add('hidden');
-    }
-}
-
-function setupFdaReminderBanner() {
-    const grantBtn = document.getElementById('fda-reminder-grant');
-    if (!grantBtn) return;
-    grantBtn.addEventListener('click', async () => {
-        try {
-            await invoke('open_safari_fda_settings');
-        } catch (e) {
-            console.warn('[fda-banner] open settings failed:', e);
-        }
     });
 }
 
@@ -2504,18 +2468,26 @@ window.addEventListener('focus', () => {
     // Repaint time-dependent UI and restart the per-second tick.
     // See kickClockNow() for the why.
     if (typeof kickClockNow === 'function') kickClockNow();
-    // Re-check FDA on every focus regain: the user may have just
-    // toggled it on in System Settings and tabbed back, in which
-    // case the persistent reminder banner should disappear.
-    updateFdaReminderBanner();
     if (migrationOnboardingActive) {
         pollMigrationCompliance();
     } else {
-        // When the migration overlay isn't open, refresh the slim
-        // banner instead — the user may have just finished allowing
-        // the extension in another browser and tabbed back here, so
-        // the banner needs to either disappear (now compliant) or
-        // re-show (regression detected). Throttled inside.
+        // Two refreshes on focus, deliberately:
+        //
+        //   1. Re-render the combined banner immediately with the
+        //      cached `lastOnboardingState`. This is what makes the
+        //      "Grant Full Disk Access" button vanish the instant a
+        //      user toggles FDA on in System Settings and tabs back —
+        //      the FDA probe runs against macOS's live state every
+        //      time updateBehaviourChangeBanner runs, no fetch
+        //      needed. Cheap.
+        //
+        //   2. Throttled (30s) full refresh that re-runs
+        //      `onboarding_state` to pick up new browser-side state
+        //      (user just installed the extension in Chrome and
+        //      tabbed back, etc.). Throttled because that call does
+        //      a full profile scan which is expensive AND can fire
+        //      cross-app TCC prompts when FDA isn't granted.
+        updateBehaviourChangeBanner(null).catch(() => {});
         refreshBehaviourBannerIfStale();
     }
 });
@@ -2572,41 +2544,99 @@ let behaviourBannerDismissedThisSession = false;
 // user knows at a glance what's still missing without having to
 // open the setup dialog (e.g. "Install in Chrome and Edge · Allow
 // in private browsing in Brave").
+// Last `onboarding_state` snapshot we've observed. Cached so the
+// focus handler can re-render the banner with fresh FDA state
+// (FDA check is cheap and side-effect-free) without re-running the
+// throttled / potentially-prompting full browser scan that produced
+// the state. Updated by `runDesktopOnboarding`,
+// `refreshBehaviourBannerIfStale`, and `pollMigrationCompliance`.
+let lastOnboardingState = null;
+
 async function updateBehaviourChangeBanner(state) {
     const banner = document.getElementById('behaviour-change-banner');
     if (!banner) return;
 
-    // Compute "are they done with extension setup yet?". `installed`
-    // means the browser app exists on disk (regardless of running
-    // state) — same scope the welcome screen uses, so the user
-    // doesn't get nagged about Brave if they don't have Brave.
+    if (state) {
+        // Latch the latest state so a follow-up FDA-only refresh (on
+        // window focus, etc.) can re-render the banner without
+        // re-fetching state from the backend.
+        lastOnboardingState = state;
+    } else {
+        // Caller passed null — fall back to the cached state so the
+        // banner can still render the browser-side fields.
+        state = lastOnboardingState || {};
+    }
+
+    // ---- Browser-side compliance ------------------------------------
+    // `installed` means the browser app exists on disk (regardless of
+    // running state) — same scope the welcome screen uses, so the
+    // user doesn't get nagged about Brave if they don't have Brave.
     const browsers = (state && state.browsers) || {};
     const detectedKeys = Object.keys(BROWSER_STORE_LINKS).filter(k => browsers[k] && browsers[k].installed);
     const allCompliant = detectedKeys.length > 0
         && detectedKeys.every(k => browserComplianceStatus(k, browsers[k]) === 'compliant');
+    const hasBrowserIssues = detectedKeys.length > 0 && !allCompliant;
 
-    // Also check enforcement status — the banner should nudge users
-    // to enable enforcement even if all browsers are compliant.
     let enforcementEnabled = false;
     try {
         enforcementEnabled = await invoke('get_enforcement_enabled');
     } catch (_) { /* non-desktop or command not available */ }
 
-    const hasBrowserIssues = detectedKeys.length > 0 && !allCompliant;
+    // ---- macOS FDA status -------------------------------------------
+    // Folded into THIS banner (rather than a parallel one) so users
+    // don't get two stacked "something's wrong with Safari" surfaces.
+    // Layout: when FDA is missing, the "Grant Full Disk Access"
+    // button is the primary CTA and any extension-setup affordance
+    // demotes to a ghost button. When FDA is granted (or the user is
+    // on Windows / Linux), behaviour is unchanged from before this
+    // change.
+    let fdaMissing = false;
+    if (isMacOSDesktop) {
+        try {
+            const [onboarded, granted] = await Promise.all([
+                invoke('check_fda_onboarded'),
+                invoke('check_full_disk_access'),
+            ]);
+            // We only surface the FDA nag once the user has been
+            // through the onboarding overlay. Before that, the overlay
+            // itself is the right surface — banner showing alongside
+            // would be redundant.
+            fdaMissing = onboarded && !granted;
+        } catch (_) { /* command unavailable — treat as not-missing */ }
+    }
+
     const shouldShow = !behaviourBannerDismissedThisSession
-        && detectedKeys.length > 0
-        && (hasBrowserIssues || !enforcementEnabled);
+        && (fdaMissing || (detectedKeys.length > 0 && (hasBrowserIssues || !enforcementEnabled)));
     if (!shouldShow) {
         banner.classList.add('hidden');
         return;
     }
     banner.classList.remove('hidden');
 
-    // Build the body text: browser actions + enforcement status
+    // ---- Headline ----------------------------------------------------
+    // FDA missing dominates the headline since it's the foundational
+    // step — once granted, all the browser-side surfaces become
+    // accurate. When FDA is fine we use the existing setup framing.
+    const headlineEl = document.getElementById('setup-banner-headline');
+    if (headlineEl) {
+        headlineEl.textContent = fdaMissing
+            ? tSettings('setupBannerFdaHeadline')
+            : tSettings('setupBrowsersBannerHeadline');
+    }
+
+    // ---- Body --------------------------------------------------------
+    // Body composes available signals — FDA explanation (if missing),
+    // per-browser action summary (if any), enforcement nudge (if off).
+    // " · " separator is the existing convention.
     const parts = [];
+    if (fdaMissing) {
+        parts.push(tSettings('setupBannerFdaBody'));
+    }
     const actionSummary = buildBannerActionSummary(browsers, detectedKeys);
     if (actionSummary) parts.push(actionSummary);
-    if (!enforcementEnabled) parts.push(tSettings('bannerTurnOnBrowserProtection'));
+    if (!enforcementEnabled && detectedKeys.length > 0) {
+        parts.push(tSettings('bannerTurnOnBrowserProtection'));
+    }
 
     const bodyEl = document.getElementById('behaviour-change-text');
     if (bodyEl) {
@@ -2614,12 +2644,41 @@ async function updateBehaviourChangeBanner(state) {
         bodyEl.textContent = parts.join(' · ');
     }
 
+    // ---- Buttons -----------------------------------------------------
+    const fdaBtn = document.getElementById('behaviour-change-fda');
     const helpBtn = document.getElementById('behaviour-change-help');
     const dismissBtn = document.getElementById('behaviour-change-dismiss');
-    if (helpBtn && !helpBtn._listenerAdded) {
-        helpBtn._listenerAdded = true;
-        helpBtn.addEventListener('click', openExtensionSetupOverlay);
+
+    if (fdaBtn) {
+        fdaBtn.classList.toggle('hidden', !fdaMissing);
+        if (!fdaBtn._listenerAdded) {
+            fdaBtn._listenerAdded = true;
+            fdaBtn.addEventListener('click', async () => {
+                try {
+                    await invoke('open_safari_fda_settings');
+                } catch (e) {
+                    console.warn('[banner-fda] open settings failed:', e);
+                }
+            });
+        }
     }
+
+    if (helpBtn) {
+        // The "Set up extension" affordance is only useful when there's
+        // a per-browser issue to fix. If the only reason the banner is
+        // showing is FDA, hide it entirely so the FDA button is the
+        // only action — clearer than offering an action the user
+        // can't usefully take yet.
+        const showHelp = hasBrowserIssues || (!enforcementEnabled && detectedKeys.length > 0);
+        helpBtn.classList.toggle('hidden', !showHelp);
+        // Ghost-demote when FDA is the primary action sharing the row.
+        helpBtn.classList.toggle('ghost', fdaMissing && showHelp);
+        if (!helpBtn._listenerAdded) {
+            helpBtn._listenerAdded = true;
+            helpBtn.addEventListener('click', openExtensionSetupOverlay);
+        }
+    }
+
     if (dismissBtn && !dismissBtn._listenerAdded) {
         dismissBtn._listenerAdded = true;
         dismissBtn.addEventListener('click', () => {
@@ -13065,6 +13124,9 @@ const SETTINGS_TRANSLATIONS = {
         setupBrowsersBannerHeadline: 'Set up ReDD Focus in your browsers',
         setupBrowsersBannerCta: 'Set up extension',
         setupBrowsersBannerDismissTitle: 'Dismiss for this session',
+        setupBannerFdaHeadline: 'Full Disk Access not granted',
+        setupBannerFdaBody: 'Without Full Disk Access, macOS will show permission prompts each time ReDD Block reaches into Chrome, Edge, Firefox, or Safari data folders.',
+        setupBannerFdaCta: 'Grant Full Disk Access',
         bannerTurnOnBrowserProtection: 'Turn on browser protection',
         bannerActionInstallIn: 'Install in',
         bannerActionEnableIn: 'Enable in',
@@ -13479,6 +13541,9 @@ const SETTINGS_TRANSLATIONS = {
         setupBrowsersBannerHeadline: 'Opsæt ReDD Focus i dine browsere',
         setupBrowsersBannerCta: 'Opsæt udvidelse',
         setupBrowsersBannerDismissTitle: 'Skjul for denne session',
+        setupBannerFdaHeadline: 'Fuld diskadgang ikke givet',
+        setupBannerFdaBody: 'Uden fuld diskadgang viser macOS tilladelsesprompter, hver gang ReDD Block tilgår Chrome, Edge, Firefox eller Safaris datamapper.',
+        setupBannerFdaCta: 'Giv fuld diskadgang',
         bannerTurnOnBrowserProtection: 'Slå browser-beskyttelse til',
         bannerActionInstallIn: 'Installer i',
         bannerActionEnableIn: 'Aktivér i',

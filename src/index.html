@@ -104,32 +104,13 @@
             </div>
         </div>
 
-        <!-- macOS-only: Full Disk Access reminder banner. Shown on
-             the main UI when the user has been through FDA onboarding
-             but did not actually grant FDA — they're seeing per-prompt
-             "data from other apps" dialogs from the OS. Non-dismissible
-             on purpose: the underlying nag stops only when FDA is
-             granted, so a "dismiss" button would just create silent
-             ongoing prompts. Hidden by default; JS toggles when
-             `check_full_disk_access` / `check_fda_onboarded` indicate
-             we should surface it. -->
-        <div id="fda-reminder-banner" class="update-banner setup-banner hidden">
-            <div class="update-banner-content">
-                <svg class="setup-banner-info-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
-                    <circle cx="12" cy="12" r="11" fill="currentColor"></circle>
-                    <circle cx="12" cy="7.5" r="1.3" fill="white"></circle>
-                    <rect x="11" y="10" width="2" height="8" rx="1" fill="white"></rect>
-                </svg>
-                <div class="setup-banner-message">
-                    <strong id="fda-reminder-headline" class="setup-banner-headline">Full Disk Access not granted</strong>
-                    <span id="fda-reminder-body" class="setup-banner-body">Without Full Disk Access, macOS will show permission prompts each time ReDD Block reaches into Chrome, Edge, Firefox, or Safari data folders.</span>
-                    <div class="setup-banner-actions-row">
-                        <button id="fda-reminder-grant" class="update-banner-btn" type="button">Grant Full Disk Access</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
+        <!-- Combined setup banner: covers both "Set up ReDD Focus in
+             your browsers" (per-browser compliance) AND "Full Disk
+             Access not granted" (macOS-only). One surface, dynamic
+             headline + body + button layout — see
+             updateBehaviourChangeBanner() in app.js for the state
+             machine. When both apply: the FDA button is primary and
+             the extension-setup button demotes to a ghost variant. -->
         <div id="behaviour-change-banner" class="update-banner setup-banner hidden">
             <div class="update-banner-content">
                 <svg class="setup-banner-info-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
@@ -139,15 +120,23 @@
                 </svg>
                 <div class="setup-banner-message">
                     <strong id="setup-banner-headline" class="setup-banner-headline">Set up ReDD Focus in your browsers</strong>
-                    <!-- Body is filled in dynamically by
-                         updateBehaviourChangeBanner() with a per-
-                         browser action summary (e.g. "Install in
+                    <!-- Body filled in dynamically. May concatenate
+                         the FDA explanation (when missing) and the
+                         per-browser action summary (e.g. "Install in
                          Chrome and Edge · Allow in private browsing
-                         in Brave"). The banner stays hidden until
-                         the summary is computed, so there's no flash
-                         of empty state. -->
+                         in Brave"). The banner stays hidden until the
+                         summary is computed, so there's no flash of
+                         empty state. -->
                     <span id="behaviour-change-text" class="setup-banner-body"></span>
                     <div class="setup-banner-actions-row">
+                        <!-- Order matters visually: the macOS-only FDA
+                             button comes first so it reads as the
+                             primary call to action whenever both are
+                             present. When only the extension-setup
+                             button is needed (FDA granted), the FDA
+                             button is hidden and the extension button
+                             promotes back to the primary slot. -->
+                        <button id="behaviour-change-fda" class="update-banner-btn hidden" type="button">Grant Full Disk Access</button>
                         <button id="behaviour-change-help" class="update-banner-btn" type="button">Set up extension</button>
                     </div>
                 </div>
