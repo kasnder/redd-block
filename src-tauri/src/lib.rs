@@ -908,6 +908,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::open_url_in_browser,
         commands::check_full_disk_access,
         commands::check_fda_onboarded,
+        commands::get_fda_user_choice,
         commands::complete_fda_onboarding,
         commands::uninstall_self_macos,
     ]

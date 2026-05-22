@@ -923,25 +923,30 @@ fn scan_safari() -> BrowserStatus {
     let embedded = embedded_safari_extension_present();
 
     // Read Safari's sandboxed container (Extensions.plist + per-profile
-    // dirs) only when we have Full Disk Access. Without FDA each of
-    // these reads fires the macOS Sequoia "ReDD Block would like to
-    // access data from other apps" TCC prompt — every 5 s while Safari
-    // is open, because the enforcer's tick re-enters this function.
-    // Since granting FDA is the user-facing solution we surface (see
-    // `cross_app_consent`), it's redundant to ALSO ask via TCC: if FDA
-    // is denied that's the user's signal to us, and we honour it by
-    // routing through the FDA-free SafariServices FFI + App Group
-    // self-report path below (the `if embedded` block).
+    // dirs) only when the user has indicated they chose Grant during
+    // FDA onboarding. Without that signal, the plist reads fire the
+    // macOS Sequoia "ReDD Block would like to access data from other
+    // apps" TCC prompt — every 5 s while Safari is open, because the
+    // enforcer's tick re-enters this function.
+    //
+    // We deliberately use the marker-recorded *choice* rather than
+    // probing live FDA: opening the system TCC database to probe
+    // also triggers the prompt on Sequoia. The choice was recorded
+    // when the user dismissed the FDA overlay (either auto-detected
+    // via SafariServices polling after they clicked "Open Settings",
+    // or set to skipped when they explicitly chose to continue
+    // without). Trade-off: if the user revokes FDA in System
+    // Settings post-onboarding we won't know — but that's rare and
+    // re-triggerable from a future Settings affordance.
     //
     // When the plist scan is skipped the loop below leaves `profiles`
-    // empty; lines 30 below then synthesise a single "(Default Safari
-    // profile)" placeholder which the FFI overlay populates with
-    // `enabled` and the App Group overlay populates with
-    // `private_browsing`. `website_access_all` stays None — Safari
-    // doesn't expose all-sites grant state via any non-plist API, and
-    // the enforcer treats None as compliant (per our agreement to
-    // drop the "verify all-websites" check by default).
-    let has_fda = crate::cross_app_consent::has_full_disk_access();
+    // empty; the empty-profiles fallback synthesises a single
+    // "(Default Safari profile)" placeholder which the FFI overlay
+    // populates with `enabled` and the App Group overlay populates
+    // with `private_browsing`. `website_access_all` stays None —
+    // Safari doesn't expose all-sites grant state via any non-plist
+    // API, and the enforcer treats None as compliant.
+    let has_fda = crate::cross_app_consent::user_chose_to_grant_fda();
     if has_fda {
         let (plist_paths, profile_list_error) = safari_extensions_plist_paths();
         for (name, is_default, path) in plist_paths {
@@ -989,7 +994,7 @@ fn scan_safari() -> BrowserStatus {
         }
     } else {
         log::info!(
-            "tcc-probe: scan_safari skipping plist (no Full Disk Access) — using FFI-only path"
+            "tcc-probe: scan_safari skipping plist (user has not granted Full Disk Access) — using FFI-only path"
         );
     }
 

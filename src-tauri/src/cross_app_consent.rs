@@ -50,17 +50,26 @@ use std::path::PathBuf;
 ///
 /// On non-macOS targets this returns `true` (FDA is a macOS concept;
 /// callers on other platforms shouldn't gate on it).
+/// Probe Full Disk Access by attempting to open the system TCC
+/// database. Returns true iff we successfully opened the file
+/// descriptor (we never read the bytes).
+///
+/// **Important caveat on macOS Sequoia:** the open call itself
+/// surfaces a "ReDD Block would like to access data from other
+/// apps" TCC prompt for a non-FDA-granted unsandboxed app. So this
+/// function is now ONLY called from the user-initiated FDA grant
+/// flow — specifically the polling loop in
+/// `showFdaOnboardingOverlay` after the user clicks
+/// "Open Full Disk Access settings". In that context the user has
+/// already opted into permissions interactions, so the additional
+/// prompt is acceptable. Background paths (install gates, profile
+/// scans, banner refresh) MUST NOT call this — they use
+/// [`user_fda_choice`] instead.
 #[cfg(target_os = "macos")]
 pub fn has_full_disk_access() -> bool {
     let path = PathBuf::from("/Library/Application Support/com.apple.TCC/TCC.db");
-    // `File::open` is intentional here, NOT `std::fs::read` — opening
-    // the descriptor is enough to tell us whether the OS will allow
-    // the read (EPERM means no FDA). Reading the full ~2 MB SQLite
-    // file is wasteful for a probe AND in some macOS versions has
-    // been reported to be more likely to surface a TCC prompt than
-    // a plain open. We never read the bytes.
     log::info!(
-        "tcc-probe: about to open (FDA probe) {}",
+        "tcc-probe: about to open (FDA probe; consent-flow only) {}",
         path.display()
     );
     let granted = std::fs::File::open(&path).is_ok();
@@ -87,10 +96,50 @@ fn fda_onboarded_marker_path() -> Option<PathBuf> {
     Some(base.join("com.reddblock").join("fda-onboarded.v1"))
 }
 
-/// True when the user has been through the FDA onboarding screen
-/// (regardless of whether they granted or skipped). Used as a
-/// "don't show the screen again" check from the frontend, and as
-/// half of the gate for [`should_run_cross_app_installs`].
+/// The choice the user made when dismissing the FDA onboarding
+/// overlay. Stored as the body of the marker file so it survives
+/// across launches without needing JSON parsing.
+///
+///   - `Granted`  → user opened System Settings and toggled FDA on
+///                  (detected by our polling). Cross-app reads will
+///                  be silent for them.
+///   - `Skipped`  → user explicitly clicked "Continue without". They
+///                  accepted the per-prompt UX as a deliberate
+///                  trade-off. Background paths should be CONSERVATIVE
+///                  and avoid cross-app touches except where strictly
+///                  necessary.
+///   - `Unknown`  → legacy marker (zero-byte file from an earlier
+///                  build, before we recorded the choice). Treat as
+///                  Skipped — conservative default.
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FdaOnboardingChoice {
+    Granted,
+    Skipped,
+    Unknown,
+}
+
+#[cfg(target_os = "macos")]
+impl FdaOnboardingChoice {
+    fn as_str(&self) -> &'static str {
+        match self {
+            FdaOnboardingChoice::Granted => "granted",
+            FdaOnboardingChoice::Skipped => "skipped",
+            FdaOnboardingChoice::Unknown => "",
+        }
+    }
+    fn parse(raw: &str) -> Self {
+        match raw.trim() {
+            "granted" | "granted-already" => FdaOnboardingChoice::Granted,
+            "skipped" => FdaOnboardingChoice::Skipped,
+            _ => FdaOnboardingChoice::Unknown,
+        }
+    }
+}
+
+/// True when the marker file exists (regardless of the recorded
+/// choice). Used as the gate for "don't show the FDA screen again"
+/// and for [`should_run_cross_app_installs`].
 #[cfg(target_os = "macos")]
 pub fn has_user_been_through_fda_onboarding() -> bool {
     let Some(path) = fda_onboarded_marker_path() else { return false };
@@ -102,42 +151,81 @@ pub fn has_user_been_through_fda_onboarding() -> bool {
     true
 }
 
-/// Drop the marker file. Best-effort — if the write fails (read-only
-/// filesystem, permissions, etc.) the next launch just re-shows the
-/// onboarding screen, which is harmless.
+/// Returns the user's recorded onboarding choice, or `None` when the
+/// marker file is absent. Cheap, reads our own data dir — never
+/// triggers TCC.
 #[cfg(target_os = "macos")]
-pub fn mark_user_through_fda_onboarding() {
+pub fn user_fda_choice() -> Option<FdaOnboardingChoice> {
+    let path = fda_onboarded_marker_path()?;
+    let raw = std::fs::read_to_string(&path).ok()?;
+    Some(FdaOnboardingChoice::parse(&raw))
+}
+
+/// Drop the marker file with the user's recorded choice. Best-effort
+/// — if the write fails (read-only filesystem, permissions, etc.)
+/// the next launch just re-shows the onboarding screen, which is
+/// harmless.
+#[cfg(target_os = "macos")]
+pub fn mark_user_through_fda_onboarding(choice: FdaOnboardingChoice) {
     let Some(path) = fda_onboarded_marker_path() else { return };
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let _ = std::fs::write(&path, b"");
+    let _ = std::fs::write(&path, choice.as_str().as_bytes());
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn mark_user_through_fda_onboarding() {}
+pub fn mark_user_through_fda_onboarding(_choice: ()) {}
 
 /// True when we're allowed to run startup cross-app writes
 /// (native-messaging manifest install, extension-install hints).
-/// Either:
-///   - Full Disk Access is granted (writes silent → great UX), or
-///   - the user has been through the FDA onboarding and explicitly
-///     chose to continue without it (prompts will fire, but they're
-///     expected — the user made the call).
+/// The signal is purely the existence of the FDA-onboarding marker:
+/// once the user has dismissed the FDA overlay (either by granting
+/// FDA or by explicitly choosing to skip), we know it's appropriate
+/// to do the writes. Until then, we defer — there's no surface where
+/// the user has been told about permission prompts yet.
 ///
-/// Until one of those holds, `lib.rs::run` skips startup installs
-/// and waits for the frontend to invoke `complete_fda_onboarding`,
-/// which writes the marker and force-runs the install in one step.
+/// We deliberately do NOT probe Full Disk Access here, because the
+/// probe itself (opening
+/// `/Library/Application Support/com.apple.TCC/TCC.db`) triggers the
+/// macOS Sequoia "ReDD Block would like to access data from other
+/// apps" TCC prompt for a non-FDA-granted app — i.e. the very
+/// prompt this whole module exists to avoid. Background paths use
+/// the marker; the actual FDA detection only runs from the user-
+/// initiated FDA polling on the onboarding overlay, where the user
+/// has already opted into permissions interactions.
 ///
-/// On non-macOS targets this always returns `true` — FDA is a macOS
-/// concept and the cross-app-touch UX problem we're guarding against
-/// doesn't exist on Windows or Linux.
+/// On non-macOS targets this always returns `true`.
 #[cfg(target_os = "macos")]
 pub fn should_run_cross_app_installs() -> bool {
-    has_full_disk_access() || has_user_been_through_fda_onboarding()
+    has_user_been_through_fda_onboarding()
 }
 
 #[cfg(not(target_os = "macos"))]
 pub fn should_run_cross_app_installs() -> bool {
+    true
+}
+
+/// True when the user chose "Grant" during FDA onboarding (i.e. they
+/// indicated they want the FDA-granted experience). Used by
+/// `scan_safari` to decide whether to read Safari's sandboxed
+/// container (silent under FDA, prompt-firing otherwise) and by the
+/// reminder banner to decide whether to surface the "Grant Full
+/// Disk Access" CTA.
+///
+/// Note: this reflects the user's RECORDED CHOICE, not the OS's
+/// current FDA grant state. If the user originally chose Grant but
+/// has since revoked FDA in System Settings, this still returns
+/// true. We can't redetect without re-introducing the very probe
+/// this design avoids. The trade-off is acceptable: revoking FDA
+/// is rare, and users who do it can re-trigger onboarding from a
+/// Settings affordance (future work).
+#[cfg(target_os = "macos")]
+pub fn user_chose_to_grant_fda() -> bool {
+    matches!(user_fda_choice(), Some(FdaOnboardingChoice::Granted))
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn user_chose_to_grant_fda() -> bool {
     true
 }

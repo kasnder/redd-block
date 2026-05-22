@@ -1434,25 +1434,26 @@ function showWelcomeOnboardingOverlay() {
 async function ensureFdaOnboardingComplete() {
     if (!isMacOSDesktop) return;
     try {
-        const fdaGranted = await invoke('check_full_disk_access');
-        if (fdaGranted) {
-            // Already granted — silently mark the user as onboarded
-            // so future launches skip the overlay, and trigger the
-            // deferred install so they get their native-messaging
-            // manifests installed (silently, since FDA is granted).
-            await invoke('complete_fda_onboarding', { choice: 'granted-already' });
-            return;
-        }
+        // Marker-only gate. We deliberately do NOT probe FDA here
+        // (via `check_full_disk_access`) because the probe opens
+        // `/Library/Application Support/com.apple.TCC/TCC.db`, which
+        // itself fires the macOS Sequoia "data from other apps" TCC
+        // prompt for an app that doesn't yet have FDA — i.e. the
+        // exact prompt this overlay exists to pre-empt. The overlay
+        // will show even for users who already have FDA granted; in
+        // that case the polling on "Open Full Disk Access settings"
+        // will detect FDA within ~1.5 s and auto-advance, so the
+        // friction is minimal.
         const alreadyOnboarded = await invoke('check_fda_onboarded');
         if (alreadyOnboarded) {
-            // User has already made a choice in a previous session.
-            // Don't pester them again — the persistent banner on the
-            // main UI is the ongoing nudge.
+            // User has previously dismissed the overlay (Grant or
+            // Skip). Don't pester them again — the persistent banner
+            // on the main UI is the ongoing nudge.
             return;
         }
         await showFdaOnboardingOverlay();
     } catch (e) {
-        // Don't block startup on FDA-detection errors — fall through
+        // Don't block startup on marker-read errors — fall through
         // to runDesktopOnboarding (which may then trigger prompts,
         // but at least the app isn't stuck).
         console.warn('[fda-onboarding] check failed, proceeding without overlay:', e);
@@ -2648,23 +2649,28 @@ async function updateBehaviourChangeBanner(state) {
     // ---- macOS FDA status -------------------------------------------
     // Folded into THIS banner (rather than a parallel one) so users
     // don't get two stacked "something's wrong with Safari" surfaces.
-    // Layout: when FDA is missing, the "Grant Full Disk Access"
-    // button is the primary CTA and any extension-setup affordance
-    // demotes to a ghost button. When FDA is granted (or the user is
-    // on Windows / Linux), behaviour is unchanged from before this
-    // change.
+    // Layout: when the user previously chose to SKIP FDA, the "Grant
+    // Full Disk Access" button is the primary CTA and any extension-
+    // setup affordance demotes to a ghost button. When the user
+    // chose Grant during onboarding (or the user is on Windows /
+    // Linux), behaviour is unchanged from before this change.
+    //
+    // We read the user's recorded ONBOARDING CHOICE rather than
+    // probing live FDA state — the probe itself fires the very
+    // "data from other apps" prompt this banner exists to warn
+    // about. Trade-off: a user who originally chose Grant but later
+    // revoked FDA in System Settings won't see the banner. Rare and
+    // acceptable for now; a future Settings affordance can let them
+    // re-trigger onboarding.
     let fdaMissing = false;
     if (isMacOSDesktop) {
         try {
-            const [onboarded, granted] = await Promise.all([
-                invoke('check_fda_onboarded'),
-                invoke('check_full_disk_access'),
-            ]);
-            // We only surface the FDA nag once the user has been
-            // through the onboarding overlay. Before that, the overlay
-            // itself is the right surface — banner showing alongside
-            // would be redundant.
-            fdaMissing = onboarded && !granted;
+            const choice = await invoke('get_fda_user_choice');
+            // 'skipped' = user explicitly chose to continue without
+            // FDA → banner shown. 'granted' / '' (not yet onboarded)
+            // / anything else → banner hidden (during onboarding the
+            // overlay is the right surface, post-grant no nag).
+            fdaMissing = choice === 'skipped';
         } catch (_) { /* command unavailable — treat as not-missing */ }
     }
 

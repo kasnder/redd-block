@@ -42,6 +42,33 @@ pub fn check_fda_onboarded() -> bool {
     cross_app_consent::has_user_been_through_fda_onboarding()
 }
 
+/// Returns the user's recorded onboarding choice as a string:
+///   "granted" — they granted FDA (either pre-existing or via the
+///               polling auto-detect on the overlay)
+///   "skipped" — they explicitly clicked "Continue without"
+///   ""        — no marker yet (haven't been through onboarding) or
+///               legacy zero-byte marker from an earlier build
+///
+/// Cheap; reads our own data dir and never triggers TCC. Use this
+/// from any banner / UI surface that needs to know "should we
+/// surface the Grant FDA CTA?" without probing live FDA state.
+#[tauri::command]
+pub fn get_fda_user_choice() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        match cross_app_consent::user_fda_choice() {
+            Some(cross_app_consent::FdaOnboardingChoice::Granted) => "granted".to_string(),
+            Some(cross_app_consent::FdaOnboardingChoice::Skipped) => "skipped".to_string(),
+            Some(cross_app_consent::FdaOnboardingChoice::Unknown) => String::new(),
+            None => String::new(),
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        "granted".to_string()
+    }
+}
+
 /// Called by the frontend when the user dismisses the FDA onboarding
 /// overlay. Records that the user has been through the flow (so it
 /// won't show again) and force-runs the cross-app installs that
@@ -55,14 +82,19 @@ pub fn check_fda_onboarded() -> bool {
 /// signature lets us add per-choice telemetry or differentiated
 /// post-onboarding behaviour later without a frontend change.
 #[tauri::command]
-pub fn complete_fda_onboarding(_choice: String) -> Result<(), String> {
-    log::info!(
-        "tcc-probe: complete_fda_onboarding called (choice={_choice}, fda_granted={})",
-        cross_app_consent::has_full_disk_access()
-    );
+pub fn complete_fda_onboarding(choice: String) -> Result<(), String> {
+    log::info!("tcc-probe: complete_fda_onboarding called (choice={choice})");
     #[cfg(target_os = "macos")]
     {
-        cross_app_consent::mark_user_through_fda_onboarding();
+        // Translate the JS-side string to our typed enum so the
+        // marker file content stays consistent. Anything we don't
+        // recognise gets recorded as the conservative "skipped".
+        let parsed = match choice.as_str() {
+            "granted" | "granted-already" => cross_app_consent::FdaOnboardingChoice::Granted,
+            "skipped" => cross_app_consent::FdaOnboardingChoice::Skipped,
+            _ => cross_app_consent::FdaOnboardingChoice::Skipped,
+        };
+        cross_app_consent::mark_user_through_fda_onboarding(parsed);
         // Run the cross-app installs that `lib.rs::run` skipped at
         // startup. We use `install_force` rather than `install`
         // because the marker from Fix A might already exist from a
