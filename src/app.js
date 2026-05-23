@@ -13458,18 +13458,18 @@ const SETTINGS_TRANSLATIONS = {
         welcomeOnboardingTitle: 'Welcome to ReDD Block',
         welcomeOnboardingSubtitle:
             'An open-source tool for blocking the websites\nand apps that pull you away from your focus.',
-        welcomeHowHeading: 'How to set it up',
+        welcomeHowHeading: 'STEPS TO GET STARTED (we\'ll guide you through it 😊)',
         welcomeStep1TitleHtml: 'Grant {APPLE} Full Disk Access',
         welcomeStep1BodyHtml:
             'macOS needs this so ReDD Block can see whether blocking is enabled in your browsers. We\'ll open System Settings for you.',
         welcomeStep2TitleHtml: 'Enable blocking in your browser & allow it in private/incognito tabs',
         welcomeStep2BodyHtml:
-            'Our {LOGO}<strong>ReDD Focus</strong> extension is what actually blocks websites. We\'ll auto-install it in your browsers where we can — you just need to flip it on and let it run in private tabs so they don\'t become a loophole.',
-        welcomeStep3TitleHtml: 'Decide what to block, and when',
+            'Our {LOGO}<strong>ReDD Focus</strong> extension is what actually blocks websites. We\'ll auto-install it in your browsers where we can, and show you what to do.',
+        welcomeStep3TitleHtml: 'Start blocking! 🥳',
         welcomeStep3BodyHtml:
             'Pick the websites and apps that pull you off task, and set the times you want them out of reach. ReDD Block takes care of the rest.',
         welcomeDemoToggleLabel: 'See it in action — 30s',
-        welcomeDemoVideoCaption: 'Quick tour — blocklists, schedules & how blocks feel',
+        welcomeDemoVideoCaption: 'Quick demo — creating blocklists & how blocks feel',
         welcomeDemoPlayAriaLabel: 'Play demo video',
         welcomeDemoResumeAriaLabel: 'Resume demo video',
         welcomeDemoPauseAriaLabel: 'Pause demo video',
@@ -13919,18 +13919,18 @@ const SETTINGS_TRANSLATIONS = {
         welcomeOnboardingTitle: 'Velkommen til ReDD Block',
         welcomeOnboardingSubtitle:
             'Et open source-værktøj til at blokere de hjemmesider\nog apps, der trækker dig væk fra dit fokus.',
-        welcomeHowHeading: 'Sådan sætter du det op',
+        welcomeHowHeading: 'TRIN FOR AT KOMME I GANG (vi guider dig igennem det 😊)',
         welcomeStep1TitleHtml: 'Giv {APPLE} fuld diskadgang',
         welcomeStep1BodyHtml:
             'macOS har brug for det, så ReDD Block kan se, om blokering er slået til i dine browsere. Vi åbner Systemindstillinger for dig.',
         welcomeStep2TitleHtml: 'Slå blokering til i din browser og tillad den i private/incognito-faner',
         welcomeStep2BodyHtml:
-            'Vores {LOGO}<strong>ReDD Focus</strong>-udvidelse er det, der faktisk blokerer websites. Vi installerer den automatisk i dine browsere, hvor vi kan — du skal bare slå den til og lade den køre i private faner, så de ikke bliver en smutvej.',
-        welcomeStep3TitleHtml: 'Bestem, hvad der skal blokeres, og hvornår',
+            'Vores {LOGO}<strong>ReDD Focus</strong>-udvidelse er det, der faktisk blokerer websites. Vi installerer den automatisk i dine browsere, hvor vi kan, og viser dig, hvad du skal gøre.',
+        welcomeStep3TitleHtml: 'Vælg, hvad der skal blokeres',
         welcomeStep3BodyHtml:
             'Vælg de websites og apps, der trækker dig væk fra opgaven, og sæt de tidspunkter, hvor de skal være uden rækkevidde. ReDD Block klarer resten.',
         welcomeDemoToggleLabel: 'Se det i aktion — 30 sek.',
-        welcomeDemoVideoCaption: 'Hurtig gennemgang — blocklists, tidsplaner og hvordan blokeringer føles',
+        welcomeDemoVideoCaption: 'Demo — blokeringslister og hvordan blokering føles',
         welcomeDemoPlayAriaLabel: 'Afspil demovideo',
         welcomeDemoResumeAriaLabel: 'Genoptag demovideo',
         welcomeDemoPauseAriaLabel: 'Pause demovideo',
@@ -14680,6 +14680,13 @@ function syncWelcomeDemoPlayLabel() {
     playBtn.setAttribute('aria-label', tSettings(labelKey));
 }
 
+function syncWelcomeDemoVideoCaption() {
+    const caption = document.getElementById('welcome-demo-video-caption');
+    const video = document.getElementById('welcome-demo-video');
+    if (!caption || !video) return;
+    caption.classList.toggle('hidden', !video.paused);
+}
+
 function toggleWelcomeDemoPlayback(video) {
     if (video.paused) {
         video.play().catch(() => {});
@@ -14704,6 +14711,7 @@ function resetWelcomeDemoPanel() {
         video.currentTime = 0;
     }
     if (playBtn) playBtn.classList.remove('hidden');
+    syncWelcomeDemoVideoCaption();
 }
 
 function initWelcomeDemoControls() {
@@ -14780,15 +14788,18 @@ function initWelcomeDemoControls() {
     video.addEventListener('play', () => {
         playBtn.classList.add('hidden');
         syncWelcomeDemoPlayLabel();
+        syncWelcomeDemoVideoCaption();
     });
     video.addEventListener('pause', () => {
         if (video.currentTime < video.duration) playBtn.classList.remove('hidden');
         syncWelcomeDemoPlayLabel();
+        syncWelcomeDemoVideoCaption();
     });
     video.addEventListener('ended', () => {
         playBtn.classList.remove('hidden');
         video.currentTime = 0;
         syncWelcomeDemoPlayLabel();
+        syncWelcomeDemoVideoCaption();
     });
 }
 
