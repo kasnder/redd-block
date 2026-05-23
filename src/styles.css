@@ -8008,28 +8008,15 @@ body:not(.ios) .settings-diagnostics-contents.desktop-only,
     transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
 }
 
+#settings-modal .uninstall-app-btn,
 #settings-modal .settings-override-all-btn {
-    background: hsl(0, 65%, 50%);
-    color: white;
-    border: 1px solid hsl(0, 65%, 45%);
-}
-
-#settings-modal .settings-override-all-btn:hover:not(:disabled) {
-    background: hsl(0, 65%, 58%);
-    border-color: hsl(0, 65%, 52%);
-}
-
-#settings-modal .settings-override-all-btn svg {
-    flex-shrink: 0;
-}
-
-#settings-modal .uninstall-app-btn {
     background: var(--modal-bg);
     color: var(--redd-coral);
     border: 1px solid var(--border-color-medium);
 }
 
-#settings-modal .uninstall-app-btn:hover:not(:disabled) {
+#settings-modal .uninstall-app-btn:hover:not(:disabled),
+#settings-modal .settings-override-all-btn:hover:not(:disabled) {
     background: var(--redd-coral-soft);
     border-color: rgba(212, 96, 90, 0.45);
 }
@@ -8041,7 +8028,8 @@ body:not(.ios) .settings-diagnostics-contents.desktop-only,
     background: var(--modal-bg);
 }
 
-#settings-modal .uninstall-app-btn svg {
+#settings-modal .uninstall-app-btn svg,
+#settings-modal .settings-override-all-btn svg {
     flex-shrink: 0;
 }
 

@@ -8509,6 +8509,41 @@ function handleTimeChange() {
     updateWindowHeight();
 }
 
+// Re-draw in-flight Now/Schedule preview bars after renderWeekBlocks() clears day tracks
+// (e.g. window focus, blocklist colour change, or updateWeekCalendar rebuild).
+function refreshCalendarPreviews() {
+    if (!selectedBlocklistId) return;
+
+    if (isScheduleMode) {
+        renderSchedulePreview();
+        return;
+    }
+
+    if (isAlwaysOnMode) return;
+
+    const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+    if (!blocklist) return;
+
+    const now = Date.now();
+    const hasActiveBlock = appData.activeBlocks.some(
+        b => b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now
+    );
+    if (hasActiveBlock) return;
+
+    let blockStart = getStartTimeAsDate();
+    let blockEnd = getEndTimeAsDate();
+    if (!userEditedEndTime && targetDurationMinutes > 0) {
+        blockEnd = new Date(blockStart.getTime() + targetDurationMinutes * 60 * 1000);
+    } else if (blockEnd <= blockStart) {
+        blockEnd.setDate(blockEnd.getDate() + 1);
+    }
+
+    const durationMinutes = Math.round((blockEnd.getTime() - blockStart.getTime()) / 60000);
+    if (durationMinutes <= 0) return;
+
+    renderInstantPreviewBlock(blockStart, blockEnd, blocklist);
+}
+
 // Render an instant-mode preview block onto the weekly calendar by projecting from
 // now → blockEnd onto today's row (and onto tomorrow's row if the duration crosses
 // midnight). The "head" slice on today's row gets a right-edge resize handle so the
@@ -11748,6 +11783,7 @@ function renderWeekBlocks() {
     layoutOverlappingBlocks();
     renderScheduleAlwaysOnRow();
     renderScheduleVisibilityChips();
+    refreshCalendarPreviews();
 }
 
 // Build a calendar block element for a manual one-off block on a specific weekday slice.
