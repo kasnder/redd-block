@@ -4714,10 +4714,12 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
 
 .welcome-onboarding-subtitle {
     margin: 0 auto;
-    max-width: 480px;
+    max-width: 22em;
     font-size: 14px;
     line-height: 1.45;
     color: var(--text-muted);
+    white-space: pre-line;
+    text-wrap: balance;
 }
 
 .welcome-onboarding-card {
@@ -5787,7 +5789,123 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
     opacity: 0.9;
 }
 
-/* ── Enforcement opt-in toggle ──────────────────────────────────── */
+/* ── Enforcement opt-in toggle (extension setup) ─────────────────── */
+.enforcement-toggle-section {
+    margin: 18px 0 4px;
+    padding: 14px 16px;
+    background: rgba(10, 45, 123, 0.04);
+    border: 1px solid rgba(10, 45, 123, 0.10);
+    border-radius: 10px;
+    --enforcement-toggle-body-size: 12.5px;
+}
+
+.enforcement-toggle-text .enforcement-toggle-disable-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 5px;
+    margin: 6px 0 0;
+    font-size: var(--enforcement-toggle-body-size);
+    line-height: 1.5;
+    color: #b45309;
+}
+
+.enforcement-toggle-text .enforcement-toggle-disable-note svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: currentColor;
+}
+
+body.dark-mode #migration-onboarding .enforcement-toggle-disable-note {
+    color: #fbbf24;
+}
+
+.enforcement-toggle-section.enforcement-off {
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.20);
+}
+
+.enforcement-toggle-section.enforcement-off .enforcement-toggle-icon {
+    color: #b45309;
+}
+
+.enforcement-toggle-section.enforcement-on {
+    background: rgba(16, 185, 129, 0.08);
+    border-color: rgba(16, 185, 129, 0.18);
+}
+
+.enforcement-toggle-section.enforcement-on .enforcement-toggle-icon {
+    color: #047857;
+}
+
+.enforcement-toggle-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.enforcement-toggle-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.enforcement-toggle-headline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    color: hsl(222, 25%, 22%);
+}
+
+.enforcement-toggle-icon {
+    flex-shrink: 0;
+    color: hsl(222, 25%, 45%);
+}
+
+.enforcement-toggle-desc {
+    display: block;
+    margin-top: 4px;
+    font-size: var(--enforcement-toggle-body-size);
+    line-height: 1.5;
+    color: hsl(222, 18%, 42%);
+}
+
+#migration-onboarding .enforcement-toggle-section .enforcement-switch {
+    margin-top: 2px;
+}
+
+body.dark-mode #migration-onboarding .enforcement-toggle-section.enforcement-off {
+    background: rgba(245, 158, 11, 0.14);
+    border-color: rgba(251, 191, 36, 0.35);
+}
+
+body.dark-mode #migration-onboarding .enforcement-toggle-section.enforcement-on {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(52, 211, 153, 0.32);
+}
+
+body.dark-mode .enforcement-toggle-headline {
+    color: var(--text-primary);
+}
+
+body.dark-mode #migration-onboarding .enforcement-toggle-section.enforcement-off .enforcement-toggle-icon {
+    color: #fbbf24;
+}
+
+body.dark-mode #migration-onboarding .enforcement-toggle-section.enforcement-on .enforcement-toggle-icon {
+    color: #6ee7b7;
+}
+
+body.dark-mode .enforcement-toggle-section:not(.enforcement-off):not(.enforcement-on) .enforcement-toggle-icon {
+    color: var(--text-muted);
+}
+
+body.dark-mode .enforcement-toggle-desc {
+    color: var(--text-secondary);
+}
+
+/* ── Enforcement settings row (Settings modal) ──────────────────── */
 .enforcement-setting-row {
     display: flex;
     align-items: center;

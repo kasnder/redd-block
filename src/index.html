@@ -143,7 +143,8 @@
                         <h1 id="eula-welcome-title">Welcome to ReDD Block</h1>
                     </div>
                     <p id="eula-onboarding-subtitle" class="welcome-onboarding-subtitle">
-                        An open-source tool for blocking the websites and apps that pull you away from your focus.
+                        An open-source tool for blocking the websites
+                        and apps that pull you away from your focus.
                     </p>
                 </header>
 
@@ -189,7 +190,8 @@
                         <h1 id="welcome-onboarding-title">Welcome to ReDD Block</h1>
                     </div>
                     <p id="welcome-onboarding-subtitle" class="welcome-onboarding-subtitle">
-                        An open-source tool for blocking the websites and apps that pull you away from your focus.
+                        An open-source tool for blocking the websites
+                        and apps that pull you away from your focus.
                     </p>
                 </header>
 
@@ -423,16 +425,30 @@
                              The server-side guard in enforcement_toggle.rs
                              rejects disable attempts during active blocks even
                              if someone bypasses the UI lock. -->
-                        <div id="enforcement-toggle-section" class="enforcement-setting-row">
-                            <div class="settings-enforcement-copy">
-                                <span id="enforcement-toggle-headline-text" class="settings-row-label">Browser enforcement</span>
-                                <span id="enforcement-toggle-desc-text" class="settings-enforcement-desc">Automatically close browser if ReDD Focus is disabled when a block is running.</span>
+                        <div id="enforcement-toggle-section" class="enforcement-toggle-section enforcement-off">
+                            <div class="enforcement-toggle-row">
+                                <div class="enforcement-toggle-text">
+                                    <strong class="enforcement-toggle-headline">
+                                        <svg class="enforcement-toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                                        </svg>
+                                        <span id="enforcement-toggle-headline-text">Browser enforcement</span>
+                                    </strong>
+                                    <span id="enforcement-toggle-desc-text" class="enforcement-toggle-desc">To help you stay focused, your browser is automatically closed if you turn off ReDD Focus while a block is running.</span>
+                                    <p class="enforcement-toggle-disable-note">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                        </svg>
+                                        <span id="enforcement-toggle-disable-note-text">Once on, you can only turn enforcement off when no blocks are running.</span>
+                                    </p>
+                                </div>
+                                <label class="enforcement-switch" for="enforcement-toggle-input">
+                                    <input type="checkbox" id="enforcement-toggle-input" class="enforcement-toggle-input" />
+                                    <span class="enforcement-slider"></span>
+                                </label>
                             </div>
-                            <label class="enforcement-switch enforcement-switch-with-tip" for="enforcement-toggle-input">
-                                <input type="checkbox" id="enforcement-toggle-input" class="enforcement-toggle-input" />
-                                <span class="enforcement-slider"></span>
-                                <span id="enforcement-toggle-disable-note-text" class="enforcement-switch-tooltip hidden" role="tooltip"></span>
-                            </label>
                         </div>
 
                         <div class="migration-post-actions">

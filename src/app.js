@@ -1926,14 +1926,20 @@ function updateGraceSettingLock() {
         input.removeAttribute('aria-disabled');
     }
     if (tooltip) {
-        tooltip.textContent = locked ? tSettings('migrationEnforcementDisableNote') : '';
+        tooltip.textContent = locked ? tSettings('settingsEnforcementLockedTooltip') : '';
         tooltip.classList.toggle('hidden', !locked);
     }
 }
 
 function syncEnforcementToggleSectionVisual(_toggle) {
-    const enabled = getEnforcementToggleInputs().some((t) => t.checked);
-    syncGraceSettingVisibility(enabled);
+    const migrationToggle = document.getElementById('enforcement-toggle-input');
+    const migrationSection = document.getElementById('enforcement-toggle-section');
+    if (migrationSection && migrationToggle) {
+        const on = !!migrationToggle.checked;
+        migrationSection.classList.toggle('enforcement-on', on);
+        migrationSection.classList.toggle('enforcement-off', !on);
+    }
+    syncGraceSettingVisibility(getEnforcementToggleInputs().some((t) => t.checked));
 }
 
 function getEnforcementToggleInputs() {
@@ -2020,7 +2026,7 @@ async function updateEnforcementToggleLock(toggle) {
         const label = toggle.closest('.enforcement-switch-with-tip');
         const tooltip = label?.querySelector('.enforcement-switch-tooltip');
         if (tooltip) {
-            tooltip.textContent = isLocked ? tSettings('migrationEnforcementDisableNote') : '';
+            tooltip.textContent = isLocked ? tSettings('settingsEnforcementLockedTooltip') : '';
             tooltip.classList.toggle('hidden', !isLocked);
         }
     } catch (e) {
@@ -13451,7 +13457,7 @@ const SETTINGS_TRANSLATIONS = {
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Welcome to ReDD Block',
         welcomeOnboardingSubtitle:
-            'An open-source tool for blocking the websites and apps that pull you away from your focus.',
+            'An open-source tool for blocking the websites\nand apps that pull you away from your focus.',
         welcomeHowHeading: 'How to set it up',
         welcomeStep1TitleHtml: 'Grant {APPLE} Full Disk Access',
         welcomeStep1BodyHtml:
@@ -13495,8 +13501,8 @@ const SETTINGS_TRANSLATIONS = {
         migrationDone: 'I\'m all set up',
         migrationSkip: 'Skip for now',
         migrationEnforcementHeadline: 'Browser enforcement',
-        migrationEnforcementDesc: 'Automatically close browser if ReDD Focus is disabled when a block is running.',
-        migrationEnforcementDisableNote: 'To change this setting, first stop all active blocks.',
+        migrationEnforcementDesc: 'To help you stay focused, your browser is automatically closed if you turn off ReDD Focus while a block is running.',
+        migrationEnforcementDisableNote: 'Once on, you can only turn enforcement off when no blocks are running.',
         migrationApproveAdminPrompt: 'Approve the admin prompt to continue…',
         migrationTryAgain: 'Try again',
         migrationCleanupNeedAdmin: 'We need that admin permission to finish — your blocklists are safe.',
@@ -13622,6 +13628,8 @@ const SETTINGS_TRANSLATIONS = {
         enforcerBrowserFallback: 'your browser',
         gracePeriodLabel: 'Seconds before a browser is closed if ReDD Focus is disabled',
         settingsEnforcementHeading: 'Enforcement settings',
+        settingsEnforcementDesc: 'Automatically close browser if ReDD Focus is disabled when a block is running.',
+        settingsEnforcementLockedTooltip: 'To change this setting, first stop all active blocks.',
         settingsDiagnosticsLabel: 'Something not working?',
         settingsDiagnosticsBtn: 'Diagnostics',
         gracePeriodLockedHint: 'Locked while a block is active—only shorter times allowed.',
@@ -13910,7 +13918,7 @@ const SETTINGS_TRANSLATIONS = {
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Velkommen til ReDD Block',
         welcomeOnboardingSubtitle:
-            'Et open source-værktøj til at blokere de hjemmesider og apps, der trækker dig væk fra dit fokus.',
+            'Et open source-værktøj til at blokere de hjemmesider\nog apps, der trækker dig væk fra dit fokus.',
         welcomeHowHeading: 'Sådan sætter du det op',
         welcomeStep1TitleHtml: 'Giv {APPLE} fuld diskadgang',
         welcomeStep1BodyHtml:
@@ -13954,8 +13962,8 @@ const SETTINGS_TRANSLATIONS = {
         migrationDone: 'Jeg er klar',
         migrationSkip: 'Spring over for nu',
         migrationEnforcementHeadline: 'Browser-beskyttelse',
-        migrationEnforcementDesc: 'Luk browser automatisk hvis ReDD Focus slås fra mens en blokering kører.',
-        migrationEnforcementDisableNote: 'For at ændre denne indstilling skal du først stoppe alle aktive blokeringer.',
+        migrationEnforcementDesc: 'For at støtte dig i at fokusere, bliver din browser automatisk lukket ned hvis du slukker for ReDD Focus mens en blokering kører.',
+        migrationEnforcementDisableNote: 'Når den er slået til, kan du kun slå håndhævelse fra, når ingen blokeringer kører.',
         migrationApproveAdminPrompt: 'Godkend administratorprompt for at fortsætte …',
         migrationTryAgain: 'Prøv igen',
         migrationCleanupNeedAdmin: 'Vi har brug for den administrators tilladelse for at afslutte — dine bloklister er i sikkerhed.',
@@ -14081,6 +14089,8 @@ const SETTINGS_TRANSLATIONS = {
         enforcerBrowserFallback: 'din browser',
         gracePeriodLabel: 'Sekunder før en browser lukkes, hvis ReDD Focus er slået fra',
         settingsEnforcementHeading: 'Indstillinger for selvkontrols-støtte',
+        settingsEnforcementDesc: 'Luk browser automatisk hvis ReDD Focus slås fra mens en blokering kører.',
+        settingsEnforcementLockedTooltip: 'For at ændre denne indstilling skal du først stoppe alle aktive blokeringer.',
         settingsDiagnosticsLabel: 'Virker noget ikke?',
         settingsDiagnosticsBtn: 'Diagnostik',
         gracePeriodLockedHint: 'Låst mens en blokering er aktiv—kun kortere tider tilladt.',
@@ -14505,10 +14515,11 @@ function applyMigrationOverlayStaticCopy() {
     setText('migration-skip-btn', tSettings('migrationSkip'));
     setText('enforcement-toggle-headline-text', tSettings('migrationEnforcementHeadline'));
     setText('enforcement-toggle-desc-text', tSettings('migrationEnforcementDesc'));
+    setText('enforcement-toggle-disable-note-text', tSettings('migrationEnforcementDisableNote'));
     void updateAllEnforcementToggleLocks();
     setText('settings-enforcement-heading', tSettings('settingsEnforcementHeading'));
     setText('settings-enforcement-toggle-headline-text', tSettings('migrationEnforcementHeadline'));
-    setText('settings-enforcement-toggle-desc-text', tSettings('migrationEnforcementDesc'));
+    setText('settings-enforcement-toggle-desc-text', tSettings('settingsEnforcementDesc'));
     const continueBtn = document.getElementById('migration-continue-btn');
     if (continueBtn && !continueBtn.disabled) {
         continueBtn.textContent = tSettings('migrationContinue');
