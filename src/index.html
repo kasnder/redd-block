@@ -155,10 +155,17 @@
                                 id="eula-agree-line-inner"></span></span>
                     </div>
                     <p id="eula-note" class="legal-onboarding-note"></p>
-                    <button id="eula-continue-btn"
-                            class="modal-btn primary-btn onboarding-primary-btn eula-continue-btn"
-                            type="button"
-                            disabled>Continue</button>
+                    <div class="eula-onboarding-actions">
+                        <button id="eula-back-btn"
+                                class="eula-back-btn"
+                                type="button">
+                            Back
+                        </button>
+                        <button id="eula-continue-btn"
+                                class="modal-btn primary-btn onboarding-primary-btn eula-continue-btn"
+                                type="button"
+                                disabled>Continue</button>
+                    </div>
                 </div>
 
                 <footer class="welcome-onboarding-footer">
@@ -188,31 +195,93 @@
 
                 <div class="welcome-onboarding-card">
                     <section class="welcome-how-it-works" aria-labelledby="welcome-how-heading">
-                        <h2 id="welcome-how-heading" class="welcome-how-heading">How it works</h2>
+                        <h2 id="welcome-how-heading" class="welcome-how-heading">How to set it up</h2>
                         <ol class="welcome-steps">
-                            <li class="welcome-step">
+                            <li id="welcome-step-fda" class="welcome-step">
                                 <span class="welcome-step-num" aria-hidden="true">1</span>
-                                <p id="welcome-step-1" class="welcome-step-text"></p>
+                                <div class="welcome-step-content">
+                                    <p id="welcome-step-1-title" class="welcome-step-title"></p>
+                                    <p id="welcome-step-1-body" class="welcome-step-text"></p>
+                                </div>
                             </li>
                             <li class="welcome-step">
                                 <span class="welcome-step-num" aria-hidden="true">2</span>
-                                <p id="welcome-step-2" class="welcome-step-text"></p>
+                                <div class="welcome-step-content">
+                                    <p id="welcome-step-2-title" class="welcome-step-title"></p>
+                                    <p id="welcome-step-2-body" class="welcome-step-text"></p>
+                                </div>
                             </li>
                             <li class="welcome-step">
                                 <span class="welcome-step-num" aria-hidden="true">3</span>
-                                <p id="welcome-step-3" class="welcome-step-text"></p>
+                                <div class="welcome-step-content">
+                                    <p id="welcome-step-3-title" class="welcome-step-title"></p>
+                                    <p id="welcome-step-3-body" class="welcome-step-text"></p>
+                                </div>
                             </li>
                         </ol>
-                    </section>
 
-                    <div id="welcome-onboarding-macos-note" class="welcome-macos-note hidden">
-                        <img id="welcome-macos-icon"
-                             class="welcome-macos-icon"
-                             src=""
-                             alt=""
-                             aria-hidden="true">
-                        <p id="welcome-macos-note-text" class="welcome-macos-note-text"></p>
-                    </div>
+                        <div class="welcome-demo-section">
+                            <button id="welcome-demo-toggle"
+                                    class="welcome-demo-toggle"
+                                    type="button"
+                                    aria-expanded="false"
+                                    aria-controls="welcome-demo-panel">
+                                <span class="welcome-demo-toggle-play" aria-hidden="true">
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                        <path d="M8 5v14l11-7z"></path>
+                                    </svg>
+                                </span>
+                                <span id="welcome-demo-toggle-label" class="welcome-demo-toggle-label"></span>
+                                <svg class="welcome-demo-toggle-chevron" width="14" height="14" viewBox="0 0 24 24"
+                                     fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                                     stroke-linejoin="round" aria-hidden="true">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
+                            </button>
+                            <div id="welcome-demo-panel" class="welcome-demo-panel hidden">
+                                <div id="welcome-demo-video-wrap" class="welcome-demo-video-wrap">
+                                    <video id="welcome-demo-video"
+                                           class="welcome-demo-video"
+                                           playsinline
+                                           preload="metadata"></video>
+                                    <button id="welcome-demo-play-btn"
+                                            class="welcome-demo-play-btn"
+                                            type="button"
+                                            aria-label="Play demo video">
+                                        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                            <path d="M8 5v14l11-7z"></path>
+                                        </svg>
+                                    </button>
+                                    <button id="welcome-demo-fullscreen-btn"
+                                            class="welcome-demo-fullscreen-btn"
+                                            type="button"
+                                            aria-label="Enter fullscreen">
+                                        <svg class="welcome-demo-fullscreen-enter-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                             stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                             stroke-linejoin="round" aria-hidden="true">
+                                            <path d="M8 3H5a2 2 0 0 0-2 2v3"></path>
+                                            <path d="M21 8V5a2 2 0 0 0-2-2h-3"></path>
+                                            <path d="M3 16v3a2 2 0 0 0 2 2h3"></path>
+                                            <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
+                                        </svg>
+                                    </button>
+                                    <button id="welcome-demo-close-btn"
+                                            class="welcome-demo-close-btn"
+                                            type="button"
+                                            hidden>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                             stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                                             stroke-linejoin="round" aria-hidden="true">
+                                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                                        </svg>
+                                        <span id="welcome-demo-close-label">Close</span>
+                                    </button>
+                                    <p id="welcome-demo-video-caption" class="welcome-demo-video-caption"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
 
                     <button id="welcome-onboarding-continue-btn"
                             class="modal-btn primary-btn onboarding-primary-btn welcome-continue-btn"
@@ -247,15 +316,17 @@
 
                 <div class="welcome-onboarding-card fda-onboarding-card">
                     <p id="fda-onboarding-why" class="migration-explainer">
-                        ReDD Block will attempt to install the <strong>ReDD Focus</strong> extension in your browsers and check that it stays enabled during your blocks.
-                    </p>
-                    <p id="fda-onboarding-why-2" class="migration-explainer">
-                        On Mac, this requires <strong>Full Disk Access</strong>. Click this button and toggle on for <strong>ReDD Block</strong> (if you don't see ReDD Block in the list, click + and add it manually).
+                        Click this button to open your System Settings and toggle on for <strong>ReDD Block</strong> (if you don't see ReDD Block in the list, click + and add it manually).
                     </p>
                     <p id="fda-onboarding-status" class="migration-status hidden"></p>
                     <div class="fda-onboarding-actions">
+                        <button id="fda-onboarding-back-btn"
+                                class="eula-back-btn"
+                                type="button">
+                            Back
+                        </button>
                         <button id="fda-onboarding-grant-btn"
-                                class="modal-btn primary-btn onboarding-primary-btn"
+                                class="modal-btn primary-btn onboarding-primary-btn fda-grant-btn"
                                 type="button">
                             Open Full Disk Access settings
                         </button>

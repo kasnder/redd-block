@@ -22,6 +22,7 @@ import screenshotFirefoxStep1 from './images/toggle-firefox-private-windows-1.pn
 import screenshotFirefoxStep2 from './images/toggle-firefox-private-windows-2.png';
 import screenshotSafariStep1 from './images/mac-extension-settings-1.png';
 import screenshotSafariStep2 from './images/mac-extension-settings-2.png';
+import welcomeDemoVideoUrl from './reddblock-video.mp4';
 
 // Compatibility layer wrapping Tauri APIs
 const tauriAPI = {
@@ -1084,6 +1085,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     detectPlatform(); // Must run early so isIOS is set before other setup
     setupNowBlockingChipScroll();
     setupEventListeners();
+    initWelcomeDemoControls();
     setupTheme();
     setupUiZoomShortcuts();
     setupHelpMenuLinks();
@@ -1375,40 +1377,43 @@ async function persistWelcomeOnboardingShown() {
 
 async function runInitialDesktopOnboardingSequence() {
     if (!hasWelcomeOnboardingBeenShown()) {
-        await showWelcomeOnboardingOverlay();
+        await presentWelcomeOnboarding();
         await persistWelcomeOnboardingShown();
     }
     updateOnboardingVisibility();
 }
 
-function showWelcomeOnboardingOverlay() {
+function presentWelcomeOnboarding(onContinue) {
     return new Promise((resolve) => {
         const overlay = document.getElementById('welcome-onboarding');
         const btn = document.getElementById('welcome-onboarding-continue-btn');
         if (!overlay || !btn) {
-            // HTML missing — bail rather than blocking startup.
-            console.warn('[welcome-onboarding] overlay elements missing, skipping');
             resolve();
             return;
         }
 
-        // Hide other onboarding screens so this is the only visible
-        // surface. updateOnboardingVisibility will resync once we
-        // resolve.
         document.getElementById('eula-onboarding')?.classList.add('hidden');
         document.getElementById('fda-onboarding')?.classList.add('hidden');
         document.getElementById('migration-onboarding')?.classList.add('hidden');
         document.getElementById('main-content')?.classList.add('hidden');
         document.getElementById('now-blocking-row')?.classList.add('hidden');
         overlay.classList.remove('hidden');
+        resetWelcomeDemoPanel();
         applyWelcomeOnboardingLanguage();
 
         const onClick = () => {
             btn.removeEventListener('click', onClick);
             overlay.classList.add('hidden');
+            onContinue?.();
             resolve();
         };
         btn.addEventListener('click', onClick);
+    });
+}
+
+function returnToWelcomeFromEula() {
+    presentWelcomeOnboarding(() => {
+        updateOnboardingVisibility();
     });
 }
 
@@ -1434,8 +1439,65 @@ async function ensureFdaOnboardingComplete() {
 
 // Block until the user grants Full Disk Access. Polls after they open
 // System Settings; auto-advances and runs deferred installs on grant.
+let activeFdaOnboardingSession = null;
+
+function hideFdaOnboardingUi() {
+    const session = activeFdaOnboardingSession;
+    if (!session) return;
+    session.overlay.classList.add('hidden');
+    if (session.pollHandle) {
+        clearInterval(session.pollHandle);
+        session.pollHandle = null;
+    }
+}
+
+function presentFdaOnboardingUi() {
+    const session = activeFdaOnboardingSession;
+    if (!session) return;
+    document.getElementById('eula-onboarding')?.classList.add('hidden');
+    document.getElementById('welcome-onboarding')?.classList.add('hidden');
+    document.getElementById('migration-onboarding')?.classList.add('hidden');
+    document.getElementById('main-content')?.classList.add('hidden');
+    document.getElementById('now-blocking-row')?.classList.add('hidden');
+    session.overlay.classList.remove('hidden');
+}
+
+function completeFdaOnboardingSession() {
+    hideFdaOnboardingUi();
+    const resolve = activeFdaOnboardingSession?.resolve;
+    activeFdaOnboardingSession = null;
+    resolve?.();
+}
+
+function returnToEulaFromFda() {
+    if (!activeFdaOnboardingSession) return;
+    hideFdaOnboardingUi();
+    document.getElementById('eula-onboarding')?.classList.remove('hidden');
+    document.getElementById('main-content')?.classList.add('hidden');
+    document.getElementById('now-blocking-row')?.classList.add('hidden');
+    applyEulaOnboardingLanguage();
+    const eulaContinueBtn = document.getElementById('eula-continue-btn');
+    const eulaCheckbox = document.getElementById('eula-agree-checkbox');
+    if (eulaContinueBtn) {
+        eulaContinueBtn.disabled = !eulaCheckbox?.checked;
+        eulaContinueBtn.textContent = tSettings('eulaContinueBtn');
+    }
+}
+
+function resumeFdaOnboardingFromEula() {
+    if (!activeFdaOnboardingSession) return;
+    document.getElementById('eula-onboarding')?.classList.add('hidden');
+    presentFdaOnboardingUi();
+}
+
 function showFdaOnboardingOverlay() {
-    return new Promise((resolve) => {
+    if (activeFdaOnboardingSession) {
+        presentFdaOnboardingUi();
+        return activeFdaOnboardingSession.promise;
+    }
+
+    let session;
+    const promise = new Promise((resolve) => {
         const overlay = document.getElementById('fda-onboarding');
         const grantBtn = document.getElementById('fda-onboarding-grant-btn');
         const statusEl = document.getElementById('fda-onboarding-status');
@@ -1444,22 +1506,6 @@ function showFdaOnboardingOverlay() {
             resolve();
             return;
         }
-
-        document.getElementById('eula-onboarding')?.classList.add('hidden');
-        document.getElementById('migration-onboarding')?.classList.add('hidden');
-        document.getElementById('main-content')?.classList.add('hidden');
-        document.getElementById('now-blocking-row')?.classList.add('hidden');
-        overlay.classList.remove('hidden');
-
-        let pollHandle = null;
-        const cleanup = () => {
-            overlay.classList.add('hidden');
-            if (pollHandle) {
-                clearInterval(pollHandle);
-                pollHandle = null;
-            }
-            grantBtn.removeEventListener('click', onGrant);
-        };
 
         const onGrant = async () => {
             grantBtn.disabled = true;
@@ -1479,8 +1525,8 @@ function showFdaOnboardingOverlay() {
                 statusEl.classList.remove('hidden');
                 statusEl.textContent = 'Waiting for Full Disk Access… leave this window open while you grant it.';
             }
-            if (!pollHandle) {
-                pollHandle = setInterval(async () => {
+            if (!session.pollHandle) {
+                session.pollHandle = setInterval(async () => {
                     try {
                         const granted = await invoke('check_full_disk_access');
                         if (granted) {
@@ -1492,16 +1538,27 @@ function showFdaOnboardingOverlay() {
                             } catch (e) {
                                 console.warn('[fda-onboarding] complete failed:', e);
                             }
-                            cleanup();
-                            resolve();
+                            completeFdaOnboardingSession();
                         }
                     } catch (_) { /* transient */ }
                 }, 1500);
             }
         };
 
+        session = {
+            overlay,
+            grantBtn,
+            statusEl,
+            pollHandle: null,
+            resolve,
+            onGrant,
+        };
+        activeFdaOnboardingSession = session;
         grantBtn.addEventListener('click', onGrant);
+        presentFdaOnboardingUi();
     });
+    if (session) session.promise = promise;
+    return promise;
 }
 
 // ---- Desktop onboarding (v1.1+) --------------------------------------------
@@ -1533,6 +1590,8 @@ function showFdaOnboardingOverlay() {
 // launch). We resume it explicitly when the user dismisses post.
 let migrationOnboardingActive = false;
 let migrationOnboardingDismissed = false;
+/** True while the welcome → EULA → FDA → extension-setup chain is in progress. */
+let firstRunExtensionSetupPending = false;
 // While the migration post-phase is on screen, the user is bouncing
 // between this window and Safari (or Chrome/Firefox/etc.) toggling
 // extension settings. The window-`focus` listener below already
@@ -1570,36 +1629,32 @@ async function runDesktopOnboarding() {
             return;
         }
 
-        // Fresh-user case: not an upgrade, but at least one INSTALLED
-        // browser is missing the extension AND the user hasn't seen+
-        // dismissed this screen before.
-        //
-        // Note: state.extension_compliant from the backend is keyed
-        // off RUNNING browsers (so the in-session enforcer doesn't
-        // nag about closed ones). Here we want a broader check: any
-        // browser the user has installed but that doesn't have ReDD
-        // Focus set up. That's the migration UI's
-        // browserComplianceStatus logic.
-        const state = await invoke('onboarding_state');
-        console.log('[onboarding] state:', state);
-        const dismissed = localStorage.getItem(EXT_ONBOARDING_DISMISSED_KEY);
-        const browsers = state.browsers || {};
-        const anyDetected = Object.keys(BROWSER_STORE_LINKS).some(k => browsers[k] && browsers[k].installed);
-        const anyMissing = Object.keys(BROWSER_STORE_LINKS).some(k => {
-            const b = browsers[k];
-            return b && b.installed && browserComplianceStatus(k, b) !== 'compliant';
-        });
-        if (!dismissed && anyDetected && anyMissing && !migrationOnboardingDismissed) {
-            await showMigrationOnboarding('post', state, { mode: 'fresh' });
-            return;
-        }
+        // Fresh-user case: surface the extension setup screen until the
+        // user dismisses it. renderBrowserInstallButtons falls back to a
+        // Chrome row when no installed browsers are detected yet.
+        await ensureExtensionSetupOnboardingShown();
 
-        // Returning user with extension already set up, OR user has
-        // dismissed the welcome — fall back to the slim banner for
-        // ongoing nagging.
+        if (migrationOnboardingActive) return;
+
+        const state = await invoke('onboarding_state');
         await updateBehaviourChangeBanner(state);
     } catch (e) {
         console.warn('[onboarding] state check failed:', e);
+    }
+}
+
+async function ensureExtensionSetupOnboardingShown() {
+    if (isIOS || migrationOnboardingActive) return;
+    const dismissed = localStorage.getItem(EXT_ONBOARDING_DISMISSED_KEY);
+    if (!firstRunExtensionSetupPending && (dismissed || migrationOnboardingDismissed)) return;
+    try {
+        if (firstRunExtensionSetupPending) {
+            migrationOnboardingDismissed = false;
+        }
+        const state = await invoke('onboarding_state');
+        await showMigrationOnboarding('post', state, { mode: 'fresh' });
+    } catch (e) {
+        console.warn('[onboarding] extension setup overlay failed:', e);
     }
 }
 
@@ -1614,6 +1669,10 @@ async function showMigrationOnboarding(phase, state, opts = {}) {
 
     migrationOnboardingActive = true;
     startMigrationPolling();
+    document.getElementById('welcome-onboarding')?.classList.add('hidden');
+    document.getElementById('eula-onboarding')?.classList.add('hidden');
+    document.getElementById('fda-onboarding')?.classList.add('hidden');
+    document.getElementById('now-blocking-row')?.classList.add('hidden');
     if (main) main.classList.add('hidden');
     screen.classList.remove('hidden');
     pre.classList.toggle('hidden', phase !== 'pre');
@@ -1669,6 +1728,7 @@ function hideMigrationOnboarding() {
     if (main) main.classList.remove('hidden');
     migrationOnboardingActive = false;
     migrationOnboardingDismissed = true;
+    firstRunExtensionSetupPending = false;
     migrationShowMeHowExpandedKeys.clear();
     lastMigrationBrowserState = null;
     stopMigrationPolling();
@@ -4234,6 +4294,7 @@ async function acceptEula() {
     if (isIOS) {
         await checkScreentimeAuth();
     } else {
+        firstRunExtensionSetupPending = true;
         updateOnboardingVisibility();
     }
     await runPostAcceptanceStartup();
@@ -4523,6 +4584,10 @@ function setupEventListeners() {
     });
     eulaContinueBtn?.addEventListener('click', async () => {
         if (!eulaCheckbox?.checked || !eulaContinueBtn) return;
+        if (activeFdaOnboardingSession) {
+            resumeFdaOnboardingFromEula();
+            return;
+        }
         eulaContinueBtn.disabled = true;
         eulaContinueBtn.textContent = tSettings('eulaContinueBusy');
         try {
@@ -4535,6 +4600,14 @@ function setupEventListeners() {
             return;
         }
         eulaContinueBtn.textContent = tSettings('eulaContinueBtn');
+    });
+
+    document.getElementById('eula-back-btn')?.addEventListener('click', () => {
+        returnToWelcomeFromEula();
+    });
+
+    document.getElementById('fda-onboarding-back-btn')?.addEventListener('click', () => {
+        returnToEulaFromFda();
     });
 
     // EULA onboarding: delegated listeners so localized HTML can rebuild links/text without losing handlers.
@@ -13245,24 +13318,34 @@ const SETTINGS_TRANSLATIONS = {
             'Note that we do not collect any user data, as per our <a href="https://reddfocus.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/privacy-policy">Privacy Policy</a>.',
         eulaContinueBtn: 'Continue',
         eulaContinueBusy: 'Continuing…',
+        eulaBackBtn: 'Back',
         eulaAcceptSaveFailedAlert: 'Could not save your agreement. Please try again.',
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Welcome to ReDD Block',
         welcomeOnboardingSubtitle:
             'An open-source tool for blocking the websites and apps that pull you away from your focus.',
-        welcomeHowHeading: 'How it works',
-        welcomeStep1Html:
-            'ReDD Block pairs with the {LOGO}<strong>ReDD Focus</strong> browser extension to block distracting sites in Chrome, Edge, Firefox, Safari, and more.',
-        welcomeStep2Html:
-            'You need to install the extension in your browsers, and allow it in private/incognito tabs.',
-        welcomeStep3Html:
-            'Afterwards, you set your blocklists and schedules; ReDD Block enforces them in the background.',
-        welcomeMacosNoteHtml:
-            'On Mac, you\'ll also need to grant <strong>Full Disk Access</strong> so ReDD Block is able to see if ReDD Focus is enabled in your browsers.',
+        welcomeHowHeading: 'How to set it up',
+        welcomeStep1TitleHtml: 'Grant {APPLE} Full Disk Access',
+        welcomeStep1BodyHtml:
+            'macOS needs this so ReDD Block can see whether blocking is enabled in your browsers. We\'ll open System Settings for you.',
+        welcomeStep2TitleHtml: 'Enable blocking in your browser & allow it in private/incognito tabs',
+        welcomeStep2BodyHtml:
+            'Our {LOGO}<strong>ReDD Focus</strong> extension is what actually blocks websites. We\'ll auto-install it in your browsers where we can — you just need to flip it on and let it run in private tabs so they don\'t become a loophole.',
+        welcomeStep3TitleHtml: 'Decide what to block, and when',
+        welcomeStep3BodyHtml:
+            'Pick the websites and apps that pull you off task, and set the times you want them out of reach. ReDD Block takes care of the rest.',
+        welcomeDemoToggleLabel: 'See it in action — 30s',
+        welcomeDemoVideoCaption: 'Quick tour — blocklists, schedules & how blocks feel',
+        welcomeDemoPlayAriaLabel: 'Play demo video',
+        welcomeDemoResumeAriaLabel: 'Resume demo video',
+        welcomeDemoPauseAriaLabel: 'Pause demo video',
+        welcomeDemoFullscreenEnterAriaLabel: 'Enter fullscreen',
+        welcomeDemoFullscreenExitAriaLabel: 'Exit fullscreen',
+        welcomeDemoCloseLabel: 'Close',
         welcomeFooter1Html:
-            'Built by the <a href="https://reddfocus.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Reduce Digital Distraction Project</a>, in collaboration with researchers at the University of Oxford and University of Maastricht. <a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">View the source code on GitHub</a>.',
+            'Built by the <a href="https://reddfocus.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Reduce Digital Distraction Project</a>, a not-for-profit creating open-source focus tools to thrive in the digital world. In collaboration with researchers at the University of Oxford and University of Maastricht.',
         welcomeFooter2Html:
-            'The ReDD Project is a not-for-profit creating insights and open-source focus tools to help everyone thrive in the digital world.',
+            '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">View the source code on GitHub</a>.',
         welcomeOnboardingContinueBtn: 'Get started',
         // Migration / extension onboarding overlay
         migrationPreWelcomeTitle: 'Welcome to ReDD Block 2.0',
@@ -13688,24 +13771,34 @@ const SETTINGS_TRANSLATIONS = {
             'Bemærk, at vi ikke indsamler brugerdata — som beskrevet i vores <a href="https://reddfocus.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/privacy-policy">privatlivspolitik</a>.',
         eulaContinueBtn: 'Fortsæt',
         eulaContinueBusy: 'Arbejder…',
+        eulaBackBtn: 'Tilbage',
         eulaAcceptSaveFailedAlert: 'Vi kunne ikke gemme din godkendelse. Prøv igen.',
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Velkommen til ReDD Block',
         welcomeOnboardingSubtitle:
             'Et open source-værktøj til at blokere de hjemmesider og apps, der trækker dig væk fra dit fokus.',
-        welcomeHowHeading: 'Sådan virker det',
-        welcomeStep1Html:
-            'ReDD Block arbejder sammen med browserudvidelsen {LOGO}<strong>ReDD Focus</strong> for at blokere distraherende sider i Chrome, Edge, Firefox, Safari og flere.',
-        welcomeStep2Html:
-            'Du skal installere udvidelsen i dine browsere og tillade den i private/incognito-faner.',
-        welcomeStep3Html:
-            'Derefter sætter du dine blocklists og tidsplaner; ReDD Block håndhæver dem i baggrunden.',
-        welcomeMacosNoteHtml:
-            'På Mac skal du også give <strong>fuld diskadgang</strong>, så ReDD Block kan se, om ReDD Focus er aktiveret i dine browsere.',
+        welcomeHowHeading: 'Sådan sætter du det op',
+        welcomeStep1TitleHtml: 'Giv {APPLE} fuld diskadgang',
+        welcomeStep1BodyHtml:
+            'macOS har brug for det, så ReDD Block kan se, om blokering er slået til i dine browsere. Vi åbner Systemindstillinger for dig.',
+        welcomeStep2TitleHtml: 'Slå blokering til i din browser og tillad den i private/incognito-faner',
+        welcomeStep2BodyHtml:
+            'Vores {LOGO}<strong>ReDD Focus</strong>-udvidelse er det, der faktisk blokerer websites. Vi installerer den automatisk i dine browsere, hvor vi kan — du skal bare slå den til og lade den køre i private faner, så de ikke bliver en smutvej.',
+        welcomeStep3TitleHtml: 'Bestem, hvad der skal blokeres, og hvornår',
+        welcomeStep3BodyHtml:
+            'Vælg de websites og apps, der trækker dig væk fra opgaven, og sæt de tidspunkter, hvor de skal være uden rækkevidde. ReDD Block klarer resten.',
+        welcomeDemoToggleLabel: 'Se det i aktion — 30 sek.',
+        welcomeDemoVideoCaption: 'Hurtig gennemgang — blocklists, tidsplaner og hvordan blokeringer føles',
+        welcomeDemoPlayAriaLabel: 'Afspil demovideo',
+        welcomeDemoResumeAriaLabel: 'Genoptag demovideo',
+        welcomeDemoPauseAriaLabel: 'Pause demovideo',
+        welcomeDemoFullscreenEnterAriaLabel: 'Fuld skærm',
+        welcomeDemoFullscreenExitAriaLabel: 'Afslut fuld skærm',
+        welcomeDemoCloseLabel: 'Luk',
         welcomeFooter1Html:
-            'Bygget af <a href="https://reddfocus.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Reduce Digital Distraction Project</a> i samarbejde med forskere ved University of Oxford og Maastricht University. <a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Se kildekoden på GitHub</a>.',
+            'Bygget af <a href="https://reddfocus.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Reduce Digital Distraction Project</a>, en non-profit, der skaber open source-fokusværktøjer for at trives i den digitale verden. I samarbejde med forskere ved University of Oxford og Maastricht University.',
         welcomeFooter2Html:
-            'ReDD Project er en non-profit, der skaber indsigt og open source-fokusværktøjer, så alle kan trives i den digitale verden.',
+            '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Se kildekoden på GitHub</a>.',
         welcomeOnboardingContinueBtn: 'Kom i gang',
         // Migration / extension onboarding overlay
         migrationPreWelcomeTitle: 'Velkommen til ReDD Block 2.0',
@@ -14307,6 +14400,12 @@ function applyEulaOnboardingLanguage() {
 
     const continueBtn = document.getElementById('eula-continue-btn');
     if (continueBtn) continueBtn.textContent = tSettings('eulaContinueBtn');
+
+    const backBtn = document.getElementById('eula-back-btn');
+    if (backBtn) {
+        backBtn.textContent = tSettings('eulaBackBtn');
+        backBtn.classList.toggle('hidden', isIOS);
+    }
 }
 
 /** Welcome onboarding screen — localized in the same way as the EULA screen. */
@@ -14328,25 +14427,54 @@ function applyWelcomeOnboardingLanguage() {
 
     const focusLogoHtml =
         `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
+    const appleLogoHtml =
+        `<img src="${appleLogoUrl}" alt="" class="welcome-apple-inline-logo" aria-hidden="true"> `;
 
-    const step1 = document.getElementById('welcome-step-1');
-    if (step1) {
-        step1.innerHTML = tSettings('welcomeStep1Html').replace('{LOGO}', focusLogoHtml);
+    const stepFda = document.getElementById('welcome-step-fda');
+    if (stepFda) stepFda.classList.toggle('hidden', !isMacOSDesktop);
+
+    const step1Title = document.getElementById('welcome-step-1-title');
+    if (step1Title) {
+        step1Title.innerHTML = tSettings('welcomeStep1TitleHtml').replace('{APPLE}', appleLogoHtml);
+    }
+    const step1Body = document.getElementById('welcome-step-1-body');
+    if (step1Body) step1Body.innerHTML = tSettings('welcomeStep1BodyHtml');
+
+    const step2Title = document.getElementById('welcome-step-2-title');
+    if (step2Title) step2Title.textContent = tSettings('welcomeStep2TitleHtml');
+    const step2Body = document.getElementById('welcome-step-2-body');
+    if (step2Body) {
+        step2Body.innerHTML = tSettings('welcomeStep2BodyHtml').replace('{LOGO}', focusLogoHtml);
     }
 
-    const step2 = document.getElementById('welcome-step-2');
-    if (step2) step2.innerHTML = tSettings('welcomeStep2Html');
+    const step3Title = document.getElementById('welcome-step-3-title');
+    if (step3Title) step3Title.textContent = tSettings('welcomeStep3TitleHtml');
+    const step3Body = document.getElementById('welcome-step-3-body');
+    if (step3Body) step3Body.innerHTML = tSettings('welcomeStep3BodyHtml');
 
-    const step3 = document.getElementById('welcome-step-3');
-    if (step3) step3.innerHTML = tSettings('welcomeStep3Html');
+    document.querySelectorAll('#welcome-onboarding .welcome-step:not(.hidden) .welcome-step-num').forEach((num, i) => {
+        num.textContent = String(i + 1);
+    });
 
-    const macosNote = document.getElementById('welcome-onboarding-macos-note');
-    const macosIcon = document.getElementById('welcome-macos-icon');
-    const macosText = document.getElementById('welcome-macos-note-text');
-    if (macosIcon) macosIcon.src = appleLogoUrl;
-    if (macosNote && macosText) {
-        macosText.innerHTML = tSettings('welcomeMacosNoteHtml');
-        macosNote.classList.toggle('hidden', !isMacOSDesktop);
+    const demoToggleLabel = document.getElementById('welcome-demo-toggle-label');
+    if (demoToggleLabel) demoToggleLabel.textContent = tSettings('welcomeDemoToggleLabel');
+
+    const demoCaption = document.getElementById('welcome-demo-video-caption');
+    if (demoCaption) demoCaption.textContent = tSettings('welcomeDemoVideoCaption');
+
+    const demoPlayBtn = document.getElementById('welcome-demo-play-btn');
+    syncWelcomeDemoPlayLabel();
+
+    const closeLabel = document.getElementById('welcome-demo-close-label');
+    if (closeLabel) closeLabel.textContent = tSettings('welcomeDemoCloseLabel');
+    const closeBtn = document.getElementById('welcome-demo-close-btn');
+    if (closeBtn) closeBtn.setAttribute('aria-label', tSettings('welcomeDemoCloseLabel'));
+
+    syncWelcomeDemoFullscreenLabel();
+
+    const demoVideo = document.getElementById('welcome-demo-video');
+    if (demoVideo && !demoVideo.src) {
+        demoVideo.src = welcomeDemoVideoUrl;
     }
 
     const continueBtn = document.getElementById('welcome-onboarding-continue-btn');
@@ -14357,6 +14485,152 @@ function applyWelcomeOnboardingLanguage() {
 
     const footer2 = document.getElementById('welcome-onboarding-footer-2');
     if (footer2) footer2.innerHTML = tSettings('welcomeFooter2Html');
+}
+
+function isWelcomeDemoVideoExpanded() {
+    return document.getElementById('welcome-demo-video-wrap')?.classList.contains('welcome-demo-video-wrap--expanded') ?? false;
+}
+
+function setWelcomeDemoVideoExpanded(expanded) {
+    const wrap = document.getElementById('welcome-demo-video-wrap');
+    const fullscreenBtn = document.getElementById('welcome-demo-fullscreen-btn');
+    const closeBtn = document.getElementById('welcome-demo-close-btn');
+    if (!wrap) return;
+    wrap.classList.toggle('welcome-demo-video-wrap--expanded', expanded);
+    fullscreenBtn?.toggleAttribute('hidden', expanded);
+    closeBtn?.toggleAttribute('hidden', !expanded);
+    syncWelcomeDemoFullscreenLabel();
+}
+
+function syncWelcomeDemoFullscreenLabel() {
+    const fullscreenBtn = document.getElementById('welcome-demo-fullscreen-btn');
+    if (!fullscreenBtn) return;
+    fullscreenBtn.setAttribute(
+        'aria-label',
+        tSettings(isWelcomeDemoVideoExpanded() ? 'welcomeDemoFullscreenExitAriaLabel' : 'welcomeDemoFullscreenEnterAriaLabel'),
+    );
+}
+
+function syncWelcomeDemoPlayLabel() {
+    const playBtn = document.getElementById('welcome-demo-play-btn');
+    const video = document.getElementById('welcome-demo-video');
+    if (!playBtn || !video) return;
+    const labelKey = video.paused
+        ? (video.currentTime > 0 ? 'welcomeDemoResumeAriaLabel' : 'welcomeDemoPlayAriaLabel')
+        : 'welcomeDemoPauseAriaLabel';
+    playBtn.setAttribute('aria-label', tSettings(labelKey));
+}
+
+function toggleWelcomeDemoPlayback(video) {
+    if (video.paused) {
+        video.play().catch(() => {});
+    } else {
+        video.pause();
+    }
+}
+
+function resetWelcomeDemoPanel() {
+    const toggle = document.getElementById('welcome-demo-toggle');
+    const panel = document.getElementById('welcome-demo-panel');
+    const video = document.getElementById('welcome-demo-video');
+    const playBtn = document.getElementById('welcome-demo-play-btn');
+    setWelcomeDemoVideoExpanded(false);
+    if (toggle) {
+        toggle.classList.remove('open');
+        toggle.setAttribute('aria-expanded', 'false');
+    }
+    if (panel) panel.classList.add('hidden');
+    if (video) {
+        video.pause();
+        video.currentTime = 0;
+    }
+    if (playBtn) playBtn.classList.remove('hidden');
+}
+
+function initWelcomeDemoControls() {
+    const toggle = document.getElementById('welcome-demo-toggle');
+    const panel = document.getElementById('welcome-demo-panel');
+    const videoWrap = document.getElementById('welcome-demo-video-wrap');
+    const video = document.getElementById('welcome-demo-video');
+    const playBtn = document.getElementById('welcome-demo-play-btn');
+    const fullscreenBtn = document.getElementById('welcome-demo-fullscreen-btn');
+    const closeBtn = document.getElementById('welcome-demo-close-btn');
+    if (!toggle || !panel || !video || !playBtn) return;
+
+    toggle.addEventListener('click', () => {
+        const isOpen = toggle.classList.toggle('open');
+        toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        panel.classList.toggle('hidden', !isOpen);
+        if (!isOpen) {
+            setWelcomeDemoVideoExpanded(false);
+            video.pause();
+            video.currentTime = 0;
+            playBtn.classList.remove('hidden');
+        }
+    });
+
+    playBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        toggleWelcomeDemoPlayback(video);
+    });
+
+    fullscreenBtn?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        setWelcomeDemoVideoExpanded(true);
+    });
+
+    closeBtn?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        setWelcomeDemoVideoExpanded(false);
+    });
+
+    let demoClickTimer = null;
+    video.addEventListener('click', () => {
+        if (demoClickTimer) clearTimeout(demoClickTimer);
+        demoClickTimer = setTimeout(() => {
+            demoClickTimer = null;
+            toggleWelcomeDemoPlayback(video);
+        }, 220);
+    });
+
+    video.addEventListener('dblclick', (event) => {
+        event.preventDefault();
+        if (demoClickTimer) {
+            clearTimeout(demoClickTimer);
+            demoClickTimer = null;
+        }
+        if (isWelcomeDemoVideoExpanded()) {
+            setWelcomeDemoVideoExpanded(false);
+        } else {
+            setWelcomeDemoVideoExpanded(true);
+        }
+    });
+
+    window.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && isWelcomeDemoVideoExpanded()) {
+            event.preventDefault();
+            setWelcomeDemoVideoExpanded(false);
+        }
+    }, true);
+
+    videoWrap?.addEventListener('click', (event) => {
+        if (!isWelcomeDemoVideoExpanded() || event.target !== videoWrap) return;
+        setWelcomeDemoVideoExpanded(false);
+    });
+
+    video.addEventListener('play', () => {
+        playBtn.classList.add('hidden');
+        syncWelcomeDemoPlayLabel();
+    });
+    video.addEventListener('pause', () => {
+        if (video.currentTime < video.duration) playBtn.classList.remove('hidden');
+        syncWelcomeDemoPlayLabel();
+    });
+    video.addEventListener('ended', () => {
+        playBtn.classList.remove('hidden');
+        video.currentTime = 0;
+        syncWelcomeDemoPlayLabel();
+    });
 }
 
 function websiteWord(count) {
@@ -14635,6 +14909,9 @@ function applySettingsLanguage() {
 
     const fdaScreenshot = document.getElementById('fda-onboarding-screenshot');
     if (fdaScreenshot) fdaScreenshot.src = screenshotEnableFda;
+
+    const fdaBackBtn = document.getElementById('fda-onboarding-back-btn');
+    if (fdaBackBtn) fdaBackBtn.textContent = tSettings('eulaBackBtn');
     if (migrationOnboardingActive && lastMigrationBrowserState) {
         renderBrowserInstallButtons(lastMigrationBrowserState);
     }
