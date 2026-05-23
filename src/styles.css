@@ -4813,6 +4813,10 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
     margin-right: 3px;
 }
 
+body.dark-mode .welcome-apple-inline-logo {
+    filter: brightness(0) invert(1);
+}
+
 .welcome-demo-section {
     margin-top: 8px;
     margin-left: 40px;
@@ -5097,6 +5101,20 @@ body.dark-mode .welcome-onboarding-card {
     border-color: rgba(255, 255, 255, 0.08);
 }
 
+body.dark-mode .onboarding-screen .legal-onboarding-subtitle {
+    color: var(--text-secondary);
+}
+
+body.dark-mode .onboarding-screen .migration-explainer-warn {
+    background: rgba(251, 191, 36, 0.14);
+}
+
+body.dark-mode .onboarding-screen .migration-bullets code,
+body.dark-mode .onboarding-screen .migration-browser-hint code {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-secondary);
+}
+
 body.dark-mode .welcome-step-num {
     background: rgba(42, 157, 143, 0.18);
     color: #7fd4c8;
@@ -5172,7 +5190,7 @@ body.dark-mode .onboarding-focus-card {
 }
 
 .onboarding-focus-card .onboarding-primary-copy {
-    color: hsl(222, 35%, 24%);
+    color: var(--text-secondary);
     font-size: 17px;
     line-height: 1.6;
     font-weight: 500;
@@ -5209,10 +5227,15 @@ body.dark-mode .onboarding-focus-card {
 }
 
 .migration-explainer {
-    color: hsl(222, 25%, 30%);
+    color: var(--text-secondary);
     font-size: 15px;
     line-height: 1.55;
     margin-bottom: 12px;
+}
+
+.migration-explainer strong {
+    color: var(--text-primary);
+    font-weight: 700;
 }
 
 .migration-explainer-warn {
@@ -5228,7 +5251,7 @@ body.dark-mode .onboarding-focus-card {
 .migration-bullets {
     margin: 0 0 12px 0;
     padding-left: 20px;
-    color: hsl(222, 25%, 35%);
+    color: var(--text-muted);
     font-size: 14px;
     line-height: 1.6;
 }
@@ -5266,7 +5289,7 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
     margin-bottom: 0;
     font-size: 14px;
     text-align: center;
-    color: hsl(222, 25%, 35%);
+    color: var(--text-muted);
 }
 
 .migration-status.hidden {
@@ -5315,11 +5338,11 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
 }
 
 .migration-checklist .checklist-done {
-    color: hsl(222, 25%, 30%);
+    color: var(--text-secondary);
 }
 
 .migration-checklist .checklist-todo {
-    color: hsl(222, 25%, 25%);
+    color: var(--text-primary);
     font-weight: 500;
 }
 
@@ -5396,7 +5419,7 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
     margin: 0 0 6px 0;
     font-size: 13px;
     font-weight: 600;
-    color: hsl(222, 35%, 24%);
+    color: var(--text-primary);
     letter-spacing: 0.02em;
     text-transform: uppercase;
 }
@@ -5404,7 +5427,7 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
 .migration-howto ol {
     margin: 0;
     padding-left: 22px;
-    color: hsl(222, 25%, 30%);
+    color: var(--text-secondary);
     font-size: 13px;
     line-height: 1.55;
 }
@@ -5414,7 +5437,7 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
 }
 
 .migration-howto ol li strong {
-    color: hsl(222, 30%, 22%);
+    color: var(--text-primary);
 }
 
 .migration-browser-buttons {
@@ -5854,7 +5877,7 @@ body.dark-mode #migration-onboarding .enforcement-toggle-disable-note {
     gap: 6px;
     font-size: 14px;
     font-weight: 600;
-    color: hsl(222, 25%, 22%);
+    color: var(--text-primary);
 }
 
 .enforcement-toggle-icon {
@@ -5867,7 +5890,7 @@ body.dark-mode #migration-onboarding .enforcement-toggle-disable-note {
     margin-top: 4px;
     font-size: var(--enforcement-toggle-body-size);
     line-height: 1.5;
-    color: hsl(222, 18%, 42%);
+    color: var(--text-secondary);
 }
 
 #migration-onboarding .enforcement-toggle-section .enforcement-switch {
@@ -6114,9 +6137,8 @@ body.dark-mode .enforcement-switch input:checked + .enforcement-slider::before {
 }
 
 /*
- * Migration / browser-extension setup overlay — dark mode.
- * Panels use --redd-card; light-theme hsl() body copy would match the
- * background and disappear. Uninstall confirm reuses the same surface.
+ * Onboarding overlays — dark mode accents for shared surfaces.
+ * Body copy uses theme tokens in base rules; these cover subtler tints.
  */
 body.dark-mode #migration-onboarding .onboarding-content h1,
 body.dark-mode #uninstall-confirm-modal h3 {
