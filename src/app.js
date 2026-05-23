@@ -1413,10 +1413,45 @@ function presentWelcomeOnboarding(onContinue) {
     });
 }
 
-function returnToWelcomeFromEula() {
-    presentWelcomeOnboarding(() => {
+function showEulaOnboardingScreen() {
+    document.getElementById('welcome-onboarding')?.classList.add('hidden');
+    document.getElementById('fda-onboarding')?.classList.add('hidden');
+    document.getElementById('migration-onboarding')?.classList.add('hidden');
+    document.getElementById('eula-onboarding')?.classList.remove('hidden');
+    document.getElementById('main-content')?.classList.add('hidden');
+    document.getElementById('now-blocking-row')?.classList.add('hidden');
+    applyEulaOnboardingLanguage();
+    const eulaContinueBtn = document.getElementById('eula-continue-btn');
+    const eulaCheckbox = document.getElementById('eula-agree-checkbox');
+    if (eulaCheckbox && hasAcceptedEula()) {
+        eulaCheckbox.checked = true;
+    }
+    if (eulaContinueBtn) {
+        eulaContinueBtn.disabled = !eulaCheckbox?.checked;
+        eulaContinueBtn.textContent = tSettings('eulaContinueBtn');
+    }
+}
+
+function isFirstRunOnboardingInProgress() {
+    if (!hasAcceptedEula()) return false;
+    if (activeFdaOnboardingSession) return true;
+    return firstRunExtensionSetupPending && !migrationOnboardingDismissed;
+}
+
+function continueFirstRunOnboardingFromWelcome() {
+    if (!hasAcceptedEula()) {
         updateOnboardingVisibility();
-    });
+        return;
+    }
+    if (isFirstRunOnboardingInProgress()) {
+        showEulaOnboardingScreen();
+        return;
+    }
+    updateOnboardingVisibility();
+}
+
+function returnToWelcomeFromEula() {
+    presentWelcomeOnboarding(continueFirstRunOnboardingFromWelcome);
 }
 
 // ---- macOS Full Disk Access onboarding -------------------------------------
@@ -1474,16 +1509,7 @@ function completeFdaOnboardingSession() {
 function returnToEulaFromFda() {
     if (!activeFdaOnboardingSession) return;
     hideFdaOnboardingUi();
-    document.getElementById('eula-onboarding')?.classList.remove('hidden');
-    document.getElementById('main-content')?.classList.add('hidden');
-    document.getElementById('now-blocking-row')?.classList.add('hidden');
-    applyEulaOnboardingLanguage();
-    const eulaContinueBtn = document.getElementById('eula-continue-btn');
-    const eulaCheckbox = document.getElementById('eula-agree-checkbox');
-    if (eulaContinueBtn) {
-        eulaContinueBtn.disabled = !eulaCheckbox?.checked;
-        eulaContinueBtn.textContent = tSettings('eulaContinueBtn');
-    }
+    showEulaOnboardingScreen();
 }
 
 function resumeFdaOnboardingFromEula() {
@@ -4673,6 +4699,11 @@ function setupEventListeners() {
         if (!eulaCheckbox?.checked || !eulaContinueBtn) return;
         if (activeFdaOnboardingSession) {
             resumeFdaOnboardingFromEula();
+            return;
+        }
+        if (firstRunExtensionSetupPending && hasAcceptedEula()) {
+            document.getElementById('eula-onboarding')?.classList.add('hidden');
+            void ensureExtensionSetupOnboardingShown();
             return;
         }
         eulaContinueBtn.disabled = true;
