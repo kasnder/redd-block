@@ -8669,6 +8669,8 @@ body.dark-mode .zoom-toast {
 
 .diagnostics-modal > h3 {
     padding: 24px 24px 0;
+    font-weight: 400;
+    margin-bottom: 4px;
 }
 
 .diagnostics-modal > .modal-buttons {
@@ -8680,7 +8682,7 @@ body.dark-mode .zoom-toast {
     overflow-y: auto;
     flex: 1;
     min-height: 0;
-    padding: 16px 24px;
+    padding: 8px 24px 16px;
 }
 
 .diagnostics-section {
@@ -8698,9 +8700,7 @@ body.dark-mode .zoom-toast {
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--text-muted);
-    margin: 0 0 10px;
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--border-color-light);
+    margin: 0 0 4px;
     display: flex;
     align-items: center;
     gap: 8px;
