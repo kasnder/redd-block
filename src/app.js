@@ -8839,14 +8839,15 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
     startDayIndex = getDayIndexFromTrack(track);
 
     function snapToInterval(minutes) {
-        return Math.round(minutes / snapMinutes) * snapMinutes;
+        return snapMinutesToInterval(minutes, snapMinutes);
     }
 
     function minutesToTime(totalMinutes) {
-        totalMinutes = Math.max(0, Math.min(1440, totalMinutes));
-        const hours = Math.floor(totalMinutes / 60);
-        const minutes = totalMinutes % 60;
-        return { hours: Math.min(23, hours), minutes };
+        const clamped = clampSameDayMinutes(totalMinutes);
+        return {
+            hours: Math.floor(clamped / 60),
+            minutes: clamped % 60,
+        };
     }
 
     function updateSegmentTimesAndDays(newStartMinutes, newEndMinutes, dayShift = 0) {
@@ -9032,7 +9033,8 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
                     });
                 }
             } else if (resizeHandle === 'end') {
-                const maxWidthPct = 100 - startLeftPct;
+                const maxEndPct = (MAX_SAME_DAY_END_MINUTES / MINUTES_PER_DAY) * 100;
+                const maxWidthPct = Math.max(0.5, maxEndPct - startLeftPct);
                 const newWidthPct = Math.max(0.5, Math.min(maxWidthPct, startWidthPct + deltaPct));
                 headBlocks.forEach(block => {
                     block.style.width = `${newWidthPct}%`;
@@ -13204,16 +13206,25 @@ function formatTime(date) {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+// Last minute of the civil day (23:59). Drag/snap math uses 1440 as exclusive
+// end-of-day; converting 1440 through hour/minute fields wrongly yielded 23:00.
+const MINUTES_PER_DAY = 1440;
+const MAX_SAME_DAY_END_MINUTES = MINUTES_PER_DAY - 1;
+
+function clampSameDayMinutes(totalMinutes) {
+    return Math.max(0, Math.min(MAX_SAME_DAY_END_MINUTES, Math.round(totalMinutes)));
+}
+
+function snapMinutesToInterval(minutes, intervalMinutes = 15) {
+    return clampSameDayMinutes(Math.round(minutes / intervalMinutes) * intervalMinutes);
+}
+
 // Format a minutes-since-midnight value as zero-padded "HH:MM". Used by drag-resize
-// handlers to live-update the time label inside a preview block. Mirrors the clamping
-// done by `minutesToTime` (max 23:00) so what's shown mid-drag matches what'll be
-// committed on mouseup. Handles fractional minute rollover from rounding (e.g. 7:60).
+// handlers to live-update the time label inside a preview block.
 function formatMinutesAsHHMM(totalMinutes) {
-    const clamped = Math.max(0, Math.min(1440, totalMinutes));
-    let h = Math.floor(clamped / 60);
-    let m = Math.round(clamped - h * 60);
-    if (m >= 60) { h += 1; m -= 60; }
-    h = Math.min(23, h);
+    const clamped = clampSameDayMinutes(totalMinutes);
+    const h = Math.floor(clamped / 60);
+    const m = clamped % 60;
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
