@@ -1407,6 +1407,40 @@
                     </select>
                 </div>
 
+                <div class="settings-utility-actions">
+                    <button id="override-all-btn" class="override-all-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3">
+                            </path>
+                            <path d="M12 9v4"></path>
+                            <path d="M12 17h.01"></path>
+                        </svg>
+                        <span id="settings-override-all-label">Stop All Blocks (with challenge)</span>
+                    </button>
+
+                    <!--
+                      Mac-only in-app uninstall. macOS .pkg installers don't
+                      ship a sibling uninstaller and the app's
+                      accessory-mode + applicationShouldTerminate guard
+                      mean the user can't quit and drag-trash it. Hidden on
+                      Windows because Settings → Apps already provides a
+                      fully-wired uninstall flow via NSIS_HOOK_PREUNINSTALL.
+                    -->
+                    <div id="uninstall-app-row" class="uninstall-app-row macos-only">
+                        <button id="uninstall-app-btn" class="uninstall-app-btn" type="button">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M3 6h18"></path>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+                                <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                            </svg>
+                            <span id="settings-uninstall-label">Uninstall ReDD Block</span>
+                        </button>
+                        <p id="uninstall-app-hint" class="uninstall-app-hint" hidden></p>
+                    </div>
+                </div>
+
                 <!-- Advanced Options (Expandable) -->
                 <div class="settings-advanced-toggle" id="advanced-options-toggle">
                     <span id="settings-advanced-options-label">Advanced options</span>
@@ -1448,39 +1482,6 @@
                             </svg>
                             <span>Diagnostics</span>
                         </button>
-
-                        <!-- Override All Button -->
-                        <button id="override-all-btn" class="override-all-btn" style="margin-top: 8px;">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3">
-                                </path>
-                                <path d="M12 9v4"></path>
-                                <path d="M12 17h.01"></path>
-                            </svg>
-                            <span id="settings-override-all-label">Stop All Blocks (with challenge)</span>
-                        </button>
-
-                        <!--
-                          Mac-only in-app uninstall. macOS .pkg installers don't
-                          ship a sibling uninstaller and the app's
-                          accessory-mode + applicationShouldTerminate guard
-                          mean the user can't quit and drag-trash it. Hidden on
-                          Windows because Settings → Apps already provides a
-                          fully-wired uninstall flow via NSIS_HOOK_PREUNINSTALL.
-                        -->
-                        <div id="uninstall-app-row" class="uninstall-app-row macos-only">
-                            <button id="uninstall-app-btn" class="uninstall-app-btn" type="button">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M3 6h18"></path>
-                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
-                                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                                </svg>
-                                <span id="settings-uninstall-label">Uninstall ReDD Block</span>
-                            </button>
-                            <p id="uninstall-app-hint" class="uninstall-app-hint" hidden></p>
-                        </div>
                     </div>
                 </div>
 

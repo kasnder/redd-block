@@ -8488,11 +8488,24 @@ body.dark-mode .zoom-toast {
     }
 }
 
-/* Helper Settings in Advanced Options */
-.settings-advanced-content .override-all-btn {
-    border-bottom: none;
-    margin-bottom: 0;
+.settings-utility-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin-top: 16px;
+    margin-bottom: 4px;
+    padding-top: 0;
 }
+
+.settings-utility-actions .override-all-btn {
+    margin-top: 0;
+}
+
+.settings-utility-actions .uninstall-app-row {
+    margin-top: 8px;
+}
+
+/* Helper Settings in Advanced Options */
 
 .helper-settings-section {
     border: none;

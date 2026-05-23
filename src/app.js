@@ -16231,8 +16231,8 @@ function setupOverrideAll() {
 
 }
 
-// macOS in-app uninstall. The Uninstall button lives in the advanced
-// options section (just below Override All) and is hidden on Windows
+// macOS in-app uninstall. The Uninstall button lives in Settings below
+// Advanced options (not inside the collapsible). Hidden on Windows
 // (`.macos-only` + `body.mac` gate) because Windows uses
 // Settings → Apps → Uninstall, fully wired up by NSIS_HOOK_PREUNINSTALL.
 //
