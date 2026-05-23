@@ -15747,6 +15747,19 @@ function setupOverrideAll() {
     const confirmOverrideAllBtn = document.getElementById('confirm-override-all-btn');
     const overrideAllChallengeInput = document.getElementById('override-all-challenge-input');
     const overrideAllProgressBar = document.getElementById('override-all-progress-bar');
+    const overrideAllChallengeTextEl = document.getElementById('override-all-challenge-text');
+
+    function renderOverrideAllChallengeText(errorIndex = -1) {
+        if (!overrideAllChallengeTextEl) return;
+        if (errorIndex < 0 || errorIndex >= overrideAllChallengeText.length) {
+            overrideAllChallengeTextEl.textContent = overrideAllChallengeText;
+        } else {
+            const before = escapeHtml(overrideAllChallengeText.slice(0, errorIndex));
+            const errorChar = escapeHtml(overrideAllChallengeText[errorIndex]);
+            const after = escapeHtml(overrideAllChallengeText.slice(errorIndex + 1));
+            overrideAllChallengeTextEl.innerHTML = `${before}<span class="error-char">${errorChar}</span>${after}`;
+        }
+    }
 
     // Toggle advanced options
     if (advancedToggle && advancedContent) {
@@ -15801,7 +15814,7 @@ function setupOverrideAll() {
             overrideAllChallengeText = overrideAllChallengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
 
             // Display challenge
-            document.getElementById('override-all-challenge-text').textContent = overrideAllChallengeText;
+            renderOverrideAllChallengeText();
             overrideAllChallengeInput.value = '';
             overrideAllProgressBar.style.width = '0%';
 
@@ -15843,16 +15856,20 @@ function setupOverrideAll() {
             const target = overrideAllChallengeText;
 
             let correctChars = 0;
+            let firstErrorIndex = -1;
             for (let i = 0; i < typed.length && i < target.length; i++) {
                 if (typed[i] === target[i]) {
                     correctChars++;
                 } else {
+                    firstErrorIndex = i;
                     break;
                 }
             }
 
             const progress = (correctChars / target.length) * 100;
             overrideAllProgressBar.style.width = `${progress}%`;
+
+            renderOverrideAllChallengeText(firstErrorIndex);
         });
 
         // Enter key submits
@@ -15870,17 +15887,32 @@ function setupOverrideAll() {
             const typed = overrideAllChallengeInput.value;
             const target = overrideAllChallengeText;
 
+            let firstErrorIndex = -1;
+            if (typed !== target) {
+                for (let i = 0; i < Math.max(typed.length, target.length); i++) {
+                    if (typed[i] !== target[i]) {
+                        firstErrorIndex = i;
+                        break;
+                    }
+                }
+                if (firstErrorIndex === -1 && typed.length < target.length) {
+                    firstErrorIndex = typed.length;
+                }
+            }
+
             if (typed === target) {
                 // Success! Clear everything
                 await performOverrideAll();
                 overrideAllModal.classList.add('hidden');
                 overrideAllChallengeText = '';
             } else {
-                // Wrong - wiggle modal
+                // Wrong - wiggle and highlight error
                 const modalContent = overrideAllModal.querySelector('.modal-content');
                 modalContent.classList.remove('wiggle');
                 void modalContent.offsetWidth; // Trigger reflow
                 modalContent.classList.add('wiggle');
+
+                renderOverrideAllChallengeText(firstErrorIndex);
             }
         });
     }
