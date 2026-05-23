@@ -78,49 +78,52 @@ else
             echo "  removed $marker"
         fi
     done
+fi
 
-    # Clear welcome / EULA flags from redd-block-data.json. On desktop
-    # the canonical file may live in either the per-user app-data dir
-    # or /var/lib/redd-block once shared storage is active — reset
-    # both so --eula actually re-shows the first-launch flow.
-    clear_onboarding_json_fields() {
-        local data_file="$1"
-        [[ -f "$data_file" ]] || return 0
-        if ! command -v jq >/dev/null 2>&1; then
-            echo "  WARNING: jq not installed; could not edit $data_file (install with 'brew install jq')"
-            return 0
-        fi
-        local tmp
-        tmp=$(mktemp /tmp/redd-block-data.XXXXXX.json)
-        if [[ "$EULA" == "1" ]]; then
-            jq 'if .settings then .settings |= (del(.eulaAcceptedRevision) | del(.eulaAcceptedAt) | del(.onboardingComplete) | del(.welcomeOnboardingShown) | if .extra then .extra |= del(.eulaAccepted) | del(.eulaAcceptedAt) | del(.eulaAcceptedRevision) else . end) else . end' \
-                "$data_file" > "$tmp"
-            echo "  cleared EULA + welcome fields in $data_file"
-        else
-            jq 'if .settings then .settings |= del(.welcomeOnboardingShown) else . end' \
-                "$data_file" > "$tmp"
-            echo "  cleared welcomeOnboardingShown in $data_file"
-        fi
-        if [[ -w "$data_file" ]]; then
-            mv "$tmp" "$data_file"
-        elif command -v sudo >/dev/null 2>&1; then
-            sudo mv "$tmp" "$data_file"
-            echo "  (wrote via sudo — $data_file is not user-writable)"
-        else
-            rm -f "$tmp"
-            echo "  WARNING: could not write $data_file (not writable and sudo unavailable)"
-        fi
-    }
+# Clear welcome / EULA flags from redd-block-data.json. On desktop
+# the canonical file may live in either the per-user app-data dir
+# or /var/lib/redd-block once shared storage is active — reset
+# both so a relaunch actually starts on the welcome screen.
+# (--nuke deletes the per-user dir but shared storage persists.)
+clear_onboarding_json_fields() {
+    local data_file="$1"
+    [[ -f "$data_file" ]] || return 0
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "  WARNING: jq not installed; could not edit $data_file (install with 'brew install jq')"
+        return 0
+    fi
+    local tmp
+    tmp=$(mktemp /tmp/redd-block-data.XXXXXX.json)
+    if [[ "$EULA" == "1" ]]; then
+        jq 'if .settings then .settings |= (del(.eulaAcceptedRevision) | del(.eulaAcceptedAt) | del(.onboardingComplete) | del(.welcomeOnboardingShown) | if .extra then .extra |= del(.eulaAccepted) | del(.eulaAcceptedAt) | del(.eulaAcceptedRevision) else . end) else . end' \
+            "$data_file" > "$tmp"
+        echo "  cleared EULA + welcome fields in $data_file"
+    else
+        jq 'if .settings then .settings |= del(.welcomeOnboardingShown) else . end' \
+            "$data_file" > "$tmp"
+        echo "  cleared welcomeOnboardingShown in $data_file"
+    fi
+    if [[ -w "$data_file" ]]; then
+        mv "$tmp" "$data_file"
+    elif command -v sudo >/dev/null 2>&1; then
+        sudo mv "$tmp" "$data_file"
+        echo "  (wrote via sudo — $data_file is not user-writable)"
+    else
+        rm -f "$tmp"
+        echo "  WARNING: could not write $data_file (not writable and sudo unavailable)"
+    fi
+}
 
-    for data_file in \
-        "$SHARED_DATA_DIR/redd-block-data.json" \
-        "$APP_DATA_DIR/redd-block-data.json" \
-        "$HOME/Library/Application Support/com.redd.block/redd-block-data.json" \
-        "$HOME/Library/Application Support/redd-block/redd-block-data.json"
-    do
-        clear_onboarding_json_fields "$data_file"
-    done
+for data_file in \
+    "$SHARED_DATA_DIR/redd-block-data.json" \
+    "$APP_DATA_DIR/redd-block-data.json" \
+    "$HOME/Library/Application Support/com.redd.block/redd-block-data.json" \
+    "$HOME/Library/Application Support/redd-block/redd-block-data.json"
+do
+    clear_onboarding_json_fields "$data_file"
+done
 
+if [[ "$NUKE" != "1" ]]; then
     fda_marker="$APP_DATA_DIR/fda-onboarded.v1"
     if [[ -f "$fda_marker" ]]; then
         echo "  WARNING: fda-onboarded.v1 still present at $fda_marker (remove failed?)"
@@ -164,7 +167,8 @@ cat <<EOF
        npm run tauri dev
 
   Expected:
-    - Welcome (explains ReDD Focus + FDA on Mac) → EULA (if --eula) →
+    - Welcome (explains ReDD Focus + FDA on Mac) → EULA (always in
+      `npm run dev`; persisted acceptance reset with --eula) →
       FDA overlay (Mac only, required — no skip).
     - Zero cross-app prompts until FDA is granted.
     - After FDA grant, ReDD Focus is installed in browsers; extension

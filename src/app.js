@@ -1357,7 +1357,8 @@ async function checkForAppUpdate() {
 // and the FDA permission ask.
 //
 // Persistence: `appData.settings.welcomeOnboardingShown` (boolean).
-// Wiped by `scripts/dev-reset-fda-onboarding.sh --eula` for re-testing.
+// Wiped by `scripts/dev-reset-fda-onboarding.sh` (incl. --nuke; shared
+// storage at /var/lib/redd-block is cleared too).
 function hasWelcomeOnboardingBeenShown() {
     return appData?.settings?.welcomeOnboardingShown === true;
 }
