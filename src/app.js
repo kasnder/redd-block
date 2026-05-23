@@ -9,6 +9,7 @@ import logoReddFocusUrl from './images/logo-reddfocus.svg';
 import logoReddShieldUrl from './images/logo-redd-shield.svg';
 import appleLogoUrl from './images/apple-logo.svg';
 import iconChromeUrl from './images/icon-chrome.svg';
+import iconBraveUrl from './images/icon-brave.svg';
 import iconEdgeUrl from './images/icon-edge.svg';
 import iconFirefoxUrl from './images/icon-firefox.svg';
 import iconSafariUrl from './images/icon-safari.svg';
@@ -2794,7 +2795,7 @@ function browserIconUrl(key) {
         case 'firefox': return iconFirefoxUrl;
         case 'edge': return iconEdgeUrl;
         case 'safari': return iconSafariUrl;
-        case 'brave':
+        case 'brave': return iconBraveUrl;
         case 'chrome':
         default: return iconChromeUrl;
     }
@@ -13554,11 +13555,11 @@ const SETTINGS_TRANSLATIONS = {
         noDaysSelected: 'No days selected',
         runningSuffix: ' (Running)',
         // Override all
-        overrideAllTitle: 'Override All Blocks?',
+        overrideAllTitle: 'Stop All Blocks?',
         overrideAllWarningStrong: 'Are you sure you want to stop all running blocks?',
         overrideAllWarningBody: 'This will stop ANY currently running blocks for any website and app. It will also stop any future scheduled blocking.',
         overrideAllInstruction: 'To do this, type the following:',
-        overrideAll: 'Override All',
+        overrideAll: 'Stop All',
         deleteUndoToastFmt: 'Deleted "{name}"',
         undo: 'Undo',
         // Settings
@@ -13575,12 +13576,22 @@ const SETTINGS_TRANSLATIONS = {
         languagePickerCurrent: 'Current language',
         languagePickerSwitch: 'Switch to',
         advancedOptions: 'Advanced options',
-        overrideAllBlocks: 'Stop all blocks (with challenge)',
+        overrideAllBlocks: 'Stop All Blocks (with challenge)',
         // In-app uninstall (macOS only)
         uninstallApp: 'Uninstall ReDD Block',
         uninstallDisabledHint: 'Stop running blocks first before you can uninstall.',
         uninstallConfirmTitle: 'Uninstall ReDD Block?',
-        uninstallConfirmBody: 'ReDD Block will be moved to the Trash. Your blocklists and schedules are kept on disk so they can be restored if you reinstall later.\n\nWhat happens to the ReDD Focus browser extensions:\n  • Chrome, Brave, Edge — stay installed. Remove them yourself from the browser\u2019s Extensions page if you no longer want them.\n  • Safari — the extension bundled with ReDD Block goes away with the app. If you also installed the standalone ReDD Focus Safari app from the App Store, that one is unaffected.\n  • Firefox — the install lock managed by ReDD Block is removed. Firefox normally auto-uninstalls the extension on next launch; if it remains, you can remove it from about:addons.\n\nIf macOS asks you to allow ReDD Block to control Finder, please click Allow — that\u2019s how the app moves itself to the Trash on systems where it can\u2019t do it directly.',
+        uninstallConfirmIntroHtml: 'ReDD Block will be moved to the Trash. Here\u2019s what happens to the {LOGO}<strong>ReDD Focus</strong> browser extensions installed on this Mac.',
+        uninstallExtChromiumBadge: 'Stay installed',
+        uninstallExtChromiumDetail: 'Remove them yourself from each browser\u2019s extension settings if you no longer want them.',
+        uninstallExtChromiumDetailOne: 'Remove it yourself from {BROWSER}\u2019s extension settings if you no longer want it.',
+        uninstallExtSafariBadge: 'Removed with the app',
+        uninstallExtSafariDetail: 'The standalone ReDD Focus Safari app from the App Store, if you have it, is unaffected.',
+        uninstallExtFirefoxName: 'Firefox',
+        uninstallExtFirefoxBadge: 'Lock removed',
+        uninstallExtFirefoxDetail: 'Firefox usually auto-uninstalls the extension on next launch. If not, remove it from Firefox\u2019s extension settings.',
+        uninstallFinderWarningHtml: 'If macOS asks you to allow ReDD Block to control <strong>Finder</strong>, click <strong>Allow</strong> \u2014 that\u2019s how the app moves itself to the Trash.',
+        uninstallDataKeptNote: 'Your blocklists and schedules are kept on disk, so they\u2019ll be restored if you reinstall later.',
         uninstallConfirmOk: 'Uninstall',
         uninstallFailedTitle: 'Uninstall failed',
         uninstallFailed: 'Could not complete uninstall.',
@@ -14010,7 +14021,16 @@ const SETTINGS_TRANSLATIONS = {
         uninstallApp: 'Afinstaller ReDD Block',
         uninstallDisabledHint: 'Stop kørende blokeringer først, før du kan afinstallere.',
         uninstallConfirmTitle: 'Afinstaller ReDD Block?',
-        uninstallConfirmBody: 'ReDD Block flyttes til papirkurven. Dine blokeringslister og skemaer bevares på harddisken, så de kan gendannes, hvis du geninstallerer senere.\n\nHvad sker der med ReDD Focus-browserudvidelserne:\n  • Chrome, Brave, Edge — forbliver installeret. Fjern dem selv fra browserens udvidelsesside, hvis du ikke længere ønsker dem.\n  • Safari — udvidelsen, der følger med ReDD Block, forsvinder sammen med appen. Hvis du også har installeret den selvstændige ReDD Focus Safari-app fra App Store, påvirkes den ikke.\n  • Firefox — installationslåsen, som ReDD Block har sat, fjernes. Firefox afinstallerer normalt udvidelsen ved næste opstart; hvis den stadig er der, kan du fjerne den selv fra about:addons.\n\nHvis macOS spørger, om ReDD Block må styre Finder, skal du klikke Tillad — det er sådan, appen flytter sig selv til papirkurven på systemer, hvor den ikke kan gøre det direkte.',
+        uninstallConfirmIntroHtml: 'ReDD Block flyttes til papirkurven. Sådan påvirkes {LOGO}<strong>ReDD Focus</strong>-browserudvidelserne på denne Mac.',
+        uninstallExtChromiumBadge: 'Forbliver installeret',
+        uninstallExtChromiumDetail: 'Fjern dem selv fra hver browsers udvidelsesindstillinger, hvis du ikke længere ønsker dem.',
+        uninstallExtChromiumDetailOne: 'Fjern den selv fra udvidelsesindstillingerne i {BROWSER}, hvis du ikke længere ønsker den.',
+        uninstallExtSafariBadge: 'Fjernes sammen med appen',
+        uninstallExtSafariDetail: 'Den selvstændige ReDD Focus Safari-app fra App Store, hvis du har den, påvirkes ikke.',
+        uninstallExtFirefoxBadge: 'Lås fjernet',
+        uninstallExtFirefoxDetail: 'Firefox afinstallerer normalt udvidelsen ved næste opstart. Hvis ikke, fjern den fra Firefox\u2019s udvidelsesindstillinger.',
+        uninstallFinderWarningHtml: 'Hvis macOS spørger, om ReDD Block må styre <strong>Finder</strong>, skal du klikke <strong>Tillad</strong> \u2014 det er sådan, appen flytter sig selv til papirkurven.',
+        uninstallDataKeptNote: 'Dine blokeringslister og skemaer bevares på harddisken, så de kan gendannes, hvis du geninstallerer senere.',
         uninstallConfirmOk: 'Afinstaller',
         uninstallFailedTitle: 'Afinstallation mislykkedes',
         uninstallFailed: 'Kunne ikke gennemføre afinstallation.',
@@ -14541,6 +14561,15 @@ function applySettingsLanguage() {
     setText('settings-advanced-options-label', tSettings('advancedOptions'));
     setText('settings-override-all-label', tSettings('overrideAllBlocks'));
     setText('settings-uninstall-label', tSettings('uninstallApp'));
+    setText('uninstall-confirm-title', tSettings('uninstallConfirmTitle'));
+    setHtml('uninstall-confirm-intro', tSettings('uninstallConfirmIntroHtml').replace(
+        '{LOGO}',
+        `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `,
+    ));
+    setHtml('uninstall-finder-warning-text', tSettings('uninstallFinderWarningHtml'));
+    setText('uninstall-data-kept-text', tSettings('uninstallDataKeptNote'));
+    setText('cancel-uninstall-confirm-btn', tSettings('cancel'));
+    setText('confirm-uninstall-confirm-btn', tSettings('uninstallConfirmOk'));
     // The hint paragraph and button tooltip need re-translation too —
     // refreshUninstallButtonState reads from tSettings() and rewrites
     // both. Cheap to call unconditionally.
@@ -15930,9 +15959,153 @@ function setupOverrideAll() {
 // mid-block would leave the user with an unenforceable promise
 // (no app = no enforcer), so we want the user to deliberately stop
 // blocking first via the existing override path.
+const UNINSTALL_CHROMIUM_KEYS = ['chrome', 'brave', 'edge'];
+
+function uninstallBrowserLabel(key) {
+    return BROWSER_STORE_LINKS[key]?.label || key;
+}
+
+function buildUninstallBrowserRow({ keys, badge, detail, detailHtml }) {
+    const row = document.createElement('div');
+    row.className = 'migration-browser-row';
+
+    const header = document.createElement('div');
+    header.className = 'migration-browser-header';
+
+    const name = document.createElement('span');
+    name.className = 'migration-browser-name';
+
+    if (keys.length > 1) {
+        const stack = document.createElement('span');
+        stack.className = 'migration-browser-icons-stack';
+        stack.setAttribute('aria-hidden', 'true');
+        for (const key of keys) {
+            const icon = document.createElement('img');
+            icon.className = 'migration-browser-icon';
+            icon.src = browserIconUrl(key);
+            icon.alt = '';
+            stack.appendChild(icon);
+        }
+        name.appendChild(stack);
+    } else {
+        const icon = document.createElement('img');
+        icon.className = 'migration-browser-icon';
+        icon.src = browserIconUrl(keys[0]);
+        icon.alt = '';
+        name.appendChild(icon);
+    }
+
+    const nameText = document.createElement('span');
+    nameText.textContent = formatBrowserList(keys.map(uninstallBrowserLabel));
+    name.appendChild(nameText);
+    header.appendChild(name);
+
+    const badgeEl = document.createElement('span');
+    badgeEl.className = 'migration-browser-badge';
+    badgeEl.textContent = badge;
+    header.appendChild(badgeEl);
+    row.appendChild(header);
+
+    const hint = document.createElement('div');
+    hint.className = 'migration-browser-hint';
+    if (detailHtml) hint.innerHTML = detailHtml;
+    else hint.textContent = detail;
+    row.appendChild(hint);
+
+    return row;
+}
+
+function renderUninstallBrowserRows(browsers) {
+    const container = document.getElementById('uninstall-browser-rows');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (!browsers) return;
+
+    if (browsers.safari?.installed) {
+        container.appendChild(buildUninstallBrowserRow({
+            keys: ['safari'],
+            badge: tSettings('uninstallExtSafariBadge'),
+            detail: tSettings('uninstallExtSafariDetail'),
+        }));
+    }
+
+    const chromiumInstalled = UNINSTALL_CHROMIUM_KEYS.filter((key) => browsers[key]?.installed);
+    if (chromiumInstalled.length) {
+        const detail = chromiumInstalled.length === 1
+            ? tSettingsFmt('uninstallExtChromiumDetailOne', {
+                BROWSER: uninstallBrowserLabel(chromiumInstalled[0]),
+            })
+            : tSettings('uninstallExtChromiumDetail');
+        container.appendChild(buildUninstallBrowserRow({
+            keys: chromiumInstalled,
+            badge: tSettings('uninstallExtChromiumBadge'),
+            detail,
+        }));
+    }
+
+    if (browsers.firefox?.installed) {
+        container.appendChild(buildUninstallBrowserRow({
+            keys: ['firefox'],
+            badge: tSettings('uninstallExtFirefoxBadge'),
+            detail: tSettings('uninstallExtFirefoxDetail'),
+        }));
+    }
+}
+
+async function fetchInstalledBrowsersForUninstall() {
+    try {
+        return await invoke('scan_browser_profiles');
+    } catch (e) {
+        if (lastOnboardingState?.browsers) {
+            console.warn('uninstall: scan_browser_profiles failed, using cached browser state', e);
+            return lastOnboardingState.browsers;
+        }
+        throw e;
+    }
+}
+
+let uninstallConfirmResolver = null;
+
+async function showUninstallConfirmModal() {
+    const modal = document.getElementById('uninstall-confirm-modal');
+    if (!modal) return false;
+
+    try {
+        const browsers = await fetchInstalledBrowsersForUninstall();
+        renderUninstallBrowserRows(browsers);
+    } catch (e) {
+        console.warn('uninstall: browser scan failed — hiding browser rows', e);
+        renderUninstallBrowserRows(null);
+    }
+
+    return new Promise((resolve) => {
+        uninstallConfirmResolver = resolve;
+        modal.classList.remove('hidden');
+    });
+}
+
+function closeUninstallConfirmModal(result) {
+    const modal = document.getElementById('uninstall-confirm-modal');
+    modal?.classList.add('hidden');
+    if (uninstallConfirmResolver) {
+        uninstallConfirmResolver(result);
+        uninstallConfirmResolver = null;
+    }
+}
+
 function setupInAppUninstall() {
     const btn = document.getElementById('uninstall-app-btn');
     if (!btn) return;
+
+    const modal = document.getElementById('uninstall-confirm-modal');
+    document.getElementById('cancel-uninstall-confirm-btn')
+        ?.addEventListener('click', () => closeUninstallConfirmModal(false));
+    document.getElementById('confirm-uninstall-confirm-btn')
+        ?.addEventListener('click', () => closeUninstallConfirmModal(true));
+    modal?.addEventListener('click', (e) => {
+        if (e.target === modal) closeUninstallConfirmModal(false);
+    });
 
     refreshUninstallButtonState();
 
@@ -15944,15 +16117,9 @@ function setupInAppUninstall() {
             return;
         }
 
-        // Native confirmation dialog (Tauri plugin-dialog `ask`).
         let proceed = false;
         try {
-            proceed = await ask(tSettings('uninstallConfirmBody'), {
-                title: tSettings('uninstallConfirmTitle'),
-                kind: 'warning',
-                okLabel: tSettings('uninstallConfirmOk'),
-                cancelLabel: tSettings('cancel'),
-            });
+            proceed = await showUninstallConfirmModal();
         } catch (e) {
             console.error('uninstall: confirm dialog failed', e);
             return;

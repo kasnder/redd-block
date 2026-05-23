@@ -1377,7 +1377,7 @@
                                 <path d="M12 9v4"></path>
                                 <path d="M12 17h.01"></path>
                             </svg>
-                            <span id="settings-override-all-label">Stop all blocks (with challenge)</span>
+                            <span id="settings-override-all-label">Stop All Blocks (with challenge)</span>
                         </button>
 
                         <!--
@@ -1418,10 +1418,30 @@
             </div>
         </div>
 
+        <!-- Uninstall Confirmation Modal (macOS in-app uninstall) -->
+        <div id="uninstall-confirm-modal" class="modal-overlay hidden">
+            <div class="modal-content uninstall-confirm-modal">
+                <h3 id="uninstall-confirm-title">Uninstall ReDD Block?</h3>
+                <p id="uninstall-confirm-intro" class="migration-explainer"></p>
+
+                <div class="onboarding-focus-card migration-card legal-onboarding-card">
+                    <div id="uninstall-browser-rows" class="migration-browser-buttons"></div>
+
+                    <p id="uninstall-finder-warning-text" class="migration-explainer migration-explainer-warn"></p>
+                    <p id="uninstall-data-kept-text" class="legal-onboarding-note"></p>
+                </div>
+
+                <div class="modal-buttons">
+                    <button id="cancel-uninstall-confirm-btn" class="modal-btn cancel-btn">Cancel</button>
+                    <button id="confirm-uninstall-confirm-btn" class="modal-btn danger-btn">Uninstall</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Override All Blocks Modal -->
         <div id="override-all-modal" class="modal-overlay hidden">
             <div class="modal-content override-challenge">
-                <h3 id="override-all-title">Override All Blocks?</h3>
+                <h3 id="override-all-title">Stop All Blocks?</h3>
                 <div class="override-all-warning">
                     <p><strong id="override-all-warning-strong">Are you sure you want to stop all running
                             blocks?</strong></p>
@@ -1438,7 +1458,7 @@
                 </div>
                 <div class="modal-buttons">
                     <button id="cancel-override-all-btn" class="modal-btn cancel-btn">Cancel</button>
-                    <button id="confirm-override-all-btn" class="modal-btn danger-btn">Override All</button>
+                    <button id="confirm-override-all-btn" class="modal-btn danger-btn">Stop All</button>
                 </div>
             </div>
         </div>

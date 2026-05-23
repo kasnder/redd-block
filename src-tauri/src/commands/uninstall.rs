@@ -127,7 +127,7 @@ pub fn uninstall_self_macos(app: tauri::AppHandle) -> Result<(), String> {
             // rm). This is the path that may surface the
             // "ReDD Block would like to control Finder" Automation
             // prompt — the user has been warned about it in the
-            // confirmation dialog (see `uninstallConfirmBody` in
+            // confirmation dialog (see `uninstall-confirm-modal` in
             // `src/app.js`).
             log::warn!(
                 "uninstall_self_macos: NSFileManager.trashItemAtURL failed ({e}); spawning bash fallback for {bundle}"

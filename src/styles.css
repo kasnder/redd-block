@@ -4985,12 +4985,32 @@ body.dark-mode .onboarding-focus-card {
     line-height: 1.6;
 }
 
-.migration-bullets code {
+.migration-bullets code,
+.migration-browser-hint code {
     background: rgba(10, 45, 123, 0.06);
     padding: 1px 5px;
     border-radius: 4px;
     font-family: ui-monospace, "SF Mono", monospace;
     font-size: 13px;
+}
+
+.migration-browser-icons-stack {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.migration-browser-icons-stack .migration-browser-icon {
+    border-radius: 50%;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.92);
+}
+
+.migration-browser-icons-stack .migration-browser-icon + .migration-browser-icon {
+    margin-left: -6px;
+}
+
+body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
+    box-shadow: 0 0 0 2px var(--redd-card);
 }
 
 .migration-status {
@@ -5144,6 +5164,14 @@ body.dark-mode .onboarding-focus-card {
     flex-direction: column;
     gap: 8px;
     margin-bottom: 18px;
+}
+
+#uninstall-confirm-modal .migration-browser-buttons {
+    margin-bottom: 0;
+}
+
+#uninstall-confirm-modal .migration-browser-buttons:not(:empty) + .migration-explainer-warn {
+    margin-top: 14px;
 }
 
 .migration-browser-buttons:empty {
@@ -5715,9 +5743,10 @@ body.dark-mode .enforcement-switch input:checked + .enforcement-slider::before {
 /*
  * Migration / browser-extension setup overlay — dark mode.
  * Panels use --redd-card; light-theme hsl() body copy would match the
- * background and disappear.
+ * background and disappear. Uninstall confirm reuses the same surface.
  */
-body.dark-mode #migration-onboarding .onboarding-content h1 {
+body.dark-mode #migration-onboarding .onboarding-content h1,
+body.dark-mode #uninstall-confirm-modal h3 {
     color: var(--text-primary);
 }
 
@@ -5730,7 +5759,9 @@ body.dark-mode #migration-onboarding .onboarding-focus-card .onboarding-primary-
 }
 
 body.dark-mode #migration-onboarding .migration-explainer,
-body.dark-mode #migration-onboarding .migration-explainer-warn {
+body.dark-mode #migration-onboarding .migration-explainer-warn,
+body.dark-mode #uninstall-confirm-modal .migration-explainer,
+body.dark-mode #uninstall-confirm-modal .migration-explainer-warn {
     color: var(--text-secondary);
 }
 
@@ -5738,7 +5769,8 @@ body.dark-mode #migration-onboarding .migration-bullets {
     color: var(--text-muted);
 }
 
-body.dark-mode #migration-onboarding .migration-bullets code {
+body.dark-mode #migration-onboarding .migration-bullets code,
+body.dark-mode #uninstall-confirm-modal .migration-browser-hint code {
     background: rgba(255, 255, 255, 0.08);
     color: var(--text-secondary);
 }
@@ -5777,7 +5809,8 @@ body.dark-mode #migration-onboarding .migration-howto ol li strong {
     color: var(--text-primary);
 }
 
-body.dark-mode #migration-onboarding .migration-browser-row {
+body.dark-mode #migration-onboarding .migration-browser-row,
+body.dark-mode #uninstall-confirm-modal .migration-browser-row {
     background: rgba(255, 255, 255, 0.05);
     border-color: var(--redd-border);
 }
@@ -5795,11 +5828,13 @@ body.dark-mode #migration-onboarding .migration-browser-row.needs-fda {
     border-color: rgba(251, 191, 36, 0.35);
 }
 
-body.dark-mode #migration-onboarding .migration-browser-name {
+body.dark-mode #migration-onboarding .migration-browser-name,
+body.dark-mode #uninstall-confirm-modal .migration-browser-name {
     color: var(--text-primary);
 }
 
-body.dark-mode #migration-onboarding .migration-browser-hint {
+body.dark-mode #migration-onboarding .migration-browser-hint,
+body.dark-mode #uninstall-confirm-modal .migration-browser-hint {
     color: var(--text-muted);
 }
 
@@ -5807,7 +5842,8 @@ body.dark-mode #migration-onboarding .migration-browser-badge.compliant {
     color: #6ee7b7;
 }
 
-body.dark-mode #migration-onboarding .migration-browser-badge.needs-install {
+body.dark-mode #migration-onboarding .migration-browser-badge.needs-install,
+body.dark-mode #uninstall-confirm-modal .migration-browser-badge {
     color: var(--text-muted);
 }
 
@@ -7661,6 +7697,46 @@ body.mac .macos-only { display: block; }
     color: var(--text-muted);
     line-height: 1.35;
     text-align: center;
+}
+
+/* Uninstall confirmation modal — reuses onboarding / migration surfaces */
+#uninstall-confirm-modal {
+    z-index: 210;
+}
+
+#uninstall-confirm-modal .modal-content {
+    max-width: 520px;
+    padding: 24px 24px 20px;
+}
+
+#uninstall-confirm-modal h3 {
+    font-family: var(--font-heading);
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    margin-bottom: 8px;
+}
+
+#uninstall-confirm-modal .migration-explainer:first-of-type {
+    margin-bottom: 14px;
+}
+
+#uninstall-confirm-modal .onboarding-focus-card {
+    margin: 0 0 16px;
+}
+
+#uninstall-confirm-modal .migration-explainer-warn {
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+#uninstall-confirm-modal .legal-onboarding-note {
+    margin-top: 14px;
+}
+
+#uninstall-confirm-modal .modal-buttons {
+    margin-top: 0;
 }
 
 /* Override All Modal Styles */
