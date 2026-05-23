@@ -1094,6 +1094,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupOverrideAll();
     setupInAppUninstall();
     setupGraceSetting();
+    setupSettingsEnforcementSection();
+    void wireEnforcementToggle();
     if (isIOS && hasAcceptedEula()) {
         await checkScreentimeAuth();
     } else if (!isIOS) {
@@ -1874,51 +1876,96 @@ function wireMigrationPostPhase(state) {
 // the user can't weaken enforcement mid-session. The server-side
 // guard in enforcement_toggle.rs is the ultimate backstop.
 
-function syncEnforcementToggleSectionVisual(toggle) {
-    const section = document.getElementById('enforcement-toggle-section');
-    if (!section || !toggle) return;
-    const on = !!toggle.checked;
-    section.classList.toggle('enforcement-on', on);
-    section.classList.toggle('enforcement-off', !on);
+function setSettingsEnforcementExpanded(expanded) {
+    const toggle = document.getElementById('settings-enforcement-toggle');
+    const content = document.getElementById('settings-enforcement-content');
+    if (toggle) toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    if (content) content.classList.toggle('hidden', !expanded);
+}
+
+function resetSettingsEnforcementSection() {
+    setSettingsEnforcementExpanded(false);
+}
+
+function setupSettingsEnforcementSection() {
+    const toggle = document.getElementById('settings-enforcement-toggle');
+    if (!toggle || toggle.dataset.wired === 'true') return;
+    toggle.dataset.wired = 'true';
+    toggle.addEventListener('click', () => {
+        const expanded = toggle.getAttribute('aria-expanded') !== 'true';
+        setSettingsEnforcementExpanded(expanded);
+    });
+}
+
+function syncGraceSettingVisibility(enabled) {
+    const label = document.querySelector('#settings-modal .settings-grace-label');
+    const input = document.getElementById('grace-seconds-input');
+    const errorEl = document.getElementById('grace-error');
+    if (label) label.classList.toggle('hidden', !enabled);
+    if (input) input.classList.toggle('hidden', !enabled);
+    if (errorEl && !enabled) {
+        errorEl.textContent = '';
+        errorEl.classList.add('hidden');
+    }
+}
+
+function syncEnforcementToggleSectionVisual(_toggle) {
+    const enabled = getEnforcementToggleInputs().some((t) => t.checked);
+    syncGraceSettingVisibility(enabled);
+}
+
+function getEnforcementToggleInputs() {
+    return Array.from(document.querySelectorAll('.enforcement-toggle-input'));
+}
+
+async function updateAllEnforcementToggleLocks() {
+    for (const toggle of getEnforcementToggleInputs()) {
+        await updateEnforcementToggleLock(toggle);
+    }
+}
+
+function syncAllEnforcementToggleInputs(checked) {
+    for (const toggle of getEnforcementToggleInputs()) {
+        toggle.checked = !!checked;
+        syncEnforcementToggleSectionVisual(toggle);
+    }
+}
+
+let enforcementToggleWired = false;
+
+async function onEnforcementToggleChange(changedToggle) {
+    const desired = changedToggle.checked;
+    syncAllEnforcementToggleInputs(desired);
+    try {
+        const saved = await invoke('set_enforcement_enabled', { enabled: desired });
+        syncAllEnforcementToggleInputs(saved);
+        await updateAllEnforcementToggleLocks();
+    } catch (e) {
+        console.warn('[enforcement-toggle] set failed:', e);
+        syncAllEnforcementToggleInputs(!desired);
+        await updateAllEnforcementToggleLocks();
+    }
 }
 
 async function wireEnforcementToggle() {
-    const toggle = document.getElementById('enforcement-toggle-input');
-    if (!toggle) return;
+    const toggles = getEnforcementToggleInputs();
+    if (!toggles.length) return;
 
-    // Read current state from backend
+    let enabled = false;
     try {
-        const enabled = await invoke('get_enforcement_enabled');
-        toggle.checked = !!enabled;
+        enabled = !!(await invoke('get_enforcement_enabled'));
     } catch (e) {
         console.warn('[enforcement-toggle] read failed:', e);
-        toggle.checked = false;
     }
 
-    syncEnforcementToggleSectionVisual(toggle);
+    syncAllEnforcementToggleInputs(enabled);
+    await updateAllEnforcementToggleLocks();
 
-    // Check if any block is currently active (to lock the toggle)
-    await updateEnforcementToggleLock(toggle);
-
-    // Wire the change handler (only once)
-    if (!toggle._listenerAdded) {
-        toggle._listenerAdded = true;
-        toggle.addEventListener('change', async () => {
-            const desired = toggle.checked;
-            syncEnforcementToggleSectionVisual(toggle);
-            try {
-                const saved = await invoke('set_enforcement_enabled', { enabled: desired });
-                toggle.checked = !!saved;
-                syncEnforcementToggleSectionVisual(toggle);
-                await updateEnforcementToggleLock(toggle);
-            } catch (e) {
-                console.warn('[enforcement-toggle] set failed:', e);
-                // Revert the checkbox — the backend rejected it
-                toggle.checked = !desired;
-                syncEnforcementToggleSectionVisual(toggle);
-                await updateEnforcementToggleLock(toggle);
-            }
-        });
+    if (!enforcementToggleWired) {
+        enforcementToggleWired = true;
+        for (const toggle of toggles) {
+            toggle.addEventListener('change', () => { void onEnforcementToggleChange(toggle); });
+        }
     }
 }
 
@@ -13367,7 +13414,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationDone: 'I\'m all set up',
         migrationSkip: 'Skip for now',
         migrationEnforcementHeadline: 'Browser enforcement',
-        migrationEnforcementDesc: 'To help you stay focused, your browser is automatically closed if you turn off ReDD Focus while a block is running.',
+        migrationEnforcementDesc: 'Automatically close browser if ReDD Focus is disabled when a block is running.',
         migrationEnforcementDisableNote: 'Once on, you can only turn enforcement off when no blocks are running.',
         migrationApproveAdminPrompt: 'Approve the admin prompt to continue…',
         migrationTryAgain: 'Try again',
@@ -13492,7 +13539,10 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedInstrAccessSafari: 'Grant ReDD Block Full Disk Access.',
         enforcerClosedInstrDefault: 'Finish ReDD Focus setup in {browser} extensions.',
         enforcerBrowserFallback: 'your browser',
-        gracePeriodLabel: 'Seconds of heads-up before a browser that isn’t protected by ReDD Focus is closed',
+        gracePeriodLabel: 'Seconds before a browser is closed if ReDD Focus is disabled',
+        settingsEnforcementHeading: 'Enforcement',
+        settingsDiagnosticsLabel: 'Something not working?',
+        settingsDiagnosticsBtn: 'Diagnostics',
         gracePeriodLockedHint: 'Locked while a block is active—only shorter times allowed.',
         appBlockingLetsGo: 'Let’s go!',
         appBlockingFallbackBlocklistName: 'this block',
@@ -13510,7 +13560,7 @@ const SETTINGS_TRANSLATIONS = {
             'Closing {apps} now — saving any pending dialogs in them…',
         appBlockingListMoreFmt: '{n} more',
         settingsFeedbackFooterHtml:
-            'Have feedback or suggestions? <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer" style="color: var(--accent-color); text-decoration: underline;">Open an issue on GitHub</a>, or email us at <a href="mailto:team@reddfocus.org" style="color: var(--accent-color); text-decoration: underline;">team@reddfocus.org</a>',
+            'Feedback or suggestions? <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer">Open an issue on GitHub</a> or email <a href="mailto:team@reddfocus.org">team@reddfocus.org</a>.',
         settingsGraceChangeBlockedAlert: 'Stop all running blocks and schedules before changing this setting.',
         madeWith: 'Made with',
         by: 'by',
@@ -13661,8 +13711,11 @@ const SETTINGS_TRANSLATIONS = {
         languagePickerSwitch: 'Switch to',
         advancedOptions: 'Advanced options',
         overrideAllBlocks: 'Stop All Blocks (with challenge)',
+        settingsOverrideAllLabel: 'Stop all blocks & schedules',
+        settingsOverrideAllBtn: 'Stop all blocks',
         // In-app uninstall (macOS only)
         uninstallApp: 'Uninstall ReDD Block',
+        uninstallAppBtn: 'Uninstall\u2026',
         uninstallDisabledHint: 'Stop running blocks first before you can uninstall.',
         uninstallConfirmTitle: 'Uninstall ReDD Block?',
         uninstallConfirmIntroHtml: 'ReDD Block will be moved to the Trash. Here\u2019s what happens to the {LOGO}<strong>ReDD Focus</strong> browser extensions installed on this Mac.',
@@ -13820,7 +13873,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationDone: 'Jeg er klar',
         migrationSkip: 'Spring over for nu',
         migrationEnforcementHeadline: 'Browser-beskyttelse',
-        migrationEnforcementDesc: 'For at støtte dig i at fokusere, bliver din browser automatisk lukket ned hvis du slukker for ReDD Focus mens en blokering kører.',
+        migrationEnforcementDesc: 'Luk browser automatisk hvis ReDD Focus slås fra mens en blokering kører.',
         migrationEnforcementDisableNote: 'Når den er slået til, kan du kun slå håndhævelse fra, når ingen blokeringer kører.',
         migrationApproveAdminPrompt: 'Godkend administratorprompt for at fortsætte …',
         migrationTryAgain: 'Prøv igen',
@@ -13945,7 +13998,10 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedInstrAccessSafari: 'Giv ReDD Block fuld diskadgang.',
         enforcerClosedInstrDefault: 'Færdiggør ReDD Focus i {browser}s udvidelsesindstillinger.',
         enforcerBrowserFallback: 'din browser',
-        gracePeriodLabel: 'Sekunders varsel før en browser uden ReDD Focus lukkes ned når en blokering kører',
+        gracePeriodLabel: 'Sekunder før en browser lukkes, hvis ReDD Focus er slået fra',
+        settingsEnforcementHeading: 'Håndhævelse',
+        settingsDiagnosticsLabel: 'Virker noget ikke?',
+        settingsDiagnosticsBtn: 'Diagnostik',
         gracePeriodLockedHint: 'Låst mens en blokering er aktiv—kun kortere tider tilladt.',
         appBlockingLetsGo: 'Fortsæt',
         appBlockingFallbackBlocklistName: 'denne blokering',
@@ -13963,7 +14019,7 @@ const SETTINGS_TRANSLATIONS = {
             'Lukker {apps} nu — giver eventuelle åbne dialoger tid i dem…',
         appBlockingListMoreFmt: '{n} flere',
         settingsFeedbackFooterHtml:
-            'Har du feedback eller forslag? <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer" style="color: var(--accent-color); text-decoration: underline;">Opret et issue på GitHub</a>, eller skriv til os på <a href="mailto:team@reddfocus.org" style="color: var(--accent-color); text-decoration: underline;">team@reddfocus.org</a>',
+            'Feedback eller forslag? <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer">Opret et issue på GitHub</a> eller skriv til <a href="mailto:team@reddfocus.org">team@reddfocus.org</a>.',
         settingsGraceChangeBlockedAlert: 'Du skal først stoppe alle kørende blokeringer og skemaer, før du kan ændre denne indstilling.',
         madeWith: 'Lavet med',
         by: 'af',
@@ -14111,8 +14167,11 @@ const SETTINGS_TRANSLATIONS = {
         languagePickerCurrent: 'Nuværende sprog',
         languagePickerSwitch: 'Skift til',
         overrideAllBlocks: 'Stop alle blokeringer (med udfordring)',
+        settingsOverrideAllLabel: 'Stop alle blokeringer og tidsplaner',
+        settingsOverrideAllBtn: 'Stop alle blokeringer',
         // In-app uninstall (macOS only)
         uninstallApp: 'Afinstaller ReDD Block',
+        uninstallAppBtn: 'Afinstaller\u2026',
         uninstallDisabledHint: 'Stop kørende blokeringer først, før du kan afinstallere.',
         uninstallConfirmTitle: 'Afinstaller ReDD Block?',
         uninstallConfirmIntroHtml: 'ReDD Block flyttes til papirkurven. Sådan påvirkes {LOGO}<strong>ReDD Focus</strong>-browserudvidelserne på denne Mac.',
@@ -14366,6 +14425,10 @@ function applyMigrationOverlayStaticCopy() {
     setText('enforcement-toggle-headline-text', tSettings('migrationEnforcementHeadline'));
     setText('enforcement-toggle-desc-text', tSettings('migrationEnforcementDesc'));
     setText('enforcement-toggle-disable-note-text', tSettings('migrationEnforcementDisableNote'));
+    setText('settings-enforcement-heading', tSettings('settingsEnforcementHeading'));
+    setText('settings-enforcement-toggle-headline-text', tSettings('migrationEnforcementHeadline'));
+    setText('settings-enforcement-toggle-desc-text', tSettings('migrationEnforcementDesc'));
+    setText('settings-enforcement-toggle-disable-note-text', tSettings('migrationEnforcementDisableNote'));
     const continueBtn = document.getElementById('migration-continue-btn');
     if (continueBtn && !continueBtn.disabled) {
         continueBtn.textContent = tSettings('migrationContinue');
@@ -14838,9 +14901,12 @@ function applySettingsLanguage() {
     setText('theme-option-system', tSettings('themeAuto'));
     setText('theme-option-light', tSettings('themeLight'));
     setText('theme-option-dark', tSettings('themeDark'));
-    setText('settings-advanced-options-label', tSettings('advancedOptions'));
-    setText('settings-override-all-label', tSettings('overrideAllBlocks'));
+    setText('settings-override-all-label', tSettings('settingsOverrideAllLabel'));
+    setText('settings-override-all-btn-label', tSettings('settingsOverrideAllBtn'));
     setText('settings-uninstall-label', tSettings('uninstallApp'));
+    setText('settings-uninstall-btn-label', tSettings('uninstallAppBtn'));
+    setText('settings-diagnostics-label', tSettings('settingsDiagnosticsLabel'));
+    setText('settings-diagnostics-btn-label', tSettings('settingsDiagnosticsBtn'));
     setText('uninstall-confirm-title', tSettings('uninstallConfirmTitle'));
     setHtml('uninstall-confirm-intro', tSettings('uninstallConfirmIntroHtml').replace(
         '{LOGO}',
@@ -14854,6 +14920,7 @@ function applySettingsLanguage() {
     // refreshUninstallButtonState reads from tSettings() and rewrites
     // both. Cheap to call unconditionally.
     refreshUninstallButtonState();
+    updateOverrideAllButtonVisibility();
     setText('settings-helper-service-label', tSettings('helperService'));
     setText('settings-update-helper-label', tSettings('updateHelper'));
     setText('settings-clean-hosts-label', tSettings('cleanHostsFile'));
@@ -14861,7 +14928,7 @@ function applySettingsLanguage() {
     setText('close-settings-btn', tSettings('close'));
     setText('grace-period-label-text', tSettings('gracePeriodLabel'));
     setText('app-blocking-lets-go-btn', tSettings('appBlockingLetsGo'));
-    setHtml('settings-feedback-footer', tSettings('settingsFeedbackFooterHtml'));
+    setHtml('settings-feedback-footer-text', tSettings('settingsFeedbackFooterHtml'));
     const graceLockedHint = document.getElementById('grace-locked-hint');
     if (graceLockedHint) graceLockedHint.textContent = tSettings('gracePeriodLockedHint');
     const currentVersionEl = document.getElementById('current-app-version');
@@ -14954,10 +15021,13 @@ function setupTheme() {
         settingsTriggers.forEach((settingsBtn) => {
             settingsBtn.addEventListener('click', () => {
             settingsModal.classList.remove('hidden');
+            resetSettingsEnforcementSection();
             // Re-evaluate the in-app Uninstall button (Mac only): a
             // schedule could have fired since the modal was last open,
             // flipping the disabled state. Cheap; idempotent.
             refreshUninstallButtonState();
+            updateOverrideAllButtonVisibility();
+            void wireEnforcementToggle();
             // Set current theme selection
             if (themeSelect) {
                 const currentTheme = appData.settings?.themeMode || 'system';
@@ -15792,11 +15862,13 @@ function hasAnyActiveBlocks() {
     return hasAnyEnforcedBlocks();
 }
 
-// No-op kept for any legacy callers — the "still not working" button
-// it used to control was removed in 2.0 along with the helper-uninstall
-// + manual-hosts-reset escape hatches. Override All visibility is now
-// purely CSS / always-on.
-function updateOverrideAllButtonVisibility() {}
+// Show Stop All Blocks only while something is actively enforced right now.
+function updateOverrideAllButtonVisibility() {
+    const row = document.getElementById('settings-override-all-row');
+    const showOverride = hasAnyEnforcedBlocks();
+
+    if (row) row.classList.toggle('hidden', !showOverride);
+}
 
 // Show challenge for removing helper when blocks are active
 
@@ -16051,8 +16123,6 @@ function setupGraceSetting() {
 
 // Setup Override All functionality in settings
 function setupOverrideAll() {
-    const advancedToggle = document.getElementById('advanced-options-toggle');
-    const advancedContent = document.getElementById('advanced-options-content');
     const overrideAllBtn = document.getElementById('override-all-btn');
     const overrideAllModal = document.getElementById('override-all-modal');
     const cancelOverrideAllBtn = document.getElementById('cancel-override-all-btn');
@@ -16071,14 +16141,6 @@ function setupOverrideAll() {
             const after = escapeHtml(overrideAllChallengeText.slice(errorIndex + 1));
             overrideAllChallengeTextEl.innerHTML = `${before}<span class="error-char">${errorChar}</span>${after}`;
         }
-    }
-
-    // Toggle advanced options
-    if (advancedToggle && advancedContent) {
-        advancedToggle.addEventListener('click', () => {
-            advancedToggle.classList.toggle('expanded');
-            advancedContent.classList.toggle('hidden');
-        });
     }
 
     // Open override all modal
@@ -16391,6 +16453,7 @@ function setupInAppUninstall() {
     });
 
     refreshUninstallButtonState();
+    updateOverrideAllButtonVisibility();
 
     btn.addEventListener('click', async () => {
         // Re-check at click time so a schedule that fired between

@@ -5778,90 +5778,48 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
 }
 
 /* ── Enforcement opt-in toggle ──────────────────────────────────── */
-.enforcement-toggle-section {
-    margin: 18px 0 4px;
-    padding: 14px 16px;
-    background: rgba(10, 45, 123, 0.04);
-    border: 1px solid rgba(10, 45, 123, 0.10);
-    border-radius: 10px;
-    --enforcement-toggle-body-size: 12.5px;
-}
-
-/* Always-visible heads-up under the Browser enforcement description:
-   tells the user upfront that turning it off requires stopping all
-   running blocks first. Without this, the locking behaviour came as
-   a surprise to v1.x upgraders whose pre-existing block carried over
-   silently. */
-.enforcement-toggle-text .enforcement-toggle-disable-note {
+.enforcement-setting-row {
     display: flex;
-    align-items: flex-start;
-    gap: 5px;
-    margin: 6px 0 0;
-    font-size: var(--enforcement-toggle-body-size);
-    line-height: 1.5;
-    color: #b45309;
-}
-
-.enforcement-toggle-text .enforcement-toggle-disable-note svg {
-    flex-shrink: 0;
-    margin-top: 2px;
-    color: currentColor;
-}
-
-body.dark-mode #migration-onboarding .enforcement-toggle-disable-note {
-    color: #fbbf24;
-}
-
-.enforcement-toggle-section.enforcement-off {
-    background: rgba(245, 158, 11, 0.08);
-    border-color: rgba(245, 158, 11, 0.20);
-}
-
-.enforcement-toggle-section.enforcement-off .enforcement-toggle-icon {
-    color: #b45309;
-}
-
-.enforcement-toggle-section.enforcement-on {
-    background: rgba(16, 185, 129, 0.08);
-    border-color: rgba(16, 185, 129, 0.18);
-}
-
-.enforcement-toggle-section.enforcement-on .enforcement-toggle-icon {
-    color: #047857;
-}
-
-.enforcement-toggle-row {
-    display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 16px;
+    margin: 18px 0 12px;
 }
 
-.enforcement-toggle-text {
-    flex: 1;
+.settings-enforcement-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
     min-width: 0;
 }
 
-.enforcement-toggle-headline {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 14px;
-    font-weight: 600;
-    color: hsl(222, 25%, 22%);
+.settings-enforcement-desc {
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text-secondary);
 }
 
-.enforcement-toggle-icon {
-    flex-shrink: 0;
-    color: hsl(222, 25%, 45%);
+#settings-modal .settings-enforcement-grid {
+    padding-top: 0;
 }
 
-.enforcement-toggle-desc {
-    display: block;
-    margin-top: 4px;
-    font-size: var(--enforcement-toggle-body-size);
-    line-height: 1.5;
-    color: hsl(222, 18%, 42%);
+#settings-modal .settings-enforcement-grid .settings-enforcement-copy {
+    grid-column: 1;
+}
+
+#settings-modal .settings-enforcement-grid .enforcement-switch-with-tip {
+    grid-column: 2;
+    justify-self: end;
+    margin-top: 0;
+}
+
+#settings-modal .settings-enforcement-grid .settings-grace-label {
+    grid-column: 1;
+}
+
+#settings-modal .settings-enforcement-grid .grace-seconds-input {
+    grid-column: 2;
+    justify-self: end;
 }
 
 /* iOS-style toggle switch */
@@ -5871,8 +5829,43 @@ body.dark-mode #migration-onboarding .enforcement-toggle-disable-note {
     width: 44px;
     height: 24px;
     flex-shrink: 0;
-    margin-top: 2px;
     cursor: pointer;
+}
+
+.enforcement-switch-with-tip {
+    margin-top: 0;
+}
+
+.enforcement-switch-tooltip {
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 8px);
+    width: min(240px, 70vw);
+    padding: 8px 10px;
+    background: rgba(252, 211, 77, 0.18);
+    border: none;
+    border-left: 3px solid var(--warning, #f59e0b);
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1.45;
+    color: hsl(222, 25%, 30%);
+    text-align: left;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.15s ease, visibility 0.15s ease;
+    z-index: 20;
+    pointer-events: none;
+}
+
+.enforcement-switch-with-tip:hover .enforcement-switch-tooltip,
+.enforcement-switch-with-tip:focus-within .enforcement-switch-tooltip {
+    opacity: 1;
+    visibility: visible;
+}
+
+body.dark-mode #migration-onboarding .enforcement-switch-tooltip,
+body.dark-mode #settings-modal .enforcement-switch-tooltip {
+    color: var(--text-secondary);
 }
 
 .enforcement-switch input {
@@ -5918,36 +5911,6 @@ body.dark-mode #migration-onboarding .enforcement-toggle-disable-note {
 
 .enforcement-switch:has(input:disabled) {
     cursor: not-allowed;
-}
-
-body.dark-mode #migration-onboarding .enforcement-toggle-section.enforcement-off {
-    background: rgba(245, 158, 11, 0.14);
-    border-color: rgba(251, 191, 36, 0.35);
-}
-
-body.dark-mode #migration-onboarding .enforcement-toggle-section.enforcement-on {
-    background: rgba(16, 185, 129, 0.12);
-    border-color: rgba(52, 211, 153, 0.32);
-}
-
-body.dark-mode .enforcement-toggle-headline {
-    color: var(--text-primary);
-}
-
-body.dark-mode #migration-onboarding .enforcement-toggle-section.enforcement-off .enforcement-toggle-icon {
-    color: #fbbf24;
-}
-
-body.dark-mode #migration-onboarding .enforcement-toggle-section.enforcement-on .enforcement-toggle-icon {
-    color: #6ee7b7;
-}
-
-body.dark-mode .enforcement-toggle-section:not(.enforcement-off):not(.enforcement-on) .enforcement-toggle-icon {
-    color: var(--text-muted);
-}
-
-body.dark-mode .enforcement-toggle-desc {
-    color: var(--text-secondary);
 }
 
 body.dark-mode .enforcement-slider {
@@ -7483,9 +7446,7 @@ body.dark-mode .settings-top-btn {
 }
 
 /* Hide desktop-only settings sections on iOS */
-body.ios .helper-settings-section,
-body.ios #advanced-options-toggle,
-body.ios #advanced-options-content,
+body.ios .settings-enforcement-section,
 body.ios .desktop-only {
     display: none;
 }
@@ -7513,7 +7474,10 @@ body.ios .desktop-only {
 }
 
 #settings-modal .settings-section-grid .language-picker,
-#settings-modal .settings-section-grid #theme-select {
+#settings-modal .settings-section-grid #theme-select,
+#settings-modal .settings-section-grid .settings-diagnostics-btn,
+#settings-modal .settings-section-grid .settings-override-all-btn,
+#settings-modal .settings-section-grid .uninstall-app-btn {
     width: 100%;
     min-width: 0;
 }
@@ -7710,6 +7674,108 @@ body.dark-mode .language-picker-dropdown {
     gap: 12px;
 }
 
+#settings-modal-title {
+    font-weight: 400;
+}
+
+.settings-section-heading {
+    margin: 0 0 8px;
+    font-family: var(--font-section-label);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.settings-enforcement-toggle .settings-section-heading {
+    margin: 0;
+}
+
+.settings-enforcement-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    width: auto;
+    padding: 8px 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--text-muted);
+    transition: color 0.15s ease;
+}
+
+.settings-enforcement-toggle:hover {
+    color: var(--text-primary);
+}
+
+.settings-enforcement-chevron {
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+}
+
+.settings-enforcement-toggle[aria-expanded="true"] .settings-enforcement-chevron {
+    transform: rotate(180deg);
+}
+
+.settings-enforcement-content.hidden {
+    display: none;
+}
+
+#settings-modal .settings-enforcement-section {
+    padding-top: 8px;
+    padding-bottom: 8px;
+}
+
+#settings-modal .settings-enforcement-full-span {
+    grid-column: 1 / -1;
+}
+
+#settings-modal .settings-enforcement-section .grace-error {
+    margin-top: 6px;
+}
+
+.settings-feedback-footer {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-top: 16px;
+    padding: 12px 14px;
+    background: #e9f0ed;
+    border: 1px solid #ccd8d2;
+    border-radius: 10px;
+    color: #2d5a4c;
+}
+
+.settings-feedback-icon {
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: currentColor;
+}
+
+.settings-feedback-text {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+.settings-feedback-text a {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.settings-feedback-text a:hover {
+    opacity: 0.85;
+}
+
+body.dark-mode #settings-modal .settings-feedback-footer {
+    background: rgba(57, 158, 144, 0.14);
+    border-color: rgba(57, 158, 144, 0.32);
+    color: #b8ddd4;
+}
+
 .settings-current-version {
     font-size: 13px;
     color: var(--text-muted);
@@ -7900,32 +7966,6 @@ body.dark-mode .language-picker-dropdown {
     -webkit-user-select: none;
 }
 
-/* Override All Button */
-.override-all-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    width: 100%;
-    padding: 10px 16px;
-    background: hsl(0, 65%, 50%);
-    border: none;
-    border-radius: 8px;
-    color: white;
-    font-size: 15px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.override-all-btn:hover {
-    background: hsl(0, 65%, 60%);
-}
-
-.override-all-btn svg {
-    flex-shrink: 0;
-}
-
 /* macOS-only sections (in-app uninstall, etc.). Hidden by default;
    `detectPlatform()` in app.js adds `body.mac` on macOS desktop.
    Windows uses the OS-provided Settings → Apps uninstall flow (see
@@ -7934,54 +7974,98 @@ body.dark-mode .language-picker-dropdown {
 .macos-only { display: none; }
 body.mac .macos-only { display: block; }
 
-/* In-app Uninstall — full-width ghost button, coral text + transparent
-   chrome, with a coral-tinted hover. Matches `.override-all-btn`'s size
-   (full width, 10px×16px padding, 15px label) so the two stack as a
-   coherent "destructive actions" pair, but the ghost styling keeps it
-   visibly subordinate to the filled Override All CTA above — Override
-   is the common path; Uninstall is the rare one. The hint paragraph
-   below appears only when the button is disabled (because blocks are
-   running) and nudges the user toward the Override-All affordance. */
-.uninstall-app-row {
-    margin-top: 14px;
+/* Participate in the parent settings grid without an extra wrapper box. */
+body.mac .settings-uninstall-contents.macos-only {
+    display: contents;
 }
 
-.uninstall-app-btn {
-    display: flex;
+body:not(.ios) .settings-diagnostics-contents.desktop-only,
+.settings-override-all-contents:not(.hidden) {
+    display: contents;
+}
+
+.settings-override-all-contents.hidden {
+    display: none;
+}
+
+/* Settings action buttons — match language/theme control width and radius. */
+#settings-modal .settings-section-grid .settings-diagnostics-btn,
+#settings-modal .settings-section-grid .settings-override-all-btn,
+#settings-modal .settings-section-grid .uninstall-app-btn {
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    width: 100%;
-    padding: 10px 16px;
-    background: transparent;
-    color: var(--redd-coral);
-    border: 1px solid transparent;
+    gap: 6px;
+    box-sizing: border-box;
+    padding: 8px 12px;
     border-radius: 8px;
     font-size: 15px;
     font-weight: 500;
+    line-height: 1.25;
+    font-family: inherit;
     cursor: pointer;
-    transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+    white-space: nowrap;
+    transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
 }
 
-.uninstall-app-btn:hover:not(:disabled) {
+#settings-modal .settings-override-all-btn {
+    background: hsl(0, 65%, 50%);
+    color: white;
+    border: 1px solid hsl(0, 65%, 45%);
+}
+
+#settings-modal .settings-override-all-btn:hover:not(:disabled) {
+    background: hsl(0, 65%, 58%);
+    border-color: hsl(0, 65%, 52%);
+}
+
+#settings-modal .settings-override-all-btn svg {
+    flex-shrink: 0;
+}
+
+#settings-modal .uninstall-app-btn {
+    background: var(--modal-bg);
+    color: var(--redd-coral);
+    border: 1px solid var(--border-color-medium);
+}
+
+#settings-modal .uninstall-app-btn:hover:not(:disabled) {
     background: var(--redd-coral-soft);
+    border-color: rgba(212, 96, 90, 0.45);
 }
 
-.uninstall-app-btn:disabled,
-.uninstall-app-btn[aria-disabled="true"] {
+#settings-modal .uninstall-app-btn:disabled,
+#settings-modal .uninstall-app-btn[aria-disabled="true"] {
     cursor: not-allowed;
     opacity: 0.5;
-    background: transparent;
+    background: var(--modal-bg);
 }
 
-.uninstall-app-btn svg { flex-shrink: 0; }
+#settings-modal .uninstall-app-btn svg {
+    flex-shrink: 0;
+}
 
-.uninstall-app-hint {
-    margin: 6px 0 0;
-    font-size: 12px;
+#settings-modal .settings-diagnostics-btn {
+    background: var(--modal-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color-medium);
+}
+
+#settings-modal .settings-diagnostics-btn:hover:not(:disabled) {
+    background: var(--element-hover-bg);
+    border-color: var(--border-color-strong, var(--border-color-medium));
+}
+
+#settings-modal .settings-diagnostics-btn svg {
+    flex-shrink: 0;
+}
+
+.uninstall-app-hint.settings-uninstall-hint {
+    grid-column: 1 / -1;
+    margin: 2px 0 0;
+    font-size: 13px;
     color: var(--text-muted);
     line-height: 1.35;
-    text-align: center;
 }
 
 /* Uninstall confirmation modal — reuses onboarding / migration surfaces */
@@ -8488,23 +8572,6 @@ body.dark-mode .zoom-toast {
     }
 }
 
-.settings-utility-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-    margin-top: 16px;
-    margin-bottom: 4px;
-    padding-top: 0;
-}
-
-.settings-utility-actions .override-all-btn {
-    margin-top: 0;
-}
-
-.settings-utility-actions .uninstall-app-row {
-    margin-top: 8px;
-}
-
 /* Helper Settings in Advanced Options */
 
 .helper-settings-section {
@@ -8764,13 +8831,6 @@ body.dark-mode .zoom-toast {
     padding: 24px;
     color: #ef4444;
     font-size: 15px;
-}
-
-/* Diagnostics button hover: neutral instead of red */
-#diagnostics-btn:hover {
-    border-color: var(--text-muted);
-    color: var(--text-primary);
-    background: var(--element-hover-bg);
 }
 
 /* =====================================================================
