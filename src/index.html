@@ -431,7 +431,7 @@
                             <label class="enforcement-switch enforcement-switch-with-tip" for="enforcement-toggle-input">
                                 <input type="checkbox" id="enforcement-toggle-input" class="enforcement-toggle-input" />
                                 <span class="enforcement-slider"></span>
-                                <span id="enforcement-toggle-disable-note-text" class="enforcement-switch-tooltip" role="tooltip">Once on, you can only turn enforcement off when no blocks are running.</span>
+                                <span id="enforcement-toggle-disable-note-text" class="enforcement-switch-tooltip hidden" role="tooltip"></span>
                             </label>
                         </div>
 
@@ -1413,16 +1413,17 @@
                         <label class="enforcement-switch enforcement-switch-with-tip" for="settings-enforcement-toggle-input">
                             <input type="checkbox" id="settings-enforcement-toggle-input" class="enforcement-toggle-input" />
                             <span class="enforcement-slider"></span>
-                            <span id="settings-enforcement-toggle-disable-note-text" class="enforcement-switch-tooltip" role="tooltip">Once on, you can only turn enforcement off when no blocks are running.</span>
+                            <span id="settings-enforcement-toggle-disable-note-text" class="enforcement-switch-tooltip hidden" role="tooltip"></span>
                         </label>
 
                         <label class="toggle-label settings-grace-label hidden" for="grace-seconds-input">
                             <span id="grace-period-label-text">Seconds before a browser is closed if ReDD Focus is disabled</span>
-                            <span id="grace-locked-hint" class="grace-locked-hint hidden">Locked while a block is
-                                active — only decreases allowed.</span>
                         </label>
-                        <input id="grace-seconds-input" type="number" min="5" max="300" step="5"
-                            class="grace-seconds-input hidden" value="60">
+                        <div id="settings-grace-input-wrap" class="settings-grace-input-wrap hidden">
+                            <input id="grace-seconds-input" type="number" min="5" max="300" step="5"
+                                class="grace-seconds-input" value="60">
+                            <span id="grace-input-lock-tooltip" class="enforcement-switch-tooltip hidden" role="tooltip"></span>
+                        </div>
                         </div>
                         <p id="grace-error" class="grace-error hidden"></p>
                     </div>
@@ -1459,16 +1460,18 @@
                     <!-- Mac-only in-app uninstall (same grid rows as Language / theme). -->
                     <div id="uninstall-app-row" class="settings-uninstall-contents macos-only">
                         <span id="settings-uninstall-label" class="settings-row-label">Uninstall ReDD Block</span>
-                        <button id="uninstall-app-btn" class="uninstall-app-btn" type="button">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <path d="M3 6h18"></path>
-                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
-                                <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                            </svg>
-                            <span id="settings-uninstall-btn-label">Uninstall…</span>
-                        </button>
-                        <p id="uninstall-app-hint" class="uninstall-app-hint settings-uninstall-hint" hidden></p>
+                        <div class="settings-uninstall-btn-wrap">
+                            <button id="uninstall-app-btn" class="uninstall-app-btn" type="button">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M3 6h18"></path>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+                                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                </svg>
+                                <span id="settings-uninstall-btn-label">Uninstall…</span>
+                            </button>
+                            <span id="uninstall-app-hint" class="enforcement-switch-tooltip hidden" role="tooltip"></span>
+                        </div>
                     </div>
                 </div>
 
@@ -1488,7 +1491,7 @@
                 </div>
 
                 <div class="modal-buttons">
-                    <button id="close-settings-btn" class="modal-btn cancel-btn">Close</button>
+                    <button id="close-settings-btn" class="modal-btn cancel-btn">Done</button>
                 </div>
             </div>
         </div>

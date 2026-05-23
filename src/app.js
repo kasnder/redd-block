@@ -1899,13 +1899,35 @@ function setupSettingsEnforcementSection() {
 
 function syncGraceSettingVisibility(enabled) {
     const label = document.querySelector('#settings-modal .settings-grace-label');
+    const wrap = document.getElementById('settings-grace-input-wrap');
     const input = document.getElementById('grace-seconds-input');
     const errorEl = document.getElementById('grace-error');
     if (label) label.classList.toggle('hidden', !enabled);
+    if (wrap) wrap.classList.toggle('hidden', !enabled);
     if (input) input.classList.toggle('hidden', !enabled);
     if (errorEl && !enabled) {
         errorEl.textContent = '';
         errorEl.classList.add('hidden');
+    }
+    if (enabled) updateGraceSettingLock();
+}
+
+function updateGraceSettingLock() {
+    const input = document.getElementById('grace-seconds-input');
+    const wrap = document.getElementById('settings-grace-input-wrap');
+    const tooltip = document.getElementById('grace-input-lock-tooltip');
+    if (!input || !wrap || wrap.classList.contains('hidden')) return;
+
+    const locked = hasAnyEnforcedBlocks();
+    input.disabled = locked;
+    if (locked) {
+        input.setAttribute('aria-disabled', 'true');
+    } else {
+        input.removeAttribute('aria-disabled');
+    }
+    if (tooltip) {
+        tooltip.textContent = locked ? tSettings('migrationEnforcementDisableNote') : '';
+        tooltip.classList.toggle('hidden', !locked);
     }
 }
 
@@ -1995,9 +2017,21 @@ async function updateEnforcementToggleLock(toggle) {
 
         const isLocked = toggle.checked && anyActive;
         toggle.disabled = isLocked;
+        const label = toggle.closest('.enforcement-switch-with-tip');
+        const tooltip = label?.querySelector('.enforcement-switch-tooltip');
+        if (tooltip) {
+            tooltip.textContent = isLocked ? tSettings('migrationEnforcementDisableNote') : '';
+            tooltip.classList.toggle('hidden', !isLocked);
+        }
     } catch (e) {
         // Can't determine lock state — leave unlocked
         toggle.disabled = false;
+        const label = toggle.closest('.enforcement-switch-with-tip');
+        const tooltip = label?.querySelector('.enforcement-switch-tooltip');
+        if (tooltip) {
+            tooltip.textContent = '';
+            tooltip.classList.add('hidden');
+        }
     }
 }
 
@@ -13437,7 +13471,7 @@ const SETTINGS_TRANSLATIONS = {
         welcomeDemoFullscreenExitAriaLabel: 'Exit fullscreen',
         welcomeDemoCloseLabel: 'Close',
         welcomeFooter1Html:
-            'Built by the <a href="https://reddfocus.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Reduce Digital Distraction Project</a>, a not-for-profit creating open-source focus tools to thrive in the digital world. In collaboration with researchers at the University of Oxford and University of Maastricht.',
+            'Built by the <a href="https://reddfocus.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Reduce Digital Distraction Project</a>, a not-for-profit creating open-source digital focus tools &amp; training. In collaboration with researchers at the University of Oxford and University of Maastricht.',
         welcomeFooter2Html:
             '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">View the source code on GitHub</a>.',
         welcomeOnboardingContinueBtn: 'Get started',
@@ -13462,7 +13496,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationSkip: 'Skip for now',
         migrationEnforcementHeadline: 'Browser enforcement',
         migrationEnforcementDesc: 'Automatically close browser if ReDD Focus is disabled when a block is running.',
-        migrationEnforcementDisableNote: 'Once on, you can only turn enforcement off when no blocks are running.',
+        migrationEnforcementDisableNote: 'To change this setting, first stop all active blocks.',
         migrationApproveAdminPrompt: 'Approve the admin prompt to continue…',
         migrationTryAgain: 'Try again',
         migrationCleanupNeedAdmin: 'We need that admin permission to finish — your blocklists are safe.',
@@ -13608,7 +13642,6 @@ const SETTINGS_TRANSLATIONS = {
         appBlockingListMoreFmt: '{n} more',
         settingsFeedbackFooterHtml:
             'Feedback or suggestions? <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer">Open an issue on GitHub</a> or email <a href="mailto:team@reddfocus.org">team@reddfocus.org</a>.',
-        settingsGraceChangeBlockedAlert: 'Stop all running blocks and schedules before changing this setting.',
         madeWith: 'Made with',
         by: 'by',
         andWord: 'and',
@@ -13745,6 +13778,7 @@ const SETTINGS_TRANSLATIONS = {
         undo: 'Undo',
         // Settings
         settingsTitle: 'Settings',
+        settingsDone: 'Done',
         yourVersionPrefix: 'Your version:',
         latestVersionPrefix: 'Latest version:',
         lightDarkMode: 'Light/dark mode',
@@ -13896,7 +13930,7 @@ const SETTINGS_TRANSLATIONS = {
         welcomeDemoFullscreenExitAriaLabel: 'Afslut fuld skærm',
         welcomeDemoCloseLabel: 'Luk',
         welcomeFooter1Html:
-            'Bygget af <a href="https://reddfocus.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Reduce Digital Distraction Project</a>, en non-profit, der skaber open source-fokusværktøjer for at trives i den digitale verden. I samarbejde med forskere ved University of Oxford og Maastricht University.',
+            'Bygget af <a href="https://reddfocus.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Reduce Digital Distraction Project</a>, en non-profit, der skaber open source digitale fokusværktøjer og træning. I samarbejde med forskere ved University of Oxford og Maastricht University.',
         welcomeFooter2Html:
             '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Se kildekoden på GitHub</a>.',
         welcomeOnboardingContinueBtn: 'Kom i gang',
@@ -13921,7 +13955,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationSkip: 'Spring over for nu',
         migrationEnforcementHeadline: 'Browser-beskyttelse',
         migrationEnforcementDesc: 'Luk browser automatisk hvis ReDD Focus slås fra mens en blokering kører.',
-        migrationEnforcementDisableNote: 'Når den er slået til, kan du kun slå håndhævelse fra, når ingen blokeringer kører.',
+        migrationEnforcementDisableNote: 'For at ændre denne indstilling skal du først stoppe alle aktive blokeringer.',
         migrationApproveAdminPrompt: 'Godkend administratorprompt for at fortsætte …',
         migrationTryAgain: 'Prøv igen',
         migrationCleanupNeedAdmin: 'Vi har brug for den administrators tilladelse for at afslutte — dine bloklister er i sikkerhed.',
@@ -14067,7 +14101,6 @@ const SETTINGS_TRANSLATIONS = {
         appBlockingListMoreFmt: '{n} flere',
         settingsFeedbackFooterHtml:
             'Feedback eller forslag? <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer">Opret et issue på GitHub</a> eller skriv til <a href="mailto:team@reddfocus.org">team@reddfocus.org</a>.',
-        settingsGraceChangeBlockedAlert: 'Du skal først stoppe alle kørende blokeringer og skemaer, før du kan ændre denne indstilling.',
         madeWith: 'Lavet med',
         by: 'af',
         andWord: 'og',
@@ -14202,6 +14235,7 @@ const SETTINGS_TRANSLATIONS = {
         undo: 'Fortryd',
         // Settings
         settingsTitle: 'Indstillinger',
+        settingsDone: 'Færdig',
         yourVersionPrefix: 'Din version:',
         latestVersionPrefix: 'Nyeste version:',
         lightDarkMode: 'Lyst / mørkt tema',
@@ -14471,11 +14505,10 @@ function applyMigrationOverlayStaticCopy() {
     setText('migration-skip-btn', tSettings('migrationSkip'));
     setText('enforcement-toggle-headline-text', tSettings('migrationEnforcementHeadline'));
     setText('enforcement-toggle-desc-text', tSettings('migrationEnforcementDesc'));
-    setText('enforcement-toggle-disable-note-text', tSettings('migrationEnforcementDisableNote'));
+    void updateAllEnforcementToggleLocks();
     setText('settings-enforcement-heading', tSettings('settingsEnforcementHeading'));
     setText('settings-enforcement-toggle-headline-text', tSettings('migrationEnforcementHeadline'));
     setText('settings-enforcement-toggle-desc-text', tSettings('migrationEnforcementDesc'));
-    setText('settings-enforcement-toggle-disable-note-text', tSettings('migrationEnforcementDisableNote'));
     const continueBtn = document.getElementById('migration-continue-btn');
     if (continueBtn && !continueBtn.disabled) {
         continueBtn.textContent = tSettings('migrationContinue');
@@ -14968,16 +15001,16 @@ function applySettingsLanguage() {
     // both. Cheap to call unconditionally.
     refreshUninstallButtonState();
     updateOverrideAllButtonVisibility();
+    void updateAllEnforcementToggleLocks();
     setText('settings-helper-service-label', tSettings('helperService'));
     setText('settings-update-helper-label', tSettings('updateHelper'));
     setText('settings-clean-hosts-label', tSettings('cleanHostsFile'));
     setText('settings-helper-hint', tSettings('helperHint'));
-    setText('close-settings-btn', tSettings('close'));
+    setText('close-settings-btn', tSettings('settingsDone'));
     setText('grace-period-label-text', tSettings('gracePeriodLabel'));
     setText('app-blocking-lets-go-btn', tSettings('appBlockingLetsGo'));
     setHtml('settings-feedback-footer-text', tSettings('settingsFeedbackFooterHtml'));
-    const graceLockedHint = document.getElementById('grace-locked-hint');
-    if (graceLockedHint) graceLockedHint.textContent = tSettings('gracePeriodLockedHint');
+    updateGraceSettingLock();
     const currentVersionEl = document.getElementById('current-app-version');
     if (currentVersionEl) {
         const raw = currentVersionEl.textContent || '';
@@ -15915,6 +15948,7 @@ function updateOverrideAllButtonVisibility() {
     const showOverride = hasAnyEnforcedBlocks();
 
     if (row) row.classList.toggle('hidden', !showOverride);
+    updateGraceSettingLock();
 }
 
 // Show challenge for removing helper when blocks are active
@@ -16105,7 +16139,6 @@ async function openInstalledAppsPicker() {
 function setupGraceSetting() {
     const input = document.getElementById('grace-seconds-input');
     const errorEl = document.getElementById('grace-error');
-    const lockedHint = document.getElementById('grace-locked-hint');
     if (!input) return;
 
     const showError = (msg) => {
@@ -16119,12 +16152,7 @@ function setupGraceSetting() {
         try {
             const secs = await invoke('get_extension_grace_seconds');
             input.value = secs;
-            // Locked-hint UX: probe by attempting to set to current+1
-            // and checking the error. Cheaper alternative would be a
-            // dedicated `is_locked` command, but this avoids a new
-            // command for an edge-case UI nicety.
-            // Skip the probe — just reset on a real failure.
-            if (lockedHint) lockedHint.classList.add('hidden');
+            updateGraceSettingLock();
         } catch (e) {
             console.warn('[grace] read failed:', e);
         }
@@ -16133,12 +16161,11 @@ function setupGraceSetting() {
 
     let lastGood = parseInt(input.value, 10) || 60;
     input.addEventListener('change', async () => {
-        // Prevent changes while any block or schedule is active
         const now = Date.now();
         const nowDate = new Date(now);
         if (hasAnyEnforcedBlocks(now, nowDate)) {
-            alert(tSettings('settingsGraceChangeBlockedAlert'));
             input.value = lastGood;
+            updateGraceSettingLock();
             return;
         }
 
@@ -16154,16 +16181,10 @@ function setupGraceSetting() {
             input.value = applied;
             lastGood = applied;
             showError('');
-            if (lockedHint) lockedHint.classList.add('hidden');
         } catch (e) {
-            // Backend rejects increases during active blocks. Revert
-            // to the prior good value and surface the message.
             const msg = typeof e === 'string' ? e : (e && e.message) || 'Could not update grace period.';
             showError(msg);
             input.value = lastGood;
-            if (lockedHint && /active|focus session/i.test(msg)) {
-                lockedHint.classList.remove('hidden');
-            }
         }
     });
 }
@@ -16541,9 +16562,9 @@ function setupInAppUninstall() {
     });
 }
 
-// Refresh the Uninstall button's enabled/disabled state and the hint
-// paragraph below it. Cheap; safe to call on settings-open and on any
-// activeBlocks/schedules state change. Idempotent — reads DOM only.
+// Refresh the Uninstall button's enabled/disabled state and blocked tooltip.
+// Cheap; safe to call on settings-open and on any activeBlocks/schedules
+// state change. Idempotent — reads DOM only.
 function refreshUninstallButtonState() {
     const btn = document.getElementById('uninstall-app-btn');
     const hint = document.getElementById('uninstall-app-hint');
@@ -16555,14 +16576,14 @@ function refreshUninstallButtonState() {
         btn.setAttribute('aria-disabled', 'true');
         if (hint) {
             hint.textContent = tSettings('uninstallDisabledHint');
-            hint.hidden = false;
+            hint.classList.remove('hidden');
         }
     } else {
         btn.disabled = false;
         btn.removeAttribute('aria-disabled');
         if (hint) {
             hint.textContent = '';
-            hint.hidden = true;
+            hint.classList.add('hidden');
         }
     }
 }

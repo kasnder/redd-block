@@ -5336,16 +5336,6 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
     gap: 2px;
 }
 
-.grace-locked-hint {
-    font-size: 12px;
-    color: hsl(222, 18%, 50%);
-    font-style: italic;
-}
-
-.grace-locked-hint.hidden {
-    display: none;
-}
-
 .grace-seconds-input {
     width: 70px;
     padding: 6px 8px;
@@ -5356,6 +5346,26 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
     font-size: 14px;
     text-align: right;
     font-family: inherit;
+}
+
+.grace-seconds-input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+#settings-modal .settings-grace-input-wrap {
+    position: relative;
+}
+
+#settings-modal .settings-grace-input-wrap:hover,
+#settings-modal .settings-grace-input-wrap:focus-within {
+    z-index: 1100;
+}
+
+#settings-modal .settings-grace-input-wrap:hover .enforcement-switch-tooltip:not(.hidden),
+#settings-modal .settings-grace-input-wrap:focus-within .enforcement-switch-tooltip:not(.hidden) {
+    opacity: 1;
+    visibility: visible;
 }
 
 .grace-error {
@@ -5801,6 +5811,7 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
 
 #settings-modal .settings-enforcement-grid {
     padding-top: 0;
+    overflow: visible;
 }
 
 #settings-modal .settings-enforcement-grid .settings-enforcement-copy {
@@ -5817,9 +5828,17 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
     grid-column: 1;
 }
 
-#settings-modal .settings-enforcement-grid .grace-seconds-input {
+#settings-modal .settings-enforcement-grid .settings-grace-input-wrap {
     grid-column: 2;
     justify-self: end;
+    width: 100%;
+    display: flex;
+    justify-content: flex-end;
+}
+
+#settings-modal .settings-enforcement-grid .grace-seconds-input {
+    width: 100%;
+    max-width: 5.5rem;
 }
 
 /* iOS-style toggle switch */
@@ -5842,10 +5861,11 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
     bottom: calc(100% + 8px);
     width: min(240px, 70vw);
     padding: 8px 10px;
-    background: rgba(252, 211, 77, 0.18);
-    border: none;
+    background: #fef9e7;
+    border: 1px solid rgba(245, 158, 11, 0.28);
     border-left: 3px solid var(--warning, #f59e0b);
     border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
     font-size: 12px;
     line-height: 1.45;
     color: hsl(222, 25%, 30%);
@@ -5853,12 +5873,17 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.15s ease, visibility 0.15s ease;
-    z-index: 20;
+    z-index: 1100;
     pointer-events: none;
 }
 
-.enforcement-switch-with-tip:hover .enforcement-switch-tooltip,
-.enforcement-switch-with-tip:focus-within .enforcement-switch-tooltip {
+.enforcement-switch-with-tip:hover,
+.enforcement-switch-with-tip:focus-within {
+    z-index: 1100;
+}
+
+.enforcement-switch-with-tip:hover .enforcement-switch-tooltip:not(.hidden),
+.enforcement-switch-with-tip:focus-within .enforcement-switch-tooltip:not(.hidden) {
     opacity: 1;
     visibility: visible;
 }
@@ -5866,6 +5891,9 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
 body.dark-mode #migration-onboarding .enforcement-switch-tooltip,
 body.dark-mode #settings-modal .enforcement-switch-tooltip {
     color: var(--text-secondary);
+    background: #3a3424;
+    border-color: rgba(251, 191, 36, 0.35);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
 }
 
 .enforcement-switch input {
@@ -7477,7 +7505,8 @@ body.ios .desktop-only {
 #settings-modal .settings-section-grid #theme-select,
 #settings-modal .settings-section-grid .settings-diagnostics-btn,
 #settings-modal .settings-section-grid .settings-override-all-btn,
-#settings-modal .settings-section-grid .uninstall-app-btn {
+#settings-modal .settings-section-grid .uninstall-app-btn,
+#settings-modal .settings-uninstall-btn-wrap {
     width: 100%;
     min-width: 0;
 }
@@ -7726,6 +7755,7 @@ body.dark-mode .language-picker-dropdown {
 #settings-modal .settings-enforcement-section {
     padding-top: 8px;
     padding-bottom: 8px;
+    overflow: visible;
 }
 
 #settings-modal .settings-enforcement-full-span {
@@ -8048,12 +8078,19 @@ body:not(.ios) .settings-diagnostics-contents.desktop-only,
     flex-shrink: 0;
 }
 
-.uninstall-app-hint.settings-uninstall-hint {
-    grid-column: 1 / -1;
-    margin: 2px 0 0;
-    font-size: 13px;
-    color: var(--text-muted);
-    line-height: 1.35;
+#settings-modal .settings-uninstall-btn-wrap {
+    position: relative;
+}
+
+#settings-modal .settings-uninstall-btn-wrap:hover,
+#settings-modal .settings-uninstall-btn-wrap:focus-within {
+    z-index: 1100;
+}
+
+#settings-modal .settings-uninstall-btn-wrap:hover .enforcement-switch-tooltip:not(.hidden),
+#settings-modal .settings-uninstall-btn-wrap:focus-within .enforcement-switch-tooltip:not(.hidden) {
+    opacity: 1;
+    visibility: visible;
 }
 
 /* Uninstall confirmation modal — reuses onboarding / migration surfaces */
