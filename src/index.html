@@ -439,7 +439,7 @@
                                             <line x1="12" y1="9" x2="12" y2="13"></line>
                                             <line x1="12" y1="17" x2="12.01" y2="17"></line>
                                         </svg>
-                                        <span id="enforcement-toggle-disable-note-text">To turn off browser enforcement again, you need to stop all running blocks.</span>
+                                        <span id="enforcement-toggle-disable-note-text">Once on, you can only turn enforcement off when no blocks are running.</span>
                                     </p>
                                 </div>
                                 <label class="enforcement-switch" for="enforcement-toggle-input">
@@ -449,8 +449,18 @@
                             </div>
                         </div>
 
-                        <button id="migration-done-btn" class="modal-btn primary-btn onboarding-primary-btn">I'm all set up</button>
-                        <button id="migration-skip-btn" class="modal-btn migration-skip-btn">Skip for now</button>
+                        <div class="migration-post-actions">
+                            <button id="migration-done-btn"
+                                    class="modal-btn primary-btn onboarding-primary-btn migration-done-btn"
+                                    type="button">
+                                I'm all set up
+                            </button>
+                            <button id="migration-skip-btn"
+                                    class="migration-skip-btn"
+                                    type="button">
+                                Skip for now
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

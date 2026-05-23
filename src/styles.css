@@ -5799,20 +5799,16 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
     margin: 6px 0 0;
     font-size: var(--enforcement-toggle-body-size);
     line-height: 1.5;
-    color: hsl(222, 18%, 42%);
+    color: #b45309;
 }
 
 .enforcement-toggle-text .enforcement-toggle-disable-note svg {
     flex-shrink: 0;
     margin-top: 2px;
-    color: #b45309;
+    color: currentColor;
 }
 
 body.dark-mode #migration-onboarding .enforcement-toggle-disable-note {
-    color: hsl(0, 0%, 75%);
-}
-
-body.dark-mode #migration-onboarding .enforcement-toggle-disable-note svg {
     color: #fbbf24;
 }
 
@@ -5971,20 +5967,42 @@ body.dark-mode .enforcement-switch input:checked + .enforcement-slider::before {
     background: #0f172a;
 }
 
-.migration-skip-btn {
-    margin-top: 8px;
-    background: transparent;
-    color: hsl(222, 25%, 50%);
-    border: 1px solid rgba(10, 45, 123, 0.15);
+.migration-post-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.migration-post-actions .migration-done-btn {
     width: 100%;
-    padding: 10px;
-    border-radius: 8px;
-    cursor: pointer;
+    margin: 0;
+    padding: 12px 20px;
+    border-radius: var(--radius-sm);
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.migration-skip-btn {
+    width: 100%;
+    margin: 0;
+    padding: 10px 16px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-family: var(--font-body);
     font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
 }
 
 .migration-skip-btn:hover {
-    background: rgba(10, 45, 123, 0.04);
+    background: var(--element-hover-bg);
+    color: var(--text-primary);
 }
 
 /*
@@ -6162,13 +6180,13 @@ body.dark-mode #migration-onboarding .migration-delay-note {
 }
 
 body.dark-mode #migration-onboarding .migration-skip-btn {
-    color: var(--text-muted);
-    border-color: var(--redd-border);
+    color: var(--text-secondary);
+    border-color: transparent;
 }
 
 body.dark-mode #migration-onboarding .migration-skip-btn:hover {
     background: rgba(255, 255, 255, 0.06);
-    color: var(--text-secondary);
+    color: var(--text-primary);
 }
 
 body.dark-mode #migration-onboarding .migration-copy-chip.copied {

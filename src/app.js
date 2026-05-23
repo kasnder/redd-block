@@ -13360,7 +13360,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationPostSubtitleCleanup: 'Almost done — finish setting up ReDD Focus in each browser you use.',
         migrationChecklistCleanedOld: 'Old version cleaned up',
         migrationChecklistBlocklistsPreserved: 'Your blocklists are preserved',
-        migrationChecklistExtLinesHtml: 'Enable ReDD Focus in your browsers<br><span style="font-weight:400;opacity:0.7">and allow it in private/incognito tabs</span>',
+        migrationChecklistExtLinesHtml: 'Enable {LOGO}ReDD Focus in your browsers<br><span style="font-weight:400;opacity:0.7">and allow it in private/incognito tabs</span>',
         migrationHowtoHeading: 'Setting up ReDD Focus',
         migrationHowtoLi1Html: 'ReDD Block has tried to install ReDD Focus in your browsers. If it shows as not installed below, click the <strong>Install</strong> buttons to add it manually.',
         migrationHowtoLi3Html: 'Once enabled, <strong>allow it in private/incognito tabs</strong> so blocking works in private windows too.',
@@ -13368,7 +13368,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationSkip: 'Skip for now',
         migrationEnforcementHeadline: 'Browser enforcement',
         migrationEnforcementDesc: 'To help you stay focused, your browser is automatically closed if you turn off ReDD Focus while a block is running.',
-        migrationEnforcementDisableNote: 'To turn off browser enforcement again, you need to stop all running blocks.',
+        migrationEnforcementDisableNote: 'Once on, you can only turn enforcement off when no blocks are running.',
         migrationApproveAdminPrompt: 'Approve the admin prompt to continue…',
         migrationTryAgain: 'Try again',
         migrationCleanupNeedAdmin: 'We need that admin permission to finish — your blocklists are safe.',
@@ -13813,7 +13813,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationPostSubtitleCleanup: 'Næsten færdig — afslut opsætningen af ReDD Focus i hver browser, du bruger.',
         migrationChecklistCleanedOld: 'Gammel version fjernet',
         migrationChecklistBlocklistsPreserved: 'Dine bloklister er bevaret',
-        migrationChecklistExtLinesHtml: 'Aktivér ReDD Focus i dine browsere<br><span style="font-weight:400;opacity:0.7">og tillad den i privat- eller inkognitofaner</span>',
+        migrationChecklistExtLinesHtml: 'Aktivér {LOGO}ReDD Focus i dine browsere<br><span style="font-weight:400;opacity:0.7">og tillad den i privat- eller inkognitofaner</span>',
         migrationHowtoHeading: 'Sådan sætter du ReDD Focus op',
         migrationHowtoLi1Html: 'ReDD Block har forsøgt at installere ReDD Focus i dine browsere. Hvis den vises som ikke installeret nedenfor, klik på <strong>Installer</strong>-knapperne for at tilføje den manuelt.',
         migrationHowtoLi3Html: 'Når den er aktiveret, <strong>tillad den i privat/inkognito-faner</strong>, så blokering også virker i private vinduer.',
@@ -13821,7 +13821,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationSkip: 'Spring over for nu',
         migrationEnforcementHeadline: 'Browser-beskyttelse',
         migrationEnforcementDesc: 'For at støtte dig i at fokusere, bliver din browser automatisk lukket ned hvis du slukker for ReDD Focus mens en blokering kører.',
-        migrationEnforcementDisableNote: 'For at slå det fra igen skal du stoppe alle kørende blokeringer.',
+        migrationEnforcementDisableNote: 'Når den er slået til, kan du kun slå håndhævelse fra, når ingen blokeringer kører.',
         migrationApproveAdminPrompt: 'Godkend administratorprompt for at fortsætte …',
         migrationTryAgain: 'Prøv igen',
         migrationCleanupNeedAdmin: 'Vi har brug for den administrators tilladelse for at afslutte — dine bloklister er i sikkerhed.',
@@ -14352,7 +14352,12 @@ function applyMigrationOverlayStaticCopy() {
     setHtml('migration-pre-warn', tSettings('migrationPreWarnHtml'));
     setText('migration-checklist-cleaned-label', tSettings('migrationChecklistCleanedOld'));
     setText('migration-checklist-blocks-label', tSettings('migrationChecklistBlocklistsPreserved'));
-    setHtml('migration-checklist-ext-lines', tSettings('migrationChecklistExtLinesHtml'));
+    const focusLogoHtml =
+        `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
+    setHtml(
+        'migration-checklist-ext-lines',
+        tSettings('migrationChecklistExtLinesHtml').replace('{LOGO}', focusLogoHtml),
+    );
     setText('migration-howto-title', tSettings('migrationHowtoHeading'));
     setHtml('migration-howto-li1', tSettings('migrationHowtoLi1Html'));
     setHtml('migration-howto-li3', tSettings('migrationHowtoLi3Html'));
