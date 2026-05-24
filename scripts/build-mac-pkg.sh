@@ -86,7 +86,7 @@ OUT_DIR="${BUNDLE_BASE}/pkg"
 mkdir -p "$OUT_DIR"
 
 COMPONENT_PKG="$OUT_DIR/component.pkg"
-DIST_PKG="$OUT_DIR/${APP_NAME// /-}-${VERSION}.pkg"
+DIST_PKG="$OUT_DIR/reddblock-${VERSION}.pkg"
 DIST_DIR=$(mktemp -d /tmp/redd-block-dist.XXXXXX)
 DIST_FILE="$DIST_DIR/distribution.xml"
 
