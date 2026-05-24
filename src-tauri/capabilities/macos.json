@@ -1,0 +1,12 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-notifications",
+  "description": "Toast/notification permission for desktop targets (macOS + Windows). Linux is not yet a supported target.",
+  "platforms": ["macOS", "windows"],
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "notification:default"
+  ]
+}

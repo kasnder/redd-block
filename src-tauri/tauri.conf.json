@@ -1,22 +1,18 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "ReDD Block",
-  "version": "1.0.5",
+  "version": "2.4.0",
   "identifier": "com.reddblock",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
     "beforeDevCommand": "npm run vite:dev",
-    "beforeBuildCommand": "npm run build:helper && npm run vite:build"
+    "beforeBuildCommand": "npm run vite:build"
   },
   "app": {
     "windows": [],
-    "trayIcon": {
-      "iconPath": "icons/icon.png",
-      "iconAsTemplate": true
-    },
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https://asset.localhost data:; font-src 'self' data:"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https://asset.localhost data:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost https://cdn.jsdelivr.net https://ulyngs.github.io"
     }
   },
   "bundle": {
@@ -34,16 +30,13 @@
     "shortDescription": "Block distracting websites and apps to stay focused",
     "longDescription": "ReDD Block helps you stay focused by blocking distracting websites and apps. Create blocklists, schedule blocks, and use override challenges to stay committed.",
     "macOS": {
-      "entitlements": null,
+      "entitlements": "entitlements.macos.plist",
       "signingIdentity": "Developer ID Application: Reduce Digital Distraction Ltd (JD647S9RT6)",
       "hardenedRuntime": true,
-      "minimumSystemVersion": "10.15"
-    },
-    "externalBin": [
-      "../helper-daemon/target/release/redd-block-helper"
-    ],
-    "resources": [
-      "../helper-daemon/resources/*"
-    ]
+      "minimumSystemVersion": "11.0",
+      "frameworks": [
+        "target/safari-bridge/libsafari_bridge.dylib"
+      ]
+    }
   }
 }

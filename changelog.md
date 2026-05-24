@@ -2,6 +2,169 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
+## v2.3.0
+
+- **Settings: language and appearance controls.** Language picker shows flags
+  and full language names in a custom menu; theme and language use matching
+  bordered controls with a double-chevron style. The control column sizes to
+  content; feedback links are left-aligned with GitHub issues listed first.
+- **Settings copy and migration setup.** Danish strings updated across
+  override-all, uninstall, grace-period, and extension-setup flows; the
+  “Setting up ReDD Focus” how-to list is shortened; miscellaneous wording tweaks
+  on the setup extension page.
+- **App-blocking warning (desktop).** The full-screen “Let’s go!” overlay and
+  the in-app close-down countdown are localized (English / Danish), including
+  app list phrasing.
+- **Diagnostics:** styling improvements on the diagnostics screen.
+- **Version:** 2.3.0.
+
+## v2.0.1
+
+- **macOS: in-app uninstall no longer surfaces an unexplained
+  "control Finder" prompt in the common case.** The Settings →
+  Uninstall ReDD Block flow now first calls
+  `NSFileManager.trashItemAtURL:` directly from the running app —
+  Apple's modern Trash API, which goes through the same privileged
+  path Finder uses internally but does **not** require Automation
+  TCC. On a typical admin account this is the only step that runs,
+  so the user sees no permission prompt at all. The detached `mv →
+  AppleScript Finder → rm -rf` script is kept as a fallback for
+  the rare case where the modern API fails (non-admin accounts,
+  unusual ownership). The uninstall confirmation dialog also now
+  warns the user up-front: *if macOS does ask permission to control
+  Finder, click Allow — that's how the app moves itself to the
+  Trash when it can't do it directly.*
+- **macOS: the app now appears in the Dock and the global menu bar
+  while the window is open.** Previously ReDD Block ran as a pure
+  menu-bar accessory on macOS — the app icon never appeared in the
+  Dock and no app name showed up next to the Apple logo, even when
+  the window was front-most. This made it easy to forget the app
+  was running and hard to tell whether you were "in" it. The app
+  now behaves like Cold Turkey Blocker:
+  - window open → Dock icon + app name in the menu bar,
+  - window closed (red X, Cmd-W, Cmd-Q) → hides to the tray, Dock
+    icon and menu bar disappear,
+  - tray-icon click / Dock-icon click / "Reopen Main Window" menu
+    item all bring the foreground UI back.
+
+  The enforcer, watcher and native messaging host keep running
+  through every transition — only the visible affordances change.
+- **The "Set up ReDD Focus" reminder banner is now persistent for
+  everyone, not just v1.x upgraders.** Whenever any browser the
+  user has installed is missing the extension (or has it disabled,
+  or not allowed in private browsing), the slim banner shows up at
+  the top of the window — independent of whether the user came
+  from v1.x. Dismissing it (× button) hides it for the current
+  session only; it reappears next launch / on focus refresh while
+  the underlying problem persists, so a fresh user who clicks ×
+  on it isn't silently left without a reminder.
+- **Settings → Advanced Options → "Set up ReDD Focus extension".**
+  New entry that re-opens the per-browser install checklist on
+  demand, so users who dismissed the banner (or the welcome
+  screen) can find their way back to the setup flow without
+  waiting for the next launch.
+- **Fix: the compliance enforcer no longer force-closes browsers
+  when no block is running.** Previously, if a browser had the
+  ReDD Focus extension installed but misconfigured (e.g. not allowed
+  in incognito), the enforcer would start its grace countdown and
+  eventually quit the browser even when no website-blocking was
+  active — pestering users about an extension that wasn't doing any
+  work yet. The enforcer now no-ops while no website-blocking is
+  active and only kicks in once a block is actually running.
+- **Fix: macOS data-access prompts no longer pile up on every
+  enforcer tick.** On macOS Sequoia 15+, reading a browser's
+  Application Support directory triggers a "ReDD Block would like
+  to access data from other apps" prompt — once per browser. The
+  enforcer used to scan all five vendors (Chrome / Brave / Edge /
+  Firefox / Safari) on every 5 s tick regardless of which were
+  running, so a user with four browsers installed got four serial
+  prompts even though we only ever act on running browsers. Now the
+  enforcer only scans browsers that are currently running, and bails
+  before touching disk if none are.
+- **Fix: schedule-based app blocking now works.** Apps attached to a
+  blocklist that's enforced via a schedule (e.g. a Downtime block
+  covering eM Client, Word, Cursor, etc.) are now correctly closed
+  when the schedule's segment is active. Previously only apps from
+  one-off (manual) blocks reached the in-process app watcher; the
+  schedule path was a no-op left over from the v1.x helper-merges-
+  schedules-internally design.
+- **Fix: `tauri dev` no longer hijacks launch-at-login.** Previously
+  a `tauri dev` run would self-heal the launch-at-login entry so it
+  pointed at `target/debug/redd-block`; on next reboot, launchd would
+  spawn the dev binary with no Vite server running, producing a blank
+  window and `localhost:5173` connection errors. Auto-enable is now
+  release-builds-only — dev runs leave the existing launch-at-login
+  entry untouched.
+- **Fix: launch-at-login reclaims a stale slot.** Release builds now
+  rewrite the LaunchAgent / Run-key on every startup instead of only
+  when no entry is registered. So if the slot is pointing at the
+  wrong path (for example: an earlier install that lived in a
+  different folder, an uninstall + reinstall cycle, or an old dev
+  binary from before the previous fix), the next launch of the
+  installed app reclaims it and points it at the current binary.
+- **Fix: macOS .pkg installer no longer relocates to a stale copy.**
+  Previously the .pkg was built with macOS Installer's "Bundle
+  Relocation" feature enabled, so if any other copy of `ReDD
+  Block.app` existed elsewhere on disk (e.g. a previously-downloaded
+  build still in `~/Downloads/`, or — for developers — a build
+  artifact in `for-distribution/`), the installer would silently
+  redirect the install to overwrite that stale copy, leaving
+  `/Applications/ReDD Block.app` missing and the launch-at-login slot
+  pointing at a binary that doesn't exist. The .pkg is now built
+  with `BundleIsRelocatable=false`, so the installer always lands in
+  `/Applications` regardless of what's already on disk.
+
+## v2.0
+
+- **New blocking architecture on desktop.** No more privileged helper
+  daemon, no more hosts-file edits, no admin/UAC prompt on install.
+  - Website blocking on both macOS and Windows now goes through the
+    ReDD Focus browser extension. Chrome / Brave / Edge / Firefox
+    speak to the app via a built-in native messaging host that's
+    just the app binary in a `--native-host` CLI mode. Safari
+    (macOS) now bridges through an App Group shared container and a
+    handler inside the signed `.app`.
+  - App blocking runs in-process on both OSes via a sysinfo
+    poll-and-kill loop. First use of app blocking on macOS prompts
+    once for Accessibility permission; AppleScript / Automation TCC
+    is no longer required.
+  - The compliance enforcer scans running browsers every 5 s and
+    force-quits any whose extension has been disabled or
+    misconfigured. The grace period before force-quit is
+    user-configurable (5 – 300 s, default 60 s).
+- **Minimum macOS is now 11 (Big Sur),** for Safari Web Extension
+  support. Still supports the same Windows versions.
+- **Reliable Safari extension detection.** The "Allow in Private
+  Browsing" toggle, the enabled state, and the install state are now
+  detected through a 15 s heartbeat from the extension into the App
+  Group container. A misconfigured Safari extension is caught within
+  ~45–105 s on default settings (down to ~50 s if grace is dialled
+  to its 5 s minimum). The previous v1.1 path silently passed every
+  Safari install regardless of configuration.
+- **Safari blocked-page no longer 404s.** The Safari extension
+  manifest now declares `web_accessible_resources` for `blocked.html`,
+  so opening a blocked URL renders the block page instead of
+  Safari's "can't find the file" error.
+- **App hides to tray on close** and launches at login so schedules
+  keep firing across sessions. A tray "Quit" entry remains the only
+  way to fully exit; Cmd-Q / window close are intercepted.
+- **Automatic migration on first launch.** The app cleans its old
+  entries out of the hosts file, removes the privileged helper
+  daemon, and moves onto the new backend. macOS prompts once for the
+  admin password to remove the old helper; Windows prompts once via
+  UAC. Idempotent — residue that reappears (e.g. after a v1.x
+  reinstall) re-triggers cleanup.
+- **"Keep blocking after uninstall" removed.** Uninstalling the app
+  now stops blocking cleanly.
+- **Windows watchdog.** A scheduled task ("ReDD Block Watchdog")
+  relaunches the app within ~1 minute if it crashes or is killed,
+  so schedules don't silently lapse.
+- **macOS `.pkg` upgrade path.** A signed `.pkg` installer is
+  available alongside the `.dmg`. Its preinstall script stops the
+  running app (including any browser-spawned native-host helpers)
+  before the new bundle is laid down, so users can upgrade in place
+  without manually quitting first. Postinstall relaunches the app.
+
 ## v1.0.1
 
 - fix bug where EULA was showing on every opening of the app

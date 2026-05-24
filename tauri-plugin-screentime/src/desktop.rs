@@ -10,8 +10,10 @@ pub fn init<R: Runtime, C: DeserializeOwned>(
   Ok(Screentime(app.clone()))
 }
 
-/// Desktop stub - Screen Time APIs are iOS-only.
-/// All commands return appropriate "not supported" responses.
+/// Desktop stub — Screen Time APIs are iOS-only.
+/// macOS uses the browser-extension path instead of Screen Time
+/// (the main binary hosts a native-messaging stdio server; Safari
+/// routes through `SafariWebExtensionHandler.swift`).
 pub struct Screentime<R: Runtime>(AppHandle<R>);
 
 impl<R: Runtime> Screentime<R> {

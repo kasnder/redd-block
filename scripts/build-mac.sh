@@ -1,75 +1,87 @@
 #!/bin/bash
-# Build script for macOS universal binary with proper naming
+# Build the macOS desktop app bundle (.app) and embed the Safari
+# Web Extension. Output is `for-distribution/ReDD Block.app`. For a
+# shippable installer, run `scripts/build-mac-pkg.sh --release` next
+# (or `npm run build:mac-all` for both in one go).
 
-set -e
+set -euo pipefail
 
-# Source environment variables for signing/notarization
+# Source environment variables for signing/notarization if present.
 if [ -f .env ]; then
   set -a
+  # shellcheck disable=SC1091
   source .env
   set +a
 fi
 
-# Build helper for both architectures
-echo "Building helper daemon for both architectures..."
-cd helper-daemon
-cargo build --release --target aarch64-apple-darwin
-cargo build --release --target x86_64-apple-darwin
-cp target/aarch64-apple-darwin/release/redd-block-helper target/release/redd-block-helper-aarch64-apple-darwin
-cp target/x86_64-apple-darwin/release/redd-block-helper target/release/redd-block-helper-x86_64-apple-darwin
-lipo -create \
-  target/release/redd-block-helper-aarch64-apple-darwin \
-  target/release/redd-block-helper-x86_64-apple-darwin \
-  -output target/release/redd-block-helper-universal-apple-darwin
+# Support the older APPLE_PASSWORD name by mapping it to the variable
+# the notarize hook actually reads.
+if [ -n "${APPLE_PASSWORD:-}" ] && [ -z "${APPLE_APP_SPECIFIC_PASSWORD:-}" ]; then
+  export APPLE_APP_SPECIFIC_PASSWORD="${APPLE_PASSWORD}"
+fi
 
-# Tauri externalBin expects the binary with target suffix for bundling
-# For universal builds, it looks for -universal-apple-darwin suffix
-echo "Copying universal helper for Tauri bundling..."
-cd ..
-
-# Build Tauri universal binary
-echo "Building Tauri app..."
-# Tauri v2 expects CI to be a bool string ("true"/"false"), not "1"/"0".
-# Normalize inherited CI values so local shells/IDEs don't break builds.
+# Tauri v2 expects CI to be "true"/"false", not "1"/"0".
 TAURI_CI="${CI:-}"
 if [ "$TAURI_CI" = "1" ]; then
   TAURI_CI="true"
 elif [ "$TAURI_CI" = "0" ]; then
   TAURI_CI="false"
 fi
+
 PROJECT_ROOT="$(pwd)"
-CARGO_TARGET_DIR="${PROJECT_ROOT}/src-tauri/target" CI="${TAURI_CI:-false}" npm run tauri build -- --target universal-apple-darwin
+BUILD_TARGET="${BUILD_MAC_TARGET:-universal-apple-darwin}"
 
-# Get version from package.json
-VERSION=$(node -p "require('./package.json').version")
-
-# Rename the DMG to preferred format
-DMG_SOURCE="src-tauri/target/universal-apple-darwin/release/bundle/dmg/ReDD Block_${VERSION}_universal.dmg"
-DMG_TARGET="src-tauri/target/universal-apple-darwin/release/bundle/dmg/reddblock-${VERSION}-universal.dmg"
-
-if [ -f "$DMG_SOURCE" ]; then
-  mv "$DMG_SOURCE" "$DMG_TARGET"
-  
-  # Copy to for-distribution folder in project root
-  mkdir -p for-distribution
-  cp "$DMG_TARGET" "for-distribution/reddblock-${VERSION}-universal.dmg"
-  
-  echo ""
-  echo "✅ Build complete!"
-  echo "   DMG: for-distribution/reddblock-${VERSION}-universal.dmg"
-else
-  echo "⚠️  DMG not found at expected location: $DMG_SOURCE"
-  echo "   Looking for the generated universal DMG..."
-  FALLBACK_DMG=$(find src-tauri/target -name "ReDD Block_${VERSION}_*.dmg" -print 2>/dev/null | head -n 1)
-  if [ -n "$FALLBACK_DMG" ] && [ -f "$FALLBACK_DMG" ]; then
-    mv "$FALLBACK_DMG" "$DMG_TARGET"
-    mkdir -p for-distribution
-    cp "$DMG_TARGET" "for-distribution/reddblock-${VERSION}-universal.dmg"
-    echo ""
-    echo "✅ Build complete (fallback path used)!"
-    echo "   DMG: for-distribution/reddblock-${VERSION}-universal.dmg"
-  else
-    echo "⚠️  Could not locate universal DMG. Existing DMGs found:"
-    find src-tauri/target -name "*.dmg" 2>/dev/null
-  fi
+CONFIG_ARGS=()
+if [ -n "${APPLE_SIGNING_IDENTITY_OVERRIDE:-}" ]; then
+  echo "Using signing identity override: ${APPLE_SIGNING_IDENTITY_OVERRIDE}"
+  CONFIG_ARGS=(
+    --config
+    "{\"bundle\":{\"macOS\":{\"signingIdentity\":\"${APPLE_SIGNING_IDENTITY_OVERRIDE}\"}}}"
+  )
 fi
+
+TARGET_DIR="${PROJECT_ROOT}/src-tauri/target/${BUILD_TARGET}/release/bundle"
+
+echo "Building ReDD Block for macOS (${BUILD_TARGET})..."
+# `--bundles app` tells Tauri to produce only the .app, skipping its
+# own .dmg target. Two reasons:
+#  1. We modify the .app after Tauri's bundling step (embed the Safari
+#     Web Extension + re-sign + re-notarize). Tauri's .dmg, which is
+#     packed BEFORE that modification, would contain a stale pre-embed
+#     copy — shipping it would silently break Safari integration for
+#     anyone who installed via .dmg.
+#  2. The .pkg from scripts/build-mac-pkg.sh re-reads the post-embed
+#     .app and is what we actually distribute (it also runs our
+#     migration pre/post-install scripts, which a .dmg can't).
+# If we ever need a .dmg again, the right path is to rebuild it with
+# hdiutil + sign + notarize + staple AFTER embed-safari-extension.sh
+# runs — see SAFARI_BUNDLE_HANDOFF.md item #2.
+CARGO_TARGET_DIR="${PROJECT_ROOT}/src-tauri/target" \
+CI="${TAURI_CI:-false}" \
+npm run tauri -- build --bundles app --target "${BUILD_TARGET}" ${CONFIG_ARGS[@]+"${CONFIG_ARGS[@]}"}
+
+VERSION=$(node -p "require('./package.json').version")
+APP_SOURCE="${TARGET_DIR}/macos/ReDD Block.app"
+
+# Embed the bundled Safari Web Extension (ReDD Focus) into the
+# freshly-built .app, then re-sign + re-notarize + staple. Set
+# SKIP_SAFARI_EXTENSION=1 to bail out (useful for smoke tests /
+# cross-build experiments where you don't want the xcodebuild +
+# notary round-trip).
+if [ "${SKIP_SAFARI_EXTENSION:-}" != "1" ] && [ -d "$APP_SOURCE" ]; then
+  bash "${PROJECT_ROOT}/scripts/embed-safari-extension.sh" "$APP_SOURCE"
+fi
+
+mkdir -p for-distribution
+
+if [ -d "$APP_SOURCE" ]; then
+  rm -rf "for-distribution/ReDD Block.app"
+  cp -R "$APP_SOURCE" "for-distribution/ReDD Block.app"
+fi
+
+echo ""
+echo "Build complete."
+if [ -d "for-distribution/ReDD Block.app" ]; then
+  echo "  App: for-distribution/ReDD Block.app"
+fi
+echo "  (Run scripts/build-mac-pkg.sh --release for a shippable .pkg.)"

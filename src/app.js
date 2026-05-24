@@ -3,7 +3,26 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { ask, message } from '@tauri-apps/plugin-dialog';
+import { ask, message, open as openDialog } from '@tauri-apps/plugin-dialog';
+import { readTextFile } from '@tauri-apps/plugin-fs';
+import logoReddFocusUrl from './images/logo-reddfocus.svg';
+import logoReddShieldUrl from './images/logo-redd-shield.svg';
+import appleLogoUrl from './images/apple-logo.svg';
+import iconChromeUrl from './images/icon-chrome.svg';
+import iconBraveUrl from './images/icon-brave.svg';
+import iconEdgeUrl from './images/icon-edge.svg';
+import iconFirefoxUrl from './images/icon-firefox.svg';
+import iconSafariUrl from './images/icon-safari.svg';
+import screenshotEnableFda from './images/enable-fda.png';
+import screenshotChromeStep1 from './images/toggle-chrome-incognito-windows-1.png';
+import screenshotChromeStep2 from './images/toggle-chrome-incognito-windows-2.png';
+import screenshotEdgeStep1 from './images/toggle-edge-incognito-windows-1.png';
+import screenshotEdgeStep2 from './images/toggle-edge-incognito-windows-2.png';
+import screenshotFirefoxStep1 from './images/toggle-firefox-private-windows-1.png';
+import screenshotFirefoxStep2 from './images/toggle-firefox-private-windows-2.png';
+import screenshotSafariStep1 from './images/mac-extension-settings-1.png';
+import screenshotSafariStep2 from './images/mac-extension-settings-2.png';
+import welcomeDemoVideoUrl from './reddblock-video.mp4';
 
 // Compatibility layer wrapping Tauri APIs
 const tauriAPI = {
@@ -22,7 +41,10 @@ const tauriAPI = {
         }
         return win.maximize();
     },
-    closeWindow: () => getCurrentWindow().hide(),
+    // Routes through the Rust `hide_main_window` command so the macOS
+    // activation policy can flip back to Accessory at the same time
+    // (Dock icon + global menu bar disappear when the window closes).
+    closeWindow: () => invoke('hide_main_window').catch(() => getCurrentWindow().hide()),
 
     // Helper daemon operations
     checkHelperStatus: () => invoke('check_helper_status').catch(() => ({ installed: false, running: false })),
@@ -41,24 +63,23 @@ const tauriAPI = {
 
     // App operations
     openAppPicker: () => invoke('open_app_picker'),
+    listInstalledApps: () => invoke('list_installed_apps'),
     blockWebsites: (domains) => invoke('block_websites', { domains }),
 
     // App blocking via helper daemon (persistent, survives app close)
-    setBlockedAppsViaHelper: (apps) => invoke('set_blocked_apps_via_helper', { apps }),
+    setBlockedAppsViaHelper: (apps, newlyAdded) =>
+        invoke('set_blocked_apps_via_helper', { apps, newlyAdded }),
 
     // Schedule management via helper daemon (persistent, handles transitions autonomously)
     setSchedulesViaHelper: (schedules) => invoke('set_schedules_via_helper', { schedules }),
-    setKeepBlockingOnUninstallViaHelper: (keepBlockingOnUninstall) =>
-        invoke('set_keep_blocking_on_uninstall_via_helper', { keepBlockingOnUninstall }),
-    setLogPingsViaHelper: (logPings) =>
-        invoke('set_log_pings_via_helper', { logPings }),
 
     // Screen Time API (iOS only - provided by tauri-plugin-screentime)
     screentimeRequestAuth: () => invoke('plugin:screentime|request_authorization'),
     screentimeCheckAuth: () => invoke('plugin:screentime|check_authorization'),
     screentimeBlockWebsites: (domains) => invoke('plugin:screentime|block_websites', { domains }),
     screentimeUnblockWebsites: () => invoke('plugin:screentime|unblock_websites'),
-    screentimeStartBlock: (payload) => invoke('plugin:screentime|screentime_start_block', payload),
+    screentimeStartBlock: (payload) =>
+        invoke('plugin:screentime|screentime_start_block', { payload }),
     screentimeClearBlock: () => invoke('plugin:screentime|screentime_clear_block'),
     showActivityPicker: (payload = {}) => invoke('plugin:screentime|show_activity_picker', payload),
     setSchedulesPlugin: (schedules) => invoke('plugin:screentime|set_schedules', { schedules }),
@@ -77,6 +98,28 @@ const tauriAPI = {
     onMenuHelpReportIssue: (callback) => listen('menu-help-report-issue', callback),
     onMenuHelpContactUs: (callback) => listen('menu-help-contact-us', callback),
     onMenuHelpWhoWeAre: (callback) => listen('menu-help-who-we-are', callback),
+
+    // Enforcer events (desktop only)
+    onEnforcerGraceUpdate: (callback) => listen('enforcer://grace-update', callback),
+    onEnforcerGraceResolved: (callback) => listen('enforcer://grace-resolved', callback),
+    onEnforcerBrowserClosed: (callback) => listen('enforcer://browser-closed', callback),
+
+    // App blocking: force-quit warning overlay (desktop)
+    onAppBlockingWarningShow: (callback) => listen('app-blocking://warning-show', callback),
+    onAppBlockingWarningHide: (callback) => listen('app-blocking://warning-hide', callback),
+    appBlockingBringForwardThenQuitAgain: (pids) =>
+        invoke('app_blocking_bring_forward_then_quit_again', { pids }),
+    /// User clicked "Let's go!" on the app-blocking warning — the
+    /// watcher transitions every awaiting PID to the 30-second
+    /// PreQuit phase before sending the polite Cmd-Q.
+    letsGoAcknowledge: () => invoke('lets_go_acknowledge'),
+
+    // macOS-only in-app uninstall. Disables launch-at-login, scrubs
+    // browser native-messaging manifests, and schedules a delayed
+    // self-delete of /Applications/ReDD Block.app. Caller is responsible
+    // for confirming with the user and refusing to invoke while blocks
+    // are running. See src-tauri/src/commands/uninstall.rs.
+    uninstallSelfMacos: () => invoke('uninstall_self_macos'),
 };
 
 async function openUrl(url, openWith) {
@@ -101,6 +144,11 @@ window.__REDDBLOCK_INTERNALS__ = {
 };
 
 let selectedBlocklistId = null;
+/** Session flag set when the user actively deselects (click-outside / ESC).
+ *  Read by the sole-blocklist auto-selector so it stops fighting an
+ *  intentional deselect — cleared again when the user picks anything via
+ *  the dropdown or creates a new blocklist. */
+let userExplicitlyDeselected = false;
 let editingBlocklistId = null;
 let blocklistModalPreviewSnapshot = null;
 /** Blocklist modal undo: session-scoped stack and "last" values for recording previous state. */
@@ -129,10 +177,14 @@ let helperAvailable = false; // Track if the privileged helper daemon is running
 const HELPER_STATUS_CACHE_TTL_MS = 3000;
 let lastDesktopHelperStatus = null;
 let lastDesktopHelperStatusAt = 0;
-let pendingBlockData = null; // Store block data when waiting for helper installation
-let pendingScheduleData = null; // Store schedule data when waiting for helper installation
 let draggedBlocklistId = null; // Track which blocklist is being dragged
 let isIOS = false; // Track if running on iOS
+// True on macOS desktop (i.e. Mac platform AND not the iOS Tauri
+// runtime). Set in `detectPlatform`. Used to gate macOS-only Tauri
+// commands like `check_full_disk_access` and the FDA onboarding flow
+// — calling those on Windows/Linux would 404 since the commands are
+// `#[cfg(target_os = "macos")]`-gated in the Rust side.
+let isMacOSDesktop = false;
 let screentimeAuthorized = false; // Track if Screen Time is authorized (iOS)
 let startupInitializationPromise = null; // Prevent duplicate post-onboarding startup runs
 let startupInitializationComplete = false; // Track whether post-onboarding startup already ran
@@ -144,23 +196,77 @@ const MIN_OVERRIDE_CHARS = 5;
 const DEFAULT_OVERRIDE_COUNT = 10;
 const TARGET_MAX_OVERRIDE_MINUTES = 30;
 /** When character count >= this, preview text is frozen (no more regeneration) for random words and gibberish. */
-const OVERRIDE_PREVIEW_TRUNCATE_AT = 37;
+const OVERRIDE_PREVIEW_TRUNCATE_AT = 50;
+/** Max length for blocklist display name (add/edit modal + persisted saves). */
+const BLOCKLIST_NAME_MAX_LENGTH = 60;
+/** Past this length the card title row usually ellipsizes; use "in 11h" instead of "starts in 11h". */
+const BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS = 26;
 let overridePreviewFrozenByType = { 'random-words': null, 'gibberish': null };
 let lastOverridePreviewType = null;
 const UI_ZOOM_MIN = 0.8;
 const UI_ZOOM_MAX = 1.8;
 const UI_ZOOM_MAX_DESKTOP = 1.5;  // cap on macOS/Windows (native webview zoom)
 const UI_ZOOM_STEP = 0.1;
-const DEFAULT_UI_ZOOM = 1.0;
+/** Desktop default — slightly larger for monitor distance. */
+const DEFAULT_UI_ZOOM = 1.2;
+/** iOS uses CSS zoom on `html`; 1.0 matches the layout viewport and avoids horizontal overflow. */
+const DEFAULT_UI_ZOOM_IOS = 1.0;
 let zoomToastHideTimeout = null;
 let nativeWebviewZoomSupported = null;
 
-// Week calendar state
-let currentWeekStart = null; // Date object for Monday of the displayed week
+// Pre-made website lists offered by the Edit Blocklist "Import" menu. Each
+// list is intentionally small/curated — a starting point users can prune or
+// extend after import. Keys match the data-preset attributes in index.html.
+const WEBSITES_PRESET_LISTS = {
+    'email': [
+        'gmail.com', 'mail.google.com', 'outlook.com', 'outlook.live.com',
+        'mail.yahoo.com', 'icloud.com', 'mail.proton.me', 'proton.me',
+        'fastmail.com', 'hey.com', 'mail.aol.com', 'mail.ru', 'gmx.com',
+        'tutanota.com', 'zoho.com'
+    ],
+    'gambling': [
+        'bet365.com', 'pokerstars.com', 'draftkings.com', 'fanduel.com',
+        'betmgm.com', 'caesars.com', 'betfair.com', 'paddypower.com',
+        'williamhill.com', 'ladbrokes.com', 'betway.com', 'unibet.com',
+        '888.com', 'pinnacle.com', 'bovada.lv'
+    ],
+    'news': [
+        'cnn.com', 'nytimes.com', 'bbc.com', 'bbc.co.uk', 'theguardian.com',
+        'washingtonpost.com', 'reuters.com', 'apnews.com', 'foxnews.com',
+        'bloomberg.com', 'wsj.com', 'ft.com', 'npr.org',
+        'news.ycombinator.com', 'politico.com', 'vox.com', 'huffpost.com',
+        'buzzfeed.com', 'techcrunch.com', 'theverge.com', 'wired.com',
+        'arstechnica.com'
+    ],
+    'porn': [
+        'pornhub.com', 'xvideos.com', 'xnxx.com', 'xhamster.com', 'redtube.com',
+        'youporn.com', 'tube8.com', 'spankbang.com', 'eporner.com', 'beeg.com',
+        'tnaflix.com', 'chaturbate.com', 'onlyfans.com', 'fansly.com',
+        'camsoda.com'
+    ],
+    'search-engines': [
+        'google.com', 'bing.com', 'duckduckgo.com', 'yahoo.com', 'baidu.com',
+        'yandex.com', 'ecosia.org', 'kagi.com', 'brave.com', 'startpage.com',
+        'swisscows.com', 'qwant.com'
+    ],
+    'shopping': [
+        'amazon.com', 'ebay.com', 'etsy.com', 'walmart.com', 'target.com',
+        'bestbuy.com', 'costco.com', 'aliexpress.com', 'alibaba.com',
+        'shein.com', 'temu.com', 'wish.com', 'newegg.com', 'ikea.com',
+        'macys.com', 'nike.com', 'adidas.com', 'zara.com', 'hm.com'
+    ],
+    'social-media': [
+        'facebook.com', 'instagram.com', 'twitter.com', 'x.com', 'tiktok.com',
+        'snapchat.com', 'linkedin.com', 'pinterest.com', 'reddit.com',
+        'tumblr.com', 'threads.net', 'mastodon.social', 'bsky.app',
+        'discord.com', 'whatsapp.com', 'web.whatsapp.com', 't.me',
+        'telegram.org'
+    ]
+};
 
 // Schedule mode state
 let isScheduleMode = false; // false = instant mode, true = schedule mode
-let isAlwaysOnMode = true; // false = timed block, true = always-on (permanent) block
+let isAlwaysOnMode = false; // false = timed block, true = always-on (permanent) block
 let scheduleSegments = getDefaultScheduleSegments(); // Array of time segments with per-segment days
 
 // Far-future timestamp used for "always on" blocks (year 9999)
@@ -354,10 +460,22 @@ function collectActiveIOSManualBlockPayload(now = Date.now()) {
     const appTokenData = new Set();
     const categoryTokenData = new Set();
 
+    let displayWinner = null;
+
     for (const block of appData.activeBlocks || []) {
         if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
         const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
         if (!blocklist) continue;
+
+        const bid = String(block.blocklistId ?? '');
+        if (
+            displayWinner == null
+            || block.startTime < displayWinner.block.startTime
+            || (block.startTime === displayWinner.block.startTime
+                && bid < String(displayWinner.block.blocklistId ?? ''))
+        ) {
+            displayWinner = { block, blocklist };
+        }
 
         for (const domain of blocklist.websites || []) {
             if (!isProtectedDomain(domain)) allDomains.add(domain);
@@ -368,11 +486,21 @@ function collectActiveIOSManualBlockPayload(now = Date.now()) {
         for (const token of iosPayload.categoryTokenData) categoryTokenData.add(token);
     }
 
-    return {
+    const out = {
         domains: Array.from(allDomains).sort(),
         appTokenData: Array.from(appTokenData),
         categoryTokenData: Array.from(categoryTokenData)
     };
+    if (displayWinner) {
+        const { block, blocklist } = displayWinner;
+        out.blocklistEmoji = blocklist.emoji ?? null;
+        out.blocklistName = blocklist.name ?? null;
+        const c = blocklist.color;
+        out.blocklistColorHex = typeof c === 'string' && c.length > 0 ? c : null;
+        out.blockStartMs = block.startTime;
+        out.blockEndMs = block.endTime;
+    }
+    return out;
 }
 
 function isNonRepeatingSchedule(schedule) {
@@ -495,6 +623,10 @@ async function syncSchedulesToHelper() {
                 const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
                 const domains = blocklist?.websites || [];
                 const iosPayload = getBlocklistIOSPayload(blocklist);
+                const blocklistEmoji = blocklist?.emoji ?? null;
+                const blocklistName = blocklist?.name ?? null;
+                const bc = blocklist?.color;
+                const blocklistColorHex = typeof bc === 'string' && bc.length > 0 ? bc : null;
                 if (isNonRepeatingSchedule(schedule)) {
                     const occurrences = resolveOneShotOccurrences(schedule);
                     occurrences.forEach((occurrence, occurrenceIdx) => {
@@ -512,7 +644,10 @@ async function syncSchedulesToHelper() {
                             activeFromTimestampMs: occurrence.start.getTime(),
                             activeUntilTimestampMs: occurrence.end.getTime(),
                             isPaused: !!schedule.isPaused,
-                            pauseEndTimestampMs: schedule.pauseEndTime || null
+                            pauseEndTimestampMs: schedule.pauseEndTime || null,
+                            blocklistEmoji,
+                            blocklistName,
+                            blocklistColorHex
                         });
                     });
                     continue;
@@ -534,7 +669,10 @@ async function syncSchedulesToHelper() {
                         activeFromTimestampMs: window.activeFromTimestampMs,
                         activeUntilTimestampMs: window.activeUntilTimestampMs,
                         isPaused: !!schedule.isPaused,
-                        pauseEndTimestampMs: schedule.pauseEndTime || null
+                        pauseEndTimestampMs: schedule.pauseEndTime || null,
+                        blocklistEmoji,
+                        blocklistName,
+                        blocklistColorHex
                     });
                 }
             }
@@ -647,26 +785,6 @@ async function syncActiveBlocksToHelper() {
     }
 }
 
-async function syncKeepBlockingPreferenceToHelper() {
-    if (isIOS || !helperAvailable) return;
-    try {
-        const keepBlocking = appData.settings?.keepBlockingOnUninstall !== false; // default true
-        await tauriAPI.setKeepBlockingOnUninstallViaHelper(keepBlocking);
-    } catch (e) {
-        console.warn('[syncKeepBlockingPreferenceToHelper] Error:', e);
-    }
-}
-
-async function syncLogPingsPreferenceToHelper() {
-    if (isIOS || !helperAvailable) return;
-    try {
-        const logPings = !!appData.settings?.logHelperPings; // default false
-        await tauriAPI.setLogPingsViaHelper(logPings);
-    } catch (e) {
-        console.warn('[syncLogPingsPreferenceToHelper] Error:', e);
-    }
-}
-
 function isOneOffBlockEnforced(block, now = Date.now()) {
     return !!(block && block.startTime <= now && block.endTime > now && !block.isPaused);
 }
@@ -735,13 +853,132 @@ function scheduleCanStillBecomeActive(schedule, nowDate = new Date()) {
     return scheduleHasFutureSingleOccurrence(schedule, nowDate);
 }
 
+function getTitleBarScheduleSearchFloorMs(schedule, nowMs = Date.now()) {
+    if (!schedule) return nowMs;
+    if (schedule.isPaused && schedule.pauseEndTime > nowMs) {
+        return Math.max(nowMs, schedule.pauseEndTime);
+    }
+    return nowMs;
+}
+
+function dayIndexMonday0FromDate(dt) {
+    const d = dt.getDay();
+    return d === 0 ? 6 : d - 1;
+}
+
+function getRepeatScheduleLastDayInclusiveMs(schedule) {
+    if (schedule.repeatType === 'date' && schedule.repeatDate) {
+        const endDate = new Date(schedule.repeatDate);
+        endDate.setHours(23, 59, 59, 999);
+        return endDate.getTime();
+    }
+    return null;
+}
+
+function computeNextOneShotOccurrenceMs(schedule, floorMs) {
+    let best = null;
+    for (const occ of resolveOneShotOccurrences(schedule)) {
+        const s = occ.start.getTime();
+        const e = occ.end.getTime();
+        if (e <= floorMs) continue;
+        if (s > floorMs) {
+            if (best === null || s < best) best = s;
+        }
+    }
+    return best;
+}
+
+function computeNextRepeatingOccurrenceMs(schedule, floorMs) {
+    if (!schedule.segments || schedule.segments.length === 0) return null;
+    const lastMs = getRepeatScheduleLastDayInclusiveMs(schedule);
+    const floorDate = new Date(floorMs);
+
+    let best = null;
+    const y0 = floorDate.getFullYear();
+    const m0 = floorDate.getMonth();
+    const d0 = floorDate.getDate();
+
+    for (let i = 0; i < 370; i++) {
+        const calMidnight = new Date(y0, m0, d0 + i, 0, 0, 0, 0);
+        if (lastMs !== null && calMidnight.getTime() > lastMs) break;
+
+        const dayIx = dayIndexMonday0FromDate(calMidnight);
+
+        for (const seg of schedule.segments) {
+            const segmentDays = Array.isArray(seg.days) && seg.days.length > 0 ? seg.days : null;
+            if (!segmentDays || !segmentDays.includes(dayIx)) continue;
+
+            const startMins = seg.startHour * 60 + seg.startMinute;
+            const endMins = seg.endHour * 60 + seg.endMinute;
+
+            if (startMins === endMins) {
+                const candMs = calMidnight.getTime();
+                if (candMs > floorMs && (lastMs === null || candMs <= lastMs)) {
+                    if (best === null || candMs < best) best = candMs;
+                }
+                continue;
+            }
+
+            const cand = new Date(calMidnight);
+            cand.setHours(seg.startHour, seg.startMinute, 0, 0);
+            const candMs = cand.getTime();
+            if (candMs > floorMs && (lastMs === null || candMs <= lastMs)) {
+                if (best === null || candMs < best) best = candMs;
+            }
+        }
+    }
+
+    return best;
+}
+
+/**
+ * Among schedules that can still run, earliest segment start strictly after pause/search floor.
+ */
+function pickEarliestUpcomingScheduledBlock(nowMs = Date.now()) {
+    let best = null;
+    for (const schedule of appData.schedules || []) {
+        if (!schedule.segments || schedule.segments.length === 0) continue;
+        if (!scheduleCanStillBecomeActive(schedule, new Date(nowMs))) continue;
+
+        const floorMs = getTitleBarScheduleSearchFloorMs(schedule, nowMs);
+        let nextMs = null;
+
+        if (isNonRepeatingSchedule(schedule)) {
+            nextMs = computeNextOneShotOccurrenceMs(schedule, floorMs);
+        } else {
+            nextMs = computeNextRepeatingOccurrenceMs(schedule, floorMs);
+        }
+
+        if (nextMs == null) continue;
+
+        const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+        if (!blocklist) continue;
+
+        if (best === null || nextMs < best.startMs) {
+            best = { startMs: nextMs, blocklist, schedule };
+        }
+    }
+    return best;
+}
+
+function formatTitleBarScheduleStartWhen(date, nowMs = Date.now()) {
+    const n = new Date(nowMs);
+    const dMid = new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
+    const targetMid = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+    const dd = Math.round((targetMid - dMid) / 86400000);
+    const timeStr = formatTime(date);
+    if (dd === 0) return `${tSettings('scheduleStartsToday')} ${timeStr}`;
+    if (dd === 1) return `${tSettings('scheduleStartsTomorrow')} ${timeStr}`;
+    return `${formatDateForDisplay(date)} · ${timeStr}`;
+}
+
 function hasAnyBlockingStateToClear(now = Date.now(), nowDate = new Date(now)) {
     const hasOneOffState = appData.activeBlocks.some(block => isOneOffBlockStillActive(block, now));
     if (hasOneOffState) return true;
     return !!appData.schedules?.some(schedule => scheduleCanStillBecomeActive(schedule, nowDate));
 }
 
-async function refreshDesktopHelperStatus({ syncPreference = true } = {}) {
+async function refreshDesktopHelperStatus() {
     if (isIOS) {
         return { installed: false, running: false, version: null, version_ok: false, helperReady: false };
     }
@@ -752,9 +989,6 @@ async function refreshDesktopHelperStatus({ syncPreference = true } = {}) {
         helperAvailable = helperReady;
         lastDesktopHelperStatus = nextStatus;
         lastDesktopHelperStatusAt = Date.now();
-        if (helperReady && syncPreference) {
-            await syncKeepBlockingPreferenceToHelper();
-        }
         return nextStatus;
     } catch (err) {
         console.error('Error checking helper status:', err);
@@ -849,16 +1083,25 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadData();
     await resetDevOnlyEulaAcceptance();
     detectPlatform(); // Must run early so isIOS is set before other setup
+    setupNowBlockingChipScroll();
     setupEventListeners();
+    initWelcomeDemoControls();
     setupTheme();
     setupUiZoomShortcuts();
     setupHelpMenuLinks();
     setupHelperSettings();
     setupDiagnosticsButton();
+    setupOnboardingReplayButton();
+    setupAppForegroundRefresh();
     setupOverrideAll();
-    setupStillNotWorking();
+    setupInAppUninstall();
+    setupGraceSetting();
+    setupSettingsEnforcementSection();
+    void wireEnforcementToggle();
     if (isIOS && hasAcceptedEula()) {
         await checkScreentimeAuth();
+    } else if (!isIOS) {
+        await runInitialDesktopOnboardingSequence();
     } else {
         updateOnboardingVisibility();
     }
@@ -866,7 +1109,80 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (hasAcceptedEula()) {
         await runPostAcceptanceStartup();
     }
+
 });
+
+function setupNowBlockingChipScroll() {
+    const chipsEl = document.getElementById('now-blocking-chips');
+    if (!chipsEl) return;
+
+    let isPointerDown = false;
+    let isDragging = false;
+    let suppressClick = false;
+    let startX = 0;
+    let startScrollLeft = 0;
+
+    window.addEventListener('resize', () => syncNowBlockingChipsScrollability(), { passive: true });
+
+    chipsEl.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        if (e.target.closest('.now-blocking-chip-menu-btn')) return;
+        if (!chipsEl.classList.contains('can-horizontal-scroll')) return;
+
+        isPointerDown = true;
+        isDragging = false;
+        suppressClick = false;
+        startX = e.clientX;
+        startScrollLeft = chipsEl.scrollLeft;
+        chipsEl.classList.add('is-dragging');
+        e.preventDefault();
+    });
+
+    const stopDragging = () => {
+        suppressClick = isDragging;
+        isPointerDown = false;
+        isDragging = false;
+        chipsEl.classList.remove('is-dragging');
+    };
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isPointerDown) return;
+        const deltaX = e.clientX - startX;
+        if (Math.abs(deltaX) > 3) {
+            isDragging = true;
+        }
+        chipsEl.scrollLeft = startScrollLeft - deltaX;
+        e.preventDefault();
+    });
+
+    document.addEventListener('mouseup', stopDragging);
+    chipsEl.addEventListener('mouseleave', () => {
+        if (!isPointerDown) return;
+        stopDragging();
+    });
+
+    chipsEl.addEventListener('click', (e) => {
+        if (!suppressClick) return;
+        if (e.target.closest('.now-blocking-chip-menu-btn')) {
+            suppressClick = false;
+            return;
+        }
+        suppressClick = false;
+        e.preventDefault();
+        e.stopPropagation();
+    }, true);
+}
+
+function syncNowBlockingChipsScrollability() {
+    const chipsEl = document.getElementById('now-blocking-chips');
+    const row = document.getElementById('now-blocking-row');
+    if (!chipsEl || !row || row.classList.contains('hidden')) return;
+    if (row.classList.contains('idle')) {
+        chipsEl.classList.remove('can-horizontal-scroll');
+        return;
+    }
+    chipsEl.classList.toggle('can-horizontal-scroll', chipsEl.scrollWidth > chipsEl.clientWidth + 1);
+}
 
 function isLocalDevRun() {
     return ['http:', 'https:'].includes(window.location.protocol)
@@ -953,18 +1269,40 @@ async function runPostAcceptanceStartup() {
                 await initializeIOSBlockingState();
             }
         } else {
+            // Run first-launch migration off the legacy helper + check
+            // Automation TCC (macOS) + extension compliance. Idempotent;
+            // a no-op on subsequent launches past the current version.
+            setupEnforcerUiAlerts();
+            setupAppBlockingWarningOverlay();
+            // macOS-only: surface the Full Disk Access onboarding
+            // overlay (if needed) BEFORE runDesktopOnboarding kicks
+            // off its profile scan via `onboarding_state`. If we
+            // didn't gate this here, the scan would hit Safari's
+            // sandboxed container on first launch — firing the very
+            // TCC prompts this overlay exists to pre-empt. No-op on
+            // Windows / Linux.
+            await ensureFdaOnboardingComplete();
+            // No explicit FDA-banner refresh here — the combined
+            // setup banner re-evaluates FDA state every time
+            // updateBehaviourChangeBanner runs, which the
+            // runDesktopOnboarding flow below triggers.
+            await runDesktopOnboarding();
             await checkHelperStatus();
             console.log('[startup-sync] Desktop startup helperAvailable:', helperAvailable);
-            // Push the user's ping-logging preference before any Pings happen downstream.
-            await syncLogPingsPreferenceToHelper();
             // Reconcile manual blocks first so paused one-offs are removed from helper state after reinstall.
             await syncActiveBlocksToHelper();
             // Then sync schedules to helper so both enforcement sources are aligned.
             await syncSchedulesToHelper();
             console.log('[startup-sync] Startup helper reconciliation complete');
+            if (!migrationOnboardingActive) {
+                try {
+                    await invoke('enforcer_start');
+                } catch (e) {
+                    console.warn('[startup] enforcer_start failed:', e);
+                }
+            }
         }
         render();
-        scrollToNow(false); // Initial scroll (instant, no animation)
         startTickInterval();
 
         // Check for app updates (non-blocking, desktop only)
@@ -1018,6 +1356,3198 @@ async function checkForAppUpdate() {
     }
 }
 
+// ---- Welcome screen --------------------------------------------------------
+//
+// Friendly one-screen intro shown once per machine, before the EULA.
+// Sets context (open-source, who built it) before legal acceptance
+// and the FDA permission ask.
+//
+// Persistence: `appData.settings.welcomeOnboardingShown` (boolean).
+// Wiped by `scripts/dev-reset-fda-onboarding.sh` (incl. --nuke; shared
+// storage at /var/lib/redd-block is cleared too).
+function hasWelcomeOnboardingBeenShown() {
+    return appData?.settings?.welcomeOnboardingShown === true;
+}
+
+async function persistWelcomeOnboardingShown() {
+    if (!appData.settings) appData.settings = {};
+    appData.settings.welcomeOnboardingShown = true;
+    try {
+        await saveData();
+    } catch (e) {
+        console.warn('[welcome-onboarding] persist failed:', e);
+    }
+}
+
+async function runInitialDesktopOnboardingSequence() {
+    if (!hasWelcomeOnboardingBeenShown()) {
+        await presentWelcomeOnboarding();
+        await persistWelcomeOnboardingShown();
+    }
+    updateOnboardingVisibility();
+}
+
+function presentWelcomeOnboarding(onContinue) {
+    return new Promise((resolve) => {
+        const overlay = document.getElementById('welcome-onboarding');
+        const btn = document.getElementById('welcome-onboarding-continue-btn');
+        if (!overlay || !btn) {
+            resolve();
+            return;
+        }
+
+        document.getElementById('eula-onboarding')?.classList.add('hidden');
+        document.getElementById('fda-onboarding')?.classList.add('hidden');
+        document.getElementById('migration-onboarding')?.classList.add('hidden');
+        document.getElementById('main-content')?.classList.add('hidden');
+        document.getElementById('now-blocking-row')?.classList.add('hidden');
+        overlay.classList.remove('hidden');
+        resetWelcomeDemoPanel();
+        applyWelcomeOnboardingLanguage();
+
+        const onClick = () => {
+            btn.removeEventListener('click', onClick);
+            overlay.classList.add('hidden');
+            onContinue?.();
+            resolve();
+        };
+        btn.addEventListener('click', onClick);
+    });
+}
+
+function showEulaOnboardingScreen() {
+    document.getElementById('welcome-onboarding')?.classList.add('hidden');
+    document.getElementById('fda-onboarding')?.classList.add('hidden');
+    document.getElementById('migration-onboarding')?.classList.add('hidden');
+    document.getElementById('eula-onboarding')?.classList.remove('hidden');
+    document.getElementById('main-content')?.classList.add('hidden');
+    document.getElementById('now-blocking-row')?.classList.add('hidden');
+    applyEulaOnboardingLanguage();
+    const eulaContinueBtn = document.getElementById('eula-continue-btn');
+    const eulaCheckbox = document.getElementById('eula-agree-checkbox');
+    if (eulaCheckbox && hasAcceptedEula()) {
+        eulaCheckbox.checked = true;
+    }
+    if (eulaContinueBtn) {
+        eulaContinueBtn.disabled = !eulaCheckbox?.checked;
+        eulaContinueBtn.textContent = tSettings('eulaContinueBtn');
+    }
+}
+
+function isFirstRunOnboardingInProgress() {
+    if (!hasAcceptedEula()) return false;
+    if (activeFdaOnboardingSession) return true;
+    return firstRunExtensionSetupPending && !migrationOnboardingDismissed;
+}
+
+function continueFirstRunOnboardingFromWelcome() {
+    if (!hasAcceptedEula()) {
+        updateOnboardingVisibility();
+        return;
+    }
+    if (isFirstRunOnboardingInProgress()) {
+        showEulaOnboardingScreen();
+        return;
+    }
+    updateOnboardingVisibility();
+}
+
+function returnToWelcomeFromEula() {
+    presentWelcomeOnboarding(continueFirstRunOnboardingFromWelcome);
+}
+
+// ---- macOS Full Disk Access onboarding -------------------------------------
+//
+// FDA is required on macOS — no skip path. After EULA acceptance the
+// user must grant Full Disk Access before ReDD Block installs ReDD
+// Focus in their browsers. Cross-app work stays deferred until the
+// marker is written with a "granted" choice via
+// `complete_fda_onboarding`.
+async function ensureFdaOnboardingComplete() {
+    if (!isMacOSDesktop) return;
+    try {
+        const choice = await invoke('get_fda_user_choice');
+        if (choice === 'granted' || choice === 'revoked') {
+            return;
+        }
+        await showFdaOnboardingOverlay();
+    } catch (e) {
+        console.warn('[fda-onboarding] check failed, proceeding without overlay:', e);
+    }
+}
+
+// Block until the user grants Full Disk Access. Polls after they open
+// System Settings; auto-advances and runs deferred installs on grant.
+let activeFdaOnboardingSession = null;
+
+function hideFdaOnboardingUi() {
+    const session = activeFdaOnboardingSession;
+    if (!session) return;
+    session.overlay.classList.add('hidden');
+    if (session.pollHandle) {
+        clearInterval(session.pollHandle);
+        session.pollHandle = null;
+    }
+}
+
+function presentFdaOnboardingUi() {
+    const session = activeFdaOnboardingSession;
+    if (!session) return;
+    document.getElementById('eula-onboarding')?.classList.add('hidden');
+    document.getElementById('welcome-onboarding')?.classList.add('hidden');
+    document.getElementById('migration-onboarding')?.classList.add('hidden');
+    document.getElementById('main-content')?.classList.add('hidden');
+    document.getElementById('now-blocking-row')?.classList.add('hidden');
+    session.overlay.classList.remove('hidden');
+    void syncFdaOnboardingGrantButton();
+}
+
+async function syncFdaOnboardingGrantButton() {
+    const grantBtn = document.getElementById('fda-onboarding-grant-btn');
+    const whyEl = document.getElementById('fda-onboarding-why');
+    if (!grantBtn) return false;
+
+    let granted = false;
+    try {
+        granted = !!(await invoke('check_full_disk_access'));
+    } catch (_) { /* treat as not granted */ }
+
+    grantBtn.textContent = granted
+        ? tSettings('fdaOnboardingAlreadyGrantedBtn')
+        : tSettings('fdaOnboardingGrantBtn');
+    if (whyEl) {
+        if (granted) {
+            whyEl.textContent = tSettings('fdaOnboardingAlreadyGrantedWhy');
+        } else {
+            whyEl.innerHTML = tSettings('fdaOnboardingWhyHtml');
+        }
+    }
+    if (activeFdaOnboardingSession) {
+        activeFdaOnboardingSession.fdaLiveGranted = granted;
+    }
+    return granted;
+}
+
+async function finalizeFdaOnboardingGrant(statusEl) {
+    if (statusEl) {
+        statusEl.classList.remove('hidden');
+        statusEl.textContent = tSettings('fdaOnboardingGrantedStatus');
+    }
+    try {
+        await invoke('complete_fda_onboarding', { choice: 'granted' });
+    } catch (e) {
+        console.warn('[fda-onboarding] complete failed:', e);
+    }
+    completeFdaOnboardingSession();
+}
+
+function completeFdaOnboardingSession() {
+    hideFdaOnboardingUi();
+    const resolve = activeFdaOnboardingSession?.resolve;
+    activeFdaOnboardingSession = null;
+    resolve?.();
+    if (extensionSetupPausedForBackNavigation) {
+        extensionSetupPausedForBackNavigation = false;
+        void ensureExtensionSetupOnboardingShown();
+    }
+}
+
+function returnToEulaFromFda() {
+    if (!activeFdaOnboardingSession) return;
+    hideFdaOnboardingUi();
+    showEulaOnboardingScreen();
+}
+
+function resumeFdaOnboardingFromEula() {
+    if (!activeFdaOnboardingSession) return;
+    document.getElementById('eula-onboarding')?.classList.add('hidden');
+    presentFdaOnboardingUi();
+}
+
+function showFdaOnboardingOverlay() {
+    if (activeFdaOnboardingSession) {
+        presentFdaOnboardingUi();
+        return activeFdaOnboardingSession.promise;
+    }
+
+    let session;
+    const promise = new Promise((resolve) => {
+        const overlay = document.getElementById('fda-onboarding');
+        const grantBtn = document.getElementById('fda-onboarding-grant-btn');
+        const statusEl = document.getElementById('fda-onboarding-status');
+        if (!overlay || !grantBtn) {
+            console.warn('[fda-onboarding] overlay elements missing, skipping');
+            resolve();
+            return;
+        }
+
+        const onGrant = async () => {
+            grantBtn.disabled = true;
+            let alreadyGranted = session.fdaLiveGranted;
+            if (!alreadyGranted) {
+                try {
+                    alreadyGranted = !!(await invoke('check_full_disk_access'));
+                } catch (_) { /* fall through to settings */ }
+            }
+            if (alreadyGranted) {
+                await finalizeFdaOnboardingGrant(statusEl);
+                return;
+            }
+
+            const originalLabel = grantBtn.textContent;
+            grantBtn.textContent = 'Opening settings…';
+            try {
+                await invoke('check_full_disk_access');
+            } catch (_) { /* register bundle with TCC */ }
+            try {
+                await invoke('open_safari_fda_settings');
+            } catch (e) {
+                console.warn('[fda-onboarding] open settings failed:', e);
+            }
+            grantBtn.textContent = originalLabel;
+            grantBtn.disabled = false;
+            if (statusEl) {
+                statusEl.classList.remove('hidden');
+                statusEl.textContent = 'Waiting for Full Disk Access… leave this window open while you grant it.';
+            }
+            if (!session.pollHandle) {
+                session.pollHandle = setInterval(async () => {
+                    try {
+                        const granted = await invoke('check_full_disk_access');
+                        if (granted) {
+                            await finalizeFdaOnboardingGrant(statusEl);
+                        }
+                    } catch (_) { /* transient */ }
+                }, 1500);
+            }
+        };
+
+        session = {
+            overlay,
+            grantBtn,
+            statusEl,
+            pollHandle: null,
+            resolve,
+            onGrant,
+        };
+        activeFdaOnboardingSession = session;
+        grantBtn.addEventListener('click', onGrant);
+        presentFdaOnboardingUi();
+    });
+    if (session) session.promise = promise;
+    return promise;
+}
+
+// ---- Desktop onboarding (v1.1+) --------------------------------------------
+//
+// - Runs the idempotent first-launch migration (strip hosts markers,
+//   uninstall legacy privileged helper, register native-messaging
+//   manifests).
+// - Queries onboarding_state to decide whether to surface the
+//   Automation permission banner (macOS TCC) and/or the extension
+//   compliance banner.
+// - No-ops on iOS.
+
+// Migration / extension-install onboarding state machine.
+//
+// Drives a single full-screen overlay used in three trigger contexts:
+//   1. v1.x residue on disk → "pre" phase (explanation + admin prompt
+//      → cleanup → swap to "post" phase).
+//   2. v1.x residue cleaned this launch → "post" phase, framed as
+//      "Cleanup complete" + browser install checklist.
+//   3. Fresh user (never had v1.x; just accepted EULA) with the
+//      ReDD Focus extension not yet compliant in any detected
+//      browser → same screen as #2 but framed as "Welcome" (no
+//      cleanup language). Dismissal persisted in localStorage so we
+//      don't nag every launch — the slim extension-compliance
+//      banner takes over after that.
+//
+// While the screen is open, the enforcer is paused (set in
+// commands::enforcement::auto_start when migration was pending at
+// launch). We resume it explicitly when the user dismisses post.
+let migrationOnboardingActive = false;
+let migrationOnboardingDismissed = false;
+/** True while the welcome → EULA → FDA → extension-setup chain is in progress. */
+let firstRunExtensionSetupPending = false;
+// While the migration post-phase is on screen, the user is bouncing
+// between this window and Safari (or Chrome/Firefox/etc.) toggling
+// extension settings. The window-`focus` listener below already
+// re-polls on tab-back, but a user who has Safari and ReDD Block
+// side-by-side never triggers focus events as they click toggles.
+// Run a low-frequency poll so the checklist ticks itself off within
+// the "up to 20 seconds" window the UI already promises. Cleared
+// when the overlay is dismissed.
+let migrationPollIntervalId = null;
+/** Preserves "Show me how" across `renderBrowserInstallButtons` poll refreshes. */
+const migrationShowMeHowExpandedKeys = new Set();
+/** Preserves Safari duplicate "How did this happen?" across poll refreshes. */
+let migrationSafariDuplicateHelpExpanded = false;
+/** Snapshot for re-rendering localized browser rows when language changes mid-overlay. */
+let lastMigrationBrowserState = null;
+/** Skips full DOM rebuild on poll when compliance state is unchanged (prevents icon flash). */
+let lastMigrationBrowserRenderSignature = '';
+const MIGRATION_POLL_MS = 2500;
+const EXT_ONBOARDING_DISMISSED_KEY = 'reddBlockExtOnboardingDismissed';
+
+async function runDesktopOnboarding() {
+    if (isIOS) return;
+    try {
+        const pendingAtLaunch = await invoke('migration_pending');
+        const wasUpgrade = await invoke('migration_was_pending_at_launch');
+
+        if (pendingAtLaunch) {
+            // Residue still present → show pre-prompt screen.
+            await showMigrationOnboarding('pre');
+            return;
+        }
+        if (wasUpgrade && !migrationOnboardingDismissed) {
+            // Residue cleaned this launch (or by an earlier launch
+            // before the user dismissed). Show the post-cleanup
+            // screen so they know what changed and install the
+            // extension. Cleanup-mode framing.
+            const state = await invoke('onboarding_state');
+            await showMigrationOnboarding('post', state, { mode: 'after-cleanup' });
+            return;
+        }
+
+        // Fresh-user case: surface the extension setup screen until the
+        // user dismisses it. renderBrowserInstallButtons falls back to a
+        // Chrome row when no installed browsers are detected yet.
+        await ensureExtensionSetupOnboardingShown();
+
+        if (migrationOnboardingActive) return;
+
+        const state = await invoke('onboarding_state');
+        await updateBehaviourChangeBanner(state);
+    } catch (e) {
+        console.warn('[onboarding] state check failed:', e);
+    }
+}
+
+async function ensureExtensionSetupOnboardingShown() {
+    if (isIOS || migrationOnboardingActive) return;
+    const dismissed = localStorage.getItem(EXT_ONBOARDING_DISMISSED_KEY);
+    if (!firstRunExtensionSetupPending && (dismissed || migrationOnboardingDismissed)) return;
+    try {
+        if (firstRunExtensionSetupPending) {
+            migrationOnboardingDismissed = false;
+        }
+        const state = await invoke('onboarding_state');
+        await showMigrationOnboarding('post', state, { mode: 'fresh' });
+    } catch (e) {
+        console.warn('[onboarding] extension setup overlay failed:', e);
+    }
+}
+
+async function showMigrationOnboarding(phase, state, opts = {}) {
+    const screen = document.getElementById('migration-onboarding');
+    const pre = document.getElementById('migration-phase-pre');
+    const post = document.getElementById('migration-phase-post');
+    const main = document.getElementById('main-content');
+    if (!screen || !pre || !post) return;
+
+    applyMigrationOverlayStaticCopy();
+
+    migrationOnboardingActive = true;
+    startMigrationPolling();
+    document.getElementById('welcome-onboarding')?.classList.add('hidden');
+    document.getElementById('eula-onboarding')?.classList.add('hidden');
+    document.getElementById('fda-onboarding')?.classList.add('hidden');
+    document.getElementById('now-blocking-row')?.classList.add('hidden');
+    if (main) main.classList.add('hidden');
+    screen.classList.remove('hidden');
+    pre.classList.toggle('hidden', phase !== 'pre');
+    post.classList.toggle('hidden', phase !== 'post');
+
+    // For the post phase, swap headline + subtitle + checklist depending
+    // on whether we got here from a v1.x cleanup (mode=after-cleanup)
+    // or it's a fresh user (mode=fresh, default).
+    if (phase === 'post') {
+        const mode = opts.mode || 'fresh';
+        const title = document.getElementById('migration-post-title');
+        const subtitle = document.getElementById('migration-post-subtitle');
+        const cleanupItems = post.querySelectorAll('.migration-cleanup-only');
+        if (mode === 'after-cleanup') {
+            if (title) title.textContent = tSettings('migrationPostTitleCleanup');
+            if (subtitle) subtitle.textContent = tSettings('migrationPostSubtitleCleanup');
+            cleanupItems.forEach(el => el.classList.remove('hidden'));
+        } else {
+            if (title) title.classList.add('hidden');
+            if (subtitle) subtitle.classList.add('hidden');
+            const icon = post.closest('.onboarding-content')?.querySelector('.onboarding-icon');
+            if (icon) icon.classList.add('hidden');
+            cleanupItems.forEach(el => el.classList.add('hidden'));
+        }
+    }
+
+    // Bring our window back to the front. The osascript admin
+    // prompt steals focus, and on macOS we run as a menu-bar
+    // accessory (no dock icon), so `window.setFocus` alone isn't
+    // enough — we need NSApp.activate(ignoringOtherApps:). The
+    // backend `activate_app` command does that. We retry twice with
+    // a small delay because macOS doesn't always restore focus
+    // immediately after osascript exits.
+    const focusBack = async () => {
+        try { await invoke('activate_app'); } catch (e) {
+            console.warn('[migration] activate_app failed:', e);
+        }
+    };
+    await focusBack();
+    setTimeout(focusBack, 250);
+
+    if (phase === 'pre') {
+        wireMigrationPrePhase();
+    } else if (phase === 'post') {
+        wireMigrationPostPhase(state);
+    }
+}
+
+let extensionSetupPausedForBackNavigation = false;
+
+function pauseMigrationOnboardingForBackNavigation() {
+    document.getElementById('migration-onboarding')?.classList.add('hidden');
+    migrationOnboardingActive = false;
+    stopMigrationPolling();
+}
+
+function syncMigrationPostBackButtonVisibility() {
+    const backBtn = document.getElementById('migration-back-btn');
+    if (backBtn) {
+        backBtn.classList.toggle('hidden', !firstRunExtensionSetupPending);
+    }
+}
+
+async function returnFromExtensionSetupOnboarding() {
+    if (!firstRunExtensionSetupPending) return;
+    extensionSetupPausedForBackNavigation = true;
+    pauseMigrationOnboardingForBackNavigation();
+    if (isMacOSDesktop) {
+        await showFdaOnboardingOverlay();
+    } else {
+        showEulaOnboardingScreen();
+    }
+}
+
+function hideMigrationOnboarding() {
+    const screen = document.getElementById('migration-onboarding');
+    const main = document.getElementById('main-content');
+    if (screen) screen.classList.add('hidden');
+    if (main) main.classList.remove('hidden');
+    migrationOnboardingActive = false;
+    migrationOnboardingDismissed = true;
+    firstRunExtensionSetupPending = false;
+    migrationShowMeHowExpandedKeys.clear();
+    migrationSafariDuplicateHelpExpanded = false;
+    lastMigrationBrowserState = null;
+    lastMigrationBrowserRenderSignature = '';
+    stopMigrationPolling();
+}
+
+function wireMigrationPrePhase() {
+    const btn = document.getElementById('migration-continue-btn');
+    const status = document.getElementById('migration-pre-status');
+    if (!btn) return;
+
+    // Always reset button + status to a clean pre-cleanup state.
+    // This function is also called when the overlay is re-shown
+    // (e.g. residue reappears after a successful migration); without
+    // this, btn.disabled / btn.textContent / status would carry over
+    // from the previous click and the user would be locked out.
+    btn.disabled = false;
+    btn.textContent = tSettings('migrationContinue');
+    if (status) {
+        status.textContent = '';
+        status.classList.add('hidden');
+        status.classList.remove('error');
+    }
+
+    if (btn._listenerAdded) return;
+    btn._listenerAdded = true;
+
+    btn.addEventListener('click', async () => {
+        if (btn.disabled) return;
+        btn.disabled = true;
+        if (status) {
+            status.textContent = tSettings('migrationApproveAdminPrompt');
+            status.classList.remove('hidden', 'error');
+        }
+
+        const failTryAgain = (msg) => {
+            btn.disabled = false;
+            btn.textContent = tSettings('migrationTryAgain');
+            if (status) {
+                status.textContent = msg;
+                status.classList.add('error');
+            }
+        };
+
+        // Race the IPC Promise against a periodic disk-state poll.
+        // The Promise is the fast signal (resolves on UAC decline in
+        // <1s; on cleanup completion within a few seconds); the poll
+        // is the safety net for cases where the Promise never settles
+        // (we've seen this happen with the blocking elevated
+        // PowerShell on the executor thread). Whichever signals
+        // first wins. The poll alone would be correct but too slow on
+        // the cancel path (user would wait for the timeout).
+        const POLL_MS = 1500;
+        const TIMEOUT_MS = 120000;
+        const start = Date.now();
+        let invokeSettled = false;
+        const invokePromise = invoke('run_upgrade_migration')
+            .catch((e) => {
+                console.warn('[migration] run_upgrade_migration rejected:', e);
+            })
+            .finally(() => { invokeSettled = true; });
+
+        try {
+            while (true) {
+                // Sleep, but wake early if the IPC Promise settles.
+                await Promise.race([
+                    new Promise((r) => setTimeout(r, POLL_MS)),
+                    invokePromise,
+                ]);
+                const stillPending = await invoke('migration_pending');
+                if (!stillPending) break;
+                // Fast path: IPC said it's done AND residue is still
+                // there → user cancelled / cleanup failed. Don't make
+                // them wait for the polling timeout.
+                if (invokeSettled) {
+                    failTryAgain(tSettings('migrationCleanupNeedAdmin'));
+                    return;
+                }
+                if (Date.now() - start > TIMEOUT_MS) {
+                    failTryAgain(tSettings('migrationCleanupRetryGeneric'));
+                    return;
+                }
+            }
+            const fresh = await invoke('onboarding_state');
+            // Explicit after-cleanup framing: we just finished the
+            // pre-phase elevated cleanup, so the post screen must
+            // surface the "Old version cleaned up / Your blocklists
+            // are preserved" rows and the cleanup-flavoured title.
+            // Without this, the post phase renders in the default
+            // 'fresh' mode for a frame, gets immediately overwritten
+            // by the window-focus handler at the bottom of
+            // setupEventListeners() (which re-runs runDesktopOnboarding
+            // and re-enters with mode: 'after-cleanup' because
+            // migration_was_pending_at_launch is still true) — visible
+            // on Windows as a flash of the fresh framing right before
+            // the cleanup framing settles.
+            await showMigrationOnboarding('post', fresh, { mode: 'after-cleanup' });
+        } catch (e) {
+            console.warn('[migration] poll failed:', e);
+            failTryAgain(tSettings('migrationCleanupRetryGeneric'));
+        }
+    });
+}
+
+function wireMigrationPostPhase(state) {
+    renderBrowserInstallButtons(state);
+    wireEnforcementToggle();
+    syncMigrationPostBackButtonVisibility();
+    const doneBtn = document.getElementById('migration-done-btn');
+    const skipBtn = document.getElementById('migration-skip-btn');
+    const backBtn = document.getElementById('migration-back-btn');
+
+    const finish = async () => {
+        try {
+            await invoke('enforcer_start');
+        } catch (e) {
+            console.warn('[migration] enforcer_start failed:', e);
+        }
+        // Persist dismissal so we don't surface this full-screen
+        // again on every launch — the slim extension-compliance
+        // banner takes over for ongoing nagging. Stored locally
+        // (per-install) which is fine for a UX hint.
+        try { localStorage.setItem(EXT_ONBOARDING_DISMISSED_KEY, String(Date.now())); }
+        catch (_) { /* localStorage may be disabled; harmless */ }
+        hideMigrationOnboarding();
+        try {
+            const fresh = await invoke('onboarding_state');
+            await updateBehaviourChangeBanner(fresh);
+        } catch (e) { /* no-op */ }
+    };
+
+    if (doneBtn && !doneBtn._listenerAdded) {
+        doneBtn._listenerAdded = true;
+        doneBtn.addEventListener('click', finish);
+    }
+    if (skipBtn && !skipBtn._listenerAdded) {
+        skipBtn._listenerAdded = true;
+        skipBtn.addEventListener('click', finish);
+    }
+    if (backBtn && !backBtn._listenerAdded) {
+        backBtn._listenerAdded = true;
+        backBtn.addEventListener('click', () => {
+            void returnFromExtensionSetupOnboarding();
+        });
+    }
+}
+
+// ---- Enforcement opt-in toggle -------------------------------------------
+// Reads the current enforcement-enabled setting from the backend and
+// wires the toggle in the extension setup dialog. When a block is
+// active and enforcement is ON, the toggle is locked (disabled) so
+// the user can't weaken enforcement mid-session. The server-side
+// guard in enforcement_toggle.rs is the ultimate backstop.
+
+function setSettingsEnforcementExpanded(expanded) {
+    const toggle = document.getElementById('settings-enforcement-toggle');
+    const content = document.getElementById('settings-enforcement-content');
+    if (toggle) toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    if (content) content.classList.toggle('hidden', !expanded);
+}
+
+function resetSettingsEnforcementSection() {
+    setSettingsEnforcementExpanded(false);
+}
+
+function setupSettingsEnforcementSection() {
+    const toggle = document.getElementById('settings-enforcement-toggle');
+    if (!toggle || toggle.dataset.wired === 'true') return;
+    toggle.dataset.wired = 'true';
+    toggle.addEventListener('click', () => {
+        const expanded = toggle.getAttribute('aria-expanded') !== 'true';
+        setSettingsEnforcementExpanded(expanded);
+    });
+}
+
+function syncGraceSettingVisibility(enabled) {
+    const label = document.querySelector('#settings-modal .settings-grace-label');
+    const wrap = document.getElementById('settings-grace-input-wrap');
+    const input = document.getElementById('grace-seconds-input');
+    const errorEl = document.getElementById('grace-error');
+    if (label) label.classList.toggle('hidden', !enabled);
+    if (wrap) wrap.classList.toggle('hidden', !enabled);
+    if (input) input.classList.toggle('hidden', !enabled);
+    if (errorEl && !enabled) {
+        errorEl.textContent = '';
+        errorEl.classList.add('hidden');
+    }
+    if (enabled) updateGraceSettingLock();
+}
+
+function updateGraceSettingLock() {
+    const input = document.getElementById('grace-seconds-input');
+    const wrap = document.getElementById('settings-grace-input-wrap');
+    const tooltip = document.getElementById('grace-input-lock-tooltip');
+    if (!input || !wrap || wrap.classList.contains('hidden')) return;
+
+    const locked = hasAnyEnforcedBlocks();
+    input.disabled = locked;
+    if (locked) {
+        input.setAttribute('aria-disabled', 'true');
+    } else {
+        input.removeAttribute('aria-disabled');
+    }
+    if (tooltip) {
+        tooltip.textContent = locked ? tSettings('settingsEnforcementLockedTooltip') : '';
+        tooltip.classList.toggle('hidden', !locked);
+    }
+}
+
+function syncEnforcementToggleSectionVisual(_toggle) {
+    const migrationToggle = document.getElementById('enforcement-toggle-input');
+    const migrationSection = document.getElementById('enforcement-toggle-section');
+    if (migrationSection && migrationToggle) {
+        const on = !!migrationToggle.checked;
+        migrationSection.classList.toggle('enforcement-on', on);
+        migrationSection.classList.toggle('enforcement-off', !on);
+    }
+    syncGraceSettingVisibility(getEnforcementToggleInputs().some((t) => t.checked));
+}
+
+function getEnforcementToggleInputs() {
+    return Array.from(document.querySelectorAll('.enforcement-toggle-input'));
+}
+
+async function updateAllEnforcementToggleLocks() {
+    for (const toggle of getEnforcementToggleInputs()) {
+        await updateEnforcementToggleLock(toggle);
+    }
+}
+
+function syncAllEnforcementToggleInputs(checked) {
+    for (const toggle of getEnforcementToggleInputs()) {
+        toggle.checked = !!checked;
+        syncEnforcementToggleSectionVisual(toggle);
+    }
+}
+
+let enforcementToggleWired = false;
+
+async function onEnforcementToggleChange(changedToggle) {
+    const desired = changedToggle.checked;
+    syncAllEnforcementToggleInputs(desired);
+    try {
+        const saved = await invoke('set_enforcement_enabled', { enabled: desired });
+        syncAllEnforcementToggleInputs(saved);
+        await updateAllEnforcementToggleLocks();
+    } catch (e) {
+        console.warn('[enforcement-toggle] set failed:', e);
+        syncAllEnforcementToggleInputs(!desired);
+        await updateAllEnforcementToggleLocks();
+    }
+}
+
+async function wireEnforcementToggle() {
+    const toggles = getEnforcementToggleInputs();
+    if (!toggles.length) return;
+
+    let enabled = false;
+    try {
+        enabled = !!(await invoke('get_enforcement_enabled'));
+    } catch (e) {
+        console.warn('[enforcement-toggle] read failed:', e);
+    }
+
+    syncAllEnforcementToggleInputs(enabled);
+    await updateAllEnforcementToggleLocks();
+
+    if (!enforcementToggleWired) {
+        enforcementToggleWired = true;
+        for (const toggle of toggles) {
+            toggle.addEventListener('change', () => { void onEnforcementToggleChange(toggle); });
+        }
+    }
+}
+
+async function updateEnforcementToggleLock(toggle) {
+    if (!toggle) return;
+    try {
+        // Try a no-op read to check current state; the real lock check
+        // is whether turning OFF would be rejected. We approximate by
+        // checking if enforcement is ON and the backend would reject
+        // disabling it. Simplest: try a dry-run disable, catch the
+        // error. But that's ugly — instead, check if any block is
+        // active by reading from the data file the same way the
+        // backend does. For simplicity, we just check if the toggle
+        // is ON and read the active-block state via the data.
+        const data = await invoke('load_data');
+        const activeBlocks = (data && data.activeBlocks) || [];
+        const schedules = (data && data.schedules) || [];
+        const nowMs = Date.now();
+        const nowDate = new Date(nowMs);
+        const anyActive = activeBlocks.some(b => {
+            const start = b.startTime || Infinity;
+            const end = b.endTime;
+            const paused = b.isPaused || false;
+            const isAlways = end === null || end === undefined;
+            return start <= nowMs && (isAlways || end > nowMs) && !paused;
+        }) || schedules.some(schedule => isScheduleSegmentActiveNow(schedule, nowDate));
+
+        const isLocked = toggle.checked && anyActive;
+        toggle.disabled = isLocked;
+        const label = toggle.closest('.enforcement-switch-with-tip');
+        const tooltip = label?.querySelector('.enforcement-switch-tooltip');
+        if (tooltip) {
+            tooltip.textContent = isLocked ? tSettings('settingsEnforcementLockedTooltip') : '';
+            tooltip.classList.toggle('hidden', !isLocked);
+        }
+    } catch (e) {
+        // Can't determine lock state — leave unlocked
+        toggle.disabled = false;
+        const label = toggle.closest('.enforcement-switch-with-tip');
+        const tooltip = label?.querySelector('.enforcement-switch-tooltip');
+        if (tooltip) {
+            tooltip.textContent = '';
+            tooltip.classList.add('hidden');
+        }
+    }
+}
+
+// Per-browser metadata: label + extension store URL (Chromium-family
+// browsers all use the Chrome Web Store listing).
+const BROWSER_STORE_LINKS = {
+    chrome: { label: 'Chrome', url: 'https://chromewebstore.google.com/detail/redd-focus-hide-distracti/hhblkhfdjijdinijakbmcpkmdfhoadcd' },
+    brave: { label: 'Brave', url: 'https://chromewebstore.google.com/detail/redd-focus-hide-distracti/hhblkhfdjijdinijakbmcpkmdfhoadcd' },
+    edge: { label: 'Edge', url: 'https://microsoftedge.microsoft.com/addons/detail/redd-focus-hide-distract/gmjfgjdhnhcegfelcddbdljdffiaepam' },
+    firefox: { label: 'Firefox', url: 'https://addons.mozilla.org/en-US/firefox/addon/reddfocus/' },
+    safari: { label: 'Safari', url: 'https://apps.apple.com/us/app/redd-focus-hide-distractions/id1660218371' },
+};
+
+// Compute per-step status for the migration UI:
+//   - 'compliant': extension installed, enabled, allowed in private, allowed on all websites
+//   - 'needs-deduplicate': Safari has both bundled + standalone ReDD Focus
+//   - 'needs-website-access': Safari installed + enabled + private, but not allowed on all websites
+//   - 'needs-private': installed + enabled but not allowed in private
+//   - 'needs-enable': installed but disabled
+//   - 'needs-install': extension not installed
+// Returns null if the browser itself isn't installed on the machine.
+function browserComplianceStatus(key, b) {
+    if (!b || !b.installed) return null;
+    const profiles = b.profiles || [];
+    const def = profiles.find(p => p.isDefault) || profiles[0];
+    if (key === 'safari') {
+        if (b.duplicateExtensions?.detected) return 'needs-deduplicate';
+        if (b.needsFdaAccess || profiles.some(p => /Full Disk Access|extension settings plist/i.test(p.note || ''))) {
+            return 'needs-fda';
+        }
+        // Safari status, post-bridge:
+        //
+        // The Swift bridge (SFSafariExtensionManager) gives us a
+        // definitive `enabled` value without Full Disk Access — that's
+        // the critical step, the one that gates whether the extension
+        // does anything at all.
+        //
+        // privateBrowsing and websiteAccessAll still come from the
+        // FDA-protected plist; SafariServices doesn't expose them.
+        // When plist reading fails (no FDA), those fields are null
+        // ("unknown"). Rather than dragging the user through an FDA
+        // prompt for fields they can verify themselves in Safari,
+        // we treat null as "trust the user" — only flag needs-private
+        // / needs-website-access when we can definitively see the
+        // toggle is off. The 3-step Safari onboarding card still
+        // surfaces all three steps so the user knows what to do.
+        if (!profiles.length || profiles.some(p => !p.installed)) return 'needs-install';
+        if (profiles.some(p => p.enabled !== true)) return 'needs-enable';
+        if (profiles.some(p => p.privateBrowsing === false)) return 'needs-private';
+        if (profiles.some(p => p.websiteAccessAll === false)) return 'needs-website-access';
+        return 'compliant';
+    }
+    if (!def || !def.installed) return 'needs-install';
+    const enabled = def.enabled;
+    if (enabled === false) return 'needs-enable';
+    const priv = def.privateBrowsing;
+    if (priv !== true) return 'needs-private';
+    return 'compliant';
+}
+
+function statusLabel(key, status) {
+    switch (status) {
+        case 'compliant': return tSettings('migrationComplianceOk');
+        case 'needs-deduplicate': return tSettings('migrationStatusDuplicateSafari');
+        case 'needs-fda': return tSettings('migrationStatusGrantFda');
+        case 'needs-website-access': return tSettings('migrationStatusAllowAllWebsites');
+        case 'needs-private': return tSettings('migrationStatusAllowPrivate');
+        case 'needs-enable': return tSettings('migrationStatusEnableExtension');
+        case 'needs-install': return tSettings('migrationStatusInstall');
+        default: return tSettings('migrationStatusInstall');
+    }
+}
+
+function safariProfileLabel(profile) {
+    const name = String(profile && profile.name ? profile.name : '').trim();
+    const legacyDefault = SETTINGS_TRANSLATIONS.en.migrationSafariProfileDefaultName;
+    if (!name || name === legacyDefault || name === '(Default Safari profile)') {
+        return tSettings('migrationSafariProfileDefaultName');
+    }
+    return name;
+}
+
+function safariProfileStatusHint(b, status) {
+    const profiles = b && Array.isArray(b.profiles) ? b.profiles : [];
+    if (profiles.length <= 1) return null;
+
+    const failing = profiles.filter(profile => {
+        switch (status) {
+            case 'needs-install': return !profile.installed;
+            case 'needs-enable': return !profile.installed || profile.enabled === false;
+            case 'needs-private': return !profile.installed || profile.enabled !== true || profile.privateBrowsing !== true;
+            case 'needs-website-access': return !profile.installed || profile.enabled !== true || profile.privateBrowsing !== true || profile.websiteAccessAll !== true;
+            case 'needs-fda': return /Full Disk Access|extension settings plist|Safari extension settings/i.test(profile.note || '');
+            default: return false;
+        }
+    });
+    if (!failing.length) return null;
+
+    const labels = failing.slice(0, 3).map(safariProfileLabel);
+    const more = failing.length > labels.length
+        ? tSettingsFmt('migrationSafariProfilesMore', { n: failing.length - labels.length })
+        : '';
+    return `${tSettings('migrationSafariProfilesAffected')} ${labels.join(', ')}${more}.`;
+}
+
+function extensionsUrl(key) {
+    switch (key) {
+        case 'chrome': return 'chrome://extensions';
+        case 'edge': return 'edge://extensions';
+        case 'brave': return 'brave://extensions';
+        case 'firefox': return 'about:addons';
+        case 'safari': return tSettings('migrationSafariSettingsPath');
+        default: return 'extensions';
+    }
+}
+
+function isCopyableExtensionsTarget(key) {
+    return key !== 'safari';
+}
+
+// Renders an inline URL chip with a small copy-to-clipboard icon.
+// Clicking the chip copies the URL so the user can paste it into
+// the browser's address bar.
+const COPY_ICON_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-left:4px;opacity:0.7"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+
+function extensionsUrlChipHtml(key) {
+    const url = extensionsUrl(key);
+    if (!isCopyableExtensionsTarget(key)) {
+        return `<span class="migration-inline-url-btn migration-copy-chip-static">${url}</span>`;
+    }
+    return `<button type="button" class="migration-inline-url-btn migration-copy-chip" data-copy-url="${url}">${url}${COPY_ICON_SVG}</button>`;
+}
+
+// Attach clipboard copy behaviour to any .migration-copy-chip inside
+// the given root element.
+function attachCopyChipHandlers(root) {
+    root.querySelectorAll('.migration-copy-chip').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const url = btn.dataset.copyUrl;
+            try {
+                await navigator.clipboard.writeText(url);
+                btn.classList.add('copied');
+                const orig = btn.innerHTML;
+                btn.innerHTML = tSettings('migrationCopied');
+                setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('copied'); }, 1500);
+            } catch (e) {
+                console.warn('[migration] clipboard copy failed:', e);
+            }
+        });
+    });
+}
+
+function privateModeNoun(key) {
+    switch (key) {
+        case 'chrome': return tSettings('migrationPrivateIncognitoChrome');
+        case 'edge': return tSettings('migrationPrivateIncognitoEdge');
+        case 'brave': return tSettings('migrationPrivateIncognitoBrave');
+        case 'firefox': return tSettings('migrationPrivateIncognitoFirefox');
+        case 'safari': return tSettings('migrationPrivateIncognitoSafari');
+        default: return tSettings('migrationPrivateIncognito');
+    }
+}
+
+// Open the user's extension settings for a given browser. For Safari
+// we prefer SafariServices' showPreferencesForExtension (via the
+// in-process Swift bridge), which deep-links to ReDD Focus in
+// Safari → Settings → Extensions. The Rust command retries after
+// launching Safari when needed, then falls back to AppleScript for
+// dev builds (`cargo tauri dev`) and other cases where SafariServices
+// can't find the host extension. AppleScript needs Accessibility
+// permission for ReDD Block (or your terminal, when running dev).
+async function openExtensionSettings(key) {
+    if (key === 'safari') {
+        try {
+            await invoke('open_safari_extension_settings');
+            return;
+        } catch (e) {
+            console.warn('[migration] safari extension settings failed, falling back:', e);
+        }
+    }
+    return invoke('open_browser_extension_settings', { browser: key });
+}
+
+function browserStatusHint(key, entry, b, status) {
+    const hasMultipleSafariProfiles = key === 'safari' && Array.isArray(b && b.profiles) && b.profiles.length > 1;
+    const safariSuffix = key === 'safari'
+        ? ` ${safariProfileStatusHint(b, status) || tSettings('migrationSafariCheckEveryProfile')}`
+        : '';
+    switch (status) {
+        case 'needs-enable':
+            return key === 'safari'
+                ? hasMultipleSafariProfiles
+                    ? tSettingsFmt('migrationHintEnableSafariMulti', { SUFFIX: safariSuffix })
+                    : tSettings('migrationHintEnableSafariOne')
+                : tSettingsFmt('migrationHintEnableBrowser', { BROWSER: entry.label });
+        case 'needs-private':
+            return key === 'safari'
+                ? hasMultipleSafariProfiles
+                    ? tSettingsFmt('migrationHintPrivateSafariMulti', { SUFFIX: safariSuffix })
+                    : tSettings('migrationHintPrivateSafariOne')
+                : tSettingsFmt('migrationHintPrivateBrowser', { BROWSER: entry.label });
+        case 'needs-website-access':
+            return hasMultipleSafariProfiles
+                ? tSettingsFmt('migrationHintWebsitesSafariMulti', { SUFFIX: safariSuffix })
+                : tSettings('migrationHintWebsitesSafariOne');
+        default:
+            return '';
+    }
+}
+
+function renderSafariDuplicateExtensionPanel(row, key) {
+    const panel = document.createElement('div');
+    panel.className = 'safari-duplicate-panel';
+
+    const intro = document.createElement('p');
+    intro.className = 'safari-duplicate-intro';
+    intro.innerHTML = tSettings('migrationSafariDuplicateIntroHtml');
+    panel.appendChild(intro);
+
+    const instructions = document.createElement('div');
+    instructions.className = 'safari-duplicate-instructions';
+
+    const instructionsHeading = document.createElement('div');
+    instructionsHeading.className = 'safari-duplicate-instructions-heading';
+    instructionsHeading.textContent = tSettings('migrationSafariDuplicateInstructionsHeading');
+    instructions.appendChild(instructionsHeading);
+
+    instructions.appendChild(buildSafariDuplicateInstructionStep(1, 'migrationSafariDuplicateStep1Html'));
+    instructions.appendChild(buildSafariDuplicateInstructionStep(2, 'migrationSafariDuplicateStep2Html'));
+    panel.appendChild(instructions);
+
+    const actionsRow = document.createElement('div');
+    actionsRow.className = 'migration-actions-row safari-duplicate-actions';
+
+    const openBtn = document.createElement('button');
+    openBtn.type = 'button';
+    openBtn.className = 'migration-primary-btn safari-duplicate-open-btn';
+    openBtn.textContent = tSettings('migrationSafariDuplicateOpenBtn');
+    openBtn.addEventListener('click', () => {
+        openExtensionSettings(key).catch(e => console.warn('[migration] open ext settings:', e));
+    });
+    actionsRow.appendChild(openBtn);
+
+    const helpToggle = document.createElement('button');
+    helpToggle.type = 'button';
+    helpToggle.className = 'safari-duplicate-help-toggle';
+    if (migrationSafariDuplicateHelpExpanded) helpToggle.classList.add('open');
+    helpToggle.setAttribute('aria-expanded', migrationSafariDuplicateHelpExpanded ? 'true' : 'false');
+    helpToggle.innerHTML = `<span>${tSettings('migrationSafariDuplicateHelpLink')}</span><svg class="safari-duplicate-help-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>`;
+    actionsRow.appendChild(helpToggle);
+
+    panel.appendChild(actionsRow);
+
+    const helpWrap = document.createElement('div');
+    helpWrap.className = 'safari-duplicate-help-wrap';
+    helpWrap.classList.toggle('hidden', !migrationSafariDuplicateHelpExpanded);
+
+    const helpText = document.createElement('p');
+    helpText.className = 'safari-duplicate-help-text';
+    helpText.textContent = tSettings('migrationSafariDuplicateHelpText');
+    helpWrap.appendChild(helpText);
+    panel.appendChild(helpWrap);
+
+    helpToggle.addEventListener('click', () => {
+        migrationSafariDuplicateHelpExpanded = !migrationSafariDuplicateHelpExpanded;
+        helpWrap.classList.toggle('hidden', !migrationSafariDuplicateHelpExpanded);
+        helpToggle.classList.toggle('open', migrationSafariDuplicateHelpExpanded);
+        helpToggle.setAttribute('aria-expanded', migrationSafariDuplicateHelpExpanded ? 'true' : 'false');
+    });
+
+    row.appendChild(panel);
+}
+
+function buildSafariDuplicateInstructionStep(stepNum, translationKey, extraClass = '') {
+    const step = document.createElement('div');
+    step.className = `safari-duplicate-step${extraClass ? ` ${extraClass}` : ''}`;
+
+    const num = document.createElement('span');
+    num.className = 'safari-duplicate-step-num';
+    num.textContent = String(stepNum);
+    num.setAttribute('aria-hidden', 'true');
+
+    const body = document.createElement('div');
+    body.className = 'safari-duplicate-step-body';
+    body.innerHTML = tSettings(translationKey);
+
+    step.appendChild(num);
+    step.appendChild(body);
+    return step;
+}
+
+function migrationBrowserKeys(state) {
+    const browsers = state?.browsers || {};
+    const detectedKeys = Object.keys(BROWSER_STORE_LINKS).filter(k => {
+        const b = browsers[k];
+        return b && b.installed;
+    });
+    return detectedKeys.length > 0 ? detectedKeys : ['chrome'];
+}
+
+function migrationBrowserRenderSignature(state) {
+    const browsers = state?.browsers || {};
+    return migrationBrowserKeys(state).map(k => {
+        const b = browsers[k];
+        const status = browserComplianceStatus(k, b) || 'needs-install';
+        if (k === 'safari' && b?.profiles?.length) {
+            const profileSig = b.profiles.map(p =>
+                `${p.installed ? 1 : 0}${p.enabled === true ? 1 : p.enabled === false ? 0 : '?'}${p.privateBrowsing === true ? 1 : p.privateBrowsing === false ? 0 : '?'}${p.websiteAccessAll === true ? 1 : p.websiteAccessAll === false ? 0 : '?'}`
+            ).join(';');
+            return `${k}:${status}:${b.duplicateExtensions?.detected ? 'dup' : ''}:${b.needsFdaAccess ? 'fda' : ''}:${profileSig}`;
+        }
+        return `${k}:${status}`;
+    }).join('|');
+}
+
+function updateMigrationBrowserChecklist(state) {
+    const checklistItem = document.getElementById('migration-checklist-ext');
+    const browsers = state?.browsers || {};
+    const keys = migrationBrowserKeys(state);
+
+    const howto = document.getElementById('migration-howto');
+    const anyMissing = keys.some(k => browserComplianceStatus(k, browsers[k]) !== 'compliant');
+    if (howto) howto.classList.toggle('hidden', !anyMissing);
+
+    if (!checklistItem) return;
+    const allCompliant = keys.length > 0
+        && keys.every(k => browserComplianceStatus(k, browsers[k]) === 'compliant');
+    if (allCompliant) {
+        checklistItem.classList.remove('checklist-todo');
+        checklistItem.classList.add('checklist-done');
+        const mark = checklistItem.querySelector('.checklist-mark');
+        if (mark) mark.textContent = '✓';
+    } else {
+        checklistItem.classList.remove('checklist-done');
+        checklistItem.classList.add('checklist-todo');
+        const mark = checklistItem.querySelector('.checklist-mark');
+        if (mark) mark.textContent = '○';
+    }
+}
+
+function renderBrowserInstallButtons(state, { force = false } = {}) {
+    lastMigrationBrowserState = state;
+    const sig = migrationBrowserRenderSignature(state);
+    if (!force && sig === lastMigrationBrowserRenderSignature) {
+        updateMigrationBrowserChecklist(state);
+        return;
+    }
+    lastMigrationBrowserRenderSignature = sig;
+
+    const container = document.getElementById('migration-browser-buttons');
+    if (!container) return;
+    container.innerHTML = '';
+
+    const browsers = state && state.browsers ? state.browsers : {};
+
+    // Show every browser we detect on disk (regardless of running
+    // state). During migration the user may need to install the
+    // extension in browsers they haven't opened yet — only filtering
+    // to running browsers (as the in-session compliance banner does)
+    // would hide those.
+    const keys = migrationBrowserKeys(state);
+
+    for (const key of keys) {
+        const entry = BROWSER_STORE_LINKS[key];
+        if (!entry) continue;
+        const status = browserComplianceStatus(key, browsers[key]) || 'needs-install';
+
+        const row = document.createElement('div');
+        row.className = `migration-browser-row ${status}`;
+
+        // Two-line row layout: header (browser name + status badge)
+        // on top, action (URL + Copy, or hint text) below. Keeps each
+        // row readable at typical window widths and avoids the prior
+        // cramped single-line stacking.
+        const header = document.createElement('div');
+        header.className = 'migration-browser-header';
+
+        const name = document.createElement('span');
+        name.className = 'migration-browser-name';
+
+        const icon = document.createElement('img');
+        icon.className = 'migration-browser-icon';
+        icon.src = browserIconUrl(key);
+        icon.alt = '';
+        icon.setAttribute('aria-hidden', 'true');
+        name.appendChild(icon);
+
+        name.appendChild(document.createTextNode(entry.label));
+        header.appendChild(name);
+
+        const badge = document.createElement('span');
+        badge.className = `migration-browser-badge ${status}`;
+        switch (status) {
+            case 'compliant': badge.textContent = statusLabel(key, status); break;
+            case 'needs-deduplicate': badge.textContent = tSettings('migrationBadgeDuplicateSafari'); break;
+            case 'needs-install': badge.textContent = tSettings('migrationBadgeNotInstalled'); break;
+            case 'needs-enable': badge.textContent = tSettings('migrationBadgeDisabled'); break;
+            case 'needs-private': badge.textContent = tSettings('migrationBadgeNotPrivate'); break;
+            case 'needs-website-access': badge.textContent = tSettings('migrationBadgeNoWebsiteAccess'); break;
+            case 'needs-fda': badge.textContent = tSettings('migrationBadgeNeedsAccess'); break;
+            default: badge.textContent = tSettings('migrationBadgeNotInstalled');
+        }
+        header.appendChild(badge);
+
+        row.appendChild(header);
+
+        if (status === 'needs-fda') {
+            const hint = document.createElement('div');
+            hint.className = 'migration-browser-hint';
+            hint.textContent = tSettings('migrationSafariFdaHint');
+            row.appendChild(hint);
+
+            const action = document.createElement('div');
+            action.className = 'migration-browser-action';
+
+            const settingsBtn = document.createElement('button');
+            settingsBtn.type = 'button';
+            settingsBtn.className = 'migration-browser-copy';
+            settingsBtn.textContent = tSettings('migrationOpenSettings');
+            settingsBtn.title = tSettings('migrationOpenFdaTitle');
+            settingsBtn.addEventListener('click', async () => {
+                try {
+                    await invoke('open_safari_fda_settings');
+                    settingsBtn.textContent = tSettings('migrationOpened');
+                    setTimeout(() => { settingsBtn.textContent = tSettings('migrationOpenSettings'); }, 1500);
+                } catch (e) {
+                    console.warn('[migration] open Full Disk Access settings failed:', e);
+                    settingsBtn.textContent = tSettings('migrationFailed');
+                    setTimeout(() => { settingsBtn.textContent = tSettings('migrationOpenSettings'); }, 1500);
+                }
+            });
+            action.appendChild(settingsBtn);
+
+            const refreshBtn = document.createElement('button');
+            refreshBtn.type = 'button';
+            refreshBtn.className = 'migration-browser-copy secondary';
+            refreshBtn.textContent = tSettings('migrationCheckAgain');
+            refreshBtn.title = tSettings('migrationRefreshSafariTitle');
+            refreshBtn.addEventListener('click', pollMigrationCompliance);
+            action.appendChild(refreshBtn);
+
+            row.appendChild(action);
+        } else if (status === 'needs-install') {
+            // Instruction hint first, then Install button below (matching
+            // the needs-enable/private layout where instruction precedes action).
+            const afterHint = document.createElement('div');
+            afterHint.className = 'migration-browser-hint migration-browser-after-hint';
+            const privNoun = privateModeNoun(key);
+            if (key === 'firefox') {
+                afterHint.innerHTML = tSettings('migrationPostInstallFirefoxHtml');
+            } else {
+                const tpl = tSettings('migrationPostInstallChromiumHtml');
+                afterHint.innerHTML = tpl
+                    .replace('{URL_CHIP}', extensionsUrlChipHtml(key))
+                    .replace(/{BROWSER}/g, entry.label)
+                    .replace(/{PRIV}/g, privNoun);
+                attachCopyChipHandlers(afterHint);
+            }
+            row.appendChild(afterHint);
+
+            const installBtn = document.createElement('button');
+            installBtn.type = 'button';
+            installBtn.className = 'migration-browser-copy';
+            installBtn.textContent = tSettings('migrationInstallButton');
+            installBtn.title = tSettingsFmt('migrationInstallStoreTitle', { browser: entry.label });
+            installBtn.addEventListener('click', async () => {
+                try {
+                    await invoke('open_url_in_browser', { browser: key, url: entry.url });
+                    installBtn.textContent = tSettings('migrationInstallOpened');
+                    setTimeout(() => { installBtn.textContent = tSettings('migrationInstallButton'); }, 2000);
+                } catch (e) {
+                    console.warn('[migration] open_url_in_browser failed, falling back to clipboard:', e);
+                    try {
+                        await navigator.clipboard.writeText(entry.url);
+                        installBtn.textContent = tSettings('migrationUrlCopied');
+                        setTimeout(() => { installBtn.textContent = tSettings('migrationInstallButton'); }, 2000);
+                    } catch (e2) {
+                        installBtn.textContent = tSettings('migrationFailed');
+                        setTimeout(() => { installBtn.textContent = tSettings('migrationInstallButton'); }, 2000);
+                    }
+                }
+            });
+
+            const actionsRow = document.createElement('div');
+            actionsRow.className = 'migration-actions-row';
+            actionsRow.appendChild(installBtn);
+            row.appendChild(actionsRow);
+        } else if (status === 'needs-deduplicate') {
+            renderSafariDuplicateExtensionPanel(row, key);
+        } else if (status === 'needs-enable' || status === 'needs-private' || status === 'needs-website-access') {
+            // Mirror the notification-banner layout for clarity:
+            // [optional ✓ Extension installed]
+            // instruction text (single line for Chromium / Firefox,
+            //   three-step checklist for Safari)
+            // [Open Extension Settings] [Show me how ▶]
+            // delay note
+            // [screenshots wrap, full-row when expanded]
+            const isSafari = key === 'safari';
+
+            // "✓ Extension installed" line. Always show for Safari —
+            // we bundle the .appex inside ReDD Block.app, so install
+            // is structurally guaranteed at this point. For Chromium /
+            // Firefox we only show it once we've moved past the
+            // install step (status !== 'needs-enable') because there
+            // the install + enable are distinct user actions.
+            if (isSafari || status !== 'needs-enable') {
+                const extInstalledLine = document.createElement('div');
+                extInstalledLine.className = 'migration-checklist-line migration-checklist-done';
+                extInstalledLine.innerHTML = `<span class="migration-check-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#047857" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span> ${tSettings('migrationExtensionInstalledMark')}`;
+                row.appendChild(extInstalledLine);
+            }
+
+            const privNoun = privateModeNoun(key);
+            const steps = enforcerScreenshotSteps(key);
+            const hasSteps = steps && steps.length;
+
+            if (isSafari) {
+                const safariBrowser = browsers[key];
+                const profiles = (safariBrowser && Array.isArray(safariBrowser.profiles)) ? safariBrowser.profiles : [];
+                const allEnabled = profiles.length > 0 && profiles.every(p => p.enabled === true);
+                const allPrivate = profiles.length > 0 && profiles.every(p => p.privateBrowsing === true);
+                const allAllSites = profiles.length > 0 && profiles.every(p => p.websiteAccessAll === true);
+
+                const stepDefs = [
+                    { label: tSettings('migrationSafariStepEnable'), done: allEnabled },
+                    { label: tSettings('migrationSafariStepPrivate'), done: allPrivate },
+                    { label: tSettings('migrationSafariStepEveryWebsite'), done: allAllSites },
+                ];
+                const activeIdx = stepDefs.findIndex(s => !s.done);
+
+                const checklist = document.createElement('div');
+                checklist.className = 'migration-safari-steps';
+
+                stepDefs.forEach((step, i) => {
+                    const line = document.createElement('div');
+                    let klass = 'migration-checklist-line';
+                    let iconHtml;
+                    if (step.done) {
+                        klass += ' migration-checklist-done';
+                        iconHtml = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#047857" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
+                    } else if (i === activeIdx) {
+                        klass += ' migration-checklist-active';
+                        iconHtml = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>`;
+                    } else {
+                        klass += ' migration-checklist-pending';
+                        iconHtml = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8" opacity="0.4"/></svg>`;
+                    }
+                    line.className = klass;
+                    const lineLabel = tSettingsFmt('migrationSafariChecklistLine', { n: String(i + 1), label: step.label });
+                    line.innerHTML = `<span class="migration-check-icon">${iconHtml}</span> ${lineLabel}`;
+                    checklist.appendChild(line);
+                });
+
+                row.appendChild(checklist);
+            } else {
+                const instructionLine = document.createElement('div');
+                instructionLine.className = 'migration-instruction';
+                let tplKey;
+                if (status === 'needs-enable') {
+                    tplKey = 'migrationInstructionEnableHtml';
+                } else if (status === 'needs-website-access') {
+                    tplKey = 'migrationInstructionWebsiteAccessHtml';
+                } else if (key === 'firefox') {
+                    tplKey = 'migrationInstructionFirefoxPrivateHtml';
+                } else {
+                    tplKey = 'migrationInstructionChromiumPrivateHtml';
+                }
+                const chip = extensionsUrlChipHtml(key);
+                instructionLine.innerHTML = tSettings(tplKey)
+                    .replace('{URL_CHIP}', chip)
+                    .replace(/{BROWSER}/g, entry.label)
+                    .replace(/{PRIV}/g, privNoun);
+                attachCopyChipHandlers(instructionLine);
+                row.appendChild(instructionLine);
+            }
+
+            const actionsRow = document.createElement('div');
+            actionsRow.className = 'migration-actions-row';
+
+            const primaryBtn = document.createElement('button');
+            primaryBtn.type = 'button';
+            primaryBtn.className = 'migration-primary-btn';
+            primaryBtn.textContent = tSettings('migrationOpenExtensionSettings');
+            primaryBtn.addEventListener('click', () => {
+                openExtensionSettings(key).catch(e => console.warn('[migration] open ext settings:', e));
+            });
+            actionsRow.appendChild(primaryBtn);
+
+            let showMeBtn = null;
+            if (hasSteps) {
+                showMeBtn = document.createElement('button');
+                showMeBtn.type = 'button';
+                showMeBtn.className = 'migration-show-me-btn';
+                showMeBtn.setAttribute('aria-expanded', 'false');
+                showMeBtn.innerHTML = `<span>${tSettings('migrationShowMeHow')}</span><svg class="migration-show-me-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>`;
+                actionsRow.appendChild(showMeBtn);
+            }
+
+            row.appendChild(actionsRow);
+
+            const delayNote = document.createElement('div');
+            delayNote.className = 'migration-browser-hint migration-delay-note';
+            delayNote.textContent = tSettings('migrationDelayDetectionNote');
+            row.appendChild(delayNote);
+
+            if (hasSteps) {
+                const screenshotsWrap = document.createElement('div');
+                screenshotsWrap.className = 'migration-screenshots-wrap hidden';
+
+                const screenshotsContainer = document.createElement('div');
+                const safariTwoUp = key === 'safari' && steps.length === 2;
+                screenshotsContainer.className = `extension-enforcer-screenshots ${steps.length >= 3 ? 'screenshots-grid' : 'screenshots-row'}${safariTwoUp ? ' safari-screenshots-asymmetric' : ''}`;
+
+                steps.forEach((step, i) => {
+                    if (i > 0 && steps.length < 3) {
+                        const arrow = document.createElement('span');
+                        arrow.className = 'extension-enforcer-screenshot-arrow';
+                        arrow.textContent = '→';
+                        screenshotsContainer.appendChild(arrow);
+                    }
+                    const figure = document.createElement('figure');
+                    figure.className = 'extension-enforcer-step';
+                    const cap = formatExtensionScreenshotCaption(step, i);
+                    if (cap) {
+                        const caption = document.createElement('figcaption');
+                        caption.className = 'extension-enforcer-step-label';
+                        caption.textContent = cap;
+                        figure.appendChild(caption);
+                    }
+                    const img = document.createElement('img');
+                    img.className = 'extension-enforcer-screenshot';
+                    img.src = step.src;
+                    img.alt = cap || tSettingsFmt('migrationScreenshotStepOnly', { n: String(i + 1) });
+                    figure.appendChild(img);
+                    screenshotsContainer.appendChild(figure);
+                });
+
+                screenshotsWrap.appendChild(screenshotsContainer);
+                row.appendChild(screenshotsWrap);
+
+                showMeBtn.addEventListener('click', () => {
+                    const isOpen = showMeBtn.classList.toggle('open');
+                    screenshotsWrap.classList.toggle('hidden', !isOpen);
+                    showMeBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+                    if (isOpen) migrationShowMeHowExpandedKeys.add(key);
+                    else migrationShowMeHowExpandedKeys.delete(key);
+                });
+
+                if (migrationShowMeHowExpandedKeys.has(key)) {
+                    showMeBtn.classList.add('open');
+                    screenshotsWrap.classList.remove('hidden');
+                    showMeBtn.setAttribute('aria-expanded', 'true');
+                }
+            }
+        }
+
+        container.appendChild(row);
+    }
+
+    updateMigrationBrowserChecklist(state);
+}
+
+// While the post-cleanup screen is open, periodically re-check
+// extension compliance so the checklist ticks itself off when the
+// user comes back from the store.
+async function pollMigrationCompliance() {
+    if (!migrationOnboardingActive) return;
+    try {
+        const fresh = await invoke('onboarding_state');
+        renderBrowserInstallButtons(fresh);
+    } catch (e) { /* no-op */ }
+}
+
+function startMigrationPolling() {
+    if (migrationPollIntervalId) return;
+    migrationPollIntervalId = setInterval(pollMigrationCompliance, MIGRATION_POLL_MS);
+}
+
+function stopMigrationPolling() {
+    if (migrationPollIntervalId) {
+        clearInterval(migrationPollIntervalId);
+        migrationPollIntervalId = null;
+    }
+}
+
+function onAppForeground() {
+    if (typeof kickClockNow === 'function') kickClockNow();
+    behaviourBannerDismissedThisSession = false;
+    if (migrationOnboardingActive) {
+        pollMigrationCompliance();
+        return;
+    }
+    if (!hasAcceptedEula() || !startupInitializationComplete) return;
+    refreshBehaviourBannerIfStale({ force: true });
+}
+
+function setupAppForegroundRefresh() {
+    if (isIOS) return;
+    window.addEventListener('focus', onAppForeground);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') onAppForeground();
+    });
+    getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+        if (focused) onAppForeground();
+    }).catch((e) => {
+        console.warn('[app] window focus listener unavailable:', e);
+    });
+    // Keep the setup banner in sync when FDA or extension state changes
+    // without a window focus (e.g. user toggles FDA in System Settings
+    // while ReDD Block stays visible). Matches enforcer tick (~5 s).
+    setInterval(() => {
+        if (!startupInitializationComplete || migrationOnboardingActive) return;
+        if (!hasAcceptedEula()) return;
+        void refreshBehaviourBannerIfStale();
+    }, 5_000);
+}
+
+// Session-only flag for the slim setup banner. We deliberately do
+// NOT persist this in localStorage anymore: the banner is a status
+// indicator ("you have a browser without ReDD Focus set up"), not
+// a one-time notice. Persisting dismissal silently hid the reminder
+// forever, so fresh users who clicked × on it after the welcome
+// screen never saw it again — even though the underlying problem
+// (extension not allowed in incognito on Chrome, etc.) was still
+// there. Now × hides for the session and the banner re-evaluates
+// on every launch / focus refresh.
+let behaviourBannerDismissedThisSession = false;
+
+// Persistent low-key reminder banner. Surfaces on every launch
+// whenever any browser the user has installed is missing the
+// ReDD Focus extension (or has it disabled, or not allowed in
+// private browsing). Auto-hides when every installed browser is
+// fully compliant — i.e. the banner is purely a "you still have
+// setup to do" indicator. Independent of the v1.x migration story:
+// fresh installs see it too, because a fresh user with the
+// extension not yet installed in their daily-driver browser is in
+// exactly the same shape as a v1.x upgrader who hasn't installed
+// the extension yet — both need the reminder.
+//
+// Body copy is built per-state: instead of generic "install ReDD
+// Focus" text, we surface the actual outstanding actions so the
+// user knows at a glance what's still missing without having to
+// open the setup dialog (e.g. "Install in Chrome and Edge · Allow
+// in private browsing in Brave").
+// Last `onboarding_state` snapshot we've observed. Updated by
+// `runDesktopOnboarding`, `refreshBehaviourBannerIfStale`, and
+// `pollMigrationCompliance`.
+let lastOnboardingState = null;
+
+async function updateBehaviourChangeBanner(state) {
+    const banner = document.getElementById('behaviour-change-banner');
+    if (!banner) return;
+
+    if (!state?.browsers) {
+        try {
+            state = await invoke('onboarding_state');
+        } catch (_) {
+            return;
+        }
+    }
+
+    lastOnboardingState = state;
+
+    let enforcementEnabled = false;
+    try {
+        enforcementEnabled = await invoke('get_enforcement_enabled');
+    } catch (_) { /* non-desktop or command not available */ }
+
+    // ---- Browser-side compliance ------------------------------------
+    // `installed` means the browser app exists on disk (regardless of
+    // running state) — same scope the welcome screen uses, so the
+    // user doesn't get nagged about Brave if they don't have Brave.
+    const browsers = (state && state.browsers) || {};
+    const detectedKeys = Object.keys(BROWSER_STORE_LINKS).filter(k => browsers[k] && browsers[k].installed);
+    const allCompliant = detectedKeys.length > 0
+        && detectedKeys.every(k => browserComplianceStatus(k, browsers[k]) === 'compliant');
+    const hasBrowserIssues = detectedKeys.length > 0 && !allCompliant;
+
+    const shouldShow = !behaviourBannerDismissedThisSession
+        && detectedKeys.length > 0
+        && (hasBrowserIssues || !enforcementEnabled);
+    if (!shouldShow) {
+        banner.classList.add('hidden');
+        return;
+    }
+    banner.classList.remove('hidden');
+
+    const headlineEl = document.getElementById('setup-banner-headline');
+    if (headlineEl) {
+        headlineEl.textContent = tSettings('setupBrowsersBannerHeadline');
+    }
+
+    const parts = [];
+    const actionSummary = buildBannerActionSummary(browsers, detectedKeys);
+    if (actionSummary) parts.push(actionSummary);
+    if (!enforcementEnabled && detectedKeys.length > 0) {
+        parts.push(tSettings('bannerTurnOnBrowserProtection'));
+    }
+
+    const bodyEl = document.getElementById('behaviour-change-text');
+    if (bodyEl) {
+        bodyEl.textContent = parts.join(' · ');
+    }
+
+    const needsFda = setupBannerNeedsFda(browsers, detectedKeys);
+    const needsExtension = setupBannerNeedsExtension(browsers, detectedKeys, enforcementEnabled);
+    const showBothActions = needsFda && needsExtension;
+
+    const fdaBtn = document.getElementById('behaviour-change-fda');
+    const helpBtn = document.getElementById('behaviour-change-help');
+    const dismissBtn = document.getElementById('behaviour-change-dismiss');
+
+    if (fdaBtn) {
+        fdaBtn.classList.toggle('hidden', !needsFda);
+        if (!fdaBtn._listenerAdded) {
+            fdaBtn._listenerAdded = true;
+            fdaBtn.addEventListener('click', () => {
+                openFdaOnboardingFromBanner().catch(e => {
+                    console.warn('[setup-banner] open FDA onboarding:', e);
+                });
+            });
+        }
+    }
+
+    if (helpBtn) {
+        helpBtn.classList.toggle('hidden', !needsExtension);
+        helpBtn.classList.toggle('ghost', showBothActions);
+        if (!helpBtn._listenerAdded) {
+            helpBtn._listenerAdded = true;
+            helpBtn.addEventListener('click', openExtensionSetupOverlay);
+        }
+    }
+
+    if (dismissBtn && !dismissBtn._listenerAdded) {
+        dismissBtn._listenerAdded = true;
+        dismissBtn.addEventListener('click', () => {
+            behaviourBannerDismissedThisSession = true;
+            banner.classList.add('hidden');
+        });
+    }
+}
+
+// Build a compact, action-grouped summary of what's still missing
+// across the user's installed browsers. Browsers with the same
+// outstanding action are grouped into a single phrase so the
+// banner doesn't repeat verbs:
+//
+//   "Install in Chrome and Edge · Allow in private browsing in Brave"
+//   "Allow on all websites in Safari · Grant Full Disk Access for Safari"
+//
+// Order is foundational-first (install → enable → private → website
+// access → FDA) so the user sees the prerequisite step before any
+// follow-up step. Returns "" when nothing is non-compliant — the
+// caller is expected to have already gated on that, but defending
+// against an empty result keeps callers safe.
+function buildBannerActionSummary(browsers, detectedKeys) {
+    const groups = new Map();
+    for (const key of detectedKeys) {
+        const status = browserComplianceStatus(key, browsers[key]);
+        if (!status || status === 'compliant') continue;
+        const label = BROWSER_STORE_LINKS[key]?.label || key;
+        if (!groups.has(status)) groups.set(status, []);
+        groups.get(status).push(label);
+    }
+
+    const order = ['needs-install', 'needs-enable', 'needs-private', 'needs-website-access', 'needs-fda'];
+    const phrases = [];
+    for (const status of order) {
+        const list = groups.get(status);
+        if (!list || list.length === 0) continue;
+        phrases.push(`${bannerActionPhrase(status)} ${joinBrowserNames(list)}`);
+    }
+    return phrases.join(' · ');
+}
+
+function bannerActionPhrase(status) {
+    switch (status) {
+        case 'needs-install':
+            return tSettings('bannerActionInstallIn');
+        case 'needs-enable':
+            return tSettings('bannerActionEnableIn');
+        case 'needs-private':
+            return tSettings('bannerActionPrivateBrowsingIn');
+        case 'needs-website-access':
+            return tSettings('bannerActionAllWebsitesIn');
+        case 'needs-fda':
+            return tSettings('bannerActionFullDiskAccessFor');
+        default:
+            return tSettings('bannerActionSetUpIn');
+    }
+}
+
+// Natural-language join: "Chrome", "Chrome and Edge",
+// "Chrome, Edge, and Brave" (Oxford comma in English).
+// Danish: no comma before the final conjunction.
+function joinBrowserNames(list) {
+    if (list.length === 0) return '';
+    if (list.length === 1) return list[0];
+    const and = tSettings('andWord');
+    if (list.length === 2) return `${list[0]} ${and} ${list[1]}`;
+    if (getSettingsLanguage() === 'da') {
+        return `${list.slice(0, -1).join(', ')} ${and} ${list[list.length - 1]}`;
+    }
+    return `${list.slice(0, -1).join(', ')}, ${and} ${list[list.length - 1]}`;
+}
+
+// Re-opens the post-cleanup migration overlay (the per-browser
+// install checklist) — the canonical "set up ReDD Focus" surface.
+// Used by both the slim banner's "Set up extension" button and the
+// new Settings → Advanced Options entry. Centralised so both call
+// sites stay in sync if the overlay's API changes.
+async function openExtensionSetupOverlay() {
+    try {
+        const fresh = await invoke('onboarding_state');
+        migrationOnboardingDismissed = false;
+        // Hide settings if it was the launch point — the migration
+        // overlay needs the full window.
+        document.getElementById('settings-modal')?.classList.add('hidden');
+        setLanguagePickerOpen(false);
+        await showMigrationOnboarding('post', fresh, { mode: 'fresh' });
+    } catch (e) {
+        console.warn('[setup-overlay] reopen failed:', e);
+    }
+}
+
+async function openFdaOnboardingFromBanner() {
+    if (!isMacOSDesktop) return;
+    document.getElementById('settings-modal')?.classList.add('hidden');
+    setLanguagePickerOpen(false);
+    try {
+        await showFdaOnboardingOverlay();
+        await refreshBehaviourBannerIfStale({ force: true });
+    } catch (e) {
+        console.warn('[setup-banner] FDA onboarding failed:', e);
+    }
+}
+
+function setupBannerNeedsFda(browsers, detectedKeys) {
+    return isMacOSDesktop && detectedKeys.some(
+        k => browserComplianceStatus(k, browsers[k]) === 'needs-fda',
+    );
+}
+
+function setupBannerNeedsExtension(browsers, detectedKeys, enforcementEnabled) {
+    const hasNonFdaBrowserIssues = detectedKeys.some(k => {
+        const status = browserComplianceStatus(k, browsers[k]);
+        return status && status !== 'compliant' && status !== 'needs-fda';
+    });
+    return hasNonFdaBrowserIssues || !enforcementEnabled;
+}
+
+async function continueOnboardingReplayFromWelcome() {
+    if (!hasAcceptedEula()) {
+        updateOnboardingVisibility();
+        return;
+    }
+    if (isMacOSDesktop) {
+        try {
+            await showFdaOnboardingOverlay();
+        } catch (e) {
+            console.warn('[onboarding-replay] FDA overlay failed:', e);
+        }
+    }
+    await openExtensionSetupOverlay();
+}
+
+async function restartOnboardingFromSettings() {
+    if (isIOS) return;
+    document.getElementById('settings-modal')?.classList.add('hidden');
+    setLanguagePickerOpen(false);
+
+    migrationOnboardingDismissed = false;
+    localStorage.removeItem(EXT_ONBOARDING_DISMISSED_KEY);
+    firstRunExtensionSetupPending = true;
+    lastMigrationBrowserRenderSignature = '';
+    extensionSetupPausedForBackNavigation = false;
+
+    await presentWelcomeOnboarding(continueOnboardingReplayFromWelcome);
+}
+
+// Re-poll extension compliance so the slim banner reflects reality
+// if the user just finished setting up an extension in another
+// browser and tabbed back. Throttled to match the enforcer tick (~5 s)
+// so it stays in sync with the countdown banner without hammering
+// `onboarding_state` on rapid focus toggling. Pass `force: true` to
+// bypass the throttle when compliance clearly changed (enforcer
+// grace-resolved, window hide → show, etc.).
+let lastBannerRefreshAt = 0;
+const BANNER_REFRESH_THROTTLE_MS = 5_000;
+async function refreshBehaviourBannerIfStale({ force = false } = {}) {
+    if (isIOS) return;
+    if (migrationOnboardingActive) return; // overlay is the source of truth
+    if (!startupInitializationComplete) return;
+    const now = Date.now();
+    if (!force && now - lastBannerRefreshAt < BANNER_REFRESH_THROTTLE_MS) return;
+    lastBannerRefreshAt = now;
+    try {
+        const fresh = await invoke('onboarding_state');
+        await updateBehaviourChangeBanner(fresh);
+    } catch (_) { /* no-op */ }
+}
+
+// ---- Enforcer UI: dynamic per-browser action banners ---------------------
+// Subscribes to Rust enforcer events and shows attention-grabbing dark-orange
+// banners with a live countdown when a browser is about to be closed.
+
+let enforcerUiAlertsAttached = false;
+const ENFORCER_ACTIVE_BANNER_ID = 'extension-enforcer-action-banner-active';
+const ENFORCER_CLOSED_BANNER_ID = 'extension-enforcer-action-banner-closed';
+const enforcerActionBannerStates = new Map();
+const enforcerClosedBannerStates = new Map();
+let enforcerActionBannerInterval = null;
+let enforcerScreenshotResizeTimer = null;
+
+function setupEnforcerUiAlerts() {
+    if (isIOS || enforcerUiAlertsAttached) return;
+    enforcerUiAlertsAttached = true;
+    tauriAPI.onEnforcerGraceUpdate((event) => {
+        const payload = event?.payload || {};
+        renderEnforcerActionBanner(payload);
+    }).catch((e) => {
+        console.warn('[enforcer-ui] failed to attach grace-update listener:', e);
+        enforcerUiAlertsAttached = false;
+    });
+    tauriAPI.onEnforcerGraceResolved((event) => {
+        const payload = event?.payload || {};
+        hideEnforcerActionBanner(payload.browser || payload.label);
+        // Enforcer just re-scanned and found this browser compliant —
+        // refresh the setup banner immediately so it doesn't lag up
+        // to 30 s behind the countdown banner (same profile scan,
+        // but the setup banner was on a separate throttle).
+        void refreshBehaviourBannerIfStale({ force: true });
+    }).catch((e) => {
+        console.warn('[enforcer-ui] failed to attach grace-resolved listener:', e);
+    });
+    tauriAPI.onEnforcerBrowserClosed((event) => {
+        const payload = event?.payload || {};
+        renderEnforcerClosedBanner(payload);
+    }).catch((e) => {
+        console.warn('[enforcer-ui] failed to attach browser-closed listener:', e);
+    });
+    window.addEventListener('resize', () => {
+        clearTimeout(enforcerScreenshotResizeTimer);
+        enforcerScreenshotResizeTimer = setTimeout(syncAllEnforcerScreenshotHeights, 100);
+    });
+}
+
+function browserKeyFromLabel(label) {
+    if (!label) return null;
+    const normalized = String(label).toLowerCase();
+    if (normalized.includes('firefox')) return 'firefox';
+    if (normalized.includes('brave')) return 'brave';
+    if (normalized.includes('edge')) return 'edge';
+    if (normalized.includes('safari')) return 'safari';
+    return 'chrome';
+}
+
+function browserIconUrl(key) {
+    switch (key) {
+        case 'firefox': return iconFirefoxUrl;
+        case 'edge': return iconEdgeUrl;
+        case 'safari': return iconSafariUrl;
+        case 'brave': return iconBraveUrl;
+        case 'chrome':
+        default: return iconChromeUrl;
+    }
+}
+
+function formatExtensionScreenshotCaption(step, index) {
+    if (step.captionKey) return tSettings(step.captionKey);
+    if (step.labelKey) {
+        const label = tSettings(step.labelKey);
+        return tSettingsFmt('migrationScreenshotCaptionStep', { n: String(index + 1), label });
+    }
+    if (step.caption) return step.caption;
+    if (step.label) return tSettingsFmt('migrationScreenshotCaptionStep', { n: String(index + 1), label: step.label });
+    return tSettingsFmt('migrationScreenshotStepOnly', { n: String(index + 1) });
+}
+
+function enforcerScreenshotSteps(key) {
+    if (key === 'chrome') return [
+        { src: screenshotChromeStep1, labelKey: 'migrationShotChromeStep1' },
+        { src: screenshotChromeStep2, labelKey: 'migrationShotChromeStep2' },
+    ];
+    if (key === 'edge') return [
+        { src: screenshotEdgeStep1, labelKey: 'migrationShotEdgeStep1' },
+        { src: screenshotEdgeStep2, labelKey: 'migrationShotEdgeStep2' },
+    ];
+    if (key === 'firefox') return [
+        { src: screenshotFirefoxStep1, labelKey: 'migrationShotFirefoxStep1' },
+        { src: screenshotFirefoxStep2, labelKey: 'migrationShotFirefoxStep2' },
+    ];
+    if (key === 'safari') return [
+        { src: screenshotSafariStep1, captionKey: 'migrationShotSafariCap1' },
+        { src: screenshotSafariStep2, captionKey: 'migrationShotSafariCap2' },
+    ];
+    return null;
+}
+
+function enforcerCopy(payload) {
+    const browserRaw = payload.label || payload.browser;
+    const browser = browserRaw || tSettings('enforcerBrowserFallback');
+    const seconds = Math.max(0, Number(payload.remaining_secs ?? payload.remainingSecs ?? 0));
+    const issue = payload.issue || 'unknown';
+    const closeHeadline = tSettingsFmt('enforcerClosingHeadline', { browser });
+    const countdownStr = (key = 'enforcerCountdownDefault') => tSettingsFmt(key, { seconds: String(seconds), browser });
+
+    if (issue === 'missing') {
+        return {
+            headline: tSettingsFmt('enforcerHeadlineMissing', { browser }),
+            countdownHeadline: closeHeadline,
+            countdownInstruction: tSettings('enforcerCountdownInstrMissing'),
+            countdown: countdownStr('enforcerCountdownMissing'),
+            instruction: tSettingsFmt('enforcerInstrMissing', { browser }),
+            action: tSettings('enforcerActionInstall'),
+        };
+    }
+    if (issue === 'disabled') {
+        const key = browserKeyFromLabel(browser);
+        const screenshotSteps = enforcerScreenshotSteps(key);
+        return {
+            headline: tSettingsFmt('enforcerHeadlineDisabled', { browser }),
+            countdownHeadline: closeHeadline,
+            countdownInstruction: tSettings('enforcerCountdownInstrDisabled'),
+            countdown: countdownStr('enforcerCountdownDisabled'),
+            instructionHtml: tSettings('migrationInstructionEnableHtml')
+                .replace('{URL_CHIP}', extensionsUrlChipHtml(key))
+                .replace(/{BROWSER}/g, browser),
+            note: tSettings('migrationDelayDetectionNote'),
+            action: tSettingsFmt('enforcerActionOpenExtensions', { browser }),
+            actionHtml: tSettings('migrationOpenExtensionSettings'),
+            screenshotSteps,
+        };
+    }
+    if (issue === 'private') {
+        const key = browserKeyFromLabel(browser);
+        const privNoun = privateModeNoun(key);
+        const screenshotSteps = enforcerScreenshotSteps(key);
+        const tplKey = key === 'firefox'
+            ? 'migrationInstructionFirefoxPrivateHtml'
+            : 'migrationInstructionChromiumPrivateHtml';
+        return {
+            headline: tSettingsFmt('enforcerHeadlinePrivate', { browser }),
+            countdownHeadline: closeHeadline,
+            countdownInstruction: tSettings('enforcerCountdownInstrPrivate'),
+            countdown: countdownStr('enforcerCountdownPrivate'),
+            instructionHtml: tSettings(tplKey)
+                .replace('{URL_CHIP}', extensionsUrlChipHtml(key))
+                .replace(/{BROWSER}/g, browser)
+                .replace(/{PRIV}/g, privNoun),
+            note: tSettings('migrationDelayDetectionNote'),
+            action: tSettingsFmt('enforcerActionOpenExtensions', { browser }),
+            actionHtml: tSettings('migrationOpenExtensionSettings'),
+            screenshotSteps,
+        };
+    }
+    if (issue === 'websiteaccess') {
+        return {
+            headline: tSettingsFmt('enforcerHeadlineWebsiteAccess', { browser }),
+            countdownHeadline: closeHeadline,
+            countdownInstruction: tSettings('enforcerCountdownInstrWebsiteAccess'),
+            countdown: countdownStr('enforcerCountdownWebsiteAccess'),
+            instruction: tSettingsFmt('enforcerInstrWebsiteAccessPlain', { browser }),
+            action: tSettingsFmt('enforcerActionOpenExtensions', { browser }),
+        };
+    }
+    if (issue === 'access') {
+        return {
+            headline: tSettingsFmt('enforcerHeadlineAccess', { browser }),
+            countdownHeadline: closeHeadline,
+            countdownInstruction: tSettings('enforcerCountdownInstrAccess'),
+            countdown: countdownStr('enforcerCountdownAccess'),
+            instruction: browser === 'Safari'
+                ? tSettings('enforcerInstrAccessSafari')
+                : tSettingsFmt('enforcerInstrAccessBrowser', { browser }),
+            action: browser === 'Safari'
+                ? tSettings('migrationOpenFdaTitle')
+                : tSettingsFmt('enforcerActionOpenBrowserSettings', { browser }),
+        };
+    }
+    return {
+        headline: tSettingsFmt('enforcerHeadlineDefault', { browser }),
+        countdownHeadline: closeHeadline,
+        countdownInstruction: tSettings('enforcerCountdownInstrDefault'),
+        countdown: countdownStr(),
+        instruction: tSettingsFmt('enforcerInstrDefault', { browser }),
+        action: tSettingsFmt('enforcerActionOpenExtensions', { browser }),
+    };
+}
+
+function renderEnforcerCountdownInstruction(el, baseText) {
+    if (!el) return;
+    el.replaceChildren();
+    let base = (baseText || '').trim();
+    const delay = tSettings('enforcerCountdownDelayNote');
+    if (base.endsWith('.')) base = base.slice(0, -1);
+    if (base) {
+        el.append(document.createTextNode(`${base} `));
+    }
+    const delaySpan = document.createElement('span');
+    delaySpan.className = 'extension-enforcer-countdown-delay-note';
+    delaySpan.textContent = delay;
+    el.appendChild(delaySpan);
+}
+
+function renderEnforcerActionCopy(banner, payload, copy) {
+    const key = enforcerBannerKey(payload);
+    const isClosed = banner.classList.contains('extension-enforcer-action-banner-closed');
+    const isActiveCountdown = !!copy.countdown && !isClosed;
+    const icon = banner.querySelector('.extension-enforcer-browser-icon');
+    const headlineText = banner.querySelector('.extension-enforcer-action-headline-text');
+    const countdown = banner.querySelector('.extension-enforcer-action-countdown');
+    const countdownRow = banner.querySelector('.extension-enforcer-action-countdown-row');
+    const instruction = banner.querySelector('.extension-enforcer-action-instruction');
+    const closedStatus = banner.querySelector('.extension-enforcer-closed-status');
+
+    if (icon) {
+        icon.src = browserIconUrl(key);
+        icon.alt = '';
+        icon.title = payload.label || payload.browser || key;
+    }
+    if (headlineText) headlineText.textContent = isActiveCountdown ? (copy.countdownHeadline || '') : (copy.headline || '');
+    if (countdown) {
+        const seconds = Math.max(0, Number(payload.remaining_secs ?? payload.remainingSecs ?? 0));
+        countdown.replaceChildren();
+        if (isActiveCountdown) {
+            const mins = Math.floor(seconds / 60);
+            const secs = String(seconds % 60).padStart(2, '0');
+            const time = document.createElement('strong');
+            time.className = 'extension-enforcer-countdown-time';
+            time.textContent = `${mins}:${secs}`;
+            const label = document.createElement('span');
+            label.className = 'extension-enforcer-countdown-label';
+            label.textContent = tSettings('enforcerCountdownRemaining');
+            countdown.append(time, label);
+        }
+    }
+    if (countdownRow) countdownRow.classList.toggle('hidden', !isActiveCountdown);
+    if (closedStatus) {
+        closedStatus.textContent = tSettings('enforcerClosedStatus');
+        closedStatus.classList.toggle('hidden', !isClosed);
+    }
+    if (instruction) {
+        if (isActiveCountdown) {
+            renderEnforcerCountdownInstruction(instruction, copy.countdownInstruction || '');
+        } else if (copy.instructionHtml) {
+            instruction.innerHTML = copy.instructionHtml;
+            attachCopyChipHandlers(instruction);
+        } else {
+            instruction.textContent = copy.instruction || '';
+        }
+    }
+
+    const note = banner.querySelector('.extension-enforcer-action-note');
+    if (note) {
+        note.textContent = isActiveCountdown ? '' : (copy.note || '');
+        note.classList.toggle('hidden', isActiveCountdown || !copy.note);
+    }
+
+    const url = banner.querySelector('.extension-enforcer-action-url');
+    if (url) {
+        const href = extensionsUrl(key);
+        const showUrl = (isActiveCountdown || isClosed) && !!href;
+        url.replaceChildren();
+        if (showUrl) {
+            populateEnforcerUrlChip(url, key);
+        } else {
+            delete url.dataset.copyUrl;
+            delete url.dataset.copiedUntil;
+            url.classList.remove('copied');
+            url.disabled = false;
+        }
+        url.classList.toggle('hidden', !showUrl);
+    }
+
+    const progress = banner.querySelector('.extension-enforcer-progress-bar');
+    if (progress) {
+        const remaining = Math.max(0, Number(payload.remaining_secs ?? payload.remainingSecs ?? 0));
+        const totalRaw = payload.total_secs ?? payload.totalSecs ?? remaining;
+        const total = Math.max(1, Number(totalRaw || 1));
+        const pct = Math.max(0, Math.min(100, (remaining / total) * 100));
+        progress.style.width = isActiveCountdown ? `${pct}%` : '0%';
+    }
+
+    const showMeBtn = banner.querySelector('.extension-enforcer-show-me-btn');
+    const screenshotsWrap = banner.querySelector('.extension-enforcer-screenshots-wrap');
+    const container = banner.querySelector('.extension-enforcer-screenshots');
+    if (showMeBtn && screenshotsWrap && container) {
+        const steps = copy.screenshotSteps;
+        if (steps && steps.length) {
+            const stepsKey = steps.map(s => s.src).join(',');
+            if (container.dataset.stepsKey !== stepsKey) {
+                container.dataset.stepsKey = stepsKey;
+                container.innerHTML = '';
+                container.classList.toggle('screenshots-grid', steps.length >= 3);
+                container.classList.toggle('screenshots-row', steps.length < 3);
+                steps.forEach((step, i) => {
+                    const figure = document.createElement('figure');
+                    figure.className = 'extension-enforcer-step';
+                    const cap = formatExtensionScreenshotCaption(step, i);
+                    if (cap) {
+                        const caption = document.createElement('figcaption');
+                        caption.className = 'extension-enforcer-step-label';
+                        caption.textContent = cap;
+                        figure.appendChild(caption);
+                    }
+                    const img = document.createElement('img');
+                    img.className = 'extension-enforcer-screenshot';
+                    img.src = step.src;
+                    img.alt = cap || tSettingsFmt('migrationScreenshotStepOnly', { n: String(i + 1) });
+                    figure.appendChild(img);
+                    container.appendChild(figure);
+                });
+            }
+            container.classList.toggle(
+                'safari-screenshots-asymmetric',
+                (banner.dataset.browser === 'safari' && steps.length === 2),
+            );
+            showMeBtn.classList.remove('hidden');
+            if (!screenshotsWrap.classList.contains('hidden')) {
+                scheduleEnforcerScreenshotSync(screenshotsWrap);
+            }
+        } else {
+            showMeBtn.classList.add('hidden');
+            showMeBtn.classList.remove('open');
+            showMeBtn.setAttribute('aria-expanded', 'false');
+            screenshotsWrap.classList.add('hidden');
+            container.classList.remove('safari-screenshots-asymmetric');
+        }
+    }
+}
+
+function enforcerBannerKey(payload) {
+    return browserKeyFromLabel(payload?.label || payload?.browser || 'chrome');
+}
+
+function enforcerBannerId(key) {
+    return `extension-enforcer-action-banner-${key}`;
+}
+
+function formatBrowserList(labels) {
+    const clean = labels.filter(Boolean);
+    if (clean.length <= 1) return clean[0] || tSettings('enforcerBrowserFallback');
+    if (clean.length === 2) return `${clean[0]} and ${clean[1]}`;
+    return `${clean.slice(0, -1).join(', ')}, and ${clean[clean.length - 1]}`;
+}
+
+function ensureActiveEnforcerActionBanner() {
+    let banner = document.getElementById(ENFORCER_ACTIVE_BANNER_ID);
+    if (banner) return banner;
+
+    banner = document.createElement('div');
+    banner.id = ENFORCER_ACTIVE_BANNER_ID;
+    banner.className = 'update-banner extension-enforcer-action-banner';
+    banner.innerHTML = `
+        <div class="extension-enforcer-progress-track" aria-hidden="true">
+            <div class="extension-enforcer-progress-bar"></div>
+        </div>
+        <div class="extension-enforcer-banner-top">
+            <div class="update-banner-content">
+                <svg class="extension-enforcer-alert-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="11" fill="currentColor"></circle>
+                    <rect x="11" y="6" width="2" height="8" rx="1" fill="white"></rect>
+                    <circle cx="12" cy="17" r="1.3" fill="white"></circle>
+                </svg>
+                <div class="extension-enforcer-message">
+                    <strong class="extension-enforcer-action-headline">
+                        <span class="extension-enforcer-action-headline-text"></span>
+                    </strong>
+                    <em class="extension-enforcer-action-instruction"></em>
+                </div>
+                <div class="extension-enforcer-action-right">
+                    <div class="extension-enforcer-action-countdown-row">
+                        <span class="extension-enforcer-action-countdown"></span>
+                    </div>
+                </div>
+            </div>
+            <button class="update-banner-dismiss extension-enforcer-action-dismiss" title="Dismiss" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+        </div>
+        <div class="extension-enforcer-action-strip">
+            <div class="extension-enforcer-actions-row extension-enforcer-active-actions"></div>
+        </div>
+        <div class="extension-enforcer-screenshots-wrap hidden">
+            <div class="extension-enforcer-screenshots"></div>
+        </div>
+    `;
+
+    banner.querySelector('.extension-enforcer-action-dismiss')?.addEventListener('click', () => {
+        banner.classList.add('hidden');
+    });
+
+    const setupBanner = document.getElementById('behaviour-change-banner');
+    if (setupBanner) {
+        setupBanner.insertAdjacentElement('beforebegin', banner);
+    } else {
+        document.querySelector('.app-container')?.prepend(banner);
+    }
+    return banner;
+}
+
+function ensureClosedEnforcerActionBanner() {
+    let banner = document.getElementById(ENFORCER_CLOSED_BANNER_ID);
+    if (banner) return banner;
+
+    banner = document.createElement('div');
+    banner.id = ENFORCER_CLOSED_BANNER_ID;
+    banner.className = 'update-banner extension-enforcer-action-banner extension-enforcer-action-banner-closed hidden';
+    banner.innerHTML = `
+        <div class="extension-enforcer-banner-top">
+            <div class="update-banner-content">
+                <img class="extension-enforcer-browser-icon" aria-hidden="true">
+                <div class="extension-enforcer-message">
+                    <strong class="extension-enforcer-action-headline">
+                        <span class="extension-enforcer-action-headline-text"></span>
+                    </strong>
+                    <em class="extension-enforcer-action-instruction"></em>
+                </div>
+            </div>
+            <button class="update-banner-dismiss extension-enforcer-action-dismiss" title="Dismiss" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+        </div>
+        <div class="extension-enforcer-action-strip">
+            <div class="extension-enforcer-actions-row extension-enforcer-closed-actions"></div>
+        </div>
+        <div class="extension-enforcer-screenshots-wrap hidden">
+            <div class="extension-enforcer-screenshots"></div>
+        </div>
+    `;
+
+    banner.querySelector('.extension-enforcer-action-dismiss')?.addEventListener('click', () => {
+        banner.classList.add('hidden');
+        enforcerClosedBannerStates.clear();
+    });
+
+    const activeBanner = document.getElementById(ENFORCER_ACTIVE_BANNER_ID);
+    const setupBanner = document.getElementById('behaviour-change-banner');
+    if (activeBanner) {
+        activeBanner.insertAdjacentElement('afterend', banner);
+    } else if (setupBanner) {
+        setupBanner.insertAdjacentElement('beforebegin', banner);
+    } else {
+        document.querySelector('.app-container')?.prepend(banner);
+    }
+    return banner;
+}
+
+function ensureEnforcerActionBanner(payload) {
+    const key = enforcerBannerKey(payload);
+    let banner = document.getElementById(enforcerBannerId(key));
+    if (banner) return { banner, key };
+
+    banner = document.createElement('div');
+    banner.id = enforcerBannerId(key);
+    banner.className = 'update-banner extension-enforcer-action-banner';
+    banner.dataset.browser = key;
+    banner.innerHTML = `
+        <div class="extension-enforcer-progress-track" aria-hidden="true">
+            <div class="extension-enforcer-progress-bar"></div>
+        </div>
+        <div class="extension-enforcer-banner-top">
+            <div class="update-banner-content">
+                <svg class="extension-enforcer-alert-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="11" fill="currentColor"></circle>
+                    <rect x="11" y="6" width="2" height="8" rx="1" fill="white"></rect>
+                    <circle cx="12" cy="17" r="1.3" fill="white"></circle>
+                </svg>
+                <div class="extension-enforcer-message">
+                    <strong class="extension-enforcer-action-headline">
+                        <img class="extension-enforcer-browser-icon" aria-hidden="true">
+                        <span class="extension-enforcer-action-headline-text"></span>
+                    </strong>
+                    <em class="extension-enforcer-action-instruction"></em>
+                </div>
+                <div class="extension-enforcer-action-right">
+                    <div class="extension-enforcer-action-countdown-row">
+                        <span class="extension-enforcer-action-countdown"></span>
+                    </div>
+                    <small class="extension-enforcer-action-note hidden"></small>
+                    <div class="extension-enforcer-closed-status hidden"></div>
+                </div>
+            </div>
+            <button class="update-banner-dismiss extension-enforcer-action-dismiss" title="Dismiss" type="button"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+        </div>
+        <div class="extension-enforcer-action-strip">
+            <div class="extension-enforcer-actions-row">
+                <button class="update-banner-btn extension-enforcer-action-btn" type="button"></button>
+                <button class="extension-enforcer-show-me-btn hidden" type="button" aria-expanded="false">
+                    <span>Show me how</span>
+                </button>
+            </div>
+            <button type="button" class="extension-enforcer-action-url hidden"></button>
+        </div>
+        <div class="extension-enforcer-screenshots-wrap hidden">
+            <div class="extension-enforcer-screenshots"></div>
+        </div>
+    `;
+
+    const showMeBtn = banner.querySelector('.extension-enforcer-show-me-btn');
+    const screenshotsWrap = banner.querySelector('.extension-enforcer-screenshots-wrap');
+    if (showMeBtn && screenshotsWrap) {
+        showMeBtn.addEventListener('click', () => {
+            const isOpen = showMeBtn.classList.toggle('open');
+            screenshotsWrap.classList.toggle('hidden', !isOpen);
+            showMeBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            if (isOpen) scheduleEnforcerScreenshotSync(screenshotsWrap);
+        });
+    }
+    const urlBtn = banner.querySelector('.extension-enforcer-action-url');
+    if (urlBtn) {
+        urlBtn.addEventListener('click', async () => {
+            const url = urlBtn.dataset.copyUrl;
+            if (!url) return;
+            try {
+                await navigator.clipboard.writeText(url);
+                urlBtn.dataset.copiedUntil = String(Date.now() + 1500);
+                urlBtn.classList.add('copied');
+                urlBtn.textContent = tSettings('migrationCopied');
+                setTimeout(() => {
+                    delete urlBtn.dataset.copiedUntil;
+                    urlBtn.classList.remove('copied');
+                }, 1500);
+            } catch (e) {
+                console.warn('[enforcer-ui] copy URL failed:', e);
+            }
+        });
+    }
+
+    const setupBanner = document.getElementById('behaviour-change-banner');
+    const existingBanners = document.querySelectorAll('.extension-enforcer-action-banner');
+    const lastExistingBanner = existingBanners[existingBanners.length - 1];
+    if (lastExistingBanner) {
+        lastExistingBanner.insertAdjacentElement('afterend', banner);
+    } else if (setupBanner) {
+        setupBanner.insertAdjacentElement('beforebegin', banner);
+    } else {
+        document.querySelector('.app-container')?.prepend(banner);
+    }
+
+    banner.querySelector('.extension-enforcer-action-dismiss')?.addEventListener('click', () => {
+        banner.classList.add('hidden');
+    });
+    return { banner, key };
+}
+
+function enforcerClosedCopy(payload) {
+    const browserRaw = payload.label || payload.browser;
+    const browser = browserRaw || tSettings('enforcerBrowserFallback');
+    const issue = payload.issue || 'unknown';
+    if (issue === 'private') {
+        const key = browserKeyFromLabel(browser);
+        const instruction = key === 'chrome'
+            ? tSettings('enforcerClosedInstrPrivateChrome')
+            : key === 'firefox'
+            ? tSettings('enforcerClosedInstrPrivateFirefox')
+            : '';
+        const screenshotSteps = enforcerScreenshotSteps(key);
+        return {
+            headline: tSettingsFmt('enforcerClosedPrivate', { browser }),
+            instruction: instruction.trim(),
+            action: tSettingsFmt('enforcerActionOpenExtensions', { browser }),
+            actionHtml: tSettings('migrationOpenExtensionSettings'),
+            screenshotSteps,
+        };
+    }
+    if (issue === 'disabled') {
+        const key = browserKeyFromLabel(browser);
+        const screenshotSteps = enforcerScreenshotSteps(key);
+        return {
+            headline: tSettingsFmt('enforcerClosedDisabled', { browser }),
+            instruction: tSettingsFmt('enforcerClosedInstrDisabled', { browser }),
+            action: tSettingsFmt('enforcerActionOpenExtensions', { browser }),
+            actionHtml: tSettings('migrationOpenExtensionSettings'),
+            screenshotSteps,
+        };
+    }
+    if (issue === 'missing') {
+        return {
+            headline: tSettingsFmt('enforcerClosedMissing', { browser }),
+            instruction: tSettingsFmt('enforcerClosedInstrMissing', { browser }),
+            action: tSettings('enforcerActionInstall'),
+        };
+    }
+    if (issue === 'websiteaccess') {
+        return {
+            headline: tSettingsFmt('enforcerClosedWebsiteAccess', { browser }),
+            instruction: tSettingsFmt('enforcerClosedInstrWebsiteAccess', { browser }),
+            action: tSettingsFmt('enforcerActionOpenExtensions', { browser }),
+        };
+    }
+    if (issue === 'access') {
+        return {
+            headline: tSettingsFmt('enforcerClosedAccess', { browser }),
+            instruction: browser === 'Safari' ? tSettings('enforcerClosedInstrAccessSafari') : '',
+            action: browser === 'Safari'
+                ? tSettings('migrationOpenFdaTitle')
+                : tSettingsFmt('enforcerActionOpenBrowserSettings', { browser }),
+        };
+    }
+    return {
+        headline: tSettingsFmt('enforcerClosedDefault', { browser }),
+        instruction: tSettingsFmt('enforcerClosedInstrDefault', { browser }),
+        action: tSettingsFmt('enforcerActionOpenExtensions', { browser }),
+    };
+}
+
+async function openEnforcerFix(payload) {
+    const browser = payload.label || payload.browser || 'Chrome';
+    const key = browserKeyFromLabel(browser);
+    try {
+        if (payload.issue === 'missing' && key && BROWSER_STORE_LINKS[key]?.url) {
+            // Open the store page in the correct browser so Windows
+            // doesn't show a "choose an app" dialog.
+            try {
+                await invoke('open_url_in_browser', { browser: key, url: BROWSER_STORE_LINKS[key].url });
+            } catch (_) {
+                await openUrl(BROWSER_STORE_LINKS[key].url);
+            }
+            return;
+        }
+        if (payload.issue === 'access' && key === 'safari') {
+            await invoke('open_safari_fda_settings');
+            return;
+        }
+        // For disabled/private/websiteaccess issues, open the extension
+        // settings page inside the correct browser. Goes through the
+        // helper so Safari uses the SafariServices deep-link rather
+        // than the Accessibility-gated AppleScript path.
+        await openExtensionSettings(key || browser);
+    } catch (e) {
+        console.warn('[enforcer-ui] fix action failed:', e);
+    }
+}
+
+function populateEnforcerUrlChip(button, key) {
+    const href = extensionsUrl(key);
+    button.replaceChildren();
+    button.dataset.browserKey = key;
+    button.classList.toggle('extension-enforcer-action-url-static', !isCopyableExtensionsTarget(key));
+    delete button.dataset.copyUrl;
+    button.disabled = !isCopyableExtensionsTarget(key);
+    if (!isCopyableExtensionsTarget(key)) {
+        button.classList.remove('copied');
+        button.textContent = href;
+        return;
+    }
+    button.dataset.copyUrl = href;
+    const copied = Number(button.dataset.copiedUntil || 0) > Date.now();
+    button.classList.toggle('copied', copied);
+    if (copied) {
+        button.textContent = tSettings('migrationCopied');
+        return;
+    }
+
+    const text = document.createElement('span');
+    text.textContent = href;
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.setAttribute('width', '13');
+    icon.setAttribute('height', '13');
+    icon.setAttribute('viewBox', '0 0 24 24');
+    icon.setAttribute('fill', 'none');
+    icon.setAttribute('stroke', 'currentColor');
+    icon.setAttribute('stroke-width', '2');
+    icon.setAttribute('stroke-linecap', 'round');
+    icon.setAttribute('stroke-linejoin', 'round');
+    icon.setAttribute('aria-hidden', 'true');
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', '9');
+    rect.setAttribute('y', '9');
+    rect.setAttribute('width', '13');
+    rect.setAttribute('height', '13');
+    rect.setAttribute('rx', '2');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', 'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1');
+    icon.append(rect, path);
+    button.append(text, icon);
+}
+
+async function copyEnforcerUrlChip(button) {
+    const url = button.dataset.copyUrl;
+    if (!url || button.disabled) return;
+    try {
+        await navigator.clipboard.writeText(url);
+        button.dataset.copiedUntil = String(Date.now() + 1500);
+        button.classList.add('copied');
+        button.textContent = tSettings('migrationCopied');
+        setTimeout(() => {
+            delete button.dataset.copiedUntil;
+            button.classList.remove('copied');
+            populateEnforcerUrlChip(button, button.dataset.browserKey || '');
+        }, 1500);
+    } catch (e) {
+        console.warn('[enforcer-ui] copy URL failed:', e);
+    }
+}
+
+function scheduleEnforcerScreenshotSync(wrap) {
+    if (!wrap) return;
+    requestAnimationFrame(() => {
+        syncEnforcerScreenshotHeights(wrap);
+        requestAnimationFrame(() => syncEnforcerScreenshotHeights(wrap));
+        wrap.querySelectorAll('.extension-enforcer-screenshot').forEach(img => {
+            if (img.complete) return;
+            img.addEventListener('load', () => scheduleEnforcerScreenshotSync(wrap), { once: true });
+        });
+    });
+}
+
+function syncAllEnforcerScreenshotHeights() {
+    document.querySelectorAll('.extension-enforcer-screenshots-wrap:not(.hidden)')
+        .forEach(scheduleEnforcerScreenshotSync);
+}
+
+/** Size enforcer how-to screenshots to fill remaining viewport height. */
+function syncEnforcerScreenshotHeights(wrap) {
+    if (!wrap || wrap.classList.contains('hidden')) {
+        if (wrap) {
+            wrap.style.maxHeight = '';
+            wrap.style.overflowY = '';
+        }
+        return;
+    }
+
+    const container = wrap.querySelector('.extension-enforcer-screenshots');
+    if (!container) return;
+
+    const images = [...container.querySelectorAll('.extension-enforcer-screenshot')];
+    images.forEach(img => {
+        img.style.maxHeight = '';
+        img.style.width = '';
+        img.style.height = '';
+    });
+
+    const bottomPadding = 10;
+    const availableTotal = Math.max(
+        180,
+        window.innerHeight - wrap.getBoundingClientRect().top - bottomPadding,
+    );
+    wrap.style.maxHeight = `${availableTotal}px`;
+    wrap.style.overflowY = 'auto';
+
+    const containerStyle = getComputedStyle(container);
+    const panelOverhead = parseFloat(containerStyle.paddingTop)
+        + parseFloat(containerStyle.paddingBottom)
+        + 8;
+    const labels = [...container.querySelectorAll('.extension-enforcer-step-label')];
+    const labelOverhead = labels.length
+        ? Math.max(...labels.map(label => label.getBoundingClientRect().height)) + 6
+        : 0;
+    const maxImgHeight = Math.max(160, availableTotal - panelOverhead - labelOverhead);
+
+    images.forEach(img => {
+        const step = img.closest('.extension-enforcer-step');
+        const columnWidth = step?.getBoundingClientRect().width || 0;
+        const naturalW = img.naturalWidth;
+        const naturalH = img.naturalHeight;
+
+        img.style.maxHeight = '';
+        img.style.maxWidth = '';
+        img.style.width = '';
+        img.style.height = '';
+
+        if (naturalW > 0 && naturalH > 0 && columnWidth > 0) {
+            const heightAtFullWidth = (columnWidth / naturalW) * naturalH;
+            if (heightAtFullWidth <= maxImgHeight) {
+                img.style.width = `${Math.round(columnWidth)}px`;
+                img.style.height = `${Math.round(heightAtFullWidth)}px`;
+            } else {
+                img.style.width = `${Math.round((maxImgHeight / naturalH) * naturalW)}px`;
+                img.style.height = `${Math.round(maxImgHeight)}px`;
+            }
+            return;
+        }
+
+        img.style.maxHeight = `${maxImgHeight}px`;
+        img.style.maxWidth = columnWidth > 0 ? `${Math.round(columnWidth)}px` : '100%';
+        img.style.width = 'auto';
+        img.style.height = 'auto';
+    });
+}
+
+function renderEnforcerScreenshots(container, steps, browserKey) {
+    if (!container || !steps?.length) return;
+    const stepsKey = `${browserKey}:${steps.map(s => s.src).join(',')}`;
+    if (container.dataset.stepsKey === stepsKey) return;
+    container.dataset.stepsKey = stepsKey;
+    container.innerHTML = '';
+    container.classList.toggle('screenshots-grid', steps.length >= 3);
+    container.classList.toggle('screenshots-row', steps.length < 3);
+    steps.forEach((step, i) => {
+        const figure = document.createElement('figure');
+        figure.className = 'extension-enforcer-step';
+        const cap = formatExtensionScreenshotCaption(step, i);
+        if (cap) {
+            const caption = document.createElement('figcaption');
+            caption.className = 'extension-enforcer-step-label';
+            caption.textContent = cap;
+            figure.appendChild(caption);
+        }
+        const img = document.createElement('img');
+        img.className = 'extension-enforcer-screenshot';
+        img.src = step.src;
+        img.alt = cap || tSettingsFmt('migrationScreenshotStepOnly', { n: String(i + 1) });
+        figure.appendChild(img);
+        container.appendChild(figure);
+    });
+    container.classList.toggle('safari-screenshots-asymmetric', browserKey === 'safari' && steps.length === 2);
+    const wrap = container.closest('.extension-enforcer-screenshots-wrap');
+    if (wrap && !wrap.classList.contains('hidden')) {
+        scheduleEnforcerScreenshotSync(wrap);
+    }
+}
+
+function closedIssueCopyKey(issue) {
+    switch (issue) {
+        case 'missing': return 'enforcerClosedCombinedMissing';
+        case 'disabled': return 'enforcerClosedCombinedDisabled';
+        case 'private': return 'enforcerClosedCombinedPrivate';
+        case 'websiteaccess': return 'enforcerClosedCombinedWebsiteAccess';
+        case 'access': return 'enforcerClosedCombinedAccess';
+        default: return 'enforcerClosedCombinedDefault';
+    }
+}
+
+function closedInstructionCopyKey(issue) {
+    switch (issue) {
+        case 'missing': return 'enforcerClosedInstrMissing';
+        case 'disabled': return 'enforcerClosedInstrDisabled';
+        case 'private': return 'enforcerClosedInstrPrivateGeneric';
+        case 'websiteaccess': return 'enforcerClosedInstrWebsiteAccess';
+        case 'access': return 'enforcerClosedInstrDefault';
+        default: return 'enforcerClosedInstrDefault';
+    }
+}
+
+function ensureClosedBannerBrowserIcon(banner) {
+    const content = banner.querySelector('.update-banner-content');
+    if (!content) return null;
+    let icon = content.querySelector('.extension-enforcer-browser-icon');
+    if (!icon) {
+        icon = document.createElement('img');
+        icon.className = 'extension-enforcer-browser-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        const message = content.querySelector('.extension-enforcer-message');
+        if (message) content.insertBefore(icon, message);
+        else content.prepend(icon);
+    }
+    return icon;
+}
+
+function renderEnforcerBrowserActionRow(state, mode) {
+    const row = document.createElement('div');
+    row.className = 'extension-enforcer-browser-action-row';
+
+    if (mode !== 'closed') {
+        const icon = document.createElement('img');
+        icon.className = 'extension-enforcer-browser-action-icon';
+        icon.src = browserIconUrl(state.key);
+        icon.alt = '';
+        row.appendChild(icon);
+    }
+
+    const action = document.createElement('button');
+    action.className = 'update-banner-btn extension-enforcer-action-btn';
+    action.type = 'button';
+    if (state.copy.actionHtml) {
+        action.innerHTML = state.copy.actionHtml;
+    } else {
+        action.textContent = state.copy.action || tSettingsFmt('enforcerActionOpenExtensions', { browser: state.payload.label || state.payload.browser || state.key });
+    }
+    action.onclick = () => openEnforcerFix(state.payload);
+    row.appendChild(action);
+
+    const showMe = document.createElement('button');
+    showMe.className = 'extension-enforcer-show-me-btn';
+    showMe.type = 'button';
+    showMe.textContent = tSettings('migrationShowMeHow');
+    const steps = state.copy.screenshotSteps;
+    showMe.classList.toggle('hidden', !steps?.length);
+    showMe.onclick = () => {
+        const banner = mode === 'closed'
+            ? ensureClosedEnforcerActionBanner()
+            : ensureActiveEnforcerActionBanner();
+        const screenshotsWrap = banner.querySelector('.extension-enforcer-screenshots-wrap');
+        const screenshots = banner.querySelector('.extension-enforcer-screenshots');
+        if (!steps?.length || !screenshotsWrap || !screenshots) return;
+        const isSameOpen = !screenshotsWrap.classList.contains('hidden')
+            && screenshots.dataset.stepsKey?.startsWith(`${state.key}:`);
+        screenshotsWrap.classList.toggle('hidden', isSameOpen);
+        if (!isSameOpen) {
+            renderEnforcerScreenshots(screenshots, steps, state.key);
+            scheduleEnforcerScreenshotSync(screenshotsWrap);
+        }
+    };
+    row.appendChild(showMe);
+
+    const url = document.createElement('button');
+    url.type = 'button';
+    url.className = 'extension-enforcer-action-url';
+    if (state.urlCopiedUntil) url.dataset.copiedUntil = String(state.urlCopiedUntil);
+    populateEnforcerUrlChip(url, state.key);
+    url.onclick = async () => {
+        await copyEnforcerUrlChip(url);
+        const store = mode === 'closed' ? enforcerClosedBannerStates : enforcerActionBannerStates;
+        const stored = store.get(state.key);
+        if (stored) stored.urlCopiedUntil = Number(url.dataset.copiedUntil || 0);
+    };
+    row.appendChild(url);
+
+    return row;
+}
+
+function hasActiveEnforcerCountdown() {
+    const now = Date.now();
+    return [...enforcerActionBannerStates.values()].some(state => state.deadline > now);
+}
+
+function promoteEnforcerActionToClosed(key, payload) {
+    if (!payload) return;
+    enforcerClosedBannerStates.set(key, {
+        ...(enforcerClosedBannerStates.get(key) || {}),
+        payload,
+        closedAt: Date.now(),
+    });
+}
+
+function renderCombinedEnforcerActionBanner() {
+    const banner = ensureActiveEnforcerActionBanner();
+    const states = [...enforcerActionBannerStates.entries()].map(([key, state]) => ({ key, ...state }));
+    if (states.length === 0) {
+        banner.classList.add('hidden');
+        renderCombinedEnforcerClosedBanner();
+        return;
+    }
+
+    const activeStates = states
+        .map(state => {
+            const remainingSecs = Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000));
+            const payload = { ...state.payload, remaining_secs: remainingSecs, remainingSecs };
+            return { ...state, payload, remainingSecs, copy: enforcerCopy(payload) };
+        })
+        .filter(state => state.remainingSecs > 0);
+
+    if (activeStates.length === 0) {
+        for (const state of states) {
+            promoteEnforcerActionToClosed(state.key, state.payload);
+            enforcerActionBannerStates.delete(state.key);
+        }
+        banner.classList.add('hidden');
+        renderCombinedEnforcerClosedBanner();
+        return;
+    }
+
+    const timerState = activeStates.reduce((max, state) => (
+        state.remainingSecs > max.remainingSecs ? state : max
+    ), activeStates[0]);
+    const labels = activeStates.map(state => state.payload.label || state.payload.browser || BROWSER_STORE_LINKS[state.key]?.label || state.key);
+    const browserList = formatBrowserList(labels);
+
+    const headline = banner.querySelector('.extension-enforcer-action-headline-text');
+    if (headline) headline.textContent = tSettingsFmt('enforcerClosingHeadline', { browser: browserList });
+
+    const instruction = banner.querySelector('.extension-enforcer-action-instruction');
+    if (instruction) {
+        const base = activeStates.length > 1
+            ? tSettings('enforcerCountdownInstrMultiple')
+            : (timerState.copy.countdownInstruction || '');
+        renderEnforcerCountdownInstruction(instruction, base);
+    }
+
+    const countdown = banner.querySelector('.extension-enforcer-action-countdown');
+    if (countdown) {
+        const mins = Math.floor(timerState.remainingSecs / 60);
+        const secs = String(timerState.remainingSecs % 60).padStart(2, '0');
+        countdown.replaceChildren();
+        const time = document.createElement('strong');
+        time.className = 'extension-enforcer-countdown-time';
+        time.textContent = `${mins}:${secs}`;
+        const label = document.createElement('span');
+        label.className = 'extension-enforcer-countdown-label';
+        label.textContent = tSettings('enforcerCountdownRemaining');
+        countdown.append(time, label);
+    }
+
+    const progress = banner.querySelector('.extension-enforcer-progress-bar');
+    if (progress) {
+        const totalRaw = timerState.payload.total_secs ?? timerState.payload.totalSecs ?? timerState.remainingSecs;
+        const total = Math.max(1, Number(totalRaw || 1));
+        const pct = Math.max(0, Math.min(100, (timerState.remainingSecs / total) * 100));
+        progress.style.width = `${pct}%`;
+    }
+
+    const actions = banner.querySelector('.extension-enforcer-active-actions');
+    if (actions) {
+        actions.innerHTML = '';
+        activeStates.forEach(state => {
+            actions.appendChild(renderEnforcerBrowserActionRow(state, 'active'));
+        });
+    }
+
+    banner.classList.remove('hidden', 'extension-enforcer-action-banner-closed');
+    document.getElementById(ENFORCER_CLOSED_BANNER_ID)?.classList.add('hidden');
+}
+
+function updateEnforcerActionBannerCountdown() {
+    if (enforcerActionBannerStates.size === 0) return;
+    for (const [key, state] of enforcerActionBannerStates) {
+        const remainingSecs = Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000));
+        const payload = {
+            ...state.payload,
+            remaining_secs: remainingSecs,
+            remainingSecs,
+        };
+        state.payload = payload;
+
+        if (remainingSecs <= 0) {
+            promoteEnforcerActionToClosed(key, state.payload);
+            enforcerActionBannerStates.delete(key);
+        }
+    }
+    renderCombinedEnforcerActionBanner();
+    if (enforcerActionBannerStates.size === 0 && enforcerActionBannerInterval) {
+        clearInterval(enforcerActionBannerInterval);
+        enforcerActionBannerInterval = null;
+    }
+}
+
+function renderEnforcerActionBanner(payload) {
+    if (!payload || !payload.browser) return;
+    const key = enforcerBannerKey(payload);
+
+    const remainingSecs = Math.max(0, Number(payload.remaining_secs ?? payload.remainingSecs ?? 0));
+    const existing = enforcerActionBannerStates.get(key);
+    enforcerActionBannerStates.set(key, {
+        payload: { ...payload, remaining_secs: remainingSecs, remainingSecs },
+        deadline: Date.now() + remainingSecs * 1000,
+        urlCopiedUntil: existing?.urlCopiedUntil,
+    });
+
+    renderCombinedEnforcerActionBanner();
+    document.getElementById(ENFORCER_CLOSED_BANNER_ID)?.classList.add('hidden');
+    if (!enforcerActionBannerInterval) {
+        enforcerActionBannerInterval = setInterval(updateEnforcerActionBannerCountdown, 1000);
+    }
+}
+
+function renderCombinedEnforcerClosedBanner() {
+    const banner = ensureClosedEnforcerActionBanner();
+    if (hasActiveEnforcerCountdown()) {
+        banner.classList.add('hidden');
+        return;
+    }
+
+    const states = [...enforcerClosedBannerStates.entries()]
+        .map(([key, state]) => ({ key, ...state, copy: enforcerClosedCopy(state.payload) }));
+
+    if (states.length === 0) {
+        banner.classList.add('hidden');
+        return;
+    }
+
+    banner.querySelector('.extension-enforcer-action-right')?.remove();
+
+    const browserList = formatBrowserList(states.map(state => (
+        state.payload.label || state.payload.browser || BROWSER_STORE_LINKS[state.key]?.label || state.key
+    )));
+    const issue = states.every(state => state.payload.issue === states[0].payload.issue)
+        ? states[0].payload.issue
+        : 'unknown';
+
+    const headline = banner.querySelector('.extension-enforcer-action-headline-text');
+    if (headline) {
+        headline.textContent = states.length === 1
+            ? states[0].copy.headline
+            : tSettingsFmt(closedIssueCopyKey(issue), { browser: browserList });
+    }
+
+    const browserIcon = ensureClosedBannerBrowserIcon(banner);
+    if (browserIcon) {
+        if (states.length === 1) {
+            browserIcon.src = browserIconUrl(states[0].key);
+            browserIcon.alt = '';
+            browserIcon.style.visibility = 'visible';
+        } else {
+            browserIcon.style.visibility = 'hidden';
+        }
+    }
+
+    const instruction = banner.querySelector('.extension-enforcer-action-instruction');
+    if (instruction) {
+        if (states.length > 1) {
+            // Multi-browser case: `enforcerClosedInstrMultiple` has no
+            // `{browser}` placeholder — same copy for all browsers.
+            instruction.textContent = tSettings('enforcerClosedInstrMultiple');
+        } else {
+            // Single-browser case: pass the browser name in for
+            // `{browser}` substitution. Several of these instruction
+            // strings (enforcerClosedInstrDisabled / Missing /
+            // WebsiteAccess) contain `{browser}` — using tSettings()
+            // here left the literal placeholder visible in the UI.
+            const single = states[0];
+            const browser = single.payload.label
+                || single.payload.browser
+                || BROWSER_STORE_LINKS[single.key]?.label
+                || single.key;
+            instruction.textContent = tSettingsFmt(
+                closedInstructionCopyKey(issue),
+                { browser }
+            );
+        }
+    }
+
+    const actions = banner.querySelector('.extension-enforcer-closed-actions');
+    if (actions) {
+        actions.innerHTML = '';
+        states.forEach(state => {
+            actions.appendChild(renderEnforcerBrowserActionRow(state, 'closed'));
+        });
+    }
+
+    banner.classList.remove('hidden');
+}
+
+function renderEnforcerClosedBanner(payload) {
+    if (!payload || (!payload.browser && !payload.label)) return;
+    const key = enforcerBannerKey(payload);
+    enforcerActionBannerStates.delete(key);
+    if (enforcerActionBannerStates.size === 0 && enforcerActionBannerInterval) {
+        clearInterval(enforcerActionBannerInterval);
+        enforcerActionBannerInterval = null;
+    }
+    promoteEnforcerActionToClosed(key, payload);
+    renderCombinedEnforcerActionBanner();
+}
+
+function hideEnforcerActionBanner(browser) {
+    const key = browserKeyFromLabel(browser);
+    enforcerActionBannerStates.delete(key);
+    renderCombinedEnforcerActionBanner();
+    if (enforcerActionBannerStates.size === 0 && enforcerActionBannerInterval) {
+        clearInterval(enforcerActionBannerInterval);
+        enforcerActionBannerInterval = null;
+    }
+}
+
+// ---- App-blocking: "Let's go!" warning (driven by native watcher) ---------
+//
+// Two pieces of UI:
+//   1. The full-screen always-on-top overlay (raised by the native watcher
+//      when a blocked PID first appears; rendered out of `appBlockingWarningRows`
+//      entries that have NO `ackedDeadlineMs`).
+//   2. The in-app countdown banner (shown after the user clicks "Let's go!";
+//      driven by entries that have an `ackedDeadlineMs` set).
+//
+// Per-row ack metadata so the overlay and banner can coexist sensibly
+// when a new blocked app gets launched mid-countdown — the new PID
+// shows in the overlay while the previously-acked PIDs continue
+// counting down in the banner.
+
+/** @type {Map<number, { name: string, ackedDeadlineMs?: number }>} */
+const appBlockingWarningRows = new Map();
+let appBlockingWarningUiAttached = false;
+let appBlockingClosedownTickInterval = null;
+
+/// 30 seconds of wrap-up time after the user clicks "Let's go!" before
+/// the watcher sends the polite Cmd-Q. Mirrors `PREQUIT_DURATION` in
+/// `app_watcher.rs`. Kept in JS too so the banner can show the right
+/// countdown without a server round-trip.
+const APP_BLOCKING_CLOSEDOWN_PREQUIT_MS = 30 * 1000;
+
+function setupAppBlockingWarningOverlay() {
+    if (isIOS || appBlockingWarningUiAttached) return;
+    appBlockingWarningUiAttached = true;
+
+    const onFail = (label) => (e) => {
+        console.warn(`[app-blocking-ui] failed to attach ${label}:`, e);
+        appBlockingWarningUiAttached = false;
+    };
+
+    // The new flow has just two events: warning-show (user-ack required)
+    // and warning-hide (the PID exited or got SIGKILLed). The old
+    // warning-update countdown stream is gone — there's no number to tick.
+    tauriAPI.onAppBlockingWarningShow((event) => {
+        const p = event?.payload || {};
+        const pid = Number(p.pid);
+        if (!Number.isFinite(pid)) return;
+        appBlockingWarningRows.set(pid, {
+            name: p.name || 'App',
+        });
+        renderAppBlockingWarningOverlay();
+        renderAppBlockingClosedownBanner();
+    }).catch(onFail('warning-show'));
+
+    tauriAPI.onAppBlockingWarningHide((event) => {
+        const p = event?.payload || {};
+        const pid = Number(p.pid);
+        if (!Number.isFinite(pid)) return;
+        appBlockingWarningRows.delete(pid);
+        renderAppBlockingWarningOverlay();
+        renderAppBlockingClosedownBanner();
+    }).catch(onFail('warning-hide'));
+
+    // "Let's go!" button — ack every currently-awaiting row, hide the
+    // full-screen overlay immediately, and surface the in-app close-down
+    // countdown banner. The watcher's AwaitingUserAck → PreQuit
+    // transition happens server-side via `letsGoAcknowledge`; we just
+    // mirror that timeline in the UI so the user sees how long they
+    // have to wrap up.
+    const letsGoBtn = document.getElementById('app-blocking-lets-go-btn');
+    letsGoBtn?.addEventListener('click', () => {
+        const ackedDeadlineMs = Date.now() + APP_BLOCKING_CLOSEDOWN_PREQUIT_MS;
+        for (const row of appBlockingWarningRows.values()) {
+            if (!row.ackedDeadlineMs) row.ackedDeadlineMs = ackedDeadlineMs;
+        }
+        applyWarningOverlayPresence();
+        renderAppBlockingClosedownBanner();
+        tauriAPI
+            .letsGoAcknowledge()
+            .catch((e) => console.warn('[app-blocking-ui] lets-go ack:', e));
+    });
+}
+
+/** Find the user's blocklist that contains a given app name (case-insensitive).
+ *  Used to surface the matching blocklist's name + emoji in the
+ *  force-quit warning so the user knows which block is responsible. */
+function findBlocklistForBlockedAppName(appName) {
+    if (!appName) return null;
+    const target = String(appName).trim().toLowerCase();
+    if (!target) return null;
+    const blocklists = appData?.blocklists || [];
+    for (const bl of blocklists) {
+        const apps = bl.apps || [];
+        if (apps.some((a) => String(a).trim().toLowerCase() === target)) {
+            return bl;
+        }
+    }
+    return null;
+}
+
+function renderAppBlockingWarningOverlay() {
+    const overlay = document.getElementById('app-blocking-warning-overlay');
+    if (!overlay) return;
+
+    if (appBlockingWarningRows.size === 0) {
+        applyWarningOverlayPresence();
+        return;
+    }
+
+    /** @type {string[]} */
+    const names = [];
+    const unknownApp = tSettings('appBlockingUnknownApp');
+    for (const [, row] of appBlockingWarningRows) {
+        const n = (row.name || unknownApp).trim() || unknownApp;
+        names.push(n);
+    }
+
+    // Pick the blocklist responsible for the warnings — for the common
+    // single-app case this is unambiguous; for multi-app we fall back to
+    // the first matching blocklist (multiple-blocklist conflicts are
+    // rare and not worth the UI complexity).
+    const responsibleBlocklist = names
+        .map(findBlocklistForBlockedAppName)
+        .find((bl) => bl) || null;
+    const blocklistName = responsibleBlocklist?.name || tSettings('appBlockingFallbackBlocklistName');
+    const blocklistEmoji = responsibleBlocklist?.emoji || '🎯';
+
+    const headingEl = document.getElementById('app-blocking-warning-heading');
+    const summaryEl = document.getElementById('app-blocking-warning-summary');
+    const emojiEl = document.getElementById('app-blocking-warning-emoji');
+    const letsGoBtn = document.getElementById('app-blocking-lets-go-btn');
+
+    if (headingEl) {
+        headingEl.innerHTML = tSettingsFmt('appBlockingWarningHeadingHtml', {
+            name: escapeHtml(blocklistName),
+        });
+    }
+    if (emojiEl) emojiEl.textContent = blocklistEmoji;
+
+    // Re-enable the button whenever we fresh-render — this is a new
+    // warning event, so any "disabled after click" state from a previous
+    // warning needs clearing. (No-op on the very first render.)
+    letsGoBtn?.removeAttribute('disabled');
+
+    if (summaryEl) {
+        const apps = joinAppListWithLimit(names, 3);
+        const bl = escapeHtml(blocklistName);
+        const letsGo = escapeHtml(tSettings('appBlockingLetsGo'));
+        const summaryKey = names.length === 1
+            ? 'appBlockingWarningSummarySingleHtml'
+            : 'appBlockingWarningSummaryMultiHtml';
+        summaryEl.innerHTML = tSettingsFmt(summaryKey, { blocklist: bl, letsGo, apps });
+    }
+
+    applyWarningOverlayPresence();
+}
+
+// ---- Warning-overlay coordinator -----------------------------------------
+//
+// Reconciles the always-on-top compact-window panel mode with the only
+// warning surface we now have — the app-blocking "Let's go!" warning.
+// The native watcher's `blocking_warning_begin/end` already manages the
+// panel-mode refcount in Rust (see `emit_warning_show/_hide`), so this
+// function is purely DOM-side: overlay visibility, body class for the
+// compact-mode CSS, and resize-observer setup.
+function applyWarningOverlayPresence() {
+    if (isIOS) return;
+    const overlay = document.getElementById('app-blocking-warning-overlay');
+    if (!overlay) return;
+
+    // Show the overlay only for rows the user hasn't yet acknowledged
+    // — once they've clicked "Let's go!" the row gets an
+    // `ackedDeadlineMs` and migrates from the overlay to the banner.
+    const hasUnackedRows = [...appBlockingWarningRows.values()]
+        .some((row) => !row.ackedDeadlineMs);
+
+    overlay.classList.toggle('hidden', !hasUnackedRows);
+    document.documentElement.classList.toggle('app-blocking-warning-window-mode', hasUnackedRows);
+    document.body.classList.toggle('app-blocking-warning-window-mode', hasUnackedRows);
+}
+
+/// Render the in-app close-down countdown banner. Idempotent — call
+/// whenever rows change or the timer ticks. Shows the soonest deadline
+/// across acked rows so the countdown reads honestly.
+function renderAppBlockingClosedownBanner() {
+    const banner = document.getElementById('app-blocking-closedown-banner');
+    const text = document.getElementById('app-blocking-closedown-banner-text');
+    if (!banner || !text) return;
+
+    const acked = [...appBlockingWarningRows.values()].filter(
+        (row) => typeof row.ackedDeadlineMs === 'number',
+    );
+    if (acked.length === 0) {
+        banner.classList.add('hidden');
+        stopAppBlockingClosedownTick();
+        return;
+    }
+
+    const appFallback = tSettings('appBlockingBannerAppFallback');
+    const names = acked.map((r) => (r.name || appFallback).trim() || appFallback);
+    const appsHtml = joinAppListWithLimit(names, 3);
+    const soonestDeadline = Math.min(...acked.map((r) => r.ackedDeadlineMs));
+    const remainingMs = Math.max(0, soonestDeadline - Date.now());
+    const remainingSecs = Math.ceil(remainingMs / 1000);
+
+    if (remainingSecs > 0) {
+        text.innerHTML = tSettingsFmt('appBlockingClosedownCountdownHtml', {
+            apps: appsHtml,
+            seconds: String(remainingSecs),
+        });
+    } else {
+        // PreQuit elapsed — Rust is now sending Cmd-Q and waiting on
+        // the 10s SIGKILL grace. Banner stays up until the watcher's
+        // warning-hide event clears the row.
+        const finalKey = names.length === 1
+            ? 'appBlockingClosedownFinalSingleHtml'
+            : 'appBlockingClosedownFinalMultiHtml';
+        text.innerHTML = tSettingsFmt(finalKey, { apps: appsHtml });
+    }
+
+    banner.classList.remove('hidden');
+    ensureAppBlockingClosedownTick();
+}
+
+function ensureAppBlockingClosedownTick() {
+    if (appBlockingClosedownTickInterval !== null) return;
+    appBlockingClosedownTickInterval = window.setInterval(() => {
+        renderAppBlockingClosedownBanner();
+    }, 1000);
+}
+
+function stopAppBlockingClosedownTick() {
+    if (appBlockingClosedownTickInterval !== null) {
+        window.clearInterval(appBlockingClosedownTickInterval);
+        appBlockingClosedownTickInterval = null;
+    }
+}
+
+/** Pretty list join: "A", "A and B", "A, B and C", "A, B and 4 more". */
+function joinAppListWithLimit(names, max = 3, { bold = true } = {}) {
+    const arr = names.filter(Boolean);
+    const wrap = bold
+        ? (n) => `<strong>${escapeHtml(n)}</strong>`
+        : (n) => escapeHtml(n);
+    if (arr.length === 0) return '';
+    if (arr.length === 1) return wrap(arr[0]);
+    const and = tSettings('andWord');
+    if (arr.length <= max) {
+        const head = arr.slice(0, -1).map(wrap).join(', ');
+        const tail = wrap(arr[arr.length - 1]);
+        return `${head} ${and} ${tail}`;
+    }
+    const shown = arr.slice(0, max - 1).map(wrap).join(', ');
+    const remaining = arr.length - (max - 1);
+    const moreLabel = tSettingsFmt('appBlockingListMoreFmt', { n: String(remaining) });
+    return `${shown} ${and} ${wrap(moreLabel)}`;
+}
+
 // Check if the helper daemon is available (desktop only)
 async function checkHelperStatus() {
     if (isIOS) return; // iOS uses Screen Time, not helper daemon
@@ -1030,61 +4560,8 @@ async function checkHelperStatus() {
         console.log('Helper not installed - will prompt on first block');
     }
 
-    updateHelperUpdateBanner(status);
 }
 
-// Show/hide the top-of-app helper update banner based on current helper status.
-// Only shown when a helper is installed and running but at an older version than required.
-// We don't show it for "not installed" because the first-block modal covers that case.
-function updateHelperUpdateBanner(status) {
-    const banner = document.getElementById('helper-update-banner');
-    if (!banner) return;
-
-    const needsUpdate = !!(status && status.running && !status.version_ok);
-    if (!needsUpdate) {
-        banner.classList.add('hidden');
-        return;
-    }
-    banner.classList.remove('hidden');
-
-    const btn = document.getElementById('helper-update-banner-btn');
-    if (btn && !btn._listenerAdded) {
-        btn._listenerAdded = true;
-        btn.addEventListener('click', async () => {
-            if (btn.disabled) return;
-
-            const confirmed = await ask(
-                'This updates the small helper service that runs in the background to manage your blocks.\n\n' +
-                'Your computer will ask you to approve an administrator action — that\'s just because the helper needs elevated permissions to edit system files. It\'s the same prompt you saw when you first installed ReDD Block.',
-                { title: 'Update helper service', kind: 'info', okLabel: 'Update', cancelLabel: 'Not now' }
-            );
-            if (!confirmed) return;
-
-            btn.disabled = true;
-            const originalText = btn.textContent;
-            btn.textContent = 'Updating...';
-            try {
-                const result = await tauriAPI.installHelper();
-                if (result && result.success) {
-                    // Give the helper a moment to start up before re-checking status.
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                    await checkHelperStatus();
-                } else if (isHelperInstallCancelled(result?.error)) {
-                    // User declined the UAC prompt — leave the banner visible but no error dialog.
-                    console.log('Helper update cancelled by user');
-                } else {
-                    await message('Failed to update helper: ' + (result?.error || 'Unknown error'), { title: 'Error', kind: 'error' });
-                }
-            } catch (e) {
-                console.error('Error updating helper:', e);
-                await message('Error updating helper: ' + e.message, { title: 'Error', kind: 'error' });
-            } finally {
-                btn.disabled = false;
-                btn.textContent = originalText;
-            }
-        });
-    }
-}
 
 /// True if a failed install-helper result looks like the user cancelled the UAC / admin prompt
 /// rather than an actual failure. Backend returns messages prefixed with "cancelled:" for this.
@@ -1154,6 +4631,12 @@ function updateOnboardingVisibility() {
     eulaOverlay?.classList.toggle('hidden', !showEula);
     screentimeOverlay?.classList.toggle('hidden', !showScreentime);
     main?.classList.toggle('hidden', showEula || showScreentime);
+
+    // Hide the BLOCKING NOW title-bar row on onboarding screens
+    const nowBlockingRow = document.getElementById('now-blocking-row');
+    if (nowBlockingRow) {
+        nowBlockingRow.classList.toggle('hidden', showEula || showScreentime);
+    }
 }
 
 async function acceptEula() {
@@ -1170,6 +4653,7 @@ async function acceptEula() {
     if (isIOS) {
         await checkScreentimeAuth();
     } else {
+        firstRunExtensionSetupPending = true;
         updateOnboardingVisibility();
     }
     await runPostAcceptanceStartup();
@@ -1199,6 +4683,24 @@ async function loadData() {
     if (!appData.schedules) {
         appData.schedules = [];
     }
+    // A pre-fix bug could insert a duplicate schedule for the same blocklist when
+    // saving edits (both the start-flow and edit-flow proceed handlers fired). If
+    // that left two entries, keep the one with the most segments and drop the rest.
+    if (appData.schedules.length > 1) {
+        const byBlocklist = new Map();
+        for (const s of appData.schedules) {
+            const existing = byBlocklist.get(s.blocklistId);
+            const segCount = Array.isArray(s.segments) ? s.segments.length : 0;
+            const existingCount = existing && Array.isArray(existing.segments) ? existing.segments.length : -1;
+            if (!existing || segCount > existingCount) {
+                byBlocklist.set(s.blocklistId, s);
+            }
+        }
+        if (byBlocklist.size < appData.schedules.length) {
+            appData.schedules = [...byBlocklist.values()];
+            shouldSave = true;
+        }
+    }
     // Ensure settings exists
     if (!appData.settings) {
         appData.settings = {};
@@ -1213,6 +4715,9 @@ async function loadData() {
             id: generateId(),
             name: 'Distractions',
             mode: 'blocklist',
+            // First colour in the palette (matches the openBlocklistModal default).
+            color: '#B8D1DE',
+            emoji: '🚫',
             websites: ['instagram.com', 'youtube.com', 'reddit.com'],
             apps: [],
             iosScreenTimeSelection: null,
@@ -1345,26 +4850,12 @@ function detectPlatform() {
             if (modalTooltip) modalTooltip.textContent = 'On iOS, apps are selected using Apple\'s Screen Time picker. Tap the button to choose which apps to block.';
         }
 
-        // Make the browse buttons more prominent (full-width) since they're the only option
-        document.querySelectorAll('.browse-btn').forEach(btn => {
-            btn.style.width = '100%';
-            btn.style.justifyContent = 'center';
-            btn.style.padding = '10px';
-            btn.title = 'Select Apps (Screen Time)';
-            // Add text label next to the icon
-            if (!btn.querySelector('.browse-label')) {
-                const label = document.createElement('span');
-                label.className = 'browse-label';
-                label.textContent = ' Select Apps';
-                label.style.marginLeft = '6px';
-                label.style.fontSize = '13px';
-                btn.appendChild(label);
-            }
-        });
+        /* Browse buttons in #blocklist-modal: layout + captions from CSS (body.ios …) and applySettingsLanguage(). */
     } else {
         const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
         if (isMac) {
             document.body.classList.add('mac');
+            isMacOSDesktop = true;
             // Hide controls on macOS - native traffic lights are used
             document.getElementById('window-controls')?.classList.add('hidden');
         } else {
@@ -1442,47 +4933,67 @@ function setupEventListeners() {
     });
     eulaContinueBtn?.addEventListener('click', async () => {
         if (!eulaCheckbox?.checked || !eulaContinueBtn) return;
-        const originalText = eulaContinueBtn.textContent;
+        if (activeFdaOnboardingSession) {
+            resumeFdaOnboardingFromEula();
+            return;
+        }
+        if (firstRunExtensionSetupPending && hasAcceptedEula()) {
+            extensionSetupPausedForBackNavigation = false;
+            document.getElementById('eula-onboarding')?.classList.add('hidden');
+            void ensureExtensionSetupOnboardingShown();
+            return;
+        }
         eulaContinueBtn.disabled = true;
-        eulaContinueBtn.textContent = 'Continuing...';
+        eulaContinueBtn.textContent = tSettings('eulaContinueBusy');
         try {
             await acceptEula();
         } catch (err) {
             console.error('Failed to accept EULA:', err);
-            alert('Could not save your agreement. Please try again.');
+            alert(tSettings('eulaAcceptSaveFailedAlert'));
             eulaContinueBtn.disabled = !eulaCheckbox.checked;
-            eulaContinueBtn.textContent = originalText;
+            eulaContinueBtn.textContent = tSettings('eulaContinueBtn');
             return;
         }
-        eulaContinueBtn.textContent = originalText;
+        eulaContinueBtn.textContent = tSettings('eulaContinueBtn');
     });
 
-    document.querySelectorAll('#eula-onboarding a[data-external-url]').forEach((link) => {
-        link.addEventListener(
+    document.getElementById('eula-back-btn')?.addEventListener('click', () => {
+        returnToWelcomeFromEula();
+    });
+
+    document.getElementById('fda-onboarding-back-btn')?.addEventListener('click', () => {
+        returnToEulaFromFda();
+    });
+
+    // EULA onboarding: delegated listeners so localized HTML can rebuild links/text without losing handlers.
+    const eulaRoot = document.getElementById('eula-onboarding');
+    if (eulaRoot) {
+        eulaRoot.addEventListener(
             'click',
             (event) => {
-                const url = link.dataset.externalUrl;
-                if (!url) return;
-                event.preventDefault();
-                event.stopImmediatePropagation();
-                openUrl(url).catch((err) => {
-                    console.warn('[eula] open in browser failed:', err);
-                    window.open(url, '_blank', 'noopener,noreferrer');
-                });
+                const anchor = event.target.closest('a[data-external-url]');
+                if (anchor && eulaRoot.contains(anchor)) {
+                    const url = anchor.dataset.externalUrl;
+                    if (!url) return;
+                    event.preventDefault();
+                    event.stopImmediatePropagation();
+                    openUrl(url).catch((err) => {
+                        console.warn('[eula] open in browser failed:', err);
+                        window.open(url, '_blank', 'noopener,noreferrer');
+                    });
+                    return;
+                }
+                const toggleHost = event.target.closest('[data-toggle-target]');
+                if (toggleHost && eulaRoot.contains(toggleHost) && !event.target.closest('a')) {
+                    const target = document.getElementById(toggleHost.dataset.toggleTarget);
+                    if (!target) return;
+                    target.checked = !target.checked;
+                    target.dispatchEvent(new Event('change', { bubbles: true }));
+                }
             },
             true
         );
-    });
-
-    document.querySelectorAll('#eula-onboarding [data-toggle-target]').forEach((el) => {
-        el.addEventListener('click', (event) => {
-            if (event.target.closest('a')) return;
-            const target = document.getElementById(el.dataset.toggleTarget);
-            if (!target) return;
-            target.checked = !target.checked;
-            target.dispatchEvent(new Event('change', { bubbles: true }));
-        });
-    });
+    }
 
     document.getElementById('ios-screentime-grant-btn')?.addEventListener('click', async () => {
         const btn = document.getElementById('ios-screentime-grant-btn');
@@ -1523,9 +5034,10 @@ function setupEventListeners() {
     // This ensures the icon updates even if window is maximized/restored via other means
     setInterval(updateMaximizeButton, 300);
 
-    // Time pickers - custom popover handlers
-    document.querySelectorAll('.time-part').forEach(btn => {
-        btn.addEventListener('click', handleTimePartClick);
+    // Time pickers — instant end uses compact `input.time-part time-popover-anchor` (click opens list + caret);
+    // schedule uses its own overlays; pause modal uses button anchors.
+    document.querySelectorAll('.time-popover-anchor').forEach(el => {
+        el.addEventListener('click', handleTimePartClick);
     });
 
     // Close popovers on outside click
@@ -1651,17 +5163,14 @@ function setupEventListeners() {
         });
     }
 
-    // Duration picker - quick toggle buttons
+    // Quick-select buttons: timed durations (15/30/45/60) + "Always" option
     document.querySelectorAll('.duration-quick-btn').forEach(btn => {
         btn.addEventListener('click', handleDurationQuickBtn);
     });
 
-    // Duration mode toggle ("for a bit" / "always")
-    document.getElementById('duration-mode-timed')?.addEventListener('click', () => setAlwaysOnMode(false));
-    document.getElementById('duration-mode-always')?.addEventListener('click', () => setAlwaysOnMode(true));
-
     // Initialize time picker with defaults
     initializeTimeInputs();
+    setupEndTimeDirectInputs();
 
     // Blocklist selector
     document.getElementById('blocklist-select').addEventListener('change', handleBlocklistSelect);
@@ -1684,27 +5193,24 @@ function setupEventListeners() {
     // Undo toast button
     document.getElementById('undo-toast-btn')?.addEventListener('click', undoDelete);
 
-    // Helper install modal buttons
-    document.getElementById('cancel-helper-install-btn')?.addEventListener('click', () => {
-        document.getElementById('helper-install-modal').classList.add('hidden');
-        pendingBlockData = null;
-        pendingScheduleData = null;
-    });
-
-    document.getElementById('proceed-helper-install-btn')?.addEventListener('click', proceedWithHelperInstall);
-
     // Start block confirmation modal buttons
     document.getElementById('cancel-start-confirm-btn')?.addEventListener('click', closeStartBlockConfirmModal);
     document.getElementById('proceed-start-confirm-btn')?.addEventListener('click', proceedWithBlock);
 
-    // Schedule confirmation modal buttons
+    // Schedule confirmation modal buttons.
+    // The proceed button routes between the start-flow and edit-flow handlers via
+    // window.editScheduleData (set by showScheduleEditConfirmModal). A single
+    // dispatch listener avoids a previous bug where both addEventListener and a
+    // per-flow .onclick fired, causing proceedWithSchedule to add a duplicate
+    // schedule after an edit-flow save.
     document.getElementById('cancel-schedule-confirm-btn')?.addEventListener('click', closeScheduleConfirmModal);
-    document.getElementById('proceed-schedule-confirm-btn')?.addEventListener('click', proceedWithSchedule);
-
-    // Week calendar navigation buttons
-    document.getElementById('prev-week-btn')?.addEventListener('click', () => navigateWeek(-1));
-    document.getElementById('next-week-btn')?.addEventListener('click', () => navigateWeek(1));
-    document.getElementById('today-btn')?.addEventListener('click', () => scrollToToday());
+    document.getElementById('proceed-schedule-confirm-btn')?.addEventListener('click', () => {
+        if (window.editScheduleData) {
+            proceedWithScheduleEdit();
+        } else {
+            proceedWithSchedule();
+        }
+    });
 
     // Schedule mode tabs
     document.getElementById('instant-mode-tab')?.addEventListener('click', () => setScheduleMode(false));
@@ -1715,6 +5221,8 @@ function setupEventListeners() {
 
     // Start schedule button
     document.getElementById('start-schedule-btn')?.addEventListener('click', startSchedule);
+    document.getElementById('schedule-pending-save')?.addEventListener('click', saveSchedulePendingChanges);
+    document.getElementById('schedule-pending-discard')?.addEventListener('click', discardSchedulePendingChanges);
 
     // Repeat dropdown (renamed from Until)
     document.getElementById('repeat-dropdown-btn')?.addEventListener('click', toggleRepeatDropdown);
@@ -1731,40 +5239,6 @@ function setupEventListeners() {
             handleSegmentDayToggle(segmentIndex, dayIndex, btn);
         });
     });
-
-    // Week calendar scroll handling with day snap
-    const calendarScroll = document.querySelector('.week-calendar-scroll');
-    const timeColumn = document.getElementById('week-calendar-time-column');
-    if (calendarScroll) {
-        let scrollTimeout;
-        calendarScroll.addEventListener('scroll', () => {
-            // Keep the time sidebar's vertical scroll in lockstep with the day grid.
-            if (timeColumn) timeColumn.scrollTop = calendarScroll.scrollTop;
-
-            clearTimeout(scrollTimeout);
-            scrollTimeout = setTimeout(() => {
-                // Update the visible date range display
-                updateVisibleRangeDisplay();
-            }, 150);
-        });
-
-        // Forward wheel-over-sidebar to the main scroll so the time column isn't an interaction dead zone.
-        if (timeColumn) {
-            timeColumn.addEventListener('wheel', (e) => {
-                if (e.deltaY !== 0) {
-                    calendarScroll.scrollTop += e.deltaY;
-                    e.preventDefault();
-                }
-            }, { passive: false });
-        }
-
-        // Click on calendar (not on block) scrolls to today
-        calendarScroll.addEventListener('click', (e) => {
-            if (!e.target.closest('.calendar-block')) {
-                scrollToToday();
-            }
-        });
-    }
 
     // Listen for blocks updated from main process
     tauriAPI.onBlocksUpdated(async () => {
@@ -1810,6 +5284,96 @@ function processWebsiteInput(raw) {
     };
 }
 
+// Parse a text-file's contents into a flat list of candidate domains. Each
+// non-comment line may contain one or more space/comma-separated domains.
+// '#' starts a line/inline comment (hosts-file style). Returns raw strings,
+// not yet validated.
+function parseTextFileDomains(content) {
+    if (!content) return [];
+    const out = [];
+    for (const rawLine of content.split(/\r?\n/)) {
+        const beforeComment = rawLine.split('#')[0];
+        if (!beforeComment.trim()) continue;
+        for (const token of parseDomainList(beforeComment)) {
+            if (token) out.push(token);
+        }
+    }
+    return out;
+}
+
+// Wire up the Edit Blocklist "Import" popover for the websites field. The
+// caller supplies a callback that receives an array of cleaned domain
+// strings; it's responsible for de-duplicating against current modal state
+// and pushing an undo entry.
+function setupWebsitesImportMenu({ addDomainsToModal }) {
+    const importBtn = document.getElementById('modal-import-websites-btn');
+    const menu = document.getElementById('websites-import-menu');
+    if (!importBtn || !menu) return;
+
+    const closeMenu = () => {
+        menu.classList.add('hidden');
+        importBtn.setAttribute('aria-expanded', 'false');
+    };
+    const openMenu = () => {
+        menu.classList.remove('hidden');
+        importBtn.setAttribute('aria-expanded', 'true');
+    };
+
+    importBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (menu.classList.contains('hidden')) {
+            openMenu();
+        } else {
+            closeMenu();
+        }
+    });
+
+    // Close on outside click / Escape.
+    document.addEventListener('click', (e) => {
+        if (menu.classList.contains('hidden')) return;
+        if (!menu.contains(e.target) && !importBtn.contains(e.target)) {
+            closeMenu();
+        }
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !menu.classList.contains('hidden')) {
+            closeMenu();
+        }
+    });
+
+    const textFileBtn = document.getElementById('websites-import-menu-text-file');
+    if (textFileBtn) {
+        textFileBtn.addEventListener('click', async () => {
+            closeMenu();
+            try {
+                const selected = await openDialog({
+                    multiple: false,
+                    title: tSettings('importWebsitesPickFileTitle'),
+                    filters: [
+                        { name: 'Text', extensions: ['txt', 'list', 'csv'] },
+                        { name: 'All files', extensions: ['*'] }
+                    ]
+                });
+                if (!selected || typeof selected !== 'string') return;
+                const contents = await readTextFile(selected);
+                addDomainsToModal(parseTextFileDomains(contents));
+            } catch (err) {
+                console.warn('[import] text file:', err);
+            }
+        });
+    }
+
+    menu.querySelectorAll('[data-preset]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            closeMenu();
+            const preset = btn.dataset.preset;
+            const list = WEBSITES_PRESET_LISTS[preset];
+            if (!list) return;
+            addDomainsToModal(list);
+        });
+    });
+}
+
 // Modal listeners
 function setupModalListeners() {
     let modalWebsites = [];
@@ -1830,12 +5394,204 @@ function setupModalListeners() {
     const modalWebsitesTags = document.getElementById('modal-websites-tags');
     const modalAppsTags = document.getElementById('modal-apps-tags');
 
+    // Email-to-field-style multi-selection. Track selection by VALUE so the
+    // sets stay valid across re-renders and modifications.
+    const selectedWebsites = new Set();
+    const selectedApps = new Set();
+
+    const isWebsiteLocked = (w) => Array.isArray(window.lockedWebsites) && window.lockedWebsites.includes(w);
+    const isAppLocked = (a) => Array.isArray(window.lockedApps) && window.lockedApps.includes(a);
+
+    const clearWebsiteSelection = () => {
+        if (selectedWebsites.size === 0) return false;
+        selectedWebsites.clear();
+        window.renderModalTags();
+        return true;
+    };
+    const clearAppSelection = () => {
+        if (selectedApps.size === 0) return false;
+        selectedApps.clear();
+        window.renderModalTags();
+        return true;
+    };
+
+    const selectAllUnlockedWebsites = () => {
+        selectedWebsites.clear();
+        modalWebsites.forEach(w => {
+            if (!isWebsiteLocked(w)) selectedWebsites.add(w);
+        });
+        window.renderModalTags();
+    };
+    const selectAllUnlockedApps = () => {
+        selectedApps.clear();
+        modalApps.forEach(a => {
+            if (!isAppLocked(a)) selectedApps.add(a);
+        });
+        // Also include the iOS Screen Time aggregate label if present.
+        const iosLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
+        if (iosLabel && !isAppLocked(iosLabel)) selectedApps.add(iosLabel);
+        window.renderModalTags();
+    };
+
+    // Bulk-delete every selected website. Pushes a single undo entry that
+    // restores all of them at once, matching the user's "select-all then
+    // backspace" mental model in a text editor.
+    const deleteSelectedWebsites = () => {
+        if (selectedWebsites.size === 0) return false;
+        const toDelete = modalWebsites.filter(w => selectedWebsites.has(w) && !isWebsiteLocked(w));
+        if (toDelete.length === 0) {
+            selectedWebsites.clear();
+            window.renderModalTags();
+            return false;
+        }
+        const restoreCopy = [...toDelete];
+        pushModalUndo('website-bulk', () => {
+            restoreCopy.forEach(w => {
+                if (!modalWebsites.includes(w)) modalWebsites.push(w);
+            });
+            window.renderModalTags();
+        });
+        toDelete.forEach(w => {
+            const i = modalWebsites.indexOf(w);
+            if (i !== -1) modalWebsites.splice(i, 1);
+        });
+        selectedWebsites.clear();
+        window.renderModalTags();
+        return true;
+    };
+
+    // Arrow-key navigation through chips, like an email-to field.
+    //   direction === -1  → ArrowLeft  (move selection left, or pull last chip
+    //                       into selection when selection is empty)
+    //   direction === +1  → ArrowRight (move selection right, deselect & return
+    //                       focus to the input if past the last chip)
+    // Returns:
+    //   'moved'      — selection changed
+    //   'deselected' — past the last chip; selection was cleared
+    //   false        — nothing happened
+    const moveSelectionInList = (list, lockedFn, selection, direction) => {
+        if (selection.size === 0) {
+            if (direction === -1) {
+                for (let i = list.length - 1; i >= 0; i--) {
+                    if (!lockedFn(list[i])) {
+                        selection.add(list[i]);
+                        return 'moved';
+                    }
+                }
+            }
+            return false;
+        }
+
+        const selectedIdx = [];
+        list.forEach((item, idx) => {
+            if (selection.has(item)) selectedIdx.push(idx);
+        });
+        if (selectedIdx.length === 0) return false;
+
+        if (direction === -1) {
+            let next = selectedIdx[0] - 1;
+            while (next >= 0 && lockedFn(list[next])) next--;
+            if (next < 0) {
+                // At the start: collapse a multi-selection onto the leftmost
+                // chip; otherwise nothing to do.
+                if (selectedIdx.length > 1) {
+                    selection.clear();
+                    selection.add(list[selectedIdx[0]]);
+                    return 'moved';
+                }
+                return false;
+            }
+            selection.clear();
+            selection.add(list[next]);
+            return 'moved';
+        }
+
+        // direction === +1 (ArrowRight)
+        let next = selectedIdx[selectedIdx.length - 1] + 1;
+        while (next < list.length && lockedFn(list[next])) next++;
+        if (next >= list.length) {
+            selection.clear();
+            return 'deselected';
+        }
+        selection.clear();
+        selection.add(list[next]);
+        return 'moved';
+    };
+
+    const moveWebsiteSelection = (direction) => {
+        const result = moveSelectionInList(modalWebsites, isWebsiteLocked, selectedWebsites, direction);
+        if (result) {
+            window.renderModalTags();
+            if (result === 'deselected') modalWebsiteInput.focus();
+        }
+        return result;
+    };
+    const moveAppSelection = (direction) => {
+        const result = moveSelectionInList(getModalDisplayApps(), isAppLocked, selectedApps, direction);
+        if (result) {
+            window.renderModalTags();
+            if (result === 'deselected') modalAppInput.focus();
+        }
+        return result;
+    };
+
+    const deleteSelectedApps = () => {
+        if (selectedApps.size === 0) return false;
+        const iosLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
+        const toDeleteApps = modalApps.filter(a => selectedApps.has(a) && !isAppLocked(a));
+        const shouldDeleteIos = iosLabel && selectedApps.has(iosLabel) && !isAppLocked(iosLabel);
+        if (toDeleteApps.length === 0 && !shouldDeleteIos) {
+            selectedApps.clear();
+            window.renderModalTags();
+            return false;
+        }
+        const previousIosSelection = shouldDeleteIos ? cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection) : null;
+        const restoredApps = [...toDeleteApps];
+        pushModalUndo('app-bulk', () => {
+            restoredApps.forEach(a => {
+                if (!modalApps.includes(a)) modalApps.push(a);
+            });
+            if (previousIosSelection) {
+                modalIOSScreenTimeSelection = cloneIOSScreenTimeSelection(previousIosSelection);
+            }
+            window.renderModalTags();
+        });
+        toDeleteApps.forEach(a => {
+            const i = modalApps.indexOf(a);
+            if (i !== -1) modalApps.splice(i, 1);
+        });
+        if (shouldDeleteIos) modalIOSScreenTimeSelection = null;
+        selectedApps.clear();
+        window.renderModalTags();
+        return true;
+    };
+
     // Close modal when clicking outside content
     document.getElementById('blocklist-modal').addEventListener('click', (e) => {
         if (e.target.classList.contains('modal-overlay')) {
             closeBlocklistModal();
         }
     });
+
+    // Make the tags+input area feel like a single email-to-field: clicking
+    // anywhere in the tags container (between chips, after the last chip,
+    // empty space) focuses the matching input so the user can immediately
+    // press Backspace to delete the last tag.
+    const focusInputOnTagAreaClick = (tagsContainer, input) => {
+        if (!tagsContainer || !input) return;
+        const wrapper = tagsContainer.closest('.tags-input-container');
+        if (!wrapper) return;
+        wrapper.addEventListener('click', (e) => {
+            if (e.target === input) return;
+            // Don't hijack clicks on chips, the X buttons, or the trailing
+            // browse/import button — they all have their own click semantics.
+            if (e.target.closest('.tag')) return;
+            if (e.target.closest('button')) return;
+            input.focus();
+        });
+    };
+    focusInputOnTagAreaClick(modalWebsitesTags, modalWebsiteInput);
+    focusInputOnTagAreaClick(modalAppsTags, modalAppInput);
 
     document.getElementById('blocklist-name').addEventListener('input', () => {
         const nameInput = document.getElementById('blocklist-name');
@@ -1850,6 +5606,35 @@ function setupModalListeners() {
     });
 
     modalWebsiteInput.addEventListener('keydown', (e) => {
+        const accel = e.metaKey || e.ctrlKey;
+
+        // Cmd/Ctrl-A in an empty input → select all unlocked website tags.
+        // Caret in input + text present keeps the native "select text" behaviour.
+        if (accel && (e.key === 'a' || e.key === 'A') && !modalWebsiteInput.value.length) {
+            e.preventDefault();
+            selectAllUnlockedWebsites();
+            return;
+        }
+
+        // Arrow navigation. ArrowLeft from an empty input pulls the last chip
+        // into selection; ArrowLeft/Right with an active selection walks the
+        // chip list. With caret-in-text, fall through to the default behaviour.
+        if (e.key === 'ArrowLeft' && !accel && !modalWebsiteInput.value.length && selectedWebsites.size === 0) {
+            if (moveWebsiteSelection(-1)) e.preventDefault();
+            return;
+        }
+        if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !accel && selectedWebsites.size > 0) {
+            if (moveWebsiteSelection(e.key === 'ArrowLeft' ? -1 : 1)) e.preventDefault();
+            return;
+        }
+
+        // Backspace/Delete with active selection → bulk delete.
+        if ((e.key === 'Backspace' || e.key === 'Delete') && selectedWebsites.size > 0) {
+            e.preventDefault();
+            deleteSelectedWebsites();
+            return;
+        }
+
         // Backspace on empty input removes the last website tag (if not locked)
         if (e.key === 'Backspace' && !modalWebsiteInput.value.length && modalWebsites.length > 0) {
             const lastIdx = modalWebsites.length - 1;
@@ -1863,6 +5648,12 @@ function setupModalListeners() {
                 window.renderModalTags();
                 e.preventDefault();
             }
+        }
+
+        // Any printable key with an active selection clears it so the user can
+        // keep typing without nuking their tags.
+        if (selectedWebsites.size > 0 && !accel && e.key.length === 1) {
+            clearWebsiteSelection();
         }
         // Enter or Space confirms the website(s) — supports multiple domains separated by space, newline, or comma
         if ((e.key === 'Enter' || e.key === ' ') && modalWebsiteInput.value.trim()) {
@@ -1906,7 +5697,53 @@ function setupModalListeners() {
         }
     });
 
+    setupWebsitesImportMenu({
+        addDomainsToModal: (rawDomains) => {
+            // Validate, drop protected, drop dupes — same filtering rules as
+            // the manual input keydown path.
+            const cleaned = (rawDomains || [])
+                .map(d => cleanDomainInput(d))
+                .filter(d => isValidDomain(d) && !isProtectedDomain(d));
+            const newDomains = cleaned.filter(d => !modalWebsites.includes(d));
+            if (newDomains.length === 0) return;
+
+            const addedCopy = [...newDomains];
+            pushModalUndo('website', () => {
+                addedCopy.forEach(w => {
+                    const i = modalWebsites.indexOf(w);
+                    if (i !== -1) modalWebsites.splice(i, 1);
+                });
+                window.renderModalTags();
+            });
+            newDomains.forEach(w => modalWebsites.push(w));
+            window.renderModalTags();
+        }
+    });
+
     modalAppInput.addEventListener('keydown', (e) => {
+        const accel = e.metaKey || e.ctrlKey;
+
+        if (accel && (e.key === 'a' || e.key === 'A') && !modalAppInput.value.length) {
+            e.preventDefault();
+            selectAllUnlockedApps();
+            return;
+        }
+
+        if (e.key === 'ArrowLeft' && !accel && !modalAppInput.value.length && selectedApps.size === 0) {
+            if (moveAppSelection(-1)) e.preventDefault();
+            return;
+        }
+        if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !accel && selectedApps.size > 0) {
+            if (moveAppSelection(e.key === 'ArrowLeft' ? -1 : 1)) e.preventDefault();
+            return;
+        }
+
+        if ((e.key === 'Backspace' || e.key === 'Delete') && selectedApps.size > 0) {
+            e.preventDefault();
+            deleteSelectedApps();
+            return;
+        }
+
         // Backspace on empty input removes the last app tag (if not locked)
         if (e.key === 'Backspace' && !modalAppInput.value.length && modalApps.length > 0) {
             const lastIdx = modalApps.length - 1;
@@ -1920,6 +5757,10 @@ function setupModalListeners() {
                 window.renderModalTags();
                 e.preventDefault();
             }
+        }
+
+        if (selectedApps.size > 0 && !accel && e.key.length === 1) {
+            clearAppSelection();
         }
         if (e.key === 'Enter' && modalAppInput.value.trim()) {
             e.preventDefault();
@@ -1987,30 +5828,8 @@ function setupModalListeners() {
         });
     } else if (modalBrowseBtn) {
         modalBrowseBtn.addEventListener('click', async () => {
-            const appNames = await tauriAPI.openAppPicker();
-            if (appNames && appNames.length > 0) {
-                const toAdd = appNames.filter(n => !modalApps.includes(n));
-                if (toAdd.length > 0) {
-                    const toAddCopy = [...toAdd];
-                    pushModalUndo('app', () => {
-                        toAddCopy.forEach(a => {
-                            const i = modalApps.indexOf(a);
-                            if (i !== -1) modalApps.splice(i, 1);
-                        });
-                        window.renderModalTags();
-                    });
-                }
-                let added = false;
-                for (const appName of appNames) {
-                    if (!modalApps.includes(appName)) {
-                        modalApps.push(appName);
-                        added = true;
-                    }
-                }
-                if (added) {
-                    window.renderModalTags();
-                }
-            }
+            // Open the in-app installed apps picker instead of the OS file picker
+            openInstalledAppsPicker();
         });
     }
     // Override type
@@ -2163,6 +5982,7 @@ function setupModalListeners() {
         swatch.addEventListener('click', () => {
             document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
             swatch.classList.add('selected');
+            applyModalBlocklistTint(swatch.dataset.color);
         });
     });
 
@@ -2181,6 +6001,7 @@ function setupModalListeners() {
             customSwatch.dataset.color = color;
             document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
             customSwatch.classList.add('selected');
+            applyModalBlocklistTint(color);
         });
     }
 
@@ -2259,7 +6080,7 @@ function setupModalListeners() {
     // Save button
     document.getElementById('save-blocklist-btn').addEventListener('click', () => {
         const nameInput = document.getElementById('blocklist-name');
-        const name = nameInput.value.trim();
+        const name = truncateBlocklistName(nameInput.value.trim());
         const nameEmpty = !name;
         if (nameEmpty) {
             nameInput.classList.add('input-error');
@@ -2314,6 +6135,8 @@ function setupModalListeners() {
 
         if (nameEmpty || websiteInvalid) return;
 
+        nameInput.value = name;
+
         const pendingApp = modalAppInput.value.trim();
         if (pendingApp && !isProtectedApp(pendingApp) && !modalApps.includes(pendingApp)) {
             pushModalUndo('app', () => {
@@ -2345,7 +6168,12 @@ function setupModalListeners() {
         const emoji = selectedEmoji ? selectedEmoji.dataset.emoji : '🚫';
 
         const showItemDetails = document.getElementById('show-item-details-checkbox').checked;
-        const alwaysShowInSchedule = document.getElementById('always-show-in-schedule-checkbox').checked;
+        // Preserve the blocklist's existing schedule visibility (toggled via the chips above the
+        // schedule); default to true for new blocklists.
+        const existingBlocklistForSave = editingBlocklistId
+            ? appData.blocklists.find(bl => bl.id === editingBlocklistId)
+            : null;
+        const alwaysShowInSchedule = existingBlocklistForSave?.alwaysShowInSchedule !== false;
 
         const overrideDifficultyPayload = {
             type: overrideType,
@@ -2414,7 +6242,15 @@ function setupModalListeners() {
         // Only update blocklist display without resetting schedule segments
         renderBlocklists();
         renderBlocklistSelector();
-        renderWeekBlocks(); // Refresh calendar to apply alwaysShowInSchedule changes
+        renderWeekBlocks(); // Refresh calendar so colour / emoji / name changes propagate
+        renderNowBlockingRow(); // Title-bar chips read emoji/name from freshly saved blocklist
+        renderScheduleAlwaysOnRow();
+
+        // If this was the first blocklist created from the empty state,
+        // auto-select it so the user doesn't have to click it. `force`
+        // clears the deselect flag — creating a new blocklist is a
+        // strong "I want to use this" signal.
+        if (!editingBlocklistId) autoSelectSoleBlocklist({ force: true });
 
         // Re-trigger blocklist selection to update button text (name may have changed)
         if (selectedBlocklistId) {
@@ -2444,7 +6280,21 @@ function setupModalListeners() {
             });
             modalWebsites.splice(idx, 1);
             window.renderModalTags();
-        }, window.lockedWebsites);
+        }, window.lockedWebsites, {
+            selectedItems: selectedWebsites,
+            onTagClick: (idx) => {
+                const value = modalWebsites[idx];
+                if (!value || isWebsiteLocked(value)) return;
+                if (selectedWebsites.has(value)) {
+                    selectedWebsites.delete(value);
+                } else {
+                    selectedWebsites.add(value);
+                }
+                window.renderModalTags();
+                // Keep keyboard focus on the input so Backspace works immediately.
+                modalWebsiteInput.focus();
+            }
+        });
 
         const displayApps = getModalDisplayApps();
         renderTags(modalAppsTags, displayApps, (idx) => {
@@ -2469,12 +6319,38 @@ function setupModalListeners() {
                 modalApps.splice(appIdx, 1);
             }
             window.renderModalTags();
-        }, window.lockedApps);
+        }, window.lockedApps, {
+            selectedItems: selectedApps,
+            onTagClick: (idx) => {
+                const value = displayApps[idx];
+                if (!value || isAppLocked(value)) return;
+                if (selectedApps.has(value)) {
+                    selectedApps.delete(value);
+                } else {
+                    selectedApps.add(value);
+                }
+                window.renderModalTags();
+                modalAppInput.focus();
+            }
+        });
+
+        syncModalWebsitePlaceholder();
     };
+
+    // Esc inside the modal clears any active tag selection (it does NOT close
+    // the modal in that case — only when no selection is active).
+    document.getElementById('blocklist-modal').addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        const clearedWebsites = clearWebsiteSelection();
+        const clearedApps = clearAppSelection();
+        if (clearedWebsites || clearedApps) e.stopPropagation();
+    });
 
     window.setModalData = (websites, apps, iosScreenTimeSelection = null, lockedWebsitesList = [], lockedAppsList = []) => {
         modalWebsites.length = 0;
         modalApps.length = 0;
+        selectedWebsites.clear();
+        selectedApps.clear();
         modalIOSScreenTimeSelection = cloneIOSScreenTimeSelection(iosScreenTimeSelection);
         window.lockedWebsites = lockedWebsitesList;
         window.lockedApps = lockedAppsList;
@@ -2528,8 +6404,8 @@ function setupOverrideModalListeners() {
         const progress = (correctChars / target.length) * 100;
         progressBar.style.width = `${progress}%`;
 
-        // Clear error highlighting while typing
-        renderChallengeText(-1);
+        // Show red highlight on the reference text at the first mismatch (-1 clears)
+        renderChallengeText(firstErrorIndex);
     });
 
     // Enter key submits the override
@@ -2637,6 +6513,15 @@ function setupOverrideModalListeners() {
     }
     window.addEventListener('resize', () => syncPauseDurationRowLayout());
 
+    const blockActionButtons = document.getElementById('block-action-buttons');
+    if (blockActionButtons && typeof ResizeObserver !== 'undefined') {
+        const stopButtonFitRo = new ResizeObserver(() => syncAllStopBtnLabelFits());
+        stopButtonFitRo.observe(blockActionButtons);
+    }
+    window.addEventListener('resize', () => syncAllStopBtnLabelFits());
+    window.addEventListener('resize', () => syncIosScheduleDayLabelsViewportMode());
+    window.visualViewport?.addEventListener('resize', syncIosScheduleDayLabelsViewportMode);
+
     document.getElementById('confirm-override-btn').addEventListener('click', async () => {
         const typed = challengeInput.value;
         const target = challengeText;
@@ -2691,63 +6576,34 @@ function setupOverrideModalListeners() {
                 // Update blocked apps (will stop watcher if no apps to block, including schedules)
                 await updateBlockedApps();
             } else if (window.overrideScheduleId) {
-                // Check which radio button is selected
-                const overrideType = document.querySelector('input[name="schedule-override-type"]:checked')?.value || 'stop-schedule';
+                // Schedules behave like one-off blocks now: stopping always tears down the
+                // entire schedule (no per-instance skip). Segments are re-loaded into the
+                // editor so the user can re-start them later without re-typing them.
                 const scheduleId = window.overrideScheduleId;
-                const segmentIndex = window.overrideSegmentIndex;
-                const segmentDay = window.overrideSegmentDay;
+                const scheduleToStop = appData.schedules.find(s =>
+                    s.id === scheduleId || s.blocklistId === scheduleId
+                );
 
-                // Only allow "just this block" if segmentIndex and segmentDay are defined
-                // (i.e., only when clicking a specific block in the timeline, not from stop schedule button)
-                if (overrideType === 'just-this' && segmentIndex !== undefined && segmentDay !== undefined) {
-                    // "Just this block" - remove only the specific day from the segment
-                    const schedule = appData.schedules.find(s => s.id === scheduleId);
-                    if (schedule && schedule.segments[segmentIndex]) {
-                        const segment = schedule.segments[segmentIndex];
-                        // Remove this day from the segment
-                        segment.days = segment.days.filter(d => d !== segmentDay);
+                if (scheduleToStop) {
+                    scheduleSegments = scheduleToStop.segments.map(seg => ({ ...seg }));
+                    activeScheduleSegmentCount = 0; // No segments are locked anymore
 
-                        // If segment has no more days, remove the entire segment
-                        if (segment.days.length === 0) {
-                            schedule.segments.splice(segmentIndex, 1);
-                        }
+                    // Save these segments as pending so they persist when clicking off/on
+                    if (!appData.settings) appData.settings = {};
+                    if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
+                    appData.settings.pendingScheduleSegments[scheduleToStop.blocklistId] = scheduleSegments.map(seg => ({ ...seg }));
 
-                        // If schedule has no more segments, remove the entire schedule
-                        if (schedule.segments.length === 0) {
-                            appData.schedules = appData.schedules.filter(s => s.id !== scheduleId);
-                            activeScheduleSegmentCount = 0;
-                        }
-                    }
-                } else {
-                    // "Stop schedule" - remove the entire schedule but preserve segments
-                    const scheduleToStop = appData.schedules.find(s =>
-                        s.id === scheduleId || s.blocklistId === scheduleId
+                    appData.schedules = appData.schedules.filter(s =>
+                        s.id !== scheduleId && s.blocklistId !== scheduleId
                     );
 
-                    if (scheduleToStop) {
-                        // Load all segments from the stopped schedule into scheduleSegments
-                        // so they become editable (not greyed out)
-                        scheduleSegments = scheduleToStop.segments.map(seg => ({ ...seg }));
-                        activeScheduleSegmentCount = 0; // No segments are locked anymore
-
-                        // Save these segments as pending so they persist when clicking off/on
-                        if (!appData.settings) appData.settings = {};
-                        if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
-                        appData.settings.pendingScheduleSegments[scheduleToStop.blocklistId] = scheduleSegments.map(seg => ({ ...seg }));
-
-                        // Remove the schedule from active schedules
-                        appData.schedules = appData.schedules.filter(s =>
-                            s.id !== scheduleId && s.blocklistId !== scheduleId
-                        );
-
-                        // Rebuild UI to show all segments as editable if we're viewing this blocklist
-                        if (selectedBlocklistId === scheduleToStop.blocklistId && isScheduleMode) {
-                            rebuildScheduleSegments();
-                            disableScheduleControls(false); // Enable all controls
-                        }
-                    } else {
-                        activeScheduleSegmentCount = 0;
+                    // Rebuild UI to show all segments as editable if we're viewing this blocklist
+                    if (selectedBlocklistId === scheduleToStop.blocklistId && isScheduleMode) {
+                        rebuildScheduleSegments();
+                        disableScheduleControls(false);
                     }
+                } else {
+                    activeScheduleSegmentCount = 0;
                 }
 
                 // On iOS, clear both Screen Time stores so the overridden schedule's blocks are removed
@@ -2759,23 +6615,10 @@ function setupOverrideModalListeners() {
 
                 await saveData();
                 await updateHostsFile();
-                // Sync updated schedules to helper daemon
                 await syncSchedulesToHelper();
-                // Update blocked apps after schedule changes
                 await updateBlockedApps();
 
-                // Reset modal title
-                const titleEl = document.getElementById('override-modal-title');
-                if (titleEl) {
-                    titleEl.textContent = 'Override Block?';
-                }
-
-                // Hide radio options and reset for next use
-                document.getElementById('schedule-override-options').classList.add('hidden');
-
                 delete window.overrideScheduleId;
-                delete window.overrideSegmentIndex;
-                delete window.overrideSegmentDay;
             }
 
             render();
@@ -2808,14 +6651,20 @@ function setupOverrideModalListeners() {
 }
 
 // Render tags
-function renderTags(container, items, onRemove, lockedItems = []) {
+function renderTags(container, items, onRemove, lockedItems = [], options = {}) {
+    const selectedItems = options.selectedItems instanceof Set ? options.selectedItems : null;
+    const onTagClick = typeof options.onTagClick === 'function' ? options.onTagClick : null;
+
     container.innerHTML = items.map((item, idx) => {
         const isLocked = lockedItems.includes(item);
-        const lockedClass = isLocked ? 'locked' : '';
+        const isSelected = !isLocked && selectedItems?.has(item);
+        const classes = ['tag'];
+        if (isLocked) classes.push('locked');
+        if (isSelected) classes.push('selected');
         const removeBtn = !isLocked ? `<button class="tag-remove" data-idx="${idx}">×</button>` : '';
 
         return `
-    <span class="tag ${lockedClass}">
+    <span class="${classes.join(' ')}" data-idx="${idx}">
       ${escapeHtml(item)}
       ${removeBtn}
     </span>
@@ -2829,6 +6678,18 @@ function renderTags(container, items, onRemove, lockedItems = []) {
             if (onRemove) onRemove(idx);
         });
     });
+
+    if (onTagClick) {
+        container.querySelectorAll('.tag').forEach(tagEl => {
+            tagEl.addEventListener('click', (e) => {
+                // Don't toggle when the user clicks the inline ✕ — that path
+                // is handled by .tag-remove above and removes the chip outright.
+                if (e.target.closest('.tag-remove')) return;
+                const idx = parseInt(tagEl.dataset.idx);
+                if (Number.isFinite(idx)) onTagClick(idx);
+            });
+        });
+    }
 }
 // Track current selected end time only (start is always 'now')
 let selectedEndHour = 20;
@@ -2844,8 +6705,8 @@ function pad(num) {
 // Disable or enable time controls (when a block is active, controls should be disabled)
 function disableTimeControls(disabled) {
     const durationInput = document.getElementById('duration-minutes-input');
-    const endHourBtn = document.getElementById('end-hour-btn');
-    const endMinuteBtn = document.getElementById('end-minute-btn');
+    const endHourInput = document.getElementById('end-hour-input');
+    const endMinuteInput = document.getElementById('end-minute-input');
     const endTimeDisplay = document.getElementById('end-time-display');
     const quickSelectBtns = document.querySelectorAll('.duration-quick-btn');
     const timePickerContainer = document.getElementById('time-picker-container');
@@ -2856,16 +6717,16 @@ function disableTimeControls(disabled) {
         durationInput.style.pointerEvents = disabled ? 'none' : 'auto';
     }
 
-    if (endHourBtn) {
-        endHourBtn.disabled = disabled;
-        endHourBtn.style.opacity = disabled ? '0.5' : '1';
-        endHourBtn.style.pointerEvents = disabled ? 'none' : 'auto';
+    if (endHourInput) {
+        endHourInput.disabled = disabled;
+        endHourInput.style.opacity = disabled ? '0.5' : '1';
+        endHourInput.style.pointerEvents = disabled ? 'none' : 'auto';
     }
 
-    if (endMinuteBtn) {
-        endMinuteBtn.disabled = disabled;
-        endMinuteBtn.style.opacity = disabled ? '0.5' : '1';
-        endMinuteBtn.style.pointerEvents = disabled ? 'none' : 'auto';
+    if (endMinuteInput) {
+        endMinuteInput.disabled = disabled;
+        endMinuteInput.style.opacity = disabled ? '0.5' : '1';
+        endMinuteInput.style.pointerEvents = disabled ? 'none' : 'auto';
     }
 
     if (endTimeDisplay) {
@@ -2881,13 +6742,6 @@ function disableTimeControls(disabled) {
     // Add a visual indicator to the whole container
     if (timePickerContainer) {
         timePickerContainer.classList.toggle('controls-disabled', disabled);
-    }
-
-    // Disable/enable duration mode toggle (always / for some time)
-    const durationToggle = document.getElementById('duration-mode-toggle');
-    if (durationToggle) {
-        durationToggle.style.opacity = disabled ? '0.5' : '1';
-        durationToggle.style.pointerEvents = disabled ? 'none' : 'auto';
     }
 }
 
@@ -2942,13 +6796,13 @@ function disableScheduleControls(disabled) {
         }
     }
 
-    // Disable Add button when schedule is active (activeScheduleSegmentCount > 0)
+    // Add button stays enabled even when schedule is active — new segments append
+    // as unsaved drafts and are committed via the pending-changes bar.
     if (addSegmentBtn) {
-        const isScheduleActive = activeScheduleSegmentCount > 0;
-        addSegmentBtn.disabled = isScheduleActive;
-        addSegmentBtn.style.opacity = isScheduleActive ? '0.5' : '1';
-        addSegmentBtn.style.pointerEvents = isScheduleActive ? 'none' : 'auto';
-        addSegmentBtn.style.cursor = isScheduleActive ? 'not-allowed' : 'pointer';
+        addSegmentBtn.disabled = false;
+        addSegmentBtn.style.opacity = '1';
+        addSegmentBtn.style.pointerEvents = 'auto';
+        addSegmentBtn.style.cursor = 'pointer';
     }
 
     // Disable controls on EXISTING segments (those within activeScheduleSegmentCount)
@@ -2984,7 +6838,7 @@ function initializeTimeInputs() {
 
     // Restore always-on mode preference for this blocklist
     const savedAlwaysOn = selectedBlocklistId && appData.settings?.alwaysOnMode?.[selectedBlocklistId];
-    setAlwaysOnMode(savedAlwaysOn !== undefined ? !!savedAlwaysOn : true);
+    setAlwaysOnMode(savedAlwaysOn !== undefined ? !!savedAlwaysOn : false);
 
     if (selectedBlocklistId && appData.settings?.instantBlockDuration?.[selectedBlocklistId] !== undefined) {
         targetDurationMinutes = appData.settings.instantBlockDuration[selectedBlocklistId];
@@ -3013,11 +6867,11 @@ function initializeTimeInputs() {
         }
     }
 
-    // Populate minute options (0-59) for end time only
+    // Populate minute options (0, 5, … 55) — typing still allows any 0–59
     const minuteContainer = document.getElementById('end-minute-options');
     if (minuteContainer) {
         minuteContainer.innerHTML = '';
-        for (let m = 0; m < 60; m++) {
+        for (let m = 0; m < 60; m += 5) {
             const btn = document.createElement('button');
             btn.className = 'popover-option';
             btn.textContent = pad(m);
@@ -3033,18 +6887,20 @@ function initializeTimeInputs() {
     updateTimeDisplay();
     handleTimeChange();
 
-    // Initialize click handlers for schedule segment time buttons
-    document.querySelectorAll('.schedule-block-panel .time-part').forEach(btn => {
-        btn.addEventListener('click', handleScheduleTimeClick);
-    });
+    // Initialize click handlers + typing for schedule segment time fields
+    wireAllScheduleSegmentTimeControls();
 }
 
-// Update the time display buttons (end time only)
+// Update the end-time display (compact inputs; skip while focused).
 function updateTimeDisplay() {
-    const endHourBtn = document.getElementById('end-hour-btn');
-    const endMinuteBtn = document.getElementById('end-minute-btn');
-    if (endHourBtn) endHourBtn.textContent = pad(selectedEndHour);
-    if (endMinuteBtn) endMinuteBtn.textContent = pad(selectedEndMinute);
+    const endHourInput = document.getElementById('end-hour-input');
+    const endMinuteInput = document.getElementById('end-minute-input');
+    if (endHourInput && document.activeElement !== endHourInput) {
+        endHourInput.value = pad(selectedEndHour);
+    }
+    if (endMinuteInput && document.activeElement !== endMinuteInput) {
+        endMinuteInput.value = pad(selectedEndMinute);
+    }
 
     // Update selected state in popovers
     updatePopoverSelection();
@@ -3059,12 +6915,96 @@ function updatePopoverSelection() {
     document.querySelectorAll('#end-hour-options .popover-option').forEach(btn => {
         if (parseInt(btn.dataset.value) === selectedEndHour) btn.classList.add('selected');
     });
+    let minuteListMatch = selectedEndMinute;
+    if (selectedEndMinute % 5 !== 0) {
+        const rounded = Math.round(selectedEndMinute / 5) * 5;
+        minuteListMatch = rounded >= 60 ? 55 : rounded;
+    }
     document.querySelectorAll('#end-minute-options .popover-option').forEach(btn => {
-        if (parseInt(btn.dataset.value) === selectedEndMinute) btn.classList.add('selected');
+        if (parseInt(btn.dataset.value) === minuteListMatch) btn.classList.add('selected');
     });
 }
 
-// Handle click on time part button
+/** Parse HH / MM from end-time numeric fields (0–23 / 0–59). Empty or invalid → null. */
+function parseEndTimeBoundedInt(raw, min, max) {
+    const digits = String(raw ?? '').replace(/\D/g, '');
+    if (digits === '') return null;
+    const n = parseInt(digits, 10);
+    if (Number.isNaN(n)) return null;
+    return Math.min(max, Math.max(min, n));
+}
+
+function commitEndHourInput() {
+    const input = document.getElementById('end-hour-input');
+    if (!input) return;
+    const v = parseEndTimeBoundedInt(input.value, 0, 23);
+    if (v === null) {
+        input.value = pad(selectedEndHour);
+        return;
+    }
+    selectedEndHour = v;
+    input.value = pad(v);
+    userEditedEndTime = true;
+    updatePopoverSelection();
+    handleTimeChange();
+}
+
+function commitEndMinuteInput() {
+    const input = document.getElementById('end-minute-input');
+    if (!input) return;
+    const v = parseEndTimeBoundedInt(input.value, 0, 59);
+    if (v === null) {
+        input.value = pad(selectedEndMinute);
+        return;
+    }
+    selectedEndMinute = v;
+    input.value = pad(v);
+    userEditedEndTime = true;
+    updatePopoverSelection();
+    handleTimeChange();
+}
+
+/** Wire blur/input once for editable instant end HH:MM fields. */
+function setupEndTimeDirectInputs() {
+    const hourEl = document.getElementById('end-hour-input');
+    const minuteEl = document.getElementById('end-minute-input');
+    if (!hourEl || !minuteEl) return;
+    if (hourEl.dataset.directInputBound === '1') return;
+    hourEl.dataset.directInputBound = '1';
+
+    const digitsOnly = (el) => {
+        const next = el.value.replace(/\D/g, '').slice(0, 2);
+        if (next !== el.value) el.value = next;
+    };
+
+    hourEl.addEventListener('input', () => {
+        closeAllPopovers();
+        digitsOnly(hourEl);
+    });
+    hourEl.addEventListener('blur', () => commitEndHourInput());
+    hourEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            hourEl.blur();
+            minuteEl.focus();
+            if (typeof minuteEl.select === 'function') minuteEl.select();
+        }
+    });
+
+    minuteEl.addEventListener('input', () => {
+        closeAllPopovers();
+        digitsOnly(minuteEl);
+    });
+    minuteEl.addEventListener('blur', () => commitEndMinuteInput());
+    minuteEl.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            minuteEl.blur();
+        }
+    });
+}
+
+// Handle click on time part (button or instant-end input): open list and mark active.
 function handleTimePartClick(e) {
     e.stopPropagation();
     const btn = e.currentTarget;
@@ -3076,6 +7016,7 @@ function handleTimePartClick(e) {
 
     // Open the relevant popover
     const popover = document.getElementById(`${target}-${type}-popover`);
+    if (!popover) return;
     popover.classList.remove('hidden');
     btn.classList.add('active');
 
@@ -3111,15 +7052,21 @@ function selectTimeOption(e) {
 
 // Close all popovers
 function closeAllPopovers() {
-    document.querySelectorAll('.time-popover').forEach(p => p.classList.add('hidden'));
-    document.querySelectorAll('.time-part').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.time-popover:not(.schedule-time-popover)').forEach(p => p.classList.add('hidden'));
+    document.querySelectorAll('.time-part.active, .time-popover-anchor.active').forEach(el =>
+        el.classList.remove('active'));
 }
 
 // Handle clicks outside popovers
 function handlePopoverOutsideClick(e) {
-    if (!e.target.closest('.time-popover') && !e.target.closest('.time-part')) {
-        closeAllPopovers();
+    if (
+        e.target.closest('.time-popover') ||
+        e.target.closest('.time-popover-anchor') ||
+        e.target.closest('button.time-part')
+    ) {
+        return;
     }
+    closeAllPopovers();
 }
 
 // Get start time as Date (always now, with seconds zeroed for consistent duration calculation)
@@ -3185,10 +7132,25 @@ function handleDurationInputChange() {
 }
 
 // Handle duration quick toggle button click
+// Handle a click on any of the quick-select buttons. The "Always" button switches into
+// always-on mode; the numeric duration buttons switch into timed mode and apply the new
+// duration.
 function handleDurationQuickBtn(e) {
-    const mins = parseInt(e.target.dataset.mins);
+    const btn = e.currentTarget || e.target.closest('.duration-quick-btn');
+    if (!btn) return;
+
+    if (btn.dataset.mode === 'always') {
+        if (!isAlwaysOnMode) setAlwaysOnMode(true);
+        // setAlwaysOnMode already refreshes the active button state via updateDurationQuickBtns.
+        return;
+    }
+
+    // Timed selection: leave always-on mode if needed, then apply the new duration.
+    if (isAlwaysOnMode) setAlwaysOnMode(false);
+
+    const mins = parseInt(btn.dataset.mins);
     const input = document.getElementById('duration-minutes-input');
-    input.value = mins;
+    if (input) input.value = mins;
 
     // Track the target duration and reset end time editing flag
     targetDurationMinutes = mins;
@@ -3206,14 +7168,15 @@ function handleDurationQuickBtn(e) {
     handleTimeChange();
 }
 
-// Update quick button active states based on current duration
+// Update quick-select button active states. In always-on mode the "Always" button is the
+// only active one; in timed mode the button matching durationMinutes (if any) is active.
 function updateDurationQuickBtns(durationMinutes) {
     document.querySelectorAll('.duration-quick-btn').forEach(btn => {
-        const btnMins = parseInt(btn.dataset.mins);
-        if (btnMins === durationMinutes) {
-            btn.classList.add('active');
+        if (btn.dataset.mode === 'always') {
+            btn.classList.toggle('active', isAlwaysOnMode);
         } else {
-            btn.classList.remove('active');
+            const btnMins = parseInt(btn.dataset.mins);
+            btn.classList.toggle('active', !isAlwaysOnMode && btnMins === durationMinutes);
         }
     });
 }
@@ -3223,16 +7186,13 @@ function updateDurationQuickBtns(durationMinutes) {
 // ========================================
 
 // Get default schedule segments based on current time
-// Start at the current hour (floor), end 2 hours later
+// Start at the current hour (floor), end 2 hours later, selected on every day of the week.
 function getDefaultScheduleSegments() {
     const now = new Date();
     const startHour = now.getHours();
     const endHour = (startHour + 2) % 24;
-    // Get current day (0=Sun...6=Sat in JS, convert to 0=Mon...6=Sun)
-    const jsDay = now.getDay();
-    const currentDay = jsDay === 0 ? 6 : jsDay - 1; // Convert: Sun=6, Mon=0, Tue=1, etc.
     return [
-        { startHour, startMinute: 0, endHour, endMinute: 0, days: [currentDay] }
+        { startHour, startMinute: 0, endHour, endMinute: 0, days: [0, 1, 2, 3, 4, 5, 6] }
     ];
 }
 
@@ -3240,17 +7200,14 @@ function getDefaultScheduleSegments() {
 function setAlwaysOnMode(alwaysOn) {
     isAlwaysOnMode = alwaysOn;
 
-    // Update toggle button active states
-    const timedBtn = document.getElementById('duration-mode-timed');
-    const alwaysBtn = document.getElementById('duration-mode-always');
-    if (timedBtn) timedBtn.classList.toggle('active', !alwaysOn);
-    if (alwaysBtn) alwaysBtn.classList.toggle('active', alwaysOn);
-
     // Show/hide timed controls vs always-on message
     const timedControls = document.getElementById('timed-controls');
     const alwaysOnMessage = document.getElementById('always-on-message');
     if (timedControls) timedControls.classList.toggle('hidden', alwaysOn);
     if (alwaysOnMessage) alwaysOnMessage.classList.toggle('hidden', !alwaysOn);
+
+    // Reflect the mode change in the quick-select row (highlight "Always" or the matching duration).
+    updateDurationQuickBtns(targetDurationMinutes);
 
     // Save preference per blocklist
     if (selectedBlocklistId) {
@@ -3327,8 +7284,8 @@ function setScheduleMode(isSchedule) {
                         saveData();
                     }
                 } else {
-                    if (appData.settings.pendingScheduleSegments[selectedBlocklistId]) {
-                        delete appData.settings.pendingScheduleSegments[selectedBlocklistId];
+                    if (appData.settings.pendingScheduleSegments?.[selectedBlocklistId]) {
+                        clearPendingScheduleDraft(selectedBlocklistId);
                         saveData();
                     }
                 }
@@ -3338,9 +7295,22 @@ function setScheduleMode(isSchedule) {
             const pendingSegments = appData.settings?.pendingScheduleSegments?.[selectedBlocklistId];
             if (pendingSegments && pendingSegments.length > 0) {
                 scheduleSegments = pendingSegments.map(seg => ({ ...seg }));
+                const repeatOpts = appData.settings?.pendingScheduleRepeatOptions?.[selectedBlocklistId];
+                if (repeatOpts && typeof repeatOpts.repeatType === 'string') {
+                    scheduleRepeatType = repeatOpts.repeatType;
+                    scheduleRepeatDate =
+                        repeatOpts.repeatType === 'date' && repeatOpts.repeatDate != null
+                            ? new Date(repeatOpts.repeatDate)
+                            : null;
+                } else {
+                    scheduleRepeatType = 'forever';
+                    scheduleRepeatDate = null;
+                }
             } else {
                 // Reset schedule segments to fresh default times
                 scheduleSegments = getDefaultScheduleSegments();
+                scheduleRepeatType = 'forever';
+                scheduleRepeatDate = null;
             }
             activeScheduleSegmentCount = 0;
         }
@@ -3377,11 +7347,10 @@ function setScheduleMode(isSchedule) {
 
                 // Also update button to show Stop state
                 const btnLabel = startBlockBtn.querySelector('.btn-label');
-                const btnName = startBlockBtn.querySelector('.btn-name');
                 const btnIcon = startBlockBtn.querySelector('svg');
-                if (btnLabel) btnLabel.textContent = 'Stop Block:';
-                if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
                 startBlockBtn.classList.add('stop-block');
+                setBtnActionLabel(btnLabel, tSettings('stopBlock'));
+                setStartBtnBlocklistInfo(startBlockBtn, blocklist);
                 startBlockBtn.disabled = false;
                 startBlockBtn.dataset.activeBlockId = activeBlock.id;
                 if (btnIcon) {
@@ -3394,15 +7363,12 @@ function setScheduleMode(isSchedule) {
 
                 // Keep the info message visible for active always-on blocks.
                 const alwaysOnMsg = document.getElementById('always-on-message');
-                const durationToggle = document.getElementById('duration-mode-toggle');
                 if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
-                if (durationToggle) durationToggle.classList.add('hidden');
             } else {
                 if (pauseBtn) pauseBtn.classList.add('hidden');
                 startBlockBtn.classList.remove('stop-block');
                 delete startBlockBtn.dataset.activeBlockId;
-                const btnName = startBlockBtn.querySelector('.btn-name');
-                if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
+                setStartBtnBlocklistInfo(startBlockBtn, blocklist);
             }
         }
     }
@@ -3611,7 +7577,6 @@ function updateScheduleButtonState() {
         : null;
 
     const btnLabel = startScheduleBtn.querySelector('.btn-label');
-    const btnName = startScheduleBtn.querySelector('.btn-name');
     const btnIcon = startScheduleBtn.querySelector('svg');
 
     // Check if there are new segments (beyond the locked count)
@@ -3637,16 +7602,15 @@ function updateScheduleButtonState() {
         }
     }
 
-    if (activeSchedule && !hasNewSegments) {
-        // Active schedule with no pending changes - show Stop button (grey/secondary style)
-        if (btnLabel) btnLabel.textContent = tSettings('stopScheduleButton');
-        if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
+    if (activeSchedule) {
+        // Active schedule - keep Stop button visible regardless of pending changes.
+        // Pending segments are committed/discarded via the pending-changes bar.
         startScheduleBtn.classList.add('stop-schedule');
+        setBtnActionLabel(btnLabel, tSettings('stopScheduleButton'));
+        setStartBtnBlocklistInfo(startScheduleBtn, blocklist);
         startScheduleBtn.classList.remove('edit-schedule');
         startScheduleBtn.disabled = false;
         startScheduleBtn.dataset.activeScheduleId = activeSchedule.id || activeSchedule.blocklistId;
-
-
 
         // Change to unlock icon
         if (btnIcon) {
@@ -3656,34 +7620,13 @@ function updateScheduleButtonState() {
             `;
         }
 
-        // Disable controls for existing segments
-        disableScheduleControls(true);
-    } else if (activeSchedule && hasNewSegments) {
-        // Existing schedule not currently active (or has pending changes) - show Edit button
-        if (btnLabel) btnLabel.textContent = tSettings('editScheduleButton');
-        if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
-        startScheduleBtn.classList.remove('stop-schedule');
-        startScheduleBtn.classList.add('edit-schedule');
-        startScheduleBtn.disabled = false;
-        startScheduleBtn.dataset.activeScheduleId = activeSchedule.id || activeSchedule.blocklistId;
-
-        // Calendar icon for edit mode
-        if (btnIcon) {
-            btnIcon.innerHTML = `
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-                <line x1="16" y1="2" x2="16" y2="6"></line>
-                <line x1="8" y1="2" x2="8" y2="6"></line>
-                <line x1="3" y1="10" x2="21" y2="10"></line>
-            `;
-        }
-
-        // Controls are mixed - existing segments disabled, new segments enabled
+        // Disable controls for existing (committed) segments; new ones stay editable
         disableScheduleControls(true);
     } else {
         // No active schedule - show Start button (normal)
-        if (btnLabel) btnLabel.textContent = tSettings('startScheduleButton');
-        if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
         startScheduleBtn.classList.remove('stop-schedule');
+        setBtnActionLabel(btnLabel, tSettings('startScheduleButton'));
+        setStartBtnBlocklistInfo(startScheduleBtn, blocklist);
         startScheduleBtn.classList.remove('edit-schedule');
         delete startScheduleBtn.dataset.activeScheduleId;
 
@@ -3704,15 +7647,78 @@ function updateScheduleButtonState() {
     // Enable button if blocklist is selected
     const isValid = selectedBlocklistId;
     startScheduleBtn.disabled = !isValid;
+
+    // Show pending-changes bar only when an active schedule has unsaved new segments
+    updateSchedulePendingBar(!!(activeSchedule && hasNewSegments), activeSchedule);
+}
+
+// Show or hide the pending-changes bar at the bottom of the schedule panel.
+function updateSchedulePendingBar(visible, activeSchedule) {
+    const bar = document.getElementById('schedule-pending-bar');
+    if (!bar) return;
+
+    if (!visible) {
+        bar.classList.add('hidden');
+        return;
+    }
+
+    const label = document.getElementById('schedule-pending-label');
+    if (label) label.textContent = tSettings('pendingChangesLabel');
+
+    const saveBtn = document.getElementById('schedule-pending-save');
+    if (saveBtn) saveBtn.textContent = tSettings('pendingChangesSave');
+    const discardBtn = document.getElementById('schedule-pending-discard');
+    if (discardBtn) discardBtn.textContent = tSettings('pendingChangesDiscard');
+
+    bar.classList.remove('hidden');
+}
+
+// Commit any unsaved new segments to the active schedule (Save changes from pending bar).
+async function saveSchedulePendingChanges() {
+    if (!selectedBlocklistId) return;
+    const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+    const activeSchedule = appData.schedules
+        ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
+        : null;
+    if (!blocklist || !activeSchedule) return;
+
+    const committedCount = getCommittedScheduleSegmentCount(activeSchedule);
+    const newSegments = scheduleSegments.slice(committedCount);
+    if (newSegments.length === 0) return;
+
+    // Require at least one day per new segment, matching startSchedule's validation.
+    const allHaveDays = newSegments.every(seg => Array.isArray(seg.days) && seg.days.length > 0);
+    if (!allHaveDays) return;
+
+    showScheduleEditConfirmModal(blocklist, activeSchedule, newSegments);
+}
+
+// Discard any unsaved new segments and revert the panel to the committed schedule.
+function discardSchedulePendingChanges() {
+    if (!selectedBlocklistId) return;
+    const activeSchedule = appData.schedules
+        ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
+        : null;
+    if (!activeSchedule) return;
+
+    const committedCount = getCommittedScheduleSegmentCount(activeSchedule);
+    if (scheduleSegments.length <= committedCount) return;
+
+    // Truncate to committed segments only
+    scheduleSegments = scheduleSegments.slice(0, committedCount).map(seg => ({ ...seg }));
+
+    // Clear persisted pending draft so a reload doesn't resurrect them
+    clearPendingScheduleDraft(selectedBlocklistId);
+    saveData();
+
+    rebuildScheduleSegments();
+    disableScheduleControls(true);
+    handleTimeChange();
+    updateScheduleButtonState();
 }
 
 // Add a new time segment
 function addScheduleSegment() {
-    // Don't allow adding segments when schedule is active
-    if (activeScheduleSegmentCount > 0) {
-        return;
-    }
-
     // Get the previous segment's end time, round up to next full hour for new start
     const prevSegment = scheduleSegments[scheduleSegments.length - 1];
     let newStartHour;
@@ -3729,17 +7735,13 @@ function addScheduleSegment() {
     const newEndHour = (newStartHour + 2) % 24;
     const newEndMinute = 0;
 
-    // Default to current day (0=Mon...6=Sun)
-    const jsDay = new Date().getDay();
-    const currentDay = jsDay === 0 ? 6 : jsDay - 1;
-
-    // Add to state
+    // New segments default to every day of the week, matching the initial schedule default.
     scheduleSegments.push({
         startHour: newStartHour,
         startMinute: newStartMinute,
         endHour: newEndHour,
         endMinute: newEndMinute,
-        days: [currentDay]
+        days: [0, 1, 2, 3, 4, 5, 6]
     });
 
     // Rebuild all segments to ensure consistent rendering
@@ -3793,18 +7795,31 @@ function removeScheduleSegment(index) {
     // Rebuild DOM (simpler than updating indices)
     rebuildScheduleSegments();
 
-    // Update calendar preview
+    // Re-apply disabled state to locked segments if a schedule is active
+    if (activeScheduleSegmentCount > 0) {
+        disableScheduleControls(true);
+    }
+
+    // Update calendar preview and pending-bar visibility
     handleTimeChange();
+    updateScheduleButtonState();
 }
 
-// Sort schedule segments chronologically by start time
+// Sort schedule segments chronologically by start time.
+// When a schedule is running, the committed/pending split is tracked by array index
+// (segments before `activeScheduleSegmentCount` are committed, the rest are unsaved).
+// Sort within each partition independently so that invariant survives the sort —
+// otherwise a pending segment with an early time could swap places with a committed
+// one and corrupt subsequent saves.
 function sortScheduleSegments() {
-    scheduleSegments.sort((a, b) => {
-        // Compare by start hour first, then by start minute
-        const aMinutes = a.startHour * 60 + a.startMinute;
-        const bMinutes = b.startHour * 60 + b.startMinute;
-        return aMinutes - bMinutes;
-    });
+    const cmp = (a, b) => (a.startHour * 60 + a.startMinute) - (b.startHour * 60 + b.startMinute);
+    if (activeScheduleSegmentCount > 0 && scheduleSegments.length > activeScheduleSegmentCount) {
+        const committed = scheduleSegments.slice(0, activeScheduleSegmentCount).sort(cmp);
+        const pending = scheduleSegments.slice(activeScheduleSegmentCount).sort(cmp);
+        scheduleSegments = [...committed, ...pending];
+    } else {
+        scheduleSegments.sort(cmp);
+    }
 }
 
 // Rebuild schedule segments DOM from state
@@ -3815,7 +7830,14 @@ function rebuildScheduleSegments() {
     const container = document.getElementById('schedule-segments');
     container.innerHTML = '';
 
-    const dayLabels = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    const fullDayLabels = weekdayAbbrevMon0List();
+    const useCompactDayLabels = shouldUseCompactIosScheduleDayLabels();
+    const dayLabels = useCompactDayLabels ? weekdayLetterMon0List() : fullDayLabels;
+    const labelStart = tSettings('start');
+    const labelEnd = tSettings('end');
+    const labelDays = tSettings('days');
+
+    iosCompactScheduleDayLabelsActive = useCompactDayLabels;
 
     scheduleSegments.forEach((seg, index) => {
         const segment = document.createElement('div');
@@ -3827,7 +7849,7 @@ function rebuildScheduleSegments() {
 
         // Generate day toggles HTML
         const dayTogglesHtml = dayLabels.map((label, i) =>
-            `<button type="button" class="segment-day-toggle${segmentDays.includes(i) ? ' active' : ''}" data-day="${i}">${label}</button>`
+            `<button type="button" class="segment-day-toggle${segmentDays.includes(i) ? ' active' : ''}" data-day="${i}" aria-label="${fullDayLabels[i]}">${label}</button>`
         ).join('');
 
         // Only show labels on the first segment
@@ -3837,38 +7859,54 @@ function rebuildScheduleSegments() {
             <div class="segment-row">
                 <div class="time-pickers-row">
                     <div class="time-picker-group">
-                        ${showLabels ? '<label class="time-label">Start</label>' : ''}
+                        ${showLabels ? `<label class="time-label">${labelStart}</label>` : ''}
                         <div class="time-picker-row">
                             <div class="time-display schedule-start-display">
                                 <div class="time-part-wrapper">
-                                    <button class="time-part schedule-hour-btn" data-type="hour" data-target="schedule-start-${index}">${String(seg.startHour).padStart(2, '0')}</button>
+                                    <input type="text" class="time-part schedule-hour-btn"
+                                        data-type="hour" data-target="schedule-start-${index}"
+                                        inputmode="numeric" maxlength="2" autocomplete="off"
+                                        value="${String(seg.startHour).padStart(2, '0')}"
+                                        aria-label="Schedule start hour" />
                                 </div>
                                 <span class="time-colon">:</span>
                                 <div class="time-part-wrapper">
-                                    <button class="time-part schedule-minute-btn" data-type="minute" data-target="schedule-start-${index}">${String(seg.startMinute).padStart(2, '0')}</button>
+                                    <input type="text" class="time-part schedule-minute-btn"
+                                        data-type="minute" data-target="schedule-start-${index}"
+                                        inputmode="numeric" maxlength="2" autocomplete="off"
+                                        value="${String(seg.startMinute).padStart(2, '0')}"
+                                        aria-label="Schedule start minute" />
                                 </div>
                             </div>
                         </div>
                     </div>
                     <span class="time-separator">→</span>
                     <div class="time-picker-group">
-                        ${showLabels ? '<label class="time-label">End</label>' : ''}
+                        ${showLabels ? `<label class="time-label">${labelEnd}</label>` : ''}
                         <div class="time-picker-row">
                             <div class="time-display schedule-end-display">
                                 <div class="time-part-wrapper">
-                                    <button class="time-part schedule-hour-btn" data-type="hour" data-target="schedule-end-${index}">${String(seg.endHour).padStart(2, '0')}</button>
+                                    <input type="text" class="time-part schedule-hour-btn"
+                                        data-type="hour" data-target="schedule-end-${index}"
+                                        inputmode="numeric" maxlength="2" autocomplete="off"
+                                        value="${String(seg.endHour).padStart(2, '0')}"
+                                        aria-label="Schedule end hour" />
                                 </div>
                                 <span class="time-colon">:</span>
                                 <div class="time-part-wrapper">
-                                    <button class="time-part schedule-minute-btn" data-type="minute" data-target="schedule-end-${index}">${String(seg.endMinute).padStart(2, '0')}</button>
+                                    <input type="text" class="time-part schedule-minute-btn"
+                                        data-type="minute" data-target="schedule-end-${index}"
+                                        inputmode="numeric" maxlength="2" autocomplete="off"
+                                        value="${String(seg.endMinute).padStart(2, '0')}"
+                                        aria-label="Schedule end minute" />
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
                 <div class="segment-days-group">
-                    ${showLabels ? '<label class="time-label">Days</label>' : ''}
-                    <div class="segment-days" data-segment-index="${index}">
+                    ${showLabels ? `<label class="time-label">${labelDays}</label>` : ''}
+                    <div class="segment-days${useCompactDayLabels ? ' compact-day-labels' : ''}" data-segment-index="${index}">
                         ${dayTogglesHtml}
                     </div>
                 </div>
@@ -3886,10 +7924,8 @@ function rebuildScheduleSegments() {
 
         container.appendChild(segment);
 
-        // Add click handlers for time parts
-        segment.querySelectorAll('.time-part').forEach(btn => {
-            btn.addEventListener('click', handleScheduleTimeClick);
-        });
+        // Wire schedule time pills (popover + typing)
+        attachScheduleSegmentTimeInteractions(segment);
 
         // Add click handlers for day toggles
         segment.querySelectorAll('.segment-day-toggle').forEach(btn => {
@@ -3911,12 +7947,96 @@ function rebuildScheduleSegments() {
     });
 }
 
-// Handle schedule time button click (show popover)
+/** Parse `schedule-start-0` → { isStart, segmentIndex }. */
+function parseScheduleTimeTarget(target) {
+    const parts = String(target || '').split('-');
+    return {
+        isStart: parts[1] === 'start',
+        segmentIndex: parseInt(parts[2], 10)
+    };
+}
+
+/** Editable schedule HH:MM — same UX as instant end: click opens list; type to edit. */
+function bindScheduleTimePartInput(el) {
+    el.addEventListener('input', () => {
+        document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
+        const next = el.value.replace(/\D/g, '').slice(0, 2);
+        if (next !== el.value) el.value = next;
+    });
+    el.addEventListener('blur', () => commitScheduleTimePart(el));
+    el.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        const type = el.dataset.type;
+        const target = el.dataset.target;
+        const segmentEl = el.closest('.schedule-segment');
+        if (type === 'hour') {
+            const minIn = segmentEl
+                ? segmentEl.querySelector(`[data-target="${target}"][data-type="minute"]`)
+                : null;
+            el.blur();
+            if (minIn) {
+                minIn.focus();
+                if (typeof minIn.select === 'function') minIn.select();
+            }
+        } else {
+            el.blur();
+        }
+    });
+}
+
+function commitScheduleTimePart(input) {
+    const type = input.dataset.type;
+    const target = input.dataset.target;
+    if (!type || !target || (type !== 'hour' && type !== 'minute')) return;
+    const { isStart, segmentIndex } = parseScheduleTimeTarget(target);
+    const seg = scheduleSegments[segmentIndex];
+    if (!seg) return;
+
+    const max = type === 'hour' ? 23 : 59;
+    const v = parseEndTimeBoundedInt(input.value, 0, max);
+    let current;
+    if (type === 'hour') {
+        current = isStart ? seg.startHour : seg.endHour;
+    } else {
+        current = isStart ? seg.startMinute : seg.endMinute;
+    }
+    if (v === null) {
+        input.value = pad(current);
+        return;
+    }
+    if (type === 'hour') {
+        if (isStart) seg.startHour = v;
+        else seg.endHour = v;
+    } else {
+        if (isStart) seg.startMinute = v;
+        else seg.endMinute = v;
+    }
+    input.value = pad(v);
+    handleTimeChange();
+}
+
+function attachScheduleSegmentTimeInteractions(segment) {
+    segment
+        .querySelectorAll('.schedule-start-display input.time-part, .schedule-end-display input.time-part')
+        .forEach(el => {
+            if (el.dataset.scheduleUiBound === '1') return;
+            el.dataset.scheduleUiBound = '1';
+            el.addEventListener('click', handleScheduleTimeClick);
+            bindScheduleTimePartInput(el);
+        });
+}
+
+function wireAllScheduleSegmentTimeControls() {
+    document.querySelectorAll('#schedule-segments .schedule-segment').forEach(attachScheduleSegmentTimeInteractions);
+}
+
+// Handle schedule time control click (show popover)
 function handleScheduleTimeClick(e) {
     e.stopPropagation();
-    const btn = e.target;
-    const type = btn.dataset.type; // 'hour' or 'minute'
-    const target = btn.dataset.target; // e.g., 'schedule-start-0' or 'schedule-end-1'
+    const el = e.currentTarget;
+    const type = el.dataset.type; // 'hour' or 'minute'
+    const target = el.dataset.target; // e.g., 'schedule-start-0' or 'schedule-end-1'
 
     // Parse target
     const parts = target.split('-');
@@ -3924,11 +8044,11 @@ function handleScheduleTimeClick(e) {
     const segmentIndex = parseInt(parts[2]);
 
     // Create and show popover for time selection
-    showScheduleTimePopover(btn, type, isStart, segmentIndex);
+    showScheduleTimePopover(el, type, isStart, segmentIndex);
 }
 
-// Show time popover for schedule time selection
-function showScheduleTimePopover(btn, type, isStart, segmentIndex) {
+// Show time popover for schedule time selection (anchored to editable time pill)
+function showScheduleTimePopover(field, type, isStart, segmentIndex) {
     // Remove any existing schedule popovers
     document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
 
@@ -3942,6 +8062,13 @@ function showScheduleTimePopover(btn, type, isStart, segmentIndex) {
     const currentValue = type === 'hour'
         ? (isStart ? segment.startHour : segment.endHour)
         : (isStart ? segment.startMinute : segment.endMinute);
+
+    /** Nearest slot in the 5-minute list for scroll/highlight when value was typed freely. */
+    let listHighlightValue = currentValue;
+    if (type === 'minute' && currentValue % 5 !== 0) {
+        const rounded = Math.round(currentValue / 5) * 5;
+        listHighlightValue = rounded >= 60 ? 55 : rounded;
+    }
 
     const max = type === 'hour' ? 24 : 60;
     const step = type === 'hour' ? 1 : 5;
@@ -4046,7 +8173,7 @@ function showScheduleTimePopover(btn, type, isStart, segmentIndex) {
 
     for (let i = 0; i < max; i += step) {
         const option = document.createElement('button');
-        option.className = 'popover-option' + (i === currentValue ? ' selected' : '');
+        option.className = 'popover-option' + (i === listHighlightValue ? ' selected' : '');
         option.textContent = String(i).padStart(2, '0');
         option.addEventListener('click', (e) => {
             e.stopPropagation(); // Prevent blocklist deselection
@@ -4063,8 +8190,8 @@ function showScheduleTimePopover(btn, type, isStart, segmentIndex) {
                 else segment.endMinute = i;
             }
 
-            // Update button text
-            btn.textContent = String(i).padStart(2, '0');
+            // Update field display
+            field.value = String(i).padStart(2, '0');
 
             // Close popover
             popover.remove();
@@ -4076,7 +8203,7 @@ function showScheduleTimePopover(btn, type, isStart, segmentIndex) {
     }
 
     popover.appendChild(scroll);
-    btn.parentElement.appendChild(popover);
+    field.parentElement.appendChild(popover);
 
     // Scroll to current value
     const activeOption = scroll.querySelector('.selected');
@@ -4087,7 +8214,7 @@ function showScheduleTimePopover(btn, type, isStart, segmentIndex) {
     // Close on outside click
     setTimeout(() => {
         document.addEventListener('click', function closePopover(e) {
-            if (!popover.contains(e.target) && e.target !== btn) {
+            if (!popover.contains(e.target) && e.target !== field) {
                 popover.remove();
                 document.removeEventListener('click', closePopover);
             }
@@ -4095,35 +8222,27 @@ function showScheduleTimePopover(btn, type, isStart, segmentIndex) {
     }, 10);
 }
 
-// Start a schedule - show confirmation modal first
+// Start a schedule - show confirmation modal first.
+// When a schedule is already active this acts as Stop; the persistent Stop button
+// behaves identically whether or not pending edits exist (those are committed/discarded
+// via the pending-changes bar, never via this button).
 async function startSchedule() {
     if (!selectedBlocklistId) return;
 
     const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
     if (!blocklist) return;
 
-    // Check if this blocklist already has an active schedule
     const activeSchedule = appData.schedules
         ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
         : null;
 
-    // Check if there are new segments beyond the locked count
-    const committedSegmentCount = getCommittedScheduleSegmentCount(activeSchedule);
-    const hasNewSegments = activeSchedule && scheduleSegments.length > committedSegmentCount;
-    if (activeSchedule && !hasNewSegments) {
+    if (activeSchedule) {
         // Stop mode - open override dialog for the schedule
         openScheduleOverrideModal(activeSchedule);
         return;
     }
 
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this schedule')) return;
-
-    if (activeSchedule && hasNewSegments) {
-        // Edit mode - show confirmation for adding new segments only
-        const newSegments = scheduleSegments.slice(committedSegmentCount);
-        showScheduleEditConfirmModal(blocklist, activeSchedule, newSegments);
-        return;
-    }
 
     // Normal start mode - check that at least one segment has days
     const hasAnyDays = scheduleSegments.some(seg => seg.days && seg.days.length > 0);
@@ -4135,9 +8254,7 @@ async function startSchedule() {
 
 // Show schedule confirmation modal
 function showScheduleConfirmModal(blocklist) {
-    const dayNames = tSettings('dayAbbrevMon0');
-
-    // Blocklist name
+    const dayNames = weekdayAbbrevMon0List();
     document.getElementById('schedule-confirm-name').textContent = blocklist.name;
 
     // Websites
@@ -4219,17 +8336,27 @@ function showScheduleConfirmModal(blocklist) {
 
     // Override info
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-    const charCount = difficulty.count || 50;
-    const charsPerMinute = 100;
-    const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
-    const charWord = charCount === 1 ? 'character' : 'characters';
+    let charCount = difficulty.count || 50;
+    let charsPerMinute = 100;
 
-    let overrideText;
-    if (difficulty.type === 'random') {
-        overrideText = `Type ${charCount} random ${charWord} (letters and numbers) exactly as shown (~${estimatedMinutes} min).`;
-    } else {
-        overrideText = `Type ${charCount} ${charWord} (displayed as random words) exactly as shown (~${estimatedMinutes} min).`;
+    if (difficulty.type === 'custom' && difficulty.customText) {
+        charCount = difficulty.customText.length;
+        charsPerMinute = 200;
     }
+
+    const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
+
+    const schedType =
+        difficulty.type === 'custom' && difficulty.customText
+            ? 'custom'
+            : difficulty.type === 'gibberish'
+              ? 'gibberish'
+              : 'random-words';
+    const overrideText = formatConfirmModalOverrideTypingLine({
+        type: schedType,
+        count: charCount,
+        estimatedMinutes
+    });
 
     document.getElementById('schedule-confirm-override-text').textContent = overrideText;
 
@@ -4240,57 +8367,50 @@ function showScheduleConfirmModal(blocklist) {
 // Close schedule confirmation modal
 function closeScheduleConfirmModal() {
     document.getElementById('start-schedule-confirm-modal').classList.add('hidden');
+
+    // Reset to start-flow defaults so a subsequent open isn't stuck in edit-mode UI.
+    // (No-op if it was already in the start-flow.) The click handler routes via
+    // editScheduleData, so clearing that variable here is what actually flips the
+    // proceed action back to the start-flow.
+    const confirmBtn = document.getElementById('proceed-schedule-confirm-btn');
+    if (confirmBtn) confirmBtn.textContent = tSettings('startSchedule');
+    const titleEl = document.getElementById('start-schedule-confirm-title');
+    if (titleEl) titleEl.textContent = tSettings('startThisSchedule');
+    const repeatRow = document.getElementById('schedule-confirm-repeat');
+    if (repeatRow && repeatRow.parentElement) repeatRow.parentElement.classList.remove('hidden');
+
+    delete window.editScheduleData;
 }
 
-// Open override modal for stopping a schedule (uses same override modal as blocks)
-// This is ONLY called from the stop schedule button - always stops entire schedule
+// Open override modal for stopping a schedule. Schedules now stop wholesale, identically
+// to one-off blocks (no per-instance skip).
 function openScheduleOverrideModal(schedule) {
-    // Store the schedule ID for the override process
     window.overrideScheduleId = schedule.id || schedule.blocklistId;
 
-    // Clear segment index/day - this ensures we can ONLY stop the entire schedule
-    window.overrideSegmentIndex = undefined;
-    window.overrideSegmentDay = undefined;
+    const confirmBtn = document.getElementById('confirm-override-btn');
+    if (confirmBtn) confirmBtn.textContent = tSettings('stopSchedule');
 
-    // Get the blocklist name
     const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
     const blocklistName = blocklist ? blocklist.name : 'Schedule';
 
-    // Set the challenge text for the override modal using blocklist settings
     const difficulty = blocklist?.overrideDifficulty || { type: 'random-words', count: 50 };
     const charCount = difficulty.count || 50;
     const isRandom = difficulty.type === 'gibberish';
 
-    // Use the existing override modal - set up challenge
     challengeText = isRandom ? generateGibberish(charCount) : generateRandomWords(charCount);
-    overrideBlockId = null; // Not a block, it's a schedule
+    overrideBlockId = null;
     overrideBlocklistIdForHelper = null;
 
-    // Update modal title to indicate it's a schedule
     const titleEl = document.getElementById('override-modal-title');
     if (titleEl) {
-        titleEl.textContent = `Stop Schedule: ${blocklistName}`;
+        titleEl.textContent = `${tSettings('stopSchedule')} ${blocklistName}`;
     }
 
-    // Hide the radio options - stop schedule button ONLY stops entire schedule
-    const optionsDiv = document.getElementById('schedule-override-options');
-    if (optionsDiv) {
-        optionsDiv.classList.add('hidden');
-    }
-
-    // Set override type to stop-schedule (even though options are hidden)
-    const stopScheduleRadio = document.querySelector('input[name="schedule-override-type"][value="stop-schedule"]');
-    if (stopScheduleRadio) {
-        stopScheduleRadio.checked = true;
-    }
-
-    // Render challenge text directly (renderChallengeText is scoped inside setupOverrideModalListeners)
     const challengeTextEl = document.getElementById('challenge-text');
     if (challengeTextEl) {
         challengeTextEl.textContent = challengeText;
     }
 
-    // Clear input and progress
     const challengeInput = document.getElementById('challenge-input');
     if (challengeInput) challengeInput.value = '';
     const progressBar = document.getElementById('challenge-progress-bar');
@@ -4299,72 +8419,29 @@ function openScheduleOverrideModal(schedule) {
     document.getElementById('override-modal').classList.remove('hidden');
 }
 
-// Open schedule override modal when clicking on a scheduled block in the calendar
-function openScheduledBlockOverrideModal(schedule, segmentIndex, day) {
-    // Store the schedule info for the override process
-    window.overrideScheduleId = schedule.id;
-    window.overrideSegmentIndex = segmentIndex;
-    window.overrideSegmentDay = day;
-
-    // Get the blocklist
+// Click handler for a scheduled block in the timeline: select the corresponding blocklist
+// (so the schedule editor on the left switches to it) and open the blocklist edit dialog.
+// The override flow is still reachable from the running-block actions; clicking a calendar
+// block now goes straight to editing.
+function openScheduledBlockEdit(schedule) {
     const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-    const blocklistName = blocklist ? blocklist.name : 'Schedule';
+    if (!blocklist) return;
 
-    // Calculate if this schedule has multiple occurrences
-    const segment = schedule.segments[segmentIndex];
-    const totalDaysInSegment = segment ? segment.days.length : 1;
-    const totalSegments = schedule.segments.length;
-    const hasMultipleOccurrences = totalSegments > 1 || totalDaysInSegment > 1 ||
-        (schedule.repeatType === 'forever' || schedule.repeatType === 'date');
-
-    // Show/hide the radio options based on multiple occurrences
-    const optionsDiv = document.getElementById('schedule-override-options');
-    if (hasMultipleOccurrences) {
-        optionsDiv.classList.remove('hidden');
-        // Reset to default "Just this block"
-        document.querySelector('input[name="schedule-override-type"][value="just-this"]').checked = true;
+    const dropdown = document.getElementById('blocklist-select');
+    if (dropdown) {
+        dropdown.value = blocklist.id;
+        handleBlocklistSelect({ target: dropdown });
     } else {
-        optionsDiv.classList.add('hidden');
+        selectedBlocklistId = blocklist.id;
     }
 
-    // Set up the challenge text using blocklist settings
-    const difficulty = blocklist?.overrideDifficulty || { type: 'random-words', count: 50 };
-    const charCount = difficulty.count || 50;
-    const isRandom = difficulty.type === 'gibberish';
-    challengeText = isRandom ? generateGibberish(charCount) : generateRandomWords(charCount);
-    overrideBlockId = null; // Not a one-off block
-    overrideBlocklistIdForHelper = null;
-
-    // Update modal title
-    const titleEl = document.getElementById('override-modal-title');
-    if (titleEl) {
-        titleEl.textContent = `Override Scheduled Block?`;
-    }
-
-    // Update summary
-    const summaryEl = document.getElementById('override-summary');
-    if (summaryEl && blocklist) {
-        summaryEl.innerHTML = `<span class="block-name">${blocklist.emoji || ''} ${blocklistName}</span>`;
-    }
-
-    // Render challenge text
-    const challengeTextEl = document.getElementById('challenge-text');
-    if (challengeTextEl) {
-        challengeTextEl.textContent = challengeText;
-    }
-
-    // Clear input and progress
-    const challengeInput = document.getElementById('challenge-input');
-    if (challengeInput) challengeInput.value = '';
-    const progressBar = document.getElementById('challenge-progress-bar');
-    if (progressBar) progressBar.style.width = '0%';
-
-    document.getElementById('override-modal').classList.remove('hidden');
+    openBlocklistModal(blocklist);
 }
+
 
 // Show confirmation modal for editing (adding segments to) an existing schedule
 function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) {
-    const dayNames = tSettings('dayAbbrevMon0');
+    const dayNames = weekdayAbbrevMon0List();
 
     // Store references for the proceed function
     window.editScheduleData = {
@@ -4372,8 +8449,12 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
         newSegments: newSegments
     };
 
-    // Blocklist name
-    document.getElementById('schedule-confirm-name').textContent = `Add to: ${blocklist.name}`;
+    // Re-title the modal for the edit case
+    const titleEl = document.getElementById('start-schedule-confirm-title');
+    if (titleEl) titleEl.textContent = tSettings('saveChangesTitle');
+
+    // Blocklist name (plain — the segments list is already labelled "Adding these time segments")
+    document.getElementById('schedule-confirm-name').textContent = blocklist.name;
 
     // Hide websites and apps rows (not changing those)
     document.getElementById('schedule-websites-row').classList.add('hidden');
@@ -4381,7 +8462,7 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
 
     // Show NEW segments only
     const segmentsEl = document.getElementById('schedule-confirm-segments');
-    segmentsEl.innerHTML = `<div class="edit-schedule-notice">${getSettingsLanguage() === 'da' ? 'Tilføjer disse tidssegmenter:' : 'Adding these time segments:'}</div>`;
+    segmentsEl.innerHTML = `<div class="edit-schedule-notice">${tSettings('addingTheseSegments')}</div>`;
 
     newSegments.forEach((seg, index) => {
         const segDays = (seg.days || []).map(d => dayNames[d]).join(', ');
@@ -4400,12 +8481,28 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
     // Hide repeat info (not changing)
     document.getElementById('schedule-confirm-repeat').parentElement.classList.add('hidden');
 
-    // Update modal button to say "Add Segments"
-    const confirmBtn = document.querySelector('#start-schedule-confirm-modal .confirm-btn');
-    if (confirmBtn) {
-        confirmBtn.textContent = 'Add Segments';
-        confirmBtn.onclick = proceedWithScheduleEdit;
+    // Populate override info — same computation as showScheduleConfirmModal so users see
+    // the actual barrier, not just the header.
+    const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
+    let charCount = difficulty.count || 50;
+    let charsPerMinute = 100;
+    if (difficulty.type === 'custom' && difficulty.customText) {
+        charCount = difficulty.customText.length;
+        charsPerMinute = 200;
     }
+    const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
+    const schedType =
+        difficulty.type === 'custom' && difficulty.customText
+            ? 'custom'
+            : difficulty.type === 'gibberish'
+              ? 'gibberish'
+              : 'random-words';
+    document.getElementById('schedule-confirm-override-text').textContent =
+        formatConfirmModalOverrideTypingLine({ type: schedType, count: charCount, estimatedMinutes });
+
+    // Swap the proceed button label; the click handler routes via editScheduleData.
+    const confirmBtn = document.getElementById('proceed-schedule-confirm-btn');
+    if (confirmBtn) confirmBtn.textContent = tSettings('pendingChangesSave');
 
     // Show modal
     document.getElementById('start-schedule-confirm-modal').classList.remove('hidden');
@@ -4413,9 +8510,10 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
 
 // Add new segments to existing schedule
 async function proceedWithScheduleEdit() {
+    // Grab editData BEFORE closing the modal — closeScheduleConfirmModal clears it.
+    const editData = window.editScheduleData;
     closeScheduleConfirmModal();
 
-    const editData = window.editScheduleData;
     if (!editData) return;
 
     // Find the existing schedule
@@ -4439,32 +8537,41 @@ async function proceedWithScheduleEdit() {
     activeScheduleSegmentCount = schedule.segments.length;
     scheduleSegments = schedule.segments.map(seg => ({ ...seg }));
 
-    // Clear pending segments for this blocklist (they're now committed)
-    if (appData.settings?.pendingScheduleSegments?.[selectedBlocklistId]) {
-        delete appData.settings.pendingScheduleSegments[selectedBlocklistId];
-    }
+    clearPendingScheduleDraft(selectedBlocklistId);
 
     // Save
     await saveData();
 
     console.log('Schedule updated with new segments:', schedule);
 
-    // Restore the confirm button to normal
-    const confirmBtn = document.querySelector('#start-schedule-confirm-modal .confirm-btn');
-    if (confirmBtn) {
-        confirmBtn.textContent = tSettings('startSchedule');
-        confirmBtn.onclick = proceedWithSchedule;
-    }
+    // Restore the confirm button + title back to the start-flow defaults.
+    // The click handler itself routes via editScheduleData, which we clear below.
+    const confirmBtn = document.getElementById('proceed-schedule-confirm-btn');
+    if (confirmBtn) confirmBtn.textContent = tSettings('startSchedule');
+    const titleEl = document.getElementById('start-schedule-confirm-title');
+    if (titleEl) titleEl.textContent = tSettings('startThisSchedule');
 
     // Restore hidden rows
     document.getElementById('schedule-confirm-repeat').parentElement.classList.remove('hidden');
+
+    // Rebuild the DOM so it matches the new scheduleSegments order and locks the
+    // formerly-pending segments. Without this, time-edit handlers attached to the
+    // pre-save DOM nodes could write to the wrong scheduleSegments index.
+    rebuildScheduleSegments();
+    disableScheduleControls(true);
 
     // Update UI
     updateScheduleButtonState();
     renderBlocklists();
     updateWeekCalendar();
-    // Sync updated schedule to helper daemon
-    syncSchedulesToHelper();
+
+    // If a newly committed segment covers the current moment, kick blocking on now
+    // rather than waiting for the next periodic tick.
+    await updateBlockedApps();
+    await updateHostsFile();
+    // Sync updated schedule to helper daemon so it picks up the new segments for
+    // future autonomous transitions.
+    await syncSchedulesToHelper();
 
     // Clean up
     delete window.editScheduleData;
@@ -4478,29 +8585,9 @@ async function proceedWithSchedule() {
     if (!blocklist) return;
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this schedule')) return;
 
-    if (!isIOS) {
-        const status = await refreshDesktopHelperStatus();
-        const helperReady = status.helperReady;
-
-        if (!helperReady) {
-            pendingBlockData = null;
-            pendingScheduleData = {
-                blocklistId: selectedBlocklistId,
-                segments: scheduleSegments.map(seg => ({
-                    startHour: seg.startHour,
-                    startMinute: seg.startMinute,
-                    endHour: seg.endHour,
-                    endMinute: seg.endMinute,
-                    days: [...seg.days]
-                })),
-                repeatType: scheduleRepeatType,
-                repeatDate: scheduleRepeatType === 'date' ? scheduleRepeatDate : null
-            };
-            configureHelperInstallModal(status);
-            document.getElementById('helper-install-modal').classList.remove('hidden');
-            return;
-        }
-    }
+    // v2: no helper to install. The app itself is the engine; if it
+    // launched, blocking works. The legacy helper-install-modal
+    // branch was here.
 
     // Create schedule object
     const schedule = {
@@ -4521,10 +8608,7 @@ async function proceedWithSchedule() {
     // Save to appData
     appData.schedules.push(schedule);
 
-    // Clear pending segments for this blocklist (they're now committed)
-    if (appData.settings?.pendingScheduleSegments?.[selectedBlocklistId]) {
-        delete appData.settings.pendingScheduleSegments[selectedBlocklistId];
-    }
+    clearPendingScheduleDraft(selectedBlocklistId);
 
     await saveData();
 
@@ -4568,6 +8652,10 @@ function handleTimeChange() {
     // Remove any existing preview blocks and active-schedule blocks (for schedule mode)
     document.querySelectorAll('.calendar-block.preview, .calendar-block.active-schedule').forEach(el => el.remove());
 
+    // Refresh the "Always on" row so any preview chip stays in sync with the current mode
+    // (it shows up only when isAlwaysOnMode is on and a blocklist is selected).
+    renderScheduleAlwaysOnRow();
+
     // Handle schedule mode separately
     if (isScheduleMode) {
         renderSchedulePreview();
@@ -4580,11 +8668,26 @@ function handleTimeChange() {
             const existingSchedule = appData.schedules?.find(s => s.blocklistId === selectedBlocklistId);
 
             if (!existingSchedule) {
-                // No active schedule - save all pending segments
+                // No active schedule - save draft segments + repeat together
                 const currentPending = JSON.stringify(appData.settings.pendingScheduleSegments[selectedBlocklistId] || []);
                 const newPending = JSON.stringify(scheduleSegments);
+                const nextRepeat = {
+                    repeatType: scheduleRepeatType,
+                    repeatDate:
+                        scheduleRepeatType === 'date' && scheduleRepeatDate
+                            ? scheduleRepeatDate.getTime()
+                            : null
+                };
+                const prevRepeat = JSON.stringify(appData.settings.pendingScheduleRepeatOptions?.[selectedBlocklistId] ?? null);
+                const nextRepeatJson = JSON.stringify(nextRepeat);
                 if (currentPending !== newPending) {
                     appData.settings.pendingScheduleSegments[selectedBlocklistId] = scheduleSegments.map(seg => ({ ...seg }));
+                }
+                if (!appData.settings.pendingScheduleRepeatOptions) appData.settings.pendingScheduleRepeatOptions = {};
+                if (prevRepeat !== nextRepeatJson) {
+                    appData.settings.pendingScheduleRepeatOptions[selectedBlocklistId] = nextRepeat;
+                }
+                if (currentPending !== newPending || prevRepeat !== nextRepeatJson) {
                     saveData();
                 }
             } else {
@@ -4600,8 +8703,8 @@ function handleTimeChange() {
                     }
                 } else {
                     // No new segments - clear any pending segments
-                    if (appData.settings.pendingScheduleSegments[selectedBlocklistId]) {
-                        delete appData.settings.pendingScheduleSegments[selectedBlocklistId];
+                    if (appData.settings.pendingScheduleSegments?.[selectedBlocklistId]) {
+                        clearPendingScheduleDraft(selectedBlocklistId);
                         saveData();
                     }
                 }
@@ -4610,28 +8713,15 @@ function handleTimeChange() {
         return;
     }
 
-    // --- Always-on mode: show a preview block from now to end of visible week ---
+    // --- Always-on mode: preview shows up only as a chip in the "Always on" row above the
+    // calendar, not as a bar inside the timeline. The chip is added by the call to
+    // renderScheduleAlwaysOnRow() at the top of this function.
     if (isAlwaysOnMode) {
         startBtn.disabled = !selectedBlocklistId;
 
-        // Hide next-day indicator
         if (nextDayIndicator) nextDayIndicator.classList.add('hidden');
 
         if (noBlocksMsg) noBlocksMsg.classList.add('hidden');
-
-        // Render a preview block from now to the end of the visible week
-        const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
-        const now = Date.now();
-        const hasActiveBlock = blocklist && appData.activeBlocks.some(b => b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now);
-
-        if (blocklist && currentWeekStart && !hasActiveBlock) {
-            const blockStart = new Date();
-            const { renderEnd } = getCalendarRenderRange();
-            renderPreviewBlock(blockStart, renderEnd, blocklist);
-        } else {
-            // Remove preview if there's an active block or no blocklist
-            document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
-        }
 
         updateWindowHeight();
         return;
@@ -4687,7 +8777,15 @@ function handleTimeChange() {
 
     // Sync duration input and quick buttons with calculated duration
     const durationInput = document.getElementById('duration-minutes-input');
-    if (durationInput && document.activeElement !== durationInput) {
+    const endH = document.getElementById('end-hour-input');
+    const endM = document.getElementById('end-minute-input');
+    const ae = document.activeElement;
+    if (
+        durationInput &&
+        ae !== durationInput &&
+        ae !== endH &&
+        ae !== endM
+    ) {
         durationInput.value = durationMinutes;
     }
     updateDurationQuickBtns(durationMinutes);
@@ -4712,25 +8810,230 @@ function handleTimeChange() {
     const now = Date.now();
     const hasActiveBlock = blocklist && appData.activeBlocks.some(b => b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now);
 
-    if (blocklist && currentWeekStart && !hasActiveBlock) {
-        renderPreviewBlock(blockStart, blockEnd, blocklist);
+    if (blocklist && !hasActiveBlock) {
+        renderInstantPreviewBlock(blockStart, blockEnd, blocklist);
     }
 
     updateWindowHeight();
 }
 
-// Render schedule preview blocks on the calendar
-function renderSchedulePreview() {
-    if (!selectedBlocklistId || !currentWeekStart) return;
+// Re-draw in-flight Now/Schedule preview bars after renderWeekBlocks() clears day tracks
+// (e.g. window focus, blocklist colour change, or updateWeekCalendar rebuild).
+function refreshCalendarPreviews() {
+    if (!selectedBlocklistId) return;
+
+    if (isScheduleMode) {
+        renderSchedulePreview();
+        return;
+    }
+
+    if (isAlwaysOnMode) return;
 
     const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
     if (!blocklist) return;
+
+    const now = Date.now();
+    const hasActiveBlock = appData.activeBlocks.some(
+        b => b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now
+    );
+    if (hasActiveBlock) return;
+
+    let blockStart = getStartTimeAsDate();
+    let blockEnd = getEndTimeAsDate();
+    if (!userEditedEndTime && targetDurationMinutes > 0) {
+        blockEnd = new Date(blockStart.getTime() + targetDurationMinutes * 60 * 1000);
+    } else if (blockEnd <= blockStart) {
+        blockEnd.setDate(blockEnd.getDate() + 1);
+    }
+
+    const durationMinutes = Math.round((blockEnd.getTime() - blockStart.getTime()) / 60000);
+    if (durationMinutes <= 0) return;
+
+    renderInstantPreviewBlock(blockStart, blockEnd, blocklist);
+}
+
+// Render an instant-mode preview block onto the weekly calendar by projecting from
+// now → blockEnd onto today's row (and onto tomorrow's row if the duration crosses
+// midnight). The "head" slice on today's row gets a right-edge resize handle so the
+// user can drag to adjust the block's duration. Continuation tails on later days stay
+// non-interactive and are redrawn when the head is released.
+function renderInstantPreviewBlock(blockStart, blockEnd, blocklist) {
+    document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
+
+    const startMs = blockStart.getTime();
+    const endMs = blockEnd.getTime();
+
+    let cursor = new Date(startMs);
+    cursor.setHours(0, 0, 0, 0);
+
+    let isFirstSlice = true;
+    let headEl = null;
+    let headTrack = null;
+
+    while (cursor.getTime() <= endMs) {
+        const dayStartMs = cursor.getTime();
+        const dayEndMs = dayStartMs + 24 * 60 * 60 * 1000 - 1;
+        const sliceStartMs = Math.max(startMs, dayStartMs);
+        const sliceEndMs = Math.min(endMs, dayEndMs);
+
+        if (sliceEndMs > sliceStartMs) {
+            const sliceDate = new Date(sliceStartMs);
+            const jsDay = sliceDate.getDay();
+            const dayIndex = jsDay === 0 ? 6 : jsDay - 1;
+            const track = document.querySelector(`.day-track[data-day-index="${dayIndex}"]`);
+            if (track) {
+                const layout = getCalendarSegmentLayout(sliceStartMs, sliceEndMs, dayStartMs, dayEndMs);
+                const previewEl = document.createElement('div');
+                const isHead = isFirstSlice;
+                previewEl.className = 'calendar-block preview' + (isHead ? ' interactive instant-preview' : ' overnight-continuation');
+                previewEl.style.left = `${layout.leftPercent}%`;
+                previewEl.style.width = `${layout.widthPercent}%`;
+                previewEl.dataset.previewGroupId = 'preview-instant';
+                if (!isHead) previewEl.dataset.continuation = '1';
+
+                if (blocklist.color) {
+                    previewEl.style.background = blocklist.color;
+                    previewEl.style.color = getContrastTextColor(blocklist.color);
+                }
+
+                // Only the head slice gets a right-edge handle. The start is "now" so
+                // there's no left-edge handle (you can't reschedule the start of an
+                // instant block).
+                const resizeHandle = isHead
+                    ? '<div class="resize-handle resize-handle-end" data-handle="end" title="Drag to change end time"></div>'
+                    : '';
+
+                previewEl.innerHTML = `
+                    ${resizeHandle}
+                    <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
+                    <span class="block-label">${escapeHtml(blocklist.name)}</span>
+                    <span class="block-time">${formatTime(layout.segmentStartDate)} - ${formatTime(layout.segmentEndDate)}</span>
+                `;
+
+                track.appendChild(previewEl);
+
+                if (isHead) {
+                    headEl = previewEl;
+                    headTrack = track;
+                }
+            }
+        }
+
+        cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
+        isFirstSlice = false;
+    }
+
+    if (headEl && headTrack) {
+        attachInstantPreviewResizeHandler(headEl, headTrack);
+    }
+
+    layoutOverlappingBlocks();
+}
+
+// Attach a right-edge resize handler to the instant-mode preview's head element. Dragging
+// the handle live-updates the head's width and on release commits the new total duration:
+// duration = head's new width (in minutes). Tails on later days are not adjusted in
+// real time; they're killed/redrawn cleanly on release via handleTimeChange().
+function attachInstantPreviewResizeHandler(headEl, headTrack) {
+    const handle = headEl.querySelector('.resize-handle-end');
+    if (!handle) return;
+
+    const snapMinutes = 15;
+    const minDurationMinutes = 5;
+    let isResizing = false;
+    let startX = 0;
+    let startWidthPct = 0;
+
+    handle.addEventListener('mouseenter', () => headEl.classList.add('resize-hover'));
+    handle.addEventListener('mouseleave', () => headEl.classList.remove('resize-hover'));
+
+    headEl.addEventListener('mousedown', (e) => {
+        if (!e.target.closest('.resize-handle-end')) return;
+        isResizing = true;
+        startX = e.clientX;
+        startWidthPct = parseFloat(headEl.style.width) || 0;
+        headEl.classList.add('resizing');
+        document.body.style.cursor = 'ew-resize';
+        e.preventDefault();
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    });
+
+    function onMouseMove(e) {
+        if (!isResizing) return;
+        const trackRect = headTrack.getBoundingClientRect();
+        if (trackRect.width <= 0) return;
+
+        const deltaX = e.clientX - startX;
+        const deltaPct = (deltaX / trackRect.width) * 100;
+        const headLeftPct = parseFloat(headEl.style.left) || 0;
+        // Clamp the head so it can't shrink to nothing or extend past end-of-day.
+        // Extending past midnight would require drawing/moving tail elements, which we
+        // intentionally skip to keep the live preview simple — the user can still type
+        // a longer duration into the Duration input for multi-day blocks.
+        const minWidthPct = (minDurationMinutes / 1440) * 100;
+        const maxWidthPct = 100 - headLeftPct;
+        const newWidthPct = Math.max(minWidthPct, Math.min(maxWidthPct, startWidthPct + deltaPct));
+        headEl.style.width = `${newWidthPct}%`;
+
+        // Live-update the "HH:MM - HH:MM" label so it tracks the cursor instead of
+        // staying frozen at the pre-drag value until release.
+        const startMins = (headLeftPct / 100) * 1440;
+        const endMins = ((headLeftPct + newWidthPct) / 100) * 1440;
+        const timeEl = headEl.querySelector('.block-time');
+        if (timeEl) {
+            timeEl.textContent = `${formatMinutesAsHHMM(startMins)} - ${formatMinutesAsHHMM(endMins)}`;
+        }
+    }
+
+    function onMouseUp() {
+        if (!isResizing) return;
+        isResizing = false;
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+        headEl.classList.remove('resizing');
+        headEl.classList.remove('resize-hover');
+        document.body.style.cursor = '';
+
+        const headWidthPct = parseFloat(headEl.style.width) || 0;
+        // The head starts at "now" within today's row, so its width in minutes = its
+        // width-as-percent-of-day × 1440. That's also the new total duration for the
+        // block (any continuation tails are dropped — drag-to-resize sets the end here).
+        let newDurationMinutes = Math.round((headWidthPct / 100) * 1440);
+        newDurationMinutes = Math.max(minDurationMinutes, Math.round(newDurationMinutes / snapMinutes) * snapMinutes);
+
+        const startTime = getStartTimeAsDate();
+        const newEndTime = new Date(startTime.getTime() + newDurationMinutes * 60 * 1000);
+
+        targetDurationMinutes = newDurationMinutes;
+        userEditedEndTime = false;
+        selectedEndHour = newEndTime.getHours();
+        selectedEndMinute = newEndTime.getMinutes();
+
+        const durationInput = document.getElementById('duration-minutes-input');
+        if (durationInput) durationInput.value = newDurationMinutes;
+
+        // If the user was on always-on mode, dragging the preview's right edge implicitly
+        // switches them into timed mode (now there's a concrete end time again).
+        if (isAlwaysOnMode) setAlwaysOnMode(false);
+
+        updateTimeDisplay();
+        handleTimeChange();
+    }
+}
+
+// Render schedule preview blocks on the calendar
+// Render preview blocks for the schedule the user is currently building. Previews are drawn
+// for every weekday selected in the segment's `days`. For non-repeating drafts, only days
+// that have a one-shot occurrence still ahead of "now" are rendered.
+function renderSchedulePreview() {
+    if (!selectedBlocklistId) return;
+
+    const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+    if (!blocklist) return;
+
     const draftCreatedAt = Date.now();
     const shouldRepeat = scheduleRepeatType === 'forever' || scheduleRepeatType === 'date';
-
-    // Determine the visible date range (21 days: 7 before anchor to 7 after anchor + 7)
-    const renderStart = new Date(currentWeekStart);
-    renderStart.setDate(renderStart.getDate() - 7);
 
     if (!shouldRepeat) {
         const draftOccurrences = resolveOneShotOccurrences({
@@ -4740,365 +9043,207 @@ function renderSchedulePreview() {
         }).filter(occurrence => occurrence.segmentIndex >= activeScheduleSegmentCount);
 
         draftOccurrences.forEach(occurrence => {
-            renderPreviewBlock(occurrence.start, occurrence.end, blocklist, true, occurrence.segmentIndex);
+            renderPreviewSegmentOnWeekday(blocklist, scheduleSegments[occurrence.segmentIndex], occurrence.segmentIndex, occurrence.dayIndex);
         });
 
         layoutOverlappingBlocks();
         return;
     }
 
-    // For each segment, render blocks on its specific days
-    const nowMs = draftCreatedAt;
     scheduleSegments.forEach((segment, segmentIndex) => {
-        // Determine if this is a locked (active) segment or a new preview segment
         const isLockedSegment = segmentIndex < activeScheduleSegmentCount;
         if (isLockedSegment) return;
 
-        // Get the days for this segment (0=Mon, 1=Tue, ..., 6=Sun)
         const segmentDays = segment.days || [];
-
-        // Repeating schedules render across all visible weeks.
-        const daysToRender = 21;
-
-        for (let d = 0; d < daysToRender; d++) {
-            const dayDate = new Date(renderStart);
-            dayDate.setDate(dayDate.getDate() + d);
-
-            // Convert JS day (0=Sun) to our format (0=Mon)
-            const jsDayOfWeek = dayDate.getDay();
-            const dayIndex = jsDayOfWeek === 0 ? 6 : jsDayOfWeek - 1;
-
-            // Check if this day matches any selected days in the segment
-            if (!segmentDays.includes(dayIndex)) continue;
-
-            // For date-limited schedules, check if outside the "until" date
-            if (scheduleRepeatType === 'date' && scheduleRepeatDate && dayDate > scheduleRepeatDate) {
-                continue;
-            }
-
-            const blockStart = new Date(dayDate);
-            blockStart.setHours(segment.startHour, segment.startMinute, 0, 0);
-
-            const blockEnd = new Date(dayDate);
-            blockEnd.setHours(segment.endHour, segment.endMinute, 0, 0);
-
-            // Handle overnight blocks
-            if (blockEnd <= blockStart) {
-                blockEnd.setDate(blockEnd.getDate() + 1);
-            }
-
-            // A forever/until-date schedule starts running when the user confirms it — it
-            // doesn't backfill the past. Skip occurrences that have already fully elapsed,
-            // and for one currently in progress, clamp the start to "now".
-            if (blockEnd.getTime() <= nowMs) continue;
-            if (blockStart.getTime() < nowMs) blockStart.setTime(nowMs);
-
-            // Render only pending/new segments as preview in schedule mode.
-            renderPreviewBlock(blockStart, blockEnd, blocklist, true, segmentIndex);
-        }
+        segmentDays.forEach(dayIndex => {
+            renderPreviewSegmentOnWeekday(blocklist, segment, segmentIndex, dayIndex);
+        });
     });
 
     layoutOverlappingBlocks();
 }
 
-// Render an active (locked) schedule block on the calendar (not a preview)
-function renderActiveScheduleBlock(blockStart, blockEnd, blocklist, segmentIndex) {
-    const startDay = new Date(blockStart);
-    startDay.setHours(0, 0, 0, 0);
+// Build a preview block element for a schedule segment on a specific weekday.
+// Overnight segments split: head from start..24:00 on this weekday, tail from 00:00..end
+// on the next weekday (wrapping Sun → Mon).
+function renderPreviewSegmentOnWeekday(blocklist, segment, segmentIndex, dayIndex) {
+    const track = document.querySelector(`.day-track[data-day-index="${dayIndex}"]`);
+    if (!track) return;
 
-    const endDay = new Date(blockEnd);
-    endDay.setHours(0, 0, 0, 0);
+    const startMinutes = segment.startHour * 60 + segment.startMinute;
+    const endMinutes = segment.endHour * 60 + segment.endMinute;
+    const isOvernight = endMinutes <= startMinutes;
 
-    let currentDay = new Date(startDay);
+    const startTimeStr = `${String(segment.startHour).padStart(2, '0')}:${String(segment.startMinute).padStart(2, '0')}`;
+    const endTimeStr = `${String(segment.endHour).padStart(2, '0')}:${String(segment.endMinute).padStart(2, '0')}`;
 
-    while (currentDay <= endDay) {
-        const dateStr = localDateKey(currentDay);
-        const track = document.querySelector(`.day-track[data-date="${dateStr}"]`);
+    if (isOvernight) {
+        const left1 = (startMinutes / 1440) * 100;
+        const width1 = Math.max(0.5, ((1440 - startMinutes) / 1440) * 100);
+        track.appendChild(buildPreviewBlockElement({
+            blocklist, segmentIndex, dayIndex,
+            leftPct: left1, widthPct: width1,
+            startTimeStr, endTimeStr,
+            isContinuation: false
+        }));
 
-        if (track) {
-            const dayStart = new Date(currentDay);
-            dayStart.setHours(0, 0, 0, 0);
-            const dayEnd = new Date(currentDay);
-            dayEnd.setHours(23, 59, 59, 999);
-
-            const {
-                topPosition,
-                height,
-                segmentStartDate,
-                segmentEndDate
-            } = getCalendarSegmentLayout(blockStart.getTime(), blockEnd.getTime(), dayStart.getTime(), dayEnd.getTime());
-
-            const startTimeStr = formatTime(segmentStartDate);
-            const endTimeStr = formatTime(segmentEndDate);
-
-            const blockEl = document.createElement('div');
-            blockEl.className = 'calendar-block active-schedule';
-            blockEl.dataset.segmentIndex = segmentIndex;
-            blockEl.style.top = `${topPosition}px`;
-            blockEl.style.height = `${height}px`;
-
-            if (blocklist.color) {
-                blockEl.style.background = blocklist.color;
-                blockEl.style.color = getContrastTextColor(blocklist.color);
-            }
-
-            blockEl.innerHTML = `
-                <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
-                <span class="block-label">${escapeHtml(blocklist.name)}</span>
-                <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
-                <span class="schedule-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></span>
-            `;
-
-            track.appendChild(blockEl);
+        const nextDayIndex = (dayIndex + 1) % 7;
+        const nextTrack = document.querySelector(`.day-track[data-day-index="${nextDayIndex}"]`);
+        if (nextTrack) {
+            const width2 = Math.max(0.5, (endMinutes / 1440) * 100);
+            nextTrack.appendChild(buildPreviewBlockElement({
+                blocklist, segmentIndex, dayIndex: nextDayIndex,
+                leftPct: 0, widthPct: width2,
+                startTimeStr, endTimeStr,
+                isContinuation: true
+            }));
         }
-
-        currentDay.setDate(currentDay.getDate() + 1);
+    } else {
+        const left = (startMinutes / 1440) * 100;
+        const width = Math.max(0.5, ((endMinutes - startMinutes) / 1440) * 100);
+        track.appendChild(buildPreviewBlockElement({
+            blocklist, segmentIndex, dayIndex,
+            leftPct: left, widthPct: width,
+            startTimeStr, endTimeStr,
+            isContinuation: false
+        }));
     }
 }
 
-function renderScheduledCalendarInterval(schedule, blockStart, blockEnd, blocklist, segmentIndex) {
-    const startDay = new Date(blockStart);
-    startDay.setHours(0, 0, 0, 0);
+// Construct a single preview block element for one weekday slot. Drag/resize handlers are
+// only attached to the head element (not the overnight tail) so that a drag operates on
+// the original anchor weekday.
+function buildPreviewBlockElement({ blocklist, segmentIndex, dayIndex, leftPct, widthPct, startTimeStr, endTimeStr, isContinuation }) {
+    const previewEl = document.createElement('div');
+    previewEl.className = `calendar-block preview interactive${isContinuation ? ' overnight-continuation' : ''}`;
+    previewEl.style.left = `${leftPct}%`;
+    previewEl.style.width = `${widthPct}%`;
+    previewEl.dataset.previewGroupId = `preview-segment-${segmentIndex}`;
+    previewEl.dataset.segmentIndex = segmentIndex;
+    previewEl.dataset.dayIndex = dayIndex;
+    if (isContinuation) previewEl.dataset.continuation = '1';
 
-    const endDay = new Date(blockEnd);
-    endDay.setHours(0, 0, 0, 0);
-
-    const fullStartTimeStr = formatTime(blockStart);
-    const fullEndTimeStr = formatTime(blockEnd);
-    let currentDay = new Date(startDay);
-
-    while (currentDay <= endDay) {
-        const dateStr = localDateKey(currentDay);
-        const track = document.querySelector(`.day-track[data-date="${dateStr}"]`);
-
-        if (track) {
-            const dayStart = new Date(currentDay);
-            dayStart.setHours(0, 0, 0, 0);
-            const dayEnd = new Date(currentDay);
-            dayEnd.setHours(23, 59, 59, 999);
-
-            const {
-                topPosition,
-                height
-            } = getCalendarSegmentLayout(blockStart.getTime(), blockEnd.getTime(), dayStart.getTime(), dayEnd.getTime());
-
-            const dayIndex = currentDay.getDay() === 0 ? 6 : currentDay.getDay() - 1;
-            const isContinuationDay = currentDay.getTime() > startDay.getTime();
-            const blockEl = document.createElement('div');
-            blockEl.className = `calendar-block scheduled${isContinuationDay ? ' overnight-continuation' : ''}`;
-            blockEl.dataset.scheduleId = schedule.id;
-            blockEl.dataset.segmentIndex = segmentIndex;
-            blockEl.dataset.day = dayIndex;
-            blockEl.style.top = `${topPosition}px`;
-            blockEl.style.height = `${height}px`;
-
-            if (blocklist.color) {
-                blockEl.style.background = blocklist.color;
-                blockEl.style.opacity = '0.7';
-                blockEl.style.color = getContrastTextColor(blocklist.color);
-            }
-
-            blockEl.innerHTML = `
-                <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
-                <span class="block-label">${escapeHtml(blocklist.name)}</span>
-                <span class="block-time">${fullStartTimeStr} - ${fullEndTimeStr}</span>
-                <span class="schedule-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></span>
-            `;
-
-            blockEl.addEventListener('click', (e) => {
-                e.stopPropagation();
-                openScheduledBlockOverrideModal(schedule, segmentIndex, dayIndex);
-            });
-
-            track.appendChild(blockEl);
-        }
-
-        currentDay.setDate(currentDay.getDate() + 1);
+    if (blocklist.color) {
+        previewEl.style.background = blocklist.color;
+        previewEl.style.color = getContrastTextColor(blocklist.color);
     }
+
+    // Resize handles run vertically along the start/end edges. Continuation (tail) blocks
+    // don't get handles — the user adjusts the segment by dragging the head block.
+    const resizeHandles = !isContinuation ? `
+        <div class="resize-handle resize-handle-start" data-handle="start" title="Drag to change start time"></div>
+        <div class="resize-handle resize-handle-end" data-handle="end" title="Drag to change end time"></div>
+    ` : '';
+
+    previewEl.innerHTML = `
+        ${resizeHandles}
+        <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
+        <span class="block-label">${escapeHtml(blocklist.name)}</span>
+        <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
+    `;
+
+    if (!isContinuation && isScheduleMode) {
+        const track = document.querySelector(`.day-track[data-day-index="${dayIndex}"]`);
+        if (track) attachPreviewBlockDragHandlers(previewEl, segmentIndex, track);
+    }
+
+    return previewEl;
 }
 
-// Render preview block on week calendar
-function renderPreviewBlock(blockStart, blockEnd, blocklist, skipClear = false, segmentIndex = null) {
-    // Clear any existing preview blocks first (unless rendering multiple schedule blocks)
-    if (!skipClear) {
-        document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
-    }
-
-    const startDay = new Date(blockStart);
-    startDay.setHours(0, 0, 0, 0);
-
-    const endDay = new Date(blockEnd);
-    endDay.setHours(0, 0, 0, 0);
-
-    // Render preview in each day it spans
-    let currentDay = new Date(startDay);
-
-    while (currentDay <= endDay) {
-        const dateStr = localDateKey(currentDay);
-        const track = document.querySelector(`.day-track[data-date="${dateStr}"]`);
-
-        if (track) {
-            // Calculate start time for this day segment
-            const dayStart = new Date(currentDay);
-            dayStart.setHours(0, 0, 0, 0);
-            const dayEnd = new Date(currentDay);
-            dayEnd.setHours(23, 59, 59, 999);
-
-            const {
-                topPosition,
-                height,
-                segmentStartDate,
-                segmentEndDate
-            } = getCalendarSegmentLayout(blockStart.getTime(), blockEnd.getTime(), dayStart.getTime(), dayEnd.getTime());
-
-            const previewEl = document.createElement('div');
-            previewEl.className = 'calendar-block preview';
-            previewEl.style.top = `${topPosition}px`;
-            previewEl.style.height = `${height}px`;
-            previewEl.dataset.previewGroupId = segmentIndex !== null ? `preview-segment-${segmentIndex}` : 'preview-instant';
-
-            if (segmentIndex !== null) {
-                previewEl.dataset.segmentIndex = segmentIndex;
-                previewEl.classList.add('interactive');
-            }
-
-            if (blocklist.color) {
-                previewEl.style.background = blocklist.color;
-                previewEl.style.color = getContrastTextColor(blocklist.color);
-            }
-
-            // Add resize handles for schedule mode
-            const resizeHandles = segmentIndex !== null ? `
-                <div class="resize-handle resize-handle-top" data-handle="top" style="cursor: ns-resize;"></div>
-                <div class="resize-handle resize-handle-bottom" data-handle="bottom" style="cursor: ns-resize;"></div>
-            ` : '';
-
-            previewEl.innerHTML = `
-                ${resizeHandles}
-                <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
-                <span class="block-label">${escapeHtml(blocklist.name)}</span>
-                <span class="block-time">${formatTime(segmentStartDate)} - ${formatTime(segmentEndDate)}</span>
-            `;
-
-            // Attach drag/resize event handlers for schedule mode
-            if (segmentIndex !== null && isScheduleMode) {
-                attachPreviewBlockDragHandlers(previewEl, segmentIndex, track);
-            }
-
-            track.appendChild(previewEl);
-        }
-
-        // Move to next day
-        currentDay.setDate(currentDay.getDate() + 1);
-    }
-
-    if (!skipClear) {
-        layoutOverlappingBlocks();
-    }
-}
-
-// Attach drag and resize handlers to a preview block
+// Attach drag and resize handlers to a preview block.
+//
+// In the row-based layout time flows horizontally and days stack vertically:
+//   - dragging the body of the block: horizontal motion changes start/end time, vertical
+//     motion (cursor over a different row) changes the day(s) of the segment.
+//   - dragging the .resize-handle-start: adjusts start time (left edge).
+//   - dragging the .resize-handle-end: adjusts end time (right edge).
 function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
     let isDragging = false;
     let isResizing = false;
     let resizeHandle = null;
-    let startY = 0;
     let startX = 0;
-    let startTop = 0;
-    let startHeight = 0;
+    let startY = 0;
+    let startLeftPct = 0;
+    let startWidthPct = 0;
     let startDayIndex = null;
     let currentHoverTrack = track;
-    let clickOffsetX = 0; // Offset from track center where user clicked
-    const pixelsPerHour = 40;
-    const snapMinutes = 15; // Snap to 15-minute intervals
+    let clickOffsetY = 0; // Offset from row center where user clicked (helps day-boundary detection)
+    const snapMinutes = 15;
+    const minDurationMinutes = 15;
 
-    // Get the day index from the track's date
     function getDayIndexFromTrack(trackEl) {
-        const dateStr = trackEl.dataset.date;
-        if (!dateStr) return null;
-        const date = parseLocalDateKey(dateStr);
-        if (!date) return null;
-        // Convert JS day (0=Sun) to our format (0=Mon)
-        const jsDay = date.getDay();
-        return jsDay === 0 ? 6 : jsDay - 1;
+        if (!trackEl) return null;
+        const raw = trackEl.dataset.dayIndex;
+        if (raw === undefined || raw === null || raw === '') return null;
+        const idx = parseInt(raw, 10);
+        return Number.isInteger(idx) && idx >= 0 && idx <= 6 ? idx : null;
     }
 
-    // Get the original day this block represents
     startDayIndex = getDayIndexFromTrack(track);
 
-    // Convert pixels to minutes
-    function pixelsToMinutes(px) {
-        return (px / pixelsPerHour) * 60;
-    }
-
-    // Snap minutes to nearest interval
     function snapToInterval(minutes) {
-        return Math.round(minutes / snapMinutes) * snapMinutes;
+        return snapMinutesToInterval(minutes, snapMinutes);
     }
 
-    // Convert minutes to hours/minutes object
     function minutesToTime(totalMinutes) {
-        totalMinutes = Math.max(0, Math.min(1440, totalMinutes)); // Clamp to 0-24 hours
-        const hours = Math.floor(totalMinutes / 60);
-        const minutes = totalMinutes % 60;
-        return { hours: Math.min(23, hours), minutes };
+        const clamped = clampSameDayMinutes(totalMinutes);
+        return {
+            hours: Math.floor(clamped / 60),
+            minutes: clamped % 60,
+        };
     }
 
-    // Update segment times and optionally days, then refresh UI
     function updateSegmentTimesAndDays(newStartMinutes, newEndMinutes, dayShift = 0) {
+        if (newEndMinutes - newStartMinutes < minDurationMinutes) return;
+
         const startTime = minutesToTime(newStartMinutes);
         const endTime = minutesToTime(newEndMinutes);
-
-        // Ensure minimum duration of 15 minutes
-        if (newEndMinutes - newStartMinutes < 15) {
-            return;
-        }
 
         scheduleSegments[segmentIndex].startHour = startTime.hours;
         scheduleSegments[segmentIndex].startMinute = startTime.minutes;
         scheduleSegments[segmentIndex].endHour = endTime.hours;
         scheduleSegments[segmentIndex].endMinute = endTime.minutes;
 
-        // If there's a day shift, update the days array
         if (dayShift !== 0) {
             const segment = scheduleSegments[segmentIndex];
             const oldDays = segment.days || [];
             const newDays = oldDays.map(d => {
                 let newDay = d + dayShift;
-                // Wrap around the week (0-6)
                 if (newDay < 0) newDay += 7;
                 if (newDay > 6) newDay -= 7;
                 return newDay;
             });
             segment.days = newDays;
-
-            // Update the day toggle buttons in the UI
             updateDayToggleUI(segmentIndex);
         }
 
-        // Update the time picker UI
         updateTimePickerUI(segmentIndex);
 
-        // Re-render preview blocks
         document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
         renderSchedulePreview();
     }
 
-    // Update time picker buttons to reflect new times
     function updateTimePickerUI(index) {
         const segment = scheduleSegments[index];
-        const startHourBtn = document.querySelector(`[data-target="schedule-start-${index}"][data-type="hour"]`);
-        const startMinBtn = document.querySelector(`[data-target="schedule-start-${index}"][data-type="minute"]`);
-        const endHourBtn = document.querySelector(`[data-target="schedule-end-${index}"][data-type="hour"]`);
-        const endMinBtn = document.querySelector(`[data-target="schedule-end-${index}"][data-type="minute"]`);
+        const startHourEl = document.querySelector(`[data-target="schedule-start-${index}"][data-type="hour"]`);
+        const startMinEl = document.querySelector(`[data-target="schedule-start-${index}"][data-type="minute"]`);
+        const endHourEl = document.querySelector(`[data-target="schedule-end-${index}"][data-type="hour"]`);
+        const endMinEl = document.querySelector(`[data-target="schedule-end-${index}"][data-type="minute"]`);
 
-        if (startHourBtn) startHourBtn.textContent = String(segment.startHour).padStart(2, '0');
-        if (startMinBtn) startMinBtn.textContent = String(segment.startMinute).padStart(2, '0');
-        if (endHourBtn) endHourBtn.textContent = String(segment.endHour).padStart(2, '0');
-        if (endMinBtn) endMinBtn.textContent = String(segment.endMinute).padStart(2, '0');
+        if (startHourEl && document.activeElement !== startHourEl) {
+            startHourEl.value = pad(segment.startHour);
+        }
+        if (startMinEl && document.activeElement !== startMinEl) {
+            startMinEl.value = pad(segment.startMinute);
+        }
+        if (endHourEl && document.activeElement !== endHourEl) {
+            endHourEl.value = pad(segment.endHour);
+        }
+        if (endMinEl && document.activeElement !== endMinEl) {
+            endMinEl.value = pad(segment.endMinute);
+        }
     }
 
-    // Update day toggle buttons in the schedule segment UI
     function updateDayToggleUI(index) {
         const segment = scheduleSegments[index];
         const days = segment.days || [];
@@ -5108,88 +9253,95 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
         const dayButtons = segmentContainer.querySelectorAll('.segment-day-toggle');
         dayButtons.forEach(btn => {
             const dayIndex = parseInt(btn.dataset.day);
-            if (days.includes(dayIndex)) {
-                btn.classList.add('active');
-            } else {
-                btn.classList.remove('active');
-            }
+            btn.classList.toggle('active', days.includes(dayIndex));
         });
     }
 
-    // Add hover listeners to resize handles to change cursor
-    const resizeHandles = previewEl.querySelectorAll('.resize-handle');
-    resizeHandles.forEach(handle => {
-        handle.addEventListener('mouseenter', () => {
-            previewEl.classList.add('resize-hover');
-        });
-        handle.addEventListener('mouseleave', () => {
-            previewEl.classList.remove('resize-hover');
-        });
+    // Cursor hover hint on resize handles
+    previewEl.querySelectorAll('.resize-handle').forEach(handle => {
+        handle.addEventListener('mouseenter', () => previewEl.classList.add('resize-hover'));
+        handle.addEventListener('mouseleave', () => previewEl.classList.remove('resize-hover'));
     });
 
-    // Mouse down handler
+    // Recompute "HH:MM - HH:MM" from the head's current left%/width% and write it onto
+    // every preview block belonging to this segment (head + overnight tails). Matches the
+    // formula used on mouseup so what the user sees mid-drag is what gets committed.
+    function updateLiveTimeText() {
+        const headBlocks = getHeadPreviewBlocks();
+        if (headBlocks.length === 0) return;
+        const head = headBlocks[0];
+        const leftPct = parseFloat(head.style.left) || 0;
+        const widthPct = parseFloat(head.style.width) || 0;
+        const startMins = (leftPct / 100) * 1440;
+        const endMins = ((leftPct + widthPct) / 100) * 1440;
+        const text = `${formatMinutesAsHHMM(startMins)} - ${formatMinutesAsHHMM(endMins)}`;
+        document.querySelectorAll(
+            `.calendar-block.preview[data-segment-index="${segmentIndex}"] .block-time`
+        ).forEach(el => { el.textContent = text; });
+    }
+
     previewEl.addEventListener('mousedown', (e) => {
-        // Check if clicking on a resize handle
         const handle = e.target.closest('.resize-handle');
         if (handle) {
             isResizing = true;
             resizeHandle = handle.dataset.handle;
             previewEl.classList.add('resizing');
-            document.body.style.cursor = 'ns-resize';
+            document.body.style.cursor = 'ew-resize';
         } else {
             isDragging = true;
             previewEl.classList.add('dragging');
             document.body.style.cursor = 'grabbing';
         }
 
-        startY = e.clientY;
         startX = e.clientX;
-        startTop = parseFloat(previewEl.style.top) || 0;
-        startHeight = parseFloat(previewEl.style.height) || 40;
+        startY = e.clientY;
+        startLeftPct = parseFloat(previewEl.style.left) || 0;
+        startWidthPct = parseFloat(previewEl.style.width) || 0;
         currentHoverTrack = track;
 
-        // Calculate offset from track center where user clicked (for accurate day boundary detection)
         const trackRect = track.getBoundingClientRect();
-        const trackCenterX = trackRect.left + trackRect.width / 2;
-        clickOffsetX = e.clientX - trackCenterX;
+        const trackCenterY = trackRect.top + trackRect.height / 2;
+        clickOffsetY = e.clientY - trackCenterY;
 
         e.preventDefault();
 
-        // Add mouse move and up handlers to document
         document.addEventListener('mousemove', handleMouseMove);
         document.addEventListener('mouseup', handleMouseUp);
     });
 
+    // Only "head" preview blocks (not overnight tails) are manipulated during a drag —
+    // tails are redrawn from the segment's new times on mouseup via renderSchedulePreview.
+    function getHeadPreviewBlocks() {
+        return document.querySelectorAll(
+            `.calendar-block.preview[data-segment-index="${segmentIndex}"]:not([data-continuation])`
+        );
+    }
+
     function handleMouseMove(e) {
-        const deltaY = e.clientY - startY;
+        const trackRect = track.getBoundingClientRect();
+        if (trackRect.width <= 0) return;
+
+        const deltaX = e.clientX - startX;
+        const deltaPct = (deltaX / trackRect.width) * 100;
+        const headBlocks = getHeadPreviewBlocks();
 
         if (isDragging) {
-            // Find all preview blocks for this segment
-            const allSegmentBlocks = document.querySelectorAll(`.calendar-block.preview[data-segment-index="${segmentIndex}"]`);
+            // Move horizontally — clamp so the block stays within [0, 100]%
+            const maxLeftPct = 100 - startWidthPct;
+            const newLeftPct = Math.max(0, Math.min(maxLeftPct, startLeftPct + deltaPct));
 
-            // Move all blocks vertically together
-            const newTop = Math.max(0, startTop + deltaY);
-            const maxTop = (24 * pixelsPerHour) - parseFloat(previewEl.style.height);
-            const finalTop = Math.min(newTop, maxTop);
-
-            allSegmentBlocks.forEach(block => {
-                block.style.top = `${finalTop}px`;
+            headBlocks.forEach(block => {
+                block.style.left = `${newLeftPct}%`;
                 block.classList.add('dragging');
             });
 
-            // Check if mouse is over a different day track - move all blocks together horizontally
+            // Move vertically (across day rows)
             const allTracks = Array.from(document.querySelectorAll('.day-track'));
+            const effectiveY = e.clientY - clickOffsetY;
             let targetTrackIndex = -1;
-
-            // Use offset-corrected position to detect which day we're over
-            // This ensures the block moves when cursor crosses the day boundary, not before/after
-            const effectiveX = e.clientX - clickOffsetX;
-
             for (let i = 0; i < allTracks.length; i++) {
                 const rect = allTracks[i].getBoundingClientRect();
-                const trackCenterX = rect.left + rect.width / 2;
-                // Check if the effective center is within this track
-                if (effectiveX >= rect.left && effectiveX <= rect.right) {
+                if (effectiveY >= rect.top && effectiveY <= rect.bottom) {
                     targetTrackIndex = i;
                     currentHoverTrack = allTracks[i];
                     break;
@@ -5197,20 +9349,15 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
             }
 
             if (targetTrackIndex >= 0) {
-                // Calculate day shift from original track position
                 const originalTrackIndex = allTracks.indexOf(track);
                 const dayShiftDuringDrag = targetTrackIndex - originalTrackIndex;
 
-                // Move all segment blocks to their shifted day positions
-                allSegmentBlocks.forEach(block => {
-                    // Get this block's original track (stored as data attribute or calculate from current position)
+                headBlocks.forEach(block => {
                     if (!block.dataset.originalTrackIndex) {
                         block.dataset.originalTrackIndex = allTracks.indexOf(block.parentElement);
                     }
                     const blockOriginalIndex = parseInt(block.dataset.originalTrackIndex);
                     const newTrackIndex = blockOriginalIndex + dayShiftDuringDrag;
-
-                    // Move block to new track if in valid range
                     if (newTrackIndex >= 0 && newTrackIndex < allTracks.length) {
                         if (allTracks[newTrackIndex] !== block.parentElement) {
                             allTracks[newTrackIndex].appendChild(block);
@@ -5219,38 +9366,33 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
                 });
             }
         } else if (isResizing) {
-            // Find all preview blocks for this segment
-            const allSegmentBlocks = document.querySelectorAll(`.calendar-block.preview[data-segment-index="${segmentIndex}"]`);
-
-            if (resizeHandle === 'top') {
-                // Resize from top - adjust start time
-                const newTop = Math.max(0, startTop + deltaY);
-                const newHeight = startHeight - deltaY;
-                if (newHeight >= 10) { // Minimum height
-                    allSegmentBlocks.forEach(block => {
-                        block.style.top = `${newTop}px`;
-                        block.style.height = `${newHeight}px`;
+            if (resizeHandle === 'start') {
+                const newLeftPct = Math.max(0, startLeftPct + deltaPct);
+                const newWidthPct = startWidthPct - (newLeftPct - startLeftPct);
+                if (newWidthPct >= 0.5) {
+                    headBlocks.forEach(block => {
+                        block.style.left = `${newLeftPct}%`;
+                        block.style.width = `${newWidthPct}%`;
                     });
                 }
-            } else if (resizeHandle === 'bottom') {
-                // Resize from bottom - adjust end time
-                const newHeight = Math.max(10, startHeight + deltaY);
-                const maxHeight = (24 * pixelsPerHour) - startTop;
-                const finalHeight = Math.min(newHeight, maxHeight);
-                allSegmentBlocks.forEach(block => {
-                    block.style.height = `${finalHeight}px`;
+            } else if (resizeHandle === 'end') {
+                const maxEndPct = (MAX_SAME_DAY_END_MINUTES / MINUTES_PER_DAY) * 100;
+                const maxWidthPct = Math.max(0.5, maxEndPct - startLeftPct);
+                const newWidthPct = Math.max(0.5, Math.min(maxWidthPct, startWidthPct + deltaPct));
+                headBlocks.forEach(block => {
+                    block.style.width = `${newWidthPct}%`;
                 });
             }
         }
+
+        updateLiveTimeText();
     }
 
-    function handleMouseUp(e) {
+    function handleMouseUp() {
         document.removeEventListener('mousemove', handleMouseMove);
         document.removeEventListener('mouseup', handleMouseUp);
 
-        // Remove classes and data from all blocks in this segment
-        const allSegmentBlocks = document.querySelectorAll(`.calendar-block.preview[data-segment-index="${segmentIndex}"]`);
-        allSegmentBlocks.forEach(block => {
+        getHeadPreviewBlocks().forEach(block => {
             block.classList.remove('dragging');
             block.classList.remove('resizing');
             delete block.dataset.originalTrackIndex;
@@ -5258,14 +9400,12 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
         document.body.style.cursor = '';
 
         if (isDragging || isResizing) {
-            // Calculate new times based on final position
-            const finalTop = parseFloat(previewEl.style.top) || 0;
-            const finalHeight = parseFloat(previewEl.style.height) || 40;
+            const finalLeftPct = parseFloat(previewEl.style.left) || 0;
+            const finalWidthPct = parseFloat(previewEl.style.width) || 0;
 
-            const newStartMinutes = snapToInterval(pixelsToMinutes(finalTop));
-            const newEndMinutes = snapToInterval(pixelsToMinutes(finalTop + finalHeight));
+            const newStartMinutes = snapToInterval((finalLeftPct / 100) * 1440);
+            const newEndMinutes = snapToInterval(((finalLeftPct + finalWidthPct) / 100) * 1440);
 
-            // Calculate day shift if block was moved to different day
             let dayShift = 0;
             if (isDragging && currentHoverTrack !== track) {
                 const newDayIndex = getDayIndexFromTrack(currentHoverTrack);
@@ -5281,6 +9421,18 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
         isResizing = false;
         resizeHandle = null;
     }
+}
+
+/** Start-a-block heading + Now/Schedule tabs — only meaningful once a blocklist is chosen. */
+function syncSchedulerChromeVisibility() {
+    const modeTabs = document.querySelector('.scheduler-mode-tabs');
+    const mainTitle = document.getElementById('main-start-block-title');
+    const sectionHeader = document.querySelector('#scheduler-section > .section-header');
+    const hasLists = (appData.blocklists?.length || 0) > 0;
+    const show = hasLists && !!selectedBlocklistId;
+    if (mainTitle) mainTitle.classList.toggle('hidden', !show);
+    if (modeTabs) modeTabs.classList.toggle('hidden', !show);
+    if (sectionHeader) sectionHeader.classList.toggle('scheduler-header-compact', !show);
 }
 
 // Handle blocklist selection
@@ -5310,8 +9462,8 @@ function handleBlocklistSelect(e) {
                     saveData();
                 } else {
                     // No new segments - clear any pending segments
-                    if (appData.settings.pendingScheduleSegments[selectedBlocklistId]) {
-                        delete appData.settings.pendingScheduleSegments[selectedBlocklistId];
+                    if (appData.settings.pendingScheduleSegments?.[selectedBlocklistId]) {
+                        clearPendingScheduleDraft(selectedBlocklistId);
                         saveData();
                     }
                 }
@@ -5328,13 +9480,13 @@ function handleBlocklistSelect(e) {
     }
 
     selectedBlocklistId = newBlocklistId;
+    if (newBlocklistId) userExplicitlyDeselected = false;
 
     const timePicker = document.getElementById('time-picker-container');
     const passwordHint = document.getElementById('password-hint');
     const selectionPrompt = document.getElementById('selection-prompt');
     const startBlockBtn = document.getElementById('start-block-btn');
     const startScheduleBtn = document.getElementById('start-schedule-btn');
-    const modeTabs = document.querySelector('.scheduler-mode-tabs');
 
     if (selectedBlocklistId) {
         // Determine which mode to show based on active blocks/schedules
@@ -5365,11 +9517,10 @@ function handleBlocklistSelect(e) {
             setScheduleMode(preferredSchedule === true);
         }
 
-        // Hide selection prompt, show time picker, hint, tabs, and appropriate button
+        // Hide selection prompt, show time picker, hint, and appropriate button
         if (selectionPrompt) selectionPrompt.classList.add('hidden');
         timePicker.classList.remove('hidden');
         if (passwordHint) passwordHint.classList.remove('hidden');
-        if (modeTabs) modeTabs.classList.remove('hidden');
 
         // Show the appropriate button based on mode
         if (isScheduleMode) {
@@ -5394,7 +9545,6 @@ function handleBlocklistSelect(e) {
 
                 if (blocklist) {
                     const btnLabel = startBlockBtn.querySelector('.btn-label');
-                    const btnName = startBlockBtn.querySelector('.btn-name');
                     const btnIcon = startBlockBtn.querySelector('svg');
 
                     // Always clear the activeBlockId first to prevent cross-blocklist issues
@@ -5404,10 +9554,10 @@ function handleBlocklistSelect(e) {
                     const pauseBtn = document.getElementById('pause-block-btn');
 
                     if (activeBlock) {
-                        // Active block - show Stop Block button (grey) with unlock icon
-                        if (btnLabel) btnLabel.textContent = 'Stop Block:';
-                        if (btnName) btnName.textContent = blocklist.name;
+                        // Active block - show Stop Block button (ghost) with unlock icon
                         startBlockBtn.classList.add('stop-block');
+                        setBtnActionLabel(btnLabel, tSettings('stopBlock'));
+                        setStartBtnBlocklistInfo(startBlockBtn, blocklist);
                         startBlockBtn.disabled = false;
                         startBlockBtn.dataset.activeBlockId = activeBlock.id;
 
@@ -5430,14 +9580,12 @@ function handleBlocklistSelect(e) {
 
                         // Keep the info message visible for active always-on blocks.
                         const alwaysOnMsg = document.getElementById('always-on-message');
-                        const durationToggle = document.getElementById('duration-mode-toggle');
                         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
-                        if (durationToggle) durationToggle.classList.add('hidden');
                     } else {
                         // No active block - show Start Block button (normal) with lock icon
                         // Ensure we've already cleared the activeBlockId above
-                        if (btnLabel) btnLabel.textContent = tSettings('startBlockButton');
-                        if (btnName) btnName.textContent = blocklist.name;
+                        setBtnActionLabel(btnLabel, tSettings('startBlockButton'));
+                        setStartBtnBlocklistInfo(startBlockBtn, blocklist);
 
                         // Change to lock icon
                         if (btnIcon) {
@@ -5450,10 +9598,8 @@ function handleBlocklistSelect(e) {
                         // Enable time controls
                         disableTimeControls(false);
 
-                        // Re-show duration mode toggle and always-on message based on current mode
+                        // Re-show always-on message based on current mode
                         const alwaysOnMsg = document.getElementById('always-on-message');
-                        const durationToggle = document.getElementById('duration-mode-toggle');
-                        if (durationToggle) durationToggle.classList.remove('hidden');
                         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isAlwaysOnMode);
 
                         // Hide pause button
@@ -5464,16 +9610,17 @@ function handleBlocklistSelect(e) {
         }
         initializeTimeInputs();
     } else {
-        // Show selection prompt, hide time picker, hint, tabs, and both buttons
+        // Show selection prompt, hide time picker, hint, and both buttons
         if (selectionPrompt) selectionPrompt.classList.remove('hidden');
         timePicker.classList.add('hidden');
         if (passwordHint) passwordHint.classList.add('hidden');
-        if (modeTabs) modeTabs.classList.add('hidden');
         if (startBlockBtn) startBlockBtn.classList.add('hidden');
         if (startScheduleBtn) startScheduleBtn.classList.add('hidden');
         const pauseBtn = document.getElementById('pause-block-btn');
         if (pauseBtn) pauseBtn.classList.add('hidden');
     }
+
+    syncSchedulerChromeVisibility();
 
     // Update visual selection state on blocklist cards
     renderBlocklists();
@@ -5490,6 +9637,7 @@ function handleBlocklistSelect(e) {
 // Used by click-outside handler and ESC key.
 function deselectBlocklist() {
     if (!selectedBlocklistId) return;
+    userExplicitlyDeselected = true;
     const currentBlocklistId = selectedBlocklistId;
     if (isScheduleMode) {
         const existingSchedule = appData.schedules?.find(s => s.blocklistId === currentBlocklistId);
@@ -5507,12 +9655,13 @@ function deselectBlocklist() {
                 const newSegments = scheduleSegments.slice(committedSegmentCount);
                 appData.settings.pendingScheduleSegments[currentBlocklistId] = newSegments.map(seg => ({ ...seg }));
                 saveData();
-            } else {
-                if (appData.settings.pendingScheduleSegments[currentBlocklistId]) {
-                    delete appData.settings.pendingScheduleSegments[currentBlocklistId];
-                    saveData();
+                } else {
+                    // No new segments - clear any pending segments
+                    if (appData.settings.pendingScheduleSegments?.[currentBlocklistId]) {
+                        clearPendingScheduleDraft(currentBlocklistId);
+                        saveData();
+                    }
                 }
-            }
         }
     } else {
         if (!appData.settings) appData.settings = {};
@@ -5641,27 +9790,29 @@ function startBlock() {
 
     // Build override difficulty text with time estimate
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-    let overrideText = '';
-
-    // Estimate typing time: ~20 chars/min for random/gibberish (it's slow!), ~30 for custom text
     let charCount = difficulty.count;
-    let charsPerMinute = 150; // Conservative for random words (average typing is ~200 chars/min)
+    let charsPerMinute = 150;
 
     if (difficulty.type === 'custom' && difficulty.customText) {
         charCount = difficulty.customText.length;
-        charsPerMinute = 200; // Custom text is slightly easier (you can see the pattern)
-        const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
-        overrideText = `Type a specific ${charCount}-character phrase exactly as shown (~${estimatedMinutes} min).`;
+        charsPerMinute = 200;
     } else if (difficulty.type === 'gibberish') {
-        charsPerMinute = 100; // Gibberish is the hardest
-        const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
-        const charWord = charCount === 1 ? 'character' : 'characters';
-        overrideText = `Type ${charCount} random ${charWord} (letters and numbers) exactly as shown (~${estimatedMinutes} min).`;
-    } else {
-        const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
-        const charWord = charCount === 1 ? 'character' : 'characters';
-        overrideText = `Type ${charCount} ${charWord} (displayed as random words) exactly as shown (~${estimatedMinutes} min).`;
+        charsPerMinute = 100;
     }
+
+    const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
+    const startType =
+        difficulty.type === 'custom' && difficulty.customText
+            ? 'custom'
+            : difficulty.type === 'gibberish'
+              ? 'gibberish'
+              : 'random-words';
+
+    const overrideText = formatConfirmModalOverrideTypingLine({
+        type: startType,
+        count: charCount,
+        estimatedMinutes
+    });
 
     document.getElementById('start-confirm-override-text').textContent = overrideText;
 
@@ -5675,7 +9826,7 @@ function closeStartBlockConfirmModal() {
     // Reset resume state and restore default text
     if (resumeData) {
         resumeData = null;
-        document.querySelector('#start-block-confirm-modal .modal-content h3').textContent = 'Start this block?';
+        document.getElementById('start-block-confirm-title').textContent = tSettings('startThisBlock');
         document.getElementById('proceed-start-confirm-btn').textContent = tSettings('startBlock');
     }
 }
@@ -5805,46 +9956,15 @@ async function proceedWithBlock() {
                 helperAvailable = false;
             }
         }
-        if (helperAvailable) {
-            result = await tauriAPI.startBlockViaHelper({
-                domains: blocklist.websites || [],
-                endTime: blockEnd.getTime(),
-                blocklistId: selectedBlocklistId
-            });
-        } else {
-            // Helper not available - check if it's installed but just not detected
-            const status = await tauriAPI.checkHelperStatus();
-
-            if (status.running && status.version_ok) {
-                // It's running with correct version, use it
-                helperAvailable = true;
-                await syncKeepBlockingPreferenceToHelper();
-                result = await tauriAPI.startBlockViaHelper({
-                    domains: blocklist.websites || [],
-                    endTime: blockEnd.getTime(),
-                    blocklistId: selectedBlocklistId
-                });
-            } else {
-                // Helper not running, not installed, or outdated - show the install modal
-                // The install flow will update an outdated helper
-                if (status.running && !status.version_ok) {
-                    console.log('Helper is outdated, need to update - showing install modal');
-                }
-                pendingScheduleData = null;
-                pendingBlockData = {
-                    block,
-                    blocklist,
-                    blockEnd
-                };
-                configureHelperInstallModal(status);
-                document.getElementById('helper-install-modal').classList.remove('hidden');
-
-                // Re-enable button and return - modal will handle the rest
-                startBtn.disabled = false;
-                startBtn.innerHTML = getStartBlockButtonHTML();
-                return;
-            }
-        }
+        // v2: the app process IS the helper. startBlockViaHelper is a
+        // no-op shim that just acknowledges the save_data the
+        // frontend already did. The legacy "is the helper installed?"
+        // / install-modal branch was here.
+        result = await tauriAPI.startBlockViaHelper({
+            domains: blocklist.websites || [],
+            endTime: blockEnd.getTime(),
+            blocklistId: selectedBlocklistId
+        });
     }
 
     if (!result.success) {
@@ -5895,171 +10015,113 @@ async function proceedWithBlock() {
     handleBlocklistSelect({ target: blocklistSelect });
 }
 
-// Helper function for start block button HTML (includes .btn-label and .btn-name for updateability)
+// Helper function for start block button HTML (includes .btn-label and .btn-blocklist-meta wrapper)
 function getStartBlockButtonHTML() {
     return `
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
             <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
         </svg>
-        <span class="btn-label">${tSettings('startBlockButton')}</span>
-        <span class="btn-name"></span>
+        <span class="btn-label">${getActionLabelHTML(tSettings('startBlockButton'))}</span>
+        <span class="btn-blocklist-meta">
+            <span class="btn-blocklist-lead" aria-hidden="true"></span>
+            <span class="btn-emoji" aria-hidden="true"></span>
+            <span class="btn-name"></span>
+        </span>
     `;
 }
 
-function configureHelperInstallModal(status = null) {
-    const modal = document.getElementById('helper-install-modal');
-    const titleEl = document.getElementById('helper-setup-required-title');
-    const textEl = document.getElementById('helper-setup-required-text');
-    const proceedBtn = document.getElementById('proceed-helper-install-btn');
-    const mode = getHelperInstallMode(status);
+// Render an action label like "Stop Schedule:" / "Start blokering:" as two
+// inner spans so narrow viewports can hide the trailing context (and the
+// .btn-emoji + .btn-name beside it) and just show "Stop" / "Start". Splits
+// at the first space so it works for any locale that follows verb-then-noun.
+function getActionLabelHTML(fullText) {
+    const safe = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const text = String(fullText ?? '');
+    const spaceIdx = text.indexOf(' ');
+    if (spaceIdx <= 0) return safe(text);
+    const action = text.slice(0, spaceIdx);
+    const context = text.slice(spaceIdx);
+    return `<span class="btn-label-action">${safe(action)}</span><span class="btn-label-context">${safe(context)}</span>`;
+}
 
-    if (modal) {
-        modal.dataset.mode = mode;
-    }
-    if (titleEl) {
-        titleEl.textContent = tSettings(getHelperInstallModeConfig(mode).titleKey);
-    }
-    if (textEl) {
-        textEl.textContent = tSettings(getHelperInstallModeConfig(mode).textKey);
-    }
-    if (proceedBtn) {
-        proceedBtn.textContent = tSettings(getHelperInstallModeConfig(mode).buttonKey);
+function setBtnActionLabel(el, fullText) {
+    if (!el) return;
+    el.innerHTML = getActionLabelHTML(fullText);
+}
+
+// The visible colon is added in CSS on .btn-label-context when the full stop
+// label fits. Keep this spacer empty so punctuation stays visually attached to
+// "Block"/"Schedule" rather than becoming a separate flex item.
+function syncStartBtnBlocklistMetaLead(btn) {
+    if (!btn) return;
+    const lead = btn.querySelector('.btn-blocklist-lead');
+    if (!lead) return;
+    lead.textContent = '';
+}
+
+function measureStopBtnExpandedWidth(btn) {
+    if (!btn) return 0;
+    const clone = btn.cloneNode(true);
+    clone.classList.remove('hidden', 'stop-meta-collapsed');
+    clone.style.position = 'absolute';
+    clone.style.visibility = 'hidden';
+    clone.style.pointerEvents = 'none';
+    clone.style.width = 'auto';
+    clone.style.maxWidth = 'none';
+    clone.style.minWidth = '0';
+    clone.style.left = '-99999px';
+    clone.style.top = '0';
+    document.body.appendChild(clone);
+    const width = clone.getBoundingClientRect().width;
+    clone.remove();
+    return width;
+}
+
+function syncStopBtnLabelFit(btn) {
+    if (!btn) return;
+    btn.classList.remove('stop-meta-collapsed');
+    syncStartBtnBlocklistMetaLead(btn);
+
+    const isStopBtn = btn.classList.contains('stop-block') || btn.classList.contains('stop-schedule');
+    if (!isStopBtn || btn.classList.contains('hidden') || btn.clientWidth <= 0) return;
+
+    const buttonRow = btn.parentElement;
+    const rowStyle = buttonRow ? window.getComputedStyle(buttonRow) : null;
+    const rowGap = rowStyle ? (parseFloat(rowStyle.columnGap || rowStyle.gap) || 0) : 0;
+    const visibleButtons = buttonRow
+        ? Array.from(buttonRow.children).filter(el => el instanceof HTMLElement && !el.classList.contains('hidden') && el.getClientRects().length > 0)
+        : [btn];
+    const otherButtonsWidth = visibleButtons
+        .filter(el => el !== btn)
+        .reduce((total, el) => total + el.getBoundingClientRect().width, 0);
+    const availableBtnWidth = buttonRow
+        ? buttonRow.clientWidth - otherButtonsWidth - (Math.max(0, visibleButtons.length - 1) * rowGap)
+        : btn.clientWidth;
+    const expandedBtnWidth = !isIOS ? measureStopBtnExpandedWidth(btn) : 0;
+    const shouldCollapseForDesktopWidth = !isIOS && expandedBtnWidth > availableBtnWidth + 1;
+
+    if (shouldCollapseForDesktopWidth || btn.scrollWidth > btn.clientWidth + 1) {
+        btn.classList.add('stop-meta-collapsed');
     }
 }
 
-function getHelperInstallMode(status = null) {
-    if (status?.running && !status?.version_ok) return 'update';
-    if (status?.installed && !status?.running) return 'repair';
-    return 'install';
+function syncAllStopBtnLabelFits() {
+    document
+        .querySelectorAll('.start-block-btn.stop-block, .start-block-btn.stop-schedule')
+        .forEach(syncStopBtnLabelFit);
 }
 
-function getHelperInstallModeConfig(mode) {
-    if (mode === 'update') {
-        return {
-            titleKey: 'helperUpdateTitle',
-            textKey: 'helperUpdateText',
-            buttonKey: 'updateHelper',
-            loadingKey: 'helperUpdating',
-        };
-    }
-    if (mode === 'repair') {
-        return {
-            titleKey: 'helperRepairTitle',
-            textKey: 'helperRepairText',
-            buttonKey: 'reinstallHelper',
-            loadingKey: 'helperReinstalling',
-        };
-    }
-    return {
-        titleKey: 'helperSetupTitle',
-        textKey: 'helperSetupText',
-        buttonKey: 'proceed',
-        loadingKey: 'helperInstalling',
-    };
+// Update both the emoji and name on a start/stop button so they stay in sync.
+function setStartBtnBlocklistInfo(btn, blocklist) {
+    if (!btn) return;
+    const btnEmoji = btn.querySelector('.btn-emoji');
+    const btnName = btn.querySelector('.btn-name');
+    if (btnEmoji) btnEmoji.textContent = blocklist ? (blocklist.emoji || '🚫') : '';
+    if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
+    syncStopBtnLabelFit(btn);
 }
 
-// Handle the Proceed button in the helper install modal
-async function proceedWithHelperInstall() {
-    const modal = document.getElementById('helper-install-modal');
-    const proceedBtn = document.getElementById('proceed-helper-install-btn');
-    const modeConfig = getHelperInstallModeConfig(modal?.dataset.mode || 'install');
-
-    // Disable button while installing with spinner
-    proceedBtn.disabled = true;
-    proceedBtn.innerHTML = `<span class="btn-spinner"></span>${tSettings(modeConfig.loadingKey)}`;
-
-    // Try to install the helper
-    const installResult = await tauriAPI.installHelper();
-
-    if (installResult.success) {
-        proceedBtn.innerHTML = '<span class="btn-spinner"></span>Starting helper...';
-
-        let finalStatus = await refreshDesktopHelperStatus();
-        for (let i = 0; i < 5 && !finalStatus.helperReady; i++) {
-            await new Promise(resolve => setTimeout(resolve, 1000));
-            finalStatus = await refreshDesktopHelperStatus();
-        }
-
-        if (!finalStatus.helperReady) {
-            proceedBtn.disabled = false;
-            proceedBtn.textContent = tSettings(getHelperInstallModeConfig(modal?.dataset.mode || 'install').buttonKey);
-            if (finalStatus.running && !finalStatus.version_ok) {
-                alert('The helper started, but it is still reporting an outdated version. Please remove the helper in Settings and try installing again.');
-            } else {
-                alert('The helper was installed but is not ready yet. Please try again, or restart your computer if the problem persists.');
-            }
-            return;
-        }
-
-        helperAvailable = true;
-        await syncKeepBlockingPreferenceToHelper();
-        modal.classList.add('hidden');
-
-        // Now start the pending block
-        if (pendingBlockData) {
-            const { block, blocklist, blockEnd } = pendingBlockData;
-
-            const result = await tauriAPI.startBlockViaHelper({
-                domains: blocklist.websites || [],
-                endTime: blockEnd.getTime(),
-                blocklistId: blocklist.id
-            });
-
-            if (result.success) {
-                // Add block to local data
-                appData.activeBlocks.push(block);
-                activatedBlockIds.add(block.id);
-                await saveData();
-
-                // Send blocked apps and schedules to the newly-installed helper
-                await updateBlockedApps();
-                await syncSchedulesToHelper();
-
-                // Reset UI - keep the blocklist selected
-                const blocklistSelect = document.getElementById('blocklist-select');
-                blocklistSelect.value = blocklist.id; // Keep the blocklist selected
-                handleBlocklistSelect({ target: blocklistSelect });
-
-
-                render();
-            } else {
-                if (isHelperConnectionError(result.error)) {
-                    helperAvailable = false;
-                    alert('The block service isn\'t running. Please open Settings, remove the helper, then try starting a block again to reinstall it.');
-                } else {
-                    alert('Could not start block: ' + (result.error || 'Unknown error'));
-                }
-            }
-
-            pendingBlockData = null;
-        } else if (pendingScheduleData) {
-            const blocklist = appData.blocklists.find(bl => bl.id === pendingScheduleData.blocklistId);
-            if (blocklist) {
-                selectedBlocklistId = pendingScheduleData.blocklistId;
-                scheduleSegments = pendingScheduleData.segments.map(seg => ({ ...seg }));
-                scheduleRepeatType = pendingScheduleData.repeatType;
-                scheduleRepeatDate = pendingScheduleData.repeatDate;
-
-                const blocklistSelect = document.getElementById('blocklist-select');
-                if (blocklistSelect) {
-                    blocklistSelect.value = blocklist.id;
-                }
-                await proceedWithSchedule();
-            }
-            pendingScheduleData = null;
-        }
-    } else {
-        // Installation failed
-        if (!installResult.error?.includes('Permission denied')) {
-            alert('Could not install helper: ' + (installResult.error || 'Unknown error'));
-        }
-    }
-
-    // Re-enable button
-    proceedBtn.disabled = false;
-    proceedBtn.textContent = tSettings(getHelperInstallModeConfig(modal?.dataset.mode || 'install').buttonKey);
-}
 
 // Update hosts file based on active blocks
 // silent = true means don't prompt for password (used for cleanup)
@@ -6162,8 +10224,6 @@ async function updateHostsFile(silent = false) {
         if (status.running && status.version_ok) {
             console.log('[updateHostsFile] Helper running with correct version, using helper to update blocks');
             helperAvailable = true;
-            await syncKeepBlockingPreferenceToHelper();
-            await syncLogPingsPreferenceToHelper();
             await syncActiveBlocksToHelper();
             await syncSchedulesToHelper();
             lastBlockedDomains = allDomains;
@@ -6194,18 +10254,31 @@ async function updateHostsFile(silent = false) {
     return result || { success: true };
 }
 
-// Update blocked apps sent to the helper. Only one-off (manual) block apps are sent here.
-// Schedule-based app blocking is owned solely by set_schedules via syncSchedulesToHelper();
-// the helper merges manual + active schedule apps internally.
+// Update blocked apps sent to the in-process app watcher (desktop only).
+// Computes the effective union of apps from active one-off blocks AND active schedule
+// segments. Both sources are evaluated on the frontend now that the legacy helper
+// daemon (which previously merged schedule + manual apps internally) is gone.
+/// Set of app names that were in the blocked set at the LAST
+/// `updateBlockedApps` call. Used to compute which apps just
+/// transitioned to blocking ("newly added") so the watcher can
+/// distinguish "block just starting → raise Let's-go warning" from
+/// "user launched a blocked app while a block was already running →
+/// silent SIGTERM". `null` until the first call so the very first
+/// sync (typically right after app launch, when blocks may already
+/// be active from a prior session) doesn't fire warnings — we treat
+/// that initial state as "what was already running before we got
+/// here", not as a transition the user just initiated.
+let appBlockingPreviousAppsSet = null;
+
 async function updateBlockedApps() {
     // iOS uses Screen Time API for app blocking - skip desktop process watcher
     if (isIOS) return;
 
     const allBlockedApps = new Set();
     const now = Date.now();
+    const nowDate = new Date(now);
 
-    // Collect apps from active one-off blocks only (skip paused). Do not include schedule-derived
-    // apps here; they are synced via set_schedules and the helper computes effective list.
+    // Collect apps from active one-off blocks (skip paused / out-of-window).
     appData.activeBlocks
         .filter(block => block.startTime <= now && block.endTime > now && !block.isPaused)
         .forEach(block => {
@@ -6214,6 +10287,20 @@ async function updateBlockedApps() {
                 blocklist.apps.forEach(app => allBlockedApps.add(app));
             }
         });
+
+    // Collect apps from schedules whose segment is currently active (skip paused).
+    // Mirrors the schedule-domain logic in updateHostsFile().
+    if (appData.schedules) {
+        appData.schedules.forEach(schedule => {
+            if (!schedule.segments) return;
+            if (isSchedulePausedNow(schedule, now)) return;
+            if (!isScheduleSegmentActiveNow(schedule, nowDate)) return;
+            const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+            if (blocklist && blocklist.apps) {
+                blocklist.apps.forEach(app => allBlockedApps.add(app));
+            }
+        });
+    }
 
     // Filter out protected apps (ReDD Block must never block itself)
     const appsArray = Array.from(allBlockedApps)
@@ -6227,19 +10314,29 @@ async function updateBlockedApps() {
             const status = await tauriAPI.checkHelperStatus();
             helperReady = !!(status.running && status.version_ok);
             helperAvailable = helperReady;
-            if (helperReady) {
-                await syncKeepBlockingPreferenceToHelper();
-            }
         } catch (e) {
             console.warn('[updateBlockedApps] Helper status re-check failed:', e);
         }
     }
 
+    // Compute the diff against the last sync so the watcher knows
+    // which apps just transitioned to blocked (warning-eligible) vs
+    // which were already blocked (silent enforcement). On the very
+    // first call `appBlockingPreviousAppsSet` is null — we treat that
+    // as "initial state, no transitions" and skip warnings entirely.
+    const newlyAddedApps = appBlockingPreviousAppsSet === null
+        ? []
+        : appsArray.filter((a) => !appBlockingPreviousAppsSet.has(a));
+    appBlockingPreviousAppsSet = new Set(appsArray);
+
     if (helperReady) {
         try {
-            const result = await tauriAPI.setBlockedAppsViaHelper(appsArray);
+            const result = await tauriAPI.setBlockedAppsViaHelper(appsArray, newlyAddedApps);
             if (result && result.success) {
-                console.log('[updateBlockedApps] Apps set via helper daemon:', appsArray.length, 'apps');
+                console.log(
+                    '[updateBlockedApps] Apps set via helper daemon:',
+                    appsArray.length, 'apps,', newlyAddedApps.length, 'newly added',
+                );
             } else {
                 console.warn('[updateBlockedApps] Helper failed to set blocked apps:', result?.error);
             }
@@ -6248,6 +10345,22 @@ async function updateBlockedApps() {
         }
     } else if (appsArray.length > 0) {
         console.warn('[updateBlockedApps] Helper not available - app blocking requires the helper daemon');
+    }
+}
+
+// Blocklist modal: --blocklist-tint colours the website/app tag chips;
+// --blocklist-tag-text is black or white for readable labels (from the
+// picker / swatch handlers). The input well stays the normal input bg.
+// Pass null on close to clear the custom properties.
+function applyModalBlocklistTint(hexColor) {
+    const modal = document.getElementById('blocklist-modal');
+    if (!modal) return;
+    if (typeof hexColor === 'string' && hexColor.startsWith('#')) {
+        modal.style.setProperty('--blocklist-tint', hexColor);
+        modal.style.setProperty('--blocklist-tag-text', getContrastTextColor(hexColor));
+    } else {
+        modal.style.removeProperty('--blocklist-tint');
+        modal.style.removeProperty('--blocklist-tag-text');
     }
 }
 
@@ -6260,7 +10373,6 @@ function openBlocklistModal(blocklist = null) {
         const original = appData.blocklists.find(b => b.id === editingBlocklistId);
         if (original) {
             blocklistModalPreviewSnapshot = {
-                alwaysShowInSchedule: original.alwaysShowInSchedule,
                 showItemDetails: original.showItemDetails
             };
         }
@@ -6268,9 +10380,10 @@ function openBlocklistModal(blocklist = null) {
 
     document.getElementById('modal-title').textContent = blocklist ? tSettings('editBlocklist') : tSettings('createBlocklist');
 
-    document.getElementById('blocklist-name').value = blocklist?.name || '';
+    const modalName = truncateBlocklistName(blocklist?.name || '');
+    document.getElementById('blocklist-name').value = modalName;
     document.getElementById('blocklist-name').classList.remove('input-error');
-    lastBlocklistNameValue = blocklist?.name || '';
+    lastBlocklistNameValue = modalName;
 
     const normalizedDifficulty = cloneOverrideDifficulty(blocklist?.overrideDifficulty, 10);
     document.getElementById('override-type').value = normalizedDifficulty.type;
@@ -6322,8 +10435,8 @@ function openBlocklistModal(blocklist = null) {
             // If all are used, wrap around to the first one
             colorToSelect = swatches[0].dataset.color;
         } else {
-            // Fallback default
-            colorToSelect = 'linear-gradient(135deg, #4a00e0 0%, #8e2de2 100%)';
+            // Fallback default — first colour in the palette.
+            colorToSelect = '#B8D1DE';
         }
     }
 
@@ -6339,6 +10452,8 @@ function openBlocklistModal(blocklist = null) {
             customSwatch.classList.add('selected');
         }
     }
+
+    applyModalBlocklistTint(colorToSelect);
 
     // Restore emoji swatch selection
     document.querySelectorAll('.emoji-swatch').forEach(s => s.classList.remove('selected'));
@@ -6476,18 +10591,6 @@ function openBlocklistModal(blocklist = null) {
         };
     }
 
-    const alwaysShowInScheduleCheckbox = document.getElementById('always-show-in-schedule-checkbox');
-    if (alwaysShowInScheduleCheckbox) {
-        alwaysShowInScheduleCheckbox.checked = blocklist?.alwaysShowInSchedule !== false;
-        alwaysShowInScheduleCheckbox.onchange = () => {
-            if (!editingBlocklistId) return;
-            const bl = appData.blocklists.find(b => b.id === editingBlocklistId);
-            if (!bl) return;
-            bl.alwaysShowInSchedule = alwaysShowInScheduleCheckbox.checked;
-            renderWeekBlocks();
-        };
-    }
-
     // Reset advanced options to collapsed state
     const blocklistAdvancedToggle = document.getElementById('blocklist-advanced-toggle');
     const blocklistAdvancedContent = document.getElementById('blocklist-advanced-content');
@@ -6521,7 +10624,6 @@ function closeBlocklistModal() {
     if (editingBlocklistId && blocklistModalPreviewSnapshot) {
         const bl = appData.blocklists.find(b => b.id === editingBlocklistId);
         if (bl) {
-            bl.alwaysShowInSchedule = blocklistModalPreviewSnapshot.alwaysShowInSchedule;
             bl.showItemDetails = blocklistModalPreviewSnapshot.showItemDetails;
             renderWeekBlocks();
             renderBlocklists();
@@ -6529,12 +10631,17 @@ function closeBlocklistModal() {
     }
 
     const showItemDetailsCheckbox = document.getElementById('show-item-details-checkbox');
-    const alwaysShowInScheduleCheckbox = document.getElementById('always-show-in-schedule-checkbox');
     if (showItemDetailsCheckbox) showItemDetailsCheckbox.onchange = null;
-    if (alwaysShowInScheduleCheckbox) alwaysShowInScheduleCheckbox.onchange = null;
+
+    // Reset the websites Import popover so it starts closed next open.
+    const importMenu = document.getElementById('websites-import-menu');
+    const importBtn = document.getElementById('modal-import-websites-btn');
+    if (importMenu) importMenu.classList.add('hidden');
+    if (importBtn) importBtn.setAttribute('aria-expanded', 'false');
 
     blocklistModalPreviewSnapshot = null;
     document.getElementById('blocklist-modal').classList.add('hidden');
+    applyModalBlocklistTint(null);
     editingBlocklistId = null;
     document.getElementById('blocklist-name').value = '';
     window.setModalData([], [], null);
@@ -6542,6 +10649,7 @@ function closeBlocklistModal() {
 
 // Open override modal
 function openOverrideModal(blockId) {
+    delete window.overrideScheduleId;
     overrideBlockId = blockId;
     const block = appData.activeBlocks.find(b => b.id === blockId);
     overrideBlocklistIdForHelper = block ? block.blocklistId : null;
@@ -6549,6 +10657,9 @@ function openOverrideModal(blockId) {
     const blocklist = appData.blocklists.find(bl => bl.id === block?.blocklistId);
 
     if (!blocklist) return;
+
+    const confirmBtn = document.getElementById('confirm-override-btn');
+    if (confirmBtn) confirmBtn.textContent = tSettings('stopBlock');
 
     // Set modal title with blocklist name
     document.getElementById('override-modal-title').textContent = `Override ${blocklist.name}?`;
@@ -6619,6 +10730,9 @@ function closeOverrideModal() {
     overrideBlockId = null;
     overrideBlocklistIdForHelper = null;
     challengeText = '';
+    delete window.overrideScheduleId;
+    const confirmBtn = document.getElementById('confirm-override-btn');
+    if (confirmBtn) confirmBtn.textContent = tSettings('stopBlock');
 }
 
 // ── Pause/Resume Block ──
@@ -6658,7 +10772,7 @@ function openResumeConfirmation(blocklistId, type, blockId) {
     resumeData = { blocklistId, type, blockId };
 
     // Set heading
-    document.querySelector('#start-block-confirm-modal .modal-content h3').textContent = 'Resume this block?';
+    document.getElementById('start-block-confirm-title').textContent = tSettings('resumeThisBlock');
 
     // Set blocklist name
     document.getElementById('start-confirm-name').textContent = blocklist.name;
@@ -6730,20 +10844,28 @@ function openResumeConfirmation(blocklistId, type, blockId) {
 
     // Override info
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-    let overrideText = '';
     let charCount = difficulty.count;
+    let estimatedMinutes;
+    let resumeType;
 
     if (difficulty.type === 'custom' && difficulty.customText) {
         charCount = difficulty.customText.length;
-        const estimatedMinutes = Math.ceil(charCount / 200);
-        overrideText = `Type a specific ${charCount}-character phrase exactly as shown (~${estimatedMinutes} min).`;
+        estimatedMinutes = Math.ceil(charCount / 200);
+        resumeType = 'custom';
     } else if (difficulty.type === 'gibberish') {
-        const estimatedMinutes = Math.ceil(charCount / 100);
-        overrideText = `Type ${charCount} random characters exactly as shown (~${estimatedMinutes} min).`;
+        estimatedMinutes = Math.ceil(charCount / 100);
+        resumeType = 'gibberish';
     } else {
-        const estimatedMinutes = Math.ceil(charCount / 150);
-        overrideText = `Type ${charCount} characters (displayed as random words) exactly as shown (~${estimatedMinutes} min).`;
+        estimatedMinutes = Math.ceil(charCount / 150);
+        resumeType = 'random-words';
     }
+
+    const overrideText = formatConfirmModalOverrideTypingLine({
+        type: resumeType,
+        count: charCount,
+        estimatedMinutes,
+        resumeShortGibberish: resumeType === 'gibberish'
+    });
     document.getElementById('start-confirm-override-text').textContent = overrideText;
 
     // Change confirm button text
@@ -7045,11 +11167,7 @@ function initPauseRestartPopovers() {
         }
     }
 
-    // Attach click handlers to the time-part buttons
-    const hourBtn = document.getElementById('pause-restart-hour-btn');
-    const minuteBtn = document.getElementById('pause-restart-minute-btn');
-    if (hourBtn) hourBtn.addEventListener('click', handleTimePartClick);
-    if (minuteBtn) minuteBtn.addEventListener('click', handleTimePartClick);
+    // Popover triggers use `.time-popover-anchor` — wired once at DOMContentLoaded.
 }
 
 // When user selects a restart time, reverse-calculate the duration
@@ -7373,7 +11491,12 @@ function updateOverridePreview() {
     const estimatedMins = getOverrideEstimatedMinutes(type, count, customText);
     const previewText = getOverridePreviewText(type, count, customText);
 
-    timeLineEl.textContent = `Takes ~${estimatedMins} min${estimatedMins !== 1 ? 's' : ''} to type and will look something like:`;
+    const lang = getSettingsLanguage();
+    const timeVars = lang === 'da'
+        ? { minutes: estimatedMins, unit: estimatedMins === 1 ? 'minut' : 'minutter' }
+        : { minutes: estimatedMins, minuteSuffix: estimatedMins === 1 ? '' : 's' };
+    timeLineEl.textContent = tSettingsFmt('overridePreviewTimeLine', timeVars);
+
     previewEl.textContent = previewText;
     previewEl.title = previewText;
 }
@@ -7437,12 +11560,36 @@ function cloneOverrideDifficulty(raw, fallbackCount = 50) {
     return cloned;
 }
 
-// macOS-style duplicate naming: "test" -> "test copy", "test copy 2", ... gap-fill; content-based chain.
+function truncateBlocklistName(raw) {
+    const s = String(raw ?? '');
+    return s.length <= BLOCKLIST_NAME_MAX_LENGTH ? s : s.slice(0, BLOCKLIST_NAME_MAX_LENGTH);
+}
 
-/** Returns chain root if name is "X copy" or "X copy N", else null. */
+// Duplicate naming (localized suffix): EN "copy", DA "kopi"; parses both so chains gap-fill correctly.
+
+/** Returns chain root if name ends with localized or legacy "copy" / "kopi" (+ optional number), else null. */
 function parseCopyRoot(name) {
-    const m = /^(.+?) copy(?: (\d+))?$/.exec(name);
+    let m = /^(.+?) copy(?: (\d+))?$/.exec(name);
+    if (m) return m[1];
+    m = /^(.+?) kopi(?: (\d+))?$/i.exec(name);
     return m ? m[1] : null;
+}
+
+function getBlocklistDuplicateSuffix() {
+    return tSettings('blocklistDuplicateSuffix');
+}
+
+/** Slot numbers already used for base (counts both "copy" and "kopi" names — one chain per base). */
+function collectUsedDuplicateSuffixSlots(base) {
+    const used = new Set();
+    const esc = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`^${esc} (copy|kopi)(?: (\\d+))?$`, 'i');
+    for (const bl of appData.blocklists) {
+        const m = re.exec(bl.name);
+        if (!m) continue;
+        used.add(m[2] ? parseInt(m[2], 10) : 1);
+    }
+    return used;
 }
 
 /** Comparable string for content (websites, apps only). Only these + name affect duplicate copy-number chain. */
@@ -7463,15 +11610,17 @@ function contentKey(blocklistId) {
 
 function sameBlocklistContent(idA, idB) { return contentKey(idA) === contentKey(idB); }
 
-/** True if name is root, "root copy", or "root copy N". */
+/** True if name is root, "root copy|kopi", or "root copy|kopi N". */
 function nameInChain(name, root) {
-    if (name === root || name === root + ' copy') return true;
-    const p = root + ' copy ';
-    return name.startsWith(p) && /^\d+$/.test(name.slice(p.length));
+    if (name === root) return true;
+    const esc = root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`^${esc} (copy|kopi)(?: (\\d+))?$`, 'i');
+    return re.test(name);
 }
 
-/** Next copy name: "X copy" or "X copy N" with gap-fill; same chain if unedited, else new chain from current name. */
+/** Next duplicate name using current locale suffix; gap-fill; same chain if unedited, else new chain from current name. */
 function getNextCopyName(blocklist) {
+    const suffix = getBlocklistDuplicateSuffix();
     const name = blocklist.name;
     const root = parseCopyRoot(name);
     let base = name;
@@ -7481,16 +11630,10 @@ function getNextCopyName(blocklist) {
         );
         if (otherInChainSameContent) base = root;
     }
-    const used = new Set();
-    const p1 = base + ' copy';
-    const p2 = base + ' copy ';
-    for (const bl of appData.blocklists) {
-        if (bl.name === p1) used.add(1);
-        else if (bl.name.startsWith(p2) && /^\d+$/.test(bl.name.slice(p2.length))) used.add(parseInt(bl.name.slice(p2.length), 10));
-    }
+    const used = collectUsedDuplicateSuffixSlots(base);
     let n = 1;
     while (used.has(n)) n++;
-    return n === 1 ? p1 : p2 + n;
+    return truncateBlocklistName(n === 1 ? `${base} ${suffix}` : `${base} ${suffix} ${n}`);
 }
 
 /** True if the blocklist has an active one-off block or a schedule currently in an active segment (and not paused). */
@@ -7503,6 +11646,16 @@ function isBlocklistCurrentlyActive(blocklistId) {
     const schedule = appData.schedules?.find(s => s.blocklistId === blocklistId);
     if (!schedule?.segments?.length) return false;
     return isScheduleSegmentActiveNow(schedule, new Date(now));
+}
+
+function clearPendingScheduleDraft(blocklistId) {
+    if (!blocklistId || !appData.settings) return;
+    if (appData.settings.pendingScheduleSegments?.[blocklistId]) {
+        delete appData.settings.pendingScheduleSegments[blocklistId];
+    }
+    if (appData.settings.pendingScheduleRepeatOptions?.[blocklistId]) {
+        delete appData.settings.pendingScheduleRepeatOptions[blocklistId];
+    }
 }
 
 function duplicateBlocklist(id) {
@@ -7528,29 +11681,57 @@ function duplicateBlocklist(id) {
 
     appData.blocklists.push(duplicate);
 
-    // Copy schedule only when the original is not currently active, so the duplicate starts inactive.
-    const originalIsActive = isBlocklistCurrentlyActive(id);
+    // Always copy schedule configuration as a draft on the new blocklist so duplicates never
+    // enforce until the user runs Start schedule (committed schedules sync to the helper and
+    // can activate immediately; pause/live-session state must not carry over).
     const existingSchedule = appData.schedules?.find(s => s.blocklistId === id);
-    if (!originalIsActive && existingSchedule && existingSchedule.segments && existingSchedule.segments.length > 0) {
-        const newSchedule = {
-            id: crypto.randomUUID(),
-            blocklistId: newId,
-            segments: existingSchedule.segments.map(seg => ({
-                startHour: seg.startHour,
-                startMinute: seg.startMinute,
-                endHour: seg.endHour,
-                endMinute: seg.endMinute,
-                days: [...(seg.days || [])]
-            })),
-            repeatType: existingSchedule.repeatType || 'no',
-            repeatDate: existingSchedule.repeatType === 'date' && existingSchedule.repeatDate
-                ? new Date(existingSchedule.repeatDate.getTime ? existingSchedule.repeatDate.getTime() : existingSchedule.repeatDate)
-                : null,
-            createdAt: Date.now()
+    const pendingSegs = appData.settings?.pendingScheduleSegments?.[id];
+    const pendingRepeat = appData.settings?.pendingScheduleRepeatOptions?.[id];
+
+    let draftSegments = null;
+    let draftRepeat = null;
+
+    if (existingSchedule?.segments?.length) {
+        draftSegments = existingSchedule.segments.map(seg => ({
+            startHour: seg.startHour,
+            startMinute: seg.startMinute,
+            endHour: seg.endHour,
+            endMinute: seg.endMinute,
+            days: [...(seg.days || [])]
+        }));
+        const repeatType = existingSchedule.repeatType || 'no';
+        let repeatDate = null;
+        if (repeatType === 'date' && existingSchedule.repeatDate) {
+            const rd = existingSchedule.repeatDate;
+            repeatDate =
+                typeof rd === 'number'
+                    ? rd
+                    : new Date(rd.getTime ? rd.getTime() : rd).getTime();
+        }
+        draftRepeat = { repeatType, repeatDate };
+    } else if (pendingSegs && pendingSegs.length > 0) {
+        draftSegments = pendingSegs.map(seg => ({ ...seg }));
+        draftRepeat =
+            pendingRepeat && typeof pendingRepeat.repeatType === 'string'
+                ? {
+                      repeatType: pendingRepeat.repeatType,
+                      repeatDate:
+                          pendingRepeat.repeatType === 'date' && pendingRepeat.repeatDate != null
+                              ? pendingRepeat.repeatDate
+                              : null
+                  }
+                : { repeatType: 'forever', repeatDate: null };
+    }
+
+    if (draftSegments && draftSegments.length > 0) {
+        if (!appData.settings) appData.settings = {};
+        if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
+        if (!appData.settings.pendingScheduleRepeatOptions) appData.settings.pendingScheduleRepeatOptions = {};
+        appData.settings.pendingScheduleSegments[newId] = draftSegments;
+        appData.settings.pendingScheduleRepeatOptions[newId] = draftRepeat || {
+            repeatType: 'forever',
+            repeatDate: null
         };
-        if (!appData.schedules) appData.schedules = [];
-        appData.schedules.push(newSchedule);
-        syncSchedulesToHelper();
     }
 
     saveData();
@@ -7584,12 +11765,12 @@ async function deleteBlocklist(id) {
     );
 
     if (hasActiveBlock) {
-        alert(`Cannot delete "${blocklist.name}" while a block is running. Override the block first.`);
+        alert(tSettingsFmt('deleteBlocklistDeniedActiveBlockFmt', { name: blocklist.name }));
         return;
     }
 
     if (hasActiveSchedule) {
-        alert(`Cannot delete "${blocklist.name}" while a schedule is active. Stop the schedule first.`);
+        alert(tSettingsFmt('deleteBlocklistDeniedActiveScheduleFmt', { name: blocklist.name }));
         return;
     }
 
@@ -7619,7 +11800,7 @@ async function deleteBlocklist(id) {
     // Show undo toast
     const toast = document.getElementById('undo-toast');
     const message = document.getElementById('undo-toast-message');
-    message.textContent = `Deleted "${blocklist.name}"`;
+    message.textContent = tSettingsFmt('deleteUndoToastFmt', { name: blocklist.name });
     toast.classList.remove('hidden');
 
     // Set up auto-commit after 5 seconds
@@ -7675,16 +11856,19 @@ function undoDelete() {
 function render() {
     updateOnboardingVisibility();
 
-    // Initialize currentWeekStart if not set
-    if (!currentWeekStart) {
-        currentWeekStart = getWeekStart(new Date());
-    }
-
+    renderNowBlockingRow();
     updateWeekCalendar();
     renderBlocklistSelector();
 
-    // Auto-select if there's only one available (non-active) blocklist
-    if (!selectedBlocklistId) {
+    // Auto-select when the choice is unambiguous, but respect a user
+    // deselect so they can return to the empty "Select a blocklist"
+    // state if they want.
+    //   - Exactly one blocklist exists → default-select it.
+    //   - Otherwise, if nothing is selected, fall back to selecting
+    //     the lone non-active blocklist if there's exactly one.
+    if (appData.blocklists.length === 1) {
+        autoSelectSoleBlocklist();
+    } else if (!selectedBlocklistId && !userExplicitlyDeselected) {
         const activeIds = appData.activeBlocks.map(b => b.blocklistId);
         const availableBlocklists = appData.blocklists.filter(bl => !activeIds.includes(bl.id));
         if (availableBlocklists.length === 1) {
@@ -7707,6 +11891,8 @@ function render() {
             selectionPrompt.classList.remove('hidden');
         }
     }
+
+    syncSchedulerChromeVisibility();
 
     // Adjust window height to fit content
     updateWindowHeight();
@@ -7734,17 +11920,15 @@ function syncSelectedControlState() {
     const now = Date.now();
     const activeBlock = appData.activeBlocks.find(b => b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now);
     const btnLabel = startBlockBtn.querySelector('.btn-label');
-    const btnName = startBlockBtn.querySelector('.btn-name');
     const btnIcon = startBlockBtn.querySelector('svg');
     const pauseBtn = document.getElementById('pause-block-btn');
     const alwaysOnMsg = document.getElementById('always-on-message');
-    const durationToggle = document.getElementById('duration-mode-toggle');
     delete startBlockBtn.dataset.activeBlockId;
     startBlockBtn.classList.remove('stop-block');
-    if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
     if (activeBlock) {
-        if (btnLabel) btnLabel.textContent = 'Stop Block:';
         startBlockBtn.classList.add('stop-block');
+        setBtnActionLabel(btnLabel, tSettings('stopBlock'));
+        setStartBtnBlocklistInfo(startBlockBtn, blocklist);
         startBlockBtn.dataset.activeBlockId = activeBlock.id;
         if (btnIcon) btnIcon.innerHTML = `<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path>`;
         if (pauseBtn) {
@@ -7753,13 +11937,12 @@ function syncSelectedControlState() {
         }
         disableTimeControls(true);
         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
-        if (durationToggle) durationToggle.classList.add('hidden');
     } else {
-        if (btnLabel) btnLabel.textContent = tSettings('startBlockButton');
+        setBtnActionLabel(btnLabel, tSettings('startBlockButton'));
+        setStartBtnBlocklistInfo(startBlockBtn, blocklist);
         if (btnIcon) btnIcon.innerHTML = `<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path>`;
         if (pauseBtn) pauseBtn.classList.add('hidden');
         disableTimeControls(false);
-        if (durationToggle) durationToggle.classList.remove('hidden');
         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isAlwaysOnMode);
     }
     startBlockBtn.disabled = !selectedBlocklistId;
@@ -7767,201 +11950,80 @@ function syncSelectedControlState() {
     updateCleanHostsBtnState();
 }
 
-// Get the Monday of the week containing the given date
-function getWeekStart(date) {
-    const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Adjust when day is Sunday
-    d.setDate(diff);
-    d.setHours(0, 0, 0, 0);
-    return d;
-}
-
-// Format week display string like "Mon 26 Jan - Sun 1 Feb"
-function formatWeekDisplay(start, end) {
-    const locale = tSettings('locale');
-    const formatDayMonth = new Intl.DateTimeFormat(locale, { weekday: 'short', day: 'numeric', month: 'short' });
-    const startLabel = formatDayMonth.format(start);
-    const endLabel = formatDayMonth.format(end);
-
-    // Include year if different from current
-    const currentYear = new Date().getFullYear();
-    const startYear = start.getFullYear();
-    const endYear = end.getFullYear();
-
-    if (startYear === endYear && startYear === currentYear) return `${startLabel} - ${endLabel}`;
-    if (startYear === endYear) return `${startLabel} - ${endLabel} ${startYear}`;
-    return `${startLabel} ${startYear} - ${endLabel} ${endYear}`;
-}
-
-// Navigate to previous/next week
-function navigateWeek(direction) {
-    if (!currentWeekStart) {
-        currentWeekStart = getWeekStart(new Date());
-    }
-
-    currentWeekStart.setDate(currentWeekStart.getDate() + (direction * 7));
-    updateWeekCalendar();
-    handleTimeChange(); // Re-render preview block after navigation
-}
-
-// Scroll to today's column and current time.
-// alignment: 'left' places today flush against the time sidebar; 'center' centers it in the viewport.
-function scrollToToday(smooth = true, alignment = 'center') {
-    const today = new Date();
-    const todayStart = getWeekStart(today);
-
-    // If today is not in the current week, navigate to it first
-    if (currentWeekStart.getTime() !== todayStart.getTime()) {
-        currentWeekStart = todayStart;
-        updateWeekCalendar();
-        handleTimeChange(); // Re-render preview block after navigation
-    }
-
-    const scrollContainer = document.querySelector('.week-calendar-scroll');
-    if (!scrollContainer) return;
-
-    // Scroll to today's column (horizontal)
-    const todayColumn = document.querySelector('.day-column.today');
-
-    if (todayColumn) {
-        // offsetLeft is relative to .week-calendar-scroll (position: relative), so day columns
-        // start at 0, 160, 320, ... Left alignment lands today against the time sidebar; centered
-        // alignment shifts by half the leftover viewport width.
-        const scrollTargetX = alignment === 'left'
-            ? todayColumn.offsetLeft
-            : todayColumn.offsetLeft - (scrollContainer.clientWidth - todayColumn.offsetWidth) / 2;
-
-        // Scroll vertically to 2 hours before current time
-        // Header row is sticky at 28px, content starts below it
-        const currentHour = today.getHours();
-        const targetHour = Math.max(0, currentHour - 2); // 2 hours before, min 0
-        const headerRowHeight = 28; // sticky header height
-        const scrollTargetY = headerRowHeight + (targetHour * 40); // 40px per hour
-
-        if (smooth) {
-            scrollContainer.scrollTo({ left: scrollTargetX, top: scrollTargetY, behavior: 'smooth' });
-        } else {
-            scrollContainer.scrollLeft = scrollTargetX;
-            scrollContainer.scrollTop = scrollTargetY;
-        }
-    }
-}
-
-// Used for the instant scroll on app startup — keeps today flush against the time sidebar
-// so the user opens the app with "today" at the leftmost position of the calendar.
-function scrollToNow(smooth = true) {
-    scrollToToday(smooth, 'left');
-}
-
-// Update week calendar display
+// Render the generic weekly schedule: fixed Mon..Sun rows with a horizontal time axis.
+// The view is dateless — every row represents a weekday, and today's row is highlighted.
 function updateWeekCalendar() {
-    const timeAxis = document.getElementById('time-axis');
-    const daysContainer = document.getElementById('days-container');
-    const headerDays = document.getElementById('header-days');
+    const dayRows = document.getElementById('day-rows');
+    const hourMarkers = document.getElementById('hour-markers');
 
-    if (!timeAxis || !daysContainer) return;
+    if (!dayRows || !hourMarkers) return;
 
-    // Generate time axis (no header spacer - it's in the header row now)
-    timeAxis.innerHTML = '';
-
-    const now = new Date();
-    const currentHour = now.getHours();
-
-    for (let h = 0; h < 24; h++) {
+    // Hour markers across the timeline (every 3 hours: 00, 03, 06, 09, 12, 15, 18, 21).
+    hourMarkers.innerHTML = '';
+    for (let h = 0; h <= 21; h += 3) {
         const marker = document.createElement('div');
-        marker.className = h === currentHour ? 'time-marker current-hour' : 'time-marker';
-        marker.textContent = `${String(h).padStart(2, '0')}:00`;
-        timeAxis.appendChild(marker);
+        marker.className = 'hour-marker';
+        marker.style.left = `${(h / 24) * 100}%`;
+        marker.textContent = String(h).padStart(2, '0');
+        hourMarkers.appendChild(marker);
     }
 
-    // Generate day columns - render 21 days (3 weeks) for open-ended scrolling
-    // currentWeekStart represents the "anchor" week, we show 1 week before and 1 week after
-    if (headerDays) headerDays.innerHTML = '';
-    daysContainer.innerHTML = '';
-    const dayNames = tSettings('dayAbbrev');
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    dayRows.innerHTML = '';
+    // Day names in our internal order: 0=Mon, 1=Tue, ... 6=Sun.
+    const dayNamesMon0 = weekdayAbbrevMon0List();
+    const todayJsDay = new Date().getDay(); // 0=Sun..6=Sat
+    const todayDayIndex = todayJsDay === 0 ? 6 : todayJsDay - 1;
 
-    // Start 7 days before currentWeekStart
-    const renderStart = new Date(currentWeekStart);
-    renderStart.setDate(renderStart.getDate() - 7);
+    for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+        const isToday = dayIndex === todayDayIndex;
+        const isWeekend = dayIndex === 5 || dayIndex === 6; // Sat, Sun
 
-    for (let d = 0; d < 21; d++) {
-        const dayDate = new Date(renderStart);
-        dayDate.setDate(dayDate.getDate() + d);
+        const row = document.createElement('div');
+        row.className = 'day-row';
+        if (isToday) row.classList.add('today');
+        if (isWeekend) row.classList.add('weekend');
+        row.dataset.dayIndex = dayIndex;
 
-        const isToday = dayDate.getTime() === today.getTime();
-        const dayOfWeek = dayDate.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-        const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+        const label = document.createElement('div');
+        label.className = 'day-label';
 
-        // Day header cell (in sticky header row)
-        if (headerDays) {
-            const headerCell = document.createElement('div');
-            headerCell.className = 'day-header-cell';
-            if (isToday) headerCell.classList.add('today');
-            if (isWeekend) headerCell.classList.add('weekend');
-            headerCell.textContent = `${dayNames[dayOfWeek]} ${dayDate.getDate()}`;
-            headerDays.appendChild(headerCell);
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'day-name';
+        nameSpan.textContent = dayNamesMon0[dayIndex];
+        label.appendChild(nameSpan);
+
+        if (isToday) {
+            const todaySpan = document.createElement('span');
+            todaySpan.className = 'day-date';
+            todaySpan.textContent = tSettings('today');
+            label.appendChild(todaySpan);
         }
 
-        // Day column (no header - headers are in separate row)
-        const column = document.createElement('div');
-        column.className = 'day-column';
-        if (isToday) column.classList.add('today');
-        if (isWeekend) column.classList.add('weekend');
-        column.dataset.date = localDateKey(dayDate);
-
-        // Hour cells
-        for (let h = 0; h < 24; h++) {
-            const cell = document.createElement('div');
-            cell.className = 'hour-cell';
-            cell.dataset.hour = h;
-            column.appendChild(cell);
-        }
-
-        // Day track for blocks
         const track = document.createElement('div');
         track.className = 'day-track';
-        if (isScheduleMode) {
-            track.classList.add('schedule-mode');
-        }
-        track.dataset.date = localDateKey(dayDate);
-        column.appendChild(track);
+        if (isScheduleMode) track.classList.add('schedule-mode');
+        track.dataset.dayIndex = dayIndex;
 
-        // Now indicator for today (no header offset - starts at top of column)
         if (isToday) {
+            const now = new Date();
+            const nowMinutes = now.getHours() * 60 + now.getMinutes();
             const nowIndicator = document.createElement('div');
             nowIndicator.className = 'now-indicator';
             nowIndicator.id = 'now-indicator';
-            const nowMinutes = now.getHours() * 60 + now.getMinutes();
-            const topPosition = (nowMinutes / 60) * 40; // hours * 40px per hour
-            nowIndicator.style.top = `${topPosition}px`;
-            column.appendChild(nowIndicator);
+            nowIndicator.style.left = `${(nowMinutes / 1440) * 100}%`;
+            track.appendChild(nowIndicator);
         }
 
-        daysContainer.appendChild(column);
+        row.append(label, track);
+        dayRows.appendChild(row);
     }
 
-    // Update visible range display after render
-    updateVisibleRangeDisplay();
-
-    // Render active blocks and scheduled blocks on the calendar
     renderWeekBlocks();
 }
 
-function getCalendarRenderRange() {
-    const renderStart = new Date(currentWeekStart);
-    renderStart.setDate(renderStart.getDate() - 7);
-    renderStart.setHours(0, 0, 0, 0);
-
-    const renderEnd = new Date(renderStart);
-    renderEnd.setDate(renderEnd.getDate() + 20);
-    renderEnd.setHours(23, 59, 59, 999);
-
-    return { renderStart, renderEnd };
-}
-
+// Convert a time interval (clamped to a single day) into horizontal positioning for the
+// row-based timeline (left%/width% of the day track) and also keep top/height as legacy
+// values for any callers still using them.
 function getCalendarSegmentLayout(segmentStartMs, segmentEndMs, dayStartMs, dayEndMs) {
     const clampedStartMs = Math.max(segmentStartMs, dayStartMs);
     const clampedEndMs = Math.min(segmentEndMs, dayEndMs);
@@ -7974,181 +12036,555 @@ function getCalendarSegmentLayout(segmentStartMs, segmentEndMs, dayStartMs, dayE
         : segmentEndDate.getHours() * 60 + segmentEndDate.getMinutes();
 
     return {
+        leftPercent: (startMinutes / 1440) * 100,
+        widthPercent: Math.max(0.5, ((endMinutes - startMinutes) / 1440) * 100),
         topPosition: (startMinutes / 60) * 40,
         height: Math.max(20, ((endMinutes - startMinutes) / 60) * 40),
+        startMinutes,
+        endMinutes,
         segmentStartDate,
         segmentEndDate
     };
 }
 
-// Update the displayed date range based on visible columns
-function updateVisibleRangeDisplay() {
-    const scrollContainer = document.querySelector('.week-calendar-scroll');
-    const weekDisplay = document.getElementById('week-display');
-    const dayColumns = document.querySelectorAll('.day-column');
-
-    if (!scrollContainer || !weekDisplay || dayColumns.length === 0) return;
-
-    const scrollLeft = scrollContainer.scrollLeft;
-    const containerWidth = scrollContainer.clientWidth;
-
-    // Find first and last visible columns. offsetLeft is measured from the scroll container
-    // (which is position: relative), so day columns start at 0, 120, 240, ...
-    let firstVisible = null;
-    let lastVisible = null;
-
-    dayColumns.forEach(column => {
-        const columnLeft = column.offsetLeft;
-        const columnRight = columnLeft + column.offsetWidth;
-
-        if (columnRight > scrollLeft && columnLeft < scrollLeft + containerWidth) {
-            if (!firstVisible) firstVisible = column;
-            lastVisible = column;
-        }
-    });
-
-    if (firstVisible && lastVisible) {
-        const startDate = parseLocalDateKey(firstVisible.dataset.date);
-        const endDate = parseLocalDateKey(lastVisible.dataset.date);
-        if (!startDate || !endDate) return;
-        weekDisplay.textContent = formatWeekDisplay(startDate, endDate);
-    }
-}
-// Render active blocks on week calendar
+// Render active manual blocks on the weekly calendar by projecting their concrete
+// timestamps onto the matching weekday(s). Overnight blocks render two halves on
+// consecutive weekdays. Fully-past blocks are not drawn.
 function renderWeekBlocks() {
     const noBlocksMsg = document.getElementById('no-blocks-message');
     const now = Date.now();
 
-    // Clear existing blocks from all day tracks
+    // Clear existing blocks from all day tracks (preserve the now-indicator on today).
     document.querySelectorAll('.day-track').forEach(track => {
+        const nowIndicator = track.querySelector('#now-indicator');
         track.innerHTML = '';
+        if (nowIndicator) track.appendChild(nowIndicator);
     });
 
-    // Filter blocks within the full visible calendar range (21 rendered days)
-    const { renderStart, renderEnd } = getCalendarRenderRange();
-    const renderStartMs = renderStart.getTime();
-    const renderEndMs = renderEnd.getTime();
-
+    // Always-on active blocks are represented in the "Always on" pill row instead of
+    // being drawn as bars across the timeline.
     const visibleBlocks = appData.activeBlocks.filter(block =>
-        block.endTime > renderStartMs && block.startTime < renderEndMs
+        !isBlockAlwaysOn(block) && block.endTime > now
     );
 
-    // Check if there are any schedules
     const hasSchedules = appData.schedules && appData.schedules.length > 0;
+    const hasAlwaysOnBlocks = appData.activeBlocks.some(b => isBlockAlwaysOn(b));
 
-    if (visibleBlocks.length === 0 && !hasSchedules) {
-        noBlocksMsg?.classList.remove('hidden');
-    } else {
-        noBlocksMsg?.classList.add('hidden');
-    }
+    // Hide the "No active blocks" overlay — empty calendar is self-explanatory.
+    noBlocksMsg?.classList.add('hidden');
 
-    // Render each block
     visibleBlocks.forEach(block => {
         const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
         if (!blocklist) return;
 
-        // Skip if blocklist has "always show in schedule" unchecked and isn't currently selected
-        if (blocklist.alwaysShowInSchedule === false && block.blocklistId !== selectedBlocklistId) {
+        // The eye chip above the schedule is authoritative — hidden means hidden,
+        // even if the blocklist is currently selected.
+        if (blocklist.alwaysShowInSchedule === false) {
             return;
         }
 
-        const blockStart = new Date(block.startTime);
-        // Clamp blockEnd to the visible calendar range to avoid infinite loops with always-on blocks
-        const blockEnd = new Date(Math.min(block.endTime, renderEndMs));
-        const isExpired = block.endTime <= now && !isBlockAlwaysOn(block);
-
-        // Determine which day(s) the block spans
-        const startDay = new Date(blockStart);
-        startDay.setHours(0, 0, 0, 0);
-
-        const endDay = new Date(blockEnd);
-        endDay.setHours(0, 0, 0, 0);
-
-        // For simplicity, render block in each day it spans
-        let currentDay = new Date(startDay);
-
-        while (currentDay <= endDay) {
-            const dateStr = localDateKey(currentDay);
-            const track = document.querySelector(`.day-track[data-date="${dateStr}"]`);
-
-            if (track) {
-                // Calculate start time for this day segment
-                const dayStart = new Date(currentDay);
-                dayStart.setHours(0, 0, 0, 0);
-                const dayEnd = new Date(currentDay);
-                dayEnd.setHours(23, 59, 59, 999);
-
-                const {
-                    topPosition,
-                    height,
-                    segmentStartDate,
-                    segmentEndDate
-                } = getCalendarSegmentLayout(block.startTime, blockEnd.getTime(), dayStart.getTime(), dayEnd.getTime());
-
-                const blockEl = document.createElement('div');
-                blockEl.className = isExpired ? 'calendar-block expired' : 'calendar-block';
-                blockEl.dataset.blockId = block.id;
-                blockEl.style.top = `${topPosition}px`;
-                blockEl.style.height = `${height}px`;
-
-                if (blocklist.color) {
-                    blockEl.style.background = blocklist.color;
-                    blockEl.style.color = getContrastTextColor(blocklist.color);
-                }
-
-                blockEl.innerHTML = `
-                    <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
-                    <span class="block-label">${escapeHtml(blocklist.name)}</span>
-                    <span class="block-time">${formatTime(segmentStartDate)} - ${formatTime(segmentEndDate)}</span>
-                `;
-
-                // Add click handler for override (only for running blocks)
-                if (!isExpired) {
-                    blockEl.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        openOverrideModal(block.id);
-                    });
-                }
-
-                track.appendChild(blockEl);
-            }
-
-            // Move to next day
-            currentDay.setDate(currentDay.getDate() + 1);
-        }
+        const isRunning = block.startTime <= now;
+        renderManualBlockOnWeekdays(block, blocklist, isRunning);
     });
 
-    // Render scheduled blocks
     renderScheduledCalendarBlocks();
-
-    // Layout overlapping blocks side-by-side (Apple Calendar style)
     layoutOverlappingBlocks();
-
-    // Wrap the header bits (emoji + name + time) in a sticky container so the label stays
-    // visible when a block starts above the viewport (e.g. an overnight schedule at 00:00).
-    makeCalendarBlockHeadersSticky();
-
-    // Refresh the visibility-chip row so it stays in sync with the data.
+    renderScheduleAlwaysOnRow();
     renderScheduleVisibilityChips();
+    refreshCalendarPreviews();
 }
 
-function makeCalendarBlockHeadersSticky() {
-    document.querySelectorAll('.calendar-block').forEach(block => {
-        // Skip if already wrapped (idempotent across renders)
-        if (block.querySelector(':scope > .calendar-block-sticky')) return;
+// Build a calendar block element for a manual one-off block on a specific weekday slice.
+function buildManualBlockElement(block, blocklist, leftPct, widthPct, segmentStartDate, segmentEndDate, isRunning) {
+    const blockEl = document.createElement('div');
+    blockEl.className = 'calendar-block';
+    if (isRunning) blockEl.classList.add('running');
+    blockEl.dataset.blockId = block.id;
+    blockEl.style.left = `${leftPct}%`;
+    blockEl.style.width = `${widthPct}%`;
 
-        const emoji = block.querySelector(':scope > .block-emoji');
-        const label = block.querySelector(':scope > .block-label');
-        const time = block.querySelector(':scope > .block-time');
-        if (!emoji && !label && !time) return;
+    if (blocklist.color) {
+        blockEl.style.background = blocklist.color;
+        blockEl.style.color = getContrastTextColor(blocklist.color);
+    }
 
-        const wrapper = document.createElement('div');
-        wrapper.className = 'calendar-block-sticky';
-        block.insertBefore(wrapper, block.firstChild);
-        if (emoji) wrapper.appendChild(emoji);
-        if (label) wrapper.appendChild(label);
-        if (time) wrapper.appendChild(time);
+    // Show "until HH:MM" for currently-running blocks; otherwise show the block's range.
+    const timeLabel = isRunning
+        ? `until ${formatTime(segmentEndDate)}`
+        : `${formatTime(segmentStartDate)} - ${formatTime(segmentEndDate)}`;
+
+    blockEl.innerHTML = `
+        <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
+        <span class="block-label">${escapeHtml(blocklist.name)}</span>
+        <span class="block-time">${timeLabel}</span>
+    `;
+
+    blockEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openOverrideModal(block.id);
     });
+
+    return blockEl;
+}
+
+// Render a manual block onto the weekly grid by computing the weekday(s) it spans.
+// Multi-day blocks are split per weekday; today's slice is clamped to start at "now" so
+// running blocks visually begin at the now-indicator.
+function renderManualBlockOnWeekdays(block, blocklist, isRunning) {
+    const startDate = new Date(block.startTime);
+    const endDate = new Date(block.endTime);
+    const now = Date.now();
+
+    const startDay = new Date(startDate);
+    startDay.setHours(0, 0, 0, 0);
+    const endDay = new Date(endDate);
+    endDay.setHours(0, 0, 0, 0);
+
+    let cursor = new Date(startDay);
+    while (cursor.getTime() <= endDay.getTime()) {
+        const sliceDayStartMs = cursor.getTime();
+        const sliceDayEndMs = sliceDayStartMs + 24 * 60 * 60 * 1000 - 1;
+
+        let sliceStartMs = Math.max(block.startTime, sliceDayStartMs);
+        const sliceEndMs = Math.min(block.endTime, sliceDayEndMs);
+
+        // For the currently-running slice, clamp the visible start to "now" so the bar
+        // doesn't draw over time that has already elapsed.
+        if (isRunning && now > sliceStartMs && now < sliceEndMs) {
+            sliceStartMs = now;
+        }
+
+        // Skip past slices entirely.
+        if (sliceEndMs <= now) {
+            cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
+            continue;
+        }
+
+        const sliceDate = new Date(sliceStartMs);
+        const jsDay = sliceDate.getDay();
+        const dayIndex = jsDay === 0 ? 6 : jsDay - 1;
+        const track = document.querySelector(`.day-track[data-day-index="${dayIndex}"]`);
+        if (track) {
+            const layout = getCalendarSegmentLayout(sliceStartMs, sliceEndMs, sliceDayStartMs, sliceDayEndMs);
+            const blockEl = buildManualBlockElement(
+                block, blocklist,
+                layout.leftPercent, layout.widthPercent,
+                layout.segmentStartDate, layout.segmentEndDate,
+                isRunning && sliceStartMs <= now && now < sliceEndMs
+            );
+            track.appendChild(blockEl);
+        }
+
+        cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
+    }
+}
+
+
+// Compute when the schedule's currently-active segment ends, returning a Date.
+// Returns null if no segment is active right now. Handles repeating, overnight, and
+// non-repeating schedules. Used by the "BLOCKING NOW" row to show "until HH:MM".
+function getScheduleCurrentSegmentEnd(schedule, nowDate = new Date()) {
+    if (!isScheduleSegmentActiveNow(schedule, nowDate)) return null;
+
+    if (isNonRepeatingSchedule(schedule)) {
+        const nowMs = nowDate.getTime();
+        const occurrence = resolveOneShotOccurrences(schedule).find(occ =>
+            nowMs >= occ.start.getTime() && nowMs < occ.end.getTime()
+        );
+        return occurrence ? new Date(occurrence.end) : null;
+    }
+
+    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1; // Mon=0
+    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
+    const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
+
+    for (const seg of schedule.segments) {
+        const startMins = seg.startHour * 60 + seg.startMinute;
+        const endMins = seg.endHour * 60 + seg.endMinute;
+        const days = Array.isArray(seg.days) ? seg.days : [];
+
+        // 24/7 segment: use end-of-day for the "until" label so we have something concrete.
+        if (startMins === endMins && days.includes(currentDay)) {
+            const end = new Date(nowDate);
+            end.setHours(23, 59, 0, 0);
+            return end;
+        }
+        // Same-day window matching now.
+        if (endMins > startMins && days.includes(currentDay) && currentMins >= startMins && currentMins < endMins) {
+            const end = new Date(nowDate);
+            end.setHours(seg.endHour, seg.endMinute, 0, 0);
+            return end;
+        }
+        // Overnight head: started yesterday-evening side, but it's stored on `currentDay`.
+        if (endMins < startMins && days.includes(currentDay) && currentMins >= startMins) {
+            const end = new Date(nowDate);
+            end.setDate(end.getDate() + 1);
+            end.setHours(seg.endHour, seg.endMinute, 0, 0);
+            return end;
+        }
+        // Overnight tail: today is the morning side of yesterday's segment.
+        if (endMins < startMins && days.includes(yesterdayDay) && currentMins < endMins) {
+            const end = new Date(nowDate);
+            end.setHours(seg.endHour, seg.endMinute, 0, 0);
+            return end;
+        }
+    }
+    return null;
+}
+
+// Build the list of items to show in the "BLOCKING NOW" row: every one-off block that's
+// currently running (and not paused) plus every schedule whose segment is active now.
+function collectNowBlockingEntries(now = Date.now()) {
+    const nowDate = new Date(now);
+    const entries = [];
+
+    for (const block of appData.activeBlocks || []) {
+        if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
+        const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+        if (!blocklist) continue;
+        entries.push({
+            kind: 'block',
+            id: block.id,
+            blocklistId: block.blocklistId,
+            blocklist,
+            until: isBlockAlwaysOn(block) ? null : new Date(block.endTime),
+            isAlwaysOn: isBlockAlwaysOn(block)
+        });
+    }
+
+    for (const schedule of appData.schedules || []) {
+        if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
+        const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+        if (!blocklist) continue;
+        // A schedule and a one-off for the same blocklist could both be active; keep both
+        // (they're independent rules) so the user can act on whichever they intend.
+        entries.push({
+            kind: 'schedule',
+            id: schedule.id || schedule.blocklistId,
+            blocklistId: schedule.blocklistId,
+            blocklist,
+            schedule,
+            until: getScheduleCurrentSegmentEnd(schedule, nowDate),
+            isAlwaysOn: false
+        });
+    }
+
+    // Sort to match the visual order of the "My Blocklists" section, which iterates
+    // `appData.blocklists` in array order. Entries whose blocklist isn't found in that
+    // array (shouldn't happen, but be safe) sort to the end. Within a single blocklist,
+    // one-off blocks come before schedules so explicit user-started actions read first.
+    const order = new Map(appData.blocklists.map((bl, i) => [bl.id, i]));
+    const kindRank = { block: 0, schedule: 1 };
+    entries.sort((a, b) => {
+        const ai = order.has(a.blocklistId) ? order.get(a.blocklistId) : Number.MAX_SAFE_INTEGER;
+        const bi = order.has(b.blocklistId) ? order.get(b.blocklistId) : Number.MAX_SAFE_INTEGER;
+        if (ai !== bi) return ai - bi;
+        return (kindRank[a.kind] ?? 9) - (kindRank[b.kind] ?? 9);
+    });
+
+    return entries;
+}
+
+// Close any currently-open chip menu popover. Called from outside-click handlers and
+// before opening a new menu (so only one is ever visible).
+function closeNowBlockingChipMenus() {
+    document.querySelectorAll('.now-blocking-chip-menu').forEach(el => el.remove());
+    document.querySelectorAll('.now-blocking-chip-menu-btn[aria-expanded="true"]').forEach(btn => {
+        btn.setAttribute('aria-expanded', 'false');
+    });
+}
+
+// Open a small Edit / Pause / Stop popover anchored to `triggerBtn` for the given entry.
+function openNowBlockingChipMenu(triggerBtn, entry) {
+    closeNowBlockingChipMenus();
+
+    const menu = document.createElement('div');
+    menu.className = 'now-blocking-chip-menu';
+    menu.setAttribute('role', 'menu');
+
+    // Match the icons used elsewhere in the app: pencil = blocklist-card edit button,
+    // open-padlock = "Stop Block" button (the bottom shackle ends "open" so it reads as
+    // unlocking/stopping the block).
+    const editIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>';
+    const pauseIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+    const stopIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>';
+
+    const items = [
+        { label: tSettings('nowBlockingMenuEdit'), icon: editIcon, action: () => handleNowBlockingEdit(entry) },
+        { label: tSettings('nowBlockingMenuPause'), icon: pauseIcon, action: () => handleNowBlockingPause(entry) },
+        { label: tSettings('nowBlockingMenuStop'), icon: stopIcon, action: () => handleNowBlockingStop(entry), danger: true }
+    ];
+
+    items.forEach(item => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'now-blocking-chip-menu-item' + (item.danger ? ' danger' : '');
+        btn.setAttribute('role', 'menuitem');
+        btn.innerHTML = `${item.icon}<span>${escapeHtml(item.label)}</span>`;
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeNowBlockingChipMenus();
+            item.action();
+        });
+        menu.appendChild(btn);
+    });
+
+    document.body.appendChild(menu);
+
+    // Position the menu just below the trigger, keeping it on-screen horizontally.
+    const rect = triggerBtn.getBoundingClientRect();
+    const menuRect = menu.getBoundingClientRect();
+    let left = rect.right - menuRect.width;
+    if (left < 8) left = 8;
+    const maxLeft = window.innerWidth - menuRect.width - 8;
+    if (left > maxLeft) left = maxLeft;
+    menu.style.left = `${left + window.scrollX}px`;
+    menu.style.top = `${rect.bottom + window.scrollY + 4}px`;
+
+    triggerBtn.setAttribute('aria-expanded', 'true');
+
+    // Outside-click and Escape close the menu. Use a microtask delay so the click that
+    // opened the menu doesn't immediately close it again.
+    setTimeout(() => {
+        const onDocClick = (e) => {
+            if (!menu.contains(e.target) && e.target !== triggerBtn) {
+                closeNowBlockingChipMenus();
+                document.removeEventListener('click', onDocClick, true);
+                document.removeEventListener('keydown', onKey, true);
+            }
+        };
+        const onKey = (e) => {
+            if (e.key === 'Escape') {
+                closeNowBlockingChipMenus();
+                document.removeEventListener('click', onDocClick, true);
+                document.removeEventListener('keydown', onKey, true);
+            }
+        };
+        document.addEventListener('click', onDocClick, true);
+        document.addEventListener('keydown', onKey, true);
+    }, 0);
+}
+
+// Edit action: select the chip's blocklist and open the blocklist edit dialog.
+function handleNowBlockingEdit(entry) {
+    const blocklist = entry.blocklist;
+    if (!blocklist) return;
+    const dropdown = document.getElementById('blocklist-select');
+    if (dropdown) {
+        dropdown.value = blocklist.id;
+        handleBlocklistSelect({ target: dropdown });
+    } else {
+        selectedBlocklistId = blocklist.id;
+    }
+    openBlocklistModal(blocklist);
+}
+
+// Pause action: open the pause modal for the corresponding block or schedule.
+function handleNowBlockingPause(entry) {
+    if (entry.kind === 'block') {
+        pauseScheduleData = null;
+        openPauseModal(entry.id);
+        return;
+    }
+    if (entry.kind === 'schedule') {
+        pauseScheduleData = {
+            blocklistId: entry.blocklistId,
+            isActiveNow: true
+        };
+        openPauseModal(null);
+    }
+}
+
+// Stop action: open the override modal so the user has to type the challenge to stop.
+function handleNowBlockingStop(entry) {
+    if (entry.kind === 'block') {
+        openOverrideModal(entry.id);
+        return;
+    }
+    if (entry.kind === 'schedule' && entry.schedule) {
+        openScheduleOverrideModal(entry.schedule);
+    }
+}
+
+// Render the title-bar status row: active chips — or idle copy showing the next scheduled start when applicable.
+function renderNowBlockingRow(nowMs = Date.now()) {
+    const row = document.getElementById('now-blocking-row');
+    const chipsEl = document.getElementById('now-blocking-chips');
+    if (!row || !chipsEl) return;
+
+    row.classList.remove('hidden');
+
+    const entries = collectNowBlockingEntries(nowMs);
+
+    if (entries.length === 0) {
+        closeNowBlockingChipMenus();
+        row.classList.add('idle');
+        row.classList.remove('many-active-chips');
+        row.setAttribute('aria-labelledby', 'now-blocking-idle-msg');
+
+        chipsEl.innerHTML = '';
+        const idleSpan = document.createElement('span');
+        idleSpan.id = 'now-blocking-idle-msg';
+        idleSpan.className = 'now-blocking-idle-msg';
+        idleSpan.setAttribute('data-tauri-drag-region', '');
+
+        const upcoming = pickEarliestUpcomingScheduledBlock(nowMs);
+        if (!upcoming) {
+            idleSpan.textContent = tSettings('titleBarNoActiveBlocks');
+        } else {
+            const whenPhrase = formatTitleBarScheduleStartWhen(new Date(upcoming.startMs), nowMs);
+            const emojiRaw = upcoming.blocklist.emoji != null ? String(upcoming.blocklist.emoji).trim() : '';
+            const emoji = emojiRaw || '🚫';
+            idleSpan.textContent = tSettings('titleBarNextScheduleStarts')
+                .replace('{emoji}', emoji)
+                .replace('{name}', upcoming.blocklist.name || '')
+                .replace('{when}', whenPhrase);
+        }
+
+        chipsEl.appendChild(idleSpan);
+        requestAnimationFrame(() => syncNowBlockingChipsScrollability());
+        return;
+    }
+
+    row.classList.remove('idle');
+    row.classList.toggle('many-active-chips', entries.length > 2);
+    row.setAttribute('aria-labelledby', 'now-blocking-label-text');
+
+    chipsEl.innerHTML = '';
+    const dotsIcon = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
+
+    entries.forEach(entry => {
+        const chip = document.createElement('div');
+        chip.className = 'now-blocking-chip';
+        chip.dataset.kind = entry.kind;
+        chip.dataset.id = entry.id;
+
+        const emoji = entry.blocklist.emoji || '🚫';
+        const name = entry.blocklist.name || '';
+        let untilText;
+        if (entry.isAlwaysOn) {
+            untilText = tSettings('nowBlockingAlways');
+        } else if (entry.until) {
+            const remainMs = entry.until - nowMs;
+            if (remainMs > 0) {
+                const totalMins = Math.ceil(remainMs / 60000);
+                untilText = formatBlockTimeRemainingShort(totalMins);
+            } else {
+                untilText = '';
+            }
+        } else {
+            untilText = '';
+        }
+
+        chip.innerHTML = `
+            <span class="now-blocking-chip-emoji">${escapeHtml(emoji)}</span>
+            <span class="now-blocking-chip-name">${escapeHtml(name)}</span>
+            ${untilText ? `<span class="now-blocking-chip-until">${escapeHtml(untilText)}</span>` : ''}
+        `;
+
+        if (entries.length > 2) {
+            const namePart = String(name || '').trim() || emoji;
+            const labelBits = untilText ? [namePart, untilText] : [namePart];
+            chip.setAttribute('aria-label', labelBits.join('. '));
+        }
+
+        const menuBtn = document.createElement('button');
+        menuBtn.type = 'button';
+        menuBtn.className = 'now-blocking-chip-menu-btn';
+        menuBtn.setAttribute('aria-haspopup', 'menu');
+        menuBtn.setAttribute('aria-expanded', 'false');
+        menuBtn.setAttribute('aria-label', tSettings('nowBlockingMenuAria'));
+        menuBtn.title = tSettings('nowBlockingMenuAria');
+        menuBtn.innerHTML = dotsIcon;
+        menuBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isOpen = menuBtn.getAttribute('aria-expanded') === 'true';
+            if (isOpen) {
+                closeNowBlockingChipMenus();
+            } else {
+                openNowBlockingChipMenu(menuBtn, entry);
+            }
+        });
+        chip.appendChild(menuBtn);
+
+        chipsEl.appendChild(chip);
+    });
+    requestAnimationFrame(() => syncNowBlockingChipsScrollability());
+}
+
+
+/// Render the "Always on (not shown in timeline): <chip> <chip>" row above the calendar.
+/// Always-on active blocks aren't drawn as bars in the timeline because they would cover
+/// every day in full; this row makes their existence clear instead.
+function renderScheduleAlwaysOnRow() {
+    const row = document.getElementById('schedule-always-on-row');
+    const chips = document.getElementById('schedule-always-on-chips');
+    if (!row || !chips) return;
+
+    const alwaysOnBlocks = (appData.activeBlocks || []).filter(b => isBlockAlwaysOn(b));
+
+    // When the user has the "always" tab selected and picked a blocklist that isn't already
+    // running, show a faded preview chip alongside the real ones. This replaces the timeline
+    // preview bar that always-on mode used to draw across every day.
+    let previewBlocklist = null;
+    if (isAlwaysOnMode && !isScheduleMode && selectedBlocklistId) {
+        const candidate = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+        const now = Date.now();
+        const alreadyActive = (appData.activeBlocks || []).some(b =>
+            b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now
+        );
+        if (candidate && !alreadyActive) {
+            previewBlocklist = candidate;
+        }
+    }
+
+    if (alwaysOnBlocks.length === 0 && !previewBlocklist) {
+        row.classList.add('hidden');
+        chips.innerHTML = '';
+        return;
+    }
+
+    chips.innerHTML = '';
+
+    alwaysOnBlocks.forEach(block => {
+        const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+        if (!blocklist) return;
+
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'always-on-chip';
+        chip.dataset.blockId = block.id;
+        chip.title = blocklist.name;
+
+        const emoji = blocklist.emoji
+            ? `<span class="always-on-chip-emoji">${escapeHtml(blocklist.emoji)}</span>`
+            : '';
+
+        chip.innerHTML = `${emoji}<span class="always-on-chip-name">${escapeHtml(blocklist.name)}</span>`;
+
+        // Clicking the chip opens the override modal so the user can stop the always-on block.
+        chip.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openOverrideModal(block.id);
+        });
+
+        chips.appendChild(chip);
+    });
+
+    if (previewBlocklist) {
+        const chip = document.createElement('div');
+        chip.className = 'always-on-chip preview';
+        chip.title = previewBlocklist.name;
+
+        const emoji = previewBlocklist.emoji
+            ? `<span class="always-on-chip-emoji">${escapeHtml(previewBlocklist.emoji)}</span>`
+            : '';
+
+        chip.innerHTML = `${emoji}<span class="always-on-chip-name">${escapeHtml(previewBlocklist.name)}</span>`;
+        chips.appendChild(chip);
+    }
+
+    row.classList.remove('hidden');
 }
 
 /// Render a row of eye/eye-slash chips under the Schedule header — one per blocklist that
@@ -8160,9 +12596,11 @@ function renderScheduleVisibilityChips() {
 
     const now = Date.now();
     const scheduledIds = new Set((appData.schedules || []).map(s => s.blocklistId));
+    // Always-on blocks aren't drawn in the timeline (they're surfaced by the "Always on"
+    // row above instead), so don't add a visibility chip for them either.
     const manualIds = new Set(
         (appData.activeBlocks || [])
-            .filter(b => b.endTime > now)
+            .filter(b => b.endTime > now && !isBlockAlwaysOn(b))
             .map(b => b.blocklistId)
     );
     const relevantIds = new Set([...scheduledIds, ...manualIds]);
@@ -8191,7 +12629,6 @@ function renderScheduleVisibilityChips() {
         chip.title = visible ? 'Hide from schedule' : 'Show in schedule';
         chip.innerHTML = `
             ${visible ? eyeOpenSvg : eyeClosedSvg}
-            ${bl.color ? `<span class="schedule-visibility-chip-dot" style="background:${escapeHtml(bl.color)}"></span>` : ''}
             <span class="schedule-visibility-chip-name">${bl.emoji ? escapeHtml(bl.emoji) + ' ' : ''}${escapeHtml(bl.name || '')}</span>
         `;
         chip.addEventListener('click', async () => {
@@ -8207,285 +12644,204 @@ function renderScheduleVisibilityChips() {
     }
 }
 
-// Layout overlapping blocks side-by-side within each day track (Apple Calendar style)
+// Layout overlapping blocks within a day row.
+//
+// In the row-based layout, blocks already use left%/width% to position by time, so blocks
+// that overlap in time would visually overlap horizontally. We resolve this by stacking
+// overlapping blocks vertically *within* the row: the row is divided into N horizontal
+// lanes (where N is the maximum overlap depth), each block sits in one lane.
 function layoutOverlappingBlocks() {
     document.querySelectorAll('.day-track').forEach(track => {
         const blocks = Array.from(track.querySelectorAll('.calendar-block'));
+        // Reset any previous lane styling so single-block rows render at full height.
+        blocks.forEach(b => {
+            b.style.top = '';
+            b.style.bottom = '';
+            b.style.height = '';
+        });
         if (blocks.length <= 1) return;
 
-        // Get block positions and group identifier (scheduleId or blockId)
+        // Compute time-extents (in % of day width) from current left/width styles.
         const blockData = blocks.map(block => {
-            const top = parseFloat(block.style.top) || 0;
-            const height = parseFloat(block.style.height) || 20;
-            // Use the most specific logical group id available so preview blocks
-            // participate in the same side-by-side layout as saved/running blocks.
+            const left = parseFloat(block.style.left) || 0;
+            const width = parseFloat(block.style.width) || 0;
             const groupId = block.dataset.scheduleId || block.dataset.blockId || block.dataset.previewGroupId || null;
             return {
                 element: block,
-                top: top,
-                bottom: top + height,
-                groupId: groupId,
-                column: 0,
-                totalColumns: 1
+                left,
+                right: left + width,
+                groupId,
+                lane: 0,
+                totalLanes: 1
             };
         });
 
-        // Sort by top position, then by height (taller blocks first)
-        blockData.sort((a, b) => a.top - b.top || b.bottom - a.bottom);
+        // Sort by left edge so we assign lanes greedily from earliest start.
+        blockData.sort((a, b) => a.left - b.left || a.right - b.right);
 
-        // First pass: assign columns to groups (blocks from same schedule get same column)
-        const groupColumns = new Map(); // groupId -> column
+        const groupLanes = new Map();
 
         for (let i = 0; i < blockData.length; i++) {
             const current = blockData[i];
 
-            // If this block's group already has a column, use it
-            if (current.groupId && groupColumns.has(current.groupId)) {
-                current.column = groupColumns.get(current.groupId);
+            if (current.groupId && groupLanes.has(current.groupId)) {
+                current.lane = groupLanes.get(current.groupId);
                 continue;
             }
 
-            // Find all blocks that overlap with current (considering the entire group)
             const overlappingGroups = new Set();
             for (let j = 0; j < blockData.length; j++) {
+                if (i === j) continue;
                 const other = blockData[j];
-                // Check if they overlap
-                if (!(current.bottom <= other.top || current.top >= other.bottom)) {
+                if (!(current.right <= other.left || current.left >= other.right)) {
                     if (other.groupId !== current.groupId) {
                         overlappingGroups.add(other.groupId);
                     }
                 }
             }
 
-            // Find columns used by overlapping groups
-            const usedColumns = new Set();
+            const usedLanes = new Set();
             overlappingGroups.forEach(gid => {
-                if (groupColumns.has(gid)) {
-                    usedColumns.add(groupColumns.get(gid));
-                }
+                if (groupLanes.has(gid)) usedLanes.add(groupLanes.get(gid));
             });
 
-            // Assign the first available column
-            let col = 1;
-            while (usedColumns.has(col)) col++;
-            current.column = col;
-            if (current.groupId) {
-                groupColumns.set(current.groupId, col);
-            }
+            let lane = 1;
+            while (usedLanes.has(lane)) lane++;
+            current.lane = lane;
+            if (current.groupId) groupLanes.set(current.groupId, lane);
         }
 
-        // Second pass: calculate totalColumns for overlapping sets
         for (let i = 0; i < blockData.length; i++) {
             const current = blockData[i];
-            let maxCol = current.column;
-
+            let maxLane = current.lane;
             for (let j = 0; j < blockData.length; j++) {
+                if (i === j) continue;
                 const other = blockData[j];
-                if (!(current.bottom <= other.top || current.top >= other.bottom)) {
-                    maxCol = Math.max(maxCol, other.column);
+                if (!(current.right <= other.left || current.left >= other.right)) {
+                    maxLane = Math.max(maxLane, other.lane);
                 }
             }
-            current.totalColumns = maxCol;
+            current.totalLanes = maxLane;
         }
 
-        // Apply positioning
         blockData.forEach(data => {
-            if (data.totalColumns > 1) {
-                const widthPercent = 100 / data.totalColumns;
-                const leftPercent = (data.column - 1) * widthPercent;
-                data.element.style.left = `calc(${leftPercent}% + 2px)`;
-                data.element.style.width = `calc(${widthPercent}% - 4px)`;
-                data.element.style.right = 'auto';
+            if (data.totalLanes > 1) {
+                const lanePercent = 100 / data.totalLanes;
+                const topPercent = (data.lane - 1) * lanePercent;
+                data.element.style.top = `calc(${topPercent}% + 2px)`;
+                data.element.style.height = `calc(${lanePercent}% - 4px)`;
+                data.element.style.bottom = 'auto';
             }
         });
     });
 }
 
-// Render scheduled blocks on the calendar (from saved schedules)
+// Render saved schedules onto the weekly calendar by weekday. Each segment lays out on
+// every weekday listed in its `days` array; overnight segments split into a tail on the
+// next weekday (wrapping Sun → Mon). One-shot non-repeating schedules render onto the
+// weekday of each resolved occurrence.
 function renderScheduledCalendarBlocks() {
-    console.log('renderScheduledCalendarBlocks called, schedules:', appData.schedules);
     if (!appData.schedules || appData.schedules.length === 0) return;
 
     const now = new Date();
-    const today = now.getDay(); // 0=Sun, 1=Mon, etc.
-    const todayIndex = today === 0 ? 6 : today - 1; // Convert to 0=Mon format
-
-    // Generate all 21 visible days (7 before anchor week, anchor week, 7 after anchor week)
-    // This matches the calendar's visible range
-    const renderStart = new Date(currentWeekStart);
-    renderStart.setDate(renderStart.getDate() - 7);
-
-    const allVisibleDays = [];
-    for (let i = 0; i < 21; i++) {
-        const day = new Date(renderStart);
-        day.setDate(day.getDate() + i);
-        allVisibleDays.push({
-            date: day,
-            dateStr: localDateKey(day),
-            dayIndex: (day.getDay() === 0 ? 6 : day.getDay() - 1) // Convert to 0=Mon format
-        });
-    }
 
     appData.schedules.forEach(schedule => {
         const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
         if (!blocklist) return;
 
-        // Skip if blocklist has "always show in schedule" unchecked and isn't currently selected
-        if (blocklist.alwaysShowInSchedule === false && schedule.blocklistId !== selectedBlocklistId) {
+        // The eye chip above the schedule is authoritative — hidden means hidden,
+        // even if the blocklist is currently selected.
+        if (blocklist.alwaysShowInSchedule === false) {
             return;
         }
 
-        // Check if schedule has expired (for date-limited schedules)
+        // Date-limited schedules drop off the calendar once their end date has passed.
         if (schedule.repeatType === 'date' && schedule.repeatDate) {
             const endDate = new Date(schedule.repeatDate);
             if (now > endDate) return;
         }
 
         if (isNonRepeatingSchedule(schedule)) {
+            // One-shot occurrences carry an explicit dayIndex (Mon=0..Sun=6). Render on
+            // that weekday using the segment's clock-times.
             const occurrences = resolveOneShotOccurrences(schedule);
             occurrences.forEach(occurrence => {
-                renderScheduledCalendarInterval(
-                    schedule,
-                    occurrence.start,
-                    occurrence.end,
-                    blocklist,
-                    occurrence.segmentIndex
-                );
+                if (occurrence.end.getTime() <= now.getTime()) return; // already finished
+                const segment = schedule.segments[occurrence.segmentIndex];
+                if (!segment) return;
+                renderScheduleSegmentOnWeekday(schedule, segment, occurrence.segmentIndex, occurrence.dayIndex, blocklist);
             });
             return;
         }
 
-        // Render each segment on its applicable days
         schedule.segments.forEach((segment, segmentIdx) => {
             const segmentDays = segment.days || [];
-
-            allVisibleDays.forEach((weekDay, weekDayIdx) => {
-                if (!segmentDays.includes(weekDay.dayIndex)) {
-                    return;
-                }
-
-                const track = document.querySelector(`.day-track[data-date="${weekDay.dateStr}"]`);
-                if (!track) return;
-
-                // Calculate position
-                const startMinutes = segment.startHour * 60 + segment.startMinute;
-                const endMinutes = segment.endHour * 60 + segment.endMinute;
-
-                // Check if this is an overnight block (end time is before start time)
-                const isOvernight = endMinutes <= startMinutes;
-
-                if (isOvernight) {
-                    // Render first part: from start until midnight (end of day)
-                    const topPosition1 = (startMinutes / 60) * 40;
-                    const height1 = ((1440 - startMinutes) / 60) * 40; // 1440 = 24 * 60 (midnight)
-
-                    const blockEl1 = document.createElement('div');
-                    blockEl1.className = 'calendar-block scheduled';
-                    blockEl1.dataset.scheduleId = schedule.id;
-                    blockEl1.dataset.segmentIndex = segmentIdx;
-                    blockEl1.dataset.day = weekDay.dayIndex;
-                    blockEl1.style.top = `${topPosition1}px`;
-                    blockEl1.style.height = `${height1}px`;
-
-                    if (blocklist.color) {
-                        blockEl1.style.background = blocklist.color;
-                        blockEl1.style.opacity = '0.7';
-                        blockEl1.style.color = getContrastTextColor(blocklist.color);
-                    }
-
-                    const startTimeStr = `${String(segment.startHour).padStart(2, '0')}:${String(segment.startMinute).padStart(2, '0')}`;
-                    const endTimeStr = `${String(segment.endHour).padStart(2, '0')}:${String(segment.endMinute).padStart(2, '0')}`;
-
-                    blockEl1.innerHTML = `
-                        <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
-                        <span class="block-label">${escapeHtml(blocklist.name)}</span>
-                        <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
-                        <span class="schedule-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></span>
-                    `;
-
-                    blockEl1.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        openScheduledBlockOverrideModal(schedule, segmentIdx, weekDay.dayIndex);
-                    });
-
-                    track.appendChild(blockEl1);
-
-                    // Render second part: from midnight until end time on the next day
-                    const nextDay = allVisibleDays[weekDayIdx + 1];
-                    if (nextDay) {
-                        const nextTrack = document.querySelector(`.day-track[data-date="${nextDay.dateStr}"]`);
-                        if (nextTrack) {
-                            const topPosition2 = 0;
-                            const height2 = Math.max(20, (endMinutes / 60) * 40);
-
-                            const blockEl2 = document.createElement('div');
-                            blockEl2.className = 'calendar-block scheduled overnight-continuation';
-                            blockEl2.dataset.scheduleId = schedule.id;
-                            blockEl2.dataset.segmentIndex = segmentIdx;
-                            blockEl2.dataset.day = nextDay.dayIndex;
-                            blockEl2.style.top = `${topPosition2}px`;
-                            blockEl2.style.height = `${height2}px`;
-
-                            if (blocklist.color) {
-                                blockEl2.style.background = blocklist.color;
-                                blockEl2.style.opacity = '0.7';
-                                blockEl2.style.color = getContrastTextColor(blocklist.color);
-                            }
-
-                            blockEl2.innerHTML = `
-                                <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
-                                <span class="block-label">${escapeHtml(blocklist.name)}</span>
-                                <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
-                                <span class="schedule-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></span>
-                            `;
-
-                            blockEl2.addEventListener('click', (e) => {
-                                e.stopPropagation();
-                                openScheduledBlockOverrideModal(schedule, segmentIdx, nextDay.dayIndex);
-                            });
-
-                            nextTrack.appendChild(blockEl2);
-                        }
-                    }
-                } else {
-                    // Normal same-day block
-                    const topPosition = (startMinutes / 60) * 40;
-                    const height = Math.max(20, ((endMinutes - startMinutes) / 60) * 40);
-
-                    const blockEl = document.createElement('div');
-                    blockEl.className = 'calendar-block scheduled';
-                    blockEl.dataset.scheduleId = schedule.id;
-                    blockEl.dataset.segmentIndex = segmentIdx;
-                    blockEl.dataset.day = weekDay.dayIndex;
-                    blockEl.style.top = `${topPosition}px`;
-                    blockEl.style.height = `${height}px`;
-
-                    if (blocklist.color) {
-                        blockEl.style.background = blocklist.color;
-                        blockEl.style.opacity = '0.7';
-                        blockEl.style.color = getContrastTextColor(blocklist.color);
-                    }
-
-                    const startTimeStr = `${String(segment.startHour).padStart(2, '0')}:${String(segment.startMinute).padStart(2, '0')}`;
-                    const endTimeStr = `${String(segment.endHour).padStart(2, '0')}:${String(segment.endMinute).padStart(2, '0')}`;
-
-                    blockEl.innerHTML = `
-                        <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
-                        <span class="block-label">${escapeHtml(blocklist.name)}</span>
-                        <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
-                        <span class="schedule-icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg></span>
-                    `;
-
-                    blockEl.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        openScheduledBlockOverrideModal(schedule, segmentIdx, weekDay.dayIndex);
-                    });
-
-                    track.appendChild(blockEl);
-                }
+            segmentDays.forEach(dayIndex => {
+                renderScheduleSegmentOnWeekday(schedule, segment, segmentIdx, dayIndex, blocklist);
             });
         });
     });
+}
+
+// Render a single schedule segment onto the day-track for a specific weekday.
+// Overnight segments split: head from start..24:00 on this weekday, tail from 00:00..end
+// on the next weekday (wrapping Sun → Mon).
+function renderScheduleSegmentOnWeekday(schedule, segment, segmentIdx, dayIndex, blocklist) {
+    const track = document.querySelector(`.day-track[data-day-index="${dayIndex}"]`);
+    if (!track) return;
+
+    const startMinutes = segment.startHour * 60 + segment.startMinute;
+    const endMinutes = segment.endHour * 60 + segment.endMinute;
+    const isOvernight = endMinutes <= startMinutes;
+
+    const startTimeStr = `${String(segment.startHour).padStart(2, '0')}:${String(segment.startMinute).padStart(2, '0')}`;
+    const endTimeStr = `${String(segment.endHour).padStart(2, '0')}:${String(segment.endMinute).padStart(2, '0')}`;
+
+    const buildBlock = (leftPct, widthPct, hostDayIndex, isContinuation) => {
+        const el = document.createElement('div');
+        el.className = `calendar-block scheduled${isContinuation ? ' overnight-continuation' : ''}`;
+        el.dataset.scheduleId = schedule.id;
+        el.dataset.segmentIndex = segmentIdx;
+        el.dataset.day = hostDayIndex;
+        el.style.left = `${leftPct}%`;
+        el.style.width = `${widthPct}%`;
+
+        if (blocklist.color) {
+            el.style.background = blocklist.color;
+            el.style.opacity = '0.7';
+            el.style.color = getContrastTextColor(blocklist.color);
+        }
+
+        el.innerHTML = `
+            <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
+            <span class="block-label">${escapeHtml(blocklist.name)}</span>
+            <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
+        `;
+
+        el.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openScheduledBlockEdit(schedule);
+        });
+
+        return el;
+    };
+
+    if (isOvernight) {
+        const left1 = (startMinutes / 1440) * 100;
+        const width1 = Math.max(0.5, ((1440 - startMinutes) / 1440) * 100);
+        track.appendChild(buildBlock(left1, width1, dayIndex, false));
+
+        const nextDayIndex = (dayIndex + 1) % 7;
+        const nextTrack = document.querySelector(`.day-track[data-day-index="${nextDayIndex}"]`);
+        if (nextTrack) {
+            const width2 = Math.max(0.5, (endMinutes / 1440) * 100);
+            nextTrack.appendChild(buildBlock(0, width2, nextDayIndex, true));
+        }
+    } else {
+        const left = (startMinutes / 1440) * 100;
+        const width = Math.max(0.5, ((endMinutes - startMinutes) / 1440) * 100);
+        track.appendChild(buildBlock(left, width, dayIndex, false));
+    }
 }
 
 // Render blocklist selector dropdown
@@ -8498,9 +12854,8 @@ function renderBlocklistSelector() {
     <option value="">${tSettings('selectionPromptOption')}</option>
     ${appData.blocklists.map(bl => {
         const isActive = activeIds.includes(bl.id);
-        const disabledAttr = isActive ? 'disabled' : '';
         const activeLabel = isActive ? tSettings('runningSuffix') : '';
-        return `<option value="${bl.id}" ${disabledAttr}>${escapeHtml(bl.name)}${activeLabel}</option>`;
+        return `<option value="${bl.id}">${escapeHtml(bl.name)}${activeLabel}</option>`;
     }).join('')}
   `;
 
@@ -8592,6 +12947,11 @@ function renderBlocklists() {
         let oneOffBadge = '';
         let scheduleBadge = '';
 
+        // Green "live" dot prefixed onto badges for blocks that are
+        // currently running (one-off active or active schedule segment).
+        // Same colour treatment as the BLOCKING NOW row dot.
+        const runningDot = '<span class="badge-running-dot" aria-hidden="true"></span>';
+
         // One-off block badge (green with hourglass, or power icon for always-on)
         if (isActive && activeBlock) {
             if (activeBlock.isPaused) {
@@ -8602,18 +12962,20 @@ function renderBlocklists() {
                 oneOffBadge = `<span class="active-badge paused-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg> Paused ${pauseTimeText}</span>`;
             } else if (isBlockAlwaysOn(activeBlock)) {
                 // Power icon for always-on blocks
-                oneOffBadge = `<span class="active-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg> Always</span>`;
+                oneOffBadge = `<span class="active-badge">${runningDot}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg> Always</span>`;
             } else {
                 const remaining = activeBlock.endTime - now;
                 const mins = Math.ceil(remaining / 60000);
-                const timeText = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
                 // Hourglass icon
-                oneOffBadge = `<span class="active-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg> ${timeText} left</span>`;
+                oneOffBadge = `<span class="active-badge">${runningDot}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg> ${formatBlockTimeRemainingShort(mins)}</span>`;
             }
         }
 
         // Schedule badge (blue with calendar-sync)
+        let scheduleSegmentRunning = false;
         if (hasSchedule) {
+            const compactScheduleUpcomingLabel =
+                (bl.name || '').trim().length > BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS;
             const schedule = appData.schedules.find(s => s.blocklistId === bl.id);
             let scheduleTimeText = '';
             if (schedule && schedule.segments) {
@@ -8647,6 +13009,7 @@ function renderBlocklists() {
 
                     if (activeSegment) {
                         // Currently blocking - show time left
+                        scheduleSegmentRunning = true;
                         const startMins = activeSegment.startHour * 60 + activeSegment.startMinute;
                         const endMins = activeSegment.endHour * 60 + activeSegment.endMinute;
                         let minsLeft;
@@ -8664,7 +13027,7 @@ function renderBlocklists() {
                                 minsLeft = endMins - currentMins;
                             }
                         }
-                        scheduleTimeText = minsLeft >= 60 ? `${Math.floor(minsLeft / 60)}h ${minsLeft % 60}m left` : `${minsLeft}m left`;
+                        scheduleTimeText = formatBlockTimeRemainingShort(minsLeft);
                     } else {
                         // Find next upcoming segment
                         let nextStart = null;
@@ -8677,30 +13040,40 @@ function renderBlocklists() {
                                 const segStartMins = seg.startHour * 60 + seg.startMinute;
                                 if (dayOffset === 0 && segStartMins <= currentMins) continue; // Already passed today
 
-                                // Found next segment
-                                const minsUntil = dayOffset === 0
-                                    ? segStartMins - currentMins
-                                    : (dayOffset * 24 * 60) + segStartMins - currentMins + (24 * 60 - currentMins) - (24 * 60 - segStartMins);
+                                // Found next segment. minsUntil = (full days) + (start-of-segment minutes) - (current minutes).
+                                // Same formula works whether dayOffset is 0 (today) or further out.
+                                const minsUntil = (dayOffset * 24 * 60) + segStartMins - currentMins;
 
+                                const nMinutes = String(minsUntil);
+                                const nHours = String(Math.floor(minsUntil / 60));
+                                const nDays = String(Math.floor(minsUntil / (24 * 60)));
                                 if (minsUntil < 60) {
-                                    scheduleTimeText = `in ${minsUntil}m`;
+                                    scheduleTimeText = compactScheduleUpcomingLabel
+                                        ? tSettingsFmt('blocklistScheduleCompactMinutesFmt', { n: nMinutes })
+                                        : tSettingsFmt('blocklistScheduleStartsInMinutesFmt', { n: nMinutes });
                                 } else if (minsUntil < 24 * 60) {
-                                    scheduleTimeText = `in ${Math.floor(minsUntil / 60)}h`;
+                                    scheduleTimeText = compactScheduleUpcomingLabel
+                                        ? tSettingsFmt('blocklistScheduleCompactHoursFmt', { n: nHours })
+                                        : tSettingsFmt('blocklistScheduleStartsInHoursFmt', { n: nHours });
                                 } else {
-                                    const days = Math.floor(minsUntil / (24 * 60));
-                                    scheduleTimeText = `in ${days}d`;
+                                    scheduleTimeText = compactScheduleUpcomingLabel
+                                        ? tSettingsFmt('blocklistScheduleCompactDaysFmt', { n: nDays })
+                                        : tSettingsFmt('blocklistScheduleStartsInDaysFmt', { n: nDays });
                                 }
                                 nextStart = true;
                                 break;
                             }
                             if (nextStart) break;
                         }
-                        if (!scheduleTimeText) scheduleTimeText = 'scheduled';
+                        if (!scheduleTimeText) scheduleTimeText = tSettings('blocklistScheduleFallback');
                     }
                 }
             }
-            // Calendar icon for scheduled blocklists
-            scheduleBadge = `<span class="schedule-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg> ${scheduleTimeText}</span>`;
+            // Calendar icon for scheduled blocklists (calendar, then live dot when segment is running)
+            const calendarIcon =
+                '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>';
+            const scheduleDot = scheduleSegmentRunning ? runningDot : '';
+            scheduleBadge = `<span class="schedule-badge">${calendarIcon}${scheduleDot} ${scheduleTimeText}</span>`;
         }
 
         const activeBadge = oneOffBadge + scheduleBadge;
@@ -8708,7 +13081,7 @@ function renderBlocklists() {
         // Check if this blocklist is selected
         const isSelected = bl.id === selectedBlocklistId;
         const selectedClass = isSelected ? ' selected' : '';
-        const selectedStyle = isSelected ? `style="box-shadow: 0 0 0 2px ${bl.color || '#667eea'}, 0 4px 8px rgba(0, 0, 0, 0.1);"` : '';
+        const selectedStyle = isSelected ? `style="box-shadow: 0 0 0 4px ${bl.color || '#667eea'}, 0 4px 8px rgba(0, 0, 0, 0.1);"` : '';
 
         // Dim if something is selected but this one isn't
         const isDimmed = selectedBlocklistId && !isSelected;
@@ -8718,39 +13091,43 @@ function renderBlocklists() {
       <div class="blocklist-card${activeClass}${selectedClass}${dimmedClass}" data-id="${bl.id}" data-active="${isActive}" ${selectedStyle}>
         <div class="blocklist-stripe" style="background: ${borderColor}"></div>
         <div class="blocklist-info">
-          <div class="blocklist-name"><span class="blocklist-emoji">${bl.emoji || '🚫'}</span>${escapeHtml(bl.name)}${activeBadge}</div>
+          <div class="blocklist-name">
+            <span class="blocklist-emoji">${bl.emoji || '🚫'}</span>
+            <span class="blocklist-title-text">${escapeHtml(bl.name)}</span>
+            <span class="blocklist-name-badges">${activeBadge}</span>
+          </div>
           <div class="blocklist-meta">${escapeHtml(metaText)}</div>
         </div>
         <div class="blocklist-actions">
           <div class="blocklist-menu-wrapper">
-            <button class="blocklist-action-btn blocklist-menu-btn" title="Blocklist options">
+            <button class="blocklist-action-btn blocklist-menu-btn" title="${tSettings('blocklistCardMenuTitle')}" aria-label="${tSettings('blocklistCardMenuTitle')}">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="1"></circle>
-                <circle cx="12" cy="5" r="1"></circle>
-                <circle cx="12" cy="19" r="1"></circle>
+                <circle cx="5" cy="12" r="1"></circle>
+                <circle cx="19" cy="12" r="1"></circle>
               </svg>
             </button>
             <div class="blocklist-menu hidden">
-              <button class="blocklist-menu-item duplicate-blocklist-item" title="Duplicate">
+              <button class="blocklist-menu-item duplicate-blocklist-item" title="${tSettings('blocklistCardDuplicate')}" aria-label="${tSettings('blocklistCardDuplicate')}">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <line x1="15" x2="15" y1="12" y2="18"/>
                   <line x1="12" x2="18" y1="15" y2="15"/>
                   <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
                   <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
                 </svg>
-                Duplicate
+                ${tSettings('blocklistCardDuplicate')}
               </button>
-              <button class="blocklist-menu-item delete-blocklist-item" title="Delete">
+              <button class="blocklist-menu-item delete-blocklist-item" title="${tSettings('blocklistCardDelete')}" aria-label="${tSettings('blocklistCardDelete')}">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M3 6h18"></path>
                   <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
                   <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
                 </svg>
-                Delete
+                ${tSettings('blocklistCardDelete')}
               </button>
             </div>
           </div>
-          <button class="blocklist-action-btn edit-btn" title="Edit">
+          <button class="blocklist-action-btn edit-btn" title="${tSettings('blocklistCardEditTooltip')}" aria-label="${tSettings('blocklistCardEditTooltip')}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
               <path d="m15 5 4 4"/>
@@ -8854,6 +13231,22 @@ function renderBlocklists() {
     });
 }
 
+/// Pre-select the sole blocklist as the default state. Skipped if the
+/// user has explicitly deselected this session (so click-outside / ESC
+/// stay sticky). Pass `force: true` to clear that flag — used when the
+/// user just *created* a new blocklist, which is a strong "I want to
+/// use this" signal.
+function autoSelectSoleBlocklist({ force = false } = {}) {
+    if (appData.blocklists.length !== 1) return;
+    if (selectedBlocklistId) return;
+    if (force) userExplicitlyDeselected = false;
+    if (userExplicitlyDeselected) return;
+    const dropdown = document.getElementById('blocklist-select');
+    if (!dropdown) return;
+    dropdown.value = appData.blocklists[0].id;
+    handleBlocklistSelect({ target: dropdown });
+}
+
 function closeAllBlocklistMenus() {
     document.querySelectorAll('.blocklist-menu:not(.hidden)').forEach(menu => {
         menu.classList.add('hidden');
@@ -8886,6 +13279,12 @@ function saveBlocklistOrderFromDOM() {
 
     appData.blocklists = reorderedBlocklists;
     saveData();
+
+    // Re-render the bits of UI that mirror blocklist order. Don't call full render() —
+    // the cards are already in the right order in the DOM (the user just dropped them
+    // there), and a full re-render would briefly flicker.
+    renderNowBlockingRow();
+    renderScheduleVisibilityChips();
 }
 
 // Start interval to update remaining time
@@ -8903,20 +13302,7 @@ function startTickInterval() {
     updateBlockedApps();
     startTickInterval._lastScheduleStateSignature = getScheduleStateSignature();
 
-    // Re-render when the window becomes visible again. The schedule's "now"
-    // line and blocklist countdowns are computed at render time, so without
-    // this they stay frozen at whatever was shown when the WebView was last
-    // active (e.g. after the Mac slept for hours).
-    if (!startTickInterval._visibilityListenerAttached) {
-        startTickInterval._visibilityListenerAttached = true;
-        document.addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') {
-                render();
-            }
-        });
-    }
-
-    setInterval(async () => {
+    startTickInterval._tickFn = async () => {
         const now = Date.now();
         let shouldSyncControls = false;
 
@@ -9072,7 +13458,7 @@ function startTickInterval() {
 
         // Only re-render if blocks actually expired
         if (appData.activeBlocks.length < previousCount) {
-            saveData();
+            await saveData();
             render();
 
             // Sync blocking rules now that blocks have been removed.
@@ -9113,6 +13499,10 @@ function startTickInterval() {
             render();
         }
 
+        if (collectNowBlockingEntries(now).length === 0) {
+            renderNowBlockingRow(now);
+        }
+
         // Update remaining times in UI
         document.querySelectorAll('.entry-remaining').forEach((el, idx) => {
             const block = appData.activeBlocks[idx];
@@ -9137,7 +13527,24 @@ function startTickInterval() {
             updateTimeDisplay();
             // Don't call handleTimeChange here to avoid circular updates
         }
-    }, 1000);
+    };
+    startTickInterval._intervalId = setInterval(startTickInterval._tickFn, 1000);
+}
+
+// Force an immediate re-render and restart the per-second tick. Called when
+// the window becomes visible or regains focus — macOS can pause/throttle
+// WKWebView's JS timers while the window is hidden or the system sleeps,
+// and the existing setInterval may not resume cleanly. Without this hook
+// the title-bar countdown and schedule "now" line could sit frozen on the
+// last-rendered timestamp until the process was killed.
+function kickClockNow() {
+    try { render(); } catch (e) { console.error('kickClockNow render failed', e); }
+    if (typeof startTickInterval._tickFn === 'function') {
+        if (startTickInterval._intervalId) {
+            clearInterval(startTickInterval._intervalId);
+        }
+        startTickInterval._intervalId = setInterval(startTickInterval._tickFn, 1000);
+    }
 }
 
 function getScheduleStateSignature(now = Date.now()) {
@@ -9155,6 +13562,28 @@ function formatTime(date) {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+// Last minute of the civil day (23:59). Drag/snap math uses 1440 as exclusive
+// end-of-day; converting 1440 through hour/minute fields wrongly yielded 23:00.
+const MINUTES_PER_DAY = 1440;
+const MAX_SAME_DAY_END_MINUTES = MINUTES_PER_DAY - 1;
+
+function clampSameDayMinutes(totalMinutes) {
+    return Math.max(0, Math.min(MAX_SAME_DAY_END_MINUTES, Math.round(totalMinutes)));
+}
+
+function snapMinutesToInterval(minutes, intervalMinutes = 15) {
+    return clampSameDayMinutes(Math.round(minutes / intervalMinutes) * intervalMinutes);
+}
+
+// Format a minutes-since-midnight value as zero-padded "HH:MM". Used by drag-resize
+// handlers to live-update the time label inside a preview block.
+function formatMinutesAsHHMM(totalMinutes) {
+    const clamped = clampSameDayMinutes(totalMinutes);
+    const h = Math.floor(clamped / 60);
+    const m = clamped % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 function formatDuration(minutes) {
     if (minutes < 60) {
         return `${minutes} min${minutes !== 1 ? 's' : ''}`;
@@ -9165,6 +13594,21 @@ function formatDuration(minutes) {
         return `${hours} hour${hours !== 1 ? 's' : ''}`;
     }
     return `${hours}h ${mins}m`;
+}
+
+/** Remaining time chip, e.g. EN "1h 39m left", DA "1t 39m endnu" (`totalMins` = full minutes). */
+function formatBlockTimeRemainingShort(totalMins) {
+    const n = Math.max(0, Math.floor(totalMins));
+    const hrs = Math.floor(n / 60);
+    const mins = n % 60;
+    if (getSettingsLanguage() === 'da') {
+        if (hrs > 0 && mins > 0) return `${hrs}t ${mins}m endnu`;
+        if (hrs > 0) return `${hrs}t endnu`;
+        return `${mins}m endnu`;
+    }
+    if (hrs > 0 && mins > 0) return `${hrs}h ${mins}m left`;
+    if (hrs > 0) return `${hrs}h left`;
+    return `${mins}m left`;
 }
 
 function escapeHtml(str) {
@@ -9233,10 +13677,328 @@ const SETTINGS_TRANSLATIONS = {
         modeSchedule: 'Schedule',
         selectionPrompt: 'Select a blocklist',
         selectionPromptOption: 'Select a blocklist...',
-        yourBlocklists: 'Your Blocklists',
-        scheduleTitle: 'Schedule',
+        yourBlocklists: 'My Blocklists',
+        blocklistCardMenuTitle: 'Blocklist options',
+        blocklistCardDuplicate: 'Duplicate',
+        blocklistCardDelete: 'Delete',
+        blocklistCardEditTooltip: 'Edit',
+        blocklistScheduleStartsInMinutesFmt: 'starts in {n}m',
+        blocklistScheduleStartsInHoursFmt: 'starts in {n}h',
+        blocklistScheduleStartsInDaysFmt: 'starts in {n}d',
+        blocklistScheduleCompactMinutesFmt: 'in {n}m',
+        blocklistScheduleCompactHoursFmt: 'in {n}h',
+        blocklistScheduleCompactDaysFmt: 'in {n}d',
+        blocklistScheduleFallback: 'scheduled',
+        deleteBlocklistDeniedActiveBlockFmt:
+            'Cannot delete "{name}" while a block is running. Stop the block first.',
+        deleteBlocklistDeniedActiveScheduleFmt:
+            'Cannot delete "{name}" while a schedule is active. Stop the schedule first.',
+        scheduleTitle: 'Week Schedule',
         today: 'Today',
         noActiveBlocks: 'No active blocks',
+        alwaysOnRowLead: 'Always on',
+        alwaysOnRowTimelineHint: 'not shown',
+        nowBlockingLabel: 'BLOCKING NOW',
+        nowBlockingUntil: 'until',
+        nowBlockingAlways: 'always',
+        nowBlockingMenuAria: 'Block actions',
+        titleBarNoActiveBlocks: 'No active blocks right now',
+        titleBarNextScheduleStarts: '{emoji} {name} starts {when}',
+        scheduleStartsToday: 'today at',
+        scheduleStartsTomorrow: 'tomorrow at',
+        nowBlockingMenuEdit: 'Edit',
+        nowBlockingMenuPause: 'Pause',
+        nowBlockingMenuStop: 'Stop',
+        scheduleFooterHint: 'Click any block to edit',
+        setupBrowsersBannerHeadline: 'Enable ReDD Focus in your browsers',
+        setupBrowsersBannerCta: 'Set up extension',
+        setupBrowsersBannerDismissTitle: 'Dismiss for this session',
+        setupBannerFdaHeadline: 'Full Disk Access not granted',
+        setupBannerFdaAndExtensionHeadline: 'Full Disk Access not granted & extension not set up',
+        setupBannerFdaBody: 'Without Full Disk Access, macOS will show permission prompts each time ReDD Block reads browser settings.',
+        setupBannerFdaCta: 'Grant Full Disk Access',
+        bannerTurnOnBrowserProtection: 'Turn on browser protection',
+        bannerActionInstallIn: 'Install in',
+        bannerActionEnableIn: 'Enable in',
+        bannerActionPrivateBrowsingIn: 'Allow in private browsing in',
+        bannerActionAllWebsitesIn: 'Allow on all websites in',
+        bannerActionFullDiskAccessFor: 'Grant Full Disk Access for',
+        bannerActionSetUpIn: 'Set up in',
+        // First-run EULA gate
+        eulaAgreeAria: 'I agree to the End User License Agreement and Privacy Policy',
+        eulaAgreeLineHtml:
+            'I agree to the ReDD Project\'s <a href="https://reddfocus.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/eula">End User License Agreement</a>',
+        eulaNoteHtml:
+            'Note that we do not collect any user data, as per our <a href="https://reddfocus.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/privacy-policy">Privacy Policy</a>.',
+        eulaContinueBtn: 'Continue',
+        eulaContinueBusy: 'Continuing…',
+        eulaBackBtn: 'Back',
+        eulaAcceptSaveFailedAlert: 'Could not save your agreement. Please try again.',
+        // Welcome onboarding (before EULA)
+        welcomeOnboardingTitle: 'Welcome to ReDD Block',
+        welcomeOnboardingSubtitle:
+            'An open-source tool for blocking the websites\nand apps that pull you away from your focus.',
+        welcomeHowHeading: 'STEPS TO GET STARTED (we\'ll guide you through it 😊)',
+        welcomeStep1TitleHtml: 'Grant {APPLE} Full Disk Access',
+        welcomeStep1BodyHtml:
+            'macOS needs this so ReDD Block can see whether blocking is enabled in your browsers. We\'ll open System Settings for you.',
+        welcomeStep2TitleHtml: 'Enable blocking in your browser & allow it in private/incognito tabs',
+        welcomeStep2BodyHtml:
+            'Our {LOGO}<strong>ReDD Focus</strong> extension is what actually blocks websites. We\'ll auto-install it in your browsers where we can, and show you what to do.',
+        welcomeStep3TitleHtml: 'Start blocking! 🥳',
+        welcomeStep3BodyHtml:
+            'Pick the websites and apps that pull you off task, and set the times you want them out of reach. ReDD Block takes care of the rest.',
+        welcomeDemoToggleLabel: 'See it in action — 30s',
+        welcomeDemoVideoCaption: 'Quick demo — creating blocklists & how blocks feel',
+        welcomeDemoPlayAriaLabel: 'Play demo video',
+        welcomeDemoResumeAriaLabel: 'Resume demo video',
+        welcomeDemoPauseAriaLabel: 'Pause demo video',
+        welcomeDemoFullscreenEnterAriaLabel: 'Enter fullscreen',
+        welcomeDemoFullscreenExitAriaLabel: 'Exit fullscreen',
+        welcomeDemoCloseLabel: 'Close',
+        welcomeFooter1Html:
+            'Built by the <a href="https://reddfocus.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Reduce Digital Distraction Project</a>, a not-for-profit creating open-source digital focus tools &amp; training. In collaboration with researchers at the University of Oxford and University of Maastricht.',
+        welcomeFooter2Html:
+            '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">View the source code on GitHub</a>.',
+        welcomeOnboardingContinueBtn: 'Get started',
+        // Migration / extension onboarding overlay
+        migrationPreWelcomeTitle: 'Welcome to ReDD Block 2.0',
+        migrationPreSubtitle: 'A one-time cleanup is needed to finish your upgrade.',
+        migrationPreExplainerHtml: 'ReDD Block now blocks websites through a browser extension instead of a system-level helper.<br>We need to:',
+        migrationPreBulletHelper: 'Stop and remove the old privileged helper',
+        migrationPreBulletHostsHtml: 'Restore your <code>/etc/hosts</code> file (a backup is kept)',
+        migrationPreBulletBlocklists: 'Keep all your existing blocklists intact',
+        migrationPreWarnHtml: 'You\'ll see <strong>one</strong> admin password prompt. Blocking will pause briefly during the changeover. After cleanup, ReDD Block sets up the <strong>ReDD Focus</strong> browser extension in your browsers automatically — you just need to allow it in private/incognito tabs.',
+        migrationContinue: 'Continue',
+        migrationPostTitleCleanup: 'Cleanup complete',
+        migrationPostSubtitleCleanup: 'Almost done — finish setting up ReDD Focus in each browser you use.',
+        migrationChecklistCleanedOld: 'Old version cleaned up',
+        migrationChecklistBlocklistsPreserved: 'Your blocklists are preserved',
+        migrationChecklistExtLinesHtml: 'Enable {LOGO}ReDD Focus in your browsers<br><span style="font-weight:400;opacity:0.7">and allow it in private/incognito tabs</span>',
+        migrationHowtoHeading: 'Setting up ReDD Focus',
+        migrationHowtoLi1Html: 'ReDD Block has tried to install ReDD Focus in your browsers. If it shows as not installed below, click the <strong>Install</strong> buttons to add it manually.',
+        migrationHowtoLi3Html: 'Once enabled, <strong>allow it in private/incognito tabs</strong> so blocking works in private windows too.',
+        migrationDone: 'I\'m all set up',
+        migrationSkip: 'Skip for now',
+        migrationEnforcementHeadline: 'Browser enforcement',
+        migrationEnforcementDesc: 'To help you stay focused, your browser is automatically closed if you turn off ReDD Focus while a block is running.',
+        migrationEnforcementDisableNote: 'Once on, you can only turn enforcement off when no blocks are running.',
+        migrationApproveAdminPrompt: 'Approve the admin prompt to continue…',
+        migrationTryAgain: 'Try again',
+        migrationCleanupNeedAdmin: 'We need that admin permission to finish — your blocklists are safe.',
+        migrationCleanupRetryGeneric: 'Something went wrong. Click to retry.',
+        migrationCopied: 'Copied! ✓',
+        migrationSafariSettingsPath: 'Safari → Settings → Extensions',
+        migrationPrivateIncognito: 'private/incognito',
+        migrationPrivateIncognitoChrome: 'Incognito',
+        migrationPrivateIncognitoEdge: 'InPrivate',
+        migrationPrivateIncognitoBrave: 'Incognito',
+        migrationPrivateIncognitoFirefox: 'Private Windows',
+        migrationPrivateIncognitoSafari: 'Private Browsing',
+        migrationComplianceOk: '✓ Installed & allowed in private tabs',
+        migrationBadgeNotInstalled: 'Not installed',
+        migrationBadgeDisabled: 'Disabled',
+        migrationBadgeNotPrivate: 'Not allowed in private tabs',
+        migrationBadgeNoWebsiteAccess: 'No website access',
+        migrationBadgeNeedsAccess: 'Needs access',
+        migrationBadgeDuplicateSafari: '⚠ Two copies installed',
+        migrationStatusDuplicateSafari: 'Disable the extra copy',
+        migrationSafariDuplicateIntroHtml: 'You have <strong>ReDD Focus: Hide Distractions</strong> from the App Store <em>and</em> the copy that ships inside ReDD Block. They conflict — keep only one.',
+        migrationSafariDuplicateInstructionsHeading: 'In Safari → Settings → Extensions',
+        migrationSafariDuplicateStep1Html: 'Find <strong>ReDD Focus: Hide Distractions</strong> — the App Store copy (not “via ReDD Block”) — and uncheck <span class="safari-duplicate-checkbox" role="img" aria-label="Unchecked"></span> it.',
+        migrationSafariDuplicateStep2Html: 'Make sure <span class="safari-duplicate-checkbox safari-duplicate-checkbox-checked" role="img" aria-label="Checked"></span> is checked for <strong>ReDD Focus (via ReDD Block)</strong>. That\'s the one this app controls.',
+        migrationSafariDuplicateOpenBtn: 'Open Safari Extensions…',
+        migrationSafariDuplicateHelpLink: 'How did this happen?',
+        migrationSafariDuplicateHelpText: 'If you previously installed ReDD Focus from the App Store and later installed ReDD Block, Safari keeps both extensions registered. ReDD Block only works with the bundled copy.',
+        migrationStatusGrantFda: 'Grant Full Disk Access',
+        migrationStatusAllowAllWebsites: 'Allow on all websites',
+        migrationStatusAllowPrivate: 'Allow in private browsing',
+        migrationStatusEnableExtension: 'Enable extension',
+        migrationStatusInstall: 'Install',
+        migrationInstallButton: 'Install',
+        migrationInstallStoreTitle: 'Open {browser} extension store page',
+        migrationUrlCopied: 'URL Copied',
+        migrationFailed: 'Failed',
+        migrationSafariFdaHint: 'Grant ReDD Block Full Disk Access so it can read Safari’s extension settings and help you finish ReDD Focus setup. Until that’s done, Safari may stay closed when browser protection needs a clear yes/no.',
+        migrationOpenSettings: 'Open Settings',
+        migrationOpened: 'Opened',
+        migrationOpenFdaTitle: 'Open Full Disk Access settings',
+        fdaOnboardingGrantBtn: 'Open Full Disk Access settings',
+        fdaOnboardingAlreadyGrantedBtn: '✓ Proceed',
+        fdaOnboardingWhyHtml: 'Click the button below to open your System Settings, then toggle on for <strong>ReDD Block</strong> (if you don\'t see ReDD Block in the list, click + and add it manually).',
+        fdaOnboardingAlreadyGrantedWhy: 'FDA is already granted for ReDD Block. Click the button below to proceed.',
+        fdaOnboardingGrantedStatus: 'Full Disk Access granted — installing ReDD Focus…',
+        migrationCheckAgain: 'Check again',
+        migrationRefreshSafariTitle: 'Refresh Safari access status',
+        migrationDelayDetectionNote: 'It may take up to 20 seconds for changes to be detected.',
+        migrationExtensionInstalledMark: 'Extension installed',
+        migrationSafariStepEnable: 'Enable the extension',
+        migrationSafariStepPrivate: 'Allow in Private Browsing',
+        migrationSafariStepEveryWebsite: 'Allow on Every Website',
+        migrationSafariChecklistLine: 'Step {n} — {label}',
+        migrationOpenExtensionSettings: 'Open Extension Settings',
+        migrationShowMeHow: 'Show me how',
+        migrationPostInstallFirefoxHtml: 'ReDD Block already set up auto-install for ReDD Focus in Firefox — <strong>restart Firefox</strong> to pick it up. (Or click <strong>Install</strong> below to add it manually — check <strong>Allow extension to run in private windows</strong> during install.)',
+        migrationPostInstallChromiumHtml: 'ReDD Block already set up auto-install for ReDD Focus in {BROWSER} — <strong>restart {BROWSER}</strong> to pick it up. (Or click <strong>Install</strong> below to add it manually now.)',
+        migrationInstructionEnableHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → find <strong>ReDD Focus</strong> → enable the extension.',
+        migrationInstructionWebsiteAccessHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → click <strong>Details</strong> on ReDD Focus → allow on <strong>all websites</strong>.',
+        migrationInstructionFirefoxPrivateHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → click <strong>ReDD Focus</strong> → turn on <strong>Run in {PRIV}</strong>.',
+        migrationInstructionChromiumPrivateHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → click <strong>Details</strong> on ReDD Focus → turn on <strong>Allow in {PRIV}</strong>.',
+        migrationHintEnableSafariMulti: 'Enable ReDD Focus in Safari\'s extension settings for every Safari profile.{SUFFIX}',
+        migrationHintEnableSafariOne: 'Enable ReDD Focus in Safari\'s extension settings.',
+        migrationHintEnableBrowser: 'Enable ReDD Focus in {BROWSER}\'s extensions settings.',
+        migrationHintPrivateSafariMulti: 'Allow ReDD Focus in Private Browsing for every Safari profile.{SUFFIX}',
+        migrationHintPrivateSafariOne: 'Allow ReDD Focus in Private Browsing in Safari\'s extension settings.',
+        migrationHintPrivateBrowser: 'Allow ReDD Focus in private/incognito browsing in {BROWSER}\'s extensions settings.',
+        migrationHintWebsitesSafariMulti: 'Allow ReDD Focus on all websites for every Safari profile.{SUFFIX}',
+        migrationHintWebsitesSafariOne: 'Allow ReDD Focus on all websites in Safari\'s extension settings.',
+        migrationSafariCheckEveryProfile: 'Check every Safari profile.',
+        migrationSafariProfilesAffected: 'Affected Safari profiles:',
+        migrationSafariProfilesMore: ', +{n} more',
+        migrationSafariProfileDefaultName: '(Default Safari profile)',
+        migrationScreenshotCaptionStep: 'Step {n}: {label}',
+        migrationScreenshotStepOnly: 'Step {n}',
+        migrationShotChromeStep1: 'In Chrome extension settings, open details for ReDD Focus',
+        migrationShotChromeStep2: 'Enable ReDD Focus and allow it in Incognito windows',
+        migrationShotEdgeStep1: 'Open Edge extension settings',
+        migrationShotEdgeStep2: 'Open Details for ReDD Focus and allow it in InPrivate windows',
+        migrationShotFirefoxStep1: 'Find ReDD Focus',
+        migrationShotFirefoxStep2: 'Allow in Private Windows',
+        migrationShotSafariCap1: 'First open Safari\'s Extension settings...',
+        migrationShotSafariCap2: 'Then i) enable ReDD Focus, ii) allow in private browsing, iii) allow it to block on all websites',
+        // Browser protection — grace banners (countdown / post-close)
+        enforcerClosingHeadline: 'Browser enforcement is closing {browser} soon',
+        enforcerCountdownRemaining: 'remaining',
+        enforcerClosedStatus: 'closed',
+        enforcerCountdownInstrMissing: 'ReDD Focus is not installed. Install it to stop the countdown.',
+        enforcerCountdownInstrDisabled: 'ReDD Focus is turned off. Enable it to stop the countdown.',
+        enforcerCountdownDelayNote: '(changes can take up to 20 seconds to detect).',
+        enforcerCountdownInstrPrivate: 'Blocking is not enabled in private windows. Enable Allow in incognito for ReDD Focus to stop the countdown.',
+        enforcerCountdownInstrWebsiteAccess: 'ReDD Focus is not allowed on all websites. Allow all websites to stop the countdown.',
+        enforcerCountdownInstrAccess: 'ReDD Block can’t verify ReDD Focus. Grant access to stop the countdown.',
+        enforcerCountdownInstrDefault: 'ReDD Focus is not ready. Finish setup to stop the countdown.',
+        enforcerCountdownInstrMultiple: 'Fix ReDD Focus in each browser below to stop the countdown.',
+        enforcerCountdownDefault: '{browser} will be auto-closed if ReDD Focus is not ready, to support your blocking.',
+        enforcerCountdownMissing: '{browser} will be auto-closed if ReDD Focus is not installed, to support your blocking.',
+        enforcerCountdownDisabled: '{browser} will be auto-closed if ReDD Focus is not enabled, to support your blocking.',
+        enforcerCountdownPrivate: '{browser} will be auto-closed if ReDD Focus is not enabled in private windows, to support your blocking.',
+        enforcerCountdownWebsiteAccess: '{browser} will be auto-closed if ReDD Focus is not allowed on all websites, to support your blocking.',
+        enforcerCountdownAccess: '{browser} will be auto-closed if ReDD Focus cannot be verified, to support your blocking.',
+        enforcerHeadlineMissing: 'ReDD Focus isn’t set up in {browser} yet.',
+        enforcerInstrMissing: 'Install ReDD Focus for {browser}.',
+        enforcerHeadlineDisabled: 'ReDD Focus is off in {browser}.',
+        enforcerHeadlinePrivate: 'Private windows in {browser} aren’t covered by ReDD Focus yet.',
+        enforcerHeadlineWebsiteAccess: '{browser} hasn’t given ReDD Focus access on every website yet.',
+        enforcerInstrWebsiteAccessPlain: 'In {browser} extension settings, allow ReDD Focus on all websites.',
+        enforcerHeadlineAccess: 'ReDD Block can’t verify ReDD Focus in {browser}.',
+        enforcerInstrAccessSafari: 'Grant ReDD Block Full Disk Access so we can help with Safari.',
+        enforcerInstrAccessBrowser: 'Grant access so ReDD Block can help verify {browser}.',
+        enforcerHeadlineDefault: 'ReDD Focus isn’t ready in {browser} yet.',
+        enforcerInstrDefault: 'Finish ReDD Focus setup in {browser} extensions.',
+        enforcerActionInstall: 'Install ReDD Focus',
+        enforcerActionOpenExtensions: 'Open {browser} extensions',
+        enforcerActionOpenBrowserSettings: 'Open {browser} settings',
+        enforcerClosedMissing: '{browser} was closed to support your block—ReDD Focus wasn’t installed yet.',
+        enforcerClosedDisabled: '{browser} was closed to support your block—ReDD Focus was turned off.',
+        enforcerClosedPrivate: '{browser} was closed to support your block—private windows were still a loophole.',
+        enforcerClosedWebsiteAccess: '{browser} was closed to support your block—ReDD Focus couldn’t cover every site yet.',
+        enforcerClosedAccess: '{browser} was closed so your protection could stay clear—ReDD Block couldn’t verify ReDD Focus.',
+        enforcerClosedDefault: '{browser} was closed to support your block—ReDD Focus wasn’t fully ready.',
+        enforcerClosedCombinedMissing: '{browser} were closed to support your block—ReDD Focus wasn’t installed yet.',
+        enforcerClosedCombinedDisabled: '{browser} were closed to support your block—ReDD Focus was turned off.',
+        enforcerClosedCombinedPrivate: '{browser} were closed to support your block—private windows were still a loophole.',
+        enforcerClosedCombinedWebsiteAccess: '{browser} were closed to support your block—ReDD Focus couldn’t cover every site yet.',
+        enforcerClosedCombinedAccess: '{browser} were closed so your protection could stay clear—ReDD Block couldn’t verify ReDD Focus.',
+        enforcerClosedCombinedDefault: '{browser} were closed to support your block—ReDD Focus wasn’t fully ready.',
+        enforcerClosedInstrPrivateChrome: 'In Chrome: ReDD Focus → Details → Allow in Incognito.',
+        enforcerClosedInstrPrivateFirefox: 'In Firefox: ReDD Focus → Run in Private Windows → Allow.',
+        enforcerClosedInstrPrivateGeneric: 'Enable private-window access before reopening.',
+        enforcerClosedInstrMultiple: 'Fix ReDD Focus in each browser below before reopening them.',
+        enforcerClosedInstrDisabled: 'In {browser} extensions, turn ReDD Focus back on.',
+        enforcerClosedInstrMissing: 'Reopen {browser} — ReDD Focus will install automatically. (Or click Install below to add it manually.)',
+        enforcerClosedInstrWebsiteAccess: 'In {browser} extension settings, allow ReDD Focus on all websites.',
+        enforcerClosedInstrAccessSafari: 'Grant ReDD Block Full Disk Access.',
+        enforcerClosedInstrDefault: 'Finish ReDD Focus setup in {browser} extensions.',
+        enforcerBrowserFallback: 'your browser',
+        gracePeriodLabel: 'Seconds before a browser is closed if ReDD Focus is disabled',
+        settingsEnforcementHeading: 'Enforcement settings',
+        settingsEnforcementDesc: 'Automatically close browser if ReDD Focus is disabled when a block is running.',
+        settingsEnforcementLockedTooltip: 'To change this setting, first stop all active blocks.',
+        settingsDiagnosticsLabel: 'Something not working?',
+        settingsDiagnosticsBtn: 'Diagnostics',
+        diagnosticsModalTitle: 'Diagnostics',
+        diagnosticsCopyReport: 'Copy to Clipboard',
+        diagnosticsCopied: 'Copied!',
+        diagnosticsCopyFailed: 'Copy failed',
+        diagnosticsGenerated: 'Generated',
+        diagnosticsGeneratedLocal: 'local',
+        diagnosticsAppSection: 'App',
+        diagnosticsOsArch: 'OS / arch',
+        diagnosticsLeftoverFiles: 'Leftover files',
+        diagnosticsFullyMigrated: 'None — fully migrated',
+        diagnosticsWasV1x: 'Was a v1.x install',
+        diagnosticsStampedVersion: 'Stamped version',
+        diagnosticsStampedAt: 'Stamped at',
+        diagnosticsBrowsersSection: 'Browsers (extension)',
+        diagnosticsBrowsersSectionHint: 'Status of the ReDD Focus extension in browsers on this computer.',
+        diagnosticsEnforcementSection: 'Enforcement',
+        diagnosticsMigrationSection: 'Migration from v1.x',
+        diagnosticsGracePeriod: 'Grace period',
+        diagnosticsAutostart: 'Autostart at login',
+        diagnosticsForceClose: 'Close browsers if ReDD Focus is disabled during block',
+        diagnosticsForceCloseEnabled: 'Enabled',
+        diagnosticsForceCloseDisabled: 'Disabled',
+        diagnosticsFullDiskAccess: 'Full Disk Access',
+        diagnosticsFdaLiveGranted: 'FDA granted (live)',
+        diagnosticsSafariPlistReadable: 'Safari plist readable',
+        diagnosticsOnboardingMarker: 'Onboarding marker',
+        diagnosticsSafariFdaRequired: 'Safari FDA required',
+        diagnosticsFdaGranted: 'Granted',
+        diagnosticsFdaNotGranted: 'Not granted',
+        diagnosticsFdaRevoked: 'Revoked',
+        diagnosticsActiveBlocks: 'Active blocks',
+        diagnosticsRecentLogSection: 'Recent log (last {n} lines)',
+        diagnosticsCurrentlyBlocking: 'Currently being blocked',
+        diagnosticsActiveSources: 'Active blocklists',
+        diagnosticsActiveSourcesNone: 'None',
+        diagnosticsDomainsCount: 'Domains ({n})',
+        diagnosticsAppsCount: 'Apps ({n})',
+        diagnosticsAppDataSection: 'App data (redd-block-data.json)',
+        diagnosticsPath: 'Path',
+        diagnosticsWatchdog: 'Watchdog Scheduled Task',
+        diagnosticsMarkerNotSet: 'not set',
+        diagnosticsBrowserReady: 'Ready',
+        diagnosticsBrowserNotRunning: 'Not running',
+        diagnosticsBrowserNotInstalled: 'Not installed',
+        diagnosticsAdvancedLog: 'Recent log',
+        diagnosticsAdvancedBlocking: 'Currently being blocked',
+        diagnosticsAdvancedAppData: 'App data',
+        diagnosticsThBrowser: 'Browser',
+        diagnosticsThExtInstalled: 'Installed',
+        diagnosticsThExtEnabled: 'Enabled',
+        diagnosticsThExtPrivate: 'Private tabs',
+        diagnosticsYes: 'Yes',
+        diagnosticsNo: 'No',
+        settingsOnboardingLabel: 'Revisit onboarding steps',
+        settingsOnboardingBtn: 'Onboarding',
+        gracePeriodLockedHint: 'Locked while a block is active—only shorter times allowed.',
+        appBlockingLetsGo: 'Let’s go!',
+        appBlockingFallbackBlocklistName: 'this block',
+        appBlockingUnknownApp: 'Unknown app',
+        appBlockingBannerAppFallback: 'an app',
+        appBlockingWarningHeadingHtml: '<strong>{name}</strong> is starting',
+        appBlockingWarningSummarySingleHtml:
+            '<strong>{blocklist}</strong> is starting — time to wrap up. When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close it for you.',
+        appBlockingWarningSummaryMultiHtml:
+            '<strong>{blocklist}</strong> is starting — time to wrap up. When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close them for you.',
+        appBlockingClosedownCountdownHtml:
+            'Closing {apps} in <strong>{seconds}s</strong> — save your work now.',
+        appBlockingClosedownFinalSingleHtml: 'Closing {apps} now…',
+        appBlockingClosedownFinalMultiHtml:
+            'Closing {apps} now — saving any pending dialogs in them…',
+        appBlockingListMoreFmt: '{n} more',
+        settingsFeedbackFooterHtml:
+            'Feedback or suggestions? <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer">Open an issue on GitHub</a> or email <a href="mailto:team@reddfocus.org">team@reddfocus.org</a>.',
         madeWith: 'Made with',
         by: 'by',
         andWord: 'and',
@@ -9252,8 +14014,7 @@ const SETTINGS_TRANSLATIONS = {
         cannotBlockDomainPlaceholder: '⚠️ Can\'t block this domain!',
         cannotBlockSelfAppPlaceholder: '⚠️ Can\'t block ReDD Block itself!',
         // Start/schedule controls
-        durationModeAlways: 'always',
-        durationModeTimed: 'for some time',
+        durationQuickAlways: 'Always',
         alwaysOnMessage: 'This block will stay on until you pause it or turn it off',
         duration: 'Duration',
         durationUnitMin: 'min',
@@ -9263,15 +14024,23 @@ const SETTINGS_TRANSLATIONS = {
         start: 'Start',
         days: 'Days',
         add: 'Add',
-        repeat: 'Repeat:',
+        repeat: 'Repeat week:',
         repeatNo: 'No',
         repeatForever: 'Forever',
         repeatUntilDate: 'Until date',
         pause: 'Pause',
         startBlockButton: 'Start Block:',
         startScheduleButton: 'Start Schedule:',
-        stopScheduleButton: 'Stop Schedule:',
+        stopScheduleButton: 'Stop Schedule',
+        /** Shown inside .btn-blocklist-meta before emoji+name when Stop is shown; hidden with meta on narrow layouts. */
+        stopBlockMetaColon: ':',
+        stopScheduleMetaColon: ':',
         editScheduleButton: 'Edit Schedule:',
+        pendingChangesLabel: 'Unsaved changes',
+        pendingChangesSave: 'Save changes',
+        pendingChangesDiscard: 'Discard',
+        saveChangesTitle: 'Save changes?',
+        addingTheseSegments: 'Adding these time segments:',
         // Blocklist modal
         createBlocklist: 'Create Blocklist',
         editBlocklist: 'Edit Blocklist',
@@ -9287,19 +14056,33 @@ const SETTINGS_TRANSLATIONS = {
         overrideCustomText: 'Custom Text',
         overrideMaxDifficulty: 'Max difficulty',
         totalCharacters: 'total characters',
+        overridePreviewTimeLine: 'Takes ~{minutes} min{minuteSuffix} to type and will look something like:',
         color: 'Color',
         emoji: 'Emoji',
         advancedOptions: 'Advanced options',
-        listBlockedOnCard: 'List blocked websites & apps on card',
-        showInSchedule: 'Show in schedule',
+        listBlockedOnCard: 'Show names of blocked websites & apps in the overview',
+        importWebsitesTitle: 'Import websites',
+        browseApplicationsTitle: 'Browse Applications',
+        modalPremadeListsCaption: 'Pre-made lists',
+        modalBrowseAppsCaption: 'Select Apps',
+        modalBrowseAppsTitleIos: 'Select Apps (Screen Time)',
+        importWebsitesPickFileTitle: 'Select a file with one domain per line',
+        importWebsitesFromFile: 'From text file…',
+        importWebsitesPreMadeList: 'Pre-made list',
+        importPresetEmail: 'Email',
+        importPresetGambling: 'Gambling',
+        importPresetNews: 'News',
+        importPresetPorn: 'Porn',
+        importPresetSearchEngines: 'Search engines',
+        importPresetShopping: 'Shopping',
+        importPresetSocialMedia: 'Social media',
         cancel: 'Cancel',
         save: 'Save',
         // Override / pause / confirmation modals
         overrideBlockTitle: 'Override Block?',
         overrideInstruction: 'To cancel this block early, type the following:',
-        scheduleOverrideJustThis: 'Just this block',
-        scheduleOverrideStop: 'Stop schedule',
-        override: 'Override',
+        stopBlock: 'Stop Block',
+        stopSchedule: 'Stop Schedule',
         pauseBlockTitle: 'Pause Block',
         pauseFor: 'PAUSE FOR',
         restartsAt: 'RESTARTS AT',
@@ -9324,23 +14107,35 @@ const SETTINGS_TRANSLATIONS = {
         confirmOverrideNeed: 'To cancel this block early, you\'ll need to:',
         startBlock: 'Start Block',
         resumeBlock: 'Resume Block',
+        resumeThisBlock: 'Resume this block?',
         alwaysUntilOff: 'Always (until turned off)',
         scheduleResumingSegment: 'Schedule (resuming current segment)',
         startThisSchedule: 'Start this schedule?',
-        repeatLabel: 'Repeat:',
-        confirmScheduleOverrideNeed: 'To cancel blocks in this schedule, you\'ll need to:',
+        repeatLabel: 'Repeat week:',
+        confirmScheduleOverrideNeed: 'To stop this blocking schedule, you\'ll need to:',
+        /** Start/resume confirmation: friction description — placeholders {count},{charUnit},{minutes} */
+        confirmOverrideRandomWordsFmt:
+            'Type {count} {charUnit} (displayed as random words) exactly as shown (~{minutes} min).',
+        confirmOverrideGibberishLettersFmt:
+            'Type {count} random {charUnit} (letters and numbers) exactly as shown (~{minutes} min).',
+        confirmOverrideGibberishShortFmt:
+            'Type {count} random characters exactly as shown (~{minutes} min).',
+        confirmOverrideCustomPhraseFmt:
+            'Type a specific {count}-character phrase exactly as shown (~{minutes} min).',
         startSchedule: 'Start Schedule',
         noDaysSelected: 'No days selected',
         runningSuffix: ' (Running)',
         // Override all
-        overrideAllTitle: 'Override All Blocks?',
+        overrideAllTitle: 'Stop All Blocks?',
         overrideAllWarningStrong: 'Are you sure you want to stop all running blocks?',
         overrideAllWarningBody: 'This will stop ANY currently running blocks for any website and app. It will also stop any future scheduled blocking.',
         overrideAllInstruction: 'To do this, type the following:',
-        overrideAll: 'Override All',
+        overrideAll: 'Stop All',
+        deleteUndoToastFmt: 'Deleted "{name}"',
         undo: 'Undo',
         // Settings
         settingsTitle: 'Settings',
+        settingsDone: 'Done',
         yourVersionPrefix: 'Your version:',
         latestVersionPrefix: 'Latest version:',
         lightDarkMode: 'Light/dark mode',
@@ -9349,10 +14144,32 @@ const SETTINGS_TRANSLATIONS = {
         themeLight: 'Light',
         themeDark: 'Dark',
         languageEnglish: 'English',
-        languageDanish: 'Dansk',
+        languageDanish: 'Danish',
+        languagePickerCurrent: 'Current language',
+        languagePickerSwitch: 'Switch to',
         advancedOptions: 'Advanced options',
-        overrideAllBlocks: 'Emergency: Stop all blocks & schedules',
-        keepBlocking: 'Keep blocking running if app is uninstalled',
+        overrideAllBlocks: 'Stop All Blocks (with challenge)',
+        settingsOverrideAllLabel: 'Stop all blocks & schedules',
+        settingsOverrideAllBtn: 'Stop all blocks',
+        // In-app uninstall (macOS only)
+        uninstallApp: 'Uninstall ReDD Block',
+        uninstallAppBtn: 'Uninstall\u2026',
+        uninstallDisabledHint: 'Stop running blocks first before you can uninstall.',
+        uninstallConfirmTitle: 'Uninstall ReDD Block?',
+        uninstallConfirmIntroHtml: 'ReDD Block will be moved to the Trash. Here\u2019s what happens to the {LOGO}<strong>ReDD Focus</strong> browser extensions installed on this Mac.',
+        uninstallExtChromiumBadge: 'Stay installed',
+        uninstallExtChromiumDetail: 'Remove them yourself from each browser\u2019s extension settings if you no longer want them.',
+        uninstallExtChromiumDetailOne: 'Remove it yourself from {BROWSER}\u2019s extension settings if you no longer want it.',
+        uninstallExtSafariBadge: 'Removed with the app',
+        uninstallExtSafariDetail: 'The standalone ReDD Focus Safari app from the App Store, if you have it, is unaffected.',
+        uninstallExtFirefoxName: 'Firefox',
+        uninstallExtFirefoxBadge: 'Lock removed',
+        uninstallExtFirefoxDetail: 'Firefox usually auto-uninstalls the extension on next launch. If not, remove it from Firefox\u2019s extension settings.',
+        uninstallFinderWarningHtml: 'If macOS asks you to allow ReDD Block to control <strong>Finder</strong>, click <strong>Allow</strong> \u2014 that\u2019s how the app moves itself to the Trash.',
+        uninstallDataKeptNote: 'Your blocklists and schedules are kept on disk, so they\u2019ll be restored if you reinstall later.',
+        uninstallConfirmOk: 'Uninstall',
+        uninstallFailedTitle: 'Uninstall failed',
+        uninstallFailed: 'Could not complete uninstall.',
         helperService: 'Helper service',
         helperStatusChecking: 'Checking...',
         helperStatusActive: 'Active',
@@ -9374,22 +14191,344 @@ const SETTINGS_TRANSLATIONS = {
         // Time/date words
         dayAbbrev: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
         dayAbbrevMon0: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        /** Single-letter row for schedule day toggles when the three-letter row does not fit (Mon..Sun). */
+        dayLetterMon0: ['M', 'T', 'W', 'T', 'F', 'S', 'S'],
         locale: 'en-US',
+        // Duplicate naming: localized via blocklistDuplicateSuffix
+        blocklistDuplicateSuffix: 'copy',
     },
     da: {
         // Main shell
         updateBannerPrefix: 'Version',
         updateBannerSuffix: 'er tilgængelig',
         updateBannerCta: 'Geninstaller fra reddfocus.org',
-        mainStartBlockTitle: 'Start en blokering',
+        mainStartBlockTitle: 'Start blokering',
         modeNow: 'Nu',
         modeSchedule: 'Skema',
-        selectionPrompt: 'Vælg en blokliste',
-        selectionPromptOption: 'Vælg en blokliste...',
-        yourBlocklists: 'Dine bloklister',
-        scheduleTitle: 'Skema',
+        selectionPrompt: 'Vælg en blokeringsliste',
+        selectionPromptOption: 'Vælg en blokeringsliste...',
+        yourBlocklists: 'Mine blokeringlister',
+        blocklistCardMenuTitle: 'Valgmuligheder for blokliste',
+        blocklistCardDuplicate: 'Duplikér',
+        blocklistCardDelete: 'Slet',
+        blocklistCardEditTooltip: 'Rediger',
+        blocklistScheduleStartsInMinutesFmt: 'starter om {n}m',
+        blocklistScheduleStartsInHoursFmt: 'starter om {n}t',
+        blocklistScheduleStartsInDaysFmt: 'starter om {n}d',
+        blocklistScheduleCompactMinutesFmt: 'om {n}m',
+        blocklistScheduleCompactHoursFmt: 'om {n}t',
+        blocklistScheduleCompactDaysFmt: 'om {n}d',
+        blocklistScheduleFallback: 'planlagt',
+        deleteBlocklistDeniedActiveBlockFmt:
+            'Kan ikke slette "{name}", mens en blokering kører. Stop blokeringen først.',
+        deleteBlocklistDeniedActiveScheduleFmt:
+            'Kan ikke slette "{name}", mens et skema er aktivt. Stop skemaet først.',
+        scheduleTitle: 'Ugeskema',
         today: 'I dag',
         noActiveBlocks: 'Ingen aktive blokeringer',
+        alwaysOnRowLead: 'Altid tændt',
+        alwaysOnRowTimelineHint: 'vises ikke i tidslinjen',
+        nowBlockingLabel: 'BLOKERER NU',
+        nowBlockingUntil: 'indtil',
+        nowBlockingAlways: 'altid',
+        nowBlockingMenuAria: 'Handlinger for blok',
+        titleBarNoActiveBlocks: 'Ingen aktive blokeringer lige nu',
+        titleBarNextScheduleStarts: '{emoji} {name} starter {when}',
+        scheduleStartsToday: 'i dag kl.',
+        scheduleStartsTomorrow: 'i morgen kl.',
+        nowBlockingMenuEdit: 'Rediger',
+        nowBlockingMenuPause: 'Pause',
+        nowBlockingMenuStop: 'Stop',
+        scheduleFooterHint: 'Klik på en blok for at redigere',
+        setupBrowsersBannerHeadline: 'Aktivér ReDD Focus i dine browsere',
+        setupBrowsersBannerCta: 'Opsæt udvidelse',
+        setupBrowsersBannerDismissTitle: 'Skjul for denne session',
+        setupBannerFdaHeadline: 'Fuld diskadgang ikke givet',
+        setupBannerFdaAndExtensionHeadline: 'Fuld diskadgang ikke givet og udvidelse ikke sat op',
+        setupBannerFdaBody: 'Uden fuld diskadgang viser macOS tilladelsesprompter, hver gang ReDD Block læser browserindstillinger.',
+        setupBannerFdaCta: 'Giv fuld diskadgang',
+        bannerTurnOnBrowserProtection: 'Slå browser-beskyttelse til',
+        bannerActionInstallIn: 'Installer i',
+        bannerActionEnableIn: 'Aktivér i',
+        bannerActionPrivateBrowsingIn: 'Tillad privat browsing i',
+        bannerActionAllWebsitesIn: 'Tillad på alle websites i',
+        bannerActionFullDiskAccessFor: 'Giv fuld diskadgang til',
+        bannerActionSetUpIn: 'Opsæt i',
+        // First-run EULA gate
+        eulaAgreeAria: 'Jeg accepterer slutbrugerlicensaftalen og privatlivspolitikken',
+        eulaAgreeLineHtml:
+            'Jeg accepterer ReDD Projektets <a href="https://reddfocus.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/eula">slutbrugerlicensaftale</a>',
+        eulaNoteHtml:
+            'Bemærk, at vi ikke indsamler brugerdata — som beskrevet i vores <a href="https://reddfocus.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/privacy-policy">privatlivspolitik</a>.',
+        eulaContinueBtn: 'Fortsæt',
+        eulaContinueBusy: 'Arbejder…',
+        eulaBackBtn: 'Tilbage',
+        eulaAcceptSaveFailedAlert: 'Vi kunne ikke gemme din godkendelse. Prøv igen.',
+        // Welcome onboarding (before EULA)
+        welcomeOnboardingTitle: 'Velkommen til ReDD Block',
+        welcomeOnboardingSubtitle:
+            'Et open source-værktøj til at blokere de hjemmesider\nog apps, der trækker dig væk fra dit fokus.',
+        welcomeHowHeading: 'TRIN FOR AT KOMME I GANG (vi guider dig igennem det 😊)',
+        welcomeStep1TitleHtml: 'Giv {APPLE} fuld diskadgang',
+        welcomeStep1BodyHtml:
+            'macOS har brug for det, så ReDD Block kan se, om blokering er slået til i dine browsere. Vi åbner Systemindstillinger for dig.',
+        welcomeStep2TitleHtml: 'Slå blokering til i din browser og tillad den i private/incognito-faner',
+        welcomeStep2BodyHtml:
+            'Vores {LOGO}<strong>ReDD Focus</strong>-udvidelse er det, der faktisk blokerer websites. Vi installerer den automatisk i dine browsere, hvor vi kan, og viser dig, hvad du skal gøre.',
+        welcomeStep3TitleHtml: 'Vælg, hvad der skal blokeres',
+        welcomeStep3BodyHtml:
+            'Vælg de websites og apps, der trækker dig væk fra opgaven, og sæt de tidspunkter, hvor de skal være uden rækkevidde. ReDD Block klarer resten.',
+        welcomeDemoToggleLabel: 'Se det i aktion — 30 sek.',
+        welcomeDemoVideoCaption: 'Demo — blokeringslister og hvordan blokering føles',
+        welcomeDemoPlayAriaLabel: 'Afspil demovideo',
+        welcomeDemoResumeAriaLabel: 'Genoptag demovideo',
+        welcomeDemoPauseAriaLabel: 'Pause demovideo',
+        welcomeDemoFullscreenEnterAriaLabel: 'Fuld skærm',
+        welcomeDemoFullscreenExitAriaLabel: 'Afslut fuld skærm',
+        welcomeDemoCloseLabel: 'Luk',
+        welcomeFooter1Html:
+            'Bygget af <a href="https://reddfocus.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Reduce Digital Distraction Project</a>, en non-profit, der skaber open source digitale fokusværktøjer og træning. I samarbejde med forskere ved University of Oxford og Maastricht University.',
+        welcomeFooter2Html:
+            '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Se kildekoden på GitHub</a>.',
+        welcomeOnboardingContinueBtn: 'Kom i gang',
+        // Migration / extension onboarding overlay
+        migrationPreWelcomeTitle: 'Velkommen til ReDD Block 2.0',
+        migrationPreSubtitle: 'Et engangskridt er nødvendigt for at afslutte opgraderingen.',
+        migrationPreExplainerHtml: 'ReDD Block blokerer nu websites via en browserudvidelse i stedet for et systemværktøj.<br>Vi skal:',
+        migrationPreBulletHelper: 'Stoppe og fjerne det gamle privilegerede hjælpeprogram',
+        migrationPreBulletHostsHtml: 'Gendanne din <code>/etc/hosts</code>-fil (en backup beholdes)',
+        migrationPreBulletBlocklists: 'Beholde alle dine eksisterende bloklister',
+        migrationPreWarnHtml: 'Du vil få <strong>én</strong> prompt om administratoradgang. Under skiftet sættes blokering kortvarigt på pause. Efter oprydningen sætter ReDD Block <strong>ReDD Focus</strong> op i dine browsere automatisk — du skal bare tillade den i private/inkognitofaner.',
+        migrationContinue: 'Fortsæt',
+        migrationPostTitleCleanup: 'Oprydning fuldført',
+        migrationPostSubtitleCleanup: 'Næsten færdig — afslut opsætningen af ReDD Focus i hver browser, du bruger.',
+        migrationChecklistCleanedOld: 'Gammel version fjernet',
+        migrationChecklistBlocklistsPreserved: 'Dine bloklister er bevaret',
+        migrationChecklistExtLinesHtml: 'Aktivér {LOGO}ReDD Focus i dine browsere<br><span style="font-weight:400;opacity:0.7">og tillad den i privat- eller inkognitofaner</span>',
+        migrationHowtoHeading: 'Sådan sætter du ReDD Focus op',
+        migrationHowtoLi1Html: 'ReDD Block har forsøgt at installere ReDD Focus i dine browsere. Hvis den vises som ikke installeret nedenfor, klik på <strong>Installer</strong>-knapperne for at tilføje den manuelt.',
+        migrationHowtoLi3Html: 'Når den er aktiveret, <strong>tillad den i privat/inkognito-faner</strong>, så blokering også virker i private vinduer.',
+        migrationDone: 'Jeg er klar',
+        migrationSkip: 'Spring over for nu',
+        migrationEnforcementHeadline: 'Browser-beskyttelse',
+        migrationEnforcementDesc: 'For at støtte dig i at fokusere, bliver din browser automatisk lukket ned hvis du slukker for ReDD Focus mens en blokering kører.',
+        migrationEnforcementDisableNote: 'Når den er slået til, kan du kun slå håndhævelse fra, når ingen blokeringer kører.',
+        migrationApproveAdminPrompt: 'Godkend administratorprompt for at fortsætte …',
+        migrationTryAgain: 'Prøv igen',
+        migrationCleanupNeedAdmin: 'Vi har brug for den administrators tilladelse for at afslutte — dine bloklister er i sikkerhed.',
+        migrationCleanupRetryGeneric: 'Noget gik galt. Klik for at prøve igen.',
+        migrationCopied: 'Kopieret! ✓',
+        migrationSafariSettingsPath: 'Safari → Indstillinger → Udvidelser',
+        migrationPrivateIncognito: 'privat/inkognito',
+        migrationPrivateIncognitoChrome: 'Inkognito',
+        migrationPrivateIncognitoEdge: 'InPrivate',
+        migrationPrivateIncognitoBrave: 'Inkognito',
+        migrationPrivateIncognitoFirefox: 'private vinduer',
+        migrationPrivateIncognitoSafari: 'Privat browsing',
+        migrationComplianceOk: '✓ Installeret og tilladt i private faner',
+        migrationBadgeNotInstalled: 'Ikke installeret',
+        migrationBadgeDisabled: 'Deaktiveret',
+        migrationBadgeNotPrivate: 'Ikke tilladt i private faner',
+        migrationBadgeNoWebsiteAccess: 'Ingen webadgang',
+        migrationBadgeNeedsAccess: 'Kræver adgang',
+        migrationBadgeDuplicateSafari: '⚠ To kopier installeret',
+        migrationStatusDuplicateSafari: 'Deaktivér den ekstra kopi',
+        migrationSafariDuplicateIntroHtml: 'Du har <strong>ReDD Focus: Hide Distractions</strong> fra App Store <em>og</em> kopien, der følger med ReDD Block. De kan ikke begge være aktive — behold kun én.',
+        migrationSafariDuplicateInstructionsHeading: 'I Safari → Indstillinger → Udvidelser',
+        migrationSafariDuplicateStep1Html: 'Find <strong>ReDD Focus: Hide Distractions</strong> — App Store-kopien (ikke “via ReDD Block”) — og fjern markeringen <span class="safari-duplicate-checkbox" role="img" aria-label="Ikke markeret"></span>.',
+        migrationSafariDuplicateStep2Html: 'Sørg for, at afkrydsningsfeltet <span class="safari-duplicate-checkbox safari-duplicate-checkbox-checked" role="img" aria-label="Markeret"></span> er markeret for <strong>ReDD Focus (via ReDD Block)</strong>. Det er den, denne app styrer.',
+        migrationSafariDuplicateOpenBtn: 'Åbn Safari-udvidelser…',
+        migrationSafariDuplicateHelpLink: 'Hvordan skete det?',
+        migrationSafariDuplicateHelpText: 'Hvis du tidligere installerede ReDD Focus fra App Store og senere installerede ReDD Block, beholder Safari begge udvidelser. ReDD Block virker kun med den bundtede kopi.',
+        migrationStatusGrantFda: 'Giv fuld diskadgang',
+        migrationStatusAllowAllWebsites: 'Tillad på alle websites',
+        migrationStatusAllowPrivate: 'Tillad privat browsing',
+        migrationStatusEnableExtension: 'Aktivér udvidelse',
+        migrationStatusInstall: 'Installer',
+        migrationInstallButton: 'Installer',
+        migrationInstallStoreTitle: 'Åbn udvidelsesbutikken for {browser}',
+        migrationUrlCopied: 'URL kopieret',
+        migrationFailed: 'Mislykkedes',
+        migrationSafariFdaHint: 'Giv ReDD Block fuld diskadgang, så appen kan læse Safaris udvidelsesindstillinger og hjælpe dig med at færdiggøre ReDD Focus. Indtil det er på plads, kan Safari blive lukket, når browser-beskyttelsen mangler et klart svar.',
+        migrationOpenSettings: 'Åbn Indstillinger',
+        migrationOpened: 'Åbnet',
+        migrationOpenFdaTitle: 'Åbn Indstillinger for Fuld diskadgang',
+        fdaOnboardingGrantBtn: 'Åbn Indstillinger for Fuld diskadgang',
+        fdaOnboardingAlreadyGrantedBtn: '✓ Fortsæt',
+        fdaOnboardingWhyHtml: 'Klik på knappen nedenfor for at åbne Systemindstillinger, og slå derefter til for <strong>ReDD Block</strong> (hvis du ikke kan se ReDD Block på listen, skal du klikke på + og tilføje den manuelt).',
+        fdaOnboardingAlreadyGrantedWhy: 'Fuld diskadgang er allerede givet til ReDD Block. Klik på knappen nedenfor for at fortsætte.',
+        fdaOnboardingGrantedStatus: 'Fuld diskadgang givet — installerer ReDD Focus…',
+        migrationCheckAgain: 'Tjek igen',
+        migrationRefreshSafariTitle: 'Opdater Safari-status',
+        migrationDelayDetectionNote: 'Der kan gå op til 20 sekunder, før ændringer registreres.',
+        migrationExtensionInstalledMark: 'Udvidelse installeret',
+        migrationSafariStepEnable: 'Aktivér udvidelsen',
+        migrationSafariStepPrivate: 'Tillad privat browsing',
+        migrationSafariStepEveryWebsite: 'Tillad på alle websites',
+        migrationSafariChecklistLine: 'Trin {n} — {label}',
+        migrationOpenExtensionSettings: 'Åbn udvidelsesindstillinger',
+        migrationShowMeHow: 'Vis mig hvordan',
+        migrationPostInstallFirefoxHtml: 'ReDD Block har allerede sat auto-installation op for ReDD Focus i Firefox — <strong>genstart Firefox</strong> for at hente den ind. (Eller klik på <strong>Installer</strong> nedenfor for at tilføje den manuelt — markér <strong>Allow extension to run in private windows</strong> under installationen.)',
+        migrationPostInstallChromiumHtml: 'ReDD Block har allerede sat auto-installation op for ReDD Focus i {BROWSER} — <strong>genstart {BROWSER}</strong> for at hente den ind. (Eller klik på <strong>Installer</strong> nedenfor for at tilføje den manuelt nu.)',
+        migrationInstructionEnableHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → find <strong>ReDD Focus</strong> → aktivér udvidelsen.',
+        migrationInstructionWebsiteAccessHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → klik på <strong>Details</strong> ved ReDD Focus → tillad på <strong>alle websites</strong>.',
+        migrationInstructionFirefoxPrivateHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → klik på <strong>ReDD Focus</strong> → slå <strong>Run in {PRIV}</strong> til.',
+        migrationInstructionChromiumPrivateHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → klik på <strong>Details</strong> ved ReDD Focus → slå <strong>Allow in {PRIV}</strong> til.',
+        migrationHintEnableSafariMulti: 'Aktivér ReDD Focus i Safaris udvidelsesindstillinger for hver Safari-profil.{SUFFIX}',
+        migrationHintEnableSafariOne: 'Aktivér ReDD Focus i Safaris udvidelsesindstillinger.',
+        migrationHintEnableBrowser: 'Aktivér ReDD Focus i udvidelsesindstillingerne for {BROWSER}.',
+        migrationHintPrivateSafariMulti: 'Tillad ReDD Focus i privat browsing for hver Safari-profil.{SUFFIX}',
+        migrationHintPrivateSafariOne: 'Tillad ReDD Focus i privat browsing i Safaris udvidelsesindstillinger.',
+        migrationHintPrivateBrowser: 'Tillad ReDD Focus i privat eller inkognito-browsing i udvidelsesindstillingerne for {BROWSER}.',
+        migrationHintWebsitesSafariMulti: 'Tillad ReDD Focus på alle websites for hver Safari-profil.{SUFFIX}',
+        migrationHintWebsitesSafariOne: 'Tillad ReDD Focus på alle websites i Safaris udvidelsesindstillinger.',
+        migrationSafariCheckEveryProfile: 'Tjek alle Safari-profiler.',
+        migrationSafariProfilesAffected: 'Berørte Safari-profiler:',
+        migrationSafariProfilesMore: ', +{n} flere',
+        migrationSafariProfileDefaultName: '(Standard Safari-profil)',
+        migrationScreenshotCaptionStep: 'Trin {n}: {label}',
+        migrationScreenshotStepOnly: 'Trin {n}',
+        migrationShotChromeStep1: 'I Chromes udvidelsesindstillinger, åbn details for ReDD Focus',
+        migrationShotChromeStep2: 'Aktivér ReDD Focus og tillad udvidelsen i Inkognito-vinduer',
+        migrationShotEdgeStep1: 'Åbn Edges udvidelsesindstillinger',
+        migrationShotEdgeStep2: 'Åbn Details for ReDD Focus og tillad udvidelsen i InPrivate-vinduer',
+        migrationShotFirefoxStep1: 'Find ReDD Focus',
+        migrationShotFirefoxStep2: 'Tillad i private vinduer',
+        migrationShotSafariCap1: 'Åbn først Safaris udvidelsesindstillinger …',
+        migrationShotSafariCap2: 'Derefter: i) aktivér ReDD Focus, ii) tillad privat browsing, iii) tillad blokering på alle websites',
+        // Browser-beskyttelse — banner under aktiv blokering
+        enforcerClosingHeadline: 'Browser enforcement lukker snart {browser}',
+        enforcerCountdownRemaining: 'tilbage',
+        enforcerClosedStatus: 'lukket',
+        enforcerCountdownInstrMissing: 'ReDD Focus er ikke installeret. Installer den for at stoppe nedtællingen.',
+        enforcerCountdownInstrDisabled: 'ReDD Focus er slået fra. Aktivér den for at stoppe nedtællingen.',
+        enforcerCountdownDelayNote: '(ændringer kan tage op til 20 sekunder at registrere).',
+        enforcerCountdownInstrPrivate: 'Blokering er ikke aktiveret i private vinduer. Aktivér Tillad i privat browsing for ReDD Focus for at stoppe nedtællingen.',
+        enforcerCountdownInstrWebsiteAccess: 'ReDD Focus er ikke tilladt på alle websites. Tillad alle websites for at stoppe nedtællingen.',
+        enforcerCountdownInstrAccess: 'ReDD Block kan ikke bekræfte ReDD Focus. Giv adgang for at stoppe nedtællingen.',
+        enforcerCountdownInstrDefault: 'ReDD Focus er ikke klar. Færdiggør opsætningen for at stoppe nedtællingen.',
+        enforcerCountdownInstrMultiple: 'Ret ReDD Focus i hver browser nedenfor for at stoppe nedtællingen.',
+        enforcerCountdownDefault: '{browser} lukkes automatisk hvis ReDD Focus ikke er klar, for at understøtte din blokering.',
+        enforcerCountdownMissing: '{browser} lukkes automatisk hvis ReDD Focus ikke er installeret, for at understøtte din blokering.',
+        enforcerCountdownDisabled: '{browser} lukkes automatisk hvis ReDD Focus ikke er aktiveret, for at understøtte din blokering.',
+        enforcerCountdownPrivate: '{browser} lukkes automatisk hvis ReDD Focus ikke er aktiveret i private vinduer, for at understøtte din blokering.',
+        enforcerCountdownWebsiteAccess: '{browser} lukkes automatisk hvis ReDD Focus ikke er tilladt på alle websites, for at understøtte din blokering.',
+        enforcerCountdownAccess: '{browser} lukkes automatisk hvis ReDD Focus ikke kan bekræftes, for at understøtte din blokering.',
+        enforcerHeadlineMissing: 'ReDD Focus er ikke sat op i {browser} endnu.',
+        enforcerInstrMissing: 'Installer ReDD Focus til {browser}.',
+        enforcerHeadlineDisabled: 'ReDD Focus er slået fra i {browser}.',
+        enforcerHeadlinePrivate: 'Privat browsing i {browser} er ikke dækket af ReDD Focus endnu.',
+        enforcerHeadlineWebsiteAccess: '{browser} har ikke givet ReDD Focus adgang på alle websites endnu.',
+        enforcerInstrWebsiteAccessPlain: 'I {browser}s udvidelsesindstillinger: tillad ReDD Focus på alle websites.',
+        enforcerHeadlineAccess: 'ReDD Block kan ikke bekræfte ReDD Focus i {browser}.',
+        enforcerInstrAccessSafari: 'Giv ReDD Block fuld diskadgang, så vi kan hjælpe med Safari.',
+        enforcerInstrAccessBrowser: 'Giv adgang, så ReDD Block kan hjælpe med at tjekke {browser}.',
+        enforcerHeadlineDefault: 'ReDD Focus er ikke helt klar i {browser} endnu.',
+        enforcerInstrDefault: 'Færdiggør ReDD Focus i {browser}s udvidelsesindstillinger.',
+        enforcerActionInstall: 'Installer ReDD Focus',
+        enforcerActionOpenExtensions: 'Åbn {browser}-udvidelser',
+        enforcerActionOpenBrowserSettings: 'Åbn Indstillinger for {browser}',
+        enforcerClosedMissing: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke installeret endnu.',
+        enforcerClosedDisabled: '{browser} blev lukket for at bakke din blok op—ReDD Focus var slået fra.',
+        enforcerClosedPrivate: '{browser} blev lukket for at bakke din blok op—private faner var stadig en åbning.',
+        enforcerClosedWebsiteAccess: '{browser} blev lukket for at bakke din blok op—ReDD Focus kunne ikke dække alle websites endnu.',
+        enforcerClosedAccess: '{browser} blev lukket, så din beskyttelse kunne være tydelig—ReDD Block kunne ikke bekræfte ReDD Focus.',
+        enforcerClosedDefault: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke helt klar.',
+        enforcerClosedCombinedMissing: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke installeret endnu.',
+        enforcerClosedCombinedDisabled: '{browser} blev lukket for at bakke din blok op—ReDD Focus var slået fra.',
+        enforcerClosedCombinedPrivate: '{browser} blev lukket for at bakke din blok op—private faner var stadig en åbning.',
+        enforcerClosedCombinedWebsiteAccess: '{browser} blev lukket for at bakke din blok op—ReDD Focus kunne ikke dække alle websites endnu.',
+        enforcerClosedCombinedAccess: '{browser} blev lukket, så din beskyttelse kunne være tydelig—ReDD Block kunne ikke bekræfte ReDD Focus.',
+        enforcerClosedCombinedDefault: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke helt klar.',
+        enforcerClosedInstrPrivateChrome: 'I Chrome: ReDD Focus → Details → Allow in Incognito.',
+        enforcerClosedInstrPrivateFirefox: 'I Firefox: ReDD Focus → Run in Private Windows → Allow.',
+        enforcerClosedInstrPrivateGeneric: 'Slå adgang i private vinduer til, før du åbner browseren igen.',
+        enforcerClosedInstrMultiple: 'Ret ReDD Focus i hver browser nedenfor, før du åbner dem igen.',
+        enforcerClosedInstrDisabled: 'I {browser}s udvidelsesindstillinger: slå ReDD Focus til igen.',
+        enforcerClosedInstrMissing: 'Genåbn {browser} — ReDD Focus installeres automatisk. (Eller klik på Installer nedenfor for at tilføje den manuelt.)',
+        enforcerClosedInstrWebsiteAccess: 'I {browser}s udvidelsesindstillinger: tillad ReDD Focus på alle websites.',
+        enforcerClosedInstrAccessSafari: 'Giv ReDD Block fuld diskadgang.',
+        enforcerClosedInstrDefault: 'Færdiggør ReDD Focus i {browser}s udvidelsesindstillinger.',
+        enforcerBrowserFallback: 'din browser',
+        gracePeriodLabel: 'Sekunder før en browser lukkes, hvis ReDD Focus er slået fra',
+        settingsEnforcementHeading: 'Indstillinger for selvkontrols-støtte',
+        settingsEnforcementDesc: 'Luk browser automatisk hvis ReDD Focus slås fra mens en blokering kører.',
+        settingsEnforcementLockedTooltip: 'For at ændre denne indstilling skal du først stoppe alle aktive blokeringer.',
+        settingsDiagnosticsLabel: 'Virker noget ikke?',
+        settingsDiagnosticsBtn: 'Diagnostik',
+        diagnosticsModalTitle: 'Diagnostik',
+        diagnosticsCopyReport: 'Kopiér til udklipsholder',
+        diagnosticsCopied: 'Kopieret!',
+        diagnosticsCopyFailed: 'Kunne ikke kopiere',
+        diagnosticsGenerated: 'Genereret',
+        diagnosticsGeneratedLocal: 'lokal tid',
+        diagnosticsAppSection: 'App',
+        diagnosticsOsArch: 'OS / arkitektur',
+        diagnosticsLeftoverFiles: 'Resterende filer',
+        diagnosticsFullyMigrated: 'Ingen — fuldt migreret',
+        diagnosticsWasV1x: 'Var en v1.x-installation',
+        diagnosticsStampedVersion: 'Stemplet version',
+        diagnosticsStampedAt: 'Stemplet',
+        diagnosticsBrowsersSection: 'Browsere (udvidelse)',
+        diagnosticsBrowsersSectionHint: 'Status for ReDD Focus-udvidelsen i browsere på denne computer.',
+        diagnosticsEnforcementSection: 'Håndhævelse',
+        diagnosticsMigrationSection: 'Migration fra v1.x',
+        diagnosticsGracePeriod: 'Henstandsperiode',
+        diagnosticsAutostart: 'Start ved login',
+        diagnosticsForceClose: 'Luk browsere hvis ReDD Focus deaktiveres under blokering',
+        diagnosticsForceCloseEnabled: 'Aktiveret',
+        diagnosticsForceCloseDisabled: 'Deaktiveret',
+        diagnosticsFullDiskAccess: 'Fuld diskadgang',
+        diagnosticsFdaLiveGranted: 'FDA givet (live)',
+        diagnosticsSafariPlistReadable: 'Safari-plist læsbar',
+        diagnosticsOnboardingMarker: 'Onboarding-markør',
+        diagnosticsSafariFdaRequired: 'Safari kræver FDA',
+        diagnosticsFdaGranted: 'Givet',
+        diagnosticsFdaNotGranted: 'Ikke givet',
+        diagnosticsFdaRevoked: 'Tilbagekaldt',
+        diagnosticsActiveBlocks: 'Aktive blokeringer',
+        diagnosticsRecentLogSection: 'Seneste log (sidste {n} linjer)',
+        diagnosticsCurrentlyBlocking: 'Blokeres lige nu',
+        diagnosticsActiveSources: 'Aktive blokeringslister',
+        diagnosticsActiveSourcesNone: 'Ingen',
+        diagnosticsDomainsCount: 'Domæner ({n})',
+        diagnosticsAppsCount: 'Apps ({n})',
+        diagnosticsAppDataSection: 'Appdata (redd-block-data.json)',
+        diagnosticsPath: 'Sti',
+        diagnosticsWatchdog: 'Watchdog-planlagt opgave',
+        diagnosticsMarkerNotSet: 'ikke sat',
+        diagnosticsBrowserReady: 'Klar',
+        diagnosticsBrowserNotRunning: 'Kører ikke',
+        diagnosticsBrowserNotInstalled: 'Ikke installeret',
+        diagnosticsAdvancedLog: 'Seneste log',
+        diagnosticsAdvancedBlocking: 'Blokeres lige nu',
+        diagnosticsAdvancedAppData: 'Appdata',
+        diagnosticsThBrowser: 'Browser',
+        diagnosticsThExtInstalled: 'Installeret',
+        diagnosticsThExtEnabled: 'Aktiveret',
+        diagnosticsThExtPrivate: 'Private faner',
+        diagnosticsYes: 'Ja',
+        diagnosticsNo: 'Nej',
+        settingsOnboardingLabel: 'Gennemgå onboarding-trin igen',
+        settingsOnboardingBtn: 'Onboarding',
+        gracePeriodLockedHint: 'Låst mens en blokering er aktiv—kun kortere tider tilladt.',
+        appBlockingLetsGo: 'Fortsæt',
+        appBlockingFallbackBlocklistName: 'denne blokering',
+        appBlockingUnknownApp: 'Ukendt app',
+        appBlockingBannerAppFallback: 'en app',
+        appBlockingWarningHeadingHtml: '<strong>{name}</strong> starter',
+        appBlockingWarningSummarySingleHtml:
+            '<strong>{blocklist}</strong> starter — tid til at runde af. Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes den ned.',
+        appBlockingWarningSummaryMultiHtml:
+            '<strong>{blocklist}</strong> starter — tid til at runde af. Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes de ned.',
+        appBlockingClosedownCountdownHtml:
+            'Lukker {apps} om <strong>{seconds} sek.</strong> — gem dit arbejde nu.',
+        appBlockingClosedownFinalSingleHtml: 'Lukker {apps} nu…',
+        appBlockingClosedownFinalMultiHtml:
+            'Lukker {apps} nu — giver eventuelle åbne dialoger tid i dem…',
+        appBlockingListMoreFmt: '{n} flere',
+        settingsFeedbackFooterHtml:
+            'Feedback eller forslag? <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer">Opret et issue på GitHub</a> eller skriv til <a href="mailto:team@reddfocus.org">team@reddfocus.org</a>.',
         madeWith: 'Lavet med',
         by: 'af',
         andWord: 'og',
@@ -9405,8 +14544,7 @@ const SETTINGS_TRANSLATIONS = {
         cannotBlockDomainPlaceholder: '⚠️ Dette domæne kan ikke blokeres!',
         cannotBlockSelfAppPlaceholder: '⚠️ ReDD Block kan ikke blokere sig selv!',
         // Start/schedule controls
-        durationModeAlways: 'altid',
-        durationModeTimed: 'et stykke tid',
+        durationQuickAlways: 'Altid',
         alwaysOnMessage: 'Denne blokering forbliver aktiv, indtil du pauser den eller slår den fra',
         duration: 'Varighed',
         durationUnitMin: 'min',
@@ -9416,15 +14554,22 @@ const SETTINGS_TRANSLATIONS = {
         start: 'Start',
         days: 'Dage',
         add: 'Tilføj',
-        repeat: 'Gentag:',
+        repeat: 'Gentag ugeskema:',
         repeatNo: 'Nej',
         repeatForever: 'For evigt',
         repeatUntilDate: 'Indtil dato',
         pause: 'Pause',
         startBlockButton: 'Start blokering:',
         startScheduleButton: 'Start skema:',
-        stopScheduleButton: 'Stop skema:',
+        stopScheduleButton: 'Stop skema',
+        stopBlockMetaColon: ':',
+        stopScheduleMetaColon: ':',
         editScheduleButton: 'Rediger skema:',
+        pendingChangesLabel: 'Ikke-gemte ændringer',
+        pendingChangesSave: 'Gem ændringer',
+        pendingChangesDiscard: 'Kassér',
+        saveChangesTitle: 'Gem ændringer?',
+        addingTheseSegments: 'Tilføjer disse tidssegmenter:',
         // Blocklist modal
         createBlocklist: 'Opret blokliste',
         editBlocklist: 'Rediger blokliste',
@@ -9436,23 +14581,37 @@ const SETTINGS_TRANSLATIONS = {
         appsTooltip: 'Indtast det præcise navn på appen (fx "Safari"). Du kan også bruge mappeknappen til at finde appen.',
         overrideDifficulty: 'Sværhedsgrad',
         overrideRandomWords: 'Tilfældige ord',
-        overrideGibberish: 'Tilfældig gibberish',
+        overrideGibberish: 'Tilfældig volapyk',
         overrideCustomText: 'Egen tekst',
-        overrideMaxDifficulty: 'Maksimal sværhedsgrad',
+        overrideMaxDifficulty: 'Max sværhed',
         totalCharacters: 'tegn i alt',
+        overridePreviewTimeLine: 'Tager cirka {minutes} {unit} at taste og ser nogenlunde sådan her ud:',
         color: 'Farve',
         emoji: 'Emoji',
         advancedOptions: 'Avancerede indstillinger',
-        listBlockedOnCard: 'Vis blokerede websites og apps på kortet',
-        showInSchedule: 'Vis i skema',
+        listBlockedOnCard: 'Vis navnet på blokerede websites og apps i oversigten',
+        importWebsitesTitle: 'Importér websites',
+        browseApplicationsTitle: 'Gennemse programmer',
+        modalPremadeListsCaption: 'Færdiglavede lister',
+        modalBrowseAppsCaption: 'Vælg apps',
+        modalBrowseAppsTitleIos: 'Vælg apps (Screen Time)',
+        importWebsitesPickFileTitle: 'Vælg en fil med ét domæne pr. linje',
+        importWebsitesFromFile: 'Fra tekstfil…',
+        importWebsitesPreMadeList: 'Færdiglavet liste',
+        importPresetEmail: 'E-mail',
+        importPresetGambling: 'Spil',
+        importPresetNews: 'Nyheder',
+        importPresetPorn: 'Porno',
+        importPresetSearchEngines: 'Søgemaskiner',
+        importPresetShopping: 'Shopping',
+        importPresetSocialMedia: 'Sociale medier',
         cancel: 'Annuller',
         save: 'Gem',
         // Override / pause / confirmation modals
         overrideBlockTitle: 'Overstyr blokering?',
         overrideInstruction: 'For at annullere denne blokering tidligt, skriv følgende:',
-        scheduleOverrideJustThis: 'Kun denne blokering',
-        scheduleOverrideStop: 'Stop skema',
-        override: 'Overstyr',
+        stopBlock: 'Stop blokering',
+        stopSchedule: 'Stop skema',
         pauseBlockTitle: 'Sæt blokering på pause',
         pauseFor: 'PAUSE I',
         restartsAt: 'STARTER IGEN KL.',
@@ -9474,37 +14633,69 @@ const SETTINGS_TRANSLATIONS = {
         blockedApps: 'Blokerede apps:',
         showAll: 'vis alle',
         confirmDuration: 'Varighed:',
-        confirmOverrideNeed: 'For at annullere denne blokering tidligt skal du:',
+        confirmOverrideNeed: 'For at stoppe denne blokering tidligt skal du:',
         startBlock: 'Start blokering',
         resumeBlock: 'Genoptag blokering',
+        resumeThisBlock: 'Genoptag blokering?',
         alwaysUntilOff: 'Altid (indtil den slås fra)',
         scheduleResumingSegment: 'Skema (genoptager nuværende segment)',
         startThisSchedule: 'Start dette skema?',
-        repeatLabel: 'Gentag:',
-        confirmScheduleOverrideNeed: 'For at annullere blokeringer i dette skema skal du:',
+        repeatLabel: 'Gentag ugeskema:',
+        confirmScheduleOverrideNeed: 'For at stoppe dette blokeringsskema skal du:',
+        confirmOverrideRandomWordsFmt:
+            'Skrive {count} {charUnit}, vist som tilfældige ord, præcis som der står (~{minutes} min).',
+        confirmOverrideGibberishLettersFmt:
+            'Skrive {count} tilfældige tegn (bogstaver og tal), præcis som der står (~{minutes} min).',
+        confirmOverrideGibberishShortFmt:
+            'Skrive {count} tilfældige tegn præcis som der står (~{minutes} min).',
+        confirmOverrideCustomPhraseFmt:
+            'Skrive et bestemt udtryk på {count} tegn præcis som der står (~{minutes} min).',
         startSchedule: 'Start skema',
         noDaysSelected: 'Ingen dage valgt',
         runningSuffix: ' (Kører)',
         // Override all
         overrideAllTitle: 'Overstyr alle blokeringer?',
         overrideAllWarningStrong: 'Er du sikker på, at du vil stoppe alle aktive blokeringer?',
-        overrideAllWarningBody: 'Dette stopper ALLE nuværende blokeringer af websites og apps. Det stopper også alle fremtidige planlagte blokeringer.',
+        overrideAllWarningBody: 'Dette stopper ALLE nuværende blokeringer af websites og apps. Det stopper også alle skemalagte blokeringer.',
         overrideAllInstruction: 'For at gøre dette, skriv følgende:',
-        overrideAll: 'Overstyr alle',
+        overrideAll: 'Stop alle',
+        deleteUndoToastFmt: 'Slettet "{name}"',
         undo: 'Fortryd',
         // Settings
         settingsTitle: 'Indstillinger',
+        settingsDone: 'Færdig',
         yourVersionPrefix: 'Din version:',
         latestVersionPrefix: 'Nyeste version:',
-        lightDarkMode: 'Lys/mørk tilstand',
+        lightDarkMode: 'Lyst / mørkt tema',
         language: 'Sprog',
         themeAuto: 'Auto',
         themeLight: 'Lys',
         themeDark: 'Mørk',
         languageEnglish: 'Engelsk',
         languageDanish: 'Dansk',
-        overrideAllBlocks: 'Nødstop: Stop alle blokeringer og tidsplaner',
-        keepBlocking: 'Hold blokering aktiv, hvis appen afinstalleres',
+        languagePickerCurrent: 'Nuværende sprog',
+        languagePickerSwitch: 'Skift til',
+        overrideAllBlocks: 'Stop alle blokeringer (med udfordring)',
+        settingsOverrideAllLabel: 'Stop alle blokeringer og tidsplaner',
+        settingsOverrideAllBtn: 'Stop alle blokeringer',
+        // In-app uninstall (macOS only)
+        uninstallApp: 'Afinstaller ReDD Block',
+        uninstallAppBtn: 'Afinstaller\u2026',
+        uninstallDisabledHint: 'Stop kørende blokeringer først, før du kan afinstallere.',
+        uninstallConfirmTitle: 'Afinstaller ReDD Block?',
+        uninstallConfirmIntroHtml: 'ReDD Block flyttes til papirkurven. Sådan påvirkes {LOGO}<strong>ReDD Focus</strong>-browserudvidelserne på denne Mac.',
+        uninstallExtChromiumBadge: 'Forbliver installeret',
+        uninstallExtChromiumDetail: 'Fjern dem selv fra hver browsers udvidelsesindstillinger, hvis du ikke længere ønsker dem.',
+        uninstallExtChromiumDetailOne: 'Fjern den selv fra udvidelsesindstillingerne i {BROWSER}, hvis du ikke længere ønsker den.',
+        uninstallExtSafariBadge: 'Fjernes sammen med appen',
+        uninstallExtSafariDetail: 'Den selvstændige ReDD Focus Safari-app fra App Store, hvis du har den, påvirkes ikke.',
+        uninstallExtFirefoxBadge: 'Lås fjernet',
+        uninstallExtFirefoxDetail: 'Firefox afinstallerer normalt udvidelsen ved næste opstart. Hvis ikke, fjern den fra Firefox\u2019s udvidelsesindstillinger.',
+        uninstallFinderWarningHtml: 'Hvis macOS spørger, om ReDD Block må styre <strong>Finder</strong>, skal du klikke <strong>Tillad</strong> \u2014 det er sådan, appen flytter sig selv til papirkurven.',
+        uninstallDataKeptNote: 'Dine blokeringslister og skemaer bevares på harddisken, så de kan gendannes, hvis du geninstallerer senere.',
+        uninstallConfirmOk: 'Afinstaller',
+        uninstallFailedTitle: 'Afinstallation mislykkedes',
+        uninstallFailed: 'Kunne ikke gennemføre afinstallation.',
         helperService: 'Hjælper',
         helperStatusChecking: 'Tjekker...',
         helperStatusActive: 'Aktiv',
@@ -9526,17 +14717,510 @@ const SETTINGS_TRANSLATIONS = {
         // Time/date words
         dayAbbrev: ['Søn', 'Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør'],
         dayAbbrevMon0: ['Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør', 'Søn'],
+        dayLetterMon0: ['M', 'T', 'O', 'T', 'F', 'L', 'S'],
         locale: 'da-DK',
+        blocklistDuplicateSuffix: 'kopi',
     },
 };
 
 function getSettingsLanguage() {
-    return appData.settings?.language === 'da' ? 'da' : 'en';
+    const saved = appData.settings?.language;
+    if (saved === 'da' || saved === 'en') return saved;
+    try {
+        return navigator.language.toLowerCase().startsWith('da') ? 'da' : 'en';
+    } catch (_) {
+        return 'en';
+    }
+}
+
+/** Abbreviated weekday labels for internal Mon..Sun indexing (Mon=0..Sun=6). */
+function weekdayAbbrevMon0List() {
+    const lang = getSettingsLanguage();
+    const row = SETTINGS_TRANSLATIONS[lang]?.dayAbbrevMon0;
+    if (Array.isArray(row) && row.length === 7) return row;
+    return SETTINGS_TRANSLATIONS.en.dayAbbrevMon0;
+}
+
+/** Single-letter weekday labels (Mon=0..Sun=6) for compact iOS schedule day toggles. */
+function weekdayLetterMon0List() {
+    const lang = getSettingsLanguage();
+    const row = SETTINGS_TRANSLATIONS[lang]?.dayLetterMon0;
+    if (Array.isArray(row) && row.length === 7) return row;
+    return SETTINGS_TRANSLATIONS.en.dayLetterMon0;
+}
+
+const IOS_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH = 1024;
+let iosCompactScheduleDayLabelsActive = null;
+
+/** Smaller iOS viewports, including iPad portrait, use single-letter day pills from first render. */
+function shouldUseCompactIosScheduleDayLabels() {
+    if (!document.body.classList.contains('ios')) return false;
+    const viewportWidth = Math.round(
+        window.visualViewport?.width
+        || window.innerWidth
+        || document.documentElement?.clientWidth
+        || 0
+    );
+    return viewportWidth > 0 && viewportWidth <= IOS_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH;
+}
+
+function syncIosScheduleDayLabelsViewportMode() {
+    if (!document.body.classList.contains('ios')) return;
+    const nextCompact = shouldUseCompactIosScheduleDayLabels();
+    if (nextCompact === iosCompactScheduleDayLabelsActive) return;
+    iosCompactScheduleDayLabelsActive = nextCompact;
+
+    const schedulePanel = document.getElementById('schedule-block-panel');
+    if (isScheduleMode && schedulePanel && !schedulePanel.classList.contains('hidden')) {
+        rebuildScheduleSegments();
+    }
 }
 
 function tSettings(key) {
     const lang = getSettingsLanguage();
     return SETTINGS_TRANSLATIONS[lang][key] || SETTINGS_TRANSLATIONS.en[key] || key;
+}
+
+/** Replace `{placeholder}` segments in a translated template string. */
+function tSettingsFmt(key, vars = {}) {
+    let s = tSettings(key);
+    for (const [k, v] of Object.entries(vars)) {
+        s = String(s).split(`{${k}}`).join(String(v));
+    }
+    return s;
+}
+
+const LANGUAGE_FLAG_SVG = {
+    en: '<svg class="language-flag-svg" viewBox="0 0 60 40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="#012169" d="M0 0h60v40H0z"/><path stroke="#FFF" stroke-width="8" d="M0 0l60 40M60 0L0 40"/><path stroke="#C8102E" stroke-width="5" d="M0 0l60 40M60 0L0 40"/><path stroke="#FFF" stroke-width="12" d="M30 0v40M0 20h60"/><path stroke="#C8102E" stroke-width="7" d="M30 0v40M0 20h60"/></svg>',
+    da: '<svg class="language-flag-svg" viewBox="0 0 37 28" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect width="37" height="28" fill="#C8102E" rx="2"/><rect x="13" y="0" width="4" height="28" fill="#fff"/><rect x="0" y="12" width="37" height="4" fill="#fff"/></svg>',
+};
+
+function setLanguagePickerOpen(open) {
+    const dd = document.getElementById('language-picker-dropdown');
+    const tr = document.getElementById('language-picker-trigger');
+    if (!dd || !tr) return;
+    if (open) {
+        dd.classList.remove('hidden');
+        tr.setAttribute('aria-expanded', 'true');
+    } else {
+        dd.classList.add('hidden');
+        tr.setAttribute('aria-expanded', 'false');
+    }
+}
+
+function syncLanguagePickerUI() {
+    const lang = getSettingsLanguage();
+    const other = lang === 'da' ? 'en' : 'da';
+    const triggerFlag = document.getElementById('language-picker-trigger-flag');
+    const triggerCode = document.getElementById('language-picker-trigger-code');
+    const currentName = document.getElementById('language-picker-current-name');
+    const currentFlag = document.getElementById('language-picker-current-flag');
+    const switchName = document.getElementById('language-picker-switch-name');
+    const switchFlag = document.getElementById('language-picker-switch-flag');
+    const curLabel = document.getElementById('language-picker-current-label');
+    const swLabel = document.getElementById('language-picker-switch-label');
+
+    if (triggerCode) {
+        triggerCode.textContent =
+            lang === 'da' ? tSettings('languageDanish') : tSettings('languageEnglish');
+    }
+    if (triggerFlag) triggerFlag.innerHTML = LANGUAGE_FLAG_SVG[lang] || '';
+    if (currentFlag) currentFlag.innerHTML = LANGUAGE_FLAG_SVG[lang] || '';
+    if (switchFlag) switchFlag.innerHTML = LANGUAGE_FLAG_SVG[other] || '';
+
+    const curLabelText = lang === 'da' ? tSettings('languageDanish') : tSettings('languageEnglish');
+    const othLabelText = other === 'da' ? tSettings('languageDanish') : tSettings('languageEnglish');
+    if (currentName) currentName.textContent = curLabelText;
+    if (switchName) switchName.textContent = othLabelText;
+    if (curLabel) curLabel.textContent = tSettings('languagePickerCurrent');
+    if (swLabel) swLabel.textContent = tSettings('languagePickerSwitch');
+}
+
+let languagePickerDocClickBound = false;
+
+function setupLanguagePicker() {
+    const picker = document.getElementById('language-picker');
+    const trigger = document.getElementById('language-picker-trigger');
+    const dd = document.getElementById('language-picker-dropdown');
+    const switchBtn = document.getElementById('language-picker-switch-btn');
+    if (!picker || !trigger || !dd || !switchBtn) return;
+    if (picker.dataset.bound === '1') return;
+    picker.dataset.bound = '1';
+
+    trigger.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const isOpen = trigger.getAttribute('aria-expanded') === 'true';
+        setLanguagePickerOpen(!isOpen);
+    });
+
+    dd.addEventListener('click', (e) => e.stopPropagation());
+
+    switchBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const cur = getSettingsLanguage();
+        const next = cur === 'da' ? 'en' : 'da';
+        if (!appData.settings) appData.settings = {};
+        appData.settings.language = next;
+        applySettingsLanguage();
+        saveData();
+        if (!isIOS) void refreshBehaviourBannerIfStale({ force: true });
+        setLanguagePickerOpen(false);
+    });
+
+    if (!languagePickerDocClickBound) {
+        languagePickerDocClickBound = true;
+        document.addEventListener('click', () => {
+            setLanguagePickerOpen(false);
+        });
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        if (trigger.getAttribute('aria-expanded') === 'true') setLanguagePickerOpen(false);
+    });
+}
+
+/** Confirmation modals — describe typing challenge count + time estimate */
+function formatConfirmModalOverrideTypingLine({ type, count, estimatedMinutes, resumeShortGibberish = false }) {
+    const minutes = estimatedMinutes;
+    const charUnitDa = 'tegn';
+    const charUnitEn = count === 1 ? 'character' : 'characters';
+    const charUnit = getSettingsLanguage() === 'da' ? charUnitDa : charUnitEn;
+
+    if (type === 'custom') {
+        return tSettingsFmt('confirmOverrideCustomPhraseFmt', { count, minutes });
+    }
+    if (type === 'gibberish') {
+        if (resumeShortGibberish) {
+            return tSettingsFmt('confirmOverrideGibberishShortFmt', { count, minutes });
+        }
+        return tSettingsFmt('confirmOverrideGibberishLettersFmt', { count, charUnit, minutes });
+    }
+    return tSettingsFmt('confirmOverrideRandomWordsFmt', { count, charUnit, minutes });
+}
+
+/** Static copy on the migration / extension-setup overlay — call when language changes. */
+function applyMigrationOverlayStaticCopy() {
+    const setHtml = (id, html) => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = html;
+    };
+    const setText = (id, text) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+    };
+    setText('migration-pre-title', tSettings('migrationPreWelcomeTitle'));
+    setText('migration-pre-subtitle', tSettings('migrationPreSubtitle'));
+    setHtml('migration-pre-explainer', tSettings('migrationPreExplainerHtml'));
+    setText('migration-pre-bullet-1', tSettings('migrationPreBulletHelper'));
+    setHtml('migration-pre-bullet-2', tSettings('migrationPreBulletHostsHtml'));
+    setText('migration-pre-bullet-3', tSettings('migrationPreBulletBlocklists'));
+    setHtml('migration-pre-warn', tSettings('migrationPreWarnHtml'));
+    setText('migration-checklist-cleaned-label', tSettings('migrationChecklistCleanedOld'));
+    setText('migration-checklist-blocks-label', tSettings('migrationChecklistBlocklistsPreserved'));
+    const focusLogoHtml =
+        `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
+    setHtml(
+        'migration-checklist-ext-lines',
+        tSettings('migrationChecklistExtLinesHtml').replace('{LOGO}', focusLogoHtml),
+    );
+    setText('migration-howto-title', tSettings('migrationHowtoHeading'));
+    setHtml('migration-howto-li1', tSettings('migrationHowtoLi1Html'));
+    setHtml('migration-howto-li3', tSettings('migrationHowtoLi3Html'));
+    setText('migration-done-btn', tSettings('migrationDone'));
+    setText('migration-skip-btn', tSettings('migrationSkip'));
+    setText('migration-back-btn', tSettings('eulaBackBtn'));
+    syncMigrationPostBackButtonVisibility();
+    setText('enforcement-toggle-headline-text', tSettings('migrationEnforcementHeadline'));
+    setText('enforcement-toggle-desc-text', tSettings('migrationEnforcementDesc'));
+    setText('enforcement-toggle-disable-note-text', tSettings('migrationEnforcementDisableNote'));
+    void updateAllEnforcementToggleLocks();
+    setText('settings-enforcement-heading', tSettings('settingsEnforcementHeading'));
+    setText('settings-enforcement-toggle-headline-text', tSettings('migrationEnforcementHeadline'));
+    setText('settings-enforcement-toggle-desc-text', tSettings('settingsEnforcementDesc'));
+    const continueBtn = document.getElementById('migration-continue-btn');
+    if (continueBtn && !continueBtn.disabled) {
+        continueBtn.textContent = tSettings('migrationContinue');
+    }
+    setText('migration-post-title', tSettings('migrationPostTitleCleanup'));
+    setText('migration-post-subtitle', tSettings('migrationPostSubtitleCleanup'));
+}
+
+/** First-run EULA screen — localized from current UI language / saved preference / browser locale (da). */
+function applyEulaOnboardingLanguage() {
+    const shieldLogo = document.getElementById('eula-onboarding-shield-logo');
+    if (shieldLogo) {
+        shieldLogo.src = logoReddShieldUrl;
+        shieldLogo.alt = '';
+    }
+
+    const heading = document.getElementById('eula-welcome-title');
+    if (heading) heading.textContent = tSettings('welcomeOnboardingTitle');
+
+    const subtitle = document.getElementById('eula-onboarding-subtitle');
+    if (subtitle) subtitle.textContent = tSettings('welcomeOnboardingSubtitle');
+
+    const agreeInner = document.getElementById('eula-agree-line-inner');
+    if (agreeInner) agreeInner.innerHTML = tSettings('eulaAgreeLineHtml');
+
+    const note = document.getElementById('eula-note');
+    if (note) note.innerHTML = tSettings('eulaNoteHtml');
+
+    const footer1 = document.getElementById('eula-onboarding-footer-1');
+    if (footer1) footer1.innerHTML = tSettings('welcomeFooter1Html');
+
+    const footer2 = document.getElementById('eula-onboarding-footer-2');
+    if (footer2) footer2.innerHTML = tSettings('welcomeFooter2Html');
+
+    const cb = document.getElementById('eula-agree-checkbox');
+    if (cb) cb.setAttribute('aria-label', tSettings('eulaAgreeAria'));
+
+    const continueBtn = document.getElementById('eula-continue-btn');
+    if (continueBtn) continueBtn.textContent = tSettings('eulaContinueBtn');
+
+    const backBtn = document.getElementById('eula-back-btn');
+    if (backBtn) {
+        backBtn.textContent = tSettings('eulaBackBtn');
+        backBtn.classList.toggle('hidden', isIOS);
+    }
+}
+
+/** Welcome onboarding screen — localized in the same way as the EULA screen. */
+function applyWelcomeOnboardingLanguage() {
+    const shieldLogo = document.getElementById('welcome-onboarding-shield-logo');
+    if (shieldLogo) {
+        shieldLogo.src = logoReddShieldUrl;
+        shieldLogo.alt = '';
+    }
+
+    const heading = document.getElementById('welcome-onboarding-title');
+    if (heading) heading.textContent = tSettings('welcomeOnboardingTitle');
+
+    const subtitle = document.getElementById('welcome-onboarding-subtitle');
+    if (subtitle) subtitle.textContent = tSettings('welcomeOnboardingSubtitle');
+
+    const howHeading = document.getElementById('welcome-how-heading');
+    if (howHeading) howHeading.textContent = tSettings('welcomeHowHeading');
+
+    const focusLogoHtml =
+        `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
+    const appleLogoHtml =
+        `<img src="${appleLogoUrl}" alt="" class="welcome-apple-inline-logo" aria-hidden="true"> `;
+
+    const stepFda = document.getElementById('welcome-step-fda');
+    if (stepFda) stepFda.classList.toggle('hidden', !isMacOSDesktop);
+
+    const step1Title = document.getElementById('welcome-step-1-title');
+    if (step1Title) {
+        step1Title.innerHTML = tSettings('welcomeStep1TitleHtml').replace('{APPLE}', appleLogoHtml);
+    }
+    const step1Body = document.getElementById('welcome-step-1-body');
+    if (step1Body) step1Body.innerHTML = tSettings('welcomeStep1BodyHtml');
+
+    const step2Title = document.getElementById('welcome-step-2-title');
+    if (step2Title) step2Title.textContent = tSettings('welcomeStep2TitleHtml');
+    const step2Body = document.getElementById('welcome-step-2-body');
+    if (step2Body) {
+        step2Body.innerHTML = tSettings('welcomeStep2BodyHtml').replace('{LOGO}', focusLogoHtml);
+    }
+
+    const step3Title = document.getElementById('welcome-step-3-title');
+    if (step3Title) step3Title.textContent = tSettings('welcomeStep3TitleHtml');
+    const step3Body = document.getElementById('welcome-step-3-body');
+    if (step3Body) step3Body.innerHTML = tSettings('welcomeStep3BodyHtml');
+
+    document.querySelectorAll('#welcome-onboarding .welcome-step:not(.hidden) .welcome-step-num').forEach((num, i) => {
+        num.textContent = String(i + 1);
+    });
+
+    const demoToggleLabel = document.getElementById('welcome-demo-toggle-label');
+    if (demoToggleLabel) demoToggleLabel.textContent = tSettings('welcomeDemoToggleLabel');
+
+    const demoCaption = document.getElementById('welcome-demo-video-caption');
+    if (demoCaption) demoCaption.textContent = tSettings('welcomeDemoVideoCaption');
+
+    const demoPlayBtn = document.getElementById('welcome-demo-play-btn');
+    syncWelcomeDemoPlayLabel();
+
+    const closeLabel = document.getElementById('welcome-demo-close-label');
+    if (closeLabel) closeLabel.textContent = tSettings('welcomeDemoCloseLabel');
+    const closeBtn = document.getElementById('welcome-demo-close-btn');
+    if (closeBtn) closeBtn.setAttribute('aria-label', tSettings('welcomeDemoCloseLabel'));
+
+    syncWelcomeDemoFullscreenLabel();
+
+    const demoVideo = document.getElementById('welcome-demo-video');
+    if (demoVideo && !demoVideo.src) {
+        demoVideo.src = welcomeDemoVideoUrl;
+    }
+
+    const continueBtn = document.getElementById('welcome-onboarding-continue-btn');
+    if (continueBtn) continueBtn.textContent = tSettings('welcomeOnboardingContinueBtn');
+
+    const footer1 = document.getElementById('welcome-onboarding-footer-1');
+    if (footer1) footer1.innerHTML = tSettings('welcomeFooter1Html');
+
+    const footer2 = document.getElementById('welcome-onboarding-footer-2');
+    if (footer2) footer2.innerHTML = tSettings('welcomeFooter2Html');
+}
+
+function isWelcomeDemoVideoExpanded() {
+    return document.getElementById('welcome-demo-video-wrap')?.classList.contains('welcome-demo-video-wrap--expanded') ?? false;
+}
+
+function setWelcomeDemoVideoExpanded(expanded) {
+    const wrap = document.getElementById('welcome-demo-video-wrap');
+    const fullscreenBtn = document.getElementById('welcome-demo-fullscreen-btn');
+    const closeBtn = document.getElementById('welcome-demo-close-btn');
+    if (!wrap) return;
+    wrap.classList.toggle('welcome-demo-video-wrap--expanded', expanded);
+    fullscreenBtn?.toggleAttribute('hidden', expanded);
+    closeBtn?.toggleAttribute('hidden', !expanded);
+    syncWelcomeDemoFullscreenLabel();
+}
+
+function syncWelcomeDemoFullscreenLabel() {
+    const fullscreenBtn = document.getElementById('welcome-demo-fullscreen-btn');
+    if (!fullscreenBtn) return;
+    fullscreenBtn.setAttribute(
+        'aria-label',
+        tSettings(isWelcomeDemoVideoExpanded() ? 'welcomeDemoFullscreenExitAriaLabel' : 'welcomeDemoFullscreenEnterAriaLabel'),
+    );
+}
+
+function syncWelcomeDemoPlayLabel() {
+    const playBtn = document.getElementById('welcome-demo-play-btn');
+    const video = document.getElementById('welcome-demo-video');
+    if (!playBtn || !video) return;
+    const labelKey = video.paused
+        ? (video.currentTime > 0 ? 'welcomeDemoResumeAriaLabel' : 'welcomeDemoPlayAriaLabel')
+        : 'welcomeDemoPauseAriaLabel';
+    playBtn.setAttribute('aria-label', tSettings(labelKey));
+}
+
+function syncWelcomeDemoVideoCaption() {
+    const caption = document.getElementById('welcome-demo-video-caption');
+    const video = document.getElementById('welcome-demo-video');
+    if (!caption || !video) return;
+    caption.classList.toggle('hidden', !video.paused);
+}
+
+function toggleWelcomeDemoPlayback(video) {
+    if (video.paused) {
+        video.play().catch(() => {});
+    } else {
+        video.pause();
+    }
+}
+
+function resetWelcomeDemoPanel() {
+    const toggle = document.getElementById('welcome-demo-toggle');
+    const panel = document.getElementById('welcome-demo-panel');
+    const video = document.getElementById('welcome-demo-video');
+    const playBtn = document.getElementById('welcome-demo-play-btn');
+    setWelcomeDemoVideoExpanded(false);
+    if (toggle) {
+        toggle.classList.remove('open');
+        toggle.setAttribute('aria-expanded', 'false');
+    }
+    if (panel) panel.classList.add('hidden');
+    if (video) {
+        video.pause();
+        video.currentTime = 0;
+    }
+    if (playBtn) playBtn.classList.remove('hidden');
+    syncWelcomeDemoVideoCaption();
+}
+
+function initWelcomeDemoControls() {
+    const toggle = document.getElementById('welcome-demo-toggle');
+    const panel = document.getElementById('welcome-demo-panel');
+    const videoWrap = document.getElementById('welcome-demo-video-wrap');
+    const video = document.getElementById('welcome-demo-video');
+    const playBtn = document.getElementById('welcome-demo-play-btn');
+    const fullscreenBtn = document.getElementById('welcome-demo-fullscreen-btn');
+    const closeBtn = document.getElementById('welcome-demo-close-btn');
+    if (!toggle || !panel || !video || !playBtn) return;
+
+    toggle.addEventListener('click', () => {
+        const isOpen = toggle.classList.toggle('open');
+        toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        panel.classList.toggle('hidden', !isOpen);
+        if (!isOpen) {
+            setWelcomeDemoVideoExpanded(false);
+            video.pause();
+            video.currentTime = 0;
+            playBtn.classList.remove('hidden');
+        }
+    });
+
+    playBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        toggleWelcomeDemoPlayback(video);
+    });
+
+    fullscreenBtn?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        setWelcomeDemoVideoExpanded(true);
+    });
+
+    closeBtn?.addEventListener('click', (event) => {
+        event.stopPropagation();
+        setWelcomeDemoVideoExpanded(false);
+    });
+
+    let demoClickTimer = null;
+    video.addEventListener('click', () => {
+        if (demoClickTimer) clearTimeout(demoClickTimer);
+        demoClickTimer = setTimeout(() => {
+            demoClickTimer = null;
+            toggleWelcomeDemoPlayback(video);
+        }, 220);
+    });
+
+    video.addEventListener('dblclick', (event) => {
+        event.preventDefault();
+        if (demoClickTimer) {
+            clearTimeout(demoClickTimer);
+            demoClickTimer = null;
+        }
+        if (isWelcomeDemoVideoExpanded()) {
+            setWelcomeDemoVideoExpanded(false);
+        } else {
+            setWelcomeDemoVideoExpanded(true);
+        }
+    });
+
+    window.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && isWelcomeDemoVideoExpanded()) {
+            event.preventDefault();
+            setWelcomeDemoVideoExpanded(false);
+        }
+    }, true);
+
+    videoWrap?.addEventListener('click', (event) => {
+        if (!isWelcomeDemoVideoExpanded() || event.target !== videoWrap) return;
+        setWelcomeDemoVideoExpanded(false);
+    });
+
+    video.addEventListener('play', () => {
+        playBtn.classList.add('hidden');
+        syncWelcomeDemoPlayLabel();
+        syncWelcomeDemoVideoCaption();
+    });
+    video.addEventListener('pause', () => {
+        if (video.currentTime < video.duration) playBtn.classList.remove('hidden');
+        syncWelcomeDemoPlayLabel();
+        syncWelcomeDemoVideoCaption();
+    });
+    video.addEventListener('ended', () => {
+        playBtn.classList.remove('hidden');
+        video.currentTime = 0;
+        syncWelcomeDemoPlayLabel();
+        syncWelcomeDemoVideoCaption();
+    });
 }
 
 function websiteWord(count) {
@@ -9554,19 +15238,39 @@ function formatLatestVersionText(version) {
     return `${tSettings('latestVersionPrefix')} ${version || 'Unknown'}`;
 }
 
+/** Blocklist modal: show example placeholder only when there are no website tags yet. */
+function syncModalWebsitePlaceholder() {
+    const el = document.getElementById('modal-website-input');
+    if (!el) return;
+    const list = window.modalWebsites;
+    el.placeholder =
+        Array.isArray(list) && list.length > 0 ? '' : tSettings('placeholderWebsiteExample');
+}
+
 function applySettingsLanguage() {
     const setText = (id, text) => {
         const el = document.getElementById(id);
         if (el) el.textContent = text;
+    };
+    const setHtml = (id, html) => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = html;
     };
 
     // Main shell / scheduler
     setText('update-banner-prefix', tSettings('updateBannerPrefix'));
     setText('update-banner-suffix', tSettings('updateBannerSuffix'));
     setText('update-banner-link', tSettings('updateBannerCta'));
+    setText('setup-banner-headline', tSettings('setupBrowsersBannerHeadline'));
+    setText('behaviour-change-fda', tSettings('setupBannerFdaCta'));
+    setText('behaviour-change-help', tSettings('setupBrowsersBannerCta'));
+    const behaviourDismissBtn = document.getElementById('behaviour-change-dismiss');
+    if (behaviourDismissBtn) {
+        behaviourDismissBtn.title = tSettings('setupBrowsersBannerDismissTitle');
+    }
     setText('main-start-block-title', tSettings('mainStartBlockTitle'));
-    setText('instant-mode-tab', tSettings('modeNow'));
-    setText('schedule-mode-tab', tSettings('modeSchedule'));
+    setText('instant-mode-tab-label', tSettings('modeNow'));
+    setText('schedule-mode-tab-label', tSettings('modeSchedule'));
     setText('selection-prompt-label', tSettings('selectionPrompt'));
     const blocklistSelect = document.getElementById('blocklist-select');
     if (blocklistSelect && blocklistSelect.options.length > 0) {
@@ -9574,10 +15278,15 @@ function applySettingsLanguage() {
     }
     setText('main-blocklists-title', tSettings('yourBlocklists'));
     setText('main-schedule-title', tSettings('scheduleTitle'));
-    setText('today-btn', tSettings('today'));
     setText('no-active-blocks-label', tSettings('noActiveBlocks'));
-    setText('duration-mode-always-label', tSettings('durationModeAlways'));
-    setText('duration-mode-timed-label', tSettings('durationModeTimed'));
+    setText('always-on-row-label-lead', tSettings('alwaysOnRowLead'));
+    setText(
+        'always-on-row-label-hint',
+        ` (${tSettings('alwaysOnRowTimelineHint')}):`
+    );
+    setText('now-blocking-label-text', tSettings('nowBlockingLabel'));
+    setText('schedule-footer-hint', tSettings('scheduleFooterHint'));
+    setText('duration-quick-btn-always-label', tSettings('durationQuickAlways'));
     setText('always-on-message-text', tSettings('alwaysOnMessage'));
     setText('duration-label', tSettings('duration'));
     setText('duration-unit-label', tSettings('durationUnitMin'));
@@ -9601,8 +15310,8 @@ function applySettingsLanguage() {
         else repeatDropdownText.textContent = tSettings('repeatNo');
     }
     setText('pause-btn-label', tSettings('pause'));
-    setText('start-block-btn-label', tSettings('startBlockButton'));
-    setText('start-schedule-btn-label', tSettings('startScheduleButton'));
+    setBtnActionLabel(document.getElementById('start-block-btn-label'), tSettings('startBlockButton'));
+    setBtnActionLabel(document.getElementById('start-schedule-btn-label'), tSettings('startScheduleButton'));
     setText('footer-made-with', tSettings('madeWith'));
     setText('footer-by', tSettings('by'));
     const setPlaceholder = (id, text) => {
@@ -9610,8 +15319,8 @@ function applySettingsLanguage() {
         if (el) el.placeholder = text;
     };
     setPlaceholder('blocklist-name', tSettings('placeholderNameExample'));
-    setPlaceholder('modal-website-input', tSettings('placeholderWebsiteExample'));
     setPlaceholder('modal-app-input', tSettings('placeholderAppExample'));
+    syncModalWebsitePlaceholder();
     setPlaceholder('challenge-input', tSettings('typeHere'));
     setPlaceholder('pause-challenge-input', tSettings('typeHere'));
     setPlaceholder('override-all-challenge-input', tSettings('typeHere'));
@@ -9634,32 +15343,47 @@ function applySettingsLanguage() {
     setText('override-option-custom', tSettings('overrideCustomText'));
     setText('override-max-difficulty-label', tSettings('overrideMaxDifficulty'));
     setText('override-total-characters-label', tSettings('totalCharacters'));
-    setText('blocklist-color-label', tSettings('color'));
     setText('blocklist-emoji-label', tSettings('emoji'));
+    setText('blocklist-color-label', tSettings('color'));
     setText('blocklist-advanced-options-label', tSettings('advancedOptions'));
     setText('show-item-details-label', tSettings('listBlockedOnCard'));
-    setText('always-show-in-schedule-label', tSettings('showInSchedule'));
+    setText('websites-import-menu-text-file-label', tSettings('importWebsitesFromFile'));
+    setText('websites-import-menu-section-label', tSettings('importWebsitesPreMadeList'));
+    setText('websites-import-menu-email', tSettings('importPresetEmail'));
+    setText('websites-import-menu-gambling', tSettings('importPresetGambling'));
+    setText('websites-import-menu-news', tSettings('importPresetNews'));
+    setText('websites-import-menu-porn', tSettings('importPresetPorn'));
+    setText('websites-import-menu-search-engines', tSettings('importPresetSearchEngines'));
+    setText('websites-import-menu-shopping', tSettings('importPresetShopping'));
+    setText('websites-import-menu-social-media', tSettings('importPresetSocialMedia'));
+    const importWebsitesBtn = document.getElementById('modal-import-websites-btn');
+    if (importWebsitesBtn) {
+        importWebsitesBtn.title = tSettings('importWebsitesTitle');
+        importWebsitesBtn.setAttribute('aria-label', tSettings('importWebsitesTitle'));
+    }
+    setText('modal-import-websites-caption', tSettings('modalPremadeListsCaption'));
+    setText('modal-browse-apps-caption', tSettings('modalBrowseAppsCaption'));
+    const modalBrowseAppsBtn = document.getElementById('modal-browse-apps-btn');
+    if (modalBrowseAppsBtn) {
+        const ios = document.body.classList.contains('ios');
+        const browseTitle = ios ? tSettings('modalBrowseAppsTitleIos') : tSettings('browseApplicationsTitle');
+        modalBrowseAppsBtn.title = browseTitle;
+        modalBrowseAppsBtn.setAttribute('aria-label', browseTitle);
+    }
     setText('cancel-blocklist-btn', tSettings('cancel'));
     setText('save-blocklist-btn', tSettings('save'));
 
     // Modal copy
     setText('override-modal-title', tSettings('overrideBlockTitle'));
     setText('override-modal-instruction', tSettings('overrideInstruction'));
-    setText('schedule-override-just-this-label', tSettings('scheduleOverrideJustThis'));
-    setText('schedule-override-stop-label', tSettings('scheduleOverrideStop'));
     setText('cancel-override-btn', tSettings('cancel'));
-    setText('confirm-override-btn', tSettings('override'));
+    setText('confirm-override-btn', tSettings('stopBlock'));
     setText('pause-modal-title', tSettings('pauseBlockTitle'));
     setText('pause-for-label', tSettings('pauseFor'));
     setText('pause-restarts-at-label', tSettings('restartsAt'));
     setText('pause-modal-instruction', tSettings('pauseInstruction'));
     setText('cancel-pause-btn', tSettings('cancel'));
     setText('confirm-pause-btn', tSettings('pause'));
-    setText('helper-setup-required-title', tSettings('helperSetupTitle'));
-    setText('helper-setup-required-text', tSettings('helperSetupText'));
-    setText('helper-open-source-link', tSettings('helperOpenSourceLink'));
-    setText('cancel-helper-install-btn', tSettings('cancel'));
-    setText('proceed-helper-install-btn', tSettings('proceed'));
     setText('start-block-confirm-title', tSettings('startThisBlock'));
     setText('confirm-blocked-websites-label', tSettings('blockedWebsites'));
     setText('confirm-blocked-apps-label', tSettings('blockedApps'));
@@ -9680,6 +15404,10 @@ function applySettingsLanguage() {
     setText('cancel-schedule-confirm-btn', tSettings('cancel'));
     setText('proceed-schedule-confirm-btn', tSettings('startSchedule'));
     setText('undo-toast-btn', tSettings('undo'));
+    const undoToastMsg = document.getElementById('undo-toast-message');
+    if (undoToastMsg && pendingDelete?.blocklist) {
+        undoToastMsg.textContent = tSettingsFmt('deleteUndoToastFmt', { name: pendingDelete.blocklist.name });
+    }
     setText('override-all-title', tSettings('overrideAllTitle'));
     setText('override-all-warning-strong', tSettings('overrideAllWarningStrong'));
     setText('override-all-warning-body', tSettings('overrideAllWarningBody'));
@@ -9692,20 +15420,45 @@ function applySettingsLanguage() {
     setText('settings-modal-title', tSettings('settingsTitle'));
     setText('settings-theme-label', tSettings('lightDarkMode'));
     setText('settings-language-label', tSettings('language'));
+    syncLanguagePickerUI();
     setText('theme-option-system', tSettings('themeAuto'));
     setText('theme-option-light', tSettings('themeLight'));
     setText('theme-option-dark', tSettings('themeDark'));
-    setText('language-option-en', tSettings('languageEnglish'));
-    setText('language-option-da', tSettings('languageDanish'));
-    setText('settings-advanced-options-label', tSettings('advancedOptions'));
-    setText('settings-override-all-label', tSettings('overrideAllBlocks'));
-    setText('settings-keep-blocking-label', tSettings('keepBlocking'));
+    setText('settings-override-all-label', tSettings('settingsOverrideAllLabel'));
+    setText('settings-override-all-btn-label', tSettings('settingsOverrideAllBtn'));
+    setText('settings-uninstall-label', tSettings('uninstallApp'));
+    setText('settings-uninstall-btn-label', tSettings('uninstallAppBtn'));
+    setText('settings-diagnostics-label', tSettings('settingsDiagnosticsLabel'));
+    setText('settings-diagnostics-btn-label', tSettings('settingsDiagnosticsBtn'));
+    setText('diagnostics-modal-title', tSettings('diagnosticsModalTitle'));
+    setText('diagnostics-copy-btn-label', tSettings('diagnosticsCopyReport'));
+    setText('close-diagnostics-btn', tSettings('close'));
+    setText('settings-onboarding-label', tSettings('settingsOnboardingLabel'));
+    setText('settings-onboarding-btn-label', tSettings('settingsOnboardingBtn'));
+    setText('uninstall-confirm-title', tSettings('uninstallConfirmTitle'));
+    setHtml('uninstall-confirm-intro', tSettings('uninstallConfirmIntroHtml').replace(
+        '{LOGO}',
+        `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `,
+    ));
+    setHtml('uninstall-finder-warning-text', tSettings('uninstallFinderWarningHtml'));
+    setText('uninstall-data-kept-text', tSettings('uninstallDataKeptNote'));
+    setText('cancel-uninstall-confirm-btn', tSettings('cancel'));
+    setText('confirm-uninstall-confirm-btn', tSettings('uninstallConfirmOk'));
+    // The hint paragraph and button tooltip need re-translation too —
+    // refreshUninstallButtonState reads from tSettings() and rewrites
+    // both. Cheap to call unconditionally.
+    refreshUninstallButtonState();
+    updateOverrideAllButtonVisibility();
+    void updateAllEnforcementToggleLocks();
     setText('settings-helper-service-label', tSettings('helperService'));
     setText('settings-update-helper-label', tSettings('updateHelper'));
     setText('settings-clean-hosts-label', tSettings('cleanHostsFile'));
     setText('settings-helper-hint', tSettings('helperHint'));
-    setText('close-settings-btn', tSettings('close'));
-
+    setText('close-settings-btn', tSettings('settingsDone'));
+    setText('grace-period-label-text', tSettings('gracePeriodLabel'));
+    setText('app-blocking-lets-go-btn', tSettings('appBlockingLetsGo'));
+    setHtml('settings-feedback-footer-text', tSettings('settingsFeedbackFooterHtml'));
+    updateGraceSettingLock();
     const currentVersionEl = document.getElementById('current-app-version');
     if (currentVersionEl) {
         const raw = currentVersionEl.textContent || '';
@@ -9744,11 +15497,42 @@ function applySettingsLanguage() {
         if (statusMap[raw]) helperStatusText.textContent = statusMap[raw];
     }
 
+    applyMigrationOverlayStaticCopy();
+    applyEulaOnboardingLanguage();
+    applyWelcomeOnboardingLanguage();
+
+    const fdaShieldLogo = document.getElementById('fda-onboarding-shield-logo');
+    if (fdaShieldLogo) {
+        fdaShieldLogo.src = logoReddShieldUrl;
+        fdaShieldLogo.alt = '';
+    }
+
+    const fdaScreenshot = document.getElementById('fda-onboarding-screenshot');
+    if (fdaScreenshot) fdaScreenshot.src = screenshotEnableFda;
+
+    const fdaBackBtn = document.getElementById('fda-onboarding-back-btn');
+    if (fdaBackBtn) fdaBackBtn.textContent = tSettings('eulaBackBtn');
+    const fdaWhyEl = document.getElementById('fda-onboarding-why');
+    if (fdaWhyEl && !activeFdaOnboardingSession) {
+        fdaWhyEl.innerHTML = tSettings('fdaOnboardingWhyHtml');
+    }
+    if (activeFdaOnboardingSession) {
+        void syncFdaOnboardingGrantButton();
+    }
+    if (migrationOnboardingActive && lastMigrationBrowserState) {
+        renderBrowserInstallButtons(lastMigrationBrowserState, { force: true });
+    }
+
     // Re-render pieces with dynamic language-dependent text.
+    renderAppBlockingWarningOverlay();
+    renderAppBlockingClosedownBanner();
     renderBlocklists();
     if (document.getElementById('blocklist-select')) renderBlocklistSelector();
     if (typeof updateScheduleButtonState === 'function') updateScheduleButtonState();
-    if (typeof updateWeekCalendar === 'function' && currentWeekStart) updateWeekCalendar();
+    if (typeof updateWeekCalendar === 'function') updateWeekCalendar();
+    if (typeof rebuildScheduleSegments === 'function') rebuildScheduleSegments();
+    renderNowBlockingRow();
+    if (typeof updateOverridePreview === 'function') updateOverridePreview();
 }
 
 // Theme Handling
@@ -9757,27 +15541,33 @@ function setupTheme() {
     applyTheme();
 
     // Setup settings modal
-    const settingsBtn = document.getElementById('settings-btn');
+    const settingsTriggers = ['settings-btn', 'settings-btn-stack']
+        .map((id) => document.getElementById(id))
+        .filter(Boolean);
     const settingsModal = document.getElementById('settings-modal');
     const closeSettingsBtn = document.getElementById('close-settings-btn');
     const themeSelect = document.getElementById('theme-select');
-    const languageSelect = document.getElementById('language-select');
 
     // Apply language immediately on startup.
     applySettingsLanguage();
+    setupLanguagePicker();
 
-    if (settingsBtn && settingsModal) {
-        settingsBtn.addEventListener('click', () => {
+    if (settingsTriggers.length && settingsModal) {
+        settingsTriggers.forEach((settingsBtn) => {
+            settingsBtn.addEventListener('click', () => {
             settingsModal.classList.remove('hidden');
+            resetSettingsEnforcementSection();
+            // Re-evaluate the in-app Uninstall button (Mac only): a
+            // schedule could have fired since the modal was last open,
+            // flipping the disabled state. Cheap; idempotent.
+            refreshUninstallButtonState();
+            updateOverrideAllButtonVisibility();
+            void wireEnforcementToggle();
             // Set current theme selection
             if (themeSelect) {
                 const currentTheme = appData.settings?.themeMode || 'system';
                 themeSelect.value = currentTheme;
             }
-            if (languageSelect) {
-                languageSelect.value = getSettingsLanguage();
-            }
-
             void (async () => {
                 applySettingsLanguage();
 
@@ -9823,11 +15613,13 @@ function setupTheme() {
                     }
                 }
             })();
+            });
         });
     }
 
     if (closeSettingsBtn && settingsModal) {
         closeSettingsBtn.addEventListener('click', () => {
+            setLanguagePickerOpen(false);
             settingsModal.classList.add('hidden');
             if (!isModalVisible('diagnostics-modal')) stopHelperUiRefreshLoop();
         });
@@ -9837,6 +15629,7 @@ function setupTheme() {
     if (settingsModal) {
         settingsModal.addEventListener('click', (e) => {
             if (e.target === settingsModal) {
+                setLanguagePickerOpen(false);
                 settingsModal.classList.add('hidden');
                 if (!isModalVisible('diagnostics-modal')) stopHelperUiRefreshLoop();
             }
@@ -9860,15 +15653,6 @@ function setupTheme() {
             }
 
             applyTheme();
-            saveData();
-        });
-    }
-
-    if (languageSelect) {
-        languageSelect.addEventListener('change', (e) => {
-            if (!appData.settings) appData.settings = {};
-            appData.settings.language = e.target.value === 'da' ? 'da' : 'en';
-            applySettingsLanguage();
             saveData();
         });
     }
@@ -9913,14 +15697,19 @@ function clampUiZoom(scale) {
     return Math.min(getUiZoomMax(), Math.max(UI_ZOOM_MIN, scale));
 }
 
+function getDefaultUiZoom() {
+    return isIOS ? DEFAULT_UI_ZOOM_IOS : DEFAULT_UI_ZOOM;
+}
+
 function getSavedUiZoom() {
     const parsed = Number(appData.settings?.uiZoom);
-    if (!Number.isFinite(parsed)) return DEFAULT_UI_ZOOM;
+    if (!Number.isFinite(parsed)) return getDefaultUiZoom();
     return clampUiZoom(parsed);
 }
 
 function applyUiZoom(scale) {
     const clamped = clampUiZoom(scale);
+    syncFooterZoomControl(clamped);
 
     // On desktop (Windows and macOS), use native webview zoom so content scales correctly
     // and behavior matches across platforms. Fall back to CSS zoom if unavailable (e.g. permission).
@@ -9939,6 +15728,27 @@ function applyUiZoom(scale) {
 
     // Fallback path (iOS or if native zoom isn't available).
     document.documentElement.style.zoom = String(clamped);
+}
+
+// Mirror the current zoom level into the footer percentage label and
+// +/- button enabled state. Called from applyUiZoom so every entry
+// point (footer buttons, cmd-+/-/0 shortcuts, native menu items) keeps
+// the UI in sync.
+function syncFooterZoomControl(scale) {
+    const valueDisplay = document.getElementById('footer-zoom-value');
+    const zoomOutBtn = document.getElementById('footer-zoom-out');
+    const zoomInBtn = document.getElementById('footer-zoom-in');
+    if (valueDisplay) valueDisplay.textContent = `${Math.round(scale * 100)}%`;
+    const max = getUiZoomMax();
+    if (zoomOutBtn) zoomOutBtn.disabled = scale <= UI_ZOOM_MIN + 1e-6;
+    if (zoomInBtn) zoomInBtn.disabled = scale >= max - 1e-6;
+}
+
+function setupFooterZoomControl() {
+    const zoomOutBtn = document.getElementById('footer-zoom-out');
+    const zoomInBtn = document.getElementById('footer-zoom-in');
+    if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => zoomUiOut());
+    if (zoomInBtn) zoomInBtn.addEventListener('click', () => zoomUiIn());
 }
 
 function showUiZoomToast(scale) {
@@ -9983,10 +15793,11 @@ function zoomUiOut(options = {}) {
 }
 
 function resetUiZoom(options = {}) {
-    setUiZoom(DEFAULT_UI_ZOOM, options);
+    setUiZoom(getDefaultUiZoom(), options);
 }
 
 function setupUiZoomShortcuts() {
+    setupFooterZoomControl();
     applyUiZoom(getSavedUiZoom());
 
     tauriAPI.onMenuZoomIn(() => zoomUiIn({ showToast: true })).catch(() => { });
@@ -10034,45 +15845,19 @@ function setupHelpMenuLinks() {
 // Setup Helper Settings in the settings modal
 function setupHelperSettings() {
     const statusIndicator = document.getElementById('helper-status-indicator');
-    const keepBlockingToggle = document.getElementById('keep-blocking-toggle');
-    const logPingsToggle = document.getElementById('log-pings-toggle');
     const cleanHostsBtn = document.getElementById('clean-hosts-btn');
 
-    // Initialize toggle from saved settings
-    // When checked (default): blocks continue running after uninstall until complete
-    // When unchecked: helper immediately cleans up when app is uninstalled
-    if (keepBlockingToggle) {
-        const keepBlocking = appData.settings?.keepBlockingOnUninstall !== false; // default true
-        keepBlockingToggle.checked = keepBlocking;
-
-        keepBlockingToggle.addEventListener('change', async (e) => {
-            if (!appData.settings) appData.settings = {};
-            appData.settings.keepBlockingOnUninstall = e.target.checked;
-            await saveData();
-            await syncKeepBlockingPreferenceToHelper();
-        });
-    }
-
-    if (logPingsToggle) {
-        logPingsToggle.checked = !!appData.settings?.logHelperPings; // default false
-
-        logPingsToggle.addEventListener('change', async (e) => {
-            if (!appData.settings) appData.settings = {};
-            appData.settings.logHelperPings = e.target.checked;
-            await saveData();
-            await syncLogPingsPreferenceToHelper();
-        });
-    }
-
     // Update helper status when settings modal opens
-    const settingsBtn = document.getElementById('settings-btn');
-    if (settingsBtn) {
-        settingsBtn.addEventListener('click', () => {
-            updateHelperStatusIndicator();
-            updateCleanHostsBtnState();
-            startHelperUiRefreshLoop();
+    ['settings-btn', 'settings-btn-stack']
+        .map((id) => document.getElementById(id))
+        .filter(Boolean)
+        .forEach((settingsBtn) => {
+            settingsBtn.addEventListener('click', () => {
+                updateHelperStatusIndicator();
+                updateCleanHostsBtnState();
+                startHelperUiRefreshLoop();
+            });
         });
-    }
 
     // Clean hosts file button
     if (cleanHostsBtn && !cleanHostsBtn._listenerAdded) {
@@ -10171,31 +15956,9 @@ function logHelperRemovalFallback(result) {
     }
 }
 
-function updateSnwUninstallOption(helperDisplay) {
-    const uninstallBtn = document.getElementById('snw-uninstall-btn');
-    if (!uninstallBtn) return;
-
-    const uninstallOption = uninstallBtn.closest('.snw-option');
-    if (uninstallOption) uninstallOption.style.display = '';
-
-    if (window._isRemovingHelper) {
-        uninstallBtn.disabled = true;
-        uninstallBtn.title = '';
-        return;
-    }
-
-    const hasBlockingState = hasAnyBlockingStateToClear();
-    if (hasBlockingState) {
-        uninstallBtn.disabled = true;
-        uninstallBtn.title = 'Run the emergency stop first to clear all active or resumable blocks and schedules';
-    } else {
-        uninstallBtn.disabled = false;
-        uninstallBtn.title = helperDisplay?.removeTitle || '';
-    }
-}
 
 async function confirmHelperRemoved() {
-    const status = await refreshDesktopHelperStatus({ syncPreference: false });
+    const status = await refreshDesktopHelperStatus();
     const removed = !(status?.installed || status?.running);
 
     await updateHelperStatusIndicator().catch(() => { });
@@ -10252,7 +16015,7 @@ async function updateHelperStatusIndicator() {
     const updateBtn = document.getElementById('update-helper-btn');
 
     try {
-        const status = await refreshDesktopHelperStatus({ syncPreference: false });
+        const status = await refreshDesktopHelperStatus();
         const helperDisplay = getHelperStatusDisplay(status);
         helperAvailable = helperDisplay.helperReady;
 
@@ -10294,13 +16057,11 @@ async function updateHelperStatusIndicator() {
             }
         }
 
-        updateSnwUninstallOption(helperDisplay);
     } catch (e) {
         statusIndicator.classList.remove('running', 'stopped');
         statusIndicator.classList.add('stopped');
         statusText.textContent = tSettings('helperStatusUnknown');
 
-        updateSnwUninstallOption(null);
         if (updateBtn) updateBtn.style.display = 'none';
     }
 
@@ -10442,83 +16203,266 @@ async function refreshDiagnosticsModalContent({ showLoading = false } = {}) {
 
     const scrollState = showLoading ? null : captureDiagnosticsScrollState(content);
     if (showLoading) {
-        content.innerHTML = '<div class="diagnostics-loading">Loading diagnostics...</div>';
+        content.innerHTML = '<div class="diagnostics-loading">Loading…</div>';
     }
 
     let diag = null;
+    let enforcementEnabled = false;
     try {
-        diag = await tauriAPI.getHelperDiagnostics();
-        const report = buildDiagnosticsReport(diag);
-        diag._formattedText = formatDiagnosticsText(diag);
-
-        let html = '';
-
-        // Two-column layout: Helper Daemon (left) + System (right)
-        html += '<div style="display: flex; gap: 16px; margin-bottom: 8px;">';
-        html += '<div class="diagnostics-section" style="flex: 1; margin-bottom: 0;">';
-        html += '<div class="diagnostics-section-title">Helper Daemon</div>';
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Reachable:</span> <span class="diagnostics-value ${report.reachable ? 'diag-ok' : 'diag-error'}">${report.reachable ? 'Yes' : 'No'}</span></div>`;
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Status:</span> <span class="diagnostics-value ${report.reachable ? 'diag-ok' : 'diag-error'}">${escapeHtml(report.helperStatusLabel)}</span></div>`;
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Version OK:</span> <span class="diagnostics-value ${report.versionOk ? 'diag-ok' : 'diag-error'}">${report.versionOk ? 'Yes' : 'No'}</span></div>`;
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Version:</span> <span class="diagnostics-value">${escapeHtml(report.version)}</span></div>`;
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Expected:</span> <span class="diagnostics-value">${escapeHtml(report.expectedVersion)}</span></div>`;
-        html += '</div>';
-        html += '<div class="diagnostics-section" style="flex: 1; margin-bottom: 0;">';
-        html += '<div class="diagnostics-section-title">System</div>';
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">OS:</span> <span class="diagnostics-value">${escapeHtml(report.osName)}</span></div>`;
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Architecture:</span> <span class="diagnostics-value">${escapeHtml(report.arch)}</span></div>`;
-        if (report.appVersion) html += `<div class="diagnostics-field"><span class="diagnostics-label">App version:</span> <span class="diagnostics-value">${escapeHtml(report.appVersion)}</span></div>`;
-        html += '</div>';
-        html += '</div>';
-
-        // Hosts file
-        html += '<div class="diagnostics-section">';
-        html += `<div class="diagnostics-section-title">Hosts File (${escapeHtml(report.hostsPath)}) <span class="diagnostics-badge ${report.hasReddBlock ? 'badge-active' : 'badge-inactive'}">${report.hasReddBlock ? 'ReDD Block entries present' : 'No ReDD Block entries'}</span></div>`;
-        html += `<pre class="diagnostics-pre">${escapeHtml(report.hostsFile)}</pre>`;
-        html += '</div>';
-
-        // Helper state file
-        html += '<div class="diagnostics-section">';
-        html += `<div class="diagnostics-section-title">Helper State File (${escapeHtml(report.statePath)})</div>`;
-        html += `<pre class="diagnostics-pre">${escapeHtml(report.statePretty)}</pre>`;
-        html += '</div>';
-
-        if (report.helperLogTail) {
-            html += '<div class="diagnostics-section">';
-            html += `<div class="diagnostics-section-title">Helper Log Tail${report.helperLogPath ? ` (${escapeHtml(report.helperLogPath)})` : ''}</div>`;
-            html += `<pre class="diagnostics-pre">${escapeHtml(report.helperLogTail)}</pre>`;
-            html += '</div>';
-        }
-
-        if (report.installLogTail) {
-            html += '<div class="diagnostics-section">';
-            html += `<div class="diagnostics-section-title">Install Log Tail${report.installLogPath ? ` (${escapeHtml(report.installLogPath)})` : ''}</div>`;
-            html += `<pre class="diagnostics-pre">${escapeHtml(report.installLogTail)}</pre>`;
-            html += '</div>';
-        }
-
-        content.innerHTML = html;
+        diag = await invoke('get_system_diagnostics');
+        try {
+            enforcementEnabled = !!(await invoke('get_enforcement_enabled'));
+        } catch (_) { /* non-desktop */ }
+        content.innerHTML = renderSystemDiagnostics(diag, { enforcementEnabled });
+        updateDiagnosticsModalChrome(diag);
         restoreDiagnosticsScrollState(content, scrollState);
     } catch (e) {
-        content.innerHTML = `<div class="diagnostics-error">Failed to load diagnostics: ${e.message || e}</div>`;
+        content.innerHTML = `<div class="diagnostics-error">Failed to load diagnostics: ${escapeHtml(e.message || e)}</div>`;
+        updateDiagnosticsModalChrome(null);
     }
 
-    // Copy button
     const copyBtn = document.getElementById('diagnostics-copy-btn');
+    const copyLabel = document.getElementById('diagnostics-copy-btn-label');
     if (copyBtn) {
         copyBtn.onclick = () => {
-            if (!diag) { copyBtn.textContent = 'No data'; return; }
-            const text = diag._formattedText || formatDiagnosticsText(diag);
-
+            if (!diag) {
+                if (copyLabel) copyLabel.textContent = tSettings('diagnosticsCopyFailed');
+                return;
+            }
+            const text = JSON.stringify(diag, null, 2);
             navigator.clipboard.writeText(text).then(() => {
-                copyBtn.textContent = 'Copied!';
-                setTimeout(() => { copyBtn.textContent = 'Copy to Clipboard'; }, 2000);
+                if (copyLabel) copyLabel.textContent = tSettings('diagnosticsCopied');
+                setTimeout(() => {
+                    if (copyLabel) copyLabel.textContent = tSettings('diagnosticsCopyReport');
+                }, 2000);
             }).catch(() => {
-                copyBtn.textContent = 'Copy failed';
-                setTimeout(() => { copyBtn.textContent = 'Copy to Clipboard'; }, 2000);
+                if (copyLabel) copyLabel.textContent = tSettings('diagnosticsCopyFailed');
+                setTimeout(() => {
+                    if (copyLabel) copyLabel.textContent = tSettings('diagnosticsCopyReport');
+                }, 2000);
             });
         };
     }
+}
+
+function updateDiagnosticsModalChrome(diag) {
+    const versionEl = document.getElementById('diagnostics-version-label');
+
+    if (versionEl) {
+        versionEl.textContent = diag?.app?.version ? `v${diag.app.version}` : '';
+    }
+}
+
+function diagnosticsStatusDot(state) {
+    if (state === 'ok') return '<span class="diagnostics-status-dot ok" aria-hidden="true">✓</span>';
+    if (state === 'off') return '<span class="diagnostics-status-dot off" aria-hidden="true">✗</span>';
+    return '<span class="diagnostics-status-dot na" aria-hidden="true"></span>';
+}
+
+function diagnosticsTriState(values) {
+    if (!values.length) return 'off';
+    if (values.every(v => v === true)) return 'ok';
+    if (values.some(v => v === false)) return 'off';
+    return 'na';
+}
+
+function diagnosticsBrowserProfiles(key, b) {
+    const profiles = b?.profiles || [];
+    if (key === 'safari') return profiles;
+    const def = profiles.find(p => p.isDefault) || profiles[0];
+    return def ? [def] : [];
+}
+
+// Extension setup from on-disk profile scan — independent of whether the browser is running.
+function diagnosticsBrowserExtensionState(key, b) {
+    const profiles = diagnosticsBrowserProfiles(key, b);
+    return {
+        installed: diagnosticsTriState(profiles.map(p => p.installed)),
+        enabled: diagnosticsTriState(profiles.map(p => p.enabled)),
+        privateBrowsing: diagnosticsTriState(profiles.map(p => p.privateBrowsing)),
+    };
+}
+
+function diagnosticsKvRow(label, valueHtml) {
+    return `<div class="diagnostics-kv-row"><span class="diagnostics-kv-label">${label}</span><span class="diagnostics-kv-value">${valueHtml}</span></div>`;
+}
+
+function diagnosticsYesNoValue(yes) {
+    return `<span class="${yes ? 'diag-ok' : ''}">${yes ? tSettings('diagnosticsYes') : tSettings('diagnosticsNo')}</span>`;
+}
+
+function diagnosticsOkNoValue(yes) {
+    return `<span class="${yes ? 'diag-ok' : 'diag-error'}">${yes ? tSettings('diagnosticsYes') : tSettings('diagnosticsNo')}</span>`;
+}
+
+// Render the structured SystemDiagnostics struct as HTML sections.
+// Designed for both user-readable scan AND copy-as-JSON for support.
+function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) {
+    const fmtTs = (ms) => ms ? new Date(ms).toLocaleString() : '—';
+    const e = (s) => escapeHtml(String(s));
+    let html = '';
+
+    // App (version lives in the modal header)
+    html += '<div class="diagnostics-section">';
+    html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsAppSection'))}</div>`;
+    html += '<div class="diagnostics-card">';
+    html += diagnosticsKvRow(e(tSettings('diagnosticsOsArch')), `${e(d.app.os)} / ${e(d.app.arch)}`);
+    html += '</div></div>';
+
+    // Currently being blocked
+    if (d.current_blocking) {
+        const cb = d.current_blocking;
+        html += '<div class="diagnostics-section">';
+        html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsCurrentlyBlocking'))}</div>`;
+        html += '<div class="diagnostics-card">';
+        if (cb.blocks && cb.blocks.length > 0) {
+            html += '<ul class="diagnostics-list">';
+            for (const b of cb.blocks) {
+                const label = `${b.emoji ? b.emoji + ' ' : ''}${b.name || b.blocklistId}`;
+                const srcLabel = b.source === 'schedule' ? 'schedule' : 'one-off';
+                const endsTxt = b.endsAt ? ` until ${new Date(b.endsAt).toLocaleString()}` : '';
+                const domainsCount = (b.domains || []).length;
+                html += `<li class="diagnostics-kv-row"><span class="diagnostics-kv-label">${e(label)}</span><span class="diagnostics-kv-value diag-muted">${e(srcLabel)}${e(endsTxt)} · ${domainsCount} domain${domainsCount === 1 ? '' : 's'}</span></li>`;
+            }
+            html += '</ul>';
+        } else {
+            html += diagnosticsKvRow(
+                e(tSettings('diagnosticsActiveSources')),
+                `<span class="diag-muted">${e(tSettings('diagnosticsActiveSourcesNone'))}</span>`,
+            );
+        }
+        html += `<div class="diagnostics-kv-row"><span class="diagnostics-kv-label">${e(tSettings('diagnosticsDomainsCount').replace('{n}', String(cb.domains?.length ?? 0)))}</span></div>`;
+        if (cb.domains && cb.domains.length > 0) {
+            html += `<pre class="diagnostics-pre">${e(cb.domains.join('\n'))}</pre>`;
+        }
+        html += `<div class="diagnostics-kv-row"><span class="diagnostics-kv-label">${e(tSettings('diagnosticsAppsCount').replace('{n}', String(cb.apps?.length ?? 0)))}</span></div>`;
+        if (cb.apps && cb.apps.length > 0) {
+            html += `<pre class="diagnostics-pre">${e(cb.apps.join('\n'))}</pre>`;
+        }
+        html += '</div></div>';
+    }
+
+    // Migration
+    const m = d.migration;
+    html += '<div class="diagnostics-section">';
+    html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsMigrationSection'))}</div>`;
+    html += '<div class="diagnostics-card">';
+    html += diagnosticsKvRow(e(tSettings('diagnosticsWasV1x')), diagnosticsYesNoValue(!!m.came_from_v1x));
+    if (m.residue_items && m.residue_items.length > 0) {
+        html += diagnosticsKvRow(e(tSettings('diagnosticsLeftoverFiles')), `<span class="diag-error">${m.residue_items.length} found</span>`);
+        html += '<ul class="diagnostics-list">';
+        for (const item of m.residue_items) {
+            html += `<li class="diag-error">${e(item)}</li>`;
+        }
+        html += '</ul>';
+    } else {
+        html += diagnosticsKvRow(
+            e(tSettings('diagnosticsLeftoverFiles')),
+            `<span class="diag-ok">${e(tSettings('diagnosticsFullyMigrated'))}</span>`,
+        );
+    }
+    html += diagnosticsKvRow(e(tSettings('diagnosticsStampedVersion')), `<span class="diag-muted">${e(m.ran_at_version || '—')}</span>`);
+    html += diagnosticsKvRow(e(tSettings('diagnosticsStampedAt')), `<span class="diag-muted">${e(fmtTs(m.ran_at_ms))}</span>`);
+    html += '</div></div>';
+
+    // Full Disk Access (macOS)
+    if (d.fda?.applicable) {
+        const f = d.fda;
+        const choiceLabel = f.onboarding_choice || tSettings('diagnosticsMarkerNotSet');
+        html += '<div class="diagnostics-section">';
+        html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsFullDiskAccess'))}</div>`;
+        html += '<div class="diagnostics-card">';
+        html += diagnosticsKvRow(e(tSettings('diagnosticsFdaLiveGranted')), diagnosticsOkNoValue(f.live_granted === true));
+        html += diagnosticsKvRow(
+            e(tSettings('diagnosticsSafariPlistReadable')),
+            f.safari_plist_readable == null
+                ? '<span class="diag-muted">—</span>'
+                : diagnosticsOkNoValue(f.safari_plist_readable === true),
+        );
+        html += diagnosticsKvRow(e(tSettings('diagnosticsOnboardingMarker')), `<span class="diag-muted">${e(choiceLabel)}</span>`);
+        if (f.safariNeedsFdaAccess != null) {
+            const fdaRequired = f.safariNeedsFdaAccess === true;
+            html += diagnosticsKvRow(
+                e(tSettings('diagnosticsSafariFdaRequired')),
+                fdaRequired
+                    ? `<span class="diag-error">${e(tSettings('diagnosticsYes'))}</span>`
+                    : `<span class="diag-ok">${e(tSettings('diagnosticsNo'))}</span>`,
+            );
+        }
+        html += '</div></div>';
+    }
+
+    // Browsers
+    html += '<div class="diagnostics-section">';
+    html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsBrowsersSection'))}</div>`;
+    html += `<p class="diagnostics-section-desc">${e(tSettings('diagnosticsBrowsersSectionHint'))}</p>`;
+    html += '<div class="diagnostics-card diagnostics-table-wrap"><table class="diagnostics-table"><thead><tr>';
+    html += `<th>${e(tSettings('diagnosticsThBrowser'))}</th>`;
+    html += `<th>${e(tSettings('diagnosticsThExtInstalled'))}</th>`;
+    html += `<th>${e(tSettings('diagnosticsThExtEnabled'))}</th>`;
+    html += `<th>${e(tSettings('diagnosticsThExtPrivate'))}</th>`;
+    html += '</tr></thead><tbody>';
+    for (const key of ['chrome', 'brave', 'edge', 'firefox', 'safari']) {
+        const b = d.browsers[key];
+        if (!b?.installed) continue;
+        const label = BROWSER_STORE_LINKS[key]?.label || key;
+        const ext = diagnosticsBrowserExtensionState(key, b);
+        html += '<tr>';
+        html += `<td><div class="diagnostics-browser-cell"><img class="diagnostics-browser-icon" src="${browserIconUrl(key)}" alt="" width="20" height="20">${e(label)}</div></td>`;
+        html += `<td>${diagnosticsStatusDot(ext.installed)}</td>`;
+        html += `<td>${diagnosticsStatusDot(ext.enabled)}</td>`;
+        html += `<td>${diagnosticsStatusDot(ext.privateBrowsing)}</td>`;
+        html += '</tr>';
+    }
+    html += '</tbody></table></div></div>';
+
+    // Enforcement
+    html += '<div class="diagnostics-section">';
+    html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsEnforcementSection'))}</div>`;
+    html += '<div class="diagnostics-card">';
+    if (!isIOS) {
+        const forceLabel = enforcementEnabled
+            ? tSettings('diagnosticsForceCloseEnabled')
+            : tSettings('diagnosticsForceCloseDisabled');
+        const forceClass = enforcementEnabled ? 'diag-ok' : 'diag-muted';
+        html += diagnosticsKvRow(
+            e(tSettings('diagnosticsForceClose')),
+            `<span class="${forceClass}">${e(forceLabel)}</span>`,
+        );
+    }
+    html += diagnosticsKvRow(e(tSettings('diagnosticsGracePeriod')), `${e(d.enforcer.grace_seconds)} s`);
+    if (d.watchdog) {
+        html += diagnosticsKvRow(e(tSettings('diagnosticsWatchdog')), diagnosticsYesNoValue(d.watchdog.task_present));
+    }
+    html += '</div></div>';
+
+    // Recent log
+    if (d.recent_log && d.recent_log.length > 0) {
+        html += '<div class="diagnostics-section">';
+        html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsRecentLogSection').replace('{n}', String(d.recent_log.length)))}</div>`;
+        html += '<div class="diagnostics-card">';
+        html += `<pre class="diagnostics-pre">${e(d.recent_log.join('\n'))}</pre>`;
+        html += '</div></div>';
+    }
+
+    // App data (redd-block-data.json)
+    if (d.app_data) {
+        html += '<div class="diagnostics-section">';
+        html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsAppDataSection'))}</div>`;
+        html += '<div class="diagnostics-card">';
+        if (d.app_data.path) {
+            html += diagnosticsKvRow(e(tSettings('diagnosticsPath')), `<span class="diag-muted">${e(d.app_data.path)}</span>`);
+        }
+        if (d.app_data.error) {
+            html += `<div class="diagnostics-kv-row"><span class="diagnostics-kv-value diag-error">${e(d.app_data.error)}</span></div>`;
+        }
+        if (d.app_data.pretty_json) {
+            html += `<pre class="diagnostics-pre">${e(d.app_data.pretty_json)}</pre>`;
+        }
+        html += '</div></div>';
+    }
+
+    return html;
 }
 
 // Diagnostics modal
@@ -10557,153 +16501,290 @@ function setupDiagnosticsButton() {
     }
 }
 
-// Check if there are any active blocks or schedules
-function hasAnyActiveBlocks() {
-    return hasAnyEnforcedBlocks();
-}
-
-// Update visibility of the Override All button based on active blocks
-function updateOverrideAllButtonVisibility() {
-    const hasBlocks = hasAnyBlockingStateToClear();
-    // "Something still not working?" — enabled when no blocks active, disabled when blocks active
-    const stillBtn = document.getElementById('still-not-working-btn');
-    if (stillBtn) {
-        stillBtn.disabled = hasBlocks;
-        stillBtn.title = hasBlocks ? 'Run the emergency stop first' : '';
+function setupOnboardingReplayButton() {
+    const btn = document.getElementById('settings-onboarding-btn');
+    if (btn) {
+        btn.addEventListener('click', () => {
+            restartOnboardingFromSettings().catch((e) => {
+                console.warn('[onboarding-replay] restart failed:', e);
+            });
+        });
     }
 }
 
-// Show challenge for removing helper when blocks are active
-async function showRemoveHelperChallenge() {
-    return new Promise((resolve) => {
-        // Find the hardest challenge from active blocks' blocklists
-        const now = Date.now();
-        let hardestDifficulty = { type: 'random-words', count: 50 }; // default
-        let maxCount = 50;
-
-        // Check active one-off blocks
-        for (const block of appData.activeBlocks) {
-            if (isOneOffBlockEnforced(block, now)) {
-                const bl = appData.blocklists.find(b => b.id === block.blocklistId);
-                if (bl?.overrideDifficulty) {
-                    const diff = bl.overrideDifficulty;
-                    // Custom text is always hardest
-                    if (diff.type === 'custom' && diff.customText) {
-                        hardestDifficulty = diff;
-                        break; // Custom is always hardest
-                    }
-                    // For gibberish/random-words, higher count = harder
-                    if (diff.count > maxCount) {
-                        maxCount = diff.count;
-                        hardestDifficulty = diff;
-                    }
-                }
-            }
-        }
-
-        // Check scheduled blocks too
-        if (hardestDifficulty.type !== 'custom' && appData.schedules) {
-            const nowDate = new Date();
-
-            for (const schedule of appData.schedules) {
-                if (!schedule.segments) continue;
-                if (isScheduleSegmentActiveNow(schedule, nowDate)) {
-                    const bl = appData.blocklists.find(b => b.id === schedule.blocklistId);
-                    if (bl?.overrideDifficulty) {
-                        const diff = bl.overrideDifficulty;
-                        if (diff.type === 'custom' && diff.customText) {
-                            hardestDifficulty = diff;
-                            break;
-                        }
-                        if (diff.count > maxCount) {
-                            maxCount = diff.count;
-                            hardestDifficulty = diff;
-                        }
-                    }
-                }
-            }
-        }
-
-        // Generate challenge text based on difficulty - use global challengeText so existing handlers work
-        if (hardestDifficulty.type === 'custom' && hardestDifficulty.customText) {
-            challengeText = hardestDifficulty.customText;
-        } else if (hardestDifficulty.type === 'gibberish') {
-            challengeText = generateGibberish(hardestDifficulty.count);
-        } else {
-            challengeText = generateRandomWords(hardestDifficulty.count);
-        }
-        challengeText = challengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
-
-        // Close settings modal first so challenge modal appears on top
-        document.getElementById('settings-modal').classList.add('hidden');
-
-        // Use the existing override modal
-        const modal = document.getElementById('override-modal');
-        const titleEl = document.getElementById('override-modal-title');
-        const summaryEl = document.getElementById('override-summary');
-        const challengeTextEl = document.getElementById('challenge-text');
-        const challengeInput = document.getElementById('challenge-input');
-        const progressBar = document.getElementById('challenge-progress-bar');
-        const confirmBtn = document.getElementById('confirm-override-btn');
-        const cancelBtn = document.getElementById('cancel-override-btn');
-        const scheduleOptions = document.getElementById('schedule-override-options');
-
-        titleEl.textContent = 'Remove Helper?';
-        summaryEl.innerHTML = '<strong>Warning:</strong> This will stop all website blocking. You have active blocks that will be cleared.';
-        challengeTextEl.textContent = challengeText;
-        challengeInput.value = '';
-        progressBar.style.width = '0%';
-        progressBar.style.background = 'linear-gradient(90deg, #dc2626 0%, #ef4444 100%)'; // Red for danger
-        scheduleOptions.classList.add('hidden');
-
-        // Store callback to be called by the existing confirm handler
-        window.helperRemovalConfirmCallback = () => {
-            modal.classList.add('hidden');
-            overrideBlockId = null;
-            overrideBlocklistIdForHelper = null;
-            window.helperRemovalConfirmCallback = null;
-            window.helperRemovalCancelCallback = null;
-            resolve(true);
-        };
-
-        window.helperRemovalCancelCallback = () => {
-            modal.classList.add('hidden');
-            overrideBlockId = null;
-            overrideBlocklistIdForHelper = null;
-            window.helperRemovalConfirmCallback = null;
-            window.helperRemovalCancelCallback = null;
-            resolve(false);
-        };
-
-        // Set special block ID so existing handlers know this is helper removal
-        overrideBlockId = 'helper-removal';
-
-        modal.classList.remove('hidden');
-        challengeInput.focus();
-    });
+// Any blocks or schedules the user could clear via Stop All — includes
+// future scheduled segments, not only what is enforcing right now.
+function hasAnyActiveBlocks() {
+    return hasAnyBlockingStateToClear();
 }
+
+// Show Stop All while there are active blocks or schedules to clear.
+function updateOverrideAllButtonVisibility() {
+    const row = document.getElementById('settings-override-all-row');
+    const showOverride = hasAnyBlockingStateToClear();
+
+    if (row) row.classList.toggle('hidden', !showOverride);
+    updateGraceSettingLock();
+}
+
+// Show challenge for removing helper when blocks are active
 
 
 // Variable to track override-all challenge text
 let overrideAllChallengeText = '';
 
+// Setup the configurable browser-extension grace period.
+// Backend reads `settings.extensionGraceSeconds` from the data file
+// on every grace-start (no app restart needed). Backend rejects
+// increases when at least one block is currently active.
+// ---- Installed Apps Picker Modal ------------------------------------------
+// Shows a searchable list of installed apps (scanned from Start Menu on
+// Windows, /Applications on macOS) so users don't have to navigate the
+// OS file picker to find executables.
+
+let installedAppsCache = null; // Cache the list so we don't re-scan every open
+
+async function openInstalledAppsPicker() {
+    const modal = document.getElementById('app-picker-modal');
+    const listEl = document.getElementById('app-picker-list');
+    const searchInput = document.getElementById('app-picker-search');
+    const addBtn = document.getElementById('app-picker-add-btn');
+    const cancelBtn = document.getElementById('app-picker-cancel-btn');
+    const browseBtn = document.getElementById('app-picker-browse-btn');
+
+    if (!modal || !listEl) return;
+
+    // Show modal with loading state
+    modal.classList.remove('hidden');
+    searchInput.value = '';
+    listEl.innerHTML = '<div class="app-picker-loading">Scanning installed apps...</div>';
+
+    // Fetch installed apps (cached after first call)
+    if (!installedAppsCache) {
+        try {
+            installedAppsCache = await tauriAPI.listInstalledApps();
+        } catch (e) {
+            console.error('[app-picker] Failed to list installed apps:', e);
+            listEl.innerHTML = '<div class="app-picker-empty">Could not scan installed apps. Use "Browse manually..." below.</div>';
+            installedAppsCache = null;
+        }
+    }
+
+    const apps = installedAppsCache || [];
+    const selectedProcessNames = new Set();
+
+    function sameAppPickerName(displayName, processName) {
+        const normalize = (value) => String(value || '').trim().toLocaleLowerCase();
+        return normalize(displayName) === normalize(processName);
+    }
+
+    function renderAppList(filter = '') {
+        const lowerFilter = filter.toLowerCase();
+        const filtered = filter
+            ? apps.filter(a =>
+                a.display_name.toLowerCase().includes(lowerFilter) ||
+                a.process_name.toLowerCase().includes(lowerFilter))
+            : apps;
+
+        if (filtered.length === 0) {
+            listEl.innerHTML = filter
+                ? '<div class="app-picker-empty">No apps match your search</div>'
+                : '<div class="app-picker-empty">No installed apps found</div>';
+            return;
+        }
+
+        listEl.innerHTML = filtered.map(app => {
+            const alreadyAdded = modalApps.some(a => a.toLowerCase() === app.process_name.toLowerCase());
+            const isChecked = selectedProcessNames.has(app.process_name) || alreadyAdded;
+            const checkedClass = isChecked ? ' checked' : '';
+            const checkedAttr = isChecked ? ' checked' : '';
+            const disabledAttr = alreadyAdded ? ' disabled' : '';
+            const dimStyle = alreadyAdded ? ' style="opacity: 0.5;"' : '';
+            const processLine = sameAppPickerName(app.display_name, app.process_name)
+                ? ''
+                : `<div class="app-picker-item-process">${escapeHtml(app.process_name)}</div>`;
+
+            return `<label class="app-picker-item${checkedClass}"${dimStyle}>
+                <input type="checkbox" data-process="${escapeHtml(app.process_name)}"${checkedAttr}${disabledAttr}>
+                <div class="app-picker-item-info">
+                    <div class="app-picker-item-name">${escapeHtml(app.display_name)}</div>
+                    ${processLine}
+                </div>
+            </label>`;
+        }).join('');
+
+        // Attach checkbox handlers
+        listEl.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            if (cb.disabled) return;
+            cb.addEventListener('change', () => {
+                const proc = cb.dataset.process;
+                if (cb.checked) {
+                    selectedProcessNames.add(proc);
+                } else {
+                    selectedProcessNames.delete(proc);
+                }
+                cb.closest('.app-picker-item').classList.toggle('checked', cb.checked);
+                updateAddButton();
+            });
+        });
+    }
+
+    function updateAddButton() {
+        const newCount = [...selectedProcessNames].filter(
+            p => !modalApps.some(a => a.toLowerCase() === p.toLowerCase())
+        ).length;
+        addBtn.textContent = newCount > 0 ? `Add Selected (${newCount})` : 'Add Selected';
+        addBtn.disabled = newCount === 0;
+    }
+
+    renderAppList();
+    updateAddButton();
+
+    // Search filtering
+    const onSearch = () => renderAppList(searchInput.value);
+    searchInput.addEventListener('input', onSearch);
+
+    // Clean up and close
+    function closePickerModal() {
+        modal.classList.add('hidden');
+        searchInput.removeEventListener('input', onSearch);
+    }
+
+    // Cancel
+    const onCancel = () => closePickerModal();
+    cancelBtn.onclick = onCancel;
+
+    // Click overlay to close
+    const onOverlayClick = (e) => {
+        if (e.target === modal) closePickerModal();
+    };
+    modal.addEventListener('click', onOverlayClick);
+
+    // Add Selected
+    addBtn.onclick = () => {
+        const toAdd = [...selectedProcessNames].filter(
+            p => !modalApps.some(a => a.toLowerCase() === p.toLowerCase())
+        );
+        if (toAdd.length > 0) {
+            const toAddCopy = [...toAdd];
+            pushModalUndo('app', () => {
+                toAddCopy.forEach(a => {
+                    const i = modalApps.indexOf(a);
+                    if (i !== -1) modalApps.splice(i, 1);
+                });
+                window.renderModalTags();
+            });
+            for (const appName of toAdd) {
+                modalApps.push(appName);
+            }
+            window.renderModalTags();
+        }
+        closePickerModal();
+    };
+
+    // Browse manually — fall back to the OS file picker
+    browseBtn.onclick = async () => {
+        closePickerModal();
+        const appNames = await tauriAPI.openAppPicker();
+        if (appNames && appNames.length > 0) {
+            const toAdd = appNames.filter(n => !modalApps.includes(n));
+            if (toAdd.length > 0) {
+                const toAddCopy = [...toAdd];
+                pushModalUndo('app', () => {
+                    toAddCopy.forEach(a => {
+                        const i = modalApps.indexOf(a);
+                        if (i !== -1) modalApps.splice(i, 1);
+                    });
+                    window.renderModalTags();
+                });
+            }
+            for (const appName of appNames) {
+                if (!modalApps.includes(appName)) {
+                    modalApps.push(appName);
+                }
+            }
+            window.renderModalTags();
+        }
+    };
+
+    // Focus search input
+    requestAnimationFrame(() => searchInput.focus());
+}
+
+// Setup the configurable browser-extension grace period.
+function setupGraceSetting() {
+    const input = document.getElementById('grace-seconds-input');
+    const errorEl = document.getElementById('grace-error');
+    if (!input) return;
+
+    const showError = (msg) => {
+        if (!errorEl) return;
+        errorEl.textContent = msg;
+        errorEl.classList.toggle('hidden', !msg);
+    };
+
+    // Load current value and reflect locked state.
+    const refresh = async () => {
+        try {
+            const secs = await invoke('get_extension_grace_seconds');
+            input.value = secs;
+            updateGraceSettingLock();
+        } catch (e) {
+            console.warn('[grace] read failed:', e);
+        }
+    };
+    refresh();
+
+    let lastGood = parseInt(input.value, 10) || 60;
+    input.addEventListener('change', async () => {
+        const now = Date.now();
+        const nowDate = new Date(now);
+        if (hasAnyEnforcedBlocks(now, nowDate)) {
+            input.value = lastGood;
+            updateGraceSettingLock();
+            return;
+        }
+
+        const raw = parseInt(input.value, 10);
+        if (!Number.isFinite(raw)) {
+            input.value = lastGood;
+            return;
+        }
+        const clamped = Math.max(5, Math.min(300, raw));
+        input.value = clamped;
+        try {
+            const applied = await invoke('set_extension_grace_seconds', { seconds: clamped });
+            input.value = applied;
+            lastGood = applied;
+            showError('');
+        } catch (e) {
+            const msg = typeof e === 'string' ? e : (e && e.message) || 'Could not update grace period.';
+            showError(msg);
+            input.value = lastGood;
+        }
+    });
+}
+
 // Setup Override All functionality in settings
 function setupOverrideAll() {
-    const advancedToggle = document.getElementById('advanced-options-toggle');
-    const advancedContent = document.getElementById('advanced-options-content');
     const overrideAllBtn = document.getElementById('override-all-btn');
     const overrideAllModal = document.getElementById('override-all-modal');
     const cancelOverrideAllBtn = document.getElementById('cancel-override-all-btn');
     const confirmOverrideAllBtn = document.getElementById('confirm-override-all-btn');
     const overrideAllChallengeInput = document.getElementById('override-all-challenge-input');
     const overrideAllProgressBar = document.getElementById('override-all-progress-bar');
+    const overrideAllChallengeTextEl = document.getElementById('override-all-challenge-text');
 
-    // Toggle advanced options
-    if (advancedToggle && advancedContent) {
-        advancedToggle.addEventListener('click', () => {
-            advancedToggle.classList.toggle('expanded');
-            advancedContent.classList.toggle('hidden');
-        });
+    function renderOverrideAllChallengeText(errorIndex = -1) {
+        if (!overrideAllChallengeTextEl) return;
+        if (errorIndex < 0 || errorIndex >= overrideAllChallengeText.length) {
+            overrideAllChallengeTextEl.textContent = overrideAllChallengeText;
+        } else {
+            const before = escapeHtml(overrideAllChallengeText.slice(0, errorIndex));
+            const errorChar = escapeHtml(overrideAllChallengeText[errorIndex]);
+            const after = escapeHtml(overrideAllChallengeText.slice(errorIndex + 1));
+            overrideAllChallengeTextEl.innerHTML = `${before}<span class="error-char">${errorChar}</span>${after}`;
+        }
     }
 
     // Open override all modal
@@ -10711,6 +16792,7 @@ function setupOverrideAll() {
         overrideAllBtn.addEventListener('click', () => {
             // Close settings modal first
             document.getElementById('settings-modal').classList.add('hidden');
+            setLanguagePickerOpen(false);
 
             const challengeTextEl = document.getElementById('override-all-challenge-text');
             const instructionEl = document.getElementById('override-all-instruction');
@@ -10750,7 +16832,7 @@ function setupOverrideAll() {
             overrideAllChallengeText = overrideAllChallengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
 
             // Display challenge
-            document.getElementById('override-all-challenge-text').textContent = overrideAllChallengeText;
+            renderOverrideAllChallengeText();
             overrideAllChallengeInput.value = '';
             overrideAllProgressBar.style.width = '0%';
 
@@ -10792,16 +16874,20 @@ function setupOverrideAll() {
             const target = overrideAllChallengeText;
 
             let correctChars = 0;
+            let firstErrorIndex = -1;
             for (let i = 0; i < typed.length && i < target.length; i++) {
                 if (typed[i] === target[i]) {
                     correctChars++;
                 } else {
+                    firstErrorIndex = i;
                     break;
                 }
             }
 
             const progress = (correctChars / target.length) * 100;
             overrideAllProgressBar.style.width = `${progress}%`;
+
+            renderOverrideAllChallengeText(firstErrorIndex);
         });
 
         // Enter key submits
@@ -10819,248 +16905,265 @@ function setupOverrideAll() {
             const typed = overrideAllChallengeInput.value;
             const target = overrideAllChallengeText;
 
+            let firstErrorIndex = -1;
+            if (typed !== target) {
+                for (let i = 0; i < Math.max(typed.length, target.length); i++) {
+                    if (typed[i] !== target[i]) {
+                        firstErrorIndex = i;
+                        break;
+                    }
+                }
+                if (firstErrorIndex === -1 && typed.length < target.length) {
+                    firstErrorIndex = typed.length;
+                }
+            }
+
             if (typed === target) {
                 // Success! Clear everything
                 await performOverrideAll();
                 overrideAllModal.classList.add('hidden');
                 overrideAllChallengeText = '';
             } else {
-                // Wrong - wiggle modal
+                // Wrong - wiggle and highlight error
                 const modalContent = overrideAllModal.querySelector('.modal-content');
                 modalContent.classList.remove('wiggle');
                 void modalContent.offsetWidth; // Trigger reflow
                 modalContent.classList.add('wiggle');
+
+                renderOverrideAllChallengeText(firstErrorIndex);
             }
         });
     }
 
-    // "Something still not working?" button - show hint when disabled
-    const stillNotWorkingWrapper = document.querySelector('.still-not-working-wrapper');
-    const stillNotWorkingHint = document.getElementById('still-not-working-hint');
-    if (stillNotWorkingWrapper && stillNotWorkingHint) {
-        stillNotWorkingWrapper.addEventListener('click', () => {
-            const btn = document.getElementById('still-not-working-btn');
-            if (btn && btn.disabled) {
-                stillNotWorkingHint.style.display = 'block';
-            }
-        });
-        stillNotWorkingWrapper.addEventListener('mouseenter', () => {
-            const btn = document.getElementById('still-not-working-btn');
-            if (btn && btn.disabled) {
-                stillNotWorkingHint.style.display = 'block';
-            }
-        });
-        stillNotWorkingWrapper.addEventListener('mouseleave', () => {
-            stillNotWorkingHint.style.display = 'none';
-        });
+}
+
+// macOS in-app uninstall. The Uninstall button lives in Settings below
+// Advanced options (not inside the collapsible). Hidden on Windows
+// (`.macos-only` + `body.mac` gate) because Windows uses
+// Settings → Apps → Uninstall, fully wired up by NSIS_HOOK_PREUNINSTALL.
+//
+// The button is *disabled* (not hidden) when any block / schedule is
+// currently active, with a hint paragraph below nudging the user
+// toward the Override-All challenge above. Rationale: uninstalling
+// mid-block would leave the user with an unenforceable promise
+// (no app = no enforcer), so we want the user to deliberately stop
+// blocking first via the existing override path.
+const UNINSTALL_CHROMIUM_KEYS = ['chrome', 'brave', 'edge'];
+
+function uninstallBrowserLabel(key) {
+    return BROWSER_STORE_LINKS[key]?.label || key;
+}
+
+function buildUninstallBrowserRow({ keys, badge, detail, detailHtml }) {
+    const row = document.createElement('div');
+    row.className = 'migration-browser-row';
+
+    const header = document.createElement('div');
+    header.className = 'migration-browser-header';
+
+    const name = document.createElement('span');
+    name.className = 'migration-browser-name';
+
+    if (keys.length > 1) {
+        const stack = document.createElement('span');
+        stack.className = 'migration-browser-icons-stack';
+        stack.setAttribute('aria-hidden', 'true');
+        for (const key of keys) {
+            const icon = document.createElement('img');
+            icon.className = 'migration-browser-icon';
+            icon.src = browserIconUrl(key);
+            icon.alt = '';
+            stack.appendChild(icon);
+        }
+        name.appendChild(stack);
+    } else {
+        const icon = document.createElement('img');
+        icon.className = 'migration-browser-icon';
+        icon.src = browserIconUrl(keys[0]);
+        icon.alt = '';
+        name.appendChild(icon);
+    }
+
+    const nameText = document.createElement('span');
+    nameText.textContent = formatBrowserList(keys.map(uninstallBrowserLabel));
+    name.appendChild(nameText);
+    header.appendChild(name);
+
+    const badgeEl = document.createElement('span');
+    badgeEl.className = 'migration-browser-badge';
+    badgeEl.textContent = badge;
+    header.appendChild(badgeEl);
+    row.appendChild(header);
+
+    const hint = document.createElement('div');
+    hint.className = 'migration-browser-hint';
+    if (detailHtml) hint.innerHTML = detailHtml;
+    else hint.textContent = detail;
+    row.appendChild(hint);
+
+    return row;
+}
+
+function renderUninstallBrowserRows(browsers) {
+    const container = document.getElementById('uninstall-browser-rows');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (!browsers) return;
+
+    if (browsers.safari?.installed) {
+        container.appendChild(buildUninstallBrowserRow({
+            keys: ['safari'],
+            badge: tSettings('uninstallExtSafariBadge'),
+            detail: tSettings('uninstallExtSafariDetail'),
+        }));
+    }
+
+    const chromiumInstalled = UNINSTALL_CHROMIUM_KEYS.filter((key) => browsers[key]?.installed);
+    if (chromiumInstalled.length) {
+        const detail = chromiumInstalled.length === 1
+            ? tSettingsFmt('uninstallExtChromiumDetailOne', {
+                BROWSER: uninstallBrowserLabel(chromiumInstalled[0]),
+            })
+            : tSettings('uninstallExtChromiumDetail');
+        container.appendChild(buildUninstallBrowserRow({
+            keys: chromiumInstalled,
+            badge: tSettings('uninstallExtChromiumBadge'),
+            detail,
+        }));
+    }
+
+    if (browsers.firefox?.installed) {
+        container.appendChild(buildUninstallBrowserRow({
+            keys: ['firefox'],
+            badge: tSettings('uninstallExtFirefoxBadge'),
+            detail: tSettings('uninstallExtFirefoxDetail'),
+        }));
     }
 }
 
-// Setup "Something still not working?" modal
-function setupStillNotWorking() {
-    const btn = document.getElementById('still-not-working-btn');
-    const modal = document.getElementById('still-not-working-modal');
-    const closeBtn = document.getElementById('close-snw-btn');
-    const uninstallBtn = document.getElementById('snw-uninstall-btn');
-    if (!btn || !modal) return;
+async function fetchInstalledBrowsersForUninstall() {
+    try {
+        return await invoke('scan_browser_profiles');
+    } catch (e) {
+        if (lastOnboardingState?.browsers) {
+            console.warn('uninstall: scan_browser_profiles failed, using cached browser state', e);
+            return lastOnboardingState.browsers;
+        }
+        throw e;
+    }
+}
 
-    // Open modal
-    btn.addEventListener('click', () => {
-        if (btn.disabled) return;
-        // Reset state each time
-        document.getElementById('snw-challenge-area')?.classList.add('hidden');
-        document.getElementById('snw-terminal-commands')?.classList.add('hidden');
-        const input = document.getElementById('snw-challenge-input');
-        if (input) input.value = '';
-        const bar = document.getElementById('snw-challenge-progress-bar');
-        if (bar) bar.style.width = '0%';
+let uninstallConfirmResolver = null;
+
+async function showUninstallConfirmModal() {
+    const modal = document.getElementById('uninstall-confirm-modal');
+    if (!modal) return false;
+
+    try {
+        const browsers = await fetchInstalledBrowsersForUninstall();
+        renderUninstallBrowserRows(browsers);
+    } catch (e) {
+        console.warn('uninstall: browser scan failed — hiding browser rows', e);
+        renderUninstallBrowserRows(null);
+    }
+
+    return new Promise((resolve) => {
+        uninstallConfirmResolver = resolve;
         modal.classList.remove('hidden');
+    });
+}
 
-        const cachedStatus = getCachedDesktopHelperStatus();
-        if (cachedStatus) {
-            updateSnwUninstallOption(getHelperStatusDisplay(cachedStatus));
+function closeUninstallConfirmModal(result) {
+    const modal = document.getElementById('uninstall-confirm-modal');
+    modal?.classList.add('hidden');
+    if (uninstallConfirmResolver) {
+        uninstallConfirmResolver(result);
+        uninstallConfirmResolver = null;
+    }
+}
+
+function setupInAppUninstall() {
+    const btn = document.getElementById('uninstall-app-btn');
+    if (!btn) return;
+
+    const modal = document.getElementById('uninstall-confirm-modal');
+    document.getElementById('cancel-uninstall-confirm-btn')
+        ?.addEventListener('click', () => closeUninstallConfirmModal(false));
+    document.getElementById('confirm-uninstall-confirm-btn')
+        ?.addEventListener('click', () => closeUninstallConfirmModal(true));
+    modal?.addEventListener('click', (e) => {
+        if (e.target === modal) closeUninstallConfirmModal(false);
+    });
+
+    refreshUninstallButtonState();
+    updateOverrideAllButtonVisibility();
+
+    btn.addEventListener('click', async () => {
+        // Re-check at click time so a schedule that fired between
+        // settings-open and click can still gate us out cleanly.
+        if (hasAnyBlockingStateToClear()) {
+            refreshUninstallButtonState();
             return;
         }
 
-        updateSnwUninstallOption(null);
-        void (async () => {
-            const status = await refreshDesktopHelperStatus({ syncPreference: false });
-            updateSnwUninstallOption(getHelperStatusDisplay(status));
-        })();
-    });
+        let proceed = false;
+        try {
+            proceed = await showUninstallConfirmModal();
+        } catch (e) {
+            console.error('uninstall: confirm dialog failed', e);
+            return;
+        }
+        if (!proceed) return;
 
-    // Close
-    if (closeBtn) {
-        closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
-    }
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) modal.classList.add('hidden');
-    });
+        // Close settings so the user sees a clean window before the
+        // process exits and the bundle disappears.
+        document.getElementById('settings-modal')?.classList.add('hidden');
+        setLanguagePickerOpen(false);
 
-    // Option 1: Uninstall Helper
-    if (uninstallBtn) {
-        uninstallBtn.addEventListener('click', async () => {
-            if (window._isRemovingHelper) return;
-            const originalHTML = uninstallBtn.innerHTML;
+        try {
+            await tauriAPI.uninstallSelfMacos();
+            // Backend exits ~200ms later. The window typically
+            // disappears before this promise resolves; nothing else
+            // to do on success.
+        } catch (e) {
+            console.error('uninstall: backend command failed', e);
             try {
-                window._isRemovingHelper = true;
-                uninstallBtn.disabled = true;
-                uninstallBtn.innerHTML = `<span class="btn-spinner"></span>${tSettings('helperRemoving')}`;
-                if (hasAnyBlockingStateToClear()) {
-                    window._isRemovingHelper = false;
-                    uninstallBtn.disabled = false;
-                    uninstallBtn.innerHTML = originalHTML;
-                    await message('Run the emergency stop first to clear all active or resumable blocks and schedules before removing the helper.', {
-                        title: 'Finish clearing blocks first',
-                        kind: 'warning'
-                    });
-                    return;
-                }
-                const result = await uninstallHelperAndConfirmRemoved();
-                if (result.success) {
-                    uninstallBtn.textContent = tSettings('helperRemoved');
-                    setTimeout(() => {
-                        window._isRemovingHelper = false;
-                        uninstallBtn.disabled = false;
-                        uninstallBtn.innerHTML = originalHTML;
-                        updateSnwUninstallOption(null);
-                    }, 3000);
-                } else {
-                    window._isRemovingHelper = false;
-                    uninstallBtn.disabled = false;
-                    uninstallBtn.innerHTML = originalHTML;
-                    await message('Failed to remove helper: ' + (result.error || 'Unknown error'), { title: 'Error', kind: 'error' });
-                }
-            } catch (e) {
-                console.error('Failed to uninstall helper:', e);
-                window._isRemovingHelper = false;
-                uninstallBtn.disabled = false;
-                uninstallBtn.innerHTML = originalHTML;
-                await message('Error removing helper: ' + e.message, { title: 'Error', kind: 'error' });
-            }
-        });
-    }
+                await message(`${tSettings('uninstallFailed')}\n\n${e}`, {
+                    title: tSettings('uninstallFailedTitle'),
+                    kind: 'error',
+                });
+            } catch (_) { /* swallow — best-effort error surface */ }
+        }
+    });
+}
 
-    // Option 2: Manual Hosts Reset — challenge
-    let snwChallengeText = '';
-    const manualResetBtn = document.getElementById('snw-manual-reset-btn');
-    const challengeArea = document.getElementById('snw-challenge-area');
-    const terminalCommands = document.getElementById('snw-terminal-commands');
-    const challengeTextEl = document.getElementById('snw-challenge-text');
-    const challengeInput = document.getElementById('snw-challenge-input');
-    const progressBar = document.getElementById('snw-challenge-progress-bar');
+// Refresh the Uninstall button's enabled/disabled state and blocked tooltip.
+// Cheap; safe to call on settings-open and on any activeBlocks/schedules
+// state change. Idempotent — reads DOM only.
+function refreshUninstallButtonState() {
+    const btn = document.getElementById('uninstall-app-btn');
+    const hint = document.getElementById('uninstall-app-hint');
+    if (!btn) return;
 
-    if (manualResetBtn && challengeArea && terminalCommands) {
-        manualResetBtn.addEventListener('click', () => {
-            if (!challengeArea.classList.contains('hidden')) {
-                challengeArea.classList.add('hidden');
-                return;
-            }
-            // Generate 2500 random characters
-            snwChallengeText = generateRandomWords(50);
-            snwChallengeText = snwChallengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
-            if (challengeTextEl) challengeTextEl.textContent = snwChallengeText;
-            if (challengeInput) challengeInput.value = '';
-            if (progressBar) progressBar.style.width = '0%';
-            challengeArea.classList.remove('hidden');
-            terminalCommands.classList.add('hidden');
-            challengeInput?.focus();
-        });
-
-        if (challengeInput) {
-            // Prevent paste
-            challengeInput.addEventListener('paste', (e) => e.preventDefault());
-
-            challengeInput.addEventListener('input', () => {
-                const typed = challengeInput.value;
-                let correctChars = 0;
-                for (let i = 0; i < typed.length && i < snwChallengeText.length; i++) {
-                    if (typed[i] === snwChallengeText[i]) correctChars++;
-                    else break;
-                }
-                const progress = (correctChars / snwChallengeText.length) * 100;
-                if (progressBar) progressBar.style.width = `${progress}%`;
-
-                // Check if complete
-                if (typed === snwChallengeText) {
-                    challengeArea.classList.add('hidden');
-
-                    // Populate with platform-specific instructions
-                    const isMac = navigator.platform?.startsWith('Mac') || navigator.userAgent?.includes('Macintosh');
-                    let appName, command, passwordNote;
-                    if (isMac) {
-                        appName = 'Terminal (find it via Spotlight: press Cmd+Space and type "Terminal")';
-                        command = "sudo sed -i '' '/# === BEGIN REDD BLOCK/,/# === END REDD BLOCK/d' /etc/hosts && sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder";
-                        passwordNote = 'You will be prompted for your Mac password (the cursor won\'t move as you type — this is normal).';
-                    } else {
-                        appName = 'PowerShell as Administrator (right-click the Start menu → "Windows PowerShell (Admin)" or "Terminal (Admin)")';
-                        command = "(Get-Content $env:SystemRoot\\System32\\drivers\\etc\\hosts) | Where-Object { $_ -notmatch 'REDD BLOCK' } | Set-Content $env:SystemRoot\\System32\\drivers\\etc\\hosts; ipconfig /flushdns";
-                        passwordNote = 'You may be prompted to confirm running as Administrator.';
-                    }
-
-                    terminalCommands.innerHTML = `
-                        <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 6px;">
-                            Open <strong>${appName}</strong> and paste this command:
-                        </p>
-                        <pre class="diagnostics-pre" style="font-size: 12px; user-select: all; white-space: pre-wrap; word-break: break-all;">${command}</pre>
-                        <div style="display: flex; gap: 8px; margin-top: 6px; align-items: center;">
-                            <button id="snw-copy-command-btn" class="modal-btn cancel-btn" style="font-size: 12px; padding: 6px 12px; flex-shrink: 0;">Copy command</button>
-                            <span id="snw-copy-status" style="font-size: 12px; color: var(--text-muted);"></span>
-                        </div>
-                        <p style="font-size: 11px; color: var(--text-muted); margin-top: 6px;">
-                            ${passwordNote}
-                        </p>
-                    `;
-
-                    // Wire up copy button
-                    const copyBtn = document.getElementById('snw-copy-command-btn');
-                    const copyStatus = document.getElementById('snw-copy-status');
-                    if (copyBtn) {
-                        copyBtn.addEventListener('click', () => {
-                            navigator.clipboard.writeText(command).then(() => {
-                                copyStatus.textContent = 'Copied!';
-                                setTimeout(() => { copyStatus.textContent = ''; }, 2000);
-                            }).catch(() => {
-                                copyStatus.textContent = 'Copy failed';
-                                setTimeout(() => { copyStatus.textContent = ''; }, 2000);
-                            });
-                        });
-                    }
-
-                    terminalCommands.classList.remove('hidden');
-                }
-            });
+    const blocking = hasAnyBlockingStateToClear();
+    if (blocking) {
+        btn.disabled = true;
+        btn.setAttribute('aria-disabled', 'true');
+        if (hint) {
+            hint.textContent = tSettings('uninstallDisabledHint');
+            hint.classList.remove('hidden');
+        }
+    } else {
+        btn.disabled = false;
+        btn.removeAttribute('aria-disabled');
+        if (hint) {
+            hint.textContent = '';
+            hint.classList.add('hidden');
         }
     }
-
-    // Option 3: Email support with diagnostics
-    const emailBtn = document.getElementById('snw-email-btn');
-    if (emailBtn) {
-        emailBtn.addEventListener('click', async () => {
-            let diagText = 'Could not load diagnostics.';
-            try {
-                const diag = await tauriAPI.getHelperDiagnostics();
-                diagText = formatDiagnosticsText(diag);
-            } catch (e) {
-                console.warn('Failed to get diagnostics for email:', e);
-            }
-
-            const subject = encodeURIComponent('ReDD Block — Something not working');
-            const body = encodeURIComponent(
-                'Hi ReDD Block team,\n\n' +
-                '[Please describe your issue here]\n\n\n' +
-                '--- Diagnostics (auto-generated) ---\n\n' +
-                diagText
-            );
-            const mailtoUrl = `mailto:team@reddfocus.org?subject=${subject}&body=${body}`;
-            try {
-                await openUrl(mailtoUrl);
-            } catch {
-                window.location.href = mailtoUrl;
-            }
-        });
-    }
 }
+
 
 // Find the hardest challenge among all block/schedule state that could still resume later.
 function findHardestChallenge() {
@@ -11172,7 +17275,7 @@ async function performOverrideAll() {
         if (isIOS) {
             await tauriAPI.screentimeClearBlock();
         } else {
-            const status = await refreshDesktopHelperStatus({ syncPreference: false });
+            const status = await refreshDesktopHelperStatus();
             if (status.helperReady) {
                 // Atomically set everything to empty — helper will know nothing should be blocked
                 try { await tauriAPI.setBlocksViaHelper([]); } catch (e) { console.warn('Failed to clear blocks:', e); }
@@ -11195,14 +17298,7 @@ async function performOverrideAll() {
             handleBlocklistSelect({ target: blocklistSelect });
         }
 
-        console.log('Emergency override completed — all blocks, schedules, apps, and hosts entries cleared');
-
-        // Enable the "Something still not working?" button
-        const stillBtn = document.getElementById('still-not-working-btn');
-        if (stillBtn) {
-            stillBtn.disabled = false;
-            stillBtn.title = '';
-        }
+        console.log('Override-all completed — all blocks, schedules, apps, and hosts entries cleared');
     } catch (err) {
         console.error('Error during override all:', err);
     }

@@ -1,6 +1,29 @@
+!macro NSIS_HOOK_POSTINSTALL
+  ; Always launch ReDD Block after install completes. The MUI finish
+  ; page also has a "Run ReDD Block" checkbox (default checked); if
+  ; the user leaves it checked we'd briefly run the app twice — the
+  ; tauri-plugin-single-instance plugin (registered in lib.rs)
+  ; collapses any second instance into a focus-the-existing-window
+  ; call, so this is safe.
+  ;
+  ; Why always-launch: on a v1.x → 2.0 upgrade the migration
+  ; onboarding (full-screen overlay) only fires when the app is
+  ; running. Skipping the launch leaves the user staring at a
+  ; finished installer with no visible result, while v1.x's daemon
+  ; stays alive and unsupervised in the background.
+  Exec '"$INSTDIR\${MAINBINARYNAME}.exe"'
+!macroend
+
 !macro NSIS_HOOK_PREUNINSTALL
-  ; Best-effort pre-kill of main app process so the built-in
-  ; running-app check usually doesn't need to show a second popup.
+  ; 1. Remove the watchdog Scheduled Task FIRST so it doesn't respawn
+  ;    redd-block.exe between the kill below and the actual file
+  ;    deletion that NSIS does after this hook returns. Idempotent —
+  ;    schtasks /Delete /F is silent if the task isn't present.
+  nsExec::ExecToLog 'schtasks /Delete /TN "ReDD Block Watchdog" /F'
+  Pop $0
+
+  ; 2. Best-effort pre-kill of the main app process so the built-in
+  ;    running-app check usually doesn't need to show a second popup.
   !if "${INSTALLMODE}" == "currentUser"
     nsis_tauri_utils::FindProcessCurrentUser "${MAINBINARYNAME}.exe"
   !else
@@ -17,5 +40,21 @@
     Sleep 500
   ${EndIf}
 
-  MessageBox MB_OK|MB_ICONINFORMATION "If $\"Keep Blocking after uninstall$\" is enabled:$\n$\nTo override blocks, reinstall ReDD Block and use $\"Override all$\" in Settings.$\n$\nUrgent help: contact team@reddfocus.org or create an issue at github.com/ulyngs/redd-block/issues"
+  ; 3. Run the app's `--uninstall` mode to remove per-browser
+  ;    native-messaging manifests and the matching HKCU registry keys.
+  ;    Without this, manifests under %LOCALAPPDATA%\ReDD Block\
+  ;    native-host\ and HKCU\Software\<vendor>\<browser>\
+  ;    NativeMessagingHosts\com.ulriklyngs.mindshield would be orphaned
+  ;    after uninstall. The binary still exists at this point — NSIS
+  ;    deletes it after the pre-uninstall hook returns. The --uninstall
+  ;    branch in main.rs runs synchronously and exits; ExecWait blocks
+  ;    until it does.
+  ;
+  ; Note: 2.0 dropped v1.x's "Keep Blocking after uninstall" feature
+  ; entirely (no daemon = no enforcement after the binary is removed).
+  ; The user's blocklists / settings in C:\ProgramData\ReDD Block\
+  ; redd-block-data.json are intentionally preserved so a future
+  ; reinstall picks them back up — only the daemon-state file (now
+  ; absent) and the helper-state.json are scrubbed during migration.
+  ExecWait '"$INSTDIR\${MAINBINARYNAME}.exe" --uninstall'
 !macroend

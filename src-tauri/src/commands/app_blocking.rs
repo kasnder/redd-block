@@ -1,0 +1,82 @@
+// Tauri commands that drive the in-process app watcher.
+// These replace the helper-mediated `set_blocked_apps_via_helper`
+// path once the migration lands.
+
+use std::sync::Mutex;
+use tauri::{AppHandle, Manager, State};
+
+use crate::app_watcher::{self, Handle};
+
+pub struct AppWatcherState(pub Mutex<Option<Handle>>);
+
+impl Default for AppWatcherState {
+    fn default() -> Self {
+        Self(Mutex::new(None))
+    }
+}
+
+/// Replace the effective blocked-app set. Starts the watcher on first
+/// call; subsequent calls update the set in place. The `AppHandle` is
+/// captured so the watcher can emit warning events and pin the main
+/// window — see `app_watcher::start`.
+///
+/// `newly_added` is the subset of `apps` that just transitioned from
+/// "not blocked" to "blocked" (block start, schedule activation,
+/// unpause, …). The watcher uses this list to decide which path a
+/// first-sighting takes: names in `newly_added` raise the Let's-go
+/// warning, names that were already blocked get the silent SIGTERM
+/// mid-block path. The frontend is responsible for computing the
+/// diff — `app_blocking.js` tracks the previous set across
+/// `updateBlockedApps` calls.
+#[tauri::command]
+pub fn set_blocked_apps(
+    app: AppHandle,
+    apps: Vec<String>,
+    newly_added: Vec<String>,
+    state: State<AppWatcherState>,
+) {
+    let mut slot = state.0.lock().expect("app-watcher lock");
+    if slot.is_none() {
+        *slot = Some(app_watcher::start(Some(app)));
+    }
+    if let Some(h) = slot.as_ref() {
+        h.set_apps(apps, newly_added);
+    }
+}
+
+/// Stop the watcher and clear the blocked set.
+#[tauri::command]
+pub fn clear_blocked_apps(state: State<AppWatcherState>) {
+    let mut slot = state.0.lock().expect("app-watcher lock");
+    if let Some(h) = slot.take() {
+        h.stop();
+    }
+}
+
+/// User clicked the single “bring apps forward & quit again” control.
+/// `pids` are the processes currently shown in the warning overlay.
+#[tauri::command]
+pub fn app_blocking_bring_forward_then_quit_again(pids: Vec<u32>) {
+    crate::app_watcher::user_request_activate_then_polite_quit_round(&pids);
+}
+
+/// Frontend's "Let's go!" button. Two things happen:
+///
+/// 1. **Phase transition.** Every PID currently in `AwaitingUserAck`
+///    moves to `PreQuit` (30-second wrap-up before polite Cmd-Q).
+///    Handled by the watcher next sweep via `user_acknowledge_warning`.
+///
+/// 2. **Dismiss the full-screen overlay.** The window resizes back to
+///    its previous size + drops always-on-top, even though the watcher
+///    keeps the PIDs in flight. From here the in-app countdown banner
+///    (rendered by JS) carries the wrap-up timer; the user can keep
+///    using the rest of the system normally.
+#[tauri::command]
+pub fn lets_go_acknowledge(app: AppHandle) {
+    crate::app_watcher::user_acknowledge_warning();
+    crate::app_watcher::force_dismiss_warning_overlay(Some(&app));
+}
+
+pub fn register<R: tauri::Runtime>(app: &tauri::App<R>) {
+    app.manage(AppWatcherState::default());
+}

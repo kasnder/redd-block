@@ -1,5 +1,42 @@
 # ReDD Block Architecture Reference (macOS, Windows, iOS)
 
+> **⚠ Sections 4–9 describe the v1.x helper-daemon desktop
+> architecture and are kept as historical reference only.** The
+> current desktop runtime is the v2 extension-based design — see
+> [browser-ext-migration/V2_OVERVIEW.md](browser-ext-migration/V2_OVERVIEW.md)
+> for the condensed read,
+> [browser-ext-migration/MIGRATION_PLAN.md](browser-ext-migration/MIGRATION_PLAN.md)
+> for full rationale, and
+> [browser-ext-migration/SAFARI_COMPLIANCE.md](browser-ext-migration/SAFARI_COMPLIANCE.md)
+> for the Safari detection model specifically.
+>
+> **v2 desktop runtime in three lines:**
+>
+> - **Website blocking** lives in the ReDD Focus browser extension
+>   (Chrome / Brave / Edge / Firefox / Safari). The Tauri app is the
+>   data source: it doubles as a native-messaging host
+>   (`src-tauri/src/native_host.rs`, `redd-block --native-host`) for
+>   Chromium/Firefox, and bridges through the
+>   `group.com.reddblock.shared` App Group container for Safari
+>   (`src-tauri/src/app_group.rs` +
+>   `redd-focus-web/Shared (Extension)/SafariWebExtensionHandler.swift`).
+> - **Compliance enforcer** (`src-tauri/src/enforcer.rs`) — 5 s scan
+>   tick, 60 s grace (user-configurable 5–300 s), force-quits any
+>   running browser whose extension is missing / disabled / not
+>   allowed in private browsing. `taskkill` on Windows, sysinfo
+>   SIGTERM/SIGKILL on macOS. The tick is gated on
+>   `website_blocking_active` (canonical-data derivation reused from
+>   the native-host payload code), so the enforcer is a no-op
+>   whenever no website-blocking is currently active.
+> - **App blocking** runs in-process via
+>   `src-tauri/src/app_watcher.rs` — sysinfo poll-and-kill loop
+>   shared by both OSes. The earlier AppleScript NSWorkspace watcher
+>   on macOS and `SetWinEventHook` path on Windows have been removed.
+>
+> The privileged helper daemon is gone. No hosts-file writes on any
+> platform. No admin/UAC prompt at install time (only once at first
+> launch if v1.x residue needs cleanup).
+
 This is the technical architecture source-of-truth for ReDD Block.
 
 It is intentionally detailed and implementation-aligned, with file references to actual code paths.
@@ -764,6 +801,34 @@ Closing app window does not stop helper runtime. Helper loops continue:
 - expiry,
 - schedule evaluation,
 - app watcher.
+
+### 12.1.1 macOS Dock + menu bar lifecycle
+
+The macOS app flips its `NSApp` activation policy at runtime so it
+behaves like a hybrid between a standard foreground app and a
+menu-bar utility (mirroring Cold Turkey Blocker's UX):
+
+- window visible → `NSApplicationActivationPolicyRegular` (Dock icon
+  present, app name in the global menu bar);
+- window hidden → `NSApplicationActivationPolicyAccessory` (no Dock
+  icon, no global menu bar; only the tray icon represents the app).
+
+Transitions are wired up at every show/hide entry point:
+
+- launch with `--autostart` boots straight into Accessory; a normal
+  launch boots into Regular,
+- `WindowEvent::CloseRequested` (red X / Cmd-W) → hide + Accessory,
+- `applicationShouldTerminate:` (Cmd-Q intercepted by
+  `install_terminate_guard`) → `[NSApp hide:]` + Accessory,
+- the JS title-bar close button calls the
+  `hide_main_window` Tauri command, which marshals the hide +
+  Accessory flip onto the AppKit main thread,
+- tray-icon click, "Reopen Main Window" menu item, dock-icon click
+  (`RunEvent::Reopen`), and the enforcer's `reveal_app` all promote
+  back to Regular before showing the window.
+
+The enforcer / app-watcher / native messaging host keep running the
+whole time; the activation policy is purely a presentation toggle.
 
 ## 12.2 App uninstall/removal
 

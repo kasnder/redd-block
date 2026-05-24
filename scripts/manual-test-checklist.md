@@ -3,7 +3,7 @@
 ## Before Each Release
 
 Run this checklist before publishing a new version. Use a test blocklist with safe, non-critical sites.  
-For iOS builds, run **section 10 (iOS-Specific)** on a physical device so coverage mirrors desktop where applicable.
+For iOS builds, run **section 14 (iOS-Specific)** on a physical device so coverage mirrors desktop where applicable.
 
 ---
 
@@ -179,33 +179,12 @@ Override applies to both websites and apps: overriding a block or using Override
 
 ## 8. Advanced Settings
 
-### Clean Hosts File
-- [ ] Verify "Clean hosts file" button is **disabled** when blocks are running
-- [ ] Stop all blocks
-- [ ] Click "Clean hosts file" → verify confirmation dialog appears
-- [ ] Confirm → verify success message
-- [ ] Check that hosts file no longer has ReDD Block entries
-
-### Keep Blocking on Uninstall
-- [ ] Enable "Keep blocking after app removal" toggle (default: on)
-- [ ] Start a block, then **move the .app to Trash** (Mac) or uninstall (Windows)
-- [ ] Wait ~5 minutes (helper checks every 5 min)
-- [ ] Verify block continues running (sites still blocked)
-- [ ] Re-install app, stop the block
-
-- [ ] Disable "Keep blocking after app removal" toggle
-- [ ] Start a block, then **move the .app to Trash** (Mac) or uninstall (Windows)
-- [ ] Wait ~5 minutes
-- [ ] Verify helper cleans up and removes itself
-- [ ] Verify hosts file is restored
-
 ### Diagnostics
 - [ ] Open Settings → Diagnostics
 - [ ] Verify diagnostics modal opens and loads without error
-- [ ] Verify helper section shows a sensible desktop status (`Running`, `Update available`, `Installed, not running`, or `Not installed`)
-- [ ] Verify version / expected version fields are present
-- [ ] Verify hosts file preview is present
-- [ ] Verify helper state file preview is present
+- [ ] Verify per-browser extension status shows Installed / Enabled / Allowed in private browsing for each detected browser (Chrome, Brave, Edge, Firefox, Safari)
+- [ ] Verify the native-messaging manifest paths (`~/Library/Application Support/<browser>/NativeMessagingHosts/com.ulriklyngs.mindshield.json`) are listed and present on disk
+- [ ] Verify Automation permission status (macOS) is shown
 - [ ] Click "Copy to Clipboard" → verify diagnostic text is copied
 
 ### Still Not Working
@@ -220,40 +199,110 @@ Override applies to both websites and apps: overriding a block or using Override
 
 ---
 
-## 9. Helper Lifecycle
+## 9. First-Launch Upgrade Migration (from v1.0.x)
 
-### Installation & Status
-- [ ] Fresh install: start a block → verify helper installs (UAC on Windows)
-- [ ] Open Settings → verify helper status shows "Running"
-- [ ] Verify version matches expected version
+Run this on a fresh user profile that already has a v1.0.x install (or simulate by hand-crafting `/etc/hosts` markers and stubbing the launchd plist).
 
-### Upgrade
-- [ ] With older helper running, open the app
-- [ ] Verify "Update available" status appears
-- [ ] Click Update → verify helper restarts with new version
-
-### Repair / Reinstall
-- [ ] With helper installed but not running, open Settings → verify helper status shows "Installed, not running"
-- [ ] Start a block
-- [ ] Verify helper modal uses repair/reinstall wording rather than first-install wording
-- [ ] Verify the action button reflects repair/reinstall (not update)
-- [ ] Complete the flow → verify helper returns to "Running"
-
-### Uninstall Helper
-- [ ] With NO active blocks: click "Uninstall Helper" → verify confirmation dialog → confirm
-- [ ] Verify uninstall button shows progress state while removal is running
-- [ ] Verify success is communicated primarily in the button state (not via overlapping success popups)
-- [ ] Verify helper status changes to "Not installed"
-- [ ] Verify helper process is no longer running (`ps aux | grep redd-block-helper` on Mac, Task Manager on Windows)
-- [ ] Verify hosts file is clean (no ReDD Block entries)
-- [ ] Open "Something still not working?" → use uninstall there too → verify behavior is consistent with Settings uninstall flow
-
-- [ ] With active blocks: verify "Uninstall Helper" button is disabled
-- [ ] Verify tooltip says "Override all running blocks first"
+- [ ] `/etc/hosts` contains `# ReDD Block start ...` markers before launch
+- [ ] Old launchd daemon (`com.reddblock.helper.plist`) installed in `/Library/LaunchDaemons` before launch
+- [ ] Launch the new build → admin password prompt to bootout the legacy daemon (osascript / AppleScript)
+- [ ] After auth: `/etc/hosts` markers gone, `/Library/LaunchDaemons/com.reddblock.helper.plist` removed, `/var/lib/redd-block/` (or its contents) cleaned up
+- [ ] Native-messaging manifests written to `~/Library/Application Support/{Google/Chrome,BraveSoftware/Brave-Browser,Microsoft Edge,Mozilla}/NativeMessagingHosts/com.ulriklyngs.mindshield.json`
+- [ ] `redd-block-data.json::settings.migrationRanAtVersion` equals the running app version
+- [ ] Quit and relaunch → no admin re-prompt, migration is idempotent
 
 ---
 
-## 10. iOS-Specific (Physical Device Only)
+## 10. Browser-Extension Compliance & Enforcer
+
+Run with at least two of {Chrome, Brave, Edge, Firefox, Safari} installed.
+
+### Compliance Banner
+- [ ] Fresh launch with the ReDD Focus extension **uninstalled** in browser X → "ReDD Focus extension is missing in X" banner appears
+- [ ] Click Install in banner → opens X's extension store / Safari extensions pane
+- [ ] Install + enable the extension in X → return to ReDD Block window → banner clears within ~2 s of the focus listener firing
+- [ ] Disable the extension in X → banner reappears
+- [ ] Disable "Allow in private browsing" (Chrome/Firefox/Edge) → banner reappears
+
+### Enforcer Grace Timer
+- [ ] Start an active block → enforcer is running (debug: tick logs every 5 s)
+- [ ] In browser X, disable the ReDD Focus extension while a block is active
+- [ ] Toast appears: "X is non-compliant — quitting in 60 s" (first offense) with countdown
+- [ ] Re-enable the extension before zero → toast clears, browser stays open (`enforcer://grace-resolved`)
+- [ ] Disable again → toast shows 30 s grace (repeat offense)
+- [ ] Let the timer expire → browser X gets `osascript quit` (macOS) / `taskkill` (Windows)
+
+### Native-Messaging Connectivity
+- [ ] Trigger an active block from ReDD Block → in browser X (extension installed), navigate to a blocked domain → redirected to extension's `blocked.html`
+- [ ] `blocked.html` shows: emoji + name pill, source ("schedule" or "active block"), countdown to `endsAt`, started-at row
+- [ ] Repeat for each browser X in {Chrome, Brave, Edge, Firefox}
+- [ ] Native host log present at `~/Library/Application Support/com.reddblock/native-host.log` (or whichever path `resolve_data_path` resolved to) with `spawned pid=...` lines
+
+---
+
+## 11. App Watcher (in-process, macOS)
+
+- [ ] Add a safe blocked app (e.g. Calculator, Notes) to a blocklist
+- [ ] Start an active block
+- [ ] Launch the blocked app → app gets hidden via System Events within ~1 s
+- [ ] Quit and relaunch the app → it gets hidden again
+- [ ] End the block → the app opens normally without being hidden
+- [ ] Run `ps -ax | grep osascript` → verify the persistent NSWorkspace watcher subprocess is alive (single instance, owned by ReDD Block)
+- [ ] Leave ReDD Block running for >10 minutes → watcher subprocess still alive
+
+### Automation TCC Permission
+- [ ] On a clean user (or after revoking via System Settings → Privacy & Security → Automation): launch ReDD Block
+- [ ] "Automation permission needed" banner appears with "Grant" button
+- [ ] Click Grant → macOS shows the system-events authorization prompt
+- [ ] Allow → banner clears (re-checked on window `focus` event)
+- [ ] Revoke in System Settings → return to ReDD Block window → banner reappears with "Open Settings" button (denied state)
+- [ ] Click Open Settings → System Settings opens to the Automation pane
+- [ ] Re-grant in Settings → return to app → banner clears
+
+---
+
+## 12. Persistence: Hide-on-Close + Launch-at-Login (macOS)
+
+- [ ] Click ⌘W or the red close button → window hides instead of quitting
+- [ ] Tray icon remains in the menu bar; clicking it reopens the window
+- [ ] Quit ReDD Block from the tray menu → window and tray icon gone
+- [ ] `launchctl list | grep com.reddblock` → LaunchAgent is registered
+- [ ] Log out and log back in → ReDD Block launches automatically (hidden, tray-only)
+- [ ] Disable "Launch at login" in Settings → `launchctl list | grep com.reddblock` returns nothing after next launch
+
+---
+
+## 13. Safari Extension via App Group
+
+Requires the ReDD Focus Safari extension built locally from `redd-focus-web/` and enabled in Safari → Settings → Extensions. Both bundles must declare the `group.com.reddblock.shared` App Group entitlement.
+
+- [ ] Build `redd-focus-web` in Xcode (Product → Run on macOS target). App launches and exposes the extension to Safari
+- [ ] Grant ReDD Block Full Disk Access in System Settings → Privacy & Security → Full Disk Access
+- [ ] Open Safari → Settings → Extensions → enable ReDD Focus
+- [ ] Enable "Allow in Private Browsing" for ReDD Focus
+- [ ] Allow ReDD Focus on "All Websites"
+- [ ] Confirm `~/Library/Group Containers/group.com.reddblock.shared/redd-block-data.json` exists and is fresh after a save in ReDD Block
+- [ ] Confirm ReDD Block reports Safari as set up from `~/Library/Containers/com.apple.Safari/Data/Library/Safari/WebExtensions/Extensions.plist`
+- [ ] Trigger an active block in ReDD Block → in Safari, navigate to a blocked domain → redirected to extension's `blocked.html` with metadata
+- [ ] `Console.app` filtered on `ReDDFocus native message` shows the handler firing on each navigation
+- [ ] Modify the block's name/emoji in ReDD Block → re-navigate in Safari → updated metadata appears in `blocked.html` (proves App Group write↔read round-trip)
+- [ ] End the block in ReDD Block → previously-blocked tabs in Safari unblock on next navigation / sweep
+
+### Strict Safari enforcement
+
+Safari is enforced whenever its process is running, matching Chrome / Brave / Edge / Firefox. Missing Full Disk Access is non-compliant because ReDD Block cannot verify Safari extension settings.
+
+- [ ] With Safari running and the extension correctly configured, no in-session compliance banner appears
+- [ ] Revoke Full Disk Access, launch Safari → grace timer fires, Safari force-quits at zero, and ReDD Block opens in front
+- [ ] Cmd-M (minimise) Safari with ReDD Focus disabled → grace timer still fires and Safari force-quits at zero
+- [ ] Cmd-H (hide) Safari with ReDD Focus disabled → grace timer still fires and Safari force-quits at zero
+- [ ] Park Safari on Mission Control space 2 with ReDD Focus disabled → grace timer still fires and Safari force-quits at zero
+- [ ] Disable ReDD Focus in Safari → Settings → Extensions → in-session banner appears, grace timer fires, Safari force-quits at zero, and ReDD Block opens in front
+- [ ] Re-enable the extension while the grace timer is counting down → banner clears, Safari stays open
+
+---
+
+## 14. iOS-Specific (Physical Device Only)
 
 iOS uses Screen Time APIs instead of the desktop helper; there is no hosts file or helper daemon. Blocking and override behavior apply to both websites and apps in the same way. Test the same behaviors where they apply. Skip: Clean hosts file, Keep blocking on uninstall, Helper lifecycle (install/upgrade/uninstall).
 

@@ -6,9 +6,9 @@ Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and th
 
 ## Features
 
-- **Cross-Platform** — Works on macOS, Windows, iOS (iPad/iPhone), and Android (source code for the Android version is here: https://github.com/kasnder/redd-block-android)
-- **Website Blocking** — System-level blocking works across all browsers (hosts file on desktop, Screen Time on iOS)
-- **App Blocking** — Automatically blocks distracting apps (minimizes/hides on desktop, Screen Time shield overlay on iOS)
+- **Cross-Platform** — Works on macOS 11+, Windows 10+, iOS (iPad/iPhone), and Android (source code for the Android version is here: https://github.com/kasnder/redd-block-android)
+- **Website Blocking** — Via the ReDD Focus browser extension on desktop (Chrome/Brave/Edge/Firefox via a built-in native messaging host; Safari via `SafariWebExtensionHandler` plus an App Group bridge). On iOS it's the Screen Time API.
+- **App Blocking** — Automatically blocks distracting apps (minimizes/hides on desktop via in-process watcher, Screen Time shield overlay on iOS)
 - **Flexible Blocklists** — Create multiple lists with custom names, colors, and emojis
 - **One-Off Blocks** — Quick blocks for immediate focus sessions
 - **Scheduled Blocks** — Set recurring blocks on specific days/times (e.g., block social media Mon-Fri 9am-5pm)
@@ -19,7 +19,31 @@ Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and th
 
 ## Architecture
 
-### Desktop (macOS / Windows)
+### Desktop
+
+One unprivileged Tauri binary per OS. No helper daemon, no hosts file,
+no admin prompt. Website blocking goes through the ReDD Focus browser
+extension on both OSes:
+
+- **Chrome / Brave / Edge / Firefox** talk to the app via native
+  messaging. The Tauri binary runs in `--native-host` mode (argv flag)
+  and speaks the stdio-framed JSON protocol; the install step writes
+  per-browser manifest JSON (macOS) or `HKCU\…\NativeMessagingHosts`
+  registry keys (Windows). Entirely user-scope.
+- **Safari** (macOS) routes through `SafariWebExtensionHandler.swift`
+  inside the signed `.app` bundle. ReDD Block mirrors
+  `redd-block-data.json` into the shared App Group container for
+  blocking data, and reads Safari's `Extensions.plist` under Full Disk
+  Access for extension compliance checks.
+- An in-app **enforcement loop** scans running browsers every ~5 s
+  (using the Rust-ported profile-scan code) and nags / quits any
+  browser whose ReDD Focus extension is missing, disabled, or not
+  allowed in private browsing.
+
+App blocking runs in-process on both OSes (AppleScript hide on macOS,
+`SetWinEventHook` + `ShowWindow` on Windows). Scheduled blocks, pause /
+resume, one-off blocks, and override challenges all work without a
+separate daemon because the app launches at login and hides on close.
 
 ```mermaid
 flowchart TB
@@ -30,24 +54,26 @@ flowchart TB
     subgraph Tauri["Tauri Backend (Rust)"]
         IPC[IPC Commands]
         Data[Data Store]
+        Watcher[App Watcher]
+        Enforcer[Extension Enforcer]
+        Host[Native Host CLI Mode]
     end
 
-    subgraph Helper["Helper Daemon (Privileged)"]
-        HostsMgr[Hosts Manager]
-        AppWatcher[App Watcher]
-        State[Persisted State]
+    subgraph Browsers["Chrome / Brave / Edge / Firefox"]
+        Ext[ReDD Focus Extension]
     end
 
-    subgraph System["System Resources"]
-        Hosts["/etc/hosts"]
-        Apps[Running Apps]
+    subgraph Safari["Safari (macOS)"]
+        SafariHandler[SafariWebExtensionHandler.swift]
     end
 
     UI <-->|invoke/listen| IPC
-    IPC <-->|TCP localhost| Helper
     IPC --> Data
-    HostsMgr -->|read/write| Hosts
-    AppWatcher -->|hide/minimize| Apps
+    Host <-->|stdio| Ext
+    SafariHandler <-->|NSExtensionItem| Ext
+    IPC --> SafariHandler
+    Enforcer -->|quit on non-compliance| Ext
+    Watcher -->|hide/minimize| Apps[Running Apps]
 ```
 
 ### iOS (iPad / iPhone)
@@ -88,18 +114,13 @@ flowchart TB
 
 ### Website Blocking
 
-**Desktop (macOS / Windows):** A privileged helper daemon modifies the system hosts file to redirect blocked domains to `0.0.0.0`. Blocks persist across app restarts and work in all browsers.
+**Desktop (macOS / Windows):** Website blocking uses the ReDD Focus browser extension. The app registers itself as a native-messaging host, derives the current blocklist from `redd-block-data.json`, and pushes it over stdio to the extension running in Chrome / Brave / Edge / Firefox. Safari (macOS) reads the same data from the shared App Group container; ReDD Block verifies Safari's enabled/private-browsing state by reading Safari's `Extensions.plist` under Full Disk Access. A background loop in the app scans running browsers every ~5 seconds and quits any that have the extension missing, disabled, or not configured the way ReDD Block expects.
 
-| Platform | Hosts File | Helper Location |
-|----------|------------|-----------------|
-| macOS | `/etc/hosts` | `/Library/PrivilegedHelperTools/com.redd.block.helper` (launchd daemon) |
-| Windows | `C:\Windows\System32\drivers\etc\hosts` | Scheduled Task (runs at logon) |
-
-**iOS:** Website blocking uses the Screen Time API's `WebContentSettings` to block domains at the OS level — no hosts file is involved. Users type in domains to block, and the app applies them via a `ManagedSettingsStore` shield.
+**iOS:** Website blocking uses the Screen Time API's `WebContentSettings` to block domains at the OS level. Users type in domains to block, and the app applies them via a `ManagedSettingsStore`. One-time authorization in Settings → Screen Time.
 
 ### App Blocking
 
-**Desktop (macOS / Windows):** The helper daemon uses event-driven monitoring to detect when blocked apps are launched or brought to focus, then immediately hides/minimizes them. App blocking persists even when the main app is closed.
+**Desktop (macOS / Windows):** The app itself uses event-driven monitoring to detect when blocked apps are launched or brought to focus, then immediately hides/minimizes them. No elevated privileges required. App blocking persists as long as the app is running — the app hides to tray on close and launches automatically at login so blocks keep firing across sessions.
 
 **iOS:** App blocking uses the Screen Time API's `ManagedSettingsStore` to apply a shield overlay on selected apps and categories.
 
@@ -116,22 +137,24 @@ This is why iOS scheduled blocking is possible without a desktop-style helper da
 
 | Platform | Detection Method | Hide Method |
 |----------|------------------|-------------|
-| macOS | NSWorkspace notifications (via helper daemon) | `set visible of application process to false` |
-| Windows | SetWinEventHook for foreground changes (via helper daemon) | ShowWindow with SW_MINIMIZE |
+| macOS | NSWorkspace notifications (in-process, Accessibility TCC) | `set visible of application process to false` |
+| Windows | SetWinEventHook for foreground changes (in-process) | ShowWindow with SW_FORCEMINIMIZE |
 | iOS | Screen Time `ManagedSettingsStore` | Shield overlay via `ShieldSettings` |
 
-### Helper Daemon (Desktop Only)
+### Authorization prompts (desktop)
 
-Runs with elevated privileges to manage hosts file changes and app blocking. On first use, requests admin credentials once. After setup, blocks start instantly without prompts.
+- **Both OSes**: users install the ReDD Focus extension from the Chrome Web Store / Firefox Add-ons / Edge Add-ons. For Safari (macOS), the extension is bundled inside the signed `.app` and the user enables it in Safari → Settings → Extensions.
+- **macOS**: the first time app blocking fires, macOS prompts for Accessibility / Automation permission so the app can call `System Events` to hide blocked apps.
+- No admin or UAC prompt on either OS.
 
-- **macOS**: Installed as a launchd daemon, authorized via password prompt
-- **Windows**: Installed as a Scheduled Task with highest privileges, authorized via UAC prompt
-- **Auto-upgrade**: If the helper is outdated when you start a block, the app prompts you to reinstall it (which upgrades it in place)
-- **Repair/reinstall**: If the helper is installed but not running, starting a desktop block prompts a reinstall/repair flow before blocking begins
-- **Troubleshooting**: If websites remain blocked after all blocks are stopped, use the "Clean hosts file" button in Settings → Advanced Options to remove stale entries
-- **Diagnostics**: Settings → Diagnostics shows helper status/version, hosts file preview, helper state, and available log tails for troubleshooting
+### First launch after upgrade
 
-On iOS, the helper daemon is not used — blocking is handled entirely through the Screen Time API.
+An app that was previously installed at v1.0.x has a privileged helper daemon + redd-block entries in the hosts file. On first launch after upgrade the app:
+
+1. Strips its own section from `/etc/hosts` (macOS) or `C:\Windows\System32\drivers\etc\hosts` (Windows).
+2. Removes the launchd daemon / Scheduled Task and helper binary (macOS prompts once for the admin password; Windows cleans up user-scope state silently).
+3. Registers itself as a launch-at-login item and a native-messaging host (both OSes).
+4. Prompts the user to install the ReDD Focus extension if not already present in any running browser.
 
 ## Local Development
 
@@ -171,8 +194,15 @@ The app will open automatically. Hot-reloading is enabled for both frontend (Vit
 ### Building
 
 ```bash
-# macOS: Universal binary (Intel + Apple Silicon) → DMG
+# macOS: Universal binary (Intel + Apple Silicon) → .app
+# (embeds the Safari Web Extension, signs + notarizes + staples)
 npm run build:mac
+
+# macOS: Wrap the .app into a signed/notarized .pkg installer
+npm run build:mac-pkg -- --release
+
+# macOS: Both in one go
+npm run build:mac-all
 
 # Windows: NSIS/MSI installers (x64 + ARM64)
 npm run build:win
@@ -185,7 +215,7 @@ Built artifacts are copied to `for-distribution/` for upload or direct distribut
 
 ### Testing
 
-Testing is organized into three automated tiers plus a manual checklist:
+Testing is organized into two automated tiers plus a manual checklist:
 
 **1. Unit Tests (in-app, instant)**
 
@@ -199,7 +229,7 @@ npm run dev                   # Start the app
 
 **2. Integration Tests (in-app, profile-based)**
 
-Creates real blocks using safe `.invalid` domains and verifies helper-backed enforcement through the real app -> Tauri -> helper path. The default `core` profile covers hosts modification, expiry, schedule activation, one-off pause/resume enforcement, overlap safety, scoped clear, and helper diagnostics/status parity. The `full` profile adds broader pause/schedule cases, extra clear semantics, app-command transport checks, and duplicate/max-difficulty paths. Requires the helper daemon to be running and can modify real desktop system state. See `testing.md` for the exact profile breakdown.
+Creates real blocks using safe `.invalid` domains and verifies enforcement end-to-end through the app. Covers Screen Time / native-host sync, schedule activation, one-off pause/resume, overlap safety, scoped clear, and diagnostics parity.
 
 ```bash
 # In the dev console:
@@ -207,24 +237,9 @@ runIntegrationTests('core')   # default, faster critical checks
 runIntegrationTests('full')   # core + expanded non-UI coverage
 ```
 
-**3. Helper Daemon Smoke Test (terminal)**
+**3. Manual Checklist**
 
-Talks directly to the helper daemon via IPC — verifies ping, version, start block → hosts file check → clear block → cleanup → localhost safety.
-
-```bash
-# macOS
-sudo ./scripts/test-helper-mac.sh
-
-# Windows (PowerShell as admin)
-.\scripts\test-helper-win.ps1
-
-# Or cross-platform via npm
-npm run test:helper
-```
-
-**4. Manual Checklist**
-
-See `scripts/manual-test-checklist.md` for the full pre-release checklist including advanced settings (override all, clean hosts, keep-blocking-on-uninstall), helper lifecycle (install/upgrade/remove), and iOS-specific tests.
+See `scripts/manual-test-checklist.md` for the full pre-release checklist. Key items for the new architecture: Screen Time authorization flow (macOS), browser-extension install + enforcer grace timer (Windows), hide-on-close + launch-at-login, first-launch migration off the legacy helper.
 
 ## Project Structure
 
@@ -236,84 +251,66 @@ redd-block/
 │   └── styles.css                # Styling
 ├── src-tauri/                    # Tauri backend (Rust)
 │   ├── src/
-│   │   ├── lib.rs                # App setup & window config
-│   │   └── commands/             # IPC commands
+│   │   ├── lib.rs                # App setup, tray, hide-on-close, autostart
+│   │   ├── app_watcher.rs        # In-process app watcher (NSWorkspace / SetWinEventHook)
+│   │   ├── enforcer.rs           # Browser-extension compliance loop (Windows)
+│   │   ├── native_host.rs        # --native-host CLI mode (stdio framing)
+│   │   ├── native_host_install.rs # Registers native-messaging manifests
+│   │   ├── profile_scan.rs       # Reads browser profile files
+│   │   └── commands/             # IPC commands (data, apps, migration, …)
+│   ├── entitlements.macos.plist  # com.apple.developer.family-controls
 │   ├── gen/apple/                # Generated Xcode project
 │   ├── tauri.conf.json           # Shared Tauri config
 │   ├── tauri.ios.conf.json       # iOS-specific config
 │   ├── tauri.macos.conf.json     # macOS-specific config
 │   └── tauri.windows.conf.json   # Windows-specific config
-├── tauri-plugin-screentime/      # iOS Screen Time plugin
+├── tauri-plugin-screentime/      # iOS Screen Time plugin (desktop uses extension path)
 │   ├── ios/Sources/              # Swift plugin (FamilyActivityPicker, ManagedSettings)
-│   ├── src/                      # Rust bindings (commands, models, mobile/desktop)
+│   ├── src/                      # Rust bindings
 │   └── permissions/              # Plugin permissions
-├── helper-daemon/                # Privileged helper (Rust, desktop only)
-│   └── src/main.rs               # Hosts file, app watching, schedules
-├── scripts/                      # Build, signing, and dev scripts
-├── docs/                         # GitHub Pages (version info for reddfocus.org, App Store privacy policy)
+├── browser-ext-migration/
+│   ├── MIGRATION_PLAN.md         # Rollout plan + remaining-work checklist
+│   ├── FUTURE_OPTIONS.md         # Parked localhost fallback + signed .pkg notes
+├── scripts/                      # Build and signing scripts
+├── docs/                         # GitHub Pages (version info, App Store privacy policy)
 └── vite.config.js                # Vite dev server config
 ```
 
 ## Version Management
 
-The app and helper daemon are versioned independently:
-
 | Component | Version Location |
 |-----------|------------------|
 | **App** | `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` |
-| **Helper daemon** | `helper-daemon/Cargo.toml` |
-| **Expected helper version** | `src-tauri/src/commands/helper.rs` → `EXPECTED_HELPER_VERSION` |
 | **Published versions** | `docs/latest-versions.json` (macOS, Windows, iOS) |
 
-Use `./scripts/bump-version.sh <version>` to update the app and helper version in all files at once. When updating the helper daemon independently, also update `EXPECTED_HELPER_VERSION` in `helper.rs` to match.
-
-This separation avoids prompting users to reinstall the helper when only the app changes.
+Use `./scripts/bump-version.sh <version>` to update the app version in all files at once.
 
 ## Data Storage
 
 ### App Data
 
-Desktop app data can exist in both a legacy per-user location and a shared system-wide location. Once the shared location becomes active, the app continues to prefer it so reinstall/uninstall flows do not silently flip storage location.
-
-| Platform | Legacy per-user location | Shared desktop location |
-|----------|--------------------------|-------------------------|
-| macOS | `~/Library/Application Support/com.redd.block/redd-block-data.json` | `/var/lib/redd-block/redd-block-data.json` |
-| Windows | `%AppData%\com.redd.block\redd-block-data.json` | `C:\ProgramData\ReDD Block\redd-block-data.json` |
-| iOS | App sandbox (managed by Tauri) | N/A |
+| Platform | Location |
+|----------|----------|
+| macOS | `~/Library/Application Support/com.redd.block/redd-block-data.json` |
+| Windows | `%AppData%\com.redd.block\redd-block-data.json` |
+| iOS | App sandbox (managed by Tauri) |
 
 Contains blocklists, schedules, active blocks, and settings.
 
-### Helper State
-
-| Platform | Location |
-|----------|----------|
-| macOS | `/var/lib/redd-block/helper-state.json` |
-| Windows | `C:\ProgramData\ReDD Block\helper-state.json` |
-| iOS | N/A (uses Screen Time API) |
-
-Tracks blocking state so blocks persist across app restarts.
+On Windows the built-in native-messaging host reads this file directly to derive the current blocklist for the extension — no separate IPC channel.
 
 ### Uninstall Behavior
 
-User data is preserved unless manually deleted. On desktop, reinstalling typically restores blocklists and settings automatically from the active app-data location (shared if already adopted, otherwise legacy per-user storage).
+User data is preserved unless manually deleted. Uninstalling the app also removes:
 
-The helper daemon checks every 5 minutes whether the main app is still installed. If the app is no longer detected:
-- **"Keep blocking running if app is uninstalled" is ON (default):** The helper keeps running as long as any one-off blocks, app blocks, or schedules are active. Once they all finish, it cleans up and removes itself.
-- **"Keep blocking running if app is uninstalled" is OFF:** The helper immediately cleans up (restores the hosts file, clears state) and removes itself.
+- the launch-at-login / login-item entry registered by `tauri-plugin-autostart`,
+- the native-messaging manifests and registry keys (Windows) / files (macOS) written by `install_native_host`.
 
-### Desktop Development Caveat
-
-Local desktop dev builds and installed release builds currently talk to the same machine-global helper installation and helper state on a given machine.
-
-This means:
-
-- a local `npm run dev` session can see a helper installed by a release build,
-- reinstall/uninstall observations can be affected by stale helper state or logs from another build,
-- helper lifecycle debugging is clearest on a clean machine or VM.
+Active blocks stop firing once the app is gone because the app itself is now the enforcement engine. A paid-for-itself "keep blocking after uninstall" mode is no longer provided.
 
 ## Requirements
 
-- **macOS**: 10.15+ (Catalina or later)
+- **macOS**: 11.0+ (Big Sur or later) — required for Safari Web Extensions
 - **Windows**: 10+ (version 1809 or later)
 - **iOS**: 16.0+ (iPhone and iPad)
 - **Android**: see https://github.com/kasnder/redd-block-android
@@ -321,4 +318,5 @@ This means:
 
 ## Tech Debt
 
-- **Rename `updateHostsFile()`**: This function is misleadingly named. On desktop it updates the hosts file (website blocking only), but on iOS it dispatches to the Screen Time API and handles *both* website and app blocking (`screentimeStartBlock`/`screentimeClearBlock`). Meanwhile, `updateBlockedApps()` returns immediately on iOS (`if (isIOS) return`). Consider renaming `updateHostsFile()` to something like `syncWebsiteBlocking()` or splitting the iOS Screen Time logic into its own function that clearly handles both websites and apps.
+- **Rename `updateHostsFile()`**: misleading now that no platform writes a hosts file. On desktop it's a no-op notify (the native messaging host re-reads the file on change). Consider renaming to `syncWebsiteBlocking()`.
+- **Frontend still calls legacy `*_via_helper` commands** via the shim in `src-tauri/src/commands/helper_shim.rs`. Rewrite `src/app.js` to call `set_blocked_apps` / `scan_browser_profiles` / Screen Time plugin commands directly and delete the shim.

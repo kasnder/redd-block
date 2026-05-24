@@ -11,8 +11,18 @@
 <body>
     <div class="app-container">
         <!-- Title Bar -->
-        <div class="title-bar">
+        <div class="title-bar" data-tauri-drag-region>
             <div data-tauri-drag-region></div>
+            <!-- Blocking row: "BLOCKING NOW" + chips when something is enforcing; idle copy
+                 in the chips slot when nothing is active (may show next scheduled start).
+                 Drag-region applied to non-interactive elements so the user can drag the
+                 window from the label/idle text; chips opt out via the chip class. -->
+            <div id="now-blocking-row" class="now-blocking-row hidden" role="status"
+                aria-labelledby="now-blocking-label-text" data-tauri-drag-region>
+                <span id="now-blocking-label-text" class="now-blocking-heading" data-tauri-drag-region>BLOCKING NOW</span>
+                <span class="now-blocking-dot" aria-hidden="true" data-tauri-drag-region></span>
+                <div class="now-blocking-chips" id="now-blocking-chips" data-tauri-drag-region></div>
+            </div>
             <div id="window-controls" class="window-controls hidden">
                 <button id="titlebar-minimize" class="win-btn" title="Minimize">
                     <!-- Windows minimize icon: horizontal line -->
@@ -66,50 +76,402 @@
             </button>
         </div>
 
-        <!-- Helper Update Banner (shown when the installed helper daemon is older than required) -->
-        <div id="helper-update-banner" class="update-banner hidden">
+        <!-- Persistent "set up the extension" reminder. Surfaces on
+             every launch whenever any installed browser is missing
+             the ReDD Focus extension (or has it disabled / not
+             allowed in private). Distinct from the one-time welcome
+             overlay — this is a slim, low-key footer-style note that
+             stays visible as a status indicator until the user is
+             compliant or installs the extension. The × button
+             dismisses for the current session only; the banner
+             reappears next launch / on focus refresh if still
+             relevant, so the reminder doesn't silently disappear
+             forever the way a localStorage-persisted dismissal
+             would. -->
+        <!-- App-blocking close-down countdown. Replaces the always-on-top
+             warning panel once the user has clicked "Let's go!"; ticks
+             down to the polite Cmd-Q (T+30s) and then through the
+             SIGKILL grace (T+40s). Auto-hides when every tracked app
+             has exited (clean save+quit or SIGKILL'd). -->
+        <div id="app-blocking-closedown-banner" class="update-banner app-blocking-closedown-banner hidden">
             <div class="update-banner-content">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <polyline points="7 10 12 15 17 10" />
-                    <line x1="12" y1="15" x2="12" y2="3" />
+                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12 6 12 12 16 14" />
                 </svg>
-                <span id="helper-update-banner-text">A small update to the helper service is available</span>
-                <button id="helper-update-banner-btn" class="update-banner-btn">Update helper...</button>
+                <span id="app-blocking-closedown-banner-text"></span>
             </div>
         </div>
 
-        <div id="eula-onboarding" class="onboarding-screen hidden">
-            <div class="onboarding-content legal-onboarding-content">
-                <div class="onboarding-icon">
-                    <img src="/reddblock-icon.svg" alt="ReDD Block app icon" class="onboarding-app-icon">
+        <!-- Combined setup banner: extension compliance + optional FDA reminder. -->
+        <div id="behaviour-change-banner" class="update-banner setup-banner hidden">
+            <div class="update-banner-content">
+                <svg class="setup-banner-info-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="11" fill="currentColor"></circle>
+                    <circle cx="12" cy="7.5" r="1.3" fill="white"></circle>
+                    <rect x="11" y="10" width="2" height="8" rx="1" fill="white"></rect>
+                </svg>
+                <div class="setup-banner-message">
+                    <strong id="setup-banner-headline" class="setup-banner-headline">Enable ReDD Focus in your browsers</strong>
+                    <span id="behaviour-change-text" class="setup-banner-body"></span>
+                    <div class="setup-banner-actions-row">
+                        <button id="behaviour-change-fda" class="update-banner-btn hidden" type="button">Grant Full Disk Access</button>
+                        <button id="behaviour-change-help" class="update-banner-btn" type="button">Set up extension</button>
+                    </div>
                 </div>
-                <h1>Welcome to ReDD Block</h1>
-                <div class="onboarding-focus-card legal-onboarding-card">
+            </div>
+            <button id="behaviour-change-dismiss" class="update-banner-dismiss" title="Dismiss for this session">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+            </button>
+        </div>
+
+
+        <div id="eula-onboarding" class="onboarding-screen hidden">
+            <div class="welcome-onboarding-layout">
+                <header class="welcome-onboarding-header">
+                    <div class="welcome-onboarding-title-row">
+                        <img id="eula-onboarding-shield-logo"
+                             class="welcome-shield-logo"
+                             src=""
+                             alt=""
+                             aria-hidden="true">
+                        <h1 id="eula-welcome-title">Welcome to ReDD Block</h1>
+                    </div>
+                    <p id="eula-onboarding-subtitle" class="welcome-onboarding-subtitle">
+                        An open-source tool for blocking the websites
+                        and apps that pull you away from your focus.
+                    </p>
+                </header>
+
+                <div class="welcome-onboarding-card legal-onboarding-card">
                     <div class="legal-onboarding-checkbox-row">
                         <input type="checkbox" id="eula-agree-checkbox"
                             aria-label="I agree to the End User License Agreement and Privacy Policy">
-                        <span class="legal-onboarding-checkbox-text" data-toggle-target="eula-agree-checkbox">
-                            I agree to the ReDD Project's
-                            <a href="https://reddfocus.org/eula" target="_blank" rel="noopener noreferrer"
-                                class="legal-onboarding-link" data-external-url="https://reddfocus.org/eula">End User
-                                License Agreement</a>
-                        </span>
+                        <span class="legal-onboarding-checkbox-text" data-toggle-target="eula-agree-checkbox"><span
+                                id="eula-agree-line-inner"></span></span>
                     </div>
-                    <p class="legal-onboarding-note">
-                        Note that we do not collect any user data, as per our
-                        <a href="https://reddfocus.org/privacy-policy" target="_blank" rel="noopener noreferrer"
-                            class="legal-onboarding-link" data-external-url="https://reddfocus.org/privacy-policy">Privacy Policy</a>.
-                    </p>
-                    <button id="eula-continue-btn" class="modal-btn primary-btn onboarding-primary-btn" disabled>Continue</button>
+                    <p id="eula-note" class="legal-onboarding-note"></p>
+                    <div class="eula-onboarding-actions">
+                        <button id="eula-back-btn"
+                                class="eula-back-btn"
+                                type="button">
+                            Back
+                        </button>
+                        <button id="eula-continue-btn"
+                                class="modal-btn primary-btn onboarding-primary-btn eula-continue-btn"
+                                type="button"
+                                disabled>Continue</button>
+                    </div>
                 </div>
-                <p class="legal-onboarding-body">
-                    ReDD Block is developed by the Reduce Digital Distraction Project, in collaboration with
-                    researchers at the University of Oxford and University of Maastricht. The ReDD Project is a
-                    not-for-profit creating insights &amp; open-source digital focus tools for everyone to thrive in
-                    the digital world.
-                </p>
+
+                <footer class="welcome-onboarding-footer">
+                    <p id="eula-onboarding-footer-1" class="welcome-footer-line"></p>
+                    <p id="eula-onboarding-footer-2" class="welcome-footer-line"></p>
+                </footer>
+            </div>
+        </div>
+
+        <!-- Friendly project intro shown once per machine, before the
+             EULA. Gated by `appData.settings.welcomeOnboardingShown`. -->
+        <div id="welcome-onboarding" class="onboarding-screen hidden">
+            <div class="welcome-onboarding-layout">
+                <header class="welcome-onboarding-header">
+                    <div class="welcome-onboarding-title-row">
+                        <img id="welcome-onboarding-shield-logo"
+                             class="welcome-shield-logo"
+                             src=""
+                             alt=""
+                             aria-hidden="true">
+                        <h1 id="welcome-onboarding-title">Welcome to ReDD Block</h1>
+                    </div>
+                    <p id="welcome-onboarding-subtitle" class="welcome-onboarding-subtitle">
+                        An open-source tool for blocking the websites
+                        and apps that pull you away from your focus.
+                    </p>
+                </header>
+
+                <div class="welcome-onboarding-card">
+                    <section class="welcome-how-it-works" aria-labelledby="welcome-how-heading">
+                        <h2 id="welcome-how-heading" class="welcome-how-heading">STEPS TO GET STARTED (we'll guide you through it 😊)</h2>
+                        <ol class="welcome-steps">
+                            <li id="welcome-step-fda" class="welcome-step">
+                                <span class="welcome-step-num" aria-hidden="true">1</span>
+                                <div class="welcome-step-content">
+                                    <p id="welcome-step-1-title" class="welcome-step-title"></p>
+                                    <p id="welcome-step-1-body" class="welcome-step-text"></p>
+                                </div>
+                            </li>
+                            <li class="welcome-step">
+                                <span class="welcome-step-num" aria-hidden="true">2</span>
+                                <div class="welcome-step-content">
+                                    <p id="welcome-step-2-title" class="welcome-step-title"></p>
+                                    <p id="welcome-step-2-body" class="welcome-step-text"></p>
+                                </div>
+                            </li>
+                            <li class="welcome-step">
+                                <span class="welcome-step-num" aria-hidden="true">3</span>
+                                <div class="welcome-step-content">
+                                    <p id="welcome-step-3-title" class="welcome-step-title"></p>
+                                    <p id="welcome-step-3-body" class="welcome-step-text"></p>
+                                </div>
+                            </li>
+                        </ol>
+
+                        <div class="welcome-demo-section">
+                            <button id="welcome-demo-toggle"
+                                    class="welcome-demo-toggle"
+                                    type="button"
+                                    aria-expanded="false"
+                                    aria-controls="welcome-demo-panel">
+                                <span class="welcome-demo-toggle-play" aria-hidden="true">
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                        <path d="M8 5v14l11-7z"></path>
+                                    </svg>
+                                </span>
+                                <span id="welcome-demo-toggle-label" class="welcome-demo-toggle-label"></span>
+                                <svg class="welcome-demo-toggle-chevron" width="14" height="14" viewBox="0 0 24 24"
+                                     fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                                     stroke-linejoin="round" aria-hidden="true">
+                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                </svg>
+                            </button>
+                            <div id="welcome-demo-panel" class="welcome-demo-panel hidden">
+                                <div id="welcome-demo-video-wrap" class="welcome-demo-video-wrap">
+                                    <video id="welcome-demo-video"
+                                           class="welcome-demo-video"
+                                           playsinline
+                                           preload="metadata"></video>
+                                    <button id="welcome-demo-play-btn"
+                                            class="welcome-demo-play-btn"
+                                            type="button"
+                                            aria-label="Play demo video">
+                                        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                            <path d="M8 5v14l11-7z"></path>
+                                        </svg>
+                                    </button>
+                                    <button id="welcome-demo-fullscreen-btn"
+                                            class="welcome-demo-fullscreen-btn"
+                                            type="button"
+                                            aria-label="Enter fullscreen">
+                                        <svg class="welcome-demo-fullscreen-enter-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                             stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                             stroke-linejoin="round" aria-hidden="true">
+                                            <path d="M8 3H5a2 2 0 0 0-2 2v3"></path>
+                                            <path d="M21 8V5a2 2 0 0 0-2-2h-3"></path>
+                                            <path d="M3 16v3a2 2 0 0 0 2 2h3"></path>
+                                            <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
+                                        </svg>
+                                    </button>
+                                    <button id="welcome-demo-close-btn"
+                                            class="welcome-demo-close-btn"
+                                            type="button"
+                                            hidden>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                             stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                                             stroke-linejoin="round" aria-hidden="true">
+                                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                                        </svg>
+                                        <span id="welcome-demo-close-label">Close</span>
+                                    </button>
+                                    <p id="welcome-demo-video-caption" class="welcome-demo-video-caption"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <button id="welcome-onboarding-continue-btn"
+                            class="modal-btn primary-btn onboarding-primary-btn welcome-continue-btn"
+                            type="button">
+                        Get started
+                    </button>
+                </div>
+
+                <footer class="welcome-onboarding-footer">
+                    <p id="welcome-onboarding-footer-1" class="welcome-footer-line"></p>
+                    <p id="welcome-onboarding-footer-2" class="welcome-footer-line"></p>
+                </footer>
+            </div>
+        </div>
+
+        <!-- macOS-only: Full Disk Access setup. Shown after EULA
+             acceptance, before extension install. FDA is required —
+             no skip path. The marker is written only once FDA is
+             granted; then deferred cross-app installs run. -->
+        <div id="fda-onboarding" class="onboarding-screen hidden">
+            <div class="welcome-onboarding-layout">
+                <header class="welcome-onboarding-header">
+                    <div class="welcome-onboarding-title-row">
+                        <img id="fda-onboarding-shield-logo"
+                             class="welcome-shield-logo"
+                             src=""
+                             alt=""
+                             aria-hidden="true">
+                        <h1 id="fda-onboarding-title">Grant Full Disk Access</h1>
+                    </div>
+                </header>
+
+                <div class="welcome-onboarding-card fda-onboarding-card">
+                    <p id="fda-onboarding-why" class="migration-explainer">
+                        Click the button below to open your System Settings, then toggle on for <strong>ReDD Block</strong> (if you don't see ReDD Block in the list, click + and add it manually).
+                    </p>
+                    <p id="fda-onboarding-status" class="migration-status hidden"></p>
+                    <div class="fda-onboarding-actions">
+                        <button id="fda-onboarding-back-btn"
+                                class="eula-back-btn"
+                                type="button">
+                            Back
+                        </button>
+                        <button id="fda-onboarding-grant-btn"
+                                class="modal-btn primary-btn onboarding-primary-btn fda-grant-btn"
+                                type="button">
+                            Open Full Disk Access settings
+                        </button>
+                    </div>
+                    <p id="fda-onboarding-howto" class="fda-onboarding-howto">
+                        System Settings → Privacy &amp; Security → Full Disk Access
+                    </p>
+                    <img id="fda-onboarding-screenshot"
+                         class="fda-onboarding-screenshot"
+                         src=""
+                         alt="Full Disk Access settings with ReDD Block toggled on">
+                </div>
+            </div>
+        </div>
+
+        <!-- v1.x → 2.0 migration onboarding. Full-screen, gates main UI
+             on first launch after upgrade. Two phases driven by JS:
+             "pre" = welcome + admin-permission ask, "post" = cleanup
+             complete + install browser extension. -->
+        <div id="migration-onboarding" class="onboarding-screen hidden">
+            <div class="onboarding-content migration-onboarding-content">
+                <div class="onboarding-icon">
+                    <img src="/reddblock-icon.svg" alt="ReDD Block app icon" class="onboarding-app-icon">
+                </div>
+
+                <!-- Phase: pre-cleanup. Shown when migration_pending=true. -->
+                <div id="migration-phase-pre" class="migration-phase">
+                    <h1 id="migration-pre-title">Welcome to ReDD Block 2.0</h1>
+                    <p id="migration-pre-subtitle" class="legal-onboarding-subtitle">A one-time cleanup is needed to finish your upgrade.</p>
+                    <div class="onboarding-focus-card migration-card">
+                        <p id="migration-pre-explainer" class="migration-explainer">
+                            ReDD Block now blocks websites through a browser extension instead of a system-level helper.
+                            We need to:
+                        </p>
+                        <ul class="migration-bullets">
+                            <li id="migration-pre-bullet-1">Stop and remove the old privileged helper</li>
+                            <li id="migration-pre-bullet-2">Restore your <code>/etc/hosts</code> file (a backup is kept)</li>
+                            <li id="migration-pre-bullet-3">Keep all your existing blocklists intact</li>
+                        </ul>
+                        <p id="migration-pre-warn" class="migration-explainer migration-explainer-warn">
+                            You'll see <strong>one</strong> admin password prompt. Blocking will pause briefly during
+                            the changeover. After cleanup, ReDD Block sets up the <strong>ReDD Focus</strong>
+                            browser extension in your browsers automatically — you just need to allow it in
+                            private/incognito tabs.
+                        </p>
+                        <button id="migration-continue-btn"
+                            class="modal-btn primary-btn onboarding-primary-btn">Continue</button>
+                        <p id="migration-pre-status" class="migration-status hidden"></p>
+                    </div>
+                </div>
+
+                <!-- Phase: install browser extension. Shown both
+                     after a v1.x → 2.0 cleanup AND on first launch
+                     for new users who haven't installed the extension
+                     yet. JS swaps the headline + checklist depending
+                     on which case it is. -->
+                <div id="migration-phase-post" class="migration-phase hidden">
+                    <h1 id="migration-post-title">Cleanup complete</h1>
+                    <p id="migration-post-subtitle" class="legal-onboarding-subtitle">Almost done — finish setting up
+                        ReDD Focus in each browser you use.</p>
+                    <div class="onboarding-focus-card migration-card">
+                        <ul id="migration-checklist" class="migration-checklist">
+                            <li class="checklist-done migration-cleanup-only">
+                                <span class="checklist-mark">✓</span>
+                                <span id="migration-checklist-cleaned-label">Old version cleaned up</span>
+                            </li>
+                            <li class="checklist-done migration-cleanup-only">
+                                <span class="checklist-mark">✓</span>
+                                <span id="migration-checklist-blocks-label">Your blocklists are preserved</span>
+                            </li>
+                            <li id="migration-checklist-ext" class="checklist-todo">
+                                <span id="migration-checklist-ext-lines">Enable ReDD Focus in your browsers<br><span
+                                        style="font-weight:400;opacity:0.7">and allow it in private/incognito
+                                        tabs</span></span>
+                            </li>
+                        </ul>
+
+                        <div id="migration-howto" class="migration-howto hidden">
+                            <h3 id="migration-howto-title">Setting up ReDD Focus</h3>
+                            <ol>
+                                <li id="migration-howto-li1">ReDD Block tried to add ReDD Focus to your installed browsers
+                                    automatically — <strong>restart each browser</strong> to pick it up.</li>
+                                <li id="migration-howto-li3">Once enabled, <strong>allow it in private/incognito tabs</strong>
+                                    so blocking works in private windows too.</li>
+                            </ol>
+                        </div>
+
+                        <div id="migration-browser-buttons" class="migration-browser-buttons"></div>
+
+                        <!-- Enforcement opt-in toggle. OFF by default so new
+                             users aren't surprised by automatic browser force-
+                             closes. Once enabled and a block is running, the
+                             toggle is locked (can't be turned off mid-session).
+                             The server-side guard in enforcement_toggle.rs
+                             rejects disable attempts during active blocks even
+                             if someone bypasses the UI lock. -->
+                        <div id="enforcement-toggle-section" class="enforcement-toggle-section enforcement-off">
+                            <div class="enforcement-toggle-row">
+                                <div class="enforcement-toggle-text">
+                                    <strong class="enforcement-toggle-headline">
+                                        <svg class="enforcement-toggle-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                                        </svg>
+                                        <span id="enforcement-toggle-headline-text">Browser enforcement</span>
+                                    </strong>
+                                    <span id="enforcement-toggle-desc-text" class="enforcement-toggle-desc">To help you stay focused, your browser is automatically closed if you turn off ReDD Focus while a block is running.</span>
+                                    <p class="enforcement-toggle-disable-note">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                                            <line x1="12" y1="9" x2="12" y2="13"></line>
+                                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                                        </svg>
+                                        <span id="enforcement-toggle-disable-note-text">Once on, you can only turn enforcement off when no blocks are running.</span>
+                                    </p>
+                                </div>
+                                <label class="enforcement-switch" for="enforcement-toggle-input">
+                                    <input type="checkbox" id="enforcement-toggle-input" class="enforcement-toggle-input" />
+                                    <span class="enforcement-slider"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="migration-post-actions">
+                            <div class="migration-post-action-row">
+                                <button id="migration-back-btn"
+                                        class="eula-back-btn hidden"
+                                        type="button">
+                                    Back
+                                </button>
+                                <button id="migration-done-btn"
+                                        class="modal-btn primary-btn onboarding-primary-btn migration-done-btn"
+                                        type="button">
+                                    I'm all set up
+                                </button>
+                            </div>
+                            <button id="migration-skip-btn"
+                                    class="migration-skip-btn"
+                                    type="button">
+                                Skip for now
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -131,30 +493,53 @@
             </div>
         </div>
 
-        <!-- Main Content - Grid Layout (hidden until JS clears onboarding gate; avoids flash before EULA on iOS) -->
+        <!-- Main Content - Grid Layout (hidden until JS clears onboarding gate; avoids flash before EULA on iOS).
+             The "BLOCKING NOW" row that used to live here has moved into
+             the title bar (see `#now-blocking-row` near the top of body),
+             so the active blocklists are visible from anywhere in the app. -->
         <div id="main-content" class="main-content hidden">
             <!-- Top Row: Scheduler + Blocklists -->
             <div class="grid-top-row">
-                <!-- Settings Button -->
-                <button id="settings-btn" class="settings-top-btn icon-btn" title="Settings">
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                        stroke-linecap="round" stroke-linejoin="round">
-                        <path
-                            d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.16.1a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.2a2 2 0 0 1-1 1.73l-.15.08a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.16.09a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.16-.09a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.73v-.2a2 2 0 0 1 1-1.72l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.16-.1a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z">
-                        </path>
-                        <circle cx="12" cy="12" r="3"></circle>
-                    </svg>
-                </button>
                 <!-- Block Scheduler (Left Column) -->
                 <div id="scheduler-section" class="scheduler-section">
                     <div class="section-header">
-                        <h2 id="main-start-block-title">Start a Block</h2>
-                        <div class="scheduler-mode-tabs">
-                            <button class="mode-tab active" id="instant-mode-tab" data-mode="instant"
-                                title="One-off">Now</button>
-                            <button class="mode-tab" id="schedule-mode-tab" data-mode="schedule"
-                                title="Schedule">Schedule</button>
+                        <h2 id="main-start-block-title" class="hidden">Start a Block</h2>
+                        <div class="scheduler-mode-tabs hidden">
+                            <button class="mode-tab active" id="instant-mode-tab" data-mode="instant" title="One-off">
+                                <svg class="mode-tab-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M5 22h14"></path>
+                                    <path d="M5 2h14"></path>
+                                    <path
+                                        d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22">
+                                    </path>
+                                    <path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2">
+                                    </path>
+                                </svg>
+                                <span class="mode-tab-label" id="instant-mode-tab-label">Now</span>
+                            </button>
+                            <button class="mode-tab" id="schedule-mode-tab" data-mode="schedule" title="Schedule">
+                                <svg class="mode-tab-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round" aria-hidden="true">
+                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                                </svg>
+                                <span class="mode-tab-label" id="schedule-mode-tab-label">Schedule</span>
+                            </button>
                         </div>
+                        <button id="settings-btn" class="settings-top-btn icon-btn" title="Settings">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                stroke-linecap="round" stroke-linejoin="round">
+                                <path
+                                    d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.16.1a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.2a2 2 0 0 1-1 1.73l-.15.08a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.16.09a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.16-.09a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.73v-.2a2 2 0 0 1 1-1.72l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.16-.1a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z">
+                                </path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                            </svg>
+                        </button>
                     </div>
 
                     <div class="scheduler-content">
@@ -177,35 +562,31 @@
 
                             <!-- INSTANT BLOCK PANEL (shown by default) -->
                             <div class="instant-block-panel" id="instant-block-panel">
-                                <!-- Duration Mode Toggle: "for a bit" vs "always" -->
-                                <div class="duration-mode-toggle" id="duration-mode-toggle">
-                                    <button type="button" class="duration-mode-btn active" id="duration-mode-always"
-                                        data-mode="always">
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-                                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                            stroke-linejoin="round">
-                                            <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
-                                            <line x1="12" y1="2" x2="12" y2="12"></line>
-                                        </svg>
-                                        <span id="duration-mode-always-label">always</span>
-                                    </button>
-                                    <button type="button" class="duration-mode-btn" id="duration-mode-timed"
-                                        data-mode="timed">
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-                                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                            stroke-linejoin="round">
-                                            <path d="M5 22h14" />
-                                            <path d="M5 2h14" />
-                                            <path
-                                                d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22" />
-                                            <path
-                                                d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2" />
-                                        </svg>
-                                        <span id="duration-mode-timed-label">for some time</span>
-                                    </button>
+                                <!-- Quick Select Row: a duration in minutes (15/30/45/60) or "Always".
+                                     Picking a duration switches to timed mode (Duration & End row below);
+                                     picking Always switches to always-on mode (info message below). -->
+                                <div class="quick-select-row">
+                                    <label class="time-label" id="quick-select-label">Quick Select</label>
+                                    <div class="duration-quick-btns">
+                                        <button type="button"
+                                            class="duration-quick-btn duration-quick-btn-always active"
+                                            data-mode="always" id="duration-quick-btn-always">
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                                                stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                stroke-linejoin="round">
+                                                <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+                                                <line x1="12" y1="2" x2="12" y2="12"></line>
+                                            </svg>
+                                            <span id="duration-quick-btn-always-label">Always</span>
+                                        </button>
+                                        <button type="button" class="duration-quick-btn" data-mins="60">60 mins</button>
+                                        <button type="button" class="duration-quick-btn" data-mins="45">45 mins</button>
+                                        <button type="button" class="duration-quick-btn" data-mins="30">30 mins</button>
+                                        <button type="button" class="duration-quick-btn" data-mins="15">15 mins</button>
+                                    </div>
                                 </div>
 
-                                <!-- Always-on message (hidden by default) -->
+                                <!-- Always-on message (visible when "Always" is selected) -->
                                 <div class="always-on-message" id="always-on-message">
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -218,7 +599,7 @@
                                         off</span>
                                 </div>
 
-                                <!-- Duration & End Row (hidden when always-on) -->
+                                <!-- Duration & End Row (visible when a duration is selected) -->
                                 <div class="timed-controls hidden" id="timed-controls">
                                     <div class="time-pickers-row">
                                         <div class="time-picker-group">
@@ -235,18 +616,20 @@
                                             <div class="time-picker-row">
                                                 <div class="time-display" id="end-time-display">
                                                     <div class="time-part-wrapper">
-                                                        <button class="time-part" id="end-hour-btn" data-type="hour"
-                                                            data-target="end">20</button>
-                                                        <!-- Hour Popover -->
+                                                        <input type="text" inputmode="numeric" maxlength="2"
+                                                            autocomplete="off" class="time-part time-popover-anchor"
+                                                            id="end-hour-input" data-type="hour" data-target="end"
+                                                            aria-label="End hour" />
                                                         <div class="time-popover hidden" id="end-hour-popover">
                                                             <div class="popover-scroll" id="end-hour-options"></div>
                                                         </div>
                                                     </div>
                                                     <span class="time-colon">:</span>
                                                     <div class="time-part-wrapper">
-                                                        <button class="time-part" id="end-minute-btn" data-type="minute"
-                                                            data-target="end">30</button>
-                                                        <!-- Minute Popover -->
+                                                        <input type="text" inputmode="numeric" maxlength="2"
+                                                            autocomplete="off" class="time-part time-popover-anchor"
+                                                            id="end-minute-input" data-type="minute" data-target="end"
+                                                            aria-label="End minute" />
                                                         <div class="time-popover hidden" id="end-minute-popover">
                                                             <div class="popover-scroll" id="end-minute-options"></div>
                                                         </div>
@@ -255,18 +638,6 @@
                                                 <span id="next-day-indicator" class="next-day-badge hidden">+1
                                                     day</span>
                                             </div>
-                                        </div>
-                                    </div>
-
-                                    <!-- Quick Select Row -->
-                                    <div class="quick-select-row">
-                                        <label class="time-label" id="quick-select-label">Quick Select</label>
-                                        <div class="duration-quick-btns">
-                                            <button type="button" class="duration-quick-btn" data-mins="15">15</button>
-                                            <button type="button" class="duration-quick-btn" data-mins="30">30</button>
-                                            <button type="button" class="duration-quick-btn" data-mins="45">45</button>
-                                            <button type="button" class="duration-quick-btn active"
-                                                data-mins="60">60</button>
                                         </div>
                                     </div>
                                 </div>
@@ -285,15 +656,17 @@
                                                     <div class="time-picker-row">
                                                         <div class="time-display schedule-start-display">
                                                             <div class="time-part-wrapper">
-                                                                <button class="time-part schedule-hour-btn"
-                                                                    data-type="hour"
-                                                                    data-target="schedule-start-0">09</button>
+                                                                <input type="text" class="time-part schedule-hour-btn"
+                                                                    data-type="hour" data-target="schedule-start-0"
+                                                                    inputmode="numeric" maxlength="2" autocomplete="off"
+                                                                    value="09" aria-label="Schedule start hour" />
                                                             </div>
                                                             <span class="time-colon">:</span>
                                                             <div class="time-part-wrapper">
-                                                                <button class="time-part schedule-minute-btn"
-                                                                    data-type="minute"
-                                                                    data-target="schedule-start-0">00</button>
+                                                                <input type="text" class="time-part schedule-minute-btn"
+                                                                    data-type="minute" data-target="schedule-start-0"
+                                                                    inputmode="numeric" maxlength="2" autocomplete="off"
+                                                                    value="00" aria-label="Schedule start minute" />
                                                             </div>
                                                         </div>
                                                     </div>
@@ -304,15 +677,17 @@
                                                     <div class="time-picker-row">
                                                         <div class="time-display schedule-end-display">
                                                             <div class="time-part-wrapper">
-                                                                <button class="time-part schedule-hour-btn"
-                                                                    data-type="hour"
-                                                                    data-target="schedule-end-0">12</button>
+                                                                <input type="text" class="time-part schedule-hour-btn"
+                                                                    data-type="hour" data-target="schedule-end-0"
+                                                                    inputmode="numeric" maxlength="2" autocomplete="off"
+                                                                    value="12" aria-label="Schedule end hour" />
                                                             </div>
                                                             <span class="time-colon">:</span>
                                                             <div class="time-part-wrapper">
-                                                                <button class="time-part schedule-minute-btn"
-                                                                    data-type="minute"
-                                                                    data-target="schedule-end-0">00</button>
+                                                                <input type="text" class="time-part schedule-minute-btn"
+                                                                    data-type="minute" data-target="schedule-end-0"
+                                                                    inputmode="numeric" maxlength="2" autocomplete="off"
+                                                                    value="00" aria-label="Schedule end minute" />
                                                             </div>
                                                         </div>
                                                     </div>
@@ -354,7 +729,7 @@
 
                                 <!-- Repeat Section -->
                                 <div class="schedule-repeat-section" id="schedule-repeat-section">
-                                    <span class="repeat-label" id="repeat-label">Repeat:</span>
+                                    <span class="repeat-label" id="repeat-label">Repeat week:</span>
                                     <div class="repeat-dropdown-wrapper">
                                         <button type="button" class="repeat-dropdown-btn" id="repeat-dropdown-btn">
                                             <span id="repeat-dropdown-text">Forever</span>
@@ -369,8 +744,7 @@
                                                 data-value="forever">Forever</button>
                                             <button type="button" class="repeat-option" data-value="date">Until
                                                 date</button>
-                                            <button type="button" class="repeat-option"
-                                                data-value="no">No</button>
+                                            <button type="button" class="repeat-option" data-value="no">No</button>
                                         </div>
                                     </div>
                                     <div class="repeat-date-wrapper hidden" id="repeat-date-wrapper">
@@ -378,54 +752,76 @@
                                         <span class="repeat-date-overlay" id="repeat-date-overlay"></span>
                                     </div>
                                 </div>
+
+                                <!-- Pending Changes Bar (shown when running schedule has unsaved new segments) -->
+                                <div class="schedule-pending-bar hidden" id="schedule-pending-bar">
+                                    <span class="schedule-pending-label" id="schedule-pending-label">Unsaved changes</span>
+                                    <div class="schedule-pending-actions">
+                                        <button type="button" class="schedule-pending-discard" id="schedule-pending-discard">Discard</button>
+                                        <button type="button" class="schedule-pending-save" id="schedule-pending-save">Save changes</button>
+                                    </div>
+                                </div>
                             </div>
-                        </div>
 
-                        <!-- Block action buttons wrapper -->
-                        <div id="block-action-buttons" class="block-action-buttons">
-                            <!-- Pause Block Button (shown only when a block/schedule is active) -->
-                            <button id="pause-block-btn" class="pause-block-btn hidden">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <rect x="6" y="4" width="4" height="16"></rect>
-                                    <rect x="14" y="4" width="4" height="16"></rect>
-                                </svg>
-                                <span id="pause-btn-label">Pause</span>
-                            </button>
+                            <!-- Block action buttons wrapper (footer of the card) -->
+                            <div id="block-action-buttons" class="block-action-buttons">
+                                <!-- Pause Block Button (shown only when a block/schedule is active) -->
+                                <button id="pause-block-btn" class="pause-block-btn hidden">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <rect x="6" y="4" width="4" height="16"></rect>
+                                        <rect x="14" y="4" width="4" height="16"></rect>
+                                    </svg>
+                                    <span id="pause-btn-label">Pause</span>
+                                </button>
 
-                            <!-- Start/Stop Block Button (for instant mode) -->
-                            <button id="start-block-btn" class="start-block-btn hidden" disabled>
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                                    <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                                </svg>
-                                <span class="btn-label" id="start-block-btn-label">Start Block:</span>
-                                <span class="btn-name"></span>
-                            </button>
+                                <!-- Start/Stop Block Button (for instant mode) -->
+                                <button id="start-block-btn" class="start-block-btn hidden" disabled>
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                                    </svg>
+                                    <span class="btn-label" id="start-block-btn-label"><span
+                                            class="btn-label-action">Start</span><span class="btn-label-context">
+                                            Block:</span></span>
+                                    <span class="btn-blocklist-meta">
+                                        <span class="btn-blocklist-lead" aria-hidden="true"></span>
+                                        <span class="btn-emoji" aria-hidden="true"></span>
+                                        <span class="btn-name"></span>
+                                    </span>
+                                </button>
 
-                            <!-- Start Schedule Button (for schedule mode) -->
-                            <button id="start-schedule-btn" class="start-block-btn start-schedule-btn hidden" disabled>
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3.5"></path>
-                                    <path d="M16 2v4"></path>
-                                    <path d="M8 2v4"></path>
-                                    <path d="M3 10h5"></path>
-                                    <path d="M17.5 17.5 16 16.25V14"></path>
-                                    <circle cx="16" cy="16" r="6"></circle>
-                                </svg>
-                                <span class="btn-label" id="start-schedule-btn-label">Start Schedule:</span>
-                                <span class="btn-name"></span>
-                            </button>
+                                <!-- Start Schedule Button (for schedule mode) -->
+                                <button id="start-schedule-btn" class="start-block-btn start-schedule-btn hidden"
+                                    disabled>
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M21 7.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h3.5"></path>
+                                        <path d="M16 2v4"></path>
+                                        <path d="M8 2v4"></path>
+                                        <path d="M3 10h5"></path>
+                                        <path d="M17.5 17.5 16 16.25V14"></path>
+                                        <circle cx="16" cy="16" r="6"></circle>
+                                    </svg>
+                                    <span class="btn-label" id="start-schedule-btn-label"><span
+                                            class="btn-label-action">Start</span><span class="btn-label-context">
+                                            Schedule:</span></span>
+                                    <span class="btn-blocklist-meta">
+                                        <span class="btn-blocklist-lead" aria-hidden="true"></span>
+                                        <span class="btn-emoji" aria-hidden="true"></span>
+                                        <span class="btn-name"></span>
+                                    </span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- Blocklists Section (Right Column) -->
                 <div id="blocklists-section" class="blocklists-section">
-                    <div class="section-header">
-                        <h2 id="main-blocklists-title">Your Blocklists</h2>
+                    <div class="section-header blocklists-section-header">
+                        <h2 id="main-blocklists-title">My Blocklists</h2>
                         <button id="add-blocklist-btn" class="icon-btn" title="Add blocklist">
                             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -433,6 +829,18 @@
                                 <line x1="5" y1="12" x2="19" y2="12"></line>
                             </svg>
                         </button>
+                        <div class="blocklists-heading-controls">
+                            <button id="settings-btn-stack" type="button" class="settings-top-btn icon-btn"
+                                title="Settings">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" stroke-linejoin="round">
+                                    <path
+                                        d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.16.1a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.2a2 2 0 0 1-1 1.73l-.15.08a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.16.09a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.16-.09a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.73v-.2a2 2 0 0 1 1-1.72l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.16-.1a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z">
+                                    </path>
+                                    <circle cx="12" cy="12" r="3"></circle>
+                                </svg>
+                            </button>
+                        </div>
                     </div>
                     <div id="blocklists-container" class="blocklists-container">
                         <!-- Blocklists will be rendered here -->
@@ -442,55 +850,37 @@
 
             <!-- Bottom Row: Week Calendar (spans full width) -->
             <div class="week-calendar-section">
-                <div class="section-header">
-                    <h2 id="main-schedule-title">Schedule</h2>
-                </div>
-
-                <!-- Per-blocklist visibility toggles for the calendar -->
-                <div class="schedule-visibility-chips hidden" id="schedule-visibility-chips"></div>
-
-                <!-- Week Navigation (Apple Calendar style) -->
-                <div class="week-nav">
-                    <span class="week-display" id="week-display">Mon 26 Jan - Sun 1 Feb</span>
-                    <div class="week-nav-buttons">
-                        <button class="week-nav-btn" id="prev-week-btn" title="Previous Week">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2">
-                                <polyline points="15 18 9 12 15 6"></polyline>
-                            </svg>
-                        </button>
-                        <button class="week-nav-today-btn" id="today-btn">Today</button>
-                        <button class="week-nav-btn" id="next-week-btn" title="Next Week">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2">
-                                <polyline points="9 18 15 12 9 6"></polyline>
-                            </svg>
-                        </button>
+                <!-- Header: SCHEDULE title (left) + chips (far right). The chips are
+                     visibility-toggle chips per blocklist + always-on chips for blocks
+                     that aren't drawn in the timeline below. Both groups flow inline using
+                     display: contents on their wrappers. -->
+                <div class="section-header schedule-header-row">
+                    <h2 id="main-schedule-title">Week Schedule</h2>
+                    <div class="schedule-status-row" id="schedule-status-row">
+                        <div class="schedule-visibility-chips hidden" id="schedule-visibility-chips"></div>
+                        <div class="schedule-always-on-row hidden" id="schedule-always-on-row">
+                            <span class="always-on-label"><span class="always-on-label-lead"
+                                    id="always-on-row-label-lead">Always on</span><span class="always-on-label-hint"
+                                    id="always-on-row-label-hint"> (not shown):</span></span>
+                            <div class="always-on-chips" id="schedule-always-on-chips"></div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Week Calendar container -->
+                <!-- Row-based week calendar: days are rows, hours are columns -->
                 <div class="week-calendar-container" id="week-calendar-container">
-                    <div class="week-calendar-body">
-                        <!-- Time sidebar (outside the horizontal scroll) - syncs vertical scroll with main scroll via JS -->
-                        <div class="week-calendar-time-column" id="week-calendar-time-column">
-                            <div class="header-time-spacer"></div>
-                            <div class="time-axis" id="time-axis">
+                    <div class="week-calendar-grid">
+                        <!-- Top header row: day-label spacer + hour markers -->
+                        <div class="grid-header-row">
+                            <div class="day-label-spacer"></div>
+                            <div class="hour-markers" id="hour-markers">
                                 <!-- Hour markers generated by JS -->
                             </div>
                         </div>
-                        <div class="week-calendar-scroll" id="week-calendar-scroll">
-                            <!-- Sticky header row - scrolls horizontally, sticks vertically -->
-                            <div class="calendar-header-row" id="calendar-header-row">
-                                <div class="header-days" id="header-days">
-                                    <!-- Day headers generated by JS -->
-                                </div>
-                            </div>
 
-                            <!-- Day columns container -->
-                            <div class="days-container" id="days-container">
-                                <!-- Day columns generated by JS -->
-                            </div>
+                        <!-- Day rows container -->
+                        <div class="day-rows" id="day-rows">
+                            <!-- Day rows generated by JS -->
                         </div>
                     </div>
 
@@ -498,6 +888,11 @@
                     <div id="no-blocks-message" class="no-blocks-message">
                         <p id="no-active-blocks-label">No active blocks</p>
                     </div>
+                </div>
+
+                <!-- Footer hint -->
+                <div class="schedule-footer-hint hidden" id="schedule-footer-hint">
+                    Click any block to edit
                 </div>
             </div>
         </div>
@@ -519,7 +914,72 @@
 
                 <div class="form-group">
                     <label for="blocklist-name" id="blocklist-name-label">Name</label>
-                    <input type="text" id="blocklist-name" placeholder="e.g., Social Media" class="form-input">
+                    <input type="text" id="blocklist-name" maxlength="60"
+                        placeholder="e.g., Social Media" class="form-input">
+                </div>
+
+                <div class="form-group">
+                    <label id="blocklist-emoji-label">Emoji</label>
+                    <div class="emoji-picker-container">
+                        <div class="emoji-swatches" id="emoji-swatches">
+                            <button type="button" class="emoji-swatch selected" data-emoji="🎯">🎯</button>
+                            <button type="button" class="emoji-swatch" data-emoji="💪">💪</button>
+                            <button type="button" class="emoji-swatch" data-emoji="📚">📚</button>
+                            <button type="button" class="emoji-swatch" data-emoji="🚫">🚫</button>
+                            <button type="button" class="emoji-swatch" data-emoji="🌳">🌳</button>
+                            <button type="button" class="emoji-swatch" data-emoji="🎉">🎉</button>
+                            <button type="button" class="emoji-swatch" data-emoji="🛏️">🛏️</button>
+                            <button type="button" class="emoji-swatch" data-emoji="🎹">🎹</button>
+                            <!-- Custom emoji selector -->
+                            <div class="custom-emoji-wrapper">
+                                <button type="button" class="emoji-swatch custom-emoji-swatch" id="custom-emoji-swatch">
+                                    <span class="custom-icon">+</span>
+                                </button>
+                                <div id="emoji-picker-popover" class="emoji-picker-popover hidden">
+                                    <emoji-picker></emoji-picker>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label id="blocklist-color-label">Color</label>
+                    <div class="color-picker-container">
+                        <div class="color-swatches" id="color-swatches">
+                            <!-- ReDD-aligned palette: Nordic-watercolor pastels, taking inspiration
+                                 from reddfocus.org's soft-surface accents (coral-soft, teal-soft,
+                                 blue-soft) which read as calm watercolor washes on the cream canvas.
+                                 Hues sweep cleanly around the wheel — sky → sea → fern → linen →
+                                 peach → terracotta → rose → lilac — so the family feels Scandi /
+                                 sophisticated, not earthy. Lightness held in a 76-82% band so they
+                                 sit comfortably on cream without shouting. -->
+                            <button type="button" class="color-swatch selected" data-color="#B8D1DE"
+                                style="background: #B8D1DE" title="Sky"></button>
+                            <button type="button" class="color-swatch" data-color="#B3D2C8" style="background: #B3D2C8"
+                                title="Seafoam"></button>
+                            <button type="button" class="color-swatch" data-color="#BCD9B6" style="background: #BCD9B6"
+                                title="Fern"></button>
+                            <button type="button" class="color-swatch" data-color="#EBDCB6" style="background: #EBDCB6"
+                                title="Linen"></button>
+                            <button type="button" class="color-swatch" data-color="#EECAAD" style="background: #EECAAD"
+                                title="Peach"></button>
+                            <button type="button" class="color-swatch" data-color="#E7B3A8" style="background: #E7B3A8"
+                                title="Terracotta"></button>
+                            <button type="button" class="color-swatch" data-color="#E1BAC3" style="background: #E1BAC3"
+                                title="Rose"></button>
+                            <button type="button" class="color-swatch" data-color="#C8B9D6" style="background: #C8B9D6"
+                                title="Lilac"></button>
+                            <!-- Custom color picker -->
+                            <div class="custom-color-wrapper">
+                                <input type="color" id="custom-color-input" class="custom-color-input" value="#B8D1DE">
+                                <button type="button" class="color-swatch custom-swatch" id="custom-color-swatch"
+                                    data-color="custom" style="background: #B8D1DE">
+                                    <span class="custom-icon">+</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="form-group">
@@ -539,8 +999,56 @@
                     </label>
                     <div class="tags-input-container">
                         <div id="modal-websites-tags" class="tags-container"></div>
-                        <input type="text" id="modal-website-input" placeholder="e.g., facebook.com" class="form-input"
-                            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+                        <div class="input-with-button websites-input-with-import">
+                            <input type="text" id="modal-website-input" placeholder="e.g., facebook.com"
+                                class="form-input" autocomplete="off" autocorrect="off" autocapitalize="off"
+                                spellcheck="false">
+                            <button type="button" id="modal-import-websites-btn" class="browse-btn"
+                                title="Import websites" aria-haspopup="menu" aria-expanded="false">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <line x1="8" y1="6" x2="21" y2="6"></line>
+                                    <line x1="8" y1="12" x2="21" y2="12"></line>
+                                    <line x1="8" y1="18" x2="21" y2="18"></line>
+                                    <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                                    <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                                    <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                                </svg>
+                                <span class="browse-btn-caption" id="modal-import-websites-caption"></span>
+                            </button>
+                            <div class="websites-import-menu hidden" id="websites-import-menu" role="menu">
+                                <button type="button" class="websites-import-menu-item"
+                                    id="websites-import-menu-text-file" data-import-action="text-file" role="menuitem">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                        <polyline points="14 2 14 8 20 8"></polyline>
+                                    </svg>
+                                    <span id="websites-import-menu-text-file-label">From text file…</span>
+                                </button>
+                                <div class="websites-import-menu-divider" role="separator"></div>
+                                <div class="websites-import-menu-section-label" id="websites-import-menu-section-label">
+                                    Pre-made list</div>
+                                <button type="button" class="websites-import-menu-item" id="websites-import-menu-email"
+                                    data-preset="email" role="menuitem">Email</button>
+                                <button type="button" class="websites-import-menu-item"
+                                    id="websites-import-menu-gambling" data-preset="gambling"
+                                    role="menuitem">Gambling</button>
+                                <button type="button" class="websites-import-menu-item" id="websites-import-menu-news"
+                                    data-preset="news" role="menuitem">News</button>
+                                <button type="button" class="websites-import-menu-item" id="websites-import-menu-porn"
+                                    data-preset="porn" role="menuitem">Porn</button>
+                                <button type="button" class="websites-import-menu-item"
+                                    id="websites-import-menu-search-engines" data-preset="search-engines"
+                                    role="menuitem">Search engines</button>
+                                <button type="button" class="websites-import-menu-item"
+                                    id="websites-import-menu-shopping" data-preset="shopping"
+                                    role="menuitem">Shopping</button>
+                                <button type="button" class="websites-import-menu-item"
+                                    id="websites-import-menu-social-media" data-preset="social-media"
+                                    role="menuitem">Social media</button>
+                            </div>
+                        </div>
                     </div>
                     <span id="website-input-error" class="input-error-msg hidden">Please enter a valid domain (e.g.
                         reddit.com)</span>
@@ -573,6 +1081,7 @@
                                         d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z">
                                     </path>
                                 </svg>
+                                <span class="browse-btn-caption" id="modal-browse-apps-caption"></span>
                             </button>
                         </div>
                     </div>
@@ -596,71 +1105,12 @@
                         <span class="input-suffix" id="override-total-characters-label">total characters</span>
                     </div>
                     <div id="override-preview-block" class="override-preview-block">
-                        <p id="override-preview-time-line" class="override-preview-time-line">Takes ~0mins to type and
-                            will look something like:</p>
+                        <p id="override-preview-time-line" class="override-preview-time-line">Takes ~0 mins to type and will look something like:</p>
                         <div id="override-preview-text" class="override-preview-text" title=""></div>
                     </div>
                     <textarea id="custom-override-text" class="form-textarea hidden"
                         placeholder="Enter your custom text (e.g., a motivational statement)"></textarea>
                     <span id="override-count-warning" class="form-hint warning hidden"></span>
-                </div>
-
-                <div class="form-group">
-                    <label id="blocklist-color-label">Color</label>
-                    <div class="color-picker-container">
-                        <div class="color-swatches" id="color-swatches">
-                            <!-- Fun yet calming pastel palette: dark blue → green → yellow → pink → dark red → lavender -->
-                            <button type="button" class="color-swatch selected" data-color="#81B1D1"
-                                style="background: #81B1D1" title="Sky"></button>
-                            <button type="button" class="color-swatch" data-color="#A0CED9" style="background: #A0CED9"
-                                title="Ice"></button>
-                            <button type="button" class="color-swatch" data-color="#ADF7B6" style="background: #ADF7B6"
-                                title="Mint"></button>
-                            <button type="button" class="color-swatch" data-color="#FFEE93" style="background: #FFEE93"
-                                title="Buttercup"></button>
-                            <button type="button" class="color-swatch" data-color="#FFD1DC" style="background: #FFD1DC"
-                                title="Blush"></button>
-                            <button type="button" class="color-swatch" data-color="#FFC09F" style="background: #FFC09F"
-                                title="Apricot"></button>
-                            <button type="button" class="color-swatch" data-color="#FF9E9E" style="background: #FF9E9E"
-                                title="Sunset"></button>
-                            <button type="button" class="color-swatch" data-color="#B19CD9" style="background: #B19CD9"
-                                title="Lavender"></button>
-                            <!-- Custom color picker -->
-                            <div class="custom-color-wrapper">
-                                <input type="color" id="custom-color-input" class="custom-color-input" value="#667eea">
-                                <button type="button" class="color-swatch custom-swatch" id="custom-color-swatch"
-                                    data-color="custom" style="background: #667eea">
-                                    <span class="custom-icon">+</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label id="blocklist-emoji-label">Emoji</label>
-                    <div class="emoji-picker-container">
-                        <div class="emoji-swatches" id="emoji-swatches">
-                            <button type="button" class="emoji-swatch selected" data-emoji="🎯">🎯</button>
-                            <button type="button" class="emoji-swatch" data-emoji="💪">💪</button>
-                            <button type="button" class="emoji-swatch" data-emoji="📚">📚</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🚫">🚫</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🌳">🌳</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🎉">🎉</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🛏️">🛏️</button>
-                            <button type="button" class="emoji-swatch" data-emoji="🎹">🎹</button>
-                            <!-- Custom emoji selector -->
-                            <div class="custom-emoji-wrapper">
-                                <button type="button" class="emoji-swatch custom-emoji-swatch" id="custom-emoji-swatch">
-                                    <span class="custom-icon">+</span>
-                                </button>
-                                <div id="emoji-picker-popover" class="emoji-picker-popover hidden">
-                                    <emoji-picker></emoji-picker>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- Advanced Options (Expandable) -->
@@ -674,17 +1124,42 @@
                 <div class="blocklist-advanced-content hidden" id="blocklist-advanced-content">
                     <label class="checkbox-option">
                         <input type="checkbox" id="show-item-details-checkbox" checked>
-                        <span id="show-item-details-label">List blocked websites &amp; apps on card</span>
-                    </label>
-                    <label class="checkbox-option">
-                        <input type="checkbox" id="always-show-in-schedule-checkbox" checked>
-                        <span id="always-show-in-schedule-label">Show in schedule</span>
+                        <span id="show-item-details-label">Show names of blocked websites &amp; apps in the overview</span>
                     </label>
                 </div>
 
                 <div class="modal-buttons">
                     <button id="cancel-blocklist-btn" class="modal-btn cancel-btn">Cancel</button>
                     <button id="save-blocklist-btn" class="modal-btn primary-btn">Save</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Installed Apps Picker Modal -->
+        <div id="app-picker-modal" class="modal-overlay hidden">
+            <div class="modal-content app-picker-modal-content">
+                <h3 id="app-picker-title">Select Apps to Block</h3>
+                <div class="app-picker-search-wrap">
+                    <input type="text" id="app-picker-search" class="form-input" placeholder="Search installed apps..."
+                        autocomplete="off">
+                    <svg class="app-picker-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="11" cy="11" r="8"></circle>
+                        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                    </svg>
+                </div>
+                <div id="app-picker-list" class="app-picker-list">
+                    <div class="app-picker-loading">Scanning installed apps...</div>
+                </div>
+                <div class="app-picker-footer">
+                    <button type="button" id="app-picker-browse-btn" class="app-picker-browse-link">
+                        Browse manually...
+                    </button>
+                    <div class="app-picker-actions">
+                        <button type="button" id="app-picker-cancel-btn" class="modal-btn cancel-btn">Cancel</button>
+                        <button type="button" id="app-picker-add-btn" class="modal-btn confirm-btn">Add
+                            Selected</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -701,24 +1176,9 @@
                 <div class="challenge-progress">
                     <div id="challenge-progress-bar" class="challenge-progress-bar"></div>
                 </div>
-                <!-- Schedule override options (shown only for scheduled blocks with multiple occurrences) -->
-                <div id="schedule-override-options" class="schedule-override-options hidden">
-                    <label class="radio-option">
-                        <input type="radio" name="schedule-override-type" value="just-this" checked>
-                        <span id="schedule-override-just-this-label">Just this block</span>
-                    </label>
-                    <label class="radio-option">
-                        <input type="radio" name="schedule-override-type" value="stop-schedule">
-                        <span id="schedule-override-stop-label">Stop schedule</span>
-                    </label>
-                </div>
-                <div class="dns-delay-hint desktop-only"
-                    style="font-size: 12px; color: var(--text-muted); margin-top: 8px; line-height: 1.4;">
-                    Changes to website blocking may take up to 60 seconds to take effect in your browser due to caching.
-                </div>
                 <div class="modal-buttons">
                     <button id="cancel-override-btn" class="modal-btn cancel-btn">Cancel</button>
-                    <button id="confirm-override-btn" class="modal-btn black-btn">Override</button>
+                    <button id="confirm-override-btn" class="modal-btn black-btn">Stop Block</button>
                 </div>
             </div>
         </div>
@@ -765,16 +1225,16 @@
                             <div class="time-picker-row">
                                 <div class="time-display" id="pause-restart-time-display">
                                     <div class="time-part-wrapper">
-                                        <button class="time-part" id="pause-restart-hour-btn" data-type="hour"
-                                            data-target="pause-restart">00</button>
+                                        <button class="time-part time-popover-anchor" id="pause-restart-hour-btn"
+                                            data-type="hour" data-target="pause-restart">00</button>
                                         <div class="time-popover hidden" id="pause-restart-hour-popover">
                                             <div class="popover-scroll" id="pause-restart-hour-options"></div>
                                         </div>
                                     </div>
                                     <span class="time-colon">:</span>
                                     <div class="time-part-wrapper">
-                                        <button class="time-part" id="pause-restart-minute-btn" data-type="minute"
-                                            data-target="pause-restart">00</button>
+                                        <button class="time-part time-popover-anchor" id="pause-restart-minute-btn"
+                                            data-type="minute" data-target="pause-restart">00</button>
                                         <div class="time-popover hidden" id="pause-restart-minute-popover">
                                             <div class="popover-scroll" id="pause-restart-minute-options"></div>
                                         </div>
@@ -799,23 +1259,6 @@
                 <div class="modal-buttons">
                     <button id="cancel-pause-btn" class="modal-btn cancel-btn">Cancel</button>
                     <button id="confirm-pause-btn" class="modal-btn primary-btn" disabled>Pause</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- Helper Install Modal -->
-        <div id="helper-install-modal" class="modal-overlay hidden">
-            <div class="modal-content helper-install-modal">
-                <h3 id="helper-setup-required-title">Setup Required</h3>
-                <p id="helper-setup-required-text">To block websites when the app is closed, ReDD Block needs to install
-                    a small background service.
-                    Your computer will prompt you for your
-                    password once — after that, blocks will start instantly without asking again.</p>
-                <p class="modal-note">You can see the <a href="https://github.com/ulyngs/redd-block" target="_blank"
-                        id="helper-open-source-link">open source code for ReDD Block here</a>.</p>
-                <div class="modal-buttons">
-                    <button id="cancel-helper-install-btn" class="modal-btn cancel-btn">Cancel</button>
-                    <button id="proceed-helper-install-btn" class="modal-btn primary-btn">Proceed</button>
                 </div>
             </div>
         </div>
@@ -853,10 +1296,6 @@
                     </div>
                     <p id="start-confirm-override-text"></p>
                 </div>
-                <div id="start-confirm-dns-hint" class="dns-delay-hint desktop-only"
-                    style="font-size: 12px; color: var(--text-muted); margin-top: 8px; line-height: 1.4;">
-                    Changes to website blocking may take up to 60 seconds to take effect in your browser due to caching.
-                </div>
                 <div class="modal-buttons">
                     <button id="cancel-start-confirm-btn" class="modal-btn cancel-btn">Cancel</button>
                     <button id="proceed-start-confirm-btn" class="modal-btn primary-btn">Start Block</button>
@@ -884,7 +1323,7 @@
                         <div class="schedule-summary-header" id="schedule-summary-header">Schedule</div>
                         <div id="schedule-confirm-segments"></div>
                         <div class="block-detail-row">
-                            <span class="detail-label" id="schedule-confirm-repeat-label">Repeat:</span>
+                            <span class="detail-label" id="schedule-confirm-repeat-label">Repeat week:</span>
                             <span class="detail-value" id="schedule-confirm-repeat"></span>
                         </div>
                     </div>
@@ -897,7 +1336,7 @@
                             <line x1="12" y1="8" x2="12" y2="12"></line>
                             <line x1="12" y1="16" x2="12.01" y2="16"></line>
                         </svg>
-                        <span id="schedule-confirm-override-header">To cancel blocks in this schedule, you'll need
+                        <span id="schedule-confirm-override-header">To stop this blocking schedule, you'll need
                             to:</span>
                     </div>
                     <p id="schedule-confirm-override-text"></p>
@@ -917,7 +1356,7 @@
 
         <!-- Zoom Toast -->
         <div id="zoom-toast" class="zoom-toast hidden">
-            <span id="zoom-toast-message">Zoom 100%</span>
+            <span id="zoom-toast-message">Zoom 120%</span>
         </div>
 
         <!-- Settings Modal -->
@@ -928,119 +1367,159 @@
                     <div id="current-app-version" class="settings-current-version">Your version: ...</div>
                 </div>
 
-                <div class="settings-section">
-                    <div style="display: flex; align-items: center; justify-content: space-between;">
-                        <span id="settings-theme-label" style="font-size: 15px;">Light/dark mode</span>
-                        <select id="theme-select"
-                            style="padding: 6px 10px; border: 1px solid var(--border-color-medium); border-radius: 4px; background: var(--modal-bg); color: var(--text-primary); font-size: 15px; cursor: pointer;">
-                            <option id="theme-option-system" value="system">Auto</option>
-                            <option id="theme-option-light" value="light">Light</option>
-                            <option id="theme-option-dark" value="dark">Dark</option>
-                        </select>
-                    </div>
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px;">
-                        <span id="settings-language-label" style="font-size: 15px;">Language</span>
-                        <select id="language-select"
-                            style="padding: 6px 10px; border: 1px solid var(--border-color-medium); border-radius: 4px; background: var(--modal-bg); color: var(--text-primary); font-size: 15px; cursor: pointer;">
-                            <option id="language-option-en" value="en">English</option>
-                            <option id="language-option-da" value="da">Dansk</option>
-                        </select>
-                    </div>
-                    <div class="helper-settings-section">
-                        <div class="helper-option-row" style="margin-top: 10px;">
-                            <label class="toggle-label" for="keep-blocking-toggle">
-                                <span id="settings-keep-blocking-label">Keep blocking running if app is
-                                    uninstalled</span>
-                            </label>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="keep-blocking-toggle" checked>
-                                <span class="toggle-slider"></span>
-                            </label>
+                <div class="settings-section settings-section-grid">
+                    <span id="settings-language-label" class="settings-row-label">Language</span>
+                    <div class="language-picker" id="language-picker">
+                        <button type="button" class="language-picker-trigger" id="language-picker-trigger"
+                            aria-expanded="false" aria-haspopup="listbox"
+                            aria-controls="language-picker-dropdown">
+                            <span class="language-picker-flag-wrap" id="language-picker-trigger-flag"
+                                aria-hidden="true"></span>
+                            <span class="language-picker-code" id="language-picker-trigger-code">English</span>
+                            <svg class="language-picker-chevron" width="16" height="16" viewBox="0 0 24 24"
+                                fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
+                                stroke-linejoin="round" aria-hidden="true">
+                                <path d="M7 10l5-4.5 5 4.5"></path>
+                                <path d="M7 14l5 4.5 5-4.5"></path>
+                            </svg>
+                        </button>
+                        <div class="language-picker-dropdown hidden" id="language-picker-dropdown" role="listbox"
+                            aria-labelledby="settings-language-label">
+                            <div class="language-picker-section">
+                                <div class="language-picker-section-label" id="language-picker-current-label">Current
+                                    language</div>
+                                <div class="language-picker-option language-picker-option--current"
+                                    id="language-picker-current" role="presentation">
+                                    <span class="language-picker-flag-wrap" id="language-picker-current-flag"
+                                        aria-hidden="true"></span>
+                                    <span class="language-picker-name" id="language-picker-current-name">English</span>
+                                </div>
+                            </div>
+                            <div class="language-picker-divider"></div>
+                            <div class="language-picker-section">
+                                <div class="language-picker-section-label" id="language-picker-switch-label">Switch to
+                                </div>
+                                <button type="button" class="language-picker-option language-picker-option--switch"
+                                    id="language-picker-switch-btn" role="option">
+                                    <span class="language-picker-flag-wrap" id="language-picker-switch-flag"
+                                        aria-hidden="true"></span>
+                                    <span class="language-picker-name" id="language-picker-switch-name">Dansk</span>
+                                </button>
+                            </div>
                         </div>
-                        <div style="margin-top: 0px; text-align: center;">
-                            <a href="https://github.com/ulyngs/redd-block/issues" target="_blank"
-                                style="color: var(--text-secondary); font-size: 14px; text-decoration: underline;">
-                                Suggest improvements
-                            </a>
-                        </div>
                     </div>
-                </div>
+                    <span id="settings-theme-label" class="settings-row-label">Light/dark mode</span>
+                    <select id="theme-select" class="settings-select">
+                        <option id="theme-option-system" value="system">Auto</option>
+                        <option id="theme-option-light" value="light">Light</option>
+                        <option id="theme-option-dark" value="dark">Dark</option>
+                    </select>
 
-                <!-- Advanced Options (Expandable) -->
-                <div class="settings-advanced-toggle" id="advanced-options-toggle">
-                    <span id="settings-advanced-options-label">Advanced options</span>
-                    <svg class="chevron-icon" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="6 9 12 15 18 9"></polyline>
-                    </svg>
-                </div>
-                <div class="settings-advanced-content hidden" id="advanced-options-content">
+                <!-- Browser enforcement (desktop only). -->
+                <section class="settings-enforcement-section desktop-only settings-enforcement-full-span">
+                    <button type="button" id="settings-enforcement-toggle" class="settings-enforcement-toggle"
+                        aria-expanded="false" aria-controls="settings-enforcement-content">
+                        <span id="settings-enforcement-heading" class="settings-section-heading">Enforcement settings</span>
+                        <svg class="settings-enforcement-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                            aria-hidden="true">
+                            <polyline points="6 9 12 15 18 9"></polyline>
+                        </svg>
+                    </button>
 
-                    <!-- Helper Settings -->
-                    <div class="helper-settings-section">
-                        <div class="helper-status-row">
-                            <span id="settings-helper-service-label" class="helper-status-label">Helper service</span>
-                            <span id="helper-status-indicator" class="helper-status-indicator">
-                                <span class="status-dot"></span>
-                                <span id="settings-helper-status-text" class="status-text">Checking...</span>
-                            </span>
+                    <div id="settings-enforcement-content" class="settings-enforcement-content hidden">
+                        <div class="settings-section-grid settings-enforcement-grid">
+                        <div class="settings-enforcement-copy">
+                            <span id="settings-enforcement-toggle-headline-text" class="settings-row-label">Browser enforcement</span>
+                            <span id="settings-enforcement-toggle-desc-text" class="settings-enforcement-desc">Automatically close browser if ReDD Focus is disabled when a block is running.</span>
                         </div>
-                        <button id="diagnostics-btn" class="remove-helper-btn" style="margin-top: 8px;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <label class="enforcement-switch enforcement-switch-with-tip" for="settings-enforcement-toggle-input">
+                            <input type="checkbox" id="settings-enforcement-toggle-input" class="enforcement-toggle-input" />
+                            <span class="enforcement-slider"></span>
+                            <span id="settings-enforcement-toggle-disable-note-text" class="enforcement-switch-tooltip hidden" role="tooltip"></span>
+                        </label>
+
+                        <label class="toggle-label settings-grace-label hidden" for="grace-seconds-input">
+                            <span id="grace-period-label-text">Seconds before a browser is closed if ReDD Focus is disabled</span>
+                        </label>
+                        <div id="settings-grace-input-wrap" class="settings-grace-input-wrap hidden">
+                            <input id="grace-seconds-input" type="number" min="5" max="300" step="5"
+                                class="grace-seconds-input" value="60">
+                            <span id="grace-input-lock-tooltip" class="enforcement-switch-tooltip hidden" role="tooltip"></span>
+                        </div>
+                        </div>
+                        <p id="grace-error" class="grace-error hidden"></p>
+                    </div>
+                </section>
+
+                    <!-- Desktop-only onboarding replay (same grid as Language / theme). -->
+                    <div id="settings-onboarding-row" class="settings-onboarding-contents desktop-only">
+                        <span id="settings-onboarding-label" class="settings-row-label">Revisit onboarding steps</span>
+                        <button id="settings-onboarding-btn" class="settings-onboarding-btn" type="button">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z" />
+                                <path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z" />
+                                <path d="M16 17h4" />
+                                <path d="M4 13h4" />
+                            </svg>
+                            <span id="settings-onboarding-btn-label">Onboarding</span>
+                        </button>
+                    </div>
+
+                    <!-- Desktop-only diagnostics row (same grid as Language / theme). -->
+                    <div id="settings-diagnostics-row" class="settings-diagnostics-contents desktop-only">
+                        <span id="settings-diagnostics-label" class="settings-row-label">Something not working?</span>
+                        <button id="diagnostics-btn" class="settings-diagnostics-btn" type="button">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                 <path
                                     d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2">
                                 </path>
                             </svg>
-                            <span>Diagnostics</span>
+                            <span id="settings-diagnostics-btn-label">Diagnostics</span>
                         </button>
-                        <div class="helper-option-row" style="margin-top: 10px;">
-                            <label class="toggle-label" for="log-pings-toggle">
-                                <span id="settings-log-pings-label">Include ping messages in helper log</span>
-                            </label>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="log-pings-toggle">
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
-                        <!-- Override All Button -->
-                        <button id="override-all-btn" class="override-all-btn" style="margin-top: 8px;">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    </div>
+
+                    <div id="settings-override-all-row" class="settings-override-all-contents hidden">
+                        <span id="settings-override-all-label" class="settings-row-label">Stop all blocks &amp; schedules</span>
+                        <button id="override-all-btn" class="settings-override-all-btn" type="button">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                 <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3">
                                 </path>
                                 <path d="M12 9v4"></path>
                                 <path d="M12 17h.01"></path>
                             </svg>
-                            <span id="settings-override-all-label">Emergency: Stop all blocks &amp; schedules</span>
+                            <span id="settings-override-all-btn-label">Stop all blocks</span>
                         </button>
-                        <button id="update-helper-btn"
-                            style="display: none; margin-bottom: 8px; width: 100%; padding: 10px 16px; background: #4f46e5; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: 500; align-items: center; justify-content: center; gap: 8px;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="M21 2v6h-6"></path>
-                                <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
-                                <path d="M3 22v-6h6"></path>
-                                <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
-                            </svg>
-                            <span id="settings-update-helper-label">Update Helper</span>
-                        </button>
-                        <div class="still-not-working-wrapper" style="position: relative; margin-top: 8px;">
-                            <button id="still-not-working-btn" class="remove-helper-btn">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <circle cx="12" cy="12" r="10"></circle>
-                                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-                                    <path d="M12 17h.01"></path>
+                    </div>
+
+                    <!-- Mac-only in-app uninstall (same grid rows as Language / theme). -->
+                    <div id="uninstall-app-row" class="settings-uninstall-contents macos-only">
+                        <span id="settings-uninstall-label" class="settings-row-label">Uninstall ReDD Block</span>
+                        <div class="settings-uninstall-btn-wrap">
+                            <button id="uninstall-app-btn" class="uninstall-app-btn" type="button">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M3 6h18"></path>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+                                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                                 </svg>
-                                <span>Something still not working?</span>
+                                <span id="settings-uninstall-btn-label">Uninstall…</span>
                             </button>
-                            <div id="still-not-working-hint" class="still-not-working-hint"
-                                style="display: none; font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.4;">
-                                Please stop all blocks and schedules first.
-                            </div>
+                            <span id="uninstall-app-hint" class="enforcement-switch-tooltip hidden" role="tooltip"></span>
                         </div>
                     </div>
+                </div>
+
+                <div id="settings-feedback-footer" class="settings-feedback-footer">
+                    <svg class="settings-feedback-icon" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                        aria-hidden="true">
+                        <path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"></path>
+                    </svg>
+                    <p id="settings-feedback-footer-text" class="settings-feedback-text"></p>
                 </div>
 
                 <!-- Version Info -->
@@ -1050,7 +1529,27 @@
                 </div>
 
                 <div class="modal-buttons">
-                    <button id="close-settings-btn" class="modal-btn cancel-btn">Close</button>
+                    <button id="close-settings-btn" class="modal-btn cancel-btn">Done</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Uninstall Confirmation Modal (macOS in-app uninstall) -->
+        <div id="uninstall-confirm-modal" class="modal-overlay hidden">
+            <div class="modal-content uninstall-confirm-modal">
+                <h3 id="uninstall-confirm-title">Uninstall ReDD Block?</h3>
+                <p id="uninstall-confirm-intro" class="migration-explainer"></p>
+
+                <div class="onboarding-focus-card migration-card legal-onboarding-card">
+                    <div id="uninstall-browser-rows" class="migration-browser-buttons"></div>
+
+                    <p id="uninstall-finder-warning-text" class="migration-explainer migration-explainer-warn"></p>
+                    <p id="uninstall-data-kept-text" class="legal-onboarding-note"></p>
+                </div>
+
+                <div class="modal-buttons">
+                    <button id="cancel-uninstall-confirm-btn" class="modal-btn cancel-btn">Cancel</button>
+                    <button id="confirm-uninstall-confirm-btn" class="modal-btn danger-btn">Uninstall</button>
                 </div>
             </div>
         </div>
@@ -1058,7 +1557,7 @@
         <!-- Override All Blocks Modal -->
         <div id="override-all-modal" class="modal-overlay hidden">
             <div class="modal-content override-challenge">
-                <h3 id="override-all-title">Override All Blocks?</h3>
+                <h3 id="override-all-title">Stop All Blocks?</h3>
                 <div class="override-all-warning">
                     <p><strong id="override-all-warning-strong">Are you sure you want to stop all running
                             blocks?</strong></p>
@@ -1075,7 +1574,7 @@
                 </div>
                 <div class="modal-buttons">
                     <button id="cancel-override-all-btn" class="modal-btn cancel-btn">Cancel</button>
-                    <button id="confirm-override-all-btn" class="modal-btn danger-btn">Override All</button>
+                    <button id="confirm-override-all-btn" class="modal-btn danger-btn">Stop All</button>
                 </div>
             </div>
         </div>
@@ -1083,89 +1582,50 @@
         <!-- Diagnostics Modal -->
         <div id="diagnostics-modal" class="modal-overlay hidden">
             <div class="modal-content diagnostics-modal">
-                <h3>Diagnostics</h3>
+                <div class="diagnostics-header">
+                    <h3 id="diagnostics-modal-title">Diagnostics</h3>
+                    <div class="diagnostics-header-meta">
+                        <span id="diagnostics-version-label" class="diagnostics-version-label"></span>
+                    </div>
+                </div>
                 <div id="diagnostics-content" class="diagnostics-content">
                     <div class="diagnostics-loading">Loading...</div>
                 </div>
-                <div class="modal-buttons">
-                    <button id="diagnostics-copy-btn" class="modal-btn cancel-btn">Copy to Clipboard</button>
-                    <button id="close-diagnostics-btn" class="modal-btn cancel-btn">Close</button>
+                <div class="diagnostics-footer">
+                    <div class="diagnostics-footer-actions">
+                        <button id="diagnostics-copy-btn" class="modal-btn diagnostics-copy-btn" type="button">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                            </svg>
+                            <span id="diagnostics-copy-btn-label">Copy to Clipboard</span>
+                        </button>
+                        <button id="close-diagnostics-btn" class="modal-btn primary-btn diagnostics-close-btn" type="button">Close</button>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Still Not Working Modal -->
-        <div id="still-not-working-modal" class="modal-overlay hidden">
-            <div class="modal-content" style="max-width: 520px;">
-                <h3>Something still not working?</h3>
-                <p style="font-size: 14px; color: var(--text-secondary); margin-bottom: 16px;">
-                    If the emergency stop didn't resolve your issue, try these options:
-                </p>
-
-                <!-- Option 1: Uninstall Helper -->
-                <div class="snw-option">
-                    <button id="snw-uninstall-btn" class="remove-helper-btn" style="width: 100%;">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M3 6h18"></path>
-                            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-                            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                        </svg>
-                        <span>Uninstall Helper Service</span>
-                    </button>
-                    <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
-                        Removes the background helper service. You can reinstall it later by starting a block.
-                    </p>
-                </div>
-
-                <!-- Option 2: Manual Hosts Reset -->
-                <div class="snw-option" style="margin-top: 12px;">
-                    <button id="snw-manual-reset-btn" class="remove-helper-btn" style="width: 100%;">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                            <path d="M14 2v6h6"></path>
-                            <line x1="9" y1="15" x2="15" y2="15"></line>
-                        </svg>
-                        <span>Manually reset hosts file</span>
-                    </button>
-                    <div id="snw-manual-reset-locked"
-                        style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
-                        Unlock terminal commands to manually remove blocking entries from your hosts file.
+        <!-- Full-screen, always-on-top "Let's go!" warning. The watcher
+             raises this when it detects a blocked app running while a
+             block is active — the user is presented with the warning,
+             clicks Let's go!, gets 30 seconds to save + manually quit,
+             then the watcher sends a polite Cmd-Q. 10 seconds after
+             that, anything still alive gets SIGKILL. The window itself
+             is sized to cover the entire display by `enter_blocking_warning_compact_window`. -->
+        <div id="app-blocking-warning-overlay" class="app-blocking-warning-overlay hidden" role="alertdialog"
+            aria-modal="true" aria-labelledby="app-blocking-warning-heading">
+            <div class="app-blocking-warning-panel-wrap" id="app-blocking-warning-panel">
+                <div class="app-blocking-warning-card">
+                    <div class="app-blocking-warning-emoji" aria-hidden="true">
+                        <span id="app-blocking-warning-emoji">🎯</span>
                     </div>
-                    <!-- Challenge area (hidden until clicked) -->
-                    <div id="snw-challenge-area" class="override-challenge hidden" style="margin-top: 8px;">
-                        <p class="override-all-subline">Type the following to unlock:</p>
-                        <div id="snw-challenge-text" class="challenge-text"></div>
-                        <textarea id="snw-challenge-input" class="challenge-input" placeholder="Type here..."
-                            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
-                        <div class="challenge-progress">
-                            <div id="snw-challenge-progress-bar" class="challenge-progress-bar"></div>
-                        </div>
+                    <h2 id="app-blocking-warning-heading" class="app-blocking-warning-heading"></h2>
+                    <p id="app-blocking-warning-summary" class="app-blocking-warning-summary"></p>
+                    <div class="app-blocking-warning-actions">
+                        <button type="button" id="app-blocking-lets-go-btn"
+                            class="modal-btn primary-btn app-blocking-lets-go-btn">Let's go!</button>
                     </div>
-                    <!-- Terminal commands (hidden until challenge completed) -->
-                    <div id="snw-terminal-commands" class="hidden" style="margin-top: 8px;">
-                    </div>
-                </div>
-
-                <!-- Option 3: Email Support -->
-                <div class="snw-option" style="margin-top: 12px;">
-                    <button id="snw-email-btn" class="remove-helper-btn" style="width: 100%;">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z">
-                            </path>
-                            <polyline points="22,6 12,13 2,6"></polyline>
-                        </svg>
-                        <span>Email support with diagnostics</span>
-                    </button>
-                    <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
-                        Opens your email client with diagnostic info pre-filled to team@reddfocus.org.
-                    </p>
-                </div>
-
-                <div class="modal-buttons" style="margin-top: 16px;">
-                    <button id="close-snw-btn" class="modal-btn cancel-btn">Close</button>
                 </div>
             </div>
         </div>
@@ -1174,6 +1634,18 @@
         <div class="footer">
             <span class="footer-text"><span id="footer-made-with">Made with</span> <span class="heart">♥</span> <span
                     id="footer-by">by</span> <a href="https://reddfocus.org" target="_blank">reddfocus.org</a></span>
+            <div class="footer-zoom-control" id="footer-zoom-control" role="group" aria-label="UI zoom">
+                <button type="button" class="footer-zoom-btn" id="footer-zoom-out" title="Zoom out"
+                    aria-label="Zoom out">−</button>
+                <svg class="footer-zoom-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="11" cy="11" r="7"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <span class="footer-zoom-value" id="footer-zoom-value">120%</span>
+                <button type="button" class="footer-zoom-btn" id="footer-zoom-in" title="Zoom in"
+                    aria-label="Zoom in">+</button>
+            </div>
         </div>
     </div>
 

@@ -1,0 +1,58 @@
+{
+  "manifest_version": 3,
+  "default_locale": "en",
+  "name": "ReDD Focus: Hide Distractions",
+  "description": "Open-source attention saver for the web (YouTube, Instagram, ... or any other site!).",
+  "version": "6.1.4",
+  "icons": {
+    "48": "images/icon-48.png",
+    "96": "images/icon-96.png",
+    "128": "images/icon-128.png",
+    "256": "images/icon-256.png",
+    "512": "images/icon-512.png"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "run_at": "document_start",
+      "css": [
+        "style.css"
+      ],
+      "js": [
+        "shared_data.js",
+        "selectors.js",
+        "content.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ],
+      "all_frames": false
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "images/popup-16.png",
+      "19": "images/popup-19.png",
+      "32": "images/popup-32.png",
+      "38": "images/popup-38.png"
+    }
+  },
+  "permissions": [
+    "storage",
+    "tabs",
+    "activeTab",
+    "nativeMessaging"
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "mindshield@example.com",
+      "strict_min_version": "109.0",
+      "data_collection_permissions": {
+        "required": ["none"]
+      }
+    }
+  }
+}
