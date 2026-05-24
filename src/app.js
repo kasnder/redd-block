@@ -16300,15 +16300,16 @@ function setupOnboardingReplayButton() {
     }
 }
 
-// Check if there are any active blocks or schedules
+// Any blocks or schedules the user could clear via Stop All — includes
+// future scheduled segments, not only what is enforcing right now.
 function hasAnyActiveBlocks() {
-    return hasAnyEnforcedBlocks();
+    return hasAnyBlockingStateToClear();
 }
 
-// Show Stop All Blocks only while something is actively enforced right now.
+// Show Stop All while there are active blocks or schedules to clear.
 function updateOverrideAllButtonVisibility() {
     const row = document.getElementById('settings-override-all-row');
-    const showOverride = hasAnyEnforcedBlocks();
+    const showOverride = hasAnyBlockingStateToClear();
 
     if (row) row.classList.toggle('hidden', !showOverride);
     updateGraceSettingLock();

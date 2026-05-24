@@ -813,7 +813,7 @@
             assert(result === true, 'T35: Active schedule → true');
         })();
 
-        // T35a: Paused one-off does not count as enforced
+        // T35a: Paused one-off still counts — Stop All should clear it
         (function T35a() {
             const blocklist = createMockBlocklist({ websites: ['paused.com'] });
             const now = Date.now();
@@ -826,10 +826,10 @@
                 activeBlocks: [block]
             });
             const result = hasAnyActiveBlocks(appData, now, new Date(now));
-            assert(result === false, 'T35a: Paused one-off → false');
+            assert(result === true, 'T35a: Paused one-off still active → true');
         })();
 
-        // T35b: Paused schedule does not count as enforced
+        // T35b: Paused schedule still counts — Stop All should clear it
         (function T35b() {
             const blocklist = createMockBlocklist({ websites: ['paused-schedule.com'] });
             const now = Date.now();
@@ -843,7 +843,26 @@
                 schedules: [schedule]
             });
             const result = hasAnyActiveBlocks(appData, now, new Date(now));
-            assert(result === false, 'T35b: Paused schedule → false');
+            assert(result === true, 'T35b: Paused schedule with future occurrence → true');
+        })();
+
+        // T36: Schedule starting later today (not enforcing yet) → true
+        (function T36() {
+            const blocklist = createMockBlocklist({ websites: ['twitter.com'] });
+            const nowDate = new Date();
+            nowDate.setHours(12, 0, 0, 0);
+            const now = nowDate.getTime();
+            const day = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
+            const schedule = createMockSchedule(
+                blocklist.id,
+                [createMockSegment(18, 0, 22, 0, [day])]
+            );
+            const appData = createMockAppData({
+                blocklists: [blocklist],
+                schedules: [schedule]
+            });
+            const result = hasAnyActiveBlocks(appData, now, nowDate);
+            assert(result === true, 'T36: Future schedule today → true');
         })();
     }
 

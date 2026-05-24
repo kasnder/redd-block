@@ -359,18 +359,58 @@ function printTestSummary() {
 // ========================================
 
 /**
- * Check if there are any enforced blocks or schedules at the given time.
- * Mirrors app.js `hasAnyActiveBlocks()`, which delegates to enforced-now semantics.
+ * Check if Stop All should be available — any one-off block that has
+ * not ended yet, or any schedule with a future occurrence.
+ * Mirrors app.js `hasAnyActiveBlocks()` / `hasAnyBlockingStateToClear()`.
  */
 function hasAnyActiveBlocks(appData, now, nowDate) {
-    const hasActiveOneOff = (appData.activeBlocks || []).some(block =>
-        isOneOffBlockEnforced(block, now)
+    const hasOneOffState = (appData.activeBlocks || []).some(block =>
+        block && block.endTime > now
     );
-    if (hasActiveOneOff) return true;
+    if (hasOneOffState) return true;
 
     return (appData.schedules || []).some(schedule =>
-        isScheduleSegmentActiveNow(schedule, nowDate)
+        scheduleHasFutureOccurrence(schedule, nowDate)
     );
+}
+
+function scheduleHasFutureOccurrence(schedule, nowDate = new Date()) {
+    if (!schedule || !Array.isArray(schedule.segments) || schedule.segments.length === 0) {
+        return false;
+    }
+
+    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
+
+    return schedule.segments.some(seg => {
+        const segmentDays = (Array.isArray(seg.days) && seg.days.length > 0) ? seg.days : [currentDay];
+        return segmentDays.some(segmentDay => {
+            let daysUntil = segmentDay - currentDay;
+            if (daysUntil < 0) daysUntil += 7;
+
+            const candidateStart = new Date(nowDate);
+            candidateStart.setDate(candidateStart.getDate() + daysUntil);
+            candidateStart.setHours(seg.startHour, seg.startMinute, 0, 0);
+
+            const candidateEnd = new Date(candidateStart);
+            candidateEnd.setHours(seg.endHour, seg.endMinute, 0, 0);
+            if (candidateEnd <= candidateStart) {
+                candidateEnd.setDate(candidateEnd.getDate() + 1);
+            }
+
+            if (candidateEnd <= nowDate) {
+                candidateStart.setDate(candidateStart.getDate() + 7);
+                candidateEnd.setDate(candidateEnd.getDate() + 7);
+            }
+
+            if (schedule.repeatType === 'date' && schedule.repeatDate) {
+                const repeatEnd = new Date(schedule.repeatDate);
+                repeatEnd.setHours(23, 59, 59, 999);
+                return candidateStart <= repeatEnd && candidateEnd > nowDate;
+            }
+
+            return candidateEnd > nowDate;
+        });
+    });
 }
 
 /**
