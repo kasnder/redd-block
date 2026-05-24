@@ -1682,6 +1682,8 @@ const migrationShowMeHowExpandedKeys = new Set();
 let migrationSafariDuplicateHelpExpanded = false;
 /** Snapshot for re-rendering localized browser rows when language changes mid-overlay. */
 let lastMigrationBrowserState = null;
+/** Skips full DOM rebuild on poll when compliance state is unchanged (prevents icon flash). */
+let lastMigrationBrowserRenderSignature = '';
 const MIGRATION_POLL_MS = 2500;
 const EXT_ONBOARDING_DISMISSED_KEY = 'reddBlockExtOnboardingDismissed';
 
@@ -1835,6 +1837,7 @@ function hideMigrationOnboarding() {
     migrationShowMeHowExpandedKeys.clear();
     migrationSafariDuplicateHelpExpanded = false;
     lastMigrationBrowserState = null;
+    lastMigrationBrowserRenderSignature = '';
     stopMigrationPolling();
 }
 
@@ -2436,10 +2439,65 @@ function buildSafariDuplicateInstructionStep(stepNum, translationKey, extraClass
     return step;
 }
 
-function renderBrowserInstallButtons(state) {
-    lastMigrationBrowserState = state;
-    const container = document.getElementById('migration-browser-buttons');
+function migrationBrowserKeys(state) {
+    const browsers = state?.browsers || {};
+    const detectedKeys = Object.keys(BROWSER_STORE_LINKS).filter(k => {
+        const b = browsers[k];
+        return b && b.installed;
+    });
+    return detectedKeys.length > 0 ? detectedKeys : ['chrome'];
+}
+
+function migrationBrowserRenderSignature(state) {
+    const browsers = state?.browsers || {};
+    return migrationBrowserKeys(state).map(k => {
+        const b = browsers[k];
+        const status = browserComplianceStatus(k, b) || 'needs-install';
+        if (k === 'safari' && b?.profiles?.length) {
+            const profileSig = b.profiles.map(p =>
+                `${p.installed ? 1 : 0}${p.enabled === true ? 1 : p.enabled === false ? 0 : '?'}${p.privateBrowsing === true ? 1 : p.privateBrowsing === false ? 0 : '?'}${p.websiteAccessAll === true ? 1 : p.websiteAccessAll === false ? 0 : '?'}`
+            ).join(';');
+            return `${k}:${status}:${b.duplicateExtensions?.detected ? 'dup' : ''}:${profileSig}`;
+        }
+        return `${k}:${status}`;
+    }).join('|');
+}
+
+function updateMigrationBrowserChecklist(state) {
     const checklistItem = document.getElementById('migration-checklist-ext');
+    const browsers = state?.browsers || {};
+    const keys = migrationBrowserKeys(state);
+
+    const howto = document.getElementById('migration-howto');
+    const anyMissing = keys.some(k => browserComplianceStatus(k, browsers[k]) !== 'compliant');
+    if (howto) howto.classList.toggle('hidden', !anyMissing);
+
+    if (!checklistItem) return;
+    const allCompliant = keys.length > 0
+        && keys.every(k => browserComplianceStatus(k, browsers[k]) === 'compliant');
+    if (allCompliant) {
+        checklistItem.classList.remove('checklist-todo');
+        checklistItem.classList.add('checklist-done');
+        const mark = checklistItem.querySelector('.checklist-mark');
+        if (mark) mark.textContent = '✓';
+    } else {
+        checklistItem.classList.remove('checklist-done');
+        checklistItem.classList.add('checklist-todo');
+        const mark = checklistItem.querySelector('.checklist-mark');
+        if (mark) mark.textContent = '○';
+    }
+}
+
+function renderBrowserInstallButtons(state, { force = false } = {}) {
+    lastMigrationBrowserState = state;
+    const sig = migrationBrowserRenderSignature(state);
+    if (!force && sig === lastMigrationBrowserRenderSignature) {
+        updateMigrationBrowserChecklist(state);
+        return;
+    }
+    lastMigrationBrowserRenderSignature = sig;
+
+    const container = document.getElementById('migration-browser-buttons');
     if (!container) return;
     container.innerHTML = '';
 
@@ -2450,15 +2508,7 @@ function renderBrowserInstallButtons(state) {
     // extension in browsers they haven't opened yet — only filtering
     // to running browsers (as the in-session compliance banner does)
     // would hide those.
-    const detectedKeys = Object.keys(BROWSER_STORE_LINKS).filter(k => {
-        const b = browsers[k];
-        return b && b.installed;
-    });
-
-    // Fallback: if the scan didn't identify any installed browser
-    // (unusual), surface a single Chrome row so the user has
-    // somewhere to go.
-    const keys = detectedKeys.length > 0 ? detectedKeys : ['chrome'];
+    const keys = migrationBrowserKeys(state);
 
     for (const key of keys) {
         const entry = BROWSER_STORE_LINKS[key];
@@ -2757,32 +2807,7 @@ function renderBrowserInstallButtons(state) {
         container.appendChild(row);
     }
 
-    // Show the "How to install" instructions only when at least one
-    // browser still needs the extension. Hidden when everything's
-    // compliant — the user is done, no need to nag.
-    const howto = document.getElementById('migration-howto');
-    const anyMissing = keys.some(k => browserComplianceStatus(k, browsers[k]) !== 'compliant');
-    if (howto) howto.classList.toggle('hidden', !anyMissing);
-
-    // Tick the checklist as "done" only once every detected browser
-    // is compliant. "any" was misleading — if Firefox was set up but
-    // Brave still needed installing, the checklist would mark itself
-    // green even though there's still work to do.
-    if (checklistItem) {
-        const allCompliant = keys.length > 0
-            && keys.every(k => browserComplianceStatus(k, browsers[k]) === 'compliant');
-        if (allCompliant) {
-            checklistItem.classList.remove('checklist-todo');
-            checklistItem.classList.add('checklist-done');
-            const mark = checklistItem.querySelector('.checklist-mark');
-            if (mark) mark.textContent = '✓';
-        } else {
-            checklistItem.classList.remove('checklist-done');
-            checklistItem.classList.add('checklist-todo');
-            const mark = checklistItem.querySelector('.checklist-mark');
-            if (mark) mark.textContent = '○';
-        }
-    }
+    updateMigrationBrowserChecklist(state);
 }
 
 // While the post-cleanup screen is open, periodically re-check
@@ -15322,7 +15347,7 @@ function applySettingsLanguage() {
         void syncFdaOnboardingGrantButton();
     }
     if (migrationOnboardingActive && lastMigrationBrowserState) {
-        renderBrowserInstallButtons(lastMigrationBrowserState);
+        renderBrowserInstallButtons(lastMigrationBrowserState, { force: true });
     }
 
     // Re-render pieces with dynamic language-dependent text.
