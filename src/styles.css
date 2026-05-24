@@ -6106,13 +6106,27 @@ body.dark-mode .enforcement-switch input:checked + .enforcement-slider::before {
     margin-top: 16px;
 }
 
-.migration-post-actions .migration-done-btn {
-    width: 100%;
+.migration-post-action-row {
+    display: flex;
+    align-items: stretch;
+    gap: 12px;
+}
+
+.migration-post-action-row .eula-back-btn,
+.migration-post-action-row .migration-done-btn {
+    border-radius: var(--radius-sm);
+}
+
+.onboarding-focus-card .migration-post-action-row .onboarding-primary-btn,
+.migration-post-action-row .migration-done-btn {
+    flex: 1;
+    min-width: 0;
+    width: auto;
     margin: 0;
     padding: 12px 20px;
-    border-radius: var(--radius-sm);
     font-size: 15px;
     font-weight: 600;
+    line-height: 1.2;
 }
 
 .migration-skip-btn {

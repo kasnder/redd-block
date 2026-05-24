@@ -1536,6 +1536,10 @@ function completeFdaOnboardingSession() {
     const resolve = activeFdaOnboardingSession?.resolve;
     activeFdaOnboardingSession = null;
     resolve?.();
+    if (extensionSetupPausedForBackNavigation) {
+        extensionSetupPausedForBackNavigation = false;
+        void ensureExtensionSetupOnboardingShown();
+    }
 }
 
 function returnToEulaFromFda() {
@@ -1784,6 +1788,32 @@ async function showMigrationOnboarding(phase, state, opts = {}) {
     }
 }
 
+let extensionSetupPausedForBackNavigation = false;
+
+function pauseMigrationOnboardingForBackNavigation() {
+    document.getElementById('migration-onboarding')?.classList.add('hidden');
+    migrationOnboardingActive = false;
+    stopMigrationPolling();
+}
+
+function syncMigrationPostBackButtonVisibility() {
+    const backBtn = document.getElementById('migration-back-btn');
+    if (backBtn) {
+        backBtn.classList.toggle('hidden', !firstRunExtensionSetupPending);
+    }
+}
+
+async function returnFromExtensionSetupOnboarding() {
+    if (!firstRunExtensionSetupPending) return;
+    extensionSetupPausedForBackNavigation = true;
+    pauseMigrationOnboardingForBackNavigation();
+    if (isMacOSDesktop) {
+        await showFdaOnboardingOverlay();
+    } else {
+        showEulaOnboardingScreen();
+    }
+}
+
 function hideMigrationOnboarding() {
     const screen = document.getElementById('migration-onboarding');
     const main = document.getElementById('main-content');
@@ -1898,8 +1928,10 @@ function wireMigrationPrePhase() {
 function wireMigrationPostPhase(state) {
     renderBrowserInstallButtons(state);
     wireEnforcementToggle();
+    syncMigrationPostBackButtonVisibility();
     const doneBtn = document.getElementById('migration-done-btn');
     const skipBtn = document.getElementById('migration-skip-btn');
+    const backBtn = document.getElementById('migration-back-btn');
 
     const finish = async () => {
         try {
@@ -1927,6 +1959,12 @@ function wireMigrationPostPhase(state) {
     if (skipBtn && !skipBtn._listenerAdded) {
         skipBtn._listenerAdded = true;
         skipBtn.addEventListener('click', finish);
+    }
+    if (backBtn && !backBtn._listenerAdded) {
+        backBtn._listenerAdded = true;
+        backBtn.addEventListener('click', () => {
+            void returnFromExtensionSetupOnboarding();
+        });
     }
 }
 
@@ -4737,6 +4775,7 @@ function setupEventListeners() {
             return;
         }
         if (firstRunExtensionSetupPending && hasAcceptedEula()) {
+            extensionSetupPausedForBackNavigation = false;
             document.getElementById('eula-onboarding')?.classList.add('hidden');
             void ensureExtensionSetupOnboardingShown();
             return;
@@ -13601,7 +13640,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationOpened: 'Opened',
         migrationOpenFdaTitle: 'Open Full Disk Access settings',
         fdaOnboardingGrantBtn: 'Open Full Disk Access settings',
-        fdaOnboardingAlreadyGrantedBtn: '✓ Already granted — proceed',
+        fdaOnboardingAlreadyGrantedBtn: '✓ Proceed',
         fdaOnboardingGrantedStatus: 'Full Disk Access granted — installing ReDD Focus…',
         migrationCheckAgain: 'Check again',
         migrationRefreshSafariTitle: 'Refresh Safari access status',
@@ -14065,7 +14104,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationOpened: 'Åbnet',
         migrationOpenFdaTitle: 'Åbn Indstillinger for Fuld diskadgang',
         fdaOnboardingGrantBtn: 'Åbn Indstillinger for Fuld diskadgang',
-        fdaOnboardingAlreadyGrantedBtn: '✓ Allerede givet — fortsæt',
+        fdaOnboardingAlreadyGrantedBtn: '✓ Fortsæt',
         fdaOnboardingGrantedStatus: 'Fuld diskadgang givet — installerer ReDD Focus…',
         migrationCheckAgain: 'Tjek igen',
         migrationRefreshSafariTitle: 'Opdater Safari-status',
@@ -14585,6 +14624,8 @@ function applyMigrationOverlayStaticCopy() {
     setHtml('migration-howto-li3', tSettings('migrationHowtoLi3Html'));
     setText('migration-done-btn', tSettings('migrationDone'));
     setText('migration-skip-btn', tSettings('migrationSkip'));
+    setText('migration-back-btn', tSettings('eulaBackBtn'));
+    syncMigrationPostBackButtonVisibility();
     setText('enforcement-toggle-headline-text', tSettings('migrationEnforcementHeadline'));
     setText('enforcement-toggle-desc-text', tSettings('migrationEnforcementDesc'));
     setText('enforcement-toggle-disable-note-text', tSettings('migrationEnforcementDisableNote'));
