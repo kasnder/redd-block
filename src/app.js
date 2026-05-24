@@ -1091,6 +1091,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupHelpMenuLinks();
     setupHelperSettings();
     setupDiagnosticsButton();
+    setupOnboardingReplayButton();
     setupOverrideAll();
     setupInAppUninstall();
     setupGraceSetting();
@@ -3076,6 +3077,35 @@ async function openExtensionSetupOverlay() {
     } catch (e) {
         console.warn('[setup-overlay] reopen failed:', e);
     }
+}
+
+async function continueOnboardingReplayFromWelcome() {
+    if (!hasAcceptedEula()) {
+        updateOnboardingVisibility();
+        return;
+    }
+    if (isMacOSDesktop) {
+        try {
+            await showFdaOnboardingOverlay();
+        } catch (e) {
+            console.warn('[onboarding-replay] FDA overlay failed:', e);
+        }
+    }
+    await openExtensionSetupOverlay();
+}
+
+async function restartOnboardingFromSettings() {
+    if (isIOS) return;
+    document.getElementById('settings-modal')?.classList.add('hidden');
+    setLanguagePickerOpen(false);
+
+    migrationOnboardingDismissed = false;
+    localStorage.removeItem(EXT_ONBOARDING_DISMISSED_KEY);
+    firstRunExtensionSetupPending = true;
+    lastMigrationBrowserRenderSignature = '';
+    extensionSetupPausedForBackNavigation = false;
+
+    await presentWelcomeOnboarding(continueOnboardingReplayFromWelcome);
 }
 
 // Re-poll extension compliance so the slim banner reflects reality
@@ -13869,6 +13899,8 @@ const SETTINGS_TRANSLATIONS = {
         settingsEnforcementLockedTooltip: 'To change this setting, first stop all active blocks.',
         settingsDiagnosticsLabel: 'Something not working?',
         settingsDiagnosticsBtn: 'Diagnostics',
+        settingsOnboardingLabel: 'Revisit onboarding steps',
+        settingsOnboardingBtn: 'Onboarding',
         gracePeriodLockedHint: 'Locked while a block is active—only shorter times allowed.',
         appBlockingLetsGo: 'Let’s go!',
         appBlockingFallbackBlocklistName: 'this block',
@@ -14344,6 +14376,8 @@ const SETTINGS_TRANSLATIONS = {
         settingsEnforcementLockedTooltip: 'For at ændre denne indstilling skal du først stoppe alle aktive blokeringer.',
         settingsDiagnosticsLabel: 'Virker noget ikke?',
         settingsDiagnosticsBtn: 'Diagnostik',
+        settingsOnboardingLabel: 'Gennemgå onboarding-trin igen',
+        settingsOnboardingBtn: 'Onboarding',
         gracePeriodLockedHint: 'Låst mens en blokering er aktiv—kun kortere tider tilladt.',
         appBlockingLetsGo: 'Fortsæt',
         appBlockingFallbackBlocklistName: 'denne blokering',
@@ -15262,6 +15296,8 @@ function applySettingsLanguage() {
     setText('settings-uninstall-btn-label', tSettings('uninstallAppBtn'));
     setText('settings-diagnostics-label', tSettings('settingsDiagnosticsLabel'));
     setText('settings-diagnostics-btn-label', tSettings('settingsDiagnosticsBtn'));
+    setText('settings-onboarding-label', tSettings('settingsOnboardingLabel'));
+    setText('settings-onboarding-btn-label', tSettings('settingsOnboardingBtn'));
     setText('uninstall-confirm-title', tSettings('uninstallConfirmTitle'));
     setHtml('uninstall-confirm-intro', tSettings('uninstallConfirmIntroHtml').replace(
         '{LOGO}',
@@ -16216,6 +16252,17 @@ function setupDiagnosticsButton() {
     const btn = document.getElementById('diagnostics-btn');
     if (btn) {
         btn.addEventListener('click', openDiagnosticsModal);
+    }
+}
+
+function setupOnboardingReplayButton() {
+    const btn = document.getElementById('settings-onboarding-btn');
+    if (btn) {
+        btn.addEventListener('click', () => {
+            restartOnboardingFromSettings().catch((e) => {
+                console.warn('[onboarding-replay] restart failed:', e);
+            });
+        });
     }
 }
 

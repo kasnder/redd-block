@@ -7868,6 +7868,7 @@ body.ios .desktop-only {
 #settings-modal .settings-section-grid .language-picker,
 #settings-modal .settings-section-grid #theme-select,
 #settings-modal .settings-section-grid .settings-diagnostics-btn,
+#settings-modal .settings-section-grid .settings-onboarding-btn,
 #settings-modal .settings-section-grid .settings-override-all-btn,
 #settings-modal .settings-section-grid .uninstall-app-btn,
 #settings-modal .settings-uninstall-btn-wrap {
@@ -8373,6 +8374,7 @@ body.mac .settings-uninstall-contents.macos-only {
     display: contents;
 }
 
+body:not(.ios) .settings-onboarding-contents.desktop-only,
 body:not(.ios) .settings-diagnostics-contents.desktop-only,
 .settings-override-all-contents:not(.hidden) {
     display: contents;
@@ -8384,6 +8386,7 @@ body:not(.ios) .settings-diagnostics-contents.desktop-only,
 
 /* Settings action buttons — match language/theme control width and radius. */
 #settings-modal .settings-section-grid .settings-diagnostics-btn,
+#settings-modal .settings-section-grid .settings-onboarding-btn,
 #settings-modal .settings-section-grid .settings-override-all-btn,
 #settings-modal .settings-section-grid .uninstall-app-btn {
     display: inline-flex;
@@ -8427,18 +8430,21 @@ body:not(.ios) .settings-diagnostics-contents.desktop-only,
     flex-shrink: 0;
 }
 
-#settings-modal .settings-diagnostics-btn {
+#settings-modal .settings-diagnostics-btn,
+#settings-modal .settings-onboarding-btn {
     background: var(--modal-bg);
     color: var(--text-primary);
     border: 1px solid var(--border-color-medium);
 }
 
-#settings-modal .settings-diagnostics-btn:hover:not(:disabled) {
+#settings-modal .settings-diagnostics-btn:hover:not(:disabled),
+#settings-modal .settings-onboarding-btn:hover:not(:disabled) {
     background: var(--element-hover-bg);
     border-color: var(--border-color-strong, var(--border-color-medium));
 }
 
-#settings-modal .settings-diagnostics-btn svg {
+#settings-modal .settings-diagnostics-btn svg,
+#settings-modal .settings-onboarding-btn svg {
     flex-shrink: 0;
 }
 
