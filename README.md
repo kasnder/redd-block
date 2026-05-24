@@ -8,7 +8,7 @@ Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and th
 
 - **Cross-Platform** — Works on macOS 11+, Windows 10+, iOS (iPad/iPhone), and Android (source code for the Android version is here: https://github.com/kasnder/redd-block-android)
 - **Website Blocking** — Via the ReDD Focus browser extension on desktop (Chrome/Brave/Edge/Firefox via a built-in native messaging host; Safari via `SafariWebExtensionHandler` plus an App Group bridge). On iOS it's the Screen Time API.
-- **App Blocking** — Automatically blocks distracting apps (minimizes/hides on desktop via in-process watcher, Screen Time shield overlay on iOS)
+- **App Blocking** — Automatically blocks distracting apps (warning overlay + polite quit on desktop via in-process watcher, Screen Time shield overlay on iOS)
 - **Flexible Blocklists** — Create multiple lists with custom names, colors, and emojis
 - **One-Off Blocks** — Quick blocks for immediate focus sessions
 - **Scheduled Blocks** — Set recurring blocks on specific days/times (e.g., block social media Mon-Fri 9am-5pm)
@@ -31,19 +31,23 @@ extension on both OSes:
   per-browser manifest JSON (macOS) or `HKCU\…\NativeMessagingHosts`
   registry keys (Windows). Entirely user-scope.
 - **Safari** (macOS) routes through `SafariWebExtensionHandler.swift`
-  inside the signed `.app` bundle. ReDD Block mirrors
-  `redd-block-data.json` into the shared App Group container for
-  blocking data, and reads Safari's `Extensions.plist` under Full Disk
-  Access for extension compliance checks.
+  inside the signed `.app` bundle (listed in Safari as **ReDD Focus
+  (via ReDD Block)** — distinct from the standalone App Store copy).
+  ReDD Block mirrors `redd-block-data.json` into the shared App Group
+  container for blocking data. Compliance checks use SafariServices
+  when running from the signed `.app`, extension self-report for
+  private-browsing access, and optionally Safari's `Extensions.plist`
+  under Full Disk Access (macOS only) for deeper reads.
 - An in-app **enforcement loop** scans running browsers every ~5 s
   (using the Rust-ported profile-scan code) and nags / quits any
   browser whose ReDD Focus extension is missing, disabled, or not
   allowed in private browsing.
 
-App blocking runs in-process on both OSes (AppleScript hide on macOS,
-`SetWinEventHook` + `ShowWindow` on Windows). Scheduled blocks, pause /
-resume, one-off blocks, and override challenges all work without a
-separate daemon because the app launches at login and hides on close.
+App blocking runs in-process on both OSes via a sysinfo polling loop
+(`app_watcher.rs`): show a warning overlay, then polite quit, then
+force-kill if needed. Scheduled blocks, pause / resume, one-off blocks,
+and override challenges all work without a separate daemon because the
+app launches at login and hides on close.
 
 ```mermaid
 flowchart TB
@@ -73,7 +77,7 @@ flowchart TB
     SafariHandler <-->|NSExtensionItem| Ext
     IPC --> SafariHandler
     Enforcer -->|quit on non-compliance| Ext
-    Watcher -->|hide/minimize| Apps[Running Apps]
+    Watcher -->|warning + quit| Apps[Running Apps]
 ```
 
 ### iOS (iPad / iPhone)
@@ -114,13 +118,13 @@ flowchart TB
 
 ### Website Blocking
 
-**Desktop (macOS / Windows):** Website blocking uses the ReDD Focus browser extension. The app registers itself as a native-messaging host, derives the current blocklist from `redd-block-data.json`, and pushes it over stdio to the extension running in Chrome / Brave / Edge / Firefox. Safari (macOS) reads the same data from the shared App Group container; ReDD Block verifies Safari's enabled/private-browsing state by reading Safari's `Extensions.plist` under Full Disk Access. A background loop in the app scans running browsers every ~5 seconds and quits any that have the extension missing, disabled, or not configured the way ReDD Block expects.
+**Desktop (macOS / Windows):** Website blocking uses the ReDD Focus browser extension. The app registers itself as a native-messaging host, derives the current blocklist from `redd-block-data.json`, and pushes it over stdio to the extension running in Chrome / Brave / Edge / Firefox. Safari (macOS) reads the same data from the shared App Group container. ReDD Block checks Safari compliance via SafariServices (enabled state), extension self-report (private-browsing access), and optionally `Extensions.plist` under Full Disk Access on macOS. A background loop in the app scans running browsers every ~5 seconds and quits any that have the extension missing, disabled, or not configured the way ReDD Block expects.
 
 **iOS:** Website blocking uses the Screen Time API's `WebContentSettings` to block domains at the OS level. Users type in domains to block, and the app applies them via a `ManagedSettingsStore`. One-time authorization in Settings → Screen Time.
 
 ### App Blocking
 
-**Desktop (macOS / Windows):** The app itself uses event-driven monitoring to detect when blocked apps are launched or brought to focus, then immediately hides/minimizes them. No elevated privileges required. App blocking persists as long as the app is running — the app hides to tray on close and launches automatically at login so blocks keep firing across sessions.
+**Desktop (macOS / Windows):** An in-process watcher polls running processes, shows a "Let's go!" warning when a blocked app appears, then sends a polite quit (`NSRunningApplication terminate` on macOS, `taskkill` without `/F` on Windows) after the user acknowledges. No elevated privileges required. App blocking persists as long as the app is running — the app hides to tray on close and launches automatically at login so blocks keep firing across sessions.
 
 **iOS:** App blocking uses the Screen Time API's `ManagedSettingsStore` to apply a shield overlay on selected apps and categories.
 
@@ -135,17 +139,17 @@ Yes, scheduled blocking is technically supported on iOS. ReDD Block implements i
 
 This is why iOS scheduled blocking is possible without a desktop-style helper daemon.
 
-| Platform | Detection Method | Hide Method |
+| Platform | Detection Method | Enforcement |
 |----------|------------------|-------------|
-| macOS | NSWorkspace notifications (in-process, Accessibility TCC) | `set visible of application process to false` |
-| Windows | SetWinEventHook for foreground changes (in-process) | ShowWindow with SW_FORCEMINIMIZE |
+| macOS | sysinfo process poll (in-process) | Warning overlay → polite quit → SIGKILL |
+| Windows | sysinfo process poll (in-process) | Warning overlay → `taskkill` → force kill |
 | iOS | Screen Time `ManagedSettingsStore` | Shield overlay via `ShieldSettings` |
 
 ### Authorization prompts (desktop)
 
-- **Both OSes**: users install the ReDD Focus extension from the Chrome Web Store / Firefox Add-ons / Edge Add-ons. For Safari (macOS), the extension is bundled inside the signed `.app` and the user enables it in Safari → Settings → Extensions.
-- **macOS**: the first time app blocking fires, macOS prompts for Accessibility / Automation permission so the app can call `System Events` to hide blocked apps.
-- No admin or UAC prompt on either OS.
+- **Both OSes**: users install the ReDD Focus extension from the Chrome Web Store / Firefox Add-ons / Edge Add-ons. For Safari (macOS), the extension is bundled inside the signed `.app` (shown as **ReDD Focus (via ReDD Block)** in Safari → Settings → Extensions) and must be enabled there.
+- **macOS (optional)**: Full Disk Access helps ReDD Block read Safari's extension plist for setup diagnostics; private-browsing access is reported by the extension itself. Some onboarding deep-links use AppleScript and may prompt for Automation permission — app blocking does not require Accessibility.
+- No admin or UAC prompt on either OS at install time.
 
 ### First launch after upgrade
 
@@ -182,7 +186,7 @@ cd redd-block
 # Install dependencies
 npm install
 
-# Run in development mode (syncs helper and starts Tauri)
+# Run in development mode
 npm run dev
 
 # Run on iOS device (opens Xcode, then press ⌘R to build)
@@ -199,9 +203,10 @@ The app will open automatically. Hot-reloading is enabled for both frontend (Vit
 npm run build:mac
 
 # macOS: Wrap the .app into a signed/notarized .pkg installer
-npm run build:mac-pkg -- --release
+# (outputs reddblock-{version}.pkg)
+npm run build:mac-pkg
 
-# macOS: Both in one go
+# macOS: Both in one go (.app + .pkg)
 npm run build:mac-all
 
 # Windows: NSIS/MSI installers (x64 + ARM64)
@@ -239,7 +244,7 @@ runIntegrationTests('full')   # core + expanded non-UI coverage
 
 **3. Manual Checklist**
 
-See `scripts/manual-test-checklist.md` for the full pre-release checklist. Key items for the new architecture: Screen Time authorization flow (macOS), browser-extension install + enforcer grace timer (Windows), hide-on-close + launch-at-login, first-launch migration off the legacy helper.
+See `scripts/manual-test-checklist.md` for the full pre-release checklist. Key items for the current architecture: Screen Time authorization flow (iOS), browser-extension install + enforcer grace timer (desktop), hide-on-close + launch-at-login, first-launch migration off the legacy helper.
 
 ## Project Structure
 
@@ -252,18 +257,19 @@ redd-block/
 ├── src-tauri/                    # Tauri backend (Rust)
 │   ├── src/
 │   │   ├── lib.rs                # App setup, tray, hide-on-close, autostart
-│   │   ├── app_watcher.rs        # In-process app watcher (NSWorkspace / SetWinEventHook)
-│   │   ├── enforcer.rs           # Browser-extension compliance loop (Windows)
+│   │   ├── app_watcher.rs        # In-process app watcher (sysinfo poll + quit)
+│   │   ├── enforcer.rs           # Browser-extension compliance loop (macOS + Windows)
 │   │   ├── native_host.rs        # --native-host CLI mode (stdio framing)
 │   │   ├── native_host_install.rs # Registers native-messaging manifests
 │   │   ├── profile_scan.rs       # Reads browser profile files
 │   │   └── commands/             # IPC commands (data, apps, migration, …)
-│   ├── entitlements.macos.plist  # com.apple.developer.family-controls
+│   ├── entitlements.macos.plist  # App Group (group.com.reddblock.shared)
 │   ├── gen/apple/                # Generated Xcode project
 │   ├── tauri.conf.json           # Shared Tauri config
 │   ├── tauri.ios.conf.json       # iOS-specific config
 │   ├── tauri.macos.conf.json     # macOS-specific config
 │   └── tauri.windows.conf.json   # Windows-specific config
+├── redd-focus-web/               # Vendored ReDD Focus Safari extension source
 ├── tauri-plugin-screentime/      # iOS Screen Time plugin (desktop uses extension path)
 │   ├── ios/Sources/              # Swift plugin (FamilyActivityPicker, ManagedSettings)
 │   ├── src/                      # Rust bindings
@@ -271,7 +277,7 @@ redd-block/
 ├── browser-ext-migration/
 │   ├── MIGRATION_PLAN.md         # Rollout plan + remaining-work checklist
 │   ├── FUTURE_OPTIONS.md         # Parked localhost fallback + signed .pkg notes
-├── scripts/                      # Build and signing scripts
+├── scripts/                      # Build/signing (build-safari-extension.sh, embed-safari-extension.sh, …)
 ├── docs/                         # GitHub Pages (version info, App Store privacy policy)
 └── vite.config.js                # Vite dev server config
 ```
@@ -291,9 +297,11 @@ Use `./scripts/bump-version.sh <version>` to update the app version in all files
 
 | Platform | Location |
 |----------|----------|
-| macOS | `~/Library/Application Support/com.redd.block/redd-block-data.json` |
-| Windows | `%AppData%\com.redd.block\redd-block-data.json` |
+| macOS | `~/Library/Application Support/com.reddblock/redd-block-data.json` |
+| Windows | `%AppData%\com.reddblock\redd-block-data.json` |
 | iOS | App sandbox (managed by Tauri) |
+
+Legacy v1 paths under `com.redd.block` are still read as a fallback during migration.
 
 Contains blocklists, schedules, active blocks, and settings.
 
