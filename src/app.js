@@ -9554,7 +9554,7 @@ function handleBlocklistSelect(e) {
                     const pauseBtn = document.getElementById('pause-block-btn');
 
                     if (activeBlock) {
-                        // Active block - show Stop Block button (grey) with unlock icon
+                        // Active block - show Stop Block button (ghost) with unlock icon
                         startBlockBtn.classList.add('stop-block');
                         setBtnActionLabel(btnLabel, tSettings('stopBlock'));
                         setStartBtnBlocklistInfo(startBlockBtn, blocklist);
@@ -16235,14 +16235,9 @@ async function refreshDiagnosticsModalContent({ showLoading = false } = {}) {
 
 function updateDiagnosticsModalChrome(diag) {
     const versionEl = document.getElementById('diagnostics-version-label');
-    const generatedEl = document.getElementById('diagnostics-generated-at');
 
     if (versionEl) {
         versionEl.textContent = diag?.app?.version ? `v${diag.app.version}` : '';
-    }
-    if (generatedEl) {
-        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        generatedEl.textContent = `${tSettings('diagnosticsGenerated')} · ${time} ${tSettings('diagnosticsGeneratedLocal')}`;
     }
 }
 

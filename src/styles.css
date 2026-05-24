@@ -3167,42 +3167,9 @@ body.dark-mode .tag.locked {
     align-self: center;
 }
 
-/* Stop Block Button — filled secondary. Stop is the more drastic action (ends
-   the block entirely) and carries the blocklist context. Pause sits beside it
-   with the same secondary weight in schedule mode; Stop Schedule is ghost. */
-.start-block-btn.stop-block {
-    background: var(--redd-warm-grey);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    width: auto;
-    max-width: 100%;
-    min-width: 0;
-    justify-content: center;
-    padding: 14px 18px;
-    /* text-align:start avoids UA button centring on wrapped .btn-name lines
-       (emoji–title gap); justify-content centers the whole row in the chip. */
-    text-align: start;
-    white-space: nowrap;
-}
-
-.start-block-btn.stop-block:hover:not(:disabled) {
-    background: rgba(30, 45, 62, 0.06);
-    transform: none;
-    box-shadow: none;
-}
-
-body.dark-mode .start-block-btn.stop-block {
-    background: var(--redd-warm-grey);
-    color: var(--text-primary);
-    border-color: var(--border-color);
-}
-
-body.dark-mode .start-block-btn.stop-block:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.06);
-}
-
-/* Stop Schedule Button — ghost. Ending a schedule is available but steps back
-   visually so Pause (secondary) carries the weight in the action row. */
+/* Stop Block / Stop Schedule — ghost. Pause carries the visual weight in
+   the action row; stop is available but steps back. */
+.start-block-btn.stop-block,
 .start-block-btn.stop-schedule {
     background: transparent;
     color: var(--text-secondary);
@@ -3216,6 +3183,7 @@ body.dark-mode .start-block-btn.stop-block:hover:not(:disabled) {
     white-space: nowrap;
 }
 
+.start-block-btn.stop-block:hover:not(:disabled),
 .start-block-btn.stop-schedule:hover:not(:disabled) {
     background: var(--element-hover-bg);
     color: var(--text-primary);
@@ -3223,12 +3191,14 @@ body.dark-mode .start-block-btn.stop-block:hover:not(:disabled) {
     box-shadow: none;
 }
 
+body.dark-mode .start-block-btn.stop-block,
 body.dark-mode .start-block-btn.stop-schedule {
     background: transparent;
     color: var(--text-secondary);
     border-color: transparent;
 }
 
+body.dark-mode .start-block-btn.stop-block:hover:not(:disabled),
 body.dark-mode .start-block-btn.stop-schedule:hover:not(:disabled) {
     background: rgba(255, 255, 255, 0.06);
     color: var(--text-primary);
@@ -3261,7 +3231,7 @@ body.dark-mode .start-block-btn.stop-schedule:hover:not(:disabled) {
 }
 
 /* Pause Block Button — filled secondary. Pause is the gentler, undoable action
-   but gets visual weight beside the ghost Stop Schedule. The Resume state lifts
+   and carries visual weight beside the ghost Stop Block / Stop Schedule. The
    to teal-soft to signal "ready to go again" — same teal family as the primary
    CTA. */
 .pause-block-btn {
@@ -9104,16 +9074,11 @@ body.dark-mode .zoom-toast {
 .diagnostics-footer {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-end;
     gap: 16px;
     padding: 14px 24px 22px;
     border-top: 1px solid var(--border-color-light);
     flex-shrink: 0;
-}
-
-.diagnostics-generated-at {
-    font-size: 12px;
-    color: var(--text-muted);
 }
 
 .diagnostics-footer-actions {
@@ -9131,6 +9096,7 @@ body.dark-mode .zoom-toast {
     background: transparent;
     border: 1px solid var(--border-color);
     color: var(--text-primary);
+    white-space: nowrap;
 }
 
 .diagnostics-copy-btn:hover:not(:disabled) {
