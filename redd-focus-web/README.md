@@ -23,6 +23,16 @@ ReDD Focus is **open source**, developed by the [Reduce Digital Distraction Proj
 
 [![Watch the video](https://img.youtube.com/vi/SsW5laIOJIw/0.jpg)](https://www.youtube.com/watch?v=xWbQYYvyUDY)
 
+## Screenshots
+
+<p align="center">
+  <img src="./docs/screenshots/RF-git-1.2.png" alt="ReDD Focus — 1" width="49%" />
+  <img src="./docs/screenshots/RF-git-4.png" alt="ReDD Focus — 2" width="49%" />
+</p>
+<p align="center">
+  <img src="./docs/screenshots/RF-git-5.png" alt="ReDD Focus — 3" width="49%" />
+  <img src="./docs/screenshots/RF-git-6.png" alt="ReDD Focus — 4" width="49%" />
+</p>
 
 ## Installation
 
