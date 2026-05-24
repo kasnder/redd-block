@@ -417,12 +417,19 @@ function getBlocklistIOSScreenTimeSelection(blocklist) {
 }
 
 function getBlocklistDisplayApps(blocklist) {
-    const apps = [...getBlocklistRegularApps(blocklist)];
+    const apps = getBlocklistRegularApps(blocklist).map(displayNameForBlockedApp);
     const screenTimeLabel = formatIOSScreenTimeSelectionLabel(getBlocklistIOSScreenTimeSelection(blocklist));
     if (screenTimeLabel) {
         apps.push(screenTimeLabel);
     }
     return apps;
+}
+
+function getBlocklistModalLockedApps(blocklist) {
+    const locked = [...getBlocklistRegularApps(blocklist)];
+    const screenTimeLabel = formatIOSScreenTimeSelectionLabel(getBlocklistIOSScreenTimeSelection(blocklist));
+    if (screenTimeLabel) locked.push(screenTimeLabel);
+    return locked;
 }
 
 function getBlocklistIOSPayload(blocklist) {
@@ -1274,6 +1281,7 @@ async function runPostAcceptanceStartup() {
             // a no-op on subsequent launches past the current version.
             setupEnforcerUiAlerts();
             setupAppBlockingWarningOverlay();
+            await ensureInstalledAppsCache();
             // macOS-only: surface the Full Disk Access onboarding
             // overlay (if needed) BEFORE runDesktopOnboarding kicks
             // off its profile scan via `onboarding_state`. If we
@@ -4380,17 +4388,15 @@ function setupAppBlockingWarningOverlay() {
     appBlockingWarningUiAttached = true;
 
     // Resolve friendly app names (e.g. "Microsoft Edge") when the warning UI needs them.
-    if (!installedAppsCache) {
-        tauriAPI.listInstalledApps()
-            .then((apps) => {
-                installedAppsCache = apps;
-                if (appBlockingWarningRows.size > 0) {
-                    renderAppBlockingWarningOverlay();
-                    renderAppBlockingClosedownBanner();
-                }
-            })
-            .catch(() => {});
-    }
+    void ensureInstalledAppsCache().then(() => {
+        if (appBlockingWarningRows.size > 0) {
+            renderAppBlockingWarningOverlay();
+            renderAppBlockingClosedownBanner();
+        }
+        if (typeof renderBlocklists === 'function' && appData?.blocklists?.length) {
+            renderBlocklists();
+        }
+    });
 
     const onFail = (label) => (e) => {
         console.warn(`[app-blocking-ui] failed to attach ${label}:`, e);
@@ -4613,6 +4619,15 @@ function displayNameForBlockedApp(processName) {
     );
     if (match?.display_name) return match.display_name;
     return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+async function ensureInstalledAppsCache() {
+    if (isIOS || installedAppsCache) return;
+    try {
+        installedAppsCache = await tauriAPI.listInstalledApps();
+    } catch (e) {
+        console.warn('[installed-apps] Failed to preload installed apps cache:', e);
+    }
 }
 
 /** One entry per blocked app — Edge's many PIDs collapse to a single name. */
@@ -5481,12 +5496,19 @@ function setupModalListeners() {
     let modalIOSScreenTimeSelection = null;
 
     const getModalDisplayApps = () => {
-        const displayApps = [...modalApps];
+        const displayApps = modalApps.map(displayNameForBlockedApp);
         const screenTimeLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
         if (screenTimeLabel) {
             displayApps.push(screenTimeLabel);
         }
         return displayApps;
+    };
+
+    const getModalLockedAppDisplayItems = () => {
+        const screenTimeLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
+        return (window.lockedApps || []).map((app) => (
+            app === screenTimeLabel ? app : displayNameForBlockedApp(app)
+        ));
     };
 
     const modalWebsiteInput = document.getElementById('modal-website-input');
@@ -5525,7 +5547,7 @@ function setupModalListeners() {
     const selectAllUnlockedApps = () => {
         selectedApps.clear();
         modalApps.forEach(a => {
-            if (!isAppLocked(a)) selectedApps.add(a);
+            if (!isAppLocked(a)) selectedApps.add(displayNameForBlockedApp(a));
         });
         // Also include the iOS Screen Time aggregate label if present.
         const iosLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
@@ -5627,7 +5649,10 @@ function setupModalListeners() {
         return result;
     };
     const moveAppSelection = (direction) => {
-        const result = moveSelectionInList(getModalDisplayApps(), isAppLocked, selectedApps, direction);
+        const displayApps = getModalDisplayApps();
+        const lockedDisplay = new Set(getModalLockedAppDisplayItems());
+        const isDisplayLocked = (displayName) => lockedDisplay.has(displayName);
+        const result = moveSelectionInList(displayApps, isDisplayLocked, selectedApps, direction);
         if (result) {
             window.renderModalTags();
             if (result === 'deselected') modalAppInput.focus();
@@ -5638,7 +5663,9 @@ function setupModalListeners() {
     const deleteSelectedApps = () => {
         if (selectedApps.size === 0) return false;
         const iosLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
-        const toDeleteApps = modalApps.filter(a => selectedApps.has(a) && !isAppLocked(a));
+        const toDeleteApps = modalApps.filter(
+            a => selectedApps.has(displayNameForBlockedApp(a)) && !isAppLocked(a),
+        );
         const shouldDeleteIos = iosLabel && selectedApps.has(iosLabel) && !isAppLocked(iosLabel);
         if (toDeleteApps.length === 0 && !shouldDeleteIos) {
             selectedApps.clear();
@@ -6397,12 +6424,10 @@ function setupModalListeners() {
         });
 
         const displayApps = getModalDisplayApps();
+        const screenTimeLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
         renderTags(modalAppsTags, displayApps, (idx) => {
-            const value = displayApps[idx];
-            if (window.lockedApps && window.lockedApps.includes(value)) {
-                return; // Do not remove locked items; do not push undo.
-            }
-            if (value === formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection)) {
+            if (displayApps[idx] === screenTimeLabel) {
+                if (isAppLocked(screenTimeLabel)) return;
                 const previousSelection = cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection);
                 pushModalUndo('ios-screentime-selection-remove', () => {
                     modalIOSScreenTimeSelection = cloneIOSScreenTimeSelection(previousSelection);
@@ -6410,20 +6435,27 @@ function setupModalListeners() {
                 });
                 modalIOSScreenTimeSelection = null;
             } else {
-                const appIdx = modalApps.indexOf(value);
+                const processName = modalApps[idx];
+                if (!processName || isAppLocked(processName)) return;
+                const appIdx = modalApps.indexOf(processName);
                 if (appIdx === -1) return;
                 pushModalUndo('app', () => {
-                    modalApps.splice(appIdx, 0, value);
+                    modalApps.splice(appIdx, 0, processName);
                     window.renderModalTags();
                 });
                 modalApps.splice(appIdx, 1);
             }
             window.renderModalTags();
-        }, window.lockedApps, {
+        }, getModalLockedAppDisplayItems(), {
             selectedItems: selectedApps,
             onTagClick: (idx) => {
                 const value = displayApps[idx];
-                if (!value || isAppLocked(value)) return;
+                if (!value) return;
+                if (value === screenTimeLabel) {
+                    if (isAppLocked(screenTimeLabel)) return;
+                } else if (isAppLocked(modalApps[idx])) {
+                    return;
+                }
                 if (selectedApps.has(value)) {
                     selectedApps.delete(value);
                 } else {
@@ -10645,7 +10677,7 @@ function openBlocklistModal(blocklist = null) {
             getBlocklistRegularApps(blocklist),
             getBlocklistIOSScreenTimeSelection(blocklist),
             blocklist.websites || [],
-            getBlocklistDisplayApps(blocklist)
+            getBlocklistModalLockedApps(blocklist)
         );
     } else {
         warningEl.classList.add('hidden');
@@ -13017,10 +13049,11 @@ function renderBlocklists() {
                     metaParts.push(stText);
                 }
             } else if (showDetails) {
+                const regularAppLabels = regularApps.map(displayNameForBlockedApp);
                 if (appCount <= 2) {
-                    metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'} (${regularApps.join(', ')})`);
+                    metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'} (${regularAppLabels.join(', ')})`);
                 } else {
-                    metaParts.push(`${appCount} apps (${regularApps.slice(0, 2).join(', ')}, ...)`);
+                    metaParts.push(`${appCount} apps (${regularAppLabels.slice(0, 2).join(', ')}, ...)`);
                 }
             } else {
                 metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'}`);
@@ -16660,14 +16693,9 @@ async function openInstalledAppsPicker() {
     listEl.innerHTML = '<div class="app-picker-loading">Scanning installed apps...</div>';
 
     // Fetch installed apps (cached after first call)
+    await ensureInstalledAppsCache();
     if (!installedAppsCache) {
-        try {
-            installedAppsCache = await tauriAPI.listInstalledApps();
-        } catch (e) {
-            console.error('[app-picker] Failed to list installed apps:', e);
-            listEl.innerHTML = '<div class="app-picker-empty">Could not scan installed apps. Use "Browse manually..." below.</div>';
-            installedAppsCache = null;
-        }
+        listEl.innerHTML = '<div class="app-picker-empty">Could not scan installed apps. Use "Browse manually..." below.</div>';
     }
 
     const apps = installedAppsCache || [];
