@@ -3152,6 +3152,7 @@ async function refreshBehaviourBannerIfStale({ force = false } = {}) {
     try {
         const fresh = await invoke('onboarding_state');
         await updateBehaviourChangeBanner(fresh);
+        await syncEnforcerClosedBannersWithCompliance(fresh);
     } catch (_) { /* no-op */ }
 }
 
@@ -3165,7 +3166,55 @@ const ENFORCER_CLOSED_BANNER_ID = 'extension-enforcer-action-banner-closed';
 const enforcerActionBannerStates = new Map();
 const enforcerClosedBannerStates = new Map();
 let enforcerActionBannerInterval = null;
+let enforcerClosedBannerPollInterval = null;
 let enforcerScreenshotResizeTimer = null;
+const ENFORCER_CLOSED_BANNER_POLL_MS = 5_000;
+
+function stopEnforcerClosedBannerPoll() {
+    if (enforcerClosedBannerPollInterval) {
+        clearInterval(enforcerClosedBannerPollInterval);
+        enforcerClosedBannerPollInterval = null;
+    }
+}
+
+function ensureEnforcerClosedBannerPoll() {
+    if (enforcerClosedBannerStates.size === 0) {
+        stopEnforcerClosedBannerPoll();
+        return;
+    }
+    void syncEnforcerClosedBannersWithCompliance();
+    if (enforcerClosedBannerPollInterval) return;
+    enforcerClosedBannerPollInterval = setInterval(() => {
+        void syncEnforcerClosedBannersWithCompliance();
+    }, ENFORCER_CLOSED_BANNER_POLL_MS);
+}
+
+async function syncEnforcerClosedBannersWithCompliance(state) {
+    if (enforcerClosedBannerStates.size === 0) {
+        stopEnforcerClosedBannerPoll();
+        return;
+    }
+    if (!state?.browsers) {
+        try {
+            state = await invoke('onboarding_state');
+        } catch (_) {
+            return;
+        }
+    }
+    let changed = false;
+    for (const key of [...enforcerClosedBannerStates.keys()]) {
+        const b = state.browsers?.[key];
+        if (b && browserComplianceStatus(key, b) === 'compliant') {
+            enforcerClosedBannerStates.delete(key);
+            changed = true;
+        }
+    }
+    if (changed) {
+        renderCombinedEnforcerClosedBanner();
+    } else if (enforcerClosedBannerStates.size === 0) {
+        stopEnforcerClosedBannerPoll();
+    }
+}
 
 function setupEnforcerUiAlerts() {
     if (isIOS || enforcerUiAlertsAttached) return;
@@ -3584,6 +3633,7 @@ function ensureClosedEnforcerActionBanner() {
     banner.querySelector('.extension-enforcer-action-dismiss')?.addEventListener('click', () => {
         banner.classList.add('hidden');
         enforcerClosedBannerStates.clear();
+        stopEnforcerClosedBannerPoll();
     });
 
     const activeBanner = document.getElementById(ENFORCER_ACTIVE_BANNER_ID);
@@ -4209,8 +4259,11 @@ function renderCombinedEnforcerClosedBanner() {
 
     if (states.length === 0) {
         banner.classList.add('hidden');
+        stopEnforcerClosedBannerPoll();
         return;
     }
+
+    ensureEnforcerClosedBannerPoll();
 
     banner.querySelector('.extension-enforcer-action-right')?.remove();
 
@@ -4289,6 +4342,7 @@ function renderEnforcerClosedBanner(payload) {
 function hideEnforcerActionBanner(browser) {
     const key = browserKeyFromLabel(browser);
     enforcerActionBannerStates.delete(key);
+    enforcerClosedBannerStates.delete(key);
     renderCombinedEnforcerActionBanner();
     if (enforcerActionBannerStates.size === 0 && enforcerActionBannerInterval) {
         clearInterval(enforcerActionBannerInterval);
