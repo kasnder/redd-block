@@ -46,6 +46,10 @@ fn fda_onboarded_marker_path() -> Option<PathBuf> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FdaOnboardingChoice {
     Granted,
+    /// User completed FDA onboarding but later revoked access in
+    /// System Settings. Distinct from a missing marker so the UI can
+    /// keep nagging without re-running the blocking first-run overlay.
+    Revoked,
     Skipped,
     Unknown,
 }
@@ -55,6 +59,7 @@ impl FdaOnboardingChoice {
     fn as_str(&self) -> &'static str {
         match self {
             FdaOnboardingChoice::Granted => "granted",
+            FdaOnboardingChoice::Revoked => "revoked",
             FdaOnboardingChoice::Skipped => "skipped",
             FdaOnboardingChoice::Unknown => "",
         }
@@ -62,6 +67,7 @@ impl FdaOnboardingChoice {
     fn parse(raw: &str) -> Self {
         match raw.trim() {
             "granted" | "granted-already" => FdaOnboardingChoice::Granted,
+            "revoked" => FdaOnboardingChoice::Revoked,
             "skipped" => FdaOnboardingChoice::Skipped,
             _ => FdaOnboardingChoice::Unknown,
         }
@@ -92,6 +98,57 @@ pub fn mark_user_through_fda_onboarding(choice: FdaOnboardingChoice) {
         let _ = std::fs::create_dir_all(parent);
     }
     let _ = std::fs::write(&path, choice.as_str().as_bytes());
+}
+
+#[cfg(target_os = "macos")]
+fn mark_fda_onboarding_revoked() {
+    mark_user_through_fda_onboarding(FdaOnboardingChoice::Revoked);
+}
+
+#[cfg(target_os = "macos")]
+pub fn user_fda_was_revoked() -> bool {
+    matches!(user_fda_choice(), Some(FdaOnboardingChoice::Revoked))
+}
+
+#[cfg(target_os = "macos")]
+static FDA_MARKER_RECONCILED: std::sync::Once = std::sync::Once::new();
+
+/// If the marker says FDA was granted but System Settings no longer
+/// grants it (common after reinstall/rebuild while Application Support
+/// persists), drop the stale marker once per process via a live TCC
+/// probe. Runtime revocation while the app stays open is handled
+/// separately when Safari plist reads return PermissionDenied.
+#[cfg(target_os = "macos")]
+fn reconcile_stale_fda_marker_once() {
+    FDA_MARKER_RECONCILED.call_once(|| {
+        if !matches!(user_fda_choice(), Some(FdaOnboardingChoice::Granted)) {
+            return;
+        }
+        if has_full_disk_access() {
+            log::info!("fda-onboarding: marker granted and live FDA probe OK");
+            return;
+        }
+        log::warn!(
+            "fda-onboarding: marker says granted but live FDA missing — marking revoked"
+        );
+        mark_fda_onboarding_revoked();
+    });
+}
+
+/// Called from the Safari profile scan when the extension plist is
+/// unreadable despite a granted marker — e.g. the user revoked Full
+/// Disk Access in System Settings while ReDD Block stayed open.
+/// Avoids probing TCC.db on every enforcer tick (which can re-prompt
+/// on Sequoia); a PermissionDenied plist read is a safe signal.
+#[cfg(target_os = "macos")]
+pub fn clear_fda_marker_on_safari_plist_denied() {
+    if !matches!(user_fda_choice(), Some(FdaOnboardingChoice::Granted)) {
+        return;
+    }
+    log::warn!(
+        "fda-onboarding: Safari extension plist PermissionDenied — marking FDA revoked"
+    );
+    mark_fda_onboarding_revoked();
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -151,10 +208,32 @@ pub fn should_run_cross_app_installs() -> bool {
 
 #[cfg(target_os = "macos")]
 pub fn user_chose_to_grant_fda() -> bool {
+    reconcile_stale_fda_marker_once();
     matches!(user_fda_choice(), Some(FdaOnboardingChoice::Granted))
 }
 
 #[cfg(not(target_os = "macos"))]
 pub fn user_chose_to_grant_fda() -> bool {
+    true
+}
+
+/// Whether profile scans may run for the setup banner and enforcer UI.
+///
+/// Broader than [`should_run_cross_app_installs`]: after the user
+/// completed FDA onboarding but later revoked access, we still scan
+/// (Safari uses the FDA-free FFI path and sets `needsFdaAccess`) so
+/// the banner can nag. Pre-onboarding — no EULA acceptance or never
+/// granted FDA — stays fully deferred to avoid Sequoia cross-app
+/// prompts on every tick.
+#[cfg(target_os = "macos")]
+pub fn should_run_profile_scans() -> bool {
+    if should_run_cross_app_installs() {
+        return true;
+    }
+    user_fda_was_revoked()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn should_run_profile_scans() -> bool {
     true
 }

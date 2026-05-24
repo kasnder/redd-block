@@ -104,8 +104,7 @@
             </div>
         </div>
 
-        <!-- Combined setup banner: extension compliance only (FDA is
-             required during onboarding on macOS, not nagged here). -->
+        <!-- Combined setup banner: extension compliance + optional FDA reminder. -->
         <div id="behaviour-change-banner" class="update-banner setup-banner hidden">
             <div class="update-banner-content">
                 <svg class="setup-banner-info-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
@@ -117,6 +116,7 @@
                     <strong id="setup-banner-headline" class="setup-banner-headline">Enable ReDD Focus in your browsers</strong>
                     <span id="behaviour-change-text" class="setup-banner-body"></span>
                     <div class="setup-banner-actions-row">
+                        <button id="behaviour-change-fda" class="update-banner-btn hidden" type="button">Grant Full Disk Access</button>
                         <button id="behaviour-change-help" class="update-banner-btn" type="button">Set up extension</button>
                     </div>
                 </div>

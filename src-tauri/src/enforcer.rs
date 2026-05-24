@@ -421,7 +421,19 @@ fn log_non_compliant(key: BrowserKey, b: &BrowserStatus) {
     );
 }
 
+fn safari_fda_access_failed(b: &BrowserStatus) -> bool {
+    b.needs_fda_access
+        || b.profiles.iter().any(|p| {
+            p.note.as_deref().map_or(false, |n| {
+                n.contains("Full Disk Access") || n.contains("extension settings plist")
+            })
+        })
+}
+
 fn default_profile_passes(b: &BrowserStatus) -> bool {
+    if safari_fda_access_failed(b) {
+        return false;
+    }
     // The caller already proved the browser is running via
     // `running_browsers()`. Do not re-check `b.present` here: it is
     // computed by a separate scan, and a transient disagreement would
@@ -514,6 +526,9 @@ fn emit_browser_closed(app: &AppHandle, key: BrowserKey, issue: ExtensionIssue) 
 
 /// Derive the most specific issue from the browser's profile status.
 fn diagnose_issue(b: &BrowserStatus) -> ExtensionIssue {
+    if safari_fda_access_failed(b) {
+        return ExtensionIssue::Access;
+    }
     // For browsers with website_access_all support (Safari), check all profiles.
     if b.profiles.iter().any(|p| p.website_access_all.is_some()) {
         // FDA issue: profile has a note mentioning Full Disk Access

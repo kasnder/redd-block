@@ -89,10 +89,32 @@ pub struct AppDataInfo {
     pub error: Option<String>,
 }
 
+/// macOS Full Disk Access snapshot. On other platforms every field is
+/// inert (`applicable = false`) so the diagnostics JSON shape is
+/// stable across targets.
+#[derive(Debug, Clone, Serialize)]
+pub struct FdaInfo {
+    pub applicable: bool,
+    /// Live probe — can this process open the system TCC database?
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub live_granted: Option<bool>,
+    /// Can Safari's Extensions.plist be read right now?
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub safari_plist_readable: Option<bool>,
+    /// Value stored in `fda-onboarded.v1`: `granted`, `revoked`, or
+    /// empty when the marker is missing.
+    pub onboarding_choice: String,
+    /// From the latest Safari profile scan — true when the setup
+    /// banner would show a grant-FDA action.
+    #[serde(rename = "safariNeedsFdaAccess", skip_serializing_if = "Option::is_none")]
+    pub safari_needs_fda_access: Option<bool>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct SystemDiagnostics {
     pub app: AppInfo,
     pub migration: MigrationInfo,
+    pub fda: FdaInfo,
     pub browsers: profile_scan::ScanResult,
     pub enforcer: EnforcerInfo,
     pub autostart: AutostartInfo,
@@ -123,6 +145,7 @@ pub fn get_system_diagnostics(app: tauri::AppHandle) -> SystemDiagnostics {
 
     let migration = collect_migration_info(&app);
     let browsers = profile_scan::scan();
+    let fda = collect_fda_info(&browsers);
     let enforcer = EnforcerInfo {
         grace_seconds: super::grace::get_extension_grace_seconds(app.clone()),
     };
@@ -142,6 +165,7 @@ pub fn get_system_diagnostics(app: tauri::AppHandle) -> SystemDiagnostics {
     SystemDiagnostics {
         app: app_info,
         migration,
+        fda,
         browsers,
         enforcer,
         autostart,
@@ -179,8 +203,6 @@ fn collect_current_blocked_apps(app: &tauri::AppHandle) -> Vec<String> {
     slot.as_ref().map(|h| h.current_apps()).unwrap_or_default()
 }
 
-/// Read the canonical redd-block-data.json and return a pretty-
-/// printed copy plus its path, for display in the diagnostics modal.
 fn collect_app_data_info(app: &tauri::AppHandle) -> AppDataInfo {
     let path = super::canonical_data_path(app);
     let path_str = path.as_ref().map(|p| p.display().to_string());
@@ -216,6 +238,38 @@ fn collect_app_data_info(app: &tauri::AppHandle) -> AppDataInfo {
         path: path_str,
         pretty_json: Some(pretty),
         error: None,
+    }
+}
+
+fn collect_fda_info(browsers: &profile_scan::ScanResult) -> FdaInfo {
+    #[cfg(target_os = "macos")]
+    {
+        let onboarding_choice = match crate::cross_app_consent::user_fda_choice() {
+            Some(crate::cross_app_consent::FdaOnboardingChoice::Granted) => "granted".to_string(),
+            Some(crate::cross_app_consent::FdaOnboardingChoice::Revoked) => "revoked".to_string(),
+            Some(crate::cross_app_consent::FdaOnboardingChoice::Skipped) => "skipped".to_string(),
+            Some(crate::cross_app_consent::FdaOnboardingChoice::Unknown) | None => String::new(),
+        };
+        let safari_plist_readable = crate::profile_scan::safari_extensions_plist_path()
+            .map(|path| std::fs::read(&path).is_ok());
+        FdaInfo {
+            applicable: true,
+            live_granted: Some(crate::cross_app_consent::has_full_disk_access()),
+            safari_plist_readable,
+            onboarding_choice,
+            safari_needs_fda_access: Some(browsers.safari.needs_fda_access),
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = browsers;
+        FdaInfo {
+            applicable: false,
+            live_granted: None,
+            safari_plist_readable: None,
+            onboarding_choice: String::new(),
+            safari_needs_fda_access: None,
+        }
     }
 }
 

@@ -1092,6 +1092,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupHelperSettings();
     setupDiagnosticsButton();
     setupOnboardingReplayButton();
+    setupAppForegroundRefresh();
     setupOverrideAll();
     setupInAppUninstall();
     setupGraceSetting();
@@ -1465,8 +1466,8 @@ function returnToWelcomeFromEula() {
 async function ensureFdaOnboardingComplete() {
     if (!isMacOSDesktop) return;
     try {
-        const alreadyGranted = await invoke('check_fda_onboarded');
-        if (alreadyGranted) {
+        const choice = await invoke('get_fda_user_choice');
+        if (choice === 'granted' || choice === 'revoked') {
             return;
         }
         await showFdaOnboardingOverlay();
@@ -2179,6 +2180,9 @@ function browserComplianceStatus(key, b) {
     const def = profiles.find(p => p.isDefault) || profiles[0];
     if (key === 'safari') {
         if (b.duplicateExtensions?.detected) return 'needs-deduplicate';
+        if (b.needsFdaAccess || profiles.some(p => /Full Disk Access|extension settings plist/i.test(p.note || ''))) {
+            return 'needs-fda';
+        }
         // Safari status, post-bridge:
         //
         // The Swift bridge (SFSafariExtensionManager) gives us a
@@ -2458,7 +2462,7 @@ function migrationBrowserRenderSignature(state) {
             const profileSig = b.profiles.map(p =>
                 `${p.installed ? 1 : 0}${p.enabled === true ? 1 : p.enabled === false ? 0 : '?'}${p.privateBrowsing === true ? 1 : p.privateBrowsing === false ? 0 : '?'}${p.websiteAccessAll === true ? 1 : p.websiteAccessAll === false ? 0 : '?'}`
             ).join(';');
-            return `${k}:${status}:${b.duplicateExtensions?.detected ? 'dup' : ''}:${profileSig}`;
+            return `${k}:${status}:${b.duplicateExtensions?.detected ? 'dup' : ''}:${b.needsFdaAccess ? 'fda' : ''}:${profileSig}`;
         }
         return `${k}:${status}`;
     }).join('|');
@@ -2833,57 +2837,38 @@ function stopMigrationPolling() {
         migrationPollIntervalId = null;
     }
 }
-window.addEventListener('focus', () => {
-    // Repaint time-dependent UI and restart the per-second tick.
-    // See kickClockNow() for the why.
+
+function onAppForeground() {
     if (typeof kickClockNow === 'function') kickClockNow();
+    behaviourBannerDismissedThisSession = false;
     if (migrationOnboardingActive) {
         pollMigrationCompliance();
-    } else if (!hasAcceptedEula() || !startupInitializationComplete) {
-        // During welcome / EULA / FDA, avoid any backend work that
-        // reads browser profile data — the enforcer is paused too,
-        // but the banner refresh path can still invoke onboarding_state.
-    } else {
-        // Two refreshes on focus, deliberately:
-        //
-        //   1. Re-render the combined banner immediately with the
-        //      cached `lastOnboardingState`. This is what makes the
-        //      "Grant Full Disk Access" button vanish the instant a
-        //      user toggles FDA on in System Settings and tabs back —
-        //      the FDA probe runs against macOS's live state every
-        //      time updateBehaviourChangeBanner runs, no fetch
-        //      needed. Cheap.
-        //
-        //   2. Throttled (~5 s, same as enforcer) full refresh via
-        //      `onboarding_state` to pick up browser-side changes
-        //      (user just allowed incognito in Edge and tabbed back).
-        updateBehaviourChangeBanner(null).catch(() => {});
-        refreshBehaviourBannerIfStale({ force: true });
+        return;
     }
-});
-
-// Treat "window was hidden, then shown again" as a fresh session
-// for the slim setup banner. ReDD Block's red-X / Cmd-W handler
-// hides the window to the tray rather than quitting (see the
-// applicationShouldTerminate guard in lib.rs), so a normal user's
-// "close and reopen the app" doesn't kill the JS context — without
-// this hook, a × dismissal would persist across hide/show cycles
-// and effectively become "dismiss forever" until tray-Quit or
-// reboot. Resetting on the hidden→visible transition mirrors the
-// user's mental model: closing the window ends the session.
-document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState !== 'visible') return;
-    // Repaint time-dependent UI and restart the per-second tick.
-    // See kickClockNow() for the why.
-    if (typeof kickClockNow === 'function') kickClockNow();
-    const wasDismissed = behaviourBannerDismissedThisSession;
-    behaviourBannerDismissedThisSession = false;
-    if (!wasDismissed) return;
-    // Force a refresh when the user re-opens the window after dismissing
-    // the banner — they expect current browser setup state, not a stale
-    // cached snapshot.
+    if (!hasAcceptedEula() || !startupInitializationComplete) return;
     refreshBehaviourBannerIfStale({ force: true });
-});
+}
+
+function setupAppForegroundRefresh() {
+    if (isIOS) return;
+    window.addEventListener('focus', onAppForeground);
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') onAppForeground();
+    });
+    getCurrentWindow().onFocusChanged(({ payload: focused }) => {
+        if (focused) onAppForeground();
+    }).catch((e) => {
+        console.warn('[app] window focus listener unavailable:', e);
+    });
+    // Keep the setup banner in sync when FDA or extension state changes
+    // without a window focus (e.g. user toggles FDA in System Settings
+    // while ReDD Block stays visible). Matches enforcer tick (~5 s).
+    setInterval(() => {
+        if (!startupInitializationComplete || migrationOnboardingActive) return;
+        if (!hasAcceptedEula()) return;
+        void refreshBehaviourBannerIfStale();
+    }, 5_000);
+}
 
 // Session-only flag for the slim setup banner. We deliberately do
 // NOT persist this in localStorage anymore: the banner is a status
@@ -2912,28 +2897,29 @@ let behaviourBannerDismissedThisSession = false;
 // user knows at a glance what's still missing without having to
 // open the setup dialog (e.g. "Install in Chrome and Edge · Allow
 // in private browsing in Brave").
-// Last `onboarding_state` snapshot we've observed. Cached so the
-// focus handler can re-render the banner with fresh FDA state
-// (FDA check is cheap and side-effect-free) without re-running the
-// throttled / potentially-prompting full browser scan that produced
-// the state. Updated by `runDesktopOnboarding`,
-// `refreshBehaviourBannerIfStale`, and `pollMigrationCompliance`.
+// Last `onboarding_state` snapshot we've observed. Updated by
+// `runDesktopOnboarding`, `refreshBehaviourBannerIfStale`, and
+// `pollMigrationCompliance`.
 let lastOnboardingState = null;
 
 async function updateBehaviourChangeBanner(state) {
     const banner = document.getElementById('behaviour-change-banner');
     if (!banner) return;
 
-    if (state) {
-        // Latch the latest state so a follow-up FDA-only refresh (on
-        // window focus, etc.) can re-render the banner without
-        // re-fetching state from the backend.
-        lastOnboardingState = state;
-    } else {
-        // Caller passed null — fall back to the cached state so the
-        // banner can still render the browser-side fields.
-        state = lastOnboardingState || {};
+    if (!state?.browsers) {
+        try {
+            state = await invoke('onboarding_state');
+        } catch (_) {
+            return;
+        }
     }
+
+    lastOnboardingState = state;
+
+    let enforcementEnabled = false;
+    try {
+        enforcementEnabled = await invoke('get_enforcement_enabled');
+    } catch (_) { /* non-desktop or command not available */ }
 
     // ---- Browser-side compliance ------------------------------------
     // `installed` means the browser app exists on disk (regardless of
@@ -2944,11 +2930,6 @@ async function updateBehaviourChangeBanner(state) {
     const allCompliant = detectedKeys.length > 0
         && detectedKeys.every(k => browserComplianceStatus(k, browsers[k]) === 'compliant');
     const hasBrowserIssues = detectedKeys.length > 0 && !allCompliant;
-
-    let enforcementEnabled = false;
-    try {
-        enforcementEnabled = await invoke('get_enforcement_enabled');
-    } catch (_) { /* non-desktop or command not available */ }
 
     const shouldShow = !behaviourBannerDismissedThisSession
         && detectedKeys.length > 0
@@ -2976,11 +2957,29 @@ async function updateBehaviourChangeBanner(state) {
         bodyEl.textContent = parts.join(' · ');
     }
 
+    const needsFda = setupBannerNeedsFda(browsers, detectedKeys);
+    const needsExtension = setupBannerNeedsExtension(browsers, detectedKeys, enforcementEnabled);
+    const showBothActions = needsFda && needsExtension;
+
+    const fdaBtn = document.getElementById('behaviour-change-fda');
     const helpBtn = document.getElementById('behaviour-change-help');
     const dismissBtn = document.getElementById('behaviour-change-dismiss');
 
+    if (fdaBtn) {
+        fdaBtn.classList.toggle('hidden', !needsFda);
+        if (!fdaBtn._listenerAdded) {
+            fdaBtn._listenerAdded = true;
+            fdaBtn.addEventListener('click', () => {
+                openFdaOnboardingFromBanner().catch(e => {
+                    console.warn('[setup-banner] open FDA onboarding:', e);
+                });
+            });
+        }
+    }
+
     if (helpBtn) {
-        helpBtn.classList.remove('hidden', 'ghost');
+        helpBtn.classList.toggle('hidden', !needsExtension);
+        helpBtn.classList.toggle('ghost', showBothActions);
         if (!helpBtn._listenerAdded) {
             helpBtn._listenerAdded = true;
             helpBtn.addEventListener('click', openExtensionSetupOverlay);
@@ -3077,6 +3076,32 @@ async function openExtensionSetupOverlay() {
     } catch (e) {
         console.warn('[setup-overlay] reopen failed:', e);
     }
+}
+
+async function openFdaOnboardingFromBanner() {
+    if (!isMacOSDesktop) return;
+    document.getElementById('settings-modal')?.classList.add('hidden');
+    setLanguagePickerOpen(false);
+    try {
+        await showFdaOnboardingOverlay();
+        await refreshBehaviourBannerIfStale({ force: true });
+    } catch (e) {
+        console.warn('[setup-banner] FDA onboarding failed:', e);
+    }
+}
+
+function setupBannerNeedsFda(browsers, detectedKeys) {
+    return isMacOSDesktop && detectedKeys.some(
+        k => browserComplianceStatus(k, browsers[k]) === 'needs-fda',
+    );
+}
+
+function setupBannerNeedsExtension(browsers, detectedKeys, enforcementEnabled) {
+    const hasNonFdaBrowserIssues = detectedKeys.some(k => {
+        const status = browserComplianceStatus(k, browsers[k]);
+        return status && status !== 'compliant' && status !== 'needs-fda';
+    });
+    return hasNonFdaBrowserIssues || !enforcementEnabled;
 }
 
 async function continueOnboardingReplayFromWelcome() {
@@ -4881,16 +4906,6 @@ async function updateMaximizeButton() {
 
 // Setup event listeners
 function setupEventListeners() {
-    // When the user comes back to ReDD Block after visiting System
-    // Settings or the browser extension store, re-run the onboarding
-    // state check so the compliance banner clears once the user has
-    // installed the extension.
-    window.addEventListener('focus', () => {
-        if (!isIOS && startupInitializationComplete) {
-            runDesktopOnboarding().catch(() => {});
-        }
-    });
-
     // Window controls (using Tauri docs naming)
     document.getElementById('titlebar-minimize')?.addEventListener('click', () => {
         tauriAPI.minimizeWindow();
@@ -15129,6 +15144,7 @@ function applySettingsLanguage() {
     setText('update-banner-suffix', tSettings('updateBannerSuffix'));
     setText('update-banner-link', tSettings('updateBannerCta'));
     setText('setup-banner-headline', tSettings('setupBrowsersBannerHeadline'));
+    setText('behaviour-change-fda', tSettings('setupBannerFdaCta'));
     setText('behaviour-change-help', tSettings('setupBrowsersBannerCta'));
     const behaviourDismissBtn = document.getElementById('behaviour-change-dismiss');
     if (behaviourDismissBtn) {
@@ -16129,6 +16145,24 @@ function renderSystemDiagnostics(d) {
     html += `<div class="diagnostics-field"><span class="diagnostics-label">Stamped version:</span> <span class="diagnostics-value">${e(m.ran_at_version || '—')}</span></div>`;
     html += `<div class="diagnostics-field"><span class="diagnostics-label">Stamped at:</span> <span class="diagnostics-value">${e(fmtTs(m.ran_at_ms))}</span></div>`;
     html += '</div>';
+
+    // Full Disk Access (macOS)
+    if (d.fda?.applicable) {
+        const f = d.fda;
+        const choiceLabel = f.onboarding_choice
+            ? f.onboarding_choice
+            : 'not set';
+        html += '<div class="diagnostics-section">';
+        html += '<div class="diagnostics-section-title">Full Disk Access</div>';
+        html += `<div class="diagnostics-field"><span class="diagnostics-label">FDA granted (live):</span> ${ok(f.live_granted === true)}</div>`;
+        html += `<div class="diagnostics-field"><span class="diagnostics-label">Safari plist readable:</span> ${f.safari_plist_readable == null ? '<span class="diagnostics-value">—</span>' : ok(f.safari_plist_readable === true)}</div>`;
+        html += `<div class="diagnostics-field"><span class="diagnostics-label">Onboarding marker:</span> <span class="diagnostics-value">${e(choiceLabel)}</span></div>`;
+        if (f.safariNeedsFdaAccess != null) {
+            const fdaRequired = f.safariNeedsFdaAccess === true;
+            html += `<div class="diagnostics-field"><span class="diagnostics-label">Safari FDA required:</span> <span class="diagnostics-value ${fdaRequired ? 'diag-error' : 'diag-ok'}">${fdaRequired ? 'Yes' : 'No'}</span></div>`;
+        }
+        html += '</div>';
+    }
 
     // Browsers
     html += '<div class="diagnostics-section">';

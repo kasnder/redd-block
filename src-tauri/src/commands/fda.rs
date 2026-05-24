@@ -12,8 +12,9 @@ pub fn check_full_disk_access() -> bool {
     cross_app_consent::has_full_disk_access()
 }
 
-/// True when the user previously completed FDA onboarding (marker
-/// records a `granted` choice). Skipped / legacy markers do not count.
+/// True when the user completed FDA onboarding **and** live Full Disk
+/// Access is still granted. Stale markers from a prior install are
+/// cleared automatically when the live probe fails.
 #[tauri::command]
 pub fn check_fda_onboarded() -> bool {
     cross_app_consent::user_chose_to_grant_fda()
@@ -27,6 +28,7 @@ pub fn get_fda_user_choice() -> String {
     {
         match cross_app_consent::user_fda_choice() {
             Some(cross_app_consent::FdaOnboardingChoice::Granted) => "granted".to_string(),
+            Some(cross_app_consent::FdaOnboardingChoice::Revoked) => "revoked".to_string(),
             Some(cross_app_consent::FdaOnboardingChoice::Skipped) => "skipped".to_string(),
             Some(cross_app_consent::FdaOnboardingChoice::Unknown) => String::new(),
             None => String::new(),

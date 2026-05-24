@@ -115,6 +115,12 @@ pub struct BrowserStatus {
     /// disable the standalone copy.
     #[serde(rename = "duplicateExtensions", skip_serializing_if = "Option::is_none")]
     pub duplicate_extensions: Option<SafariDuplicateExtensions>,
+    /// macOS Safari only: user previously granted Full Disk Access during
+    /// onboarding but it was revoked in System Settings. Survives the
+    /// FDA-free SafariServices scan path so the setup banner keeps nagging
+    /// after app refocus / relaunch without re-reading the protected plist.
+    #[serde(rename = "needsFdaAccess", default)]
+    pub needs_fda_access: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -159,7 +165,7 @@ fn empty_scan_result() -> ScanResult {
 /// short names: "firefox", "chrome", "brave", "edge", "safari".
 pub fn scan_filter<F: Fn(&str) -> bool>(should_scan: F) -> ScanResult {
     #[cfg(target_os = "macos")]
-    if !crate::cross_app_consent::should_run_cross_app_installs() {
+    if !crate::cross_app_consent::should_run_profile_scans() {
         log::info!("tcc-probe: profile_scan deferred — onboarding not complete");
         return empty_scan_result();
     }
@@ -200,10 +206,9 @@ fn empty(_label: &str) -> BrowserStatus {
         profiles: vec![],
         error: None,
         duplicate_extensions: None,
+        needs_fda_access: false,
     }
 }
-
-// ---- Firefox ---------------------------------------------------------------
 
 fn firefox_root() -> Option<PathBuf> {
     #[cfg(target_os = "macos")]
@@ -293,6 +298,7 @@ fn scan_firefox() -> Option<BrowserStatus> {
             profiles: vec![],
             error: None,
             duplicate_extensions: None,
+            needs_fda_access: false,
         });
     }
 
@@ -369,6 +375,7 @@ fn scan_firefox() -> Option<BrowserStatus> {
         profiles,
         error: None,
         duplicate_extensions: None,
+        needs_fda_access: false,
     })
 }
 
@@ -582,6 +589,7 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
             profiles: vec![],
             error: None,
             duplicate_extensions: None,
+            needs_fda_access: false,
         });
     }
 
@@ -723,6 +731,7 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
         profiles,
         error: None,
         duplicate_extensions: None,
+        needs_fda_access: false,
     })
 }
 
@@ -1084,6 +1093,7 @@ fn scan_safari() -> BrowserStatus {
     let mut profiles = Vec::new();
     let mut error = None;
     let embedded = embedded_safari_extension_present();
+    let mut needs_fda_access = crate::cross_app_consent::user_fda_was_revoked();
 
     // Read Safari's sandboxed container (Extensions.plist + per-profile
     // dirs) only when the user has indicated they chose Grant during
@@ -1093,14 +1103,11 @@ fn scan_safari() -> BrowserStatus {
     // enforcer's tick re-enters this function.
     //
     // We deliberately use the marker-recorded *choice* rather than
-    // probing live FDA: opening the system TCC database to probe
-    // also triggers the prompt on Sequoia. The choice was recorded
-    // when the user dismissed the FDA overlay (either auto-detected
-    // via SafariServices polling after they clicked "Open Settings",
-    // or set to skipped when they explicitly chose to continue
-    // without). Trade-off: if the user revokes FDA in System
-    // Settings post-onboarding we won't know — but that's rare and
-    // re-triggerable from a future Settings affordance.
+    // probing live FDA on every tick: opening the system TCC database
+    // to probe also triggers the prompt on Sequoia. When the marker
+    // says granted but a plist read returns PermissionDenied, we clear
+    // the marker immediately so the enforcer and onboarding UI pick up
+    // the revocation on the next scan (~5 s).
     //
     // When the plist scan is skipped the loop below leaves `profiles`
     // empty; the empty-profiles fallback synthesises a single
@@ -1109,7 +1116,7 @@ fn scan_safari() -> BrowserStatus {
     // with `private_browsing`. `website_access_all` stays None —
     // Safari doesn't expose all-sites grant state via any non-plist
     // API, and the enforcer treats None as compliant.
-    let has_fda = crate::cross_app_consent::user_chose_to_grant_fda();
+    let mut has_fda = crate::cross_app_consent::user_chose_to_grant_fda();
     if has_fda {
         let (plist_paths, profile_list_error) = safari_extensions_plist_paths();
         for (name, is_default, path) in plist_paths {
@@ -1124,6 +1131,11 @@ fn scan_safari() -> BrowserStatus {
                     note: None,
                 }),
                 Err(e) => {
+                    if e == SafariPlistScanError::PermissionDenied {
+                        crate::cross_app_consent::clear_fda_marker_on_safari_plist_denied();
+                        has_fda = false;
+                        needs_fda_access = true;
+                    }
                     let note = e.note();
                     if error.is_none() {
                         error = Some(note.clone());
@@ -1141,6 +1153,11 @@ fn scan_safari() -> BrowserStatus {
             }
         }
         if let Some(e) = profile_list_error {
+            if e == SafariPlistScanError::PermissionDenied {
+                crate::cross_app_consent::clear_fda_marker_on_safari_plist_denied();
+                has_fda = false;
+                needs_fda_access = true;
+            }
             let note = e.note();
             if error.is_none() {
                 error = Some(note.clone());
@@ -1197,7 +1214,11 @@ fn scan_safari() -> BrowserStatus {
             // existing handler stamped `Some(false)` on each state
             // field as a placeholder. Now that we know the extension
             // IS installed, demote those to None — "unknown" is more
-            // accurate than "definitely off".
+            // accurate than "definitely off" — unless FDA was revoked
+            // and we need the failure to stay visible to the enforcer.
+            if profile.note.as_deref() == Some("Full Disk Access required") {
+                continue;
+            }
             if profile.note.is_some() {
                 profile.enabled = None;
                 profile.private_browsing = None;
@@ -1271,6 +1292,15 @@ fn scan_safari() -> BrowserStatus {
 
     let duplicate_extensions = scan_safari_duplicate_extensions(has_fda, embedded);
 
+    if crate::cross_app_consent::user_fda_was_revoked() {
+        needs_fda_access = true;
+        let note = SafariPlistScanError::PermissionDenied.note();
+        error = Some(note.clone());
+        for profile in profiles.iter_mut() {
+            profile.note = Some(note.clone());
+        }
+    }
+
     log::info!("tcc-probe: profile_scan::scan_safari() exited (running={running}, embedded={embedded}, duplicate={:?})", duplicate_extensions);
     BrowserStatus {
         present: running,
@@ -1278,6 +1308,7 @@ fn scan_safari() -> BrowserStatus {
         profiles,
         error,
         duplicate_extensions,
+        needs_fda_access,
     }
 }
 
@@ -1346,6 +1377,7 @@ fn scan_safari() -> BrowserStatus {
         profiles: vec![],
         error: Some("Safari is macOS-only".to_string()),
         duplicate_extensions: None,
+        needs_fda_access: false,
     }
 }
 
