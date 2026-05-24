@@ -748,10 +748,20 @@ pub(crate) fn open_safari_extensions_settings_applescript() -> Result<(), String
 pub fn open_browser_extension_settings(browser: String) -> Result<(), String> {
     let browser = browser.trim();
     let normalized = browser.to_ascii_lowercase();
-    let chromium_id = crate::native_host_install::CHROMIUM_EXT_ID;
     let url = match normalized.as_str() {
         "firefox" => "about:addons".to_string(),
-        _ => format!("chrome://extensions/?id={chromium_id}"),
+        "edge" => format!(
+            "edge://extensions/?id={}",
+            crate::native_host_install::EDGE_ADDONS_EXT_ID
+        ),
+        "brave" => format!(
+            "brave://extensions/?id={}",
+            crate::native_host_install::CHROMIUM_EXT_ID
+        ),
+        _ => format!(
+            "chrome://extensions/?id={}",
+            crate::native_host_install::CHROMIUM_EXT_ID
+        ),
     };
 
     #[cfg(target_os = "macos")]

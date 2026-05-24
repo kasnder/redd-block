@@ -12,9 +12,9 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-// ReDD Focus extension IDs. Keep in sync with the MVP script.
+// ReDD Focus extension IDs. Keep in sync with native_host_install.rs
+// and BROWSER_STORE_LINKS in app.js.
 const FIREFOX_ID: &str = "mindshield@example.com";
-const CHROMIUM_ID: &str = "hhblkhfdjijdinijakbmcpkmdfhoadcd";
 #[cfg(target_os = "macos")]
 const SAFARI_EXTENSION_KEYS: &[&str] = &[
     // Embedded inside this ReDD Block.app — the bundled Safari Web
@@ -44,20 +44,10 @@ pub struct SafariDuplicateExtensions {
 }
 
 /// Chromium IDs the scanner will accept as "ReDD Focus is here".
-/// Production ID is always included. In debug builds, comma-separated
-/// IDs from `REDD_DEV_EXT_ID` are appended so an unpacked dev extension
-/// (path-derived ID, ≠ production) is recognised by the compliance
-/// scan. The env var is ignored in release builds.
+/// Delegates to `native_host_install::chromium_extension_ids` so
+/// Edge Add-ons installs (different store ID) are recognised too.
 fn chromium_ids() -> Vec<String> {
-    let mut ids = vec![CHROMIUM_ID.to_string()];
-    if cfg!(debug_assertions) {
-        if let Ok(extra) = std::env::var("REDD_DEV_EXT_ID") {
-            for id in extra.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
-                ids.push(id.to_string());
-            }
-        }
-    }
-    ids
+    crate::native_host_install::chromium_extension_ids()
 }
 
 #[cfg(target_os = "macos")]

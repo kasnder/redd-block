@@ -18,12 +18,32 @@ use serde_json::json;
 pub const HOST_NAME: &str = "com.ulriklyngs.mindshield";
 pub const FIREFOX_EXT_ID: &str = "mindshield@example.com";
 pub const CHROMIUM_EXT_ID: &str = "hhblkhfdjijdinijakbmcpkmdfhoadcd";
+/// Microsoft Edge Add-ons listing ID — differs from the Chrome Web
+/// Store ID when the user installs manually from edge://extensions.
+pub const EDGE_ADDONS_EXT_ID: &str = "gmjfgjdhnhcegfelcddbdljdffiaepam";
 /// Bundle identifier of the Safari Web Extension target embedded
 /// inside `ReDD Block.app/Contents/PlugIns/`. Set by
 /// `scripts/build-safari-extension.sh` via the
 /// `PRODUCT_BUNDLE_IDENTIFIER` xcodebuild override — keep these in
 /// sync.
 pub const SAFARI_EXT_ID: &str = "com.reddblock.SafariExtension";
+
+/// Every Chromium-family extension ID ReDD Block treats as ReDD Focus.
+/// Includes both the Chrome Web Store ID (auto-install hint) and the
+/// Edge Add-ons ID (manual install from Microsoft's store).
+pub fn chromium_extension_ids() -> Vec<String> {
+    let mut ids = vec![CHROMIUM_EXT_ID.to_string(), EDGE_ADDONS_EXT_ID.to_string()];
+    if cfg!(debug_assertions) {
+        if let Ok(extra) = std::env::var("REDD_DEV_EXT_ID") {
+            for id in extra.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
+                ids.push(id.to_string());
+            }
+        }
+    }
+    ids.sort();
+    ids.dedup();
+    ids
+}
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub enum BrowserTarget { Chrome, Brave, Edge, Firefox }
@@ -89,14 +109,10 @@ fn manifest_body(browser: BrowserTarget, binary_path: &str) -> serde_json::Value
             obj["allowed_extensions"] = json!([FIREFOX_EXT_ID]);
         }
         _ => {
-            let mut origins = vec![format!("chrome-extension://{CHROMIUM_EXT_ID}/")];
-            if cfg!(debug_assertions) {
-                if let Ok(extra) = std::env::var("REDD_DEV_EXT_ID") {
-                    for id in extra.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
-                        origins.push(format!("chrome-extension://{id}/"));
-                    }
-                }
-            }
+            let origins: Vec<String> = chromium_extension_ids()
+                .into_iter()
+                .map(|id| format!("chrome-extension://{id}/"))
+                .collect();
             obj["allowed_origins"] = json!(origins);
         }
     }
