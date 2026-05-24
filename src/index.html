@@ -1582,13 +1582,27 @@
         <!-- Diagnostics Modal -->
         <div id="diagnostics-modal" class="modal-overlay hidden">
             <div class="modal-content diagnostics-modal">
-                <h3>Diagnostics</h3>
+                <div class="diagnostics-header">
+                    <h3 id="diagnostics-modal-title">Diagnostics</h3>
+                    <div class="diagnostics-header-meta">
+                        <span id="diagnostics-version-label" class="diagnostics-version-label"></span>
+                    </div>
+                </div>
                 <div id="diagnostics-content" class="diagnostics-content">
                     <div class="diagnostics-loading">Loading...</div>
                 </div>
-                <div class="modal-buttons">
-                    <button id="diagnostics-copy-btn" class="modal-btn cancel-btn">Copy to Clipboard</button>
-                    <button id="close-diagnostics-btn" class="modal-btn cancel-btn">Close</button>
+                <div class="diagnostics-footer">
+                    <span id="diagnostics-generated-at" class="diagnostics-generated-at"></span>
+                    <div class="diagnostics-footer-actions">
+                        <button id="diagnostics-copy-btn" class="modal-btn diagnostics-copy-btn" type="button">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                            </svg>
+                            <span id="diagnostics-copy-btn-label">Copy to Clipboard</span>
+                        </button>
+                        <button id="close-diagnostics-btn" class="modal-btn primary-btn diagnostics-close-btn" type="button">Close</button>
+                    </div>
                 </div>
             </div>
         </div>

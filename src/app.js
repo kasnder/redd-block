@@ -13914,6 +13914,59 @@ const SETTINGS_TRANSLATIONS = {
         settingsEnforcementLockedTooltip: 'To change this setting, first stop all active blocks.',
         settingsDiagnosticsLabel: 'Something not working?',
         settingsDiagnosticsBtn: 'Diagnostics',
+        diagnosticsModalTitle: 'Diagnostics',
+        diagnosticsCopyReport: 'Copy to Clipboard',
+        diagnosticsCopied: 'Copied!',
+        diagnosticsCopyFailed: 'Copy failed',
+        diagnosticsGenerated: 'Generated',
+        diagnosticsGeneratedLocal: 'local',
+        diagnosticsAppSection: 'App',
+        diagnosticsOsArch: 'OS / arch',
+        diagnosticsLeftoverFiles: 'Leftover files',
+        diagnosticsFullyMigrated: 'None — fully migrated',
+        diagnosticsWasV1x: 'Was a v1.x install',
+        diagnosticsStampedVersion: 'Stamped version',
+        diagnosticsStampedAt: 'Stamped at',
+        diagnosticsBrowsersSection: 'Browsers (extension)',
+        diagnosticsBrowsersSectionHint: 'Status of the ReDD Focus extension in browsers on this computer.',
+        diagnosticsEnforcementSection: 'Enforcement',
+        diagnosticsMigrationSection: 'Migration from v1.x',
+        diagnosticsGracePeriod: 'Grace period',
+        diagnosticsAutostart: 'Autostart at login',
+        diagnosticsForceClose: 'Close browsers if ReDD Focus is disabled during block',
+        diagnosticsForceCloseEnabled: 'Enabled',
+        diagnosticsForceCloseDisabled: 'Disabled',
+        diagnosticsFullDiskAccess: 'Full Disk Access',
+        diagnosticsFdaLiveGranted: 'FDA granted (live)',
+        diagnosticsSafariPlistReadable: 'Safari plist readable',
+        diagnosticsOnboardingMarker: 'Onboarding marker',
+        diagnosticsSafariFdaRequired: 'Safari FDA required',
+        diagnosticsFdaGranted: 'Granted',
+        diagnosticsFdaNotGranted: 'Not granted',
+        diagnosticsFdaRevoked: 'Revoked',
+        diagnosticsActiveBlocks: 'Active blocks',
+        diagnosticsRecentLogSection: 'Recent log (last {n} lines)',
+        diagnosticsCurrentlyBlocking: 'Currently being blocked',
+        diagnosticsActiveSources: 'Active blocklists',
+        diagnosticsActiveSourcesNone: 'None',
+        diagnosticsDomainsCount: 'Domains ({n})',
+        diagnosticsAppsCount: 'Apps ({n})',
+        diagnosticsAppDataSection: 'App data (redd-block-data.json)',
+        diagnosticsPath: 'Path',
+        diagnosticsWatchdog: 'Watchdog Scheduled Task',
+        diagnosticsMarkerNotSet: 'not set',
+        diagnosticsBrowserReady: 'Ready',
+        diagnosticsBrowserNotRunning: 'Not running',
+        diagnosticsBrowserNotInstalled: 'Not installed',
+        diagnosticsAdvancedLog: 'Recent log',
+        diagnosticsAdvancedBlocking: 'Currently being blocked',
+        diagnosticsAdvancedAppData: 'App data',
+        diagnosticsThBrowser: 'Browser',
+        diagnosticsThExtInstalled: 'Installed',
+        diagnosticsThExtEnabled: 'Enabled',
+        diagnosticsThExtPrivate: 'Private tabs',
+        diagnosticsYes: 'Yes',
+        diagnosticsNo: 'No',
         settingsOnboardingLabel: 'Revisit onboarding steps',
         settingsOnboardingBtn: 'Onboarding',
         gracePeriodLockedHint: 'Locked while a block is active—only shorter times allowed.',
@@ -14391,6 +14444,59 @@ const SETTINGS_TRANSLATIONS = {
         settingsEnforcementLockedTooltip: 'For at ændre denne indstilling skal du først stoppe alle aktive blokeringer.',
         settingsDiagnosticsLabel: 'Virker noget ikke?',
         settingsDiagnosticsBtn: 'Diagnostik',
+        diagnosticsModalTitle: 'Diagnostik',
+        diagnosticsCopyReport: 'Kopiér til udklipsholder',
+        diagnosticsCopied: 'Kopieret!',
+        diagnosticsCopyFailed: 'Kunne ikke kopiere',
+        diagnosticsGenerated: 'Genereret',
+        diagnosticsGeneratedLocal: 'lokal tid',
+        diagnosticsAppSection: 'App',
+        diagnosticsOsArch: 'OS / arkitektur',
+        diagnosticsLeftoverFiles: 'Resterende filer',
+        diagnosticsFullyMigrated: 'Ingen — fuldt migreret',
+        diagnosticsWasV1x: 'Var en v1.x-installation',
+        diagnosticsStampedVersion: 'Stemplet version',
+        diagnosticsStampedAt: 'Stemplet',
+        diagnosticsBrowsersSection: 'Browsere (udvidelse)',
+        diagnosticsBrowsersSectionHint: 'Status for ReDD Focus-udvidelsen i browsere på denne computer.',
+        diagnosticsEnforcementSection: 'Håndhævelse',
+        diagnosticsMigrationSection: 'Migration fra v1.x',
+        diagnosticsGracePeriod: 'Henstandsperiode',
+        diagnosticsAutostart: 'Start ved login',
+        diagnosticsForceClose: 'Luk browsere hvis ReDD Focus deaktiveres under blokering',
+        diagnosticsForceCloseEnabled: 'Aktiveret',
+        diagnosticsForceCloseDisabled: 'Deaktiveret',
+        diagnosticsFullDiskAccess: 'Fuld diskadgang',
+        diagnosticsFdaLiveGranted: 'FDA givet (live)',
+        diagnosticsSafariPlistReadable: 'Safari-plist læsbar',
+        diagnosticsOnboardingMarker: 'Onboarding-markør',
+        diagnosticsSafariFdaRequired: 'Safari kræver FDA',
+        diagnosticsFdaGranted: 'Givet',
+        diagnosticsFdaNotGranted: 'Ikke givet',
+        diagnosticsFdaRevoked: 'Tilbagekaldt',
+        diagnosticsActiveBlocks: 'Aktive blokeringer',
+        diagnosticsRecentLogSection: 'Seneste log (sidste {n} linjer)',
+        diagnosticsCurrentlyBlocking: 'Blokeres lige nu',
+        diagnosticsActiveSources: 'Aktive blokeringslister',
+        diagnosticsActiveSourcesNone: 'Ingen',
+        diagnosticsDomainsCount: 'Domæner ({n})',
+        diagnosticsAppsCount: 'Apps ({n})',
+        diagnosticsAppDataSection: 'Appdata (redd-block-data.json)',
+        diagnosticsPath: 'Sti',
+        diagnosticsWatchdog: 'Watchdog-planlagt opgave',
+        diagnosticsMarkerNotSet: 'ikke sat',
+        diagnosticsBrowserReady: 'Klar',
+        diagnosticsBrowserNotRunning: 'Kører ikke',
+        diagnosticsBrowserNotInstalled: 'Ikke installeret',
+        diagnosticsAdvancedLog: 'Seneste log',
+        diagnosticsAdvancedBlocking: 'Blokeres lige nu',
+        diagnosticsAdvancedAppData: 'Appdata',
+        diagnosticsThBrowser: 'Browser',
+        diagnosticsThExtInstalled: 'Installeret',
+        diagnosticsThExtEnabled: 'Aktiveret',
+        diagnosticsThExtPrivate: 'Private faner',
+        diagnosticsYes: 'Ja',
+        diagnosticsNo: 'Nej',
         settingsOnboardingLabel: 'Gennemgå onboarding-trin igen',
         settingsOnboardingBtn: 'Onboarding',
         gracePeriodLockedHint: 'Låst mens en blokering er aktiv—kun kortere tider tilladt.',
@@ -15312,6 +15418,9 @@ function applySettingsLanguage() {
     setText('settings-uninstall-btn-label', tSettings('uninstallAppBtn'));
     setText('settings-diagnostics-label', tSettings('settingsDiagnosticsLabel'));
     setText('settings-diagnostics-btn-label', tSettings('settingsDiagnosticsBtn'));
+    setText('diagnostics-modal-title', tSettings('diagnosticsModalTitle'));
+    setText('diagnostics-copy-btn-label', tSettings('diagnosticsCopyReport'));
+    setText('close-diagnostics-btn', tSettings('close'));
     setText('settings-onboarding-label', tSettings('settingsOnboardingLabel'));
     setText('settings-onboarding-btn-label', tSettings('settingsOnboardingBtn'));
     setText('uninstall-confirm-title', tSettings('uninstallConfirmTitle'));
@@ -16082,172 +16191,268 @@ async function refreshDiagnosticsModalContent({ showLoading = false } = {}) {
 
     const scrollState = showLoading ? null : captureDiagnosticsScrollState(content);
     if (showLoading) {
-        content.innerHTML = '<div class="diagnostics-loading">Loading diagnostics...</div>';
+        content.innerHTML = '<div class="diagnostics-loading">Loading…</div>';
     }
 
     let diag = null;
+    let enforcementEnabled = false;
     try {
         diag = await invoke('get_system_diagnostics');
-        content.innerHTML = renderSystemDiagnostics(diag);
+        try {
+            enforcementEnabled = !!(await invoke('get_enforcement_enabled'));
+        } catch (_) { /* non-desktop */ }
+        content.innerHTML = renderSystemDiagnostics(diag, { enforcementEnabled });
+        updateDiagnosticsModalChrome(diag);
         restoreDiagnosticsScrollState(content, scrollState);
     } catch (e) {
-        content.innerHTML = `<div class="diagnostics-error">Failed to load diagnostics: ${e.message || e}</div>`;
+        content.innerHTML = `<div class="diagnostics-error">Failed to load diagnostics: ${escapeHtml(e.message || e)}</div>`;
+        updateDiagnosticsModalChrome(null);
     }
 
     const copyBtn = document.getElementById('diagnostics-copy-btn');
+    const copyLabel = document.getElementById('diagnostics-copy-btn-label');
     if (copyBtn) {
         copyBtn.onclick = () => {
-            if (!diag) { copyBtn.textContent = 'No data'; return; }
+            if (!diag) {
+                if (copyLabel) copyLabel.textContent = tSettings('diagnosticsCopyFailed');
+                return;
+            }
             const text = JSON.stringify(diag, null, 2);
             navigator.clipboard.writeText(text).then(() => {
-                copyBtn.textContent = 'Copied!';
-                setTimeout(() => { copyBtn.textContent = 'Copy to Clipboard'; }, 2000);
+                if (copyLabel) copyLabel.textContent = tSettings('diagnosticsCopied');
+                setTimeout(() => {
+                    if (copyLabel) copyLabel.textContent = tSettings('diagnosticsCopyReport');
+                }, 2000);
             }).catch(() => {
-                copyBtn.textContent = 'Copy failed';
-                setTimeout(() => { copyBtn.textContent = 'Copy to Clipboard'; }, 2000);
+                if (copyLabel) copyLabel.textContent = tSettings('diagnosticsCopyFailed');
+                setTimeout(() => {
+                    if (copyLabel) copyLabel.textContent = tSettings('diagnosticsCopyReport');
+                }, 2000);
             });
         };
     }
 }
 
-// Render the structured SystemDiagnostics struct as collapsible
-// HTML sections. Designed for both user-readable scan AND copy-as-JSON
-// for filing support tickets.
-function renderSystemDiagnostics(d) {
-    const ok = (b) => `<span class="diagnostics-value ${b ? 'diag-ok' : 'diag-error'}">${b ? 'Yes' : 'No'}</span>`;
-    const yesno = (b) => b ? '✓' : '✗';
+function updateDiagnosticsModalChrome(diag) {
+    const versionEl = document.getElementById('diagnostics-version-label');
+    const generatedEl = document.getElementById('diagnostics-generated-at');
+
+    if (versionEl) {
+        versionEl.textContent = diag?.app?.version ? `v${diag.app.version}` : '';
+    }
+    if (generatedEl) {
+        const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        generatedEl.textContent = `${tSettings('diagnosticsGenerated')} · ${time} ${tSettings('diagnosticsGeneratedLocal')}`;
+    }
+}
+
+function diagnosticsStatusDot(state) {
+    if (state === 'ok') return '<span class="diagnostics-status-dot ok" aria-hidden="true">✓</span>';
+    if (state === 'off') return '<span class="diagnostics-status-dot off" aria-hidden="true">✗</span>';
+    return '<span class="diagnostics-status-dot na" aria-hidden="true"></span>';
+}
+
+function diagnosticsTriState(values) {
+    if (!values.length) return 'off';
+    if (values.every(v => v === true)) return 'ok';
+    if (values.some(v => v === false)) return 'off';
+    return 'na';
+}
+
+function diagnosticsBrowserProfiles(key, b) {
+    const profiles = b?.profiles || [];
+    if (key === 'safari') return profiles;
+    const def = profiles.find(p => p.isDefault) || profiles[0];
+    return def ? [def] : [];
+}
+
+// Extension setup from on-disk profile scan — independent of whether the browser is running.
+function diagnosticsBrowserExtensionState(key, b) {
+    const profiles = diagnosticsBrowserProfiles(key, b);
+    return {
+        installed: diagnosticsTriState(profiles.map(p => p.installed)),
+        enabled: diagnosticsTriState(profiles.map(p => p.enabled)),
+        privateBrowsing: diagnosticsTriState(profiles.map(p => p.privateBrowsing)),
+    };
+}
+
+function diagnosticsKvRow(label, valueHtml) {
+    return `<div class="diagnostics-kv-row"><span class="diagnostics-kv-label">${label}</span><span class="diagnostics-kv-value">${valueHtml}</span></div>`;
+}
+
+function diagnosticsYesNoValue(yes) {
+    return `<span class="${yes ? 'diag-ok' : ''}">${yes ? tSettings('diagnosticsYes') : tSettings('diagnosticsNo')}</span>`;
+}
+
+function diagnosticsOkNoValue(yes) {
+    return `<span class="${yes ? 'diag-ok' : 'diag-error'}">${yes ? tSettings('diagnosticsYes') : tSettings('diagnosticsNo')}</span>`;
+}
+
+// Render the structured SystemDiagnostics struct as HTML sections.
+// Designed for both user-readable scan AND copy-as-JSON for support.
+function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) {
     const fmtTs = (ms) => ms ? new Date(ms).toLocaleString() : '—';
     const e = (s) => escapeHtml(String(s));
     let html = '';
 
-    // App
+    // App (version lives in the modal header)
     html += '<div class="diagnostics-section">';
-    html += '<div class="diagnostics-section-title">App</div>';
-    html += `<div class="diagnostics-field"><span class="diagnostics-label">Version:</span> <span class="diagnostics-value">${e(d.app.version)}</span> <span class="diagnostics-badge">${e(d.app.build_mode)}</span></div>`;
-    html += `<div class="diagnostics-field"><span class="diagnostics-label">OS / arch:</span> <span class="diagnostics-value">${e(d.app.os)} / ${e(d.app.arch)}</span></div>`;
-    html += '</div>';
+    html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsAppSection'))}</div>`;
+    html += '<div class="diagnostics-card">';
+    html += diagnosticsKvRow(e(tSettings('diagnosticsOsArch')), `${e(d.app.os)} / ${e(d.app.arch)}`);
+    html += '</div></div>';
 
-    // Migration
-    const m = d.migration;
-    html += '<div class="diagnostics-section">';
-    html += '<div class="diagnostics-section-title">Migration from v1.x</div>';
-    html += `<div class="diagnostics-field"><span class="diagnostics-label">Was a v1.x install:</span> <span class="diagnostics-value">${m.came_from_v1x ? 'Yes' : 'No'}</span></div>`;
-    if (m.residue_items && m.residue_items.length > 0) {
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Old version leftover files:</span></div>`;
-        html += '<ul class="diagnostics-list">';
-        for (const item of m.residue_items) {
-            html += `<li class="diag-error">${e(item)}</li>`;
-        }
-        html += '</ul>';
-    } else {
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Old version leftover files:</span> <span class="diagnostics-value diag-ok">None — fully migrated</span></div>`;
-    }
-    html += `<div class="diagnostics-field"><span class="diagnostics-label">Stamped version:</span> <span class="diagnostics-value">${e(m.ran_at_version || '—')}</span></div>`;
-    html += `<div class="diagnostics-field"><span class="diagnostics-label">Stamped at:</span> <span class="diagnostics-value">${e(fmtTs(m.ran_at_ms))}</span></div>`;
-    html += '</div>';
-
-    // Full Disk Access (macOS)
-    if (d.fda?.applicable) {
-        const f = d.fda;
-        const choiceLabel = f.onboarding_choice
-            ? f.onboarding_choice
-            : 'not set';
-        html += '<div class="diagnostics-section">';
-        html += '<div class="diagnostics-section-title">Full Disk Access</div>';
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">FDA granted (live):</span> ${ok(f.live_granted === true)}</div>`;
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Safari plist readable:</span> ${f.safari_plist_readable == null ? '<span class="diagnostics-value">—</span>' : ok(f.safari_plist_readable === true)}</div>`;
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Onboarding marker:</span> <span class="diagnostics-value">${e(choiceLabel)}</span></div>`;
-        if (f.safariNeedsFdaAccess != null) {
-            const fdaRequired = f.safariNeedsFdaAccess === true;
-            html += `<div class="diagnostics-field"><span class="diagnostics-label">Safari FDA required:</span> <span class="diagnostics-value ${fdaRequired ? 'diag-error' : 'diag-ok'}">${fdaRequired ? 'Yes' : 'No'}</span></div>`;
-        }
-        html += '</div>';
-    }
-
-    // Browsers
-    html += '<div class="diagnostics-section">';
-    html += '<div class="diagnostics-section-title">Browsers (extension)</div>';
-    html += '<table class="diagnostics-table"><thead><tr><th>Browser</th><th>Installed</th><th>Running</th><th>Ext set up</th></tr></thead><tbody>';
-    for (const key of ['chrome', 'brave', 'edge', 'firefox', 'safari']) {
-        const b = d.browsers[key];
-        if (!b) continue;
-        const compliant = browserComplianceStatus(key, b) === 'compliant';
-        html += `<tr><td>${e(key)}</td><td>${yesno(b.installed)}</td><td>${yesno(b.present)}</td><td>${b.installed ? yesno(compliant) : '—'}</td></tr>`;
-    }
-    html += '</tbody></table>';
-    html += '</div>';
-
-    // Enforcer + autostart
-    html += '<div class="diagnostics-section">';
-    html += '<div class="diagnostics-section-title">Enforcement</div>';
-    html += `<div class="diagnostics-field"><span class="diagnostics-label">Grace period:</span> <span class="diagnostics-value">${e(d.enforcer.grace_seconds)} s</span></div>`;
-    html += `<div class="diagnostics-field"><span class="diagnostics-label">Autostart at login:</span> ${ok(d.autostart.enabled)}</div>`;
-    if (d.watchdog) {
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Watchdog Scheduled Task:</span> ${ok(d.watchdog.task_present)}</div>`;
-    }
-    html += '</div>';
-
-    // Recent log
-    if (d.recent_log && d.recent_log.length > 0) {
-        html += '<div class="diagnostics-section">';
-        html += `<div class="diagnostics-section-title">Recent log (last ${d.recent_log.length} lines)</div>`;
-        html += `<pre class="diagnostics-pre">${e(d.recent_log.join('\n'))}</pre>`;
-        html += '</div>';
-    }
-
-    // Currently being blocked — derived data, NOT recomputed here.
-    // The Rust side reuses native_host::derive_payload (same code that
-    // pushes to the browser extension on every frame) for domains and
-    // reads the in-process app watcher's effective set for apps. So
-    // this section reflects exactly what's being enforced right now.
+    // Currently being blocked
     if (d.current_blocking) {
         const cb = d.current_blocking;
         html += '<div class="diagnostics-section">';
-        html += '<div class="diagnostics-section-title">Currently being blocked</div>';
-
+        html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsCurrentlyBlocking'))}</div>`;
+        html += '<div class="diagnostics-card">';
         if (cb.blocks && cb.blocks.length > 0) {
-            html += '<div class="diagnostics-field"><span class="diagnostics-label">Active sources:</span></div>';
             html += '<ul class="diagnostics-list">';
             for (const b of cb.blocks) {
                 const label = `${b.emoji ? b.emoji + ' ' : ''}${b.name || b.blocklistId}`;
                 const srcLabel = b.source === 'schedule' ? 'schedule' : 'one-off';
                 const endsTxt = b.endsAt ? ` until ${new Date(b.endsAt).toLocaleString()}` : '';
                 const domainsCount = (b.domains || []).length;
-                html += `<li>${e(label)} <span class="diagnostics-badge">${e(srcLabel)}</span>${e(endsTxt)} — ${domainsCount} domain${domainsCount === 1 ? '' : 's'}</li>`;
+                html += `<li class="diagnostics-kv-row"><span class="diagnostics-kv-label">${e(label)}</span><span class="diagnostics-kv-value diag-muted">${e(srcLabel)}${e(endsTxt)} · ${domainsCount} domain${domainsCount === 1 ? '' : 's'}</span></li>`;
             }
             html += '</ul>';
         } else {
-            html += `<div class="diagnostics-field"><span class="diagnostics-label">Active sources:</span> <span class="diagnostics-value">None</span></div>`;
+            html += diagnosticsKvRow(
+                e(tSettings('diagnosticsActiveSources')),
+                `<span class="diag-muted">${e(tSettings('diagnosticsActiveSourcesNone'))}</span>`,
+            );
         }
-
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Domains (${cb.domains?.length ?? 0}):</span></div>`;
+        html += `<div class="diagnostics-kv-row"><span class="diagnostics-kv-label">${e(tSettings('diagnosticsDomainsCount').replace('{n}', String(cb.domains?.length ?? 0)))}</span></div>`;
         if (cb.domains && cb.domains.length > 0) {
             html += `<pre class="diagnostics-pre">${e(cb.domains.join('\n'))}</pre>`;
         }
-
-        html += `<div class="diagnostics-field"><span class="diagnostics-label">Apps (${cb.apps?.length ?? 0}):</span></div>`;
+        html += `<div class="diagnostics-kv-row"><span class="diagnostics-kv-label">${e(tSettings('diagnosticsAppsCount').replace('{n}', String(cb.apps?.length ?? 0)))}</span></div>`;
         if (cb.apps && cb.apps.length > 0) {
             html += `<pre class="diagnostics-pre">${e(cb.apps.join('\n'))}</pre>`;
         }
-
-        html += '</div>';
+        html += '</div></div>';
     }
 
-    // App data (redd-block-data.json) — sanity-check readout of the
-    // persisted blocklists / activeBlocks / schedules / settings.
+    // Migration
+    const m = d.migration;
+    html += '<div class="diagnostics-section">';
+    html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsMigrationSection'))}</div>`;
+    html += '<div class="diagnostics-card">';
+    html += diagnosticsKvRow(e(tSettings('diagnosticsWasV1x')), diagnosticsYesNoValue(!!m.came_from_v1x));
+    if (m.residue_items && m.residue_items.length > 0) {
+        html += diagnosticsKvRow(e(tSettings('diagnosticsLeftoverFiles')), `<span class="diag-error">${m.residue_items.length} found</span>`);
+        html += '<ul class="diagnostics-list">';
+        for (const item of m.residue_items) {
+            html += `<li class="diag-error">${e(item)}</li>`;
+        }
+        html += '</ul>';
+    } else {
+        html += diagnosticsKvRow(
+            e(tSettings('diagnosticsLeftoverFiles')),
+            `<span class="diag-ok">${e(tSettings('diagnosticsFullyMigrated'))}</span>`,
+        );
+    }
+    html += diagnosticsKvRow(e(tSettings('diagnosticsStampedVersion')), `<span class="diag-muted">${e(m.ran_at_version || '—')}</span>`);
+    html += diagnosticsKvRow(e(tSettings('diagnosticsStampedAt')), `<span class="diag-muted">${e(fmtTs(m.ran_at_ms))}</span>`);
+    html += '</div></div>';
+
+    // Full Disk Access (macOS)
+    if (d.fda?.applicable) {
+        const f = d.fda;
+        const choiceLabel = f.onboarding_choice || tSettings('diagnosticsMarkerNotSet');
+        html += '<div class="diagnostics-section">';
+        html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsFullDiskAccess'))}</div>`;
+        html += '<div class="diagnostics-card">';
+        html += diagnosticsKvRow(e(tSettings('diagnosticsFdaLiveGranted')), diagnosticsOkNoValue(f.live_granted === true));
+        html += diagnosticsKvRow(
+            e(tSettings('diagnosticsSafariPlistReadable')),
+            f.safari_plist_readable == null
+                ? '<span class="diag-muted">—</span>'
+                : diagnosticsOkNoValue(f.safari_plist_readable === true),
+        );
+        html += diagnosticsKvRow(e(tSettings('diagnosticsOnboardingMarker')), `<span class="diag-muted">${e(choiceLabel)}</span>`);
+        if (f.safariNeedsFdaAccess != null) {
+            const fdaRequired = f.safariNeedsFdaAccess === true;
+            html += diagnosticsKvRow(
+                e(tSettings('diagnosticsSafariFdaRequired')),
+                fdaRequired
+                    ? `<span class="diag-error">${e(tSettings('diagnosticsYes'))}</span>`
+                    : `<span class="diag-ok">${e(tSettings('diagnosticsNo'))}</span>`,
+            );
+        }
+        html += '</div></div>';
+    }
+
+    // Browsers
+    html += '<div class="diagnostics-section">';
+    html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsBrowsersSection'))}</div>`;
+    html += `<p class="diagnostics-section-desc">${e(tSettings('diagnosticsBrowsersSectionHint'))}</p>`;
+    html += '<div class="diagnostics-card diagnostics-table-wrap"><table class="diagnostics-table"><thead><tr>';
+    html += `<th>${e(tSettings('diagnosticsThBrowser'))}</th>`;
+    html += `<th>${e(tSettings('diagnosticsThExtInstalled'))}</th>`;
+    html += `<th>${e(tSettings('diagnosticsThExtEnabled'))}</th>`;
+    html += `<th>${e(tSettings('diagnosticsThExtPrivate'))}</th>`;
+    html += '</tr></thead><tbody>';
+    for (const key of ['chrome', 'brave', 'edge', 'firefox', 'safari']) {
+        const b = d.browsers[key];
+        if (!b?.installed) continue;
+        const label = BROWSER_STORE_LINKS[key]?.label || key;
+        const ext = diagnosticsBrowserExtensionState(key, b);
+        html += '<tr>';
+        html += `<td><div class="diagnostics-browser-cell"><img class="diagnostics-browser-icon" src="${browserIconUrl(key)}" alt="" width="20" height="20">${e(label)}</div></td>`;
+        html += `<td>${diagnosticsStatusDot(ext.installed)}</td>`;
+        html += `<td>${diagnosticsStatusDot(ext.enabled)}</td>`;
+        html += `<td>${diagnosticsStatusDot(ext.privateBrowsing)}</td>`;
+        html += '</tr>';
+    }
+    html += '</tbody></table></div></div>';
+
+    // Enforcement
+    html += '<div class="diagnostics-section">';
+    html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsEnforcementSection'))}</div>`;
+    html += '<div class="diagnostics-card">';
+    if (!isIOS) {
+        const forceLabel = enforcementEnabled
+            ? tSettings('diagnosticsForceCloseEnabled')
+            : tSettings('diagnosticsForceCloseDisabled');
+        const forceClass = enforcementEnabled ? 'diag-ok' : 'diag-muted';
+        html += diagnosticsKvRow(
+            e(tSettings('diagnosticsForceClose')),
+            `<span class="${forceClass}">${e(forceLabel)}</span>`,
+        );
+    }
+    html += diagnosticsKvRow(e(tSettings('diagnosticsGracePeriod')), `${e(d.enforcer.grace_seconds)} s`);
+    if (d.watchdog) {
+        html += diagnosticsKvRow(e(tSettings('diagnosticsWatchdog')), diagnosticsYesNoValue(d.watchdog.task_present));
+    }
+    html += '</div></div>';
+
+    // Recent log
+    if (d.recent_log && d.recent_log.length > 0) {
+        html += '<div class="diagnostics-section">';
+        html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsRecentLogSection').replace('{n}', String(d.recent_log.length)))}</div>`;
+        html += '<div class="diagnostics-card">';
+        html += `<pre class="diagnostics-pre">${e(d.recent_log.join('\n'))}</pre>`;
+        html += '</div></div>';
+    }
+
+    // App data (redd-block-data.json)
     if (d.app_data) {
         html += '<div class="diagnostics-section">';
-        html += '<div class="diagnostics-section-title">App data (redd-block-data.json)</div>';
+        html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsAppDataSection'))}</div>`;
+        html += '<div class="diagnostics-card">';
         if (d.app_data.path) {
-            html += `<div class="diagnostics-field"><span class="diagnostics-label">Path:</span> <span class="diagnostics-value">${e(d.app_data.path)}</span></div>`;
+            html += diagnosticsKvRow(e(tSettings('diagnosticsPath')), `<span class="diag-muted">${e(d.app_data.path)}</span>`);
         }
         if (d.app_data.error) {
-            html += `<div class="diagnostics-field diag-error">${e(d.app_data.error)}</div>`;
+            html += `<div class="diagnostics-kv-row"><span class="diagnostics-kv-value diag-error">${e(d.app_data.error)}</span></div>`;
         }
         if (d.app_data.pretty_json) {
             html += `<pre class="diagnostics-pre">${e(d.app_data.pretty_json)}</pre>`;
         }
-        html += '</div>';
+        html += '</div></div>';
     }
 
     return html;
