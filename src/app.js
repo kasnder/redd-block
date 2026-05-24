@@ -1497,6 +1497,38 @@ function presentFdaOnboardingUi() {
     document.getElementById('main-content')?.classList.add('hidden');
     document.getElementById('now-blocking-row')?.classList.add('hidden');
     session.overlay.classList.remove('hidden');
+    void syncFdaOnboardingGrantButton();
+}
+
+async function syncFdaOnboardingGrantButton() {
+    const grantBtn = document.getElementById('fda-onboarding-grant-btn');
+    if (!grantBtn) return false;
+
+    let granted = false;
+    try {
+        granted = !!(await invoke('check_full_disk_access'));
+    } catch (_) { /* treat as not granted */ }
+
+    grantBtn.textContent = granted
+        ? tSettings('fdaOnboardingAlreadyGrantedBtn')
+        : tSettings('fdaOnboardingGrantBtn');
+    if (activeFdaOnboardingSession) {
+        activeFdaOnboardingSession.fdaLiveGranted = granted;
+    }
+    return granted;
+}
+
+async function finalizeFdaOnboardingGrant(statusEl) {
+    if (statusEl) {
+        statusEl.classList.remove('hidden');
+        statusEl.textContent = tSettings('fdaOnboardingGrantedStatus');
+    }
+    try {
+        await invoke('complete_fda_onboarding', { choice: 'granted' });
+    } catch (e) {
+        console.warn('[fda-onboarding] complete failed:', e);
+    }
+    completeFdaOnboardingSession();
 }
 
 function completeFdaOnboardingSession() {
@@ -1537,6 +1569,17 @@ function showFdaOnboardingOverlay() {
 
         const onGrant = async () => {
             grantBtn.disabled = true;
+            let alreadyGranted = session.fdaLiveGranted;
+            if (!alreadyGranted) {
+                try {
+                    alreadyGranted = !!(await invoke('check_full_disk_access'));
+                } catch (_) { /* fall through to settings */ }
+            }
+            if (alreadyGranted) {
+                await finalizeFdaOnboardingGrant(statusEl);
+                return;
+            }
+
             const originalLabel = grantBtn.textContent;
             grantBtn.textContent = 'Opening settings…';
             try {
@@ -1558,15 +1601,7 @@ function showFdaOnboardingOverlay() {
                     try {
                         const granted = await invoke('check_full_disk_access');
                         if (granted) {
-                            if (statusEl) {
-                                statusEl.textContent = 'Full Disk Access granted — installing ReDD Focus…';
-                            }
-                            try {
-                                await invoke('complete_fda_onboarding', { choice: 'granted' });
-                            } catch (e) {
-                                console.warn('[fda-onboarding] complete failed:', e);
-                            }
-                            completeFdaOnboardingSession();
+                            await finalizeFdaOnboardingGrant(statusEl);
                         }
                     } catch (_) { /* transient */ }
                 }, 1500);
@@ -13565,6 +13600,9 @@ const SETTINGS_TRANSLATIONS = {
         migrationOpenSettings: 'Open Settings',
         migrationOpened: 'Opened',
         migrationOpenFdaTitle: 'Open Full Disk Access settings',
+        fdaOnboardingGrantBtn: 'Open Full Disk Access settings',
+        fdaOnboardingAlreadyGrantedBtn: '✓ Already granted — proceed',
+        fdaOnboardingGrantedStatus: 'Full Disk Access granted — installing ReDD Focus…',
         migrationCheckAgain: 'Check again',
         migrationRefreshSafariTitle: 'Refresh Safari access status',
         migrationDelayDetectionNote: 'It may take up to 20 seconds for changes to be detected.',
@@ -14026,6 +14064,9 @@ const SETTINGS_TRANSLATIONS = {
         migrationOpenSettings: 'Åbn Indstillinger',
         migrationOpened: 'Åbnet',
         migrationOpenFdaTitle: 'Åbn Indstillinger for Fuld diskadgang',
+        fdaOnboardingGrantBtn: 'Åbn Indstillinger for Fuld diskadgang',
+        fdaOnboardingAlreadyGrantedBtn: '✓ Allerede givet — fortsæt',
+        fdaOnboardingGrantedStatus: 'Fuld diskadgang givet — installerer ReDD Focus…',
         migrationCheckAgain: 'Tjek igen',
         migrationRefreshSafariTitle: 'Opdater Safari-status',
         migrationDelayDetectionNote: 'Der kan gå op til 20 sekunder, før ændringer registreres.',
@@ -15117,6 +15158,9 @@ function applySettingsLanguage() {
 
     const fdaBackBtn = document.getElementById('fda-onboarding-back-btn');
     if (fdaBackBtn) fdaBackBtn.textContent = tSettings('eulaBackBtn');
+    if (activeFdaOnboardingSession) {
+        void syncFdaOnboardingGrantButton();
+    }
     if (migrationOnboardingActive && lastMigrationBrowserState) {
         renderBrowserInstallButtons(lastMigrationBrowserState);
     }
