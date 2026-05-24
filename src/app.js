@@ -4325,6 +4325,19 @@ function setupAppBlockingWarningOverlay() {
     if (isIOS || appBlockingWarningUiAttached) return;
     appBlockingWarningUiAttached = true;
 
+    // Resolve friendly app names (e.g. "Microsoft Edge") when the warning UI needs them.
+    if (!installedAppsCache) {
+        tauriAPI.listInstalledApps()
+            .then((apps) => {
+                installedAppsCache = apps;
+                if (appBlockingWarningRows.size > 0) {
+                    renderAppBlockingWarningOverlay();
+                    renderAppBlockingClosedownBanner();
+                }
+            })
+            .catch(() => {});
+    }
+
     const onFail = (label) => (e) => {
         console.warn(`[app-blocking-ui] failed to attach ${label}:`, e);
         appBlockingWarningUiAttached = false;
@@ -4399,15 +4412,20 @@ function renderAppBlockingWarningOverlay() {
         return;
     }
 
-    /** @type {string[]} */
-    const names = [];
     const unknownApp = tSettings('appBlockingUnknownApp');
+    const rawNames = [];
     for (const [, row] of appBlockingWarningRows) {
+        if (row.ackedDeadlineMs) continue;
         const n = (row.name || unknownApp).trim() || unknownApp;
-        names.push(n);
+        rawNames.push(n);
+    }
+    const names = uniqueBlockedAppDisplayNames(rawNames);
+    if (names.length === 0) {
+        applyWarningOverlayPresence();
+        return;
     }
 
-    // Pick the blocklist responsible for the warnings — for the common
+    // Pick the blocklist responsible for the warnings
     // single-app case this is unambiguous; for multi-app we fall back to
     // the first matching blocklist (multiple-blocklist conflicts are
     // rare and not worth the UI complexity).
@@ -4489,7 +4507,8 @@ function renderAppBlockingClosedownBanner() {
     }
 
     const appFallback = tSettings('appBlockingBannerAppFallback');
-    const names = acked.map((r) => (r.name || appFallback).trim() || appFallback);
+    const rawNames = acked.map((r) => (r.name || appFallback).trim() || appFallback);
+    const names = uniqueBlockedAppDisplayNames(rawNames);
     const appsHtml = joinAppListWithLimit(names, 3);
     const soonestDeadline = Math.min(...acked.map((r) => r.ackedDeadlineMs));
     const remainingMs = Math.max(0, soonestDeadline - Date.now());
@@ -4526,6 +4545,33 @@ function stopAppBlockingClosedownTick() {
         window.clearInterval(appBlockingClosedownTickInterval);
         appBlockingClosedownTickInterval = null;
     }
+}
+
+function normalizeBlockedAppKey(name) {
+    return String(name || '').trim().replace(/\.exe$/i, '').toLowerCase();
+}
+
+function displayNameForBlockedApp(processName) {
+    const key = normalizeBlockedAppKey(processName);
+    if (!key) return processName;
+    const match = (installedAppsCache || []).find(
+        (a) => normalizeBlockedAppKey(a.process_name) === key,
+    );
+    if (match?.display_name) return match.display_name;
+    return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+/** One entry per blocked app — Edge's many PIDs collapse to a single name. */
+function uniqueBlockedAppDisplayNames(names) {
+    const seen = new Set();
+    const out = [];
+    for (const name of names) {
+        const key = normalizeBlockedAppKey(name);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        out.push(displayNameForBlockedApp(name));
+    }
+    return out;
 }
 
 /** Pretty list join: "A", "A and B", "A, B and C", "A, B and 4 more". */
