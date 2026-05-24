@@ -30,6 +30,18 @@ const SAFARI_EXTENSION_KEYS: &[&str] = &[
     // and the scanner accepts either as "ReDD Focus is here".
     "com.ulriklyngs.mind-shield.mind-shield (JD647S9RT6)",
 ];
+#[cfg(target_os = "macos")]
+const SAFARI_BUNDLED_PLIST_KEY: &str = "com.reddblock.SafariExtension (JD647S9RT6)";
+#[cfg(target_os = "macos")]
+const SAFARI_STANDALONE_PLIST_KEY: &str = "com.ulriklyngs.mind-shield.mind-shield (JD647S9RT6)";
+
+/// Both the bundled (ReDD Block) and standalone (ReDD Focus app) Safari
+/// Web Extensions are registered at once — Safari lists two "ReDD Focus"
+/// rows and blocking/native-messaging can get confused.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SafariDuplicateExtensions {
+    pub detected: bool,
+}
 
 /// Chromium IDs the scanner will accept as "ReDD Focus is here".
 /// Production ID is always included. In debug builds, comma-separated
@@ -98,6 +110,11 @@ pub struct BrowserStatus {
     pub profiles: Vec<ProfileStatus>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// macOS Safari only: both the bundled and standalone ReDD Focus
+    /// extensions are registered. The onboarding UI asks the user to
+    /// disable the standalone copy.
+    #[serde(rename = "duplicateExtensions", skip_serializing_if = "Option::is_none")]
+    pub duplicate_extensions: Option<SafariDuplicateExtensions>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -182,6 +199,7 @@ fn empty(_label: &str) -> BrowserStatus {
         installed: false,
         profiles: vec![],
         error: None,
+        duplicate_extensions: None,
     }
 }
 
@@ -274,6 +292,7 @@ fn scan_firefox() -> Option<BrowserStatus> {
             installed,
             profiles: vec![],
             error: None,
+            duplicate_extensions: None,
         });
     }
 
@@ -349,6 +368,7 @@ fn scan_firefox() -> Option<BrowserStatus> {
         installed: true,
         profiles,
         error: None,
+        duplicate_extensions: None,
     })
 }
 
@@ -561,6 +581,7 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
             installed,
             profiles: vec![],
             error: None,
+            duplicate_extensions: None,
         });
     }
 
@@ -701,6 +722,7 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
         installed: true,
         profiles,
         error: None,
+        duplicate_extensions: None,
     })
 }
 
@@ -858,6 +880,131 @@ fn safari_plist_status_tuple(status: SafariPlistStatus) -> Option<(bool, bool, b
             status.private_browsing.unwrap_or(false),
             status.website_access_all.unwrap_or(false),
         ))
+    } else {
+        None
+    }
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+struct SafariExtensionPlistEntry {
+    present: bool,
+    enabled: bool,
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+struct SafariDuplicatePlistScan {
+    bundled: SafariExtensionPlistEntry,
+    standalone: SafariExtensionPlistEntry,
+}
+
+#[cfg(target_os = "macos")]
+fn safari_extension_entry_in_plist_dict(
+    dict: &plist::Dictionary,
+    plist_key: &str,
+) -> SafariExtensionPlistEntry {
+    let Some(value) = dict.get(plist_key) else {
+        return SafariExtensionPlistEntry::default();
+    };
+    let Some(ext) = value.as_dictionary() else {
+        return SafariExtensionPlistEntry::default();
+    };
+    if ext.contains_key("RemovedDate") {
+        return SafariExtensionPlistEntry::default();
+    }
+    let enabled = ext
+        .get("Enabled")
+        .and_then(|v| v.as_boolean())
+        .unwrap_or(false);
+    SafariExtensionPlistEntry {
+        present: true,
+        enabled,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn parse_safari_duplicate_extensions_at(path: &Path) -> Result<SafariDuplicatePlistScan, SafariPlistScanError> {
+    log::info!(
+        "tcc-probe: about to read (Safari duplicate scan) {}",
+        path.display()
+    );
+    let bytes = std::fs::read(path).map_err(|e| safari_plist_io_error(e))?;
+    parse_safari_duplicate_extensions(bytes.as_slice())
+}
+
+#[cfg(target_os = "macos")]
+fn parse_safari_duplicate_extensions(bytes: &[u8]) -> Result<SafariDuplicatePlistScan, SafariPlistScanError> {
+    let root = plist::Value::from_reader(std::io::Cursor::new(bytes))
+        .map_err(|e| SafariPlistScanError::Invalid(e.to_string()))?;
+    let Some(dict) = root.as_dictionary() else {
+        return Err(SafariPlistScanError::Invalid(
+            "root is not a dictionary".to_string(),
+        ));
+    };
+    Ok(SafariDuplicatePlistScan {
+        bundled: safari_extension_entry_in_plist_dict(dict, SAFARI_BUNDLED_PLIST_KEY),
+        standalone: safari_extension_entry_in_plist_dict(dict, SAFARI_STANDALONE_PLIST_KEY),
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn safari_extensions_both_enabled_conflict(
+    embedded: bool,
+    mut bundled_present: bool,
+    mut bundled_enabled: bool,
+    mut standalone_present: bool,
+    mut standalone_enabled: bool,
+) -> bool {
+    if embedded {
+        bundled_present = true;
+    }
+    if bundled_present && !bundled_enabled {
+        if let Ok(state) =
+            crate::safari_services::extension_state(crate::native_host_install::SAFARI_EXT_ID)
+        {
+            bundled_enabled = state.enabled;
+        }
+    }
+    bundled_present && standalone_present && bundled_enabled && standalone_enabled
+}
+
+#[cfg(target_os = "macos")]
+fn scan_safari_duplicate_extensions(has_fda: bool, embedded: bool) -> Option<SafariDuplicateExtensions> {
+    if !has_fda {
+        return None;
+    }
+    let (paths, _) = safari_extensions_plist_paths();
+    let mut bundled_present = false;
+    let mut bundled_enabled = false;
+    let mut standalone_present = false;
+    let mut standalone_enabled = false;
+    for (_, _, path) in paths {
+        match parse_safari_duplicate_extensions_at(&path) {
+            Ok(scan) => {
+                if scan.bundled.present {
+                    bundled_present = true;
+                    bundled_enabled |= scan.bundled.enabled;
+                }
+                if scan.standalone.present {
+                    standalone_present = true;
+                    standalone_enabled |= scan.standalone.enabled;
+                }
+            }
+            Err(SafariPlistScanError::Missing) => {}
+            Err(e) => {
+                log::info!("safari duplicate scan skipped for {}: {}", path.display(), e.note());
+            }
+        }
+    }
+    if safari_extensions_both_enabled_conflict(
+        embedded,
+        bundled_present,
+        bundled_enabled,
+        standalone_present,
+        standalone_enabled,
+    ) {
+        Some(SafariDuplicateExtensions { detected: true })
     } else {
         None
     }
@@ -1122,12 +1269,15 @@ fn scan_safari() -> BrowserStatus {
         }
     }
 
-    log::info!("tcc-probe: profile_scan::scan_safari() exited (running={running}, embedded={embedded})");
+    let duplicate_extensions = scan_safari_duplicate_extensions(has_fda, embedded);
+
+    log::info!("tcc-probe: profile_scan::scan_safari() exited (running={running}, embedded={embedded}, duplicate={:?})", duplicate_extensions);
     BrowserStatus {
         present: running,
         installed: true,
         profiles,
         error,
+        duplicate_extensions,
     }
 }
 
@@ -1195,6 +1345,7 @@ fn scan_safari() -> BrowserStatus {
         installed: false,
         profiles: vec![],
         error: Some("Safari is macOS-only".to_string()),
+        duplicate_extensions: None,
     }
 }
 
@@ -1418,6 +1569,102 @@ mod tests {
         assert_eq!(status.enabled, Some(true));
         assert_eq!(status.private_browsing, Some(false));
         assert_eq!(status.website_access_all, Some(false));
+    }
+
+    fn parse_duplicate(body: &str) -> SafariDuplicatePlistScan {
+        parse_safari_duplicate_extensions(body.as_bytes()).expect("plist parses")
+    }
+
+    #[test]
+    fn safari_duplicate_detects_both_enabled() {
+        let entries = format!(
+            "{}\n{}",
+            entry(
+                SAFARI_BUNDLED_PLIST_KEY,
+                true,
+                true,
+                true,
+                false,
+                false,
+            ),
+            entry(
+                SAFARI_STANDALONE_PLIST_KEY,
+                true,
+                true,
+                true,
+                false,
+                false,
+            ),
+        );
+        let scan = parse_duplicate(&plist(&entries));
+        assert!(scan.bundled.present && scan.bundled.enabled);
+        assert!(scan.standalone.present && scan.standalone.enabled);
+        assert!(safari_extensions_both_enabled_conflict(
+            true,
+            scan.bundled.present,
+            scan.bundled.enabled,
+            scan.standalone.present,
+            scan.standalone.enabled,
+        ));
+    }
+
+    #[test]
+    fn safari_duplicate_clears_when_standalone_disabled() {
+        let entries = format!(
+            "{}\n{}",
+            entry(
+                SAFARI_BUNDLED_PLIST_KEY,
+                true,
+                true,
+                true,
+                false,
+                false,
+            ),
+            entry(
+                SAFARI_STANDALONE_PLIST_KEY,
+                false,
+                true,
+                true,
+                false,
+                false,
+            ),
+        );
+        let scan = parse_duplicate(&plist(&entries));
+        assert!(scan.bundled.present && scan.bundled.enabled);
+        assert!(scan.standalone.present && !scan.standalone.enabled);
+        assert!(!safari_extensions_both_enabled_conflict(
+            true,
+            scan.bundled.present,
+            scan.bundled.enabled,
+            scan.standalone.present,
+            scan.standalone.enabled,
+        ));
+    }
+
+    #[test]
+    fn safari_duplicate_ignores_removed_standalone() {
+        let entries = format!(
+            "{}\n{}",
+            entry(
+                SAFARI_BUNDLED_PLIST_KEY,
+                true,
+                true,
+                true,
+                false,
+                false,
+            ),
+            entry(
+                SAFARI_STANDALONE_PLIST_KEY,
+                true,
+                true,
+                true,
+                false,
+                true,
+            ),
+        );
+        let scan = parse_duplicate(&plist(&entries));
+        assert!(scan.bundled.present);
+        assert!(!scan.standalone.present);
     }
 
     #[test]

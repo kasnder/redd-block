@@ -688,6 +688,60 @@ pub async fn browser_profiles_compliant() -> Result<bool, String> {
     .map_err(|e| format!("join error: {e}"))
 }
 
+/// Open Safari → Settings → Extensions via AppleScript. Needs
+/// Accessibility permission for System Events; tries both the legacy
+/// toolbar layout and the Ventura+ sidebar layout.
+#[cfg(target_os = "macos")]
+pub(crate) fn open_safari_extensions_settings_applescript() -> Result<(), String> {
+    const SCRIPT: &str = concat!(
+        "tell application \"Safari\" to activate\n",
+        "delay 0.4\n",
+        "tell application \"System Events\"\n",
+        "  tell process \"Safari\"\n",
+        "    keystroke \",\" using command down\n",
+        "    delay 1.0\n",
+        "    set extClicked to false\n",
+        "    try\n",
+        "      click button \"Extensions\" of toolbar 1 of window 1\n",
+        "      set extClicked to true\n",
+        "    end try\n",
+        "    if not extClicked then\n",
+        "      try\n",
+        "        click button \"Extensions\" of group 1 of scroll area 1 of group 1 of group 2 of splitter group 1 of group 1 of window 1\n",
+        "        set extClicked to true\n",
+        "      end try\n",
+        "    end if\n",
+        "    if not extClicked then\n",
+        "      repeat with theRow in (UI elements of scroll area 1 of group 1 of group 2 of splitter group 1 of group 1 of window 1)\n",
+        "        try\n",
+        "          if name of theRow is \"Extensions\" then\n",
+        "            click theRow\n",
+        "            set extClicked to true\n",
+        "            exit repeat\n",
+        "          end if\n",
+        "        end try\n",
+        "      end repeat\n",
+        "    end if\n",
+        "    if not extClicked then error \"Could not open Safari Extensions settings\"\n",
+        "  end tell\n",
+        "end tell\n",
+    );
+    let out = std::process::Command::new("osascript")
+        .args(["-e", SCRIPT])
+        .output()
+        .map_err(|e| format!("osascript: {e}"))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn open_safari_extensions_settings_applescript() -> Result<(), String> {
+    Err("Safari is macOS-only".into())
+}
+
 /// Open the browser's extension-management UI so the user can enable
 /// ReDD Focus or allow it in private/incognito windows.
 #[tauri::command]
@@ -703,33 +757,16 @@ pub fn open_browser_extension_settings(browser: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         if normalized == "safari" {
-            // Safari extensions are managed in Safari > Settings > Extensions.
-            // Use osascript to open the Extensions pane directly.
-            let script = concat!(
-                "tell application \"Safari\" to activate\n",
-                "delay 0.3\n",
-                "tell application \"System Events\"\n",
-                "  tell process \"Safari\"\n",
-                "    keystroke \",\" using command down\n",
-                "    delay 0.5\n",
-                "    click button \"Extensions\" of toolbar 1 of window 1\n",
-                "  end tell\n",
-                "end tell\n",
-            );
-            let out = std::process::Command::new("osascript")
-                .args(["-e", script])
-                .output()
-                .map_err(|e| format!("osascript: {e}"))?;
-            if !out.status.success() {
-                // If AppleScript failed (e.g. no accessibility permission),
-                // fall back to just activating Safari.
-                log::warn!(
-                    "osascript for Safari settings failed ({}), activating Safari",
-                    String::from_utf8_lossy(&out.stderr).trim()
-                );
-                let _ = std::process::Command::new("/usr/bin/open")
-                    .args(["-a", "Safari"])
-                    .output();
+            match open_safari_extensions_settings_applescript() {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    log::warn!(
+                        "osascript for Safari Extensions settings failed ({e}), activating Safari"
+                    );
+                    let _ = std::process::Command::new("/usr/bin/open")
+                        .args(["-a", "Safari"])
+                        .output();
+                }
             }
             return Ok(());
         }

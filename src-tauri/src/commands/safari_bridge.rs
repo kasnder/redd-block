@@ -89,10 +89,24 @@ pub fn open_safari_fda_settings() -> Result<(), String> {
 pub fn open_safari_extension_settings() -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        crate::safari_services::open_extension_settings(
+        if crate::safari_services::open_extension_settings(
             crate::native_host_install::SAFARI_EXT_ID,
         )
-        .map_err(|e| e.to_string())
+        .is_ok()
+        {
+            return Ok(());
+        }
+
+        log::warn!(
+            "SafariServices showPreferencesForExtension failed, trying AppleScript fallback"
+        );
+        super::browser_ext::open_safari_extensions_settings_applescript()
+            .map_err(|e| {
+                format!(
+                    "Could not open Safari extension settings automatically ({e}). \
+                     Open Safari → Settings → Extensions manually."
+                )
+            })
     }
     #[cfg(not(target_os = "macos"))]
     {

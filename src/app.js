@@ -1502,6 +1502,7 @@ function presentFdaOnboardingUi() {
 
 async function syncFdaOnboardingGrantButton() {
     const grantBtn = document.getElementById('fda-onboarding-grant-btn');
+    const whyEl = document.getElementById('fda-onboarding-why');
     if (!grantBtn) return false;
 
     let granted = false;
@@ -1512,6 +1513,13 @@ async function syncFdaOnboardingGrantButton() {
     grantBtn.textContent = granted
         ? tSettings('fdaOnboardingAlreadyGrantedBtn')
         : tSettings('fdaOnboardingGrantBtn');
+    if (whyEl) {
+        if (granted) {
+            whyEl.textContent = tSettings('fdaOnboardingAlreadyGrantedWhy');
+        } else {
+            whyEl.innerHTML = tSettings('fdaOnboardingWhyHtml');
+        }
+    }
     if (activeFdaOnboardingSession) {
         activeFdaOnboardingSession.fdaLiveGranted = granted;
     }
@@ -1670,6 +1678,8 @@ let firstRunExtensionSetupPending = false;
 let migrationPollIntervalId = null;
 /** Preserves "Show me how" across `renderBrowserInstallButtons` poll refreshes. */
 const migrationShowMeHowExpandedKeys = new Set();
+/** Preserves Safari duplicate "How did this happen?" across poll refreshes. */
+let migrationSafariDuplicateHelpExpanded = false;
 /** Snapshot for re-rendering localized browser rows when language changes mid-overlay. */
 let lastMigrationBrowserState = null;
 const MIGRATION_POLL_MS = 2500;
@@ -1823,6 +1833,7 @@ function hideMigrationOnboarding() {
     migrationOnboardingDismissed = true;
     firstRunExtensionSetupPending = false;
     migrationShowMeHowExpandedKeys.clear();
+    migrationSafariDuplicateHelpExpanded = false;
     lastMigrationBrowserState = null;
     stopMigrationPolling();
 }
@@ -2152,6 +2163,7 @@ const BROWSER_STORE_LINKS = {
 
 // Compute per-step status for the migration UI:
 //   - 'compliant': extension installed, enabled, allowed in private, allowed on all websites
+//   - 'needs-deduplicate': Safari has both bundled + standalone ReDD Focus
 //   - 'needs-website-access': Safari installed + enabled + private, but not allowed on all websites
 //   - 'needs-private': installed + enabled but not allowed in private
 //   - 'needs-enable': installed but disabled
@@ -2162,6 +2174,7 @@ function browserComplianceStatus(key, b) {
     const profiles = b.profiles || [];
     const def = profiles.find(p => p.isDefault) || profiles[0];
     if (key === 'safari') {
+        if (b.duplicateExtensions?.detected) return 'needs-deduplicate';
         // Safari status, post-bridge:
         //
         // The Swift bridge (SFSafariExtensionManager) gives us a
@@ -2195,6 +2208,7 @@ function browserComplianceStatus(key, b) {
 function statusLabel(key, status) {
     switch (status) {
         case 'compliant': return tSettings('migrationComplianceOk');
+        case 'needs-deduplicate': return tSettings('migrationStatusDuplicateSafari');
         case 'needs-fda': return tSettings('migrationStatusGrantFda');
         case 'needs-website-access': return tSettings('migrationStatusAllowAllWebsites');
         case 'needs-private': return tSettings('migrationStatusAllowPrivate');
@@ -2295,25 +2309,20 @@ function privateModeNoun(key) {
 }
 
 // Open the user's extension settings for a given browser. For Safari
-// we prefer SafariServices'  SFSafariApplication.showPreferencesForExtension
-// (via the in-process Swift bridge) which deep-links straight to
-// ReDD Focus's row in Safari → Settings → Extensions — no Accessibility
-// permission, no Cmd+, keystroke, no UI-element clicking. The bridge
-// only works when the call comes from the registered main executable
-// of the host bundle (the production `.app`), so dev mode (cargo
-// tauri dev) falls through to the older AppleScript path. Other
-// browsers just go to open_browser_extension_settings as before.
+// we prefer SafariServices' showPreferencesForExtension (via the
+// in-process Swift bridge), which deep-links to ReDD Focus in
+// Safari → Settings → Extensions. The Rust command retries after
+// launching Safari when needed, then falls back to AppleScript for
+// dev builds (`cargo tauri dev`) and other cases where SafariServices
+// can't find the host extension. AppleScript needs Accessibility
+// permission for ReDD Block (or your terminal, when running dev).
 async function openExtensionSettings(key) {
     if (key === 'safari') {
         try {
             await invoke('open_safari_extension_settings');
             return;
         } catch (e) {
-            console.warn('[migration] safari deep-link failed, falling back:', e);
-            // Fall through to the AppleScript path. It needs
-            // Accessibility permission to send Cmd+, and click the
-            // Extensions tab; if that's also missing, the backend
-            // command at least activates Safari.
+            console.warn('[migration] safari extension settings failed, falling back:', e);
         }
     }
     return invoke('open_browser_extension_settings', { browser: key });
@@ -2344,6 +2353,87 @@ function browserStatusHint(key, entry, b, status) {
         default:
             return '';
     }
+}
+
+function renderSafariDuplicateExtensionPanel(row, key) {
+    const panel = document.createElement('div');
+    panel.className = 'safari-duplicate-panel';
+
+    const intro = document.createElement('p');
+    intro.className = 'safari-duplicate-intro';
+    intro.innerHTML = tSettings('migrationSafariDuplicateIntroHtml');
+    panel.appendChild(intro);
+
+    const instructions = document.createElement('div');
+    instructions.className = 'safari-duplicate-instructions';
+
+    const instructionsHeading = document.createElement('div');
+    instructionsHeading.className = 'safari-duplicate-instructions-heading';
+    instructionsHeading.textContent = tSettings('migrationSafariDuplicateInstructionsHeading');
+    instructions.appendChild(instructionsHeading);
+
+    instructions.appendChild(buildSafariDuplicateInstructionStep(1, 'migrationSafariDuplicateStep1Html'));
+    instructions.appendChild(buildSafariDuplicateInstructionStep(2, 'migrationSafariDuplicateStep2Html'));
+    panel.appendChild(instructions);
+
+    const actionsRow = document.createElement('div');
+    actionsRow.className = 'migration-actions-row safari-duplicate-actions';
+
+    const openBtn = document.createElement('button');
+    openBtn.type = 'button';
+    openBtn.className = 'migration-primary-btn safari-duplicate-open-btn';
+    openBtn.textContent = tSettings('migrationSafariDuplicateOpenBtn');
+    openBtn.addEventListener('click', () => {
+        openExtensionSettings(key).catch(e => console.warn('[migration] open ext settings:', e));
+    });
+    actionsRow.appendChild(openBtn);
+
+    const helpToggle = document.createElement('button');
+    helpToggle.type = 'button';
+    helpToggle.className = 'safari-duplicate-help-toggle';
+    if (migrationSafariDuplicateHelpExpanded) helpToggle.classList.add('open');
+    helpToggle.setAttribute('aria-expanded', migrationSafariDuplicateHelpExpanded ? 'true' : 'false');
+    helpToggle.innerHTML = `<span>${tSettings('migrationSafariDuplicateHelpLink')}</span><svg class="safari-duplicate-help-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>`;
+    actionsRow.appendChild(helpToggle);
+
+    panel.appendChild(actionsRow);
+
+    const helpWrap = document.createElement('div');
+    helpWrap.className = 'safari-duplicate-help-wrap';
+    helpWrap.classList.toggle('hidden', !migrationSafariDuplicateHelpExpanded);
+
+    const helpText = document.createElement('p');
+    helpText.className = 'safari-duplicate-help-text';
+    helpText.textContent = tSettings('migrationSafariDuplicateHelpText');
+    helpWrap.appendChild(helpText);
+    panel.appendChild(helpWrap);
+
+    helpToggle.addEventListener('click', () => {
+        migrationSafariDuplicateHelpExpanded = !migrationSafariDuplicateHelpExpanded;
+        helpWrap.classList.toggle('hidden', !migrationSafariDuplicateHelpExpanded);
+        helpToggle.classList.toggle('open', migrationSafariDuplicateHelpExpanded);
+        helpToggle.setAttribute('aria-expanded', migrationSafariDuplicateHelpExpanded ? 'true' : 'false');
+    });
+
+    row.appendChild(panel);
+}
+
+function buildSafariDuplicateInstructionStep(stepNum, translationKey, extraClass = '') {
+    const step = document.createElement('div');
+    step.className = `safari-duplicate-step${extraClass ? ` ${extraClass}` : ''}`;
+
+    const num = document.createElement('span');
+    num.className = 'safari-duplicate-step-num';
+    num.textContent = String(stepNum);
+    num.setAttribute('aria-hidden', 'true');
+
+    const body = document.createElement('div');
+    body.className = 'safari-duplicate-step-body';
+    body.innerHTML = tSettings(translationKey);
+
+    step.appendChild(num);
+    step.appendChild(body);
+    return step;
 }
 
 function renderBrowserInstallButtons(state) {
@@ -2402,6 +2492,7 @@ function renderBrowserInstallButtons(state) {
         badge.className = `migration-browser-badge ${status}`;
         switch (status) {
             case 'compliant': badge.textContent = statusLabel(key, status); break;
+            case 'needs-deduplicate': badge.textContent = tSettings('migrationBadgeDuplicateSafari'); break;
             case 'needs-install': badge.textContent = tSettings('migrationBadgeNotInstalled'); break;
             case 'needs-enable': badge.textContent = tSettings('migrationBadgeDisabled'); break;
             case 'needs-private': badge.textContent = tSettings('migrationBadgeNotPrivate'); break;
@@ -2494,6 +2585,8 @@ function renderBrowserInstallButtons(state) {
             actionsRow.className = 'migration-actions-row';
             actionsRow.appendChild(installBtn);
             row.appendChild(actionsRow);
+        } else if (status === 'needs-deduplicate') {
+            renderSafariDuplicateExtensionPanel(row, key);
         } else if (status === 'needs-enable' || status === 'needs-private' || status === 'needs-website-access') {
             // Mirror the notification-banner layout for clarity:
             // [optional ✓ Extension installed]
@@ -13626,6 +13719,15 @@ const SETTINGS_TRANSLATIONS = {
         migrationBadgeNotPrivate: 'Not allowed in private tabs',
         migrationBadgeNoWebsiteAccess: 'No website access',
         migrationBadgeNeedsAccess: 'Needs access',
+        migrationBadgeDuplicateSafari: '⚠ Two copies installed',
+        migrationStatusDuplicateSafari: 'Disable the extra copy',
+        migrationSafariDuplicateIntroHtml: 'You have <strong>ReDD Focus: Hide Distractions</strong> from the App Store <em>and</em> the copy that ships inside ReDD Block. They conflict — keep only one.',
+        migrationSafariDuplicateInstructionsHeading: 'In Safari → Settings → Extensions',
+        migrationSafariDuplicateStep1Html: 'Find <strong>ReDD Focus: Hide Distractions</strong> — the App Store copy (not “via ReDD Block”) — and uncheck <span class="safari-duplicate-checkbox" role="img" aria-label="Unchecked"></span> it.',
+        migrationSafariDuplicateStep2Html: 'Make sure <span class="safari-duplicate-checkbox safari-duplicate-checkbox-checked" role="img" aria-label="Checked"></span> is checked for <strong>ReDD Focus (via ReDD Block)</strong>. That\'s the one this app controls.',
+        migrationSafariDuplicateOpenBtn: 'Open Safari Extensions…',
+        migrationSafariDuplicateHelpLink: 'How did this happen?',
+        migrationSafariDuplicateHelpText: 'If you previously installed ReDD Focus from the App Store and later installed ReDD Block, Safari keeps both extensions registered. ReDD Block only works with the bundled copy.',
         migrationStatusGrantFda: 'Grant Full Disk Access',
         migrationStatusAllowAllWebsites: 'Allow on all websites',
         migrationStatusAllowPrivate: 'Allow in private browsing',
@@ -13641,6 +13743,8 @@ const SETTINGS_TRANSLATIONS = {
         migrationOpenFdaTitle: 'Open Full Disk Access settings',
         fdaOnboardingGrantBtn: 'Open Full Disk Access settings',
         fdaOnboardingAlreadyGrantedBtn: '✓ Proceed',
+        fdaOnboardingWhyHtml: 'Click the button below to open your System Settings, then toggle on for <strong>ReDD Block</strong> (if you don\'t see ReDD Block in the list, click + and add it manually).',
+        fdaOnboardingAlreadyGrantedWhy: 'FDA is already granted for ReDD Block. Click the button below to proceed.',
         fdaOnboardingGrantedStatus: 'Full Disk Access granted — installing ReDD Focus…',
         migrationCheckAgain: 'Check again',
         migrationRefreshSafariTitle: 'Refresh Safari access status',
@@ -14090,6 +14194,15 @@ const SETTINGS_TRANSLATIONS = {
         migrationBadgeNotPrivate: 'Ikke tilladt i private faner',
         migrationBadgeNoWebsiteAccess: 'Ingen webadgang',
         migrationBadgeNeedsAccess: 'Kræver adgang',
+        migrationBadgeDuplicateSafari: '⚠ To kopier installeret',
+        migrationStatusDuplicateSafari: 'Deaktivér den ekstra kopi',
+        migrationSafariDuplicateIntroHtml: 'Du har <strong>ReDD Focus: Hide Distractions</strong> fra App Store <em>og</em> kopien, der følger med ReDD Block. De kan ikke begge være aktive — behold kun én.',
+        migrationSafariDuplicateInstructionsHeading: 'I Safari → Indstillinger → Udvidelser',
+        migrationSafariDuplicateStep1Html: 'Find <strong>ReDD Focus: Hide Distractions</strong> — App Store-kopien (ikke “via ReDD Block”) — og fjern markeringen <span class="safari-duplicate-checkbox" role="img" aria-label="Ikke markeret"></span>.',
+        migrationSafariDuplicateStep2Html: 'Sørg for, at afkrydsningsfeltet <span class="safari-duplicate-checkbox safari-duplicate-checkbox-checked" role="img" aria-label="Markeret"></span> er markeret for <strong>ReDD Focus (via ReDD Block)</strong>. Det er den, denne app styrer.',
+        migrationSafariDuplicateOpenBtn: 'Åbn Safari-udvidelser…',
+        migrationSafariDuplicateHelpLink: 'Hvordan skete det?',
+        migrationSafariDuplicateHelpText: 'Hvis du tidligere installerede ReDD Focus fra App Store og senere installerede ReDD Block, beholder Safari begge udvidelser. ReDD Block virker kun med den bundtede kopi.',
         migrationStatusGrantFda: 'Giv fuld diskadgang',
         migrationStatusAllowAllWebsites: 'Tillad på alle websites',
         migrationStatusAllowPrivate: 'Tillad privat browsing',
@@ -14105,6 +14218,8 @@ const SETTINGS_TRANSLATIONS = {
         migrationOpenFdaTitle: 'Åbn Indstillinger for Fuld diskadgang',
         fdaOnboardingGrantBtn: 'Åbn Indstillinger for Fuld diskadgang',
         fdaOnboardingAlreadyGrantedBtn: '✓ Fortsæt',
+        fdaOnboardingWhyHtml: 'Klik på knappen nedenfor for at åbne Systemindstillinger, og slå derefter til for <strong>ReDD Block</strong> (hvis du ikke kan se ReDD Block på listen, skal du klikke på + og tilføje den manuelt).',
+        fdaOnboardingAlreadyGrantedWhy: 'Fuld diskadgang er allerede givet til ReDD Block. Klik på knappen nedenfor for at fortsætte.',
         fdaOnboardingGrantedStatus: 'Fuld diskadgang givet — installerer ReDD Focus…',
         migrationCheckAgain: 'Tjek igen',
         migrationRefreshSafariTitle: 'Opdater Safari-status',
@@ -15199,6 +15314,10 @@ function applySettingsLanguage() {
 
     const fdaBackBtn = document.getElementById('fda-onboarding-back-btn');
     if (fdaBackBtn) fdaBackBtn.textContent = tSettings('eulaBackBtn');
+    const fdaWhyEl = document.getElementById('fda-onboarding-why');
+    if (fdaWhyEl && !activeFdaOnboardingSession) {
+        fdaWhyEl.innerHTML = tSettings('fdaOnboardingWhyHtml');
+    }
     if (activeFdaOnboardingSession) {
         void syncFdaOnboardingGrantButton();
     }

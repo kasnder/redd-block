@@ -5478,6 +5478,7 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
 .migration-browser-row.needs-enable,
 .migration-browser-row.needs-private,
 .migration-browser-row.needs-website-access,
+.migration-browser-row.needs-deduplicate,
 .migration-browser-row.needs-fda {
     background: rgba(245, 158, 11, 0.08);
     border-color: rgba(245, 158, 11, 0.20);
@@ -5547,8 +5548,174 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
 .migration-browser-badge.needs-enable,
 .migration-browser-badge.needs-private,
 .migration-browser-badge.needs-website-access,
+.migration-browser-badge.needs-deduplicate,
 .migration-browser-badge.needs-fda {
     color: #b45309;
+}
+
+.migration-browser-badge.needs-deduplicate {
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-size: 11px;
+}
+
+/* Safari duplicate-extension panel (two ReDD Focus copies installed) */
+.safari-duplicate-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 4px;
+}
+
+.safari-duplicate-intro {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text-secondary, hsl(222, 18%, 35%));
+}
+
+.safari-duplicate-intro strong {
+    font-weight: 600;
+    color: var(--text-primary, hsl(222, 25%, 25%));
+}
+
+.safari-duplicate-instructions {
+    padding: 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(10, 45, 123, 0.1);
+    background: var(--redd-card, #fff);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.safari-duplicate-instructions-heading {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #92400e;
+    line-height: 1.3;
+}
+
+.safari-duplicate-step {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+}
+
+.safari-duplicate-step + .safari-duplicate-step {
+    padding-top: 12px;
+    border-top: 1px dashed rgba(10, 45, 123, 0.14);
+}
+
+.safari-duplicate-step-num {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    color: #fff;
+    background: #92400e;
+}
+
+.safari-duplicate-step-body {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text-secondary, hsl(222, 18%, 35%));
+}
+
+.safari-duplicate-step-body strong {
+    font-weight: 600;
+    color: var(--text-primary, hsl(222, 25%, 25%));
+}
+
+.safari-duplicate-checkbox {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    border: 1.5px solid rgba(0, 0, 0, 0.22);
+    background: #fff;
+    vertical-align: -2px;
+    margin: 0 1px;
+    box-sizing: border-box;
+    position: relative;
+}
+
+.safari-duplicate-checkbox-checked {
+    border-color: #007aff;
+    background: #007aff;
+}
+
+.safari-duplicate-checkbox-checked::after {
+    content: '';
+    position: absolute;
+    left: 3.5px;
+    top: 0.5px;
+    width: 3.5px;
+    height: 7px;
+    border: solid #fff;
+    border-width: 0 1.75px 1.75px 0;
+    transform: rotate(45deg);
+}
+
+.safari-duplicate-actions {
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.safari-duplicate-help-toggle {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 2px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted, hsl(222, 12%, 48%));
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.safari-duplicate-help-toggle:hover {
+    color: var(--text-secondary, hsl(222, 18%, 35%));
+}
+
+.safari-duplicate-open-btn {
+    padding: 8px 14px;
+    font-size: 13px;
+}
+
+.safari-duplicate-help-chevron {
+    flex: 0 0 auto;
+    transition: transform 0.2s ease;
+}
+
+.safari-duplicate-help-toggle.open .safari-duplicate-help-chevron {
+    transform: rotate(90deg);
+}
+
+.safari-duplicate-help-wrap {
+    margin-top: 2px;
+}
+
+.safari-duplicate-help-text {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.45;
+    color: var(--text-muted, hsl(222, 12%, 48%));
 }
 
 /* Checklist-style lines inside browser cards */
@@ -6232,6 +6399,7 @@ body.dark-mode #migration-onboarding .migration-browser-row.compliant {
 body.dark-mode #migration-onboarding .migration-browser-row.needs-enable,
 body.dark-mode #migration-onboarding .migration-browser-row.needs-private,
 body.dark-mode #migration-onboarding .migration-browser-row.needs-website-access,
+body.dark-mode #migration-onboarding .migration-browser-row.needs-deduplicate,
 body.dark-mode #migration-onboarding .migration-browser-row.needs-fda {
     background: rgba(245, 158, 11, 0.14);
     border-color: rgba(251, 191, 36, 0.35);
@@ -6259,6 +6427,7 @@ body.dark-mode #uninstall-confirm-modal .migration-browser-badge {
 body.dark-mode #migration-onboarding .migration-browser-badge.needs-enable,
 body.dark-mode #migration-onboarding .migration-browser-badge.needs-private,
 body.dark-mode #migration-onboarding .migration-browser-badge.needs-website-access,
+body.dark-mode #migration-onboarding .migration-browser-badge.needs-deduplicate,
 body.dark-mode #migration-onboarding .migration-browser-badge.needs-fda {
     color: #fbbf24;
 }
@@ -6273,6 +6442,48 @@ body.dark-mode #migration-onboarding .migration-checklist-active {
 
 body.dark-mode #migration-onboarding .migration-checklist-pending {
     color: var(--text-muted);
+}
+
+body.dark-mode #migration-onboarding .safari-duplicate-intro,
+body.dark-mode #migration-onboarding .safari-duplicate-step-body {
+    color: var(--text-secondary);
+}
+
+body.dark-mode #migration-onboarding .safari-duplicate-intro strong,
+body.dark-mode #migration-onboarding .safari-duplicate-step-body strong {
+    color: var(--text-primary);
+}
+
+body.dark-mode #migration-onboarding .safari-duplicate-instructions {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+body.dark-mode #migration-onboarding .safari-duplicate-instructions-heading {
+    color: #fcd34d;
+}
+
+body.dark-mode #migration-onboarding .safari-duplicate-step-num {
+    background: #b45309;
+}
+
+body.dark-mode #migration-onboarding .safari-duplicate-checkbox {
+    border-color: rgba(255, 255, 255, 0.28);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+body.dark-mode #migration-onboarding .safari-duplicate-checkbox-checked {
+    border-color: #0a84ff;
+    background: #0a84ff;
+}
+
+body.dark-mode #migration-onboarding .safari-duplicate-help-text,
+body.dark-mode #migration-onboarding .safari-duplicate-help-toggle {
+    color: var(--text-muted);
+}
+
+body.dark-mode #migration-onboarding .safari-duplicate-help-toggle:hover {
+    color: var(--text-secondary);
 }
 
 body.dark-mode #migration-onboarding .migration-inline-url-btn {

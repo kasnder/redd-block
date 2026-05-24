@@ -34,6 +34,7 @@
 // directly into the main redd-block binary places the call in the
 // right process context.
 
+import AppKit
 import Foundation
 import SafariServices
 
@@ -108,6 +109,55 @@ public func redd_safari_extension_state(
     return exitCode
 }
 
+/// Launch Safari without stealing focus from ReDD Block. Returns true
+/// when the open request succeeded.
+private func launchSafari() -> Bool {
+    guard let safariURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Safari") else {
+        return false
+    }
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.activates = false
+    let semaphore = DispatchSemaphore(value: 0)
+    var launched = false
+    NSWorkspace.shared.openApplication(at: safariURL, configuration: configuration) { _, error in
+        launched = (error == nil)
+        semaphore.signal()
+    }
+    semaphore.wait()
+    return launched
+}
+
+/// `showPreferencesForExtension` often fails with SFErrorDomain code 1
+/// when Safari hasn't been launched yet. Launch Safari, wait for the
+/// system to register extensions, then retry once — same pattern as
+/// the standalone ReDD Focus macOS app.
+private func openSafariExtensionPreferences(bundleId: String, retryCount: Int) -> Int32 {
+    let semaphore = DispatchSemaphore(value: 0)
+    var exitCode: Int32 = 0
+    var shouldRetry = false
+
+    SFSafariApplication.showPreferencesForExtension(withIdentifier: bundleId) { error in
+        if let nsError = error as NSError?,
+           nsError.domain == "SFErrorDomain",
+           nsError.code == 1,
+           retryCount == 0 {
+            shouldRetry = true
+            semaphore.signal()
+            return
+        }
+        exitCode = (error != nil) ? 1 : 0
+        semaphore.signal()
+    }
+    semaphore.wait()
+
+    if shouldRetry {
+        _ = launchSafari()
+        Thread.sleep(forTimeInterval: 1.5)
+        return openSafariExtensionPreferences(bundleId: bundleId, retryCount: 1)
+    }
+    return exitCode
+}
+
 /// Deep-link Safari to the row for the given extension in
 /// Settings → Extensions. Returns 0 on success, 1 on error.
 @_cdecl("redd_safari_open_extension_settings")
@@ -115,16 +165,5 @@ public func redd_safari_open_extension_settings(
     _ bundleIdPtr: UnsafePointer<CChar>
 ) -> Int32 {
     let bundleId = String(cString: bundleIdPtr)
-    let semaphore = DispatchSemaphore(value: 0)
-    var exitCode: Int32 = 0
-
-    SFSafariApplication.showPreferencesForExtension(withIdentifier: bundleId) {
-        error in
-        if error != nil {
-            exitCode = 1
-        }
-        semaphore.signal()
-    }
-    semaphore.wait()
-    return exitCode
+    return openSafariExtensionPreferences(bundleId: bundleId, retryCount: 0)
 }
