@@ -1415,6 +1415,92 @@
                         <option id="theme-option-dark" value="dark">Dark</option>
                     </select>
 
+                    <div id="settings-blocklists-io-row" class="settings-blocklists-io-contents">
+                        <span id="settings-blocklists-io-label" class="settings-row-label">Export / import blocklists &amp; schedules</span>
+                        <div class="settings-blocklists-io-btns">
+                            <button id="settings-export-blocklists-btn" class="settings-blocklists-io-btn" type="button">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="7 10 12 15 17 10"></polyline>
+                                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                                <span id="settings-export-blocklists-btn-label">Export…</span>
+                            </button>
+                            <button id="settings-import-blocklists-btn" class="settings-blocklists-io-btn" type="button">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                    <polyline points="17 8 12 3 7 8"></polyline>
+                                    <line x1="12" y1="3" x2="12" y2="15"></line>
+                                </svg>
+                                <span id="settings-import-blocklists-btn-label">Import…</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="settings-modal-divider" aria-hidden="true"></div>
+
+                    <!-- Desktop-only diagnostics row (same grid as Language / theme). -->
+                    <div id="settings-diagnostics-row" class="settings-diagnostics-contents desktop-only">
+                        <span id="settings-diagnostics-label" class="settings-row-label">Something not working?</span>
+                        <button id="diagnostics-btn" class="settings-diagnostics-btn" type="button">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path
+                                    d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2">
+                                </path>
+                            </svg>
+                            <span id="settings-diagnostics-btn-label">Diagnostics</span>
+                        </button>
+                    </div>
+
+                    <!-- Desktop-only onboarding replay (same grid as Language / theme). -->
+                    <div id="settings-onboarding-row" class="settings-onboarding-contents desktop-only">
+                        <span id="settings-onboarding-label" class="settings-row-label">Revisit onboarding steps</span>
+                        <button id="settings-onboarding-btn" class="settings-onboarding-btn" type="button">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z" />
+                                <path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z" />
+                                <path d="M16 17h4" />
+                                <path d="M4 13h4" />
+                            </svg>
+                            <span id="settings-onboarding-btn-label">Onboarding</span>
+                        </button>
+                    </div>
+
+                    <div id="settings-override-all-row" class="settings-override-all-contents hidden">
+                        <span id="settings-override-all-label" class="settings-row-label">Stop all blocks &amp; schedules</span>
+                        <button id="override-all-btn" class="settings-override-all-btn" type="button">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3">
+                                </path>
+                                <path d="M12 9v4"></path>
+                                <path d="M12 17h.01"></path>
+                            </svg>
+                            <span id="settings-override-all-btn-label">Stop all blocks</span>
+                        </button>
+                    </div>
+
+                    <!-- Mac-only in-app uninstall (same grid rows as Language / theme). -->
+                    <div id="uninstall-app-row" class="settings-uninstall-contents macos-only">
+                        <span id="settings-uninstall-label" class="settings-row-label">Uninstall ReDD Block</span>
+                        <div class="settings-uninstall-btn-wrap">
+                            <button id="uninstall-app-btn" class="uninstall-app-btn" type="button">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M3 6h18"></path>
+                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+                                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                </svg>
+                                <span id="settings-uninstall-btn-label">Uninstall…</span>
+                            </button>
+                            <span id="uninstall-app-hint" class="enforcement-switch-tooltip hidden" role="tooltip"></span>
+                        </div>
+                    </div>
+
                 <!-- Browser enforcement (desktop only). -->
                 <section class="settings-enforcement-section desktop-only settings-enforcement-full-span">
                     <button type="button" id="settings-enforcement-toggle" class="settings-enforcement-toggle"
@@ -1451,90 +1537,6 @@
                         <p id="grace-error" class="grace-error hidden"></p>
                     </div>
                 </section>
-
-                    <div id="settings-blocklists-io-row" class="settings-blocklists-io-contents">
-                        <span id="settings-blocklists-io-label" class="settings-row-label">Export / import blocklists &amp; schedules</span>
-                        <div class="settings-blocklists-io-btns">
-                            <button id="settings-export-blocklists-btn" class="settings-blocklists-io-btn" type="button">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                    <polyline points="7 10 12 15 17 10"></polyline>
-                                    <line x1="12" y1="15" x2="12" y2="3"></line>
-                                </svg>
-                                <span id="settings-export-blocklists-btn-label">Export…</span>
-                            </button>
-                            <button id="settings-import-blocklists-btn" class="settings-blocklists-io-btn" type="button">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                                    <polyline points="17 8 12 3 7 8"></polyline>
-                                    <line x1="12" y1="3" x2="12" y2="15"></line>
-                                </svg>
-                                <span id="settings-import-blocklists-btn-label">Import…</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- Desktop-only onboarding replay (same grid as Language / theme). -->
-                    <div id="settings-onboarding-row" class="settings-onboarding-contents desktop-only">
-                        <span id="settings-onboarding-label" class="settings-row-label">Revisit onboarding steps</span>
-                        <button id="settings-onboarding-btn" class="settings-onboarding-btn" type="button">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z" />
-                                <path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z" />
-                                <path d="M16 17h4" />
-                                <path d="M4 13h4" />
-                            </svg>
-                            <span id="settings-onboarding-btn-label">Onboarding</span>
-                        </button>
-                    </div>
-
-                    <!-- Desktop-only diagnostics row (same grid as Language / theme). -->
-                    <div id="settings-diagnostics-row" class="settings-diagnostics-contents desktop-only">
-                        <span id="settings-diagnostics-label" class="settings-row-label">Something not working?</span>
-                        <button id="diagnostics-btn" class="settings-diagnostics-btn" type="button">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <path
-                                    d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2">
-                                </path>
-                            </svg>
-                            <span id="settings-diagnostics-btn-label">Diagnostics</span>
-                        </button>
-                    </div>
-
-                    <div id="settings-override-all-row" class="settings-override-all-contents hidden">
-                        <span id="settings-override-all-label" class="settings-row-label">Stop all blocks &amp; schedules</span>
-                        <button id="override-all-btn" class="settings-override-all-btn" type="button">
-                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3">
-                                </path>
-                                <path d="M12 9v4"></path>
-                                <path d="M12 17h.01"></path>
-                            </svg>
-                            <span id="settings-override-all-btn-label">Stop all blocks</span>
-                        </button>
-                    </div>
-
-                    <!-- Mac-only in-app uninstall (same grid rows as Language / theme). -->
-                    <div id="uninstall-app-row" class="settings-uninstall-contents macos-only">
-                        <span id="settings-uninstall-label" class="settings-row-label">Uninstall ReDD Block</span>
-                        <div class="settings-uninstall-btn-wrap">
-                            <button id="uninstall-app-btn" class="uninstall-app-btn" type="button">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M3 6h18"></path>
-                                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
-                                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                                </svg>
-                                <span id="settings-uninstall-btn-label">Uninstall…</span>
-                            </button>
-                            <span id="uninstall-app-hint" class="enforcement-switch-tooltip hidden" role="tooltip"></span>
-                        </div>
-                    </div>
                 </div>
 
                 <div id="settings-feedback-footer" class="settings-feedback-footer">
