@@ -7868,13 +7868,17 @@ function addScheduleSegment() {
     const newEndHour = (newStartHour + 2) % 24;
     const newEndMinute = 0;
 
-    // New segments default to every day of the week, matching the initial schedule default.
+    const defaultDays =
+        prevSegment && Array.isArray(prevSegment.days) && prevSegment.days.length > 0
+            ? [...prevSegment.days]
+            : [0, 1, 2, 3, 4, 5, 6];
+
     scheduleSegments.push({
         startHour: newStartHour,
         startMinute: newStartMinute,
         endHour: newEndHour,
         endMinute: newEndMinute,
-        days: [0, 1, 2, 3, 4, 5, 6]
+        days: defaultDays
     });
 
     // Rebuild all segments to ensure consistent rendering
