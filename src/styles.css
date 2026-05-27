@@ -7849,11 +7849,58 @@ body.ios .desktop-only {
     min-width: 0;
 }
 
+#settings-modal .settings-section-grid .settings-blocklists-io-btns {
+    width: auto;
+    max-width: 100%;
+    justify-self: end;
+}
+
 .settings-row-label {
     font-size: 15px;
     color: var(--text-primary);
     flex-shrink: 0;
     min-width: 0;
+}
+
+.settings-blocklists-io-btns {
+    display: flex;
+    gap: 6px;
+    min-width: 0;
+    justify-content: flex-end;
+}
+
+#settings-modal .settings-blocklists-io-btn {
+    flex: 0 1 auto;
+    min-width: 0;
+    width: auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    box-sizing: border-box;
+    padding: 6px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.2;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    background: var(--modal-bg);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color-medium);
+    transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+#settings-modal .settings-blocklists-io-btn:hover:not(:disabled) {
+    background: var(--element-hover-bg);
+    border-color: var(--border-color-strong, var(--border-color-medium));
+}
+
+#settings-modal .settings-blocklists-io-btn svg {
+    flex-shrink: 0;
+    width: 13px;
+    height: 13px;
 }
 
 /* Shared “Cold Turkey” style: bordered pill + double chevron
@@ -8349,6 +8396,7 @@ body.mac .settings-uninstall-contents.macos-only {
 
 body:not(.ios) .settings-onboarding-contents.desktop-only,
 body:not(.ios) .settings-diagnostics-contents.desktop-only,
+.settings-blocklists-io-contents,
 .settings-override-all-contents:not(.hidden) {
     display: contents;
 }

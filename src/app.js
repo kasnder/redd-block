@@ -3,8 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { ask, message, open as openDialog } from '@tauri-apps/plugin-dialog';
-import { readTextFile } from '@tauri-apps/plugin-fs';
+import { ask, message, open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
+import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import logoReddFocusUrl from './images/logo-reddfocus.svg';
 import logoReddShieldUrl from './images/logo-redd-shield.svg';
 import appleLogoUrl from './images/apple-logo.svg';
@@ -1099,6 +1099,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupHelperSettings();
     setupDiagnosticsButton();
     setupOnboardingReplayButton();
+    setupBlocklistsImportExportButtons();
     setupAppForegroundRefresh();
     setupOverrideAll();
     setupInAppUninstall();
@@ -11790,6 +11791,70 @@ function clearPendingScheduleDraft(blocklistId) {
     }
 }
 
+function cloneScheduleSegment(seg) {
+    return {
+        startHour: seg.startHour,
+        startMinute: seg.startMinute,
+        endHour: seg.endHour,
+        endMinute: seg.endMinute,
+        days: [...(seg.days || [])]
+    };
+}
+
+function normalizeScheduleRepeatFromSchedule(schedule) {
+    const repeatType = schedule?.repeatType || 'no';
+    let repeatDate = null;
+    if (repeatType === 'date' && schedule?.repeatDate) {
+        const rd = schedule.repeatDate;
+        repeatDate = typeof rd === 'number' ? rd : new Date(rd.getTime ? rd.getTime() : rd).getTime();
+    }
+    return { repeatType, repeatDate };
+}
+
+/** Committed or draft schedule config for a blocklist (segments + repeat, no active state). */
+function getBlocklistScheduleDraft(blocklistId) {
+    const existingSchedule = appData.schedules?.find((s) => s.blocklistId === blocklistId);
+    const pendingSegs = appData.settings?.pendingScheduleSegments?.[blocklistId];
+    const pendingRepeat = appData.settings?.pendingScheduleRepeatOptions?.[blocklistId];
+
+    if (existingSchedule?.segments?.length) {
+        return {
+            segments: existingSchedule.segments.map(cloneScheduleSegment),
+            repeat: normalizeScheduleRepeatFromSchedule(existingSchedule)
+        };
+    }
+
+    if (pendingSegs?.length) {
+        return {
+            segments: pendingSegs.map((seg) => ({ ...seg })),
+            repeat:
+                pendingRepeat && typeof pendingRepeat.repeatType === 'string'
+                    ? {
+                          repeatType: pendingRepeat.repeatType,
+                          repeatDate:
+                              pendingRepeat.repeatType === 'date' && pendingRepeat.repeatDate != null
+                                  ? pendingRepeat.repeatDate
+                                  : null
+                      }
+                    : { repeatType: 'forever', repeatDate: null }
+        };
+    }
+
+    return null;
+}
+
+function saveBlocklistScheduleDraft(blocklistId, draft) {
+    if (!blocklistId || !draft?.segments?.length) return;
+    if (!appData.settings) appData.settings = {};
+    if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
+    if (!appData.settings.pendingScheduleRepeatOptions) appData.settings.pendingScheduleRepeatOptions = {};
+    appData.settings.pendingScheduleSegments[blocklistId] = draft.segments.map(cloneScheduleSegment);
+    appData.settings.pendingScheduleRepeatOptions[blocklistId] = draft.repeat || {
+        repeatType: 'forever',
+        repeatDate: null
+    };
+}
+
 function duplicateBlocklist(id) {
     const blocklist = appData.blocklists.find(bl => bl.id === id);
     if (!blocklist) return;
@@ -11813,57 +11878,9 @@ function duplicateBlocklist(id) {
 
     appData.blocklists.push(duplicate);
 
-    // Always copy schedule configuration as a draft on the new blocklist so duplicates never
-    // enforce until the user runs Start schedule (committed schedules sync to the helper and
-    // can activate immediately; pause/live-session state must not carry over).
-    const existingSchedule = appData.schedules?.find(s => s.blocklistId === id);
-    const pendingSegs = appData.settings?.pendingScheduleSegments?.[id];
-    const pendingRepeat = appData.settings?.pendingScheduleRepeatOptions?.[id];
-
-    let draftSegments = null;
-    let draftRepeat = null;
-
-    if (existingSchedule?.segments?.length) {
-        draftSegments = existingSchedule.segments.map(seg => ({
-            startHour: seg.startHour,
-            startMinute: seg.startMinute,
-            endHour: seg.endHour,
-            endMinute: seg.endMinute,
-            days: [...(seg.days || [])]
-        }));
-        const repeatType = existingSchedule.repeatType || 'no';
-        let repeatDate = null;
-        if (repeatType === 'date' && existingSchedule.repeatDate) {
-            const rd = existingSchedule.repeatDate;
-            repeatDate =
-                typeof rd === 'number'
-                    ? rd
-                    : new Date(rd.getTime ? rd.getTime() : rd).getTime();
-        }
-        draftRepeat = { repeatType, repeatDate };
-    } else if (pendingSegs && pendingSegs.length > 0) {
-        draftSegments = pendingSegs.map(seg => ({ ...seg }));
-        draftRepeat =
-            pendingRepeat && typeof pendingRepeat.repeatType === 'string'
-                ? {
-                      repeatType: pendingRepeat.repeatType,
-                      repeatDate:
-                          pendingRepeat.repeatType === 'date' && pendingRepeat.repeatDate != null
-                              ? pendingRepeat.repeatDate
-                              : null
-                  }
-                : { repeatType: 'forever', repeatDate: null };
-    }
-
-    if (draftSegments && draftSegments.length > 0) {
-        if (!appData.settings) appData.settings = {};
-        if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
-        if (!appData.settings.pendingScheduleRepeatOptions) appData.settings.pendingScheduleRepeatOptions = {};
-        appData.settings.pendingScheduleSegments[newId] = draftSegments;
-        appData.settings.pendingScheduleRepeatOptions[newId] = draftRepeat || {
-            repeatType: 'forever',
-            repeatDate: null
-        };
+    const scheduleDraft = getBlocklistScheduleDraft(id);
+    if (scheduleDraft) {
+        saveBlocklistScheduleDraft(newId, scheduleDraft);
     }
 
     saveData();
@@ -11877,6 +11894,267 @@ function duplicateBlocklist(id) {
             dropdown.value = id;
             handleBlocklistSelect({ target: dropdown });
         }
+    }
+}
+
+const BLOCKLIST_EXPORT_FORMAT = 'redd-block-rules';
+const BLOCKLIST_EXPORT_FORMAT_VERSION = 2;
+
+function serializeBlocklistForExport(blocklist) {
+    const payload = {
+        name: blocklist.name,
+        mode: blocklist.mode || 'blocklist',
+        color: blocklist.color ?? null,
+        emoji: blocklist.emoji ?? '🚫',
+        websites: [...(blocklist.websites || [])],
+        apps: [...getBlocklistRegularApps(blocklist)],
+        iosScreenTimeSelection: cloneIOSScreenTimeSelection(getBlocklistIOSScreenTimeSelection(blocklist)),
+        showItemDetails: blocklist.showItemDetails !== false,
+        alwaysShowInSchedule: blocklist.alwaysShowInSchedule !== false,
+        overrideDifficulty: cloneOverrideDifficulty(blocklist.overrideDifficulty)
+    };
+
+    const scheduleDraft = getBlocklistScheduleDraft(blocklist.id);
+    if (scheduleDraft) {
+        payload.schedule = {
+            segments: scheduleDraft.segments.map(cloneScheduleSegment),
+            repeatType: scheduleDraft.repeat.repeatType,
+            repeatDate: scheduleDraft.repeat.repeatDate
+        };
+    }
+
+    return payload;
+}
+
+function buildBlocklistsExportPayload() {
+    return {
+        format: BLOCKLIST_EXPORT_FORMAT,
+        formatVersion: BLOCKLIST_EXPORT_FORMAT_VERSION,
+        exportedAt: new Date().toISOString(),
+        blocklists: (appData.blocklists || []).map(serializeBlocklistForExport)
+    };
+}
+
+function normalizeImportedScheduleSegment(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const startHour = Number(raw.startHour);
+    const startMinute = Number(raw.startMinute);
+    const endHour = Number(raw.endHour);
+    const endMinute = Number(raw.endMinute);
+    const days = Array.isArray(raw.days)
+        ? raw.days.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+        : [];
+    if (
+        !Number.isFinite(startHour)
+        || !Number.isFinite(startMinute)
+        || !Number.isFinite(endHour)
+        || !Number.isFinite(endMinute)
+        || days.length === 0
+    ) {
+        return null;
+    }
+    return { startHour, startMinute, endHour, endMinute, days: [...days] };
+}
+
+function normalizeImportedSchedule(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const segments = (Array.isArray(raw.segments) ? raw.segments : [])
+        .map(normalizeImportedScheduleSegment)
+        .filter(Boolean);
+    if (segments.length === 0) return null;
+
+    const repeatType = typeof raw.repeatType === 'string' ? raw.repeatType : 'forever';
+    let repeatDate = null;
+    if (repeatType === 'date' && raw.repeatDate != null) {
+        repeatDate = typeof raw.repeatDate === 'number'
+            ? raw.repeatDate
+            : new Date(raw.repeatDate).getTime();
+        if (!Number.isFinite(repeatDate)) repeatDate = null;
+    }
+
+    return {
+        segments,
+        repeat: { repeatType, repeatDate }
+    };
+}
+
+function normalizeImportedBlocklist(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+
+    const websites = Array.isArray(raw.websites)
+        ? raw.websites.filter((entry) => typeof entry === 'string' && entry.trim())
+        : [];
+    const apps = Array.isArray(raw.apps)
+        ? raw.apps.filter((entry) => typeof entry === 'string' && entry.trim() && !isScreenTimeSummaryEntry(entry))
+        : [];
+    const schedule = normalizeImportedSchedule(raw.schedule);
+
+    if (
+        typeof raw.name !== 'string'
+        && websites.length === 0
+        && apps.length === 0
+        && !raw.iosScreenTimeSelection
+        && !schedule
+    ) {
+        return null;
+    }
+
+    const imported = {
+        name: typeof raw.name === 'string' ? raw.name : tSettings('importBlocklistDefaultName'),
+        mode: typeof raw.mode === 'string' && raw.mode.trim() ? raw.mode : 'blocklist',
+        color: typeof raw.color === 'string' && raw.color.trim() ? raw.color : null,
+        emoji: typeof raw.emoji === 'string' && raw.emoji.trim() ? raw.emoji : '🚫',
+        websites,
+        apps,
+        iosScreenTimeSelection: cloneIOSScreenTimeSelection(
+            getBlocklistIOSScreenTimeSelection({
+                apps: raw.apps,
+                iosScreenTimeSelection: raw.iosScreenTimeSelection
+            })
+        ),
+        showItemDetails: raw.showItemDetails !== false,
+        alwaysShowInSchedule: raw.alwaysShowInSchedule !== false,
+        overrideDifficulty: cloneOverrideDifficulty(raw.overrideDifficulty),
+        schedule
+    };
+
+    return normalizeBlocklist(imported);
+}
+
+function parseBlocklistsImportPayload(text) {
+    const parsed = JSON.parse(text);
+    const rawList = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed?.blocklists)
+            ? parsed.blocklists
+            : null;
+    if (!rawList) {
+        throw new Error('missing blocklists array');
+    }
+    return rawList.map(normalizeImportedBlocklist).filter(Boolean);
+}
+
+function uniqueImportedBlocklistName(desiredName) {
+    let name = truncateBlocklistName(String(desiredName || '').trim() || tSettings('importBlocklistDefaultName'));
+    if (!appData.blocklists.some((bl) => bl.name === name)) return name;
+    return getNextCopyName({
+        id: generateId(),
+        name,
+        websites: [],
+        apps: []
+    });
+}
+
+function blocklistFromImportedEntry(entry) {
+    return {
+        id: generateId(),
+        name: uniqueImportedBlocklistName(entry.name),
+        mode: entry.mode || 'blocklist',
+        color: entry.color ?? null,
+        emoji: entry.emoji ?? '🚫',
+        websites: [...(entry.websites || [])],
+        apps: [...getBlocklistRegularApps(entry)],
+        iosScreenTimeSelection: cloneIOSScreenTimeSelection(getBlocklistIOSScreenTimeSelection(entry)),
+        showItemDetails: entry.showItemDetails !== false,
+        alwaysShowInSchedule: entry.alwaysShowInSchedule !== false,
+        overrideDifficulty: cloneOverrideDifficulty(entry.overrideDifficulty)
+    };
+}
+
+async function exportBlocklistsToFile() {
+    const blocklists = appData.blocklists || [];
+    if (blocklists.length === 0) {
+        await message(tSettings('exportBlocklistsEmpty'), { title: tSettings('settingsExportBlocklistsBtn'), kind: 'info' });
+        return;
+    }
+
+    try {
+        const selectedPath = await saveDialog({
+            title: tSettings('exportBlocklistsSaveTitle'),
+            defaultPath: 'redd-block-rules.json',
+            filters: [{ name: 'JSON', extensions: ['json'] }]
+        });
+        if (!selectedPath || typeof selectedPath !== 'string') return;
+
+        const payload = buildBlocklistsExportPayload();
+        await writeTextFile(selectedPath, `${JSON.stringify(payload, null, 2)}\n`);
+        await message(
+            tSettingsFmt('exportBlocklistsSuccessFmt', { n: blocklists.length, path: selectedPath }),
+            { title: tSettings('settingsExportBlocklistsBtn'), kind: 'info' }
+        );
+    } catch (err) {
+        console.warn('[export] blocklists:', err);
+        await message(tSettings('exportBlocklistsFailed'), { title: tSettings('settingsExportBlocklistsBtn'), kind: 'error' });
+    }
+}
+
+async function importBlocklistsFromFile() {
+    try {
+        const selectedPath = await openDialog({
+            multiple: false,
+            title: tSettings('importBlocklistsOpenTitle'),
+            filters: [
+                { name: 'JSON', extensions: ['json'] },
+                { name: 'All files', extensions: ['*'] }
+            ]
+        });
+        if (!selectedPath || typeof selectedPath !== 'string') return;
+
+        let importedEntries;
+        try {
+            importedEntries = parseBlocklistsImportPayload(await readTextFile(selectedPath));
+        } catch (err) {
+            console.warn('[import] parse blocklists:', err);
+            await message(tSettings('importBlocklistsParseFailed'), { title: tSettings('settingsImportBlocklistsBtn'), kind: 'error' });
+            return;
+        }
+
+        if (importedEntries.length === 0) {
+            await message(tSettings('importBlocklistsInvalidFile'), { title: tSettings('settingsImportBlocklistsBtn'), kind: 'warning' });
+            return;
+        }
+
+        const confirmed = await ask(
+            tSettingsFmt('importBlocklistsConfirmFmt', { n: importedEntries.length }),
+            { title: tSettings('settingsImportBlocklistsBtn'), kind: 'warning' }
+        );
+        if (!confirmed) return;
+
+        for (const entry of importedEntries) {
+            const blocklist = blocklistFromImportedEntry(entry);
+            appData.blocklists.push(blocklist);
+            if (entry.schedule) {
+                saveBlocklistScheduleDraft(blocklist.id, entry.schedule);
+            }
+        }
+
+        await saveData();
+        render();
+
+        await message(
+            tSettingsFmt('importBlocklistsSuccessFmt', { n: importedEntries.length }),
+            { title: tSettings('settingsImportBlocklistsBtn'), kind: 'info' }
+        );
+    } catch (err) {
+        console.warn('[import] blocklists:', err);
+        await message(tSettings('importBlocklistsFailed'), { title: tSettings('settingsImportBlocklistsBtn'), kind: 'error' });
+    }
+}
+
+function setupBlocklistsImportExportButtons() {
+    const exportBtn = document.getElementById('settings-export-blocklists-btn');
+    const importBtn = document.getElementById('settings-import-blocklists-btn');
+    if (exportBtn && !exportBtn._listenerAdded) {
+        exportBtn._listenerAdded = true;
+        exportBtn.addEventListener('click', () => {
+            void exportBlocklistsToFile();
+        });
+    }
+    if (importBtn && !importBtn._listenerAdded) {
+        importBtn._listenerAdded = true;
+        importBtn.addEventListener('click', () => {
+            void importBlocklistsFromFile();
+        });
     }
 }
 
@@ -14114,6 +14392,21 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsNo: 'No',
         settingsOnboardingLabel: 'Revisit onboarding steps',
         settingsOnboardingBtn: 'Onboarding',
+        settingsBlocklistsIoLabel: 'Export / import blocklists & schedules',
+        settingsExportBlocklistsBtn: 'Export…',
+        settingsImportBlocklistsBtn: 'Import…',
+        exportBlocklistsSaveTitle: 'Export blocklists & schedules',
+        exportBlocklistsEmpty: 'You have no blocklists to export.',
+        exportBlocklistsSuccessFmt: 'Exported {n} blocklist(s) and their schedules to:\n{path}',
+        exportBlocklistsFailed: 'Could not export blocklists.',
+        importBlocklistsOpenTitle: 'Import blocklists & schedules',
+        importBlocklistsInvalidFile: 'That file does not contain any valid blocklists.',
+        importBlocklistsParseFailed: 'Could not read that file. Make sure it is valid JSON.',
+        importBlocklistsConfirmFmt:
+            'Import {n} blocklist(s) from this file?\n\nThey will be added to your existing blocklists. Any schedules will be restored as drafts — start them manually when you are ready.',
+        importBlocklistsSuccessFmt: 'Imported {n} blocklist(s). Schedules were saved as drafts and are not running yet.',
+        importBlocklistsFailed: 'Could not import blocklists.',
+        importBlocklistDefaultName: 'Imported blocklist',
         gracePeriodLockedHint: 'Locked while a block is active—only shorter times allowed.',
         appBlockingLetsGo: 'Let’s go!',
         appBlockingFallbackBlocklistName: 'this block',
@@ -14644,6 +14937,21 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsNo: 'Nej',
         settingsOnboardingLabel: 'Gennemgå onboarding-trin igen',
         settingsOnboardingBtn: 'Onboarding',
+        settingsBlocklistsIoLabel: 'Eksportér / importér bloklister og tidsplaner',
+        settingsExportBlocklistsBtn: 'Eksportér…',
+        settingsImportBlocklistsBtn: 'Importér…',
+        exportBlocklistsSaveTitle: 'Eksportér bloklister og tidsplaner',
+        exportBlocklistsEmpty: 'Du har ingen bloklister at eksportere.',
+        exportBlocklistsSuccessFmt: 'Eksporterede {n} blokliste(r) og deres tidsplaner til:\n{path}',
+        exportBlocklistsFailed: 'Kunne ikke eksportere bloklister.',
+        importBlocklistsOpenTitle: 'Importér bloklister og tidsplaner',
+        importBlocklistsInvalidFile: 'Filen indeholder ingen gyldige bloklister.',
+        importBlocklistsParseFailed: 'Kunne ikke læse filen. Tjek at den er gyldig JSON.',
+        importBlocklistsConfirmFmt:
+            'Importér {n} blokliste(r) fra denne fil?\n\nDe tilføjes til dine eksisterende bloklister. Eventuelle tidsplaner gendannes som kladder — start dem manuelt, når du er klar.',
+        importBlocklistsSuccessFmt: 'Importerede {n} blokliste(r). Tidsplaner er gemt som kladder og kører ikke endnu.',
+        importBlocklistsFailed: 'Kunne ikke importere bloklister.',
+        importBlocklistDefaultName: 'Importeret blokliste',
         gracePeriodLockedHint: 'Låst mens en blokering er aktiv—kun kortere tider tilladt.',
         appBlockingLetsGo: 'Fortsæt',
         appBlockingFallbackBlocklistName: 'denne blokering',
@@ -15568,6 +15876,9 @@ function applySettingsLanguage() {
     setText('close-diagnostics-btn', tSettings('close'));
     setText('settings-onboarding-label', tSettings('settingsOnboardingLabel'));
     setText('settings-onboarding-btn-label', tSettings('settingsOnboardingBtn'));
+    setText('settings-blocklists-io-label', tSettings('settingsBlocklistsIoLabel'));
+    setText('settings-export-blocklists-btn-label', tSettings('settingsExportBlocklistsBtn'));
+    setText('settings-import-blocklists-btn-label', tSettings('settingsImportBlocklistsBtn'));
     setText('uninstall-confirm-title', tSettings('uninstallConfirmTitle'));
     setHtml('uninstall-confirm-intro', tSettings('uninstallConfirmIntroHtml').replace(
         '{LOGO}',
