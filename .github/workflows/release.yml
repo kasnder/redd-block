@@ -101,7 +101,14 @@ jobs:
           APPLE_NOTARIZE_USER: ${{ secrets.APPLE_ID }}
           APPLE_NOTARIZE_PASS: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npm run build:mac-all
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security default-keychain -s "$KEYCHAIN_PATH"
+          echo "Installer identities before build:"
+          security find-identity -v "$KEYCHAIN_PATH" | grep "Developer ID Installer" || true
+          npm run build:mac-all
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v4

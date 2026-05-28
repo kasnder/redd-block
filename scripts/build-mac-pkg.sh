@@ -175,6 +175,8 @@ EOF
 # 3. productbuild combines it into the user-facing .pkg.
 SIGN_ARGS=()
 if [[ -n "${APPLE_DEVELOPER_INSTALLER_IDENTITY:-}" ]]; then
+    # Trim accidental whitespace/newlines from CI secrets.
+    APPLE_DEVELOPER_INSTALLER_IDENTITY="$(printf '%s' "$APPLE_DEVELOPER_INSTALLER_IDENTITY" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     SIGN_ARGS=(--sign "$APPLE_DEVELOPER_INSTALLER_IDENTITY")
     echo "Signing with: $APPLE_DEVELOPER_INSTALLER_IDENTITY"
 else

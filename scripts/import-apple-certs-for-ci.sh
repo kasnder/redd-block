@@ -32,6 +32,8 @@ import_p12() {
   security import "$path" \
     -P "$password" \
     -A -t cert -f pkcs12 \
+    -T /usr/bin/codesign \
+    -T /usr/bin/productbuild \
     -k "$KEYCHAIN_PATH"
 }
 
@@ -48,6 +50,14 @@ fi
 
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 security list-keychains -d user -s "$KEYCHAIN_PATH"
+security default-keychain -s "$KEYCHAIN_PATH"
+
+if [ -n "${GITHUB_ENV:-}" ]; then
+  {
+    echo "KEYCHAIN_PATH=$KEYCHAIN_PATH"
+    echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD"
+  } >> "$GITHUB_ENV"
+fi
 
 echo ""
 echo "Code signing identities available in CI keychain:"
