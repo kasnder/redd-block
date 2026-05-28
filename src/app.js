@@ -6150,17 +6150,52 @@ function setupModalListeners() {
     const emojiPicker = emojiPickerPopover?.querySelector('emoji-picker');
 
     if (customEmojiSwatch && emojiPickerPopover && emojiPicker) {
+        function positionEmojiPickerPopover() {
+            const gap = 8;
+            const padding = 8;
+            const titleBarHeight = parseFloat(
+                getComputedStyle(document.documentElement).getPropertyValue('--title-bar-height')
+            ) || 44;
+            const titleBarHidden = document.querySelector('.title-bar')?.classList.contains('hidden');
+            const minTop = titleBarHidden ? padding : titleBarHeight + padding;
+
+            emojiPickerPopover.style.top = '';
+            emojiPickerPopover.style.bottom = '';
+            emojiPickerPopover.style.left = '';
+            emojiPickerPopover.style.right = '';
+
+            // Escape modal overflow clipping while open
+            if (emojiPickerPopover.parentElement !== document.body) {
+                document.body.appendChild(emojiPickerPopover);
+            }
+
+            emojiPickerPopover.classList.remove('hidden');
+
+            const rect = customEmojiSwatch.getBoundingClientRect();
+            const popoverRect = emojiPickerPopover.getBoundingClientRect();
+            const popoverHeight = popoverRect.height;
+            const popoverWidth = popoverRect.width;
+
+            const spaceAbove = rect.top - minTop;
+            let top = spaceAbove >= popoverHeight + gap
+                ? rect.top - popoverHeight - gap
+                : rect.bottom + gap;
+            top = Math.max(minTop, Math.min(top, window.innerHeight - popoverHeight - padding));
+
+            let left = rect.right - popoverWidth;
+            left = Math.max(padding, Math.min(left, window.innerWidth - popoverWidth - padding));
+
+            emojiPickerPopover.style.top = `${top}px`;
+            emojiPickerPopover.style.left = `${left}px`;
+        }
+
         // Toggle popover on swatch click
         customEmojiSwatch.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
 
             if (emojiPickerPopover.classList.contains('hidden')) {
-                // Position the popover above the button using fixed positioning
-                const rect = customEmojiSwatch.getBoundingClientRect();
-                emojiPickerPopover.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
-                emojiPickerPopover.style.right = (window.innerWidth - rect.right) + 'px';
-                emojiPickerPopover.classList.remove('hidden');
+                positionEmojiPickerPopover();
             } else {
                 emojiPickerPopover.classList.add('hidden');
             }

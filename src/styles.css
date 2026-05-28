@@ -8855,7 +8855,7 @@ body:not(.ios) .settings-diagnostics-contents.desktop-only,
 
 .emoji-picker-popover {
     position: fixed;
-    z-index: 1000;
+    z-index: 250;
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
     border-radius: 12px;
     overflow: hidden;
