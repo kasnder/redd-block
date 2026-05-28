@@ -1,49 +1,30 @@
 fn main() {
-    tauri_build::build();
-
-    // ---- macOS: compile + link the SafariServices Swift bridge ----
-    //
-    // We need to call SFSafariExtensionManager and SFSafariApplication
-    // from the main `redd-block` process (a sidecar binary fails — see
-    // the doc-comment in src-tauri/safari-bridge/safari-bridge.swift
-    // for why). The bridge is a tiny dylib with two @_cdecl functions
-    // that the Rust side calls via `extern "C"`. build.rs invokes the
-    // shell script that does the swiftc + lipo dance, then emits the
-    // necessary cargo directives so the Rust linker pulls in the
-    // resulting `libsafari_bridge.dylib` (plus SafariServices.framework
-    // that the dylib transitively needs).
-    //
-    // Runtime resolution: the dylib's install_name is
-    // `@rpath/libsafari_bridge.dylib`. We add two rpaths:
-    //
-    //   @executable_path/../Frameworks/
-    //     The location Tauri puts the dylib in the bundled .app
-    //     (via bundle.macOS.frameworks in tauri.conf.json). This is
-    //     the path users actually run from.
-    //
-    //   <absolute path to target/safari-bridge/>
-    //     Where the build script just put the dylib. Lets `cargo run`
-    //     and `cargo test` resolve the dylib at dev time without us
-    //     having to copy it next to the binary. The absolute path
-    //     gets baked into the production binary's Mach-O load
-    //     commands too, but since it doesn't exist on the user's
-    //     machine dyld silently skips it and falls through to the
-    //     Frameworks/ rpath. Harmless, just a small path-leak in the
-    //     binary metadata.
-    //
-    // Gate on CARGO_CFG_TARGET_OS, not #[cfg(target_os = "macos")]:
-    // build.rs is compiled for the *host*, so cfg(target_os) is always
-    // macos when developing on a Mac and would wrongly run this step
-    // during iOS cross-compiles (swiftc then mixes iPhoneOS sysroot with
-    // -target arm64-apple-macos11 and fails).
+    // Build the Safari bridge dylib before tauri_build::build(). Tauri's
+    // bundle.macOS.frameworks lists target/safari-bridge/libsafari_bridge.dylib
+    // and build.rs validates it exists — on a clean CI checkout the file is
+    // missing until we compile it here first.
     if std::env::var("CARGO_CFG_TARGET_OS")
         .ok()
         .as_deref()
-        != Some("macos")
+        == Some("macos")
     {
-        return;
+        build_and_link_safari_bridge();
     }
 
+    tauri_build::build();
+}
+
+/// Compile + link the SafariServices Swift bridge on macOS desktop targets.
+///
+/// We need to call SFSafariExtensionManager and SFSafariApplication from the
+/// main `redd-block` process (a sidecar binary fails — see the doc-comment in
+/// src-tauri/safari-bridge/safari-bridge.swift for why). The bridge is a tiny
+/// dylib with two @_cdecl functions that the Rust side calls via `extern "C"`.
+///
+/// Gate on CARGO_CFG_TARGET_OS, not #[cfg(target_os = "macos")]: build.rs is
+/// compiled for the *host*, so cfg(target_os) is always macos when developing
+/// on a Mac and would wrongly run this step during iOS cross-compiles.
+fn build_and_link_safari_bridge() {
     use std::path::PathBuf;
     use std::process::Command;
 
@@ -57,8 +38,6 @@ fn main() {
     let bridge_out_dir = manifest_dir.join("target/safari-bridge");
     let dylib = bridge_out_dir.join("libsafari_bridge.dylib");
 
-    // Re-run the build script when the Swift source or the script
-    // itself changes. Cargo otherwise caches build.rs output.
     println!("cargo:rerun-if-changed={}", src.display());
     println!("cargo:rerun-if-changed={}", script.display());
 
@@ -77,6 +56,18 @@ fn main() {
         );
     }
 
+    // Runtime resolution: the dylib's install_name is
+    // `@rpath/libsafari_bridge.dylib`. We add two rpaths:
+    //
+    //   @executable_path/../Frameworks/
+    //     The location Tauri puts the dylib in the bundled .app
+    //     (via bundle.macOS.frameworks in tauri.conf.json). This is
+    //     the path users actually run from.
+    //
+    //   <absolute path to target/safari-bridge/>
+    //     Where the build script just put the dylib. Lets `cargo run`
+    //     and `cargo test` resolve the dylib at dev time without us
+    //     having to copy it next to the binary.
     println!("cargo:rustc-link-search=native={}", bridge_out_dir.display());
     println!("cargo:rustc-link-lib=dylib=safari_bridge");
     println!("cargo:rustc-link-lib=framework=SafariServices");
