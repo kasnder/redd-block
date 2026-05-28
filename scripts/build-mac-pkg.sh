@@ -177,8 +177,25 @@ SIGN_ARGS=()
 if [[ -n "${APPLE_DEVELOPER_INSTALLER_IDENTITY:-}" ]]; then
     # Trim accidental whitespace/newlines from CI secrets.
     APPLE_DEVELOPER_INSTALLER_IDENTITY="$(printf '%s' "$APPLE_DEVELOPER_INSTALLER_IDENTITY" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-    SIGN_ARGS=(--sign "$APPLE_DEVELOPER_INSTALLER_IDENTITY")
-    echo "Signing with: $APPLE_DEVELOPER_INSTALLER_IDENTITY"
+
+    # Resolve to a certificate hash when possible — productbuild in CI is more
+    # reliable with the 40-char SHA-1 than with the human-readable name.
+    RESOLVED_SIGN_IDENTITY="$APPLE_DEVELOPER_INSTALLER_IDENTITY"
+    IDENTITY_HASH="$(security find-identity -v 2>/dev/null \
+        | grep -F "$APPLE_DEVELOPER_INSTALLER_IDENTITY" \
+        | head -1 \
+        | sed -E 's/^[[:space:]]*[0-9]+\) ([0-9A-Fa-f]{40}) .*/\1/')"
+    if [[ "$IDENTITY_HASH" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+        RESOLVED_SIGN_IDENTITY="$IDENTITY_HASH"
+        echo "Signing with: $APPLE_DEVELOPER_INSTALLER_IDENTITY"
+        echo "  (resolved hash: $RESOLVED_SIGN_IDENTITY)"
+    else
+        echo "Signing with: $APPLE_DEVELOPER_INSTALLER_IDENTITY"
+        echo "  (warning: could not resolve hash from keychain; using name directly)"
+        security find-identity -v 2>/dev/null | grep "Developer ID Installer" || true
+    fi
+
+    SIGN_ARGS=(--sign "$RESOLVED_SIGN_IDENTITY")
 else
     echo "WARNING: APPLE_DEVELOPER_INSTALLER_IDENTITY unset — producing UNSIGNED .pkg (local-test-only)"
 fi

@@ -29,7 +29,7 @@ trap cleanup EXIT
 security create-keychain -p test "$KC"
 security unlock-keychain -p test "$KC"
 security set-keychain-settings -lut 21600 "$KC"
-security import "$P12" -k "$KC" -P "$PASSWORD" \
+security import "$P12" -k "$KC" -P "$PASSWORD" -quiet \
   -T /usr/bin/codesign \
   -T /usr/bin/productbuild
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k test "$KC"

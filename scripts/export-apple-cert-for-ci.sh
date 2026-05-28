@@ -18,5 +18,5 @@ if [ ! -f "$FILE" ]; then
   exit 1
 fi
 
-echo "Base64 for APPLE_CERTIFICATE_BASE64:"
-base64 -i "$FILE" | tee /dev/stderr | pbcopy 2>/dev/null && echo "(copied to clipboard)" || true
+echo "Base64 for APPLE_CERTIFICATE_BASE64 (single line, copied to clipboard if pbcopy exists):"
+base64 -i "$FILE" | tr -d '\n' | tee /dev/stderr | pbcopy 2>/dev/null && echo "(copied to clipboard)" || true
