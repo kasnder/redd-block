@@ -14,8 +14,13 @@
 #   S3_ASSETS_BUCKET            redd-website-assets
 #
 # ── macOS signing ──
-#   APPLE_CERTIFICATE_BASE64, APPLE_CERTIFICATE_PASSWORD, KEYCHAIN_PASSWORD
+#   APPLE_CERTIFICATE_BASE64       Developer ID Application .p12 (base64)
+#   APPLE_CERTIFICATE_PASSWORD
+#   KEYCHAIN_PASSWORD
 #   APPLE_DEVELOPER_INSTALLER_IDENTITY
+#                                  "Developer ID Installer: Reduce Digital Distraction Ltd (JD647S9RT6)"
+#   APPLE_INSTALLER_CERTIFICATE_BASE64   (if Installer was exported as a separate .p12)
+#   APPLE_INSTALLER_CERTIFICATE_PASSWORD (optional; defaults to APPLE_CERTIFICATE_PASSWORD)
 #   APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD, APPLE_TEAM_ID
 #
 # ── Windows signing (same as local .env) ──
@@ -78,27 +83,15 @@ jobs:
       - name: Build Safari bridge dylib
         run: bash ./scripts/build-safari-bridge.sh
 
-      - name: Import Apple signing certificate
+      - name: Import Apple signing certificates
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_INSTALLER_CERTIFICATE_BASE64: ${{ secrets.APPLE_INSTALLER_CERTIFICATE_BASE64 }}
+          APPLE_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_INSTALLER_CERTIFICATE_PASSWORD }}
+          APPLE_DEVELOPER_INSTALLER_IDENTITY: ${{ secrets.APPLE_DEVELOPER_INSTALLER_IDENTITY }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          if [ -z "$APPLE_CERTIFICATE_BASE64" ]; then
-            echo "::error::APPLE_CERTIFICATE_BASE64 secret is not set."
-            exit 1
-          fi
-          KEYCHAIN_PATH="$RUNNER_TEMP/app-signing.keychain-db"
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
-          security import "$RUNNER_TEMP/certificate.p12" \
-            -P "$APPLE_CERTIFICATE_PASSWORD" \
-            -A -t cert -f pkcs12 \
-            -k "$KEYCHAIN_PATH"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH"
+        run: bash ./scripts/import-apple-certs-for-ci.sh
 
       - name: Build signed .app + .pkg
         env:
