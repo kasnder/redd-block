@@ -14463,9 +14463,9 @@ const SETTINGS_TRANSLATIONS = {
         appBlockingBannerAppFallback: 'an app',
         appBlockingWarningHeadingHtml: '<strong>{name}</strong> is starting',
         appBlockingWarningSummarySingleHtml:
-            '<strong>{blocklist}</strong> is starting — time to wrap up. When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close it for you.',
+            '<strong>{blocklist}</strong> is starting — time to wrap up.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close it for you.',
         appBlockingWarningSummaryMultiHtml:
-            '<strong>{blocklist}</strong> is starting — time to wrap up. When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close them for you.',
+            '<strong>{blocklist}</strong> is starting — time to wrap up.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close them for you.',
         appBlockingClosedownCountdownHtml:
             'Closing {apps} in <strong>{seconds}s</strong> — save your work now.',
         appBlockingClosedownFinalSingleHtml: 'Closing {apps} now…',
@@ -15009,9 +15009,9 @@ const SETTINGS_TRANSLATIONS = {
         appBlockingBannerAppFallback: 'en app',
         appBlockingWarningHeadingHtml: '<strong>{name}</strong> starter',
         appBlockingWarningSummarySingleHtml:
-            '<strong>{blocklist}</strong> starter — tid til at runde af. Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes den ned.',
+            '<strong>{blocklist}</strong> starter — tid til at runde af.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes den ned.',
         appBlockingWarningSummaryMultiHtml:
-            '<strong>{blocklist}</strong> starter — tid til at runde af. Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes de ned.',
+            '<strong>{blocklist}</strong> starter — tid til at runde af.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes de ned.',
         appBlockingClosedownCountdownHtml:
             'Lukker {apps} om <strong>{seconds} sek.</strong> — gem dit arbejde nu.',
         appBlockingClosedownFinalSingleHtml: 'Lukker {apps} nu…',
