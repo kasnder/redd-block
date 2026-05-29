@@ -2698,7 +2698,7 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
             if (isSafari || status !== 'needs-enable') {
                 const extInstalledLine = document.createElement('div');
                 extInstalledLine.className = 'migration-checklist-line migration-checklist-done';
-                extInstalledLine.innerHTML = `<span class="migration-check-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#047857" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span> ${tSettings('migrationExtensionInstalledMark')}`;
+                extInstalledLine.textContent = `✓ ${tSettings('migrationExtensionInstalledMark')}`;
                 row.appendChild(extInstalledLine);
             }
 
@@ -2726,20 +2726,23 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
                 stepDefs.forEach((step, i) => {
                     const line = document.createElement('div');
                     let klass = 'migration-checklist-line';
-                    let iconHtml;
+                    const lineLabel = tSettingsFmt('migrationSafariChecklistLine', { n: String(i + 1), label: step.label });
                     if (step.done) {
                         klass += ' migration-checklist-done';
-                        iconHtml = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#047857" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>`;
-                    } else if (i === activeIdx) {
-                        klass += ' migration-checklist-active';
-                        iconHtml = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>`;
+                        line.className = klass;
+                        line.textContent = `✓ ${lineLabel}`;
                     } else {
-                        klass += ' migration-checklist-pending';
-                        iconHtml = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8" opacity="0.4"/></svg>`;
+                        let iconHtml;
+                        if (i === activeIdx) {
+                            klass += ' migration-checklist-active';
+                            iconHtml = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 6 15 12 9 18"/></svg>`;
+                        } else {
+                            klass += ' migration-checklist-pending';
+                            iconHtml = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8" opacity="0.4"/></svg>`;
+                        }
+                        line.className = klass;
+                        line.innerHTML = `<span class="migration-check-icon">${iconHtml}</span> ${lineLabel}`;
                     }
-                    line.className = klass;
-                    const lineLabel = tSettingsFmt('migrationSafariChecklistLine', { n: String(i + 1), label: step.label });
-                    line.innerHTML = `<span class="migration-check-icon">${iconHtml}</span> ${lineLabel}`;
                     checklist.appendChild(line);
                 });
 
