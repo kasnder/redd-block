@@ -14618,7 +14618,7 @@ const SETTINGS_TRANSLATIONS = {
         settingsOverrideAllBtn: 'Stop all blocks',
         // In-app uninstall (macOS only)
         uninstallApp: 'Uninstall ReDD Block',
-        uninstallAppBtn: 'Uninstall\u2026',
+        uninstallAppBtn: 'Uninstall',
         uninstallDisabledHint: 'Stop running blocks first before you can uninstall.',
         uninstallConfirmTitle: 'Uninstall ReDD Block?',
         uninstallConfirmIntroHtml: 'ReDD Block will be moved to the Trash. Here\u2019s what happens to the {LOGO}<strong>ReDD Focus</strong> browser extensions installed on this Mac.',
@@ -15160,7 +15160,7 @@ const SETTINGS_TRANSLATIONS = {
         settingsOverrideAllBtn: 'Stop alle blokeringer',
         // In-app uninstall (macOS only)
         uninstallApp: 'Afinstaller ReDD Block',
-        uninstallAppBtn: 'Afinstaller\u2026',
+        uninstallAppBtn: 'Afinstaller',
         uninstallDisabledHint: 'Stop kørende blokeringer først, før du kan afinstallere.',
         uninstallConfirmTitle: 'Afinstaller ReDD Block?',
         uninstallConfirmIntroHtml: 'ReDD Block flyttes til papirkurven. Sådan påvirkes {LOGO}<strong>ReDD Focus</strong>-browserudvidelserne på denne Mac.',
