@@ -10849,30 +10849,13 @@ function closeBlocklistModal() {
     window.setModalData([], [], null);
 }
 
-// Open override modal
-function openOverrideModal(blockId) {
-    delete window.overrideScheduleId;
-    overrideBlockId = blockId;
-    const block = appData.activeBlocks.find(b => b.id === blockId);
-    overrideBlocklistIdForHelper = block ? block.blocklistId : null;
-
-    const blocklist = appData.blocklists.find(bl => bl.id === block?.blocklistId);
-
-    if (!blocklist) return;
-
-    const confirmBtn = document.getElementById('confirm-override-btn');
-    if (confirmBtn) confirmBtn.textContent = tSettings('stopBlock');
-
-    // Set modal title with blocklist name
-    document.getElementById('override-modal-title').textContent = `Override ${blocklist.name}?`;
-
-    // Set summary text
+/** Override / pause modal summary, e.g. "Blocks 3 websites (a.com, b.com, c.com)". */
+function formatBlocklistModalSummary(blocklist) {
     const websiteCount = blocklist.websites?.length || 0;
     const displayApps = getBlocklistDisplayApps(blocklist);
     const appCount = displayApps.length;
     const mode = blocklist.mode === 'allowlist' ? 'Allows' : 'Blocks';
-
-    let metaParts = [];
+    const metaParts = [];
 
     if (websiteCount > 0) {
         const displaySites = blocklist.websites.map(cleanUrlForDisplay);
@@ -10892,7 +10875,27 @@ function openOverrideModal(blockId) {
     }
 
     const itemsText = metaParts.length > 0 ? metaParts.join(` ${tSettings('andWord')} `) : tSettings('nothingWord');
-    document.getElementById('override-summary').textContent = `${mode} ${itemsText}`;
+    return `${mode} ${itemsText}`;
+}
+
+// Open override modal
+function openOverrideModal(blockId) {
+    delete window.overrideScheduleId;
+    overrideBlockId = blockId;
+    const block = appData.activeBlocks.find(b => b.id === blockId);
+    overrideBlocklistIdForHelper = block ? block.blocklistId : null;
+
+    const blocklist = appData.blocklists.find(bl => bl.id === block?.blocklistId);
+
+    if (!blocklist) return;
+
+    const confirmBtn = document.getElementById('confirm-override-btn');
+    if (confirmBtn) confirmBtn.textContent = tSettings('stopBlock');
+
+    // Set modal title with blocklist name
+    document.getElementById('override-modal-title').textContent = `Override ${blocklist.name}?`;
+
+    document.getElementById('override-summary').textContent = formatBlocklistModalSummary(blocklist);
 
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
 
@@ -11142,31 +11145,7 @@ function openPauseModal(blockId) {
     // Set modal title
     document.getElementById('pause-modal-title').textContent = `Pause ${blocklist.name}`;
 
-    // Set summary (same format as override modal)
-    const websiteCount = blocklist.websites?.length || 0;
-    const displayApps = getBlocklistDisplayApps(blocklist);
-    const appCount = displayApps.length;
-    const mode = blocklist.mode === 'allowlist' ? 'Allows' : 'Blocks';
-
-    let metaParts = [];
-    if (websiteCount > 0) {
-        const displaySites = blocklist.websites.map(cleanUrlForDisplay);
-        if (websiteCount <= 2) {
-            metaParts.push(`${websiteCount} ${websiteWord(websiteCount)} (${displaySites.join(', ')})`);
-        } else {
-            metaParts.push(`${websiteCount} ${websiteWord(websiteCount)} (${displaySites.slice(0, 2).join(', ')}, ...)`);
-        }
-    }
-    if (appCount > 0) {
-        if (appCount <= 2) {
-            metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'} (${displayApps.join(', ')})`);
-        } else {
-            metaParts.push(`${appCount} apps (${displayApps.slice(0, 2).join(', ')}, ...)`);
-        }
-    }
-
-    const itemsText = metaParts.length > 0 ? metaParts.join(` ${tSettings('andWord')} `) : tSettings('nothingWord');
-    document.getElementById('pause-summary').textContent = `${mode} ${itemsText}`;
+    document.getElementById('pause-summary').textContent = formatBlocklistModalSummary(blocklist);
 
     // Calculate remaining time and max pause duration
     const remainingInfo = document.getElementById('pause-remaining-info');
