@@ -14555,7 +14555,7 @@ const SETTINGS_TRANSLATIONS = {
         save: 'Save',
         // Override / pause / confirmation modals
         overrideBlockTitle: 'Override Block?',
-        overrideInstruction: 'To cancel this block early, type the following:',
+        overrideInstruction: 'To stop this block early, type the following:',
         stopBlock: 'Stop Block',
         stopSchedule: 'Stop Schedule',
         pauseBlockTitle: 'Pause Block',
@@ -14579,7 +14579,7 @@ const SETTINGS_TRANSLATIONS = {
         blockedApps: 'Blocked apps:',
         showAll: 'show all',
         confirmDuration: 'Duration:',
-        confirmOverrideNeed: 'To cancel this block early, you\'ll need to:',
+        confirmOverrideNeed: 'To stop this block early, you\'ll need to:',
         startBlock: 'Start Block',
         resumeBlock: 'Resume Block',
         resumeThisBlock: 'Resume this block?',
@@ -15100,7 +15100,7 @@ const SETTINGS_TRANSLATIONS = {
         save: 'Gem',
         // Override / pause / confirmation modals
         overrideBlockTitle: 'Overstyr blokering?',
-        overrideInstruction: 'For at annullere denne blokering tidligt, skriv følgende:',
+        overrideInstruction: 'For at stoppe denne blokering tidligt, skriv følgende:',
         stopBlock: 'Stop blokering',
         stopSchedule: 'Stop skema',
         pauseBlockTitle: 'Sæt blokering på pause',
