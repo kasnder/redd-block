@@ -1511,7 +1511,7 @@ function resetFdaOnboardingGrantButtonUi() {
     }
 }
 
-function presentFdaOnboardingUi() {
+async function presentFdaOnboardingUi() {
     const session = activeFdaOnboardingSession;
     if (!session) return;
     document.getElementById('eula-onboarding')?.classList.add('hidden');
@@ -1521,7 +1521,7 @@ function presentFdaOnboardingUi() {
     document.getElementById('now-blocking-row')?.classList.add('hidden');
     session.overlay.classList.remove('hidden');
     resetFdaOnboardingGrantButtonUi();
-    void syncFdaOnboardingGrantButton();
+    await syncFdaOnboardingGrantButton();
 }
 
 function wireFdaOnboardingGrantButtonOnce() {
@@ -1540,7 +1540,7 @@ async function syncFdaOnboardingGrantButton() {
 
     let granted = false;
     try {
-        granted = !!(await invoke('check_full_disk_access'));
+        granted = !!(await invoke('sync_fda_onboarding_access'));
     } catch (_) { /* treat as not granted */ }
 
     grantBtn.textContent = granted
@@ -1598,12 +1598,12 @@ function returnToEulaFromFda() {
 function resumeFdaOnboardingFromEula() {
     if (!activeFdaOnboardingSession) return;
     document.getElementById('eula-onboarding')?.classList.add('hidden');
-    presentFdaOnboardingUi();
+    void presentFdaOnboardingUi();
 }
 
 function showFdaOnboardingOverlay() {
     if (activeFdaOnboardingSession) {
-        presentFdaOnboardingUi();
+        void presentFdaOnboardingUi();
         return activeFdaOnboardingSession.promise;
     }
 
@@ -1619,12 +1619,11 @@ function showFdaOnboardingOverlay() {
         }
 
         const onGrant = async () => {
-            let alreadyGranted = session.fdaLiveGranted;
-            if (!alreadyGranted) {
-                try {
-                    alreadyGranted = !!(await invoke('check_full_disk_access'));
-                } catch (_) { /* fall through to settings */ }
-            }
+            let alreadyGranted = false;
+            try {
+                alreadyGranted = !!(await invoke('sync_fda_onboarding_access'));
+            } catch (_) { /* fall through to settings */ }
+            session.fdaLiveGranted = alreadyGranted;
             if (alreadyGranted) {
                 await finalizeFdaOnboardingGrant(statusEl);
                 return;
@@ -1634,7 +1633,7 @@ function showFdaOnboardingOverlay() {
             const originalLabel = grantBtn.textContent;
             grantBtn.textContent = 'Opening settings…';
             try {
-                await invoke('check_full_disk_access');
+                await invoke('sync_fda_onboarding_access');
             } catch (_) { /* register bundle with TCC */ }
             try {
                 await invoke('open_safari_fda_settings');
@@ -1650,7 +1649,8 @@ function showFdaOnboardingOverlay() {
             if (!session.pollHandle) {
                 session.pollHandle = setInterval(async () => {
                     try {
-                        const granted = await invoke('check_full_disk_access');
+                        const granted = await invoke('sync_fda_onboarding_access');
+                        session.fdaLiveGranted = granted;
                         if (granted) {
                             await finalizeFdaOnboardingGrant(statusEl);
                         }
@@ -1669,7 +1669,7 @@ function showFdaOnboardingOverlay() {
         };
         activeFdaOnboardingSession = session;
         wireFdaOnboardingGrantButtonOnce();
-        presentFdaOnboardingUi();
+        void presentFdaOnboardingUi();
     });
     if (session) session.promise = promise;
     return promise;
@@ -5110,6 +5110,14 @@ function setupEventListeners() {
     });
 
     wireFdaOnboardingGrantButtonOnce();
+    if (!window._fdaOnboardingFocusSyncBound) {
+        window._fdaOnboardingFocusSyncBound = true;
+        window.addEventListener('focus', () => {
+            const overlay = document.getElementById('fda-onboarding');
+            if (!activeFdaOnboardingSession || overlay?.classList.contains('hidden')) return;
+            void syncFdaOnboardingGrantButton();
+        });
+    }
 
     // EULA onboarding: delegated listeners so localized HTML can rebuild links/text without losing handlers.
     const eulaRoot = document.getElementById('eula-onboarding');

@@ -113,6 +113,24 @@ pub fn user_fda_was_revoked() -> bool {
 #[cfg(target_os = "macos")]
 static FDA_MARKER_RECONCILED: std::sync::Once = std::sync::Once::new();
 
+/// If the marker says FDA was granted but live access is gone, mark it
+/// revoked. Shared by the once-per-process startup path and the
+/// user-initiated FDA onboarding screen (which may open many times).
+#[cfg(target_os = "macos")]
+fn reconcile_stale_fda_marker_if_needed() {
+    if !matches!(user_fda_choice(), Some(FdaOnboardingChoice::Granted)) {
+        return;
+    }
+    if has_full_disk_access() {
+        log::info!("fda-onboarding: marker granted and live FDA probe OK");
+        return;
+    }
+    log::warn!(
+        "fda-onboarding: marker says granted but live FDA missing — marking revoked"
+    );
+    mark_fda_onboarding_revoked();
+}
+
 /// If the marker says FDA was granted but System Settings no longer
 /// grants it (common after reinstall/rebuild while Application Support
 /// persists), drop the stale marker once per process via a live TCC
@@ -120,19 +138,20 @@ static FDA_MARKER_RECONCILED: std::sync::Once = std::sync::Once::new();
 /// separately when Safari plist reads return PermissionDenied.
 #[cfg(target_os = "macos")]
 fn reconcile_stale_fda_marker_once() {
-    FDA_MARKER_RECONCILED.call_once(|| {
-        if !matches!(user_fda_choice(), Some(FdaOnboardingChoice::Granted)) {
-            return;
-        }
-        if has_full_disk_access() {
-            log::info!("fda-onboarding: marker granted and live FDA probe OK");
-            return;
-        }
-        log::warn!(
-            "fda-onboarding: marker says granted but live FDA missing — marking revoked"
-        );
-        mark_fda_onboarding_revoked();
-    });
+    FDA_MARKER_RECONCILED.call_once(reconcile_stale_fda_marker_if_needed);
+}
+
+/// Called when the FDA onboarding overlay opens. Re-runs the marker
+/// reconcile + live probe (user-initiated; safe to hit TCC.db).
+#[cfg(target_os = "macos")]
+pub fn sync_fda_onboarding_access() -> bool {
+    reconcile_stale_fda_marker_if_needed();
+    has_full_disk_access()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn sync_fda_onboarding_access() -> bool {
+    true
 }
 
 /// Called from the Safari profile scan when the extension plist is

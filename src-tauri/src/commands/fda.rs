@@ -12,6 +12,14 @@ pub fn check_full_disk_access() -> bool {
     cross_app_consent::has_full_disk_access()
 }
 
+/// Reconcile a stale `granted` marker against live FDA, then probe.
+/// Use when presenting the FDA onboarding screen so Proceed/Open
+/// settings match System Settings after revoke + relaunch.
+#[tauri::command]
+pub fn sync_fda_onboarding_access() -> bool {
+    cross_app_consent::sync_fda_onboarding_access()
+}
+
 /// True when the user completed FDA onboarding **and** live Full Disk
 /// Access is still granted. Stale markers from a prior install are
 /// cleared automatically when the live probe fails.
@@ -66,7 +74,7 @@ pub fn complete_fda_onboarding(choice: String) -> Result<(), String> {
         if choice != "granted" && choice != "granted-already" {
             return Err("Full Disk Access is required on macOS".to_string());
         }
-        if !cross_app_consent::has_full_disk_access() {
+        if !cross_app_consent::sync_fda_onboarding_access() {
             return Err("Full Disk Access is not granted yet".to_string());
         }
         cross_app_consent::mark_user_through_fda_onboarding(
