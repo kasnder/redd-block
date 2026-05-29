@@ -6146,7 +6146,6 @@ function setupModalListeners() {
         updateOverridePreview();
     });
 
-    // Color swatches
     document.querySelectorAll('.color-swatch').forEach(swatch => {
         swatch.addEventListener('click', () => {
             document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
@@ -6154,25 +6153,15 @@ function setupModalListeners() {
             applyModalBlocklistTint(swatch.dataset.color);
         });
     });
-
-    // Custom color picker
-    const customColorInput = document.getElementById('custom-color-input');
-    const customSwatch = document.getElementById('custom-color-swatch');
-    if (customColorInput && customSwatch) {
-        // Trigger input when swatch is clicked
-        customSwatch.addEventListener('click', () => {
-            customColorInput.click();
-        });
-
-        customColorInput.addEventListener('input', (e) => {
-            const color = e.target.value;
-            customSwatch.style.background = color;
-            customSwatch.dataset.color = color;
-            document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
-            customSwatch.classList.add('selected');
-            applyModalBlocklistTint(color);
-        });
-    }
+    document.getElementById('custom-color-input')?.addEventListener('input', (e) => {
+        const customSwatch = document.getElementById('custom-color-swatch');
+        const color = e.target.value;
+        customSwatch.style.background = color;
+        customSwatch.dataset.color = color;
+        document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+        customSwatch.classList.add('selected');
+        applyModalBlocklistTint(color);
+    });
 
     // Emoji swatches
     document.querySelectorAll('.emoji-swatch').forEach(swatch => {
