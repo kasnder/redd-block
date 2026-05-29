@@ -3306,7 +3306,7 @@ body.dark-mode .pause-block-btn.resume-mode:hover {
 .pause-duration-row {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 16px;
 }
 
 /* When horizontal layout overflows, JS adds this class: restarts-at block below pause-for, no arrow */
@@ -3327,13 +3327,23 @@ body.dark-mode .pause-block-btn.resume-mode:hover {
 }
 
 .pause-duration-col {
-    flex: 1;
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
 }
 
+.pause-duration-col > .time-label {
+    margin: 0 0 6px 0;
+}
 
+.pause-duration-inputs,
+.pause-duration-col > .time-picker-row {
+    display: flex;
+    align-items: center;
+    min-height: 36px;
+}
 
 .pause-duration-inputs {
-    display: flex;
     gap: 8px;
 }
 
@@ -3343,9 +3353,10 @@ body.dark-mode .pause-block-btn.resume-mode:hover {
     gap: 4px;
 }
 
-.pause-time-input {
+.pause-duration-section .pause-time-input {
     width: 34px;
-    padding: 8px 4px;
+    height: 36px;
+    padding: 0 4px;
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: var(--input-bg);
@@ -3353,14 +3364,37 @@ body.dark-mode .pause-block-btn.resume-mode:hover {
     font-size: 17px;
     font-weight: 600;
     text-align: center;
+    box-sizing: border-box;
+    line-height: 1;
     -moz-appearance: textfield;
     appearance: textfield;
 }
 
-.pause-time-input::-webkit-inner-spin-button,
-.pause-time-input::-webkit-outer-spin-button {
+.pause-duration-section .pause-time-input::-webkit-inner-spin-button,
+.pause-duration-section .pause-time-input::-webkit-outer-spin-button {
     -webkit-appearance: none;
     margin: 0;
+}
+
+/* Match pause input footprint; keep .time-part hover / focus / .active for popover */
+.pause-duration-section .time-part {
+    width: 34px;
+    min-width: 34px;
+    height: 36px;
+    padding: 0 4px;
+    border-radius: 8px;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+.pause-duration-section .time-colon {
+    font-size: 17px;
+    font-weight: 600;
+    line-height: 36px;
+    padding: 0 2px;
 }
 
 .pause-time-unit {
@@ -3371,7 +3405,11 @@ body.dark-mode .pause-block-btn.resume-mode:hover {
 .pause-arrow {
     color: var(--text-secondary);
     flex-shrink: 0;
-    padding-top: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    align-self: flex-end;
+    margin-bottom: 9px;
 }
 
 
