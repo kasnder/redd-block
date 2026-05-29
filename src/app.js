@@ -1482,9 +1482,18 @@ function presentWelcomeOnboarding(onContinue) {
 
         const onClick = () => {
             btn.removeEventListener('click', onClick);
-            overlay.classList.add('hidden');
-            onContinue?.();
-            resolve();
+            void (async () => {
+                try {
+                    if (onContinue) {
+                        await onContinue();
+                    } else if (!hasAcceptedEula()) {
+                        showEulaOnboardingScreen();
+                    }
+                } finally {
+                    overlay.classList.add('hidden');
+                    resolve();
+                }
+            })();
         };
         btn.addEventListener('click', onClick);
     });
@@ -1645,7 +1654,12 @@ async function finalizeFdaOnboardingGrant(statusEl) {
 }
 
 function completeFdaOnboardingSession() {
-    hideFdaOnboardingUi();
+    // During Settings replay the next screen (extension setup) opens
+    // immediately; keep FDA visible until showMigrationOnboarding hides it
+    // so we never flash an empty shell + setup banner.
+    if (!onboardingBannerSuppressed) {
+        hideFdaOnboardingUi();
+    }
     const resolve = activeFdaOnboardingSession?.resolve;
     activeFdaOnboardingSession = null;
     resolve?.();
@@ -1772,6 +1786,8 @@ let migrationOnboardingActive = false;
 let migrationOnboardingDismissed = false;
 /** True while the welcome → EULA → FDA → extension-setup chain is in progress. */
 let firstRunExtensionSetupPending = false;
+/** Hides the slim setup banner during Settings replay and between full-screen steps. */
+let onboardingBannerSuppressed = false;
 // While the migration post-phase is on screen, the user is bouncing
 // between this window and Safari (or Chrome/Firefox/etc.) toggling
 // extension settings. The window-`focus` listener below already
@@ -1939,6 +1955,7 @@ function hideMigrationOnboarding() {
     migrationOnboardingActive = false;
     migrationOnboardingDismissed = true;
     firstRunExtensionSetupPending = false;
+    onboardingBannerSuppressed = false;
     migrationShowMeHowExpandedKeys.clear();
     migrationSafariDuplicateHelpExpanded = false;
     lastMigrationBrowserState = null;
@@ -3008,9 +3025,23 @@ let behaviourBannerDismissedThisSession = false;
 // `pollMigrationCompliance`.
 let lastOnboardingState = null;
 
+function isFullScreenOnboardingVisible() {
+    if (migrationOnboardingActive || activeFdaOnboardingSession) return true;
+    for (const id of ['welcome-onboarding', 'eula-onboarding', 'fda-onboarding', 'migration-onboarding']) {
+        const el = document.getElementById(id);
+        if (el && !el.classList.contains('hidden')) return true;
+    }
+    return false;
+}
+
 async function updateBehaviourChangeBanner(state) {
     const banner = document.getElementById('behaviour-change-banner');
     if (!banner) return;
+
+    if (onboardingBannerSuppressed || isFullScreenOnboardingVisible()) {
+        banner.classList.add('hidden');
+        return;
+    }
 
     if (!state?.browsers) {
         try {
@@ -3233,6 +3264,8 @@ async function restartOnboardingFromSettings() {
     migrationOnboardingDismissed = false;
     localStorage.removeItem(EXT_ONBOARDING_DISMISSED_KEY);
     firstRunExtensionSetupPending = true;
+    onboardingBannerSuppressed = true;
+    document.getElementById('behaviour-change-banner')?.classList.add('hidden');
     lastMigrationBrowserRenderSignature = '';
     extensionSetupPausedForBackNavigation = false;
 
@@ -4867,6 +4900,8 @@ async function acceptEula() {
         await checkScreentimeAuth();
     } else {
         firstRunExtensionSetupPending = true;
+        onboardingBannerSuppressed = true;
+        document.getElementById('behaviour-change-banner')?.classList.add('hidden');
         updateOnboardingVisibility();
     }
     await runPostAcceptanceStartup();
