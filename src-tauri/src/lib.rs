@@ -910,6 +910,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::open_browser_extension_settings,
         commands::open_url_in_browser,
         commands::check_full_disk_access,
+        commands::fda_deferred_focus_install_pending,
         commands::check_fda_onboarded,
         commands::get_fda_user_choice,
         commands::complete_fda_onboarding,

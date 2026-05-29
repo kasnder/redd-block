@@ -20,6 +20,22 @@ pub fn check_fda_onboarded() -> bool {
     cross_app_consent::user_chose_to_grant_fda()
 }
 
+/// True when completing FDA onboarding will run the deferred ReDD Focus
+/// browser install (extension hints). False on revisit once
+/// `extension-hints-installed.v1` exists — native-host manifest refresh
+/// may still run but is not what the FDA status line describes.
+#[tauri::command]
+pub fn fda_deferred_focus_install_pending() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        !crate::extension_install::startup_install_already_done()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
 /// Recorded onboarding choice — kept for diagnostics; only `granted`
 /// unlocks cross-app work.
 #[tauri::command]

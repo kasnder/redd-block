@@ -1561,8 +1561,14 @@ async function syncFdaOnboardingGrantButton() {
 
 async function finalizeFdaOnboardingGrant(statusEl) {
     if (statusEl) {
+        let installPending = true;
+        try {
+            installPending = !!(await invoke('fda_deferred_focus_install_pending'));
+        } catch (_) { /* default: show installing */ }
         statusEl.classList.remove('hidden');
-        statusEl.textContent = tSettings('fdaOnboardingGrantedStatus');
+        statusEl.textContent = installPending
+            ? tSettings('fdaOnboardingGrantedInstallingStatus')
+            : tSettings('fdaOnboardingGrantedStatus');
     }
     try {
         await invoke('complete_fda_onboarding', { choice: 'granted' });
@@ -14301,7 +14307,8 @@ const SETTINGS_TRANSLATIONS = {
         fdaOnboardingAlreadyGrantedBtn: '✓ Proceed',
         fdaOnboardingWhyHtml: 'Click the button below to open your System Settings, then toggle <strong>ReDD Block</strong> on\u2026 (if you don\'t see ReDD Block in the list, click + and add it manually).',
         fdaOnboardingAlreadyGrantedWhy: 'FDA is already granted for ReDD Block. Click the button below to proceed.',
-        fdaOnboardingGrantedStatus: 'Full Disk Access granted — installing ReDD Focus…',
+        fdaOnboardingGrantedStatus: 'Full Disk Access granted.',
+        fdaOnboardingGrantedInstallingStatus: 'Full Disk Access granted — installing ReDD Focus…',
         migrationCheckAgain: 'Check again',
         migrationRefreshSafariTitle: 'Refresh Safari access status',
         migrationDelayDetectionNote: 'It may take up to 20 seconds for changes to be detected.',
@@ -14846,7 +14853,8 @@ const SETTINGS_TRANSLATIONS = {
         fdaOnboardingAlreadyGrantedBtn: '✓ Fortsæt',
         fdaOnboardingWhyHtml: 'Klik på knappen nedenfor for at åbne Systemindstillinger, og slå derefter <strong>ReDD Block</strong> til\u2026 (hvis du ikke kan se ReDD Block på listen, skal du klikke på + og tilføje den manuelt).',
         fdaOnboardingAlreadyGrantedWhy: 'Fuld diskadgang er allerede givet til ReDD Block. Klik på knappen nedenfor for at fortsætte.',
-        fdaOnboardingGrantedStatus: 'Fuld diskadgang givet — installerer ReDD Focus…',
+        fdaOnboardingGrantedStatus: 'Fuld diskadgang givet.',
+        fdaOnboardingGrantedInstallingStatus: 'Fuld diskadgang givet — installerer ReDD Focus…',
         migrationCheckAgain: 'Tjek igen',
         migrationRefreshSafariTitle: 'Opdater Safari-status',
         migrationDelayDetectionNote: 'Der kan gå op til 20 sekunder, før ændringer registreres.',
