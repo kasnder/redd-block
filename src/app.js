@@ -1499,6 +1499,18 @@ function hideFdaOnboardingUi() {
     }
 }
 
+function resetFdaOnboardingGrantButtonUi() {
+    const grantBtn = document.getElementById('fda-onboarding-grant-btn');
+    const statusEl = document.getElementById('fda-onboarding-status');
+    if (grantBtn) grantBtn.disabled = false;
+    // Clear a prior "granted" / "waiting" status when re-opening the step
+    // (e.g. Settings → revisit onboarding → Back from extension setup).
+    if (statusEl && !activeFdaOnboardingSession?.pollHandle) {
+        statusEl.classList.add('hidden');
+        statusEl.textContent = '';
+    }
+}
+
 function presentFdaOnboardingUi() {
     const session = activeFdaOnboardingSession;
     if (!session) return;
@@ -1508,7 +1520,17 @@ function presentFdaOnboardingUi() {
     document.getElementById('main-content')?.classList.add('hidden');
     document.getElementById('now-blocking-row')?.classList.add('hidden');
     session.overlay.classList.remove('hidden');
+    resetFdaOnboardingGrantButtonUi();
     void syncFdaOnboardingGrantButton();
+}
+
+function wireFdaOnboardingGrantButtonOnce() {
+    const grantBtn = document.getElementById('fda-onboarding-grant-btn');
+    if (!grantBtn || grantBtn._fdaGrantListenerAdded) return;
+    grantBtn._fdaGrantListenerAdded = true;
+    grantBtn.addEventListener('click', () => {
+        void activeFdaOnboardingSession?.onGrant?.();
+    });
 }
 
 async function syncFdaOnboardingGrantButton() {
@@ -1591,7 +1613,6 @@ function showFdaOnboardingOverlay() {
         }
 
         const onGrant = async () => {
-            grantBtn.disabled = true;
             let alreadyGranted = session.fdaLiveGranted;
             if (!alreadyGranted) {
                 try {
@@ -1603,6 +1624,7 @@ function showFdaOnboardingOverlay() {
                 return;
             }
 
+            grantBtn.disabled = true;
             const originalLabel = grantBtn.textContent;
             grantBtn.textContent = 'Opening settings…';
             try {
@@ -1640,7 +1662,7 @@ function showFdaOnboardingOverlay() {
             onGrant,
         };
         activeFdaOnboardingSession = session;
-        grantBtn.addEventListener('click', onGrant);
+        wireFdaOnboardingGrantButtonOnce();
         presentFdaOnboardingUi();
     });
     if (session) session.promise = promise;
@@ -5080,6 +5102,8 @@ function setupEventListeners() {
     document.getElementById('fda-onboarding-back-btn')?.addEventListener('click', () => {
         returnToEulaFromFda();
     });
+
+    wireFdaOnboardingGrantButtonOnce();
 
     // EULA onboarding: delegated listeners so localized HTML can rebuild links/text without losing handlers.
     const eulaRoot = document.getElementById('eula-onboarding');
