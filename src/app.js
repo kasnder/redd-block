@@ -1028,6 +1028,72 @@ function isModalVisible(id) {
     return !!(modal && !modal.classList.contains('hidden'));
 }
 
+/** ESC layer 4 → 3: sub-overlays, then the topmost .modal-overlay (cancel/close). */
+function dismissTopmostEscapeLayer() {
+    if (closeEscapeSubLayer()) return true;
+    return closeEscapeDialog();
+}
+
+function closeEscapeSubLayer() {
+    const focused = document.activeElement;
+    if (focused?.matches('#custom-color-input, input[type="color"]')) {
+        focused.blur();
+        return true;
+    }
+    if (document.querySelector('.now-blocking-chip-menu')) {
+        closeNowBlockingChipMenus();
+        return true;
+    }
+    const emoji = document.getElementById('emoji-picker-popover');
+    if (emoji && !emoji.classList.contains('hidden')) {
+        emoji.classList.add('hidden');
+        return true;
+    }
+    if (document.querySelector('.schedule-time-popover')) {
+        document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
+        return true;
+    }
+    if (document.querySelector('.time-popover:not(.hidden)')) {
+        closeAllPopovers();
+        return true;
+    }
+    const repeatMenu = document.getElementById('repeat-dropdown-menu');
+    if (repeatMenu && !repeatMenu.classList.contains('hidden')) {
+        repeatMenu.classList.add('hidden');
+        return true;
+    }
+    const importMenu = document.getElementById('websites-import-menu');
+    if (importMenu && !importMenu.classList.contains('hidden')) {
+        importMenu.classList.add('hidden');
+        document.getElementById('modal-import-websites-btn')?.setAttribute('aria-expanded', 'false');
+        return true;
+    }
+    if (document.querySelector('.blocklist-menu:not(.hidden)')) {
+        closeAllBlocklistMenus();
+        return true;
+    }
+    const langDd = document.getElementById('language-picker-dropdown');
+    if (langDd && !langDd.classList.contains('hidden')) {
+        setLanguagePickerOpen(false);
+        return true;
+    }
+    return false;
+}
+
+function closeEscapeDialog() {
+    const modals = [...document.querySelectorAll('.modal-overlay:not(.hidden)')];
+    if (!modals.length) return false;
+    const modal = modals.reduce((top, el) => {
+        const z = parseInt(getComputedStyle(el).zIndex, 10) || 0;
+        const topZ = parseInt(getComputedStyle(top).zIndex, 10) || 0;
+        return z >= topZ ? el : top;
+    });
+    const cancel = modal.querySelector('.modal-buttons .cancel-btn, [id^="cancel-"], [id^="close-"]');
+    if (cancel) cancel.click();
+    else modal.classList.add('hidden');
+    return true;
+}
+
 function stopHelperUiRefreshLoop() {
     if (helperUiRefreshTimer != null) {
         clearInterval(helperUiRefreshTimer);
@@ -5228,12 +5294,10 @@ function setupEventListeners() {
         }
     });
 
-    // ESC: close blocklist add/edit modal if open, otherwise deselect blocklist
+    // ESC: sub-overlays → dialog → (elsewhere) deselect selected blocklist
     document.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape') return;
-        const blocklistModal = document.getElementById('blocklist-modal');
-        if (blocklistModal && !blocklistModal.classList.contains('hidden')) {
-            closeBlocklistModal();
+        if (dismissTopmostEscapeLayer()) {
             e.preventDefault();
             return;
         }
