@@ -277,6 +277,41 @@ fn firefox_app_present() -> bool {
     }
 }
 
+/// True when an `extensions.json` addon row represents a real on-profile
+/// install. Firefox often keeps catalog metadata after the user removes an
+/// add-on (`pendingUninstall`, `visible: false`, or a stale `path`). Those
+/// rows must not map to "installed but disabled" in the migration UI.
+fn firefox_addon_counts_as_installed(addon: &Value, profile_dir: &Path) -> bool {
+    if addon.get("pendingUninstall").and_then(|v| v.as_bool()) == Some(true) {
+        return false;
+    }
+    if addon.get("visible").and_then(|v| v.as_bool()) == Some(false) {
+        return false;
+    }
+    if let Some(path) = addon.get("path").and_then(|v| v.as_str()) {
+        if path.is_empty() || !profile_dir.join(path).exists() {
+            return false;
+        }
+    }
+    true
+}
+
+fn firefox_addon_enabled(addon: &Value) -> bool {
+    let active = addon
+        .get("active")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let user_disabled = addon
+        .get("userDisabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let app_disabled = addon
+        .get("appDisabled")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    active && !user_disabled && !app_disabled
+}
+
 fn scan_firefox() -> Option<BrowserStatus> {
     let running = firefox_app_present();
     let installed = firefox_app_installed();
@@ -316,20 +351,10 @@ fn scan_firefox() -> Option<BrowserStatus> {
                         .iter()
                         .find(|a| a.get("id").and_then(|v| v.as_str()) == Some(FIREFOX_ID))
                     {
-                        s.installed = true;
-                        let active = addon
-                            .get("active")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false);
-                        let user_disabled = addon
-                            .get("userDisabled")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false);
-                        let app_disabled = addon
-                            .get("appDisabled")
-                            .and_then(|v| v.as_bool())
-                            .unwrap_or(false);
-                        s.enabled = Some(active && !user_disabled && !app_disabled);
+                        if firefox_addon_counts_as_installed(addon, &dir) {
+                            s.installed = true;
+                            s.enabled = Some(firefox_addon_enabled(addon));
+                        }
                     }
                 }
             }
@@ -1417,6 +1442,101 @@ fn safari_profile_passes(p: &ProfileStatus) -> bool {
         && p.enabled == Some(true)
         && p.private_browsing != Some(false)
         && p.website_access_all != Some(false)
+}
+
+#[cfg(test)]
+mod firefox_addon_tests {
+    use super::*;
+    use std::fs;
+
+    fn test_profile_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "redd_block_firefox_scan_test_{}_{name}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("mkdir");
+        dir
+    }
+
+    fn addon_json(extra: serde_json::Map<String, Value>) -> Value {
+        let mut m = serde_json::Map::new();
+        m.insert("id".into(), Value::String(FIREFOX_ID.into()));
+        m.insert("type".into(), Value::String("extension".into()));
+        for (k, v) in extra {
+            m.insert(k, v);
+        }
+        Value::Object(m)
+    }
+
+    #[test]
+    fn firefox_counts_disabled_addon_as_installed() {
+        let dir = test_profile_dir("disabled");
+        let addon = addon_json(serde_json::Map::from_iter([
+            ("visible".into(), Value::Bool(true)),
+            ("active".into(), Value::Bool(false)),
+            ("userDisabled".into(), Value::Bool(true)),
+        ]));
+        assert!(firefox_addon_counts_as_installed(&addon, &dir));
+        assert!(!firefox_addon_enabled(&addon));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn firefox_ignores_pending_uninstall() {
+        let dir = test_profile_dir("pending_uninstall");
+        let addon = addon_json(serde_json::Map::from_iter([
+            ("visible".into(), Value::Bool(true)),
+            ("pendingUninstall".into(), Value::Bool(true)),
+            ("active".into(), Value::Bool(false)),
+            ("userDisabled".into(), Value::Bool(true)),
+        ]));
+        assert!(!firefox_addon_counts_as_installed(&addon, &dir));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn firefox_ignores_invisible_catalog_row() {
+        let dir = test_profile_dir("invisible");
+        let addon = addon_json(serde_json::Map::from_iter([
+            ("visible".into(), Value::Bool(false)),
+            ("active".into(), Value::Bool(false)),
+            ("userDisabled".into(), Value::Bool(true)),
+        ]));
+        assert!(!firefox_addon_counts_as_installed(&addon, &dir));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn firefox_ignores_stale_path() {
+        let dir = test_profile_dir("stale_path");
+        let rel = "extensions/stale.xpi";
+        let addon = addon_json(serde_json::Map::from_iter([
+            ("visible".into(), Value::Bool(true)),
+            ("path".into(), Value::String(rel.into())),
+            ("active".into(), Value::Bool(false)),
+            ("userDisabled".into(), Value::Bool(true)),
+        ]));
+        assert!(!firefox_addon_counts_as_installed(&addon, &dir));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn firefox_accepts_path_on_disk() {
+        let dir = test_profile_dir("on_disk");
+        let rel = "extensions/redd.xpi";
+        fs::create_dir_all(dir.join("extensions")).expect("mkdir");
+        fs::write(dir.join(rel), b"xpi").expect("write");
+        let addon = addon_json(serde_json::Map::from_iter([
+            ("visible".into(), Value::Bool(true)),
+            ("path".into(), Value::String(rel.into())),
+            ("active".into(), Value::Bool(true)),
+            ("userDisabled".into(), Value::Bool(false)),
+        ]));
+        assert!(firefox_addon_counts_as_installed(&addon, &dir));
+        assert!(firefox_addon_enabled(&addon));
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
 
 #[cfg(all(test, target_os = "macos"))]
