@@ -5701,7 +5701,6 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
 .migration-checklist-done {
     color: #047857;
     font-weight: 500;
-    text-decoration: line-through;
     display: flex;
     align-items: center;
     gap: 4px;
