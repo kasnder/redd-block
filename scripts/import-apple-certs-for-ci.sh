@@ -31,7 +31,7 @@ import_p12() {
   echo "$b64" | base64 --decode > "$path"
   security import "$path" \
     -P "$password" \
-    -A -t cert -f pkcs12 -quiet \
+    -A -t cert -f pkcs12 \
     -T /usr/bin/codesign \
     -T /usr/bin/productbuild \
     -k "$KEYCHAIN_PATH"
