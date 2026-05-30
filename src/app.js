@@ -2686,12 +2686,10 @@ function migrationExtHeaderCopy(state) {
     if (!isMacOSDesktop) return null;
     const focusLogoHtml =
         `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
-    const shieldLogoHtml =
-        `<img src="${logoReddShieldUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
     const browsers = state?.browsers || lastMigrationBrowserState?.browsers || {};
     const firefoxInstalled = !!(browsers.firefox && browsers.firefox.installed);
     return {
-        titleHtml: tSettings('migrationExtTitleMac').replace('{SHIELD}', shieldLogoHtml),
+        titleHtml: tSettings('migrationExtTitleMac'),
         subtitleHtml: (firefoxInstalled
             ? tSettings('migrationExtSubMacFirefox')
             : tSettings('migrationExtSubMac')).replace('{FOCUS}', focusLogoHtml),
@@ -2762,9 +2760,11 @@ function syncMigrationPostHeader(state) {
     header.classList.remove('hidden');
     const copy = migrationExtHeaderCopy(state);
     if (copy) {
+        const shieldLogo = document.getElementById('migration-post-header-shield-logo');
         const titleEl = document.getElementById('migration-post-header-title');
         const subEl = document.getElementById('migration-post-header-subtitle');
-        if (titleEl) titleEl.innerHTML = copy.titleHtml;
+        if (shieldLogo) shieldLogo.src = logoReddShieldUrl;
+        if (titleEl) titleEl.textContent = copy.titleHtml;
         if (subEl) subEl.innerHTML = copy.subtitleHtml;
     }
     checklist?.classList.add('hidden');
@@ -14829,7 +14829,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationChecklistCleanedOld: 'Old version cleaned up',
         migrationChecklistBlocklistsPreserved: 'Your blocklists are preserved',
         migrationChecklistExtLinesHtml: 'Enable {LOGO}ReDD Focus in your browsers<br><span style="font-weight:400;opacity:0.7">and allow it in private/incognito tabs</span>',
-        migrationExtTitleMac: 'Enable {SHIELD}ReDD Block in your browsers',
+        migrationExtTitleMac: 'Enable ReDD Block in your browsers',
         migrationExtSubMac: 'Website blocking uses <strong>macOS automation</strong> for Safari, Chrome & Edge.',
         migrationExtSubMacFirefox: 'Website blocking uses <strong>macOS automation</strong> for Safari, Chrome & Edge, and the <strong>ReDD Focus extension</strong> for Firefox.',
         migrationExtStep1Mac: 'Click <strong>Grant access</strong> on each browser below and approve the macOS permission prompt. If you see <strong>Open Automation settings</strong>, click it and switch ReDD Block back on.',
@@ -15415,7 +15415,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationChecklistCleanedOld: 'Gammel version fjernet',
         migrationChecklistBlocklistsPreserved: 'Dine bloklister er bevaret',
         migrationChecklistExtLinesHtml: 'Aktivér {LOGO}ReDD Focus i dine browsere<br><span style="font-weight:400;opacity:0.7">og tillad den i privat- eller inkognitofaner</span>',
-        migrationExtTitleMac: 'Aktivér {SHIELD}ReDD Block i dine browsere',
+        migrationExtTitleMac: 'Aktivér ReDD Block i dine browsere',
         migrationExtSubMac: 'Websiteblokering bruger <strong>macOS-automatisering</strong> i Safari, Chrome og Edge.',
         migrationExtSubMacFirefox: 'Websiteblokering bruger <strong>macOS-automatisering</strong> i Safari, Chrome og Edge og <strong>ReDD Focus-udvidelsen</strong> i Firefox.',
         migrationExtStep1Mac: 'Klik på <strong>Giv adgang</strong> for hver browser nedenfor, og godkend macOS-prompten. Hvis du ser <strong>Åbn Automatisering</strong>, klik på den og slå ReDD Block til igen.',

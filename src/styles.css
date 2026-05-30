@@ -4687,6 +4687,11 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
     overflow-y: auto;
 }
 
+#welcome-onboarding.onboarding-screen,
+#eula-onboarding.onboarding-screen {
+    padding-top: 24px;
+}
+
 .welcome-onboarding-layout {
     width: 100%;
     max-width: 560px;
@@ -5173,7 +5178,7 @@ body.dark-mode .welcome-demo-toggle:hover {
     }
 }
 
-.onboarding-content h1 {
+.onboarding-content h1:not(#migration-post-header-title) {
     font-size: 24px;
     font-weight: 700;
     color: var(--text-secondary);
@@ -5226,21 +5231,15 @@ body.dark-mode .onboarding-focus-card {
 }
 
 .migration-onboarding-content {
-    max-width: 520px;
+    max-width: 560px;
     width: 100%;
 }
 
 .migration-post-header {
-    text-align: center;
     margin: 0 0 16px;
 }
 
-#migration-post-header-title {
-    text-align: center;
-    padding-bottom: 4px;
-}
-
-#migration-post-header-title .welcome-reddfocus-inline-logo {
+#migration-post-header-subtitle .welcome-reddfocus-inline-logo {
     width: 24px;
     height: 24px;
     vertical-align: middle;
@@ -5250,8 +5249,8 @@ body.dark-mode .onboarding-focus-card {
 .migration-post-header-subtitle {
     margin: 0 auto;
     max-width: 36em;
-    font-size: 13px;
-    line-height: 1.5;
+    font-size: 14px;
+    line-height: 1.45;
     font-weight: 400;
     font-style: normal;
     color: var(--text-muted);
@@ -6436,7 +6435,7 @@ body.dark-mode .enforcement-switch input:checked + .enforcement-slider::before {
  * Onboarding overlays — dark mode accents for shared surfaces.
  * Body copy uses theme tokens in base rules; these cover subtler tints.
  */
-body.dark-mode #migration-onboarding .onboarding-content h1,
+body.dark-mode #migration-onboarding .onboarding-content h1:not(#migration-post-header-title),
 body.dark-mode #uninstall-confirm-modal h3 {
     color: var(--text-primary);
 }
