@@ -688,6 +688,13 @@ body.dark-mode .app-blocking-closedown-banner {
     margin-top: 12px;
 }
 
+/* The soft web-automation permission banner reuses the setup-banner look
+   and parks just above #behaviour-change-banner. When both are visible,
+   collapse the lower banner's title-bar offset so they read as a stack. */
+#web-automation-permission-banner:not(.hidden)~#behaviour-change-banner:not(.hidden) {
+    margin-top: 12px;
+}
+
 .extension-enforcer-action-banner .update-banner-btn {
     background: #ffffff;
     color: #991b1b;

@@ -104,6 +104,16 @@ const tauriAPI = {
     onEnforcerGraceResolved: (callback) => listen('enforcer://grace-resolved', callback),
     onEnforcerBrowserClosed: (callback) => listen('enforcer://browser-closed', callback),
 
+    // Website automation (macOS only): JOMO-style Safari/Chromium
+    // blocking via Apple Events. The watcher fires permission-needed when
+    // a browser denies the Automation grant; resolved when it's granted.
+    onWebAutomationPermissionNeeded: (callback) => listen('web-automation://permission-needed', callback),
+    onWebAutomationPermissionResolved: (callback) => listen('web-automation://permission-resolved', callback),
+    webAutomationStart: () => invoke('web_automation_start'),
+    webAutomationPermissionStatus: () => invoke('web_automation_permission_status'),
+    requestAutomationPermission: (browser) => invoke('request_automation_permission', { browser }),
+    openAutomationSettings: () => invoke('open_automation_settings'),
+
     // App blocking: force-quit warning overlay (desktop)
     onAppBlockingWarningShow: (callback) => listen('app-blocking://warning-show', callback),
     onAppBlockingWarningHide: (callback) => listen('app-blocking://warning-hide', callback),
@@ -1347,6 +1357,7 @@ async function runPostAcceptanceStartup() {
             // Automation TCC (macOS) + extension compliance. Idempotent;
             // a no-op on subsequent launches past the current version.
             setupEnforcerUiAlerts();
+            setupWebAutomationUiAlerts();
             setupAppBlockingWarningOverlay();
             await ensureInstalledAppsCache();
             // macOS-only: surface the Full Disk Access onboarding
@@ -1375,6 +1386,7 @@ async function runPostAcceptanceStartup() {
                 } catch (e) {
                     console.warn('[startup] enforcer_start failed:', e);
                 }
+                await startWebAutomationWatcher();
             }
         }
         render();
@@ -2046,6 +2058,14 @@ function wireMigrationPrePhase() {
 
 function wireMigrationPostPhase(state) {
     renderBrowserInstallButtons(state);
+    // macOS: the first paint shows Automation rows as 'unknown' because
+    // the native status query is async. Fetch it, then re-render so the
+    // rows settle to their real Allowed / needs-permission state.
+    if (isMacOSDesktop) {
+        refreshAutomationPermissionStatus().then(() => {
+            if (migrationOnboardingActive) renderBrowserInstallButtons(state, { force: true });
+        });
+    }
     wireEnforcementToggle();
     syncMigrationPostBackButtonVisibility();
     const doneBtn = document.getElementById('migration-done-btn');
@@ -2058,6 +2078,7 @@ function wireMigrationPostPhase(state) {
         } catch (e) {
             console.warn('[migration] enforcer_start failed:', e);
         }
+        await startWebAutomationWatcher();
         // Persist dismissal so we don't surface this full-screen
         // again on every launch — the slim extension-compliance
         // banner takes over for ongoing nagging. Stored locally
@@ -2268,6 +2289,54 @@ const BROWSER_STORE_LINKS = {
     firefox: { label: 'Firefox', url: 'https://addons.mozilla.org/en-US/firefox/addon/reddfocus/' },
     safari: { label: 'Safari', url: 'https://apps.apple.com/us/app/redd-focus-hide-distractions/id1660218371' },
 };
+
+// On macOS we block Safari + Chromium browsers via the Automation
+// (Apple Events) watcher rather than the browser extension — so for
+// these the onboarding "compliance" is about the per-browser Automation
+// grant, not whether ReDD Focus is installed/enabled. Firefox stays on
+// the extension path. Non-macOS keeps the extension model everywhere.
+const AUTOMATION_BROWSER_KEYS = ['chrome', 'brave', 'edge', 'safari'];
+
+// key -> 'granted' | 'denied' | 'unknown', refreshed from
+// `web_automation_permission_status` (a no-prompt native query). Empty
+// until the first refresh; treated as 'unknown' per key.
+let lastAutomationPermissionByKey = {};
+
+function browserUsesAutomation(key) {
+    return isMacOSDesktop && AUTOMATION_BROWSER_KEYS.includes(key);
+}
+
+// Pull the live per-browser Automation decision (no consent prompt) and
+// cache it by browser key. Safe to call on any platform — no-ops off
+// macOS. Returns the cached map for convenience.
+async function refreshAutomationPermissionStatus() {
+    if (!isMacOSDesktop) return lastAutomationPermissionByKey;
+    try {
+        const list = await tauriAPI.webAutomationPermissionStatus();
+        const map = {};
+        for (const info of (list || [])) {
+            const key = browserKeyFromLabel(info.label || info.browser);
+            if (key) map[key] = info.state; // 'granted' | 'denied' | 'unknown'
+        }
+        lastAutomationPermissionByKey = map;
+    } catch (e) {
+        console.warn('[automation] permission status fetch failed:', e);
+    }
+    return lastAutomationPermissionByKey;
+}
+
+// Unified onboarding compliance status that knows about the macOS
+// Automation model. For Automation browsers, 'compliant' iff the grant
+// is present; otherwise 'needs-automation'. Falls back to the extension
+// compliance for Firefox / non-macOS.
+function effectiveBrowserComplianceStatus(key, browsers) {
+    if (browserUsesAutomation(key)) {
+        return (lastAutomationPermissionByKey[key] || 'unknown') === 'granted'
+            ? 'compliant'
+            : 'needs-automation';
+    }
+    return browserComplianceStatus(key, (browsers || {})[key]) || 'needs-install';
+}
 
 // Compute per-step status for the migration UI:
 //   - 'compliant': extension installed, enabled, allowed in private, allowed on all websites
@@ -2556,9 +2625,121 @@ function migrationBrowserKeys(state) {
     return detectedKeys.length > 0 ? detectedKeys : ['chrome'];
 }
 
+// After the user grants/opens settings, nudge a couple of quick
+// re-checks so the row flips to "Allowed" without waiting for the next
+// regular poll tick. The native query is cheap and local.
+function schedulePostGrantPoll() {
+    setTimeout(pollMigrationCompliance, 1200);
+    setTimeout(pollMigrationCompliance, 3500);
+}
+
+// Build an onboarding row for a macOS Automation-blocked browser
+// (Safari / Chromium). Three states:
+//   granted  -> green "Allowed" badge, no action
+//   unknown  -> not asked yet: "Grant access" launches the browser and
+//               surfaces the system Automation prompt
+//   denied   -> already refused / revoked: the OS won't re-prompt, so we
+//               deep-link to System Settings → Automation instead
+function buildAutomationBrowserRow(key, entry) {
+    const state = (lastAutomationPermissionByKey[key] || 'unknown');
+    const granted = state === 'granted';
+    const denied = state === 'denied';
+    const status = granted ? 'compliant' : 'needs-enable';
+
+    const row = document.createElement('div');
+    row.className = `migration-browser-row ${status}`;
+
+    const header = document.createElement('div');
+    header.className = 'migration-browser-header';
+
+    const name = document.createElement('span');
+    name.className = 'migration-browser-name';
+    const icon = document.createElement('img');
+    icon.className = 'migration-browser-icon';
+    icon.src = browserIconUrl(key);
+    icon.alt = '';
+    icon.setAttribute('aria-hidden', 'true');
+    name.appendChild(icon);
+    name.appendChild(document.createTextNode(entry.label));
+    header.appendChild(name);
+
+    const badge = document.createElement('span');
+    badge.className = `migration-browser-badge ${status}`;
+    badge.textContent = granted
+        ? tSettings('migrationBadgeAutomationOn')
+        : tSettings('migrationBadgeAutomationOff');
+    header.appendChild(badge);
+    row.appendChild(header);
+
+    if (granted) return row;
+
+    const hint = document.createElement('div');
+    hint.className = 'migration-browser-hint';
+    hint.textContent = denied
+        ? tSettingsFmt('migrationAutomationDeniedHint', { browser: entry.label })
+        : tSettingsFmt('migrationAutomationGrantHint', { browser: entry.label });
+    row.appendChild(hint);
+
+    const actionsRow = document.createElement('div');
+    actionsRow.className = 'migration-actions-row';
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'migration-browser-copy';
+    const restore = (label) => setTimeout(() => { btn.textContent = label; }, 1800);
+
+    if (denied) {
+        const label = tSettings('migrationOpenAutomationSettings');
+        btn.textContent = label;
+        btn.addEventListener('click', async () => {
+            try {
+                await tauriAPI.openAutomationSettings();
+                btn.textContent = tSettings('migrationOpened');
+            } catch (e) {
+                console.warn('[automation] open settings failed:', e);
+                btn.textContent = tSettings('migrationFailed');
+            }
+            restore(label);
+            schedulePostGrantPoll();
+        });
+    } else {
+        const label = tSettingsFmt('migrationGrantAutomation', { browser: entry.label });
+        btn.textContent = label;
+        btn.addEventListener('click', async () => {
+            try {
+                // Launches the browser and surfaces the system Automation
+                // prompt for it. If the prompt can't appear (already
+                // answered once), fall back to the Settings deep-link.
+                await tauriAPI.requestAutomationPermission(entry.label);
+                btn.textContent = tSettings('migrationOpened');
+            } catch (e) {
+                console.warn('[automation] request permission failed, opening settings:', e);
+                try { await tauriAPI.openAutomationSettings(); } catch (_) { /* no-op */ }
+                btn.textContent = tSettings('migrationOpened');
+            }
+            restore(label);
+            schedulePostGrantPoll();
+        });
+    }
+    actionsRow.appendChild(btn);
+
+    const refreshBtn = document.createElement('button');
+    refreshBtn.type = 'button';
+    refreshBtn.className = 'migration-browser-copy secondary';
+    refreshBtn.textContent = tSettings('migrationCheckAgain');
+    refreshBtn.addEventListener('click', pollMigrationCompliance);
+    actionsRow.appendChild(refreshBtn);
+
+    row.appendChild(actionsRow);
+    return row;
+}
+
 function migrationBrowserRenderSignature(state) {
     const browsers = state?.browsers || {};
     return migrationBrowserKeys(state).map(k => {
+        if (browserUsesAutomation(k)) {
+            return `${k}:auto:${lastAutomationPermissionByKey[k] || 'unknown'}`;
+        }
         const b = browsers[k];
         const status = browserComplianceStatus(k, b) || 'needs-install';
         if (k === 'safari' && b?.profiles?.length) {
@@ -2577,12 +2758,12 @@ function updateMigrationBrowserChecklist(state) {
     const keys = migrationBrowserKeys(state);
 
     const howto = document.getElementById('migration-howto');
-    const anyMissing = keys.some(k => browserComplianceStatus(k, browsers[k]) !== 'compliant');
+    const anyMissing = keys.some(k => effectiveBrowserComplianceStatus(k, browsers) !== 'compliant');
     if (howto) howto.classList.toggle('hidden', !anyMissing);
 
     if (!checklistItem) return;
     const allCompliant = keys.length > 0
-        && keys.every(k => browserComplianceStatus(k, browsers[k]) === 'compliant');
+        && keys.every(k => effectiveBrowserComplianceStatus(k, browsers) === 'compliant');
     if (allCompliant) {
         checklistItem.classList.remove('checklist-todo');
         checklistItem.classList.add('checklist-done');
@@ -2621,6 +2802,14 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
     for (const key of keys) {
         const entry = BROWSER_STORE_LINKS[key];
         if (!entry) continue;
+
+        // macOS: Safari + Chromium block via Automation, not the
+        // extension — render a permission-grant row instead.
+        if (browserUsesAutomation(key)) {
+            container.appendChild(buildAutomationBrowserRow(key, entry));
+            continue;
+        }
+
         const status = browserComplianceStatus(key, browsers[key]) || 'needs-install';
 
         const row = document.createElement('div');
@@ -2927,6 +3116,7 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
 async function pollMigrationCompliance() {
     if (!migrationOnboardingActive) return;
     try {
+        await refreshAutomationPermissionStatus();
         const fresh = await invoke('onboarding_state');
         renderBrowserInstallButtons(fresh);
     } catch (e) { /* no-op */ }
@@ -3034,7 +3224,7 @@ async function updateBehaviourChangeBanner(state) {
     const browsers = (state && state.browsers) || {};
     const detectedKeys = Object.keys(BROWSER_STORE_LINKS).filter(k => browsers[k] && browsers[k].installed);
     const allCompliant = detectedKeys.length > 0
-        && detectedKeys.every(k => browserComplianceStatus(k, browsers[k]) === 'compliant');
+        && detectedKeys.every(k => effectiveBrowserComplianceStatus(k, browsers) === 'compliant');
     const hasBrowserIssues = detectedKeys.length > 0 && !allCompliant;
 
     const shouldShow = !behaviourBannerDismissedThisSession
@@ -3117,14 +3307,14 @@ async function updateBehaviourChangeBanner(state) {
 function buildBannerActionSummary(browsers, detectedKeys) {
     const groups = new Map();
     for (const key of detectedKeys) {
-        const status = browserComplianceStatus(key, browsers[key]);
+        const status = effectiveBrowserComplianceStatus(key, browsers);
         if (!status || status === 'compliant') continue;
         const label = BROWSER_STORE_LINKS[key]?.label || key;
         if (!groups.has(status)) groups.set(status, []);
         groups.get(status).push(label);
     }
 
-    const order = ['needs-install', 'needs-enable', 'needs-private', 'needs-website-access', 'needs-fda'];
+    const order = ['needs-install', 'needs-automation', 'needs-enable', 'needs-private', 'needs-website-access', 'needs-fda'];
     const phrases = [];
     for (const status of order) {
         const list = groups.get(status);
@@ -3138,6 +3328,8 @@ function bannerActionPhrase(status) {
     switch (status) {
         case 'needs-install':
             return tSettings('bannerActionInstallIn');
+        case 'needs-automation':
+            return tSettings('bannerActionAutomationIn');
         case 'needs-enable':
             return tSettings('bannerActionEnableIn');
         case 'needs-private':
@@ -3198,13 +3390,13 @@ async function openFdaOnboardingFromBanner() {
 
 function setupBannerNeedsFda(browsers, detectedKeys) {
     return isMacOSDesktop && detectedKeys.some(
-        k => browserComplianceStatus(k, browsers[k]) === 'needs-fda',
+        k => !browserUsesAutomation(k) && browserComplianceStatus(k, browsers[k]) === 'needs-fda',
     );
 }
 
 function setupBannerNeedsExtension(browsers, detectedKeys, enforcementEnabled) {
     const hasNonFdaBrowserIssues = detectedKeys.some(k => {
-        const status = browserComplianceStatus(k, browsers[k]);
+        const status = effectiveBrowserComplianceStatus(k, browsers);
         return status && status !== 'compliant' && status !== 'needs-fda';
     });
     return hasNonFdaBrowserIssues || !enforcementEnabled;
@@ -3256,6 +3448,7 @@ async function refreshBehaviourBannerIfStale({ force = false } = {}) {
     if (!force && now - lastBannerRefreshAt < BANNER_REFRESH_THROTTLE_MS) return;
     lastBannerRefreshAt = now;
     try {
+        if (isMacOSDesktop) await refreshAutomationPermissionStatus();
         const fresh = await invoke('onboarding_state');
         await updateBehaviourChangeBanner(fresh);
         await syncEnforcerClosedBannersWithCompliance(fresh);
@@ -3353,6 +3546,136 @@ function setupEnforcerUiAlerts() {
         clearTimeout(enforcerScreenshotResizeTimer);
         enforcerScreenshotResizeTimer = setTimeout(syncAllEnforcerScreenshotHeights, 100);
     });
+}
+
+// ---- Website automation (macOS) permission prompt --------------------------
+//
+// The Automation watcher (src-tauri/src/web_automation.rs) drives
+// Safari + Chromium blocking via Apple Events. The first event to each
+// browser surfaces the system "ReDD Block wants to control <App>"
+// prompt; if the user denies it, the watcher emits
+// `web-automation://permission-needed` (and `...resolved` once granted).
+// Without the grant, website blocking silently does nothing, so we show
+// a persistent banner with a one-click jump to System Settings. The
+// banner reuses the shared `update-banner setup-banner` look (same as
+// the "Enable ReDD Focus in your browsers" reminder) so we don't grow a
+// second banner style; it's created on demand and parked in the top
+// banner stack just above `#behaviour-change-banner`. The whole thing is
+// macOS-only and self-contained — it deliberately does not touch the
+// extension enforcer's banner machinery.
+
+const WEB_AUTOMATION_BANNER_ID = 'web-automation-permission-banner';
+const webAutomationPendingBrowsers = new Map(); // label -> true
+let webAutomationUiAlertsAttached = false;
+
+async function startWebAutomationWatcher() {
+    if (!isMacOSDesktop) return;
+    try {
+        await tauriAPI.webAutomationStart();
+    } catch (e) {
+        console.warn('[web-automation] web_automation_start failed:', e);
+    }
+}
+
+function setupWebAutomationUiAlerts() {
+    if (!isMacOSDesktop || webAutomationUiAlertsAttached) return;
+    webAutomationUiAlertsAttached = true;
+    tauriAPI.onWebAutomationPermissionNeeded(async (event) => {
+        const label = event?.payload?.label || event?.payload?.browser;
+        if (!label) return;
+        // When enforcement is enabled, the extension enforcer already runs
+        // a grace countdown for the denied browser and force-closes it,
+        // surfacing its own banner + deep-link. Showing this soft banner
+        // too would be redundant. Only surface it when enforcement is OFF
+        // (where blocking silently no-ops and this is the user's only cue).
+        try {
+            if (await invoke('get_enforcement_enabled')) return;
+        } catch (_) { /* fall through and show the banner */ }
+        webAutomationPendingBrowsers.set(String(label), true);
+        renderWebAutomationPermissionBanner();
+    }).catch((e) => {
+        console.warn('[web-automation] failed to attach permission-needed listener:', e);
+        webAutomationUiAlertsAttached = false;
+    });
+    tauriAPI.onWebAutomationPermissionResolved((event) => {
+        const label = event?.payload?.label || event?.payload?.browser;
+        if (!label) return;
+        webAutomationPendingBrowsers.delete(String(label));
+        renderWebAutomationPermissionBanner();
+    }).catch((e) => {
+        console.warn('[web-automation] failed to attach permission-resolved listener:', e);
+    });
+}
+
+// Build (once) the soft permission banner. Reuses the same DOM shape and
+// classes as the static `#behaviour-change-banner` (info icon + headline +
+// body + dark CTA + × dismiss) so all styling comes from the shared
+// `.update-banner`/`.setup-banner` rules — no bespoke inline styles. It's
+// parked just above `#behaviour-change-banner` in the top banner stack,
+// mirroring how the enforcer banners insert themselves.
+function ensureWebAutomationBanner() {
+    let banner = document.getElementById(WEB_AUTOMATION_BANNER_ID);
+    if (banner) return banner;
+
+    banner = document.createElement('div');
+    banner.id = WEB_AUTOMATION_BANNER_ID;
+    banner.className = 'update-banner setup-banner hidden';
+    banner.innerHTML = `
+        <div class="update-banner-content">
+            <svg class="setup-banner-info-icon" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="12" cy="12" r="11" fill="currentColor"></circle>
+                <circle cx="12" cy="7.5" r="1.3" fill="white"></circle>
+                <rect x="11" y="10" width="2" height="8" rx="1" fill="white"></rect>
+            </svg>
+            <div class="setup-banner-message">
+                <strong class="setup-banner-headline web-automation-banner-headline"></strong>
+                <span class="setup-banner-body web-automation-banner-text"></span>
+                <div class="setup-banner-actions-row">
+                    <button class="update-banner-btn web-automation-banner-open" type="button"></button>
+                </div>
+            </div>
+        </div>
+        <button class="update-banner-dismiss web-automation-banner-dismiss" title="Dismiss" type="button">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18"></line>
+                <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+        </button>
+    `;
+
+    banner.querySelector('.web-automation-banner-open')?.addEventListener('click', () => {
+        tauriAPI.openAutomationSettings().catch((e) =>
+            console.warn('[web-automation] openAutomationSettings failed:', e));
+    });
+    banner.querySelector('.web-automation-banner-dismiss')?.addEventListener('click', () => {
+        webAutomationPendingBrowsers.clear();
+        banner.classList.add('hidden');
+    });
+
+    const setupBanner = document.getElementById('behaviour-change-banner');
+    if (setupBanner) {
+        setupBanner.insertAdjacentElement('beforebegin', banner);
+    } else {
+        document.querySelector('.app-container')?.prepend(banner);
+    }
+    return banner;
+}
+
+function renderWebAutomationPermissionBanner() {
+    const labels = [...webAutomationPendingBrowsers.keys()];
+    if (labels.length === 0) {
+        document.getElementById(WEB_AUTOMATION_BANNER_ID)?.classList.add('hidden');
+        return;
+    }
+    const banner = ensureWebAutomationBanner();
+    const list = joinBrowserNames(labels);
+    const headlineEl = banner.querySelector('.web-automation-banner-headline');
+    if (headlineEl) headlineEl.textContent = tSettings('webAutomationBannerHeadline');
+    const text = banner.querySelector('.web-automation-banner-text');
+    if (text) text.textContent = tSettingsFmt('webAutomationBannerBody', { browsers: list });
+    const openBtn = banner.querySelector('.web-automation-banner-open');
+    if (openBtn) openBtn.textContent = tSettings('migrationOpenAutomationSettings');
+    banner.classList.remove('hidden');
 }
 
 function browserKeyFromLabel(label) {
@@ -3486,6 +3809,20 @@ function enforcerCopy(payload) {
             action: browser === 'Safari'
                 ? tSettings('migrationOpenFdaTitle')
                 : tSettingsFmt('enforcerActionOpenBrowserSettings', { browser }),
+        };
+    }
+    if (issue === 'automation') {
+        // macOS: ReDD Block lost the Automation grant for this browser,
+        // so it can't redirect blocked tabs. No extension URL applies —
+        // the only fix is re-enabling the grant in System Settings.
+        return {
+            headline: tSettingsFmt('enforcerHeadlineAutomation', { browser }),
+            countdownHeadline: closeHeadline,
+            countdownInstruction: tSettings('enforcerCountdownInstrAutomation'),
+            countdown: countdownStr(),
+            instruction: tSettingsFmt('enforcerInstrAutomation', { browser }),
+            action: tSettings('migrationOpenAutomationSettings'),
+            hideUrlChip: true,
         };
     }
     return {
@@ -3906,6 +4243,14 @@ function enforcerClosedCopy(payload) {
                 : tSettingsFmt('enforcerActionOpenBrowserSettings', { browser }),
         };
     }
+    if (issue === 'automation') {
+        return {
+            headline: tSettingsFmt('enforcerClosedAutomation', { browser }),
+            instruction: tSettingsFmt('enforcerClosedInstrAutomation', { browser }),
+            action: tSettings('migrationOpenAutomationSettings'),
+            hideUrlChip: true,
+        };
+    }
     return {
         headline: tSettingsFmt('enforcerClosedDefault', { browser }),
         instruction: tSettingsFmt('enforcerClosedInstrDefault', { browser }),
@@ -3917,6 +4262,12 @@ async function openEnforcerFix(payload) {
     const browser = payload.label || payload.browser || 'Chrome';
     const key = browserKeyFromLabel(browser);
     try {
+        if (payload.issue === 'automation') {
+            // macOS Automation grant was revoked — deep-link straight to
+            // System Settings → Privacy & Security → Automation.
+            await tauriAPI.openAutomationSettings();
+            return;
+        }
         if (payload.issue === 'missing' && key && BROWSER_STORE_LINKS[key]?.url) {
             // Open the store page in the correct browser so Windows
             // doesn't show a "choose an app" dialog.
@@ -4127,6 +4478,7 @@ function closedIssueCopyKey(issue) {
         case 'private': return 'enforcerClosedCombinedPrivate';
         case 'websiteaccess': return 'enforcerClosedCombinedWebsiteAccess';
         case 'access': return 'enforcerClosedCombinedAccess';
+        case 'automation': return 'enforcerClosedCombinedAutomation';
         default: return 'enforcerClosedCombinedDefault';
     }
 }
@@ -4138,6 +4490,7 @@ function closedInstructionCopyKey(issue) {
         case 'private': return 'enforcerClosedInstrPrivateGeneric';
         case 'websiteaccess': return 'enforcerClosedInstrWebsiteAccess';
         case 'access': return 'enforcerClosedInstrDefault';
+        case 'automation': return 'enforcerClosedInstrAutomationGeneric';
         default: return 'enforcerClosedInstrDefault';
     }
 }
@@ -4203,18 +4556,21 @@ function renderEnforcerBrowserActionRow(state, mode) {
     };
     row.appendChild(showMe);
 
-    const url = document.createElement('button');
-    url.type = 'button';
-    url.className = 'extension-enforcer-action-url';
-    if (state.urlCopiedUntil) url.dataset.copiedUntil = String(state.urlCopiedUntil);
-    populateEnforcerUrlChip(url, state.key);
-    url.onclick = async () => {
-        await copyEnforcerUrlChip(url);
-        const store = mode === 'closed' ? enforcerClosedBannerStates : enforcerActionBannerStates;
-        const stored = store.get(state.key);
-        if (stored) stored.urlCopiedUntil = Number(url.dataset.copiedUntil || 0);
-    };
-    row.appendChild(url);
+    // The automation issue has no extension URL to copy — skip the chip.
+    if (!state.copy.hideUrlChip) {
+        const url = document.createElement('button');
+        url.type = 'button';
+        url.className = 'extension-enforcer-action-url';
+        if (state.urlCopiedUntil) url.dataset.copiedUntil = String(state.urlCopiedUntil);
+        populateEnforcerUrlChip(url, state.key);
+        url.onclick = async () => {
+            await copyEnforcerUrlChip(url);
+            const store = mode === 'closed' ? enforcerClosedBannerStates : enforcerActionBannerStates;
+            const stored = store.get(state.key);
+            if (stored) stored.urlCopiedUntil = Number(url.dataset.copiedUntil || 0);
+        };
+        row.appendChild(url);
+    }
 
     return row;
 }
@@ -14242,6 +14598,7 @@ const SETTINGS_TRANSLATIONS = {
         setupBannerFdaCta: 'Grant Full Disk Access',
         bannerTurnOnBrowserProtection: 'Turn on browser protection',
         bannerActionInstallIn: 'Install in',
+        bannerActionAutomationIn: 'Allow Automation for',
         bannerActionEnableIn: 'Enable in',
         bannerActionPrivateBrowsingIn: 'Allow in private browsing in',
         bannerActionAllWebsitesIn: 'Allow on all websites in',
@@ -14301,6 +14658,18 @@ const SETTINGS_TRANSLATIONS = {
         migrationHowtoHeading: 'Setting up ReDD Focus',
         migrationHowtoLi1Html: 'ReDD Block has tried to install ReDD Focus in your browsers. If it shows as not installed below, click the <strong>Install</strong> buttons to add it manually.',
         migrationHowtoLi3Html: 'Once enabled, <strong>allow it in private/incognito tabs</strong> so blocking works in private windows too.',
+        // macOS-only howto: Safari + Chromium block via Automation, so the
+        // rows ask for permission rather than an extension install.
+        migrationHowtoLi1HtmlMac: 'ReDD Block blocks distracting sites by controlling your browsers. Click <strong>Grant access</strong> on each browser below and approve the macOS permission prompt.',
+        migrationHowtoLi3HtmlMac: 'If a browser later shows <strong>Permission needed</strong>, use <strong>Open Automation settings</strong> to switch ReDD Block back on.',
+        migrationBadgeAutomationOn: 'Allowed',
+        migrationBadgeAutomationOff: 'Permission needed',
+        migrationAutomationGrantHint: 'Allow ReDD Block to control {browser} so it can close distracting tabs while a block is running.',
+        migrationAutomationDeniedHint: 'Permission for {browser} is turned off. Switch ReDD Block back on under Automation so blocking works again.',
+        migrationGrantAutomation: 'Grant access in {browser}',
+        migrationOpenAutomationSettings: 'Open Automation settings',
+        webAutomationBannerHeadline: 'Allow ReDD Block to control your browser',
+        webAutomationBannerBody: 'ReDD Block needs permission to control {browsers} to block websites. Enable it under Privacy & Security → Automation, then the block will take effect.',
         migrationDone: 'I\'m all set up',
         migrationSkip: 'Skip for now',
         migrationEnforcementHeadline: 'Browser enforcement',
@@ -14443,6 +14812,15 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedInstrWebsiteAccess: 'In {browser} extension settings, allow ReDD Focus on all websites.',
         enforcerClosedInstrAccessSafari: 'Grant ReDD Block Full Disk Access.',
         enforcerClosedInstrDefault: 'Finish ReDD Focus setup in {browser} extensions.',
+        // macOS Automation issue: ReDD Block lost the per-browser
+        // Automation grant, so it can't redirect blocked tabs.
+        enforcerHeadlineAutomation: 'ReDD Block can’t control {browser} right now.',
+        enforcerCountdownInstrAutomation: 'Switch Automation back on to keep your block.',
+        enforcerInstrAutomation: 'Switch ReDD Block back on for {browser} under System Settings → Privacy & Security → Automation, then your block will work again.',
+        enforcerClosedAutomation: '{browser} was closed because ReDD Block couldn’t control it.',
+        enforcerClosedInstrAutomation: 'Switch ReDD Block back on for {browser} under Privacy & Security → Automation.',
+        enforcerClosedCombinedAutomation: '{browser} were closed because ReDD Block couldn’t control them.',
+        enforcerClosedInstrAutomationGeneric: 'Switch ReDD Block back on for {browser} under Privacy & Security → Automation.',
         enforcerBrowserFallback: 'your browser',
         gracePeriodLabel: 'Seconds before a browser is closed if ReDD Focus is disabled',
         settingsEnforcementHeading: 'Enforcement settings',
@@ -14788,6 +15166,7 @@ const SETTINGS_TRANSLATIONS = {
         setupBannerFdaCta: 'Giv fuld diskadgang',
         bannerTurnOnBrowserProtection: 'Slå browser-beskyttelse til',
         bannerActionInstallIn: 'Installer i',
+        bannerActionAutomationIn: 'Tillad automatisering for',
         bannerActionEnableIn: 'Aktivér i',
         bannerActionPrivateBrowsingIn: 'Tillad privat browsing i',
         bannerActionAllWebsitesIn: 'Tillad på alle websites i',
@@ -14847,6 +15226,16 @@ const SETTINGS_TRANSLATIONS = {
         migrationHowtoHeading: 'Sådan sætter du ReDD Focus op',
         migrationHowtoLi1Html: 'ReDD Block har forsøgt at installere ReDD Focus i dine browsere. Hvis den vises som ikke installeret nedenfor, klik på <strong>Installer</strong>-knapperne for at tilføje den manuelt.',
         migrationHowtoLi3Html: 'Når den er aktiveret, <strong>tillad den i privat/inkognito-faner</strong>, så blokering også virker i private vinduer.',
+        migrationHowtoLi1HtmlMac: 'ReDD Block blokerer distraherende sider ved at styre dine browsere. Klik på <strong>Giv adgang</strong> for hver browser nedenfor, og godkend macOS-prompten.',
+        migrationHowtoLi3HtmlMac: 'Hvis en browser senere viser <strong>Tilladelse mangler</strong>, brug <strong>Åbn Automatisering</strong> for at slå ReDD Block til igen.',
+        migrationBadgeAutomationOn: 'Tilladt',
+        migrationBadgeAutomationOff: 'Tilladelse mangler',
+        migrationAutomationGrantHint: 'Tillad ReDD Block at styre {browser}, så den kan lukke distraherende faner, mens en blokering kører.',
+        migrationAutomationDeniedHint: 'Tilladelse til {browser} er slået fra. Slå ReDD Block til igen under Automatisering, så blokering virker igen.',
+        migrationGrantAutomation: 'Giv adgang i {browser}',
+        migrationOpenAutomationSettings: 'Åbn Automatisering',
+        webAutomationBannerHeadline: 'Tillad ReDD Block at styre din browser',
+        webAutomationBannerBody: 'ReDD Block skal have tilladelse til at styre {browsers} for at blokere websteder. Slå det til under Anonymitet & sikkerhed → Automatisering, så træder blokeringen i kraft.',
         migrationDone: 'Jeg er klar',
         migrationSkip: 'Spring over for nu',
         migrationEnforcementHeadline: 'Browser-beskyttelse',
@@ -14989,6 +15378,13 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedInstrWebsiteAccess: 'I {browser}s udvidelsesindstillinger: tillad ReDD Focus på alle websites.',
         enforcerClosedInstrAccessSafari: 'Giv ReDD Block fuld diskadgang.',
         enforcerClosedInstrDefault: 'Færdiggør ReDD Focus i {browser}s udvidelsesindstillinger.',
+        enforcerHeadlineAutomation: 'ReDD Block kan ikke styre {browser} lige nu.',
+        enforcerCountdownInstrAutomation: 'Slå Automatisering til igen for at bevare din blokering.',
+        enforcerInstrAutomation: 'Slå ReDD Block til igen for {browser} under Systemindstillinger → Anonymitet & sikkerhed → Automatisering, så virker din blokering igen.',
+        enforcerClosedAutomation: '{browser} blev lukket, fordi ReDD Block ikke kunne styre den.',
+        enforcerClosedInstrAutomation: 'Slå ReDD Block til igen for {browser} under Anonymitet & sikkerhed → Automatisering.',
+        enforcerClosedCombinedAutomation: '{browser} blev lukket, fordi ReDD Block ikke kunne styre dem.',
+        enforcerClosedInstrAutomationGeneric: 'Slå ReDD Block til igen for {browser} under Anonymitet & sikkerhed → Automatisering.',
         enforcerBrowserFallback: 'din browser',
         gracePeriodLabel: 'Sekunder før en browser lukkes, hvis ReDD Focus er slået fra',
         settingsEnforcementHeading: 'Indstillinger for selvkontrols-støtte',
@@ -15482,8 +15878,12 @@ function applyMigrationOverlayStaticCopy() {
         tSettings('migrationChecklistExtLinesHtml').replace('{LOGO}', focusLogoHtml),
     );
     setText('migration-howto-title', tSettings('migrationHowtoHeading'));
-    setHtml('migration-howto-li1', tSettings('migrationHowtoLi1Html'));
-    setHtml('migration-howto-li3', tSettings('migrationHowtoLi3Html'));
+    // macOS blocks Safari + Chromium via Automation (the rows below ask
+    // for permission), while Firefox still uses the extension. The
+    // default howto copy is extension-only, so swap in copy that covers
+    // both paths.
+    setHtml('migration-howto-li1', tSettings(isMacOSDesktop ? 'migrationHowtoLi1HtmlMac' : 'migrationHowtoLi1Html'));
+    setHtml('migration-howto-li3', tSettings(isMacOSDesktop ? 'migrationHowtoLi3HtmlMac' : 'migrationHowtoLi3Html'));
     setText('migration-done-btn', tSettings('migrationDone'));
     setText('migration-skip-btn', tSettings('migrationSkip'));
     setText('migration-back-btn', tSettings('eulaBackBtn'));
