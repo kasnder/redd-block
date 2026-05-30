@@ -21,7 +21,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 
 
@@ -368,7 +368,7 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
 
         // None = compliant (extension OK, or Automation granted) → clear
         // any timer and move on. Some(issue) = act on it.
-        let issue = match compliance_issue(key, &scan_result) {
+        let issue = match compliance_issue(app, key, &scan_result, is_running) {
             None => {
                 cancel_timer(app, state, key, true);
                 continue;
@@ -634,21 +634,28 @@ fn diagnose_issue(b: &BrowserStatus) -> ExtensionIssue {
 /// `None` = nothing to enforce; `Some(issue)` = start/continue the grace
 /// timer toward a force-close.
 ///
-/// macOS Safari/Chromium are judged purely by their Automation permission
-/// (read without prompting via `query_automation_permission`). Only a
-/// positive `Denied` is actionable — `Unknown` (not-yet-decided or
-/// transient) must NOT force-close, the same rule the extension path
-/// follows for unmeasurable state. Firefox (all platforms) and every
-/// browser on Windows fall back to the extension scan.
-fn compliance_issue(key: BrowserKey, scan: &profile_scan::ScanResult) -> Option<ExtensionIssue> {
+/// macOS Safari/Chromium are judged by Automation permission via the
+/// watcher's cached state, a live osascript probe, and the silent TCC
+/// read (in that order). Only `Unknown` across all three is treated as
+/// compliant — same leniency as before for unmeasurable state. Firefox
+/// (all platforms) and every browser on Windows fall back to the
+/// extension scan.
+fn compliance_issue(
+    app: &AppHandle,
+    key: BrowserKey,
+    scan: &profile_scan::ScanResult,
+    is_running: bool,
+) -> Option<ExtensionIssue> {
     #[cfg(target_os = "macos")]
     {
         if let Some(browser) = key.to_web_automation() {
-            use crate::web_automation::PermState;
-            return match crate::web_automation::query_automation_permission(browser) {
-                PermState::Denied => Some(ExtensionIssue::Automation),
-                PermState::Granted | PermState::Unknown => None,
-            };
+            let cached = watcher_automation_cache(app, browser);
+            if crate::web_automation::automation_denied_for_enforcement(
+                browser, cached, is_running,
+            ) {
+                return Some(ExtensionIssue::Automation);
+            }
+            return None;
         }
     }
     let b = key.for_status(scan);
@@ -657,6 +664,21 @@ fn compliance_issue(key: BrowserKey, scan: &profile_scan::ScanResult) -> Option<
     } else {
         Some(diagnose_issue(b))
     }
+}
+
+#[cfg(target_os = "macos")]
+fn watcher_automation_cache(
+    app: &AppHandle,
+    browser: crate::web_automation::SupportedBrowser,
+) -> Option<crate::web_automation::PermState> {
+    let state = app.try_state::<crate::commands::web_automation::WebAutomationState>()?;
+    let guard = state.0.lock().ok()?;
+    let handle = guard.as_ref()?;
+    handle
+        .permission_status()
+        .into_iter()
+        .find(|i| i.browser == browser)
+        .map(|i| i.state)
 }
 
 /// Log why a browser is being enforced. Automation denials have no

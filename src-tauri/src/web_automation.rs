@@ -752,6 +752,30 @@ pub fn resolve_permission_state(browser: SupportedBrowser, cached: Option<PermSt
     }
 }
 
+/// Whether the enforcer should treat Automation as missing for this browser.
+///
+/// The silent TCC read (`query_automation_permission`) often returns
+/// `Unknown` in dev builds even after osascript fails with -1743, so we
+/// also trust the watcher's cached denial and a live probe — the same
+/// signals that make website blocking fail.
+pub fn automation_denied_for_enforcement(
+    browser: SupportedBrowser,
+    cached: Option<PermState>,
+    is_running: bool,
+) -> bool {
+    if cached == Some(PermState::Denied) {
+        return true;
+    }
+    if is_running {
+        match probe_automation_access(browser) {
+            PermState::Denied => return true,
+            PermState::Granted => return false,
+            PermState::Unknown => {}
+        }
+    }
+    matches!(query_automation_permission(browser), PermState::Denied)
+}
+
 /// Send a minimal Apple Event to surface the system Automation prompt
 /// (or confirm an existing grant) on demand — used by the "Enable" /
 /// onboarding affordance so the prompt appears when the user expects it.
