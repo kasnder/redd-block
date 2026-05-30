@@ -37,9 +37,23 @@ flowchart LR
 
 ### Website blocking (desktop)
 
-**ReDD Block** stores your blocklists. **ReDD Focus** (the extension in your browser) blocks the actual pages. The extension has to ask ReDD Block what to block — browsers do that in two different ways:
+**ReDD Block** stores your blocklists. **ReDD Focus** (the extension in your browser) blocks the actual pages — but macOS and Windows use different plumbing to get the list to the browser and enforce compliance.
 
-**Chrome, Brave, Edge, Firefox**
+**macOS**
+
+| Browser | How blocking works | Extension setup |
+|---------|-------------------|-----------------|
+| Safari | App Group shared file + bundled extension | Enable **ReDD Focus (via ReDD Block)** in Safari → Settings → Extensions |
+| Chrome, Brave, Edge | **Automation** (Apple Events) — ReDD Block redirects blocked tabs | ReDD Block prompts for Automation in System Settings → Privacy & Security → Automation |
+| Firefox | ReDD Focus extension | Install manually from the [Firefox Add-ons store](https://addons.mozilla.org/) — ReDD Block does **not** auto-install on macOS |
+
+**Windows**
+
+| Browser | How blocking works | Extension setup |
+|---------|-------------------|-----------------|
+| Chrome, Brave, Edge, Firefox | Native messaging (stdio) — the extension wakes ReDD Block in the background to fetch the blocklist | ReDD Block can auto-install extension hints where supported |
+
+**How native messaging works (Windows)**
 
 1. The extension needs the current blocklist.
 2. The browser **cannot read ReDD Block's window**, so it wakes up ReDD Block **in the background** — same app you installed, **no new window appears**.
@@ -48,15 +62,10 @@ flowchart LR
 
 You never open anything extra or run a second program. It's just how Chrome/Firefox talk to local apps.
 
-**Safari (macOS)**
+**Safari on macOS (App Group)**
 
 1. ReDD Block writes the blocklist to a **shared file** on your Mac.
 2. The ReDD Focus extension (bundled inside ReDD Block — **ReDD Focus (via ReDD Block)** in Safari → Settings → Extensions) reads that file.
-
-| Browser | Where to get the extension |
-|---------|---------------------------|
-| Chrome, Brave, Edge, Firefox | Browser extension store (ReDD Block can auto-install where supported) |
-| Safari | Already inside ReDD Block — just enable it in Safari → Settings → Extensions |
 
 While a block is active, ReDD Block also checks that the extension is still installed, enabled, and allowed in private/incognito windows. If not, it can warn you or quit the browser.
 
@@ -80,8 +89,9 @@ No browser extension — ReDD Block uses **Screen Time** to shield websites and 
 ### Permissions (desktop)
 
 - **Extensions:** install ReDD Focus in each browser you use (Safari's copy ships inside ReDD Block).
-- **macOS (optional):** Full Disk Access can help Safari setup diagnostics; private-browsing status is reported by the extension itself.
-- **No** admin or UAC prompt at install time.
+- **macOS — Automation:** Safari, Chrome, Brave, and Edge need **Automation** permission so ReDD Block can redirect blocked tabs. ReDD Block walks you through this during setup; no Full Disk Access is required.
+- **macOS — Firefox:** install ReDD Focus manually from the Add-ons store and allow it in private windows.
+- **No** admin or UAC prompt at install time (macOS may ask once when cleaning up leftover v1.x components).
 
 ### Upgrading from v1.x
 
@@ -194,8 +204,9 @@ redd-block/
 │   │   ├── lib.rs                # App setup, tray, hide-on-close, autostart
 │   │   ├── app_watcher.rs        # In-process app watcher (sysinfo poll + quit)
 │   │   ├── enforcer.rs           # Browser-extension compliance loop (macOS + Windows)
-│   │   ├── native_host.rs        # Headless native-messaging host (Chrome/Firefox blocklist feed)
-│   │   ├── native_host_install.rs # Registers native-messaging manifests
+│   │   ├── web_automation.rs     # macOS Automation tab blocking (Safari, Chrome, Brave, Edge)
+│   │   ├── native_host.rs        # Headless native-messaging host (Windows / Firefox blocklist feed)
+│   │   ├── native_host_install.rs # Registers native-messaging manifests (Windows; skipped on macOS)
 │   │   ├── profile_scan.rs       # Reads browser profile files
 │   │   └── commands/             # IPC commands (data, apps, migration, …)
 │   ├── entitlements.macos.plist  # App Group (group.com.reddblock.shared)
@@ -247,7 +258,7 @@ On Windows the built-in native-messaging host reads this file directly to derive
 User data is preserved unless manually deleted. Uninstalling the app also removes:
 
 - the launch-at-login / login-item entry registered by `tauri-plugin-autostart`,
-- the native-messaging manifests and registry keys (Windows) / files (macOS) written by `install_native_host`.
+- the native-messaging manifests and registry keys (Windows) written by `install_native_host` (macOS uses Automation + App Group instead, and does not auto-write Firefox manifests).
 
 Active blocks stop firing once the app is gone because the app itself is now the enforcement engine. A paid-for-itself "keep blocking after uninstall" mode is no longer provided.
 
