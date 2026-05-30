@@ -1573,19 +1573,19 @@ function migrationEnforcementDescHtml(firefoxInstalled = enforcementCopyFirefoxI
         : 'migrationEnforcementDescMacAutomation');
 }
 
-function settingsEnforcementDescHtml(firefoxInstalled = enforcementCopyFirefoxInstalled) {
+function settingsEnforcementHintHtml(firefoxInstalled = enforcementCopyFirefoxInstalled) {
     if (!isMacOSDesktop) {
-        return tSettings('settingsEnforcementDescExtension');
+        return tSettings('settingsEnforcementRowHintExtension');
     }
     return tSettings(firefoxInstalled
-        ? 'settingsEnforcementDescMacFirefox'
-        : 'settingsEnforcementDescMacAutomation');
+        ? 'settingsEnforcementRowHintMacFirefox'
+        : 'settingsEnforcementRowHintMacAutomation');
 }
 
 async function applyEnforcementDescCopy(state) {
     await resolveEnforcementCopyFirefoxInstalled(state);
     setHtmlById('enforcement-toggle-desc-text', migrationEnforcementDescHtml());
-    setHtmlById('settings-enforcement-toggle-desc-text', settingsEnforcementDescHtml());
+    setHtmlById('settings-enforcement-toggle-desc-text', settingsEnforcementHintHtml());
 }
 
 function setHtmlById(id, html) {
@@ -2163,34 +2163,23 @@ function wireMigrationPostPhase(state) {
 // the user can't weaken enforcement mid-session. The server-side
 // guard in enforcement_toggle.rs is the ultimate backstop.
 
-function setSettingsEnforcementExpanded(expanded) {
-    const toggle = document.getElementById('settings-enforcement-toggle');
-    const content = document.getElementById('settings-enforcement-content');
-    if (toggle) toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-    if (content) content.classList.toggle('hidden', !expanded);
+function setSettingsEnforcementExpanded(_expanded) {
+    /* Enforcement settings are always visible in the redesigned settings panel. */
 }
 
 function resetSettingsEnforcementSection() {
-    setSettingsEnforcementExpanded(false);
+    /* no-op */
 }
 
 function setupSettingsEnforcementSection() {
-    const toggle = document.getElementById('settings-enforcement-toggle');
-    if (!toggle || toggle.dataset.wired === 'true') return;
-    toggle.dataset.wired = 'true';
-    toggle.addEventListener('click', () => {
-        const expanded = toggle.getAttribute('aria-expanded') !== 'true';
-        setSettingsEnforcementExpanded(expanded);
-    });
+    /* Collapsible enforcement section removed — settings panel is always expanded. */
 }
 
 function syncGraceSettingVisibility(enabled) {
-    const label = document.querySelector('#settings-modal .settings-grace-label');
-    const wrap = document.getElementById('settings-grace-input-wrap');
+    const row = document.getElementById('settings-grace-row');
     const input = document.getElementById('grace-seconds-input');
     const errorEl = document.getElementById('grace-error');
-    if (label) label.classList.toggle('hidden', !enabled);
-    if (wrap) wrap.classList.toggle('hidden', !enabled);
+    if (row) row.classList.toggle('hidden', !enabled);
     if (input) input.classList.toggle('hidden', !enabled);
     if (errorEl && !enabled) {
         errorEl.textContent = '';
@@ -2201,9 +2190,10 @@ function syncGraceSettingVisibility(enabled) {
 
 function updateGraceSettingLock() {
     const input = document.getElementById('grace-seconds-input');
+    const row = document.getElementById('settings-grace-row');
     const wrap = document.getElementById('settings-grace-input-wrap');
     const tooltip = document.getElementById('grace-input-lock-tooltip');
-    if (!input || !wrap || wrap.classList.contains('hidden')) return;
+    if (!input || !wrap || row?.classList.contains('hidden')) return;
 
     const locked = hasAnyEnforcedBlocks();
     input.disabled = locked;
@@ -2756,7 +2746,7 @@ function syncMigrationPostHeader(state) {
         if (showReadyBanner && readyText) {
             const count = migrationBrowserKeys(state).length;
             const key = count === 1 ? 'migrationSetupAllReadyOne' : 'migrationSetupAllReadyMany';
-            readyText.innerHTML = tSettingsFmt(key, { count: String(count) });
+            readyText.innerHTML = tSettings(key);
         }
     }
 
@@ -14858,7 +14848,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationDone: 'I\'m all set up',
         migrationSkip: 'Skip for now',
         migrationSetupAllReadyOne: '<strong>Your browser is ready.</strong> You can finish setup.',
-        migrationSetupAllReadyMany: '<strong>All {count} browsers are ready.</strong> You can finish setup.',
+        migrationSetupAllReadyMany: '<strong>All your browsers are ready.</strong> You can finish setup.',
         migrationEnforcementHeadline: 'Browser enforcement',
         migrationEnforcementDescMacAutomation: 'To hold yourself accountable, your <strong>browser is automatically closed</strong> if you turn off Automation during blocking.',
         migrationEnforcementDescMacFirefox: 'To hold yourself accountable, your <strong>browser is automatically closed</strong> if you turn off Automation or disable ReDD Focus during blocking.',
@@ -15012,11 +15002,13 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedCombinedAutomation: '{browser} were closed because ReDD Block couldn’t control them.',
         enforcerClosedInstrAutomationGeneric: 'Switch ReDD Block back on for {browser} under Privacy & Security → Automation.',
         enforcerBrowserFallback: 'your browser',
-        gracePeriodLabel: 'Seconds before a browser is closed if ReDD Focus is disabled',
-        settingsEnforcementHeading: 'Enforcement settings',
-        settingsEnforcementDescMacAutomation: 'Your <strong>browser is automatically closed</strong> if you turn off Automation during blocking.',
-        settingsEnforcementDescMacFirefox: 'Your <strong>browser is automatically closed</strong> if you turn off Automation or disable ReDD Focus during blocking.',
-        settingsEnforcementDescExtension: 'Your <strong>browser is automatically closed</strong> if you disable ReDD Focus during blocking.',
+        gracePeriodLabel: 'Grace period',
+        gracePeriodHint: 'Seconds to re-enable before the browser closes.',
+        settingsEnforcementHeading: 'Enforcement',
+        settingsEnforcementRowLabel: 'Auto-close browser if protection stops',
+        settingsEnforcementRowHintMacAutomation: 'If Automation is switched off mid-block.',
+        settingsEnforcementRowHintMacFirefox: 'If Automation is switched off — or ReDD Focus is disabled in Firefox — mid-block.',
+        settingsEnforcementRowHintExtension: 'If ReDD Focus is disabled mid-block.',
         settingsEnforcementLockedTooltip: 'To change this setting, first stop all active blocks.',
         settingsDiagnosticsLabel: 'Something not working?',
         settingsSetupBtn: 'Setup',
@@ -15075,9 +15067,10 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsYes: 'Yes',
         diagnosticsNo: 'No',
         settingsOnboardingBtn: 'Onboarding',
-        settingsBlocklistsIoLabel: 'Export / import blocklists & schedules',
-        settingsExportBlocklistsBtn: 'Export…',
-        settingsImportBlocklistsBtn: 'Import…',
+        settingsBlocklistsIoLabel: 'Blocklists & schedules',
+        settingsBlocklistsIoHint: 'Save a backup or restore from a file.',
+        settingsExportBlocklistsBtn: 'Export',
+        settingsImportBlocklistsBtn: 'Import',
         exportBlocklistsSaveTitle: 'Export blocklists & schedules',
         exportBlocklistsEmpty: 'You have no blocklists to export.',
         exportBlocklistsSuccessFmt: 'Exported {n} blocklist(s) and their schedules to:\n{path}',
@@ -15245,9 +15238,13 @@ const SETTINGS_TRANSLATIONS = {
         // Settings
         settingsTitle: 'Settings',
         settingsDone: 'Done',
-        yourVersionPrefix: 'Your version:',
+        settingsGeneralHeading: 'General',
+        settingsManageHeading: 'Manage',
+        settingsOverrideAllHint: 'Ends every active block right now.',
+        settingsUninstallHint: 'Your blocklists are kept on disk.',
+        yourVersionPrefix: 'Version',
         latestVersionPrefix: 'Latest version:',
-        lightDarkMode: 'Light/dark mode',
+        lightDarkMode: 'Appearance',
         language: 'Language',
         themeAuto: 'Auto',
         themeLight: 'Light',
@@ -15259,10 +15256,10 @@ const SETTINGS_TRANSLATIONS = {
         advancedOptions: 'Advanced options',
         overrideAllBlocks: 'Stop All Blocks (with challenge)',
         settingsOverrideAllLabel: 'Stop all blocks & schedules',
-        settingsOverrideAllBtn: 'Stop all blocks',
+        settingsOverrideAllBtn: 'Stop all',
         // In-app uninstall (macOS only)
         uninstallApp: 'Uninstall ReDD Block',
-        uninstallAppBtn: 'Uninstall',
+        uninstallAppBtn: 'Uninstall…',
         uninstallDisabledHint: 'Stop running blocks first before you can uninstall.',
         uninstallConfirmTitle: 'Uninstall ReDD Block?',
         uninstallConfirmIntroHtml: 'ReDD Block will be moved to the Trash. Here\u2019s what happens to the {LOGO}<strong>ReDD Focus</strong> browser extensions installed on this Mac.',
@@ -15437,7 +15434,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationDone: 'Jeg er klar',
         migrationSkip: 'Spring over for nu',
         migrationSetupAllReadyOne: '<strong>Din browser er klar.</strong> Du kan afslutte opsætningen.',
-        migrationSetupAllReadyMany: '<strong>Alle {count} browsere er klar.</strong> Du kan afslutte opsætningen.',
+        migrationSetupAllReadyMany: '<strong>Alle dine browsere er klar.</strong> Du kan afslutte opsætningen.',
         migrationEnforcementHeadline: 'Browser-beskyttelse',
         migrationEnforcementDescMacAutomation: 'For at holde dig ansvarlig bliver din <strong>browser automatisk lukket</strong>, hvis du slår Automatisering fra under blokering.',
         migrationEnforcementDescMacFirefox: 'For at holde dig ansvarlig bliver din <strong>browser automatisk lukket</strong>, hvis du slår Automatisering fra eller deaktiverer ReDD Focus under blokering.',
@@ -15589,11 +15586,13 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedCombinedAutomation: '{browser} blev lukket, fordi ReDD Block ikke kunne styre dem.',
         enforcerClosedInstrAutomationGeneric: 'Slå ReDD Block til igen for {browser} under Anonymitet & sikkerhed → Automatisering.',
         enforcerBrowserFallback: 'din browser',
-        gracePeriodLabel: 'Sekunder før en browser lukkes, hvis ReDD Focus er slået fra',
-        settingsEnforcementHeading: 'Indstillinger for selvkontrols-støtte',
-        settingsEnforcementDescMacAutomation: 'Din <strong>browser lukkes automatisk</strong>, hvis du slår Automatisering fra under blokering.',
-        settingsEnforcementDescMacFirefox: 'Din <strong>browser lukkes automatisk</strong>, hvis du slår Automatisering fra eller deaktiverer ReDD Focus under blokering.',
-        settingsEnforcementDescExtension: 'Din <strong>browser lukkes automatisk</strong>, hvis du deaktiverer ReDD Focus under blokering.',
+        gracePeriodLabel: 'Henstandsperiode',
+        gracePeriodHint: 'Sekunder til at slå til igen, før browseren lukkes.',
+        settingsEnforcementHeading: 'Håndhævelse',
+        settingsEnforcementRowLabel: 'Luk browser automatisk, hvis beskyttelsen stopper',
+        settingsEnforcementRowHintMacAutomation: 'Hvis Automatisering slås fra midt i en blokering.',
+        settingsEnforcementRowHintMacFirefox: 'Hvis Automatisering slås fra — eller ReDD Focus deaktiveres i Firefox — midt i en blokering.',
+        settingsEnforcementRowHintExtension: 'Hvis ReDD Focus deaktiveres midt i en blokering.',
         settingsEnforcementLockedTooltip: 'For at ændre denne indstilling skal du først stoppe alle aktive blokeringer.',
         settingsDiagnosticsLabel: 'Virker noget ikke?',
         settingsSetupBtn: 'Opsætning',
@@ -15652,9 +15651,10 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsYes: 'Ja',
         diagnosticsNo: 'Nej',
         settingsOnboardingBtn: 'Onboarding',
-        settingsBlocklistsIoLabel: 'Eksportér / importér bloklister og tidsplaner',
-        settingsExportBlocklistsBtn: 'Eksportér…',
-        settingsImportBlocklistsBtn: 'Importér…',
+        settingsBlocklistsIoLabel: 'Bloklister og tidsplaner',
+        settingsBlocklistsIoHint: 'Gem en sikkerhedskopi, eller gendan fra en fil.',
+        settingsExportBlocklistsBtn: 'Eksportér',
+        settingsImportBlocklistsBtn: 'Importér',
         exportBlocklistsSaveTitle: 'Eksportér bloklister og tidsplaner',
         exportBlocklistsEmpty: 'Du har ingen bloklister at eksportere.',
         exportBlocklistsSuccessFmt: 'Eksporterede {n} blokliste(r) og deres tidsplaner til:\n{path}',
@@ -15820,9 +15820,13 @@ const SETTINGS_TRANSLATIONS = {
         // Settings
         settingsTitle: 'Indstillinger',
         settingsDone: 'Færdig',
-        yourVersionPrefix: 'Din version:',
+        settingsGeneralHeading: 'Generelt',
+        settingsManageHeading: 'Administrér',
+        settingsOverrideAllHint: 'Afslutter alle aktive blokeringer med det samme.',
+        settingsUninstallHint: 'Dine bloklister gemmes på disken.',
+        yourVersionPrefix: 'Version',
         latestVersionPrefix: 'Nyeste version:',
-        lightDarkMode: 'Lyst / mørkt tema',
+        lightDarkMode: 'Udseende',
         language: 'Sprog',
         themeAuto: 'Auto',
         themeLight: 'Lys',
@@ -15833,10 +15837,10 @@ const SETTINGS_TRANSLATIONS = {
         languagePickerSwitch: 'Skift til',
         overrideAllBlocks: 'Stop alle blokeringer (med udfordring)',
         settingsOverrideAllLabel: 'Stop alle blokeringer og tidsplaner',
-        settingsOverrideAllBtn: 'Stop alle blokeringer',
+        settingsOverrideAllBtn: 'Stop alle',
         // In-app uninstall (macOS only)
         uninstallApp: 'Afinstaller ReDD Block',
-        uninstallAppBtn: 'Afinstaller',
+        uninstallAppBtn: 'Afinstaller…',
         uninstallDisabledHint: 'Stop kørende blokeringer først, før du kan afinstallere.',
         uninstallConfirmTitle: 'Afinstaller ReDD Block?',
         uninstallConfirmIntroHtml: 'ReDD Block flyttes til papirkurven. Sådan påvirkes {LOGO}<strong>ReDD Focus</strong>-browserudvidelserne på denne Mac.',
@@ -16096,7 +16100,6 @@ function applyMigrationOverlayStaticCopy() {
     setText('enforcement-toggle-disable-note-text', tSettings('migrationEnforcementDisableNote'));
     void updateAllEnforcementToggleLocks();
     setText('settings-enforcement-heading', tSettings('settingsEnforcementHeading'));
-    setText('settings-enforcement-toggle-headline-text', tSettings('migrationEnforcementHeadline'));
     const continueBtn = document.getElementById('migration-continue-btn');
     if (continueBtn && !continueBtn.disabled) {
         continueBtn.textContent = tSettings('migrationContinue');
@@ -16595,6 +16598,8 @@ function applySettingsLanguage() {
     setText('pause-next-day-indicator', `+1 ${tSettings('nextDay')}`);
 
     setText('settings-modal-title', tSettings('settingsTitle'));
+    setText('settings-general-heading', tSettings('settingsGeneralHeading'));
+    setText('settings-manage-heading', tSettings('settingsManageHeading'));
     setText('settings-theme-label', tSettings('lightDarkMode'));
     setText('settings-language-label', tSettings('language'));
     syncLanguagePickerUI();
@@ -16602,10 +16607,15 @@ function applySettingsLanguage() {
     setText('theme-option-light', tSettings('themeLight'));
     setText('theme-option-dark', tSettings('themeDark'));
     setText('settings-override-all-label', tSettings('settingsOverrideAllLabel'));
+    setText('settings-override-all-hint', tSettings('settingsOverrideAllHint'));
     setText('settings-override-all-btn-label', tSettings('settingsOverrideAllBtn'));
     setText('settings-uninstall-label', tSettings('uninstallApp'));
+    setText('settings-uninstall-hint', tSettings('settingsUninstallHint'));
     setText('settings-uninstall-btn-label', tSettings('uninstallAppBtn'));
     setText('settings-help-label', tSettings('settingsDiagnosticsLabel'));
+    setText('settings-enforcement-heading', tSettings('settingsEnforcementHeading'));
+    setText('settings-enforcement-row-label', tSettings('settingsEnforcementRowLabel'));
+    void applyEnforcementDescCopy(lastMigrationBrowserState);
     setText('settings-setup-btn-label', tSettings('settingsSetupBtn'));
     setText('settings-diagnostics-btn-label', tSettings('settingsDiagnosticsBtn'));
     setText('diagnostics-modal-title', tSettings('diagnosticsModalTitle'));
@@ -16613,6 +16623,7 @@ function applySettingsLanguage() {
     setText('close-diagnostics-btn', tSettings('close'));
     setText('settings-onboarding-btn-label', tSettings('settingsOnboardingBtn'));
     setText('settings-blocklists-io-label', tSettings('settingsBlocklistsIoLabel'));
+    setText('settings-blocklists-io-hint', tSettings('settingsBlocklistsIoHint'));
     setText('settings-export-blocklists-btn-label', tSettings('settingsExportBlocklistsBtn'));
     setText('settings-import-blocklists-btn-label', tSettings('settingsImportBlocklistsBtn'));
     setText('uninstall-confirm-title', tSettings('uninstallConfirmTitle'));
@@ -16636,6 +16647,7 @@ function applySettingsLanguage() {
     setText('settings-helper-hint', tSettings('helperHint'));
     setText('close-settings-btn', tSettings('settingsDone'));
     setText('grace-period-label-text', tSettings('gracePeriodLabel'));
+    setText('grace-period-hint-text', tSettings('gracePeriodHint'));
     setText('app-blocking-lets-go-btn', tSettings('appBlockingLetsGo'));
     setHtml('settings-feedback-footer-text', tSettings('settingsFeedbackFooterHtml'));
     updateGraceSettingLock();

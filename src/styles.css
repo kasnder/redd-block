@@ -7479,6 +7479,11 @@ body.ios .modal-content {
     overscroll-behavior-y: none;
 }
 
+#settings-modal .modal-content {
+    max-width: 520px;
+    --settings-control-width: 140px;
+}
+
 body.ios #blocklist-modal {
     padding-top: env(safe-area-inset-top, 20px);
 }
@@ -7953,18 +7958,108 @@ body.dark-mode .settings-top-btn {
 }
 
 /* Hide desktop-only settings sections on iOS */
-body.ios .settings-enforcement-section,
+body.ios #settings-enforcement-panel,
+body.ios .settings-help-section,
 body.ios .desktop-only {
     display: none;
 }
 
 /* Settings Modal Section */
-.settings-section {
-    padding: 12px 0;
+.settings-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 4px 0 8px;
 }
 
-/* Lift the whole top settings block above feedback/footer while the language
-   menu is open; later siblings in .modal-content would otherwise paint on top. */
+#settings-modal .settings-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0;
+}
+
+.settings-panel {
+    border: 1px solid var(--border-color-medium);
+    border-radius: 12px;
+    background: #FAF8F5;
+    overflow: visible;
+}
+
+body.dark-mode #settings-modal .settings-panel {
+    background: var(--redd-warm-grey);
+}
+
+.settings-panel-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+}
+
+.settings-panel-rows > .settings-row + .settings-row {
+    border-top: 1px solid var(--border-color-medium);
+}
+
+.settings-panel-rows > .settings-row {
+    padding: 12px 14px;
+}
+
+.settings-panel-rows > .grace-error {
+    padding: 0 14px 12px;
+}
+
+.settings-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+}
+
+.settings-row-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.settings-row-label {
+    font-size: 15px;
+    font-weight: 400;
+    line-height: 1.3;
+    color: var(--text-primary);
+    flex-shrink: 0;
+    min-width: 0;
+}
+
+.settings-row-hint {
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
+.settings-row-control {
+    justify-self: end;
+    min-width: 0;
+}
+
+#settings-modal .settings-row-control:has(.language-picker),
+#settings-modal .settings-row-control:has(#theme-select),
+#settings-modal .settings-row-control:has(.settings-override-all-btn),
+#settings-modal .settings-row-control.settings-uninstall-btn-wrap {
+    width: var(--settings-control-width);
+    flex-shrink: 0;
+}
+
+#settings-modal .settings-row-control .language-picker,
+#settings-modal .settings-row-control #theme-select,
+#settings-modal .settings-row-control .settings-override-all-btn,
+#settings-modal .settings-row-control.settings-uninstall-btn-wrap .uninstall-app-btn {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
 #settings-modal .settings-section:has(.language-picker-dropdown:not(.hidden)) {
     position: relative;
     z-index: 100;
@@ -7990,12 +8085,11 @@ body.ios .desktop-only {
 }
 
 .settings-help-actions .settings-help-btn {
-    width: auto;
-    flex: 1 1 0;
+    width: 100%;
     min-width: 0;
 }
 
-#settings-modal .settings-section-grid .settings-blocklists-io-btns {
+#settings-modal .settings-row-control.settings-blocklists-io-btns {
     width: auto;
     max-width: 100%;
     justify-self: end;
@@ -8005,13 +8099,6 @@ body.ios .desktop-only {
     grid-column: 1 / -1;
     border-top: 1px solid var(--border-color-light);
     margin: 2px 0 4px;
-}
-
-.settings-row-label {
-    font-size: 15px;
-    color: var(--text-primary);
-    flex-shrink: 0;
-    min-width: 0;
 }
 
 .settings-blocklists-io-btns {
@@ -8120,9 +8207,9 @@ body.dark-mode #settings-modal .settings-select {
 }
 
 .language-picker-code {
-    font-weight: 500;
+    font-weight: 400;
     letter-spacing: 0.02em;
-    color: var(--text-muted);
+    color: var(--text-primary);
 }
 
 .language-picker-trigger .language-picker-code {
@@ -8201,7 +8288,7 @@ body.dark-mode .language-picker-dropdown {
     cursor: default;
     font-family: inherit;
     font-size: 15px;
-    font-weight: 600;
+    font-weight: 400;
     color: var(--text-primary);
     margin: 0;
     box-sizing: border-box;
@@ -8245,10 +8332,11 @@ body.dark-mode .language-picker-dropdown {
 }
 
 .settings-section-heading {
-    margin: 0 0 8px;
+    margin: 0;
+    padding: 0 2px;
     font-family: var(--font-section-label);
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--text-muted);
@@ -8290,10 +8378,9 @@ body.dark-mode .language-picker-dropdown {
 }
 
 #settings-modal .settings-enforcement-section {
-    margin-top: 6px;
-    padding-top: 8px;
+    margin-top: 0;
+    padding-top: 0;
     padding-bottom: 0;
-    border-top: 1px solid var(--border-color-light);
     overflow: visible;
 }
 
@@ -8305,8 +8392,20 @@ body.dark-mode .language-picker-dropdown {
     margin-top: 6px;
 }
 
-#settings-modal .settings-section {
-    padding: 12px 0 6px;
+#settings-modal .settings-panel .grace-error {
+    margin: -2px 0 0;
+}
+
+#settings-modal .settings-feedback-footer {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-top: 16px;
+    padding: 12px 14px;
+    background: #e9f0ed;
+    border: 1px solid #ccd8d2;
+    border-radius: 10px;
+    color: #2d5a4c;
 }
 
 .settings-feedback-footer {
@@ -8546,33 +8645,55 @@ body.dark-mode #settings-modal .settings-feedback-footer {
    isn't shown there. */
 .macos-only { display: none; }
 body.mac .macos-only { display: block; }
-
-/* Participate in the parent settings grid without an extra wrapper box. */
-body.mac .settings-uninstall-contents.macos-only {
-    display: contents;
+body.mac .settings-uninstall-contents.macos-only.settings-row {
+    display: grid;
 }
 
-body:not(.ios) .settings-blocklists-io-contents,
-.settings-override-all-contents:not(.hidden) {
-    display: contents;
-}
-
-#settings-modal .settings-help-section {
-    grid-column: 1 / -1;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-}
-
-.settings-help-label {
-    font-weight: 600;
+body:not(.ios) .settings-override-all-contents:not(.hidden) {
+    display: grid;
 }
 
 .settings-help-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+#settings-modal .settings-help-btn {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    box-sizing: border-box;
+    width: 100%;
+    padding: 14px 10px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.2;
+    font-family: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    background: #FAF8F5;
+    color: var(--text-primary);
+    border: 1px solid var(--border-color-light);
+    transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
+}
+
+body.dark-mode #settings-modal .settings-help-btn {
+    background: var(--redd-warm-grey);
+}
+
+#settings-modal .settings-help-btn:hover:not(:disabled) {
+    background: var(--element-hover-bg);
+    border-color: var(--border-color-strong, var(--border-color-medium));
+}
+
+#settings-modal .settings-help-btn svg {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
 }
 
 .settings-override-all-contents.hidden {
@@ -8580,10 +8701,9 @@ body:not(.ios) .settings-blocklists-io-contents,
 }
 
 /* Settings action buttons — match language/theme control width and radius. */
-#settings-modal .settings-section-grid .settings-help-btn,
-#settings-modal .settings-section-grid .settings-override-all-btn,
-#settings-modal .settings-section-grid .uninstall-app-btn {
-    display: inline-flex;
+#settings-modal .settings-override-all-btn,
+#settings-modal .uninstall-app-btn {
+    display: flex;
     align-items: center;
     justify-content: center;
     gap: 6px;
@@ -8621,21 +8741,6 @@ body:not(.ios) .settings-blocklists-io-contents,
 
 #settings-modal .uninstall-app-btn svg,
 #settings-modal .settings-override-all-btn svg {
-    flex-shrink: 0;
-}
-
-#settings-modal .settings-help-btn {
-    background: var(--modal-bg);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color-medium);
-}
-
-#settings-modal .settings-help-btn:hover:not(:disabled) {
-    background: var(--element-hover-bg);
-    border-color: var(--border-color-strong, var(--border-color-medium));
-}
-
-#settings-modal .settings-help-btn svg {
     flex-shrink: 0;
 }
 
