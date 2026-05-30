@@ -5227,6 +5227,42 @@ body.dark-mode .onboarding-focus-card {
     max-width: 520px;
 }
 
+.migration-post-header {
+    text-align: center;
+    margin: 0 0 16px;
+}
+
+.migration-post-header-title {
+    margin: 0 0 8px;
+    font-family: var(--font-heading);
+    font-size: 24px;
+    font-weight: 400;
+    line-height: 1.25;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+}
+
+.migration-post-header-subtitle {
+    margin: 0 auto;
+    max-width: 36em;
+    font-size: 13px;
+    line-height: 1.5;
+    font-weight: 400;
+    font-style: normal;
+    color: var(--text-muted);
+    text-wrap: balance;
+}
+
+.migration-post-header-subtitle strong {
+    font-weight: 600;
+    font-style: normal;
+}
+
+#migration-phase-post:has(.migration-post-header:not(.hidden)) .migration-card {
+    margin-top: 0;
+    padding-top: 24px;
+}
+
 .migration-card {
     text-align: left;
     padding: 24px 28px 22px;
@@ -6009,7 +6045,9 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
     display: flex;
     align-items: flex-start;
     gap: 5px;
-    margin: 6px 0 0;
+    margin: 10px 0 0;
+    padding-top: 10px;
+    border-top: 1px dashed rgba(10, 45, 123, 0.14);
     font-size: var(--enforcement-toggle-body-size);
     line-height: 1.5;
     color: #b45309;
@@ -6023,6 +6061,7 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
 
 body.dark-mode #migration-onboarding .enforcement-toggle-disable-note {
     color: #fbbf24;
+    border-top-color: rgba(255, 255, 255, 0.14);
 }
 
 .enforcement-toggle-section.enforcement-off {
@@ -6075,6 +6114,11 @@ body.dark-mode #migration-onboarding .enforcement-toggle-disable-note {
     font-size: var(--enforcement-toggle-body-size);
     line-height: 1.5;
     color: var(--text-secondary);
+}
+
+.enforcement-toggle-desc strong,
+.settings-enforcement-desc strong {
+    font-weight: 600;
 }
 
 #migration-onboarding .enforcement-toggle-section .enforcement-switch {

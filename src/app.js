@@ -1438,7 +1438,7 @@ async function checkForAppUpdate() {
 //
 // Friendly one-screen intro shown once per machine, before the EULA.
 // Sets context (open-source, who built it) before legal acceptance
-// and the FDA permission ask.
+// and the macOS Automation / Firefox FDA setup overview.
 //
 // Persistence: `appData.settings.welcomeOnboardingShown` (boolean).
 // Wiped by `scripts/dev-reset-fda-onboarding.sh` (incl. --nuke; shared
@@ -1466,11 +1466,10 @@ async function runInitialDesktopOnboardingSequence() {
 }
 
 function presentWelcomeOnboarding(onContinue) {
-    return new Promise((resolve) => {
+    return (async () => {
         const overlay = document.getElementById('welcome-onboarding');
         const btn = document.getElementById('welcome-onboarding-continue-btn');
         if (!overlay || !btn) {
-            resolve();
             return;
         }
 
@@ -1481,16 +1480,19 @@ function presentWelcomeOnboarding(onContinue) {
         document.getElementById('now-blocking-row')?.classList.add('hidden');
         overlay.classList.remove('hidden');
         resetWelcomeDemoPanel();
+        welcomeFirefoxInstalled = await detectWelcomeFirefoxInstalled();
         applyWelcomeOnboardingLanguage();
 
-        const onClick = () => {
-            btn.removeEventListener('click', onClick);
-            overlay.classList.add('hidden');
-            onContinue?.();
-            resolve();
-        };
-        btn.addEventListener('click', onClick);
-    });
+        await new Promise((resolve) => {
+            const onClick = () => {
+                btn.removeEventListener('click', onClick);
+                overlay.classList.add('hidden');
+                onContinue?.();
+                resolve();
+            };
+            btn.addEventListener('click', onClick);
+        });
+    })();
 }
 
 function showEulaOnboardingScreen() {
@@ -1528,6 +1530,19 @@ function continueFirstRunOnboardingFromWelcome() {
         return;
     }
     updateOnboardingVisibility();
+}
+
+/** macOS welcome screen: whether Firefox.app is on disk (step 2 gate). */
+let welcomeFirefoxInstalled = false;
+
+async function detectWelcomeFirefoxInstalled() {
+    if (!isMacOSDesktop) return false;
+    try {
+        return !!(await invoke('is_firefox_installed'));
+    } catch (e) {
+        console.warn('[welcome-onboarding] is_firefox_installed failed:', e);
+        return false;
+    }
 }
 
 function returnToWelcomeFromEula() {
@@ -1865,8 +1880,14 @@ async function showMigrationOnboarding(phase, state, opts = {}) {
         const subtitle = document.getElementById('migration-post-subtitle');
         const cleanupItems = post.querySelectorAll('.migration-cleanup-only');
         if (mode === 'after-cleanup') {
-            if (title) title.textContent = tSettings('migrationPostTitleCleanup');
-            if (subtitle) subtitle.textContent = tSettings('migrationPostSubtitleCleanup');
+            if (title) {
+                title.textContent = tSettings('migrationPostTitleCleanup');
+                title.classList.remove('hidden');
+            }
+            if (subtitle) {
+                subtitle.textContent = tSettings('migrationPostSubtitleCleanup');
+                subtitle.classList.remove('hidden');
+            }
             cleanupItems.forEach(el => el.classList.remove('hidden'));
         } else {
             if (title) title.classList.add('hidden');
@@ -1875,6 +1896,7 @@ async function showMigrationOnboarding(phase, state, opts = {}) {
             if (icon) icon.classList.add('hidden');
             cleanupItems.forEach(el => el.classList.add('hidden'));
         }
+        syncMigrationPostHeader(state);
     }
 
     // Bring our window back to the front. The osascript admin
@@ -2622,19 +2644,60 @@ function migrationBrowserKeys(state) {
 // Firefox is installed — the ReDD Focus extension in Firefox, so the
 // subtitle is built from live state. Other platforms keep the
 // extension-everywhere copy.
+function migrationExtHeaderCopy(state) {
+    if (!isMacOSDesktop) return null;
+    const focusLogoHtml =
+        `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
+    const shieldLogoHtml =
+        `<img src="${logoReddShieldUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
+    const browsers = state?.browsers || lastMigrationBrowserState?.browsers || {};
+    const firefoxInstalled = !!(browsers.firefox && browsers.firefox.installed);
+    return {
+        titleHtml: tSettings('migrationExtTitleMac').replace('{SHIELD}', shieldLogoHtml),
+        subtitleHtml: (firefoxInstalled
+            ? tSettings('migrationExtSubMacFirefox')
+            : tSettings('migrationExtSubMac')).replace('{FOCUS}', focusLogoHtml),
+    };
+}
+
+function isMacFreshMigrationPost() {
+    const postTitle = document.getElementById('migration-post-title');
+    return isMacOSDesktop && !!postTitle?.classList.contains('hidden');
+}
+
+function syncMigrationPostHeader(state) {
+    const header = document.getElementById('migration-post-header');
+    const checklist = document.getElementById('migration-checklist');
+    if (!header) return;
+
+    if (!isMacFreshMigrationPost()) {
+        header.classList.add('hidden');
+        checklist?.classList.remove('hidden');
+        return;
+    }
+
+    const copy = migrationExtHeaderCopy(state);
+    if (!copy) return;
+
+    header.classList.remove('hidden');
+    const titleEl = document.getElementById('migration-post-header-title');
+    const subEl = document.getElementById('migration-post-header-subtitle');
+    if (titleEl) titleEl.innerHTML = copy.titleHtml;
+    if (subEl) subEl.innerHTML = copy.subtitleHtml;
+    checklist?.classList.add('hidden');
+}
+
 function migrationExtLinesHtml(state) {
     const focusLogoHtml =
         `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
     if (isMacOSDesktop) {
-        const shieldLogoHtml =
-            `<img src="${logoReddShieldUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
-        const browsers = state?.browsers || lastMigrationBrowserState?.browsers || {};
-        const firefoxInstalled = !!(browsers.firefox && browsers.firefox.installed);
-        const title = tSettings('migrationExtTitleMac').replace('{SHIELD}', shieldLogoHtml);
-        const sub = (firefoxInstalled
-            ? tSettings('migrationExtSubMacFirefox')
-            : tSettings('migrationExtSubMac')).replace('{FOCUS}', focusLogoHtml);
-        return `<span style="font-weight:400;font-size:1.25em">${title}</span><br><span style="font-weight:400;font-style:italic;opacity:0.7">${sub}</span>`;
+        if (isMacFreshMigrationPost()) {
+            return '';
+        }
+        const copy = migrationExtHeaderCopy(state);
+        if (copy) {
+            return `<span style="font-weight:400;font-size:1.25em">${copy.titleHtml}</span><br><span style="font-weight:400;opacity:0.85">${copy.subtitleHtml}</span>`;
+        }
     }
     return tSettings('migrationChecklistExtLinesHtml').replace('{LOGO}', focusLogoHtml);
 }
@@ -2788,6 +2851,7 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
     lastMigrationBrowserState = state;
     // Keep the header subtitle in sync with the live scan (the macOS
     // copy depends on whether Firefox is installed).
+    syncMigrationPostHeader(state);
     const extLines = document.getElementById('migration-checklist-ext-lines');
     if (extLines) extLines.innerHTML = migrationExtLinesHtml(state);
     const sig = migrationBrowserRenderSignature(state);
@@ -14640,9 +14704,12 @@ const SETTINGS_TRANSLATIONS = {
         welcomeOnboardingSubtitle:
             'An open-source tool for blocking the websites\nand apps that pull you away from your focus.',
         welcomeHowHeading: 'STEPS TO GET STARTED (we\'ll guide you through it 😊)',
-        welcomeStep1TitleHtml: 'Grant {APPLE} Full Disk Access',
-        welcomeStep1BodyHtml:
-            'macOS needs this so ReDD Block can see whether blocking is enabled in your browsers. We\'ll open System Settings for you.',
+        welcomeStep1TitleAutomationHtml: 'Allow {APPLE}Automation',
+        welcomeStep1BodyAutomationHtml:
+            'In Safari, Chrome, Brave, and Edge, ReDD Block uses Automation to block websites. We\'ll prompt you to allow access.',
+        welcomeStep2TitleFirefoxHtml: 'Grant {APPLE}Full Disk Access & set up {LOGO}ReDD Focus in Firefox',
+        welcomeStep2BodyFirefoxHtml:
+            'Firefox blocking uses our {LOGO}<strong>ReDD Focus</strong> extension, which needs Full Disk Access so ReDD Block can verify it\'s enabled. We\'ll open System Settings for you.',
         welcomeStep2TitleHtml: 'Enable blocking in your browser & allow it in private/incognito tabs',
         welcomeStep2BodyHtml:
             'Our {LOGO}<strong>ReDD Focus</strong> extension is what actually blocks websites. We\'ll auto-install it in your browsers where we can, and show you what to do.',
@@ -14677,8 +14744,8 @@ const SETTINGS_TRANSLATIONS = {
         migrationChecklistBlocklistsPreserved: 'Your blocklists are preserved',
         migrationChecklistExtLinesHtml: 'Enable {LOGO}ReDD Focus in your browsers<br><span style="font-weight:400;opacity:0.7">and allow it in private/incognito tabs</span>',
         migrationExtTitleMac: 'Enable {SHIELD}ReDD Block in your browsers',
-        migrationExtSubMac: 'allow automation',
-        migrationExtSubMacFirefox: 'allow automation and set up {FOCUS}ReDD Focus in Firefox',
+        migrationExtSubMac: 'Website blocking uses <strong>macOS automation</strong> for Safari, Chrome & Edge.',
+        migrationExtSubMacFirefox: 'Website blocking uses <strong>macOS automation</strong> for Safari, Chrome & Edge, and the <strong>ReDD Focus extension</strong> for Firefox.',
         migrationHowtoHeading: 'Setting up ReDD Focus',
         migrationHowtoLi1Html: 'ReDD Block has tried to install ReDD Focus in your browsers. If it shows as not installed below, click the <strong>Install</strong> buttons to add it manually.',
         migrationHowtoLi3Html: 'Once enabled, <strong>allow it in private/incognito tabs</strong> so blocking works in private windows too.',
@@ -14697,7 +14764,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationDone: 'I\'m all set up',
         migrationSkip: 'Skip for now',
         migrationEnforcementHeadline: 'Browser enforcement',
-        migrationEnforcementDesc: 'To help you stay focused, your browser is automatically closed if you turn off ReDD Focus while a block is running.',
+        migrationEnforcementDesc: 'To hold yourself accountable, your <strong>browser is automatically closed</strong> if you turn off Automation or disable ReDD Focus during blocking.',
         migrationEnforcementDisableNote: 'Once on, you can only turn enforcement off when no blocks are running.',
         migrationApproveAdminPrompt: 'Approve the admin prompt to continue…',
         migrationTryAgain: 'Try again',
@@ -14849,7 +14916,7 @@ const SETTINGS_TRANSLATIONS = {
         enforcerBrowserFallback: 'your browser',
         gracePeriodLabel: 'Seconds before a browser is closed if ReDD Focus is disabled',
         settingsEnforcementHeading: 'Enforcement settings',
-        settingsEnforcementDesc: 'Automatically close browser if ReDD Focus is disabled when a block is running.',
+        settingsEnforcementDesc: 'Your <strong>browser is automatically closed</strong> if you turn off Automation or disable ReDD Focus during blocking.',
         settingsEnforcementLockedTooltip: 'To change this setting, first stop all active blocks.',
         settingsDiagnosticsLabel: 'Something not working?',
         settingsDiagnosticsBtn: 'Diagnostics',
@@ -15212,9 +15279,12 @@ const SETTINGS_TRANSLATIONS = {
         welcomeOnboardingSubtitle:
             'Et open source-værktøj til at blokere de hjemmesider\nog apps, der trækker dig væk fra dit fokus.',
         welcomeHowHeading: 'TRIN FOR AT KOMME I GANG (vi guider dig igennem det 😊)',
-        welcomeStep1TitleHtml: 'Giv {APPLE} fuld diskadgang',
-        welcomeStep1BodyHtml:
-            'macOS har brug for det, så ReDD Block kan se, om blokering er slået til i dine browsere. Vi åbner Systemindstillinger for dig.',
+        welcomeStep1TitleAutomationHtml: 'Tillad {APPLE}Automatisering',
+        welcomeStep1BodyAutomationHtml:
+            'I Safari, Chrome, Brave og Edge bruger ReDD Block Automatisering til at blokere websites. Vi beder dig om at tillade adgang.',
+        welcomeStep2TitleFirefoxHtml: 'Giv {APPLE}fuld diskadgang og opsæt {LOGO}ReDD Focus i Firefox',
+        welcomeStep2BodyFirefoxHtml:
+            'Blokering i Firefox bruger vores {LOGO}<strong>ReDD Focus</strong>-udvidelse, som kræver fuld diskadgang, så ReDD Block kan verificere, at den er slået til. Vi åbner Systemindstillinger for dig.',
         welcomeStep2TitleHtml: 'Slå blokering til i din browser og tillad den i private/incognito-faner',
         welcomeStep2BodyHtml:
             'Vores {LOGO}<strong>ReDD Focus</strong>-udvidelse er det, der faktisk blokerer websites. Vi installerer den automatisk i dine browsere, hvor vi kan, og viser dig, hvad du skal gøre.',
@@ -15249,8 +15319,8 @@ const SETTINGS_TRANSLATIONS = {
         migrationChecklistBlocklistsPreserved: 'Dine bloklister er bevaret',
         migrationChecklistExtLinesHtml: 'Aktivér {LOGO}ReDD Focus i dine browsere<br><span style="font-weight:400;opacity:0.7">og tillad den i privat- eller inkognitofaner</span>',
         migrationExtTitleMac: 'Aktivér {SHIELD}ReDD Block i dine browsere',
-        migrationExtSubMac: 'tillad automatisering',
-        migrationExtSubMacFirefox: 'tillad automatisering og opsæt {FOCUS}ReDD Focus-udvidelsen i Firefox',
+        migrationExtSubMac: 'Websiteblokering bruger <strong>macOS-automatisering</strong> i Safari, Chrome og Edge.',
+        migrationExtSubMacFirefox: 'Websiteblokering bruger <strong>macOS-automatisering</strong> i Safari, Chrome og Edge og <strong>ReDD Focus-udvidelsen</strong> i Firefox.',
         migrationHowtoHeading: 'Sådan sætter du ReDD Focus op',
         migrationHowtoLi1Html: 'ReDD Block har forsøgt at installere ReDD Focus i dine browsere. Hvis den vises som ikke installeret nedenfor, klik på <strong>Installer</strong>-knapperne for at tilføje den manuelt.',
         migrationHowtoLi3Html: 'Når den er aktiveret, <strong>tillad den i privat/inkognito-faner</strong>, så blokering også virker i private vinduer.',
@@ -15267,7 +15337,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationDone: 'Jeg er klar',
         migrationSkip: 'Spring over for nu',
         migrationEnforcementHeadline: 'Browser-beskyttelse',
-        migrationEnforcementDesc: 'For at støtte dig i at fokusere, bliver din browser automatisk lukket ned hvis du slukker for ReDD Focus mens en blokering kører.',
+        migrationEnforcementDesc: 'For at holde dig ansvarlig bliver din <strong>browser automatisk lukket</strong>, hvis du slår Automatisering fra eller deaktiverer ReDD Focus under blokering.',
         migrationEnforcementDisableNote: 'Når den er slået til, kan du kun slå håndhævelse fra, når ingen blokeringer kører.',
         migrationApproveAdminPrompt: 'Godkend administratorprompt for at fortsætte …',
         migrationTryAgain: 'Prøv igen',
@@ -15417,7 +15487,7 @@ const SETTINGS_TRANSLATIONS = {
         enforcerBrowserFallback: 'din browser',
         gracePeriodLabel: 'Sekunder før en browser lukkes, hvis ReDD Focus er slået fra',
         settingsEnforcementHeading: 'Indstillinger for selvkontrols-støtte',
-        settingsEnforcementDesc: 'Luk browser automatisk hvis ReDD Focus slås fra mens en blokering kører.',
+        settingsEnforcementDesc: 'Din <strong>browser lukkes automatisk</strong>, hvis du slår Automatisering fra eller deaktiverer ReDD Focus under blokering.',
         settingsEnforcementLockedTooltip: 'For at ændre denne indstilling skal du først stoppe alle aktive blokeringer.',
         settingsDiagnosticsLabel: 'Virker noget ikke?',
         settingsDiagnosticsBtn: 'Diagnostik',
@@ -15900,6 +15970,7 @@ function applyMigrationOverlayStaticCopy() {
     setHtml('migration-pre-warn', tSettings('migrationPreWarnHtml'));
     setText('migration-checklist-cleaned-label', tSettings('migrationChecklistCleanedOld'));
     setText('migration-checklist-blocks-label', tSettings('migrationChecklistBlocklistsPreserved'));
+    syncMigrationPostHeader(lastMigrationBrowserState);
     setHtml('migration-checklist-ext-lines', migrationExtLinesHtml(lastMigrationBrowserState));
     setText('migration-howto-title', tSettings('migrationHowtoHeading'));
     // macOS blocks Safari + Chromium via Automation (the rows below ask
@@ -15913,12 +15984,12 @@ function applyMigrationOverlayStaticCopy() {
     setText('migration-back-btn', tSettings('eulaBackBtn'));
     syncMigrationPostBackButtonVisibility();
     setText('enforcement-toggle-headline-text', tSettings('migrationEnforcementHeadline'));
-    setText('enforcement-toggle-desc-text', tSettings('migrationEnforcementDesc'));
+    setHtml('enforcement-toggle-desc-text', tSettings('migrationEnforcementDesc'));
     setText('enforcement-toggle-disable-note-text', tSettings('migrationEnforcementDisableNote'));
     void updateAllEnforcementToggleLocks();
     setText('settings-enforcement-heading', tSettings('settingsEnforcementHeading'));
     setText('settings-enforcement-toggle-headline-text', tSettings('migrationEnforcementHeadline'));
-    setText('settings-enforcement-toggle-desc-text', tSettings('settingsEnforcementDesc'));
+    setHtml('settings-enforcement-toggle-desc-text', tSettings('settingsEnforcementDesc'));
     const continueBtn = document.getElementById('migration-continue-btn');
     if (continueBtn && !continueBtn.disabled) {
         continueBtn.textContent = tSettings('migrationContinue');
@@ -15988,21 +16059,41 @@ function applyWelcomeOnboardingLanguage() {
     const appleLogoHtml =
         `<img src="${appleLogoUrl}" alt="" class="welcome-apple-inline-logo" aria-hidden="true"> `;
 
-    const stepFda = document.getElementById('welcome-step-fda');
-    if (stepFda) stepFda.classList.toggle('hidden', !isMacOSDesktop);
+    const stepMac = document.getElementById('welcome-step-mac');
+    const stepFirefox = document.getElementById('welcome-step-firefox');
 
     const step1Title = document.getElementById('welcome-step-1-title');
-    if (step1Title) {
-        step1Title.innerHTML = tSettings('welcomeStep1TitleHtml').replace('{APPLE}', appleLogoHtml);
-    }
     const step1Body = document.getElementById('welcome-step-1-body');
-    if (step1Body) step1Body.innerHTML = tSettings('welcomeStep1BodyHtml');
-
     const step2Title = document.getElementById('welcome-step-2-title');
-    if (step2Title) step2Title.textContent = tSettings('welcomeStep2TitleHtml');
     const step2Body = document.getElementById('welcome-step-2-body');
-    if (step2Body) {
-        step2Body.innerHTML = tSettings('welcomeStep2BodyHtml').replace('{LOGO}', focusLogoHtml);
+
+    if (isMacOSDesktop) {
+        stepMac?.classList.remove('hidden');
+        stepFirefox?.classList.toggle('hidden', !welcomeFirefoxInstalled);
+
+        if (step1Title) {
+            step1Title.innerHTML = tSettings('welcomeStep1TitleAutomationHtml').replace('{APPLE}', appleLogoHtml);
+        }
+        if (step1Body) step1Body.innerHTML = tSettings('welcomeStep1BodyAutomationHtml');
+
+        if (welcomeFirefoxInstalled) {
+            if (step2Title) {
+                step2Title.innerHTML = tSettings('welcomeStep2TitleFirefoxHtml')
+                    .replace('{APPLE}', appleLogoHtml)
+                    .replace('{LOGO}', focusLogoHtml);
+            }
+            if (step2Body) {
+                step2Body.innerHTML = tSettings('welcomeStep2BodyFirefoxHtml').replace('{LOGO}', focusLogoHtml);
+            }
+        }
+    } else {
+        stepMac?.classList.add('hidden');
+        stepFirefox?.classList.remove('hidden');
+
+        if (step2Title) step2Title.textContent = tSettings('welcomeStep2TitleHtml');
+        if (step2Body) {
+            step2Body.innerHTML = tSettings('welcomeStep2BodyHtml').replace('{LOGO}', focusLogoHtml);
+        }
     }
 
     const step3Title = document.getElementById('welcome-step-3-title');

@@ -199,14 +199,14 @@
                     <section class="welcome-how-it-works" aria-labelledby="welcome-how-heading">
                         <h2 id="welcome-how-heading" class="welcome-how-heading">STEPS TO GET STARTED (we'll guide you through it 😊)</h2>
                         <ol class="welcome-steps">
-                            <li id="welcome-step-fda" class="welcome-step">
+                            <li id="welcome-step-mac" class="welcome-step">
                                 <span class="welcome-step-num" aria-hidden="true">1</span>
                                 <div class="welcome-step-content">
                                     <p id="welcome-step-1-title" class="welcome-step-title"></p>
                                     <p id="welcome-step-1-body" class="welcome-step-text"></p>
                                 </div>
                             </li>
-                            <li class="welcome-step">
+                            <li id="welcome-step-firefox" class="welcome-step">
                                 <span class="welcome-step-num" aria-hidden="true">2</span>
                                 <div class="welcome-step-content">
                                     <p id="welcome-step-2-title" class="welcome-step-title"></p>
@@ -388,6 +388,10 @@
                     <h1 id="migration-post-title">Cleanup complete</h1>
                     <p id="migration-post-subtitle" class="legal-onboarding-subtitle">Almost done — finish setting up
                         ReDD Focus in each browser you use.</p>
+                    <header id="migration-post-header" class="migration-post-header hidden">
+                        <h1 id="migration-post-header-title" class="migration-post-header-title"></h1>
+                        <p id="migration-post-header-subtitle" class="migration-post-header-subtitle"></p>
+                    </header>
                     <div class="onboarding-focus-card migration-card">
                         <ul id="migration-checklist" class="migration-checklist">
                             <li class="checklist-done migration-cleanup-only">
@@ -433,7 +437,7 @@
                                         </svg>
                                         <span id="enforcement-toggle-headline-text">Browser enforcement</span>
                                     </strong>
-                                    <span id="enforcement-toggle-desc-text" class="enforcement-toggle-desc">To help you stay focused, your browser is automatically closed if you turn off ReDD Focus while a block is running.</span>
+                                    <span id="enforcement-toggle-desc-text" class="enforcement-toggle-desc">To hold yourself accountable, your <strong>browser is automatically closed</strong> if you turn off Automation or disable ReDD Focus during blocking.</span>
                                     <p class="enforcement-toggle-disable-note">
                                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                                             <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
@@ -1513,7 +1517,7 @@
                         <div class="settings-section-grid settings-enforcement-grid">
                         <div class="settings-enforcement-copy">
                             <span id="settings-enforcement-toggle-headline-text" class="settings-row-label">Browser enforcement</span>
-                            <span id="settings-enforcement-toggle-desc-text" class="settings-enforcement-desc">Automatically close browser if ReDD Focus is disabled when a block is running.</span>
+                            <span id="settings-enforcement-toggle-desc-text" class="settings-enforcement-desc">Your <strong>browser is automatically closed</strong> if you turn off Automation or disable ReDD Focus during blocking.</span>
                         </div>
                         <label class="enforcement-switch enforcement-switch-with-tip" for="settings-enforcement-toggle-input">
                             <input type="checkbox" id="settings-enforcement-toggle-input" class="enforcement-toggle-input" />

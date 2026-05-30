@@ -256,7 +256,7 @@ fn firefox_root() -> Option<PathBuf> {
 }
 
 /// Bundle (or equivalent) on disk, regardless of running state.
-fn firefox_app_installed() -> bool {
+pub fn firefox_app_installed() -> bool {
     #[cfg(target_os = "macos")]
     {
         let candidates = [

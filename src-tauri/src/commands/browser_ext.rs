@@ -46,6 +46,13 @@ const WARNING_SHELL_MIN_H: f64 = 200.0;
 /// Cap so an enormous block list cannot create an unusably tall window.
 const WARNING_SHELL_MAX_H: f64 = 1280.0;
 
+/// True when Firefox is installed on this machine (app bundle / exe on
+/// disk). Used by the welcome screen before a full profile scan.
+#[tauri::command]
+pub fn is_firefox_installed() -> bool {
+    profile_scan::firefox_app_installed()
+}
+
 /// Scan every supported browser profile for ReDD Focus extension
 /// compliance. Returns the raw scan result so the UI can render a
 /// per-browser status.
