@@ -1568,13 +1568,30 @@
         <div id="uninstall-confirm-modal" class="modal-overlay hidden">
             <div class="modal-content uninstall-confirm-modal">
                 <h3 id="uninstall-confirm-title">Uninstall ReDD Block?</h3>
-                <p id="uninstall-confirm-intro" class="migration-explainer"></p>
+                <p id="uninstall-confirm-lead" class="uninstall-confirm-lead"></p>
 
-                <div class="onboarding-focus-card migration-card legal-onboarding-card">
-                    <div id="uninstall-browser-rows" class="migration-browser-buttons"></div>
+                <div class="uninstall-finder-info settings-panel">
+                    <svg class="uninstall-info-icon" width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="12" cy="12" r="11" fill="currentColor"></circle>
+                        <circle cx="12" cy="7.5" r="1.3" fill="white"></circle>
+                        <rect x="11" y="10" width="2" height="8" rx="1" fill="white"></rect>
+                    </svg>
+                    <p id="uninstall-finder-warning-text" class="uninstall-finder-info-text"></p>
+                </div>
 
-                    <p id="uninstall-finder-warning-text" class="migration-explainer migration-explainer-warn"></p>
-                    <p id="uninstall-data-kept-text" class="legal-onboarding-note"></p>
+                <div id="uninstall-firefox-callout" class="uninstall-firefox-callout hidden">
+                    <div class="uninstall-firefox-callout-header">
+                        <div class="uninstall-firefox-callout-title">
+                            <img id="uninstall-firefox-callout-logo"
+                                 class="uninstall-firefox-callout-logo"
+                                 src=""
+                                 alt=""
+                                 aria-hidden="true">
+                            <span id="uninstall-firefox-callout-title-text"></span>
+                        </div>
+                        <span id="uninstall-firefox-callout-badge" class="uninstall-firefox-callout-badge"></span>
+                    </div>
+                    <p id="uninstall-firefox-callout-detail" class="uninstall-firefox-callout-detail"></p>
                 </div>
 
                 <div class="modal-buttons">
