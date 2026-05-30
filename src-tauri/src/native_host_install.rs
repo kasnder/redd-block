@@ -153,9 +153,9 @@ pub fn current_binary_path() -> Option<String> {
 /// hits a Reinstall hints button in the UI), use [`install_force`].
 pub fn install() -> std::io::Result<()> {
     #[cfg(target_os = "macos")]
-    if !crate::cross_app_consent::should_run_cross_app_installs() {
+    if !crate::cross_app_consent::should_run_firefox_cross_app_installs() {
         log::info!(
-            "tcc-probe: native_host_install::install() skipped — onboarding not complete"
+            "tcc-probe: native_host_install::install() skipped — Firefox FDA onboarding not complete"
         );
         return Ok(());
     }
@@ -196,7 +196,7 @@ pub fn install_force() -> std::io::Result<()> {
 }
 
 fn install_inner(binary: &str) {
-    for browser in BrowserTarget::all() {
+    for browser in install_targets() {
         log::info!("tcc-probe: native_host_install::install_one({browser:?}) start");
         if let Err(e) = install_one(browser, binary) {
             // Don't fail the whole operation for a single browser
@@ -207,12 +207,24 @@ fn install_inner(binary: &str) {
     }
 }
 
+/// Browsers that receive a native-messaging manifest on this platform.
+fn install_targets() -> Vec<BrowserTarget> {
+    #[cfg(target_os = "macos")]
+    {
+        vec![BrowserTarget::Firefox]
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        BrowserTarget::all().to_vec()
+    }
+}
+
 /// Remove the manifest for every supported browser. Safe to call even
 /// if install never ran. Also clears the install marker so the next
 /// `install()` call definitely re-writes (uninstall is rare and the
 /// re-write cost on the next install is acceptable).
 pub fn uninstall() -> std::io::Result<()> {
-    for browser in BrowserTarget::all() {
+    for browser in install_targets() {
         if let Err(e) = uninstall_one(browser) {
             log::warn!("native-host uninstall for {browser:?} failed: {e}");
         }

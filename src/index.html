@@ -300,9 +300,8 @@
         </div>
 
         <!-- macOS-only: Full Disk Access setup. Shown after EULA
-             acceptance, before extension install. FDA is required —
-             no skip path. The marker is written only once FDA is
-             granted; then deferred cross-app installs run. -->
+             Optional full-screen FDA step (Firefox only; surfaced from
+             the setup banner). Safari/Chromium use Automation instead. -->
         <div id="fda-onboarding" class="onboarding-screen hidden">
             <div class="welcome-onboarding-layout">
                 <header class="welcome-onboarding-header">
@@ -312,7 +311,7 @@
                              src=""
                              alt=""
                              aria-hidden="true">
-                        <h1 id="fda-onboarding-title">Grant Full Disk Access</h1>
+                        <h1 id="fda-onboarding-title">Grant Full Disk Access for Firefox</h1>
                     </div>
                 </header>
 

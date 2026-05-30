@@ -195,28 +195,29 @@ fn firefox_policies_json_path() -> PathBuf {
 /// re-creates them if the user removed any manually.
 pub fn install() -> std::io::Result<()> {
     #[cfg(target_os = "macos")]
-    if !crate::cross_app_consent::should_run_cross_app_installs() {
+    if !crate::cross_app_consent::should_run_firefox_cross_app_installs() {
         log::info!(
-            "tcc-probe: extension_install::install() skipped — onboarding not complete"
+            "tcc-probe: extension_install::install() skipped — Firefox FDA onboarding not complete"
         );
         return Ok(());
     }
 
     log::info!("tcc-probe: extension_install::install() entered");
-    for browser in BrowserTarget::all() {
-        log::info!("tcc-probe: extension_install::install_chromium({browser:?}) start");
-        if let Err(e) = install_chromium(browser) {
-            // Don't fail the whole operation for a single browser
-            // (e.g. browser not installed at all). Log + continue.
-            log::warn!("extension-install hint for {browser:?} failed: {e}");
-        }
-        log::info!("tcc-probe: extension_install::install_chromium({browser:?}) done");
-    }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(target_os = "macos"))]
     {
-        log::info!("tcc-probe: extension_install::maybe_scrub_external_uninstalls_once() start");
-        maybe_scrub_external_uninstalls_once();
-        log::info!("tcc-probe: extension_install::maybe_scrub_external_uninstalls_once() done");
+        for browser in BrowserTarget::all() {
+            log::info!("tcc-probe: extension_install::install_chromium({browser:?}) start");
+            if let Err(e) = install_chromium(browser) {
+                log::warn!("extension-install hint for {browser:?} failed: {e}");
+            }
+            log::info!("tcc-probe: extension_install::install_chromium({browser:?}) done");
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            log::info!("tcc-probe: extension_install::maybe_scrub_external_uninstalls_once() start");
+            maybe_scrub_external_uninstalls_once();
+            log::info!("tcc-probe: extension_install::maybe_scrub_external_uninstalls_once() done");
+        }
     }
     #[cfg(target_os = "macos")]
     {
@@ -226,9 +227,17 @@ pub fn install() -> std::io::Result<()> {
         }
         log::info!("tcc-probe: extension_install::install_firefox_policy() done");
     }
-    #[cfg(target_os = "windows")]
+    #[cfg(all(not(target_os = "macos"), target_os = "windows"))]
     if let Err(e) = install_firefox_registry() {
         log::warn!("extension-install Firefox registry policy failed: {e}");
+    }
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        log::info!("tcc-probe: extension_install::install_firefox_policy() start");
+        if let Err(e) = install_firefox_policy() {
+            log::warn!("extension-install Firefox policy failed: {e}");
+        }
+        log::info!("tcc-probe: extension_install::install_firefox_policy() done");
     }
     log::info!("tcc-probe: extension_install::install() exited");
     Ok(())

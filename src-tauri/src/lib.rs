@@ -656,27 +656,18 @@ pub fn run() {
             // writes happen only when the binary path actually
             // changes.
             //
-            // On macOS we ALSO gate the whole call on
-            // `cross_app_consent::should_run_cross_app_installs()`:
-            // until the user has either granted Full Disk Access or
-            // been through the FDA onboarding overlay, every cross-
-            // app write would fire a "ReDD Block would like to access
-            // data from other apps" TCC prompt — and on Sequoia those
-            // prompts re-fire across launches even after Allow.
-            // Deferring the writes lets the UI show its FDA
-            // explanation first; `commands::fda::complete_fda_onboarding`
-            // force-runs the install once the user dismisses the
-            // overlay (either by granting FDA or by explicitly
-            // choosing to continue with the per-prompt UX).
+            // On macOS, native-host + Firefox policy installs are
+            // gated on Firefox FDA onboarding (see cross_app_consent).
+            // Chromium/Safari use Automation — no manifests on macOS.
             #[cfg(all(not(target_os = "ios"), target_os = "macos"))]
             {
-                if cross_app_consent::should_run_cross_app_installs() {
+                if cross_app_consent::should_run_firefox_cross_app_installs() {
                     if let Err(e) = native_host_install::install() {
                         log::warn!("native-host install on startup failed: {e}");
                     }
                 } else {
                     log::info!(
-                        "tcc-probe: deferring native_host_install::install — user hasn't completed FDA onboarding yet, UI will run it after the overlay dismisses"
+                        "tcc-probe: deferring native_host_install::install — Firefox FDA not granted yet"
                     );
                 }
             }
@@ -704,19 +695,10 @@ pub fn run() {
             // whole call. Force-rerun is still available via the
             // `install_extension_hints` Tauri command if the user
             // hits a "Reinstall hints" affordance.
-            // Same FDA gate as native_host_install above. On macOS,
-            // extension_install::install writes External Extensions
-            // hints into Chrome/Brave/Edge user-data dirs and Firefox
-            // policies.json into /Applications/Firefox.app — every
-            // one of those is a cross-app touch that fires the "data
-            // from other apps" TCC prompt without Full Disk Access.
-            // The FDA onboarding overlay (commands::fda) calls
-            // install_force after the user makes a choice, so we
-            // don't lose the install on machines that skip FDA — it
-            // just happens after the explanation rather than before.
+            // Same Firefox FDA gate as native_host_install above.
             #[cfg(all(not(target_os = "ios"), target_os = "macos"))]
             {
-                if cross_app_consent::should_run_cross_app_installs() {
+                if cross_app_consent::should_run_firefox_cross_app_installs() {
                     if !extension_install::startup_install_already_done() {
                         if let Err(e) = extension_install::install() {
                             log::warn!("extension-install hint on startup failed: {e}");
@@ -730,7 +712,7 @@ pub fn run() {
                     }
                 } else {
                     log::info!(
-                        "tcc-probe: deferring extension_install::install — user hasn't completed FDA onboarding yet"
+                        "tcc-probe: deferring extension_install::install — Firefox FDA not granted yet"
                     );
                 }
             }
@@ -931,6 +913,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::open_url_in_browser,
         commands::check_full_disk_access,
         commands::sync_fda_onboarding_access,
+        commands::probe_firefox_fda_access,
         commands::fda_deferred_focus_install_pending,
         commands::check_fda_onboarded,
         commands::get_fda_user_choice,

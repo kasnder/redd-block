@@ -358,6 +358,14 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
             continue;
         }
 
+        // Firefox extension scans need FDA on macOS — don't start grace
+        // timers until the user has granted it via the Firefox setup row.
+        #[cfg(target_os = "macos")]
+        if key == BrowserKey::Firefox && !crate::cross_app_consent::firefox_fda_effective() {
+            cancel_timer(app, state, key, false);
+            continue;
+        }
+
         // None = compliant (extension OK, or Automation granted) → clear
         // any timer and move on. Some(issue) = act on it.
         let issue = match compliance_issue(key, &scan_result) {

@@ -190,7 +190,18 @@ pub fn scan_filter<F: Fn(&str) -> bool>(should_scan: F) -> ScanResult {
 
     ScanResult {
         firefox: if should_scan("firefox") {
-            scan_firefox().unwrap_or_else(|| empty("firefox"))
+            #[cfg(target_os = "macos")]
+            {
+                if crate::cross_app_consent::firefox_fda_effective() {
+                    scan_firefox().unwrap_or_else(|| empty("firefox"))
+                } else {
+                    firefox_onboarding_status()
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                scan_firefox().unwrap_or_else(|| empty("firefox"))
+            }
         } else {
             empty("firefox")
         },
@@ -1088,6 +1099,24 @@ fn safari_presence_only() -> BrowserStatus {
         error: None,
         duplicate_extensions: None,
         needs_fda_access: false,
+    }
+}
+
+/// Firefox row for onboarding before FDA: presence only, with
+/// `needs_fda_access` when the app is installed so the UI can surface
+/// the grant-FDA step without reading Mozilla profile dirs.
+#[cfg(target_os = "macos")]
+fn firefox_onboarding_status() -> BrowserStatus {
+    let installed = firefox_app_installed();
+    let running = firefox_app_present();
+    let needs_fda = installed && !crate::cross_app_consent::firefox_fda_effective();
+    BrowserStatus {
+        present: running,
+        installed,
+        profiles: vec![],
+        error: None,
+        duplicate_extensions: None,
+        needs_fda_access: needs_fda || crate::cross_app_consent::user_fda_was_revoked(),
     }
 }
 

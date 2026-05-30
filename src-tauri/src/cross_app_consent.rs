@@ -1,15 +1,19 @@
 //! Cross-app consent gating for macOS.
 //!
-//! ReDD Block writes into other apps' Application Support trees
-//! (native-messaging manifests, extension-install hints) and reads
-//! Safari's sandboxed container to detect extension state. On macOS
-//! Sonoma+/Sequoia those touches require **Full Disk Access**.
+//! ReDD Block writes into Firefox's Application Support tree and
+//! `/Applications/Firefox.app` for native-messaging manifests and
+//! enterprise policy. Those touches require **Full Disk Access** on
+//! Sonoma+/Sequoia.
 //!
-//! Policy: FDA is required. The onboarding overlay blocks until the
-//! user grants FDA; we record that as `granted` in `fda-onboarded.v1`.
-//! Cross-app work (installs, profile scans, enforcer) runs only after
-//! that marker exists **and** the EULA is accepted in the canonical
-//! data file. There is no "continue without FDA" path.
+//! Safari and Chromium website blocking uses **Automation** (Apple
+//! Events) instead — no extension scans, no native-host manifests, and
+//! no FDA on that path.
+//!
+//! Policy: FDA is required only for the **Firefox extension** path.
+//! The marker `fda-onboarded.v1` records that the user granted FDA;
+//! Firefox cross-app installs run after that marker exists and the EULA
+//! is accepted. Automation and the enforcer's Safari/Chromium checks
+//! need only EULA acceptance.
 
 #[cfg(target_os = "macos")]
 use std::path::PathBuf;
@@ -207,21 +211,73 @@ fn has_accepted_eula_in_data() -> bool {
     true
 }
 
-/// True when cross-app installs, profile scans, and the enforcer may run.
+/// True when we can read Firefox's profile metadata — the practical
+/// signal that Full Disk Access is working for the Firefox extension
+/// path. Unlike opening TCC.db this reflects real cross-app access and
+/// works in dev when FDA is granted to Cursor/Terminal rather than the
+/// packaged `.app` or debug binary.
+#[cfg(target_os = "macos")]
+pub fn firefox_profile_data_accessible() -> bool {
+    let Some(home) = dirs::home_dir() else {
+        return false;
+    };
+    let root = home.join("Library/Application Support/Firefox");
+    root.is_dir() && std::fs::read(root.join("profiles.ini")).is_ok()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn firefox_profile_data_accessible() -> bool {
+    true
+}
+
+/// True when Firefox profile scans / cross-app installs may run: the
+/// onboarding marker says granted, or a live read of `profiles.ini`
+/// succeeds right now.
+#[cfg(target_os = "macos")]
+pub fn firefox_fda_effective() -> bool {
+    user_chose_to_grant_fda() || firefox_profile_data_accessible()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn firefox_fda_effective() -> bool {
+    true
+}
+
+/// True when Firefox native-host / policy installs may run (FDA marker
+/// + EULA). On macOS this is the only cross-app install path left —
+/// Chromium/Safari use Automation instead of extension manifests.
+#[cfg(target_os = "macos")]
+pub fn should_run_firefox_cross_app_installs() -> bool {
+    if !has_accepted_eula_in_data() {
+        log::info!("tcc-probe: deferring Firefox cross-app work — EULA not accepted in data file");
+        return false;
+    }
+    firefox_fda_effective()
+}
+
+/// True when cross-app installs may run. On macOS this is Firefox-only
+/// ([`should_run_firefox_cross_app_installs`]); other platforms install
+/// for every supported browser.
 #[cfg(target_os = "macos")]
 pub fn should_run_cross_app_installs() -> bool {
-    if !user_chose_to_grant_fda() {
-        return false;
-    }
-    if !has_accepted_eula_in_data() {
-        log::info!("tcc-probe: deferring cross-app work — EULA not accepted in data file");
-        return false;
-    }
-    true
+    should_run_firefox_cross_app_installs()
 }
 
 #[cfg(not(target_os = "macos"))]
 pub fn should_run_cross_app_installs() -> bool {
+    true
+}
+
+/// True when the in-process enforcer loop may run (EULA only on macOS).
+/// Safari/Chromium are judged via Automation; Firefox extension scans
+/// are skipped until FDA is granted (see enforcer tick).
+#[cfg(target_os = "macos")]
+pub fn should_run_enforcer() -> bool {
+    should_run_web_automation()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn should_run_enforcer() -> bool {
     true
 }
 
@@ -261,17 +317,16 @@ pub fn user_chose_to_grant_fda() -> bool {
     true
 }
 
-/// Whether profile scans may run for the setup banner and enforcer UI.
+/// Whether profile scans may run for the setup banner and onboarding UI.
 ///
-/// Broader than [`should_run_cross_app_installs`]: after the user
+/// After EULA acceptance we run lightweight presence scans for
+/// Safari/Chromium (Automation path) without FDA. Full Firefox profile
+/// reads still require FDA — see `scan_for_onboarding`. If the user
 /// completed FDA onboarding but later revoked access, we still scan
-/// (Safari uses the FDA-free FFI path and sets `needsFdaAccess`) so
-/// the banner can nag. Pre-onboarding — no EULA acceptance or never
-/// granted FDA — stays fully deferred to avoid Sequoia cross-app
-/// prompts on every tick.
+/// so the banner can nag.
 #[cfg(target_os = "macos")]
 pub fn should_run_profile_scans() -> bool {
-    if should_run_cross_app_installs() {
+    if has_accepted_eula_in_data() {
         return true;
     }
     user_fda_was_revoked()

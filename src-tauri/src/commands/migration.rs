@@ -318,13 +318,13 @@ pub async fn run_upgrade_migration(app: tauri::AppHandle) -> Result<bool, String
         // checking. Gated on macOS so we don't fire cross-app TCC
         // prompts during welcome / EULA / FDA onboarding.
         #[cfg(target_os = "macos")]
-        if crate::cross_app_consent::should_run_cross_app_installs() {
+        if crate::cross_app_consent::should_run_firefox_cross_app_installs() {
             if let Err(e) = crate::native_host_install::install() {
                 log::warn!("native-host install during migration failed: {e}");
             }
         } else {
             log::info!(
-                "tcc-probe: deferring native_host_install during migration — onboarding not complete"
+                "tcc-probe: deferring native_host_install during migration — Firefox FDA not granted yet"
             );
         }
         #[cfg(not(target_os = "macos"))]
@@ -352,7 +352,7 @@ pub async fn run_upgrade_migration(app: tauri::AppHandle) -> Result<bool, String
     }
 
     #[cfg(target_os = "macos")]
-    if crate::cross_app_consent::should_run_cross_app_installs() {
+    if crate::cross_app_consent::should_run_firefox_cross_app_installs() {
         if let Err(e) = crate::native_host_install::install() {
             log::warn!("native-host install during migration failed: {e}");
         }

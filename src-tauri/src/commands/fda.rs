@@ -1,9 +1,9 @@
 //! Tauri commands for the macOS Full Disk Access onboarding flow.
 //!
-//! FDA is required on macOS. The frontend blocks on the overlay until
-//! [`check_full_disk_access`] returns true, then calls
-//! [`complete_fda_onboarding`] once to write the marker and run the
-//! deferred cross-app installs.
+//! FDA is required on macOS only for the **Firefox extension** path
+//! (native-host manifest + enterprise policy + profile scans). Safari
+//! and Chromium use Automation instead. The frontend surfaces this
+//! step on the Firefox row in extension setup, not as a global gate.
 
 use crate::cross_app_consent;
 
@@ -17,7 +17,13 @@ pub fn check_full_disk_access() -> bool {
 /// settings match System Settings after revoke + relaunch.
 #[tauri::command]
 pub fn sync_fda_onboarding_access() -> bool {
-    cross_app_consent::sync_fda_onboarding_access()
+    cross_app_consent::sync_fda_onboarding_access() || cross_app_consent::firefox_profile_data_accessible()
+}
+
+/// Live probe: can we read Firefox profile data (practical FDA signal).
+#[tauri::command]
+pub fn probe_firefox_fda_access() -> bool {
+    cross_app_consent::firefox_profile_data_accessible()
 }
 
 /// True when the user completed FDA onboarding **and** live Full Disk
@@ -72,9 +78,9 @@ pub fn complete_fda_onboarding(choice: String) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
         if choice != "granted" && choice != "granted-already" {
-            return Err("Full Disk Access is required on macOS".to_string());
+            return Err("Full Disk Access is required for Firefox on macOS".to_string());
         }
-        if !cross_app_consent::sync_fda_onboarding_access() {
+        if !cross_app_consent::firefox_fda_effective() {
             return Err("Full Disk Access is not granted yet".to_string());
         }
         cross_app_consent::mark_user_through_fda_onboarding(

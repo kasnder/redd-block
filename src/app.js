@@ -1360,18 +1360,6 @@ async function runPostAcceptanceStartup() {
             setupWebAutomationUiAlerts();
             setupAppBlockingWarningOverlay();
             await ensureInstalledAppsCache();
-            // macOS-only: surface the Full Disk Access onboarding
-            // overlay (if needed) BEFORE runDesktopOnboarding kicks
-            // off its profile scan via `onboarding_state`. If we
-            // didn't gate this here, the scan would hit Safari's
-            // sandboxed container on first launch — firing the very
-            // TCC prompts this overlay exists to pre-empt. No-op on
-            // Windows / Linux.
-            await ensureFdaOnboardingComplete();
-            // No explicit FDA-banner refresh here — the combined
-            // setup banner re-evaluates FDA state every time
-            // updateBehaviourChangeBanner runs, which the
-            // runDesktopOnboarding flow below triggers.
             await runDesktopOnboarding();
             await checkHelperStatus();
             console.log('[startup-sync] Desktop startup helperAvailable:', helperAvailable);
@@ -1546,24 +1534,15 @@ function returnToWelcomeFromEula() {
     presentWelcomeOnboarding(continueFirstRunOnboardingFromWelcome);
 }
 
-// ---- macOS Full Disk Access onboarding -------------------------------------
+// ---- macOS Full Disk Access (Firefox only) ---------------------------------
 //
-// FDA is required on macOS — no skip path. After EULA acceptance the
-// user must grant Full Disk Access before ReDD Block installs ReDD
-// Focus in their browsers. Cross-app work stays deferred until the
-// marker is written with a "granted" choice via
-// `complete_fda_onboarding`.
+// FDA is required on macOS only for the Firefox extension path (native
+// host manifest, enterprise policy, profile scans). Safari + Chromium
+// use Automation instead. The Firefox row in extension setup surfaces
+// the grant step; the full-screen overlay remains for banner replay.
 async function ensureFdaOnboardingComplete() {
-    if (!isMacOSDesktop) return;
-    try {
-        const choice = await invoke('get_fda_user_choice');
-        if (choice === 'granted' || choice === 'revoked') {
-            return;
-        }
-        await showFdaOnboardingOverlay();
-    } catch (e) {
-        console.warn('[fda-onboarding] check failed, proceeding without overlay:', e);
-    }
+    // No longer a global gate after EULA — Firefox handles FDA inline.
+    return;
 }
 
 // Block until the user grants Full Disk Access. Polls after they open
@@ -1939,11 +1918,7 @@ async function returnFromExtensionSetupOnboarding() {
     if (!firstRunExtensionSetupPending) return;
     extensionSetupPausedForBackNavigation = true;
     pauseMigrationOnboardingForBackNavigation();
-    if (isMacOSDesktop) {
-        await showFdaOnboardingOverlay();
-    } else {
-        showEulaOnboardingScreen();
-    }
+    showEulaOnboardingScreen();
 }
 
 function hideMigrationOnboarding() {
@@ -2360,6 +2335,9 @@ function browserComplianceStatus(key, b) {
     if (!b || !b.installed) return null;
     const profiles = b.profiles || [];
     const def = profiles.find(p => p.isDefault) || profiles[0];
+    if (key === 'firefox' && isMacOSDesktop && b.needsFdaAccess) {
+        return 'needs-fda';
+    }
     if (key === 'safari') {
         if (b.duplicateExtensions?.detected) return 'needs-deduplicate';
         if (b.needsFdaAccess || profiles.some(p => /Full Disk Access|extension settings plist/i.test(p.note || ''))) {
@@ -2857,7 +2835,9 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
         if (status === 'needs-fda') {
             const hint = document.createElement('div');
             hint.className = 'migration-browser-hint';
-            hint.textContent = tSettings('migrationSafariFdaHint');
+            hint.textContent = key === 'firefox'
+                ? tSettings('migrationFirefoxFdaHint')
+                : tSettings('migrationSafariFdaHint');
             row.appendChild(hint);
 
             const action = document.createElement('div');
@@ -2873,6 +2853,7 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
                     await invoke('open_safari_fda_settings');
                     settingsBtn.textContent = tSettings('migrationOpened');
                     setTimeout(() => { settingsBtn.textContent = tSettings('migrationOpenSettings'); }, 1500);
+                    schedulePostGrantPoll();
                 } catch (e) {
                     console.warn('[migration] open Full Disk Access settings failed:', e);
                     settingsBtn.textContent = tSettings('migrationFailed');
@@ -2880,14 +2861,6 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
                 }
             });
             action.appendChild(settingsBtn);
-
-            const refreshBtn = document.createElement('button');
-            refreshBtn.type = 'button';
-            refreshBtn.className = 'migration-browser-copy secondary';
-            refreshBtn.textContent = tSettings('migrationCheckAgain');
-            refreshBtn.title = tSettings('migrationRefreshSafariTitle');
-            refreshBtn.addEventListener('click', pollMigrationCompliance);
-            action.appendChild(refreshBtn);
 
             row.appendChild(action);
         } else if (status === 'needs-install') {
@@ -3120,9 +3093,26 @@ async function pollMigrationCompliance() {
     if (!migrationOnboardingActive) return;
     try {
         await refreshAutomationPermissionStatus({ force: true });
+        if (isMacOSDesktop) {
+            await maybeCompleteFirefoxFdaFromPoll();
+        }
         const fresh = await invoke('onboarding_state');
         renderBrowserInstallButtons(fresh);
     } catch (e) { /* no-op */ }
+}
+
+// When the user grants FDA in System Settings, persist the marker and
+// run deferred Firefox installs (native host + policy).
+async function maybeCompleteFirefoxFdaFromPoll() {
+    try {
+        const choice = await invoke('get_fda_user_choice');
+        if (choice === 'granted' || choice === 'revoked') return;
+        const granted = await invoke('sync_fda_onboarding_access');
+        if (!granted) return;
+        await invoke('complete_fda_onboarding', { choice: 'granted' });
+    } catch (e) {
+        console.warn('[migration] Firefox FDA completion failed:', e);
+    }
 }
 
 function startMigrationPolling() {
@@ -3409,13 +3399,6 @@ async function continueOnboardingReplayFromWelcome() {
     if (!hasAcceptedEula()) {
         updateOnboardingVisibility();
         return;
-    }
-    if (isMacOSDesktop) {
-        try {
-            await showFdaOnboardingOverlay();
-        } catch (e) {
-            console.warn('[onboarding-replay] FDA overlay failed:', e);
-        }
     }
     await openExtensionSetupOverlay();
 }
@@ -14720,15 +14703,16 @@ const SETTINGS_TRANSLATIONS = {
         migrationUrlCopied: 'URL Copied',
         migrationFailed: 'Failed',
         migrationSafariFdaHint: 'Grant ReDD Block Full Disk Access so it can read Safari’s extension settings and help you finish ReDD Focus setup. Until that’s done, Safari may stay closed when browser protection needs a clear yes/no.',
+        migrationFirefoxFdaHint: 'Grant ReDD Block Full Disk Access so it can install and verify ReDD Focus in Firefox. Safari and other browsers on this Mac use Automation instead and do not need this step.',
         migrationOpenSettings: 'Open Settings',
         migrationOpened: 'Opened',
         migrationOpenFdaTitle: 'Open Full Disk Access settings',
         fdaOnboardingGrantBtn: 'Open Full Disk Access settings',
         fdaOnboardingAlreadyGrantedBtn: '✓ Proceed',
-        fdaOnboardingWhyHtml: 'Click the button below to open your System Settings, then toggle <strong>ReDD Block</strong> on\u2026 (if you don\'t see ReDD Block in the list, click + and add it manually).',
-        fdaOnboardingAlreadyGrantedWhy: 'FDA is already granted for ReDD Block. Click the button below to proceed.',
+        fdaOnboardingWhyHtml: 'Firefox needs Full Disk Access so ReDD Block can install ReDD Focus and read its settings. Open System Settings below, then toggle <strong>ReDD Block</strong> on\u2026 (if you don\u2019t see ReDD Block in the list, click + and add it manually).',
+        fdaOnboardingAlreadyGrantedWhy: 'Full Disk Access is already granted. Click below to finish Firefox setup.',
         fdaOnboardingGrantedStatus: 'Full Disk Access granted.',
-        fdaOnboardingGrantedInstallingStatus: 'Full Disk Access granted — installing ReDD Focus…',
+        fdaOnboardingGrantedInstallingStatus: 'Full Disk Access granted \u2014 setting up Firefox\u2026',
         migrationCheckAgain: 'Check again',
         migrationRefreshSafariTitle: 'Refresh Safari access status',
         migrationDelayDetectionNote: 'It may take up to 20 seconds for changes to be detected.',
@@ -15286,6 +15270,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationUrlCopied: 'URL kopieret',
         migrationFailed: 'Mislykkedes',
         migrationSafariFdaHint: 'Giv ReDD Block fuld diskadgang, så appen kan læse Safaris udvidelsesindstillinger og hjælpe dig med at færdiggøre ReDD Focus. Indtil det er på plads, kan Safari blive lukket, når browser-beskyttelsen mangler et klart svar.',
+        migrationFirefoxFdaHint: 'Giv ReDD Block fuld diskadgang, så appen kan installere og kontrollere ReDD Focus i Firefox. Safari og andre browsere på denne Mac bruger Automation i stedet og behøver ikke dette trin.',
         migrationOpenSettings: 'Åbn Indstillinger',
         migrationOpened: 'Åbnet',
         migrationOpenFdaTitle: 'Åbn Indstillinger for Fuld diskadgang',

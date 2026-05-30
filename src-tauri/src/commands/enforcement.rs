@@ -22,13 +22,13 @@ pub fn enforcer_start(app: AppHandle, state: State<EnforcerState>) {
         *slot = Some(enforcer::start(app));
     }
     #[cfg(target_os = "macos")]
-    let cross_app_ok = crate::cross_app_consent::should_run_cross_app_installs();
+    let cross_app_ok = crate::cross_app_consent::should_run_enforcer();
     #[cfg(not(target_os = "macos"))]
     let cross_app_ok = true;
     if let Some(h) = slot.as_ref() {
         h.set_enabled(cross_app_ok);
         if !cross_app_ok {
-            log::info!("enforcer: enforcer_start ignored — onboarding not complete");
+            log::info!("enforcer: enforcer_start ignored — EULA not accepted");
         }
     }
 }
@@ -52,21 +52,20 @@ pub fn register<R: tauri::Runtime>(app: &tauri::App<R>) {
 ///
 /// IMPORTANT: we start the enforcer **paused** when either:
 ///   - a v1.x → 2.0 migration is pending (same rationale as before), or
-///   - on macOS, the user has not yet completed FDA onboarding.
+///   - on macOS, the EULA has not yet been accepted.
 ///
-/// The enforcer's tick loop reads each running browser's profile data
-/// to detect disabled extensions — every read can fire the macOS
-/// "access data from other apps" TCC prompt. Defer until the frontend
-/// has walked the user through welcome / EULA / FDA and calls
-/// `enforcer_start`. See migration UX and `runPostAcceptanceStartup`
-/// in app.js.
+/// The enforcer's tick loop reads Firefox profile data to detect a
+/// disabled extension — that read needs FDA and is skipped until the
+/// user grants it. Safari/Chromium on macOS are judged via Automation
+/// (no profile reads). Defer until the frontend calls `enforcer_start`
+/// after EULA acceptance. See `runPostAcceptanceStartup` in app.js.
 pub fn auto_start(app: &tauri::AppHandle) {
     use tauri::Manager;
     let h = enforcer::start(app.clone());
 
     let pending = crate::commands::migration::migration_pending_sync();
     #[cfg(target_os = "macos")]
-    let cross_app_ok = crate::cross_app_consent::should_run_cross_app_installs();
+    let cross_app_ok = crate::cross_app_consent::should_run_enforcer();
     #[cfg(not(target_os = "macos"))]
     let cross_app_ok = true;
 
@@ -75,7 +74,7 @@ pub fn auto_start(app: &tauri::AppHandle) {
     if pending {
         log::info!("enforcer: starting paused (migration onboarding pending)");
     } else if !cross_app_ok {
-        log::info!("enforcer: starting paused (FDA onboarding not completed)");
+        log::info!("enforcer: starting paused (EULA not accepted)");
     }
 
     let state = app.state::<EnforcerState>();
