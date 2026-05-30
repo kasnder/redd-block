@@ -4613,13 +4613,13 @@ body.ios .blocklist-action-btn svg {
 /* Onboarding Screen */
 .onboarding-screen {
     position: absolute;
-    top: 0;
+    top: var(--title-bar-height);
     left: 0;
     right: 0;
     bottom: 0;
     background: var(--container-bg);
     display: flex;
-    align-items: safe center;
+    align-items: flex-start;
     justify-content: center;
     z-index: 100;
     padding: 24px;
@@ -5225,6 +5225,7 @@ body.dark-mode .onboarding-focus-card {
 
 .migration-onboarding-content {
     max-width: 520px;
+    width: 100%;
 }
 
 .migration-post-header {
@@ -5258,9 +5259,59 @@ body.dark-mode .onboarding-focus-card {
     font-style: normal;
 }
 
+.migration-setup-steps {
+    margin: 0 auto;
+    padding-left: 1.25em;
+    text-align: left;
+    list-style: decimal;
+}
+
+.migration-setup-steps li {
+    margin-bottom: 6px;
+}
+
+.migration-setup-steps li:last-child {
+    margin-bottom: 0;
+}
+
 #migration-phase-post:has(.migration-post-header:not(.hidden)) .migration-card {
     margin-top: 0;
     padding-top: 24px;
+}
+
+.migration-setup-ready-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0 0 16px;
+    padding: 12px 14px;
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.32);
+    border-radius: 10px;
+    color: #047857;
+    text-align: left;
+}
+
+.migration-setup-ready-icon {
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.migration-setup-ready-banner-text {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.45;
+    color: inherit;
+}
+
+.migration-setup-ready-banner-text strong {
+    font-weight: 600;
+}
+
+body.dark-mode #migration-onboarding .migration-setup-ready-banner {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(52, 211, 153, 0.35);
+    color: #6ee7b7;
 }
 
 .migration-card {
@@ -7928,12 +7979,16 @@ body.ios .desktop-only {
 
 #settings-modal .settings-section-grid .language-picker,
 #settings-modal .settings-section-grid #theme-select,
-#settings-modal .settings-section-grid .settings-diagnostics-btn,
-#settings-modal .settings-section-grid .settings-onboarding-btn,
 #settings-modal .settings-section-grid .settings-override-all-btn,
 #settings-modal .settings-section-grid .uninstall-app-btn,
 #settings-modal .settings-uninstall-btn-wrap {
     width: 100%;
+    min-width: 0;
+}
+
+.settings-help-actions .settings-help-btn {
+    width: auto;
+    flex: 1 1 0;
     min-width: 0;
 }
 
@@ -8494,11 +8549,27 @@ body.mac .settings-uninstall-contents.macos-only {
     display: contents;
 }
 
-body:not(.ios) .settings-onboarding-contents.desktop-only,
-body:not(.ios) .settings-diagnostics-contents.desktop-only,
-.settings-blocklists-io-contents,
+body:not(.ios) .settings-blocklists-io-contents,
 .settings-override-all-contents:not(.hidden) {
     display: contents;
+}
+
+#settings-modal .settings-help-section {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+}
+
+.settings-help-label {
+    font-weight: 600;
+}
+
+.settings-help-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
 }
 
 .settings-override-all-contents.hidden {
@@ -8506,8 +8577,7 @@ body:not(.ios) .settings-diagnostics-contents.desktop-only,
 }
 
 /* Settings action buttons — match language/theme control width and radius. */
-#settings-modal .settings-section-grid .settings-diagnostics-btn,
-#settings-modal .settings-section-grid .settings-onboarding-btn,
+#settings-modal .settings-section-grid .settings-help-btn,
 #settings-modal .settings-section-grid .settings-override-all-btn,
 #settings-modal .settings-section-grid .uninstall-app-btn {
     display: inline-flex;
@@ -8551,21 +8621,18 @@ body:not(.ios) .settings-diagnostics-contents.desktop-only,
     flex-shrink: 0;
 }
 
-#settings-modal .settings-diagnostics-btn,
-#settings-modal .settings-onboarding-btn {
+#settings-modal .settings-help-btn {
     background: var(--modal-bg);
     color: var(--text-primary);
     border: 1px solid var(--border-color-medium);
 }
 
-#settings-modal .settings-diagnostics-btn:hover:not(:disabled),
-#settings-modal .settings-onboarding-btn:hover:not(:disabled) {
+#settings-modal .settings-help-btn:hover:not(:disabled) {
     background: var(--element-hover-bg);
     border-color: var(--border-color-strong, var(--border-color-medium));
 }
 
-#settings-modal .settings-diagnostics-btn svg,
-#settings-modal .settings-onboarding-btn svg {
+#settings-modal .settings-help-btn svg {
     flex-shrink: 0;
 }
 

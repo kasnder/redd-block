@@ -1173,8 +1173,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupUiZoomShortcuts();
     setupHelpMenuLinks();
     setupHelperSettings();
-    setupDiagnosticsButton();
-    setupOnboardingReplayButton();
+    setupSettingsHelpButtons();
     setupBlocklistsImportExportButtons();
     setupAppForegroundRefresh();
     setupOverrideAll();
@@ -1543,6 +1542,55 @@ async function detectWelcomeFirefoxInstalled() {
         console.warn('[welcome-onboarding] is_firefox_installed failed:', e);
         return false;
     }
+}
+
+/** Cached for enforcement copy when the browser scan is not available yet. */
+let enforcementCopyFirefoxInstalled = false;
+
+function firefoxInstalledFromState(state) {
+    const b = state?.browsers?.firefox ?? lastMigrationBrowserState?.browsers?.firefox;
+    if (!b) return null;
+    return !!b.installed;
+}
+
+async function resolveEnforcementCopyFirefoxInstalled(state) {
+    if (!isMacOSDesktop) return false;
+    const fromState = firefoxInstalledFromState(state);
+    if (fromState !== null) {
+        enforcementCopyFirefoxInstalled = fromState;
+        return fromState;
+    }
+    enforcementCopyFirefoxInstalled = await detectWelcomeFirefoxInstalled();
+    return enforcementCopyFirefoxInstalled;
+}
+
+function migrationEnforcementDescHtml(firefoxInstalled = enforcementCopyFirefoxInstalled) {
+    if (!isMacOSDesktop) {
+        return tSettings('migrationEnforcementDescExtension');
+    }
+    return tSettings(firefoxInstalled
+        ? 'migrationEnforcementDescMacFirefox'
+        : 'migrationEnforcementDescMacAutomation');
+}
+
+function settingsEnforcementDescHtml(firefoxInstalled = enforcementCopyFirefoxInstalled) {
+    if (!isMacOSDesktop) {
+        return tSettings('settingsEnforcementDescExtension');
+    }
+    return tSettings(firefoxInstalled
+        ? 'settingsEnforcementDescMacFirefox'
+        : 'settingsEnforcementDescMacAutomation');
+}
+
+async function applyEnforcementDescCopy(state) {
+    await resolveEnforcementCopyFirefoxInstalled(state);
+    setHtmlById('enforcement-toggle-desc-text', migrationEnforcementDescHtml());
+    setHtmlById('settings-enforcement-toggle-desc-text', settingsEnforcementDescHtml());
+}
+
+function setHtmlById(id, html) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = html;
 }
 
 function returnToWelcomeFromEula() {
@@ -2660,15 +2708,60 @@ function migrationExtHeaderCopy(state) {
     };
 }
 
+function syncMigrationMacHowto(state) {
+    if (!isMacOSDesktop) return;
+    const focusLogoHtml =
+        `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
+    const browsers = state?.browsers || lastMigrationBrowserState?.browsers || {};
+    const firefoxInstalled = !!(browsers.firefox && browsers.firefox.installed);
+    const li1 = document.getElementById('migration-howto-li1');
+    const li2 = document.getElementById('migration-howto-li2');
+    const li3 = document.getElementById('migration-howto-li3');
+    if (li1) li1.innerHTML = tSettings('migrationExtStep1Mac');
+    if (li2) {
+        li2.innerHTML = tSettings('migrationExtStep2MacFirefox').replace('{FOCUS}', focusLogoHtml);
+        li2.classList.toggle('hidden', !firefoxInstalled);
+    }
+    if (li3) li3.classList.add('hidden');
+}
+
+function isMigrationFreshPostPhase() {
+    return !!document.getElementById('migration-post-title')?.classList.contains('hidden');
+}
+
+function migrationSetupAllCompliant(state) {
+    const browsers = state?.browsers || {};
+    const keys = migrationBrowserKeys(state);
+    if (keys.length === 0) return false;
+    return keys.every(k => effectiveBrowserComplianceStatus(k, browsers) === 'compliant');
+}
+
 function isMacFreshMigrationPost() {
-    const postTitle = document.getElementById('migration-post-title');
-    return isMacOSDesktop && !!postTitle?.classList.contains('hidden');
+    return isMacOSDesktop && isMigrationFreshPostPhase();
 }
 
 function syncMigrationPostHeader(state) {
     const header = document.getElementById('migration-post-header');
     const checklist = document.getElementById('migration-checklist');
+    const readyBanner = document.getElementById('migration-setup-ready-banner');
+    const readyText = document.getElementById('migration-setup-ready-banner-text');
     if (!header) return;
+
+    const freshPost = isMigrationFreshPostPhase();
+    const allReady = migrationSetupAllCompliant(state);
+    const showReadyBanner = freshPost && allReady;
+
+    if (readyBanner) {
+        readyBanner.classList.toggle('hidden', !showReadyBanner);
+        if (showReadyBanner && readyText) {
+            const count = migrationBrowserKeys(state).length;
+            const key = count === 1 ? 'migrationSetupAllReadyOne' : 'migrationSetupAllReadyMany';
+            readyText.innerHTML = tSettingsFmt(key, { count: String(count) });
+        }
+    }
+
+    const skipBtn = document.getElementById('migration-skip-btn');
+    if (skipBtn) skipBtn.classList.toggle('hidden', allReady);
 
     if (!isMacFreshMigrationPost()) {
         header.classList.add('hidden');
@@ -2676,14 +2769,14 @@ function syncMigrationPostHeader(state) {
         return;
     }
 
-    const copy = migrationExtHeaderCopy(state);
-    if (!copy) return;
-
     header.classList.remove('hidden');
-    const titleEl = document.getElementById('migration-post-header-title');
-    const subEl = document.getElementById('migration-post-header-subtitle');
-    if (titleEl) titleEl.innerHTML = copy.titleHtml;
-    if (subEl) subEl.innerHTML = copy.subtitleHtml;
+    const copy = migrationExtHeaderCopy(state);
+    if (copy) {
+        const titleEl = document.getElementById('migration-post-header-title');
+        const subEl = document.getElementById('migration-post-header-subtitle');
+        if (titleEl) titleEl.innerHTML = copy.titleHtml;
+        if (subEl) subEl.innerHTML = copy.subtitleHtml;
+    }
     checklist?.classList.add('hidden');
 }
 
@@ -2696,7 +2789,7 @@ function migrationExtLinesHtml(state) {
         }
         const copy = migrationExtHeaderCopy(state);
         if (copy) {
-            return `<span style="font-weight:400;font-size:1.25em">${copy.titleHtml}</span><br><span style="font-weight:400;opacity:0.85">${copy.subtitleHtml}</span>`;
+            return `<span style="font-weight:400;font-size:1.25em">${copy.titleHtml}</span><br>${copy.subtitleHtml}`;
         }
     }
     return tSettings('migrationChecklistExtLinesHtml').replace('{LOGO}', focusLogoHtml);
@@ -2829,7 +2922,8 @@ function updateMigrationBrowserChecklist(state) {
 
     const howto = document.getElementById('migration-howto');
     const anyMissing = keys.some(k => effectiveBrowserComplianceStatus(k, browsers) !== 'compliant');
-    if (howto) howto.classList.toggle('hidden', !anyMissing);
+    const showHowto = anyMissing;
+    if (howto) howto.classList.toggle('hidden', !showHowto);
 
     if (!checklistItem) return;
     const allCompliant = keys.length > 0
@@ -2849,9 +2943,11 @@ function updateMigrationBrowserChecklist(state) {
 
 function renderBrowserInstallButtons(state, { force = false } = {}) {
     lastMigrationBrowserState = state;
+    void applyEnforcementDescCopy(state);
     // Keep the header subtitle in sync with the live scan (the macOS
     // copy depends on whether Firefox is installed).
     syncMigrationPostHeader(state);
+    if (isMacOSDesktop) syncMigrationMacHowto(state);
     const extLines = document.getElementById('migration-checklist-ext-lines');
     if (extLines) extLines.innerHTML = migrationExtLinesHtml(state);
     const sig = migrationBrowserRenderSignature(state);
@@ -14746,13 +14842,11 @@ const SETTINGS_TRANSLATIONS = {
         migrationExtTitleMac: 'Enable {SHIELD}ReDD Block in your browsers',
         migrationExtSubMac: 'Website blocking uses <strong>macOS automation</strong> for Safari, Chrome & Edge.',
         migrationExtSubMacFirefox: 'Website blocking uses <strong>macOS automation</strong> for Safari, Chrome & Edge, and the <strong>ReDD Focus extension</strong> for Firefox.',
-        migrationHowtoHeading: 'Setting up ReDD Focus',
+        migrationExtStep1Mac: 'Click <strong>Grant access</strong> on each browser below and approve the macOS permission prompt. If you see <strong>Open Automation settings</strong>, click it and switch ReDD Block back on.',
+        migrationExtStep2MacFirefox: 'For Firefox, set up the {FOCUS}<strong>ReDD Focus</strong> extension and grant Full Disk Access so ReDD Block can verify it\'s enabled.',
+        migrationHowtoHeading: 'Setting up',
         migrationHowtoLi1Html: 'ReDD Block has tried to install ReDD Focus in your browsers. If it shows as not installed below, click the <strong>Install</strong> buttons to add it manually.',
         migrationHowtoLi3Html: 'Once enabled, <strong>allow it in private/incognito tabs</strong> so blocking works in private windows too.',
-        // macOS-only howto: Safari + Chromium block via Automation, so the
-        // rows ask for permission rather than an extension install.
-        migrationHowtoLi1HtmlMac: 'ReDD Block blocks distracting sites by controlling your browsers. Click <strong>Grant access</strong> on each browser below and approve the macOS permission prompt.',
-        migrationHowtoLi3HtmlMac: 'If a browser later shows <strong>Permission needed</strong>, use <strong>Open Automation settings</strong> to switch ReDD Block back on.',
         migrationBadgeAutomationOn: 'Allowed',
         migrationBadgeAutomationOff: 'Permission needed',
         migrationAutomationGrantHint: 'Allow ReDD Block to control {browser} so it can close distracting tabs while a block is running.',
@@ -14763,8 +14857,12 @@ const SETTINGS_TRANSLATIONS = {
         webAutomationBannerBody: 'ReDD Block needs permission to control {browsers} to block websites. Enable it under Privacy & Security → Automation, then the block will take effect.',
         migrationDone: 'I\'m all set up',
         migrationSkip: 'Skip for now',
+        migrationSetupAllReadyOne: '<strong>Your browser is ready.</strong> You can finish setup.',
+        migrationSetupAllReadyMany: '<strong>All {count} browsers are ready.</strong> You can finish setup.',
         migrationEnforcementHeadline: 'Browser enforcement',
-        migrationEnforcementDesc: 'To hold yourself accountable, your <strong>browser is automatically closed</strong> if you turn off Automation or disable ReDD Focus during blocking.',
+        migrationEnforcementDescMacAutomation: 'To hold yourself accountable, your <strong>browser is automatically closed</strong> if you turn off Automation during blocking.',
+        migrationEnforcementDescMacFirefox: 'To hold yourself accountable, your <strong>browser is automatically closed</strong> if you turn off Automation or disable ReDD Focus during blocking.',
+        migrationEnforcementDescExtension: 'To hold yourself accountable, your <strong>browser is automatically closed</strong> if you disable ReDD Focus during blocking.',
         migrationEnforcementDisableNote: 'Once on, you can only turn enforcement off when no blocks are running.',
         migrationApproveAdminPrompt: 'Approve the admin prompt to continue…',
         migrationTryAgain: 'Try again',
@@ -14916,9 +15014,12 @@ const SETTINGS_TRANSLATIONS = {
         enforcerBrowserFallback: 'your browser',
         gracePeriodLabel: 'Seconds before a browser is closed if ReDD Focus is disabled',
         settingsEnforcementHeading: 'Enforcement settings',
-        settingsEnforcementDesc: 'Your <strong>browser is automatically closed</strong> if you turn off Automation or disable ReDD Focus during blocking.',
+        settingsEnforcementDescMacAutomation: 'Your <strong>browser is automatically closed</strong> if you turn off Automation during blocking.',
+        settingsEnforcementDescMacFirefox: 'Your <strong>browser is automatically closed</strong> if you turn off Automation or disable ReDD Focus during blocking.',
+        settingsEnforcementDescExtension: 'Your <strong>browser is automatically closed</strong> if you disable ReDD Focus during blocking.',
         settingsEnforcementLockedTooltip: 'To change this setting, first stop all active blocks.',
         settingsDiagnosticsLabel: 'Something not working?',
+        settingsSetupBtn: 'Setup',
         settingsDiagnosticsBtn: 'Diagnostics',
         diagnosticsModalTitle: 'Diagnostics',
         diagnosticsCopyReport: 'Copy to Clipboard',
@@ -14973,7 +15074,6 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsThExtPrivate: 'Private tabs',
         diagnosticsYes: 'Yes',
         diagnosticsNo: 'No',
-        settingsOnboardingLabel: 'Revisit onboarding steps',
         settingsOnboardingBtn: 'Onboarding',
         settingsBlocklistsIoLabel: 'Export / import blocklists & schedules',
         settingsExportBlocklistsBtn: 'Export…',
@@ -15321,11 +15421,11 @@ const SETTINGS_TRANSLATIONS = {
         migrationExtTitleMac: 'Aktivér {SHIELD}ReDD Block i dine browsere',
         migrationExtSubMac: 'Websiteblokering bruger <strong>macOS-automatisering</strong> i Safari, Chrome og Edge.',
         migrationExtSubMacFirefox: 'Websiteblokering bruger <strong>macOS-automatisering</strong> i Safari, Chrome og Edge og <strong>ReDD Focus-udvidelsen</strong> i Firefox.',
-        migrationHowtoHeading: 'Sådan sætter du ReDD Focus op',
+        migrationExtStep1Mac: 'Klik på <strong>Giv adgang</strong> for hver browser nedenfor, og godkend macOS-prompten. Hvis du ser <strong>Åbn Automatisering</strong>, klik på den og slå ReDD Block til igen.',
+        migrationExtStep2MacFirefox: 'Til Firefox: opsæt {FOCUS}<strong>ReDD Focus</strong>-udvidelsen, og giv fuld diskadgang, så ReDD Block kan verificere, at den er aktiveret.',
+        migrationHowtoHeading: 'Opsætning',
         migrationHowtoLi1Html: 'ReDD Block har forsøgt at installere ReDD Focus i dine browsere. Hvis den vises som ikke installeret nedenfor, klik på <strong>Installer</strong>-knapperne for at tilføje den manuelt.',
         migrationHowtoLi3Html: 'Når den er aktiveret, <strong>tillad den i privat/inkognito-faner</strong>, så blokering også virker i private vinduer.',
-        migrationHowtoLi1HtmlMac: 'ReDD Block blokerer distraherende sider ved at styre dine browsere. Klik på <strong>Giv adgang</strong> for hver browser nedenfor, og godkend macOS-prompten.',
-        migrationHowtoLi3HtmlMac: 'Hvis en browser senere viser <strong>Tilladelse mangler</strong>, brug <strong>Åbn Automatisering</strong> for at slå ReDD Block til igen.',
         migrationBadgeAutomationOn: 'Tilladt',
         migrationBadgeAutomationOff: 'Tilladelse mangler',
         migrationAutomationGrantHint: 'Tillad ReDD Block at styre {browser}, så den kan lukke distraherende faner, mens en blokering kører.',
@@ -15336,8 +15436,12 @@ const SETTINGS_TRANSLATIONS = {
         webAutomationBannerBody: 'ReDD Block skal have tilladelse til at styre {browsers} for at blokere websteder. Slå det til under Anonymitet & sikkerhed → Automatisering, så træder blokeringen i kraft.',
         migrationDone: 'Jeg er klar',
         migrationSkip: 'Spring over for nu',
+        migrationSetupAllReadyOne: '<strong>Din browser er klar.</strong> Du kan afslutte opsætningen.',
+        migrationSetupAllReadyMany: '<strong>Alle {count} browsere er klar.</strong> Du kan afslutte opsætningen.',
         migrationEnforcementHeadline: 'Browser-beskyttelse',
-        migrationEnforcementDesc: 'For at holde dig ansvarlig bliver din <strong>browser automatisk lukket</strong>, hvis du slår Automatisering fra eller deaktiverer ReDD Focus under blokering.',
+        migrationEnforcementDescMacAutomation: 'For at holde dig ansvarlig bliver din <strong>browser automatisk lukket</strong>, hvis du slår Automatisering fra under blokering.',
+        migrationEnforcementDescMacFirefox: 'For at holde dig ansvarlig bliver din <strong>browser automatisk lukket</strong>, hvis du slår Automatisering fra eller deaktiverer ReDD Focus under blokering.',
+        migrationEnforcementDescExtension: 'For at holde dig ansvarlig bliver din <strong>browser automatisk lukket</strong>, hvis du deaktiverer ReDD Focus under blokering.',
         migrationEnforcementDisableNote: 'Når den er slået til, kan du kun slå håndhævelse fra, når ingen blokeringer kører.',
         migrationApproveAdminPrompt: 'Godkend administratorprompt for at fortsætte …',
         migrationTryAgain: 'Prøv igen',
@@ -15487,9 +15591,12 @@ const SETTINGS_TRANSLATIONS = {
         enforcerBrowserFallback: 'din browser',
         gracePeriodLabel: 'Sekunder før en browser lukkes, hvis ReDD Focus er slået fra',
         settingsEnforcementHeading: 'Indstillinger for selvkontrols-støtte',
-        settingsEnforcementDesc: 'Din <strong>browser lukkes automatisk</strong>, hvis du slår Automatisering fra eller deaktiverer ReDD Focus under blokering.',
+        settingsEnforcementDescMacAutomation: 'Din <strong>browser lukkes automatisk</strong>, hvis du slår Automatisering fra under blokering.',
+        settingsEnforcementDescMacFirefox: 'Din <strong>browser lukkes automatisk</strong>, hvis du slår Automatisering fra eller deaktiverer ReDD Focus under blokering.',
+        settingsEnforcementDescExtension: 'Din <strong>browser lukkes automatisk</strong>, hvis du deaktiverer ReDD Focus under blokering.',
         settingsEnforcementLockedTooltip: 'For at ændre denne indstilling skal du først stoppe alle aktive blokeringer.',
         settingsDiagnosticsLabel: 'Virker noget ikke?',
+        settingsSetupBtn: 'Opsætning',
         settingsDiagnosticsBtn: 'Diagnostik',
         diagnosticsModalTitle: 'Diagnostik',
         diagnosticsCopyReport: 'Kopiér til udklipsholder',
@@ -15544,7 +15651,6 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsThExtPrivate: 'Private faner',
         diagnosticsYes: 'Ja',
         diagnosticsNo: 'Nej',
-        settingsOnboardingLabel: 'Gennemgå onboarding-trin igen',
         settingsOnboardingBtn: 'Onboarding',
         settingsBlocklistsIoLabel: 'Eksportér / importér bloklister og tidsplaner',
         settingsExportBlocklistsBtn: 'Eksportér…',
@@ -15973,23 +16079,24 @@ function applyMigrationOverlayStaticCopy() {
     syncMigrationPostHeader(lastMigrationBrowserState);
     setHtml('migration-checklist-ext-lines', migrationExtLinesHtml(lastMigrationBrowserState));
     setText('migration-howto-title', tSettings('migrationHowtoHeading'));
-    // macOS blocks Safari + Chromium via Automation (the rows below ask
-    // for permission), while Firefox still uses the extension. The
-    // default howto copy is extension-only, so swap in copy that covers
-    // both paths.
-    setHtml('migration-howto-li1', tSettings(isMacOSDesktop ? 'migrationHowtoLi1HtmlMac' : 'migrationHowtoLi1Html'));
-    setHtml('migration-howto-li3', tSettings(isMacOSDesktop ? 'migrationHowtoLi3HtmlMac' : 'migrationHowtoLi3Html'));
+    if (isMacOSDesktop) {
+        syncMigrationMacHowto(lastMigrationBrowserState);
+    } else {
+        setHtml('migration-howto-li1', tSettings('migrationHowtoLi1Html'));
+        document.getElementById('migration-howto-li2')?.classList.add('hidden');
+        document.getElementById('migration-howto-li3')?.classList.remove('hidden');
+        setHtml('migration-howto-li3', tSettings('migrationHowtoLi3Html'));
+    }
     setText('migration-done-btn', tSettings('migrationDone'));
     setText('migration-skip-btn', tSettings('migrationSkip'));
     setText('migration-back-btn', tSettings('eulaBackBtn'));
     syncMigrationPostBackButtonVisibility();
     setText('enforcement-toggle-headline-text', tSettings('migrationEnforcementHeadline'));
-    setHtml('enforcement-toggle-desc-text', tSettings('migrationEnforcementDesc'));
+    void applyEnforcementDescCopy(lastMigrationBrowserState);
     setText('enforcement-toggle-disable-note-text', tSettings('migrationEnforcementDisableNote'));
     void updateAllEnforcementToggleLocks();
     setText('settings-enforcement-heading', tSettings('settingsEnforcementHeading'));
     setText('settings-enforcement-toggle-headline-text', tSettings('migrationEnforcementHeadline'));
-    setHtml('settings-enforcement-toggle-desc-text', tSettings('settingsEnforcementDesc'));
     const continueBtn = document.getElementById('migration-continue-btn');
     if (continueBtn && !continueBtn.disabled) {
         continueBtn.textContent = tSettings('migrationContinue');
@@ -16498,12 +16605,12 @@ function applySettingsLanguage() {
     setText('settings-override-all-btn-label', tSettings('settingsOverrideAllBtn'));
     setText('settings-uninstall-label', tSettings('uninstallApp'));
     setText('settings-uninstall-btn-label', tSettings('uninstallAppBtn'));
-    setText('settings-diagnostics-label', tSettings('settingsDiagnosticsLabel'));
+    setText('settings-help-label', tSettings('settingsDiagnosticsLabel'));
+    setText('settings-setup-btn-label', tSettings('settingsSetupBtn'));
     setText('settings-diagnostics-btn-label', tSettings('settingsDiagnosticsBtn'));
     setText('diagnostics-modal-title', tSettings('diagnosticsModalTitle'));
     setText('diagnostics-copy-btn-label', tSettings('diagnosticsCopyReport'));
     setText('close-diagnostics-btn', tSettings('close'));
-    setText('settings-onboarding-label', tSettings('settingsOnboardingLabel'));
     setText('settings-onboarding-btn-label', tSettings('settingsOnboardingBtn'));
     setText('settings-blocklists-io-label', tSettings('settingsBlocklistsIoLabel'));
     setText('settings-export-blocklists-btn-label', tSettings('settingsExportBlocklistsBtn'));
@@ -16630,6 +16737,7 @@ function setupTheme() {
             settingsBtn.addEventListener('click', () => {
             settingsModal.classList.remove('hidden');
             resetSettingsEnforcementSection();
+            void applyEnforcementDescCopy(lastMigrationBrowserState);
             // Re-evaluate the in-app Uninstall button (Mac only): a
             // schedule could have fired since the modal was last open,
             // flipping the disabled state. Cheap; idempotent.
@@ -17566,22 +17674,32 @@ async function openDiagnosticsModal() {
     };
 }
 
-// Setup diagnostics button
-function setupDiagnosticsButton() {
-    const btn = document.getElementById('diagnostics-btn');
-    if (btn) {
-        btn.addEventListener('click', openDiagnosticsModal);
-    }
-}
-
-function setupOnboardingReplayButton() {
-    const btn = document.getElementById('settings-onboarding-btn');
-    if (btn) {
-        btn.addEventListener('click', () => {
-            restartOnboardingFromSettings().catch((e) => {
-                console.warn('[onboarding-replay] restart failed:', e);
+// Setup, onboarding replay, and diagnostics from Settings → Help.
+function setupSettingsHelpButtons() {
+    const setupBtn = document.getElementById('settings-setup-btn');
+    if (setupBtn && !setupBtn.dataset.wired) {
+        setupBtn.dataset.wired = '1';
+        setupBtn.addEventListener('click', () => {
+            openExtensionSetupOverlay().catch((e) => {
+                console.warn('[settings-help] setup overlay failed:', e);
             });
         });
+    }
+
+    const onboardingBtn = document.getElementById('settings-onboarding-btn');
+    if (onboardingBtn && !onboardingBtn.dataset.wired) {
+        onboardingBtn.dataset.wired = '1';
+        onboardingBtn.addEventListener('click', () => {
+            restartOnboardingFromSettings().catch((e) => {
+                console.warn('[settings-help] onboarding replay failed:', e);
+            });
+        });
+    }
+
+    const diagnosticsBtn = document.getElementById('diagnostics-btn');
+    if (diagnosticsBtn && !diagnosticsBtn.dataset.wired) {
+        diagnosticsBtn.dataset.wired = '1';
+        diagnosticsBtn.addEventListener('click', openDiagnosticsModal);
     }
 }
 
