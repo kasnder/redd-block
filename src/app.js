@@ -1386,8 +1386,11 @@ async function runPostAcceptanceStartup() {
                 } catch (e) {
                     console.warn('[startup] enforcer_start failed:', e);
                 }
-                await startWebAutomationWatcher();
             }
+            // Start the automation watcher even while the migration overlay
+            // is open — blocks may already be active and the watcher is
+            // idle until then anyway.
+            await startWebAutomationWatcher();
         }
         render();
         startTickInterval();
@@ -3123,7 +3126,7 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
 async function pollMigrationCompliance() {
     if (!migrationOnboardingActive) return;
     try {
-        await refreshAutomationPermissionStatus();
+        await refreshAutomationPermissionStatus({ force: true });
         const fresh = await invoke('onboarding_state');
         renderBrowserInstallButtons(fresh);
     } catch (e) { /* no-op */ }
@@ -3607,8 +3610,13 @@ function setupWebAutomationUiAlerts() {
     tauriAPI.onWebAutomationPermissionResolved((event) => {
         const label = event?.payload?.label || event?.payload?.browser;
         if (!label) return;
+        const key = browserKeyFromLabel(label);
+        if (key) lastAutomationPermissionByKey[key] = 'granted';
         webAutomationPendingBrowsers.delete(String(label));
         renderWebAutomationPermissionBanner();
+        if (migrationOnboardingActive && lastMigrationBrowserState) {
+            renderBrowserInstallButtons(lastMigrationBrowserState, { force: true });
+        }
     }).catch((e) => {
         console.warn('[web-automation] failed to attach permission-resolved listener:', e);
     });

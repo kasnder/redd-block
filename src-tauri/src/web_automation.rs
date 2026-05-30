@@ -358,7 +358,14 @@ fn tick(
             Ok(tabs) => {
                 set_perm(app, shared, browser, PermState::Granted);
                 let actions = plan_actions(&tabs, &domains, &blocks, block_page_url);
-                if !actions.is_empty() {
+                if actions.is_empty() {
+                    log::debug!(
+                        "web_automation: {} — {} tab(s), {} blocked domain(s), nothing to do",
+                        browser.label(),
+                        tabs.len(),
+                        domains.len()
+                    );
+                } else {
                     match apply_actions(browser, &actions) {
                         Ok(()) => log::info!(
                             "web_automation: applied {} tab action(s) to {} (redirect to / restore from block page)",
@@ -582,10 +589,10 @@ fn apply_actions(
         // Each set is wrapped in `try` so one stale index (a tab the
         // user closed mid-tick) doesn't abort the whole batch.
         body.push_str(&format!(
-            "  try\n    set URL of tab {ti} of window {wi} to \"{url}\"\n  end try\n",
+            "  try\n    set URL of tab {ti} of window {wi} to {url}\n  end try\n",
             ti = ti,
             wi = wi,
-            url = applescript_escape(url)
+            url = applescript_string_expr(url)
         ));
     }
     let script = format!(
@@ -677,6 +684,20 @@ pub fn trigger_permission_prompt(browser: SupportedBrowser) -> Result<(), String
 
 fn applescript_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// Build an AppleScript string expression for `s`. Query strings contain
+/// `&` between params; inside AppleScript double-quoted strings `&` is the
+/// concatenation operator, so `"file://x?u=1&id=2"` parses as two expressions
+/// and the `set URL` silently fails inside `try`.
+fn applescript_string_expr(s: &str) -> String {
+    if !s.contains('&') {
+        return format!("\"{}\"", applescript_escape(s));
+    }
+    s.split('&')
+        .map(|part| format!("\"{}\"", applescript_escape(part)))
+        .collect::<Vec<_>>()
+        .join(" & \"&\" & ")
 }
 
 // ---- Block-page URL + matching (ported from background.js) ----------------
@@ -921,6 +942,15 @@ mod tests {
         let built = build_blocked_url(base, original, &[]);
         assert!(is_block_page_url(&built, base));
         assert_eq!(original_url_from_block_page(&built).as_deref(), Some(original));
+    }
+
+    #[test]
+    fn applescript_string_expr_escapes_ampersands_in_query() {
+        let url = "file:///Applications/ReDD%20Block.app/Contents/Resources/blocked/blocked.html?u=https%3A%2F%2Fx.com&id=abc";
+        assert_eq!(
+            applescript_string_expr(url),
+            "\"file:///Applications/ReDD%20Block.app/Contents/Resources/blocked/blocked.html?u=https%3A%2F%2Fx.com\" & \"&\" & \"id=abc\""
+        );
     }
 
     #[test]

@@ -95,14 +95,18 @@ pub async fn web_automation_permission_status(
         SupportedBrowser::all()
             .into_iter()
             .map(|b| {
-                let mut st = web_automation::query_automation_permission(b);
-                if st == PermState::Unknown {
-                    if let Some(list) = &cached {
-                        if let Some(info) = list.iter().find(|i| i.browser == b) {
-                            st = info.state;
-                        }
-                    }
-                }
+                let live = web_automation::query_automation_permission(b);
+                let cached_state = cached.as_ref().and_then(|list| {
+                    list.iter().find(|i| i.browser == b).map(|i| i.state)
+                });
+                // Trust a successful osascript probe (cached Granted) over a
+                // silent TCC read that often returns Unknown for dev builds.
+                let st = match (cached_state, live) {
+                    (Some(PermState::Granted), _) | (_, PermState::Granted) => PermState::Granted,
+                    (_, PermState::Denied) => PermState::Denied,
+                    (Some(s), PermState::Unknown) => s,
+                    (_, s) => s,
+                };
                 PermissionInfo {
                     browser: b,
                     label: b.label(),
