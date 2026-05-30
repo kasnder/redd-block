@@ -2733,13 +2733,6 @@ function buildAutomationBrowserRow(key, entry) {
     }
     actionsRow.appendChild(btn);
 
-    const refreshBtn = document.createElement('button');
-    refreshBtn.type = 'button';
-    refreshBtn.className = 'migration-browser-copy secondary';
-    refreshBtn.textContent = tSettings('migrationCheckAgain');
-    refreshBtn.addEventListener('click', pollMigrationCompliance);
-    actionsRow.appendChild(refreshBtn);
-
     row.appendChild(actionsRow);
     return row;
 }
