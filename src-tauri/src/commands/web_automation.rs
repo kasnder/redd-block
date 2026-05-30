@@ -79,38 +79,40 @@ pub fn web_automation_pause(state: State<WebAutomationState>) {
 /// Per-browser Automation-permission snapshot for the diagnostics /
 /// onboarding UI.
 ///
-/// Reads the *live* decision via `AEDeterminePermissionToAutomateTarget`
-/// (no consent prompt), so the onboarding rows are accurate before any
-/// block has run — independent of whether the watcher has probed yet. If
-/// the live query is inconclusive (Unknown: not-decided or browser not
-/// running) we fall back to any cached state the watcher learned from a
-/// real Apple Event, which can only be more definite.
+/// Runs off the main thread — the underlying TCC query shares the
+/// Apple Event lock with the automation tick and must not block UI.
 #[tauri::command]
-pub fn web_automation_permission_status(state: State<WebAutomationState>) -> Vec<PermissionInfo> {
+pub async fn web_automation_permission_status(
+    state: State<'_, WebAutomationState>,
+) -> Result<Vec<PermissionInfo>, String> {
     use crate::web_automation::PermState;
     let cached = state
         .0
         .lock()
         .ok()
         .and_then(|s| s.as_ref().map(|h| h.permission_status()));
-    SupportedBrowser::all()
-        .into_iter()
-        .map(|b| {
-            let mut st = web_automation::query_automation_permission(b);
-            if st == PermState::Unknown {
-                if let Some(list) = &cached {
-                    if let Some(info) = list.iter().find(|i| i.browser == b) {
-                        st = info.state;
+    tauri::async_runtime::spawn_blocking(move || {
+        SupportedBrowser::all()
+            .into_iter()
+            .map(|b| {
+                let mut st = web_automation::query_automation_permission(b);
+                if st == PermState::Unknown {
+                    if let Some(list) = &cached {
+                        if let Some(info) = list.iter().find(|i| i.browser == b) {
+                            st = info.state;
+                        }
                     }
                 }
-            }
-            PermissionInfo {
-                browser: b,
-                label: b.label(),
-                state: st,
-            }
-        })
-        .collect()
+                PermissionInfo {
+                    browser: b,
+                    label: b.label(),
+                    state: st,
+                }
+            })
+            .collect()
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// Surface the system Automation prompt for one browser on demand (used
@@ -118,12 +120,14 @@ pub fn web_automation_permission_status(state: State<WebAutomationState>) -> Vec
 /// the labels from `permission_status` ("Safari", "Chrome", "Brave",
 /// "Edge").
 #[tauri::command]
-pub fn request_automation_permission(browser: String) -> Result<(), String> {
+pub async fn request_automation_permission(browser: String) -> Result<(), String> {
     let target = SupportedBrowser::all()
         .into_iter()
         .find(|b| b.label().eq_ignore_ascii_case(&browser))
         .ok_or_else(|| format!("unknown browser: {browser}"))?;
-    web_automation::trigger_permission_prompt(target)
+    tauri::async_runtime::spawn_blocking(move || web_automation::trigger_permission_prompt(target))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Open System Settings → Privacy & Security → Automation so the user can

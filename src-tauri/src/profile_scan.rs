@@ -127,6 +127,34 @@ pub fn scan() -> ScanResult {
     scan_filter(|_| true)
 }
 
+/// Lighter scan for onboarding UI and the setup banner.
+///
+/// On macOS, Safari + Chromium are blocked via Automation (see
+/// `web_automation.rs`), so we only need install/running presence for
+/// those — not a walk of their `Application Support` profile trees,
+/// which triggers Sequoia per-app data-access TCC prompts and can
+/// stall the UI when polled every few seconds. Firefox keeps the full
+/// extension profile scan. Other platforms use the full scan.
+pub fn scan_for_onboarding() -> ScanResult {
+    #[cfg(target_os = "macos")]
+    {
+        if !crate::cross_app_consent::should_run_profile_scans() {
+            log::info!("tcc-probe: profile_scan deferred — onboarding not complete");
+            return empty_scan_result();
+        }
+        let mut result = scan_filter(|label| label == "firefox");
+        result.chrome = ChromiumBrowser::Chrome.presence_only();
+        result.brave = ChromiumBrowser::Brave.presence_only();
+        result.edge = ChromiumBrowser::Edge.presence_only();
+        result.safari = safari_presence_only();
+        result
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        scan()
+    }
+}
+
 fn empty_scan_result() -> ScanResult {
     ScanResult {
         firefox: empty("firefox"),
@@ -532,6 +560,18 @@ impl ChromiumBrowser {
         #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
         {
             self.root().map(|p| p.exists()).unwrap_or(false)
+        }
+    }
+
+    /// Install + running flags only — no profile-dir reads (macOS onboarding).
+    fn presence_only(self) -> BrowserStatus {
+        BrowserStatus {
+            present: self.app_present(),
+            installed: self.app_installed(),
+            profiles: vec![],
+            error: None,
+            duplicate_extensions: None,
+            needs_fda_access: false,
         }
     }
 
@@ -1031,6 +1071,23 @@ fn scan_safari_duplicate_extensions(has_fda: bool, embedded: bool) -> Option<Saf
         Some(SafariDuplicateExtensions { detected: true })
     } else {
         None
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn safari_presence_only() -> BrowserStatus {
+    let installed = Path::new("/Applications/Safari.app").exists()
+        || dirs::home_dir()
+            .map(|h| h.join("Applications/Safari.app").exists())
+            .unwrap_or(false);
+    let running = is_process_running(&["Safari"]);
+    BrowserStatus {
+        present: running,
+        installed,
+        profiles: vec![],
+        error: None,
+        duplicate_extensions: None,
+        needs_fda_access: false,
     }
 }
 

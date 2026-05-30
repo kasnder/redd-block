@@ -385,7 +385,7 @@ pub async fn onboarding_state(_app: tauri::AppHandle) -> Result<OnboardingState,
     let show_upgrade_welcome = snapshot_initial_state() && !migration_pending;
     let migrated_this_launch = show_upgrade_welcome;
 
-    let browsers = tauri::async_runtime::spawn_blocking(crate::profile_scan::scan)
+    let browsers = tauri::async_runtime::spawn_blocking(crate::profile_scan::scan_for_onboarding)
         .await
         .map_err(|e| e.to_string())?;
     let extension_compliant = crate::profile_scan::compliant(&browsers);

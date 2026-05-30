@@ -29,6 +29,7 @@
 // extension's native host and the enforcer use.
 
 use std::collections::HashMap;
+use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -48,6 +49,16 @@ const TICK: Duration = Duration::from_millis(1000);
 /// changes System Settings). Re-probe at this cadence so a later grant
 /// is picked up without a restart.
 const DENIED_RETRY: Duration = Duration::from_secs(30);
+
+/// Serialize every Apple Event / osascript call. Concurrent access from
+/// the automation tick (background thread), the enforcer, and Tauri
+/// commands on the main thread can deadlock macOS's AppleEvent manager
+/// and freeze the app (beach ball).
+static APPLE_EVENTS: Mutex<()> = Mutex::new(());
+
+/// Cap osascript waits so a browser waiting on an Automation consent
+/// dialog cannot block the watcher thread indefinitely.
+const OSASCRIPT_TIMEOUT: Duration = Duration::from_secs(8);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub enum SupportedBrowser {
@@ -128,6 +139,9 @@ impl SupportedBrowser {
 /// on unmeasurable state).
 #[cfg(target_os = "macos")]
 pub fn query_automation_permission(browser: SupportedBrowser) -> PermState {
+    let _guard = APPLE_EVENTS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     match tcc::permission_status(browser.bundle_id()) {
         0 => PermState::Granted,                 // noErr
         -1743 => PermState::Denied,              // errAEEventNotPermitted
@@ -588,19 +602,54 @@ end if"#,
 /// Run an AppleScript via osascript, classifying the not-authorized
 /// (Automation TCC) error so the caller can drive the permission UI.
 fn run_osascript(script: &str) -> Result<String, AutomationError> {
-    let output = std::process::Command::new("/usr/bin/osascript")
+    let _guard = APPLE_EVENTS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+
+    let mut child = std::process::Command::new("/usr/bin/osascript")
         .arg("-e")
         .arg(script)
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .map_err(|e| AutomationError::Other(format!("spawn osascript: {e}")))?;
-    if output.status.success() {
-        return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
+
+    let started = Instant::now();
+    loop {
+        match child
+            .try_wait()
+            .map_err(|e| AutomationError::Other(format!("wait osascript: {e}")))?
+        {
+            Some(status) => {
+                use std::io::Read;
+                let mut stdout = String::new();
+                let mut stderr = String::new();
+                if let Some(mut out) = child.stdout.take() {
+                    out.read_to_string(&mut stdout).ok();
+                }
+                if let Some(mut err) = child.stderr.take() {
+                    err.read_to_string(&mut stderr).ok();
+                }
+                if status.success() {
+                    return Ok(stdout);
+                }
+                if stderr.contains("-1743") || stderr.contains("Not authorized to send Apple events")
+                {
+                    return Err(AutomationError::NotAuthorized);
+                }
+                return Err(AutomationError::Other(stderr.trim().to_string()));
+            }
+            None if started.elapsed() >= OSASCRIPT_TIMEOUT => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(AutomationError::Other(format!(
+                    "osascript timed out after {}s",
+                    OSASCRIPT_TIMEOUT.as_secs()
+                )));
+            }
+            None => std::thread::sleep(Duration::from_millis(50)),
+        }
     }
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    if stderr.contains("-1743") || stderr.contains("Not authorized to send Apple events") {
-        return Err(AutomationError::NotAuthorized);
-    }
-    Err(AutomationError::Other(stderr.trim().to_string()))
 }
 
 /// Send a minimal Apple Event to surface the system Automation prompt

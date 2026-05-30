@@ -2301,6 +2301,8 @@ const AUTOMATION_BROWSER_KEYS = ['chrome', 'brave', 'edge', 'safari'];
 // `web_automation_permission_status` (a no-prompt native query). Empty
 // until the first refresh; treated as 'unknown' per key.
 let lastAutomationPermissionByKey = {};
+let lastAutomationPermissionFetchAt = 0;
+const AUTOMATION_PERMISSION_FETCH_MIN_MS = 2000;
 
 function browserUsesAutomation(key) {
     return isMacOSDesktop && AUTOMATION_BROWSER_KEYS.includes(key);
@@ -2309,10 +2311,15 @@ function browserUsesAutomation(key) {
 // Pull the live per-browser Automation decision (no consent prompt) and
 // cache it by browser key. Safe to call on any platform — no-ops off
 // macOS. Returns the cached map for convenience.
-async function refreshAutomationPermissionStatus() {
+async function refreshAutomationPermissionStatus({ force = false } = {}) {
     if (!isMacOSDesktop) return lastAutomationPermissionByKey;
+    const now = Date.now();
+    if (!force && now - lastAutomationPermissionFetchAt < AUTOMATION_PERMISSION_FETCH_MIN_MS) {
+        return lastAutomationPermissionByKey;
+    }
     try {
         const list = await tauriAPI.webAutomationPermissionStatus();
+        lastAutomationPermissionFetchAt = now;
         const map = {};
         for (const info of (list || [])) {
             const key = browserKeyFromLabel(info.label || info.browser);
