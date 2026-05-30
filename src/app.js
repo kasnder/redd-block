@@ -1175,6 +1175,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupAppForegroundRefresh();
     setupOverrideAll();
     setupInAppUninstall();
+    setupMacAutomationIntroModal();
     setupGraceSetting();
     setupSettingsEnforcementSection();
     void wireEnforcementToggle();
@@ -1663,6 +1664,14 @@ async function runDesktopOnboarding() {
             return;
         }
 
+        const state = await invoke('onboarding_state');
+
+        // Returning macOS upgraders: one-time intro before the full browser-
+        // setup overlay (which would take over the window and hide this).
+        if (await maybeShowMacAutomationIntro(state)) {
+            return;
+        }
+
         // Fresh-user case: surface the extension setup screen until the
         // user dismisses it. renderBrowserInstallButtons falls back to a
         // Chrome row when no installed browsers are detected yet.
@@ -1670,11 +1679,154 @@ async function runDesktopOnboarding() {
 
         if (migrationOnboardingActive) return;
 
-        const state = await invoke('onboarding_state');
         await updateBehaviourChangeBanner(state);
     } catch (e) {
         console.warn('[onboarding] state check failed:', e);
     }
+}
+
+function hasMacAutomationIntroBeenShown() {
+    return appData?.settings?.macAutomationIntroShown === true;
+}
+
+async function persistMacAutomationIntroShown() {
+    if (!appData.settings) appData.settings = {};
+    if (appData.settings.macAutomationIntroShown) return;
+    appData.settings.macAutomationIntroShown = true;
+    try {
+        await saveData();
+    } catch (e) {
+        console.warn('[mac-automation-intro] persist failed:', e);
+    }
+}
+
+function applyMacAutomationIntroCopy() {
+    const setText = (id, text) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+    };
+    const setHtml = (id, html) => {
+        const el = document.getElementById(id);
+        if (el) el.innerHTML = html;
+    };
+
+    setText('mac-automation-intro-badge-text', tSettings('macAutomationIntroBadge'));
+    setText('mac-automation-intro-title', tSettings('macAutomationIntroTitle'));
+    setHtml('mac-automation-intro-lead', tSettings('macAutomationIntroLeadHtml'));
+    setText('mac-automation-intro-automation-browsers-label', tSettings('macAutomationIntroAutomationBrowsers'));
+    setText('mac-automation-intro-automation-method', tSettings('macAutomationIntroAutomationMethod'));
+    setText('mac-automation-intro-firefox-label', tSettings('macAutomationIntroFirefoxLabel'));
+    setText('mac-automation-intro-extension-method', tSettings('macAutomationIntroExtensionMethod'));
+    setHtml('mac-automation-intro-unchanged', tSettings('macAutomationIntroUnchangedHtml'));
+    setText('mac-automation-intro-dismiss-btn', tSettings('macAutomationIntroDismissBtn'));
+    setText('mac-automation-intro-review-btn', tSettings('macAutomationIntroReviewBtn'));
+
+    const stack = document.getElementById('mac-automation-intro-automation-icons');
+    if (stack && !stack.dataset.ready) {
+        for (const key of ['safari', 'chrome', 'edge', 'brave']) {
+            const img = document.createElement('img');
+            img.src = browserIconUrl(key);
+            img.alt = '';
+            img.className = 'mac-automation-intro-stack-icon';
+            stack.appendChild(img);
+        }
+        stack.dataset.ready = '1';
+    }
+    const firefoxIcon = document.getElementById('mac-automation-intro-firefox-icon');
+    if (firefoxIcon) firefoxIcon.src = browserIconUrl('firefox');
+}
+
+function hideMacAutomationIntroModal() {
+    document.getElementById('mac-automation-intro-modal')?.classList.add('hidden');
+}
+
+async function dismissMacAutomationIntroModal({ openSetup = false } = {}) {
+    await persistMacAutomationIntroShown();
+    hideMacAutomationIntroModal();
+    if (openSetup) {
+        await openExtensionSetupOverlay();
+    }
+}
+
+// True when ReDD Focus was previously set up in a browser that now
+// blocks via Automation — i.e. they used the old extension-based model.
+function hadLegacyAutomationBrowserExtension(state) {
+    const browsers = state?.browsers || {};
+    for (const key of AUTOMATION_BROWSER_KEYS) {
+        const b = browsers[key];
+        if (!b?.installed) continue;
+        const profiles = b.profiles || [];
+        if (key === 'safari') {
+            if (profiles.some((p) => p.installed)) return true;
+            continue;
+        }
+        const def = profiles.find((p) => p.isDefault) || profiles[0];
+        if (def?.installed) return true;
+    }
+    return false;
+}
+
+async function shouldShowMacAutomationIntro(state) {
+    if (!isMacOSDesktop || !hasAcceptedEula() || !hasWelcomeOnboardingBeenShown()) return false;
+    if (hasMacAutomationIntroBeenShown() || migrationOnboardingActive) return false;
+
+    const extDismissed = !!localStorage.getItem(EXT_ONBOARDING_DISMISSED_KEY);
+    const returningUser = appData?.settings?.onboardingComplete === true || extDismissed;
+    if (!returningUser) return false;
+
+    // Fresh first-run path after EULA — browser-setup overlay covers it.
+    if (firstRunExtensionSetupPending && !extDismissed) return false;
+
+    await refreshAutomationPermissionStatus();
+    const browsers = state?.browsers || {};
+    const automationKeys = AUTOMATION_BROWSER_KEYS.filter((k) => browsers[k]?.installed);
+    if (automationKeys.length === 0) {
+        await persistMacAutomationIntroShown();
+        return false;
+    }
+
+    const allAutomationGranted = automationKeys.every(
+        (k) => (lastAutomationPermissionByKey[k] || 'unknown') === 'granted',
+    );
+    if (allAutomationGranted) {
+        await persistMacAutomationIntroShown();
+        return false;
+    }
+
+    // Prefer the legacy-extension signal for ambiguous cases; anyone who
+    // already finished onboarding is treated as an upgrader.
+    if (!hadLegacyAutomationBrowserExtension(state)
+        && appData?.settings?.onboardingComplete !== true) {
+        return false;
+    }
+
+    return true;
+}
+
+async function maybeShowMacAutomationIntro(state) {
+    if (!(await shouldShowMacAutomationIntro(state))) return false;
+    applyMacAutomationIntroCopy();
+    document.getElementById('migration-onboarding')?.classList.add('hidden');
+    migrationOnboardingActive = false;
+    stopMigrationPolling();
+    document.getElementById('main-content')?.classList.remove('hidden');
+    document.getElementById('now-blocking-row')?.classList.remove('hidden');
+    document.getElementById('mac-automation-intro-modal')?.classList.remove('hidden');
+    return true;
+}
+
+function setupMacAutomationIntroModal() {
+    const modal = document.getElementById('mac-automation-intro-modal');
+    if (!modal || modal._wired) return;
+    modal._wired = true;
+
+    document.getElementById('mac-automation-intro-dismiss-btn')
+        ?.addEventListener('click', () => { void dismissMacAutomationIntroModal(); });
+    document.getElementById('mac-automation-intro-review-btn')
+        ?.addEventListener('click', () => { void dismissMacAutomationIntroModal({ openSetup: true }); });
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) void dismissMacAutomationIntroModal();
+    });
 }
 
 async function ensureExtensionSetupOnboardingShown() {
@@ -1925,6 +2077,7 @@ function wireMigrationPostPhase(state) {
         // (per-install) which is fine for a UX hint.
         try { localStorage.setItem(EXT_ONBOARDING_DISMISSED_KEY, String(Date.now())); }
         catch (_) { /* localStorage may be disabled; harmless */ }
+        await persistMacAutomationIntroShown();
         hideMigrationOnboarding();
         try {
             const fresh = await invoke('onboarding_state');
@@ -5082,7 +5235,9 @@ async function acceptEula() {
     if (isIOS) {
         await checkScreentimeAuth();
     } else {
-        firstRunExtensionSetupPending = true;
+        if (!appData.settings.onboardingComplete) {
+            firstRunExtensionSetupPending = true;
+        }
         updateOnboardingVisibility();
     }
     await runPostAcceptanceStartup();
@@ -14926,6 +15081,16 @@ const SETTINGS_TRANSLATIONS = {
         uninstallConfirmOk: 'Uninstall',
         uninstallFailedTitle: 'Uninstall failed',
         uninstallFailed: 'Could not complete uninstall.',
+        macAutomationIntroBadge: 'What\u2019s new',
+        macAutomationIntroTitle: 'Website blocking on macOS works a little differently now',
+        macAutomationIntroLeadHtml: 'To make blocking easier to set up, most browsers now use <strong>macOS Automation</strong> instead of the ReDD Focus extension. Here\u2019s the new setup.',
+        macAutomationIntroAutomationBrowsers: 'Safari, Chrome, Edge & Brave',
+        macAutomationIntroAutomationMethod: 'macOS Automation',
+        macAutomationIntroFirefoxLabel: 'Firefox',
+        macAutomationIntroExtensionMethod: 'ReDD Focus extension',
+        macAutomationIntroUnchangedHtml: '<span class="mac-automation-intro-unchanged-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="11" fill="currentColor"></circle><path d="M7 12.5l3 3 7-7" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg></span><span class="mac-automation-intro-unchanged-text">Your <strong>blocklists and schedules are unchanged</strong> \u2014 nothing to redo.</span>',
+        macAutomationIntroReviewBtn: 'Review browser setup',
+        macAutomationIntroDismissBtn: 'Got it',
         helperService: 'Helper service',
         helperStatusChecking: 'Checking...',
         helperStatusActive: 'Active',
@@ -15486,6 +15651,16 @@ const SETTINGS_TRANSLATIONS = {
         uninstallConfirmOk: 'Afinstaller',
         uninstallFailedTitle: 'Afinstallation mislykkedes',
         uninstallFailed: 'Kunne ikke gennemføre afinstallation.',
+        macAutomationIntroBadge: 'Nyhed',
+        macAutomationIntroTitle: 'Websiteblokering på macOS fungerer lidt anderledes nu',
+        macAutomationIntroLeadHtml: 'For at gøre blokering nemmere at opsætte bruger de fleste browsere nu <strong>macOS Automatisering</strong> i stedet for ReDD Focus-udvidelsen. Sådan ser opsætningen ud nu.',
+        macAutomationIntroAutomationBrowsers: 'Safari, Chrome, Edge og Brave',
+        macAutomationIntroAutomationMethod: 'macOS Automatisering',
+        macAutomationIntroFirefoxLabel: 'Firefox',
+        macAutomationIntroExtensionMethod: 'ReDD Focus-udvidelse',
+        macAutomationIntroUnchangedHtml: '<span class="mac-automation-intro-unchanged-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="11" fill="currentColor"></circle><path d="M7 12.5l3 3 7-7" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg></span><span class="mac-automation-intro-unchanged-text">Dine <strong>blokeringslister og skemaer er uændrede</strong> \u2014 intet skal gøres om.</span>',
+        macAutomationIntroReviewBtn: 'Gennemgå browseropsætning',
+        macAutomationIntroDismissBtn: 'Forstået',
         helperService: 'Hjælper',
         helperStatusChecking: 'Tjekker...',
         helperStatusActive: 'Aktiv',
@@ -16259,6 +16434,7 @@ function applySettingsLanguage() {
     syncUninstallConfirmModal(null);
     setText('cancel-uninstall-confirm-btn', tSettings('cancel'));
     setText('confirm-uninstall-confirm-btn', tSettings('uninstallConfirmOk'));
+    applyMacAutomationIntroCopy();
     // The hint paragraph and button tooltip need re-translation too —
     // refreshUninstallButtonState reads from tSettings() and rewrites
     // both. Cheap to call unconditionally.

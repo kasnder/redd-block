@@ -1601,6 +1601,55 @@
             </div>
         </div>
 
+        <!-- macOS Automation upgrade intro (one-time, returning users) -->
+        <div id="mac-automation-intro-modal" class="modal-overlay hidden">
+            <div class="modal-content mac-automation-intro-modal">
+                <div class="mac-automation-intro-badge">
+                    <svg class="mac-automation-intro-badge-icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                        <path fill="currentColor" d="M12 2l1.8 5.5L19 9.3l-5.2 1.8L12 16.5 10.2 11 5 9.3l5.2-1.8L12 2z"/>
+                        <path fill="currentColor" d="M19 14l.9 2.7 2.7.9-2.7.9-.9 2.7-.9-2.7-2.7-.9 2.7-.9.9-2.7z"/>
+                    </svg>
+                    <span id="mac-automation-intro-badge-text"></span>
+                </div>
+                <h3 id="mac-automation-intro-title"></h3>
+                <p id="mac-automation-intro-lead" class="mac-automation-intro-lead"></p>
+
+                <div class="mac-automation-intro-browser-panel settings-panel">
+                    <div class="mac-automation-intro-browser-row">
+                        <div class="mac-automation-intro-browser-label">
+                            <span id="mac-automation-intro-automation-icons" class="mac-automation-intro-icons-stack" aria-hidden="true"></span>
+                            <span id="mac-automation-intro-automation-browsers-label"></span>
+                        </div>
+                        <span class="mac-automation-intro-method-pill mac-automation-intro-method-pill--automation">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                <path d="M5 12h14"></path>
+                                <path d="M13 6l6 6-6 6"></path>
+                            </svg>
+                            <span id="mac-automation-intro-automation-method"></span>
+                        </span>
+                    </div>
+                    <div class="mac-automation-intro-browser-row">
+                        <div class="mac-automation-intro-browser-label">
+                            <img id="mac-automation-intro-firefox-icon"
+                                 class="mac-automation-intro-browser-icon"
+                                 src=""
+                                 alt=""
+                                 aria-hidden="true">
+                            <span id="mac-automation-intro-firefox-label"></span>
+                        </div>
+                        <span id="mac-automation-intro-extension-method" class="mac-automation-intro-method-pill mac-automation-intro-method-pill--extension"></span>
+                    </div>
+                </div>
+
+                <p id="mac-automation-intro-unchanged" class="mac-automation-intro-unchanged"></p>
+
+                <div class="modal-buttons">
+                    <button id="mac-automation-intro-dismiss-btn" class="modal-btn cancel-btn" type="button"></button>
+                    <button id="mac-automation-intro-review-btn" class="modal-btn primary-btn" type="button"></button>
+                </div>
+            </div>
+        </div>
+
         <!-- Override All Blocks Modal -->
         <div id="override-all-modal" class="modal-overlay hidden">
             <div class="modal-content override-challenge">

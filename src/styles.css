@@ -8838,6 +8838,230 @@ body.dark-mode #uninstall-confirm-modal .modal-btn.cancel-btn:hover {
     background: rgba(255, 255, 255, 0.06);
 }
 
+/* macOS Automation upgrade intro (returning users) */
+#mac-automation-intro-modal {
+    z-index: 205;
+}
+
+#mac-automation-intro-modal .modal-content {
+    max-width: 520px;
+    padding: 28px 28px 24px;
+}
+
+#mac-automation-intro-modal .mac-automation-intro-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 14px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    background: hsl(152, 38%, 93%);
+    color: hsl(152, 45%, 28%);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+#mac-automation-intro-modal .mac-automation-intro-badge-icon {
+    flex-shrink: 0;
+    opacity: 0.85;
+}
+
+#mac-automation-intro-modal h3 {
+    font-family: var(--font-heading);
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    margin: 0 0 12px;
+    color: var(--text-primary);
+}
+
+#mac-automation-intro-modal .mac-automation-intro-lead {
+    margin: 0 0 18px;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--text-secondary);
+}
+
+#mac-automation-intro-modal .mac-automation-intro-lead strong {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+#mac-automation-intro-modal .mac-automation-intro-browser-panel {
+    margin-bottom: 16px;
+    padding: 0;
+    overflow: hidden;
+}
+
+#mac-automation-intro-modal .mac-automation-intro-browser-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 16px;
+}
+
+#mac-automation-intro-modal .mac-automation-intro-browser-row + .mac-automation-intro-browser-row {
+    border-top: 1px solid var(--border-color-medium);
+}
+
+#mac-automation-intro-modal .mac-automation-intro-browser-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.3;
+    color: var(--text-primary);
+}
+
+#mac-automation-intro-modal .mac-automation-intro-icons-stack {
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+#mac-automation-intro-modal .mac-automation-intro-stack-icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    object-fit: contain;
+    box-shadow: 0 0 0 2px var(--redd-card);
+}
+
+#mac-automation-intro-modal .mac-automation-intro-stack-icon + .mac-automation-intro-stack-icon {
+    margin-left: -7px;
+}
+
+#mac-automation-intro-modal .mac-automation-intro-browser-icon {
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    object-fit: contain;
+}
+
+#mac-automation-intro-modal .mac-automation-intro-method-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+#mac-automation-intro-modal .mac-automation-intro-method-pill--automation {
+    background: var(--primary-btn-bg);
+    border: none;
+    color: #ffffff;
+}
+
+#mac-automation-intro-modal .mac-automation-intro-method-pill--extension {
+    background: var(--redd-card);
+    border: 1px solid var(--border-color-medium);
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+#mac-automation-intro-modal .mac-automation-intro-unchanged {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 0 0 22px;
+    font-size: 13px;
+    line-height: 1.45;
+    color: hsl(152, 35%, 30%);
+}
+
+#mac-automation-intro-modal .mac-automation-intro-unchanged-icon {
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: hsl(152, 45%, 42%);
+}
+
+#mac-automation-intro-modal .mac-automation-intro-unchanged-text {
+    min-width: 0;
+}
+
+#mac-automation-intro-modal .mac-automation-intro-unchanged-text strong {
+    font-weight: 600;
+    color: hsl(152, 40%, 24%);
+}
+
+#mac-automation-intro-modal .modal-buttons {
+    margin-top: 0;
+    gap: 12px;
+}
+
+#mac-automation-intro-modal .modal-btn {
+    padding: 12px 16px;
+    border-radius: 10px;
+    font-size: 15px;
+}
+
+#mac-automation-intro-modal .modal-btn.cancel-btn {
+    background: #ffffff;
+    border: 1px solid var(--border-color-medium);
+    color: var(--text-secondary);
+}
+
+#mac-automation-intro-modal .modal-btn.cancel-btn:hover {
+    background: var(--redd-warm-grey);
+}
+
+#mac-automation-intro-modal .modal-btn.primary-btn {
+    background: var(--primary-btn-bg);
+    color: var(--primary-btn-text);
+}
+
+#mac-automation-intro-modal .modal-btn.primary-btn:hover {
+    background: var(--primary-btn-bg-hover);
+}
+
+body.dark-mode #mac-automation-intro-modal .mac-automation-intro-badge {
+    background: hsl(152, 22%, 18%);
+    color: hsl(152, 40%, 72%);
+}
+
+body.dark-mode #mac-automation-intro-modal .mac-automation-intro-stack-icon {
+    box-shadow: 0 0 0 2px var(--redd-warm-grey);
+}
+
+body.dark-mode #mac-automation-intro-modal .mac-automation-intro-method-pill--extension {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: var(--border-color-medium);
+    color: var(--text-muted);
+}
+
+body.dark-mode #mac-automation-intro-modal .mac-automation-intro-unchanged {
+    color: hsl(152, 35%, 68%);
+}
+
+body.dark-mode #mac-automation-intro-modal .mac-automation-intro-unchanged-text strong {
+    color: hsl(152, 40%, 78%);
+}
+
+body.dark-mode #mac-automation-intro-modal .mac-automation-intro-unchanged-icon {
+    color: hsl(152, 45%, 55%);
+}
+
+body.dark-mode #mac-automation-intro-modal .modal-btn.cancel-btn {
+    background: var(--element-bg);
+    border-color: var(--border-color-medium);
+    color: var(--text-secondary);
+}
+
+body.dark-mode #mac-automation-intro-modal .modal-btn.cancel-btn:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
 /* Override All Modal Styles */
 .override-all-warning {
     background: hsl(0, 80%, 97%);
