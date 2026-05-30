@@ -4,5 +4,7 @@
 <dict>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>ReDD Block controls Safari and Chromium-based browsers to redirect blocked websites to a block page while a block is active.</string>
 </dict>
 </plist>

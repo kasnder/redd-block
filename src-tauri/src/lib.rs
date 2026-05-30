@@ -100,6 +100,11 @@ pub mod app_watcher;
 pub mod app_group;
 #[cfg(not(target_os = "ios"))]
 pub mod enforcer;
+// JOMO-style website blocking via macOS Automation (Apple Events) — the
+// macOS replacement for the Safari/Chromium extension. Firefox stays on
+// the extension + enforcer path.
+#[cfg(target_os = "macos")]
+pub mod web_automation;
 #[cfg(not(target_os = "ios"))]
 pub mod native_host;
 #[cfg(not(target_os = "ios"))]
@@ -618,6 +623,16 @@ pub fn run() {
                 commands::enforcement::auto_start(app.handle());
             }
 
+            // macOS website blocking runs through Automation (Apple
+            // Events), not the extension, for Safari + Chromium. Register
+            // its state handle and auto-start the watcher (paused until
+            // onboarding completes — same gate as the enforcer).
+            #[cfg(target_os = "macos")]
+            {
+                commands::web_automation::register(app);
+                commands::web_automation::auto_start(app.handle());
+            }
+
             // Ensure notification permission is granted (or prompt for
             // it once). Without this, the enforcer's grace / kill
             // notifications silently no-op. macOS prompts via
@@ -881,6 +896,11 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         extension_install::uninstall_extension_hints,
         commands::enforcer_start,
         commands::enforcer_pause,
+        commands::web_automation_start,
+        commands::web_automation_pause,
+        commands::web_automation_permission_status,
+        commands::request_automation_permission,
+        commands::open_automation_settings,
         commands::strip_hosts_markers,
         commands::uninstall_legacy_helper,
         commands::run_upgrade_migration,

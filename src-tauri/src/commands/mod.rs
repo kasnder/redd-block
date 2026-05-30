@@ -24,6 +24,8 @@ pub mod safari_bridge;
 pub mod fda;
 #[cfg(target_os = "macos")]
 pub mod uninstall;
+#[cfg(target_os = "macos")]
+pub mod web_automation;
 
 pub use data::*;
 
@@ -51,3 +53,5 @@ pub use safari_bridge::*;
 pub use fda::*;
 #[cfg(target_os = "macos")]
 pub use uninstall::*;
+#[cfg(target_os = "macos")]
+pub use web_automation::*;

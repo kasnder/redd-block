@@ -6,5 +6,13 @@
 	<array>
 		<string>group.com.reddblock.shared</string>
 	</array>
+	<!-- Required for the hardened-runtime parent app to send Apple Events
+	     (AppleScript) to other apps. Without this, macOS denies the event
+	     with errAEEventNotPermitted (-1743) in the signed build even after
+	     the user grants Automation permission. Drives the JOMO-style
+	     website automation in web_automation.rs (reads/redirects Safari +
+	     Chromium tabs). -->
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
 </dict>
 </plist>

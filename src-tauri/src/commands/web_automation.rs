@@ -1,0 +1,175 @@
+// Tauri commands that control the JOMO-style website-automation watcher
+// (macOS only). The watcher itself lives in `crate::web_automation`; this
+// is the thin command/lifecycle layer the frontend and app setup drive,
+// mirroring `commands/enforcement.rs`.
+
+use std::sync::Mutex;
+
+use tauri::{AppHandle, Manager, State};
+
+use crate::web_automation::{self, PermissionInfo, SupportedBrowser, WebAutomationHandle};
+
+pub struct WebAutomationState(pub Mutex<Option<WebAutomationHandle>>);
+
+impl Default for WebAutomationState {
+    fn default() -> Self {
+        Self(Mutex::new(None))
+    }
+}
+
+/// Resolve the bundled block page to a `file://` base URL (no query
+/// string). The page is staged at `<resources>/blocked/blocked.html` by
+/// the bundler (see `bundle.resources` in tauri.conf.json). We log loudly
+/// if it's missing so a bad bundle path shows up immediately in dev
+/// rather than as silent redirects to a 404.
+fn resolve_block_page_url(app: &AppHandle) -> Option<String> {
+    let dir = match app.path().resource_dir() {
+        Ok(d) => d,
+        Err(e) => {
+            log::warn!("web_automation: cannot resolve resource dir: {e}");
+            return None;
+        }
+    };
+    let page = dir.join("blocked").join("blocked.html");
+    if !page.exists() {
+        log::warn!(
+            "web_automation: bundled block page not found at {} — redirects will 404",
+            page.display()
+        );
+    }
+    Some(web_automation::path_to_file_url(&page))
+}
+
+/// Start the automation watcher if not already running. Idempotent.
+///
+/// Gated on EULA acceptance only (`should_run_web_automation`) — NOT
+/// FDA. Apple Events need just the per-browser Automation grant, which
+/// the watcher surfaces itself on the first event during an active
+/// block. The frontend calls this from `runPostAcceptanceStartup`.
+#[tauri::command]
+pub fn web_automation_start(app: AppHandle, state: State<WebAutomationState>) {
+    let mut slot = state.0.lock().expect("web_automation lock");
+    if slot.is_none() {
+        match resolve_block_page_url(&app) {
+            Some(url) => *slot = Some(web_automation::start(app.clone(), url)),
+            None => {
+                log::warn!("web_automation: not starting — no block page URL");
+                return;
+            }
+        }
+    }
+    let ok = crate::cross_app_consent::should_run_web_automation();
+    if let Some(h) = slot.as_ref() {
+        h.set_enabled(ok);
+        if !ok {
+            log::info!("web_automation: web_automation_start ignored — EULA not accepted");
+        }
+    }
+}
+
+/// Pause the watcher without tearing it down. The loop goes idle (sends
+/// no Apple Events) until re-enabled.
+#[tauri::command]
+pub fn web_automation_pause(state: State<WebAutomationState>) {
+    if let Some(h) = state.0.lock().expect("web_automation lock").as_ref() {
+        h.set_enabled(false);
+    }
+}
+
+/// Per-browser Automation-permission snapshot for the diagnostics /
+/// onboarding UI.
+///
+/// Reads the *live* decision via `AEDeterminePermissionToAutomateTarget`
+/// (no consent prompt), so the onboarding rows are accurate before any
+/// block has run — independent of whether the watcher has probed yet. If
+/// the live query is inconclusive (Unknown: not-decided or browser not
+/// running) we fall back to any cached state the watcher learned from a
+/// real Apple Event, which can only be more definite.
+#[tauri::command]
+pub fn web_automation_permission_status(state: State<WebAutomationState>) -> Vec<PermissionInfo> {
+    use crate::web_automation::PermState;
+    let cached = state
+        .0
+        .lock()
+        .ok()
+        .and_then(|s| s.as_ref().map(|h| h.permission_status()));
+    SupportedBrowser::all()
+        .into_iter()
+        .map(|b| {
+            let mut st = web_automation::query_automation_permission(b);
+            if st == PermState::Unknown {
+                if let Some(list) = &cached {
+                    if let Some(info) = list.iter().find(|i| i.browser == b) {
+                        st = info.state;
+                    }
+                }
+            }
+            PermissionInfo {
+                browser: b,
+                label: b.label(),
+                state: st,
+            }
+        })
+        .collect()
+}
+
+/// Surface the system Automation prompt for one browser on demand (used
+/// by the onboarding / "grant access" affordance). `browser` is one of
+/// the labels from `permission_status` ("Safari", "Chrome", "Brave",
+/// "Edge").
+#[tauri::command]
+pub fn request_automation_permission(browser: String) -> Result<(), String> {
+    let target = SupportedBrowser::all()
+        .into_iter()
+        .find(|b| b.label().eq_ignore_ascii_case(&browser))
+        .ok_or_else(|| format!("unknown browser: {browser}"))?;
+    web_automation::trigger_permission_prompt(target)
+}
+
+/// Open System Settings → Privacy & Security → Automation so the user can
+/// toggle the per-app grants ReDD Block needs.
+#[tauri::command]
+pub fn open_automation_settings() -> Result<(), String> {
+    std::process::Command::new("/usr/bin/open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("open Automation settings: {e}"))
+}
+
+/// Register the watcher state handle on the app.
+pub fn register<R: tauri::Runtime>(app: &tauri::App<R>) {
+    app.manage(WebAutomationState::default());
+}
+
+/// Auto-start the watcher at launch, paused until the EULA is accepted
+/// (and any v1.x→2.0 migration onboarding is finished). Unlike the
+/// enforcer this does NOT wait on FDA — Apple Events don't need it. The
+/// watcher only sends Apple Events while a block is actually active, so a
+/// started-and-enabled watcher is silent until the first block, at which
+/// point the per-browser Automation prompt appears.
+pub fn auto_start(app: &AppHandle) {
+    let url = match resolve_block_page_url(app) {
+        Some(u) => u,
+        None => {
+            log::warn!("web_automation: skipping auto_start — no block page URL");
+            return;
+        }
+    };
+    let h = web_automation::start(app.clone(), url);
+
+    let pending = crate::commands::migration::migration_pending_sync();
+    let eula_ok = crate::cross_app_consent::should_run_web_automation();
+    let enabled = !pending && eula_ok;
+    h.set_enabled(enabled);
+    if pending {
+        log::info!("web_automation: starting paused (migration onboarding pending)");
+    } else if !eula_ok {
+        log::info!("web_automation: starting paused (EULA not accepted)");
+    }
+
+    let state = app.state::<WebAutomationState>();
+    if let Ok(mut slot) = state.0.lock() {
+        *slot = Some(h);
+    };
+}
