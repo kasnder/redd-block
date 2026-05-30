@@ -2604,13 +2604,39 @@ function buildSafariDuplicateInstructionStep(stepNum, translationKey, extraClass
     return step;
 }
 
+// Display order for the extension-setup rows. Safari sits above the
+// Chromium browsers; Firefox stays last.
+const MIGRATION_BROWSER_ORDER = ['safari', 'chrome', 'brave', 'edge', 'firefox'];
+
 function migrationBrowserKeys(state) {
     const browsers = state?.browsers || {};
-    const detectedKeys = Object.keys(BROWSER_STORE_LINKS).filter(k => {
+    const detectedKeys = MIGRATION_BROWSER_ORDER.filter(k => {
         const b = browsers[k];
         return b && b.installed;
     });
     return detectedKeys.length > 0 ? detectedKeys : ['chrome'];
+}
+
+// HTML for the extension-setup header (bold title + lighter subtitle).
+// On macOS the path is Automation for Safari/Chromium plus — only when
+// Firefox is installed — the ReDD Focus extension in Firefox, so the
+// subtitle is built from live state. Other platforms keep the
+// extension-everywhere copy.
+function migrationExtLinesHtml(state) {
+    const focusLogoHtml =
+        `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
+    if (isMacOSDesktop) {
+        const shieldLogoHtml =
+            `<img src="${logoReddShieldUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
+        const browsers = state?.browsers || lastMigrationBrowserState?.browsers || {};
+        const firefoxInstalled = !!(browsers.firefox && browsers.firefox.installed);
+        const title = tSettings('migrationExtTitleMac').replace('{SHIELD}', shieldLogoHtml);
+        const sub = (firefoxInstalled
+            ? tSettings('migrationExtSubMacFirefox')
+            : tSettings('migrationExtSubMac')).replace('{FOCUS}', focusLogoHtml);
+        return `<span style="font-weight:400;font-size:1.25em">${title}</span><br><span style="font-weight:400;font-style:italic;opacity:0.7">${sub}</span>`;
+    }
+    return tSettings('migrationChecklistExtLinesHtml').replace('{LOGO}', focusLogoHtml);
 }
 
 // After the user grants/opens settings, nudge a couple of quick
@@ -2760,6 +2786,10 @@ function updateMigrationBrowserChecklist(state) {
 
 function renderBrowserInstallButtons(state, { force = false } = {}) {
     lastMigrationBrowserState = state;
+    // Keep the header subtitle in sync with the live scan (the macOS
+    // copy depends on whether Firefox is installed).
+    const extLines = document.getElementById('migration-checklist-ext-lines');
+    if (extLines) extLines.innerHTML = migrationExtLinesHtml(state);
     const sig = migrationBrowserRenderSignature(state);
     if (!force && sig === lastMigrationBrowserRenderSignature) {
         updateMigrationBrowserChecklist(state);
@@ -14646,6 +14676,9 @@ const SETTINGS_TRANSLATIONS = {
         migrationChecklistCleanedOld: 'Old version cleaned up',
         migrationChecklistBlocklistsPreserved: 'Your blocklists are preserved',
         migrationChecklistExtLinesHtml: 'Enable {LOGO}ReDD Focus in your browsers<br><span style="font-weight:400;opacity:0.7">and allow it in private/incognito tabs</span>',
+        migrationExtTitleMac: 'Enable {SHIELD}ReDD Block in your browsers',
+        migrationExtSubMac: 'allow automation',
+        migrationExtSubMacFirefox: 'allow automation and set up {FOCUS}ReDD Focus in Firefox',
         migrationHowtoHeading: 'Setting up ReDD Focus',
         migrationHowtoLi1Html: 'ReDD Block has tried to install ReDD Focus in your browsers. If it shows as not installed below, click the <strong>Install</strong> buttons to add it manually.',
         migrationHowtoLi3Html: 'Once enabled, <strong>allow it in private/incognito tabs</strong> so blocking works in private windows too.',
@@ -15215,6 +15248,9 @@ const SETTINGS_TRANSLATIONS = {
         migrationChecklistCleanedOld: 'Gammel version fjernet',
         migrationChecklistBlocklistsPreserved: 'Dine bloklister er bevaret',
         migrationChecklistExtLinesHtml: 'Aktivér {LOGO}ReDD Focus i dine browsere<br><span style="font-weight:400;opacity:0.7">og tillad den i privat- eller inkognitofaner</span>',
+        migrationExtTitleMac: 'Aktivér {SHIELD}ReDD Block i dine browsere',
+        migrationExtSubMac: 'tillad automatisering',
+        migrationExtSubMacFirefox: 'tillad automatisering og opsæt {FOCUS}ReDD Focus-udvidelsen i Firefox',
         migrationHowtoHeading: 'Sådan sætter du ReDD Focus op',
         migrationHowtoLi1Html: 'ReDD Block har forsøgt at installere ReDD Focus i dine browsere. Hvis den vises som ikke installeret nedenfor, klik på <strong>Installer</strong>-knapperne for at tilføje den manuelt.',
         migrationHowtoLi3Html: 'Når den er aktiveret, <strong>tillad den i privat/inkognito-faner</strong>, så blokering også virker i private vinduer.',
@@ -15864,12 +15900,7 @@ function applyMigrationOverlayStaticCopy() {
     setHtml('migration-pre-warn', tSettings('migrationPreWarnHtml'));
     setText('migration-checklist-cleaned-label', tSettings('migrationChecklistCleanedOld'));
     setText('migration-checklist-blocks-label', tSettings('migrationChecklistBlocklistsPreserved'));
-    const focusLogoHtml =
-        `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
-    setHtml(
-        'migration-checklist-ext-lines',
-        tSettings('migrationChecklistExtLinesHtml').replace('{LOGO}', focusLogoHtml),
-    );
+    setHtml('migration-checklist-ext-lines', migrationExtLinesHtml(lastMigrationBrowserState));
     setText('migration-howto-title', tSettings('migrationHowtoHeading'));
     // macOS blocks Safari + Chromium via Automation (the rows below ask
     // for permission), while Firefox still uses the extension. The
