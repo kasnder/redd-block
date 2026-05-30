@@ -542,13 +542,7 @@ body.dark-mode .title-bar {
     border-color: var(--button-hover);
 }
 
-/* Ghost variant of the setup-banner button. Used when the banner is
-   surfacing TWO actions at once (FDA + extension setup) — the FDA
-   button keeps the primary filled style so it reads as the headline
-   action, and the secondary action demotes to outline-only so the
-   user's eye is drawn to the FDA path first. JS toggles `.ghost` on
-   `#behaviour-change-help` based on whether the FDA button is also
-   visible. */
+/* Ghost variant of the setup-banner button (reserved for dual-action layouts). */
 .setup-banner .update-banner-btn.ghost {
     background: transparent;
     color: var(--button-bg);
@@ -4681,8 +4675,7 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
 
 /* Welcome onboarding — hero layout matching reddfocus.org entry flow */
 #welcome-onboarding.onboarding-screen,
-#eula-onboarding.onboarding-screen,
-#fda-onboarding.onboarding-screen {
+#eula-onboarding.onboarding-screen {
     padding: 12px 20px 16px;
     overflow-y: auto;
 }
@@ -4724,7 +4717,6 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
 
 #welcome-onboarding-title,
 #eula-welcome-title,
-#fda-onboarding-title,
 #migration-post-header-title {
     margin: 0;
     font-family: var(--font-heading);
@@ -5168,7 +5160,6 @@ body.dark-mode .welcome-demo-toggle:hover {
 
     #welcome-onboarding-title,
     #eula-welcome-title,
-    #fda-onboarding-title,
     #migration-post-header-title {
         font-size: 24px;
     }
@@ -5585,8 +5576,7 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
 .migration-browser-row.needs-enable,
 .migration-browser-row.needs-private,
 .migration-browser-row.needs-website-access,
-.migration-browser-row.needs-deduplicate,
-.migration-browser-row.needs-fda {
+.migration-browser-row.needs-deduplicate {
     background: rgba(245, 158, 11, 0.08);
     border-color: rgba(245, 158, 11, 0.20);
 }
@@ -5655,8 +5645,7 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
 .migration-browser-badge.needs-enable,
 .migration-browser-badge.needs-private,
 .migration-browser-badge.needs-website-access,
-.migration-browser-badge.needs-deduplicate,
-.migration-browser-badge.needs-fda {
+.migration-browser-badge.needs-deduplicate {
     color: #b45309;
 }
 
@@ -6513,8 +6502,7 @@ body.dark-mode #migration-onboarding .migration-browser-row.compliant {
 body.dark-mode #migration-onboarding .migration-browser-row.needs-enable,
 body.dark-mode #migration-onboarding .migration-browser-row.needs-private,
 body.dark-mode #migration-onboarding .migration-browser-row.needs-website-access,
-body.dark-mode #migration-onboarding .migration-browser-row.needs-deduplicate,
-body.dark-mode #migration-onboarding .migration-browser-row.needs-fda {
+body.dark-mode #migration-onboarding .migration-browser-row.needs-deduplicate {
     background: rgba(245, 158, 11, 0.14);
     border-color: rgba(251, 191, 36, 0.35);
 }
@@ -6541,8 +6529,7 @@ body.dark-mode #uninstall-confirm-modal .migration-browser-badge {
 body.dark-mode #migration-onboarding .migration-browser-badge.needs-enable,
 body.dark-mode #migration-onboarding .migration-browser-badge.needs-private,
 body.dark-mode #migration-onboarding .migration-browser-badge.needs-website-access,
-body.dark-mode #migration-onboarding .migration-browser-badge.needs-deduplicate,
-body.dark-mode #migration-onboarding .migration-browser-badge.needs-fda {
+body.dark-mode #migration-onboarding .migration-browser-badge.needs-deduplicate {
     color: #fbbf24;
 }
 
@@ -6742,97 +6729,6 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied {
     justify-content: center;
     font-size: 16px;
     font-weight: 600;
-}
-
-/* FDA onboarding overlay. Inherits most styling from
-   .legal-onboarding-card; adds a button-stack pattern (primary +
-   secondary stacked, not side-by-side) and a small how-to hint
-   below them. */
-.fda-onboarding-card {
-    text-align: left;
-}
-
-.fda-onboarding-card .migration-explainer {
-    margin-top: 12px;
-}
-
-.fda-onboarding-card .migration-explainer:first-child {
-    margin-top: 0;
-}
-
-.fda-onboarding-actions {
-    display: flex;
-    align-items: stretch;
-    gap: 12px;
-    margin-top: 20px;
-}
-
-.fda-onboarding-actions .eula-back-btn,
-.fda-onboarding-actions .fda-grant-btn {
-    border-radius: var(--radius-sm);
-}
-
-.fda-onboarding-actions .fda-grant-btn {
-    flex: 1;
-    min-width: 0;
-    width: auto;
-    margin: 0;
-    padding: 12px 20px;
-    font-size: 15px;
-    font-weight: 600;
-    line-height: 1.2;
-}
-
-.fda-onboarding-actions .onboarding-primary-btn,
-.fda-onboarding-actions .onboarding-secondary-btn {
-    width: auto;
-    margin: 0;
-    justify-content: center;
-    font-size: 15px;
-    font-weight: 600;
-}
-
-/* Secondary onboarding button: lighter weight than the primary,
-   used here for "Continue without granting" so it doesn't compete
-   with the recommended Grant action. Background-less; just text +
-   border so it reads as an option, not a call-to-action. */
-.onboarding-secondary-btn {
-    background: transparent;
-    color: var(--text-primary);
-    border: 1px solid var(--redd-warm-grey);
-    padding: 10px 16px;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background 120ms ease, border-color 120ms ease;
-}
-
-.onboarding-secondary-btn:hover {
-    background: var(--redd-warm-grey-light, rgba(0, 0, 0, 0.04));
-}
-
-.fda-onboarding-howto {
-    margin-top: 14px;
-    font-size: 13px;
-    color: var(--text-muted);
-    line-height: 1.5;
-}
-
-.fda-onboarding-howto strong {
-    color: var(--text-primary);
-}
-
-.fda-onboarding-screenshot {
-    display: block;
-    width: 100%;
-    height: auto;
-    margin-top: 14px;
-    border-radius: 10px;
-    border: 1px solid rgba(30, 45, 62, 0.08);
-    box-shadow: 0 4px 14px rgba(10, 45, 123, 0.08);
-}
-
-body.dark-mode .fda-onboarding-screenshot {
-    border-color: rgba(255, 255, 255, 0.08);
 }
 
 @media (max-width: 640px) {

@@ -358,14 +358,6 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
             continue;
         }
 
-        // Firefox extension scans need FDA on macOS — don't start grace
-        // timers until the user has granted it via the Firefox setup row.
-        #[cfg(target_os = "macos")]
-        if key == BrowserKey::Firefox && !crate::cross_app_consent::firefox_fda_effective() {
-            cancel_timer(app, state, key, false);
-            continue;
-        }
-
         // None = compliant (extension OK, or Automation granted) → clear
         // any timer and move on. Some(issue) = act on it.
         let issue = match compliance_issue(app, key, &scan_result, is_running) {
@@ -478,19 +470,7 @@ fn log_non_compliant(key: BrowserKey, b: &BrowserStatus) {
     );
 }
 
-fn safari_fda_access_failed(b: &BrowserStatus) -> bool {
-    b.needs_fda_access
-        || b.profiles.iter().any(|p| {
-            p.note.as_deref().map_or(false, |n| {
-                n.contains("Full Disk Access") || n.contains("extension settings plist")
-            })
-        })
-}
-
 fn default_profile_passes(b: &BrowserStatus) -> bool {
-    if safari_fda_access_failed(b) {
-        return false;
-    }
     // The caller already proved the browser is running via
     // `running_browsers()`. Do not re-check `b.present` here: it is
     // computed by a separate scan, and a transient disagreement would
@@ -583,19 +563,8 @@ fn emit_browser_closed(app: &AppHandle, key: BrowserKey, issue: ExtensionIssue) 
 
 /// Derive the most specific issue from the browser's profile status.
 fn diagnose_issue(b: &BrowserStatus) -> ExtensionIssue {
-    if safari_fda_access_failed(b) {
-        return ExtensionIssue::Access;
-    }
     // For browsers with website_access_all support (Safari), check all profiles.
     if b.profiles.iter().any(|p| p.website_access_all.is_some()) {
-        // FDA issue: profile has a note mentioning Full Disk Access
-        if b.profiles.iter().any(|p| {
-            p.note.as_deref().map_or(false, |n| {
-                n.contains("Full Disk Access") || n.contains("extension settings plist")
-            })
-        }) {
-            return ExtensionIssue::Access;
-        }
         if b.profiles.iter().any(|p| !p.installed) {
             return ExtensionIssue::Missing;
         }

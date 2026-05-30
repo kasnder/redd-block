@@ -153,10 +153,8 @@ pub fn current_binary_path() -> Option<String> {
 /// hits a Reinstall hints button in the UI), use [`install_force`].
 pub fn install() -> std::io::Result<()> {
     #[cfg(target_os = "macos")]
-    if !crate::cross_app_consent::should_run_firefox_cross_app_installs() {
-        log::info!(
-            "tcc-probe: native_host_install::install() skipped — Firefox FDA onboarding not complete"
-        );
+    {
+        log::info!("native_host_install::install() skipped on macOS — Firefox setup is manual");
         return Ok(());
     }
 
@@ -185,6 +183,12 @@ pub fn install() -> std::io::Result<()> {
 /// TCC prompt is contextually expected. Drops the marker on success
 /// so the next startup call stays silent.
 pub fn install_force() -> std::io::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        log::info!("native_host_install::install_force() skipped on macOS — Firefox setup is manual");
+        return Ok(());
+    }
+
     let binary = current_binary_path().ok_or_else(|| {
         std::io::Error::new(std::io::ErrorKind::Other, "cannot resolve current exe")
     })?;

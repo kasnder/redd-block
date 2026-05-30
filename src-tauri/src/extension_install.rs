@@ -195,10 +195,8 @@ fn firefox_policies_json_path() -> PathBuf {
 /// re-creates them if the user removed any manually.
 pub fn install() -> std::io::Result<()> {
     #[cfg(target_os = "macos")]
-    if !crate::cross_app_consent::should_run_firefox_cross_app_installs() {
-        log::info!(
-            "tcc-probe: extension_install::install() skipped — Firefox FDA onboarding not complete"
-        );
+    {
+        log::info!("extension_install::install() skipped on macOS — Firefox extension is manual");
         return Ok(());
     }
 

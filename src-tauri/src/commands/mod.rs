@@ -21,8 +21,6 @@ pub mod diagnostics;
 #[cfg(not(target_os = "ios"))]
 pub mod safari_bridge;
 #[cfg(target_os = "macos")]
-pub mod fda;
-#[cfg(target_os = "macos")]
 pub mod uninstall;
 #[cfg(target_os = "macos")]
 pub mod web_automation;
@@ -49,8 +47,6 @@ pub use enforcement_toggle::*;
 pub use diagnostics::*;
 #[cfg(not(target_os = "ios"))]
 pub use safari_bridge::*;
-#[cfg(target_os = "macos")]
-pub use fda::*;
 #[cfg(target_os = "macos")]
 pub use uninstall::*;
 #[cfg(target_os = "macos")]

@@ -651,71 +651,13 @@ pub fn run() {
                 }
             }
 
-            // Refresh per-browser native-messaging manifests on every
-            // launch. Marker-gated inside install() so the cross-app
-            // writes happen only when the binary path actually
-            // changes.
-            //
-            // On macOS, native-host + Firefox policy installs are
-            // gated on Firefox FDA onboarding (see cross_app_consent).
-            // Chromium/Safari use Automation — no manifests on macOS.
-            #[cfg(all(not(target_os = "ios"), target_os = "macos"))]
-            {
-                if cross_app_consent::should_run_firefox_cross_app_installs() {
-                    if let Err(e) = native_host_install::install() {
-                        log::warn!("native-host install on startup failed: {e}");
-                    }
-                } else {
-                    log::info!(
-                        "tcc-probe: deferring native_host_install::install — Firefox FDA not granted yet"
-                    );
-                }
-            }
+            // On macOS, Safari/Chromium use Automation; Firefox extension
+            // is installed manually — no startup native-host/policy writes.
             #[cfg(all(not(target_os = "ios"), not(target_os = "macos")))]
             if let Err(e) = native_host_install::install() {
                 log::warn!("native-host install on startup failed: {e}");
             }
 
-            // Drop the auto-install hint for every supported browser.
-            // Chromium-family (Chrome/Brave/Edge): External-Extensions
-            // JSON / HKCU registry → silent install on next launch.
-            // Firefox (macOS only): write `policies.json` inside
-            // Firefox.app → silent force-install via Firefox enterprise
-            // policy on next launch. Saves the user a per-browser
-            // "Add to <browser>" walk-through during onboarding. See
-            // `browser-ext-migration/FORCE_INSTALL_EXTENSIONS.md` for
-            // design rationale.
-            //
-            // Marker-gated so it runs once per machine, not every
-            // launch. Touching each browser's data dir triggers macOS
-            // Sonoma+ "ReDD Block would like to access data from other
-            // apps" TCC prompts; even with idempotent writes (no-op
-            // for existing-correct files), opening the dir alone
-            // sometimes prompts. Once the marker exists we skip the
-            // whole call. Force-rerun is still available via the
-            // `install_extension_hints` Tauri command if the user
-            // hits a "Reinstall hints" affordance.
-            // Same Firefox FDA gate as native_host_install above.
-            #[cfg(all(not(target_os = "ios"), target_os = "macos"))]
-            {
-                if cross_app_consent::should_run_firefox_cross_app_installs() {
-                    if !extension_install::startup_install_already_done() {
-                        if let Err(e) = extension_install::install() {
-                            log::warn!("extension-install hint on startup failed: {e}");
-                        } else {
-                            extension_install::mark_startup_install_done();
-                        }
-                    } else {
-                        log::debug!(
-                            "extension-install: startup auto-install skipped (marker present)"
-                        );
-                    }
-                } else {
-                    log::info!(
-                        "tcc-probe: deferring extension_install::install — Firefox FDA not granted yet"
-                    );
-                }
-            }
             #[cfg(all(not(target_os = "ios"), not(target_os = "macos")))]
             if !extension_install::startup_install_already_done() {
                 if let Err(e) = extension_install::install() {
@@ -907,18 +849,9 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::block_websites,
         commands::clean_hosts_file,
         commands::get_helper_diagnostics,
-        commands::check_safari_fda_access,
-        commands::open_safari_fda_settings,
         commands::open_safari_extension_settings,
         commands::open_browser_extension_settings,
         commands::open_url_in_browser,
-        commands::check_full_disk_access,
-        commands::sync_fda_onboarding_access,
-        commands::probe_firefox_fda_access,
-        commands::fda_deferred_focus_install_pending,
-        commands::check_fda_onboarded,
-        commands::get_fda_user_choice,
-        commands::complete_fda_onboarding,
         commands::uninstall_self_macos,
     ]
 }

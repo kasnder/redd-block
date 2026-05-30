@@ -190,18 +190,7 @@ pub fn scan_filter<F: Fn(&str) -> bool>(should_scan: F) -> ScanResult {
 
     ScanResult {
         firefox: if should_scan("firefox") {
-            #[cfg(target_os = "macos")]
-            {
-                if crate::cross_app_consent::firefox_fda_effective() {
-                    scan_firefox().unwrap_or_else(|| empty("firefox"))
-                } else {
-                    firefox_onboarding_status()
-                }
-            }
-            #[cfg(not(target_os = "macos"))]
-            {
-                scan_firefox().unwrap_or_else(|| empty("firefox"))
-            }
+            scan_firefox().unwrap_or_else(|| empty("firefox"))
         } else {
             empty("firefox")
         },
@@ -1102,24 +1091,6 @@ fn safari_presence_only() -> BrowserStatus {
     }
 }
 
-/// Firefox row for onboarding before FDA: presence only, with
-/// `needs_fda_access` when the app is installed so the UI can surface
-/// the grant-FDA step without reading Mozilla profile dirs.
-#[cfg(target_os = "macos")]
-fn firefox_onboarding_status() -> BrowserStatus {
-    let installed = firefox_app_installed();
-    let running = firefox_app_present();
-    let needs_fda = installed && !crate::cross_app_consent::firefox_fda_effective();
-    BrowserStatus {
-        present: running,
-        installed,
-        profiles: vec![],
-        error: None,
-        duplicate_extensions: None,
-        needs_fda_access: needs_fda || crate::cross_app_consent::user_fda_was_revoked(),
-    }
-}
-
 #[cfg(target_os = "macos")]
 fn parse_safari_extensions_plist(
     bytes: &[u8],
@@ -1194,90 +1165,10 @@ fn scan_safari() -> BrowserStatus {
     let mut profiles = Vec::new();
     let mut error = None;
     let embedded = embedded_safari_extension_present();
-    let mut needs_fda_access = crate::cross_app_consent::user_fda_was_revoked();
 
-    // Read Safari's sandboxed container (Extensions.plist + per-profile
-    // dirs) only when the user has indicated they chose Grant during
-    // FDA onboarding. Without that signal, the plist reads fire the
-    // macOS Sequoia "ReDD Block would like to access data from other
-    // apps" TCC prompt — every 5 s while Safari is open, because the
-    // enforcer's tick re-enters this function.
-    //
-    // We deliberately use the marker-recorded *choice* rather than
-    // probing live FDA on every tick: opening the system TCC database
-    // to probe also triggers the prompt on Sequoia. When the marker
-    // says granted but a plist read returns PermissionDenied, we clear
-    // the marker immediately so the enforcer and onboarding UI pick up
-    // the revocation on the next scan (~5 s).
-    //
-    // When the plist scan is skipped the loop below leaves `profiles`
-    // empty; the empty-profiles fallback synthesises a single
-    // "(Default Safari profile)" placeholder which the FFI overlay
-    // populates with `enabled` and the App Group overlay populates
-    // with `private_browsing`. `website_access_all` stays None —
-    // Safari doesn't expose all-sites grant state via any non-plist
-    // API, and the enforcer treats None as compliant.
-    let mut has_fda = crate::cross_app_consent::user_chose_to_grant_fda();
-    if has_fda {
-        let (plist_paths, profile_list_error) = safari_extensions_plist_paths();
-        for (name, is_default, path) in plist_paths {
-            match scan_safari_extensions_plist_at(&path) {
-                Ok(status) => profiles.push(ProfileStatus {
-                    name,
-                    is_default,
-                    installed: status.installed,
-                    enabled: status.enabled,
-                    private_browsing: status.private_browsing,
-                    website_access_all: status.website_access_all,
-                    note: None,
-                }),
-                Err(e) => {
-                    if e == SafariPlistScanError::PermissionDenied {
-                        crate::cross_app_consent::clear_fda_marker_on_safari_plist_denied();
-                        has_fda = false;
-                        needs_fda_access = true;
-                    }
-                    let note = e.note();
-                    if error.is_none() {
-                        error = Some(note.clone());
-                    }
-                    profiles.push(ProfileStatus {
-                        name,
-                        is_default,
-                        installed: false,
-                        enabled: Some(false),
-                        private_browsing: Some(false),
-                        website_access_all: Some(false),
-                        note: Some(note),
-                    });
-                }
-            }
-        }
-        if let Some(e) = profile_list_error {
-            if e == SafariPlistScanError::PermissionDenied {
-                crate::cross_app_consent::clear_fda_marker_on_safari_plist_denied();
-                has_fda = false;
-                needs_fda_access = true;
-            }
-            let note = e.note();
-            if error.is_none() {
-                error = Some(note.clone());
-            }
-            profiles.push(ProfileStatus {
-                name: "Safari profiles".to_string(),
-                is_default: false,
-                installed: false,
-                enabled: Some(false),
-                private_browsing: Some(false),
-                website_access_all: Some(false),
-                note: Some(note),
-            });
-        }
-    } else {
-        log::info!(
-            "tcc-probe: scan_safari skipping plist (user has not granted Full Disk Access) — using FFI-only path"
-        );
-    }
+    log::info!(
+        "tcc-probe: scan_safari skipping plist — using FFI + App Group path (no FDA)"
+    );
 
     if profiles.is_empty() {
         let note = SafariPlistScanError::Missing.note();
@@ -1391,16 +1282,7 @@ fn scan_safari() -> BrowserStatus {
         }
     }
 
-    let duplicate_extensions = scan_safari_duplicate_extensions(has_fda, embedded);
-
-    if crate::cross_app_consent::user_fda_was_revoked() {
-        needs_fda_access = true;
-        let note = SafariPlistScanError::PermissionDenied.note();
-        error = Some(note.clone());
-        for profile in profiles.iter_mut() {
-            profile.note = Some(note.clone());
-        }
-    }
+    let duplicate_extensions = scan_safari_duplicate_extensions(false, embedded);
 
     log::info!("tcc-probe: profile_scan::scan_safari() exited (running={running}, embedded={embedded}, duplicate={:?})", duplicate_extensions);
     BrowserStatus {
@@ -1409,7 +1291,7 @@ fn scan_safari() -> BrowserStatus {
         profiles,
         error,
         duplicate_extensions,
-        needs_fda_access,
+        needs_fda_access: false,
     }
 }
 

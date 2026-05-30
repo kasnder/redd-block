@@ -242,34 +242,13 @@ fn collect_app_data_info(app: &tauri::AppHandle) -> AppDataInfo {
 }
 
 fn collect_fda_info(browsers: &profile_scan::ScanResult) -> FdaInfo {
-    #[cfg(target_os = "macos")]
-    {
-        let onboarding_choice = match crate::cross_app_consent::user_fda_choice() {
-            Some(crate::cross_app_consent::FdaOnboardingChoice::Granted) => "granted".to_string(),
-            Some(crate::cross_app_consent::FdaOnboardingChoice::Revoked) => "revoked".to_string(),
-            Some(crate::cross_app_consent::FdaOnboardingChoice::Skipped) => "skipped".to_string(),
-            Some(crate::cross_app_consent::FdaOnboardingChoice::Unknown) | None => String::new(),
-        };
-        let safari_plist_readable = crate::profile_scan::safari_extensions_plist_path()
-            .map(|path| std::fs::read(&path).is_ok());
-        FdaInfo {
-            applicable: true,
-            live_granted: Some(crate::cross_app_consent::has_full_disk_access()),
-            safari_plist_readable,
-            onboarding_choice,
-            safari_needs_fda_access: Some(browsers.safari.needs_fda_access),
-        }
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = browsers;
-        FdaInfo {
-            applicable: false,
-            live_granted: None,
-            safari_plist_readable: None,
-            onboarding_choice: String::new(),
-            safari_needs_fda_access: None,
-        }
+    let _ = browsers;
+    FdaInfo {
+        applicable: false,
+        live_granted: None,
+        safari_plist_readable: None,
+        onboarding_choice: String::new(),
+        safari_needs_fda_access: None,
     }
 }
 
