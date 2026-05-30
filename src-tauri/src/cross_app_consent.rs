@@ -225,6 +225,31 @@ pub fn should_run_cross_app_installs() -> bool {
     true
 }
 
+/// True when the macOS website-automation watcher may run.
+///
+/// Unlike `should_run_cross_app_installs`, this deliberately does NOT
+/// require Full Disk Access: driving Safari/Chromium via Apple Events
+/// needs only the per-browser Automation TCC grant, which the watcher
+/// itself surfaces on the first event during an active block — never
+/// FDA. Gating the automation backend behind FDA would silently break
+/// website blocking for exactly the users who decline FDA, which is the
+/// opposite of the point (automation is the FDA-free replacement for the
+/// Safari/Chromium extension). We still defer until the EULA is accepted
+/// so we never script browsers before the user has agreed to anything.
+#[cfg(target_os = "macos")]
+pub fn should_run_web_automation() -> bool {
+    if !has_accepted_eula_in_data() {
+        log::info!("tcc-probe: deferring web automation — EULA not accepted in data file");
+        return false;
+    }
+    true
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn should_run_web_automation() -> bool {
+    true
+}
+
 #[cfg(target_os = "macos")]
 pub fn user_chose_to_grant_fda() -> bool {
     reconcile_stale_fda_marker_once();

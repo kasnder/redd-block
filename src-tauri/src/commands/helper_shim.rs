@@ -144,7 +144,12 @@ pub struct HelperDiagnostics {
 
 #[tauri::command]
 pub fn get_helper_diagnostics() -> HelperDiagnostics {
-    let backend = if cfg!(any(target_os = "macos", target_os = "windows")) {
+    // macOS drives Safari + Chromium through Automation (Apple Events);
+    // Firefox alone still rides the extension + enforcer. Windows keeps
+    // every browser on the extension.
+    let backend = if cfg!(target_os = "macos") {
+        "automation"
+    } else if cfg!(target_os = "windows") {
         "extension"
     } else {
         "unsupported"

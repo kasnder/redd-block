@@ -147,14 +147,37 @@ impl BrowserKey {
         }
     }
 
-    fn all() -> [BrowserKey; 5] {
-        [
+    /// Browsers the in-process enforcer polices on this platform. All of
+    /// them on both macOS and Windows — but the *compliance signal*
+    /// differs (see `compliance_issue`): on macOS, Safari + Chromium are
+    /// judged by their Automation (Apple Events) permission instead of
+    /// the extension scan (they moved to web_automation.rs), while
+    /// Firefox stays on the extension. Windows keeps every browser on the
+    /// extension scan. Either way a failing browser rides the same
+    /// grace-timer + force-quit path.
+    fn enforced() -> &'static [BrowserKey] {
+        &[
             BrowserKey::Firefox,
             BrowserKey::Chrome,
             BrowserKey::Brave,
             BrowserKey::Edge,
             BrowserKey::Safari,
         ]
+    }
+
+    /// macOS only: map to the web_automation browser enum for the
+    /// Automation-permission check. Firefox has no mapping (it stays on
+    /// the extension path).
+    #[cfg(target_os = "macos")]
+    fn to_web_automation(self) -> Option<crate::web_automation::SupportedBrowser> {
+        use crate::web_automation::SupportedBrowser as S;
+        match self {
+            BrowserKey::Chrome => Some(S::Chrome),
+            BrowserKey::Brave => Some(S::Brave),
+            BrowserKey::Edge => Some(S::Edge),
+            BrowserKey::Safari => Some(S::Safari),
+            BrowserKey::Firefox => None,
+        }
     }
 
     fn for_status<'a>(self, r: &'a profile_scan::ScanResult) -> &'a BrowserStatus {
@@ -179,6 +202,12 @@ pub enum ExtensionIssue {
     WebsiteAccess,
     /// Can't read extension state (e.g. Full Disk Access needed for Safari).
     Access,
+    /// macOS Safari/Chromium: the Automation (Apple Events) permission this
+    /// build uses to redirect tabs is denied. Fix = re-enable the browser
+    /// under System Settings → Privacy & Security → Automation. Not an
+    /// extension problem — these browsers no longer use the extension on
+    /// macOS — but it rides the same grace/force-close machinery.
+    Automation,
     Unknown,
 }
 
@@ -261,7 +290,7 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
     // got killed anyway). Resolve any in-flight grace timers so the
     // UI banner clears if a block just expired or got paused mid-grace.
     if !website_blocking_active(app) {
-        for key in BrowserKey::all() {
+        for &key in BrowserKey::enforced() {
             cancel_timer(app, state, key, true);
         }
         return;
@@ -273,7 +302,7 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
     // user enables it in the extension setup dialog once they've
     // understood the behaviour.
     if !enforcement_enabled(app) {
-        for key in BrowserKey::all() {
+        for &key in BrowserKey::enforced() {
             cancel_timer(app, state, key, true);
         }
         return;
@@ -288,23 +317,40 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
     // running there's nothing to enforce — bail before touching disk.
     let running = running_browsers();
     if running.is_empty() {
-        for key in BrowserKey::all() {
+        for &key in BrowserKey::enforced() {
             cancel_timer(app, state, key, false);
         }
         return;
     }
 
-    let scan_result = profile_scan::scan_filter(|label| match label {
-        "firefox" => running.contains(&BrowserKey::Firefox),
-        "chrome" => running.contains(&BrowserKey::Chrome),
-        "brave" => running.contains(&BrowserKey::Brave),
-        "edge" => running.contains(&BrowserKey::Edge),
-        "safari" => running.contains(&BrowserKey::Safari),
-        _ => false,
+    // Only scan browsers we actually judge by the extension. On macOS
+    // that's Firefox alone — scanning a Chromium/Safari profile dir
+    // triggers Sequoia's per-app data-access TCC prompt, and we don't
+    // need it anyway (those are judged by `query_automation_permission`,
+    // which reads the decision without touching disk or prompting).
+    let scan_result = profile_scan::scan_filter(|label| {
+        let key = match label {
+            "firefox" => BrowserKey::Firefox,
+            "chrome" => BrowserKey::Chrome,
+            "brave" => BrowserKey::Brave,
+            "edge" => BrowserKey::Edge,
+            "safari" => BrowserKey::Safari,
+            _ => return false,
+        };
+        if !running.contains(&key) {
+            return false;
+        }
+        #[cfg(target_os = "macos")]
+        {
+            matches!(key, BrowserKey::Firefox)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            true
+        }
     });
 
-    for key in BrowserKey::all() {
-        let browser_status = key.for_status(&scan_result);
+    for &key in BrowserKey::enforced() {
         let is_running = running.contains(&key);
 
         if !is_running {
@@ -312,13 +358,16 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
             continue;
         }
 
-        if default_profile_passes(browser_status) {
-            cancel_timer(app, state, key, true);
-            continue;
-        }
-
-        let issue = diagnose_issue(browser_status);
-        log_non_compliant(key, browser_status);
+        // None = compliant (extension OK, or Automation granted) → clear
+        // any timer and move on. Some(issue) = act on it.
+        let issue = match compliance_issue(key, &scan_result) {
+            None => {
+                cancel_timer(app, state, key, true);
+                continue;
+            }
+            Some(i) => i,
+        };
+        log_non_compliant_summary(key, issue, &scan_result);
 
         // Failing. Either start a timer or check if it expired.
         let (expired, fresh) = {
@@ -508,7 +557,7 @@ fn emit_update(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>, key: BrowserK
 }
 
 fn emit_all_updates(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
-    for key in BrowserKey::all() {
+    for &key in BrowserKey::enforced() {
         emit_update(app, state, key);
     }
 }
@@ -573,6 +622,53 @@ fn diagnose_issue(b: &BrowserStatus) -> ExtensionIssue {
     }
 }
 
+/// Decide whether a *running* enforced browser is currently compliant.
+/// `None` = nothing to enforce; `Some(issue)` = start/continue the grace
+/// timer toward a force-close.
+///
+/// macOS Safari/Chromium are judged purely by their Automation permission
+/// (read without prompting via `query_automation_permission`). Only a
+/// positive `Denied` is actionable — `Unknown` (not-yet-decided or
+/// transient) must NOT force-close, the same rule the extension path
+/// follows for unmeasurable state. Firefox (all platforms) and every
+/// browser on Windows fall back to the extension scan.
+fn compliance_issue(key: BrowserKey, scan: &profile_scan::ScanResult) -> Option<ExtensionIssue> {
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(browser) = key.to_web_automation() {
+            use crate::web_automation::PermState;
+            return match crate::web_automation::query_automation_permission(browser) {
+                PermState::Denied => Some(ExtensionIssue::Automation),
+                PermState::Granted | PermState::Unknown => None,
+            };
+        }
+    }
+    let b = key.for_status(scan);
+    if default_profile_passes(b) {
+        None
+    } else {
+        Some(diagnose_issue(b))
+    }
+}
+
+/// Log why a browser is being enforced. Automation denials have no
+/// per-profile detail to dump, so keep them terse; extension issues defer
+/// to the detailed per-profile dump.
+fn log_non_compliant_summary(
+    key: BrowserKey,
+    issue: ExtensionIssue,
+    scan: &profile_scan::ScanResult,
+) {
+    if issue == ExtensionIssue::Automation {
+        log::info!(
+            "enforcer: {} non-compliant: Automation permission denied",
+            key.label()
+        );
+        return;
+    }
+    log_non_compliant(key, key.for_status(scan));
+}
+
 // ---- Process detection + quit -----------------------------------------
 
 fn running_browsers() -> std::collections::HashSet<BrowserKey> {
@@ -580,7 +676,7 @@ fn running_browsers() -> std::collections::HashSet<BrowserKey> {
     let mut sys = System::new();
     sys.refresh_processes(ProcessesToUpdate::All, true);
     let mut out = std::collections::HashSet::new();
-    for key in BrowserKey::all() {
+    for &key in BrowserKey::enforced() {
         for name in key.process_names() {
             let lowered = name.to_ascii_lowercase();
             if sys.processes().values().any(|p| {
