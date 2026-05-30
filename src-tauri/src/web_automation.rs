@@ -49,6 +49,9 @@ const TICK: Duration = Duration::from_millis(1000);
 /// changes System Settings). Re-probe at this cadence so a later grant
 /// is picked up without a restart.
 const DENIED_RETRY: Duration = Duration::from_secs(30);
+/// While a block is active we retry sooner — the user may have just
+/// toggled Automation on in System Settings.
+const DENIED_RETRY_WHILE_BLOCKING: Duration = Duration::from_secs(5);
 
 /// Serialize every Apple Event / osascript call. Concurrent access from
 /// the automation tick (background thread), the enforcer, and Tauri
@@ -139,9 +142,9 @@ impl SupportedBrowser {
 /// on unmeasurable state).
 #[cfg(target_os = "macos")]
 pub fn query_automation_permission(browser: SupportedBrowser) -> PermState {
-    let _guard = APPLE_EVENTS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // TCC read only — do not take APPLE_EVENTS here. That mutex is for
+    // osascript serialization; holding it during AEDeterminePermission…
+    // (especially from UI polling every ~2s) starved the blocking tick.
     match tcc::permission_status(browser.bundle_id()) {
         0 => PermState::Granted,                 // noErr
         -1743 => PermState::Denied,              // errAEEventNotPermitted
@@ -293,6 +296,17 @@ impl WebAutomationHandle {
             })
             .collect()
     }
+
+    /// Persist a permission probe result so the watcher tick and UI agree.
+    pub fn record_permission(&self, browser: SupportedBrowser, state: PermState) {
+        if let Ok(mut s) = self.shared.lock() {
+            let rt = s.runtimes.entry(browser).or_default();
+            rt.state = state;
+            if state == PermState::Denied {
+                rt.next_attempt = Instant::now() + DENIED_RETRY;
+            }
+        }
+    }
 }
 
 /// Spawn the automation loop. `block_page_url` is the `file://` base URL
@@ -342,7 +356,8 @@ fn tick(
     let running = running_supported_browsers();
     for browser in running {
         // Respect the denial backoff so we don't spawn osascript every
-        // second only to get -1743 back.
+        // second only to get -1743 back. While a block is active, retry
+        // sooner so a fresh Automation grant is picked up quickly.
         let now = Instant::now();
         let skip = shared
             .lock()
@@ -357,7 +372,8 @@ fn tick(
         match read_tabs(browser) {
             Ok(tabs) => {
                 set_perm(app, shared, browser, PermState::Granted);
-                let actions = plan_actions(&tabs, &domains, &blocks, block_page_url);
+                let actions =
+                    plan_actions(&tabs, &domains, &blocks, block_page_url, blocking_active);
                 if actions.is_empty() {
                     log::debug!(
                         "web_automation: {} — {} tab(s), {} blocked domain(s), nothing to do",
@@ -379,14 +395,24 @@ fn tick(
                                 browser.label()
                             );
                             if matches!(e, AutomationError::NotAuthorized) {
-                                set_perm(app, shared, browser, PermState::Denied);
+                                let retry = if blocking_active {
+                                    DENIED_RETRY_WHILE_BLOCKING
+                                } else {
+                                    DENIED_RETRY
+                                };
+                                set_perm_denied(app, shared, browser, retry);
                             }
                         }
                     }
                 }
             }
             Err(AutomationError::NotAuthorized) => {
-                set_perm(app, shared, browser, PermState::Denied);
+                let retry = if blocking_active {
+                    DENIED_RETRY_WHILE_BLOCKING
+                } else {
+                    DENIED_RETRY
+                };
+                set_perm_denied(app, shared, browser, retry);
             }
             Err(AutomationError::Other(msg)) => {
                 // Transient (browser quitting mid-tick, AppleScript
@@ -405,15 +431,19 @@ fn plan_actions(
     domains: &[String],
     blocks: &[BlockInfo],
     block_page_url: &str,
+    blocking_active: bool,
 ) -> Vec<(u32, u32, String)> {
     let mut actions = Vec::new();
     for tab in tabs {
         if is_block_page_url(&tab.url, block_page_url) {
-            // Already on our block page. Restore only when the site it
-            // was blocking is no longer blocked (block ended / paused).
-            if let Some(original) = original_url_from_block_page(&tab.url) {
-                if is_http_url(&original) && !is_blocked(&original, domains) {
-                    actions.push((tab.window_index, tab.tab_index, original));
+            // Only restore parked tabs once blocking has ended — never
+            // while a block is still active (even if domain matching
+            // glitches on the decoded original URL).
+            if !blocking_active {
+                if let Some(original) = original_url_from_block_page(&tab.url) {
+                    if is_http_url(&original) && !is_blocked(&original, domains) {
+                        actions.push((tab.window_index, tab.tab_index, original));
+                    }
                 }
             }
             continue;
@@ -435,6 +465,30 @@ fn set_perm(
     browser: SupportedBrowser,
     new_state: PermState,
 ) {
+    let retry = if new_state == PermState::Denied {
+        DENIED_RETRY
+    } else {
+        Duration::ZERO
+    };
+    set_perm_inner(app, shared, browser, new_state, retry);
+}
+
+fn set_perm_denied(
+    app: &AppHandle,
+    shared: &Arc<Mutex<Shared>>,
+    browser: SupportedBrowser,
+    retry: Duration,
+) {
+    set_perm_inner(app, shared, browser, PermState::Denied, retry);
+}
+
+fn set_perm_inner(
+    app: &AppHandle,
+    shared: &Arc<Mutex<Shared>>,
+    browser: SupportedBrowser,
+    new_state: PermState,
+    denied_retry: Duration,
+) {
     let mut transitioned_to = None;
     if let Ok(mut s) = shared.lock() {
         let rt = s.runtimes.entry(browser).or_default();
@@ -443,7 +497,7 @@ fn set_perm(
             transitioned_to = Some(new_state);
         }
         if new_state == PermState::Denied {
-            rt.next_attempt = Instant::now() + DENIED_RETRY;
+            rt.next_attempt = Instant::now() + denied_retry;
         }
     }
     match transitioned_to {
@@ -473,9 +527,7 @@ fn set_perm(
     }
 }
 
-// ---- Process detection ----------------------------------------------------
-
-fn running_supported_browsers() -> Vec<SupportedBrowser> {
+pub fn running_supported_browsers() -> Vec<SupportedBrowser> {
     use sysinfo::{ProcessesToUpdate, System};
     let mut sys = System::new();
     sys.refresh_processes(ProcessesToUpdate::All, true);
@@ -655,6 +707,47 @@ fn run_osascript(script: &str) -> Result<String, AutomationError> {
                 )));
             }
             None => std::thread::sleep(Duration::from_millis(50)),
+        }
+    }
+}
+
+/// Probe whether we can actually control a browser right now by sending
+/// a harmless Apple Event. Unlike `AEDeterminePermissionToAutomateTarget`
+/// this reflects real-world access — important in dev where `tauri dev`
+/// runs under Cursor/Terminal and TCC often reports Unknown even though
+/// osascript works. Only returns Granted when the browser is running and
+/// the event succeeds; returns Unknown when the browser is not open.
+pub fn probe_automation_access(browser: SupportedBrowser) -> PermState {
+    let app_name = browser.applescript_name();
+    let script = format!(
+        r#"if application "{app}" is running then
+  tell application "{app}" to count windows
+  return "ok"
+else
+  return "idle"
+end if"#,
+        app = app_name
+    );
+    match run_osascript(&script) {
+        Ok(out) if out.contains("ok") => PermState::Granted,
+        Ok(_) => PermState::Unknown,
+        Err(AutomationError::NotAuthorized) => PermState::Denied,
+        Err(_) => PermState::Unknown,
+    }
+}
+
+/// Combine watcher cache and a live osascript probe for the UI.
+/// Skips the silent TCC read — it often returns Unknown in dev builds
+/// and used to share the osascript mutex, starving the blocking tick.
+pub fn resolve_permission_state(browser: SupportedBrowser, cached: Option<PermState>) -> PermState {
+    match probe_automation_access(browser) {
+        probe @ (PermState::Granted | PermState::Denied) => probe,
+        PermState::Unknown => {
+            if cached == Some(PermState::Granted) {
+                PermState::Granted
+            } else {
+                cached.unwrap_or(PermState::Unknown)
+            }
         }
     }
 }

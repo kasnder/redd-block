@@ -91,21 +91,21 @@ pub async fn web_automation_permission_status(
         .lock()
         .ok()
         .and_then(|s| s.as_ref().map(|h| h.permission_status()));
-    tauri::async_runtime::spawn_blocking(move || {
+    let running = tauri::async_runtime::spawn_blocking(web_automation::running_supported_browsers)
+        .await
+        .map_err(|e| e.to_string())?;
+    let running: std::collections::HashSet<_> = running.into_iter().collect();
+    let list = tauri::async_runtime::spawn_blocking(move || {
         SupportedBrowser::all()
             .into_iter()
             .map(|b| {
-                let live = web_automation::query_automation_permission(b);
                 let cached_state = cached.as_ref().and_then(|list| {
                     list.iter().find(|i| i.browser == b).map(|i| i.state)
                 });
-                // Trust a successful osascript probe (cached Granted) over a
-                // silent TCC read that often returns Unknown for dev builds.
-                let st = match (cached_state, live) {
-                    (Some(PermState::Granted), _) | (_, PermState::Granted) => PermState::Granted,
-                    (_, PermState::Denied) => PermState::Denied,
-                    (Some(s), PermState::Unknown) => s,
-                    (_, s) => s,
+                let st = if running.contains(&b) {
+                    web_automation::resolve_permission_state(b, cached_state)
+                } else {
+                    cached_state.unwrap_or(PermState::Unknown)
                 };
                 PermissionInfo {
                     browser: b,
@@ -113,10 +113,23 @@ pub async fn web_automation_permission_status(
                     state: st,
                 }
             })
-            .collect()
+            .collect::<Vec<_>>()
     })
     .await
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    if let Ok(guard) = state.0.lock() {
+        if let Some(h) = guard.as_ref() {
+            for info in &list {
+                // Only persist positive grants for the watcher loop.
+                // Writing Denied here (from UI polling every ~2s) was
+                // resetting the denial backoff and preventing retries.
+                if info.state == PermState::Granted {
+                    h.record_permission(info.browser, info.state);
+                }
+            }
+        }
+    }
+    Ok(list)
 }
 
 /// Surface the system Automation prompt for one browser on demand (used
