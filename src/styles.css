@@ -4719,11 +4719,12 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
 
 #welcome-onboarding-title,
 #eula-welcome-title,
-#fda-onboarding-title {
+#fda-onboarding-title,
+#migration-post-header-title {
     margin: 0;
     font-family: var(--font-heading);
-    font-size: 26px;
-    font-weight: 700;
+    font-size: 28px;
+    font-weight: 500;
     line-height: 1.15;
     color: var(--text-primary);
     letter-spacing: -0.02em;
@@ -5162,8 +5163,9 @@ body.dark-mode .welcome-demo-toggle:hover {
 
     #welcome-onboarding-title,
     #eula-welcome-title,
-    #fda-onboarding-title {
-        font-size: 22px;
+    #fda-onboarding-title,
+    #migration-post-header-title {
+        font-size: 24px;
     }
 
     .welcome-onboarding-card {
@@ -5233,14 +5235,16 @@ body.dark-mode .onboarding-focus-card {
     margin: 0 0 16px;
 }
 
-.migration-post-header-title {
-    margin: 0 0 8px;
-    font-family: var(--font-heading);
-    font-size: 24px;
-    font-weight: 400;
-    line-height: 1.25;
-    color: var(--text-primary);
-    letter-spacing: -0.02em;
+#migration-post-header-title {
+    text-align: center;
+    padding-bottom: 4px;
+}
+
+#migration-post-header-title .welcome-reddfocus-inline-logo {
+    width: 24px;
+    height: 24px;
+    vertical-align: middle;
+    margin-right: 4px;
 }
 
 .migration-post-header-subtitle {
@@ -5281,10 +5285,10 @@ body.dark-mode .onboarding-focus-card {
 
 .migration-setup-ready-banner {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 10px;
     margin: 0 0 16px;
-    padding: 12px 14px;
+    padding: 12px 14px 10px;
     background: rgba(16, 185, 129, 0.08);
     border: 1px solid rgba(16, 185, 129, 0.32);
     border-radius: 10px;
@@ -5294,13 +5298,12 @@ body.dark-mode .onboarding-focus-card {
 
 .migration-setup-ready-icon {
     flex-shrink: 0;
-    margin-top: 1px;
 }
 
 .migration-setup-ready-banner-text {
     margin: 0;
     font-size: 14px;
-    line-height: 1.45;
+    line-height: 1.35;
     color: inherit;
 }
 
