@@ -21,6 +21,7 @@ import screenshotFirefoxStep1 from './images/toggle-firefox-private-windows-1.pn
 import screenshotFirefoxStep2 from './images/toggle-firefox-private-windows-2.png';
 import screenshotSafariStep1 from './images/mac-extension-settings-1.png';
 import screenshotSafariStep2 from './images/mac-extension-settings-2.png';
+import screenshotAutomationSettings from './images/automation-settings.png';
 import welcomeDemoVideoUrl from './reddblock-video.mp4';
 
 // Compatibility layer wrapping Tauri APIs
@@ -109,7 +110,9 @@ const tauriAPI = {
     onWebAutomationPermissionNeeded: (callback) => listen('web-automation://permission-needed', callback),
     onWebAutomationPermissionResolved: (callback) => listen('web-automation://permission-resolved', callback),
     webAutomationStart: () => invoke('web_automation_start'),
-    webAutomationPermissionStatus: () => invoke('web_automation_permission_status'),
+    webAutomationPermissionStatus: (opts) => invoke('web_automation_permission_status', {
+        launchProbe: opts?.launchProbe ?? false,
+    }),
     requestAutomationPermission: (browser) => invoke('request_automation_permission', { browser }),
     openAutomationSettings: () => invoke('open_automation_settings'),
 
@@ -2298,14 +2301,16 @@ function browserUsesAutomation(key) {
 // Pull the live per-browser Automation decision (no consent prompt) and
 // cache it by browser key. Safe to call on any platform — no-ops off
 // macOS. Returns the cached map for convenience.
-async function refreshAutomationPermissionStatus({ force = false } = {}) {
+async function refreshAutomationPermissionStatus({ force = false, launchProbe = false } = {}) {
     if (!isMacOSDesktop) return lastAutomationPermissionByKey;
     const now = Date.now();
     if (!force && now - lastAutomationPermissionFetchAt < AUTOMATION_PERMISSION_FETCH_MIN_MS) {
         return lastAutomationPermissionByKey;
     }
     try {
-        const list = await tauriAPI.webAutomationPermissionStatus();
+        const list = await tauriAPI.webAutomationPermissionStatus({
+            launchProbe,
+        });
         lastAutomationPermissionFetchAt = now;
         const map = {};
         for (const info of (list || [])) {
@@ -2728,10 +2733,26 @@ function migrationExtLinesHtml(state) {
 
 // After the user grants/opens settings, nudge a couple of quick
 // re-checks so the row flips to "Allowed" without waiting for the next
-// regular poll tick. The native query is cheap and local.
+// regular poll tick. Pass `launchProbe: true` only here (and other
+// explicit post-settings actions) — never on background banner polls,
+// or we'd relaunch browsers the enforcer just closed.
 function schedulePostGrantPoll() {
-    setTimeout(pollMigrationCompliance, 1200);
-    setTimeout(pollMigrationCompliance, 3500);
+    setTimeout(() => pollMigrationCompliance({ launchProbe: true }), 1200);
+    setTimeout(() => pollMigrationCompliance({ launchProbe: true }), 3500);
+}
+
+function scheduleAutomationVerificationPoll() {
+    const verify = async () => {
+        await refreshAutomationPermissionStatus({ force: true, launchProbe: true });
+        try {
+            const fresh = await invoke('onboarding_state');
+            lastOnboardingState = fresh;
+            await updateBehaviourChangeBanner(fresh);
+            await syncEnforcerClosedBannersWithCompliance(fresh);
+        } catch (_) { /* no-op */ }
+    };
+    setTimeout(verify, 1200);
+    setTimeout(verify, 3500);
 }
 
 // Build an onboarding row for a macOS Automation-blocked browser
@@ -2786,7 +2807,7 @@ function buildAutomationBrowserRow(key, entry) {
 
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'migration-browser-copy';
+    btn.className = 'migration-primary-btn';
     const restore = (label) => setTimeout(() => { btn.textContent = label; }, 1800);
 
     if (denied) {
@@ -2824,7 +2845,68 @@ function buildAutomationBrowserRow(key, entry) {
     }
     actionsRow.appendChild(btn);
 
-    row.appendChild(actionsRow);
+    const steps = automationScreenshotSteps();
+    if (steps.length) {
+        const showMeBtn = document.createElement('button');
+        showMeBtn.type = 'button';
+        showMeBtn.className = 'migration-show-me-btn';
+        showMeBtn.setAttribute('aria-expanded', 'false');
+        showMeBtn.innerHTML = `<span>${tSettings('migrationShowMeHow')}</span><svg class="migration-show-me-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>`;
+        actionsRow.appendChild(showMeBtn);
+
+        const delayNote = document.createElement('div');
+        delayNote.className = 'migration-browser-hint migration-delay-note';
+        delayNote.textContent = tSettings('migrationDelayDetectionNote');
+        row.appendChild(actionsRow);
+        row.appendChild(delayNote);
+
+        const expandKey = `${key}-automation`;
+        const screenshotsWrap = document.createElement('div');
+        screenshotsWrap.className = 'migration-screenshots-wrap hidden';
+
+        const screenshotsContainer = document.createElement('div');
+        screenshotsContainer.className = 'extension-enforcer-screenshots screenshots-row';
+
+        steps.forEach((step, i) => {
+            const figure = document.createElement('figure');
+            figure.className = 'extension-enforcer-step';
+            const cap = formatExtensionScreenshotCaption(step, i);
+            if (cap) {
+                const caption = document.createElement('figcaption');
+                caption.className = 'extension-enforcer-step-label';
+                caption.textContent = cap;
+                figure.appendChild(caption);
+            }
+            const img = document.createElement('img');
+            img.className = 'extension-enforcer-screenshot';
+            img.src = step.src;
+            img.alt = screenshotAltText(step, i, cap);
+            figure.appendChild(img);
+            screenshotsContainer.appendChild(figure);
+        });
+
+        applyScreenshotContainerLayout(screenshotsContainer, steps);
+
+        screenshotsWrap.appendChild(screenshotsContainer);
+        row.appendChild(screenshotsWrap);
+
+        showMeBtn.addEventListener('click', () => {
+            const isOpen = showMeBtn.classList.toggle('open');
+            screenshotsWrap.classList.toggle('hidden', !isOpen);
+            showMeBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            if (isOpen) migrationShowMeHowExpandedKeys.add(expandKey);
+            else migrationShowMeHowExpandedKeys.delete(expandKey);
+        });
+
+        if (migrationShowMeHowExpandedKeys.has(expandKey)) {
+            showMeBtn.classList.add('open');
+            screenshotsWrap.classList.remove('hidden');
+            showMeBtn.setAttribute('aria-expanded', 'true');
+        }
+    } else {
+        row.appendChild(actionsRow);
+    }
+
     return row;
 }
 
@@ -3147,7 +3229,7 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
                     const img = document.createElement('img');
                     img.className = 'extension-enforcer-screenshot';
                     img.src = step.src;
-                    img.alt = cap || tSettingsFmt('migrationScreenshotStepOnly', { n: String(i + 1) });
+                    img.alt = screenshotAltText(step, i, cap);
                     figure.appendChild(img);
                     screenshotsContainer.appendChild(figure);
                 });
@@ -3180,10 +3262,10 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
 // While the post-cleanup screen is open, periodically re-check
 // extension compliance so the checklist ticks itself off when the
 // user comes back from the store.
-async function pollMigrationCompliance() {
+async function pollMigrationCompliance({ launchProbe = false } = {}) {
     if (!migrationOnboardingActive) return;
     try {
-        await refreshAutomationPermissionStatus({ force: true });
+        await refreshAutomationPermissionStatus({ force: true, launchProbe });
         const fresh = await invoke('onboarding_state');
         renderBrowserInstallButtons(fresh);
     } catch (e) { /* no-op */ }
@@ -3279,7 +3361,7 @@ async function updateBehaviourChangeBanner(state) {
 
     lastOnboardingState = state;
 
-    if (isMacOSDesktop) await refreshAutomationPermissionStatus();
+    if (isMacOSDesktop) await refreshAutomationPermissionStatus({ force: true, launchProbe: false });
 
     let enforcementEnabled = false;
     try {
@@ -3464,7 +3546,7 @@ async function refreshBehaviourBannerIfStale({ force = false } = {}) {
     if (!force && now - lastBannerRefreshAt < BANNER_REFRESH_THROTTLE_MS) return;
     lastBannerRefreshAt = now;
     try {
-        if (isMacOSDesktop) await refreshAutomationPermissionStatus();
+        if (isMacOSDesktop) await refreshAutomationPermissionStatus({ force });
         const fresh = await invoke('onboarding_state');
         await updateBehaviourChangeBanner(fresh);
         await syncEnforcerClosedBannersWithCompliance(fresh);
@@ -3516,7 +3598,7 @@ async function syncEnforcerClosedBannersWithCompliance(state) {
             return;
         }
     }
-    if (isMacOSDesktop) await refreshAutomationPermissionStatus({ force: true });
+    if (isMacOSDesktop) await refreshAutomationPermissionStatus({ force: true, launchProbe: false });
     const browsers = state.browsers || {};
     let changed = false;
     for (const key of [...enforcerClosedBannerStates.keys()]) {
@@ -3669,8 +3751,10 @@ function ensureWebAutomationBanner() {
     `;
 
     banner.querySelector('.web-automation-banner-open')?.addEventListener('click', () => {
-        tauriAPI.openAutomationSettings().catch((e) =>
-            console.warn('[web-automation] openAutomationSettings failed:', e));
+        tauriAPI.openAutomationSettings()
+            .then(() => scheduleAutomationVerificationPoll())
+            .catch((e) =>
+                console.warn('[web-automation] openAutomationSettings failed:', e));
     });
     banner.querySelector('.web-automation-banner-dismiss')?.addEventListener('click', () => {
         webAutomationPendingBrowsers.clear();
@@ -3725,6 +3809,7 @@ function browserIconUrl(key) {
 }
 
 function formatExtensionScreenshotCaption(step, index) {
+    if (step.hideCaption) return '';
     if (step.captionKey) return tSettings(step.captionKey);
     if (step.labelKey) {
         const label = tSettings(step.labelKey);
@@ -3733,6 +3818,27 @@ function formatExtensionScreenshotCaption(step, index) {
     if (step.caption) return step.caption;
     if (step.label) return tSettingsFmt('migrationScreenshotCaptionStep', { n: String(index + 1), label: step.label });
     return tSettingsFmt('migrationScreenshotStepOnly', { n: String(index + 1) });
+}
+
+function screenshotAltText(step, index, caption) {
+    if (step.altKey) return tSettings(step.altKey);
+    if (caption) return caption;
+    return tSettingsFmt('migrationScreenshotStepOnly', { n: String(index + 1) });
+}
+
+function enforcerShowMeHowButtonHtml() {
+    return `<span>${tSettings('migrationShowMeHow')}</span><svg class="extension-enforcer-show-me-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>`;
+}
+
+function automationScreenshotSteps() {
+    return [
+        {
+            src: screenshotAutomationSettings,
+            plainPanel: true,
+            hideCaption: true,
+            altKey: 'migrationShotAutomationStep1',
+        },
+    ];
 }
 
 function enforcerScreenshotSteps(key) {
@@ -3848,6 +3954,7 @@ function enforcerCopy(payload) {
             instruction: tSettingsFmt('enforcerInstrAutomation', { browser }),
             action: tSettings('migrationOpenAutomationSettings'),
             hideUrlChip: true,
+            screenshotSteps: automationScreenshotSteps(),
         };
     }
     return {
@@ -3964,8 +4071,9 @@ function renderEnforcerActionCopy(banner, payload, copy) {
             if (container.dataset.stepsKey !== stepsKey) {
                 container.dataset.stepsKey = stepsKey;
                 container.innerHTML = '';
-                container.classList.toggle('screenshots-grid', steps.length >= 3);
-                container.classList.toggle('screenshots-row', steps.length < 3);
+                applyScreenshotContainerLayout(container, steps, {
+                    browserKey: banner.dataset.browser,
+                });
                 steps.forEach((step, i) => {
                     const figure = document.createElement('figure');
                     figure.className = 'extension-enforcer-step';
@@ -3979,15 +4087,14 @@ function renderEnforcerActionCopy(banner, payload, copy) {
                     const img = document.createElement('img');
                     img.className = 'extension-enforcer-screenshot';
                     img.src = step.src;
-                    img.alt = cap || tSettingsFmt('migrationScreenshotStepOnly', { n: String(i + 1) });
+                    img.alt = screenshotAltText(step, i, cap);
                     figure.appendChild(img);
                     container.appendChild(figure);
                 });
             }
-            container.classList.toggle(
-                'safari-screenshots-asymmetric',
-                (banner.dataset.browser === 'safari' && steps.length === 2),
-            );
+            applyScreenshotContainerLayout(container, steps, {
+                browserKey: banner.dataset.browser,
+            });
             showMeBtn.classList.remove('hidden');
             if (!screenshotsWrap.classList.contains('hidden')) {
                 scheduleEnforcerScreenshotSync(screenshotsWrap);
@@ -4156,9 +4263,7 @@ function ensureEnforcerActionBanner(payload) {
         <div class="extension-enforcer-action-strip">
             <div class="extension-enforcer-actions-row">
                 <button class="update-banner-btn extension-enforcer-action-btn" type="button"></button>
-                <button class="extension-enforcer-show-me-btn hidden" type="button" aria-expanded="false">
-                    <span>Show me how</span>
-                </button>
+                <button class="extension-enforcer-show-me-btn hidden" type="button" aria-expanded="false"></button>
             </div>
             <button type="button" class="extension-enforcer-action-url hidden"></button>
         </div>
@@ -4168,6 +4273,7 @@ function ensureEnforcerActionBanner(payload) {
     `;
 
     const showMeBtn = banner.querySelector('.extension-enforcer-show-me-btn');
+    if (showMeBtn) showMeBtn.innerHTML = enforcerShowMeHowButtonHtml();
     const screenshotsWrap = banner.querySelector('.extension-enforcer-screenshots-wrap');
     if (showMeBtn && screenshotsWrap) {
         showMeBtn.addEventListener('click', () => {
@@ -4274,6 +4380,7 @@ function enforcerClosedCopy(payload) {
             instruction: tSettingsFmt('enforcerClosedInstrAutomation', { browser }),
             action: tSettings('migrationOpenAutomationSettings'),
             hideUrlChip: true,
+            screenshotSteps: automationScreenshotSteps(),
         };
     }
     return {
@@ -4291,6 +4398,7 @@ async function openEnforcerFix(payload) {
             // macOS Automation grant was revoked — deep-link straight to
             // System Settings → Privacy & Security → Automation.
             await tauriAPI.openAutomationSettings();
+            scheduleAutomationVerificationPoll();
             return;
         }
         if (payload.issue === 'missing' && key && BROWSER_STORE_LINKS[key]?.url) {
@@ -4464,14 +4572,27 @@ function syncEnforcerScreenshotHeights(wrap) {
     });
 }
 
+function applyScreenshotContainerLayout(container, steps, { browserKey } = {}) {
+    if (!container || !steps?.length) return;
+    container.classList.toggle('screenshots-grid', steps.length >= 3);
+    container.classList.toggle('screenshots-row', steps.length < 3);
+    container.classList.toggle(
+        'screenshots-plain',
+        steps.length === 1 && steps.every(s => s.plainPanel),
+    );
+    container.classList.toggle(
+        'safari-screenshots-asymmetric',
+        browserKey === 'safari' && steps.length === 2,
+    );
+}
+
 function renderEnforcerScreenshots(container, steps, browserKey) {
     if (!container || !steps?.length) return;
     const stepsKey = `${browserKey}:${steps.map(s => s.src).join(',')}`;
     if (container.dataset.stepsKey === stepsKey) return;
     container.dataset.stepsKey = stepsKey;
     container.innerHTML = '';
-    container.classList.toggle('screenshots-grid', steps.length >= 3);
-    container.classList.toggle('screenshots-row', steps.length < 3);
+    applyScreenshotContainerLayout(container, steps, { browserKey });
     steps.forEach((step, i) => {
         const figure = document.createElement('figure');
         figure.className = 'extension-enforcer-step';
@@ -4485,11 +4606,10 @@ function renderEnforcerScreenshots(container, steps, browserKey) {
         const img = document.createElement('img');
         img.className = 'extension-enforcer-screenshot';
         img.src = step.src;
-        img.alt = cap || tSettingsFmt('migrationScreenshotStepOnly', { n: String(i + 1) });
+        img.alt = screenshotAltText(step, i, cap);
         figure.appendChild(img);
         container.appendChild(figure);
     });
-    container.classList.toggle('safari-screenshots-asymmetric', browserKey === 'safari' && steps.length === 2);
     const wrap = container.closest('.extension-enforcer-screenshots-wrap');
     if (wrap && !wrap.classList.contains('hidden')) {
         scheduleEnforcerScreenshotSync(wrap);
@@ -4561,7 +4681,8 @@ function renderEnforcerBrowserActionRow(state, mode) {
     const showMe = document.createElement('button');
     showMe.className = 'extension-enforcer-show-me-btn';
     showMe.type = 'button';
-    showMe.textContent = tSettings('migrationShowMeHow');
+    showMe.setAttribute('aria-expanded', 'false');
+    showMe.innerHTML = enforcerShowMeHowButtonHtml();
     const steps = state.copy.screenshotSteps;
     showMe.classList.toggle('hidden', !steps?.length);
     showMe.onclick = () => {
@@ -4571,11 +4692,17 @@ function renderEnforcerBrowserActionRow(state, mode) {
         const screenshotsWrap = banner.querySelector('.extension-enforcer-screenshots-wrap');
         const screenshots = banner.querySelector('.extension-enforcer-screenshots');
         if (!steps?.length || !screenshotsWrap || !screenshots) return;
-        const isSameOpen = !screenshotsWrap.classList.contains('hidden')
+        const wasOpen = !screenshotsWrap.classList.contains('hidden')
             && screenshots.dataset.stepsKey?.startsWith(`${state.key}:`);
-        screenshotsWrap.classList.toggle('hidden', isSameOpen);
-        if (!isSameOpen) {
+        if (wasOpen) {
+            screenshotsWrap.classList.add('hidden');
+            showMe.classList.remove('open');
+            showMe.setAttribute('aria-expanded', 'false');
+        } else {
             renderEnforcerScreenshots(screenshots, steps, state.key);
+            screenshotsWrap.classList.remove('hidden');
+            showMe.classList.add('open');
+            showMe.setAttribute('aria-expanded', 'true');
             scheduleEnforcerScreenshotSync(screenshotsWrap);
         }
     };
@@ -4602,7 +4729,8 @@ function renderEnforcerBrowserActionRow(state, mode) {
 
 function hasActiveEnforcerCountdown() {
     const now = Date.now();
-    return [...enforcerActionBannerStates.values()].some(state => state.deadline > now);
+    return [...enforcerActionBannerStates.values()].some(state =>
+        state.closing || state.deadline > now);
 }
 
 function promoteEnforcerActionToClosed(key, payload) {
@@ -4625,22 +4753,21 @@ function renderCombinedEnforcerActionBanner() {
 
     const activeStates = states
         .map(state => {
-            const remainingSecs = Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000));
+            const remainingSecs = state.closing
+                ? 0
+                : Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000));
             const payload = { ...state.payload, remaining_secs: remainingSecs, remainingSecs };
             return { ...state, payload, remainingSecs, copy: enforcerCopy(payload) };
         })
-        .filter(state => state.remainingSecs > 0);
+        .filter(state => state.remainingSecs > 0 || state.closing);
 
     if (activeStates.length === 0) {
-        for (const state of states) {
-            promoteEnforcerActionToClosed(state.key, state.payload);
-            enforcerActionBannerStates.delete(state.key);
-        }
         banner.classList.add('hidden');
         renderCombinedEnforcerClosedBanner();
         return;
     }
 
+    const allClosing = activeStates.every(state => state.closing);
     const timerState = activeStates.reduce((max, state) => (
         state.remainingSecs > max.remainingSecs ? state : max
     ), activeStates[0]);
@@ -4648,7 +4775,11 @@ function renderCombinedEnforcerActionBanner() {
     const browserList = formatBrowserList(labels);
 
     const headline = banner.querySelector('.extension-enforcer-action-headline-text');
-    if (headline) headline.textContent = tSettingsFmt('enforcerClosingHeadline', { browser: browserList });
+    if (headline) {
+        headline.textContent = allClosing
+            ? tSettingsFmt('enforcerClosingNowHeadline', { browser: browserList })
+            : tSettingsFmt('enforcerClosingHeadline', { browser: browserList });
+    }
 
     const instruction = banner.querySelector('.extension-enforcer-action-instruction');
     if (instruction) {
@@ -4659,17 +4790,23 @@ function renderCombinedEnforcerActionBanner() {
     }
 
     const countdown = banner.querySelector('.extension-enforcer-action-countdown');
+    const countdownRow = banner.querySelector('.extension-enforcer-action-countdown-row');
+    if (countdownRow) countdownRow.classList.toggle('hidden', allClosing);
     if (countdown) {
-        const mins = Math.floor(timerState.remainingSecs / 60);
-        const secs = String(timerState.remainingSecs % 60).padStart(2, '0');
-        countdown.replaceChildren();
-        const time = document.createElement('strong');
-        time.className = 'extension-enforcer-countdown-time';
-        time.textContent = `${mins}:${secs}`;
-        const label = document.createElement('span');
-        label.className = 'extension-enforcer-countdown-label';
-        label.textContent = tSettings('enforcerCountdownRemaining');
-        countdown.append(time, label);
+        if (allClosing) {
+            countdown.replaceChildren();
+        } else {
+            const mins = Math.floor(timerState.remainingSecs / 60);
+            const secs = String(timerState.remainingSecs % 60).padStart(2, '0');
+            countdown.replaceChildren();
+            const time = document.createElement('strong');
+            time.className = 'extension-enforcer-countdown-time';
+            time.textContent = `${mins}:${secs}`;
+            const label = document.createElement('span');
+            label.className = 'extension-enforcer-countdown-label';
+            label.textContent = tSettings('enforcerCountdownRemaining');
+            countdown.append(time, label);
+        }
     }
 
     const progress = banner.querySelector('.extension-enforcer-progress-bar');
@@ -4704,8 +4841,10 @@ function updateEnforcerActionBannerCountdown() {
         state.payload = payload;
 
         if (remainingSecs <= 0) {
-            promoteEnforcerActionToClosed(key, state.payload);
-            enforcerActionBannerStates.delete(key);
+            // Grace expired on the client — wait for the backend
+            // `enforcer://browser-closed` event before showing the
+            // post-close banner. quit_browser can take several seconds.
+            state.closing = true;
         }
     }
     renderCombinedEnforcerActionBanner();
@@ -4724,6 +4863,7 @@ function renderEnforcerActionBanner(payload) {
     enforcerActionBannerStates.set(key, {
         payload: { ...payload, remaining_secs: remainingSecs, remainingSecs },
         deadline: Date.now() + remainingSecs * 1000,
+        closing: false,
         urlCopiedUntil: existing?.urlCopiedUntil,
     });
 
@@ -14674,7 +14814,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationBadgeAutomationOff: 'Permission needed',
         migrationAutomationGrantHint: 'Allow ReDD Block to control {browser} so it can close distracting tabs while a block is running.',
         migrationAutomationDeniedHint: 'Permission for {browser} is turned off. Switch ReDD Block back on under Automation so blocking works again.',
-        migrationGrantAutomation: 'Grant access in {browser}',
+        migrationGrantAutomation: 'Grant access to {browser}',
         migrationOpenAutomationSettings: 'Open Automation settings',
         webAutomationBannerHeadline: 'Allow ReDD Block to control your browser',
         webAutomationBannerBody: 'ReDD Block needs permission to control {browsers} to block websites. Enable it under Privacy & Security → Automation, then the block will take effect.',
@@ -14762,8 +14902,10 @@ const SETTINGS_TRANSLATIONS = {
         migrationShotFirefoxStep2: 'Allow in Private Windows',
         migrationShotSafariCap1: 'First open Safari\'s Extension settings...',
         migrationShotSafariCap2: 'Then i) enable ReDD Focus, ii) allow in private browsing, iii) allow it to block on all websites',
+        migrationShotAutomationStep1: 'System Settings → Automation',
         // Browser protection — grace banners (countdown / post-close)
         enforcerClosingHeadline: 'Browser enforcement is closing {browser} soon',
+        enforcerClosingNowHeadline: 'Closing {browser}…',
         enforcerCountdownRemaining: 'remaining',
         enforcerClosedStatus: 'closed',
         enforcerCountdownInstrMissing: 'ReDD Focus is not installed. Install it to stop the countdown.',
@@ -15249,7 +15391,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationBadgeAutomationOff: 'Tilladelse mangler',
         migrationAutomationGrantHint: 'Tillad ReDD Block at styre {browser}, så den kan lukke distraherende faner, mens en blokering kører.',
         migrationAutomationDeniedHint: 'Tilladelse til {browser} er slået fra. Slå ReDD Block til igen under Automatisering, så blokering virker igen.',
-        migrationGrantAutomation: 'Giv adgang i {browser}',
+        migrationGrantAutomation: 'Giv adgang til {browser}',
         migrationOpenAutomationSettings: 'Åbn Automatisering',
         webAutomationBannerHeadline: 'Tillad ReDD Block at styre din browser',
         webAutomationBannerBody: 'ReDD Block skal have tilladelse til at styre {browsers} for at blokere websteder. Slå det til under Anonymitet & sikkerhed → Automatisering, så træder blokeringen i kraft.',
@@ -15337,8 +15479,10 @@ const SETTINGS_TRANSLATIONS = {
         migrationShotFirefoxStep2: 'Tillad i private vinduer',
         migrationShotSafariCap1: 'Åbn først Safaris udvidelsesindstillinger …',
         migrationShotSafariCap2: 'Derefter: i) aktivér ReDD Focus, ii) tillad privat browsing, iii) tillad blokering på alle websites',
+        migrationShotAutomationStep1: 'Systemindstillinger → Automatisering',
         // Browser-beskyttelse — banner under aktiv blokering
         enforcerClosingHeadline: 'Browser enforcement lukker snart {browser}',
+        enforcerClosingNowHeadline: 'Lukker {browser}…',
         enforcerCountdownRemaining: 'tilbage',
         enforcerClosedStatus: 'lukket',
         enforcerCountdownInstrMissing: 'ReDD Focus er ikke installeret. Installer den for at stoppe nedtællingen.',

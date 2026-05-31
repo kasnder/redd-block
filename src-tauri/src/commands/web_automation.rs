@@ -84,8 +84,10 @@ pub fn web_automation_pause(state: State<WebAutomationState>) {
 #[tauri::command]
 pub async fn web_automation_permission_status(
     state: State<'_, WebAutomationState>,
+    launch_probe: Option<bool>,
 ) -> Result<Vec<PermissionInfo>, String> {
     use crate::web_automation::PermState;
+    let launch_probe = launch_probe.unwrap_or(false);
     let cached = state
         .0
         .lock()
@@ -106,6 +108,7 @@ pub async fn web_automation_permission_status(
                     b,
                     cached_state,
                     running.contains(&b),
+                    launch_probe,
                 );
                 PermissionInfo {
                     browser: b,
@@ -151,11 +154,7 @@ pub async fn request_automation_permission(browser: String) -> Result<(), String
 /// toggle the per-app grants ReDD Block needs.
 #[tauri::command]
 pub fn open_automation_settings() -> Result<(), String> {
-    std::process::Command::new("/usr/bin/open")
-        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")
-        .spawn()
-        .map(|_| ())
-        .map_err(|e| format!("open Automation settings: {e}"))
+    web_automation::open_automation_settings()
 }
 
 /// Register the watcher state handle on the app.

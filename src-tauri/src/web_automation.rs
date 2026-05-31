@@ -30,7 +30,7 @@
 
 use std::collections::HashMap;
 use std::process::Stdio;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -62,6 +62,16 @@ static APPLE_EVENTS: Mutex<()> = Mutex::new(());
 /// Cap osascript waits so a browser waiting on an Automation consent
 /// dialog cannot block the watcher thread indefinitely.
 const OSASCRIPT_TIMEOUT: Duration = Duration::from_secs(8);
+
+/// Minimum gap between launch probes for the same browser while it is
+/// closed. Avoids relaunching a force-closed browser on every UI poll.
+const IDLE_LAUNCH_PROBE_COOLDOWN: Duration = Duration::from_secs(20);
+
+static IDLE_LAUNCH_PROBE_AT: OnceLock<Mutex<HashMap<SupportedBrowser, Instant>>> = OnceLock::new();
+
+fn idle_launch_probe_at() -> &'static Mutex<HashMap<SupportedBrowser, Instant>> {
+    IDLE_LAUNCH_PROBE_AT.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub enum SupportedBrowser {
@@ -736,6 +746,40 @@ end if"#,
     }
 }
 
+/// Apple Event probe that launches the browser if needed. The only
+/// reliable way to detect a Settings toggle while the enforcer has the
+/// browser closed — `AEDeterminePermissionToAutomateTarget` returns -600
+/// ("target not running") for both grant and deny until an event reaches
+/// the app.
+pub fn probe_automation_access_launching(browser: SupportedBrowser) -> PermState {
+    let app_name = browser.applescript_name();
+    let script = format!(r#"tell application "{app}" to count windows"#, app = app_name);
+    match run_osascript(&script) {
+        Ok(_) => PermState::Granted,
+        Err(AutomationError::NotAuthorized) => PermState::Denied,
+        Err(_) => PermState::Unknown,
+    }
+}
+
+fn probe_automation_access_launching_rate_limited(browser: SupportedBrowser) -> Option<PermState> {
+    let now = Instant::now();
+    let mut allow = false;
+    if let Ok(mut map) = idle_launch_probe_at().lock() {
+        let stale = map
+            .get(&browser)
+            .map(|t| now.duration_since(*t) >= IDLE_LAUNCH_PROBE_COOLDOWN)
+            .unwrap_or(true);
+        if stale {
+            map.insert(browser, now);
+            allow = true;
+        }
+    }
+    if !allow {
+        return None;
+    }
+    Some(probe_automation_access_launching(browser))
+}
+
 /// Combine watcher cache and a live osascript probe for the UI.
 /// Skips the silent TCC read — it often returns Unknown in dev builds
 /// and used to share the osascript mutex, starving the blocking tick.
@@ -753,19 +797,38 @@ pub fn resolve_permission_state(browser: SupportedBrowser, cached: Option<PermSt
 }
 
 /// Permission snapshot for UI polling. Running browsers get a live probe;
-/// idle browsers use the silent TCC read so System Settings toggles are
-/// picked up even when the enforcer has force-closed the browser.
+/// idle browsers normally can't be read via TCC (-600). When
+/// `launch_probe` is set — only after the user explicitly opens
+/// Settings or taps Grant access — send one rate-limited Apple Event
+/// that launches the browser if needed so a fresh grant is detected.
 pub fn resolve_permission_state_for_status(
     browser: SupportedBrowser,
     cached: Option<PermState>,
     is_running: bool,
+    launch_probe: bool,
 ) -> PermState {
     if is_running {
         return resolve_permission_state(browser, cached);
     }
+    if launch_probe && cached == Some(PermState::Denied) {
+        if let Some(probe) = probe_automation_access_launching_rate_limited(browser) {
+            if matches!(probe, PermState::Granted | PermState::Denied) {
+                return probe;
+            }
+        }
+    }
     match query_automation_permission(browser) {
         tcc @ (PermState::Granted | PermState::Denied) => tcc,
-        PermState::Unknown => cached.unwrap_or(PermState::Unknown),
+        PermState::Unknown => {
+            // Stale watcher denial while the browser is closed is not
+            // trustworthy — the user may have re-enabled Automation in
+            // Settings; TCC can't confirm until the app receives an event.
+            if cached == Some(PermState::Granted) {
+                PermState::Granted
+            } else {
+                PermState::Unknown
+            }
+        }
     }
 }
 
@@ -792,7 +855,22 @@ pub fn automation_denied_for_enforcement(
         PermState::Granted => return false,
         PermState::Unknown => {}
     }
-    cached == Some(PermState::Denied)
+    // Stale watcher denial while the browser is closed isn't actionable.
+    if is_running {
+        cached == Some(PermState::Denied)
+    } else {
+        false
+    }
+}
+
+/// Open System Settings → Privacy & Security → Automation and bring it
+/// to the foreground.
+pub fn open_automation_settings() -> Result<(), String> {
+    std::process::Command::new("/usr/bin/open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Automation")
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("open Automation settings: {e}"))
 }
 
 /// Send a minimal Apple Event to surface the system Automation prompt
@@ -809,13 +887,18 @@ pub fn trigger_permission_prompt(browser: SupportedBrowser) -> Result<(), String
         r#"tell application "{app}" to count windows"#,
         app = app_name
     );
-    match run_osascript(&script) {
+    let result = match run_osascript(&script) {
         Ok(_) => Ok(()),
         Err(AutomationError::NotAuthorized) => {
             Err(format!("Automation permission for {} not granted", browser.label()))
         }
         Err(AutomationError::Other(msg)) => Err(msg),
-    }
+    };
+    // The Apple Event launches/activates the browser; bring System
+    // Settings → Automation back to the front so the user can toggle
+    // the grant without hunting for the Settings window.
+    let _ = open_automation_settings();
+    result
 }
 
 fn applescript_escape(s: &str) -> String {

@@ -1208,9 +1208,21 @@ body.dark-mode .app-blocking-closedown-banner {
     border-radius: 12px;
 }
 
+.extension-enforcer-screenshots.screenshots-plain {
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+}
+
 .extension-enforcer-action-banner-closed .extension-enforcer-screenshots {
     background: rgba(122, 46, 11, 0.06);
     border: 1px solid rgba(224, 138, 53, 0.25);
+}
+
+.extension-enforcer-action-banner-closed .extension-enforcer-screenshots.screenshots-plain {
+    background: transparent;
+    border: none;
 }
 
 /* ── Step figure ── */
