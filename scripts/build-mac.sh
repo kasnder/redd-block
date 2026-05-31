@@ -1,8 +1,8 @@
 #!/bin/bash
-# Build the macOS desktop app bundle (.app) and embed the Safari
-# Web Extension. Output is `for-distribution/ReDD Block.app`. For a
-# shippable installer, run `scripts/build-mac-pkg.sh --release` next
-# (or `npm run build:mac-all` for both in one go).
+# Build the macOS desktop app bundle (.app). Output is
+# `for-distribution/ReDD Block.app`. For a shippable installer, run
+# `scripts/build-mac-pkg.sh --release` next (or `npm run build:mac-all`
+# for both in one go).
 
 set -euo pipefail
 
@@ -44,33 +44,13 @@ TARGET_DIR="${PROJECT_ROOT}/src-tauri/target/${BUILD_TARGET}/release/bundle"
 
 echo "Building ReDD Block for macOS (${BUILD_TARGET})..."
 # `--bundles app` tells Tauri to produce only the .app, skipping its
-# own .dmg target. Two reasons:
-#  1. We modify the .app after Tauri's bundling step (embed the Safari
-#     Web Extension + re-sign + re-notarize). Tauri's .dmg, which is
-#     packed BEFORE that modification, would contain a stale pre-embed
-#     copy — shipping it would silently break Safari integration for
-#     anyone who installed via .dmg.
-#  2. The .pkg from scripts/build-mac-pkg.sh re-reads the post-embed
-#     .app and is what we actually distribute (it also runs our
-#     migration pre/post-install scripts, which a .dmg can't).
-# If we ever need a .dmg again, the right path is to rebuild it with
-# hdiutil + sign + notarize + staple AFTER embed-safari-extension.sh
-# runs — see SAFARI_BUNDLE_HANDOFF.md item #2.
+# own .dmg target. We distribute via scripts/build-mac-pkg.sh, which
+# wraps the .app in a signed .pkg with migration pre/post-install scripts.
 CARGO_TARGET_DIR="${PROJECT_ROOT}/src-tauri/target" \
 CI="${TAURI_CI:-false}" \
 npm run tauri -- build --bundles app --target "${BUILD_TARGET}" ${CONFIG_ARGS[@]+"${CONFIG_ARGS[@]}"}
 
-VERSION=$(node -p "require('./package.json').version")
 APP_SOURCE="${TARGET_DIR}/macos/ReDD Block.app"
-
-# Embed the bundled Safari Web Extension (ReDD Focus) into the
-# freshly-built .app, then re-sign + re-notarize + staple. Set
-# SKIP_SAFARI_EXTENSION=1 to bail out (useful for smoke tests /
-# cross-build experiments where you don't want the xcodebuild +
-# notary round-trip).
-if [ "${SKIP_SAFARI_EXTENSION:-}" != "1" ] && [ -d "$APP_SOURCE" ]; then
-  bash "${PROJECT_ROOT}/scripts/embed-safari-extension.sh" "$APP_SOURCE"
-fi
 
 mkdir -p for-distribution
 

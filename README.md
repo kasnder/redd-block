@@ -43,8 +43,7 @@ flowchart LR
 
 | Browser | How blocking works | Extension setup |
 |---------|-------------------|-----------------|
-| Safari | App Group shared file + bundled extension | Enable **ReDD Focus (via ReDD Block)** in Safari → Settings → Extensions |
-| Chrome, Brave, Edge | **Automation** (Apple Events) — ReDD Block redirects blocked tabs | ReDD Block prompts for Automation in System Settings → Privacy & Security → Automation |
+| Safari, Chrome, Brave, Edge | **Automation** (Apple Events) — ReDD Block redirects blocked tabs | ReDD Block prompts for Automation in System Settings → Privacy & Security → Automation |
 | Firefox | ReDD Focus extension | Install manually from the [Firefox Add-ons store](https://addons.mozilla.org/) — ReDD Block does **not** auto-install on macOS |
 
 **Windows**
@@ -62,12 +61,7 @@ flowchart LR
 
 You never open anything extra or run a second program. It's just how Chrome/Firefox talk to local apps.
 
-**Safari on macOS (App Group)**
-
-1. ReDD Block writes the blocklist to a **shared file** on your Mac.
-2. The ReDD Focus extension (bundled inside ReDD Block — **ReDD Focus (via ReDD Block)** in Safari → Settings → Extensions) reads that file.
-
-While a block is active, ReDD Block also checks that the extension is still installed, enabled, and allowed in private/incognito windows. If not, it can warn you or quit the browser.
+While a block is active, ReDD Block can warn you or quit browsers if website blocking stops working (e.g. Automation denied on Safari/Chrome, or the Firefox extension disabled).
 
 ### App blocking (desktop)
 
@@ -88,7 +82,7 @@ No browser extension — ReDD Block uses **Screen Time** to shield websites and 
 
 ### Permissions (desktop)
 
-- **Extensions:** install ReDD Focus in each browser you use (Safari's copy ships inside ReDD Block).
+- **Extensions:** install ReDD Focus in Firefox (macOS) or in each browser you use on Windows.
 - **macOS — Automation:** Safari, Chrome, Brave, and Edge need **Automation** permission so ReDD Block can redirect blocked tabs. ReDD Block walks you through this during setup; no Full Disk Access is required.
 - **macOS — Firefox:** install ReDD Focus manually from the Add-ons store and allow it in private windows.
 - **No** admin or UAC prompt at install time (macOS may ask once when cleaning up leftover v1.x components).
@@ -144,7 +138,6 @@ The app will open automatically. Hot-reloading is enabled for both frontend (Vit
 
 ```bash
 # macOS: Universal binary (Intel + Apple Silicon) → .app
-# (embeds the Safari Web Extension, signs + notarizes + staples)
 npm run build:mac
 
 # macOS: Wrap the .app into a signed/notarized .pkg installer
@@ -209,7 +202,7 @@ redd-block/
 │   │   ├── native_host_install.rs # Registers native-messaging manifests (Windows; skipped on macOS)
 │   │   ├── profile_scan.rs       # Reads browser profile files
 │   │   └── commands/             # IPC commands (data, apps, migration, …)
-│   ├── entitlements.macos.plist  # App Group (group.com.reddblock.shared)
+│   ├── entitlements.macos.plist  # macOS Automation (Apple Events) entitlement
 │   ├── gen/apple/                # Generated Xcode project
 │   ├── tauri.conf.json           # Shared Tauri config
 │   ├── tauri.ios.conf.json       # iOS-specific config
@@ -223,7 +216,7 @@ redd-block/
 ├── browser-ext-migration/
 │   ├── MIGRATION_PLAN.md         # Rollout plan + remaining-work checklist
 │   ├── FUTURE_OPTIONS.md         # Parked localhost fallback + signed .pkg notes
-├── scripts/                      # Build/signing (build-safari-extension.sh, embed-safari-extension.sh, …)
+├── scripts/                      # Build/signing (build-mac.sh, build-mac-pkg.sh, …)
 ├── docs/                         # GitHub Pages (version info, App Store privacy policy)
 └── vite.config.js                # Vite dev server config
 ```
@@ -258,7 +251,7 @@ On Windows the built-in native-messaging host reads this file directly to derive
 User data is preserved unless manually deleted. Uninstalling the app also removes:
 
 - the launch-at-login / login-item entry registered by `tauri-plugin-autostart`,
-- the native-messaging manifests and registry keys (Windows) written by `install_native_host` (macOS uses Automation + App Group instead, and does not auto-write Firefox manifests).
+- the native-messaging manifests and registry keys (Windows) written by `install_native_host` (macOS uses Automation instead and does not auto-write Firefox manifests).
 
 Active blocks stop firing once the app is gone because the app itself is now the enforcement engine. A paid-for-itself "keep blocking after uninstall" mode is no longer provided.
 

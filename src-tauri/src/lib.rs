@@ -96,8 +96,6 @@ tauri_nspanel::tauri_panel! {
 
 #[cfg(not(target_os = "ios"))]
 pub mod app_watcher;
-#[cfg(target_os = "macos")]
-pub mod app_group;
 #[cfg(not(target_os = "ios"))]
 pub mod enforcer;
 // JOMO-style website blocking via macOS Automation (Apple Events) — the
@@ -670,12 +668,6 @@ pub fn run() {
                     "extension-install: startup auto-install skipped (marker present)"
                 );
             }
-
-            // App Group blocklist mirror: written in save_data() when the
-            // user (or enforcer) persists changes — not on startup. A
-            // background sync loop here resolves the App Group container
-            // immediately on every launch, which triggers macOS Sequoia's
-            // "access data from other apps" TCC prompt on .pkg installs.
 
             // Self-heal the watchdog Scheduled Task on Windows. If the
             // user disabled or deleted it (or the install dir moved),

@@ -21,11 +21,9 @@ pub const CHROMIUM_EXT_ID: &str = "hhblkhfdjijdinijakbmcpkmdfhoadcd";
 /// Microsoft Edge Add-ons listing ID — differs from the Chrome Web
 /// Store ID when the user installs manually from edge://extensions.
 pub const EDGE_ADDONS_EXT_ID: &str = "gmjfgjdhnhcegfelcddbdljdffiaepam";
-/// Bundle identifier of the Safari Web Extension target embedded
-/// inside `ReDD Block.app/Contents/PlugIns/`. Set by
-/// `scripts/build-safari-extension.sh` via the
-/// `PRODUCT_BUNDLE_IDENTIFIER` xcodebuild override — keep these in
-/// sync.
+/// Bundle identifier of the legacy bundled Safari Web Extension (no longer
+/// shipped). Still referenced for duplicate-extension detection when a
+/// user has both the App Store ReDD Focus and an old embedded copy.
 pub const SAFARI_EXT_ID: &str = "com.reddblock.SafariExtension";
 
 /// Every Chromium-family extension ID ReDD Block treats as ReDD Focus.

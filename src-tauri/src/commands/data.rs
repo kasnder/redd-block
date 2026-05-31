@@ -425,11 +425,6 @@ pub fn save_data(app: AppHandle, mut data: AppData) -> Result<(), String> {
     let content = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
     fs::write(&data_path, &content).map_err(|e| e.to_string())?;
     set_shared_permissions(&data_path);
-
-    #[cfg(target_os = "macos")]
-    if let Err(e) = crate::app_group::write_blocklist_bytes(content.as_bytes()) {
-        log::warn!("App Group mirror write failed: {}", e);
-    }
     Ok(())
 }
 

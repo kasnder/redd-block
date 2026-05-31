@@ -502,11 +502,9 @@ fn local_time_components_full(now_ms: u64) -> Option<(u8, u8, u8, u8)> {
 /// Order:
 ///   1. `/var/lib/redd-block` (legacy shared dir from the helper era;
 ///      still authoritative if it survived a v1.0.x install).
-///   2. The App Group container — written by `commands::data::save_data`
-///      whenever the user is running on a build with the entitlement.
-///   3. `~/Library/Application Support/com.reddblock/...` — the Tauri
+///   2. `~/Library/Application Support/com.reddblock/...` — the Tauri
 ///      `app_data_dir()` for `identifier = "com.reddblock"`.
-///   4. `~/Library/Application Support/com.redd.block/...` — earlier
+///   3. `~/Library/Application Support/com.redd.block/...` — earlier
 ///      bundle id used by some pre-v1.0 builds; keeps native-messaging
 ///      working through the migration window.
 pub fn resolve_data_path() -> Option<PathBuf> {
@@ -517,14 +515,6 @@ pub fn resolve_data_path() -> Option<PathBuf> {
             return Some(shared);
         }
         let home = dirs::home_dir()?;
-        let group_path = home
-            .join("Library")
-            .join("Group Containers")
-            .join("group.com.reddblock.shared")
-            .join("redd-block-data.json");
-        if group_path.exists() {
-            return Some(group_path);
-        }
         let app_support = home.join("Library").join("Application Support");
         for id in ["com.reddblock", "com.redd.block"] {
             let p = app_support.join(id).join("redd-block-data.json");
