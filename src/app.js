@@ -2225,7 +2225,7 @@ async function wireEnforcementToggle() {
 let blockingMethodSettingsWired = false;
 
 function syncBlockingMethodSelects(methods = getBlockingMethodsMap()) {
-    for (const key of MAC_CHROMIUM_BLOCKING_KEYS) {
+    for (const key of MAC_BLOCKING_METHOD_KEYS) {
         const select = document.getElementById(`blocking-method-${key}`);
         if (!select) continue;
         const value = methods[key] || 'automation';
@@ -2249,7 +2249,7 @@ async function wireBlockingMethodSettings() {
 
     if (!blockingMethodSettingsWired) {
         blockingMethodSettingsWired = true;
-        for (const key of MAC_CHROMIUM_BLOCKING_KEYS) {
+        for (const key of MAC_BLOCKING_METHOD_KEYS) {
             const select = document.getElementById(`blocking-method-${key}`);
             if (!select) continue;
             select.addEventListener('change', () => {
@@ -2348,15 +2348,17 @@ const BROWSER_STORE_LINKS = {
 // grant, not whether ReDD Focus is installed/enabled. Firefox stays on
 // the extension path. Non-macOS keeps the extension model everywhere.
 const AUTOMATION_BROWSER_KEYS = ['chrome', 'brave', 'edge', 'safari'];
-const MAC_CHROMIUM_BLOCKING_KEYS = ['chrome', 'brave', 'edge'];
+const MAC_BLOCKING_METHOD_KEYS = ['chrome', 'brave', 'edge', 'safari'];
+/** @deprecated use MAC_BLOCKING_METHOD_KEYS */
+const MAC_CHROMIUM_BLOCKING_KEYS = MAC_BLOCKING_METHOD_KEYS;
 
 function getBlockingMethodsMap() {
     return appData?.settings?.blockingMethods || {};
 }
 
 function browserBlockingMethod(key) {
-    if (!isMacOSDesktop || !MAC_CHROMIUM_BLOCKING_KEYS.includes(key)) {
-        if (isMacOSDesktop && key === 'safari') return 'automation';
+    if (!isMacOSDesktop || !MAC_BLOCKING_METHOD_KEYS.includes(key)) {
+        if (isMacOSDesktop && key === 'firefox') return 'extension';
         return 'extension';
     }
     return getBlockingMethodsMap()[key] || 'automation';
@@ -2364,12 +2366,11 @@ function browserBlockingMethod(key) {
 
 function browserUsesAutomation(key) {
     if (!isMacOSDesktop) return false;
-    if (key === 'safari') return true;
     if (key === 'firefox') return false;
-    if (MAC_CHROMIUM_BLOCKING_KEYS.includes(key)) {
+    if (MAC_BLOCKING_METHOD_KEYS.includes(key)) {
         return browserBlockingMethod(key) === 'automation';
     }
-    return AUTOMATION_BROWSER_KEYS.includes(key);
+    return false;
 }
 
 // key -> 'granted' | 'denied' | 'unknown', refreshed from
@@ -15083,12 +15084,13 @@ const SETTINGS_TRANSLATIONS = {
         gracePeriodHint: 'Seconds to re-enable before the browser closes.',
         settingsEnforcementHeading: 'Enforcement',
         settingsBlockingMethodHeading: 'Website blocking (macOS)',
-        settingsBlockingMethodHint: 'Automation is the default. Extension mode uses ReDD Focus for instant redirects — install the extension in each browser you switch.',
+        settingsBlockingMethodHint: 'Automation is the default. Extension mode uses ReDD Focus for instant redirects — install the extension in each browser you switch. Safari uses a shared App Group instead of native messaging.',
         settingsBlockingMethodAutomation: 'Automation',
         settingsBlockingMethodExtension: 'Extension (instant)',
         settingsBlockingMethodChrome: 'Chrome',
         settingsBlockingMethodBrave: 'Brave',
         settingsBlockingMethodEdge: 'Edge',
+        settingsBlockingMethodSafari: 'Safari',
         settingsEnforcementRowLabel: 'Auto-close browser if protection stops',
         settingsEnforcementRowHintMacAutomation: 'If Automation is switched off mid-block.',
         settingsEnforcementRowHintMacFirefox: 'If Automation is switched off — or ReDD Focus is disabled in Firefox — mid-block.',
@@ -15112,7 +15114,8 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsStampedVersion: 'Stamped version',
         diagnosticsStampedAt: 'Stamped at',
         diagnosticsBrowsersSection: 'Browsers (extension)',
-        diagnosticsBrowsersSectionHintMac: 'Firefox uses the ReDD Focus extension. Safari, Chrome, Brave, and Edge use Automation (see above).',
+        diagnosticsBrowsersSectionHintMac: 'Browsers listed here use macOS Automation (see above).',
+        diagnosticsBrowsersSectionHintMacExtension: 'Browsers listed here use the ReDD Focus extension (install, enable, and allow private browsing).',
         diagnosticsBrowsersSectionHint: 'Status of the ReDD Focus extension in browsers on this computer.',
         diagnosticsAutomationSection: 'Automation (macOS)',
         diagnosticsAutomationSectionHint: 'ReDD Block needs Automation permission to redirect blocked tabs in each browser. Grant in System Settings → Privacy & Security → Automation.',
@@ -15673,12 +15676,13 @@ const SETTINGS_TRANSLATIONS = {
         gracePeriodHint: 'Sekunder til at slå til igen, før browseren lukkes.',
         settingsEnforcementHeading: 'Håndhævelse',
         settingsBlockingMethodHeading: 'Websiteblokering (macOS)',
-        settingsBlockingMethodHint: 'Automatisering er standard. Udvidelsestilstand bruger ReDD Focus til øjeblikkelige omdirigeringer — installer udvidelsen i hver browser, du skifter.',
+        settingsBlockingMethodHint: 'Automatisering er standard. Udvidelsestilstand bruger ReDD Focus til øjeblikkelige omdirigeringer — installer udvidelsen i hver browser, du skifter. Safari bruger en delt App Group i stedet for native messaging.',
         settingsBlockingMethodAutomation: 'Automatisering',
         settingsBlockingMethodExtension: 'Udvidelse (øjeblikkelig)',
         settingsBlockingMethodChrome: 'Chrome',
         settingsBlockingMethodBrave: 'Brave',
         settingsBlockingMethodEdge: 'Edge',
+        settingsBlockingMethodSafari: 'Safari',
         settingsEnforcementRowLabel: 'Luk browser automatisk, hvis beskyttelsen stopper',
         settingsEnforcementRowHintMacAutomation: 'Hvis Automatisering slås fra midt i en blokering.',
         settingsEnforcementRowHintMacFirefox: 'Hvis Automatisering slås fra — eller ReDD Focus deaktiveres i Firefox — midt i en blokering.',
@@ -15702,7 +15706,8 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsStampedVersion: 'Stemplet version',
         diagnosticsStampedAt: 'Stemplet',
         diagnosticsBrowsersSection: 'Browsere (udvidelse)',
-        diagnosticsBrowsersSectionHintMac: 'Firefox bruger ReDD Focus-udvidelsen. Safari, Chrome, Brave og Edge bruger Automatisering (se ovenfor).',
+        diagnosticsBrowsersSectionHintMac: 'Browsere her bruger macOS Automatisering (se ovenfor).',
+        diagnosticsBrowsersSectionHintMacExtension: 'Browsere her bruger ReDD Focus-udvidelsen (installer, aktiver og tillad privat browsing).',
         diagnosticsBrowsersSectionHint: 'Status for ReDD Focus-udvidelsen i browsere på denne computer.',
         diagnosticsAutomationSection: 'Automatisering (macOS)',
         diagnosticsAutomationSectionHint: 'ReDD Block skal have Automatisering-tilladelse for at omdirigere blokerede faner i hver browser. Giv tilladelse i Systemindstillinger → Privatliv og sikkerhed → Automatisering.',
@@ -16791,7 +16796,8 @@ function applySettingsLanguage() {
     setText('settings-blocking-method-chrome-label', tSettings('settingsBlockingMethodChrome'));
     setText('settings-blocking-method-brave-label', tSettings('settingsBlockingMethodBrave'));
     setText('settings-blocking-method-edge-label', tSettings('settingsBlockingMethodEdge'));
-    for (const key of MAC_CHROMIUM_BLOCKING_KEYS) {
+    setText('settings-blocking-method-safari-label', tSettings('settingsBlockingMethodSafari'));
+    for (const key of MAC_BLOCKING_METHOD_KEYS) {
         const select = document.getElementById(`blocking-method-${key}`);
         if (!select) continue;
         const current = select.value || browserBlockingMethod(key);
@@ -17809,10 +17815,10 @@ function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) {
 
     // Browsers (extension)
     const extensionBrowserKeys = isMacOSDesktop
-        ? ['firefox', ...MAC_CHROMIUM_BLOCKING_KEYS.filter((k) => browserBlockingMethod(k) === 'extension')]
+        ? ['firefox', ...MAC_BLOCKING_METHOD_KEYS.filter((k) => browserBlockingMethod(k) === 'extension')]
         : ['chrome', 'brave', 'edge', 'firefox', 'safari'];
     const browsersHint = isMacOSDesktop
-        ? tSettings('diagnosticsBrowsersSectionHintMac')
+        ? tSettings('diagnosticsBrowsersSectionHintMacExtension')
         : tSettings('diagnosticsBrowsersSectionHint');
     html += '<div class="diagnostics-section">';
     html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsBrowsersSection'))}</div>`;

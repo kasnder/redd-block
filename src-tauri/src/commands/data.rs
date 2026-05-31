@@ -425,6 +425,10 @@ pub fn save_data(app: AppHandle, mut data: AppData) -> Result<(), String> {
     let content = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
     fs::write(&data_path, &content).map_err(|e| e.to_string())?;
     set_shared_permissions(&data_path);
+
+    #[cfg(target_os = "macos")]
+    crate::app_group::maybe_mirror_after_save(&data_path, content.as_bytes());
+
     Ok(())
 }
 

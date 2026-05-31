@@ -1,4 +1,4 @@
-//! Tauri commands for per-browser blocking method (macOS Chromium).
+//! Tauri commands for per-browser blocking method (macOS).
 
 use std::collections::HashMap;
 
@@ -18,7 +18,7 @@ pub fn set_blocking_method(
     browser: String,
     method: String,
 ) -> Result<HashMap<String, String>, String> {
-    blocking_method::validate_mac_chromium_key(&browser)?;
+    blocking_method::validate_mac_blocking_method_key(&browser)?;
     let parsed = blocking_method::validate_method(&method)?;
 
     let path = super::canonical_data_path(&app).ok_or_else(|| "no app data path".to_string())?;
@@ -40,20 +40,25 @@ pub fn set_blocking_method(
         .insert(browser.clone(), Value::String(parsed.as_str().to_string()));
 
     write_data(&path, &data).map_err(|e| format!("write data: {e}"))?;
-    apply_side_effects(&browser, parsed)?;
+    apply_side_effects(&app, &browser, parsed)?;
     log::info!("blocking_method: {browser} -> {}", parsed.as_str());
     Ok(blocking_method::read_map_from_path(&path))
 }
 
-fn apply_side_effects(browser: &str, method: Method) -> Result<(), String> {
+fn apply_side_effects(app: &AppHandle, browser: &str, method: Method) -> Result<(), String> {
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (browser, method);
+        let _ = (app, browser, method);
         return Ok(());
     }
     #[cfg(target_os = "macos")]
-    match method {
-        Method::Extension => {
+    match (browser, method) {
+        ("safari", Method::Extension) => {
+            let path = super::canonical_data_path(app).ok_or_else(|| "no app data path".to_string())?;
+            crate::app_group::sync_blocklist_from(&path)
+                .map_err(|e| format!("App Group sync for Safari: {e}"))?;
+        }
+        (browser, Method::Extension) => {
             if let Some(target) = blocking_method::native_host_target(browser) {
                 crate::native_host_install::install_native_host_for(target)
                     .map_err(|e| format!("native-host install for {browser}: {e}"))?;
@@ -63,7 +68,11 @@ fn apply_side_effects(browser: &str, method: Method) -> Result<(), String> {
                     .map_err(|e| format!("extension hint for {browser}: {e}"))?;
             }
         }
-        Method::Automation => {
+        ("safari", Method::Automation) => {
+            crate::app_group::remove_blocklist_mirror()
+                .map_err(|e| format!("App Group cleanup for Safari: {e}"))?;
+        }
+        (browser, Method::Automation) => {
             if let Some(target) = blocking_method::native_host_target(browser) {
                 crate::native_host_install::uninstall_native_host_for(target)
                     .map_err(|e| format!("native-host uninstall for {browser}: {e}"))?;

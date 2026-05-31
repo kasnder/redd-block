@@ -96,6 +96,8 @@ tauri_nspanel::tauri_panel! {
 
 #[cfg(not(target_os = "ios"))]
 pub mod app_watcher;
+#[cfg(target_os = "macos")]
+pub mod app_group;
 #[cfg(not(target_os = "ios"))]
 pub mod enforcer;
 // JOMO-style website blocking via macOS Automation (Apple Events) — the
@@ -631,6 +633,9 @@ pub fn run() {
             {
                 commands::web_automation::register(app);
                 commands::web_automation::auto_start(app.handle());
+                if let Some(path) = commands::canonical_data_path(app.handle()) {
+                    crate::app_group::ensure_sync_loop(path);
+                }
             }
 
             // Ensure notification permission is granted (or prompt for

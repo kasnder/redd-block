@@ -1,8 +1,7 @@
 //! Per-browser website blocking method on macOS (Automation vs extension).
 //!
-//! Chrome, Brave, and Edge default to Automation; power users may opt into
-//! the ReDD Focus extension + native messaging path for instant redirects.
-//! Safari stays Automation-only until the App Group bridge returns.
+//! Chrome, Brave, Edge, and Safari default to Automation; power users may
+//! opt into the ReDD Focus extension path for instant redirects.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -13,6 +12,9 @@ use tauri::AppHandle;
 pub const METHOD_AUTOMATION: &str = "automation";
 pub const METHOD_EXTENSION: &str = "extension";
 
+pub const MAC_BLOCKING_METHOD_KEYS: &[&str] = &["chrome", "brave", "edge", "safari"];
+
+/// Chromium browsers on macOS (native-messaging extension path).
 pub const MAC_CHROMIUM_KEYS: &[&str] = &["chrome", "brave", "edge"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,9 +79,8 @@ pub fn method_for_key_at_path(path: &Path, key: &str) -> Method {
     #[cfg(target_os = "macos")]
     {
         match key {
-            "safari" => Method::Automation,
             "firefox" => Method::Extension,
-            k if MAC_CHROMIUM_KEYS.contains(&k) => read_map_from_path(path)
+            k if MAC_BLOCKING_METHOD_KEYS.contains(&k) => read_map_from_path(path)
                 .get(k)
                 .and_then(|s| Method::parse(s))
                 .unwrap_or(Method::Automation),
@@ -102,12 +103,12 @@ pub fn uses_automation(app: &AppHandle, key: &str) -> bool {
     method_for_key(app, key) == Method::Automation
 }
 
-pub fn is_mac_chromium_key(key: &str) -> bool {
-    MAC_CHROMIUM_KEYS.contains(&key)
+pub fn is_mac_blocking_method_key(key: &str) -> bool {
+    MAC_BLOCKING_METHOD_KEYS.contains(&key)
 }
 
-pub fn validate_mac_chromium_key(key: &str) -> Result<(), String> {
-    if is_mac_chromium_key(key) {
+pub fn validate_mac_blocking_method_key(key: &str) -> Result<(), String> {
+    if is_mac_blocking_method_key(key) {
         Ok(())
     } else {
         Err(format!("unsupported browser for blocking method: {key}"))

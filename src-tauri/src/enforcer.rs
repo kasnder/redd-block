@@ -364,7 +364,11 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
             }
             matches!(
                 key,
-                BrowserKey::Firefox | BrowserKey::Chrome | BrowserKey::Brave | BrowserKey::Edge
+                BrowserKey::Firefox
+                    | BrowserKey::Chrome
+                    | BrowserKey::Brave
+                    | BrowserKey::Edge
+                    | BrowserKey::Safari
             )
         }
         #[cfg(not(target_os = "macos"))]

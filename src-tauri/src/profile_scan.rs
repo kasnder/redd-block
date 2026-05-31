@@ -137,14 +137,12 @@ pub fn scan_for_onboarding() -> ScanResult {
             return empty_scan_result();
         }
         let path = crate::commands::canonical_data_path_static();
-        let mut result = scan_filter(|label| {
-            match label {
-                "firefox" => true,
-                "chrome" | "brave" | "edge" => {
-                    !crate::blocking_method::uses_automation_at_path(&path, label)
-                }
-                _ => false,
+        let mut result = scan_filter(|label| match label {
+            "firefox" => true,
+            "safari" | "chrome" | "brave" | "edge" => {
+                !crate::blocking_method::uses_automation_at_path(&path, label)
             }
+            _ => false,
         });
         if crate::blocking_method::uses_automation_at_path(&path, "chrome") {
             result.chrome = ChromiumBrowser::Chrome.presence_only();
@@ -155,7 +153,9 @@ pub fn scan_for_onboarding() -> ScanResult {
         if crate::blocking_method::uses_automation_at_path(&path, "edge") {
             result.edge = ChromiumBrowser::Edge.presence_only();
         }
-        result.safari = safari_presence_only();
+        if crate::blocking_method::uses_automation_at_path(&path, "safari") {
+            result.safari = safari_presence_only();
+        }
         result
     }
     #[cfg(not(target_os = "macos"))]
