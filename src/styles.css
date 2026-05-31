@@ -5526,12 +5526,67 @@ body.dark-mode .blocking-method-select {
     cursor: default;
 }
 
-#settings-blocking-method-panel .settings-section-desc {
-    margin: -4px 0 12px;
-    padding: 0 4px;
+#settings-blocking-method-section .settings-blocking-method-hint {
+    margin: 0 0 10px;
+    padding: 0 16px;
     font-size: 13px;
     line-height: 1.45;
     color: var(--text-secondary);
+}
+
+.settings-blocking-method-section {
+    border-top: 1px solid var(--border-color-light);
+}
+
+.settings-enforcement-subsection-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    padding: 14px 16px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    color: var(--text-primary);
+}
+
+.settings-enforcement-subsection-toggle:hover {
+    background: rgba(0, 0, 0, 0.03);
+}
+
+body.dark-mode .settings-enforcement-subsection-toggle:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.settings-enforcement-subsection-label {
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.settings-enforcement-subsection-toggle .settings-enforcement-chevron {
+    flex-shrink: 0;
+    color: var(--text-muted);
+}
+
+.settings-enforcement-subsection-toggle[aria-expanded="true"] .settings-enforcement-chevron {
+    transform: rotate(180deg);
+}
+
+.settings-enforcement-subsection-content.hidden {
+    display: none;
+}
+
+.settings-blocking-method-rows .settings-row {
+    padding: 12px 16px;
+    border-top: 1px solid var(--border-color-medium);
+}
+
+.settings-enforcement-subsection-toggle .settings-enforcement-chevron {
+    transition: transform 0.2s ease;
 }
 
 #settings-modal .settings-grace-input-wrap {

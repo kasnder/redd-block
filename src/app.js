@@ -2111,16 +2111,26 @@ function wireMigrationPostPhase(state) {
 // the user can't weaken enforcement mid-session. The server-side
 // guard in enforcement_toggle.rs is the ultimate backstop.
 
-function setSettingsEnforcementExpanded(_expanded) {
-    /* Enforcement settings are always visible in the redesigned settings panel. */
+function setSettingsBlockingMethodExpanded(expanded) {
+    const toggle = document.getElementById('settings-blocking-method-toggle');
+    const content = document.getElementById('settings-blocking-method-content');
+    if (!toggle || !content) return;
+    toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    content.classList.toggle('hidden', !expanded);
 }
 
 function resetSettingsEnforcementSection() {
-    /* no-op */
+    setSettingsBlockingMethodExpanded(false);
 }
 
 function setupSettingsEnforcementSection() {
-    /* Collapsible enforcement section removed — settings panel is always expanded. */
+    const toggle = document.getElementById('settings-blocking-method-toggle');
+    if (!toggle || toggle.dataset.bound === '1') return;
+    toggle.dataset.bound = '1';
+    toggle.addEventListener('click', () => {
+        const isOpen = toggle.getAttribute('aria-expanded') === 'true';
+        setSettingsBlockingMethodExpanded(!isOpen);
+    });
 }
 
 function syncGraceSettingVisibility(enabled) {
@@ -15083,10 +15093,10 @@ const SETTINGS_TRANSLATIONS = {
         gracePeriodLabel: 'Grace period',
         gracePeriodHint: 'Seconds to re-enable before the browser closes.',
         settingsEnforcementHeading: 'Enforcement',
-        settingsBlockingMethodHeading: 'Website blocking (macOS)',
-        settingsBlockingMethodHint: 'Automation is the default. Extension mode uses ReDD Focus for instant redirects — install the extension in each browser you switch. Safari uses a shared App Group instead of native messaging.',
+        settingsBlockingMethodHeading: 'Blocking mechanism',
+        settingsBlockingMethodHint: 'Automation uses macOS automation for blocking. Extension mode uses the ReDD Focus browser extension. If you experience short lags with the automation approach, try extension mode.',
         settingsBlockingMethodAutomation: 'Automation',
-        settingsBlockingMethodExtension: 'Extension (instant)',
+        settingsBlockingMethodExtension: 'Extension',
         settingsBlockingMethodChrome: 'Chrome',
         settingsBlockingMethodBrave: 'Brave',
         settingsBlockingMethodEdge: 'Edge',
@@ -15675,10 +15685,10 @@ const SETTINGS_TRANSLATIONS = {
         gracePeriodLabel: 'Henstandsperiode',
         gracePeriodHint: 'Sekunder til at slå til igen, før browseren lukkes.',
         settingsEnforcementHeading: 'Håndhævelse',
-        settingsBlockingMethodHeading: 'Websiteblokering (macOS)',
+        settingsBlockingMethodHeading: 'Blokeringsmekanisme',
         settingsBlockingMethodHint: 'Automatisering er standard. Udvidelsestilstand bruger ReDD Focus til øjeblikkelige omdirigeringer — installer udvidelsen i hver browser, du skifter. Safari bruger en delt App Group i stedet for native messaging.',
         settingsBlockingMethodAutomation: 'Automatisering',
-        settingsBlockingMethodExtension: 'Udvidelse (øjeblikkelig)',
+        settingsBlockingMethodExtension: 'Udvidelse',
         settingsBlockingMethodChrome: 'Chrome',
         settingsBlockingMethodBrave: 'Brave',
         settingsBlockingMethodEdge: 'Edge',
@@ -16791,7 +16801,7 @@ function applySettingsLanguage() {
     setText('settings-uninstall-btn-label', tSettings('uninstallAppBtn'));
     setText('settings-help-label', tSettings('settingsDiagnosticsLabel'));
     setText('settings-enforcement-heading', tSettings('settingsEnforcementHeading'));
-    setText('settings-blocking-method-heading', tSettings('settingsBlockingMethodHeading'));
+    setText('settings-blocking-method-toggle-label', tSettings('settingsBlockingMethodHeading'));
     setText('settings-blocking-method-hint', tSettings('settingsBlockingMethodHint'));
     setText('settings-blocking-method-chrome-label', tSettings('settingsBlockingMethodChrome'));
     setText('settings-blocking-method-brave-label', tSettings('settingsBlockingMethodBrave'));
