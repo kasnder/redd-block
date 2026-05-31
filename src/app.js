@@ -113,6 +113,8 @@ const tauriAPI = {
     webAutomationPermissionStatus: (opts) => invoke('web_automation_permission_status', {
         launchProbe: opts?.launchProbe ?? false,
     }),
+    getBlockingMethods: () => invoke('get_blocking_methods'),
+    setBlockingMethod: (browser, method) => invoke('set_blocking_method', { browser, method }),
     requestAutomationPermission: (browser) => invoke('request_automation_permission', { browser }),
     openAutomationSettings: () => invoke('open_automation_settings'),
 
@@ -1082,9 +1084,8 @@ function closeEscapeSubLayer() {
         closeAllBlocklistMenus();
         return true;
     }
-    const langDd = document.getElementById('language-picker-dropdown');
-    if (langDd && !langDd.classList.contains('hidden')) {
-        setLanguagePickerOpen(false);
+    if (isAnyLanguagePickerOpen()) {
+        closeAllLanguagePickers();
         return true;
     }
     return false;
@@ -1639,6 +1640,9 @@ let migrationSafariDuplicateHelpExpanded = false;
 let lastMigrationBrowserState = null;
 /** Skips full DOM rebuild on poll when compliance state is unchanged (prevents icon flash). */
 let lastMigrationBrowserRenderSignature = '';
+/** Skips header/how-to HTML rewrites on poll when copy inputs are unchanged (prevents logo flash). */
+let lastMigrationHeaderCopyKey = '';
+let lastMigrationHowtoCopyKey = '';
 const MIGRATION_POLL_MS = 2500;
 const EXT_ONBOARDING_DISMISSED_KEY = 'reddBlockExtOnboardingDismissed';
 
@@ -1778,7 +1782,9 @@ async function shouldShowMacAutomationIntro(state) {
 
     await refreshAutomationPermissionStatus();
     const browsers = state?.browsers || {};
-    const automationKeys = AUTOMATION_BROWSER_KEYS.filter((k) => browsers[k]?.installed);
+    const automationKeys = AUTOMATION_BROWSER_KEYS.filter(
+        (k) => browsers[k]?.installed && browserUsesAutomation(k),
+    );
     if (automationKeys.length === 0) {
         await persistMacAutomationIntroShown();
         return false;
@@ -1851,20 +1857,11 @@ async function showMigrationOnboarding(phase, state, opts = {}) {
     if (!screen || !pre || !post) return;
 
     applyMigrationOverlayStaticCopy();
-
-    migrationOnboardingActive = true;
-    startMigrationPolling();
-    document.getElementById('welcome-onboarding')?.classList.add('hidden');
-    document.getElementById('eula-onboarding')?.classList.add('hidden');
-    document.getElementById('now-blocking-row')?.classList.add('hidden');
-    if (main) main.classList.add('hidden');
-    screen.classList.remove('hidden');
     pre.classList.toggle('hidden', phase !== 'pre');
     post.classList.toggle('hidden', phase !== 'post');
 
-    // For the post phase, swap headline + subtitle + checklist depending
-    // on whether we got here from a v1.x cleanup (mode=after-cleanup)
-    // or it's a fresh user (mode=fresh, default).
+    // Configure the target phase while still hidden so we never flash the
+    // wrong framing (e.g. "Cleanup complete" before fresh-user copy).
     if (phase === 'post') {
         const mode = opts.mode || 'fresh';
         const title = document.getElementById('migration-post-title');
@@ -1880,6 +1877,7 @@ async function showMigrationOnboarding(phase, state, opts = {}) {
                 subtitle.classList.remove('hidden');
             }
             cleanupItems.forEach(el => el.classList.remove('hidden'));
+            post.closest('.onboarding-content')?.querySelector('.onboarding-icon')?.classList.remove('hidden');
         } else {
             if (title) title.classList.add('hidden');
             if (subtitle) subtitle.classList.add('hidden');
@@ -1888,7 +1886,18 @@ async function showMigrationOnboarding(phase, state, opts = {}) {
             cleanupItems.forEach(el => el.classList.add('hidden'));
         }
         syncMigrationPostHeader(state);
+        wireMigrationPostPhase(state);
+    } else if (phase === 'pre') {
+        wireMigrationPrePhase();
     }
+
+    migrationOnboardingActive = true;
+    startMigrationPolling();
+    document.getElementById('welcome-onboarding')?.classList.add('hidden');
+    document.getElementById('eula-onboarding')?.classList.add('hidden');
+    document.getElementById('now-blocking-row')?.classList.add('hidden');
+    if (main) main.classList.add('hidden');
+    screen.classList.remove('hidden');
 
     // Bring our window back to the front. The osascript admin
     // prompt steals focus, and on macOS we run as a menu-bar
@@ -1904,12 +1913,6 @@ async function showMigrationOnboarding(phase, state, opts = {}) {
     };
     await focusBack();
     setTimeout(focusBack, 250);
-
-    if (phase === 'pre') {
-        wireMigrationPrePhase();
-    } else if (phase === 'post') {
-        wireMigrationPostPhase(state);
-    }
 }
 
 let extensionSetupPausedForBackNavigation = false;
@@ -1946,6 +1949,7 @@ function hideMigrationOnboarding() {
     migrationSafariDuplicateHelpExpanded = false;
     lastMigrationBrowserState = null;
     lastMigrationBrowserRenderSignature = '';
+    invalidateMigrationMacCopyCache();
     stopMigrationPolling();
 }
 
@@ -2218,6 +2222,72 @@ async function wireEnforcementToggle() {
     }
 }
 
+let blockingMethodSettingsWired = false;
+
+function syncBlockingMethodSelects(methods = getBlockingMethodsMap()) {
+    for (const key of MAC_CHROMIUM_BLOCKING_KEYS) {
+        const select = document.getElementById(`blocking-method-${key}`);
+        if (!select) continue;
+        const value = methods[key] || 'automation';
+        select.value = value;
+        select.disabled = false;
+    }
+}
+
+async function wireBlockingMethodSettings() {
+    if (!isMacOSDesktop) return;
+
+    let methods = getBlockingMethodsMap();
+    try {
+        methods = await tauriAPI.getBlockingMethods();
+        if (!appData.settings) appData.settings = {};
+        appData.settings.blockingMethods = methods;
+    } catch (e) {
+        console.warn('[blocking-method] read failed:', e);
+    }
+    syncBlockingMethodSelects(methods);
+
+    if (!blockingMethodSettingsWired) {
+        blockingMethodSettingsWired = true;
+        for (const key of MAC_CHROMIUM_BLOCKING_KEYS) {
+            const select = document.getElementById(`blocking-method-${key}`);
+            if (!select) continue;
+            select.addEventListener('change', () => {
+                void onBlockingMethodChange(key, select);
+            });
+        }
+    }
+}
+
+async function onBlockingMethodChange(key, select) {
+    const previous = browserBlockingMethod(key);
+    const desired = select.value === 'extension' ? 'extension' : 'automation';
+    select.disabled = true;
+    try {
+        const methods = await tauriAPI.setBlockingMethod(key, desired);
+        if (!appData.settings) appData.settings = {};
+        appData.settings.blockingMethods = methods;
+        syncBlockingMethodSelects(methods);
+        await refreshAutomationPermissionStatus({ force: true });
+        if (migrationOnboardingActive || isModalVisible('migration-onboarding')) {
+            const fresh = await invoke('onboarding_state');
+            renderBrowserInstallButtons(fresh, { force: true });
+        }
+        if (desired === 'extension') {
+            await openExtensionSetupOverlay();
+        }
+    } catch (e) {
+        console.warn('[blocking-method] set failed:', e);
+        select.value = previous;
+        await ask(
+            String(e?.message || e || 'Could not change blocking method.'),
+            { title: 'Blocking method', kind: 'error' },
+        );
+    } finally {
+        select.disabled = false;
+    }
+}
+
 async function updateEnforcementToggleLock(toggle) {
     if (!toggle) return;
     try {
@@ -2278,6 +2348,29 @@ const BROWSER_STORE_LINKS = {
 // grant, not whether ReDD Focus is installed/enabled. Firefox stays on
 // the extension path. Non-macOS keeps the extension model everywhere.
 const AUTOMATION_BROWSER_KEYS = ['chrome', 'brave', 'edge', 'safari'];
+const MAC_CHROMIUM_BLOCKING_KEYS = ['chrome', 'brave', 'edge'];
+
+function getBlockingMethodsMap() {
+    return appData?.settings?.blockingMethods || {};
+}
+
+function browserBlockingMethod(key) {
+    if (!isMacOSDesktop || !MAC_CHROMIUM_BLOCKING_KEYS.includes(key)) {
+        if (isMacOSDesktop && key === 'safari') return 'automation';
+        return 'extension';
+    }
+    return getBlockingMethodsMap()[key] || 'automation';
+}
+
+function browserUsesAutomation(key) {
+    if (!isMacOSDesktop) return false;
+    if (key === 'safari') return true;
+    if (key === 'firefox') return false;
+    if (MAC_CHROMIUM_BLOCKING_KEYS.includes(key)) {
+        return browserBlockingMethod(key) === 'automation';
+    }
+    return AUTOMATION_BROWSER_KEYS.includes(key);
+}
 
 // key -> 'granted' | 'denied' | 'unknown', refreshed from
 // `web_automation_permission_status` (a no-prompt native query). Empty
@@ -2289,10 +2382,6 @@ let lastAutomationPermissionFetchAt = 0;
 // doesn't flash "Allow Automation…" during startup.
 let automationPermissionStatusReady = false;
 const AUTOMATION_PERMISSION_FETCH_MIN_MS = 2000;
-
-function browserUsesAutomation(key) {
-    return isMacOSDesktop && AUTOMATION_BROWSER_KEYS.includes(key);
-}
 
 // Pull the live per-browser Automation decision (no consent prompt) and
 // cache it by browser key. Safe to call on any platform — no-ops off
@@ -2638,6 +2727,17 @@ function migrationExtHeaderCopy(state) {
     };
 }
 
+function migrationMacCopyKey(state) {
+    const browsers = state?.browsers || lastMigrationBrowserState?.browsers || {};
+    const firefoxInstalled = !!(browsers.firefox && browsers.firefox.installed);
+    return `${getSettingsLanguage()}:${firefoxInstalled ? 1 : 0}`;
+}
+
+function invalidateMigrationMacCopyCache() {
+    lastMigrationHeaderCopyKey = '';
+    lastMigrationHowtoCopyKey = '';
+}
+
 function syncMigrationMacHowto(state) {
     if (!isMacOSDesktop) return;
     const focusLogoHtml =
@@ -2647,11 +2747,15 @@ function syncMigrationMacHowto(state) {
     const li1 = document.getElementById('migration-howto-li1');
     const li2 = document.getElementById('migration-howto-li2');
     const li3 = document.getElementById('migration-howto-li3');
-    if (li1) li1.innerHTML = tSettings('migrationExtStep1Mac');
-    if (li2) {
-        li2.innerHTML = tSettings('migrationExtStep2MacFirefox').replace('{FOCUS}', focusLogoHtml);
-        li2.classList.toggle('hidden', !firefoxInstalled);
+    const copyKey = migrationMacCopyKey(state);
+    if (copyKey !== lastMigrationHowtoCopyKey) {
+        if (li1) li1.innerHTML = tSettings('migrationExtStep1Mac');
+        if (li2) {
+            li2.innerHTML = tSettings('migrationExtStep2MacFirefox').replace('{FOCUS}', focusLogoHtml);
+        }
+        lastMigrationHowtoCopyKey = copyKey;
     }
+    if (li2) li2.classList.toggle('hidden', !firefoxInstalled);
     if (li3) li3.classList.add('hidden');
 }
 
@@ -2705,9 +2809,13 @@ function syncMigrationPostHeader(state) {
         const shieldLogo = document.getElementById('migration-post-header-shield-logo');
         const titleEl = document.getElementById('migration-post-header-title');
         const subEl = document.getElementById('migration-post-header-subtitle');
-        if (shieldLogo) shieldLogo.src = logoReddShieldUrl;
-        if (titleEl) titleEl.textContent = copy.titleHtml;
-        if (subEl) subEl.innerHTML = copy.subtitleHtml;
+        const copyKey = migrationMacCopyKey(state);
+        if (copyKey !== lastMigrationHeaderCopyKey) {
+            if (shieldLogo) shieldLogo.src = logoReddShieldUrl;
+            if (titleEl) titleEl.textContent = copy.titleHtml;
+            if (subEl) subEl.innerHTML = copy.subtitleHtml;
+            lastMigrationHeaderCopyKey = copyKey;
+        }
     }
     checklist?.classList.add('hidden');
 }
@@ -5357,15 +5465,23 @@ function updateOnboardingVisibility() {
     const main = document.getElementById('main-content');
     const showEula = !hasAcceptedEula();
     const showScreentime = isIOS && !showEula && !screentimeAuthorized;
+    const keepEulaVisibleForPendingSetup = !isIOS
+        && isFirstRunOnboardingInProgress()
+        && !migrationOnboardingActive;
+    const showEulaScreen = showEula || keepEulaVisibleForPendingSetup;
+    const blockMainUi = showEulaScreen
+        || showScreentime
+        || migrationOnboardingActive
+        || (!isIOS && isFirstRunOnboardingInProgress());
 
-    eulaOverlay?.classList.toggle('hidden', !showEula);
+    eulaOverlay?.classList.toggle('hidden', !showEulaScreen);
     screentimeOverlay?.classList.toggle('hidden', !showScreentime);
-    main?.classList.toggle('hidden', showEula || showScreentime);
+    main?.classList.toggle('hidden', blockMainUi);
 
     // Hide the BLOCKING NOW title-bar row on onboarding screens
     const nowBlockingRow = document.getElementById('now-blocking-row');
     if (nowBlockingRow) {
-        nowBlockingRow.classList.toggle('hidden', showEula || showScreentime);
+        nowBlockingRow.classList.toggle('hidden', blockMainUi);
     }
 }
 
@@ -14966,6 +15082,13 @@ const SETTINGS_TRANSLATIONS = {
         gracePeriodLabel: 'Grace period',
         gracePeriodHint: 'Seconds to re-enable before the browser closes.',
         settingsEnforcementHeading: 'Enforcement',
+        settingsBlockingMethodHeading: 'Website blocking (macOS)',
+        settingsBlockingMethodHint: 'Automation is the default. Extension mode uses ReDD Focus for instant redirects — install the extension in each browser you switch.',
+        settingsBlockingMethodAutomation: 'Automation',
+        settingsBlockingMethodExtension: 'Extension (instant)',
+        settingsBlockingMethodChrome: 'Chrome',
+        settingsBlockingMethodBrave: 'Brave',
+        settingsBlockingMethodEdge: 'Edge',
         settingsEnforcementRowLabel: 'Auto-close browser if protection stops',
         settingsEnforcementRowHintMacAutomation: 'If Automation is switched off mid-block.',
         settingsEnforcementRowHintMacFirefox: 'If Automation is switched off — or ReDD Focus is disabled in Firefox — mid-block.',
@@ -15342,7 +15465,7 @@ const SETTINGS_TRANSLATIONS = {
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Velkommen til ReDD Block',
         welcomeOnboardingSubtitle:
-            'Et open source-værktøj til at blokere de hjemmesider\nog apps, der trækker dig væk fra dit fokus.',
+            'Et open source-værktøj der blokerer distraherende hjemmesider og apps, når du har brug for at fokusere.',
         welcomeHowHeading: 'TRIN FOR AT KOMME I GANG (vi guider dig igennem det 😊)',
         welcomeStep1TitleAutomationHtml: 'Tillad {APPLE}Automatisering',
         welcomeStep1BodyAutomationHtml:
@@ -15355,7 +15478,7 @@ const SETTINGS_TRANSLATIONS = {
             'Vores {LOGO}<strong>ReDD Focus</strong>-udvidelse er det, der faktisk blokerer websites. Vi installerer den automatisk i dine browsere, hvor vi kan, og viser dig, hvad du skal gøre.',
         welcomeStep3TitleHtml: 'Vælg, hvad der skal blokeres',
         welcomeStep3BodyHtml:
-            'Vælg de websites og apps, der trækker dig væk fra opgaven, og sæt de tidspunkter, hvor de skal være uden rækkevidde. ReDD Block klarer resten.',
+            'Vælg de websites og apps, der distraherer dig, og bestem hvornår de skal være utilgængelige. ReDD Block klarer resten.',
         welcomeDemoToggleLabel: 'Se det i aktion — 30 sek.',
         welcomeDemoVideoCaption: 'Demo — blokeringslister og hvordan blokering føles',
         welcomeDemoPlayAriaLabel: 'Afspil demovideo',
@@ -15365,7 +15488,7 @@ const SETTINGS_TRANSLATIONS = {
         welcomeDemoFullscreenExitAriaLabel: 'Afslut fuld skærm',
         welcomeDemoCloseLabel: 'Luk',
         welcomeFooter1Html:
-            'Bygget af <a href="https://reddfocus.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Reduce Digital Distraction Project</a>, en non-profit, der skaber open source digitale fokusværktøjer og træning. I samarbejde med forskere ved University of Oxford og Maastricht University.',
+            'Udviklet af <a href="https://reddfocus.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Reduce Digital Distraction Project</a>, en non-profit, der bygger open source digitale fokusværktøjer og kurser. I samarbejde med forskere ved University of Oxford og Maastricht University.',
         welcomeFooter2Html:
             '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Se kildekoden på GitHub</a>.',
         welcomeOnboardingContinueBtn: 'Kom i gang',
@@ -15405,7 +15528,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationSetupAllReadyMany: '<strong>Alle dine browsere er klar.</strong> Du kan afslutte opsætningen.',
         migrationEnforcementHeadline: 'Browser-beskyttelse',
         migrationEnforcementDescMacAutomation: 'For at holde dig ansvarlig bliver din <strong>browser automatisk lukket</strong>, hvis du slår Automatisering fra under blokering.',
-        migrationEnforcementDescMacFirefox: 'For at holde dig ansvarlig bliver din <strong>browser automatisk lukket</strong>, hvis du slår Automatisering fra eller deaktiverer ReDD Focus under blokering.',
+        migrationEnforcementDescMacFirefox: 'For at holde dig selv fokuseret bliver din <strong>browser automatisk lukket</strong>, hvis du slår Automatisering fra eller deaktiverer ReDD Focus under blokering.',
         migrationEnforcementDescExtension: 'For at holde dig ansvarlig bliver din <strong>browser automatisk lukket</strong>, hvis du deaktiverer ReDD Focus under blokering.',
         migrationEnforcementDisableNote: 'Når den er slået til, kan du kun slå håndhævelse fra, når ingen blokeringer kører.',
         migrationApproveAdminPrompt: 'Godkend administratorprompt for at fortsætte …',
@@ -15549,6 +15672,13 @@ const SETTINGS_TRANSLATIONS = {
         gracePeriodLabel: 'Henstandsperiode',
         gracePeriodHint: 'Sekunder til at slå til igen, før browseren lukkes.',
         settingsEnforcementHeading: 'Håndhævelse',
+        settingsBlockingMethodHeading: 'Websiteblokering (macOS)',
+        settingsBlockingMethodHint: 'Automatisering er standard. Udvidelsestilstand bruger ReDD Focus til øjeblikkelige omdirigeringer — installer udvidelsen i hver browser, du skifter.',
+        settingsBlockingMethodAutomation: 'Automatisering',
+        settingsBlockingMethodExtension: 'Udvidelse (øjeblikkelig)',
+        settingsBlockingMethodChrome: 'Chrome',
+        settingsBlockingMethodBrave: 'Brave',
+        settingsBlockingMethodEdge: 'Edge',
         settingsEnforcementRowLabel: 'Luk browser automatisk, hvis beskyttelsen stopper',
         settingsEnforcementRowHintMacAutomation: 'Hvis Automatisering slås fra midt i en blokering.',
         settingsEnforcementRowHintMacFirefox: 'Hvis Automatisering slås fra — eller ReDD Focus deaktiveres i Firefox — midt i en blokering.',
@@ -15928,55 +16058,126 @@ const LANGUAGE_FLAG_SVG = {
     da: '<svg class="language-flag-svg" viewBox="0 0 37 28" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect width="37" height="28" fill="#C8102E" rx="2"/><rect x="13" y="0" width="4" height="28" fill="#fff"/><rect x="0" y="12" width="37" height="4" fill="#fff"/></svg>',
 };
 
-function setLanguagePickerOpen(open) {
-    const dd = document.getElementById('language-picker-dropdown');
-    const tr = document.getElementById('language-picker-trigger');
-    if (!dd || !tr) return;
-    if (open) {
-        dd.classList.remove('hidden');
-        tr.setAttribute('aria-expanded', 'true');
-    } else {
-        dd.classList.add('hidden');
-        tr.setAttribute('aria-expanded', 'false');
+const LANGUAGE_NATIVE_LABELS = {
+    en: 'English',
+    da: 'Dansk',
+};
+
+function languageNativeLabel(code) {
+    return LANGUAGE_NATIVE_LABELS[code] || LANGUAGE_NATIVE_LABELS.en;
+}
+
+const LANGUAGE_PICKER_ROOT_IDS = ['language-picker', 'welcome-language-picker'];
+
+function languagePickerElements(rootId) {
+    return {
+        picker: document.getElementById(rootId),
+        trigger: document.getElementById(`${rootId}-trigger`),
+        dropdown: document.getElementById(`${rootId}-dropdown`),
+        triggerFlag: document.getElementById(`${rootId}-trigger-flag`),
+        triggerCode: document.getElementById(`${rootId}-trigger-code`),
+        currentName: document.getElementById(`${rootId}-current-name`),
+        currentFlag: document.getElementById(`${rootId}-current-flag`),
+        switchName: document.getElementById(`${rootId}-switch-name`),
+        switchFlag: document.getElementById(`${rootId}-switch-flag`),
+        curLabel: document.getElementById(`${rootId}-current-label`),
+        swLabel: document.getElementById(`${rootId}-switch-label`),
+        switchBtn: document.getElementById(`${rootId}-switch-btn`),
+    };
+}
+
+function isAnyLanguagePickerOpen() {
+    return LANGUAGE_PICKER_ROOT_IDS.some((rootId) => {
+        const { dropdown } = languagePickerElements(rootId);
+        return dropdown && !dropdown.classList.contains('hidden');
+    });
+}
+
+function closeAllLanguagePickers() {
+    for (const rootId of LANGUAGE_PICKER_ROOT_IDS) {
+        const { dropdown, trigger } = languagePickerElements(rootId);
+        if (!dropdown || !trigger) continue;
+        dropdown.classList.add('hidden');
+        trigger.setAttribute('aria-expanded', 'false');
     }
 }
 
-function syncLanguagePickerUI() {
+function setLanguagePickerOpen(open, rootId) {
+    if (open) {
+        for (const id of LANGUAGE_PICKER_ROOT_IDS) {
+            const { dropdown, trigger } = languagePickerElements(id);
+            if (!dropdown || !trigger) continue;
+            const show = id === rootId;
+            dropdown.classList.toggle('hidden', !show);
+            trigger.setAttribute('aria-expanded', show ? 'true' : 'false');
+        }
+        return;
+    }
+    if (rootId) {
+        const { dropdown, trigger } = languagePickerElements(rootId);
+        if (!dropdown || !trigger) return;
+        dropdown.classList.add('hidden');
+        trigger.setAttribute('aria-expanded', 'false');
+        return;
+    }
+    closeAllLanguagePickers();
+}
+
+function syncLanguagePickerUIForRoot(rootId) {
     const lang = getSettingsLanguage();
     const other = lang === 'da' ? 'en' : 'da';
-    const triggerFlag = document.getElementById('language-picker-trigger-flag');
-    const triggerCode = document.getElementById('language-picker-trigger-code');
-    const currentName = document.getElementById('language-picker-current-name');
-    const currentFlag = document.getElementById('language-picker-current-flag');
-    const switchName = document.getElementById('language-picker-switch-name');
-    const switchFlag = document.getElementById('language-picker-switch-flag');
-    const curLabel = document.getElementById('language-picker-current-label');
-    const swLabel = document.getElementById('language-picker-switch-label');
+    const {
+        picker,
+        trigger,
+        triggerFlag,
+        triggerCode,
+        currentName,
+        currentFlag,
+        switchName,
+        switchFlag,
+        curLabel,
+        swLabel,
+    } = languagePickerElements(rootId);
+    if (!picker) return;
 
     if (triggerCode) {
-        triggerCode.textContent =
-            lang === 'da' ? tSettings('languageDanish') : tSettings('languageEnglish');
+        triggerCode.textContent = languageNativeLabel(lang);
     }
     if (triggerFlag) triggerFlag.innerHTML = LANGUAGE_FLAG_SVG[lang] || '';
     if (currentFlag) currentFlag.innerHTML = LANGUAGE_FLAG_SVG[lang] || '';
     if (switchFlag) switchFlag.innerHTML = LANGUAGE_FLAG_SVG[other] || '';
 
-    const curLabelText = lang === 'da' ? tSettings('languageDanish') : tSettings('languageEnglish');
-    const othLabelText = other === 'da' ? tSettings('languageDanish') : tSettings('languageEnglish');
+    const curLabelText = languageNativeLabel(lang);
+    const othLabelText = languageNativeLabel(other);
     if (currentName) currentName.textContent = curLabelText;
     if (switchName) switchName.textContent = othLabelText;
     if (curLabel) curLabel.textContent = tSettings('languagePickerCurrent');
     if (swLabel) swLabel.textContent = tSettings('languagePickerSwitch');
+    if (trigger) trigger.setAttribute('aria-label', tSettings('language'));
+}
+
+function syncLanguagePickerUI() {
+    for (const rootId of LANGUAGE_PICKER_ROOT_IDS) {
+        syncLanguagePickerUIForRoot(rootId);
+    }
+}
+
+function switchLanguageSetting() {
+    const cur = getSettingsLanguage();
+    const next = cur === 'da' ? 'en' : 'da';
+    if (!appData.settings) appData.settings = {};
+    appData.settings.language = next;
+    applySettingsLanguage();
+    saveData();
+    if (!isIOS) void refreshBehaviourBannerIfStale({ force: true });
+    closeAllLanguagePickers();
 }
 
 let languagePickerDocClickBound = false;
 
-function setupLanguagePicker() {
-    const picker = document.getElementById('language-picker');
-    const trigger = document.getElementById('language-picker-trigger');
-    const dd = document.getElementById('language-picker-dropdown');
-    const switchBtn = document.getElementById('language-picker-switch-btn');
-    if (!picker || !trigger || !dd || !switchBtn) return;
+function setupLanguagePickerForRoot(rootId) {
+    const { picker, trigger, dropdown, switchBtn } = languagePickerElements(rootId);
+    if (!picker || !trigger || !dropdown || !switchBtn) return;
     if (picker.dataset.bound === '1') return;
     picker.dataset.bound = '1';
 
@@ -15984,35 +16185,33 @@ function setupLanguagePicker() {
         e.preventDefault();
         e.stopPropagation();
         const isOpen = trigger.getAttribute('aria-expanded') === 'true';
-        setLanguagePickerOpen(!isOpen);
+        setLanguagePickerOpen(!isOpen, rootId);
     });
 
-    dd.addEventListener('click', (e) => e.stopPropagation());
+    dropdown.addEventListener('click', (e) => e.stopPropagation());
 
     switchBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        const cur = getSettingsLanguage();
-        const next = cur === 'da' ? 'en' : 'da';
-        if (!appData.settings) appData.settings = {};
-        appData.settings.language = next;
-        applySettingsLanguage();
-        saveData();
-        if (!isIOS) void refreshBehaviourBannerIfStale({ force: true });
-        setLanguagePickerOpen(false);
+        switchLanguageSetting();
     });
+}
+
+function setupLanguagePicker() {
+    for (const rootId of LANGUAGE_PICKER_ROOT_IDS) {
+        setupLanguagePickerForRoot(rootId);
+    }
 
     if (!languagePickerDocClickBound) {
         languagePickerDocClickBound = true;
         document.addEventListener('click', () => {
-            setLanguagePickerOpen(false);
+            closeAllLanguagePickers();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Escape') return;
+            if (isAnyLanguagePickerOpen()) closeAllLanguagePickers();
         });
     }
-
-    document.addEventListener('keydown', (e) => {
-        if (e.key !== 'Escape') return;
-        if (trigger.getAttribute('aria-expanded') === 'true') setLanguagePickerOpen(false);
-    });
 }
 
 /** Confirmation modals — describe typing challenge count + time estimate */
@@ -16036,6 +16235,7 @@ function formatConfirmModalOverrideTypingLine({ type, count, estimatedMinutes, r
 
 /** Static copy on the migration / extension-setup overlay — call when language changes. */
 function applyMigrationOverlayStaticCopy() {
+    invalidateMigrationMacCopyCache();
     const setHtml = (id, html) => {
         const el = document.getElementById(id);
         if (el) el.innerHTML = html;
@@ -16586,6 +16786,27 @@ function applySettingsLanguage() {
     setText('settings-uninstall-btn-label', tSettings('uninstallAppBtn'));
     setText('settings-help-label', tSettings('settingsDiagnosticsLabel'));
     setText('settings-enforcement-heading', tSettings('settingsEnforcementHeading'));
+    setText('settings-blocking-method-heading', tSettings('settingsBlockingMethodHeading'));
+    setText('settings-blocking-method-hint', tSettings('settingsBlockingMethodHint'));
+    setText('settings-blocking-method-chrome-label', tSettings('settingsBlockingMethodChrome'));
+    setText('settings-blocking-method-brave-label', tSettings('settingsBlockingMethodBrave'));
+    setText('settings-blocking-method-edge-label', tSettings('settingsBlockingMethodEdge'));
+    for (const key of MAC_CHROMIUM_BLOCKING_KEYS) {
+        const select = document.getElementById(`blocking-method-${key}`);
+        if (!select) continue;
+        const current = select.value || browserBlockingMethod(key);
+        select.innerHTML = '';
+        for (const [value, labelKey] of [
+            ['automation', 'settingsBlockingMethodAutomation'],
+            ['extension', 'settingsBlockingMethodExtension'],
+        ]) {
+            const opt = document.createElement('option');
+            opt.value = value;
+            opt.textContent = tSettings(labelKey);
+            if (value === current) opt.selected = true;
+            select.appendChild(opt);
+        }
+    }
     setText('settings-enforcement-row-label', tSettings('settingsEnforcementRowLabel'));
     void applyEnforcementDescCopy(lastMigrationBrowserState);
     setText('settings-setup-btn-label', tSettings('settingsSetupBtn'));
@@ -16707,6 +16928,7 @@ function setupTheme() {
             refreshUninstallButtonState();
             updateOverrideAllButtonVisibility();
             void wireEnforcementToggle();
+            void wireBlockingMethodSettings();
             // Set current theme selection
             if (themeSelect) {
                 const currentTheme = appData.settings?.themeMode || 'system';
@@ -17574,6 +17796,7 @@ function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) {
         for (const key of ['safari', 'chrome', 'brave', 'edge']) {
             const b = d.browsers[key];
             if (!b?.installed) continue;
+            if (key !== 'safari' && !browserUsesAutomation(key)) continue;
             const label = BROWSER_STORE_LINKS[key]?.label || key;
             const autoState = diagnosticsAutomationEntry(d, key);
             html += '<tr>';
@@ -17586,7 +17809,7 @@ function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) {
 
     // Browsers (extension)
     const extensionBrowserKeys = isMacOSDesktop
-        ? ['firefox']
+        ? ['firefox', ...MAC_CHROMIUM_BLOCKING_KEYS.filter((k) => browserBlockingMethod(k) === 'extension')]
         : ['chrome', 'brave', 'edge', 'firefox', 'safari'];
     const browsersHint = isMacOSDesktop
         ? tSettings('diagnosticsBrowsersSectionHintMac')

@@ -4707,6 +4707,25 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
     gap: 12px;
 }
 
+.welcome-onboarding-language-row {
+    display: flex;
+    justify-content: flex-end;
+    width: 100%;
+}
+
+#welcome-onboarding .language-picker {
+    width: auto;
+}
+
+#welcome-onboarding .language-picker-trigger {
+    width: auto;
+    min-width: 9.5rem;
+}
+
+#welcome-onboarding .language-picker-dropdown {
+    z-index: 110;
+}
+
 .welcome-onboarding-header {
     text-align: center;
 }
@@ -4742,7 +4761,7 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
 
 .welcome-onboarding-subtitle {
     margin: 0 auto;
-    max-width: 22em;
+    max-width: 30em;
     font-size: 14px;
     line-height: 1.45;
     color: var(--text-muted);
@@ -5485,6 +5504,34 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
 .grace-seconds-input:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+}
+
+.blocking-method-select {
+    min-width: 168px;
+    padding: 7px 10px;
+    font-size: 13px;
+    font-family: var(--font-body);
+    color: var(--text-primary);
+    background: var(--surface-raised, var(--redd-warm-grey));
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+}
+
+body.dark-mode .blocking-method-select {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.blocking-method-select:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
+#settings-blocking-method-panel .settings-section-desc {
+    margin: -4px 0 12px;
+    padding: 0 4px;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text-secondary);
 }
 
 #settings-modal .settings-grace-input-wrap {

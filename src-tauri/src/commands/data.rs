@@ -431,6 +431,7 @@ pub fn save_data(app: AppHandle, mut data: AppData) -> Result<(), String> {
 const BACKEND_MANAGED_SETTING_KEYS: &[&str] = &[
     "enforcementEnabled",
     "extensionGraceSeconds",
+    "blockingMethods",
 ];
 
 fn preserve_backend_settings(data_path: &std::path::Path, data: &mut AppData) {

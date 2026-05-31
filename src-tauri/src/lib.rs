@@ -110,6 +110,8 @@ pub mod native_host_install;
 #[cfg(not(target_os = "ios"))]
 pub mod extension_install;
 #[cfg(not(target_os = "ios"))]
+pub mod blocking_method;
+#[cfg(not(target_os = "ios"))]
 pub mod profile_scan;
 #[cfg(target_os = "macos")]
 pub mod safari_services;
@@ -829,6 +831,8 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::set_extension_grace_seconds,
         commands::get_enforcement_enabled,
         commands::set_enforcement_enabled,
+        commands::get_blocking_methods,
+        commands::set_blocking_method,
         commands::get_system_diagnostics,
         commands::onboarding_state,
         commands::check_helper_status,

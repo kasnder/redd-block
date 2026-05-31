@@ -180,6 +180,23 @@ impl BrowserKey {
         }
     }
 
+    /// Short settings key (`chrome`, `brave`, …).
+    fn setting_key(self) -> &'static str {
+        match self {
+            BrowserKey::Firefox => "firefox",
+            BrowserKey::Chrome => "chrome",
+            BrowserKey::Brave => "brave",
+            BrowserKey::Edge => "edge",
+            BrowserKey::Safari => "safari",
+        }
+    }
+
+    /// macOS: true when this browser is blocked via Automation (not extension).
+    #[cfg(target_os = "macos")]
+    fn uses_automation_on_macos(self, app: &AppHandle) -> bool {
+        crate::blocking_method::uses_automation(app, self.setting_key())
+    }
+
     fn for_status<'a>(self, r: &'a profile_scan::ScanResult) -> &'a BrowserStatus {
         match self {
             BrowserKey::Firefox => &r.firefox,
@@ -342,7 +359,13 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
         }
         #[cfg(target_os = "macos")]
         {
-            matches!(key, BrowserKey::Firefox)
+            if key.uses_automation_on_macos(app) {
+                return matches!(key, BrowserKey::Firefox);
+            }
+            matches!(
+                key,
+                BrowserKey::Firefox | BrowserKey::Chrome | BrowserKey::Brave | BrowserKey::Edge
+            )
         }
         #[cfg(not(target_os = "macos"))]
         {
@@ -615,18 +638,20 @@ fn compliance_issue(
     scan: &profile_scan::ScanResult,
     is_running: bool,
 ) -> Option<ExtensionIssue> {
-    #[cfg(target_os = "macos")]
-    {
-        if let Some(browser) = key.to_web_automation() {
-            let cached = watcher_automation_cache(app, browser);
-            if crate::web_automation::automation_denied_for_enforcement(
-                browser, cached, is_running,
-            ) {
-                return Some(ExtensionIssue::Automation);
+        #[cfg(target_os = "macos")]
+        {
+            if key.uses_automation_on_macos(app) {
+                if let Some(browser) = key.to_web_automation() {
+                    let cached = watcher_automation_cache(app, browser);
+                    if crate::web_automation::automation_denied_for_enforcement(
+                        browser, cached, is_running,
+                    ) {
+                        return Some(ExtensionIssue::Automation);
+                    }
+                }
+                return None;
             }
-            return None;
         }
-    }
     let b = key.for_status(scan);
     if default_profile_passes(b) {
         None

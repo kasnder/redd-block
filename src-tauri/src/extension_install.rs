@@ -262,6 +262,17 @@ pub fn uninstall() -> std::io::Result<()> {
 
 // ---- Chromium-family (Chrome / Brave / Edge) -------------------------------
 
+/// Drop the External Extensions install hint for one Chromium browser.
+pub fn install_chromium_hint(browser: BrowserTarget) -> std::io::Result<()> {
+    #[cfg(not(target_os = "windows"))]
+    {
+        maybe_scrub_external_uninstalls_once();
+        install_chromium(browser)
+    }
+    #[cfg(target_os = "windows")]
+    install_chromium(browser)
+}
+
 #[cfg(not(target_os = "windows"))]
 fn install_chromium(browser: BrowserTarget) -> std::io::Result<()> {
     // External Extensions hint: per-user JSON file under the browser's

@@ -83,11 +83,13 @@ pub fn web_automation_pause(state: State<WebAutomationState>) {
 /// Apple Event lock with the automation tick and must not block UI.
 #[tauri::command]
 pub async fn web_automation_permission_status(
+    app: AppHandle,
     state: State<'_, WebAutomationState>,
     launch_probe: Option<bool>,
 ) -> Result<Vec<PermissionInfo>, String> {
     use crate::web_automation::PermState;
     let launch_probe = launch_probe.unwrap_or(false);
+    let app_for_filter = app.clone();
     let cached = state
         .0
         .lock()
@@ -100,6 +102,15 @@ pub async fn web_automation_permission_status(
     let list = tauri::async_runtime::spawn_blocking(move || {
         SupportedBrowser::all()
             .into_iter()
+            .filter(|b| {
+                let key = match b {
+                    SupportedBrowser::Safari => "safari",
+                    SupportedBrowser::Chrome => "chrome",
+                    SupportedBrowser::Brave => "brave",
+                    SupportedBrowser::Edge => "edge",
+                };
+                crate::blocking_method::uses_automation(&app_for_filter, key)
+            })
             .map(|b| {
                 let cached_state = cached.as_ref().and_then(|list| {
                     list.iter().find(|i| i.browser == b).map(|i| i.state)

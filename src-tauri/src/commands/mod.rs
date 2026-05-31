@@ -17,6 +17,8 @@ pub mod grace;
 #[cfg(not(target_os = "ios"))]
 pub mod enforcement_toggle;
 #[cfg(not(target_os = "ios"))]
+mod blocking_method_cmd;
+#[cfg(not(target_os = "ios"))]
 pub mod diagnostics;
 #[cfg(not(target_os = "ios"))]
 pub mod safari_bridge;
@@ -43,6 +45,8 @@ pub use migration::*;
 pub use grace::*;
 #[cfg(not(target_os = "ios"))]
 pub use enforcement_toggle::*;
+#[cfg(not(target_os = "ios"))]
+pub use blocking_method_cmd::*;
 #[cfg(not(target_os = "ios"))]
 pub use diagnostics::*;
 #[cfg(not(target_os = "ios"))]

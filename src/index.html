@@ -179,6 +179,48 @@
              EULA. Gated by `appData.settings.welcomeOnboardingShown`. -->
         <div id="welcome-onboarding" class="onboarding-screen hidden">
             <div class="welcome-onboarding-layout">
+                <div class="welcome-onboarding-language-row">
+                    <div class="language-picker" id="welcome-language-picker">
+                        <button type="button" class="language-picker-trigger" id="welcome-language-picker-trigger"
+                            aria-expanded="false" aria-haspopup="listbox"
+                            aria-controls="welcome-language-picker-dropdown">
+                            <span class="language-picker-flag-wrap" id="welcome-language-picker-trigger-flag"
+                                aria-hidden="true"></span>
+                            <span class="language-picker-code" id="welcome-language-picker-trigger-code">English</span>
+                            <svg class="language-picker-chevron" width="16" height="16" viewBox="0 0 24 24"
+                                fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
+                                stroke-linejoin="round" aria-hidden="true">
+                                <path d="M7 10l5-4.5 5 4.5"></path>
+                                <path d="M7 14l5 4.5 5-4.5"></path>
+                            </svg>
+                        </button>
+                        <div class="language-picker-dropdown hidden" id="welcome-language-picker-dropdown" role="listbox"
+                            aria-labelledby="welcome-language-picker-trigger">
+                            <div class="language-picker-section">
+                                <div class="language-picker-section-label" id="welcome-language-picker-current-label">Current
+                                    language</div>
+                                <div class="language-picker-option language-picker-option--current"
+                                    id="welcome-language-picker-current" role="presentation">
+                                    <span class="language-picker-flag-wrap" id="welcome-language-picker-current-flag"
+                                        aria-hidden="true"></span>
+                                    <span class="language-picker-name" id="welcome-language-picker-current-name">English</span>
+                                </div>
+                            </div>
+                            <div class="language-picker-divider"></div>
+                            <div class="language-picker-section">
+                                <div class="language-picker-section-label" id="welcome-language-picker-switch-label">Switch to
+                                </div>
+                                <button type="button" class="language-picker-option language-picker-option--switch"
+                                    id="welcome-language-picker-switch-btn" role="option">
+                                    <span class="language-picker-flag-wrap" id="welcome-language-picker-switch-flag"
+                                        aria-hidden="true"></span>
+                                    <span class="language-picker-name" id="welcome-language-picker-switch-name">Dansk</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <header class="welcome-onboarding-header">
                     <div class="welcome-onboarding-title-row">
                         <img id="welcome-onboarding-shield-logo"
@@ -1460,6 +1502,48 @@
                                 </div>
                             </div>
                             <p id="grace-error" class="grace-error hidden"></p>
+                        </div>
+                        </div>
+                    </section>
+
+                    <section id="settings-blocking-method-panel" class="settings-section macos-only desktop-only">
+                        <h4 id="settings-blocking-method-heading" class="settings-section-heading">Website blocking (macOS)</h4>
+                        <p id="settings-blocking-method-hint" class="settings-section-desc">Automation is the default. Extension mode uses ReDD Focus for instant redirects — install the extension in each browser you switch.</p>
+                        <div class="settings-panel">
+                        <div class="settings-panel-rows">
+                            <div class="settings-row">
+                                <div class="settings-row-copy">
+                                    <span id="settings-blocking-method-chrome-label" class="settings-row-label">Chrome</span>
+                                </div>
+                                <div class="settings-row-control">
+                                    <select id="blocking-method-chrome" class="blocking-method-select" aria-label="Chrome blocking method">
+                                        <option value="automation">Automation</option>
+                                        <option value="extension">Extension (instant)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-copy">
+                                    <span id="settings-blocking-method-brave-label" class="settings-row-label">Brave</span>
+                                </div>
+                                <div class="settings-row-control">
+                                    <select id="blocking-method-brave" class="blocking-method-select" aria-label="Brave blocking method">
+                                        <option value="automation">Automation</option>
+                                        <option value="extension">Extension (instant)</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="settings-row">
+                                <div class="settings-row-copy">
+                                    <span id="settings-blocking-method-edge-label" class="settings-row-label">Edge</span>
+                                </div>
+                                <div class="settings-row-control">
+                                    <select id="blocking-method-edge" class="blocking-method-select" aria-label="Edge blocking method">
+                                        <option value="automation">Automation</option>
+                                        <option value="extension">Extension (instant)</option>
+                                    </select>
+                                </div>
+                            </div>
                         </div>
                         </div>
                     </section>

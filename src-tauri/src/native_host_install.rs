@@ -175,6 +175,20 @@ pub fn install() -> std::io::Result<()> {
     Ok(())
 }
 
+/// Install the native-messaging manifest for one browser. Used when the
+/// user opts into extension mode on macOS Chromium.
+pub fn install_native_host_for(browser: BrowserTarget) -> std::io::Result<()> {
+    let binary = current_binary_path().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::Other, "cannot resolve current exe")
+    })?;
+    install_one(browser, &binary)
+}
+
+/// Remove the native-messaging manifest for one browser.
+pub fn uninstall_native_host_for(browser: BrowserTarget) -> std::io::Result<()> {
+    uninstall_one(browser)
+}
+
 /// Force-write the native-messaging manifest for every supported
 /// browser, ignoring the marker. Use for the user-driven "Reinstall
 /// hints" command — they're explicitly asking us to refresh, so the

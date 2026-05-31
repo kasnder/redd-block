@@ -363,7 +363,18 @@ fn tick(
     }
     *had_active_block = blocking_active;
 
-    let running = running_supported_browsers();
+    let running = running_supported_browsers()
+        .into_iter()
+        .filter(|browser| {
+            let key = match browser {
+                SupportedBrowser::Safari => "safari",
+                SupportedBrowser::Chrome => "chrome",
+                SupportedBrowser::Brave => "brave",
+                SupportedBrowser::Edge => "edge",
+            };
+            crate::blocking_method::uses_automation(app, key)
+        })
+        .collect::<Vec<_>>();
     for browser in running {
         // Respect the denial backoff so we don't spawn osascript every
         // second only to get -1743 back. While a block is active, retry
