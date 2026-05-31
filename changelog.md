@@ -2,6 +2,30 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
+## v3.0.0
+
+- **macOS: website blocking via Automation instead of browser extensions.**
+  Safari, Chrome, Brave, and Edge are now blocked through macOS Automation
+  (Apple Events) — no ReDD Focus extension to install or keep enabled for
+  those browsers. Grant ReDD Block Automation access once per browser in
+  System Settings; the app redirects blocked URLs to a built-in block page.
+- **macOS: no Full Disk Access, App Group, or bundled Safari extension.**
+  The v2.x Safari Web Extension pipeline and cross-app data container are
+  removed. Firefox on macOS still uses the ReDD Focus extension, installed
+  manually from the in-app setup flow (same as before for Firefox-only users).
+- **macOS: Automation onboarding and enforcer.** New setup rows with
+  step-by-step guidance (including a screenshot of System Settings →
+  Automation), a one-time upgrade intro for returning users, and enforcer
+  checks that respect Automation permission — including when a browser is
+  closed. Permission probes that need to launch a browser run only on
+  explicit user actions (e.g. “Grant access”), not on background polls, so
+  force-closed browsers stay closed.
+- **Settings and uninstall polish.** Settings dialog uses sectioned cards;
+  macOS uninstall copy calls out Firefox extension cleanup where relevant.
+- **Windows unchanged.** Chrome, Brave, Edge, and Firefox still block through
+  the ReDD Focus extension and native messaging host.
+- **Version:** 3.0.0.
+
 ## v2.3.0
 
 - **Settings: language and appearance controls.** Language picker shows flags

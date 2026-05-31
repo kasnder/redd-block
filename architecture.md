@@ -1,96 +1,118 @@
 # ReDD Block Architecture Reference (macOS, Windows, iOS)
 
-> **⚠ Sections 4–9 describe the v1.x helper-daemon desktop
-> architecture and are kept as historical reference only.** The
-> current desktop runtime is the v2 extension-based design — see
-> [browser-ext-migration/V2_OVERVIEW.md](browser-ext-migration/V2_OVERVIEW.md)
-> for the condensed read,
-> [browser-ext-migration/MIGRATION_PLAN.md](browser-ext-migration/MIGRATION_PLAN.md)
-> for full rationale, and
-> [browser-ext-migration/SAFARI_COMPLIANCE.md](browser-ext-migration/SAFARI_COMPLIANCE.md)
-> for the Safari detection model specifically.
->
-> **v2 desktop runtime in three lines:**
->
-> - **Website blocking** lives in the ReDD Focus browser extension
->   (Chrome / Brave / Edge / Firefox / Safari). The Tauri app is the
->   data source: it doubles as a native-messaging host
->   (`src-tauri/src/native_host.rs`, `redd-block --native-host`) for
->   Chromium/Firefox, and bridges through the
->   `group.com.reddblock.shared` App Group container for Safari
->   (`src-tauri/src/app_group.rs` +
->   `redd-focus-web/Shared (Extension)/SafariWebExtensionHandler.swift`).
-> - **Compliance enforcer** (`src-tauri/src/enforcer.rs`) — 5 s scan
->   tick, 60 s grace (user-configurable 5–300 s), force-quits any
->   running browser whose extension is missing / disabled / not
->   allowed in private browsing. `taskkill` on Windows, sysinfo
->   SIGTERM/SIGKILL on macOS. The tick is gated on
->   `website_blocking_active` (canonical-data derivation reused from
->   the native-host payload code), so the enforcer is a no-op
->   whenever no website-blocking is currently active.
-> - **App blocking** runs in-process via
->   `src-tauri/src/app_watcher.rs` — sysinfo poll-and-kill loop
->   shared by both OSes. The earlier AppleScript NSWorkspace watcher
->   on macOS and `SetWinEventHook` path on Windows have been removed.
->
-> The privileged helper daemon is gone. No hosts-file writes on any
-> platform. No admin/UAC prompt at install time (only once at first
-> launch if v1.x residue needs cleanup).
+Technical source-of-truth for how ReDD Block works today and how earlier
+versions worked. Implementation-aligned, with file references to actual
+code paths.
 
-This is the technical architecture source-of-truth for ReDD Block.
+## How this document is organized
 
-It is intentionally detailed and implementation-aligned, with file references to actual code paths.
+| Section | What it covers |
+|---|---|
+| **[Part I — v3 (current)](#part-i--current-architecture-v3)** | Desktop runtime as shipped in v3.0+: macOS Automation blocking for Safari and Chromium browsers, extension blocking on Windows and macOS Firefox, in-process app blocking, compliance enforcer, iOS Screen Time. **Start here.** |
+| **[Part II — v2 (historical)](#part-ii--v2-architecture-historical)** | v2.0–v2.4.x desktop design: every browser blocked via the ReDD Focus extension (including Safari App Group bridge). Superseded on macOS by v3 Automation; Windows is still on this model. |
+| **[Part III — v1 (historical)](#part-iii--v1-architecture-historical)** | v1.x privileged helper daemon, `/etc/hosts` writes, helper-owned enforcement state. Removed in v2; migration code still cleans residue on upgrade. |
+
+### v3 desktop runtime in three lines
+
+- **Website blocking (macOS):** Safari, Chrome, Brave, and Edge are driven by
+  **Automation** (Apple Events) in `src-tauri/src/web_automation.rs` — blocked
+  tabs redirect to a bundled block page (`src-tauri/blocked/`). **Firefox on
+  macOS** still uses the **ReDD Focus extension** + native-messaging host
+  (`src-tauri/src/native_host.rs`). **Windows:** all supported browsers use
+  the extension + native host (unchanged from v2).
+- **Compliance enforcer** (`src-tauri/src/enforcer.rs`) — 5 s scan tick,
+  user-configurable grace (5–300 s, default 60 s), force-quits non-compliant
+  *running* browsers during active website blocks when the user has opted in.
+  On macOS, Safari/Chromium compliance = Automation TCC; Firefox/Windows =
+  extension profile scan (`src-tauri/src/profile_scan.rs`).
+- **App blocking** runs in-process via `src-tauri/src/app_watcher.rs` (sysinfo
+  poll-and-kill on both desktop OSes). **No privileged helper daemon. No
+  hosts-file writes.** v1.x cleanup runs once via
+  `src-tauri/src/commands/migration.rs`.
+
+Deeper v2 migration notes live in
+[browser-ext-migration/V2_OVERVIEW.md](browser-ext-migration/V2_OVERVIEW.md).
 
 ---
 
+# Part I — Current architecture (v3)
+
 ## 1) Scope and goals
 
-This document explains:
+This section explains the **current** runtime:
 
-- core runtime architecture on desktop and iOS,
-- state ownership and synchronization rules,
-- enforcement pipelines (websites and apps),
-- lifecycle flows (start, schedule, override, uninstall, cleanup),
-- override difficulty configuration (including max difficulty mode) and blocklist duplication,
-- diagnostics and machine-level support surfaces,
+- core architecture on desktop and iOS,
+- state ownership and synchronization,
+- website and app enforcement pipelines,
+- lifecycle flows (start, schedule, override, uninstall, v1 migration),
+- override difficulty and blocklist duplication,
+- diagnostics surfaces,
 - cross-platform differences.
 
-Primary code surfaces:
+### Primary code surfaces (v3)
 
-- `src/app.js` (frontend orchestration and UX state)
-- `src-tauri/src/commands/data.rs` (app data persistence)
-- `src-tauri/src/commands/helper.rs` (desktop helper bridge and lifecycle commands)
-- `src-tauri/src/commands/apps.rs` (desktop app picker utilities)
-- `src-tauri/src/lib.rs` (command registration and platform window setup)
-- `helper-daemon/src/main.rs` (desktop privileged enforcement engine)
-- `tauri-plugin-screentime/` (iOS blocking plugin stack): `src/commands.rs`, `src/mobile.rs` (Rust bridge), `ios/Sources/ScreentimePlugin.swift` (authorization, ManagedSettings, DeviceActivityCenter, activity picker), `ios/Sources/ScheduleData.swift` and `src-tauri/gen/apple/Shared/ScheduleData.swift` (App Group schedule payload), `src-tauri/gen/apple/ReddBlockMonitor/DeviceActivityMonitorExtension.swift` (DeviceActivityMonitor for scheduled windows).
+| Area | Files |
+|---|---|
+| Frontend orchestration | `src/app.js`, `src/index.html`, `src/styles.css` |
+| App data persistence | `src-tauri/src/commands/data.rs` |
+| Legacy command names (shim) | `src-tauri/src/commands/helper_shim.rs` |
+| macOS Automation blocking | `src-tauri/src/web_automation.rs`, `src-tauri/src/commands/web_automation.rs` |
+| Windows + macOS Firefox extension host | `src-tauri/src/native_host.rs`, `src-tauri/src/native_host_install.rs` |
+| Extension install hints | `src-tauri/src/extension_install.rs` |
+| Browser profile / extension scan | `src-tauri/src/profile_scan.rs` |
+| Compliance enforcer | `src-tauri/src/enforcer.rs`, `src-tauri/src/commands/enforcement_toggle.rs` |
+| App blocking watcher | `src-tauri/src/app_watcher.rs`, `src-tauri/src/commands/app_blocking.rs` |
+| v1.x migration / hosts cleanup | `src-tauri/src/commands/migration.rs` |
+| Uninstall | `src-tauri/src/commands/uninstall.rs` |
+| App registration / tray / startup | `src-tauri/src/lib.rs` |
+| Windows crash relaunch | `src-tauri/src/watchdog.rs` |
+| iOS Screen Time plugin | `tauri-plugin-screentime/` |
+
+There is **no** `helper-daemon/` in the repo and **no** live IPC to a
+privileged helper. Frontend calls like `start_block_via_helper` are kept for
+historical reasons and route through `helper_shim.rs` (mostly no-ops for
+website blocking; app blocking goes to `app_watcher`).
 
 ---
 
 ## 2) Runtime architecture at a glance
 
-There are two enforcement families:
+Three enforcement families:
 
-- **Desktop (macOS/Windows):** helper daemon is the privileged enforcement runtime.
-- **iOS:** Screen Time plugin/API is the enforcement runtime.
+- **Desktop macOS (websites):** in-process Automation watcher + optional
+  Firefox extension path.
+- **Desktop Windows (websites):** ReDD Focus extension + native-messaging
+  host spawned from the same binary.
+- **Desktop (apps):** in-process app watcher (both OSes).
+- **iOS:** Screen Time plugin — no helper, no extension.
 
 ```mermaid
 flowchart TD
-    userInput[UserInput_UI] --> appFrontend[AppFrontend_src_app_js]
-    appFrontend --> tauriBackend[TauriBackend_Commands]
-    tauriBackend --> platformBranch{Platform}
-    platformBranch -->|Desktop| helperIpc[IPC_to_Helper]
-    helperIpc --> helperCore[HelperDaemon_main_rs]
-    helperCore --> desktopEnforce[HostsAndAppWatcher]
-    platformBranch -->|iOS| stPlugin[ScreenTimePlugin]
-    stPlugin --> iosEnforce[ScreenTimeEnforcement]
+    ui[UserInput_src_app_js] --> tauri[TauriBackend_Commands]
+    tauri --> platform{Platform}
+    platform -->|macOS_websites| auto[web_automation_rs]
+    platform -->|macOS_Firefox| nmMac[native_host_rs]
+    platform -->|Windows_websites| nmWin[native_host_rs]
+    platform -->|Desktop_apps| watcher[app_watcher_rs]
+    platform -->|iOS| st[ScreenTimePlugin]
+    auto --> blockPage[bundled_blocked_html]
+    nmMac --> extFF[Firefox_extension]
+    nmWin --> extAll[Browser_extensions]
+    tauri --> enforcer[enforcer_rs]
+    enforcer -->|grace_force_quit| browsers[Running_browsers]
 ```
+
+**Single source of truth for “what is blocked right now” (desktop):**
+`redd-block-data.json` → `native_host::derive_payload()` computes the active
+domain set from `activeBlocks`, `schedules`, and `blocklists`. Both the
+Automation watcher and the native-messaging host re-read this file; the
+frontend writes it via `save_data` before starting or editing blocks.
 
 ---
 
 ## 3) State ownership and authority model
 
-## 3.1 App-owned state (authoring and UX)
+### 3.1 App-owned state (authoritative everywhere)
 
 Persisted via `src-tauri/src/commands/data.rs`:
 
@@ -99,123 +121,525 @@ Persisted via `src-tauri/src/commands/data.rs`:
 - `schedules`
 - `settings`
 
-Important `settings` sub-state now includes EULA acceptance:
+Important `settings` sub-state:
 
-- `eulaAcceptedRevision`
-- `eulaAcceptedAt`
+- `eulaAcceptedRevision`, `eulaAcceptedAt` — EULA gate
+- `enforcementEnabled` — opt-in for force-closing non-compliant browsers
+- `extensionGraceSeconds` — enforcer grace (5–300 s)
+- `migrationRanAtVersion` — v1.x cleanup stamp
 
-Used by `src/app.js` for:
+The frontend (`src/app.js`) owns UX state: rendering, challenges, pause/resume,
+onboarding (EULA → browser setup → iOS Screen Time auth), and command dispatch.
 
-- rendering,
-- challenge UX,
-- local schedule/block computations,
-- pause/resume state,
-- command dispatching,
-- onboarding gates (EULA, then iOS Screen Time authorization).
+**There is no separate helper-owned enforcement state in v3.** Schedule
+evaluation for website blocking happens when backends read
+`redd-block-data.json` (native host polls every 30 s for time transitions;
+Automation watcher reads every 1 s tick). App blocking state lives in the
+in-process watcher, driven by frontend commands.
 
-## 3.2 Helper-owned state (desktop enforcement authority)
+### 3.2 Desktop app-data paths
 
-Persisted via `helper-daemon/src/main.rs` (`helper-state.json`):
-
-- `manual_blocks`
-- `blocked_apps`
-- `schedules`
-- `keepBlockingOnUninstall`
-
-This state is authoritative for desktop enforcement decisions and merging behavior.
-
-## 3.3 iOS enforcement state
-
-iOS does not use helper/hosts. Enforcement is delegated to Screen Time API through plugin calls from `src/app.js` (`plugin:screentime|...` commands).
-
-## 3.4 Desktop app-data authority and path selection
-
-Desktop app data now has both:
-
-- legacy per-user locations, and
-- a shared machine-level canonical location.
-
-Current canonical shared app-data paths:
+Canonical shared paths (preferred once activated):
 
 - macOS: `/var/lib/redd-block/redd-block-data.json`
 - Windows: `%PROGRAMDATA%\ReDD Block\redd-block-data.json`
 
-Legacy per-user app-data paths:
+Legacy per-user paths (used on fresh install until shared dir is writable /
+exists):
 
 - macOS: `~/Library/Application Support/com.redd.block/redd-block-data.json`
 - Windows: `%APPDATA%\com.redd.block\redd-block-data.json`
 
-Canonical path selection in `src-tauri/src/commands/data.rs` is based on:
+Selection logic in `data.rs` (`should_use_shared_data_path`) keeps the path
+stable across reinstall so data does not silently flip locations.
 
-- whether shared app data already exists,
-- whether shared helper state already exists,
-- whether the shared directory is writable.
+Legacy v1 helper state may still exist at
+`/var/lib/redd-block/helper-state.json` (macOS) or
+`%PROGRAMDATA%\ReDD Block\helper-state.json` (Windows) until migration removes
+it — it is **not** read by v3 enforcement.
 
-Once the shared location becomes active, the app continues to prefer it so uninstall/reinstall flows do not silently flip storage location.
+### 3.3 iOS enforcement state
 
-EULA acceptance is stored in the same canonical app-data file as the rest of app-owned state. This means:
+iOS delegates to Screen Time APIs via `tauri-plugin-screentime`. No helper,
+no extension, no shared desktop data file. Schedule payloads and activity-picker
+selection live in the iOS App Group used by the plugin stack.
 
-- desktop EULA acceptance persists across normal updates and reinstall-overwrites as long as the canonical app-data file remains
-- EULA acceptance does **not** live in helper state
-- helper uninstall/reinstall is not the source of truth for EULA completion
+### 3.4 EULA gate
+
+Revision-based model in `src/app.js`:
+
+- `CURRENT_EULA_REVISION` defines the required revision
+- compliant when `eulaAcceptedRevision === CURRENT_EULA_REVISION`
+- local dev can force-show EULA without clearing persisted acceptance
+- legacy `eulaAccepted: true` migrates to `eulaAcceptedRevision = 1`
+
+macOS Automation (`web_automation_start`) and other post-acceptance startup
+hooks run only after EULA acceptance.
+
+---
+
+## 4) macOS website blocking (Automation)
+
+Implemented in `src-tauri/src/web_automation.rs`.
+
+### 4.1 Supported browsers
+
+| Browser | Mechanism | Extension required? |
+|---|---|---|
+| Safari | Apple Events (`tell application "Safari"`) | No |
+| Chrome | Apple Events (`tell application "Google Chrome"`) | No |
+| Brave | Apple Events (`tell application "Brave Browser"`) | No |
+| Edge | Apple Events (`tell application "Microsoft Edge"`) | No |
+| Firefox | ReDD Focus extension + `--native-host` | Yes (manual install) |
+
+Firefox has no usable AppleScript dictionary for tab URL control, so it stays
+on the v2 extension path.
+
+### 4.2 How blocking works
+
+1. After EULA acceptance, `commands/web_automation.rs` starts the watcher
+   (idempotent). It resolves the bundled block page:
+   `<resources>/blocked/blocked.html` → `file://` URL.
+2. Every **1 s** tick, for each **running** supported browser (main process
+   detected via sysinfo):
+   - read active blocked domains from `native_host::derive_payload()`,
+   - if empty, restore any tabs still parked on the block page,
+   - if non-empty, AppleScript-reads open tab URLs; matching tabs get
+     `location` set to the block page with the same query params the
+     extension uses (`url`, `blocklist`, etc.).
+3. All Apple Events serialize through a global mutex — concurrent osascript
+   from the watcher, enforcer, and Tauri commands can deadlock macOS's
+   AppleEvent manager.
+
+### 4.3 Automation permission (TCC)
+
+Requires entitlement `com.apple.security.automation.apple-events`
+(`src-tauri/entitlements.macos.plist`). First Apple Event to each browser
+surfaces the system consent dialog.
+
+- Denied → osascript returns `-1743`; UI gets
+  `web-automation://permission-needed`.
+- While denied, re-probes are rate-limited (30 s idle, 5 s during an active
+  block) instead of hammering every tick.
+- **Launch probes** (to detect grant when the browser is closed — TCC returns
+  `-600` if the target app is not running) run only on **explicit user
+  actions** (`launchProbe` from Grant access / Open Automation settings),
+  not on background UI polls — avoids relaunching a force-closed browser.
+
+Commands: `web_automation_permission_status`, `web_automation_trigger_prompt`,
+`web_automation_open_settings` in `commands/web_automation.rs`.
+
+### 4.4 Block page
+
+Same UX as the extension block page, bundled under `src-tauri/blocked/` and
+staged into the app resources at build time (`tauri.conf.json` →
+`bundle.resources`). No App Group, no Safari Web Extension, no Full Disk Access
+for website blocking on macOS.
 
 ```mermaid
 flowchart TD
-    launch[AppLaunch] --> loadData[LoadCanonicalAppData]
-    loadData --> devCheck{LocalDevRun}
-    devCheck -->|Yes| forceShow[forceShowEulaThisSession]
-    devCheck -->|No| normalRun[UseSavedEulaState]
-    forceShow --> gateDecision{needsEula}
-    normalRun --> gateDecision
-    gateDecision -->|Yes| showEula[ShowEulaOverlay]
-    gateDecision -->|No| continueStartup[ContinueStartup]
-    showEula --> accept[UserAcceptsEula]
-    accept --> saveRevision[SaveAcceptedRevisionAndTimestamp]
-    saveRevision --> continueStartup
-```
-
-## 3.5 EULA state model and migration
-
-The app uses a revision-based EULA model:
-
-- `CURRENT_EULA_REVISION` is defined in `src/app.js`
-- the user is considered compliant when saved `eulaAcceptedRevision === CURRENT_EULA_REVISION`
-- local dev force-shows the EULA via runtime override rather than by deleting persisted acceptance
-
-Migration rules:
-
-- legacy installs with `eulaAccepted: true` are promoted to `eulaAcceptedRevision = 1`
-- if legacy `eulaAcceptedAt` exists, it is copied forward
-- normal app upgrades do not re-prompt users unless `CURRENT_EULA_REVISION` changes
-
-This separates three independent concepts:
-
-- app version
-- helper daemon version
-- legal revision
-
-Only the legal revision should control whether the EULA is shown again.
-
-```mermaid
-flowchart TD
-    loadData[load_data] --> iosCheck{Is_iOS}
-    iosCheck -->|Yes| iosPath[Use_iOS_App_Path]
-    iosCheck -->|No| sharedDecision{should_use_shared_data_path}
-    sharedDecision -->|Yes| sharedPath[Use_Shared_Desktop_Path]
-    sharedDecision -->|No| perUserPath[Use_Legacy_Per_User_Path]
-    sharedPath --> migrateCheck[find_per_user_data]
-    perUserPath --> migrateCheck
-    migrateCheck --> sourceDecision{Legacy_Source_Found_And_Different}
-    sourceDecision -->|Yes| migrate[Copy_Into_Canonical_Path]
-    sourceDecision -->|No| readPath[Read_Canonical_Path]
-    migrate --> readPath
+    tick[Every_1s_tick] --> running{Browser_running}
+    running -->|No| skip[Skip_browser]
+    running -->|Yes| domains[derive_payload_domains]
+    domains --> empty{Any_domains}
+    empty -->|No| restore[Restore_tabs_on_block_page]
+    empty -->|Yes| script[AppleScript_read_tabs]
+    script --> match{URL_on_blocklist}
+    match -->|Yes| redirect[Set_tab_to_file_block_page]
+    match -->|No| done[Leave_tab]
 ```
 
 ---
 
-## 4) Desktop helper internals
+## 5) Windows website blocking (extension + native host)
 
-Core constants and command model in `helper-daemon/src/main.rs`:
+Unchanged from v2. All supported browsers (Chrome, Brave, Edge, Firefox) use
+the **ReDD Focus** extension.
+
+### 5.1 Native-messaging host
+
+The main binary doubles as the host: `redd-block --native-host` (see
+`src-tauri/src/main.rs`). `native_host_install.rs` writes per-browser
+manifests pointing at the installed binary.
+
+Protocol (`native_host.rs`):
+
+- 4-byte little-endian length + UTF-8 JSON per message
+- on connect: read `redd-block-data.json`, derive domains, push
+  `{ "blocklist": [...] }`
+- re-push on file change (`notify`) and every 30 s (schedule time transitions)
+- empty list when nothing active → extension clears blocking
+
+### 5.2 Extension install
+
+`extension_install.rs` can auto-install or hint on Windows where supported.
+The extension performs the actual page redirect to `blocked.html` (shipped
+with the extension assets, not the Automation bundle path).
+
+### 5.3 Windows watchdog
+
+`watchdog.rs` registers a scheduled task to relaunch the app ~1 minute after
+crash/kill so schedules do not silently lapse.
+
+---
+
+## 6) macOS Firefox (extension path)
+
+Firefox on macOS follows the Windows-style extension + native-messaging model:
+
+- manifest in `~/Library/Application Support/Mozilla/NativeMessagingHosts/`
+- extension installed **manually** from the Firefox Add-ons store (no auto-install)
+- `profile_scan.rs` scans the Firefox profile for extension presence,
+  enabled state, and private-browsing allowance
+- enforcer treats Firefox like a Windows browser (extension compliance, not
+  Automation TCC)
+
+---
+
+## 7) Compliance enforcer
+
+`src-tauri/src/enforcer.rs` — in-process loop, **5 s** tick.
+
+### 7.1 When it runs
+
+The enforcer is active only when **all** of:
+
+1. `website_blocking_active()` — `derive_payload()` returns a non-empty domain
+   set (respects pause, schedule windows, one-off expiry),
+2. `settings.enforcementEnabled === true` — user opt-in (default **off**),
+3. at least one enforced browser process is **running**.
+
+If no website block is active, the tick is a no-op and in-flight grace timers
+are cleared — a misconfigured extension outside a block is not policed.
+
+### 7.2 Compliance signal by browser
+
+| Platform | Browser | Compliance check |
+|---|---|---|
+| macOS | Safari, Chrome, Brave, Edge | Automation permission (`web_automation`) |
+| macOS | Firefox | Extension profile scan |
+| Windows | All | Extension profile scan |
+
+On macOS, profile directories for Chromium/Safari are **not** scanned during
+enforcement (avoids Sequoia “access data from other apps” prompts for browsers
+already on the Automation path).
+
+### 7.3 Grace and force-quit
+
+- Grace period: `settings.extensionGraceSeconds` (default 60 s, clamped 5–300 s)
+- Emits `enforcer://grace-update` with countdown; UI shows persistent banner
+- On expiry: SIGTERM then SIGKILL after 10 s (`taskkill` on Windows)
+- Emits `enforcer://browser-closed` when quit completes
+- Issue types include `ExtensionIssue::Automation` for macOS Safari/Chromium
+
+---
+
+## 8) App blocking watcher
+
+`src-tauri/src/app_watcher.rs` — in-process, **1 s** poll via sysinfo.
+
+Per blocked-app PID state machine:
+
+1. **AwaitingUserAck** — show always-on-top “Let’s go!” warning; no quit yet
+2. **PreQuit** — user clicked “Let’s go!”; 30 s to save and quit manually
+3. **PostQuit** — polite quit sent (`NSRunningApplication terminate` / Windows
+   `taskkill` without `/F`)
+4. **SIGKILL** — 10 s after polite quit if PID still alive
+
+Protected apps (ReDD Block itself, Finder, shell processes) are never targeted.
+Schedule and manual app lists merge in the frontend; `set_blocked_apps_via_helper`
+(shim) forwards to `app_blocking::set_blocked_apps`.
+
+macOS warning overlay uses a custom `MainPanel` NSPanel (`lib.rs`) so the
+countdown can float over third-party fullscreen Spaces without stealing focus.
+
+---
+
+## 9) One-off blocks and schedules
+
+### 9.1 Data model
+
+- **One-off blocks:** `activeBlocks` in app data, with `endTime`, pause fields
+- **Schedules:** `schedules` array with segments (day set, start/end time),
+  linked blocklists, pause fields
+
+### 9.2 How enforcement picks up changes
+
+1. Frontend computes intent and calls `save_data`.
+2. Legacy shims acknowledge (`start_block_via_helper`, `set_schedules_via_helper`
+   — no separate daemon to sync to).
+3. Backends re-read canonical data:
+   - Automation watcher: every tick
+   - Native host: on connect, file notify, 30 s poll
+   - App watcher: on `set_blocked_apps` and each poll
+   - Enforcer: every 5 s via `derive_payload`
+
+### 9.3 Pause / resume
+
+Pause fields live in app data. While paused, domains/apps from that source are
+excluded from `derive_payload` and app-watcher effective sets. Schedule pause
+can suppress upcoming segments until pause end or manual resume.
+
+### 9.4 Merge semantics
+
+Effective website blocking is the union of active one-off and currently active
+schedule segments. Shared domains stay blocked while any source is active.
+`hasAnyEnforcedBlocks()` in `src/app.js` gates override-all, uninstall prompts,
+and similar UX.
+
+---
+
+## 10) Override architecture
+
+Frontend challenge UX in `src/app.js`. Clearing a block updates app data and
+relies on backends to observe the file change — no helper IPC.
+
+### 10.1 Override difficulty and max difficulty mode
+
+Persisted on each blocklist as `overrideDifficulty`:
+
+- `type`: `random-words` | `gibberish` | `custom`
+- `count`, `customText`, `maxDifficulty`, `countBeforeMax`, `typeBeforeMax`
+
+Max difficulty locks random types to 7500 (words) or 5000 (gibberish) chars.
+
+### 10.2 Blocklist duplication
+
+`duplicateBlocklist(id)` copies blocklist + schedule with new ids; duplicate is
+never active. Naming: “X” → “X copy” → “X copy 2” …
+
+---
+
+## 11) Lifecycle flows
+
+### 11.1 Startup (desktop)
+
+1. Load canonical app data (`data.rs`)
+2. Run v1 migration if needed (`migration.rs`) — hosts cleanup + legacy helper
+   removal; may prompt once for admin/UAC
+3. Register tray, enforcer, app watcher, native host manifests
+4. macOS: start Automation watcher after EULA (`web_automation` auto-start)
+5. Windows: ensure watchdog task; reconcile launch-at-login (release builds only)
+6. Frontend: EULA gate → browser setup (Automation rows + Firefox extension)
+
+`check_helper_status()` always reports ready — the app **is** the runtime.
+
+### 11.2 App close vs quit
+
+Closing the window hides to tray; **does not** stop enforcer, Automation watcher,
+app watcher, or native-host child processes. Only tray **Quit** sets
+`ALLOW_EXIT` and terminates the process.
+
+**macOS Dock / menu bar:** activation policy flips between Regular (window open:
+Dock + menu bar) and Accessory (hidden: tray only). Enforcer and watchers keep
+running regardless.
+
+### 11.3 Uninstall
+
+- macOS: modern `NSFileManager.trashItemAtURL` path first; legacy script fallback
+- Removes native-messaging manifests, legacy helper artifacts if present
+- **Keep blocking after uninstall** removed in v2 — uninstall stops blocking
+- Firefox extension on macOS may need manual removal (called out in UI)
+
+### 11.4 v1.x migration
+
+`migration.rs` on first launch after upgrade from v1.x:
+
+- detect hosts markers or legacy daemon install
+- one elevated script: backup hosts → strip ReDD markers → flush DNS → remove
+  launchd/task + helper binary + `/var/lib/redd-block` → stamp
+  `migrationRanAtVersion`
+- idempotent and retryable; `migration_pending` banner if user cancels elevation
+
+---
+
+## 12) iOS architecture
+
+iOS does not use Automation, extensions, or a helper daemon. Enforcement is
+Apple Screen Time (FamilyControls, ManagedSettings, DeviceActivity) via
+`tauri-plugin-screentime`.
+
+### 12.1 Runtime model
+
+- Plugin commands from `src/app.js` when `isIOS`
+- Two `ManagedSettingsStore` instances: default (manual blocks) and named
+  `"schedule"` (DeviceActivityMonitor extension)
+- Activity picker selection and schedule payloads in iOS App Group storage
+- 50-domain cap per store; authorization required before blocking
+
+### 12.2 Flows
+
+- **Manual block:** authorize → plugin applies domains/apps → update activeBlocks
+- **Schedules:** `DeviceActivityCenter` + monitor extension applies schedule
+  store at window boundaries
+- **Override:** app-side challenge only; not a system-level bypass
+
+```mermaid
+flowchart TD
+    ui[UserAction_src_app_js] --> ios{isIOS}
+    ios --> auth{Screen_Time_Authorized}
+    auth -->|No| req[request_authorization]
+    auth -->|Yes| cmd[Plugin_Command]
+    req --> cmd
+    cmd --> manual[ManagedSettingsStore_default]
+    cmd --> sched[ManagedSettingsStore_schedule_via_monitor]
+```
+
+---
+
+## 13) Data paths and persistence (v3)
+
+| Artifact | macOS | Windows | iOS |
+|---|---|---|---|
+| App data (canonical) | `/var/lib/redd-block/redd-block-data.json` | `%PROGRAMDATA%\ReDD Block\redd-block-data.json` | App sandbox |
+| App data (legacy) | `~/Library/Application Support/com.redd.block/...` | `%APPDATA%\com.redd.block\...` | — |
+| Bundled block page | Inside `.app` Resources | Inside install dir | — |
+| Native host manifests | `~/Library/Application Support/<vendor>/NativeMessagingHosts/` | `HKCU\Software\<vendor>\...\NativeMessagingHosts\` | — |
+| Legacy helper state (v1 residue) | `/var/lib/redd-block/helper-state.json` | `%PROGRAMDATA%\ReDD Block\helper-state.json` | — |
+| Legacy hosts backup (v1 residue) | `/etc/hosts.redd-backup` | `...\etc\hosts.redd-backup` | — |
+
+---
+
+## 14) Diagnostics
+
+`openDiagnosticsModal()` in `src/app.js` → backend diagnostics commands in
+`src-tauri/src/commands/diagnostics.rs`.
+
+Desktop surfaces include:
+
+- app version and backend mode (`automation` on macOS, `extension` on Windows)
+- Automation permission status per browser (macOS)
+- extension scan summary (Firefox on macOS; all browsers on Windows)
+- hosts file contents (should be clean post-migration)
+- relevant paths and logs
+
+`get_helper_diagnostics()` (shim) returns app version + backend label — not
+legacy helper daemon status.
+
+---
+
+## 15) Safety mechanisms (v3)
+
+- Protected domain filtering in frontend (`PROTECTED_DOMAINS`) and payload derivation
+- Protected app filtering in app watcher
+- Apple Event serialization mutex (macOS Automation)
+- osascript timeout (8 s) so consent dialogs cannot block the watcher indefinitely
+- Enforcer gated on active website blocks + explicit user opt-in
+- Enforcer scans only **running** browsers
+- v1 migration: hosts backup + validation before strip
+- Localhost validity checks in migration scripts
+
+---
+
+## 16) Known constraints (v3)
+
+- Automation requires per-browser grant; denied grant blocks redirects until fixed
+- TCC cannot report Automation grant for a **closed** browser without launching it
+- Browser cache may delay visible redirect after a block starts
+- Firefox on macOS is manual-install only
+- Schedule boundary effects are tick-bounded (1 s Automation, 30 s native host, 5 s enforcer)
+- `tauri dev` does not rewrite launch-at-login (release builds only)
+- iOS behavior must not be reasoned about through the desktop Automation/extension model
+- Windows native host and Automation watcher share one canonical data file — path must remain stable
+
+---
+
+# Part II — v2 architecture (historical)
+
+> **Status:** Superseded on **macOS** by v3 Automation (v3.0+). **Windows**
+> still matches this model. Kept for upgrade context and git archaeology.
+
+v2 (v2.0 – v2.4.x) replaced the v1 helper daemon with an **extension-first**
+desktop design: no `/etc/hosts` writes, no privileged helper process, no admin
+prompt at install (except one-time v1 cleanup).
+
+## What v2 did
+
+| Concern | v2 approach |
+|---|---|
+| Website blocking | ReDD Focus extension in **every** supported browser |
+| Chromium / Firefox transport | Native messaging — same binary as `--native-host` |
+| Safari transport | App Group container (`group.com.reddblock.shared`) + bundled Safari Web Extension + `SafariWebExtensionHandler.swift` |
+| Safari compliance | 15 s extension heartbeat into App Group; `profile_scan` + enforcer |
+| App blocking | In-process `app_watcher.rs` (same as v3) |
+| Enforcer | Extension scan for **all** browsers on both OSes |
+| macOS FDA | Required for reliable Safari/extension profile reads in some builds |
+| Data model | Same `redd-block-data.json` — upgrades preserve blocklists/schedules |
+
+## v2 module map (removed or narrowed in v3)
+
+```
+ReDD Block app (Tauri)
+ ├─ native_host.rs          ─ stdio host (Chromium/Firefox; Windows all)
+ ├─ app_group.rs             ─ Safari App Group bridge [REMOVED in v3]
+ ├─ redd-focus-web/         ─ vendored Safari extension bundle [REMOVED in v3]
+ ├─ profile_scan.rs          ─ extension state from disk
+ ├─ enforcer.rs              ─ force-quit non-compliant browsers
+ ├─ app_watcher.rs           ─ app blocking
+ └─ commands/migration.rs    ─ v1 cleanup [still present]
+```
+
+## v2 communication transports
+
+| Browser | Transport |
+|---|---|
+| Chrome, Brave, Edge | Native messaging (stdio) |
+| Firefox | Native messaging (stdio) |
+| Safari (macOS) | App Group shared volume + Web Extension handler |
+
+## What v3 changed on macOS
+
+| v2 | v3 |
+|---|---|
+| Safari + Chromium need ReDD Focus extension | Safari + Chromium use Automation; extension not required |
+| Safari App Group + heartbeat | Removed |
+| Bundled Safari extension build pipeline | Removed; block page bundled in `src-tauri/blocked/` |
+| Full Disk Access for profile scans | Not required for Safari/Chromium website blocking |
+| Enforcer scans all browser profiles | Enforcer scans Firefox profile only; Safari/Chromium use Automation TCC |
+| Firefox auto-install hints on macOS | Manual install only |
+
+Windows and macOS Firefox in v3 still match the v2 extension column.
+
+Further detail:
+[browser-ext-migration/V2_OVERVIEW.md](browser-ext-migration/V2_OVERVIEW.md),
+[MIGRATION_PLAN.md](browser-ext-migration/MIGRATION_PLAN.md),
+[SAFARI_COMPLIANCE.md](browser-ext-migration/SAFARI_COMPLIANCE.md).
+
+---
+
+# Part III — v1 architecture (historical)
+
+> **Status:** Removed in v2. No v3 runtime code talks to the helper daemon.
+> `commands/migration.rs` and macOS `.pkg` / Windows installer scripts may
+> still **delete** leftover v1 artifacts on disk. The `helper-daemon/` source
+> tree is no longer in the repository.
+
+v1.x (through v1.1.x) used a **privileged helper daemon** separate from the
+Tauri UI. The helper owned enforcement state, wrote the system **hosts file**
+for website blocking, and ran platform-specific app watchers.
+
+## v1 runtime at a glance
+
+```mermaid
+flowchart TD
+    ui[AppFrontend] --> tauri[Tauri_Commands_helper_rs]
+    tauri --> ipc[IPC_to_Helper]
+    ipc --> daemon[HelperDaemon]
+    daemon --> hosts[etc_hosts_writes]
+    daemon --> appWatch[AppWatcher_AppleScript_or_WinEventHook]
+```
+
+- **Desktop enforcement authority:** helper (`helper-state.json`)
+- **App authority:** `redd-block-data.json` (UX + intent)
+- **Website blocking:** DNS-level via `/etc/hosts` (macOS) or Windows hosts
+- **Install:** required admin/UAC for helper registration
+
+Primary historical code lived in `helper-daemon/src/main.rs` and
+`src-tauri/src/commands/helper.rs` (since replaced by `helper_shim.rs`).
+
+## v1 helper internals
+
+Core constants in the helper:
 
 - hosts markers:
   - `# === BEGIN REDD BLOCK (reddfocus.org) ===`
@@ -223,800 +647,72 @@ Core constants and command model in `helper-daemon/src/main.rs`:
 - hosts path:
   - macOS: `/etc/hosts`
   - Windows: `C:\Windows\System32\drivers\etc\hosts`
-- IPC command enum includes:
-  - `start-block`, `clear-block`, `set-schedules`, `set-blocked-apps`,
-  - `set-keep-blocking-on-uninstall`, `restore-hosts`, `uninstall`, `ping`, `get-version`, `get-status`.
+- IPC commands: `start-block`, `clear-block`, `set-schedules`,
+  `set-blocked-apps`, `set-keep-blocking-on-uninstall`, `restore-hosts`,
+  `uninstall`, `ping`, `get-version`, `get-status`
 
----
+### Website blocking pipeline (v1)
 
-## 5) Website blocking pipeline (desktop, technical)
-
-## 5.1 End-to-end command path
-
-For desktop, website enforcement prefers the helper path whenever the helper is ready:
-
-1. `src/app.js` computes current desired blocked-domain state.
-2. Tauri commands in `src-tauri/src/commands/helper.rs` send JSON IPC (`start-block`, `clear-block`, `set-schedules`, `restore-hosts`).
-3. Helper `handle_command()` (`helper-daemon/src/main.rs`) updates authoritative state.
-4. Helper calls `sync_hosts_file()` to rebuild effective domains and write hosts.
-5. Helper calls `flush_dns_cache()`.
-
-If the helper is not ready, desktop can still use fallback paths in limited cases, but helper-owned enforcement is the preferred architecture.
+1. App computed desired blocked domains
+2. Tauri sent JSON IPC to helper
+3. Helper updated `manual_blocks` / schedule state in `helper-state.json`
+4. Helper `sync_hosts_file()` merged manual + schedule domains
+5. Helper wrote hosts (with backup/rollback safety) and flushed DNS
 
 ```mermaid
 flowchart TD
-    uiIntent[UI_BlockingIntent] --> appDecision[App_Computes_Effective_Intent]
-    appDecision --> readyCheck{Helper_Ready}
-    readyCheck -->|Yes| tauriCmd[Tauri_Helper_Command]
-    readyCheck -->|No| fallbackPath[Fallback_Website_Path_When_Allowed]
-    tauriCmd --> helperCmd[Helper_handle_command]
-    helperCmd --> mergeDomains[ResolveEffectiveDomains]
-    mergeDomains --> hostsTransform[remove_old_section_plus_add_new]
-    hostsTransform --> hostsWrite[write_hosts_file]
-    hostsWrite --> dnsFlush[flush_dns_cache]
-    dnsFlush --> enforced[Website_Enforcement_Updated]
-    fallbackPath --> enforced
+    intent[UI_BlockingIntent] --> ready{Helper_Ready}
+    ready -->|Yes| ipc[Tauri_IPC]
+    ipc --> merge[ResolveEffectiveDomains]
+    merge --> write[write_hosts_file]
+    write --> dns[flush_dns_cache]
 ```
 
-## 5.2 Hosts transformation internals
+**Hosts safety (v1):** backup at `hosts.redd-backup`, refuse writes missing
+`localhost`, protected-domain filter, replace-not-append section semantics.
 
-Helper hosts functions in `helper-daemon/src/main.rs`:
+### App blocking (v1)
 
-- `remove_block_from_hosts(content)`:
-  - removes the managed section between
-    - `# === BEGIN REDD BLOCK (reddfocus.org) ===`
-    - `# === END REDD BLOCK (reddfocus.org) ===`
-  - also strips legacy markers (`# ReDD Block Start/End`).
+Helper-owned watcher:
 
-- `add_block_to_hosts(content, domains)`:
-  - first calls `remove_block_from_hosts` (replace-not-append semantics),
-  - sanitizes each domain:
-    - strips `https://`/`http://`,
-    - strips URL paths,
-    - lowercases,
-  - skips protected domains via `is_protected_domain`,
-  - writes both IPv4 and IPv6 entries:
-    - `0.0.0.0 domain`, `0.0.0.0 www.domain`,
-    - `:: domain`, `:: www.domain`.
+- **macOS:** AppleScript `NSWorkspace` notifications + periodic foreground check
+- **Windows:** `SetWinEventHook` on foreground/minimize events → force-minimize
 
-- `sync_hosts_file(state, schedule_state)`:
-  - computes union set from active manual blocks and active schedule domains,
-  - deduplicates via set semantics,
-  - writes final rendered hosts content.
+Schedule app activation evaluated in helper every **30 s**; manual app state
+persisted helper-side.
 
-## 5.3 Write safety and rollback mechanics
+### v1 helper-owned state
 
-`write_hosts_file(content)` enforces multiple hard safety checks:
+`/var/lib/redd-block/helper-state.json` (macOS) or
+`%PROGRAMDATA%\ReDD Block\helper-state.json` (Windows):
 
-- refuses writes that omit `localhost` entry,
-- on unsafe content:
-  - attempts `restore_hosts_from_backup()`,
-  - if restore fails, writes a minimal valid hosts file as last resort.
+- `manual_blocks`, `blocked_apps`, `schedules`, `keepBlockingOnUninstall`
 
-Backup mechanics:
+Pause fields synced from app → helper; helper excluded paused sources from
+effective hosts/app sets.
 
-- `ensure_backup_exists()` creates `hosts.redd-backup` on first write,
-- backup is cleaned of managed block entries before saving,
-- `restore_hosts_from_backup()` validates backup still contains `localhost`.
+### v1 lifecycle
 
-## 5.4 Platform-specific write strategy
+- **App close:** helper kept running (expiry loop, schedule evaluator, watcher)
+- **App uninstall:** helper `app_existence_checker()` (5 min) could self-remove
+  depending on `keepBlockingOnUninstall` and active rules
+- **Keep blocking after uninstall:** user preference (removed in v2)
 
-- **Windows**:
-  - direct write with `fs::write(HOSTS_PATH, content)`,
-  - avoids rename approach due to common lock contention from AV/DNS services.
+### v1 → v2 → v3 migration chain
 
-- **macOS**:
-  - atomic-leaning approach: write temp file then `rename`,
-  - direct-write fallback if rename fails.
-
-## 5.5 DNS flush internals
-
-`flush_dns_cache()` does per-OS commands:
-
-- macOS:
-  - `dscacheutil -flushcache`
-  - `killall -HUP mDNSResponder`
-- Windows:
-  - `ipconfig /flushdns` with hidden-window creation flags.
-
-This ensures OS resolver sees hosts changes quickly (browser cache may still delay visible behavior).
-
-## 5.6 Domain normalization and protection
-
-Both frontend and helper enforce protections:
-
-- frontend:
-  - `PROTECTED_DOMAINS` in `src/app.js`,
-  - `isProtectedDomain()`.
-- helper:
-  - protected-domain filter before hosts rendering.
-
-This defense-in-depth prevents accidental self-breakage if UI validation is bypassed.
+| Transition | What happened |
+|---|---|
+| v1 → v2 | Drop helper + hosts; move website blocking to extensions; in-process app watcher; one-time elevated cleanup |
+| v2 → v3 (macOS) | Drop Safari App Group extension path for Safari/Chromium; add Automation watcher; Firefox unchanged |
+| Any upgrade from v1 | `migration.rs` still strips hosts markers and removes daemon if detected |
 
 ---
 
-## 6) App blocking watcher pipeline (desktop, technical)
+## Document maintenance
 
-App blocking is helper-owned and independent of hosts writes.
+When changing enforcement architecture:
 
-## 6.1 Watcher lifecycle and state transitions
-
-In `helper-daemon/src/main.rs`:
-
-- `set_blocked_apps(...)` updates manual blocked app list.
-- schedule evaluator computes schedule-active apps.
-- effective blocked apps are union of manual + schedule sources.
-- `start_app_watcher()` starts background watcher if needed.
-- `stop_app_watcher()` tears down watcher when no effective apps remain.
-
-Watcher stop details:
-
-- Windows posts `WM_QUIT` to watcher thread message loop.
-- macOS kills the watcher subprocess/script and cleans temp script file.
-
-```mermaid
-flowchart TD
-    manualApps[Manual_One_Off_App_State] --> mergeApps[Merge_Manual_And_Schedule_Apps]
-    scheduleApps[Schedule_Active_App_State] --> mergeApps
-    mergeApps --> filterApps[Filter_Protected_Apps]
-    filterApps --> watcherNeed{AnyAppsBlocked}
-    watcherNeed -->|Yes| startWatcher[start_app_watcher]
-    watcherNeed -->|No| stopWatcher[stop_app_watcher]
-    startWatcher --> platformImpl{Platform}
-    platformImpl -->|macOS| macHide[HideApp_via_AppleScript]
-    platformImpl -->|Windows| winMin[MinimizeApp_via_WinEventHook]
-```
-
-## 6.2 macOS watcher internals
-
-`run_macos_app_watcher(...)`:
-
-- writes a temporary AppleScript that subscribes to:
-  - `NSWorkspaceDidLaunchApplicationNotification`,
-  - `NSWorkspaceDidActivateApplicationNotification`.
-- runs via `osascript`, reading emitted app names from stderr log output.
-- matches app names case-insensitively against blocked set.
-- debounces repeat detections (~500ms window via `last_detection` map).
-- calls `hide_app(app_name)` which executes AppleScript visibility hide.
-- includes a macOS-only periodic foreground fallback check thread (2s cadence):
-  - reads current frontmost app name,
-  - applies same blocked-app matching and debounce rules,
-  - calls `hide_app(...)` when event-driven watcher misses focus transitions.
-
-## 6.3 Windows watcher internals
-
-`run_windows_app_watcher(...)`:
-
-- installs WinEvent hook (`SetWinEventHook`) for:
-  - `EVENT_SYSTEM_FOREGROUND`,
-  - `EVENT_SYSTEM_MINIMIZEEND`.
-- runs native message loop (`GetMessageW`, `TranslateMessage`, `DispatchMessageW`).
-- callback resolves process image name from `hwnd`,
-  normalizes executable name, and compares against effective blocked-app set.
-- blocked app windows are minimized via `ShowWindow(..., SW_FORCEMINIMIZE)`.
-
-Windows performance path:
-
-- effective blocked apps are stored in shared `RwLock<Arc<Vec<String>>>` state (`EFFECTIVE_BLOCKED_APPS`),
-- callback reads cloned app lists with low contention and safer lifetime semantics.
-
-## 6.4 App protection rules
-
-Protected apps are filtered in frontend and helper:
-
-- `PROTECTED_APP_NAMES` in `src/app.js`,
-- helper-side protected-app checks.
-
-Goal: never hide/minimize ReDD Block itself.
-
-## 6.5 App blocking persistence caveat
-
-Desktop watcher persistence is robust while helper is alive, but timing semantics differ by source:
-
-- schedule app activation/deactivation is helper-evaluated (30s cadence),
-- manual app blocking state is persisted helper-side,
-- one-off app-block expiry interactions still depend on how app-side intent and helper state stay synchronized over time.
-
----
-
-## 7) One-off blocks (manual blocks)
-
-## 7.1 Data model
-
-Helper stores manual one-off blocks as `manual_blocks` with:
-
-- domains,
-- end_time,
-- blocklist_id.
-
-App-owned active blocks carry the UX/runtime state, including pause fields.
-
-## 7.2 Runtime behavior
-
-- Start path adds/updates manual block state and triggers hosts sync.
-- Expiry path runs in helper `expiry_checker()` loop (1s cadence).
-- Expired manual blocks are removed by time and persisted.
-
-This gives near-real-time end behavior for website enforcement without requiring app UI to stay open.
-
-Technical details:
-
-- start command path:
-  - frontend block start / `updateHostsFile()` flow in `src/app.js`,
-  - Tauri `start_block_via_helper(...)`,
-  - helper `IpcCommand::StartBlock` -> `start_block(...)`.
-- clear path:
-  - scoped clear by blocklist identity uses `clear_block_via_helper(blocklist_id)`,
-  - helper `clear_block(...)` mutates only targeted manual block(s),
-  - resulting domain set is recomputed through `sync_hosts_file(...)`.
-- expiry loop behavior:
-  - `expiry_checker()` runs every second,
-  - retains only blocks with `end_time > now`,
-  - on change, triggers hosts sync + state persist.
-
-## 7.3 Pause/resume architecture (one-off + schedule)
-
-Pause semantics are stateful and enforcement-driven, not UI-only.
-
-- one-off pause state lives in app data (`src/app.js`): `isPaused`, `pauseEndTime` on active blocks.
-- schedule pause state is synchronized end-to-end:
-  - frontend schedule records include pause fields,
-  - `syncSchedulesToHelper()` sends `isPaused` + `pauseEndTime`,
-  - helper schedule records persist the same fields.
-
-Enforcement behavior:
-
-- while paused:
-  - domains/apps from paused one-off and paused schedule sources are excluded from effective blocking sets,
-  - helper schedule evaluation explicitly skips paused schedules.
-- on manual resume or natural pause expiry:
-  - pause fields are cleared,
-  - app re-syncs helper schedule/manual block state,
-  - hosts and app watcher state are recomputed and re-applied.
-
-Schedule pause can be triggered even when no segment is currently active; this suppresses upcoming segment activation until pause end or manual resume.
-
-```mermaid
-flowchart TD
-    currentTime[Current_Time] --> oneOffEval[Evaluate_One_Off_Block]
-    currentTime --> scheduleEval[Evaluate_Schedule]
-    oneOffEval --> oneOffPaused{isPaused_And_Not_Expired}
-    scheduleEval --> schedulePaused{isPaused_And_Not_Expired}
-    oneOffPaused -->|Yes| oneOffSuppressed[Exclude_One_Off_From_Enforcement]
-    oneOffPaused -->|No| oneOffTime{Within_Start_End}
-    oneOffTime -->|Yes| oneOffEnforced[One_Off_Enforced]
-    oneOffTime -->|No| oneOffSuppressed
-    schedulePaused -->|Yes| scheduleSuppressed[Exclude_Schedule_From_Enforcement]
-    schedulePaused -->|No| segActive{Segment_Active_Now}
-    segActive -->|Yes| scheduleEnforced[Schedule_Enforced]
-    segActive -->|No| scheduleSuppressed
-```
-
----
-
-## 8) Scheduled blocks
-
-## 8.1 Schedule representation
-
-Helper schedule records include:
-
-- `id`, `domains`, `apps`,
-- `isPaused`, `pauseEndTime`,
-- segment list with start/end hour/minute and day set.
-
-## 8.2 Evaluator loop
-
-`schedule_evaluator()` in helper runs every 30s:
-
-- computes active schedule domains/apps from local time,
-- skips schedules paused at current time (`isPaused && pauseEndTime > now`),
-- compares with previous active set,
-- applies transitions:
-  - hosts sync when active domains changed,
-  - watcher/app updates when active apps changed.
-
-```mermaid
-flowchart TD
-    tick30s[Every30Seconds] --> readSched[ReadSchedules]
-    readSched --> pauseFilter[Skip_Paused_Schedules]
-    pauseFilter --> activeDomains[ComputeActiveScheduleDomains]
-    pauseFilter --> activeApps[ComputeActiveScheduleApps]
-    activeDomains --> domainChanged{DomainsChanged}
-    activeApps --> appsChanged{AppsChanged}
-    domainChanged -->|Yes| syncHosts[sync_hosts_file]
-    appsChanged -->|Yes| updateWatcher[StartStopWatcherAndHideApps]
-```
-
-## 8.3 Future schedule activation
-
-On desktop, helper can activate future schedule windows without app UI running, because schedule evaluation is helper-local and persistent.
-
-## 8.4 Active-now semantics
-
-App-side schedule logic in `src/app.js` is also significant:
-
-- `isScheduleSegmentActiveNow()` is used for current UI state,
-- it handles cross-midnight segments,
-- it handles all-day segments (`start == end`),
-- it is pause-aware.
-
-This is important because desktop behavior is split between:
-
-- app-authored intent and UI calculations, and
-- helper-owned persistent schedule enforcement.
-
----
-
-## 9) Merge semantics and overlap correctness
-
-Effective desktop enforcement is a composition of:
-
-- manual one-off blocks,
-- currently active schedule windows.
-
-Consequences:
-
-- shared domains remain blocked while any source is active,
-- one block override does not collapse unrelated overlapping rules,
-- one-off and schedule on same blocklist compose safely.
-
-This is a key correctness property for concurrent blocking scenarios.
-
-`hasAnyEnforcedBlocks()` exists so UI gating follows real current enforcement rather than naive "there is some state in arrays" checks.
-
-This matters for:
-
-- override-all visibility,
-- uninstall gating,
-- settings states,
-- operator messaging.
-
----
-
-## 10) Override architecture
-
-Frontend handles challenge UX (`src/app.js`) and dispatches scoped clear commands to helper.
-
-Important paths:
-
-- scoped clear uses identity-aware semantics (blocklist/target-specific),
-- override-all uses broad clear semantics intentionally,
-- helper applies state mutation + resync, preventing UI-only divergence.
-
-This keeps override behavior deterministic in multi-block situations.
-
-### 10.1 Override difficulty configuration and max difficulty mode
-
-Override difficulty (friction settings) lives on each blocklist and controls the challenge required to override a block: type (random words, random gibberish, or custom text), character count, and optional **max difficulty** lock.
-
-**Data model** (persisted in `blocklist.overrideDifficulty`):
-
-- `type`: `'random-words'` | `'gibberish'` | `'custom'`
-- `count`: number of characters (for random types) or length of custom text
-- `maxDifficulty`: boolean — when true, effective challenge is always max for the chosen random type (7500 for random-words, 5000 for gibberish)
-- `countBeforeMax`: when `maxDifficulty` is true, stored so unchecking restores this count
-- `typeBeforeMax`: when `maxDifficulty` is true, stored so unchecking restores this type
-- `customText`: used only when `type === 'custom'`
-
-**Max difficulty behavior:**
-
-- When the user checks “Max difficulty”:
-  - the dropdown is restricted to Random Words and Random Gibberish,
-  - if the current type was Custom Text, it switches to Random Words,
-  - the character count is set and locked to the max for the selected type,
-  - previous type and count are stored for restoration.
-- When the user unchecks:
-  - Custom Text is re-added to the dropdown,
-  - dropdown and count are restored to the prior stored values.
-
-**Code locations:**
-
-- UI: `src/index.html`
-- styles: `src/styles.css`
-- logic: `src/app.js`
-
-### 10.2 Blocklist duplication
-
-Blocklist duplication creates a full copy of a blocklist (and its schedule if present) with a new id and a derived name; the duplicate is never active.
-
-**Entry point:** `duplicateBlocklist(id)` in `src/app.js`.
-
-**What is copied:**
-
-- blocklist properties,
-- override settings including max-difficulty-related fields,
-- schedule if present, with a new schedule id and new `blocklistId`.
-
-**Naming semantics:**
-
-- “X” → “X copy” → “X copy 2” → “X copy 3”
-- gap-fill and content-based chain rules are implemented in `src/app.js`
-
-### 10.3 Start / schedule / reconciliation flow
-
-Desktop startup and desktop block/schedule start share one important pattern:
-
-- refresh helper status,
-- decide whether helper is ready,
-- if ready, use helper command path,
-- if not ready, choose install/update/repair modal,
-- after successful helper readiness, continue pending block or schedule work.
-
-```mermaid
-flowchart TD
-    startup[Desktop_App_Start] --> statusRefresh[refreshDesktopHelperStatus]
-    statusRefresh --> reconcileManual[Sync_Manual_Blocks_To_Helper]
-    reconcileManual --> reconcileSchedules[Sync_Schedules_To_Helper]
-    reconcileSchedules --> userAction[User_Starts_Block_Or_Schedule]
-    userAction --> readyCheck{running_And_version_ok}
-    readyCheck -->|Yes| sendCommand[Send_Helper_Command]
-    readyCheck -->|No| inspectStatus[Inspect_Installed_Running_Version]
-    inspectStatus --> modeChoice{Install_Update_Or_Repair}
-    modeChoice --> installMode[Open_Helper_Install_Modal]
-    installMode --> installRun[install_helper]
-    installRun --> finalCheck{Helper_Ready_After_Poll}
-    finalCheck -->|Yes| continuePending[Resume_Pending_Block_Or_Schedule]
-    finalCheck -->|No| notReady[Show_Not_Ready_Error]
-```
-
----
-
-## 11) Helper lifecycle and versioning (desktop)
-
-## 11.1 Install/update/repair model
-
-`src-tauri/src/commands/helper.rs` handles:
-
-- helper status checks,
-- install path and elevation flow,
-- version compatibility checks via `EXPECTED_HELPER_VERSION`,
-- reinstall/update when helper is outdated,
-- repair/reinstall when helper is installed but not running.
-
-The frontend in `src/app.js` now distinguishes three real modal states:
-
-- `install`
-- `update`
-- `repair`
-
-Current visible button labels:
-
-- `install` → `Proceed`
-- `update` → `Update Helper`
-- `repair` → `Reinstall Helper`
-
-Before starting a block, the frontend re-verifies helper readiness when it believes the helper may be available. This avoids using a stale cached helper-available state.
-
-## 11.2 Runtime persistence
-
-- macOS: launch daemon registration and privileged helper path.
-- Windows: scheduled task setup and elevated helper execution path.
-
-## 11.3 Manual helper uninstall
-
-Uninstall command path:
-
-- attempt graceful helper `uninstall` command,
-- fallback to force cleanup path if needed.
-
-Fallback cleanup now also tries to converge hosts-file cleanup rather than only removing helper artifacts.
-
-## 11.4 Desktop helper: full UI-to-helper flow (start, stop, override, install, uninstall)
-
-The flows below show the frontend (`src/app.js`), Tauri (`helper.rs`), and helper daemon (TCP on Windows, Unix socket on macOS).
-
-**Start block (desktop)**
-
-```mermaid
-flowchart TD
-    A[User_Start_Block] --> B{Helper_Ready}
-    B -->|Yes| C[start_block_via_helper]
-    B -->|No| D[check_helper_status]
-    D --> E[Show_Install_Update_Or_Repair_Modal]
-    E --> F[install_helper]
-    F --> G{Helper_Ready_After_Poll}
-    G -->|Yes| H[start_block_via_helper]
-    G -->|No| I[Show_Not_Ready_Error]
-    C --> J{Success}
-    H --> J
-    J -->|Yes| K[Persist_activeBlocks_And_Render]
-    J -->|No| L{Connection_Error}
-    L -->|Yes| M[Clear_Cached_Helper_Availability_And_Show_Friendly_Message]
-    L -->|No| N[Show_Raw_Error]
-```
-
-**Stop block / Override**
-
-```mermaid
-flowchart TD
-    A[User_Stop_Or_Override] --> B{Single_Or_Override_All}
-    B -->|Single| C[clear_block_via_helper_with_blocklist_id]
-    B -->|Override_All| D[clear_block_via_helper_or_full_cleanup_path]
-    C --> E[Helper_mutates_state]
-    D --> E
-    E --> F[sync_hosts_file_and_app_state]
-```
-
-**Helper install**
-
-```mermaid
-flowchart TD
-    A[User_Proceeds_In_Helper_Modal] --> B[install_helper]
-    B --> C[Privileged_Install_or_Update_or_Repair_Path]
-    C --> D[Poll_check_helper_status]
-    D --> E{running_And_version_ok}
-    E -->|Yes| F[helperAvailable_true]
-    E -->|No| G[Return_Not_Ready_Error]
-    F --> H[Resume_Pending_Block_Or_Schedule]
-```
-
-**Helper uninstall**
-
-```mermaid
-flowchart TD
-    A[User_Uninstall_Helper] --> B[uninstall_helper]
-    B --> C{Helper_Reachable}
-    C -->|Yes| D[Send_uninstall_IPC]
-    C -->|No| E[force_cleanup_helper]
-    D --> F{Uninstall_IPC_Succeeded}
-    F -->|Yes| G[Helper_Self_Removes]
-    F -->|No| E
-    E --> H[Attempt_restore_hosts_then_remove_helper_artifacts]
-    G --> I[Return_Success]
-    H --> I
-```
-
-**Ongoing sync to helper** (called from various flows):
-
-- `set_schedules_via_helper`
-- `set_blocked_apps_via_helper`
-- `set_keep_blocking_on_uninstall_via_helper`
-
-## 11.5 Diagnostics surface
-
-Desktop diagnostics now expose:
-
-- helper status (`installed`, `running`, `version`, `version_ok`)
-- expected helper version
-- hosts file contents
-- helper state file contents
-- relevant artifact paths
-- helper log tail
-- install log tail where available
-
-The UI path is `openDiagnosticsModal()` in `src/app.js`.
-
-The backend path is `get_helper_diagnostics()` in `src-tauri/src/commands/helper.rs`.
-
-This is the preferred surface for deep machine-level troubleshooting.
-
----
-
-## 12) App close vs app uninstall semantics (desktop)
-
-## 12.1 App close
-
-Closing app window does not stop helper runtime. Helper loops continue:
-
-- expiry,
-- schedule evaluation,
-- app watcher.
-
-### 12.1.1 macOS Dock + menu bar lifecycle
-
-The macOS app flips its `NSApp` activation policy at runtime so it
-behaves like a hybrid between a standard foreground app and a
-menu-bar utility (mirroring Cold Turkey Blocker's UX):
-
-- window visible → `NSApplicationActivationPolicyRegular` (Dock icon
-  present, app name in the global menu bar);
-- window hidden → `NSApplicationActivationPolicyAccessory` (no Dock
-  icon, no global menu bar; only the tray icon represents the app).
-
-Transitions are wired up at every show/hide entry point:
-
-- launch with `--autostart` boots straight into Accessory; a normal
-  launch boots into Regular,
-- `WindowEvent::CloseRequested` (red X / Cmd-W) → hide + Accessory,
-- `applicationShouldTerminate:` (Cmd-Q intercepted by
-  `install_terminate_guard`) → `[NSApp hide:]` + Accessory,
-- the JS title-bar close button calls the
-  `hide_main_window` Tauri command, which marshals the hide +
-  Accessory flip onto the AppKit main thread,
-- tray-icon click, "Reopen Main Window" menu item, dock-icon click
-  (`RunEvent::Reopen`), and the enforcer's `reveal_app` all promote
-  back to Regular before showing the window.
-
-The enforcer / app-watcher / native messaging host keep running the
-whole time; the activation policy is purely a presentation toggle.
-
-## 12.2 App uninstall/removal
-
-Helper `app_existence_checker()` (5-minute cadence) decides cleanup based on:
-
-- app presence,
-- shared app-data presence,
-- `keepBlockingOnUninstall` (helper-owned preference),
-- whether active/configured enforcement state exists.
-
-Current implementation specifics (`helper-daemon/src/main.rs`):
-
-- `check_app_install_state()` returns:
-  - `Detected`
-  - `NotDetectedButSharedDataPresent`
-  - `NotDetected`
-- the helper is intentionally conservative when shared app data still exists
-- keep-blocking preference is read from helper state and defaults to `true` when absent
-- active-manual check uses time-based predicate (`end_time > now`), not simple non-empty check.
-
-```mermaid
-flowchart TD
-    checkLoop[Every5Minutes] --> appState[check_app_install_state]
-    appState --> detected{Install_State}
-    detected -->|Detected| continueRun[Continue]
-    detected -->|NotDetectedButSharedDataPresent| skipCleanup[Skip_Auto_Cleanup_For_Now]
-    detected -->|NotDetected| readPref[Read_keepBlockingOnUninstall]
-    readPref --> keepOn{KeepBlockingOnUninstall}
-    keepOn -->|No| cleanup[ClearState_RestoreHosts_SelfRemove]
-    keepOn -->|Yes| hasRules{HasBlocksAppsSchedules}
-    hasRules -->|Yes| continueRun
-    hasRules -->|No| cleanup
-```
-
-Cleanup path includes:
-
-- clearing in-memory state,
-- persisting empty helper state,
-- restoring hosts,
-- deleting helper state file,
-- self-removal from OS startup mechanism.
-
-Self-removal internals:
-
-- `perform_self_cleanup()` executes platform-specific teardown:
-  - macOS: launchd removal + helper/plist cleanup,
-  - Windows: scheduled task removal + helper artifact cleanup + firewall-rule cleanup.
-
----
-
-## 13) iOS architecture specifics
-
-iOS does not use a helper daemon. Enforcement is delegated to Apple’s Screen Time APIs (FamilyControls, ManagedSettings, DeviceActivity). The app talks to these via the Tauri Screen Time plugin (`tauri-plugin-screentime`), which is implemented in Swift on iOS and invoked from `src/app.js` through `plugin:screentime|...` commands.
-
-### 13.1 Runtime and authority model
-
-- **No helper:** There is no privileged helper process on iOS. All blocking is done by the system via Screen Time.
-- **Plugin:** `tauri-plugin-screentime` (Rust bridge in `src/mobile.rs`, native implementation in `tauri-plugin-screentime/ios/Sources/ScreentimePlugin.swift`) exposes commands that the frontend calls when `isIOS` is true.
-- **Two enforcement stores:** The plugin uses two `ManagedSettingsStore` instances so manual blocks and scheduled blocks can coexist without overwriting each other:
-  - **Default store** (`ManagedSettingsStore()`): used for manual (one-off) blocks.
-  - **Named store** (`ManagedSettingsStore(named: .init("schedule"))`): used by the DeviceActivityMonitor extension when a scheduled time window is active.
-
-### 13.2 Authorization
-
-- **API:** `AuthorizationCenter.shared.requestAuthorization(for: .individual)` (FamilyControls).
-- **Frontend:** On load, when `isIOS` is true, the app calls `checkScreentimeAuth()`. Before starting a block, if authorization is missing, the app can call `requestScreentimeAuth()`.
-- **Plugin:** Blocking commands check authorization and return an error if not granted.
-
-### 13.3 Website blocking pipeline (iOS)
-
-- `src/app.js` computes desired blocked domains and calls Screen Time plugin commands.
-- The plugin converts domains to `WebDomain` and applies them via `ManagedSettingsStore`.
-- The plugin clears both manual and schedule stores on full clear.
-- ManagedSettingsStore persists at the OS level.
-
-### 13.4 App and category blocking (iOS)
-
-- iOS uses opaque Screen Time tokens, not desktop-style app names.
-- The activity picker stores selection in App Group storage.
-- Manual blocks and schedules use these stored token payloads.
-
-### 13.5 Manual (one-off) block flow
-
-1. user starts a block,
-2. frontend ensures authorization,
-3. plugin applies website and app/category payloads,
-4. frontend updates app-owned active-block state.
-
-### 13.6 Scheduled blocks (DeviceActivity and extension)
-
-- schedules are registered with `DeviceActivityCenter`
-- payloads are stored in App Group shared storage
-- `DeviceActivityMonitor` reads those payloads at schedule boundaries
-- the named schedule store is updated by the extension
-
-Scheduled time windows from the UI do activate on iOS when the app has synced those schedules to the plugin.
-
-### 13.7 Merge semantics and store separation
-
-- manual blocks use the default store
-- scheduled blocks use the named schedule store
-- the OS enforces both
-
-### 13.8 End-to-end command path (app → Screen Time)
-
-```mermaid
-flowchart TD
-    ui[UserAction_src_app_js] --> branch{Platform}
-    branch -->|iOS| auth{Screen_Time_Authorized}
-    auth -->|No| requestAuth[request_authorization]
-    auth -->|Yes| cmd[Plugin_Command]
-    requestAuth --> cmd
-    cmd --> startBlock[screentime_start_block]
-    cmd --> clearBlock[screentime_clear_block]
-    cmd --> picker[show_activity_picker]
-    startBlock --> defaultStore[ManagedSettingsStore_default]
-    clearBlock --> defaultStore
-    clearBlock --> scheduleStore[ManagedSettingsStore_schedule]
-    scheduleStart[DeviceActivity_interval_start] --> monitor[DeviceActivityMonitor]
-    monitor --> scheduleStore
-```
-
-### 13.9 App Group and persistence
-
-App Group storage carries:
-
-- activity picker selection
-- schedule payloads
-- manual block state payloads used by resume/end flows
-
-### 13.10 iOS-specific constraints and limitations
-
-- 50-domain cap per store,
-- no desktop-style helper daemon,
-- override challenge is app-side, not system-side,
-- authorization is required for all blocking,
-- keep-blocking-on-uninstall does not have a desktop-style equivalent.
-
----
-
-## 14) Data paths and persistence locations
-
-## 14.1 App data
-
-- macOS legacy per-user: `~/Library/Application Support/com.redd.block/redd-block-data.json`
-- Windows legacy per-user: `%APPDATA%\com.redd.block\redd-block-data.json`
-- macOS shared canonical: `/var/lib/redd-block/redd-block-data.json`
-- Windows shared canonical: `%PROGRAMDATA%\ReDD Block\redd-block-data.json`
-- iOS: Tauri-managed app sandbox path
-
-## 14.2 Helper data (desktop only)
-
-- macOS: `/var/lib/redd-block/helper-state.json`
-- Windows: `%PROGRAMDATA%\ReDD Block\helper-state.json`
-
-## 14.3 Hosts backup (desktop only)
-
-- macOS: `/etc/hosts.redd-backup`
-- Windows: `C:\Windows\System32\drivers\etc\hosts.redd-backup`
-
-## 14.4 Diagnostics-related artifacts
-
-- macOS helper log: `/var/log/redd-block-helper.log`
-- Windows helper log: `%PROGRAMDATA%\ReDD Block\helper.log`
-- Windows install log: `%PROGRAMDATA%\ReDD Block\install.log`
-
----
-
-## 15) Safety and security mechanisms
-
-- protected domain filtering (frontend + helper),
-- protected app filtering (frontend + helper),
-- hosts backup/restore safety net,
-- localhost validity checks before/after writes,
-- constrained privileged operations in helper lifecycle paths,
-- compatibility defaults for missing fields/version drift paths.
-
-These reduce risk of system networking breakage and self-lockout.
-
----
-
-## 16) Known technical constraints and non-obvious behaviors
-
-- schedule transitions are loop-driven, so boundary effects are interval-bounded,
-- browser-level caching can delay visible effect after hosts changes even when helper completed correctly,
-- helper upgrade mismatch can disable helper-available paths until reinstall/update,
-- on Windows, the helper process is not restarted on crash (scheduled task runs at logon only),
-- if the helper exits unexpectedly, the app re-verifies readiness before start block and can fall back into repair/reinstall UX,
-- desktop app-block timing still depends on effective blocked-app state transitions, not hosts model,
-- local desktop dev builds and installed release builds currently share one machine-global helper installation, IPC endpoint, and helper-state surface,
-- iOS behavior differs by Screen Time API constraints and should not be reasoned about through the desktop helper model.
+1. Update **Part I** first — it describes what ships today.
+2. Move replaced designs into **Part II** or **Part III** rather than deleting history.
+3. Keep file paths and tick intervals aligned with code comments at the top of
+   each module (`web_automation.rs`, `enforcer.rs`, `app_watcher.rs`, etc.).
