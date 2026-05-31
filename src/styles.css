@@ -9665,6 +9665,27 @@ body.dark-mode .zoom-toast {
     padding-top: 6px;
 }
 
+.diagnostics-header-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 12px;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    white-space: nowrap;
+    font-size: 13px;
+}
+
+.diagnostics-header-btn:hover:not(:disabled) {
+    background: var(--border-color-light);
+}
+
+.diagnostics-header-btn:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
 .diagnostics-version-label {
     font-size: 13px;
     font-weight: 500;
@@ -9764,6 +9785,26 @@ body.dark-mode .diagnostics-card {
 
 .diagnostics-kv-row:last-child {
     border-bottom: none;
+}
+
+.diagnostics-kv-row-multiline {
+    align-items: flex-start;
+}
+
+.diagnostics-kv-row-multiline .diagnostics-kv-value {
+    text-align: left;
+    min-width: 0;
+    flex: 1;
+    max-width: 68%;
+}
+
+.diagnostics-pre-inline {
+    border-top: none;
+    padding: 8px 10px;
+    margin: 0;
+    width: 100%;
+    max-height: 120px;
+    box-sizing: border-box;
 }
 
 .diagnostics-kv-label {
@@ -10052,6 +10093,11 @@ body.dark-mode .diagnostics-pill-error {
 
 body.dark-mode .diagnostics-pre {
     background: rgba(0, 0, 0, 0.2);
+}
+
+.diagnostics-pre.diagnostics-pre-inline {
+    border-top: none;
+    border-radius: 8px;
 }
 
 .diagnostics-loading {

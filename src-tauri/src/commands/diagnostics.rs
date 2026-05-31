@@ -46,6 +46,23 @@ pub struct AutostartInfo {
     pub enabled: bool,
 }
 
+/// macOS Automation (Apple Events) permission snapshot for Safari and
+/// Chromium-family browsers. Inert on other platforms so the JSON shape
+/// is stable.
+#[derive(Debug, Clone, Serialize)]
+pub struct AutomationBrowserInfo {
+    pub label: String,
+    /// `granted`, `denied`, or `unknown`
+    pub state: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct AutomationInfo {
+    pub applicable: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub browsers: Vec<AutomationBrowserInfo>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[cfg(target_os = "windows")]
 pub struct WatchdogInfo {
@@ -118,6 +135,7 @@ pub struct SystemDiagnostics {
     pub browsers: profile_scan::ScanResult,
     pub enforcer: EnforcerInfo,
     pub autostart: AutostartInfo,
+    pub automation: AutomationInfo,
     #[cfg(target_os = "windows")]
     pub watchdog: WatchdogInfo,
     /// Last N lines of the rolling app log, newest last. Empty in
@@ -152,6 +170,7 @@ pub fn get_system_diagnostics(app: tauri::AppHandle) -> SystemDiagnostics {
     let autostart = AutostartInfo {
         enabled: autostart_enabled(&app),
     };
+    let automation = collect_automation_info(&app);
 
     #[cfg(target_os = "windows")]
     let watchdog = WatchdogInfo {
@@ -169,6 +188,7 @@ pub fn get_system_diagnostics(app: tauri::AppHandle) -> SystemDiagnostics {
         browsers,
         enforcer,
         autostart,
+        automation,
         #[cfg(target_os = "windows")]
         watchdog,
         recent_log,
@@ -331,6 +351,65 @@ fn current_residue_items() -> Vec<String> {
 fn autostart_enabled(app: &tauri::AppHandle) -> bool {
     use tauri_plugin_autostart::ManagerExt;
     app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+#[cfg(target_os = "macos")]
+fn collect_automation_info(app: &tauri::AppHandle) -> AutomationInfo {
+    use std::collections::HashSet;
+
+    use tauri::Manager;
+
+    use crate::commands::web_automation::WebAutomationState;
+    use crate::web_automation::{self, SupportedBrowser};
+
+    let cached = app.try_state::<WebAutomationState>().and_then(|state| {
+        state
+            .0
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(|h| h.permission_status()))
+    });
+
+    let running: HashSet<_> = web_automation::running_supported_browsers()
+        .into_iter()
+        .collect();
+
+    let browsers = SupportedBrowser::all()
+        .into_iter()
+        .map(|b| {
+            let cached_state = cached.as_ref().and_then(|list| {
+                list.iter().find(|i| i.browser == b).map(|i| i.state)
+            });
+            let state = web_automation::resolve_permission_state_for_status(
+                b,
+                cached_state,
+                running.contains(&b),
+                false,
+            );
+            AutomationBrowserInfo {
+                label: b.label().to_string(),
+                state: match state {
+                    web_automation::PermState::Granted => "granted",
+                    web_automation::PermState::Denied => "denied",
+                    web_automation::PermState::Unknown => "unknown",
+                }
+                .to_string(),
+            }
+        })
+        .collect();
+
+    AutomationInfo {
+        applicable: true,
+        browsers,
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn collect_automation_info(_app: &tauri::AppHandle) -> AutomationInfo {
+    AutomationInfo {
+        applicable: false,
+        browsers: vec![],
+    }
 }
 
 /// Read up to `max_lines` lines from the back of the tauri-plugin-log

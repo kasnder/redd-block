@@ -1115,8 +1115,7 @@ async function refreshOpenHelperUi() {
     if (helperUiRefreshInFlight || isIOS) return;
 
     const settingsVisible = isModalVisible('settings-modal');
-    const diagnosticsVisible = isModalVisible('diagnostics-modal');
-    if (!settingsVisible && !diagnosticsVisible) {
+    if (!settingsVisible) {
         stopHelperUiRefreshLoop();
         return;
     }
@@ -1126,9 +1125,6 @@ async function refreshOpenHelperUi() {
         if (settingsVisible) {
             await updateHelperStatusIndicator();
             updateCleanHostsBtnState();
-        }
-        if (diagnosticsVisible) {
-            await refreshDiagnosticsModalContent();
         }
     } finally {
         helperUiRefreshInFlight = false;
@@ -14979,6 +14975,7 @@ const SETTINGS_TRANSLATIONS = {
         settingsSetupBtn: 'Setup',
         settingsDiagnosticsBtn: 'Diagnostics',
         diagnosticsModalTitle: 'Diagnostics',
+        diagnosticsRefresh: 'Refresh',
         diagnosticsCopyReport: 'Copy to Clipboard',
         diagnosticsCopied: 'Copied!',
         diagnosticsCopyFailed: 'Copy failed',
@@ -14992,7 +14989,14 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsStampedVersion: 'Stamped version',
         diagnosticsStampedAt: 'Stamped at',
         diagnosticsBrowsersSection: 'Browsers (extension)',
+        diagnosticsBrowsersSectionHintMac: 'Firefox uses the ReDD Focus extension. Safari, Chrome, Brave, and Edge use Automation (see above).',
         diagnosticsBrowsersSectionHint: 'Status of the ReDD Focus extension in browsers on this computer.',
+        diagnosticsAutomationSection: 'Automation (macOS)',
+        diagnosticsAutomationSectionHint: 'ReDD Block needs Automation permission to redirect blocked tabs in each browser. Grant in System Settings → Privacy & Security → Automation.',
+        diagnosticsThAutomation: 'Automation',
+        diagnosticsAutomationGranted: 'Allowed',
+        diagnosticsAutomationDenied: 'Denied',
+        diagnosticsAutomationUnknown: 'Unknown',
         diagnosticsEnforcementSection: 'Enforcement',
         diagnosticsMigrationSection: 'Migration from v1.x',
         diagnosticsGracePeriod: 'Grace period',
@@ -15554,6 +15558,7 @@ const SETTINGS_TRANSLATIONS = {
         settingsSetupBtn: 'Opsætning',
         settingsDiagnosticsBtn: 'Diagnostik',
         diagnosticsModalTitle: 'Diagnostik',
+        diagnosticsRefresh: 'Opdater',
         diagnosticsCopyReport: 'Kopiér til udklipsholder',
         diagnosticsCopied: 'Kopieret!',
         diagnosticsCopyFailed: 'Kunne ikke kopiere',
@@ -15567,7 +15572,14 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsStampedVersion: 'Stemplet version',
         diagnosticsStampedAt: 'Stemplet',
         diagnosticsBrowsersSection: 'Browsere (udvidelse)',
+        diagnosticsBrowsersSectionHintMac: 'Firefox bruger ReDD Focus-udvidelsen. Safari, Chrome, Brave og Edge bruger Automatisering (se ovenfor).',
         diagnosticsBrowsersSectionHint: 'Status for ReDD Focus-udvidelsen i browsere på denne computer.',
+        diagnosticsAutomationSection: 'Automatisering (macOS)',
+        diagnosticsAutomationSectionHint: 'ReDD Block skal have Automatisering-tilladelse for at omdirigere blokerede faner i hver browser. Giv tilladelse i Systemindstillinger → Privatliv og sikkerhed → Automatisering.',
+        diagnosticsThAutomation: 'Automatisering',
+        diagnosticsAutomationGranted: 'Tilladt',
+        diagnosticsAutomationDenied: 'Afvist',
+        diagnosticsAutomationUnknown: 'Ukendt',
         diagnosticsEnforcementSection: 'Håndhævelse',
         diagnosticsMigrationSection: 'Migration fra v1.x',
         diagnosticsGracePeriod: 'Henstandsperiode',
@@ -16579,6 +16591,7 @@ function applySettingsLanguage() {
     setText('settings-setup-btn-label', tSettings('settingsSetupBtn'));
     setText('settings-diagnostics-btn-label', tSettings('settingsDiagnosticsBtn'));
     setText('diagnostics-modal-title', tSettings('diagnosticsModalTitle'));
+    setText('diagnostics-refresh-btn-label', tSettings('diagnosticsRefresh'));
     setText('diagnostics-copy-btn-label', tSettings('diagnosticsCopyReport'));
     setText('close-diagnostics-btn', tSettings('close'));
     setText('settings-onboarding-btn-label', tSettings('settingsOnboardingBtn'));
@@ -16752,7 +16765,7 @@ function setupTheme() {
         closeSettingsBtn.addEventListener('click', () => {
             setLanguagePickerOpen(false);
             settingsModal.classList.add('hidden');
-            if (!isModalVisible('diagnostics-modal')) stopHelperUiRefreshLoop();
+            stopHelperUiRefreshLoop();
         });
     }
 
@@ -16762,7 +16775,7 @@ function setupTheme() {
             if (e.target === settingsModal) {
                 setLanguagePickerOpen(false);
                 settingsModal.classList.add('hidden');
-                if (!isModalVisible('diagnostics-modal')) stopHelperUiRefreshLoop();
+                stopHelperUiRefreshLoop();
             }
         });
     }
@@ -17414,8 +17427,32 @@ function diagnosticsBrowserExtensionState(key, b) {
     };
 }
 
+function diagnosticsAutomationEntry(d, key) {
+    const label = BROWSER_STORE_LINKS[key]?.label || key;
+    const list = d.automation?.browsers || [];
+    const entry = list.find((b) => String(b.label || '').toLowerCase() === key);
+    return entry?.state || 'unknown';
+}
+
+function diagnosticsAutomationStatusCell(state) {
+    const normalized = String(state || 'unknown').toLowerCase();
+    let label;
+    if (normalized === 'granted') label = tSettings('diagnosticsAutomationGranted');
+    else if (normalized === 'denied') label = tSettings('diagnosticsAutomationDenied');
+    else label = tSettings('diagnosticsAutomationUnknown');
+    const dotState = normalized === 'granted' ? 'ok' : (normalized === 'denied' ? 'off' : 'na');
+    return `${diagnosticsStatusDot(dotState)} <span class="diag-muted">${escapeHtml(label)}</span>`;
+}
+
 function diagnosticsKvRow(label, valueHtml) {
     return `<div class="diagnostics-kv-row"><span class="diagnostics-kv-label">${label}</span><span class="diagnostics-kv-value">${valueHtml}</span></div>`;
+}
+
+function diagnosticsKvPreRow(label, lines, escape) {
+    const value = lines.length > 0
+        ? `<pre class="diagnostics-pre diagnostics-pre-inline">${escape(lines.join('\n'))}</pre>`
+        : `<span class="diag-muted">—</span>`;
+    return `<div class="diagnostics-kv-row diagnostics-kv-row-multiline"><span class="diagnostics-kv-label">${label}</span><span class="diagnostics-kv-value">${value}</span></div>`;
 }
 
 function diagnosticsYesNoValue(yes) {
@@ -17462,14 +17499,16 @@ function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) {
                 `<span class="diag-muted">${e(tSettings('diagnosticsActiveSourcesNone'))}</span>`,
             );
         }
-        html += `<div class="diagnostics-kv-row"><span class="diagnostics-kv-label">${e(tSettings('diagnosticsDomainsCount').replace('{n}', String(cb.domains?.length ?? 0)))}</span></div>`;
-        if (cb.domains && cb.domains.length > 0) {
-            html += `<pre class="diagnostics-pre">${e(cb.domains.join('\n'))}</pre>`;
-        }
-        html += `<div class="diagnostics-kv-row"><span class="diagnostics-kv-label">${e(tSettings('diagnosticsAppsCount').replace('{n}', String(cb.apps?.length ?? 0)))}</span></div>`;
-        if (cb.apps && cb.apps.length > 0) {
-            html += `<pre class="diagnostics-pre">${e(cb.apps.join('\n'))}</pre>`;
-        }
+        html += diagnosticsKvPreRow(
+            e(tSettings('diagnosticsDomainsCount').replace('{n}', String(cb.domains?.length ?? 0))),
+            cb.domains || [],
+            e,
+        );
+        html += diagnosticsKvPreRow(
+            e(tSettings('diagnosticsAppsCount').replace('{n}', String(cb.apps?.length ?? 0))),
+            cb.apps || [],
+            e,
+        );
         html += '</div></div>';
     }
 
@@ -17523,17 +17562,45 @@ function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) {
         html += '</div></div>';
     }
 
-    // Browsers
+    // Automation (macOS)
+    if (d.automation?.applicable) {
+        html += '<div class="diagnostics-section">';
+        html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsAutomationSection'))}</div>`;
+        html += `<p class="diagnostics-section-desc">${e(tSettings('diagnosticsAutomationSectionHint'))}</p>`;
+        html += '<div class="diagnostics-card diagnostics-table-wrap"><table class="diagnostics-table"><thead><tr>';
+        html += `<th>${e(tSettings('diagnosticsThBrowser'))}</th>`;
+        html += `<th>${e(tSettings('diagnosticsThAutomation'))}</th>`;
+        html += '</tr></thead><tbody>';
+        for (const key of ['safari', 'chrome', 'brave', 'edge']) {
+            const b = d.browsers[key];
+            if (!b?.installed) continue;
+            const label = BROWSER_STORE_LINKS[key]?.label || key;
+            const autoState = diagnosticsAutomationEntry(d, key);
+            html += '<tr>';
+            html += `<td><div class="diagnostics-browser-cell"><img class="diagnostics-browser-icon" src="${browserIconUrl(key)}" alt="" width="20" height="20">${e(label)}</div></td>`;
+            html += `<td>${diagnosticsAutomationStatusCell(autoState)}</td>`;
+            html += '</tr>';
+        }
+        html += '</tbody></table></div></div>';
+    }
+
+    // Browsers (extension)
+    const extensionBrowserKeys = isMacOSDesktop
+        ? ['firefox']
+        : ['chrome', 'brave', 'edge', 'firefox', 'safari'];
+    const browsersHint = isMacOSDesktop
+        ? tSettings('diagnosticsBrowsersSectionHintMac')
+        : tSettings('diagnosticsBrowsersSectionHint');
     html += '<div class="diagnostics-section">';
     html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsBrowsersSection'))}</div>`;
-    html += `<p class="diagnostics-section-desc">${e(tSettings('diagnosticsBrowsersSectionHint'))}</p>`;
+    html += `<p class="diagnostics-section-desc">${e(browsersHint)}</p>`;
     html += '<div class="diagnostics-card diagnostics-table-wrap"><table class="diagnostics-table"><thead><tr>';
     html += `<th>${e(tSettings('diagnosticsThBrowser'))}</th>`;
     html += `<th>${e(tSettings('diagnosticsThExtInstalled'))}</th>`;
     html += `<th>${e(tSettings('diagnosticsThExtEnabled'))}</th>`;
     html += `<th>${e(tSettings('diagnosticsThExtPrivate'))}</th>`;
     html += '</tr></thead><tbody>';
-    for (const key of ['chrome', 'brave', 'edge', 'firefox', 'safari']) {
+    for (const key of extensionBrowserKeys) {
         const b = d.browsers[key];
         if (!b?.installed) continue;
         const label = BROWSER_STORE_LINKS[key]?.label || key;
@@ -17604,14 +17671,12 @@ async function openDiagnosticsModal() {
 
     modal.classList.remove('hidden');
     await refreshDiagnosticsModalContent({ showLoading: true });
-    startHelperUiRefreshLoop();
 
     // Close button
     const closeBtn = document.getElementById('close-diagnostics-btn');
     if (closeBtn) {
         closeBtn.onclick = () => {
             modal.classList.add('hidden');
-            if (!isModalVisible('settings-modal')) stopHelperUiRefreshLoop();
         };
     }
 
@@ -17619,9 +17684,19 @@ async function openDiagnosticsModal() {
     modal.onclick = (e) => {
         if (e.target === modal) {
             modal.classList.add('hidden');
-            if (!isModalVisible('settings-modal')) stopHelperUiRefreshLoop();
         }
     };
+}
+
+async function refreshDiagnosticsModalManual() {
+    const btn = document.getElementById('diagnostics-refresh-btn');
+    if (btn?.disabled) return;
+    if (btn) btn.disabled = true;
+    try {
+        await refreshDiagnosticsModalContent();
+    } finally {
+        if (btn) btn.disabled = false;
+    }
 }
 
 // Setup, onboarding replay, and diagnostics from Settings → Help.
@@ -17650,6 +17725,14 @@ function setupSettingsHelpButtons() {
     if (diagnosticsBtn && !diagnosticsBtn.dataset.wired) {
         diagnosticsBtn.dataset.wired = '1';
         diagnosticsBtn.addEventListener('click', openDiagnosticsModal);
+    }
+
+    const diagnosticsRefreshBtn = document.getElementById('diagnostics-refresh-btn');
+    if (diagnosticsRefreshBtn && !diagnosticsRefreshBtn.dataset.wired) {
+        diagnosticsRefreshBtn.dataset.wired = '1';
+        diagnosticsRefreshBtn.addEventListener('click', () => {
+            void refreshDiagnosticsModalManual();
+        });
     }
 }
 
