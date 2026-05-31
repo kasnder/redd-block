@@ -2,6 +2,18 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
+## v3.1.1
+
+- **macOS: fix .pkg first-install dialog.** The preinstall script no longer
+  tries to quit ReDD Block before the app exists, which could show a spurious
+  “Where is ReDD Block?” prompt on fresh installs.
+- **macOS: optional data wipe on uninstall.** The uninstall dialog includes an
+  unchecked-by-default option to remove saved blocklists and settings.
+- **macOS: migration setup copy.** Safari and Chromium install rows now describe
+  manual store installs instead of claiming auto-install, matching the
+  Automation-first setup flow.
+- **Version:** 3.1.1.
+
 ## v3.1.0
 
 - **macOS: optional extension mode for instant blocking.** Power users can
