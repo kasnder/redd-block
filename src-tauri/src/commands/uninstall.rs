@@ -72,10 +72,20 @@ use crate::native_host_install;
 /// process drops.
 #[cfg(target_os = "macos")]
 #[tauri::command]
-pub fn uninstall_self_macos(app: tauri::AppHandle) -> Result<(), String> {
+pub fn uninstall_self_macos(
+    app: tauri::AppHandle,
+    delete_user_data: Option<bool>,
+) -> Result<(), String> {
     use tauri_plugin_autostart::ManagerExt;
 
-    log::info!("uninstall_self_macos: starting");
+    log::info!(
+        "uninstall_self_macos: starting (delete_user_data={})",
+        delete_user_data.unwrap_or(false)
+    );
+
+    if delete_user_data.unwrap_or(false) {
+        super::data::wipe_user_data(&app);
+    }
 
     // 1. Disable launch-at-login. The plugin removes the LaunchAgent
     //    plist as part of `disable()` when running in MacosLauncher::

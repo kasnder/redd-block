@@ -476,3 +476,75 @@ pub fn set_window_size(window: WebviewWindow, width: f64, height: f64) -> Result
 pub fn set_window_size(_width: f64, _height: f64) -> Result<(), String> {
     Ok(())
 }
+
+/// Remove blocklists, schedules, settings, and related on-disk state.
+/// Best-effort: logs and continues when individual paths are missing or
+/// not writable. Logs are intentionally preserved.
+#[cfg(not(target_os = "ios"))]
+pub fn wipe_user_data(app: &AppHandle) {
+    use std::collections::HashSet;
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Err(e) = crate::app_group::remove_blocklist_mirror() {
+            log::warn!("wipe_user_data: App Group mirror cleanup failed: {e}");
+        }
+    }
+
+    let mut files: Vec<PathBuf> = vec![get_data_path(app)];
+
+    if let Ok(app_data_dir) = app.path().app_data_dir() {
+        files.push(app_data_dir.join("redd-block-data.json"));
+    }
+
+    if let Some(data_dir) = dirs::data_dir() {
+        files.push(data_dir.join("com.reddblock").join("redd-block-data.json"));
+        for id in ["com.redd.block", "redd-block"] {
+            files.push(data_dir.join(id).join("redd-block-data.json"));
+        }
+    }
+
+    let shared_dir = get_shared_dir();
+    files.push(shared_dir.join("redd-block-data.json"));
+    files.push(shared_dir.join("helper-state.json"));
+
+    #[cfg(target_os = "macos")]
+    if let Some(home) = dirs::home_dir() {
+        files.push(home.join("Library/Preferences/com.reddblock.plist"));
+    }
+
+    let mut dirs: HashSet<PathBuf> = HashSet::new();
+    if let Ok(app_data_dir) = app.path().app_data_dir() {
+        dirs.insert(app_data_dir);
+    }
+    if let Some(data_dir) = dirs::data_dir() {
+        dirs.insert(data_dir.join("com.reddblock"));
+        for id in ["com.redd.block", "redd-block"] {
+            dirs.insert(data_dir.join(id));
+        }
+    }
+
+    for path in files {
+        wipe_path(&path);
+    }
+    for dir in dirs {
+        wipe_path(&dir);
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn wipe_path(path: &PathBuf) {
+    if !path.exists() {
+        return;
+    }
+    let result = if path.is_dir() {
+        fs::remove_dir_all(path)
+    } else {
+        fs::remove_file(path)
+    };
+    if let Err(e) = result {
+        log::warn!("wipe_user_data: failed to remove {}: {e}", path.display());
+    } else {
+        log::info!("wipe_user_data: removed {}", path.display());
+    }
+}

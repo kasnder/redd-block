@@ -133,7 +133,8 @@ const tauriAPI = {
     // self-delete of /Applications/ReDD Block.app. Caller is responsible
     // for confirming with the user and refusing to invoke while blocks
     // are running. See src-tauri/src/commands/uninstall.rs.
-    uninstallSelfMacos: () => invoke('uninstall_self_macos'),
+    uninstallSelfMacos: (deleteUserData = false) =>
+        invoke('uninstall_self_macos', { deleteUserData }),
 };
 
 async function openUrl(url, openWith) {
@@ -15376,6 +15377,8 @@ const SETTINGS_TRANSLATIONS = {
         uninstallDisabledHint: 'Stop running blocks first before you can uninstall.',
         uninstallConfirmTitle: 'Uninstall ReDD Block?',
         uninstallConfirmLeadHtml: 'ReDD Block will be moved to the Trash. Your blocklists and schedules are <strong>kept on disk</strong>, so they\u2019ll be restored if you reinstall later.',
+        uninstallConfirmLeadDeleteHtml: 'ReDD Block will be moved to the Trash. Your blocklists, schedules, and settings will be <strong>permanently deleted</strong> from this Mac.',
+        uninstallDeleteDataLabel: 'Also delete my blocklists, schedules, and settings',
         uninstallFinderWarningHtml: 'If macOS asks you to allow ReDD Block to control <strong>Finder</strong>, click <strong>Allow</strong> \u2014 that\u2019s how the app moves itself to the Trash.',
         uninstallFirefoxCalloutTitle: 'ReDD Focus extension in Firefox',
         uninstallExtFirefoxBadge: 'Stays installed',
@@ -15965,6 +15968,8 @@ const SETTINGS_TRANSLATIONS = {
         uninstallDisabledHint: 'Stop kørende blokeringer først, før du kan afinstallere.',
         uninstallConfirmTitle: 'Afinstaller ReDD Block?',
         uninstallConfirmLeadHtml: 'ReDD Block flyttes til papirkurven. Dine blokeringslister og skemaer <strong>bevares p\u00e5 harddisken</strong>, s\u00e5 de kan gendannes, hvis du geninstallerer senere.',
+        uninstallConfirmLeadDeleteHtml: 'ReDD Block flyttes til papirkurven. Dine blokeringslister, skemaer og indstillinger bliver <strong>permanent slettet</strong> fra denne Mac.',
+        uninstallDeleteDataLabel: 'Slet ogs\u00e5 mine blokeringslister, skemaer og indstillinger',
         uninstallFinderWarningHtml: 'Hvis macOS spørger, om ReDD Block må styre <strong>Finder</strong>, skal du klikke <strong>Tillad</strong> \u2014 det er sådan, appen flytter sig selv til papirkurven.',
         uninstallFirefoxCalloutTitle: 'ReDD Focus-udvidelse i Firefox',
         uninstallExtFirefoxBadge: 'Forbliver installeret',
@@ -16846,6 +16851,7 @@ function applySettingsLanguage() {
     setText('settings-export-blocklists-btn-label', tSettings('settingsExportBlocklistsBtn'));
     setText('settings-import-blocklists-btn-label', tSettings('settingsImportBlocklistsBtn'));
     setText('uninstall-confirm-title', tSettings('uninstallConfirmTitle'));
+    setText('uninstall-delete-data-label', tSettings('uninstallDeleteDataLabel'));
     syncUninstallConfirmModal(null);
     setText('cancel-uninstall-confirm-btn', tSettings('cancel'));
     setText('confirm-uninstall-confirm-btn', tSettings('uninstallConfirmOk'));
@@ -18423,8 +18429,7 @@ function firefoxHasReddFocusExtension(firefox) {
 }
 
 function applyUninstallConfirmModalStaticCopy() {
-    const lead = document.getElementById('uninstall-confirm-lead');
-    if (lead) lead.innerHTML = tSettings('uninstallConfirmLeadHtml');
+    syncUninstallDeleteDataCopy();
 
     const finderText = document.getElementById('uninstall-finder-warning-text');
     if (finderText) finderText.innerHTML = tSettings('uninstallFinderWarningHtml');
@@ -18471,9 +18476,21 @@ async function fetchInstalledBrowsersForUninstall() {
 
 let uninstallConfirmResolver = null;
 
+function syncUninstallDeleteDataCopy() {
+    const checkbox = document.getElementById('uninstall-delete-data-checkbox');
+    const lead = document.getElementById('uninstall-confirm-lead');
+    if (!lead) return;
+    const deleteData = checkbox?.checked === true;
+    lead.innerHTML = tSettings(deleteData ? 'uninstallConfirmLeadDeleteHtml' : 'uninstallConfirmLeadHtml');
+}
+
 async function showUninstallConfirmModal() {
     const modal = document.getElementById('uninstall-confirm-modal');
-    if (!modal) return false;
+    if (!modal) return null;
+
+    const checkbox = document.getElementById('uninstall-delete-data-checkbox');
+    if (checkbox) checkbox.checked = false;
+    syncUninstallDeleteDataCopy();
 
     try {
         const browsers = await fetchInstalledBrowsersForUninstall();
@@ -18491,9 +18508,12 @@ async function showUninstallConfirmModal() {
 
 function closeUninstallConfirmModal(result) {
     const modal = document.getElementById('uninstall-confirm-modal');
+    const checkbox = document.getElementById('uninstall-delete-data-checkbox');
     modal?.classList.add('hidden');
     if (uninstallConfirmResolver) {
-        uninstallConfirmResolver(result);
+        uninstallConfirmResolver(
+            result ? { deleteUserData: checkbox?.checked === true } : null
+        );
         uninstallConfirmResolver = null;
     }
 }
@@ -18507,6 +18527,8 @@ function setupInAppUninstall() {
         ?.addEventListener('click', () => closeUninstallConfirmModal(false));
     document.getElementById('confirm-uninstall-confirm-btn')
         ?.addEventListener('click', () => closeUninstallConfirmModal(true));
+    document.getElementById('uninstall-delete-data-checkbox')
+        ?.addEventListener('change', syncUninstallDeleteDataCopy);
     modal?.addEventListener('click', (e) => {
         if (e.target === modal) closeUninstallConfirmModal(false);
     });
@@ -18522,14 +18544,14 @@ function setupInAppUninstall() {
             return;
         }
 
-        let proceed = false;
+        let confirmResult = null;
         try {
-            proceed = await showUninstallConfirmModal();
+            confirmResult = await showUninstallConfirmModal();
         } catch (e) {
             console.error('uninstall: confirm dialog failed', e);
             return;
         }
-        if (!proceed) return;
+        if (!confirmResult) return;
 
         // Close settings so the user sees a clean window before the
         // process exits and the bundle disappears.
@@ -18537,7 +18559,7 @@ function setupInAppUninstall() {
         setLanguagePickerOpen(false);
 
         try {
-            await tauriAPI.uninstallSelfMacos();
+            await tauriAPI.uninstallSelfMacos(confirmResult.deleteUserData);
             // Backend exits ~200ms later. The window typically
             // disappears before this promise resolves; nothing else
             // to do on success.

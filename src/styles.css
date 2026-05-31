@@ -8813,11 +8813,28 @@ body.dark-mode #settings-modal .settings-help-btn {
 }
 
 #uninstall-confirm-modal .uninstall-firefox-callout {
-    margin-bottom: 20px;
+    margin-bottom: 16px;
     padding: 14px 16px;
     border: 1px solid hsl(152, 28%, 72%);
     border-radius: 12px;
     background: hsl(152, 38%, 95%);
+}
+
+#uninstall-confirm-modal .uninstall-delete-data-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0 0 20px;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+#uninstall-confirm-modal .uninstall-delete-data-row input {
+    flex-shrink: 0;
+    margin-top: 2px;
+    cursor: pointer;
 }
 
 #uninstall-confirm-modal .uninstall-firefox-callout-header {
