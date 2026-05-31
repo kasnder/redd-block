@@ -671,10 +671,11 @@ pub fn run() {
                 );
             }
 
-            #[cfg(target_os = "macos")]
-            if let Some(data_path) = native_host::resolve_data_path() {
-                app_group::start_sync_loop(data_path);
-            }
+            // App Group blocklist mirror: written in save_data() when the
+            // user (or enforcer) persists changes — not on startup. A
+            // background sync loop here resolves the App Group container
+            // immediately on every launch, which triggers macOS Sequoia's
+            // "access data from other apps" TCC prompt on .pkg installs.
 
             // Self-heal the watchdog Scheduled Task on Windows. If the
             // user disabled or deleted it (or the install dir moved),
