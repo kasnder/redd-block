@@ -634,7 +634,14 @@ pub fn run() {
                 commands::web_automation::register(app);
                 commands::web_automation::auto_start(app.handle());
                 if let Some(path) = commands::canonical_data_path(app.handle()) {
-                    crate::app_group::ensure_sync_loop(path);
+                    crate::app_group::ensure_sync_loop(path.clone());
+                    if let Err(e) =
+                        native_host_install::sync_extension_mode_native_hosts(&path, false)
+                    {
+                        log::warn!(
+                            "native-host sync for extension-mode browsers failed: {e}"
+                        );
+                    }
                 }
             }
 

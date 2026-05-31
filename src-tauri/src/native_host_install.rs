@@ -184,6 +184,58 @@ pub fn install_native_host_for(browser: BrowserTarget) -> std::io::Result<()> {
     install_one(browser, &binary)
 }
 
+/// `true` when the browser's manifest is missing or points at a different
+/// binary (e.g. after `tauri dev` rebuild or .pkg reinstall).
+fn manifest_needs_update(browser: BrowserTarget, binary: &str) -> bool {
+    let Some(dir) = browser.manifest_dir() else {
+        return true;
+    };
+    let path = dir.join(format!("{HOST_NAME}.json"));
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return true;
+    };
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return true;
+    };
+    val.get("path").and_then(|p| p.as_str()) != Some(binary)
+}
+
+/// On macOS, ensure every Chromium browser set to extension mode has an
+/// up-to-date native-messaging manifest. Skips browsers already pointing
+/// at the current binary so startup does not re-touch other apps' data
+/// dirs (and re-trigger TCC) on every launch.
+#[cfg(target_os = "macos")]
+pub fn sync_extension_mode_native_hosts(path: &std::path::Path, force: bool) -> std::io::Result<()> {
+    use crate::blocking_method::{self, Method, MAC_CHROMIUM_KEYS};
+
+    let binary = current_binary_path().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::Other, "cannot resolve current exe")
+    })?;
+
+    for key in MAC_CHROMIUM_KEYS {
+        if blocking_method::method_for_key_at_path(path, key) != Method::Extension {
+            continue;
+        }
+        let Some(target) = blocking_method::native_host_target(key) else {
+            continue;
+        };
+        if !force && !manifest_needs_update(target, &binary) {
+            log::debug!("native-host sync: {key} manifest already current, skipping");
+            continue;
+        }
+        log::info!("native-host sync: writing manifest for {key}");
+        if let Err(e) = install_one(target, &binary) {
+            log::warn!("native-host sync for {key} failed: {e}");
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn sync_extension_mode_native_hosts(_path: &std::path::Path, _force: bool) -> std::io::Result<()> {
+    Ok(())
+}
+
 /// Remove the native-messaging manifest for one browser.
 pub fn uninstall_native_host_for(browser: BrowserTarget) -> std::io::Result<()> {
     uninstall_one(browser)
@@ -470,8 +522,18 @@ fn to_wide(s: &str) -> Vec<u16> {
 /// auto-install path in `lib.rs::run` uses [`install`] (marker-gated)
 /// instead.
 #[tauri::command]
-pub fn install_native_host() -> Result<(), String> {
-    install_force().map_err(|e| e.to_string())
+pub fn install_native_host(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let path = crate::commands::canonical_data_path(&app)
+            .ok_or_else(|| "no app data path".to_string())?;
+        sync_extension_mode_native_hosts(&path, true).map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        install_force().map_err(|e| e.to_string())
+    }
 }
 
 #[tauri::command]
