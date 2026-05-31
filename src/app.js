@@ -2285,6 +2285,10 @@ const AUTOMATION_BROWSER_KEYS = ['chrome', 'brave', 'edge', 'safari'];
 // until the first refresh; treated as 'unknown' per key.
 let lastAutomationPermissionByKey = {};
 let lastAutomationPermissionFetchAt = 0;
+// False until the first successful macOS Automation status fetch; while
+// false, automation browsers are treated as compliant so the setup banner
+// doesn't flash "Allow Automation…" during startup.
+let automationPermissionStatusReady = false;
 const AUTOMATION_PERMISSION_FETCH_MIN_MS = 2000;
 
 function browserUsesAutomation(key) {
@@ -2309,6 +2313,7 @@ async function refreshAutomationPermissionStatus({ force = false } = {}) {
             if (key) map[key] = info.state; // 'granted' | 'denied' | 'unknown'
         }
         lastAutomationPermissionByKey = map;
+        if (isMacOSDesktop) automationPermissionStatusReady = true;
     } catch (e) {
         console.warn('[automation] permission status fetch failed:', e);
     }
@@ -2321,6 +2326,7 @@ async function refreshAutomationPermissionStatus({ force = false } = {}) {
 // compliance for Firefox / non-macOS.
 function effectiveBrowserComplianceStatus(key, browsers) {
     if (browserUsesAutomation(key)) {
+        if (!automationPermissionStatusReady) return 'compliant';
         return (lastAutomationPermissionByKey[key] || 'unknown') === 'granted'
             ? 'compliant'
             : 'needs-automation';
@@ -3273,6 +3279,8 @@ async function updateBehaviourChangeBanner(state) {
 
     lastOnboardingState = state;
 
+    if (isMacOSDesktop) await refreshAutomationPermissionStatus();
+
     let enforcementEnabled = false;
     try {
         enforcementEnabled = await invoke('get_enforcement_enabled');
@@ -3508,10 +3516,12 @@ async function syncEnforcerClosedBannersWithCompliance(state) {
             return;
         }
     }
+    if (isMacOSDesktop) await refreshAutomationPermissionStatus({ force: true });
+    const browsers = state.browsers || {};
     let changed = false;
     for (const key of [...enforcerClosedBannerStates.keys()]) {
-        const b = state.browsers?.[key];
-        if (b && browserComplianceStatus(key, b) === 'compliant') {
+        const b = browsers[key];
+        if (b && effectiveBrowserComplianceStatus(key, browsers) === 'compliant') {
             enforcerClosedBannerStates.delete(key);
             changed = true;
         }
@@ -3611,7 +3621,9 @@ function setupWebAutomationUiAlerts() {
         const key = browserKeyFromLabel(label);
         if (key) lastAutomationPermissionByKey[key] = 'granted';
         webAutomationPendingBrowsers.delete(String(label));
+        hideEnforcerActionBanner(label);
         renderWebAutomationPermissionBanner();
+        void refreshBehaviourBannerIfStale({ force: true });
         if (migrationOnboardingActive && lastMigrationBrowserState) {
             renderBrowserInstallButtons(lastMigrationBrowserState, { force: true });
         }

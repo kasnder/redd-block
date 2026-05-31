@@ -102,11 +102,11 @@ pub async fn web_automation_permission_status(
                 let cached_state = cached.as_ref().and_then(|list| {
                     list.iter().find(|i| i.browser == b).map(|i| i.state)
                 });
-                let st = if running.contains(&b) {
-                    web_automation::resolve_permission_state(b, cached_state)
-                } else {
-                    cached_state.unwrap_or(PermState::Unknown)
-                };
+                let st = web_automation::resolve_permission_state_for_status(
+                    b,
+                    cached_state,
+                    running.contains(&b),
+                );
                 PermissionInfo {
                     browser: b,
                     label: b.label(),

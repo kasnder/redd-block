@@ -752,6 +752,23 @@ pub fn resolve_permission_state(browser: SupportedBrowser, cached: Option<PermSt
     }
 }
 
+/// Permission snapshot for UI polling. Running browsers get a live probe;
+/// idle browsers use the silent TCC read so System Settings toggles are
+/// picked up even when the enforcer has force-closed the browser.
+pub fn resolve_permission_state_for_status(
+    browser: SupportedBrowser,
+    cached: Option<PermState>,
+    is_running: bool,
+) -> PermState {
+    if is_running {
+        return resolve_permission_state(browser, cached);
+    }
+    match query_automation_permission(browser) {
+        tcc @ (PermState::Granted | PermState::Denied) => tcc,
+        PermState::Unknown => cached.unwrap_or(PermState::Unknown),
+    }
+}
+
 /// Whether the enforcer should treat Automation as missing for this browser.
 ///
 /// The silent TCC read (`query_automation_permission`) often returns
@@ -763,9 +780,6 @@ pub fn automation_denied_for_enforcement(
     cached: Option<PermState>,
     is_running: bool,
 ) -> bool {
-    if cached == Some(PermState::Denied) {
-        return true;
-    }
     if is_running {
         match probe_automation_access(browser) {
             PermState::Denied => return true,
@@ -773,7 +787,12 @@ pub fn automation_denied_for_enforcement(
             PermState::Unknown => {}
         }
     }
-    matches!(query_automation_permission(browser), PermState::Denied)
+    match query_automation_permission(browser) {
+        PermState::Denied => return true,
+        PermState::Granted => return false,
+        PermState::Unknown => {}
+    }
+    cached == Some(PermState::Denied)
 }
 
 /// Send a minimal Apple Event to surface the system Automation prompt
