@@ -220,8 +220,8 @@ fn mtime(path: &std::path::Path) -> Option<SystemTime> {
 }
 
 /// Per-block metadata sent alongside the flat `blocklist`. Mirrors the
-/// `blocks[]` shape `redd-focus-web/.../background.js` reads and forwards
-/// to `blocked.html` for the pill / source / countdown UI.
+/// `blocks[]` shape the ReDD Focus extension reads and forwards to
+/// `blocked.html` for the pill / source / countdown UI.
 #[derive(Debug, Clone, Serialize)]
 pub struct BlockInfo {
     #[serde(rename = "blocklistId")]

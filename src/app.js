@@ -3400,7 +3400,7 @@ function joinBrowserNames(list) {
 
 // Re-opens the post-cleanup migration overlay (the per-browser
 // install checklist) — the canonical "set up ReDD Focus" surface.
-// Used by both the slim banner's "Set up extension" button and the
+// Used by both the slim banner's "Set up browsers" button and the
 // new Settings → Advanced Options entry. Centralised so both call
 // sites stay in sync if the overlay's API changes.
 async function openExtensionSetupOverlay() {
@@ -14586,8 +14586,8 @@ const SETTINGS_TRANSLATIONS = {
         nowBlockingMenuPause: 'Pause',
         nowBlockingMenuStop: 'Stop',
         scheduleFooterHint: 'Click any block to edit',
-        setupBrowsersBannerHeadline: 'Enable ReDD Focus in your browsers',
-        setupBrowsersBannerCta: 'Set up extension',
+        setupBrowsersBannerHeadline: 'Enable ReDD Block in your browsers',
+        setupBrowsersBannerCta: 'Set up browsers',
         setupBrowsersBannerDismissTitle: 'Dismiss for this session',
         bannerTurnOnBrowserProtection: 'Turn on browser protection',
         bannerActionInstallIn: 'Install in',
@@ -15161,8 +15161,8 @@ const SETTINGS_TRANSLATIONS = {
         nowBlockingMenuPause: 'Pause',
         nowBlockingMenuStop: 'Stop',
         scheduleFooterHint: 'Klik på en blok for at redigere',
-        setupBrowsersBannerHeadline: 'Aktivér ReDD Focus i dine browsere',
-        setupBrowsersBannerCta: 'Opsæt udvidelse',
+        setupBrowsersBannerHeadline: 'Aktivér ReDD Block i dine browsere',
+        setupBrowsersBannerCta: 'Opsæt browsere',
         setupBrowsersBannerDismissTitle: 'Skjul for denne session',
         bannerTurnOnBrowserProtection: 'Slå browser-beskyttelse til',
         bannerActionInstallIn: 'Installer i',

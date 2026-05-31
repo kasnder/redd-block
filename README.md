@@ -202,13 +202,13 @@ redd-block/
 │   │   ├── native_host_install.rs # Registers native-messaging manifests (Windows; skipped on macOS)
 │   │   ├── profile_scan.rs       # Reads browser profile files
 │   │   └── commands/             # IPC commands (data, apps, migration, …)
+│   ├── blocked/                  # Block page bundled for macOS Automation redirects
 │   ├── entitlements.macos.plist  # macOS Automation (Apple Events) entitlement
 │   ├── gen/apple/                # Generated Xcode project
 │   ├── tauri.conf.json           # Shared Tauri config
 │   ├── tauri.ios.conf.json       # iOS-specific config
 │   ├── tauri.macos.conf.json     # macOS-specific config
 │   └── tauri.windows.conf.json   # Windows-specific config
-├── redd-focus-web/               # Vendored ReDD Focus Safari extension source
 ├── tauri-plugin-screentime/      # iOS Screen Time plugin (desktop uses extension path)
 │   ├── ios/Sources/              # Swift plugin (FamilyActivityPicker, ManagedSettings)
 │   ├── src/                      # Rust bindings

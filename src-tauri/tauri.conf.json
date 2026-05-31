@@ -19,8 +19,8 @@
     "active": true,
     "targets": "all",
     "resources": {
-      "../redd-focus-web/Shared (Extension)/Resources/blocked.html": "blocked/blocked.html",
-      "../redd-focus-web/Shared (Extension)/Resources/blocked.js": "blocked/blocked.js"
+      "blocked/blocked.html": "blocked/blocked.html",
+      "blocked/blocked.js": "blocked/blocked.js"
     },
     "icon": [
       "icons/32x32.png",

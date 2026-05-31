@@ -17,17 +17,11 @@ use serde_json::Value;
 const FIREFOX_ID: &str = "mindshield@example.com";
 #[cfg(target_os = "macos")]
 const SAFARI_EXTENSION_KEYS: &[&str] = &[
-    // Embedded inside this ReDD Block.app — the bundled Safari Web
-    // Extension target from redd-focus-web/, signed under our team.
-    // This is the path most users will hit going forward, since
-    // installing ReDD Block automatically lights up the extension
-    // in Safari without any separate App-Store install.
+    // Legacy: Safari Web Extension embedded in older ReDD Block.app builds.
     "com.reddblock.SafariExtension (JD647S9RT6)",
-    // Legacy: standalone "ReDD Focus" macOS app from the App Store.
-    // Still recognised so users who installed it before we bundled
-    // don't see a regression. The two installs can coexist; Safari
-    // shows them as two separate listings under Settings → Extensions
-    // and the scanner accepts either as "ReDD Focus is here".
+    // Standalone "ReDD Focus" macOS app from the App Store. Still recognised
+    // so users who installed it before we switched Safari to Automation
+    // don't see a regression during duplicate-extension detection.
     "com.ulriklyngs.mind-shield.mind-shield (JD647S9RT6)",
 ];
 #[cfg(target_os = "macos")]
