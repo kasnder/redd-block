@@ -3168,6 +3168,15 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
                 afterHint.innerHTML = isMacOSDesktop
                     ? tSettings('migrationPostInstallFirefoxMacHtml')
                     : tSettings('migrationPostInstallFirefoxHtml');
+            } else if (key === 'safari') {
+                afterHint.innerHTML = tSettings('migrationPostInstallSafariHtml');
+            } else if (isMacOSDesktop) {
+                const tpl = tSettings('migrationPostInstallChromiumMacHtml');
+                afterHint.innerHTML = tpl
+                    .replace('{URL_CHIP}', extensionsUrlChipHtml(key))
+                    .replace(/{BROWSER}/g, entry.label)
+                    .replace(/{PRIV}/g, privNoun);
+                attachCopyChipHandlers(afterHint);
             } else {
                 const tpl = tSettings('migrationPostInstallChromiumHtml');
                 afterHint.innerHTML = tpl
@@ -15007,6 +15016,8 @@ const SETTINGS_TRANSLATIONS = {
         migrationShowMeHow: 'Show me how',
         migrationPostInstallFirefoxHtml: 'ReDD Block already set up auto-install for ReDD Focus in Firefox — <strong>restart Firefox</strong> to pick it up. (Or click <strong>Install</strong> below to add it manually — check <strong>Allow extension to run in private windows</strong> during install.)',
         migrationPostInstallFirefoxMacHtml: 'Install ReDD Focus from the Firefox Add-ons store — click <strong>Install</strong> below and check <strong>Allow extension to run in private windows</strong> during install.',
+        migrationPostInstallSafariHtml: 'Install ReDD Focus from the Mac App Store — click <strong>Install</strong> below. After it\u2019s installed, return here and we\u2019ll walk you through enabling it in Safari.',
+        migrationPostInstallChromiumMacHtml: 'Install ReDD Focus from the {BROWSER} store — click <strong>Install</strong> below. After it\u2019s installed, return here and we\u2019ll walk you through enabling it and allowing it in {PRIV} tabs.',
         migrationPostInstallChromiumHtml: 'ReDD Block already set up auto-install for ReDD Focus in {BROWSER} — <strong>restart {BROWSER}</strong> to pick it up. (Or click <strong>Install</strong> below to add it manually now.)',
         migrationInstructionEnableHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → find <strong>ReDD Focus</strong> → enable the extension.',
         migrationInstructionWebsiteAccessHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → click <strong>Details</strong> on ReDD Focus → allow on <strong>all websites</strong>.',
@@ -15603,6 +15614,8 @@ const SETTINGS_TRANSLATIONS = {
         migrationShowMeHow: 'Vis mig hvordan',
         migrationPostInstallFirefoxHtml: 'ReDD Block har allerede sat auto-installation op for ReDD Focus i Firefox — <strong>genstart Firefox</strong> for at hente den ind. (Eller klik på <strong>Installer</strong> nedenfor for at tilføje den manuelt — markér <strong>Allow extension to run in private windows</strong> under installationen.)',
         migrationPostInstallFirefoxMacHtml: 'Installer ReDD Focus fra Firefoxs tilføjelsesbutik — klik på <strong>Installer</strong> nedenfor, og markér <strong>Allow extension to run in private windows</strong> under installationen.',
+        migrationPostInstallSafariHtml: 'Installer ReDD Focus fra Mac App Store — klik på <strong>Installer</strong> nedenfor. Når den er installeret, vend tilbage hertil, så guider vi dig gennem aktivering i Safari.',
+        migrationPostInstallChromiumMacHtml: 'Installer ReDD Focus fra {BROWSER}-butikken — klik på <strong>Installer</strong> nedenfor. Når den er installeret, vend tilbage hertil, så guider vi dig gennem aktivering og tilladelse i {PRIV}-faner.',
         migrationPostInstallChromiumHtml: 'ReDD Block har allerede sat auto-installation op for ReDD Focus i {BROWSER} — <strong>genstart {BROWSER}</strong> for at hente den ind. (Eller klik på <strong>Installer</strong> nedenfor for at tilføje den manuelt nu.)',
         migrationInstructionEnableHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → find <strong>ReDD Focus</strong> → aktivér udvidelsen.',
         migrationInstructionWebsiteAccessHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → klik på <strong>Details</strong> ved ReDD Focus → tillad på <strong>alle websites</strong>.',
