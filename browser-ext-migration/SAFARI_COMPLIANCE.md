@@ -1,5 +1,10 @@
 # Safari Extension Compliance Detection
 
+> **Historical — v2 macOS Safari only.** v3 uses Automation TCC for Safari
+> (and Chromium on macOS), not extension profile scans. See
+> [../architecture.md](../architecture.md) §7. Still relevant for **Windows**
+> extension compliance and **macOS Firefox**.
+
 How ReDD Block tells whether the Safari Web Extension is **installed**,
 **enabled**, and **allowed in private browsing** — and what gets
 enforced when it isn't.

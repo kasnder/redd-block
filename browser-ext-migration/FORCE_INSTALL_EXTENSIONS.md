@@ -1,5 +1,9 @@
 # Force-installing the ReDD Focus extension at ReDD Block install time
 
+> **Historical — partial v3 relevance.** Windows Chromium auto-install hints
+> still apply. macOS Chromium/Safari use **Automation** in v3 (no extension).
+> macOS Firefox is **manual install only**. See [../architecture.md](../architecture.md).
+
 > Branch: `explore-force-install-extensions`
 > Status: implemented. The mechanism per browser ended up being
 > different by platform once we discovered the OS-level constraints

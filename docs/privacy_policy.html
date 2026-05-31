@@ -50,7 +50,7 @@
 <body>
     <div class="container">
         <h1>Privacy Policy</h1>
-        <p>Last updated: February 13, 2026</p>
+        <p>Last updated: May 30, 2026</p>
 
         <p>Thank you for using ReDD Block. This Privacy Policy explains how we handle your information when you use our
             application.</p>
@@ -63,11 +63,19 @@
             (such as blocklists and settings) remains on your local machine.</p>
 
         <h2>2. System Permissions</h2>
-        <p>On macOS and Windows, ReDD Block requires administrator privileges to modify the system hosts file
-            temporarily to enforce website blocking. On iOS, ReDD Block uses Apple's Screen Time framework
-            (Family Controls and ManagedSettings) to block websites and apps. In all cases, this process occurs
-            entirely locally on your device. No information about your system configuration or blocked content is
-            transmitted off your device.</p>
+        <p>ReDD Block operates entirely locally. It does not collect or transmit your data off your device.</p>
+        <p><strong>macOS (desktop):</strong> Website blocking for Safari, Chrome, Brave, and Edge uses Apple's
+            Automation permission (Apple Events) so ReDD Block can redirect blocked tabs — you grant this per browser
+            in System Settings → Privacy &amp; Security → Automation. Firefox on macOS uses the separate ReDD Focus
+            browser extension. App blocking runs in-process and may show system permission prompts as needed. If you
+            upgrade from ReDD Block 1.x, the app may ask for your administrator password <em>once</em> to remove
+            legacy helper-daemon and hosts-file entries; normal use does not modify the hosts file.</p>
+        <p><strong>Windows (desktop):</strong> Website blocking uses the ReDD Focus browser extension and a
+            local native-messaging connection to the ReDD Block app (no separate daemon). The app may register
+            extension-related entries in your user profile. App blocking runs in-process.</p>
+        <p><strong>iOS:</strong> ReDD Block uses Apple's Screen Time framework (Family Controls and
+            ManagedSettings) to block websites and apps you select. You must grant Screen Time authorization in
+            the app.</p>
 
         <h2>3. Data Storage</h2>
         <p>All data created or processed by ReDD Block is stored locally on your device. You have full

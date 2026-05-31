@@ -1,5 +1,11 @@
 # v2 Overview & Open TODOs
 
+> **Historical — macOS superseded by v3.0.** This folder documents the **v2**
+> extension-based desktop architecture. **Windows** still matches v2. On
+> **macOS**, website blocking for Safari/Chrome/Brave/Edge moved to
+> **Automation** in v3 — see [../architecture.md](../architecture.md) Part I.
+> Safari App Group / bundled extension content here is v2-only history.
+
 The condensed read for anyone landing in this folder. If you only have
 five minutes, this is the file. The deeper documents linked below
 exist for "I am about to touch this code" depth.

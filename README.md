@@ -7,7 +7,7 @@ Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and th
 ## Features
 
 - **Cross-Platform** — Works on macOS 11+, Windows 10+, iOS (iPad/iPhone), and Android (source code for the Android version is here: https://github.com/kasnder/redd-block-android)
-- **Website Blocking** — ReDD Block decides what to block; the **ReDD Focus** browser extension does the blocking in Chrome, Brave, Edge, Firefox, and Safari. On iOS, blocking uses Screen Time instead.
+- **Website Blocking** — ReDD Block decides what to block. On **macOS**, Safari/Chrome/Brave/Edge use **Automation** (no extension); **Firefox** uses the ReDD Focus extension. On **Windows**, Chrome/Brave/Edge/Firefox use the extension. On **iOS**, blocking uses Screen Time.
 - **App Blocking** — Closes distracting apps on desktop (warning overlay → save window → polite quit → force-close if needed; Screen Time shield overlay on iOS)
 - **Flexible Blocklists** — Create multiple lists with custom names, colors, and emojis
 - **One-Off Blocks** — Quick blocks for immediate focus sessions
@@ -19,25 +19,25 @@ Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and th
 
 ## How it works
 
-> **New in v2.** ReDD Block no longer edits your system `hosts` file and no longer runs a privileged background helper daemon — both were part of v1.x. Website blocking now goes through the **ReDD Focus** browser extension instead. You don't need an admin password to install or run v2 (macOS may ask once when cleaning up leftover v1.x components).
+> **v3 (current).** ReDD Block is a single unprivileged app — no helper daemon, no `hosts` file writes. On **macOS**, Safari/Chrome/Brave/Edge website blocking uses **Automation** (Apple Events); **Firefox** still uses the ReDD Focus extension. On **Windows**, all supported browsers use the extension. macOS may ask for your password **once** when cleaning up leftover v1.x components.
 
 ReDD Block is **one app**. When you start a block, it does two things:
 
-| | What gets blocked | Who does the blocking |
-|---|-------------------|------------------------|
-| **Websites** | URLs in your blocklists | **ReDD Focus** — a browser extension |
+| | What gets blocked | Who does the blocking (desktop) |
+|---|-------------------|----------------------------------|
+| **Websites** | URLs in your blocklists | **macOS:** Automation for Safari/Chrome/Brave/Edge; ReDD Focus extension for Firefox. **Windows:** ReDD Focus extension |
 | **Apps** | Programs in your blocklists | **ReDD Block** — closes them for you |
 
 ```mermaid
 flowchart LR
   RB[ReDD Block]
-  RB --> WEB[Websites<br/>via ReDD Focus]
+  RB --> WEB[Websites<br/>Automation or extension]
   RB --> APP[Apps<br/>closed by ReDD Block]
 ```
 
 ### Website blocking (desktop)
 
-**ReDD Block** stores your blocklists. **ReDD Focus** (the extension in your browser) blocks the actual pages — but macOS and Windows use different plumbing to get the list to the browser and enforce compliance.
+**ReDD Block** stores your blocklists and enforces them. macOS and Windows use different plumbing — see the tables below.
 
 **macOS**
 
@@ -92,12 +92,12 @@ No browser extension — ReDD Block uses **Screen Time** to shield websites and 
 If you previously ran ReDD Block 1.x (helper daemon + hosts file), the first launch after upgrade:
 
 1. Cleans up the old hosts-file entries and helper daemon (macOS may ask for your password once).
-2. Registers launch-at-login and browser extension hooks.
-3. Walks you through ReDD Focus setup in your browsers.
+2. Registers launch-at-login and (on Windows) native-messaging manifests for the extension.
+3. Walks you through browser setup — Automation for Safari/Chrome/Brave/Edge on macOS; ReDD Focus extension on Windows and for Firefox on macOS.
 
 ### Developers
 
-Implementation details, module map, and the iOS Screen Time pipeline: [architecture.md](architecture.md) and [browser-ext-migration/V2_OVERVIEW.md](browser-ext-migration/V2_OVERVIEW.md).
+Implementation details and module map: [architecture.md](architecture.md) (v3 current; v2/v1 historical). The [browser-ext-migration/](browser-ext-migration/) folder documents the v2 extension architecture — still accurate for **Windows**; macOS website blocking moved to Automation in v3.
 
 ## Local Development
 
@@ -158,7 +158,7 @@ Built artifacts are copied to `for-distribution/` for upload or direct distribut
 
 ### Testing
 
-Testing is organized into two automated tiers plus a manual checklist:
+Testing is organized into two automated tiers plus a manual checklist (see [testing.md](testing.md)):
 
 **1. Unit Tests (in-app, instant)**
 
@@ -172,7 +172,7 @@ npm run dev                   # Start the app
 
 **2. Integration Tests (in-app, profile-based)**
 
-Creates real blocks using safe `.invalid` domains and verifies enforcement end-to-end through the app. Covers Screen Time / native-host sync, schedule activation, one-off pause/resume, overlap safety, scoped clear, and diagnostics parity.
+Creates real blocks using safe `.invalid` domains and exercises app → Tauri command paths (save, pause/resume, scoped clear, app-blocking commands, migration hosts cleanup). Does **not** fully prove website blocking on v3 — use the manual checklist for Automation redirects and extension enforcement.
 
 ```bash
 # In the dev console:
@@ -182,7 +182,7 @@ runIntegrationTests('full')   # core + expanded non-UI coverage
 
 **3. Manual Checklist**
 
-See `scripts/manual-test-checklist.md` for the full pre-release checklist. Key items for the current architecture: Screen Time authorization flow (iOS), browser-extension install + enforcer grace timer (desktop), hide-on-close + launch-at-login, first-launch migration off the legacy helper.
+See `scripts/manual-test-checklist.md` for the full pre-release checklist. Key items: macOS Automation setup + enforcer (Safari/Chrome/Brave/Edge), Firefox/Windows extension install, hide-on-close + launch-at-login, v1.x migration cleanup, Screen Time (iOS).
 
 ## Project Structure
 
@@ -196,7 +196,7 @@ redd-block/
 │   ├── src/
 │   │   ├── lib.rs                # App setup, tray, hide-on-close, autostart
 │   │   ├── app_watcher.rs        # In-process app watcher (sysinfo poll + quit)
-│   │   ├── enforcer.rs           # Browser-extension compliance loop (macOS + Windows)
+│   │   ├── enforcer.rs           # Compliance enforcer (Automation TCC on macOS Safari/Chromium; extension elsewhere)
 │   │   ├── web_automation.rs     # macOS Automation tab blocking (Safari, Chrome, Brave, Edge)
 │   │   ├── native_host.rs        # Headless native-messaging host (Windows / Firefox blocklist feed)
 │   │   ├── native_host_install.rs # Registers native-messaging manifests (Windows; skipped on macOS)
@@ -209,7 +209,7 @@ redd-block/
 │   ├── tauri.ios.conf.json       # iOS-specific config
 │   ├── tauri.macos.conf.json     # macOS-specific config
 │   └── tauri.windows.conf.json   # Windows-specific config
-├── tauri-plugin-screentime/      # iOS Screen Time plugin (desktop uses extension path)
+├── tauri-plugin-screentime/      # iOS Screen Time plugin
 │   ├── ios/Sources/              # Swift plugin (FamilyActivityPicker, ManagedSettings)
 │   ├── src/                      # Rust bindings
 │   └── permissions/              # Plugin permissions
@@ -234,17 +234,17 @@ Use `./scripts/bump-version.sh <version>` to update the app version in all files
 
 ### App Data
 
-| Platform | Location |
-|----------|----------|
-| macOS | `~/Library/Application Support/com.reddblock/redd-block-data.json` |
-| Windows | `%AppData%\com.reddblock\redd-block-data.json` |
-| iOS | App sandbox (managed by Tauri) |
+| Platform | Canonical location (once activated) | Per-user fallback |
+|----------|-------------------------------------|-------------------|
+| macOS | `/var/lib/redd-block/redd-block-data.json` | `~/Library/Application Support/com.reddblock/redd-block-data.json` |
+| Windows | `%PROGRAMDATA%\ReDD Block\redd-block-data.json` | `%AppData%\com.reddblock\redd-block-data.json` |
+| iOS | App sandbox (managed by Tauri) | — |
 
 Legacy v1 paths under `com.redd.block` are still read as a fallback during migration.
 
 Contains blocklists, schedules, active blocks, and settings.
 
-On Windows the built-in native-messaging host reads this file directly to derive the current blocklist for the extension — no separate IPC channel.
+On **Windows** and **macOS Firefox**, the native-messaging host re-reads this file to derive the current blocklist. On **macOS Safari/Chrome/Brave/Edge**, the Automation watcher reads the same file via `derive_payload()`.
 
 ### Uninstall Behavior
 
@@ -257,7 +257,7 @@ Active blocks stop firing once the app is gone because the app itself is now the
 
 ## Requirements
 
-- **macOS**: 11.0+ (Big Sur or later) — required for Safari Web Extensions
+- **macOS**: 11.0+ (Big Sur or later) — Automation-based website blocking for Safari and Chromium browsers
 - **Windows**: 10+ (version 1809 or later)
 - **iOS**: 16.0+ (iPhone and iPad)
 - **Android**: see https://github.com/kasnder/redd-block-android
@@ -265,5 +265,6 @@ Active blocks stop firing once the app is gone because the app itself is now the
 
 ## Tech Debt
 
-- **Rename `updateHostsFile()`**: misleading now that no platform writes a hosts file. On desktop it's a no-op notify (the native messaging host re-reads the file on change). Consider renaming to `syncWebsiteBlocking()`.
-- **Frontend still calls legacy `*_via_helper` commands** via the shim in `src-tauri/src/commands/helper_shim.rs`. Rewrite `src/app.js` to call `set_blocked_apps` / `scan_browser_profiles` / Screen Time plugin commands directly and delete the shim.
+- **Rename `updateHostsFile()`**: misleading now that no platform writes a hosts file for blocking. Consider renaming to `syncWebsiteBlocking()`.
+- **Rewrite Tier 2 integration tests** (`src/integration-tests.js`): hosts-file assertions are v1-era; update to validate v3 enforcement paths.
+- **Frontend still calls legacy `*_via_helper` commands** via the shim in `src-tauri/src/commands/helper_shim.rs`. Rewrite `src/app.js` to call modern command names directly and delete the shim.

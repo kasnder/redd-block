@@ -1,5 +1,9 @@
 # How the v1.x → v2 migration runs in practice (Windows)
 
+> **Historical.** Describes v1→v2 upgrade cleanup (still runs in v3 via
+> `commands/migration.rs`). macOS website blocking changed again in v3 — see
+> [../architecture.md](../architecture.md).
+
 ## Context
 
 We've verified the cleanup *logic* works end-to-end (`cargo run --example test_migration` — accept, cancel, retry, idempotent re-run all green; data preservation verified by MD5). The remaining question is the *delivery* path: when a real v1.x user installs v2, what fires the cleanup, and is that flow practically testable?

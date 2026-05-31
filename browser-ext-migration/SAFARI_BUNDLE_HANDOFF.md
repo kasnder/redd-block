@@ -1,5 +1,10 @@
 # Safari extension bundling — branch handoff
 
+> **Obsolete — not shipped in v3.** Bundled Safari Web Extension, App Group
+> bridge, and Full Disk Access paths were removed in v3.0. Kept for git
+> archaeology only. Current macOS Safari blocking: Automation in
+> `src-tauri/src/web_automation.rs`.
+
 Snapshot of `bundle-safari-extension` at the point you paused for
 your weekend solo work. Written so you don't have to reconstruct the
 context from chat scrollback.

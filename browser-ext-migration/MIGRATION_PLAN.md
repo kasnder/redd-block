@@ -1,5 +1,10 @@
 # Browser-Extension Migration Plan
 
+> **Historical — macOS superseded by v3.0.** v2 replaced the v1 helper daemon
+> with browser extensions. v3 replaced macOS Safari/Chromium extension blocking
+> with Automation. See [../architecture.md](../architecture.md) for the current
+> design. This plan remains useful for **Windows** and v1→v2 migration context.
+
 > **Status (branch `claude/plan-extension-migration-J9CTL`)** — code complete,
 > end-to-end tested on real macOS and Windows hardware. Safari now uses an
 > App Group bridge (`group.com.reddblock.shared`) between ReDD Block and the

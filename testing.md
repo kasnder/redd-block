@@ -5,8 +5,9 @@ This document expands the `README.md` testing section with a deeper technical ex
 Terminology in this file follows `README.md`:
 
 - **Tier 1** = in-app logic tests
-- **Tier 2** = in-app integration tests
-- **Tier 3** = helper daemon smoke tests
+- **Tier 2** = in-app integration tests (desktop command-path + legacy hosts checks)
+
+There is **no Tier 3** anymore — the v1.x privileged helper daemon and its smoke-test scripts were removed in v2.
 
 ---
 
@@ -15,10 +16,9 @@ Terminology in this file follows `README.md`:
 Each tier answers a different quality question:
 
 - **Tier 1**: Is our blocking logic correct as pure behavior?
-- **Tier 2**: Does app -> Tauri -> helper flow behave correctly with real side effects?
-- **Tier 3**: Is the helper itself healthy and enforcing baseline system behavior?
+- **Tier 2**: Do app → Tauri command paths, data persistence, and migration cleanup behave correctly?
 
-No single tier is sufficient on its own.
+No single tier is sufficient on its own. **Website blocking enforcement** (macOS Automation redirects, Windows/Firefox native messaging) is validated primarily through the **manual checklist** — Tier 2 still contains some legacy hosts-file assertions from the v1 helper era that do not prove v3 blocking works.
 
 ---
 
@@ -31,27 +31,23 @@ No single tier is sufficient on its own.
 - **Tier 2**
   - In app dev console (default fast profile): `runIntegrationTests('core')`
   - In app dev console (expanded profile): `runIntegrationTests('full')`
-- **Tier 3**
-  - Cross-platform wrapper: `npm run test:helper`
-  - macOS directly: `sudo ./scripts/test-helper-mac.sh`
-  - Windows directly: `powershell -ExecutionPolicy Bypass -File .\scripts\test-helper-win.ps1`
 
 ---
 
 ## Tier 1: In-App Logic Tests
 
-## Purpose
+### Purpose
 
-Tier 1 validates logic and state-composition rules without requiring helper installation or system file mutation.
+Tier 1 validates logic and state-composition rules without Tauri side effects or system file mutation.
 
-## Entry points and structure
+### Entry points and structure
 
 - Runner and categories: `src/blocking-tests.js`
 - Pure helper/test functions: `src/test-utils.js`
 - Loaded in dev UI via script tags: `src/index.html`
 - Keyboard shortcut wiring: `src/app.js` (`Cmd/Ctrl + Shift + T`)
 
-## What it actually tests
+### What it actually tests
 
 `src/blocking-tests.js` currently covers logical categories such as:
 
@@ -71,33 +67,34 @@ It uses mock `appData` and pure functions from `src/test-utils.js` including:
 - `findHardestChallengeAtTime(...)`
 - `simulateOverrideAll(...)`
 
-## What differentiates Tier 1
+### What differentiates Tier 1
 
 - Very fast and deterministic.
 - Excellent for regression in business logic.
 - Minimal environment dependency.
 
-## Important limitations
+### Important limitations
 
-- Does not prove real hosts file writes.
-- Does not prove DNS flush behavior.
-- Does not prove real helper IPC transport.
+- Does not prove real Automation redirects (macOS) or extension blocking (Windows/Firefox).
+- Does not prove app-watcher quit behavior (manual checklist covers that).
 - App watcher behavior is mostly marked as manual/placeholder in this tier.
 
 ---
 
 ## Tier 2: In-App Integration Tests
 
-## Purpose
+### Purpose
 
 Tier 2 validates real side effects through the same app pathways users hit:
 
 - frontend state updates,
-- Tauri command calls,
-- helper orchestration,
-- hosts updates/cleanup.
+- Tauri command calls (`save_data`, legacy `*_via_helper` shims, `clean_hosts_file`, app-blocking commands),
+- pause/resume flag propagation,
+- diagnostics contract.
 
-## Entry points and structure
+It does **not** run a separate helper daemon. `check_helper_status()` always reports the app itself as ready via `helper_shim.rs`.
+
+### Entry points and structure
 
 - Integration suite: `src/integration-tests.js`
 - Exposed runner: `window.runIntegrationTests(profile)`
@@ -108,30 +105,21 @@ Core internal handles used:
 
 - `appData`
 - `saveData`
-- `updateHostsFile`
+- `updateHostsFile` (legacy name — does not write hosts in v3)
 - `tauriAPI`
 - `render`
 
-## Current profile model
+### Current profile model
 
-Tier 2 now supports two profiles:
-
-- `runIntegrationTests('core')`
-  - fast critical checks intended for regular local use.
-- `runIntegrationTests('full')`
-  - runs `core` plus expanded non-UI coverage.
+- `runIntegrationTests('core')` — fast critical checks for regular local use.
+- `runIntegrationTests('full')` — `core` plus expanded non-UI coverage.
 
 Default behavior with invalid/missing profile falls back to `core`.
 
-## Tier 2 exact test IDs and profile coverage
-
-The IDs below match both:
-
-- `src/integration-tests.js` test names, and
-- console output lines (pass/fail/skip + group failure summary when applicable).
+### Tier 2 exact test IDs and profile coverage
 
 ### Testing Group A: One-off and schedule mechanics
-- **A1**: Hosts modification path
+- **A1**: Legacy hosts modification path (**see limitations below**)
 - **A2**: One-off start/end timing
 - **A3**: Schedule active-now path
 - **A4**: Future schedule path (**full only**)
@@ -141,182 +129,99 @@ The IDs below match both:
 - **A8**: Pause/resume schedule active path (**full only**)
 - **A9**: Pause natural-expiry schedule smoke (**full only**)
 - **A10**: Pause inactive schedule suppression path (**full only**)
+- **A11**: Pause state roundtrip (**full only**)
 
-Expected outcome:
-- blocking and schedule state transitions succeed through app -> Tauri -> helper
-- `core` already includes one-off pause/resume enforcement coverage via `A6`
-- pause/resume transitions propagate through save + hosts/helper sync paths
+Expected outcome for A2–A10, A11:
+- blocking and schedule state transitions succeed through save + shim command paths
+- pause/resume transitions update flags and sync without errors
 - short timer-smoke checks confirm automatic pause expiry clears pause flags
-
-Pause case intent (expected vs what test verifies):
-- **A6 expected**: paused one-off is temporarily non-enforcing and manual resume restores enforcement; **verified** by pause flags + successful sync path before/after resume.
-- **A7 expected**: paused one-off auto-resumes after pause timeout; **verified** by short wait then pause flags naturally cleared.
-- **A8 expected**: active schedule can be paused and resumed with clean helper sync; **verified** by schedule pause flags + successful sync path before/after resume.
-- **A9 expected**: paused schedule auto-resumes after pause timeout; **verified** by short wait then schedule pause flags naturally cleared.
-- **A10 expected**: inactive schedule can be paused to suppress upcoming activation and then resumed; **verified** by inactive pause flag transition + clean resume/sync path.
 
 ### Testing Group B: Multi-block overlap correctness
 - **B1**: Shared-domain overlap
 - **B2**: One-off + schedule same blocklist (**full only**)
 
-Expected outcome:
-- overlap behavior remains stable without merge/preference regressions
-- clearing one active source must not remove shared enforcement still owned by another source
-
 ### Testing Group C: Clear and override semantics
-- **C1**: Scoped clear by blocklist ID
+- **C1**: Scoped clear by blocklist ID (**legacy hosts assertion — see limitations**)
 - **C2**: Clear-all manual blocks (**full only**)
 - **C3**: Max difficulty blocklist start/clear path (**full only**)
 
-Expected outcome:
-- scoped clear affects only targeted manual block scope
-- clear assertions are made directly against helper-observed hosts state after `clearBlockViaHelper(...)`
-- clear-all removes all manual block scope
-- blocklists with max override difficulty start and clear without errors (C3)
-
-### Testing Group D: Keep-blocking preference decision inputs
-- **D1**: Keep-blocking preference roundtrip
-
-Expected outcome:
-- helper preference update path is reliable and reversible
-
 ### Testing Group E: Hosts safety and cleanup invariants
-- **E1**: Clean hosts command path
-- **E2**: Helper diagnostics contract
-
-Expected outcome:
-- hosts cleanup command path succeeds without helper command errors
-- helper diagnostics stay aligned with `checkHelperStatus()` and continue returning the expected core fields
+- **E1**: Clean hosts command path (v1 migration cleanup — strips markers if present)
+- **E2**: Diagnostics contract
 
 ### Testing Group F: App-block command-path checks (non-visual)
 - **F1**: Set blocked apps command path (**full only**)
 - **F2**: Protected app payload path (**full only**)
 
-Expected outcome:
-- app-block command transport remains stable (visual watcher behavior is still manual)
-
 ### Testing Group G: Blocklist management
 - **G1**: Duplicate blocklist then start/clear path (**full only**)
 
-Expected outcome:
-- duplicating a blocklist then starting the duplicate and clearing by its ID succeeds through app -> Tauri -> helper
-
 ## Tier 2 profile composition
 
-- `core`: `A1`, `A2`, `A3`, `A6`, `B1`, `C1`, `D1`, `E1`, `E2`
-- `full`: `core` + `A4`, `A5`, `A7`, `A8`, `A9`, `A10`, `B2`, `C2`, `C3`, `F1`, `F2`, `G1`
+- `core`: `A1`, `A2`, `A3`, `A6`, `B1`, `C1`, `E1`, `E2`
+- `full`: `core` + `A4`, `A5`, `A7`, `A8`, `A9`, `A10`, `A11`, `B2`, `C2`, `C3`, `F1`, `F2`, `G1`
 
 ## Suite behavior
 
-1. setup snapshots the current `appData` so the suite can restore the user's state when it finishes.
-2. tests run sequentially by selected profile.
-3. some full-only pause/schedule cases use per-test reset/setup-cleanup boundaries so they do not leak state across the `full` profile.
-4. teardown restores the saved snapshot, saves it, and re-syncs helper state when the helper is healthy.
-5. when profile is `full` and at least one test fails, output includes a bottom **Group failure summary** for groups `A`–`G`.
+1. Setup snapshots the current `appData` so the suite can restore the user's state when it finishes.
+2. Tests run sequentially by selected profile.
+3. Some full-only pause/schedule cases use per-test reset/setup-cleanup boundaries.
+4. Teardown restores the saved snapshot, saves it, and re-syncs via legacy shim commands.
+5. When profile is `full` and at least one test fails, output includes a bottom **Group failure summary** for groups `A`–`G`.
 
-## What differentiates Tier 2
+### What differentiates Tier 2
 
-- Real system-touching app flow from UI-side code.
-- Exercises app-to-helper coordination and persistence behavior.
-- Catches integration issues missed by Tier 1.
+- Real Tauri command flow from UI-side code.
+- Catches persistence and shim regressions missed by Tier 1.
 
-## Important limitations
+### Important limitations
 
-- Some checks remain command-path assertions rather than UI-visible assertions.
-- Tests can be skipped when helper is unavailable or version-mismatched.
-- `updateHostsFile(true)` can still return `deferred: true` on the desktop fallback path when helper sync is unavailable; `A1` explicitly guards against that during helper-backed cleanup.
-- Still not a substitute for manual visual UX and OS prompt flows.
-
----
-
-## Tier 3: Helper Daemon Smoke Tests
-
-## Purpose
-
-Tier 3 directly validates helper baseline health and enforcement pipeline independent of most frontend logic.
-
-## Entry points and structure
-
-- macOS script: `scripts/test-helper-mac.sh`
-- Windows script: `scripts/test-helper-win.ps1`
-- npm wrapper: `package.json` -> `test:helper`
-
-## Transport specifics
-
-- macOS uses Unix socket: `/tmp/redd-block-helper.sock`
-- Windows uses TCP loopback: `127.0.0.1:62222`
-  - includes auth token handling from `%PROGRAMDATA%\ReDD Block\auth-token`
-
-## What it actually checks
-
-Both scripts validate a baseline chain:
-
-1. helper reachable (socket/TCP),
-2. `ping`,
-3. helper version/status,
-4. start a smoke test block,
-5. verify hosts contains test domain + markers,
-6. clear block,
-7. verify cleanup and localhost safety.
-
-## What differentiates Tier 3
-
-- Closest to helper engine health.
-- Fast failure signal for helper transport/enforcement regressions.
-- Useful before deep app-level debugging.
-
-## Important limitations
-
-- Bypasses most frontend orchestration and UI logic.
-- Not a complete product behavior test.
-- Focused on baseline helper correctness, not full feature matrix.
+- **A1, C1, C3, and parts of B/C groups** still assert domains appear in `/etc/hosts` via diagnostics. v3 website blocking does **not** write hosts — those tests validate legacy assumptions and **will fail or pass vacuously** unless rewritten to check `derive_payload` / browser-visible blocking instead.
+- Some checks are command-path assertions, not UI-visible assertions.
+- Not a substitute for manual Automation TCC flows, extension install, or enforcer grace UX.
+- **Tech debt:** rewrite Tier 2 website assertions for v3 (Automation + native host) — tracked alongside renaming `updateHostsFile()`.
 
 ---
 
 ## Tier Comparison
 
 - **Tier 1 (logic)**: high breadth of logic permutations, zero system mutation.
-- **Tier 2 (integration)**: moderate breadth, real app pathways and side effects.
-- **Tier 3 (smoke/helper)**: narrow breadth, deep helper sanity and transport checks.
+- **Tier 2 (integration)**: moderate breadth, Tauri command paths + stale hosts checks.
+- **Manual checklist**: required for website enforcement, permissions, enforcer, and visual UX.
 
 Recommended stance:
 
-- Use all three tiers together.
-- Treat Tier 2 as the primary candidate for expansion when aligning automation with manual checklist depth.
+- Run Tier 1 during feature work.
+- Run Tier 2 for data/sync/shim regressions; do not treat passing Tier 2 as proof of website blocking.
+- Run the manual checklist before every release.
 
 ---
 
 ## iOS and testing tiers
 
-iOS does not use the helper daemon; enforcement uses the Screen Time plugin (`tauri-plugin-screentime`). Testing should mirror desktop behavior where the same functionality exists.
+iOS enforcement uses the Screen Time plugin (`tauri-plugin-screentime`).
 
-- **Tier 1 (logic):** Runs in the app; safe to run on iOS. Same blocking/schedule/override logic applies; no system mutation.
-- **Tier 2 (integration):** Desktop-oriented. On iOS, `checkHelperStatus()` is not used for enforcement, so helper-dependent tests are skipped (helper not running). Tier 2 does not currently include iOS-specific integration paths (e.g. Screen Time plugin calls). **Manual checklist is the primary way to validate iOS.**
-- **Tier 3 (helper):** Desktop only; not applicable on iOS.
+- **Tier 1 (logic):** Runs in the app; safe on iOS. Same blocking/schedule/override logic applies.
+- **Tier 2 (integration):** Desktop-oriented; helper-dependent paths always see the shim as “ready” but do not exercise Screen Time. **Manual checklist is the primary way to validate iOS.**
 
-For release, run the **manual test checklist** (including section **11. iOS-Specific**) on a physical iPhone to cover permissions, one-off/schedule blocking, pause/resume, overlap, override, app blocking, and edge cases in line with the desktop list.
+For release, run the **manual test checklist** (section **14. iOS-Specific**) on a physical iPhone.
 
 ---
 
 ## Typical contributor workflow
 
 1. Run Tier 1 during active feature work for fast feedback.
-2. Run Tier 2 before merging behavior changes that touch block/schedule/helper flows.
-3. Run Tier 3 when debugging helper-specific issues or before release packaging.
-4. Run manual checklist for final release confidence and UX/platform validation.
+2. Run Tier 2 before merging changes that touch save/sync/shim/app-blocking command paths.
+3. Run the manual checklist for website blocking, permissions, enforcer, and release confidence.
 
 ---
 
 ## Common troubleshooting
 
-- Tier 1 not running:
+- **Tier 1 not running:**
   - confirm `src/index.html` includes `test-utils.js` and `blocking-tests.js`.
   - confirm shortcut handler in `src/app.js` is active in current build.
-- Tier 2 failing at setup/teardown:
+- **Tier 2 failing on A1/C1/C3 (hosts assertions):**
+  - expected on v3 until integration tests are rewritten — use manual checklist for website blocking instead.
+- **Tier 2 failing at setup/teardown:**
   - confirm `window.__REDDBLOCK_INTERNALS__` exports are present from `src/app.js`.
-  - confirm helper is installed/running for helper-dependent cases.
-- Tier 3 connection failures:
-  - verify helper service is installed and started.
-  - check socket/TCP path and permissions.
-  - on Windows, check auth token file and firewall/task state.
-

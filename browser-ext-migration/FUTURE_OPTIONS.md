@@ -1,5 +1,9 @@
 # Future Options
 
+> **Historical — v2 planning notes.** Some items (signed `.pkg`) were later
+> implemented; macOS localhost/App Group fallbacks were superseded by v3
+> Automation. See [../architecture.md](../architecture.md).
+
 Design notes for ideas explored during the browser-extension migration and
 intentionally parked for the v2.0 release.
 
