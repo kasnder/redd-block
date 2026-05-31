@@ -26,14 +26,19 @@ exec > >(tee -a "$LOG") 2>&1
 echo "=== preinstall $(date '+%F %T') ==="
 
 # 1. Stop any running ReDD Block process. Order:
-#    - polite quit (works for v1.x and any v2 build before the
-#      terminate-guard installs),
+#    - polite quit (only when the .app is already on disk — on a
+#      first-time install preinstall runs before the payload lands, so
+#      `tell application "ReDD Block"` would make macOS show a
+#      "Where is ReDD Block?" file picker; skip it in that case),
 #    - SIGTERM by binary path / process name,
 #    - 2 s breather,
 #    - SIGKILL stragglers including --native-host subprocesses spawned
 #      by browsers (those hold open file handles inside the .app
 #      bundle and would block the payload swap).
-osascript -e 'tell application "ReDD Block" to quit' 2>/dev/null || true
+APP_PATH='/Applications/ReDD Block.app'
+if [ -d "$APP_PATH" ]; then
+    osascript -e 'tell application id "com.reddblock" to quit' 2>/dev/null || true
+fi
 
 # `redd-block` is the Tauri binary stem inside the .app; that's the
 # name `ps` shows, not the bundle display name "ReDD Block". Match
