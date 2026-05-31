@@ -2234,6 +2234,13 @@ async function wireEnforcementToggle() {
 
 let blockingMethodSettingsWired = false;
 
+function syncBlockingMethodLabelIcons() {
+    for (const key of MAC_BLOCKING_METHOD_KEYS) {
+        const icon = document.getElementById(`settings-blocking-method-${key}-icon`);
+        if (icon) icon.src = browserIconUrl(key);
+    }
+}
+
 function syncBlockingMethodSelects(methods = getBlockingMethodsMap()) {
     for (const key of MAC_BLOCKING_METHOD_KEYS) {
         const select = document.getElementById(`blocking-method-${key}`);
@@ -2256,6 +2263,7 @@ async function wireBlockingMethodSettings() {
         console.warn('[blocking-method] read failed:', e);
     }
     syncBlockingMethodSelects(methods);
+    syncBlockingMethodLabelIcons();
 
     if (!blockingMethodSettingsWired) {
         blockingMethodSettingsWired = true;
@@ -2358,7 +2366,7 @@ const BROWSER_STORE_LINKS = {
 // grant, not whether ReDD Focus is installed/enabled. Firefox stays on
 // the extension path. Non-macOS keeps the extension model everywhere.
 const AUTOMATION_BROWSER_KEYS = ['chrome', 'brave', 'edge', 'safari'];
-const MAC_BLOCKING_METHOD_KEYS = ['chrome', 'brave', 'edge', 'safari'];
+const MAC_BLOCKING_METHOD_KEYS = ['safari', 'chrome', 'brave', 'edge'];
 /** @deprecated use MAC_BLOCKING_METHOD_KEYS */
 const MAC_CHROMIUM_BLOCKING_KEYS = MAC_BLOCKING_METHOD_KEYS;
 
@@ -15094,7 +15102,7 @@ const SETTINGS_TRANSLATIONS = {
         gracePeriodHint: 'Seconds to re-enable before the browser closes.',
         settingsEnforcementHeading: 'Enforcement',
         settingsBlockingMethodHeading: 'Blocking mechanism',
-        settingsBlockingMethodHint: 'Automation uses macOS automation for blocking. Extension mode uses the ReDD Focus browser extension. If you experience short lags with the automation approach, try extension mode.',
+        settingsBlockingMethodHint: 'Whether website blocking should use Automation or the ReDD Focus browser extension (try the latter if blocking is lagging).',
         settingsBlockingMethodAutomation: 'Automation',
         settingsBlockingMethodExtension: 'Extension',
         settingsBlockingMethodChrome: 'Chrome',
@@ -16807,6 +16815,7 @@ function applySettingsLanguage() {
     setText('settings-blocking-method-brave-label', tSettings('settingsBlockingMethodBrave'));
     setText('settings-blocking-method-edge-label', tSettings('settingsBlockingMethodEdge'));
     setText('settings-blocking-method-safari-label', tSettings('settingsBlockingMethodSafari'));
+    syncBlockingMethodLabelIcons();
     for (const key of MAC_BLOCKING_METHOD_KEYS) {
         const select = document.getElementById(`blocking-method-${key}`);
         if (!select) continue;

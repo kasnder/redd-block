@@ -2,6 +2,19 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
+## v3.1.0
+
+- **macOS: optional extension mode for instant blocking.** Power users can
+  switch Chrome, Brave, Edge, or Safari from Automation (default) to the ReDD
+  Focus extension in Settings → Website blocking. Extension mode redirects
+  blocked URLs at navigation time instead of on the ~1 second Automation tick.
+  Chromium uses native messaging; Safari uses a shared App Group mirror of
+  your blocklists when extension mode is on.
+- **macOS: diagnostics improvements.** Automation permission status per
+  browser, manual Refresh (no background polling), and clearer layout for
+  blocked domains and apps.
+- **Version:** 3.1.0.
+
 ## v3.0.0
 
 - **macOS: website blocking via Automation instead of browser extensions.**

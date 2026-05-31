@@ -1508,7 +1508,10 @@
                                     class="settings-enforcement-subsection-toggle"
                                     aria-expanded="false"
                                     aria-controls="settings-blocking-method-content">
-                                    <span id="settings-blocking-method-toggle-label" class="settings-enforcement-subsection-label">Blocking mechanism</span>
+                                    <div class="settings-blocking-method-toggle-copy">
+                                        <span id="settings-blocking-method-toggle-label" class="settings-row-label">Blocking mechanism</span>
+                                        <span id="settings-blocking-method-hint" class="settings-row-hint">Whether website blocking should use Automation or the ReDD Focus browser extension (try the latter if blocking is lagging).</span>
+                                    </div>
                                     <svg class="settings-enforcement-chevron" width="14" height="14" viewBox="0 0 24 24"
                                         fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
                                         stroke-linejoin="round" aria-hidden="true">
@@ -1516,11 +1519,27 @@
                                     </svg>
                                 </button>
                                 <div id="settings-blocking-method-content" class="settings-enforcement-subsection-content hidden">
-                                    <p id="settings-blocking-method-hint" class="settings-blocking-method-hint">Automation uses macOS automation for blocking. Extension mode uses the ReDD Focus browser extension. If you experience short lags with the automation approach, try extension mode.</p>
                                     <div class="settings-blocking-method-rows">
                                         <div class="settings-row">
                                             <div class="settings-row-copy">
-                                                <span id="settings-blocking-method-chrome-label" class="settings-row-label">Chrome</span>
+                                                <span class="settings-blocking-method-label">
+                                                    <img id="settings-blocking-method-safari-icon" class="settings-blocking-method-icon" src="" alt="" aria-hidden="true">
+                                                    <span id="settings-blocking-method-safari-label" class="settings-row-label">Safari</span>
+                                                </span>
+                                            </div>
+                                            <div class="settings-row-control">
+                                                <select id="blocking-method-safari" class="blocking-method-select" aria-label="Safari blocking method">
+                                                    <option value="automation">Automation</option>
+                                                    <option value="extension">Extension</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                        <div class="settings-row">
+                                            <div class="settings-row-copy">
+                                                <span class="settings-blocking-method-label">
+                                                    <img id="settings-blocking-method-chrome-icon" class="settings-blocking-method-icon" src="" alt="" aria-hidden="true">
+                                                    <span id="settings-blocking-method-chrome-label" class="settings-row-label">Chrome</span>
+                                                </span>
                                             </div>
                                             <div class="settings-row-control">
                                                 <select id="blocking-method-chrome" class="blocking-method-select" aria-label="Chrome blocking method">
@@ -1531,7 +1550,10 @@
                                         </div>
                                         <div class="settings-row">
                                             <div class="settings-row-copy">
-                                                <span id="settings-blocking-method-brave-label" class="settings-row-label">Brave</span>
+                                                <span class="settings-blocking-method-label">
+                                                    <img id="settings-blocking-method-brave-icon" class="settings-blocking-method-icon" src="" alt="" aria-hidden="true">
+                                                    <span id="settings-blocking-method-brave-label" class="settings-row-label">Brave</span>
+                                                </span>
                                             </div>
                                             <div class="settings-row-control">
                                                 <select id="blocking-method-brave" class="blocking-method-select" aria-label="Brave blocking method">
@@ -1542,21 +1564,13 @@
                                         </div>
                                         <div class="settings-row">
                                             <div class="settings-row-copy">
-                                                <span id="settings-blocking-method-edge-label" class="settings-row-label">Edge</span>
+                                                <span class="settings-blocking-method-label">
+                                                    <img id="settings-blocking-method-edge-icon" class="settings-blocking-method-icon" src="" alt="" aria-hidden="true">
+                                                    <span id="settings-blocking-method-edge-label" class="settings-row-label">Edge</span>
+                                                </span>
                                             </div>
                                             <div class="settings-row-control">
                                                 <select id="blocking-method-edge" class="blocking-method-select" aria-label="Edge blocking method">
-                                                    <option value="automation">Automation</option>
-                                                    <option value="extension">Extension</option>
-                                                </select>
-                                            </div>
-                                        </div>
-                                        <div class="settings-row">
-                                            <div class="settings-row-copy">
-                                                <span id="settings-blocking-method-safari-label" class="settings-row-label">Safari</span>
-                                            </div>
-                                            <div class="settings-row-control">
-                                                <select id="blocking-method-safari" class="blocking-method-select" aria-label="Safari blocking method">
                                                     <option value="automation">Automation</option>
                                                     <option value="extension">Extension</option>
                                                 </select>

@@ -5526,16 +5526,16 @@ body.dark-mode .blocking-method-select {
     cursor: default;
 }
 
-#settings-blocking-method-section .settings-blocking-method-hint {
-    margin: 0 0 10px;
-    padding: 0 16px;
-    font-size: 13px;
-    line-height: 1.45;
-    color: var(--text-secondary);
-}
-
 .settings-blocking-method-section {
     border-top: 1px solid var(--border-color-light);
+}
+
+.settings-blocking-method-toggle-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
 }
 
 .settings-enforcement-subsection-toggle {
@@ -5544,7 +5544,7 @@ body.dark-mode .blocking-method-select {
     justify-content: space-between;
     gap: 12px;
     width: 100%;
-    padding: 14px 16px;
+    padding: 12px 16px;
     border: none;
     background: transparent;
     cursor: pointer;
@@ -5559,12 +5559,6 @@ body.dark-mode .blocking-method-select {
 
 body.dark-mode .settings-enforcement-subsection-toggle:hover {
     background: rgba(255, 255, 255, 0.04);
-}
-
-.settings-enforcement-subsection-label {
-    font-size: 15px;
-    font-weight: 500;
-    color: var(--text-primary);
 }
 
 .settings-enforcement-subsection-toggle .settings-enforcement-chevron {
@@ -5583,6 +5577,19 @@ body.dark-mode .settings-enforcement-subsection-toggle:hover {
 .settings-blocking-method-rows .settings-row {
     padding: 12px 16px;
     border-top: 1px solid var(--border-color-medium);
+}
+
+.settings-blocking-method-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.settings-blocking-method-icon {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    object-fit: contain;
 }
 
 .settings-enforcement-subsection-toggle .settings-enforcement-chevron {
