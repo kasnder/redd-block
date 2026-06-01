@@ -105,6 +105,24 @@ pub struct BrowserStatus {
     /// after app refocus / relaunch without re-reading the protected plist.
     #[serde(rename = "needsFdaAccess", default)]
     pub needs_fda_access: bool,
+    /// macOS Firefox only: native-messaging manifest points at the
+    /// current ReDD Block binary (extension blocking bridge).
+    #[serde(rename = "nativeHostReady", default)]
+    pub native_host_ready: bool,
+}
+
+impl Default for BrowserStatus {
+    fn default() -> Self {
+        Self {
+            present: false,
+            installed: false,
+            profiles: vec![],
+            error: None,
+            duplicate_extensions: None,
+            needs_fda_access: false,
+            native_host_ready: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,6 +173,13 @@ pub fn scan_for_onboarding() -> ScanResult {
         }
         if crate::blocking_method::uses_automation_at_path(&path, "safari") {
             result.safari = safari_presence_only();
+        }
+        if result.firefox.installed {
+            if let Err(e) = crate::native_host_install::sync_firefox_native_host(false) {
+                log::warn!("native-host sync for firefox during onboarding scan failed: {e}");
+            }
+            result.firefox.native_host_ready =
+                crate::native_host_install::firefox_native_host_is_current();
         }
         result
     }
@@ -227,14 +252,7 @@ pub fn scan_filter<F: Fn(&str) -> bool>(should_scan: F) -> ScanResult {
 }
 
 fn empty(_label: &str) -> BrowserStatus {
-    BrowserStatus {
-        present: false,
-        installed: false,
-        profiles: vec![],
-        error: None,
-        duplicate_extensions: None,
-        needs_fda_access: false,
-    }
+    BrowserStatus::default()
 }
 
 fn firefox_root() -> Option<PathBuf> {
@@ -361,6 +379,7 @@ fn scan_firefox() -> Option<BrowserStatus> {
             error: None,
             duplicate_extensions: None,
             needs_fda_access: false,
+            native_host_ready: false,
         });
     }
 
@@ -428,6 +447,7 @@ fn scan_firefox() -> Option<BrowserStatus> {
         error: None,
         duplicate_extensions: None,
         needs_fda_access: false,
+        native_host_ready: false,
     })
 }
 
@@ -581,6 +601,7 @@ impl ChromiumBrowser {
             error: None,
             duplicate_extensions: None,
             needs_fda_access: false,
+            native_host_ready: false,
         }
     }
 
@@ -654,6 +675,7 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
             error: None,
             duplicate_extensions: None,
             needs_fda_access: false,
+            native_host_ready: false,
         });
     }
 
@@ -796,6 +818,7 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
         error: None,
         duplicate_extensions: None,
         needs_fda_access: false,
+        native_host_ready: false,
     })
 }
 
@@ -1088,6 +1111,7 @@ fn safari_presence_only() -> BrowserStatus {
         error: None,
         duplicate_extensions: None,
         needs_fda_access: false,
+        native_host_ready: false,
     }
 }
 
@@ -1272,6 +1296,7 @@ fn scan_safari() -> BrowserStatus {
         error,
         duplicate_extensions,
         needs_fda_access: false,
+        native_host_ready: false,
     }
 }
 
@@ -1301,6 +1326,7 @@ fn scan_safari() -> BrowserStatus {
         error: Some("Safari is macOS-only".to_string()),
         duplicate_extensions: None,
         needs_fda_access: false,
+        native_host_ready: false,
     }
 }
 
@@ -1309,24 +1335,36 @@ fn scan_safari() -> BrowserStatus {
 /// plist we can see must report installed+enabled+privateBrowsing and
 /// all-website access. Used by onboarding to gate the backend switch.
 ///
+fn default_profile_compliant(b: &BrowserStatus) -> bool {
+    let def = b
+        .profiles
+        .iter()
+        .find(|p| p.is_default)
+        .or_else(|| b.profiles.first());
+    matches!(
+        def,
+        Some(p) if p.installed
+            && p.enabled == Some(true)
+            && p.private_browsing == Some(true)
+            && p.website_access_all.unwrap_or(true)
+    )
+}
+
 pub fn compliant(result: &ScanResult) -> bool {
-    let chromium_or_firefox = [&result.firefox, &result.chrome, &result.brave, &result.edge];
-    let chromium_ok = chromium_or_firefox.iter().all(|b| {
-        !b.present || {
-            let def = b
-                .profiles
-                .iter()
-                .find(|p| p.is_default)
-                .or_else(|| b.profiles.first());
-            matches!(
-                def,
-                Some(p) if p.installed
-                    && p.enabled == Some(true)
-                    && p.private_browsing == Some(true)
-                    && p.website_access_all.unwrap_or(true)
-            )
-        }
-    });
+    let chromium_ok = [&result.chrome, &result.brave, &result.edge]
+        .iter()
+        .all(|b| !b.present || default_profile_compliant(b));
+    let firefox_ok = !result.firefox.present
+        || (default_profile_compliant(&result.firefox) && {
+            #[cfg(target_os = "macos")]
+            {
+                result.firefox.native_host_ready
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                true
+            }
+        });
     let safari_ok = !result.safari.present
         || (!result.safari.profiles.is_empty()
             && result
@@ -1334,7 +1372,7 @@ pub fn compliant(result: &ScanResult) -> bool {
                 .profiles
                 .iter()
                 .all(|p| safari_profile_passes(p)));
-    chromium_ok && safari_ok
+    chromium_ok && firefox_ok && safari_ok
 }
 
 fn safari_profile_passes(p: &ProfileStatus) -> bool {

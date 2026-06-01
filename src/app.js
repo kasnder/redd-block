@@ -2483,6 +2483,9 @@ function browserComplianceStatus(key, b) {
     if (enabled === false) return 'needs-enable';
     const priv = def.privateBrowsing;
     if (priv !== true) return 'needs-private';
+    if (key === 'firefox' && isMacOSDesktop && b.nativeHostReady === false) {
+        return 'needs-native-host';
+    }
     return 'compliant';
 }
 
@@ -2493,6 +2496,7 @@ function statusLabel(key, status) {
         case 'needs-website-access': return tSettings('migrationStatusAllowAllWebsites');
         case 'needs-private': return tSettings('migrationStatusAllowPrivate');
         case 'needs-enable': return tSettings('migrationStatusEnableExtension');
+        case 'needs-native-host': return tSettings('migrationStatusNativeHost');
         case 'needs-install': return tSettings('migrationStatusInstall');
         default: return tSettings('migrationStatusInstall');
     }
@@ -3042,6 +3046,9 @@ function migrationBrowserRenderSignature(state) {
         }
         const b = browsers[k];
         const status = browserComplianceStatus(k, b) || 'needs-install';
+        if (k === 'firefox') {
+            return `${k}:${status}:${b?.nativeHostReady ? 1 : 0}`;
+        }
         if (k === 'safari' && b?.profiles?.length) {
             const profileSig = b.profiles.map(p =>
                 `${p.installed ? 1 : 0}${p.enabled === true ? 1 : p.enabled === false ? 0 : '?'}${p.privateBrowsing === true ? 1 : p.privateBrowsing === false ? 0 : '?'}${p.websiteAccessAll === true ? 1 : p.websiteAccessAll === false ? 0 : '?'}`
@@ -3151,6 +3158,7 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
             case 'needs-install': badge.textContent = tSettings('migrationBadgeNotInstalled'); break;
             case 'needs-enable': badge.textContent = tSettings('migrationBadgeDisabled'); break;
             case 'needs-private': badge.textContent = tSettings('migrationBadgeNotPrivate'); break;
+            case 'needs-native-host': badge.textContent = tSettings('migrationBadgeNativeHost'); break;
             case 'needs-website-access': badge.textContent = tSettings('migrationBadgeNoWebsiteAccess'); break;
             default: badge.textContent = tSettings('migrationBadgeNotInstalled');
         }
@@ -3216,6 +3224,29 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
             row.appendChild(actionsRow);
         } else if (status === 'needs-deduplicate') {
             renderSafariDuplicateExtensionPanel(row, key);
+        } else if (status === 'needs-native-host') {
+            const hint = document.createElement('div');
+            hint.className = 'migration-browser-hint migration-browser-after-hint';
+            hint.innerHTML = tSettings('migrationFirefoxNativeHostHtml');
+            row.appendChild(hint);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'migration-browser-copy';
+            btn.textContent = tSettings('migrationFirefoxNativeHostButton');
+            btn.addEventListener('click', async () => {
+                try {
+                    await invoke('ensure_firefox_native_host');
+                    const fresh = await invoke('onboarding_state');
+                    renderBrowserInstallButtons(fresh, { force: true });
+                    await updateBehaviourChangeBanner(fresh);
+                } catch (e) {
+                    console.warn('[firefox] ensure_firefox_native_host failed:', e);
+                }
+            });
+            const actionsRow = document.createElement('div');
+            actionsRow.className = 'migration-actions-row';
+            actionsRow.appendChild(btn);
+            row.appendChild(actionsRow);
         } else if (status === 'needs-enable' || status === 'needs-private' || status === 'needs-website-access') {
             // Mirror the notification-banner layout for clarity:
             // [optional ✓ Extension installed]
@@ -3580,7 +3611,7 @@ function buildBannerActionSummary(browsers, detectedKeys) {
         groups.get(status).push(label);
     }
 
-    const order = ['needs-install', 'needs-automation', 'needs-enable', 'needs-private', 'needs-website-access'];
+    const order = ['needs-install', 'needs-automation', 'needs-native-host', 'needs-enable', 'needs-private', 'needs-website-access'];
     const phrases = [];
     for (const status of order) {
         const list = groups.get(status);
@@ -14998,6 +15029,10 @@ const SETTINGS_TRANSLATIONS = {
         migrationStatusAllowPrivate: 'Allow in private browsing',
         migrationStatusEnableExtension: 'Enable extension',
         migrationStatusInstall: 'Install',
+        migrationStatusNativeHost: 'Connect ReDD Block',
+        migrationBadgeNativeHost: 'Connect ReDD Block',
+        migrationFirefoxNativeHostHtml: 'ReDD Focus is installed. ReDD Block still needs to register its connection with Firefox (one small setup step).',
+        migrationFirefoxNativeHostButton: 'Connect to Firefox',
         migrationInstallButton: 'Install',
         migrationInstallStoreTitle: 'Open {browser} extension store page',
         migrationUrlCopied: 'URL Copied',
@@ -15596,6 +15631,10 @@ const SETTINGS_TRANSLATIONS = {
         migrationStatusAllowPrivate: 'Tillad privat browsing',
         migrationStatusEnableExtension: 'Aktivér udvidelse',
         migrationStatusInstall: 'Installer',
+        migrationStatusNativeHost: 'Forbind ReDD Block',
+        migrationBadgeNativeHost: 'Forbind ReDD Block',
+        migrationFirefoxNativeHostHtml: 'ReDD Focus er installeret. ReDD Block skal stadig registrere forbindelsen til Firefox (ét lille trin).',
+        migrationFirefoxNativeHostButton: 'Forbind til Firefox',
         migrationInstallButton: 'Installer',
         migrationInstallStoreTitle: 'Åbn udvidelsesbutikken for {browser}',
         migrationUrlCopied: 'URL kopieret',

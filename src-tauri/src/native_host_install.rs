@@ -186,7 +186,7 @@ pub fn install_native_host_for(browser: BrowserTarget) -> std::io::Result<()> {
 
 /// `true` when the browser's manifest is missing or points at a different
 /// binary (e.g. after `tauri dev` rebuild or .pkg reinstall).
-fn manifest_needs_update(browser: BrowserTarget, binary: &str) -> bool {
+pub fn manifest_needs_update(browser: BrowserTarget, binary: &str) -> bool {
     let Some(dir) = browser.manifest_dir() else {
         return true;
     };
@@ -234,6 +234,43 @@ pub fn sync_extension_mode_native_hosts(path: &std::path::Path, force: bool) -> 
 #[cfg(not(target_os = "macos"))]
 pub fn sync_extension_mode_native_hosts(_path: &std::path::Path, _force: bool) -> std::io::Result<()> {
     Ok(())
+}
+
+/// macOS Firefox: write the native-messaging manifest when missing or stale.
+/// No-op when Firefox is not installed. Skips the write when already current
+/// unless `force` is true (explicit user refresh).
+#[cfg(target_os = "macos")]
+pub fn sync_firefox_native_host(force: bool) -> std::io::Result<()> {
+    if !crate::profile_scan::firefox_app_installed() {
+        return Ok(());
+    }
+    let binary = current_binary_path().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::Other, "cannot resolve current exe")
+    })?;
+    if !force && !manifest_needs_update(BrowserTarget::Firefox, &binary) {
+        log::debug!("native-host sync: firefox manifest already current, skipping");
+        return Ok(());
+    }
+    log::info!("native-host sync: writing manifest for firefox");
+    install_one(BrowserTarget::Firefox, &binary)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn sync_firefox_native_host(_force: bool) -> std::io::Result<()> {
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+pub fn firefox_native_host_is_current() -> bool {
+    let Some(binary) = current_binary_path() else {
+        return false;
+    };
+    !manifest_needs_update(BrowserTarget::Firefox, &binary)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn firefox_native_host_is_current() -> bool {
+    true
 }
 
 /// Remove the native-messaging manifest for one browser.
@@ -527,13 +564,19 @@ pub fn install_native_host(app: tauri::AppHandle) -> Result<(), String> {
     {
         let path = crate::commands::canonical_data_path(&app)
             .ok_or_else(|| "no app data path".to_string())?;
-        sync_extension_mode_native_hosts(&path, true).map_err(|e| e.to_string())
+        sync_extension_mode_native_hosts(&path, true).map_err(|e| e.to_string())?;
+        sync_firefox_native_host(true).map_err(|e| e.to_string())
     }
     #[cfg(not(target_os = "macos"))]
     {
         let _ = app;
         install_force().map_err(|e| e.to_string())
     }
+}
+
+#[tauri::command]
+pub fn ensure_firefox_native_host() -> Result<(), String> {
+    sync_firefox_native_host(true).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
