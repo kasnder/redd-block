@@ -46,7 +46,14 @@ pub fn check_safari_fda_access() -> SafariFdaAccess {
 
 #[tauri::command]
 pub fn sync_safari_fda_access() -> bool {
-    crate::cross_app_consent::sync_safari_fda_access()
+    #[cfg(target_os = "macos")]
+    {
+        crate::cross_app_consent::sync_safari_fda_access()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        true
+    }
 }
 
 #[tauri::command]
