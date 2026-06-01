@@ -12,6 +12,7 @@
     "build:mac-all": "npm run build:mac && npm run build:mac-pkg",
     "build:ios": "bash ./scripts/ios-appstore-build.sh",
     "build:win": "powershell -ExecutionPolicy Bypass -File ./scripts/build-win.ps1",
+    "build:win-store": "powershell -ExecutionPolicy Bypass -File ./scripts/build-win-store.ps1",
     "tauri": "tauri",
     "vite:dev": "vite",
     "vite:build": "vite build",

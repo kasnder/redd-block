@@ -6,6 +6,7 @@ node_modules/
 dist/
 build/
 appx-build/
+msix-build/
 *.appx
 *.dmg
 *.exe

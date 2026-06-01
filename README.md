@@ -147,12 +147,17 @@ npm run build:mac-pkg
 # macOS: Both in one go (.app + .pkg)
 npm run build:mac-all
 
-# Windows: NSIS/MSI installers (x64 + ARM64)
+# Windows: NSIS/MSI installers (x64 + ARM64) — direct download / S3
 npm run build:win
+
+# Windows: Microsoft Store (MSIX for Partner Center upload; same pipeline as redd-do)
+npm run build:win-store
 
 # iOS: Build IPA for App Store upload (via Transporter)
 npm run build:ios
 ```
+
+For Store builds, set `WINDOWS_IDENTITY_NAME` and `WINDOWS_PUBLISHER` in `.env` (Partner Center → Product identity) and upload the `.msix` from `for-distribution/x86_64-pc-windows-msvc/`. Run `node scripts/generate-icons-from-svg.js` first if `assets/icons/1024x1024.png` is missing.
 
 Built artifacts are copied to `for-distribution/` for upload or direct distribution.
 
