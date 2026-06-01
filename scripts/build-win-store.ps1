@@ -61,10 +61,9 @@ if ((Test-Path $dotnetX64) -and -not $env:DOTNET_ROOT) {
     $env:DOTNET_ROOT = $dotnetX64
 }
 
+. (Join-Path $PSScriptRoot "windows-signing-preflight.ps1")
+if (-not (Test-ReddBlockWindowsSigning)) { exit 1 }
 $hasSigningVars = $env:AZURE_CLIENT_ID -and $env:AZURE_CLIENT_SECRET -and $env:AZURE_TENANT_ID
-if (-not $hasSigningVars) {
-    Write-Host "  WARNING: Azure signing env vars not set. Binaries may be unsigned." -ForegroundColor Yellow
-}
 
 if (-not $env:WINDOWS_IDENTITY_NAME -or -not $env:WINDOWS_PUBLISHER) {
     Write-Host "  ERROR: Set WINDOWS_IDENTITY_NAME and WINDOWS_PUBLISHER in .env (Partner Center -> Product identity)." -ForegroundColor Red

@@ -53,11 +53,11 @@ if ((Test-Path $dotnetX64) -and -not $env:DOTNET_ROOT) {
     Write-Host "  .NET root: $dotnetX64" -ForegroundColor Gray
 }
 
-# Check for Azure signing environment variables
+. (Join-Path $PSScriptRoot "windows-signing-preflight.ps1")
+if (-not (Test-ReddBlockWindowsSigning)) { exit 1 }
 $hasSigningVars = $env:AZURE_CLIENT_ID -and $env:AZURE_CLIENT_SECRET -and $env:AZURE_TENANT_ID
 if (-not $hasSigningVars) {
-    Write-Host "  WARNING: Azure signing env vars not set. Build will NOT be code-signed." -ForegroundColor Yellow
-    Write-Host "  Set AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_TENANT_ID to enable signing." -ForegroundColor Yellow
+    Write-Host "  Set AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_TENANT_ID in .env to enable signing." -ForegroundColor Yellow
     Write-Host ""
 }
 
