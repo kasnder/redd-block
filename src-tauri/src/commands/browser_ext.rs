@@ -831,6 +831,13 @@ pub fn open_browser_extension_settings(browser: String) -> Result<(), String> {
     }
 }
 
+fn is_mac_app_store_url(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    lower.starts_with("macappstore://")
+        || lower.starts_with("itms-apps://")
+        || (lower.contains("apps.apple.com") && lower.contains("/app/"))
+}
+
 /// Open a specific URL in a specific browser.  Used by the enforcer
 /// "Install ReDD Focus" button so the store page opens in the correct
 /// browser instead of triggering the OS "choose an app" dialog.
@@ -840,6 +847,16 @@ pub fn open_url_in_browser(browser: String, url: String) -> Result<(), String> {
 
     #[cfg(target_os = "macos")]
     {
+        // App Store links must use plain `open`, not `open -a Safari` — the
+        // latter loads apps.apple.com in the browser instead of the store.
+        if is_mac_app_store_url(&url) {
+            std::process::Command::new("/usr/bin/open")
+                .arg(&url)
+                .output()
+                .map_err(|e| format!("open App Store URL: {e}"))?;
+            return Ok(());
+        }
+
         let app_name = match normalized.as_str() {
             "brave" => "Brave Browser",
             "edge" => "Microsoft Edge",

@@ -2358,7 +2358,7 @@ const BROWSER_STORE_LINKS = {
     brave: { label: 'Brave', url: 'https://chromewebstore.google.com/detail/redd-focus-hide-distracti/hhblkhfdjijdinijakbmcpkmdfhoadcd' },
     edge: { label: 'Edge', url: 'https://microsoftedge.microsoft.com/addons/detail/redd-focus-hide-distract/gmjfgjdhnhcegfelcddbdljdffiaepam' },
     firefox: { label: 'Firefox', url: 'https://addons.mozilla.org/en-US/firefox/addon/reddfocus/' },
-    safari: { label: 'Safari', url: 'https://apps.apple.com/us/app/redd-focus-hide-distractions/id1660218371' },
+    safari: { label: 'Safari', url: 'macappstore://apps.apple.com/app/id1660218371' },
 };
 
 // On macOS we block Safari + Chromium browsers via the Automation
