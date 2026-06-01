@@ -5507,7 +5507,8 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
 }
 
 .blocking-method-select {
-    min-width: 168px;
+    width: 100%;
+    min-width: 0;
     padding: 7px 10px;
     font-size: 13px;
     font-family: var(--font-body);
@@ -5579,6 +5580,11 @@ body.dark-mode .settings-enforcement-subsection-toggle:hover {
     border-top: 1px solid var(--border-color-medium);
 }
 
+.settings-blocking-method-rows .settings-row-control {
+    width: var(--settings-control-width);
+    flex-shrink: 0;
+}
+
 .settings-blocking-method-label {
     display: inline-flex;
     align-items: center;
@@ -5593,18 +5599,43 @@ body.dark-mode .settings-enforcement-subsection-toggle:hover {
 }
 
 .settings-safari-fda-row {
-    padding: 8px 16px 12px;
-    border-top: 1px solid var(--border-color-medium);
-    text-align: left;
+    padding: 0 16px 12px;
+    border-top: none;
+}
+
+/* No divider between Safari dropdown and FDA note (Chrome row keeps its top border). */
+.settings-blocking-method-rows .settings-row:has(+ .settings-safari-fda-row:not(.hidden)) {
+    border-bottom: none;
+    padding-bottom: 4px;
 }
 
 .settings-safari-fda-row .settings-row-hint {
-    margin: 0 0 8px 0;
-    text-align: left;
+    margin: 0;
 }
 
-.settings-safari-fda-grant-btn {
+.settings-safari-fda-grant-btn.modal-btn.primary-btn {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 7px 10px;
     font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    text-align: center;
+    background: var(--redd-teal);
+    border: none;
+    color: #ffffff;
+}
+
+.settings-safari-fda-grant-btn.modal-btn.primary-btn:hover:not(:disabled) {
+    background: var(--redd-teal-hover);
+    color: #ffffff;
+}
+
+body.dark-mode .settings-safari-fda-grant-btn.modal-btn.primary-btn,
+body.dark-mode .settings-safari-fda-grant-btn.modal-btn.primary-btn:hover:not(:disabled) {
+    color: #ffffff;
 }
 
 #fda-onboarding.onboarding-screen {
@@ -5619,7 +5650,15 @@ body.dark-mode .settings-enforcement-subsection-toggle:hover {
     gap: 12px;
     margin-top: 20px;
 }
-.fda-onboarding-actions .fda-grant-btn { flex: 1; }
+
+.fda-onboarding-actions .eula-back-btn,
+.fda-onboarding-actions .fda-grant-btn {
+    border-radius: var(--radius-sm);
+}
+
+.fda-onboarding-actions .fda-grant-btn {
+    flex: 1;
+}
 .fda-onboarding-howto {
     margin-top: 14px;
     font-size: 13px;

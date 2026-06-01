@@ -15314,7 +15314,7 @@ const SETTINGS_TRANSLATIONS = {
         safariFdaSetupHintHtml: 'ReDD Block must read Safari\'s protected extension settings. Grant <strong>Full Disk Access</strong> for ReDD Block, then return here.',
         safariFdaSettingsGranted: 'Full Disk Access: granted (Safari extension settings readable).',
         safariFdaSettingsNotGranted: 'Full Disk Access: not granted — required to verify ReDD Focus in Safari.',
-        safariFdaSettingsGrantBtn: 'Grant Full Disk Access',
+        safariFdaSettingsGrantBtn: 'Grant access',
         migrationBadgeNativeHost: 'Connect ReDD Block',
         migrationFirefoxNativeHostHtml: 'ReDD Focus is installed. ReDD Block still needs to register its connection with Firefox (one small setup step).',
         migrationFirefoxNativeHostButton: 'Connect to Firefox',
