@@ -262,6 +262,27 @@ fn collect_app_data_info(app: &tauri::AppHandle) -> AppDataInfo {
 }
 
 fn collect_fda_info(browsers: &profile_scan::ScanResult) -> FdaInfo {
+    #[cfg(target_os = "macos")]
+    {
+        let safari_ext = !crate::blocking_method::uses_automation_at_path(
+            &crate::commands::canonical_data_path_static(),
+            "safari",
+        );
+        let live = crate::cross_app_consent::safari_extensions_plist_readable();
+        let choice = crate::cross_app_consent::safari_fda_onboarding_choice_label();
+        return FdaInfo {
+            applicable: safari_ext,
+            live_granted: if safari_ext { Some(live) } else { None },
+            safari_plist_readable: if safari_ext { Some(live) } else { None },
+            onboarding_choice: if safari_ext { choice } else { String::new() },
+            safari_needs_fda_access: if safari_ext {
+                Some(browsers.safari.needs_fda_access)
+            } else {
+                None
+            },
+        };
+    }
+    #[cfg(not(target_os = "macos"))]
     let _ = browsers;
     FdaInfo {
         applicable: false,

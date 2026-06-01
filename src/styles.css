@@ -5592,6 +5592,47 @@ body.dark-mode .settings-enforcement-subsection-toggle:hover {
     object-fit: contain;
 }
 
+.settings-safari-fda-row {
+    padding: 8px 16px 12px;
+    border-top: 1px solid var(--border-color-medium);
+    text-align: left;
+}
+
+.settings-safari-fda-row .settings-row-hint {
+    margin: 0 0 8px 0;
+    text-align: left;
+}
+
+.settings-safari-fda-grant-btn {
+    font-size: 13px;
+}
+
+#fda-onboarding.onboarding-screen {
+    padding: 12px 20px 16px;
+    overflow-y: auto;
+}
+
+.fda-onboarding-card { text-align: left; }
+.fda-onboarding-actions {
+    display: flex;
+    align-items: stretch;
+    gap: 12px;
+    margin-top: 20px;
+}
+.fda-onboarding-actions .fda-grant-btn { flex: 1; }
+.fda-onboarding-howto {
+    margin-top: 14px;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+.fda-onboarding-screenshot {
+    display: block;
+    width: 100%;
+    height: auto;
+    margin-top: 14px;
+    border-radius: 10px;
+}
+
 .settings-enforcement-subsection-toggle .settings-enforcement-chevron {
     transition: transform 0.2s ease;
 }
@@ -5755,10 +5796,16 @@ body.dark-mode .settings-enforcement-subsection-toggle:hover {
     font-weight: 600;
 }
 
+.migration-browser-row.needs-fda {
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.20);
+}
+
 .migration-browser-badge.needs-enable,
 .migration-browser-badge.needs-private,
 .migration-browser-badge.needs-website-access,
-.migration-browser-badge.needs-deduplicate {
+.migration-browser-badge.needs-deduplicate,
+.migration-browser-badge.needs-fda {
     color: #b45309;
 }
 

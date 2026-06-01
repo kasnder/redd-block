@@ -22,6 +22,7 @@ import screenshotFirefoxStep2 from './images/toggle-firefox-private-windows-2.pn
 import screenshotSafariStep1 from './images/mac-extension-settings-1.png';
 import screenshotSafariStep2 from './images/mac-extension-settings-2.png';
 import screenshotAutomationSettings from './images/automation-settings.png';
+import screenshotEnableFda from './images/enable-fda.png';
 import welcomeDemoVideoUrl from './reddblock-video.mp4';
 
 // Compatibility layer wrapping Tauri APIs
@@ -1837,6 +1838,9 @@ function setupMacAutomationIntroModal() {
 
 async function ensureExtensionSetupOnboardingShown() {
     if (isIOS || migrationOnboardingActive) return;
+    if (safariUsesExtensionMode()) {
+        await ensureSafariExtensionFdaBeforeSetup();
+    }
     const dismissed = localStorage.getItem(EXT_ONBOARDING_DISMISSED_KEY);
     if (!firstRunExtensionSetupPending && (dismissed || migrationOnboardingDismissed)) return;
     try {
@@ -2275,7 +2279,250 @@ async function wireBlockingMethodSettings() {
                 void onBlockingMethodChange(key, select);
             });
         }
+        const safariFdaBtn = document.getElementById('settings-safari-fda-grant-btn');
+        if (safariFdaBtn && !safariFdaBtn._safariFdaWired) {
+            safariFdaBtn._safariFdaWired = true;
+            safariFdaBtn.addEventListener('click', () => {
+                void (async () => {
+                    try {
+                        await invoke('open_safari_fda_settings');
+                    } catch (e) {
+                        console.warn('[safari-fda] open settings failed:', e);
+                    }
+                    await pollSafariFdaUntilGranted({ refreshSettings: true });
+                })();
+            });
+        }
     }
+    syncSafariFdaSettingsRow();
+}
+
+function safariUsesExtensionMode() {
+    return isMacOSDesktop && browserBlockingMethod('safari') === 'extension';
+}
+
+let activeSafariFdaOnboardingSession = null;
+
+function hideSafariFdaOnboardingUi() {
+    const session = activeSafariFdaOnboardingSession;
+    if (!session) return;
+    session.overlay?.classList.add('hidden');
+    if (session.pollHandle) {
+        clearInterval(session.pollHandle);
+        session.pollHandle = null;
+    }
+}
+
+async function syncSafariFdaOnboardingGrantButton() {
+    const grantBtn = document.getElementById('fda-onboarding-grant-btn');
+    const whyEl = document.getElementById('fda-onboarding-why');
+    if (!grantBtn) return false;
+    let granted = false;
+    try {
+        granted = !!(await invoke('sync_safari_fda_access'));
+    } catch (_) { /* not granted */ }
+    grantBtn.textContent = granted
+        ? tSettings('safariFdaOnboardingAlreadyGrantedBtn')
+        : tSettings('safariFdaOnboardingGrantBtn');
+    if (whyEl) {
+        whyEl.innerHTML = granted
+            ? tSettings('safariFdaOnboardingAlreadyGrantedWhy')
+            : tSettings('safariFdaOnboardingWhyHtml');
+    }
+    if (activeSafariFdaOnboardingSession) {
+        activeSafariFdaOnboardingSession.fdaLiveGranted = granted;
+    }
+    return granted;
+}
+
+async function finalizeSafariFdaOnboardingGrant(statusEl) {
+    if (statusEl) {
+        statusEl.classList.remove('hidden');
+        statusEl.textContent = tSettings('safariFdaOnboardingGrantedStatus');
+    }
+    try {
+        await invoke('complete_safari_fda_onboarding');
+    } catch (e) {
+        console.warn('[safari-fda] complete failed:', e);
+        return false;
+    }
+    hideSafariFdaOnboardingUi();
+    const resolve = activeSafariFdaOnboardingSession?.resolve;
+    activeSafariFdaOnboardingSession = null;
+    resolve?.();
+    return true;
+}
+
+function showSafariFdaOnboardingOverlay() {
+    if (!safariUsesExtensionMode()) {
+        return Promise.resolve();
+    }
+    if (activeSafariFdaOnboardingSession) {
+        void presentSafariFdaOnboardingUi();
+        return activeSafariFdaOnboardingSession.promise;
+    }
+    let session;
+    const promise = new Promise((resolve) => {
+        const overlay = document.getElementById('fda-onboarding');
+        const grantBtn = document.getElementById('fda-onboarding-grant-btn');
+        const statusEl = document.getElementById('fda-onboarding-status');
+        const shield = document.getElementById('fda-onboarding-shield-logo');
+        const screenshot = document.getElementById('fda-onboarding-screenshot');
+        if (!overlay || !grantBtn) {
+            resolve();
+            return;
+        }
+        if (shield) shield.src = logoReddShieldUrl;
+        if (screenshot) screenshot.src = screenshotEnableFda;
+        const title = document.getElementById('fda-onboarding-title');
+        if (title) title.textContent = tSettings('safariFdaOnboardingTitle');
+        const howto = document.getElementById('fda-onboarding-howto');
+        if (howto) howto.textContent = tSettings('safariFdaOnboardingHowto');
+
+        const onGrant = async () => {
+            let alreadyGranted = false;
+            try {
+                alreadyGranted = !!(await invoke('sync_safari_fda_access'));
+            } catch (_) { /* fall through */ }
+            if (alreadyGranted) {
+                await finalizeSafariFdaOnboardingGrant(statusEl);
+                return;
+            }
+            grantBtn.disabled = true;
+            const originalLabel = grantBtn.textContent;
+            grantBtn.textContent = tSettings('safariFdaOnboardingOpeningSettings');
+            try {
+                await invoke('open_safari_fda_settings');
+            } catch (e) {
+                console.warn('[safari-fda] open settings failed:', e);
+            }
+            grantBtn.textContent = originalLabel;
+            grantBtn.disabled = false;
+            if (statusEl) {
+                statusEl.classList.remove('hidden');
+                statusEl.textContent = tSettings('safariFdaOnboardingWaiting');
+            }
+            if (!session.pollHandle) {
+                session.pollHandle = setInterval(async () => {
+                    try {
+                        const granted = await invoke('sync_safari_fda_access');
+                        session.fdaLiveGranted = granted;
+                        if (granted) {
+                            await finalizeSafariFdaOnboardingGrant(statusEl);
+                        }
+                    } catch (_) { /* transient */ }
+                }, 1500);
+            }
+        };
+
+        session = {
+            overlay,
+            grantBtn,
+            statusEl,
+            pollHandle: null,
+            resolve,
+            onGrant,
+        };
+        activeSafariFdaOnboardingSession = session;
+        if (!grantBtn._safariFdaGrantListenerAdded) {
+            grantBtn._safariFdaGrantListenerAdded = true;
+            grantBtn.addEventListener('click', () => {
+                void session.onGrant?.();
+            });
+        }
+        const backBtn = document.getElementById('fda-onboarding-back-btn');
+        if (backBtn && !backBtn._safariFdaBackWired) {
+            backBtn._safariFdaBackWired = true;
+            backBtn.addEventListener('click', () => {
+                hideSafariFdaOnboardingUi();
+                const r = activeSafariFdaOnboardingSession?.resolve;
+                activeSafariFdaOnboardingSession = null;
+                r?.();
+            });
+        }
+        void presentSafariFdaOnboardingUi();
+    });
+    if (session) session.promise = promise;
+    return promise;
+}
+
+async function presentSafariFdaOnboardingUi() {
+    const session = activeSafariFdaOnboardingSession;
+    if (!session) return;
+    document.getElementById('eula-onboarding')?.classList.add('hidden');
+    document.getElementById('welcome-onboarding')?.classList.add('hidden');
+    document.getElementById('migration-onboarding')?.classList.add('hidden');
+    document.getElementById('main-content')?.classList.add('hidden');
+    document.getElementById('now-blocking-row')?.classList.add('hidden');
+    session.overlay.classList.remove('hidden');
+    const statusEl = document.getElementById('fda-onboarding-status');
+    if (statusEl && !session.pollHandle) {
+        statusEl.classList.add('hidden');
+        statusEl.textContent = '';
+    }
+    await syncSafariFdaOnboardingGrantButton();
+}
+
+async function pollSafariFdaUntilGranted({ refreshSettings = false } = {}) {
+    for (let i = 0; i < 40; i++) {
+        let granted = false;
+        try {
+            granted = !!(await invoke('sync_safari_fda_access'));
+        } catch (_) { /* retry */ }
+        if (granted) {
+            try {
+                await invoke('complete_safari_fda_onboarding');
+            } catch (e) {
+                console.warn('[safari-fda] complete failed:', e);
+            }
+            if (refreshSettings) syncSafariFdaSettingsRow();
+            if (migrationOnboardingActive || isModalVisible('migration-onboarding')) {
+                const fresh = await invoke('onboarding_state');
+                renderBrowserInstallButtons(fresh, { force: true });
+            }
+            await refreshBehaviourBannerIfStale({ force: true });
+            return true;
+        }
+        await new Promise(r => setTimeout(r, 1500));
+    }
+    return false;
+}
+
+async function ensureSafariExtensionFdaBeforeSetup() {
+    if (!safariUsesExtensionMode()) return;
+    let granted = false;
+    try {
+        const probe = await invoke('check_safari_fda_access');
+        granted = !!(probe && probe.granted);
+    } catch (_) { /* not granted */ }
+    if (granted) {
+        try {
+            await invoke('complete_safari_fda_onboarding');
+        } catch (_) { /* marker only */ }
+        return;
+    }
+    await showSafariFdaOnboardingOverlay();
+}
+
+async function syncSafariFdaSettingsRow() {
+    const row = document.getElementById('settings-safari-fda-row');
+    const statusEl = document.getElementById('settings-safari-fda-status');
+    const grantBtn = document.getElementById('settings-safari-fda-grant-btn');
+    if (!row || !statusEl) return;
+    if (!safariUsesExtensionMode()) {
+        row.classList.add('hidden');
+        return;
+    }
+    row.classList.remove('hidden');
+    if (grantBtn) grantBtn.textContent = tSettings('safariFdaSettingsGrantBtn');
+    let granted = false;
+    try {
+        granted = !!(await invoke('sync_safari_fda_access'));
+    } catch (_) { /* not granted */ }
+    statusEl.textContent = granted
+        ? tSettings('safariFdaSettingsGranted')
+        : tSettings('safariFdaSettingsNotGranted');
+    if (grantBtn) grantBtn.classList.toggle('hidden', granted);
 }
 
 async function onBlockingMethodChange(key, select) {
@@ -2292,8 +2539,17 @@ async function onBlockingMethodChange(key, select) {
             const fresh = await invoke('onboarding_state');
             renderBrowserInstallButtons(fresh, { force: true });
         }
+        if (key === 'safari' && desired === 'automation') {
+            hideSafariFdaOnboardingUi();
+            syncSafariFdaSettingsRow();
+        }
         if (desired === 'extension') {
+            if (key === 'safari') {
+                await ensureSafariExtensionFdaBeforeSetup();
+            }
             await openExtensionSetupOverlay();
+        } else if (key === 'safari') {
+            syncSafariFdaSettingsRow();
         }
     } catch (e) {
         console.warn('[blocking-method] set failed:', e);
@@ -2458,20 +2714,9 @@ function browserComplianceStatus(key, b) {
     const def = profiles.find(p => p.isDefault) || profiles[0];
     if (key === 'safari') {
         if (b.duplicateExtensions?.detected) return 'needs-deduplicate';
-        // Safari status, post-bridge:
-        //
-        // The Swift bridge (SFSafariExtensionManager) gives us a
-        // definitive `enabled` value without Full Disk Access — that's
-        // the critical step, the one that gates whether the extension
-        // does anything at all.
-        //
-        // privateBrowsing and websiteAccessAll still come from the
-        // plist when readable; SafariServices doesn't expose them.
-        // When those fields are null ("unknown"), treat null as "trust
-        // the user" — only flag needs-private / needs-website-access
-        // when we can definitively see the toggle is off. The 3-step
-        // Safari onboarding card still surfaces all three steps so the
-        // user knows what to do.
+        if (b.needsFdaAccess || profiles.some(p => /Full Disk Access/i.test(p.note || ''))) {
+            return 'needs-fda';
+        }
         if (!profiles.length || profiles.some(p => !p.installed)) return 'needs-install';
         if (profiles.some(p => p.enabled !== true)) return 'needs-enable';
         if (profiles.some(p => p.privateBrowsing === false)) return 'needs-private';
@@ -2493,6 +2738,7 @@ function statusLabel(key, status) {
     switch (status) {
         case 'compliant': return tSettings('migrationComplianceOk');
         case 'needs-deduplicate': return tSettings('migrationStatusDuplicateSafari');
+        case 'needs-fda': return tSettings('migrationStatusGrantFda');
         case 'needs-website-access': return tSettings('migrationStatusAllowAllWebsites');
         case 'needs-private': return tSettings('migrationStatusAllowPrivate');
         case 'needs-enable': return tSettings('migrationStatusEnableExtension');
@@ -3053,7 +3299,7 @@ function migrationBrowserRenderSignature(state) {
             const profileSig = b.profiles.map(p =>
                 `${p.installed ? 1 : 0}${p.enabled === true ? 1 : p.enabled === false ? 0 : '?'}${p.privateBrowsing === true ? 1 : p.privateBrowsing === false ? 0 : '?'}${p.websiteAccessAll === true ? 1 : p.websiteAccessAll === false ? 0 : '?'}`
             ).join(';');
-            return `${k}:${status}:${b.duplicateExtensions?.detected ? 'dup' : ''}:${profileSig}`;
+            return `${k}:${status}:${b.needsFdaAccess ? 'fda' : ''}:${b.duplicateExtensions?.detected ? 'dup' : ''}:${profileSig}`;
         }
         return `${k}:${status}`;
     }).join('|');
@@ -3159,6 +3405,7 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
             case 'needs-enable': badge.textContent = tSettings('migrationBadgeDisabled'); break;
             case 'needs-private': badge.textContent = tSettings('migrationBadgeNotPrivate'); break;
             case 'needs-native-host': badge.textContent = tSettings('migrationBadgeNativeHost'); break;
+            case 'needs-fda': badge.textContent = tSettings('migrationStatusGrantFda'); break;
             case 'needs-website-access': badge.textContent = tSettings('migrationBadgeNoWebsiteAccess'); break;
             default: badge.textContent = tSettings('migrationBadgeNotInstalled');
         }
@@ -3166,7 +3413,27 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
 
         row.appendChild(header);
 
-        if (status === 'needs-install') {
+        if (status === 'needs-fda') {
+            const hint = document.createElement('div');
+            hint.className = 'migration-browser-hint migration-browser-after-hint';
+            hint.innerHTML = tSettings('safariFdaSetupHintHtml');
+            row.appendChild(hint);
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'migration-primary-btn';
+            btn.textContent = tSettings('safariFdaOnboardingGrantBtn');
+            btn.addEventListener('click', () => {
+                void showSafariFdaOnboardingOverlay().then(async () => {
+                    const fresh = await invoke('onboarding_state');
+                    renderBrowserInstallButtons(fresh, { force: true });
+                    await updateBehaviourChangeBanner(fresh);
+                });
+            });
+            const actionsRow = document.createElement('div');
+            actionsRow.className = 'migration-actions-row';
+            actionsRow.appendChild(btn);
+            row.appendChild(actionsRow);
+        } else if (status === 'needs-install') {
             // Instruction hint first, then Install button below (matching
             // the needs-enable/private layout where instruction precedes action).
             const afterHint = document.createElement('div');
@@ -3611,7 +3878,7 @@ function buildBannerActionSummary(browsers, detectedKeys) {
         groups.get(status).push(label);
     }
 
-    const order = ['needs-install', 'needs-automation', 'needs-native-host', 'needs-enable', 'needs-private', 'needs-website-access'];
+    const order = ['needs-install', 'needs-automation', 'needs-fda', 'needs-native-host', 'needs-enable', 'needs-private', 'needs-website-access'];
     const phrases = [];
     for (const status of order) {
         const list = groups.get(status);
@@ -3627,6 +3894,8 @@ function bannerActionPhrase(status) {
             return tSettings('bannerActionInstallIn');
         case 'needs-automation':
             return tSettings('bannerActionAutomationIn');
+        case 'needs-fda':
+            return tSettings('bannerActionGrantFdaIn');
         case 'needs-enable':
             return tSettings('bannerActionEnableIn');
         case 'needs-private':
@@ -3659,6 +3928,7 @@ function joinBrowserNames(list) {
 // sites stay in sync if the overlay's API changes.
 async function openExtensionSetupOverlay() {
     try {
+        await ensureSafariExtensionFdaBeforeSetup();
         const fresh = await invoke('onboarding_state');
         migrationOnboardingDismissed = false;
         // Hide settings if it was the launch point — the migration
@@ -15029,7 +15299,22 @@ const SETTINGS_TRANSLATIONS = {
         migrationStatusAllowPrivate: 'Allow in private browsing',
         migrationStatusEnableExtension: 'Enable extension',
         migrationStatusInstall: 'Install',
+        migrationStatusGrantFda: 'Grant Full Disk Access',
         migrationStatusNativeHost: 'Connect ReDD Block',
+        bannerActionGrantFdaIn: 'Grant Full Disk Access in',
+        safariFdaOnboardingTitle: 'Grant Full Disk Access for Safari',
+        safariFdaOnboardingGrantBtn: 'Open Full Disk Access settings',
+        safariFdaOnboardingAlreadyGrantedBtn: '✓ Proceed',
+        safariFdaOnboardingWhyHtml: 'Safari extension mode needs Full Disk Access so ReDD Block can read Safari\'s extension settings and verify ReDD Focus is installed, enabled, and allowed in private browsing. Open System Settings below, then toggle <strong>ReDD Block</strong> on (use + if it is not listed).',
+        safariFdaOnboardingAlreadyGrantedWhy: 'Full Disk Access is already granted. Click below to continue Safari setup.',
+        safariFdaOnboardingGrantedStatus: 'Full Disk Access granted.',
+        safariFdaOnboardingWaiting: 'Waiting for Full Disk Access… leave this window open while you grant it.',
+        safariFdaOnboardingOpeningSettings: 'Opening settings…',
+        safariFdaOnboardingHowto: 'System Settings → Privacy & Security → Full Disk Access',
+        safariFdaSetupHintHtml: 'ReDD Block must read Safari\'s protected extension settings. Grant <strong>Full Disk Access</strong> for ReDD Block, then return here.',
+        safariFdaSettingsGranted: 'Full Disk Access: granted (Safari extension settings readable).',
+        safariFdaSettingsNotGranted: 'Full Disk Access: not granted — required to verify ReDD Focus in Safari.',
+        safariFdaSettingsGrantBtn: 'Grant Full Disk Access',
         migrationBadgeNativeHost: 'Connect ReDD Block',
         migrationFirefoxNativeHostHtml: 'ReDD Focus is installed. ReDD Block still needs to register its connection with Firefox (one small setup step).',
         migrationFirefoxNativeHostButton: 'Connect to Firefox',

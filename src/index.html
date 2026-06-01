@@ -340,6 +340,46 @@
             </div>
         </div>
 
+        <!-- Safari extension mode: Full Disk Access to read Extensions.plist. -->
+        <div id="fda-onboarding" class="onboarding-screen hidden">
+            <div class="welcome-onboarding-layout">
+                <header class="welcome-onboarding-header">
+                    <div class="welcome-onboarding-title-row">
+                        <img id="fda-onboarding-shield-logo"
+                             class="welcome-shield-logo"
+                             src=""
+                             alt=""
+                             aria-hidden="true">
+                        <h1 id="fda-onboarding-title">Grant Full Disk Access for Safari</h1>
+                    </div>
+                </header>
+
+                <div class="welcome-onboarding-card fda-onboarding-card">
+                    <p id="fda-onboarding-why" class="migration-explainer"></p>
+                    <p id="fda-onboarding-status" class="migration-status hidden"></p>
+                    <div class="fda-onboarding-actions">
+                        <button id="fda-onboarding-back-btn"
+                                class="eula-back-btn"
+                                type="button">
+                            Back
+                        </button>
+                        <button id="fda-onboarding-grant-btn"
+                                class="modal-btn primary-btn onboarding-primary-btn fda-grant-btn"
+                                type="button">
+                            Open Full Disk Access settings
+                        </button>
+                    </div>
+                    <p id="fda-onboarding-howto" class="fda-onboarding-howto">
+                        System Settings → Privacy &amp; Security → Full Disk Access
+                    </p>
+                    <img id="fda-onboarding-screenshot"
+                         class="fda-onboarding-screenshot"
+                         src=""
+                         alt="Full Disk Access settings with ReDD Block toggled on">
+                </div>
+            </div>
+        </div>
+
         <!-- v1.x → 2.0 migration onboarding. Full-screen, gates main UI
              on first launch after upgrade. Two phases driven by JS:
              "pre" = welcome + admin-permission ask, "post" = cleanup
@@ -1533,6 +1573,10 @@
                                                     <option value="extension">Extension</option>
                                                 </select>
                                             </div>
+                                        </div>
+                                        <div id="settings-safari-fda-row" class="settings-safari-fda-row hidden">
+                                            <p id="settings-safari-fda-status" class="settings-row-hint"></p>
+                                            <button id="settings-safari-fda-grant-btn" type="button" class="modal-btn secondary-btn settings-safari-fda-grant-btn">Grant Full Disk Access</button>
                                         </div>
                                         <div class="settings-row">
                                             <div class="settings-row-copy">
