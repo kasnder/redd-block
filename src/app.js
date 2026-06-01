@@ -2366,18 +2366,11 @@ function showSafariFdaOnboardingOverlay() {
         const overlay = document.getElementById('fda-onboarding');
         const grantBtn = document.getElementById('fda-onboarding-grant-btn');
         const statusEl = document.getElementById('fda-onboarding-status');
-        const shield = document.getElementById('fda-onboarding-shield-logo');
-        const screenshot = document.getElementById('fda-onboarding-screenshot');
         if (!overlay || !grantBtn) {
             resolve();
             return;
         }
-        if (shield) shield.src = logoReddShieldUrl;
-        if (screenshot) screenshot.src = screenshotEnableFda;
-        const title = document.getElementById('fda-onboarding-title');
-        if (title) title.textContent = tSettings('safariFdaOnboardingTitle');
-        const howto = document.getElementById('fda-onboarding-howto');
-        if (howto) howto.textContent = tSettings('safariFdaOnboardingHowto');
+        applySafariFdaOnboardingLanguage();
 
         const onGrant = async () => {
             let alreadyGranted = false;
@@ -15306,9 +15299,9 @@ const SETTINGS_TRANSLATIONS = {
         migrationStatusNativeHost: 'Connect ReDD Block',
         bannerActionGrantFdaIn: 'Grant Full Disk Access in',
         safariFdaOnboardingTitle: 'Grant Full Disk Access for Safari',
+        safariFdaOnboardingWhyHtml: 'Blocking on Safari through the ReDD Focus browser extension requires Full Disk Access to ensure the extension is installed, enabled, and allowed in private browsing. Open System Settings below, then toggle <strong>ReDD Block</strong> on (use + if it is not listed).',
         safariFdaOnboardingGrantBtn: 'Open Full Disk Access settings',
         safariFdaOnboardingAlreadyGrantedBtn: '✓ Proceed',
-        safariFdaOnboardingWhyHtml: 'Safari extension mode needs Full Disk Access so ReDD Block can read Safari\'s extension settings and verify ReDD Focus is installed, enabled, and allowed in private browsing. Open System Settings below, then toggle <strong>ReDD Block</strong> on (use + if it is not listed).',
         safariFdaOnboardingAlreadyGrantedWhy: 'Full Disk Access is already granted. Click below to continue Safari setup.',
         safariFdaOnboardingGrantedStatus: 'Full Disk Access granted.',
         safariFdaOnboardingWaiting: 'Waiting for Full Disk Access… leave this window open while you grant it.',
@@ -16688,6 +16681,28 @@ function applyEulaOnboardingLanguage() {
     }
 }
 
+/** Safari FDA onboarding — same layout/copy pattern as the EULA screen. */
+function applySafariFdaOnboardingLanguage() {
+    const shield = document.getElementById('fda-onboarding-shield-logo');
+    if (shield) {
+        shield.src = logoReddShieldUrl;
+        shield.alt = '';
+    }
+    const screenshot = document.getElementById('fda-onboarding-screenshot');
+    if (screenshot) screenshot.src = screenshotEnableFda;
+
+    const title = document.getElementById('fda-onboarding-title');
+    if (title) title.textContent = tSettings('safariFdaOnboardingTitle');
+
+    const howto = document.getElementById('fda-onboarding-howto');
+    if (howto) howto.textContent = tSettings('safariFdaOnboardingHowto');
+
+    const backBtn = document.getElementById('fda-onboarding-back-btn');
+    if (backBtn) backBtn.textContent = tSettings('eulaBackBtn');
+
+    void syncSafariFdaOnboardingGrantButton();
+}
+
 /** Welcome onboarding screen — localized in the same way as the EULA screen. */
 function applyWelcomeOnboardingLanguage() {
     const shieldLogo = document.getElementById('welcome-onboarding-shield-logo');
@@ -17253,6 +17268,7 @@ function applySettingsLanguage() {
     applyMigrationOverlayStaticCopy();
     applyEulaOnboardingLanguage();
     applyWelcomeOnboardingLanguage();
+    applySafariFdaOnboardingLanguage();
 
     if (migrationOnboardingActive && lastMigrationBrowserState) {
         renderBrowserInstallButtons(lastMigrationBrowserState, { force: true });

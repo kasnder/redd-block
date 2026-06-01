@@ -4687,13 +4687,15 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
 
 /* Welcome onboarding — hero layout matching reddfocus.org entry flow */
 #welcome-onboarding.onboarding-screen,
-#eula-onboarding.onboarding-screen {
+#eula-onboarding.onboarding-screen,
+#fda-onboarding.onboarding-screen {
     padding: 12px 20px 16px;
     overflow-y: auto;
 }
 
 #welcome-onboarding.onboarding-screen,
-#eula-onboarding.onboarding-screen {
+#eula-onboarding.onboarding-screen,
+#fda-onboarding.onboarding-screen {
     padding-top: 24px;
 }
 
@@ -4748,6 +4750,7 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
 
 #welcome-onboarding-title,
 #eula-welcome-title,
+#fda-onboarding-title,
 #migration-post-header-title {
     margin: 0;
     font-family: var(--font-heading);
@@ -5191,6 +5194,7 @@ body.dark-mode .welcome-demo-toggle:hover {
 
     #welcome-onboarding-title,
     #eula-welcome-title,
+    #fda-onboarding-title,
     #migration-post-header-title {
         font-size: 24px;
     }
@@ -5638,32 +5642,6 @@ body.dark-mode .settings-safari-fda-grant-btn.modal-btn.primary-btn:hover:not(:d
     color: #ffffff;
 }
 
-#fda-onboarding.onboarding-screen {
-    padding: 12px 20px 16px;
-    overflow-y: auto;
-}
-
-.fda-onboarding-card { text-align: left; }
-.fda-onboarding-actions {
-    display: flex;
-    align-items: stretch;
-    gap: 12px;
-    margin-top: 20px;
-}
-
-.fda-onboarding-actions .eula-back-btn,
-.fda-onboarding-actions .fda-grant-btn {
-    border-radius: var(--radius-sm);
-}
-
-.fda-onboarding-actions .fda-grant-btn {
-    flex: 1;
-}
-.fda-onboarding-howto {
-    margin-top: 14px;
-    font-size: 13px;
-    color: var(--text-muted);
-}
 .fda-onboarding-screenshot {
     display: block;
     width: 100%;
