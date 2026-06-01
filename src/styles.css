@@ -5533,7 +5533,7 @@ body.dark-mode .blocking-method-select {
 }
 
 .settings-blocking-method-section {
-    border-top: 1px solid var(--border-color-light);
+    border-top: 1px solid var(--border-color-medium);
 }
 
 .settings-blocking-method-toggle-copy {
@@ -8062,7 +8062,7 @@ body.dark-mode .settings-panel {
     padding: 0;
 }
 
-.settings-panel-rows > .settings-row + .settings-row {
+.settings-panel-rows > .settings-row:not(.hidden) + .settings-row:not(.hidden) {
     border-top: 1px solid var(--border-color-medium);
 }
 
