@@ -7714,6 +7714,24 @@ body.ios #blocklist-modal {
     border-top: 1px solid var(--border-color);
 }
 
+.start-confirm-modal.schedule-confirm-edit-layout .block-detail-name,
+.start-confirm-modal.schedule-confirm-edit-layout .schedule-summary-header {
+    display: none;
+}
+
+.start-confirm-modal.schedule-confirm-edit-layout .schedule-summary {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
+.edit-schedule-notice {
+    margin-bottom: 14px;
+    font-size: 15px;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
 .schedule-summary-header {
     font-size: 15px;
     font-weight: 600;

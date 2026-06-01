@@ -9575,20 +9575,25 @@ function showScheduleConfirmModal(blocklist) {
 }
 
 // Close schedule confirmation modal
-function closeScheduleConfirmModal() {
-    document.getElementById('start-schedule-confirm-modal').classList.add('hidden');
+function resetScheduleConfirmModalToStartLayout() {
+    document.querySelector('#start-schedule-confirm-modal .start-confirm-modal')
+        ?.classList.remove('schedule-confirm-edit-layout');
+    document.getElementById('schedule-confirm-name')?.classList.remove('hidden');
+    document.getElementById('schedule-summary-header')?.classList.remove('hidden');
 
-    // Reset to start-flow defaults so a subsequent open isn't stuck in edit-mode UI.
-    // (No-op if it was already in the start-flow.) The click handler routes via
-    // editScheduleData, so clearing that variable here is what actually flips the
-    // proceed action back to the start-flow.
     const confirmBtn = document.getElementById('proceed-schedule-confirm-btn');
     if (confirmBtn) confirmBtn.textContent = tSettings('startSchedule');
     const titleEl = document.getElementById('start-schedule-confirm-title');
     if (titleEl) titleEl.textContent = tSettings('startThisSchedule');
     const repeatRow = document.getElementById('schedule-confirm-repeat');
     if (repeatRow && repeatRow.parentElement) repeatRow.parentElement.classList.remove('hidden');
+    const overrideHeader = document.getElementById('schedule-confirm-override-header');
+    if (overrideHeader) overrideHeader.textContent = tSettings('confirmScheduleOverrideNeed');
+}
 
+function closeScheduleConfirmModal() {
+    document.getElementById('start-schedule-confirm-modal').classList.add('hidden');
+    resetScheduleConfirmModalToStartLayout();
     delete window.editScheduleData;
 }
 
@@ -9659,12 +9664,18 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
         newSegments: newSegments
     };
 
-    // Re-title the modal for the edit case
-    const titleEl = document.getElementById('start-schedule-confirm-title');
-    if (titleEl) titleEl.textContent = tSettings('saveChangesTitle');
+    const modalContent = document.querySelector('#start-schedule-confirm-modal .start-confirm-modal');
+    modalContent?.classList.add('schedule-confirm-edit-layout');
 
-    // Blocklist name (plain — the segments list is already labelled "Adding these time segments")
-    document.getElementById('schedule-confirm-name').textContent = blocklist.name;
+    const titleEl = document.getElementById('start-schedule-confirm-title');
+    if (titleEl) {
+        titleEl.textContent = tSettingsFmt('saveChangesTitleFmt', { name: blocklist.name });
+    }
+
+    document.getElementById('schedule-confirm-name')?.classList.add('hidden');
+    document.getElementById('schedule-summary-header')?.classList.add('hidden');
+    const overrideHeader = document.getElementById('schedule-confirm-override-header');
+    if (overrideHeader) overrideHeader.textContent = tSettings('saveChangesOverrideNeed');
 
     // Hide websites and apps rows (not changing those)
     document.getElementById('schedule-websites-row').classList.add('hidden');
@@ -9754,15 +9765,7 @@ async function proceedWithScheduleEdit() {
 
     console.log('Schedule updated with new segments:', schedule);
 
-    // Restore the confirm button + title back to the start-flow defaults.
-    // The click handler itself routes via editScheduleData, which we clear below.
-    const confirmBtn = document.getElementById('proceed-schedule-confirm-btn');
-    if (confirmBtn) confirmBtn.textContent = tSettings('startSchedule');
-    const titleEl = document.getElementById('start-schedule-confirm-title');
-    if (titleEl) titleEl.textContent = tSettings('startThisSchedule');
-
-    // Restore hidden rows
-    document.getElementById('schedule-confirm-repeat').parentElement.classList.remove('hidden');
+    resetScheduleConfirmModalToStartLayout();
 
     // Rebuild the DOM so it matches the new scheduleSegments order and locks the
     // formerly-pending segments. Without this, time-edit handlers attached to the
@@ -15584,6 +15587,7 @@ const SETTINGS_TRANSLATIONS = {
         pendingChangesSave: 'Save changes',
         pendingChangesDiscard: 'Discard',
         saveChangesTitle: 'Save changes?',
+        saveChangesTitleFmt: 'Save changes to {name}?',
         addingTheseSegments: 'Adding these time segments:',
         // Blocklist modal
         createBlocklist: 'Create Blocklist',
@@ -15657,6 +15661,7 @@ const SETTINGS_TRANSLATIONS = {
         startThisSchedule: 'Start this schedule?',
         repeatLabel: 'Repeat week:',
         confirmScheduleOverrideNeed: 'To stop this blocking schedule, you\'ll need to:',
+        saveChangesOverrideNeed: 'To stop this schedule, you\'ll need to:',
         /** Start/resume confirmation: friction description — placeholders {count},{charUnit},{minutes} */
         confirmOverrideRandomWordsFmt:
             'Type {count} {charUnit} (displayed as random words) exactly as shown (~{minutes} min).',
@@ -16183,6 +16188,7 @@ const SETTINGS_TRANSLATIONS = {
         pendingChangesSave: 'Gem ændringer',
         pendingChangesDiscard: 'Kassér',
         saveChangesTitle: 'Gem ændringer?',
+        saveChangesTitleFmt: 'Gem ændringer til {name}?',
         addingTheseSegments: 'Tilføjer disse tidssegmenter:',
         // Blocklist modal
         createBlocklist: 'Opret blokliste',
@@ -16256,6 +16262,7 @@ const SETTINGS_TRANSLATIONS = {
         startThisSchedule: 'Start dette skema?',
         repeatLabel: 'Gentag ugeskema:',
         confirmScheduleOverrideNeed: 'For at stoppe dette blokeringsskema skal du:',
+        saveChangesOverrideNeed: 'For at stoppe dette skema skal du:',
         confirmOverrideRandomWordsFmt:
             'Skrive {count} {charUnit}, vist som tilfældige ord, præcis som der står (~{minutes} min).',
         confirmOverrideGibberishLettersFmt:
