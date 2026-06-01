@@ -2449,6 +2449,8 @@ function showSafariFdaOnboardingOverlay() {
 async function presentSafariFdaOnboardingUi() {
     const session = activeSafariFdaOnboardingSession;
     if (!session) return;
+    document.getElementById('settings-modal')?.classList.add('hidden');
+    setLanguagePickerOpen(false);
     document.getElementById('eula-onboarding')?.classList.add('hidden');
     document.getElementById('welcome-onboarding')?.classList.add('hidden');
     document.getElementById('migration-onboarding')?.classList.add('hidden');
@@ -2544,6 +2546,8 @@ async function onBlockingMethodChange(key, select) {
             syncSafariFdaSettingsRow();
         }
         if (desired === 'extension') {
+            document.getElementById('settings-modal')?.classList.add('hidden');
+            setLanguagePickerOpen(false);
             if (key === 'safari') {
                 await ensureSafariExtensionFdaBeforeSetup();
             }
@@ -3928,7 +3932,6 @@ function joinBrowserNames(list) {
 // sites stay in sync if the overlay's API changes.
 async function openExtensionSetupOverlay() {
     try {
-        await ensureSafariExtensionFdaBeforeSetup();
         const fresh = await invoke('onboarding_state');
         migrationOnboardingDismissed = false;
         // Hide settings if it was the launch point — the migration
