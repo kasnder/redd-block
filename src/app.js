@@ -6038,6 +6038,7 @@ function detectPlatform() {
             document.getElementById('window-controls')?.classList.remove('hidden');
         }
     }
+    updateManageSectionVisibility();
 }
 
 // Update window height to fit content
@@ -18352,12 +18353,22 @@ function hasAnyActiveBlocks() {
     return hasAnyBlockingStateToClear();
 }
 
+// Manage section: macOS always has Uninstall; Windows only when Stop All is relevant.
+function updateManageSectionVisibility() {
+    const section = document.getElementById('settings-manage-section');
+    if (!section) return;
+    const isMac = document.body.classList.contains('mac');
+    const showOverride = hasAnyBlockingStateToClear();
+    section.classList.toggle('hidden', !isMac && !showOverride);
+}
+
 // Show Stop All while there are active blocks or schedules to clear.
 function updateOverrideAllButtonVisibility() {
     const row = document.getElementById('settings-override-all-row');
     const showOverride = hasAnyBlockingStateToClear();
 
     if (row) row.classList.toggle('hidden', !showOverride);
+    updateManageSectionVisibility();
     updateGraceSettingLock();
 }
 
