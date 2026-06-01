@@ -4687,13 +4687,15 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
 
 /* Welcome onboarding — hero layout matching reddfocus.org entry flow */
 #welcome-onboarding.onboarding-screen,
-#eula-onboarding.onboarding-screen {
+#eula-onboarding.onboarding-screen,
+#fda-onboarding.onboarding-screen {
     padding: 12px 20px 16px;
     overflow-y: auto;
 }
 
 #welcome-onboarding.onboarding-screen,
-#eula-onboarding.onboarding-screen {
+#eula-onboarding.onboarding-screen,
+#fda-onboarding.onboarding-screen {
     padding-top: 24px;
 }
 
@@ -4748,6 +4750,7 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
 
 #welcome-onboarding-title,
 #eula-welcome-title,
+#fda-onboarding-title,
 #migration-post-header-title {
     margin: 0;
     font-family: var(--font-heading);
@@ -4854,10 +4857,11 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
 
 .welcome-apple-inline-logo {
     display: inline-block;
-    width: 15px;
-    height: 15px;
-    vertical-align: -1px;
-    margin-right: 3px;
+    width: auto;
+    height: 20px;
+    vertical-align: -3px;
+    margin-right: 2px;
+    margin-left: 2px;
 }
 
 body.dark-mode .welcome-apple-inline-logo {
@@ -5191,6 +5195,7 @@ body.dark-mode .welcome-demo-toggle:hover {
 
     #welcome-onboarding-title,
     #eula-welcome-title,
+    #fda-onboarding-title,
     #migration-post-header-title {
         font-size: 24px;
     }
@@ -5507,7 +5512,8 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon {
 }
 
 .blocking-method-select {
-    min-width: 168px;
+    width: 100%;
+    min-width: 0;
     padding: 7px 10px;
     font-size: 13px;
     font-family: var(--font-body);
@@ -5527,7 +5533,7 @@ body.dark-mode .blocking-method-select {
 }
 
 .settings-blocking-method-section {
-    border-top: 1px solid var(--border-color-light);
+    border-top: 1px solid var(--border-color-medium);
 }
 
 .settings-blocking-method-toggle-copy {
@@ -5579,6 +5585,11 @@ body.dark-mode .settings-enforcement-subsection-toggle:hover {
     border-top: 1px solid var(--border-color-medium);
 }
 
+.settings-blocking-method-rows .settings-row-control {
+    width: var(--settings-control-width);
+    flex-shrink: 0;
+}
+
 .settings-blocking-method-label {
     display: inline-flex;
     align-items: center;
@@ -5590,6 +5601,54 @@ body.dark-mode .settings-enforcement-subsection-toggle:hover {
     height: 20px;
     flex-shrink: 0;
     object-fit: contain;
+}
+
+/* No divider between Safari dropdown and FDA row (Chrome row keeps its top border). */
+.settings-blocking-method-rows .settings-safari-fda-row.settings-row {
+    padding: 0 16px 12px;
+    border-top: none;
+}
+
+.settings-blocking-method-rows .settings-row:has(+ .settings-safari-fda-row:not(.hidden)) {
+    border-bottom: none;
+    padding-bottom: 4px;
+}
+
+.settings-safari-fda-row .settings-row-hint {
+    margin: 0;
+}
+
+.settings-safari-fda-grant-btn.modal-btn.primary-btn {
+    flex: none;
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 7px 10px;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    text-align: center;
+    background: var(--redd-teal);
+    border: none;
+    color: #ffffff;
+}
+
+.settings-safari-fda-grant-btn.modal-btn.primary-btn:hover:not(:disabled) {
+    background: var(--redd-teal-hover);
+    color: #ffffff;
+}
+
+body.dark-mode .settings-safari-fda-grant-btn.modal-btn.primary-btn,
+body.dark-mode .settings-safari-fda-grant-btn.modal-btn.primary-btn:hover:not(:disabled) {
+    color: #ffffff;
+}
+
+.fda-onboarding-screenshot {
+    display: block;
+    width: 100%;
+    height: auto;
+    margin-top: 14px;
+    border-radius: 10px;
 }
 
 .settings-enforcement-subsection-toggle .settings-enforcement-chevron {
@@ -5755,10 +5814,16 @@ body.dark-mode .settings-enforcement-subsection-toggle:hover {
     font-weight: 600;
 }
 
+.migration-browser-row.needs-fda {
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.20);
+}
+
 .migration-browser-badge.needs-enable,
 .migration-browser-badge.needs-private,
 .migration-browser-badge.needs-website-access,
-.migration-browser-badge.needs-deduplicate {
+.migration-browser-badge.needs-deduplicate,
+.migration-browser-badge.needs-fda {
     color: #b45309;
 }
 
@@ -7649,6 +7714,24 @@ body.ios #blocklist-modal {
     border-top: 1px solid var(--border-color);
 }
 
+.start-confirm-modal.schedule-confirm-edit-layout .block-detail-name,
+.start-confirm-modal.schedule-confirm-edit-layout .schedule-summary-header {
+    display: none;
+}
+
+.start-confirm-modal.schedule-confirm-edit-layout .schedule-summary {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+}
+
+.edit-schedule-notice {
+    margin-bottom: 14px;
+    font-size: 15px;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
 .schedule-summary-header {
     font-size: 15px;
     font-weight: 600;
@@ -7997,7 +8080,7 @@ body.dark-mode .settings-panel {
     padding: 0;
 }
 
-.settings-panel-rows > .settings-row + .settings-row {
+.settings-panel-rows > .settings-row:not(.hidden) + .settings-row:not(.hidden) {
     border-top: 1px solid var(--border-color-medium);
 }
 

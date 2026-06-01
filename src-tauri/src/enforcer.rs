@@ -657,6 +657,10 @@ fn compliance_issue(
             }
         }
     let b = key.for_status(scan);
+    #[cfg(target_os = "macos")]
+    if key == BrowserKey::Safari && b.needs_fda_access {
+        return None;
+    }
     if default_profile_passes(b) {
         None
     } else {

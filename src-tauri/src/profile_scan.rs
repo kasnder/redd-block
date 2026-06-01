@@ -105,6 +105,24 @@ pub struct BrowserStatus {
     /// after app refocus / relaunch without re-reading the protected plist.
     #[serde(rename = "needsFdaAccess", default)]
     pub needs_fda_access: bool,
+    /// macOS Firefox only: native-messaging manifest points at the
+    /// current ReDD Block binary (extension blocking bridge).
+    #[serde(rename = "nativeHostReady", default)]
+    pub native_host_ready: bool,
+}
+
+impl Default for BrowserStatus {
+    fn default() -> Self {
+        Self {
+            present: false,
+            installed: false,
+            profiles: vec![],
+            error: None,
+            duplicate_extensions: None,
+            needs_fda_access: false,
+            native_host_ready: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -155,6 +173,13 @@ pub fn scan_for_onboarding() -> ScanResult {
         }
         if crate::blocking_method::uses_automation_at_path(&path, "safari") {
             result.safari = safari_presence_only();
+        }
+        if result.firefox.installed {
+            if let Err(e) = crate::native_host_install::sync_firefox_native_host(false) {
+                log::warn!("native-host sync for firefox during onboarding scan failed: {e}");
+            }
+            result.firefox.native_host_ready =
+                crate::native_host_install::firefox_native_host_is_current();
         }
         result
     }
@@ -227,14 +252,7 @@ pub fn scan_filter<F: Fn(&str) -> bool>(should_scan: F) -> ScanResult {
 }
 
 fn empty(_label: &str) -> BrowserStatus {
-    BrowserStatus {
-        present: false,
-        installed: false,
-        profiles: vec![],
-        error: None,
-        duplicate_extensions: None,
-        needs_fda_access: false,
-    }
+    BrowserStatus::default()
 }
 
 fn firefox_root() -> Option<PathBuf> {
@@ -361,6 +379,7 @@ fn scan_firefox() -> Option<BrowserStatus> {
             error: None,
             duplicate_extensions: None,
             needs_fda_access: false,
+            native_host_ready: false,
         });
     }
 
@@ -428,6 +447,7 @@ fn scan_firefox() -> Option<BrowserStatus> {
         error: None,
         duplicate_extensions: None,
         needs_fda_access: false,
+        native_host_ready: false,
     })
 }
 
@@ -581,6 +601,7 @@ impl ChromiumBrowser {
             error: None,
             duplicate_extensions: None,
             needs_fda_access: false,
+            native_host_ready: false,
         }
     }
 
@@ -654,6 +675,7 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
             error: None,
             duplicate_extensions: None,
             needs_fda_access: false,
+            native_host_ready: false,
         });
     }
 
@@ -796,6 +818,7 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
         error: None,
         duplicate_extensions: None,
         needs_fda_access: false,
+        native_host_ready: false,
     })
 }
 
@@ -1088,6 +1111,7 @@ fn safari_presence_only() -> BrowserStatus {
         error: None,
         duplicate_extensions: None,
         needs_fda_access: false,
+        native_host_ready: false,
     }
 }
 
@@ -1164,14 +1188,75 @@ fn scan_safari() -> BrowserStatus {
     let running = is_process_running(&["Safari"]);
     let mut profiles = Vec::new();
     let mut error = None;
-    let embedded = embedded_safari_extension_present();
+    let mut needs_fda_access = crate::cross_app_consent::safari_fda_was_revoked();
+    let mut has_fda = crate::cross_app_consent::safari_fda_effective();
 
-    log::info!(
-        "tcc-probe: scan_safari skipping plist — using FFI path (no FDA)"
-    );
+    if has_fda {
+        let (plist_paths, profile_list_error) = safari_extensions_plist_paths();
+        for (name, is_default, path) in plist_paths {
+            match scan_safari_extensions_plist_at(&path) {
+                Ok(status) => profiles.push(ProfileStatus {
+                    name,
+                    is_default,
+                    installed: status.installed,
+                    enabled: status.enabled,
+                    private_browsing: status.private_browsing,
+                    website_access_all: status.website_access_all,
+                    note: None,
+                }),
+                Err(e) => {
+                    if e == SafariPlistScanError::PermissionDenied {
+                        crate::cross_app_consent::clear_fda_marker_on_safari_plist_denied();
+                        has_fda = false;
+                        needs_fda_access = true;
+                    }
+                    let note = e.note();
+                    if error.is_none() {
+                        error = Some(note.clone());
+                    }
+                    profiles.push(ProfileStatus {
+                        name,
+                        is_default,
+                        installed: false,
+                        enabled: Some(false),
+                        private_browsing: Some(false),
+                        website_access_all: Some(false),
+                        note: Some(note),
+                    });
+                }
+            }
+        }
+        if let Some(e) = profile_list_error {
+            if e == SafariPlistScanError::PermissionDenied {
+                crate::cross_app_consent::clear_fda_marker_on_safari_plist_denied();
+                has_fda = false;
+                needs_fda_access = true;
+            }
+            let note = e.note();
+            if error.is_none() {
+                error = Some(note.clone());
+            }
+            profiles.push(ProfileStatus {
+                name: "Safari profiles".to_string(),
+                is_default: false,
+                installed: false,
+                enabled: Some(false),
+                private_browsing: Some(false),
+                website_access_all: Some(false),
+                note: Some(note),
+            });
+        }
+    } else {
+        needs_fda_access = true;
+        log::info!("tcc-probe: scan_safari skipping plist (Safari FDA not effective)");
+    }
 
     if profiles.is_empty() {
-        let note = SafariPlistScanError::Missing.note();
+        let note = if has_fda {
+            SafariPlistScanError::Missing.note()
+        } else {
+            SafariPlistScanError::PermissionDenied.note()
+        };
         error = Some(note.clone());
         profiles.push(ProfileStatus {
             name: "(Default Safari profile)".to_string(),
@@ -1184,94 +1269,24 @@ fn scan_safari() -> BrowserStatus {
         });
     }
 
-    // If the bundled Safari Web Extension lives inside this very
-    // .app, force `installed=true` on every profile entry — the
-    // plist-based check would otherwise miss it whenever the user
-    // hasn't granted Full Disk Access (the FDA branch already wrote
-    // installed=false above) or whenever Safari hasn't flushed its
-    // Extensions.plist entry yet (fresh install before the user
-    // visits Settings → Extensions). Enabled / private / all-sites
-    // state remain plist-driven; we don't synthesise them here
-    // because Safari is the source of truth and the user can
-    // legitimately have the extension toggled off. Once we wire up
-    // SFSafariExtensionManager (Phase 4), even those state fields
-    // become independent of FDA.
-    if embedded {
-        for profile in profiles.iter_mut() {
-            if profile.installed {
-                continue;
-            }
-            profile.installed = true;
-            // Plist read failed (no FDA, missing file, etc.) and the
-            // existing handler stamped `Some(false)` on each state
-            // field as a placeholder. Now that we know the extension
-            // IS installed, demote those to None — "unknown" is more
-            // accurate than "definitely off" — unless FDA was revoked
-            // and we need the failure to stay visible to the enforcer.
-            if profile.note.as_deref() == Some("Full Disk Access required") {
-                continue;
-            }
-            if profile.note.is_some() {
-                profile.enabled = None;
-                profile.private_browsing = None;
-                profile.website_access_all = None;
-            }
-        }
-        // Drop the top-level error if the only thing it was
-        // reporting was an FDA-style plist failure — we no longer
-        // need FDA to know the extension is there. Per-profile
-        // notes stay so the UI can still surface "FDA needed for
-        // enabled-state details" if it cares.
-        error = None;
+    let embedded = embedded_safari_extension_present();
+    let duplicate_extensions = scan_safari_duplicate_extensions(has_fda, embedded);
 
-        // Ask SafariServices for the live `enabled` state via the
-        // Swift bridge. Bypasses the FDA-protected plist entirely
-        // for this one field. Bridge only succeeds when called from
-        // the registered main executable of the host bundle (i.e.
-        // the bundled `.app`); during `cargo tauri dev` it returns
-        // `extensionNotFound`, in which case we leave whatever the
-        // plist scan already reported (or None if FDA was missing).
-        // SafariServices doesn't expose private-browsing or per-site
-        // permission state at all — those still come from the plist.
-        log::info!(
-            "tcc-probe: about to call SFSafariExtensionManager.getStateOfSafariExtension({})",
-            crate::native_host_install::SAFARI_EXT_ID
-        );
-        match crate::safari_services::extension_state(
-            crate::native_host_install::SAFARI_EXT_ID,
-        ) {
-            Ok(state) => {
-                for profile in profiles.iter_mut() {
-                    profile.enabled = Some(state.enabled);
-                    // If the plist couldn't be read, the bridge gave
-                    // us a definitive `enabled` answer that supersedes
-                    // the "FDA needed" note for that one field. Keep
-                    // the note around for private-browsing and
-                    // all-sites, which the bridge can't introspect.
-                }
-                log::info!(
-                    "tcc-probe: SFSafariExtensionManager returned enabled={}",
-                    state.enabled
-                );
-            }
-            Err(e) => {
-                log::info!(
-                    "tcc-probe: SFSafariExtensionManager error (expected outside .app): {e}"
-                );
-            }
-        }
+    if crate::cross_app_consent::safari_fda_was_revoked() {
+        needs_fda_access = true;
     }
 
-    let duplicate_extensions = scan_safari_duplicate_extensions(false, embedded);
-
-    log::info!("tcc-probe: profile_scan::scan_safari() exited (running={running}, embedded={embedded}, duplicate={:?})", duplicate_extensions);
+    log::info!(
+        "tcc-probe: profile_scan::scan_safari() exited (running={running}, has_fda={has_fda}, duplicate={duplicate_extensions:?})"
+    );
     BrowserStatus {
         present: running,
         installed: true,
         profiles,
         error,
         duplicate_extensions,
-        needs_fda_access: false,
+        needs_fda_access,
+        native_host_ready: false,
     }
 }
 
@@ -1301,6 +1316,7 @@ fn scan_safari() -> BrowserStatus {
         error: Some("Safari is macOS-only".to_string()),
         duplicate_extensions: None,
         needs_fda_access: false,
+        native_host_ready: false,
     }
 }
 
@@ -1309,24 +1325,36 @@ fn scan_safari() -> BrowserStatus {
 /// plist we can see must report installed+enabled+privateBrowsing and
 /// all-website access. Used by onboarding to gate the backend switch.
 ///
+fn default_profile_compliant(b: &BrowserStatus) -> bool {
+    let def = b
+        .profiles
+        .iter()
+        .find(|p| p.is_default)
+        .or_else(|| b.profiles.first());
+    matches!(
+        def,
+        Some(p) if p.installed
+            && p.enabled == Some(true)
+            && p.private_browsing == Some(true)
+            && p.website_access_all.unwrap_or(true)
+    )
+}
+
 pub fn compliant(result: &ScanResult) -> bool {
-    let chromium_or_firefox = [&result.firefox, &result.chrome, &result.brave, &result.edge];
-    let chromium_ok = chromium_or_firefox.iter().all(|b| {
-        !b.present || {
-            let def = b
-                .profiles
-                .iter()
-                .find(|p| p.is_default)
-                .or_else(|| b.profiles.first());
-            matches!(
-                def,
-                Some(p) if p.installed
-                    && p.enabled == Some(true)
-                    && p.private_browsing == Some(true)
-                    && p.website_access_all.unwrap_or(true)
-            )
-        }
-    });
+    let chromium_ok = [&result.chrome, &result.brave, &result.edge]
+        .iter()
+        .all(|b| !b.present || default_profile_compliant(b));
+    let firefox_ok = !result.firefox.present
+        || (default_profile_compliant(&result.firefox) && {
+            #[cfg(target_os = "macos")]
+            {
+                result.firefox.native_host_ready
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                true
+            }
+        });
     let safari_ok = !result.safari.present
         || (!result.safari.profiles.is_empty()
             && result
@@ -1334,7 +1362,7 @@ pub fn compliant(result: &ScanResult) -> bool {
                 .profiles
                 .iter()
                 .all(|p| safari_profile_passes(p)));
-    chromium_ok && safari_ok
+    chromium_ok && firefox_ok && safari_ok
 }
 
 fn safari_profile_passes(p: &ProfileStatus) -> bool {

@@ -642,6 +642,11 @@ pub fn run() {
                             "native-host sync for extension-mode browsers failed: {e}"
                         );
                     }
+                    if crate::cross_app_consent::should_run_profile_scans() {
+                        if let Err(e) = native_host_install::sync_firefox_native_host(false) {
+                            log::warn!("native-host sync for firefox failed: {e}");
+                        }
+                    }
                 }
             }
 
@@ -664,7 +669,8 @@ pub fn run() {
             }
 
             // On macOS, Safari/Chromium use Automation; Firefox extension
-            // is installed manually — no startup native-host/policy writes.
+            // is installed manually — Firefox native-host manifest sync
+            // runs above (EULA-gated) and during onboarding scans.
             #[cfg(all(not(target_os = "ios"), not(target_os = "macos")))]
             if let Err(e) = native_host_install::install() {
                 log::warn!("native-host install on startup failed: {e}");
@@ -823,6 +829,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::activate_app,
         commands::hide_main_window,
         native_host_install::install_native_host,
+        native_host_install::ensure_firefox_native_host,
         native_host_install::uninstall_native_host,
         extension_install::install_extension_hints,
         extension_install::uninstall_extension_hints,
@@ -858,6 +865,10 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::block_websites,
         commands::clean_hosts_file,
         commands::get_helper_diagnostics,
+        commands::check_safari_fda_access,
+        commands::sync_safari_fda_access,
+        commands::complete_safari_fda_onboarding,
+        commands::open_safari_fda_settings,
         commands::open_safari_extension_settings,
         commands::open_browser_extension_settings,
         commands::open_url_in_browser,
@@ -888,6 +899,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::activate_app,
         commands::hide_main_window,
         native_host_install::install_native_host,
+        native_host_install::ensure_firefox_native_host,
         native_host_install::uninstall_native_host,
         extension_install::install_extension_hints,
         extension_install::uninstall_extension_hints,
