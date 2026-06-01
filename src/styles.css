@@ -4857,10 +4857,11 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
 
 .welcome-apple-inline-logo {
     display: inline-block;
-    width: 15px;
-    height: 15px;
-    vertical-align: -1px;
-    margin-right: 3px;
+    width: auto;
+    height: 20px;
+    vertical-align: -3px;
+    margin-right: 2px;
+    margin-left: 2px;
 }
 
 body.dark-mode .welcome-apple-inline-logo {
