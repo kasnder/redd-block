@@ -2367,7 +2367,7 @@ const BROWSER_STORE_LINKS = {
 // grant, not whether ReDD Focus is installed/enabled. Firefox stays on
 // the extension path. Non-macOS keeps the extension model everywhere.
 const AUTOMATION_BROWSER_KEYS = ['chrome', 'brave', 'edge', 'safari'];
-const MAC_BLOCKING_METHOD_KEYS = ['safari', 'chrome', 'brave', 'edge'];
+const MAC_BLOCKING_METHOD_KEYS = ['safari', 'chrome', 'edge', 'brave'];
 /** @deprecated use MAC_BLOCKING_METHOD_KEYS */
 const MAC_CHROMIUM_BLOCKING_KEYS = MAC_BLOCKING_METHOD_KEYS;
 
