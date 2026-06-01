@@ -5598,12 +5598,12 @@ body.dark-mode .settings-enforcement-subsection-toggle:hover {
     object-fit: contain;
 }
 
-.settings-safari-fda-row {
+/* No divider between Safari dropdown and FDA row (Chrome row keeps its top border). */
+.settings-blocking-method-rows .settings-safari-fda-row.settings-row {
     padding: 0 16px 12px;
     border-top: none;
 }
 
-/* No divider between Safari dropdown and FDA note (Chrome row keeps its top border). */
 .settings-blocking-method-rows .settings-row:has(+ .settings-safari-fda-row:not(.hidden)) {
     border-bottom: none;
     padding-bottom: 4px;
