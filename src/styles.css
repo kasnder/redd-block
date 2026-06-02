@@ -8329,6 +8329,24 @@ body.windows .settings-panel-rows > #settings-override-all-row:not(.hidden) ~ #w
     height: 13px;
 }
 
+@media (max-width: 640px) {
+    .settings-blocklists-io-btns {
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+        justify-content: flex-start;
+    }
+
+    #settings-modal .settings-row-control.settings-blocklists-io-btns {
+        width: 100%;
+        justify-self: stretch;
+    }
+
+    #settings-modal .settings-blocklists-io-btn {
+        width: 100%;
+    }
+}
+
 /* Shared “Cold Turkey” style: bordered pill + double chevron
    (--modal-bg / --border-color-* map to real tokens via :root aliases.) */
 #settings-modal .settings-select {
