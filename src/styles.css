@@ -4709,6 +4709,77 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
     gap: 12px;
 }
 
+/* EULA — desktop welcome hero; iOS compact centered column (shared controls). */
+.eula-onboarding-inner {
+    width: 100%;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+}
+
+body:not(.ios) .eula-onboarding-inner {
+    max-width: 560px;
+}
+
+body.ios .eula-onboarding-inner {
+    max-width: 360px;
+    text-align: center;
+}
+
+body.ios .eula-onboarding-desktop-header,
+body.ios .eula-onboarding-desktop-footer {
+    display: none;
+}
+
+body.ios .eula-onboarding-ios-hero {
+    display: block;
+    margin-bottom: 0;
+}
+
+body.ios .eula-welcome-title-ios {
+    display: block;
+    margin: 0 0 8px;
+    font-family: var(--font-heading);
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--text-secondary);
+}
+
+body:not(.ios) .eula-onboarding-ios-hero,
+body:not(.ios) .eula-welcome-title-ios,
+body:not(.ios) .eula-ios-blurb {
+    display: none;
+}
+
+body.ios .legal-onboarding-body.eula-ios-blurb {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+body.ios #eula-onboarding .onboarding-focus-card {
+    margin: 20px 0 18px;
+    padding: 28px 24px;
+}
+
+body.ios #eula-onboarding .legal-onboarding-checkbox-row,
+body.ios #eula-onboarding .legal-onboarding-note {
+    font-size: 15px;
+}
+
+body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card {
+    background: var(--redd-card);
+    border: 1px solid rgba(30, 45, 62, 0.06);
+    border-radius: 16px;
+    box-shadow: var(--redd-shadow-card-hover);
+    padding: 18px 20px 16px;
+    margin: 0;
+}
+
 .welcome-onboarding-language-row {
     display: flex;
     justify-content: flex-end;
@@ -5106,6 +5177,10 @@ body.ios .eula-back-btn {
     display: none;
 }
 
+body.ios .eula-onboarding-actions {
+    margin-top: 16px;
+}
+
 body.ios .eula-onboarding-actions .eula-continue-btn {
     width: 100%;
 }
@@ -5195,6 +5270,7 @@ body.dark-mode .welcome-demo-toggle:hover {
 
     #welcome-onboarding-title,
     #eula-welcome-title,
+    #eula-welcome-title-ios,
     #fda-onboarding-title,
     #migration-post-header-title {
         font-size: 24px;
@@ -6913,27 +6989,6 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied {
     .legal-onboarding-subtitle {
         font-size: 16px;
     }
-}
-
-/* iPhone/iPod: landscape width is usually >640px — keep same compact EULA layout as portrait */
-body.ios.ios-phone .legal-onboarding-content {
-    max-width: 100%;
-}
-
-body.ios.ios-phone .legal-onboarding-card {
-    padding: 16px 14px 14px;
-}
-
-body.ios.ios-phone .legal-onboarding-subtitle {
-    font-size: 16px;
-}
-
-body.ios.ios-phone .legal-onboarding-checkbox-row {
-    font-size: 14px;
-}
-
-body.ios.ios-phone .legal-onboarding-note {
-    font-size: 13px;
 }
 
 .onboarding-form {

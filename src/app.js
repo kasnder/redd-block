@@ -15195,6 +15195,9 @@ const SETTINGS_TRANSLATIONS = {
         eulaContinueBusy: 'Continuing…',
         eulaBackBtn: 'Back',
         eulaAcceptSaveFailedAlert: 'Could not save your agreement. Please try again.',
+        eulaWelcomeIconAlt: 'ReDD Block app icon',
+        eulaProjectBlurb:
+            'ReDD Block is developed by the Reduce Digital Distraction Project, in collaboration with researchers at the University of Oxford and University of Maastricht. The ReDD Project is a not-for-profit creating insights & open-source digital focus tools for everyone to thrive in the digital world.',
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Welcome to ReDD Block',
         welcomeOnboardingSubtitle:
@@ -15819,6 +15822,9 @@ const SETTINGS_TRANSLATIONS = {
         eulaContinueBusy: 'Arbejder…',
         eulaBackBtn: 'Tilbage',
         eulaAcceptSaveFailedAlert: 'Vi kunne ikke gemme din godkendelse. Prøv igen.',
+        eulaWelcomeIconAlt: 'ReDD Block-appikon',
+        eulaProjectBlurb:
+            'ReDD Block er udviklet af Reduce Digital Distraction Project i samarbejde med forskere ved University of Oxford og Maastricht University. ReDD-projektet er en non-profit, der skaber indsigt og open source digitale fokusværktøjer, så alle kan trives i den digitale verden.',
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Velkommen til ReDD Block',
         welcomeOnboardingSubtitle:
@@ -16656,6 +16662,8 @@ function applyMigrationOverlayStaticCopy() {
 
 /** First-run EULA screen — localized from current UI language / saved preference / browser locale (da). */
 function applyEulaOnboardingLanguage() {
+    const title = tSettings('welcomeOnboardingTitle');
+
     const shieldLogo = document.getElementById('eula-onboarding-shield-logo');
     if (shieldLogo) {
         shieldLogo.src = logoReddShieldUrl;
@@ -16663,16 +16671,25 @@ function applyEulaOnboardingLanguage() {
     }
 
     const heading = document.getElementById('eula-welcome-title');
-    if (heading) heading.textContent = tSettings('welcomeOnboardingTitle');
+    if (heading) heading.textContent = title;
+
+    const headingIos = document.getElementById('eula-welcome-title-ios');
+    if (headingIos) headingIos.textContent = title;
 
     const subtitle = document.getElementById('eula-onboarding-subtitle');
     if (subtitle) subtitle.textContent = tSettings('welcomeOnboardingSubtitle');
+
+    const appIcon = document.getElementById('eula-onboarding-app-icon');
+    if (appIcon) appIcon.setAttribute('alt', tSettings('eulaWelcomeIconAlt'));
 
     const agreeInner = document.getElementById('eula-agree-line-inner');
     if (agreeInner) agreeInner.innerHTML = tSettings('eulaAgreeLineHtml');
 
     const note = document.getElementById('eula-note');
     if (note) note.innerHTML = tSettings('eulaNoteHtml');
+
+    const blurb = document.getElementById('eula-project-blurb');
+    if (blurb) blurb.textContent = tSettings('eulaProjectBlurb');
 
     const footer1 = document.getElementById('eula-onboarding-footer-1');
     if (footer1) footer1.innerHTML = tSettings('welcomeFooter1Html');

@@ -131,8 +131,8 @@
 
 
         <div id="eula-onboarding" class="onboarding-screen hidden">
-            <div class="welcome-onboarding-layout">
-                <header class="welcome-onboarding-header">
+            <div class="eula-onboarding-inner">
+                <header class="eula-onboarding-desktop-header welcome-onboarding-header">
                     <div class="welcome-onboarding-title-row">
                         <img id="eula-onboarding-shield-logo"
                              class="welcome-shield-logo"
@@ -147,28 +147,38 @@
                     </p>
                 </header>
 
-                <div class="welcome-onboarding-card legal-onboarding-card">
-                    <div class="legal-onboarding-checkbox-row">
-                        <input type="checkbox" id="eula-agree-checkbox"
-                            aria-label="I agree to the End User License Agreement and Privacy Policy">
-                        <span class="legal-onboarding-checkbox-text" data-toggle-target="eula-agree-checkbox"><span
-                                id="eula-agree-line-inner"></span></span>
-                    </div>
-                    <p id="eula-note" class="legal-onboarding-note"></p>
-                    <div class="eula-onboarding-actions">
-                        <button id="eula-back-btn"
-                                class="eula-back-btn"
-                                type="button">
-                            Back
-                        </button>
-                        <button id="eula-continue-btn"
-                                class="modal-btn primary-btn onboarding-primary-btn eula-continue-btn"
-                                type="button"
-                                disabled>Continue</button>
+                <div class="eula-onboarding-ios-hero onboarding-icon">
+                    <img id="eula-onboarding-app-icon" src="/reddblock-icon.svg" alt="ReDD Block app icon"
+                        class="onboarding-app-icon">
+                </div>
+                <h1 id="eula-welcome-title-ios" class="eula-welcome-title-ios">Welcome to ReDD Block</h1>
+
+                <div class="eula-onboarding-card-wrap">
+                    <div class="onboarding-focus-card legal-onboarding-card welcome-onboarding-card">
+                        <div class="legal-onboarding-checkbox-row">
+                            <input type="checkbox" id="eula-agree-checkbox"
+                                aria-label="I agree to the End User License Agreement and Privacy Policy">
+                            <span class="legal-onboarding-checkbox-text" data-toggle-target="eula-agree-checkbox"><span
+                                    id="eula-agree-line-inner"></span></span>
+                        </div>
+                        <p id="eula-note" class="legal-onboarding-note"></p>
+                        <div class="eula-onboarding-actions">
+                            <button id="eula-back-btn"
+                                    class="eula-back-btn"
+                                    type="button">
+                                Back
+                            </button>
+                            <button id="eula-continue-btn"
+                                    class="modal-btn primary-btn onboarding-primary-btn eula-continue-btn"
+                                    type="button"
+                                    disabled>Continue</button>
+                        </div>
                     </div>
                 </div>
 
-                <footer class="welcome-onboarding-footer">
+                <p id="eula-project-blurb" class="legal-onboarding-body eula-ios-blurb"></p>
+
+                <footer class="eula-onboarding-desktop-footer welcome-onboarding-footer">
                     <p id="eula-onboarding-footer-1" class="welcome-footer-line"></p>
                     <p id="eula-onboarding-footer-2" class="welcome-footer-line"></p>
                 </footer>
