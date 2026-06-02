@@ -1045,8 +1045,12 @@ function isModalVisible(id) {
     return !!(modal && !modal.classList.contains('hidden'));
 }
 
-/** ESC layer 4 → 3: sub-overlays, then the topmost .modal-overlay (cancel/close). */
+/** ESC: title-bar chip menu → other sub-overlays → topmost modal → (elsewhere) deselect blocklist. */
 function dismissTopmostEscapeLayer() {
+    if (document.querySelector('.now-blocking-chip-menu')) {
+        closeNowBlockingChipMenus();
+        return true;
+    }
     if (closeEscapeSubLayer()) return true;
     return closeEscapeDialog();
 }
@@ -1055,10 +1059,6 @@ function closeEscapeSubLayer() {
     const focused = document.activeElement;
     if (focused?.matches('#custom-color-input, input[type="color"]')) {
         focused.blur();
-        return true;
-    }
-    if (document.querySelector('.now-blocking-chip-menu')) {
-        closeNowBlockingChipMenus();
         return true;
     }
     const emoji = document.getElementById('emoji-picker-popover');
@@ -13816,25 +13816,16 @@ function openNowBlockingChipMenu(triggerBtn, entry) {
 
     triggerBtn.setAttribute('aria-expanded', 'true');
 
-    // Outside-click and Escape close the menu. Use a microtask delay so the click that
-    // opened the menu doesn't immediately close it again.
+    // Outside-click closes the menu. Escape is handled by dismissTopmostEscapeLayer()
+    // (chip menu is checked first). Delay so the opening click doesn't close immediately.
     setTimeout(() => {
         const onDocClick = (e) => {
             if (!menu.contains(e.target) && e.target !== triggerBtn) {
                 closeNowBlockingChipMenus();
                 document.removeEventListener('click', onDocClick, true);
-                document.removeEventListener('keydown', onKey, true);
-            }
-        };
-        const onKey = (e) => {
-            if (e.key === 'Escape') {
-                closeNowBlockingChipMenus();
-                document.removeEventListener('click', onDocClick, true);
-                document.removeEventListener('keydown', onKey, true);
             }
         };
         document.addEventListener('click', onDocClick, true);
-        document.addEventListener('keydown', onKey, true);
     }, 0);
 }
 
