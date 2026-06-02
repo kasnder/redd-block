@@ -4297,12 +4297,14 @@ body.ios .blocklists-container {
 
 /* Blocklist Card */
 .blocklist-card {
+    --blocklist-card-border: 4px;
+    --blocklist-card-padding-y: 8px;
     display: flex;
-    align-items: center;
-    padding: 8px 10px 8px 16px;
-    /* Reduced by 4px to offset the selection border below */
-    border: 4px solid transparent;
-    /* Increased left padding for stripe gap */
+    align-items: stretch;
+    padding: var(--blocklist-card-padding-y) 10px var(--blocklist-card-padding-y) 0;
+    /* Reduced by 4px to offset the selection border on top/right/bottom */
+    border: var(--blocklist-card-border) solid transparent;
+    border-left-width: 0;
     background: var(--element-bg);
     border-radius: 10px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
@@ -4314,7 +4316,10 @@ body.ios .blocklists-container {
        their column without overflowing it. On narrow viewports cards still shrink. */
     max-width: 480px;
     width: 100%;
-    /* overflow: hidden; Removed to keep stripe corners sharp */
+}
+
+.blocklist-card.selected {
+    border-left-width: 0;
 }
 
 .blocklist-card:hover {
@@ -4387,13 +4392,12 @@ body.ios .selection-prompt {
     cursor: grabbing;
 }
 
+/* Colour stripe is the left edge; selection border runs top/right/bottom only. */
 .blocklist-stripe {
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
+    flex: 0 0 7px;
     width: 7px;
-    z-index: 1;
+    align-self: stretch;
+    margin-block: calc(-1 * (var(--blocklist-card-border) + var(--blocklist-card-padding-y)));
     border-top-left-radius: 10px;
     border-bottom-left-radius: 10px;
 }
@@ -4461,6 +4465,10 @@ body.ios .selection-prompt {
 .blocklist-info {
     flex: 1;
     min-width: 0;
+    padding-left: 9px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 
 .blocklist-name {
@@ -4524,6 +4532,7 @@ body.ios .selection-prompt {
     display: flex;
     gap: 4px;
     align-items: center;
+    align-self: center;
 }
 
 body.ios .blocklist-actions {
