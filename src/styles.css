@@ -7962,7 +7962,7 @@ body.dark-mode .modal-btn.black-btn:hover {
 }
 
 .override-challenge .challenge-current-word {
-    background: var(--redd-teal-soft);
+    background: var(--redd-warm-grey);
     color: var(--text-primary);
     border: 1px solid var(--border-color);
     border-radius: 10px;
