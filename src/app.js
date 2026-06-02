@@ -15285,6 +15285,31 @@ function renderPauseWordChallengeState() {
     document.getElementById('confirm-pause-btn').disabled = !currentWord;
 }
 
+function setOverrideAllWordChallengeMode(enabled) {
+    document.getElementById('override-all-word-progress')?.classList.toggle('hidden', !enabled);
+    document.getElementById('override-all-current-word')?.classList.toggle('hidden', !enabled);
+    document.getElementById('override-all-challenge-word-input')?.classList.toggle('hidden', !enabled);
+    document.getElementById('override-all-challenge-input')?.classList.toggle('hidden', enabled);
+}
+
+function renderOverrideAllWordChallengeState() {
+    const progressLabelEl = document.getElementById('override-all-word-progress');
+    const currentWordEl = document.getElementById('override-all-current-word');
+    const wordInput = document.getElementById('override-all-challenge-word-input');
+    const progressBar = document.getElementById('override-all-progress-bar');
+    if (!overrideAllWordChallengeState || !progressLabelEl || !currentWordEl || !wordInput || !progressBar) return;
+    const currentWord = getCurrentChallengeWord(overrideAllWordChallengeState);
+    const completedText = getCompletedChallengeText(overrideAllWordChallengeState);
+    const targetText = completedText ? `${completedText} ${currentWord}` : currentWord;
+    progressLabelEl.textContent = `Word ${overrideAllWordChallengeState.currentIndex + 1} of ${overrideAllWordChallengeState.words.length}`;
+    currentWordEl.textContent = currentWord;
+    wordInput.value = '';
+    progressBar.style.width = overrideAllChallengeText.length > 0
+        ? `${Math.min(100, (targetText.length / overrideAllChallengeText.length) * 100)}%`
+        : '0%';
+    document.getElementById('confirm-override-all-btn').disabled = !currentWord;
+}
+
 // Clean up URL for display (remove protocol, www, trailing slash)
 function cleanUrlForDisplay(url) {
     return url
@@ -18624,6 +18649,7 @@ function updateOverrideAllButtonVisibility() {
 
 // Variable to track override-all challenge text
 let overrideAllChallengeText = '';
+let overrideAllWordChallengeState = null;
 
 // Setup the configurable browser-extension grace period.
 // Backend reads `settings.extensionGraceSeconds` from the data file
@@ -18859,8 +18885,14 @@ function setupOverrideAll() {
     const cancelOverrideAllBtn = document.getElementById('cancel-override-all-btn');
     const confirmOverrideAllBtn = document.getElementById('confirm-override-all-btn');
     const overrideAllChallengeInput = document.getElementById('override-all-challenge-input');
+    const overrideAllChallengeWordInput = document.getElementById('override-all-challenge-word-input');
     const overrideAllProgressBar = document.getElementById('override-all-progress-bar');
     const overrideAllChallengeTextEl = document.getElementById('override-all-challenge-text');
+    const overrideAllCurrentWordEl = document.getElementById('override-all-current-word');
+
+    function getOverrideAllTypedValue() {
+        return overrideAllWordChallengeState?.typedText ?? overrideAllChallengeInput.value;
+    }
 
     function renderOverrideAllChallengeText(errorIndex = -1) {
         if (!overrideAllChallengeTextEl) return;
@@ -18887,18 +18919,21 @@ function setupOverrideAll() {
             if (!hasAnyBlockingStateToClear()) {
                 // No blocks active — show dialog but skip the typing challenge
                 overrideAllChallengeText = '';
+                overrideAllWordChallengeState = null;
+                setOverrideAllWordChallengeMode(false);
                 if (challengeTextEl) challengeTextEl.style.display = 'none';
                 if (overrideAllChallengeInput) overrideAllChallengeInput.style.display = 'none';
+                if (overrideAllChallengeWordInput) overrideAllChallengeWordInput.style.display = 'none';
                 if (instructionEl) instructionEl.style.display = 'none';
                 const progressEl = overrideAllModal.querySelector('.challenge-progress');
                 if (progressEl) progressEl.style.display = 'none';
+                if (confirmOverrideAllBtn) confirmOverrideAllBtn.disabled = false;
                 overrideAllModal.classList.remove('hidden');
                 return;
             }
 
             // Restore challenge elements visibility
             if (challengeTextEl) challengeTextEl.style.display = '';
-            if (overrideAllChallengeInput) overrideAllChallengeInput.style.display = '';
             if (instructionEl) instructionEl.style.display = '';
             const progressEl = overrideAllModal.querySelector('.challenge-progress');
             if (progressEl) progressEl.style.display = '';
@@ -18921,9 +18956,25 @@ function setupOverrideAll() {
             // Display challenge
             renderOverrideAllChallengeText();
             overrideAllChallengeInput.value = '';
+            overrideAllChallengeWordInput.value = '';
+            overrideAllWordChallengeState = isIOSRandomWordsChallenge(hardestDifficulty)
+                ? buildWordChallengeState(overrideAllChallengeText)
+                : null;
+            setOverrideAllWordChallengeMode(!!overrideAllWordChallengeState);
+            if (overrideAllChallengeInput) overrideAllChallengeInput.style.display = overrideAllWordChallengeState ? 'none' : '';
+            if (overrideAllChallengeWordInput) overrideAllChallengeWordInput.style.display = overrideAllWordChallengeState ? '' : 'none';
             overrideAllProgressBar.style.width = '0%';
+            if (confirmOverrideAllBtn) confirmOverrideAllBtn.disabled = !!overrideAllWordChallengeState;
 
             overrideAllModal.classList.remove('hidden');
+            requestAnimationFrame(() => {
+                if (overrideAllWordChallengeState) {
+                    renderOverrideAllWordChallengeState();
+                    overrideAllChallengeWordInput?.focus();
+                } else {
+                    overrideAllChallengeInput?.focus();
+                }
+            });
         });
     }
 
@@ -18932,6 +18983,9 @@ function setupOverrideAll() {
         cancelOverrideAllBtn.addEventListener('click', () => {
             overrideAllModal.classList.add('hidden');
             overrideAllChallengeText = '';
+            overrideAllWordChallengeState = null;
+            setOverrideAllWordChallengeMode(false);
+            confirmOverrideAllBtn.disabled = false;
             // Re-open settings modal so user goes back to settings, not main screen
             document.getElementById('settings-modal').classList.remove('hidden');
         });
@@ -18943,6 +18997,9 @@ function setupOverrideAll() {
             if (e.target === overrideAllModal) {
                 overrideAllModal.classList.add('hidden');
                 overrideAllChallengeText = '';
+                overrideAllWordChallengeState = null;
+                setOverrideAllWordChallengeMode(false);
+                confirmOverrideAllBtn.disabled = false;
                 // Re-open settings modal so user goes back to settings, not main screen
                 document.getElementById('settings-modal').classList.remove('hidden');
             }
@@ -18985,11 +19042,50 @@ function setupOverrideAll() {
             }
         });
     }
+    if (overrideAllChallengeWordInput) {
+        overrideAllChallengeWordInput.addEventListener('paste', (e) => {
+            e.preventDefault();
+        });
+        overrideAllChallengeWordInput.addEventListener('input', () => {
+            if (!overrideAllWordChallengeState) return;
+            overrideAllCurrentWordEl.textContent = getCurrentChallengeWord(overrideAllWordChallengeState);
+        });
+        overrideAllChallengeWordInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                confirmOverrideAllBtn.click();
+            }
+        });
+    }
 
     // Confirm override all
     if (confirmOverrideAllBtn) {
         confirmOverrideAllBtn.addEventListener('click', async () => {
-            const typed = overrideAllChallengeInput.value;
+            if (overrideAllWordChallengeState) {
+                const expectedWord = getCurrentChallengeWord(overrideAllWordChallengeState);
+                const typedWord = overrideAllChallengeWordInput.value.trim();
+                if (typedWord === expectedWord) {
+                    overrideAllWordChallengeState.currentIndex++;
+                    const completedText = getCompletedChallengeText(overrideAllWordChallengeState);
+                    overrideAllWordChallengeState.typedText = overrideAllWordChallengeState.currentIndex >= overrideAllWordChallengeState.words.length
+                        ? overrideAllChallengeText
+                        : completedText;
+                    if (overrideAllWordChallengeState.currentIndex < overrideAllWordChallengeState.words.length) {
+                        renderOverrideAllWordChallengeState();
+                        overrideAllChallengeWordInput.focus();
+                        return;
+                    }
+                } else {
+                    const modalContent = overrideAllModal.querySelector('.modal-content');
+                    modalContent.classList.remove('wiggle');
+                    void modalContent.offsetWidth;
+                    modalContent.classList.add('wiggle');
+                    overrideAllCurrentWordEl.textContent = getCurrentChallengeWord(overrideAllWordChallengeState);
+                    return;
+                }
+            }
+
+            const typed = getOverrideAllTypedValue();
             const target = overrideAllChallengeText;
 
             let firstErrorIndex = -1;
@@ -19010,6 +19106,9 @@ function setupOverrideAll() {
                 await performOverrideAll();
                 overrideAllModal.classList.add('hidden');
                 overrideAllChallengeText = '';
+                overrideAllWordChallengeState = null;
+                setOverrideAllWordChallengeMode(false);
+                confirmOverrideAllBtn.disabled = false;
             } else {
                 // Wrong - wiggle and highlight error
                 const modalContent = overrideAllModal.querySelector('.modal-content');
@@ -19017,7 +19116,11 @@ function setupOverrideAll() {
                 void modalContent.offsetWidth; // Trigger reflow
                 modalContent.classList.add('wiggle');
 
-                renderOverrideAllChallengeText(firstErrorIndex);
+                if (overrideAllWordChallengeState) {
+                    overrideAllCurrentWordEl.textContent = getCurrentChallengeWord(overrideAllWordChallengeState);
+                } else {
+                    renderOverrideAllChallengeText(firstErrorIndex);
+                }
             }
         });
     }
