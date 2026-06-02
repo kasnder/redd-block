@@ -7975,6 +7975,14 @@ body.dark-mode .modal-btn.black-btn:hover {
     letter-spacing: 0.02em;
 }
 
+.override-challenge .challenge-word-progress {
+    margin: -4px 0 8px;
+    text-align: left;
+    font-size: 15px;
+    line-height: 1.4;
+    color: hsl(215, 20%, 50%);
+}
+
 .override-challenge .challenge-input {
     width: 100%;
     padding: 12px;

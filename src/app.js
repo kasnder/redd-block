@@ -15236,19 +15236,22 @@ function getCompletedChallengeText(state) {
 }
 
 function setOverrideWordChallengeMode(enabled) {
+    document.getElementById('challenge-word-progress')?.classList.toggle('hidden', !enabled);
     document.getElementById('challenge-current-word')?.classList.toggle('hidden', !enabled);
     document.getElementById('challenge-word-input')?.classList.toggle('hidden', !enabled);
     document.getElementById('challenge-input')?.classList.toggle('hidden', enabled);
 }
 
 function renderOverrideWordChallengeState() {
+    const progressLabelEl = document.getElementById('challenge-word-progress');
     const currentWordEl = document.getElementById('challenge-current-word');
     const wordInput = document.getElementById('challenge-word-input');
     const progressBar = document.getElementById('challenge-progress-bar');
-    if (!overrideWordChallengeState || !currentWordEl || !wordInput || !progressBar) return;
+    if (!overrideWordChallengeState || !progressLabelEl || !currentWordEl || !wordInput || !progressBar) return;
     const currentWord = getCurrentChallengeWord(overrideWordChallengeState);
     const completedText = getCompletedChallengeText(overrideWordChallengeState);
     const targetText = completedText ? `${completedText} ${currentWord}` : currentWord;
+    progressLabelEl.textContent = `Word ${overrideWordChallengeState.currentIndex + 1} of ${overrideWordChallengeState.words.length}`;
     currentWordEl.textContent = currentWord;
     wordInput.value = '';
     progressBar.style.width = challengeText.length > 0
@@ -15258,19 +15261,22 @@ function renderOverrideWordChallengeState() {
 }
 
 function setPauseWordChallengeMode(enabled) {
+    document.getElementById('pause-word-progress')?.classList.toggle('hidden', !enabled);
     document.getElementById('pause-current-word')?.classList.toggle('hidden', !enabled);
     document.getElementById('pause-challenge-word-input')?.classList.toggle('hidden', !enabled);
     document.getElementById('pause-challenge-input')?.classList.toggle('hidden', enabled);
 }
 
 function renderPauseWordChallengeState() {
+    const progressLabelEl = document.getElementById('pause-word-progress');
     const currentWordEl = document.getElementById('pause-current-word');
     const wordInput = document.getElementById('pause-challenge-word-input');
     const progressBar = document.getElementById('pause-challenge-progress-bar');
-    if (!pauseWordChallengeState || !currentWordEl || !wordInput || !progressBar) return;
+    if (!pauseWordChallengeState || !progressLabelEl || !currentWordEl || !wordInput || !progressBar) return;
     const currentWord = getCurrentChallengeWord(pauseWordChallengeState);
     const completedText = getCompletedChallengeText(pauseWordChallengeState);
     const targetText = completedText ? `${completedText} ${currentWord}` : currentWord;
+    progressLabelEl.textContent = `Word ${pauseWordChallengeState.currentIndex + 1} of ${pauseWordChallengeState.words.length}`;
     currentWordEl.textContent = currentWord;
     wordInput.value = '';
     progressBar.style.width = pauseChallengeText.length > 0
