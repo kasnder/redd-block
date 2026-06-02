@@ -209,6 +209,8 @@ let pauseBlockId = null; // Track which block is being paused
 let pauseChallengeText = ''; // Challenge text for pause modal
 let pauseMaxMinutes = null; // Maximum pause duration in minutes (null = unlimited)
 let pauseScheduleData = null; // Track schedule-specific pause data { blocklistId, segmentEndTime }
+let overrideWordChallengeState = null;
+let pauseWordChallengeState = null;
 const MIN_OVERRIDE_CHARS = 5;
 const DEFAULT_OVERRIDE_COUNT = 10;
 const TARGET_MAX_OVERRIDE_MINUTES = 30;
@@ -7574,8 +7576,28 @@ function setupModalListeners() {
 // Override modal listeners
 function setupOverrideModalListeners() {
     const challengeInput = document.getElementById('challenge-input');
+    const challengeWordInput = document.getElementById('challenge-word-input');
     const progressBar = document.getElementById('challenge-progress-bar');
     const challengeTextEl = document.getElementById('challenge-text');
+    const challengeCurrentWordEl = document.getElementById('challenge-current-word');
+
+    function getOverrideTypedValue() {
+        return overrideWordChallengeState?.typedText ?? challengeInput.value;
+    }
+
+    function renderOverrideWordChallenge() {
+        if (!overrideWordChallengeState) return;
+        const currentWord = getCurrentChallengeWord(overrideWordChallengeState);
+        const completedText = getCompletedChallengeText(overrideWordChallengeState);
+        const targetText = completedText ? `${completedText} ${currentWord}` : currentWord;
+        challengeTextEl.textContent = challengeText;
+        challengeCurrentWordEl.textContent = currentWord;
+        challengeWordInput.value = '';
+        progressBar.style.width = challengeText.length > 0
+            ? `${Math.min(100, (targetText.length / challengeText.length) * 100)}%`
+            : '0%';
+        document.getElementById('confirm-override-btn').disabled = !currentWord;
+    }
 
     // Helper to render challenge text with optional error highlight
     function renderChallengeText(errorIndex = -1) {
@@ -7592,6 +7614,9 @@ function setupOverrideModalListeners() {
 
     // Prevent paste - users must type manually
     challengeInput.addEventListener('paste', (e) => {
+        e.preventDefault();
+    });
+    challengeWordInput.addEventListener('paste', (e) => {
         e.preventDefault();
     });
 
@@ -7618,10 +7643,21 @@ function setupOverrideModalListeners() {
         renderChallengeText(firstErrorIndex);
     });
 
+    challengeWordInput.addEventListener('input', () => {
+        if (!overrideWordChallengeState) return;
+        challengeCurrentWordEl.textContent = getCurrentChallengeWord(overrideWordChallengeState);
+    });
+
     // Enter key submits the override
     challengeInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             e.preventDefault(); // Prevent newline in textarea
+            document.getElementById('confirm-override-btn').click();
+        }
+    });
+    challengeWordInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
             document.getElementById('confirm-override-btn').click();
         }
     });
@@ -7699,6 +7735,8 @@ function setupOverrideModalListeners() {
 
     // Pause challenge input — track progress
     const pauseChallengeInput = document.getElementById('pause-challenge-input');
+    const pauseChallengeWordInput = document.getElementById('pause-challenge-word-input');
+    const pauseCurrentWordEl = document.getElementById('pause-current-word');
     pauseChallengeInput.addEventListener('input', () => {
         const typed = pauseChallengeInput.value;
         const target = pauseChallengeText;
@@ -7708,8 +7746,21 @@ function setupOverrideModalListeners() {
         // Enable/disable confirm button
         document.getElementById('confirm-pause-btn').disabled = (typed !== target);
     });
+    pauseChallengeWordInput.addEventListener('paste', (e) => {
+        e.preventDefault();
+    });
+    pauseChallengeWordInput.addEventListener('input', () => {
+        if (!pauseWordChallengeState) return;
+        pauseCurrentWordEl.textContent = getCurrentChallengeWord(pauseWordChallengeState);
+    });
 
     pauseChallengeInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            document.getElementById('confirm-pause-btn').click();
+        }
+    });
+    pauseChallengeWordInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             document.getElementById('confirm-pause-btn').click();
@@ -7733,7 +7784,31 @@ function setupOverrideModalListeners() {
     window.visualViewport?.addEventListener('resize', syncIosScheduleDayLabelsViewportMode);
 
     document.getElementById('confirm-override-btn').addEventListener('click', async () => {
-        const typed = challengeInput.value;
+        if (overrideWordChallengeState) {
+            const expectedWord = getCurrentChallengeWord(overrideWordChallengeState);
+            const typedWord = challengeWordInput.value.trim();
+            if (typedWord === expectedWord) {
+                overrideWordChallengeState.currentIndex++;
+                const completedText = getCompletedChallengeText(overrideWordChallengeState);
+                overrideWordChallengeState.typedText = overrideWordChallengeState.currentIndex >= overrideWordChallengeState.words.length
+                    ? challengeText
+                    : completedText;
+                if (overrideWordChallengeState.currentIndex < overrideWordChallengeState.words.length) {
+                    renderOverrideWordChallenge();
+                    challengeWordInput.focus();
+                    return;
+                }
+            } else {
+                const modalContent = document.querySelector('#override-modal .modal-content');
+                modalContent.classList.remove('wiggle');
+                void modalContent.offsetWidth;
+                modalContent.classList.add('wiggle');
+                challengeCurrentWordEl.textContent = getCurrentChallengeWord(overrideWordChallengeState);
+                return;
+            }
+        }
+
+        const typed = getOverrideTypedValue();
         const target = challengeText;
 
         // Find first mismatch
@@ -7847,7 +7922,11 @@ function setupOverrideModalListeners() {
             modalContent.classList.add('wiggle');
 
             // Highlight first wrong character
-            renderChallengeText(firstErrorIndex);
+            if (overrideWordChallengeState) {
+                challengeCurrentWordEl.textContent = getCurrentChallengeWord(overrideWordChallengeState);
+            } else {
+                renderChallengeText(firstErrorIndex);
+            }
         }
     });
 
@@ -11928,6 +12007,9 @@ function openOverrideModal(blockId) {
 
     document.getElementById('challenge-text').textContent = challengeText;
     document.getElementById('challenge-input').value = '';
+    document.getElementById('challenge-word-input').value = '';
+    overrideWordChallengeState = isIOSRandomWordsChallenge(difficulty) ? buildWordChallengeState(challengeText) : null;
+    setOverrideWordChallengeMode(!!overrideWordChallengeState);
 
     const progressBar = document.getElementById('challenge-progress-bar');
     progressBar.style.width = '0%';
@@ -11942,6 +12024,13 @@ function openOverrideModal(blockId) {
     document.querySelector('#override-modal .modal-content').classList.remove('wiggle');
 
     document.getElementById('override-modal').classList.remove('hidden');
+    if (overrideWordChallengeState) {
+        renderOverrideWordChallengeState();
+        requestAnimationFrame(() => document.getElementById('challenge-word-input')?.focus());
+    } else {
+        document.getElementById('confirm-override-btn').disabled = false;
+        requestAnimationFrame(() => document.getElementById('challenge-input')?.focus());
+    }
 }
 
 // Close override modal
@@ -11950,9 +12039,12 @@ function closeOverrideModal() {
     overrideBlockId = null;
     overrideBlocklistIdForHelper = null;
     challengeText = '';
+    overrideWordChallengeState = null;
+    setOverrideWordChallengeMode(false);
     delete window.overrideScheduleId;
     const confirmBtn = document.getElementById('confirm-override-btn');
     if (confirmBtn) confirmBtn.textContent = tSettings('stopBlock');
+    if (confirmBtn) confirmBtn.disabled = false;
 }
 
 // ── Pause/Resume Block ──
@@ -12235,6 +12327,9 @@ function openPauseModal(blockId) {
 
     document.getElementById('pause-challenge-text').textContent = pauseChallengeText;
     document.getElementById('pause-challenge-input').value = '';
+    document.getElementById('pause-challenge-word-input').value = '';
+    pauseWordChallengeState = isIOSRandomWordsChallenge(difficulty) ? buildWordChallengeState(pauseChallengeText) : null;
+    setPauseWordChallengeMode(!!pauseWordChallengeState);
     document.getElementById('confirm-pause-btn').disabled = true;
 
     const progressBar = document.getElementById('pause-challenge-progress-bar');
@@ -12251,6 +12346,12 @@ function openPauseModal(blockId) {
     document.getElementById('pause-modal').classList.remove('hidden');
     requestAnimationFrame(() => {
         syncPauseDurationRowLayout();
+        if (pauseWordChallengeState) {
+            renderPauseWordChallengeState();
+            document.getElementById('pause-challenge-word-input')?.focus();
+        } else {
+            document.getElementById('pause-challenge-input')?.focus();
+        }
     });
 }
 
@@ -12272,6 +12373,9 @@ function closePauseModal() {
     pauseBlockId = null;
     pauseScheduleData = null;
     pauseChallengeText = '';
+    pauseWordChallengeState = null;
+    setPauseWordChallengeMode(false);
+    document.getElementById('confirm-pause-btn').disabled = true;
 }
 
 function updatePauseRestartTime() {
@@ -12443,7 +12547,30 @@ function selectPauseRestartTimeOption(e) {
 async function proceedWithPause() {
     if (!pauseBlockId && !pauseScheduleData) return;
 
-    const typed = document.getElementById('pause-challenge-input').value;
+    if (pauseWordChallengeState) {
+        const typedWord = document.getElementById('pause-challenge-word-input').value.trim();
+        const expectedWord = getCurrentChallengeWord(pauseWordChallengeState);
+        if (typedWord === expectedWord) {
+            pauseWordChallengeState.currentIndex++;
+            const completedText = getCompletedChallengeText(pauseWordChallengeState);
+            if (pauseWordChallengeState.currentIndex < pauseWordChallengeState.words.length) {
+                renderPauseWordChallengeState();
+                document.getElementById('pause-challenge-word-input')?.focus();
+                return;
+            }
+            pauseWordChallengeState.typedText = pauseChallengeText;
+        } else {
+            const modal = document.querySelector('#pause-modal .modal-content');
+            modal.classList.add('wiggle');
+            setTimeout(() => modal.classList.remove('wiggle'), 400);
+            document.getElementById('pause-current-word').textContent = expectedWord;
+            return;
+        }
+    }
+
+    const typed = pauseWordChallengeState
+        ? (pauseWordChallengeState.typedText || '')
+        : document.getElementById('pause-challenge-input').value;
     if (typed !== pauseChallengeText) {
         // Wiggle on mismatch
         const modal = document.querySelector('#pause-modal .modal-content');
@@ -15083,6 +15210,73 @@ function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+}
+
+function buildWordChallengeState(text) {
+    const words = String(text || '').split(/\s+/).filter(Boolean);
+    return {
+        words,
+        currentIndex: 0,
+        typedText: ''
+    };
+}
+
+function isIOSRandomWordsChallenge(difficulty) {
+    return !!(isIOS && difficulty?.type === 'random-words');
+}
+
+function getCurrentChallengeWord(state) {
+    if (!state || state.currentIndex >= state.words.length) return '';
+    return state.words[state.currentIndex];
+}
+
+function getCompletedChallengeText(state) {
+    if (!state || state.currentIndex <= 0) return '';
+    return state.words.slice(0, state.currentIndex).join(' ');
+}
+
+function setOverrideWordChallengeMode(enabled) {
+    document.getElementById('challenge-current-word')?.classList.toggle('hidden', !enabled);
+    document.getElementById('challenge-word-input')?.classList.toggle('hidden', !enabled);
+    document.getElementById('challenge-input')?.classList.toggle('hidden', enabled);
+}
+
+function renderOverrideWordChallengeState() {
+    const currentWordEl = document.getElementById('challenge-current-word');
+    const wordInput = document.getElementById('challenge-word-input');
+    const progressBar = document.getElementById('challenge-progress-bar');
+    if (!overrideWordChallengeState || !currentWordEl || !wordInput || !progressBar) return;
+    const currentWord = getCurrentChallengeWord(overrideWordChallengeState);
+    const completedText = getCompletedChallengeText(overrideWordChallengeState);
+    const targetText = completedText ? `${completedText} ${currentWord}` : currentWord;
+    currentWordEl.textContent = currentWord;
+    wordInput.value = '';
+    progressBar.style.width = challengeText.length > 0
+        ? `${Math.min(100, (targetText.length / challengeText.length) * 100)}%`
+        : '0%';
+    document.getElementById('confirm-override-btn').disabled = !currentWord;
+}
+
+function setPauseWordChallengeMode(enabled) {
+    document.getElementById('pause-current-word')?.classList.toggle('hidden', !enabled);
+    document.getElementById('pause-challenge-word-input')?.classList.toggle('hidden', !enabled);
+    document.getElementById('pause-challenge-input')?.classList.toggle('hidden', enabled);
+}
+
+function renderPauseWordChallengeState() {
+    const currentWordEl = document.getElementById('pause-current-word');
+    const wordInput = document.getElementById('pause-challenge-word-input');
+    const progressBar = document.getElementById('pause-challenge-progress-bar');
+    if (!pauseWordChallengeState || !currentWordEl || !wordInput || !progressBar) return;
+    const currentWord = getCurrentChallengeWord(pauseWordChallengeState);
+    const completedText = getCompletedChallengeText(pauseWordChallengeState);
+    const targetText = completedText ? `${completedText} ${currentWord}` : currentWord;
+    currentWordEl.textContent = currentWord;
+    wordInput.value = '';
+    progressBar.style.width = pauseChallengeText.length > 0
+        ? `${Math.min(100, (targetText.length / pauseChallengeText.length) * 100)}%`
+        : '0%';
+    document.getElementById('confirm-pause-btn').disabled = !currentWord;
 }
 
 // Clean up URL for display (remove protocol, www, trailing slash)

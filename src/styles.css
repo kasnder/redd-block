@@ -7961,6 +7961,20 @@ body.dark-mode .modal-btn.black-btn:hover {
     -webkit-user-select: none;
 }
 
+.override-challenge .challenge-current-word {
+    background: var(--redd-teal-soft);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin: -4px 0 16px;
+    text-align: center;
+    font-family: monospace;
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
 .override-challenge .challenge-input {
     width: 100%;
     padding: 12px;
@@ -7970,6 +7984,11 @@ body.dark-mode .modal-btn.black-btn:hover {
     font-size: 15px;
     min-height: 80px;
     resize: none;
+}
+
+.override-challenge .challenge-word-input {
+    min-height: 0;
+    height: 48px;
 }
 
 .override-challenge .challenge-progress {
