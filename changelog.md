@@ -2,6 +2,26 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
+## v3.1.3
+
+- **Windows: uninstall from Settings.** Settings → Manage includes guidance
+  and an **Open settings** shortcut to Installed apps, so you can remove ReDD
+  Block without hunting through the OS menus.
+- **Keyboard: Escape closes more overlays.** The title-bar block actions menu
+  (⋯ on active blocks) and other popovers now dismiss reliably with Esc, with
+  the topmost overlay closed first.
+- **Version:** 3.1.3.
+
+## v3.1.2
+
+- **Website blocking: Automation ↔ extension switching.** Switching between
+  Automation and extension mode in Settings now works consistently across
+  Safari, Chrome, Brave, Edge, and Firefox, with fixes for edge cases when
+  changing method on an already-configured browser.
+- **UI polish.** Settings, blocking status, and related screens received
+  layout and styling tweaks for clearer hierarchy and spacing.
+- **Version:** 3.1.2.
+
 ## v3.1.1
 
 - **macOS: fix .pkg first-install dialog.** The preinstall script no longer
