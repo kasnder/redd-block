@@ -9,6 +9,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# scripts/sign.ps1 — manual signing; Tauri bundle uses src-tauri/windows/sign-bundle.cmd
 $ProjectRoot = Split-Path $PSScriptRoot -Parent
 $LogFile = Join-Path $env:TEMP 'sign-debug.txt'
 

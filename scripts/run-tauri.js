@@ -5,10 +5,19 @@
  */
 const { spawnSync } = require('child_process');
 const path = require('path');
-
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+const { loadDotenv } = require('./load-dotenv');
 
 const repoRoot = path.join(__dirname, '..');
+const { count, path: envPath, missing } = loadDotenv(repoRoot);
+
+if (missing) {
+  console.warn(`[run-tauri] No .env at ${envPath} — Azure signing will be skipped unless vars are in the shell environment.`);
+} else if (count === 0) {
+  console.warn(`[run-tauri] .env exists but no variables loaded from ${envPath}`);
+} else {
+  console.log(`[run-tauri] Loaded ${count} variable(s) from .env`);
+}
+
 const args = ['tauri', ...process.argv.slice(2)];
 const cmd = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 

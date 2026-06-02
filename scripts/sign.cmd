@@ -1,4 +1,4 @@
 @echo off
-REM Wrapper so manual invocations still work; Tauri uses sign.ps1 via tauri.windows.conf.json.
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0sign.ps1" "%~1"
+REM Manual signing wrapper (Tauri uses src-tauri\windows\sign-bundle.cmd).
+call "%~dp0..\src-tauri\windows\sign-bundle.cmd" "%~1"
 exit /b %ERRORLEVEL%

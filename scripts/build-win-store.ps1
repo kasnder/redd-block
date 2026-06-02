@@ -30,7 +30,11 @@ $TargetX64 = "x86_64-pc-windows-msvc"
 $TargetArm64 = "aarch64-pc-windows-msvc"
 
 $envFile = Join-Path $ProjectRoot ".env"
-if (Test-Path $envFile) {
+if (-not (Test-Path $envFile)) {
+    Write-Host "  WARNING: No .env at $envFile" -ForegroundColor Yellow
+    Write-Host "  Copy .env.example to .env (or sync from your Mac) before signed builds." -ForegroundColor Yellow
+    Write-Host ""
+} else {
     Write-Host "  Loading environment variables from .env..." -ForegroundColor Gray
     Get-Content $envFile | ForEach-Object {
         $line = $_.Trim()
@@ -42,6 +46,11 @@ if (Test-Path $envFile) {
                 [System.Environment]::SetEnvironmentVariable($key, $value, "Process")
             }
         }
+    }
+    $azureOk = $env:AZURE_CLIENT_ID -and $env:AZURE_TENANT_ID -and $env:AZURE_CLIENT_SECRET
+    if (-not $azureOk) {
+        Write-Host "  WARNING: .env exists but AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_CLIENT_SECRET not all set." -ForegroundColor Yellow
+        Write-Host "  Bundle will skip code signing (OK for local Store MSIX testing)." -ForegroundColor Yellow
     }
     Write-Host ""
 }

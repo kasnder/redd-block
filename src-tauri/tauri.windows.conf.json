@@ -11,13 +11,11 @@
                 "silent": true
             },
             "signCommand": {
-                "cmd": "powershell",
+                "cmd": "cmd",
                 "args": [
-                    "-NoProfile",
-                    "-ExecutionPolicy",
-                    "Bypass",
-                    "-File",
-                    "../scripts/sign.ps1",
+                    "/c",
+                    "call",
+                    "windows\\sign-bundle.cmd",
                     "%1"
                 ]
             },
