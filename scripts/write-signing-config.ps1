@@ -1,5 +1,6 @@
 # Writes src-tauri/tauri.signing.generated.conf.json with an absolute path to
 # sign-bundle.cmd so Tauri can find the signer regardless of process CWD.
+# Do not wrap the path in quotes — Tauri's Windows runner fails with os error 123.
 
 param(
     [string]$ProjectRoot = (Split-Path $PSScriptRoot -Parent)
@@ -14,11 +15,11 @@ if (-not (Test-Path $signBundle)) {
 $signBundle = (Resolve-Path $signBundle).Path
 $outFile = Join-Path $ProjectRoot "src-tauri\tauri.signing.generated.conf.json"
 
-# String form: Tauri runs this .cmd directly with the binary path as %1.
+# No quotes around the path — Tauri's Windows Command runner breaks on quoted signCommand.
 $config = @{
     bundle = @{
         windows = @{
-            signCommand = "`"$signBundle`" %1"
+            signCommand = "$signBundle %1"
         }
     }
 }

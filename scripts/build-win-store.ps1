@@ -1,18 +1,19 @@
 # Full Microsoft Store build for ReDD Block (matches redd-do).
 #
-# 1. Compile Tauri (signed via tauri.windows.conf.json + sign.cmd)
+# 1. Compile Tauri (unsigned — Partner Center re-signs the MSIX on upload)
 # 2. Bundle NSIS/MSI with webviewInstallMode "skip" (Store uses MSIX, not the installer)
 # 3. Package MSIX with makeappx (upload this to Partner Center)
 #
 # Prerequisites (Windows):
-#   - Node 20+, Rust x86_64-pc-windows-msvc, Windows SDK (SignTool + makeappx)
-#   - trusted-signing-cli + AZURE_* in .env for signed binaries
+#   - Node 20+, Rust x86_64-pc-windows-msvc, Windows SDK (makeappx)
 #   - WINDOWS_IDENTITY_NAME, WINDOWS_PUBLISHER, WINDOWS_PUBLISHER_DISPLAY_NAME in .env
 #   - assets/icons/1024x1024.png (run: node scripts/generate-icons-from-svg.js)
 #
 # Output:
 #   for-distribution/x86_64-pc-windows-msvc/ReDD_Block_<version>.0_x64.msix  <- submit this
 #   for-distribution/x86_64-pc-windows-msvc/nsis|msi/  (optional sideload artifacts)
+#
+# Direct-distribution signing (AZURE_*) is only used by npm run build:win, not this script.
 
 param(
     [switch]$x64Only,
@@ -32,7 +33,7 @@ $TargetArm64 = "aarch64-pc-windows-msvc"
 $envFile = Join-Path $ProjectRoot ".env"
 if (-not (Test-Path $envFile)) {
     Write-Host "  WARNING: No .env at $envFile" -ForegroundColor Yellow
-    Write-Host "  Copy .env.example to .env (or sync from your Mac) before signed builds." -ForegroundColor Yellow
+    Write-Host "  Copy .env.example to .env and set WINDOWS_* vars before Store builds." -ForegroundColor Yellow
     Write-Host ""
 } else {
     Write-Host "  Loading environment variables from .env..." -ForegroundColor Gray
@@ -47,32 +48,14 @@ if (-not (Test-Path $envFile)) {
             }
         }
     }
-    $azureOk = $env:AZURE_CLIENT_ID -and $env:AZURE_TENANT_ID -and $env:AZURE_CLIENT_SECRET
-    if (-not $azureOk) {
-        Write-Host "  WARNING: .env exists but AZURE_CLIENT_ID / AZURE_TENANT_ID / AZURE_CLIENT_SECRET not all set." -ForegroundColor Yellow
-        Write-Host "  Bundle will skip code signing (OK for local Store MSIX testing)." -ForegroundColor Yellow
+    if ($env:AZURE_CLIENT_ID -and $env:AZURE_TENANT_ID -and $env:AZURE_CLIENT_SECRET) {
+        Write-Host "  Note: AZURE_* is set but unused here (Store MSIX is re-signed on upload)." -ForegroundColor Gray
     }
     Write-Host ""
 }
 
-if (-not $env:TAURI_WINDOWS_SIGNTOOL_PATH) {
-    $sdkSigntool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" -ErrorAction SilentlyContinue |
-        Sort-Object FullName -Descending |
-        Select-Object -First 1
-    if ($sdkSigntool) {
-        $env:TAURI_WINDOWS_SIGNTOOL_PATH = $sdkSigntool.FullName
-        Write-Host "  SignTool: $($sdkSigntool.FullName)" -ForegroundColor Gray
-    }
-}
-
-$dotnetX64 = "C:\Program Files\dotnet\x64"
-if ((Test-Path $dotnetX64) -and -not $env:DOTNET_ROOT) {
-    $env:DOTNET_ROOT = $dotnetX64
-}
-
-. (Join-Path $PSScriptRoot "windows-signing-preflight.ps1")
-if (-not (Test-ReddBlockWindowsSigning)) { exit 1 }
-$hasSigningVars = $env:AZURE_CLIENT_ID -and $env:AZURE_CLIENT_SECRET -and $env:AZURE_TENANT_ID
+Write-Host "  Code signing: skipped (Microsoft Store submission; Partner Center re-signs the MSIX)." -ForegroundColor Gray
+Write-Host ""
 
 if (-not $env:WINDOWS_IDENTITY_NAME -or -not $env:WINDOWS_PUBLISHER) {
     Write-Host "  ERROR: Set WINDOWS_IDENTITY_NAME and WINDOWS_PUBLISHER in .env (Partner Center -> Product identity)." -ForegroundColor Red
@@ -92,9 +75,7 @@ function Invoke-TauriStoreBuild {
     if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }
 
     Write-Host "  Bundling NSIS/MSI ($Target)..." -ForegroundColor Gray
-    & (Join-Path $ProjectRoot "scripts\write-signing-config.ps1") -ProjectRoot $ProjectRoot
-    if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }
-    node (Join-Path $ProjectRoot "scripts\run-tauri.js") bundle --target $Target --bundles nsis,msi --config $StoreConfig --config src-tauri/tauri.signing.generated.conf.json
+    node (Join-Path $ProjectRoot "scripts\run-tauri.js") bundle --target $Target --bundles nsis,msi --config $StoreConfig
     if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }
 
     Pop-Location

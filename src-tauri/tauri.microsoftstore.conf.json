@@ -4,7 +4,8 @@
             "webviewInstallMode": {
                 "type": "skip",
                 "silent": null
-            }
+            },
+            "signCommand": null
         }
     }
 }
