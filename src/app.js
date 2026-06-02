@@ -17476,6 +17476,11 @@ function getSavedUiZoom() {
 }
 
 function applyUiZoom(scale) {
+    if (isIOS) {
+        document.documentElement.style.zoom = '';
+        return;
+    }
+
     const clamped = clampUiZoom(scale);
     syncFooterZoomControl(clamped);
 
@@ -17537,6 +17542,8 @@ function showUiZoomToast(scale) {
 }
 
 function setUiZoom(scale, options = {}) {
+    if (isIOS) return;
+
     const clamped = clampUiZoom(scale);
     applyUiZoom(clamped);
     if (options.showToast) {
@@ -17565,6 +17572,11 @@ function resetUiZoom(options = {}) {
 }
 
 function setupUiZoomShortcuts() {
+    if (isIOS) {
+        applyUiZoom(1);
+        return;
+    }
+
     setupFooterZoomControl();
     applyUiZoom(getSavedUiZoom());
 

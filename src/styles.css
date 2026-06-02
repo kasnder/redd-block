@@ -8007,16 +8007,18 @@ body.ios.ios-phone .footer-text {
     line-height: 1.25;
 }
 
-/* Limited horizontal room on small iOS phones — the zoom is still reachable
-   via cmd/ctrl shortcuts and the system menu. */
-body.ios.ios-phone .footer-zoom-control {
+/* iOS: no footer zoom — layout uses the native viewport; CSS zoom breaks WKWebView. */
+body.ios .footer-zoom-control {
     display: none;
 }
 
-/* iPad — pull zoom controls in from the right edge and add breathing room
-   above the home indicator / bottom edge */
-body.ios:not(.ios-phone) .footer-zoom-control {
-    padding-right: calc(36px + env(safe-area-inset-right, 0px));
+body.ios .footer {
+    display: flex;
+    justify-content: center;
+}
+
+body.ios .footer-text {
+    grid-column: unset;
 }
 
 .settings-top-btn {
