@@ -145,6 +145,9 @@ async function openUrl(url, openWith) {
     });
 }
 
+/** Windows Settings → Apps → Installed apps (Apps & features). */
+const WINDOWS_APPS_SETTINGS_URI = 'ms-settings:appsfeatures';
+
 // State
 let appData = {
     blocklists: [],
@@ -1177,6 +1180,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupAppForegroundRefresh();
     setupOverrideAll();
     setupInAppUninstall();
+    setupWindowsUninstallGuidance();
     setupMacAutomationIntroModal();
     setupGraceSetting();
     setupSettingsEnforcementSection();
@@ -15719,6 +15723,11 @@ const SETTINGS_TRANSLATIONS = {
         uninstallConfirmOk: 'Uninstall',
         uninstallFailedTitle: 'Uninstall failed',
         uninstallFailed: 'Could not complete uninstall.',
+        // Windows Settings uninstall guidance
+        windowsUninstallHint: 'Settings \u2192 Installed apps \u2192 ReDD Block \u2192 Uninstall',
+        windowsUninstallOpenSettingsBtn: 'Open settings',
+        windowsUninstallOpenFailedTitle: 'Could not open Settings',
+        windowsUninstallOpenFailed: 'Windows Settings could not be opened. Open Settings manually, go to Apps \u2192 Installed apps, and search for ReDD Block.',
         macAutomationIntroBadge: 'What\u2019s new',
         macAutomationIntroTitle: 'Website blocking on macOS works a little differently now',
         macAutomationIntroLeadHtml: 'To make blocking easier to set up, most browsers now use <strong>macOS Automation</strong> instead of the ReDD Focus extension. Here\u2019s the new setup.',
@@ -16318,6 +16327,10 @@ const SETTINGS_TRANSLATIONS = {
         uninstallConfirmOk: 'Afinstaller',
         uninstallFailedTitle: 'Afinstallation mislykkedes',
         uninstallFailed: 'Kunne ikke gennemføre afinstallation.',
+        windowsUninstallHint: 'Indstillinger \u2192 Installerede apps \u2192 ReDD Block \u2192 Afinstaller',
+        windowsUninstallOpenSettingsBtn: 'Åbn indstillinger',
+        windowsUninstallOpenFailedTitle: 'Kunne ikke åbne Indstillinger',
+        windowsUninstallOpenFailed: 'Windows Indstillinger kunne ikke åbnes. Åbn Indstillinger manuelt, gå til Apps \u2192 Installerede apps, og søg efter ReDD Block.',
         macAutomationIntroBadge: 'Nyhed',
         macAutomationIntroTitle: 'Websiteblokering på macOS fungerer lidt anderledes nu',
         macAutomationIntroLeadHtml: 'For at gøre blokering nemmere at opsætte bruger de fleste browsere nu <strong>macOS Automatisering</strong> i stedet for ReDD Focus-udvidelsen. Sådan ser opsætningen ud nu.',
@@ -17175,6 +17188,9 @@ function applySettingsLanguage() {
     setText('settings-uninstall-label', tSettings('uninstallApp'));
     setText('settings-uninstall-hint', tSettings('settingsUninstallHint'));
     setText('settings-uninstall-btn-label', tSettings('uninstallAppBtn'));
+    setText('settings-windows-uninstall-label', tSettings('uninstallApp'));
+    setText('settings-windows-uninstall-hint', tSettings('windowsUninstallHint'));
+    setText('settings-windows-uninstall-btn-label', tSettings('windowsUninstallOpenSettingsBtn'));
     setText('settings-help-label', tSettings('settingsDiagnosticsLabel'));
     setText('settings-enforcement-heading', tSettings('settingsEnforcementHeading'));
     setText('settings-blocking-method-toggle-label', tSettings('settingsBlockingMethodHeading'));
@@ -18360,13 +18376,14 @@ function hasAnyActiveBlocks() {
     return hasAnyBlockingStateToClear();
 }
 
-// Manage section: macOS always has Uninstall; Windows only when Stop All is relevant.
+// Manage section: macOS and Windows always show Uninstall guidance; Stop All when relevant.
 function updateManageSectionVisibility() {
     const section = document.getElementById('settings-manage-section');
     if (!section) return;
     const isMac = document.body.classList.contains('mac');
+    const isWindows = document.body.classList.contains('windows');
     const showOverride = hasAnyBlockingStateToClear();
-    section.classList.toggle('hidden', !isMac && !showOverride);
+    section.classList.toggle('hidden', !isMac && !isWindows && !showOverride);
 }
 
 // Show Stop All while there are active blocks or schedules to clear.
@@ -18949,30 +18966,61 @@ function setupInAppUninstall() {
     });
 }
 
-// Refresh the Uninstall button's enabled/disabled state and blocked tooltip.
-// Cheap; safe to call on settings-open and on any activeBlocks/schedules
-// state change. Idempotent — reads DOM only.
+// Refresh Uninstall / Open Settings buttons when blocks are active (same gate as macOS).
 function refreshUninstallButtonState() {
-    const btn = document.getElementById('uninstall-app-btn');
-    const hint = document.getElementById('uninstall-app-hint');
-    if (!btn) return;
-
     const blocking = hasAnyBlockingStateToClear();
-    if (blocking) {
-        btn.disabled = true;
-        btn.setAttribute('aria-disabled', 'true');
-        if (hint) {
-            hint.textContent = tSettings('uninstallDisabledHint');
-            hint.classList.remove('hidden');
-        }
-    } else {
-        btn.disabled = false;
-        btn.removeAttribute('aria-disabled');
-        if (hint) {
-            hint.textContent = '';
-            hint.classList.add('hidden');
+    const disabledHint = tSettings('uninstallDisabledHint');
+
+    for (const { btnId, hintId } of [
+        { btnId: 'uninstall-app-btn', hintId: 'uninstall-app-hint' },
+        { btnId: 'windows-uninstall-open-settings-btn', hintId: 'windows-uninstall-app-hint' },
+    ]) {
+        const btn = document.getElementById(btnId);
+        const hint = document.getElementById(hintId);
+        if (!btn) continue;
+
+        if (blocking) {
+            btn.disabled = true;
+            btn.setAttribute('aria-disabled', 'true');
+            if (hint) {
+                hint.textContent = disabledHint;
+                hint.classList.remove('hidden');
+            }
+        } else {
+            btn.disabled = false;
+            btn.removeAttribute('aria-disabled');
+            if (hint) {
+                hint.textContent = '';
+                hint.classList.add('hidden');
+            }
         }
     }
+}
+
+function setupWindowsUninstallGuidance() {
+    const btn = document.getElementById('windows-uninstall-open-settings-btn');
+    if (!btn) return;
+
+    refreshUninstallButtonState();
+
+    btn.addEventListener('click', async () => {
+        if (hasAnyBlockingStateToClear()) {
+            refreshUninstallButtonState();
+            return;
+        }
+
+        try {
+            await openUrl(WINDOWS_APPS_SETTINGS_URI);
+        } catch (e) {
+            console.error('windows uninstall: open Settings failed', e);
+            try {
+                await message(`${tSettings('windowsUninstallOpenFailed')}\n\n${e}`, {
+                    title: tSettings('windowsUninstallOpenFailedTitle'),
+                    kind: 'error',
+                });
+            } catch (_) { /* dialog dismissed */ }
+        }
+    });
 }
 
 

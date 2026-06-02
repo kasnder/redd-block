@@ -8084,6 +8084,16 @@ body.dark-mode .settings-panel {
     border-top: 1px solid var(--border-color-medium);
 }
 
+/* Off-platform uninstall rows stay in the DOM (display:none) without .hidden. */
+.settings-panel-rows > .settings-row.macos-only + .settings-row:not(.hidden),
+.settings-panel-rows > .settings-row.windows-only + .settings-row:not(.hidden) {
+    border-top: none;
+}
+
+body.windows .settings-panel-rows > #settings-override-all-row:not(.hidden) ~ #windows-uninstall-app-row {
+    border-top: 1px solid var(--border-color-medium);
+}
+
 .settings-panel-rows > .settings-row {
     padding: 12px 14px;
 }
@@ -8137,7 +8147,8 @@ body.dark-mode .settings-panel {
 #settings-modal .settings-row-control .language-picker,
 #settings-modal .settings-row-control #theme-select,
 #settings-modal .settings-row-control .settings-override-all-btn,
-#settings-modal .settings-row-control.settings-uninstall-btn-wrap .uninstall-app-btn {
+#settings-modal .settings-row-control.settings-uninstall-btn-wrap .uninstall-app-btn,
+#settings-modal .settings-row-control.settings-uninstall-btn-wrap #windows-uninstall-open-settings-btn {
     width: 100%;
     min-width: 0;
     box-sizing: border-box;
@@ -8721,15 +8732,21 @@ body.dark-mode #settings-modal .settings-feedback-footer {
     -webkit-user-select: none;
 }
 
-/* macOS-only sections (in-app uninstall, etc.). Hidden by default;
-   `detectPlatform()` in app.js adds `body.mac` on macOS desktop.
-   Windows uses the OS-provided Settings → Apps uninstall flow (see
-   `windows/hooks.nsh`'s NSIS_HOOK_PREUNINSTALL macro), so this button
-   isn't shown there. */
-.macos-only { display: none; }
+/* Platform-specific uninstall UI in Settings → Manage.
+   macOS: in-app uninstall (`body.mac`). Windows: opens Settings → Installed apps
+   (`body.windows`). See `windows/hooks.nsh` NSIS_HOOK_PREUNINSTALL. */
+.macos-only,
+.windows-only { display: none; }
 body.mac .macos-only { display: block; }
 body.mac .settings-uninstall-contents.macos-only.settings-row {
     display: grid;
+}
+body.windows .windows-only { display: block; }
+body.windows .settings-uninstall-contents.windows-only.settings-row {
+    display: grid;
+}
+body.windows .settings-uninstall-windows-row.settings-row {
+    align-items: start;
 }
 
 body:not(.ios) .settings-override-all-contents:not(.hidden) {
