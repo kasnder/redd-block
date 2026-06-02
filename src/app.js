@@ -15724,7 +15724,7 @@ const SETTINGS_TRANSLATIONS = {
         uninstallFailedTitle: 'Uninstall failed',
         uninstallFailed: 'Could not complete uninstall.',
         // Windows Settings uninstall guidance
-        windowsUninstallHint: 'Settings \u2192 Installed apps \u2192 ReDD Block \u2192 Uninstall',
+        windowsUninstallHint: 'Settings \u2192 Installed apps \u2192 ReDD Block',
         windowsUninstallOpenSettingsBtn: 'Open settings',
         windowsUninstallOpenFailedTitle: 'Could not open Settings',
         windowsUninstallOpenFailed: 'Windows Settings could not be opened. Open Settings manually, go to Apps \u2192 Installed apps, and search for ReDD Block.',
@@ -16327,7 +16327,7 @@ const SETTINGS_TRANSLATIONS = {
         uninstallConfirmOk: 'Afinstaller',
         uninstallFailedTitle: 'Afinstallation mislykkedes',
         uninstallFailed: 'Kunne ikke gennemføre afinstallation.',
-        windowsUninstallHint: 'Indstillinger \u2192 Installerede apps \u2192 ReDD Block \u2192 Afinstaller',
+        windowsUninstallHint: 'Indstillinger \u2192 Installerede apps \u2192 ReDD Block',
         windowsUninstallOpenSettingsBtn: 'Åbn indstillinger',
         windowsUninstallOpenFailedTitle: 'Kunne ikke åbne Indstillinger',
         windowsUninstallOpenFailed: 'Windows Indstillinger kunne ikke åbnes. Åbn Indstillinger manuelt, gå til Apps \u2192 Installerede apps, og søg efter ReDD Block.',
