@@ -92,7 +92,9 @@ function Invoke-TauriStoreBuild {
     if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }
 
     Write-Host "  Bundling NSIS/MSI ($Target)..." -ForegroundColor Gray
-    node (Join-Path $ProjectRoot "scripts\run-tauri.js") bundle --target $Target --bundles nsis,msi --config $StoreConfig
+    & (Join-Path $ProjectRoot "scripts\write-signing-config.ps1") -ProjectRoot $ProjectRoot
+    if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }
+    node (Join-Path $ProjectRoot "scripts\run-tauri.js") bundle --target $Target --bundles nsis,msi --config $StoreConfig --config src-tauri/tauri.signing.generated.conf.json
     if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }
 
     Pop-Location

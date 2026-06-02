@@ -73,7 +73,9 @@ if ($buildX64) {
     # v2.0 dropped the privileged helper daemon — app blocking is now
     # in-process, so there is no longer a sidecar binary to cross-compile.
     Push-Location $ProjectRoot
-    node (Join-Path $ProjectRoot "scripts\run-tauri.js") build --target x86_64-pc-windows-msvc
+    & (Join-Path $ProjectRoot "scripts\write-signing-config.ps1") -ProjectRoot $ProjectRoot
+    if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }
+    node (Join-Path $ProjectRoot "scripts\run-tauri.js") build --target x86_64-pc-windows-msvc --config src-tauri/tauri.signing.generated.conf.json
     if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }
     Pop-Location
 
@@ -87,7 +89,9 @@ if ($buildArm64) {
     Write-Host ""
 
     Push-Location $ProjectRoot
-    node (Join-Path $ProjectRoot "scripts\run-tauri.js") build --target aarch64-pc-windows-msvc
+    & (Join-Path $ProjectRoot "scripts\write-signing-config.ps1") -ProjectRoot $ProjectRoot
+    if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }
+    node (Join-Path $ProjectRoot "scripts\run-tauri.js") build --target aarch64-pc-windows-msvc --config src-tauri/tauri.signing.generated.conf.json
     if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }
     Pop-Location
 

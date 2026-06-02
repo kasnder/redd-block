@@ -10,15 +10,7 @@
                 "type": "embedBootstrapper",
                 "silent": true
             },
-            "signCommand": {
-                "cmd": "cmd",
-                "args": [
-                    "/c",
-                    "call",
-                    "windows\\sign-bundle.cmd",
-                    "%1"
-                ]
-            },
+            "signCommand": "sign.cmd %1",
             "nsis": {
                 "languages": [
                     "English"
