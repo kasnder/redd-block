@@ -73,7 +73,7 @@ if ($buildX64) {
     # v2.0 dropped the privileged helper daemon — app blocking is now
     # in-process, so there is no longer a sidecar binary to cross-compile.
     Push-Location $ProjectRoot
-    npm run tauri build -- --target x86_64-pc-windows-msvc
+    node (Join-Path $ProjectRoot "scripts\run-tauri.js") build --target x86_64-pc-windows-msvc
     if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }
     Pop-Location
 
@@ -87,7 +87,7 @@ if ($buildArm64) {
     Write-Host ""
 
     Push-Location $ProjectRoot
-    npm run tauri build -- --target aarch64-pc-windows-msvc
+    node (Join-Path $ProjectRoot "scripts\run-tauri.js") build --target aarch64-pc-windows-msvc
     if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }
     Pop-Location
 

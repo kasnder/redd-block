@@ -79,11 +79,11 @@ function Invoke-TauriStoreBuild {
     Push-Location $ProjectRoot
 
     Write-Host "  Compiling ($Target)..." -ForegroundColor Gray
-    npm run tauri build -- --target $Target --no-bundle
+    node (Join-Path $ProjectRoot "scripts\run-tauri.js") build --target $Target --no-bundle
     if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }
 
     Write-Host "  Bundling NSIS/MSI ($Target)..." -ForegroundColor Gray
-    npm run tauri bundle -- --target $Target --bundles nsis,msi --config $StoreConfig
+    node (Join-Path $ProjectRoot "scripts\run-tauri.js") bundle --target $Target --bundles nsis,msi --config $StoreConfig
     if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }
 
     Pop-Location

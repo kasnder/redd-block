@@ -10,7 +10,17 @@
                 "type": "embedBootstrapper",
                 "silent": true
             },
-            "signCommand": "..\\scripts\\sign.cmd %1",
+            "signCommand": {
+                "cmd": "powershell",
+                "args": [
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    "../scripts/sign.ps1",
+                    "%1"
+                ]
+            },
             "nsis": {
                 "languages": [
                     "English"
