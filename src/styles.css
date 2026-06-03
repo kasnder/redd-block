@@ -1477,7 +1477,7 @@ body.dark-mode .app-blocking-closedown-banner {
 @media (min-width: 769px) and (max-width: 1024px) and (orientation: portrait) {
     body.ios:not(.ios-phone) .grid-top-row {
         grid-template-columns: 1fr;
-        gap: 12px;
+        gap: 18px;
     }
 
     body.ios:not(.ios-phone) #settings-btn-stack {
@@ -1519,6 +1519,484 @@ body.dark-mode .app-blocking-closedown-banner {
         clip: auto;
         white-space: nowrap;
         border: 0;
+    }
+
+    /* -------------------------------------------------------------------------
+       Portrait iPad: scale main-content UI (blocklists, scheduler, week calendar).
+       Scoped under .main-content so modals / onboarding overlays are unchanged.
+       ------------------------------------------------------------------------- */
+    body.ios:not(.ios-phone) .main-content {
+        padding: 16px 28px 6px;
+        gap: 18px;
+        --day-label-width: 76px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .section-header {
+        gap: 14px;
+        margin-bottom: 14px;
+        min-height: 44px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .grid-top-row .section-header {
+        min-height: 44px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .section-header h2 {
+        font-size: 19px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .icon-btn,
+    body.ios:not(.ios-phone) .main-content #add-blocklist-btn,
+    body.ios:not(.ios-phone) .main-content #settings-btn-stack {
+        width: 44px;
+        height: 44px;
+        border-radius: 8px;
+    }
+
+    body.ios:not(.ios-phone) .main-content #add-blocklist-btn svg,
+    body.ios:not(.ios-phone) .main-content #settings-btn-stack svg {
+        width: 24px;
+        height: 24px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .scheduler-mode-tabs {
+        gap: 4px;
+        padding: 5px;
+        border-radius: 12px;
+        max-width: none;
+    }
+
+    body.ios:not(.ios-phone) .main-content .mode-tab {
+        padding: 10px 18px;
+        gap: 8px;
+        font-size: 17px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .mode-tab.active {
+        padding: 12px 18px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .mode-tab-icon {
+        width: 18px;
+        height: 18px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .selection-prompt {
+        gap: 13px;
+        padding: 0 0 22px 22px;
+        margin-top: -28px;
+        font-size: 18px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .selection-prompt svg {
+        width: 26px;
+        height: 26px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .time-picker-container {
+        gap: 18px;
+        margin-bottom: 12px;
+        border-radius: 14px;
+        padding: 20px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .quick-select-row {
+        gap: 6px;
+        margin-bottom: 14px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .time-label {
+        font-size: 14px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .duration-input {
+        width: 68px;
+        padding: 8px 8px;
+        font-size: 18px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .duration-unit {
+        font-size: 16px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .duration-quick-btn {
+        padding: 8px 12px;
+        font-size: 14px;
+        border-radius: 8px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .duration-quick-btn-always svg {
+        width: 14px;
+        height: 14px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .always-on-message {
+        gap: 12px;
+        padding: 16px 18px;
+        font-size: 16px;
+        border-radius: 10px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .always-on-message svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .time-pickers-row {
+        gap: 18px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .time-picker-group {
+        gap: 6px;
+    }
+
+    body.ios:not(.ios-phone) .main-content #timed-controls .duration-input-wrapper,
+    body.ios:not(.ios-phone) .main-content #timed-controls .time-picker-row {
+        min-height: 42px;
+    }
+
+    body.ios:not(.ios-phone) .main-content #timed-controls .time-separator {
+        height: 42px;
+        font-size: 22px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .now-btn {
+        padding: 10px 18px;
+        font-size: 16px;
+        border-radius: 10px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .time-select {
+        padding: 10px 6px;
+        font-size: 16px;
+        border-radius: 8px;
+        min-width: 58px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .time-part {
+        padding: 6px 6px;
+        font-size: 19px;
+        min-width: 42px;
+        border-radius: 8px;
+    }
+
+    body.ios:not(.ios-phone) .main-content #end-time-display input.time-part.time-popover-anchor,
+    body.ios:not(.ios-phone) .main-content .schedule-block-panel .schedule-start-display input.time-part,
+    body.ios:not(.ios-phone) .main-content .schedule-block-panel .schedule-end-display input.time-part {
+        min-width: 42px;
+        max-width: 54px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .time-colon {
+        font-size: 22px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .next-day-badge {
+        padding: 5px 10px;
+        font-size: 12px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .time-separator {
+        font-size: 22px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .popover-option {
+        padding: 10px 14px;
+        font-size: 16px;
+        min-width: 52px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .start-block-btn,
+    body.ios:not(.ios-phone) .main-content .start-schedule-btn {
+        padding: 16px 18px;
+        border-radius: 12px;
+        font-size: 18px;
+        gap: 10px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .start-block-btn.stop-block,
+    body.ios:not(.ios-phone) .main-content .start-block-btn.stop-schedule {
+        padding: 16px 20px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .start-block-btn > svg,
+    body.ios:not(.ios-phone) .main-content .start-schedule-btn > svg {
+        flex: 0 0 20px;
+        width: 20px;
+        height: 20px;
+        min-width: 20px;
+        min-height: 20px;
+        max-width: 20px;
+        max-height: 20px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .pause-block-btn {
+        padding: 16px 18px;
+        border-radius: 12px;
+        font-size: 18px;
+        gap: 8px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .pause-block-btn svg {
+        width: 20px;
+        height: 20px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .block-action-buttons {
+        gap: 10px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .schedule-segments {
+        gap: 10px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .schedule-segment {
+        margin-bottom: 6px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .segment-row {
+        gap: 14px 18px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .segment-day-toggle {
+        min-width: 54px;
+        height: 38px;
+        padding: 0 12px;
+        font-size: 16px;
+        border-radius: 8px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .segment-days.compact-day-labels .segment-day-toggle {
+        min-width: 38px;
+        padding: 0 6px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .segment-days {
+        gap: 6px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .segment-days-group {
+        gap: 8px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .remove-segment-btn {
+        width: 24px;
+        height: 24px;
+        margin-left: 12px;
+        margin-bottom: 8px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .add-segment-btn {
+        gap: 8px;
+        padding: 12px 16px;
+        font-size: 16px;
+        border-radius: 10px;
+        width: 148px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .add-segment-btn svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .schedule-repeat-section {
+        gap: 10px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .repeat-label {
+        font-size: 16px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .repeat-dropdown-btn {
+        gap: 6px;
+        padding: 8px 12px;
+        font-size: 16px;
+        border-radius: 8px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .repeat-option {
+        padding: 10px 14px;
+        font-size: 16px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .repeat-date-overlay {
+        font-size: 16px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .schedule-pending-bar {
+        gap: 14px;
+        padding: 10px 14px;
+        font-size: 14px;
+        border-radius: 10px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .schedule-pending-discard,
+    body.ios:not(.ios-phone) .main-content .schedule-pending-save {
+        padding: 8px 14px;
+        font-size: 14px;
+        border-radius: 8px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .warning-banner {
+        padding: 10px 14px;
+        font-size: 16px;
+        gap: 10px;
+        border-radius: 8px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .warning-banner svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .blocklists-container {
+        gap: 12px;
+        max-height: 440px;
+        padding-top: 6px;
+        padding-bottom: 6px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .blocklist-card {
+        --blocklist-card-padding-y: 12px;
+        border-radius: 12px;
+        padding-right: 6px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .blocklist-stripe {
+        flex: 0 0 8px;
+        width: 8px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .blocklist-info {
+        padding-left: 12px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .blocklist-name {
+        font-size: 22px;
+        gap: 10px;
+        margin-bottom: 4px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .blocklist-meta {
+        font-size: 19px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .active-badge,
+    body.ios:not(.ios-phone) .main-content .schedule-badge {
+        font-size: 12px;
+        gap: 6px;
+        padding: 3px 0;
+    }
+
+    body.ios:not(.ios-phone) .main-content .badge-running-dot {
+        width: 8px;
+        height: 8px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .paused-badge {
+        padding: 3px 10px;
+        font-size: 12px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .time-remaining {
+        font-size: 14px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .blocklist-action-btn {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .blocklist-action-btn svg {
+        width: 24px;
+        height: 24px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .week-calendar-section {
+        margin-top: 16px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .week-calendar-section .section-header,
+    body.ios:not(.ios-phone) .main-content .blocklists-section > .section-header {
+        margin-bottom: 10px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .always-on-label {
+        font-size: 15px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .schedule-visibility-chip,
+    body.ios:not(.ios-phone) .main-content .always-on-chip {
+        gap: 8px;
+        padding: 5px 12px;
+        font-size: 14px;
+        border-radius: 14px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .schedule-visibility-chip svg,
+    body.ios:not(.ios-phone) .main-content .always-on-chip svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .always-on-chip-emoji {
+        font-size: 15px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .week-calendar-container {
+        border-radius: 10px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .grid-header-row {
+        height: 28px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .hour-marker {
+        font-size: 12px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .day-row {
+        height: 46px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .day-label {
+        padding: 0 10px 0 12px;
+        font-size: 12px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .day-label .day-name {
+        font-size: 15px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .day-label .day-date {
+        font-size: 12px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .calendar-block {
+        padding: 0 10px;
+        font-size: 13px;
+        gap: 5px;
+        border-radius: 6px;
+        top: 5px;
+        bottom: 5px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .calendar-block .block-emoji {
+        font-size: 15px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .calendar-block .block-time {
+        font-size: 12px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .schedule-footer-hint {
+        margin-top: 10px;
+        font-size: 12px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .no-blocks-message p {
+        font-size: 15px;
     }
 }
 
