@@ -1,6 +1,6 @@
 [package]
 name = "redd-block"
-version = "3.1.3"
+version = "3.1.4"
 description = "ReDD Block - block distracting websites and apps to stay focused"
 authors = ["The Reduce Digital Distraction Project <team@reddfocus.org>"]
 license = "CC-BY-NC-ND-3.0"
