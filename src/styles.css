@@ -1472,6 +1472,56 @@ body.dark-mode .app-blocking-closedown-banner {
     }
 }
 
+/* Portrait iPad: same vertical stack as iPhone — blocklists, then scheduler, then
+   week calendar (calendar stays in .main-content below .grid-top-row). */
+@media (min-width: 769px) and (max-width: 1024px) and (orientation: portrait) {
+    body.ios:not(.ios-phone) .grid-top-row {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    body.ios:not(.ios-phone) #settings-btn-stack {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+    }
+
+    body.ios:not(.ios-phone) .scheduler-section .section-header #settings-btn {
+        display: none !important;
+    }
+
+    body.ios:not(.ios-phone) .blocklist-card {
+        max-width: none;
+    }
+
+    body.ios:not(.ios-phone) .scheduler-section > .section-header.scheduler-header-compact {
+        margin-bottom: 2px;
+    }
+
+    body.ios:not(.ios-phone) .selection-prompt {
+        padding: 0 0 18px 20px;
+        margin-top: -32px;
+    }
+
+    body.ios:not(.ios-phone) .selection-prompt svg {
+        transform: rotate(90deg);
+    }
+
+    /* Stacked phones keep tab labels; undo cramped two-column icon-only tabs here. */
+    body.ios:not(.ios-phone) .mode-tab-label {
+        position: static;
+        width: auto;
+        height: auto;
+        padding: 0;
+        margin: 0;
+        overflow: visible;
+        clip: auto;
+        white-space: nowrap;
+        border: 0;
+    }
+}
+
 /* Cramped two-column zone (above the stack breakpoint, below comfortable
    desktop). Previously the gear was anchored to the grid edge and could spill
    over the tab pill; tabs + inline settings are laid out from the scheduler
