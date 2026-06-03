@@ -234,7 +234,6 @@ const UI_ZOOM_MAX_IOS = 1.4;  // cap on iOS (CSS zoom on html)
 const UI_ZOOM_LAYOUT_STACK_MAX = 768;
 const UI_ZOOM_LAYOUT_CRAMPED_MAX = 1024;
 const UI_ZOOM_LAYOUT_NARROW_MAX = 800;
-const UI_ZOOM_SCHED_HEADER_ICON_THRESHOLD = 420;
 let uiZoomLayoutRaf = 0;
 let uiZoomLayoutObserverBound = false;
 const UI_ZOOM_STEP = 0.1;
@@ -17886,21 +17885,18 @@ function syncUiZoomResponsiveLayout() {
     document.documentElement.style.setProperty('--ui-zoom', String(zoom));
 
     const effVp = getEffectiveViewportWidth();
-    const cramped = effVp > UI_ZOOM_LAYOUT_STACK_MAX && effVp <= UI_ZOOM_LAYOUT_CRAMPED_MAX;
+    const ipadPortraitStack = usesStackSettingsPlacement()
+        && document.body.classList.contains('ios')
+        && !document.body.classList.contains('ios-phone');
+    const cramped = effVp > UI_ZOOM_LAYOUT_STACK_MAX
+        && effVp <= UI_ZOOM_LAYOUT_CRAMPED_MAX
+        && !ipadPortraitStack;
 
     document.body.classList.toggle('ui-zoom-tier-stack', effVp > 0 && effVp <= UI_ZOOM_LAYOUT_STACK_MAX);
     document.body.classList.toggle('ui-zoom-tier-cramped', cramped);
     document.body.classList.toggle('ui-zoom-tier-narrow', effVp > 0 && effVp <= UI_ZOOM_LAYOUT_NARROW_MAX);
 
-    const schedHeader = document.querySelector('.scheduler-section > .section-header');
-    let schedTabsIcons = cramped;
-    if (schedHeader) {
-        const headerLayoutWidth = schedHeader.getBoundingClientRect().width / zoom;
-        // At higher zoom, switch to icons earlier (same effective space as @container 420px).
-        schedTabsIcons = schedTabsIcons
-            || headerLayoutWidth <= UI_ZOOM_SCHED_HEADER_ICON_THRESHOLD * zoom;
-    }
-    document.body.classList.toggle('ui-zoom-sched-tabs-icons', schedTabsIcons);
+    syncSchedulerModeTabLabelMode();
 
     syncZoomControlPlacement();
     syncIosScheduleDayLabelsViewportMode();
@@ -17916,6 +17912,34 @@ function usesStackSettingsPlacement() {
     return document.body.classList.contains('ios')
         && !document.body.classList.contains('ios-phone')
         && window.matchMedia('(min-width: 769px) and (max-width: 1024px) and (orientation: portrait)').matches;
+}
+
+/** Icon-only Now/Schedule tabs only when labels would overlap settings or overflow the header row. */
+function syncSchedulerModeTabLabelMode() {
+    const header = document.querySelector('.scheduler-section > .section-header');
+    const modeTabs = header?.querySelector('.scheduler-mode-tabs');
+    if (!header || !modeTabs || modeTabs.classList.contains('hidden')) {
+        document.body.classList.remove('ui-zoom-sched-tabs-icons');
+        return;
+    }
+
+    document.body.classList.remove('ui-zoom-sched-tabs-icons');
+    void header.offsetWidth;
+
+    const toolbar = header.querySelector('#settings-toolbar-scheduler');
+    let iconOnly = false;
+    if (toolbar && getComputedStyle(toolbar).display !== 'none') {
+        const tabsRect = modeTabs.getBoundingClientRect();
+        const toolbarRect = toolbar.getBoundingClientRect();
+        if (tabsRect.right > toolbarRect.left - 6) {
+            iconOnly = true;
+        }
+    }
+    if (header.scrollWidth > header.clientWidth + 1) {
+        iconOnly = true;
+    }
+
+    document.body.classList.toggle('ui-zoom-sched-tabs-icons', iconOnly);
 }
 
 /** Keep the single zoom control beside whichever settings button is visible for this layout. */

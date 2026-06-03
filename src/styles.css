@@ -1528,8 +1528,8 @@ body.dark-mode .app-blocking-closedown-banner {
         transform: rotate(90deg);
     }
 
-    /* Stacked phones keep tab labels; undo cramped two-column icon-only tabs here. */
-    body.ios:not(.ios-phone) .mode-tab-label {
+    /* Portrait stack: show Now/Schedule text unless JS detects overlap (ui-zoom-sched-tabs-icons). */
+    body.ios:not(.ios-phone) .scheduler-section > .section-header .mode-tab-label {
         position: static;
         width: auto;
         height: auto;
@@ -1537,6 +1537,18 @@ body.dark-mode .app-blocking-closedown-banner {
         margin: 0;
         overflow: visible;
         clip: auto;
+        white-space: nowrap;
+        border: 0;
+    }
+
+    body.ios:not(.ios-phone).ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
         white-space: nowrap;
         border: 0;
     }
@@ -2743,15 +2755,10 @@ body.dark-mode .app-blocking-closedown-banner {
     }
 }
 
-/* Cramped two-column zone (above the stack breakpoint, below comfortable
-   desktop). Previously the gear was anchored to the grid edge and could spill
-   over the tab pill; tabs + inline settings are laid out from the scheduler
-   header flex now. Here we still:
-     - drop the mode-tab text and rely on the icons + tooltips
-     - tighten the blocklists column so the scheduler has more breathing room
-     - collapse Start/Edit buttons to just the verb ("Start" / "Edit")
-       while Stop buttons decide from their own rendered width */
-@media (min-width: 769px) and (max-width: 1024px) {
+/* Cramped two-column zone (iPad landscape / narrow desktop columns only).
+   Portrait stack keeps Now/Schedule labels — syncSchedulerModeTabLabelMode()
+   switches to icon-only only on actual overlap. */
+@media (min-width: 769px) and (max-width: 1024px) and (orientation: landscape) {
     .grid-top-row {
         grid-template-columns: 380px minmax(0, 1fr);
     }
@@ -2808,16 +2815,6 @@ body.ui-zoom-tier-cramped .blocklist-card {
     max-width: 380px;
 }
 
-body.ui-zoom-tier-cramped .mode-tab {
-    padding: 6px 12px;
-    gap: 0;
-}
-
-body.ui-zoom-tier-cramped .mode-tab.active {
-    padding: 8px 12px;
-}
-
-body.ui-zoom-tier-cramped .mode-tab-label,
 body.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-label {
     position: absolute;
     width: 1px;
@@ -2830,7 +2827,6 @@ body.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-lab
     border: 0;
 }
 
-body.ui-zoom-tier-cramped .mode-tab-icon,
 body.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-icon {
     width: 16px;
     height: 16px;
