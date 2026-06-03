@@ -1171,9 +1171,9 @@ const wordList = [
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
+    detectPlatform(); // Before loadData so first-launch defaults can differ on iOS
     await loadData();
     await resetDevOnlyEulaAcceptance();
-    detectPlatform(); // Must run early so isIOS is set before other setup
     setupIOSExternalLinkOpens();
     setupNowBlockingChipScroll();
     setupEventListeners();
@@ -5933,7 +5933,7 @@ async function loadData() {
             iosScreenTimeSelection: null,
             overrideDifficulty: {
                 type: 'random-words',
-                count: 50
+                count: isIOS ? 25 : 50
             }
         });
         // Mark onboarding as complete for backwards compat
