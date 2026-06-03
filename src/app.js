@@ -222,6 +222,8 @@ const OVERRIDE_PREVIEW_TRUNCATE_AT = 50;
 const BLOCKLIST_NAME_MAX_LENGTH = 60;
 /** Past this length the card title row usually ellipsizes; use "in 11h" instead of "starts in 11h". */
 const BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS = 26;
+/** Collapse stop-button emoji+name this many px before measured overflow (iOS flex overlap). */
+const IOS_STOP_BTN_META_COLLAPSE_SLACK_PX = 24;
 let overridePreviewFrozenByType = { 'random-words': null, 'gibberish': null };
 let lastOverridePreviewType = null;
 const UI_ZOOM_MIN = 0.8;
@@ -11408,10 +11410,12 @@ function syncStopBtnLabelFit(btn) {
     const availableBtnWidth = buttonRow
         ? buttonRow.clientWidth - otherButtonsWidth - (Math.max(0, visibleButtons.length - 1) * rowGap)
         : btn.clientWidth;
-    const expandedBtnWidth = !isIOS ? measureStopBtnExpandedWidth(btn) : 0;
-    const shouldCollapseForDesktopWidth = !isIOS && expandedBtnWidth > availableBtnWidth + 1;
+    const expandedBtnWidth = measureStopBtnExpandedWidth(btn);
+    const fitSlackPx = isIOS ? IOS_STOP_BTN_META_COLLAPSE_SLACK_PX : 1;
+    const shouldCollapseForWidth = expandedBtnWidth > 0
+        && expandedBtnWidth > availableBtnWidth - fitSlackPx;
 
-    if (shouldCollapseForDesktopWidth || btn.scrollWidth > btn.clientWidth + 1) {
+    if (shouldCollapseForWidth || btn.scrollWidth > btn.clientWidth + 1) {
         btn.classList.add('stop-meta-collapsed');
     }
 }
