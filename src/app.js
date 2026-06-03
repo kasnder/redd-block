@@ -1413,9 +1413,7 @@ async function checkForAppUpdate() {
         const response = await fetch(`https://ulyngs.github.io/redd-block/latest-versions.json?t=${Date.now()}`);
         const versions = await response.json();
 
-        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-        const platform = isMac ? 'macos' : 'windows';
-        const latestVersion = versions[platform];
+        const latestVersion = versions[getLatestVersionPlatformKey()];
 
         if (latestVersion && isVersionHigher(latestVersion, currentVersion)) {
             const banner = document.getElementById('update-banner');
@@ -5991,6 +5989,13 @@ function isVersionHigher(versionA, versionB) {
         if (a < b) return false;
     }
     return false; // Equal versions
+}
+
+/** Key in latest-versions.json — iOS uses its own release line, not desktop macos. */
+function getLatestVersionPlatformKey() {
+    if (isIOS) return 'ios';
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    return isMac ? 'macos' : 'windows';
 }
 
 // Detect platform for window controls and iOS
@@ -17609,10 +17614,7 @@ function setupTheme() {
                     try {
                         const response = await fetch(`https://ulyngs.github.io/redd-block/latest-versions.json?t=${Date.now()}`);
                         const versions = await response.json();
-                        // Detect platform
-                        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-                        const platform = isMac ? 'macos' : 'windows';
-                        const latestVersion = versions[platform];
+                        const latestVersion = versions[getLatestVersionPlatformKey()];
 
                         // Only show if latest version is higher than current version
                         if (latestVersion && currentVersion && isVersionHigher(latestVersion, currentVersion)) {
