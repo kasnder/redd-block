@@ -12003,6 +12003,7 @@ function openOverrideModal(blockId) {
         challengeText = difficulty.customText;
     } else if (difficulty.type === 'gibberish') {
         challengeText = generateGibberish(difficulty.count);
+        if (isIOS) challengeText = formatIOSGibberishChallenge(challengeText);
     } else {
         challengeText = generateRandomWords(difficulty.count);
     }
@@ -12013,7 +12014,7 @@ function openOverrideModal(blockId) {
     document.getElementById('challenge-text').textContent = challengeText;
     document.getElementById('challenge-input').value = '';
     document.getElementById('challenge-word-input').value = '';
-    overrideWordChallengeState = isIOSRandomWordsChallenge(difficulty) ? buildWordChallengeState(challengeText) : null;
+    overrideWordChallengeState = isIOSWordByWordChallenge(difficulty) ? buildWordChallengeState(challengeText) : null;
     setOverrideWordChallengeMode(!!overrideWordChallengeState);
 
     const progressBar = document.getElementById('challenge-progress-bar');
@@ -12324,6 +12325,7 @@ function openPauseModal(blockId) {
         pauseChallengeText = difficulty.customText;
     } else if (difficulty.type === 'gibberish') {
         pauseChallengeText = generateGibberish(difficulty.count);
+        if (isIOS) pauseChallengeText = formatIOSGibberishChallenge(pauseChallengeText);
     } else {
         pauseChallengeText = generateRandomWords(difficulty.count);
     }
@@ -12333,7 +12335,7 @@ function openPauseModal(blockId) {
     document.getElementById('pause-challenge-text').textContent = pauseChallengeText;
     document.getElementById('pause-challenge-input').value = '';
     document.getElementById('pause-challenge-word-input').value = '';
-    pauseWordChallengeState = isIOSRandomWordsChallenge(difficulty) ? buildWordChallengeState(pauseChallengeText) : null;
+    pauseWordChallengeState = isIOSWordByWordChallenge(difficulty) ? buildWordChallengeState(pauseChallengeText) : null;
     setPauseWordChallengeMode(!!pauseWordChallengeState);
     document.getElementById('confirm-pause-btn').disabled = true;
 
@@ -12783,13 +12785,18 @@ function getOverridePreviewText(type, count, customText) {
             const generated = type === 'gibberish'
                 ? generateGibberish(OVERRIDE_PREVIEW_TRUNCATE_AT)
                 : generateRandomWords(OVERRIDE_PREVIEW_TRUNCATE_AT);
-            frozen = generated.slice(0, OVERRIDE_PREVIEW_TRUNCATE_AT);
+            frozen = type === 'gibberish' && isIOS
+                ? formatIOSGibberishChallenge(generated)
+                : generated.slice(0, OVERRIDE_PREVIEW_TRUNCATE_AT);
             overridePreviewFrozenByType[type] = frozen;
             return frozen;
         }
     }
 
-    if (type === 'gibberish') return generateGibberish(countNum);
+    if (type === 'gibberish') {
+        const generated = generateGibberish(countNum);
+        return isIOS ? formatIOSGibberishChallenge(generated) : generated;
+    }
     return generateRandomWords(countNum);
 }
 
@@ -15226,8 +15233,13 @@ function buildWordChallengeState(text) {
     };
 }
 
-function isIOSRandomWordsChallenge(difficulty) {
-    return !!(isIOS && difficulty?.type === 'random-words');
+function formatIOSGibberishChallenge(text) {
+    const compact = String(text || '').replace(/\s+/g, '');
+    return compact.replace(/(.{6})(?=.)/g, '$1 ');
+}
+
+function isIOSWordByWordChallenge(difficulty) {
+    return !!(isIOS && (difficulty?.type === 'random-words' || difficulty?.type === 'gibberish'));
 }
 
 function getCurrentChallengeWord(state) {
@@ -18948,6 +18960,7 @@ function setupOverrideAll() {
                 overrideAllChallengeText = hardestDifficulty.customText;
             } else if (hardestDifficulty.type === 'gibberish') {
                 overrideAllChallengeText = generateGibberish(hardestDifficulty.count);
+                if (isIOS) overrideAllChallengeText = formatIOSGibberishChallenge(overrideAllChallengeText);
             } else {
                 overrideAllChallengeText = generateRandomWords(hardestDifficulty.count);
             }
@@ -18959,7 +18972,7 @@ function setupOverrideAll() {
             renderOverrideAllChallengeText();
             overrideAllChallengeInput.value = '';
             overrideAllChallengeWordInput.value = '';
-            overrideAllWordChallengeState = isIOSRandomWordsChallenge(hardestDifficulty)
+            overrideAllWordChallengeState = isIOSWordByWordChallenge(hardestDifficulty)
                 ? buildWordChallengeState(overrideAllChallengeText)
                 : null;
             setOverrideAllWordChallengeMode(!!overrideAllWordChallengeState);
