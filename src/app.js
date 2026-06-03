@@ -209,20 +209,33 @@ let pauseBlockId = null; // Track which block is being paused
 let pauseChallengeText = ''; // Challenge text for pause modal
 let pauseMaxMinutes = null; // Maximum pause duration in minutes (null = unlimited)
 let pauseScheduleData = null; // Track schedule-specific pause data { blocklistId, segmentEndTime }
+let overrideWordChallengeState = null;
+let pauseWordChallengeState = null;
 const MIN_OVERRIDE_CHARS = 5;
 const DEFAULT_OVERRIDE_COUNT = 10;
 const TARGET_MAX_OVERRIDE_MINUTES = 30;
+/** iOS random-words / gibberish: max word count (random-words: 2500 letters at max; gibberish: 3000). */
+const MAX_IOS_OVERRIDE_WORD_COUNT = 500;
 /** When character count >= this, preview text is frozen (no more regeneration) for random words and gibberish. */
 const OVERRIDE_PREVIEW_TRUNCATE_AT = 50;
 /** Max length for blocklist display name (add/edit modal + persisted saves). */
 const BLOCKLIST_NAME_MAX_LENGTH = 60;
 /** Past this length the card title row usually ellipsizes; use "in 11h" instead of "starts in 11h". */
 const BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS = 26;
+/** Collapse stop-button emoji+name this many px before measured overflow (iOS flex overlap). */
+const IOS_STOP_BTN_META_COLLAPSE_SLACK_PX = 24;
 let overridePreviewFrozenByType = { 'random-words': null, 'gibberish': null };
 let lastOverridePreviewType = null;
 const UI_ZOOM_MIN = 0.8;
 const UI_ZOOM_MAX = 1.8;
 const UI_ZOOM_MAX_DESKTOP = 1.5;  // cap on macOS/Windows (native webview zoom)
+const UI_ZOOM_MAX_IOS = 1.4;  // cap on iOS (CSS zoom on html)
+/** Layout breakpoints — CSS `zoom` does not affect @media / @container; tiers use effective width. */
+const UI_ZOOM_LAYOUT_STACK_MAX = 768;
+const UI_ZOOM_LAYOUT_CRAMPED_MAX = 1024;
+const UI_ZOOM_LAYOUT_NARROW_MAX = 800;
+let uiZoomLayoutRaf = 0;
+let uiZoomLayoutObserverBound = false;
 const UI_ZOOM_STEP = 0.1;
 /** Desktop default — slightly larger for monitor distance. */
 const DEFAULT_UI_ZOOM = 1.2;
@@ -1165,9 +1178,10 @@ const wordList = [
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
+    detectPlatform(); // Before loadData so first-launch defaults can differ on iOS
     await loadData();
     await resetDevOnlyEulaAcceptance();
-    detectPlatform(); // Must run early so isIOS is set before other setup
+    setupIOSExternalLinkOpens();
     setupNowBlockingChipScroll();
     setupEventListeners();
     initWelcomeDemoControls();
@@ -1411,9 +1425,7 @@ async function checkForAppUpdate() {
         const response = await fetch(`https://ulyngs.github.io/redd-block/latest-versions.json?t=${Date.now()}`);
         const versions = await response.json();
 
-        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-        const platform = isMac ? 'macos' : 'windows';
-        const latestVersion = versions[platform];
+        const latestVersion = versions[getLatestVersionPlatformKey()];
 
         if (latestVersion && isVersionHigher(latestVersion, currentVersion)) {
             const banner = document.getElementById('update-banner');
@@ -5837,12 +5849,39 @@ async function acceptEula() {
     await runPostAcceptanceStartup();
 }
 
+function getExternalLinkTarget(href) {
+    if (!href || typeof href !== 'string') return null;
+    const trimmed = href.trim();
+    const lower = trimmed.toLowerCase();
+    if (lower.startsWith('https://') || lower.startsWith('http://') || lower.startsWith('mailto:')) {
+        return trimmed;
+    }
+    return null;
+}
+
 async function openExternal(target) {
     try {
         await openUrl(target);
-    } catch {
-        window.open(target, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+        console.warn('[openExternal] opener plugin failed:', err);
+        if (!isIOS) {
+            window.open(target, '_blank', 'noopener,noreferrer');
+        }
     }
+}
+
+/** WKWebView on iOS does not open target=_blank links in Safari; route via opener plugin. */
+function setupIOSExternalLinkOpens() {
+    if (!isIOS) return;
+    document.addEventListener('click', (event) => {
+        const anchor = event.target.closest('a[href]');
+        if (!anchor) return;
+        const url = getExternalLinkTarget(anchor.dataset.externalUrl || anchor.getAttribute('href'));
+        if (!url) return;
+        event.preventDefault();
+        event.stopPropagation();
+        void openExternal(url);
+    }, true);
 }
 
 // Load data from main process
@@ -5901,7 +5940,7 @@ async function loadData() {
             iosScreenTimeSelection: null,
             overrideDifficulty: {
                 type: 'random-words',
-                count: 50
+                count: isIOS ? 25 : 50
             }
         });
         // Mark onboarding as complete for backwards compat
@@ -5989,6 +6028,17 @@ function isVersionHigher(versionA, versionB) {
         if (a < b) return false;
     }
     return false; // Equal versions
+}
+
+function usesIOSWordCountForOverrideType(type) {
+    return !!(isIOS && (type === 'random-words' || type === 'gibberish'));
+}
+
+/** Key in latest-versions.json — iOS uses its own release line, not desktop macos. */
+function getLatestVersionPlatformKey() {
+    if (isIOS) return 'ios';
+    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+    return isMac ? 'macos' : 'windows';
 }
 
 // Detect platform for window controls and iOS
@@ -6142,18 +6192,6 @@ function setupEventListeners() {
         eulaRoot.addEventListener(
             'click',
             (event) => {
-                const anchor = event.target.closest('a[data-external-url]');
-                if (anchor && eulaRoot.contains(anchor)) {
-                    const url = anchor.dataset.externalUrl;
-                    if (!url) return;
-                    event.preventDefault();
-                    event.stopImmediatePropagation();
-                    openUrl(url).catch((err) => {
-                        console.warn('[eula] open in browser failed:', err);
-                        window.open(url, '_blank', 'noopener,noreferrer');
-                    });
-                    return;
-                }
                 const toggleHost = event.target.closest('[data-toggle-target]');
                 if (toggleHost && eulaRoot.contains(toggleHost) && !event.target.closest('a')) {
                     const target = document.getElementById(toggleHost.dataset.toggleTarget);
@@ -7128,6 +7166,7 @@ function setupModalListeners() {
         const warningEl = document.getElementById('override-count-warning');
         const overrideType = document.getElementById('override-type')?.value || 'random-words';
         const maxChars = getMaxOverrideCharsForType(overrideType);
+        const unitLabel = usesIOSWordCountForOverrideType(overrideType) ? 'words' : 'characters';
         e.target.max = String(maxChars);
         const rawValue = e.target.value.trim();
         if (rawValue === '') {
@@ -7143,7 +7182,7 @@ function setupModalListeners() {
             const charsPerMinute = getTypingCharsPerMinuteForType(overrideType);
             const estimatedMinutes = Math.ceil(maxChars / charsPerMinute);
             e.target.value = maxChars;
-            warningEl.textContent = `Max is ${maxChars} characters so it's still possible to override in case of emergency (takes you ~${estimatedMinutes} minutes to type).`;
+            warningEl.textContent = `Max is ${maxChars} ${unitLabel} so it's still possible to override in case of emergency (takes you ~${estimatedMinutes} minutes to type).`;
             warningEl.classList.remove('hidden');
         } else {
             warningEl.classList.add('hidden');
@@ -7574,8 +7613,14 @@ function setupModalListeners() {
 // Override modal listeners
 function setupOverrideModalListeners() {
     const challengeInput = document.getElementById('challenge-input');
+    const challengeWordInput = document.getElementById('challenge-word-input');
     const progressBar = document.getElementById('challenge-progress-bar');
     const challengeTextEl = document.getElementById('challenge-text');
+    const challengeCurrentWordEl = document.getElementById('challenge-current-word');
+
+    function getOverrideTypedValue() {
+        return overrideWordChallengeState?.typedText ?? challengeInput.value;
+    }
 
     // Helper to render challenge text with optional error highlight
     function renderChallengeText(errorIndex = -1) {
@@ -7592,6 +7637,9 @@ function setupOverrideModalListeners() {
 
     // Prevent paste - users must type manually
     challengeInput.addEventListener('paste', (e) => {
+        e.preventDefault();
+    });
+    challengeWordInput.addEventListener('paste', (e) => {
         e.preventDefault();
     });
 
@@ -7618,10 +7666,21 @@ function setupOverrideModalListeners() {
         renderChallengeText(firstErrorIndex);
     });
 
+    challengeWordInput.addEventListener('input', () => {
+        if (!overrideWordChallengeState) return;
+        challengeCurrentWordEl.textContent = getCurrentChallengeWord(overrideWordChallengeState);
+    });
+
     // Enter key submits the override
     challengeInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             e.preventDefault(); // Prevent newline in textarea
+            document.getElementById('confirm-override-btn').click();
+        }
+    });
+    challengeWordInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
             document.getElementById('confirm-override-btn').click();
         }
     });
@@ -7699,6 +7758,8 @@ function setupOverrideModalListeners() {
 
     // Pause challenge input — track progress
     const pauseChallengeInput = document.getElementById('pause-challenge-input');
+    const pauseChallengeWordInput = document.getElementById('pause-challenge-word-input');
+    const pauseCurrentWordEl = document.getElementById('pause-current-word');
     pauseChallengeInput.addEventListener('input', () => {
         const typed = pauseChallengeInput.value;
         const target = pauseChallengeText;
@@ -7708,8 +7769,21 @@ function setupOverrideModalListeners() {
         // Enable/disable confirm button
         document.getElementById('confirm-pause-btn').disabled = (typed !== target);
     });
+    pauseChallengeWordInput.addEventListener('paste', (e) => {
+        e.preventDefault();
+    });
+    pauseChallengeWordInput.addEventListener('input', () => {
+        if (!pauseWordChallengeState) return;
+        pauseCurrentWordEl.textContent = getCurrentChallengeWord(pauseWordChallengeState);
+    });
 
     pauseChallengeInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            document.getElementById('confirm-pause-btn').click();
+        }
+    });
+    pauseChallengeWordInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             document.getElementById('confirm-pause-btn').click();
@@ -7733,7 +7807,31 @@ function setupOverrideModalListeners() {
     window.visualViewport?.addEventListener('resize', syncIosScheduleDayLabelsViewportMode);
 
     document.getElementById('confirm-override-btn').addEventListener('click', async () => {
-        const typed = challengeInput.value;
+        if (overrideWordChallengeState) {
+            const expectedWord = getCurrentChallengeWord(overrideWordChallengeState);
+            const typedWord = challengeWordInput.value.trim();
+            if (typedWord === expectedWord) {
+                overrideWordChallengeState.currentIndex++;
+                const completedText = getCompletedChallengeText(overrideWordChallengeState);
+                overrideWordChallengeState.typedText = overrideWordChallengeState.currentIndex >= overrideWordChallengeState.words.length
+                    ? challengeText
+                    : completedText;
+                if (overrideWordChallengeState.currentIndex < overrideWordChallengeState.words.length) {
+                    renderOverrideWordChallengeState();
+                    challengeWordInput.focus();
+                    return;
+                }
+            } else {
+                const modalContent = document.querySelector('#override-modal .modal-content');
+                modalContent.classList.remove('wiggle');
+                void modalContent.offsetWidth;
+                modalContent.classList.add('wiggle');
+                challengeCurrentWordEl.textContent = getCurrentChallengeWord(overrideWordChallengeState);
+                return;
+            }
+        }
+
+        const typed = getOverrideTypedValue();
         const target = challengeText;
 
         // Find first mismatch
@@ -7847,7 +7945,11 @@ function setupOverrideModalListeners() {
             modalContent.classList.add('wiggle');
 
             // Highlight first wrong character
-            renderChallengeText(firstErrorIndex);
+            if (overrideWordChallengeState) {
+                challengeCurrentWordEl.textContent = getCurrentChallengeWord(overrideWordChallengeState);
+            } else {
+                renderChallengeText(firstErrorIndex);
+            }
         }
     });
 
@@ -9613,10 +9715,6 @@ function openScheduleOverrideModal(schedule) {
     const blocklistName = blocklist ? blocklist.name : 'Schedule';
 
     const difficulty = blocklist?.overrideDifficulty || { type: 'random-words', count: 50 };
-    const charCount = difficulty.count || 50;
-    const isRandom = difficulty.type === 'gibberish';
-
-    challengeText = isRandom ? generateGibberish(charCount) : generateRandomWords(charCount);
     overrideBlockId = null;
     overrideBlocklistIdForHelper = null;
 
@@ -9624,18 +9722,8 @@ function openScheduleOverrideModal(schedule) {
     if (titleEl) {
         titleEl.textContent = `${tSettings('stopSchedule')} ${blocklistName}`;
     }
-
-    const challengeTextEl = document.getElementById('challenge-text');
-    if (challengeTextEl) {
-        challengeTextEl.textContent = challengeText;
-    }
-
-    const challengeInput = document.getElementById('challenge-input');
-    if (challengeInput) challengeInput.value = '';
-    const progressBar = document.getElementById('challenge-progress-bar');
-    if (progressBar) progressBar.style.width = '0%';
-
-    document.getElementById('override-modal').classList.remove('hidden');
+    document.getElementById('override-summary').textContent = formatBlocklistModalSummary(blocklist);
+    initializeOverrideModalChallenge(difficulty, blocklist?.color);
 }
 
 // Click handler for a scheduled block in the timeline: select the corresponding blocklist
@@ -9715,7 +9803,9 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
         charCount = difficulty.customText.length;
         charsPerMinute = 200;
     }
-    const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
+    const displayCount = difficulty.type === 'custom' ? charCount : normalizeOverrideCount(charCount, difficulty.type);
+    const generatedCharCount = difficulty.type === 'custom' ? charCount : getOverrideGeneratedCharCount(difficulty.type, displayCount);
+    const estimatedMinutes = Math.ceil(generatedCharCount / charsPerMinute);
     const schedType =
         difficulty.type === 'custom' && difficulty.customText
             ? 'custom'
@@ -9723,7 +9813,7 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
               ? 'gibberish'
               : 'random-words';
     document.getElementById('schedule-confirm-override-text').textContent =
-        formatConfirmModalOverrideTypingLine({ type: schedType, count: charCount, estimatedMinutes });
+        formatConfirmModalOverrideTypingLine({ type: schedType, count: displayCount, estimatedMinutes });
 
     // Swap the proceed button label; the click handler routes via editScheduleData.
     const confirmBtn = document.getElementById('proceed-schedule-confirm-btn');
@@ -10147,6 +10237,44 @@ function renderInstantPreviewBlock(blockStart, blockEnd, blocklist) {
     layoutOverlappingBlocks();
 }
 
+// Pointer-based drag session for calendar preview blocks (mouse + touch on iPad).
+function bindPointerDragSession(element, { onStart, onMove, onEnd }) {
+    element.addEventListener('pointerdown', (e) => {
+        if (!e.isPrimary || e.button !== 0) return;
+        if (onStart(e) === false) return;
+
+        const captureEl = e.currentTarget;
+        try {
+            captureEl.setPointerCapture?.(e.pointerId);
+        } catch (_) { /* ignore */ }
+
+        e.preventDefault();
+
+        const onPointerMove = (moveEvent) => {
+            if (moveEvent.pointerId !== e.pointerId) return;
+            moveEvent.preventDefault();
+            onMove(moveEvent);
+        };
+
+        const endSession = (endEvent) => {
+            if (endEvent.pointerId !== e.pointerId) return;
+            document.removeEventListener('pointermove', onPointerMove);
+            document.removeEventListener('pointerup', endSession);
+            document.removeEventListener('pointercancel', endSession);
+            try {
+                if (captureEl.hasPointerCapture?.(e.pointerId)) {
+                    captureEl.releasePointerCapture(e.pointerId);
+                }
+            } catch (_) { /* ignore */ }
+            onEnd(endEvent);
+        };
+
+        document.addEventListener('pointermove', onPointerMove);
+        document.addEventListener('pointerup', endSession);
+        document.addEventListener('pointercancel', endSession);
+    });
+}
+
 // Attach a right-edge resize handler to the instant-mode preview's head element. Dragging
 // the handle live-updates the head's width and on release commits the new total duration:
 // duration = head's new width (in minutes). Tails on later days are not adjusted in
@@ -10161,22 +10289,23 @@ function attachInstantPreviewResizeHandler(headEl, headTrack) {
     let startX = 0;
     let startWidthPct = 0;
 
-    handle.addEventListener('mouseenter', () => headEl.classList.add('resize-hover'));
-    handle.addEventListener('mouseleave', () => headEl.classList.remove('resize-hover'));
+    handle.addEventListener('pointerenter', () => headEl.classList.add('resize-hover'));
+    handle.addEventListener('pointerleave', () => headEl.classList.remove('resize-hover'));
 
-    headEl.addEventListener('mousedown', (e) => {
-        if (!e.target.closest('.resize-handle-end')) return;
-        isResizing = true;
-        startX = e.clientX;
-        startWidthPct = parseFloat(headEl.style.width) || 0;
-        headEl.classList.add('resizing');
-        document.body.style.cursor = 'ew-resize';
-        e.preventDefault();
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
+    bindPointerDragSession(headEl, {
+        onStart(e) {
+            if (!e.target.closest('.resize-handle-end')) return false;
+            isResizing = true;
+            startX = e.clientX;
+            startWidthPct = parseFloat(headEl.style.width) || 0;
+            headEl.classList.add('resizing');
+            document.body.style.cursor = 'ew-resize';
+        },
+        onMove: onPointerMove,
+        onEnd: onPointerUp
     });
 
-    function onMouseMove(e) {
+    function onPointerMove(e) {
         if (!isResizing) return;
         const trackRect = headTrack.getBoundingClientRect();
         if (trackRect.width <= 0) return;
@@ -10203,11 +10332,9 @@ function attachInstantPreviewResizeHandler(headEl, headTrack) {
         }
     }
 
-    function onMouseUp() {
+    function onPointerUp() {
         if (!isResizing) return;
         isResizing = false;
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
         headEl.classList.remove('resizing');
         headEl.classList.remove('resize-hover');
         document.body.style.cursor = '';
@@ -10474,10 +10601,10 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
         });
     }
 
-    // Cursor hover hint on resize handles
+    // Cursor hover hint on resize handles (pointer events work for mouse; touch skips hover)
     previewEl.querySelectorAll('.resize-handle').forEach(handle => {
-        handle.addEventListener('mouseenter', () => previewEl.classList.add('resize-hover'));
-        handle.addEventListener('mouseleave', () => previewEl.classList.remove('resize-hover'));
+        handle.addEventListener('pointerenter', () => previewEl.classList.add('resize-hover'));
+        handle.addEventListener('pointerleave', () => previewEl.classList.remove('resize-hover'));
     });
 
     // Recompute "HH:MM - HH:MM" from the head's current left%/width% and write it onto
@@ -10497,33 +10624,32 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
         ).forEach(el => { el.textContent = text; });
     }
 
-    previewEl.addEventListener('mousedown', (e) => {
-        const handle = e.target.closest('.resize-handle');
-        if (handle) {
-            isResizing = true;
-            resizeHandle = handle.dataset.handle;
-            previewEl.classList.add('resizing');
-            document.body.style.cursor = 'ew-resize';
-        } else {
-            isDragging = true;
-            previewEl.classList.add('dragging');
-            document.body.style.cursor = 'grabbing';
-        }
+    bindPointerDragSession(previewEl, {
+        onStart(e) {
+            const handle = e.target.closest('.resize-handle');
+            if (handle) {
+                isResizing = true;
+                resizeHandle = handle.dataset.handle;
+                previewEl.classList.add('resizing');
+                document.body.style.cursor = 'ew-resize';
+            } else {
+                isDragging = true;
+                previewEl.classList.add('dragging');
+                document.body.style.cursor = 'grabbing';
+            }
 
-        startX = e.clientX;
-        startY = e.clientY;
-        startLeftPct = parseFloat(previewEl.style.left) || 0;
-        startWidthPct = parseFloat(previewEl.style.width) || 0;
-        currentHoverTrack = track;
+            startX = e.clientX;
+            startY = e.clientY;
+            startLeftPct = parseFloat(previewEl.style.left) || 0;
+            startWidthPct = parseFloat(previewEl.style.width) || 0;
+            currentHoverTrack = track;
 
-        const trackRect = track.getBoundingClientRect();
-        const trackCenterY = trackRect.top + trackRect.height / 2;
-        clickOffsetY = e.clientY - trackCenterY;
-
-        e.preventDefault();
-
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
+            const trackRect = track.getBoundingClientRect();
+            const trackCenterY = trackRect.top + trackRect.height / 2;
+            clickOffsetY = e.clientY - trackCenterY;
+        },
+        onMove: handlePointerMove,
+        onEnd: handlePointerUp
     });
 
     // Only "head" preview blocks (not overnight tails) are manipulated during a drag —
@@ -10534,7 +10660,7 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
         );
     }
 
-    function handleMouseMove(e) {
+    function handlePointerMove(e) {
         const trackRect = track.getBoundingClientRect();
         if (trackRect.width <= 0) return;
 
@@ -10605,10 +10731,7 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
         updateLiveTimeText();
     }
 
-    function handleMouseUp() {
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
-
+    function handlePointerUp() {
         getHeadPreviewBlocks().forEach(block => {
             block.classList.remove('dragging');
             block.classList.remove('resizing');
@@ -10650,6 +10773,8 @@ function syncSchedulerChromeVisibility() {
     if (mainTitle) mainTitle.classList.toggle('hidden', !show);
     if (modeTabs) modeTabs.classList.toggle('hidden', !show);
     if (sectionHeader) sectionHeader.classList.toggle('scheduler-header-compact', !show);
+    bindUiZoomLayoutObserver();
+    scheduleUiZoomResponsiveLayout();
 }
 
 // Handle blocklist selection
@@ -11017,7 +11142,10 @@ function startBlock() {
         charsPerMinute = 100;
     }
 
-    const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
+    const displayCount = difficulty.type === 'custom' ? charCount : normalizeOverrideCount(charCount, difficulty.type);
+    const generatedCharCount = difficulty.type === 'custom' ? charCount : getOverrideGeneratedCharCount(difficulty.type, displayCount);
+
+    const estimatedMinutes = Math.ceil(generatedCharCount / charsPerMinute);
     const startType =
         difficulty.type === 'custom' && difficulty.customText
             ? 'custom'
@@ -11027,7 +11155,7 @@ function startBlock() {
 
     const overrideText = formatConfirmModalOverrideTypingLine({
         type: startType,
-        count: charCount,
+        count: displayCount,
         estimatedMinutes
     });
 
@@ -11315,10 +11443,12 @@ function syncStopBtnLabelFit(btn) {
     const availableBtnWidth = buttonRow
         ? buttonRow.clientWidth - otherButtonsWidth - (Math.max(0, visibleButtons.length - 1) * rowGap)
         : btn.clientWidth;
-    const expandedBtnWidth = !isIOS ? measureStopBtnExpandedWidth(btn) : 0;
-    const shouldCollapseForDesktopWidth = !isIOS && expandedBtnWidth > availableBtnWidth + 1;
+    const expandedBtnWidth = measureStopBtnExpandedWidth(btn);
+    const fitSlackPx = isIOS ? IOS_STOP_BTN_META_COLLAPSE_SLACK_PX : 1;
+    const shouldCollapseForWidth = expandedBtnWidth > 0
+        && expandedBtnWidth > availableBtnWidth - fitSlackPx;
 
-    if (shouldCollapseForDesktopWidth || btn.scrollWidth > btn.clientWidth + 1) {
+    if (shouldCollapseForWidth || btn.scrollWidth > btn.clientWidth + 1) {
         btn.classList.add('stop-meta-collapsed');
     }
 }
@@ -11913,35 +12043,7 @@ function openOverrideModal(blockId) {
     document.getElementById('override-summary').textContent = formatBlocklistModalSummary(blocklist);
 
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-
-    // Generate challenge text
-    if (difficulty.type === 'custom' && difficulty.customText) {
-        challengeText = difficulty.customText;
-    } else if (difficulty.type === 'gibberish') {
-        challengeText = generateGibberish(difficulty.count);
-    } else {
-        challengeText = generateRandomWords(difficulty.count);
-    }
-
-    // Sanitize: remove linebreaks and collapse multiple spaces
-    challengeText = challengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
-
-    document.getElementById('challenge-text').textContent = challengeText;
-    document.getElementById('challenge-input').value = '';
-
-    const progressBar = document.getElementById('challenge-progress-bar');
-    progressBar.style.width = '0%';
-    // Use the blocklist's color for the progress bar
-    if (blocklist.color) {
-        progressBar.style.background = blocklist.color;
-    } else {
-        progressBar.style.background = 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)';
-    }
-
-    // Reset wiggle state
-    document.querySelector('#override-modal .modal-content').classList.remove('wiggle');
-
-    document.getElementById('override-modal').classList.remove('hidden');
+    initializeOverrideModalChallenge(difficulty, blocklist?.color);
 }
 
 // Close override modal
@@ -11950,9 +12052,45 @@ function closeOverrideModal() {
     overrideBlockId = null;
     overrideBlocklistIdForHelper = null;
     challengeText = '';
+    overrideWordChallengeState = null;
+    setOverrideWordChallengeMode(false);
     delete window.overrideScheduleId;
     const confirmBtn = document.getElementById('confirm-override-btn');
     if (confirmBtn) confirmBtn.textContent = tSettings('stopBlock');
+    if (confirmBtn) confirmBtn.disabled = false;
+}
+
+function initializeOverrideModalChallenge(difficulty, progressColor = null) {
+    challengeText = generateOverrideChallengeText(difficulty.type, difficulty.count, difficulty.customText);
+
+    // Sanitize: remove linebreaks and collapse multiple spaces
+    challengeText = challengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+
+    document.getElementById('challenge-text').textContent = challengeText;
+    document.getElementById('challenge-input').value = '';
+    document.getElementById('challenge-word-input').value = '';
+    overrideWordChallengeState = isIOSWordByWordChallenge(difficulty) ? buildWordChallengeState(challengeText) : null;
+    setOverrideWordChallengeMode(!!overrideWordChallengeState);
+
+    const progressBar = document.getElementById('challenge-progress-bar');
+    progressBar.style.width = '0%';
+    if (progressColor) {
+        progressBar.style.background = progressColor;
+    } else {
+        progressBar.style.background = 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)';
+    }
+
+    // Reset wiggle state
+    document.querySelector('#override-modal .modal-content').classList.remove('wiggle');
+
+    document.getElementById('override-modal').classList.remove('hidden');
+    if (overrideWordChallengeState) {
+        renderOverrideWordChallengeState();
+        requestAnimationFrame(() => document.getElementById('challenge-word-input')?.focus());
+    } else {
+        document.getElementById('confirm-override-btn').disabled = false;
+        requestAnimationFrame(() => document.getElementById('challenge-input')?.focus());
+    }
 }
 
 // ── Pause/Resume Block ──
@@ -12067,22 +12205,26 @@ function openResumeConfirmation(blocklistId, type, blockId) {
     let charCount = difficulty.count;
     let estimatedMinutes;
     let resumeType;
+    let displayCount;
 
     if (difficulty.type === 'custom' && difficulty.customText) {
         charCount = difficulty.customText.length;
         estimatedMinutes = Math.ceil(charCount / 200);
         resumeType = 'custom';
+        displayCount = charCount;
     } else if (difficulty.type === 'gibberish') {
-        estimatedMinutes = Math.ceil(charCount / 100);
+        displayCount = normalizeOverrideCount(charCount, difficulty.type);
+        estimatedMinutes = Math.ceil(getOverrideGeneratedCharCount(difficulty.type, displayCount) / 100);
         resumeType = 'gibberish';
     } else {
-        estimatedMinutes = Math.ceil(charCount / 150);
+        displayCount = normalizeOverrideCount(charCount, difficulty.type);
+        estimatedMinutes = Math.ceil(getOverrideGeneratedCharCount(difficulty.type, displayCount) / 150);
         resumeType = 'random-words';
     }
 
     const overrideText = formatConfirmModalOverrideTypingLine({
         type: resumeType,
-        count: charCount,
+        count: displayCount,
         estimatedMinutes,
         resumeShortGibberish: resumeType === 'gibberish'
     });
@@ -12223,18 +12365,15 @@ function openPauseModal(blockId) {
 
     // Generate challenge text
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-    if (difficulty.type === 'custom' && difficulty.customText) {
-        pauseChallengeText = difficulty.customText;
-    } else if (difficulty.type === 'gibberish') {
-        pauseChallengeText = generateGibberish(difficulty.count);
-    } else {
-        pauseChallengeText = generateRandomWords(difficulty.count);
-    }
+    pauseChallengeText = generateOverrideChallengeText(difficulty.type, difficulty.count, difficulty.customText);
 
     pauseChallengeText = pauseChallengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
 
     document.getElementById('pause-challenge-text').textContent = pauseChallengeText;
     document.getElementById('pause-challenge-input').value = '';
+    document.getElementById('pause-challenge-word-input').value = '';
+    pauseWordChallengeState = isIOSWordByWordChallenge(difficulty) ? buildWordChallengeState(pauseChallengeText) : null;
+    setPauseWordChallengeMode(!!pauseWordChallengeState);
     document.getElementById('confirm-pause-btn').disabled = true;
 
     const progressBar = document.getElementById('pause-challenge-progress-bar');
@@ -12251,6 +12390,12 @@ function openPauseModal(blockId) {
     document.getElementById('pause-modal').classList.remove('hidden');
     requestAnimationFrame(() => {
         syncPauseDurationRowLayout();
+        if (pauseWordChallengeState) {
+            renderPauseWordChallengeState();
+            document.getElementById('pause-challenge-word-input')?.focus();
+        } else {
+            document.getElementById('pause-challenge-input')?.focus();
+        }
     });
 }
 
@@ -12272,6 +12417,9 @@ function closePauseModal() {
     pauseBlockId = null;
     pauseScheduleData = null;
     pauseChallengeText = '';
+    pauseWordChallengeState = null;
+    setPauseWordChallengeMode(false);
+    document.getElementById('confirm-pause-btn').disabled = true;
 }
 
 function updatePauseRestartTime() {
@@ -12443,7 +12591,30 @@ function selectPauseRestartTimeOption(e) {
 async function proceedWithPause() {
     if (!pauseBlockId && !pauseScheduleData) return;
 
-    const typed = document.getElementById('pause-challenge-input').value;
+    if (pauseWordChallengeState) {
+        const typedWord = document.getElementById('pause-challenge-word-input').value.trim();
+        const expectedWord = getCurrentChallengeWord(pauseWordChallengeState);
+        if (typedWord === expectedWord) {
+            pauseWordChallengeState.currentIndex++;
+            const completedText = getCompletedChallengeText(pauseWordChallengeState);
+            if (pauseWordChallengeState.currentIndex < pauseWordChallengeState.words.length) {
+                renderPauseWordChallengeState();
+                document.getElementById('pause-challenge-word-input')?.focus();
+                return;
+            }
+            pauseWordChallengeState.typedText = pauseChallengeText;
+        } else {
+            const modal = document.querySelector('#pause-modal .modal-content');
+            modal.classList.add('wiggle');
+            setTimeout(() => modal.classList.remove('wiggle'), 400);
+            document.getElementById('pause-current-word').textContent = expectedWord;
+            return;
+        }
+    }
+
+    const typed = pauseWordChallengeState
+        ? (pauseWordChallengeState.typedText || '')
+        : document.getElementById('pause-challenge-input').value;
     if (typed !== pauseChallengeText) {
         // Wiggle on mismatch
         const modal = document.querySelector('#pause-modal .modal-content');
@@ -12541,8 +12712,35 @@ async function proceedWithPause() {
     closePauseModal();
 }
 
-// Generate random words to reach target character count
-// Generate random words to reach target character count exactly
+/** Five-letter words only — used for iOS word-count random-words (predictable length per word). */
+let wordList5Cache = null;
+function getWordList5() {
+    if (!wordList5Cache) {
+        wordList5Cache = wordList.filter(w => w.length === 5);
+    }
+    return wordList5Cache;
+}
+
+/** Typed letters only for N five-letter words (spaces in display are not counted). */
+function getIOSRandomWordsCharCount(wordCount) {
+    const n = Math.max(0, Math.floor(wordCount));
+    return n * 5;
+}
+
+/** iOS: generate exactly `wordCount` random five-letter words. */
+function generateRandomWordsByCount(wordCount) {
+    const n = Math.max(0, Math.floor(wordCount));
+    if (n === 0) return '';
+    const pool = getWordList5();
+    if (pool.length === 0) return '';
+    const words = [];
+    for (let i = 0; i < n; i++) {
+        words.push(pool[Math.floor(Math.random() * pool.length)]);
+    }
+    return words.join(' ');
+}
+
+// Generate random words to reach target character count exactly (desktop / character-count mode)
 function generateRandomWords(targetChars) {
     const words = [];
     let currentLength = 0;
@@ -12595,6 +12793,19 @@ function generateRandomWords(targetChars) {
     return words.join(' ');
 }
 
+function generateOverrideChallengeText(type, count, customText = '') {
+    if (type === 'custom' && customText) return customText;
+    const normalizedCount = normalizeOverrideCount(count, type);
+    if (type === 'gibberish') {
+        const raw = generateGibberish(usesIOSWordCountForOverrideType(type) ? normalizedCount * 6 : normalizedCount);
+        return isIOS ? formatIOSGibberishChallenge(raw) : raw;
+    }
+    if (usesIOSWordCountForOverrideType(type)) {
+        return generateRandomWordsByCount(normalizedCount);
+    }
+    return generateRandomWords(normalizedCount);
+}
+
 // Generate gibberish
 function generateGibberish(count) {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -12608,8 +12819,8 @@ function generateGibberish(count) {
 function normalizeOverrideCount(value, type = 'random-words') {
     const parsed = parseInt(value, 10);
     if (!Number.isFinite(parsed)) return DEFAULT_OVERRIDE_COUNT;
-    const maxChars = getMaxOverrideCharsForType(type);
-    return Math.min(maxChars, Math.max(MIN_OVERRIDE_CHARS, parsed));
+    const maxCount = getMaxOverrideCharsForType(type);
+    return Math.min(maxCount, Math.max(MIN_OVERRIDE_CHARS, parsed));
 }
 
 function normalizeCustomOverrideText(value) {
@@ -12625,8 +12836,33 @@ function getTypingCharsPerMinuteForType(type) {
 }
 
 function getMaxOverrideCharsForType(type) {
+    if (usesIOSWordCountForOverrideType(type)) return MAX_IOS_OVERRIDE_WORD_COUNT;
     if (type === 'gibberish') return 5000;
     return 7500; // random-words and custom: fixed max; estimated time uses CPM
+}
+
+function getOverrideGeneratedCharCount(type, count) {
+    const parsed = Number.parseInt(count, 10);
+    const normalizedCount = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+    if (!usesIOSWordCountForOverrideType(type)) return normalizedCount;
+
+    if (type === 'random-words') {
+        return getIOSRandomWordsCharCount(normalizedCount);
+    }
+    return normalizedCount * 6;
+}
+
+/** Letters-only workload for comparing override difficulties (e.g. override-all hardest). */
+function getDifficultyTypingCharCount(difficulty) {
+    if (!difficulty) return 0;
+    if (difficulty.type === 'custom') {
+        return typeof difficulty.customText === 'string' ? difficulty.customText.length : 0;
+    }
+    const parsed = Number(difficulty.count);
+    const count = difficulty.maxDifficulty === true
+        ? getMaxOverrideCharsForType(difficulty.type)
+        : (Number.isFinite(parsed) && parsed > 0 ? parsed : 50);
+    return getOverrideGeneratedCharCount(difficulty.type, count);
 }
 
 /** Preview text for override difficulty (random words, gibberish, or custom). Used in blocklist modal. */
@@ -12638,6 +12874,7 @@ function getOverridePreviewText(type, count, customText) {
     }
     const num = parseInt(count, 10);
     const countNum = Number.isFinite(num) && num >= 0 ? num : 10;
+    const generatedCharCount = getOverrideGeneratedCharCount(type, countNum);
 
     if (type !== lastOverridePreviewType) {
         lastOverridePreviewType = type;
@@ -12645,19 +12882,27 @@ function getOverridePreviewText(type, count, customText) {
     }
 
     if (type === 'random-words' || type === 'gibberish') {
-        if (countNum >= OVERRIDE_PREVIEW_TRUNCATE_AT) {
+        if (generatedCharCount >= OVERRIDE_PREVIEW_TRUNCATE_AT) {
             let frozen = overridePreviewFrozenByType[type];
             if (frozen != null) return frozen;
             const generated = type === 'gibberish'
-                ? generateGibberish(OVERRIDE_PREVIEW_TRUNCATE_AT)
-                : generateRandomWords(OVERRIDE_PREVIEW_TRUNCATE_AT);
+                ? (isIOS ? formatIOSGibberishChallenge(generateGibberish(countNum * 6)) : generateGibberish(OVERRIDE_PREVIEW_TRUNCATE_AT))
+                : (usesIOSWordCountForOverrideType(type)
+                    ? generateRandomWordsByCount(countNum)
+                    : generateRandomWords(countNum));
             frozen = generated.slice(0, OVERRIDE_PREVIEW_TRUNCATE_AT);
             overridePreviewFrozenByType[type] = frozen;
             return frozen;
         }
     }
 
-    if (type === 'gibberish') return generateGibberish(countNum);
+    if (type === 'gibberish') {
+        const generated = generateGibberish(usesIOSWordCountForOverrideType(type) ? countNum * 6 : countNum);
+        return isIOS ? formatIOSGibberishChallenge(generated) : generated;
+    }
+    if (usesIOSWordCountForOverrideType(type)) {
+        return generateRandomWordsByCount(countNum);
+    }
     return generateRandomWords(countNum);
 }
 
@@ -12665,7 +12910,7 @@ function getOverridePreviewText(type, count, customText) {
 function getOverrideEstimatedMinutes(type, count, customText) {
     const charCount = type === 'custom'
         ? (typeof customText === 'string' ? customText : '').length
-        : (Number.isFinite(parseInt(count, 10)) ? parseInt(count, 10) : 0);
+        : getOverrideGeneratedCharCount(type, count);
     if (charCount <= 0) return 0;
     const cpm = getTypingCharsPerMinuteForType(type);
     return Math.ceil(charCount / cpm);
@@ -12697,6 +12942,15 @@ function updateOverridePreview() {
     previewEl.title = previewText;
 }
 
+function syncOverrideCountUi(type) {
+    const suffixEl = document.getElementById('override-total-characters-label');
+    const countInput = document.getElementById('override-count');
+    if (!suffixEl || !countInput) return;
+    const usesWords = usesIOSWordCountForOverrideType(type);
+    suffixEl.textContent = usesWords ? tSettings('totalWords') : tSettings('totalCharacters');
+    countInput.max = String(getMaxOverrideCharsForType(type));
+}
+
 function applyOverrideTypeUi(type) {
     const customTextArea = document.getElementById('custom-override-text');
     const overrideCountInput = document.getElementById('override-count');
@@ -12705,6 +12959,7 @@ function applyOverrideTypeUi(type) {
     const previewBlockEl = document.getElementById('override-preview-block');
     const maxDifficultyWrapEl = document.getElementById('override-max-difficulty-wrap');
     const maxChars = getMaxOverrideCharsForType(type);
+    syncOverrideCountUi(type);
     overrideCountInput.max = String(maxChars);
 
     if (type === 'custom') {
@@ -14546,7 +14801,10 @@ function renderBlocklists() {
         // Check if this blocklist is selected
         const isSelected = bl.id === selectedBlocklistId;
         const selectedClass = isSelected ? ' selected' : '';
-        const selectedStyle = isSelected ? `style="border-color: ${bl.color || '#667eea'}; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);"` : '';
+        const accent = bl.color || '#667eea';
+        const selectedStyle = isSelected
+            ? `style="border-top-color: ${accent}; border-right-color: ${accent}; border-bottom-color: ${accent}; border-left-width: 0; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);"`
+            : '';
 
         // Dim if something is selected but this one isn't
         const isDimmed = selectedBlocklistId && !isSelected;
@@ -15082,6 +15340,109 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
+function buildWordChallengeState(text) {
+    const words = String(text || '').split(/\s+/).filter(Boolean);
+    return {
+        words,
+        currentIndex: 0,
+        typedText: ''
+    };
+}
+
+function formatIOSGibberishChallenge(text) {
+    const compact = String(text || '').replace(/\s+/g, '');
+    return compact.replace(/(.{6})(?=.)/g, '$1 ');
+}
+
+function isIOSWordByWordChallenge(difficulty) {
+    return !!(isIOS && (difficulty?.type === 'random-words' || difficulty?.type === 'gibberish'));
+}
+
+function getCurrentChallengeWord(state) {
+    if (!state || state.currentIndex >= state.words.length) return '';
+    return state.words[state.currentIndex];
+}
+
+function getCompletedChallengeText(state) {
+    if (!state || state.currentIndex <= 0) return '';
+    return state.words.slice(0, state.currentIndex).join(' ');
+}
+
+function setOverrideWordChallengeMode(enabled) {
+    document.getElementById('challenge-word-progress')?.classList.toggle('hidden', !enabled);
+    document.getElementById('challenge-current-word')?.classList.toggle('hidden', !enabled);
+    document.getElementById('challenge-word-input')?.classList.toggle('hidden', !enabled);
+    document.getElementById('challenge-input')?.classList.toggle('hidden', enabled);
+}
+
+function renderOverrideWordChallengeState() {
+    const progressLabelEl = document.getElementById('challenge-word-progress');
+    const currentWordEl = document.getElementById('challenge-current-word');
+    const wordInput = document.getElementById('challenge-word-input');
+    const progressBar = document.getElementById('challenge-progress-bar');
+    if (!overrideWordChallengeState || !progressLabelEl || !currentWordEl || !wordInput || !progressBar) return;
+    const currentWord = getCurrentChallengeWord(overrideWordChallengeState);
+    const completedText = getCompletedChallengeText(overrideWordChallengeState);
+    const targetText = completedText ? `${completedText} ${currentWord}` : currentWord;
+    progressLabelEl.textContent = `Word ${overrideWordChallengeState.currentIndex + 1} of ${overrideWordChallengeState.words.length}`;
+    currentWordEl.textContent = currentWord;
+    wordInput.value = '';
+    progressBar.style.width = challengeText.length > 0
+        ? `${Math.min(100, (targetText.length / challengeText.length) * 100)}%`
+        : '0%';
+    document.getElementById('confirm-override-btn').disabled = !currentWord;
+}
+
+function setPauseWordChallengeMode(enabled) {
+    document.getElementById('pause-word-progress')?.classList.toggle('hidden', !enabled);
+    document.getElementById('pause-current-word')?.classList.toggle('hidden', !enabled);
+    document.getElementById('pause-challenge-word-input')?.classList.toggle('hidden', !enabled);
+    document.getElementById('pause-challenge-input')?.classList.toggle('hidden', enabled);
+}
+
+function renderPauseWordChallengeState() {
+    const progressLabelEl = document.getElementById('pause-word-progress');
+    const currentWordEl = document.getElementById('pause-current-word');
+    const wordInput = document.getElementById('pause-challenge-word-input');
+    const progressBar = document.getElementById('pause-challenge-progress-bar');
+    if (!pauseWordChallengeState || !progressLabelEl || !currentWordEl || !wordInput || !progressBar) return;
+    const currentWord = getCurrentChallengeWord(pauseWordChallengeState);
+    const completedText = getCompletedChallengeText(pauseWordChallengeState);
+    const targetText = completedText ? `${completedText} ${currentWord}` : currentWord;
+    progressLabelEl.textContent = `Word ${pauseWordChallengeState.currentIndex + 1} of ${pauseWordChallengeState.words.length}`;
+    currentWordEl.textContent = currentWord;
+    wordInput.value = '';
+    progressBar.style.width = pauseChallengeText.length > 0
+        ? `${Math.min(100, (targetText.length / pauseChallengeText.length) * 100)}%`
+        : '0%';
+    document.getElementById('confirm-pause-btn').disabled = !currentWord;
+}
+
+function setOverrideAllWordChallengeMode(enabled) {
+    document.getElementById('override-all-word-progress')?.classList.toggle('hidden', !enabled);
+    document.getElementById('override-all-current-word')?.classList.toggle('hidden', !enabled);
+    document.getElementById('override-all-challenge-word-input')?.classList.toggle('hidden', !enabled);
+    document.getElementById('override-all-challenge-input')?.classList.toggle('hidden', enabled);
+}
+
+function renderOverrideAllWordChallengeState() {
+    const progressLabelEl = document.getElementById('override-all-word-progress');
+    const currentWordEl = document.getElementById('override-all-current-word');
+    const wordInput = document.getElementById('override-all-challenge-word-input');
+    const progressBar = document.getElementById('override-all-progress-bar');
+    if (!overrideAllWordChallengeState || !progressLabelEl || !currentWordEl || !wordInput || !progressBar) return;
+    const currentWord = getCurrentChallengeWord(overrideAllWordChallengeState);
+    const completedText = getCompletedChallengeText(overrideAllWordChallengeState);
+    const targetText = completedText ? `${completedText} ${currentWord}` : currentWord;
+    progressLabelEl.textContent = `Word ${overrideAllWordChallengeState.currentIndex + 1} of ${overrideAllWordChallengeState.words.length}`;
+    currentWordEl.textContent = currentWord;
+    wordInput.value = '';
+    progressBar.style.width = overrideAllChallengeText.length > 0
+        ? `${Math.min(100, (targetText.length / overrideAllChallengeText.length) * 100)}%`
+        : '0%';
+    document.getElementById('confirm-override-all-btn').disabled = !currentWord;
+}
+
 // Clean up URL for display (remove protocol, www, trailing slash)
 function cleanUrlForDisplay(url) {
     return url
@@ -15195,6 +15556,9 @@ const SETTINGS_TRANSLATIONS = {
         eulaContinueBusy: 'Continuing…',
         eulaBackBtn: 'Back',
         eulaAcceptSaveFailedAlert: 'Could not save your agreement. Please try again.',
+        eulaWelcomeIconAlt: 'ReDD Block app icon',
+        eulaProjectBlurb:
+            'ReDD Block is developed by the Reduce Digital Distraction Project, in collaboration with researchers at the University of Oxford and University of Maastricht. The ReDD Project is a not-for-profit creating insights & open-source digital focus tools for everyone to thrive in the digital world.',
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Welcome to ReDD Block',
         welcomeOnboardingSubtitle:
@@ -15599,6 +15963,7 @@ const SETTINGS_TRANSLATIONS = {
         overrideCustomText: 'Custom Text',
         overrideMaxDifficulty: 'Max difficulty',
         totalCharacters: 'total characters',
+        totalWords: 'total words',
         overridePreviewTimeLine: 'Takes ~{minutes} min{minuteSuffix} to type and will look something like:',
         color: 'Color',
         emoji: 'Emoji',
@@ -15660,8 +16025,12 @@ const SETTINGS_TRANSLATIONS = {
         /** Start/resume confirmation: friction description — placeholders {count},{charUnit},{minutes} */
         confirmOverrideRandomWordsFmt:
             'Type {count} {charUnit} (displayed as random words) exactly as shown (~{minutes} min).',
+        confirmOverrideRandomWordsIosFmt:
+            'Type {count} random {wordUnit} exactly as shown (~{minutes} min).',
         confirmOverrideGibberishLettersFmt:
             'Type {count} random {charUnit} (letters and numbers) exactly as shown (~{minutes} min).',
+        confirmOverrideGibberishWordsFmt:
+            'Type {count} random {wordUnit} (6 characters each) exactly as shown (~{minutes} min).',
         confirmOverrideGibberishShortFmt:
             'Type {count} random characters exactly as shown (~{minutes} min).',
         confirmOverrideCustomPhraseFmt:
@@ -15819,6 +16188,9 @@ const SETTINGS_TRANSLATIONS = {
         eulaContinueBusy: 'Arbejder…',
         eulaBackBtn: 'Tilbage',
         eulaAcceptSaveFailedAlert: 'Vi kunne ikke gemme din godkendelse. Prøv igen.',
+        eulaWelcomeIconAlt: 'ReDD Block-appikon',
+        eulaProjectBlurb:
+            'ReDD Block er udviklet af Reduce Digital Distraction Project i samarbejde med forskere ved University of Oxford og Maastricht University. ReDD-projektet er en non-profit, der skaber indsigt og open source digitale fokusværktøjer, så alle kan trives i den digitale verden.',
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Velkommen til ReDD Block',
         welcomeOnboardingSubtitle:
@@ -16205,6 +16577,7 @@ const SETTINGS_TRANSLATIONS = {
         overrideCustomText: 'Egen tekst',
         overrideMaxDifficulty: 'Max sværhed',
         totalCharacters: 'tegn i alt',
+        totalWords: 'ord i alt',
         overridePreviewTimeLine: 'Tager cirka {minutes} {unit} at taste og ser nogenlunde sådan her ud:',
         color: 'Farve',
         emoji: 'Emoji',
@@ -16265,8 +16638,12 @@ const SETTINGS_TRANSLATIONS = {
         saveChangesOverrideNeed: 'For at stoppe dette skema skal du:',
         confirmOverrideRandomWordsFmt:
             'Skrive {count} {charUnit}, vist som tilfældige ord, præcis som der står (~{minutes} min).',
+        confirmOverrideRandomWordsIosFmt:
+            'Skrive {count} tilfældige {wordUnit} præcis som der står (~{minutes} min).',
         confirmOverrideGibberishLettersFmt:
             'Skrive {count} tilfældige tegn (bogstaver og tal), præcis som der står (~{minutes} min).',
+        confirmOverrideGibberishWordsFmt:
+            'Skrive {count} tilfældige {wordUnit} (6 tegn hver) præcis som der står (~{minutes} min).',
         confirmOverrideGibberishShortFmt:
             'Skrive {count} tilfældige tegn præcis som der står (~{minutes} min).',
         confirmOverrideCustomPhraseFmt:
@@ -16391,13 +16768,8 @@ let iosCompactScheduleDayLabelsActive = null;
 /** Smaller iOS viewports, including iPad portrait, use single-letter day pills from first render. */
 function shouldUseCompactIosScheduleDayLabels() {
     if (!document.body.classList.contains('ios')) return false;
-    const viewportWidth = Math.round(
-        window.visualViewport?.width
-        || window.innerWidth
-        || document.documentElement?.clientWidth
-        || 0
-    );
-    return viewportWidth > 0 && viewportWidth <= IOS_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH;
+    const effVp = Math.round(getEffectiveViewportWidth());
+    return effVp > 0 && effVp <= IOS_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH;
 }
 
 function syncIosScheduleDayLabelsViewportMode() {
@@ -16593,17 +16965,25 @@ function formatConfirmModalOverrideTypingLine({ type, count, estimatedMinutes, r
     const charUnitDa = 'tegn';
     const charUnitEn = count === 1 ? 'character' : 'characters';
     const charUnit = getSettingsLanguage() === 'da' ? charUnitDa : charUnitEn;
+    const wordUnitDa = count === 1 ? 'ord' : 'ord';
+    const wordUnitEn = count === 1 ? 'word' : 'words';
+    const wordUnit = getSettingsLanguage() === 'da' ? wordUnitDa : wordUnitEn;
 
     if (type === 'custom') {
         return tSettingsFmt('confirmOverrideCustomPhraseFmt', { count, minutes });
     }
     if (type === 'gibberish') {
+        if (usesIOSWordCountForOverrideType(type)) {
+            return tSettingsFmt('confirmOverrideGibberishWordsFmt', { count, wordUnit, minutes });
+        }
         if (resumeShortGibberish) {
             return tSettingsFmt('confirmOverrideGibberishShortFmt', { count, minutes });
         }
         return tSettingsFmt('confirmOverrideGibberishLettersFmt', { count, charUnit, minutes });
     }
-    return tSettingsFmt('confirmOverrideRandomWordsFmt', { count, charUnit, minutes });
+    return usesIOSWordCountForOverrideType(type)
+        ? tSettingsFmt('confirmOverrideRandomWordsIosFmt', { count, wordUnit, minutes })
+        : tSettingsFmt('confirmOverrideRandomWordsFmt', { count, charUnit, minutes });
 }
 
 /** Static copy on the migration / extension-setup overlay — call when language changes. */
@@ -16656,6 +17036,8 @@ function applyMigrationOverlayStaticCopy() {
 
 /** First-run EULA screen — localized from current UI language / saved preference / browser locale (da). */
 function applyEulaOnboardingLanguage() {
+    const title = tSettings('welcomeOnboardingTitle');
+
     const shieldLogo = document.getElementById('eula-onboarding-shield-logo');
     if (shieldLogo) {
         shieldLogo.src = logoReddShieldUrl;
@@ -16663,16 +17045,25 @@ function applyEulaOnboardingLanguage() {
     }
 
     const heading = document.getElementById('eula-welcome-title');
-    if (heading) heading.textContent = tSettings('welcomeOnboardingTitle');
+    if (heading) heading.textContent = title;
+
+    const headingIos = document.getElementById('eula-welcome-title-ios');
+    if (headingIos) headingIos.textContent = title;
 
     const subtitle = document.getElementById('eula-onboarding-subtitle');
     if (subtitle) subtitle.textContent = tSettings('welcomeOnboardingSubtitle');
+
+    const appIcon = document.getElementById('eula-onboarding-app-icon');
+    if (appIcon) appIcon.setAttribute('alt', tSettings('eulaWelcomeIconAlt'));
 
     const agreeInner = document.getElementById('eula-agree-line-inner');
     if (agreeInner) agreeInner.innerHTML = tSettings('eulaAgreeLineHtml');
 
     const note = document.getElementById('eula-note');
     if (note) note.innerHTML = tSettings('eulaNoteHtml');
+
+    const blurb = document.getElementById('eula-project-blurb');
+    if (blurb) blurb.textContent = tSettings('eulaProjectBlurb');
 
     const footer1 = document.getElementById('eula-onboarding-footer-1');
     if (footer1) footer1.innerHTML = tSettings('welcomeFooter1Html');
@@ -17364,10 +17755,7 @@ function setupTheme() {
                     try {
                         const response = await fetch(`https://ulyngs.github.io/redd-block/latest-versions.json?t=${Date.now()}`);
                         const versions = await response.json();
-                        // Detect platform
-                        const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-                        const platform = isMac ? 'macos' : 'windows';
-                        const latestVersion = versions[platform];
+                        const latestVersion = versions[getLatestVersionPlatformKey()];
 
                         // Only show if latest version is higher than current version
                         if (latestVersion && currentVersion && isVersionHigher(latestVersion, currentVersion)) {
@@ -17457,6 +17845,7 @@ function applyTheme() {
 }
 
 function getUiZoomMax() {
+    if (isIOS) return UI_ZOOM_MAX_IOS;
     const isDesktop = document.body.classList.contains('windows') || document.body.classList.contains('mac');
     return isDesktop ? UI_ZOOM_MAX_DESKTOP : UI_ZOOM_MAX;
 }
@@ -17475,9 +17864,132 @@ function getSavedUiZoom() {
     return clampUiZoom(parsed);
 }
 
+function getActiveUiZoomScale() {
+    const inline = parseFloat(document.documentElement.style.zoom);
+    if (Number.isFinite(inline) && inline > 0) return inline;
+    return getSavedUiZoom();
+}
+
+function getEffectiveViewportWidth() {
+    const zoom = getActiveUiZoomScale();
+    const viewportWidth = window.visualViewport?.width
+        || window.innerWidth
+        || document.documentElement?.clientWidth
+        || 0;
+    return viewportWidth > 0 ? viewportWidth / zoom : viewportWidth;
+}
+
+/** Mirror responsive layout tiers when UI zoom is above 100% (zoom ignores @media queries). */
+function syncUiZoomResponsiveLayout() {
+    const zoom = getActiveUiZoomScale();
+    document.documentElement.style.setProperty('--ui-zoom', String(zoom));
+
+    const effVp = getEffectiveViewportWidth();
+    const ipadPortraitStack = usesStackSettingsPlacement()
+        && document.body.classList.contains('ios')
+        && !document.body.classList.contains('ios-phone');
+    const cramped = effVp > UI_ZOOM_LAYOUT_STACK_MAX
+        && effVp <= UI_ZOOM_LAYOUT_CRAMPED_MAX
+        && !ipadPortraitStack;
+
+    document.body.classList.toggle('ui-zoom-tier-stack', effVp > 0 && effVp <= UI_ZOOM_LAYOUT_STACK_MAX);
+    document.body.classList.toggle('ui-zoom-tier-cramped', cramped);
+    document.body.classList.toggle('ui-zoom-tier-narrow', effVp > 0 && effVp <= UI_ZOOM_LAYOUT_NARROW_MAX);
+
+    syncSchedulerModeTabLabelMode();
+
+    syncZoomControlPlacement();
+    syncIosScheduleDayLabelsViewportMode();
+    syncAllStopBtnLabelFits();
+    const pauseModal = document.getElementById('pause-modal');
+    if (pauseModal && !pauseModal.classList.contains('hidden')) {
+        syncPauseDurationRowLayout();
+    }
+}
+
+function usesStackSettingsPlacement() {
+    if (window.matchMedia('(max-width: 768px)').matches) return true;
+    return document.body.classList.contains('ios')
+        && !document.body.classList.contains('ios-phone')
+        && window.matchMedia('(min-width: 769px) and (max-width: 1024px) and (orientation: portrait)').matches;
+}
+
+/** Icon-only Now/Schedule tabs only when labels would overlap settings or overflow the header row. */
+function syncSchedulerModeTabLabelMode() {
+    const header = document.querySelector('.scheduler-section > .section-header');
+    const modeTabs = header?.querySelector('.scheduler-mode-tabs');
+    if (!header || !modeTabs || modeTabs.classList.contains('hidden')) {
+        document.body.classList.remove('ui-zoom-sched-tabs-icons');
+        return;
+    }
+
+    document.body.classList.remove('ui-zoom-sched-tabs-icons');
+    void header.offsetWidth;
+
+    const toolbar = header.querySelector('#settings-toolbar-scheduler');
+    let iconOnly = false;
+    if (toolbar && getComputedStyle(toolbar).display !== 'none') {
+        const tabsRect = modeTabs.getBoundingClientRect();
+        const toolbarRect = toolbar.getBoundingClientRect();
+        if (tabsRect.right > toolbarRect.left - 6) {
+            iconOnly = true;
+        }
+    }
+    if (header.scrollWidth > header.clientWidth + 1) {
+        iconOnly = true;
+    }
+
+    document.body.classList.toggle('ui-zoom-sched-tabs-icons', iconOnly);
+}
+
+/** Keep the single zoom control beside whichever settings button is visible for this layout. */
+function syncZoomControlPlacement() {
+    const zoom = document.getElementById('header-zoom-control');
+    const stackToolbar = document.getElementById('settings-toolbar-stack');
+    const schedToolbar = document.getElementById('settings-toolbar-scheduler');
+    const stackBtn = document.getElementById('settings-btn-stack');
+    const schedBtn = document.getElementById('settings-btn');
+    if (!zoom || !stackToolbar || !schedToolbar || !stackBtn || !schedBtn) return;
+
+    const hostToolbar = usesStackSettingsPlacement() ? stackToolbar : schedToolbar;
+    const hostBtn = usesStackSettingsPlacement() ? stackBtn : schedBtn;
+    if (zoom.parentElement !== hostToolbar) {
+        hostToolbar.insertBefore(zoom, hostBtn);
+    } else if (zoom.nextElementSibling !== hostBtn) {
+        hostToolbar.insertBefore(zoom, hostBtn);
+    }
+}
+
+function scheduleUiZoomResponsiveLayout() {
+    cancelAnimationFrame(uiZoomLayoutRaf);
+    uiZoomLayoutRaf = requestAnimationFrame(() => {
+        uiZoomLayoutRaf = 0;
+        syncUiZoomResponsiveLayout();
+    });
+}
+
+function bindUiZoomLayoutObserver() {
+    if (uiZoomLayoutObserverBound || typeof ResizeObserver === 'undefined') return;
+    const targets = [
+        document.getElementById('main-content'),
+        document.querySelector('.grid-top-row'),
+        document.querySelector('.scheduler-section > .section-header'),
+    ].filter(Boolean);
+    if (!targets.length) return;
+    uiZoomLayoutObserverBound = true;
+    const ro = new ResizeObserver(() => scheduleUiZoomResponsiveLayout());
+    targets.forEach((el) => ro.observe(el));
+}
+
 function applyUiZoom(scale) {
     const clamped = clampUiZoom(scale);
     syncFooterZoomControl(clamped);
+
+    if (isIOS) {
+        document.documentElement.style.zoom = String(clamped);
+        scheduleUiZoomResponsiveLayout();
+        return;
+    }
 
     // On desktop (Windows and macOS), use native webview zoom so content scales correctly
     // and behavior matches across platforms. Fall back to CSS zoom if unavailable (e.g. permission).
@@ -17486,9 +17998,11 @@ function applyUiZoom(scale) {
             getCurrentWebview().setZoom(clamped).then(() => {
                 nativeWebviewZoomSupported = true;
                 document.documentElement.style.zoom = '';
+                scheduleUiZoomResponsiveLayout();
             }).catch(() => {
                 nativeWebviewZoomSupported = false;
                 document.documentElement.style.zoom = String(clamped);
+                scheduleUiZoomResponsiveLayout();
             });
             return;
         }
@@ -17496,6 +18010,7 @@ function applyUiZoom(scale) {
 
     // Fallback path (iOS or if native zoom isn't available).
     document.documentElement.style.zoom = String(clamped);
+    scheduleUiZoomResponsiveLayout();
 }
 
 // Mirror the current zoom level into the footer percentage label and
@@ -17503,20 +18018,26 @@ function applyUiZoom(scale) {
 // point (footer buttons, cmd-+/-/0 shortcuts, native menu items) keeps
 // the UI in sync.
 function syncFooterZoomControl(scale) {
-    const valueDisplay = document.getElementById('footer-zoom-value');
-    const zoomOutBtn = document.getElementById('footer-zoom-out');
-    const zoomInBtn = document.getElementById('footer-zoom-in');
-    if (valueDisplay) valueDisplay.textContent = `${Math.round(scale * 100)}%`;
+    const pct = `${Math.round(scale * 100)}%`;
     const max = getUiZoomMax();
-    if (zoomOutBtn) zoomOutBtn.disabled = scale <= UI_ZOOM_MIN + 1e-6;
-    if (zoomInBtn) zoomInBtn.disabled = scale >= max - 1e-6;
+    document.querySelectorAll('.zoom-value').forEach((el) => {
+        el.textContent = pct;
+    });
+    document.querySelectorAll('.zoom-out-btn').forEach((btn) => {
+        btn.disabled = scale <= UI_ZOOM_MIN + 1e-6;
+    });
+    document.querySelectorAll('.zoom-in-btn').forEach((btn) => {
+        btn.disabled = scale >= max - 1e-6;
+    });
 }
 
 function setupFooterZoomControl() {
-    const zoomOutBtn = document.getElementById('footer-zoom-out');
-    const zoomInBtn = document.getElementById('footer-zoom-in');
-    if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => zoomUiOut());
-    if (zoomInBtn) zoomInBtn.addEventListener('click', () => zoomUiIn());
+    document.querySelectorAll('.header-zoom-control').forEach((control) => {
+        if (control.dataset.bound === '1') return;
+        control.dataset.bound = '1';
+        control.querySelector('.zoom-out-btn')?.addEventListener('click', () => zoomUiOut());
+        control.querySelector('.zoom-in-btn')?.addEventListener('click', () => zoomUiIn());
+    });
 }
 
 function showUiZoomToast(scale) {
@@ -17567,6 +18088,12 @@ function resetUiZoom(options = {}) {
 function setupUiZoomShortcuts() {
     setupFooterZoomControl();
     applyUiZoom(getSavedUiZoom());
+    syncZoomControlPlacement();
+    bindUiZoomLayoutObserver();
+    window.addEventListener('resize', scheduleUiZoomResponsiveLayout, { passive: true });
+    window.visualViewport?.addEventListener('resize', scheduleUiZoomResponsiveLayout, { passive: true });
+
+    if (isIOS) return;
 
     tauriAPI.onMenuZoomIn(() => zoomUiIn({ showToast: true })).catch(() => { });
     tauriAPI.onMenuZoomOut(() => zoomUiOut({ showToast: true })).catch(() => { });
@@ -18392,6 +18919,7 @@ function updateOverrideAllButtonVisibility() {
 
 // Variable to track override-all challenge text
 let overrideAllChallengeText = '';
+let overrideAllWordChallengeState = null;
 
 // Setup the configurable browser-extension grace period.
 // Backend reads `settings.extensionGraceSeconds` from the data file
@@ -18627,8 +19155,14 @@ function setupOverrideAll() {
     const cancelOverrideAllBtn = document.getElementById('cancel-override-all-btn');
     const confirmOverrideAllBtn = document.getElementById('confirm-override-all-btn');
     const overrideAllChallengeInput = document.getElementById('override-all-challenge-input');
+    const overrideAllChallengeWordInput = document.getElementById('override-all-challenge-word-input');
     const overrideAllProgressBar = document.getElementById('override-all-progress-bar');
     const overrideAllChallengeTextEl = document.getElementById('override-all-challenge-text');
+    const overrideAllCurrentWordEl = document.getElementById('override-all-current-word');
+
+    function getOverrideAllTypedValue() {
+        return overrideAllWordChallengeState?.typedText ?? overrideAllChallengeInput.value;
+    }
 
     function renderOverrideAllChallengeText(errorIndex = -1) {
         if (!overrideAllChallengeTextEl) return;
@@ -18655,18 +19189,21 @@ function setupOverrideAll() {
             if (!hasAnyBlockingStateToClear()) {
                 // No blocks active — show dialog but skip the typing challenge
                 overrideAllChallengeText = '';
+                overrideAllWordChallengeState = null;
+                setOverrideAllWordChallengeMode(false);
                 if (challengeTextEl) challengeTextEl.style.display = 'none';
                 if (overrideAllChallengeInput) overrideAllChallengeInput.style.display = 'none';
+                if (overrideAllChallengeWordInput) overrideAllChallengeWordInput.style.display = 'none';
                 if (instructionEl) instructionEl.style.display = 'none';
                 const progressEl = overrideAllModal.querySelector('.challenge-progress');
                 if (progressEl) progressEl.style.display = 'none';
+                if (confirmOverrideAllBtn) confirmOverrideAllBtn.disabled = false;
                 overrideAllModal.classList.remove('hidden');
                 return;
             }
 
             // Restore challenge elements visibility
             if (challengeTextEl) challengeTextEl.style.display = '';
-            if (overrideAllChallengeInput) overrideAllChallengeInput.style.display = '';
             if (instructionEl) instructionEl.style.display = '';
             const progressEl = overrideAllModal.querySelector('.challenge-progress');
             if (progressEl) progressEl.style.display = '';
@@ -18675,13 +19212,11 @@ function setupOverrideAll() {
             const hardestDifficulty = findHardestChallenge();
 
             // Generate challenge text based on hardest difficulty
-            if (hardestDifficulty.type === 'custom' && hardestDifficulty.customText) {
-                overrideAllChallengeText = hardestDifficulty.customText;
-            } else if (hardestDifficulty.type === 'gibberish') {
-                overrideAllChallengeText = generateGibberish(hardestDifficulty.count);
-            } else {
-                overrideAllChallengeText = generateRandomWords(hardestDifficulty.count);
-            }
+            overrideAllChallengeText = generateOverrideChallengeText(
+                hardestDifficulty.type,
+                hardestDifficulty.count,
+                hardestDifficulty.customText
+            );
 
             // Sanitize: remove linebreaks and collapse multiple spaces
             overrideAllChallengeText = overrideAllChallengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
@@ -18689,9 +19224,25 @@ function setupOverrideAll() {
             // Display challenge
             renderOverrideAllChallengeText();
             overrideAllChallengeInput.value = '';
+            overrideAllChallengeWordInput.value = '';
+            overrideAllWordChallengeState = isIOSWordByWordChallenge(hardestDifficulty)
+                ? buildWordChallengeState(overrideAllChallengeText)
+                : null;
+            setOverrideAllWordChallengeMode(!!overrideAllWordChallengeState);
+            if (overrideAllChallengeInput) overrideAllChallengeInput.style.display = overrideAllWordChallengeState ? 'none' : '';
+            if (overrideAllChallengeWordInput) overrideAllChallengeWordInput.style.display = overrideAllWordChallengeState ? '' : 'none';
             overrideAllProgressBar.style.width = '0%';
+            if (confirmOverrideAllBtn) confirmOverrideAllBtn.disabled = !!overrideAllWordChallengeState;
 
             overrideAllModal.classList.remove('hidden');
+            requestAnimationFrame(() => {
+                if (overrideAllWordChallengeState) {
+                    renderOverrideAllWordChallengeState();
+                    overrideAllChallengeWordInput?.focus();
+                } else {
+                    overrideAllChallengeInput?.focus();
+                }
+            });
         });
     }
 
@@ -18700,6 +19251,9 @@ function setupOverrideAll() {
         cancelOverrideAllBtn.addEventListener('click', () => {
             overrideAllModal.classList.add('hidden');
             overrideAllChallengeText = '';
+            overrideAllWordChallengeState = null;
+            setOverrideAllWordChallengeMode(false);
+            confirmOverrideAllBtn.disabled = false;
             // Re-open settings modal so user goes back to settings, not main screen
             document.getElementById('settings-modal').classList.remove('hidden');
         });
@@ -18711,6 +19265,9 @@ function setupOverrideAll() {
             if (e.target === overrideAllModal) {
                 overrideAllModal.classList.add('hidden');
                 overrideAllChallengeText = '';
+                overrideAllWordChallengeState = null;
+                setOverrideAllWordChallengeMode(false);
+                confirmOverrideAllBtn.disabled = false;
                 // Re-open settings modal so user goes back to settings, not main screen
                 document.getElementById('settings-modal').classList.remove('hidden');
             }
@@ -18753,11 +19310,50 @@ function setupOverrideAll() {
             }
         });
     }
+    if (overrideAllChallengeWordInput) {
+        overrideAllChallengeWordInput.addEventListener('paste', (e) => {
+            e.preventDefault();
+        });
+        overrideAllChallengeWordInput.addEventListener('input', () => {
+            if (!overrideAllWordChallengeState) return;
+            overrideAllCurrentWordEl.textContent = getCurrentChallengeWord(overrideAllWordChallengeState);
+        });
+        overrideAllChallengeWordInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                confirmOverrideAllBtn.click();
+            }
+        });
+    }
 
     // Confirm override all
     if (confirmOverrideAllBtn) {
         confirmOverrideAllBtn.addEventListener('click', async () => {
-            const typed = overrideAllChallengeInput.value;
+            if (overrideAllWordChallengeState) {
+                const expectedWord = getCurrentChallengeWord(overrideAllWordChallengeState);
+                const typedWord = overrideAllChallengeWordInput.value.trim();
+                if (typedWord === expectedWord) {
+                    overrideAllWordChallengeState.currentIndex++;
+                    const completedText = getCompletedChallengeText(overrideAllWordChallengeState);
+                    overrideAllWordChallengeState.typedText = overrideAllWordChallengeState.currentIndex >= overrideAllWordChallengeState.words.length
+                        ? overrideAllChallengeText
+                        : completedText;
+                    if (overrideAllWordChallengeState.currentIndex < overrideAllWordChallengeState.words.length) {
+                        renderOverrideAllWordChallengeState();
+                        overrideAllChallengeWordInput.focus();
+                        return;
+                    }
+                } else {
+                    const modalContent = overrideAllModal.querySelector('.modal-content');
+                    modalContent.classList.remove('wiggle');
+                    void modalContent.offsetWidth;
+                    modalContent.classList.add('wiggle');
+                    overrideAllCurrentWordEl.textContent = getCurrentChallengeWord(overrideAllWordChallengeState);
+                    return;
+                }
+            }
+
+            const typed = getOverrideAllTypedValue();
             const target = overrideAllChallengeText;
 
             let firstErrorIndex = -1;
@@ -18778,6 +19374,9 @@ function setupOverrideAll() {
                 await performOverrideAll();
                 overrideAllModal.classList.add('hidden');
                 overrideAllChallengeText = '';
+                overrideAllWordChallengeState = null;
+                setOverrideAllWordChallengeMode(false);
+                confirmOverrideAllBtn.disabled = false;
             } else {
                 // Wrong - wiggle and highlight error
                 const modalContent = overrideAllModal.querySelector('.modal-content');
@@ -18785,7 +19384,11 @@ function setupOverrideAll() {
                 void modalContent.offsetWidth; // Trigger reflow
                 modalContent.classList.add('wiggle');
 
-                renderOverrideAllChallengeText(firstErrorIndex);
+                if (overrideAllWordChallengeState) {
+                    overrideAllCurrentWordEl.textContent = getCurrentChallengeWord(overrideAllWordChallengeState);
+                } else {
+                    renderOverrideAllChallengeText(firstErrorIndex);
+                }
             }
         });
     }
@@ -19051,9 +19654,7 @@ function findHardestChallenge() {
     // Resolve effective count for maxDifficulty (handles single-block case
     // where compareDifficulties was never called)
     if (hardestDifficulty.maxDifficulty === true && hardestDifficulty.count === undefined) {
-        const MAX_CHARS_RANDOM_WORDS = 7500;
-        const MAX_CHARS_GIBBERISH = 5000;
-        const effectiveCount = hardestDifficulty.type === 'gibberish' ? MAX_CHARS_GIBBERISH : MAX_CHARS_RANDOM_WORDS;
+        const effectiveCount = getMaxOverrideCharsForType(hardestDifficulty.type);
         return { ...hardestDifficulty, count: effectiveCount };
     }
     return hardestDifficulty;
@@ -19064,21 +19665,6 @@ function compareDifficulties(a, b) {
     if (!a) return b;
     if (!b) return a;
 
-    const MAX_CHARS_RANDOM_WORDS = 7500;  // 250 * 30, match getMaxOverrideCharsForType
-    const MAX_CHARS_GIBBERISH = 5000;     // match getMaxOverrideCharsForType
-
-    const getEffectiveCount = (difficulty) => {
-        if (difficulty.type === 'custom' && typeof difficulty.customText === 'string') {
-            return difficulty.customText.length;
-        }
-        if (difficulty.maxDifficulty === true) {
-            if (difficulty.type === 'gibberish') return MAX_CHARS_GIBBERISH;
-            if (difficulty.type === 'random-words') return MAX_CHARS_RANDOM_WORDS;
-        }
-        const parsed = Number(difficulty.count);
-        return Number.isFinite(parsed) && parsed > 0 ? parsed : 50;
-    };
-
     const getTypeRank = (difficulty) => {
         if (difficulty.type === 'custom') return 3;
         if (difficulty.type === 'gibberish') return 2;
@@ -19086,8 +19672,8 @@ function compareDifficulties(a, b) {
         return 0;
     };
 
-    const aCount = getEffectiveCount(a);
-    const bCount = getEffectiveCount(b);
+    const aCount = getDifficultyTypingCharCount(a);
+    const bCount = getDifficultyTypingCharCount(b);
 
     let winner;
     if (bCount > aCount) winner = b;
@@ -19101,10 +19687,12 @@ function compareDifficulties(a, b) {
         else winner = a; // Equal, return a
     }
 
-    // Return with effective count resolved (so maxDifficulty is reflected in .count)
-    const winnerCount = getEffectiveCount(winner);
-    if (winner.count !== winnerCount) {
-        return { ...winner, count: winnerCount };
+    // Resolve stored count for generation when maxDifficulty (keep word counts on iOS)
+    if (winner.maxDifficulty === true) {
+        const genCount = getMaxOverrideCharsForType(winner.type);
+        if (winner.count !== genCount) {
+            return { ...winner, count: genCount };
+        }
     }
     return winner;
 }

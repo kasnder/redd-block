@@ -10,7 +10,22 @@ User-facing changes for each release. Every app upgrade adds a new entry here.
 - **Keyboard: Escape closes more overlays.** The title-bar block actions menu
   (⋯ on active blocks) and other popovers now dismiss reliably with Esc, with
   the topmost overlay closed first.
-- **Version:** 3.1.3.
+- **iOS: Settings redesign and backup.** Settings uses the same sectioned-card
+  layout as desktop, with JSON export/import for blocklists and schedules;
+- **iOS: one-word override challenges.** Random-words and gibberish use
+  one-word-at-a-time typing in single-block override, pause, and Stop all
+  (full challenge text still visible, with “Word x of n”, a highlighted
+  current-word card, and a single-line field with Enter/Go).
+- **iOS: gibberish pseudo-words.** Gibberish challenges use spaced
+  six-character chunks (spaces are shown but not counted toward typing
+  workload); the blocklist editor preview shows that format instead of one long
+  string.
+- **iOS: override difficulty in words.** Random-words and gibberish difficulty
+  are set in **words** (max 500), not characters. Random words are always five
+  letters; time estimates and Stop-all “hardest challenge” selection compare
+  letter workload (words × 5 or × 6) against custom text length. Desktop
+  behavior is unchanged.
+- **Version:** 3.1.3 (desktop and iOS aligned).
 
 ## v3.1.2
 
