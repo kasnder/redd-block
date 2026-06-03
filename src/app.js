@@ -10230,6 +10230,44 @@ function renderInstantPreviewBlock(blockStart, blockEnd, blocklist) {
     layoutOverlappingBlocks();
 }
 
+// Pointer-based drag session for calendar preview blocks (mouse + touch on iPad).
+function bindPointerDragSession(element, { onStart, onMove, onEnd }) {
+    element.addEventListener('pointerdown', (e) => {
+        if (!e.isPrimary || e.button !== 0) return;
+        if (onStart(e) === false) return;
+
+        const captureEl = e.currentTarget;
+        try {
+            captureEl.setPointerCapture?.(e.pointerId);
+        } catch (_) { /* ignore */ }
+
+        e.preventDefault();
+
+        const onPointerMove = (moveEvent) => {
+            if (moveEvent.pointerId !== e.pointerId) return;
+            moveEvent.preventDefault();
+            onMove(moveEvent);
+        };
+
+        const endSession = (endEvent) => {
+            if (endEvent.pointerId !== e.pointerId) return;
+            document.removeEventListener('pointermove', onPointerMove);
+            document.removeEventListener('pointerup', endSession);
+            document.removeEventListener('pointercancel', endSession);
+            try {
+                if (captureEl.hasPointerCapture?.(e.pointerId)) {
+                    captureEl.releasePointerCapture(e.pointerId);
+                }
+            } catch (_) { /* ignore */ }
+            onEnd(endEvent);
+        };
+
+        document.addEventListener('pointermove', onPointerMove);
+        document.addEventListener('pointerup', endSession);
+        document.addEventListener('pointercancel', endSession);
+    });
+}
+
 // Attach a right-edge resize handler to the instant-mode preview's head element. Dragging
 // the handle live-updates the head's width and on release commits the new total duration:
 // duration = head's new width (in minutes). Tails on later days are not adjusted in
@@ -10244,22 +10282,23 @@ function attachInstantPreviewResizeHandler(headEl, headTrack) {
     let startX = 0;
     let startWidthPct = 0;
 
-    handle.addEventListener('mouseenter', () => headEl.classList.add('resize-hover'));
-    handle.addEventListener('mouseleave', () => headEl.classList.remove('resize-hover'));
+    handle.addEventListener('pointerenter', () => headEl.classList.add('resize-hover'));
+    handle.addEventListener('pointerleave', () => headEl.classList.remove('resize-hover'));
 
-    headEl.addEventListener('mousedown', (e) => {
-        if (!e.target.closest('.resize-handle-end')) return;
-        isResizing = true;
-        startX = e.clientX;
-        startWidthPct = parseFloat(headEl.style.width) || 0;
-        headEl.classList.add('resizing');
-        document.body.style.cursor = 'ew-resize';
-        e.preventDefault();
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
+    bindPointerDragSession(headEl, {
+        onStart(e) {
+            if (!e.target.closest('.resize-handle-end')) return false;
+            isResizing = true;
+            startX = e.clientX;
+            startWidthPct = parseFloat(headEl.style.width) || 0;
+            headEl.classList.add('resizing');
+            document.body.style.cursor = 'ew-resize';
+        },
+        onMove: onPointerMove,
+        onEnd: onPointerUp
     });
 
-    function onMouseMove(e) {
+    function onPointerMove(e) {
         if (!isResizing) return;
         const trackRect = headTrack.getBoundingClientRect();
         if (trackRect.width <= 0) return;
@@ -10286,11 +10325,9 @@ function attachInstantPreviewResizeHandler(headEl, headTrack) {
         }
     }
 
-    function onMouseUp() {
+    function onPointerUp() {
         if (!isResizing) return;
         isResizing = false;
-        document.removeEventListener('mousemove', onMouseMove);
-        document.removeEventListener('mouseup', onMouseUp);
         headEl.classList.remove('resizing');
         headEl.classList.remove('resize-hover');
         document.body.style.cursor = '';
@@ -10557,10 +10594,10 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
         });
     }
 
-    // Cursor hover hint on resize handles
+    // Cursor hover hint on resize handles (pointer events work for mouse; touch skips hover)
     previewEl.querySelectorAll('.resize-handle').forEach(handle => {
-        handle.addEventListener('mouseenter', () => previewEl.classList.add('resize-hover'));
-        handle.addEventListener('mouseleave', () => previewEl.classList.remove('resize-hover'));
+        handle.addEventListener('pointerenter', () => previewEl.classList.add('resize-hover'));
+        handle.addEventListener('pointerleave', () => previewEl.classList.remove('resize-hover'));
     });
 
     // Recompute "HH:MM - HH:MM" from the head's current left%/width% and write it onto
@@ -10580,33 +10617,32 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
         ).forEach(el => { el.textContent = text; });
     }
 
-    previewEl.addEventListener('mousedown', (e) => {
-        const handle = e.target.closest('.resize-handle');
-        if (handle) {
-            isResizing = true;
-            resizeHandle = handle.dataset.handle;
-            previewEl.classList.add('resizing');
-            document.body.style.cursor = 'ew-resize';
-        } else {
-            isDragging = true;
-            previewEl.classList.add('dragging');
-            document.body.style.cursor = 'grabbing';
-        }
+    bindPointerDragSession(previewEl, {
+        onStart(e) {
+            const handle = e.target.closest('.resize-handle');
+            if (handle) {
+                isResizing = true;
+                resizeHandle = handle.dataset.handle;
+                previewEl.classList.add('resizing');
+                document.body.style.cursor = 'ew-resize';
+            } else {
+                isDragging = true;
+                previewEl.classList.add('dragging');
+                document.body.style.cursor = 'grabbing';
+            }
 
-        startX = e.clientX;
-        startY = e.clientY;
-        startLeftPct = parseFloat(previewEl.style.left) || 0;
-        startWidthPct = parseFloat(previewEl.style.width) || 0;
-        currentHoverTrack = track;
+            startX = e.clientX;
+            startY = e.clientY;
+            startLeftPct = parseFloat(previewEl.style.left) || 0;
+            startWidthPct = parseFloat(previewEl.style.width) || 0;
+            currentHoverTrack = track;
 
-        const trackRect = track.getBoundingClientRect();
-        const trackCenterY = trackRect.top + trackRect.height / 2;
-        clickOffsetY = e.clientY - trackCenterY;
-
-        e.preventDefault();
-
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
+            const trackRect = track.getBoundingClientRect();
+            const trackCenterY = trackRect.top + trackRect.height / 2;
+            clickOffsetY = e.clientY - trackCenterY;
+        },
+        onMove: handlePointerMove,
+        onEnd: handlePointerUp
     });
 
     // Only "head" preview blocks (not overnight tails) are manipulated during a drag —
@@ -10617,7 +10653,7 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
         );
     }
 
-    function handleMouseMove(e) {
+    function handlePointerMove(e) {
         const trackRect = track.getBoundingClientRect();
         if (trackRect.width <= 0) return;
 
@@ -10688,10 +10724,7 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
         updateLiveTimeText();
     }
 
-    function handleMouseUp() {
-        document.removeEventListener('mousemove', handleMouseMove);
-        document.removeEventListener('mouseup', handleMouseUp);
-
+    function handlePointerUp() {
         getHeadPreviewBlocks().forEach(block => {
             block.classList.remove('dragging');
             block.classList.remove('resizing');
