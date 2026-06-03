@@ -2000,6 +2000,497 @@ body.dark-mode .app-blocking-closedown-banner {
     }
 }
 
+/* iPad (portrait + landscape): scale modals — add/edit, pause, start confirm,
+   override, override all, and other .modal-overlay dialogs. */
+@media (min-width: 769px) and (max-width: 1024px) {
+    body.ios:not(.ios-phone) .modal-overlay {
+        padding: 24px;
+    }
+
+    body.ios:not(.ios-phone) .modal-content {
+        padding: 28px;
+        border-radius: 18px;
+        max-width: 460px;
+    }
+
+    body.ios:not(.ios-phone) #blocklist-modal .modal-content {
+        max-width: 560px;
+    }
+
+    body.ios:not(.ios-phone) .modal-content.start-confirm-modal,
+    body.ios:not(.ios-phone) #start-block-confirm-modal .modal-content,
+    body.ios:not(.ios-phone) #start-schedule-confirm-modal .modal-content {
+        max-width: 500px;
+    }
+
+    body.ios:not(.ios-phone) .modal-content.pause-modal,
+    body.ios:not(.ios-phone) #pause-modal .modal-content {
+        max-width: 480px;
+    }
+
+    body.ios:not(.ios-phone) #override-modal .modal-content,
+    body.ios:not(.ios-phone) #override-all-modal .modal-content {
+        max-width: 480px;
+    }
+
+    body.ios:not(.ios-phone) .app-picker-modal-content {
+        max-width: 520px;
+    }
+
+    body.ios:not(.ios-phone) .modal-content h3,
+    body.ios:not(.ios-phone) .start-confirm-modal h3 {
+        font-size: 26px;
+        margin-bottom: 14px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay p {
+        font-size: 16px;
+        line-height: 1.5;
+    }
+
+    body.ios:not(.ios-phone) .modal-buttons {
+        gap: 10px;
+        margin-top: 24px;
+    }
+
+    body.ios:not(.ios-phone) .modal-btn {
+        padding: 12px 18px;
+        border-radius: 10px;
+        font-size: 17px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .btn-spinner {
+        width: 16px;
+        height: 16px;
+        margin-right: 10px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .warning-banner {
+        padding: 10px 14px;
+        font-size: 16px;
+        gap: 10px;
+        border-radius: 8px;
+        margin-bottom: 12px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .warning-banner svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .form-group {
+        margin-bottom: 18px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .form-group > label {
+        font-size: 14px;
+        margin-bottom: 8px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .form-input {
+        padding: 12px 14px;
+        font-size: 16px;
+        border-radius: 10px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .form-input.small {
+        width: 88px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay #override-count-wrapper .form-input.small {
+        width: 3.75rem;
+        min-width: 3.75rem;
+        max-width: 3.75rem;
+        flex: 0 0 3.75rem;
+        padding-left: 10px;
+        padding-right: 10px;
+        font-size: 16px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .input-with-suffix {
+        gap: 10px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .input-suffix {
+        font-size: 16px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .form-select {
+        padding: 12px 40px 12px 14px;
+        font-size: 16px;
+        border-radius: 10px;
+        background-size: 18px;
+        background-position: right 12px center;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .form-textarea {
+        padding: 12px 14px;
+        font-size: 16px;
+        min-height: 96px;
+        border-radius: 10px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .form-hint {
+        font-size: 14px;
+        margin-top: 6px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .input-error-msg {
+        font-size: 14px;
+        margin-top: 8px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .info-icon {
+        width: 18px;
+        height: 18px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .info-tooltip {
+        font-size: 14px;
+        padding: 10px 14px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .tags-input-container {
+        padding: 8px;
+        gap: 8px;
+        min-height: 52px;
+        border-radius: 10px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .tags-input-container .form-input {
+        padding: 6px 8px;
+        font-size: 16px;
+        min-width: 140px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .tags-container {
+        gap: 6px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .tag {
+        gap: 6px;
+        padding: 6px 10px;
+        font-size: 14px;
+        border-radius: 6px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .tag-remove {
+        font-size: 17px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .browse-btn {
+        padding: 8px 12px;
+        border-radius: 8px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay #blocklist-modal .tags-input-container > .input-with-button {
+        gap: 8px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay #blocklist-modal .tags-input-container .browse-btn {
+        padding: 12px 14px;
+        gap: 10px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay #blocklist-modal .tags-input-container .browse-btn-caption {
+        font-size: 15px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .websites-import-menu {
+        min-width: 220px;
+        padding: 6px;
+        border-radius: 10px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .websites-import-menu-item {
+        gap: 10px;
+        padding: 8px 12px;
+        font-size: 15px;
+        border-radius: 8px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .websites-import-menu-item svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .websites-import-menu-section-label {
+        font-size: 12px;
+        padding: 8px 12px 4px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .color-swatches {
+        gap: 10px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .color-swatches .color-swatch {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .emoji-swatches {
+        gap: 10px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .emoji-swatch {
+        width: 32px;
+        height: 32px;
+        font-size: 19px;
+        border-radius: 8px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .custom-emoji-swatch .custom-icon {
+        font-size: 19px;
+    }
+
+    body.ios:not(.ios-phone) .emoji-picker-popover emoji-picker {
+        --emoji-size: 1.35rem;
+        --category-emoji-size: 1.15rem;
+        height: 320px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-type-row {
+        gap: 18px;
+        margin-bottom: 10px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-type-row .override-type-select {
+        max-width: 220px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .max-difficulty-checkbox-option {
+        gap: 8px;
+        font-size: 16px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .max-difficulty-checkbox-option span {
+        font-size: 16px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .max-difficulty-checkbox-option input[type="checkbox"] {
+        width: 22px;
+        height: 22px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-preview-block {
+        margin-top: 12px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-preview-time-line {
+        font-size: 15px;
+        margin-bottom: 8px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-preview-text {
+        padding: 12px 14px;
+        font-size: 16px;
+        border-radius: 10px;
+    }
+
+    /* Override / pause challenge */
+    body.ios:not(.ios-phone) .modal-overlay .override-summary {
+        font-size: 16px;
+        margin-bottom: 18px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-text {
+        padding: 18px;
+        font-size: 16px;
+        line-height: 1.65;
+        margin: 18px 0;
+        max-height: 140px;
+        border-radius: 10px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-current-word {
+        padding: 16px 18px;
+        margin: -2px 0 18px;
+        font-size: 22px;
+        border-radius: 12px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-word-progress {
+        margin: -2px 0 10px;
+        font-size: 16px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-input {
+        padding: 14px;
+        font-size: 16px;
+        min-height: 96px;
+        border-radius: 10px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-word-input {
+        min-height: 0;
+        height: 54px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-progress {
+        height: 5px;
+        margin-top: 10px;
+        border-radius: 3px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-all-warning {
+        padding: 14px 16px;
+        margin-bottom: 18px;
+        border-radius: 10px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-all-warning p {
+        font-size: 16px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-all-warning p:first-child {
+        margin-bottom: 10px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-all-subline {
+        font-size: 16px;
+        margin-bottom: 10px;
+    }
+
+    /* Start / schedule confirm */
+    body.ios:not(.ios-phone) .modal-overlay .block-details {
+        margin-bottom: 18px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .block-detail-name {
+        font-size: 19px;
+        margin-bottom: 14px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .block-detail-row {
+        gap: 6px;
+        margin-bottom: 8px;
+        font-size: 16px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .show-all-btn {
+        font-size: 14px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .schedule-summary {
+        margin-top: 14px;
+        padding-top: 14px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .edit-schedule-notice {
+        margin-bottom: 16px;
+        font-size: 16px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .schedule-summary-header {
+        font-size: 16px;
+        margin-bottom: 10px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .schedule-segment-row {
+        gap: 10px;
+        margin-bottom: 8px;
+        font-size: 16px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .schedule-segment-row .segment-time {
+        min-width: 110px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-info-box {
+        padding: 14px 16px;
+        border-radius: 10px;
+        margin-bottom: 10px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-info-header {
+        gap: 10px;
+        font-size: 16px;
+        margin-bottom: 10px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-info-header svg {
+        width: 18px;
+        height: 18px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-info-box p {
+        font-size: 16px;
+    }
+
+    /* Pause modal duration */
+    body.ios:not(.ios-phone) .modal-overlay .pause-remaining-info {
+        font-size: 16px;
+        margin-bottom: 20px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .pause-duration-section {
+        margin-bottom: 18px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .pause-duration-row {
+        gap: 18px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .pause-duration-col > .time-label {
+        margin-bottom: 8px;
+        font-size: 14px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .pause-duration-inputs,
+    body.ios:not(.ios-phone) .modal-overlay .pause-duration-col > .time-picker-row {
+        min-height: 42px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .pause-duration-section .pause-time-input {
+        width: 40px;
+        height: 42px;
+        font-size: 19px;
+        border-radius: 10px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .pause-duration-section .time-part {
+        width: 40px;
+        min-width: 40px;
+        height: 42px;
+        font-size: 19px;
+        border-radius: 10px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .pause-duration-section .time-colon {
+        font-size: 19px;
+        line-height: 42px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .pause-time-unit {
+        font-size: 16px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .pause-arrow svg {
+        width: 20px;
+        height: 20px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .next-day-badge {
+        padding: 5px 10px;
+        font-size: 12px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .time-popover {
+        border-radius: 10px;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .popover-option {
+        padding: 10px 14px;
+        font-size: 16px;
+        min-width: 52px;
+    }
+
+    body.ios:not(.ios-phone) .app-picker-modal-content h3 {
+        font-size: 26px;
+    }
+}
+
 /* Cramped two-column zone (above the stack breakpoint, below comfortable
    desktop). Previously the gear was anchored to the grid edge and could spill
    over the tab pill; tabs + inline settings are laid out from the scheduler
