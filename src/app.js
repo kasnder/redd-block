@@ -9722,7 +9722,6 @@ function openScheduleOverrideModal(schedule) {
     const blocklistName = blocklist ? blocklist.name : 'Schedule';
 
     const difficulty = blocklist?.overrideDifficulty || { type: 'random-words', count: 50 };
-    challengeText = generateOverrideChallengeText(difficulty.type, difficulty.count, difficulty.customText);
     overrideBlockId = null;
     overrideBlocklistIdForHelper = null;
 
@@ -9730,18 +9729,8 @@ function openScheduleOverrideModal(schedule) {
     if (titleEl) {
         titleEl.textContent = `${tSettings('stopSchedule')} ${blocklistName}`;
     }
-
-    const challengeTextEl = document.getElementById('challenge-text');
-    if (challengeTextEl) {
-        challengeTextEl.textContent = challengeText;
-    }
-
-    const challengeInput = document.getElementById('challenge-input');
-    if (challengeInput) challengeInput.value = '';
-    const progressBar = document.getElementById('challenge-progress-bar');
-    if (progressBar) progressBar.style.width = '0%';
-
-    document.getElementById('override-modal').classList.remove('hidden');
+    document.getElementById('override-summary').textContent = formatBlocklistModalSummary(blocklist);
+    initializeOverrideModalChallenge(difficulty, blocklist?.color);
 }
 
 // Click handler for a scheduled block in the timeline: select the corresponding blocklist
@@ -12026,6 +12015,24 @@ function openOverrideModal(blockId) {
     document.getElementById('override-summary').textContent = formatBlocklistModalSummary(blocklist);
 
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
+    initializeOverrideModalChallenge(difficulty, blocklist?.color);
+}
+
+// Close override modal
+function closeOverrideModal() {
+    document.getElementById('override-modal').classList.add('hidden');
+    overrideBlockId = null;
+    overrideBlocklistIdForHelper = null;
+    challengeText = '';
+    overrideWordChallengeState = null;
+    setOverrideWordChallengeMode(false);
+    delete window.overrideScheduleId;
+    const confirmBtn = document.getElementById('confirm-override-btn');
+    if (confirmBtn) confirmBtn.textContent = tSettings('stopBlock');
+    if (confirmBtn) confirmBtn.disabled = false;
+}
+
+function initializeOverrideModalChallenge(difficulty, progressColor = null) {
     challengeText = generateOverrideChallengeText(difficulty.type, difficulty.count, difficulty.customText);
 
     // Sanitize: remove linebreaks and collapse multiple spaces
@@ -12039,9 +12046,8 @@ function openOverrideModal(blockId) {
 
     const progressBar = document.getElementById('challenge-progress-bar');
     progressBar.style.width = '0%';
-    // Use the blocklist's color for the progress bar
-    if (blocklist.color) {
-        progressBar.style.background = blocklist.color;
+    if (progressColor) {
+        progressBar.style.background = progressColor;
     } else {
         progressBar.style.background = 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)';
     }
@@ -12057,20 +12063,6 @@ function openOverrideModal(blockId) {
         document.getElementById('confirm-override-btn').disabled = false;
         requestAnimationFrame(() => document.getElementById('challenge-input')?.focus());
     }
-}
-
-// Close override modal
-function closeOverrideModal() {
-    document.getElementById('override-modal').classList.add('hidden');
-    overrideBlockId = null;
-    overrideBlocklistIdForHelper = null;
-    challengeText = '';
-    overrideWordChallengeState = null;
-    setOverrideWordChallengeMode(false);
-    delete window.overrideScheduleId;
-    const confirmBtn = document.getElementById('confirm-override-btn');
-    if (confirmBtn) confirmBtn.textContent = tSettings('stopBlock');
-    if (confirmBtn) confirmBtn.disabled = false;
 }
 
 // ── Pause/Resume Block ──
