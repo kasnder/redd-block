@@ -10,7 +10,16 @@ User-facing changes for each release. Every app upgrade adds a new entry here.
 - **Keyboard: Escape closes more overlays.** The title-bar block actions menu
   (⋯ on active blocks) and other popovers now dismiss reliably with Esc, with
   the topmost overlay closed first.
-- **Version:** 3.1.3.
+- **iOS: Settings redesign and backup.** Settings uses the same sectioned-card
+  layout as desktop, with JSON export/import for blocklists and schedules;
+  export/import buttons stack vertically on narrow iPhone screens.
+- **iOS: one-word override challenges.** For random-words difficulty, override,
+  pause, and Stop all use one-word-at-a-time typing (full challenge text still
+  visible, with a current-word prompt and progress label).
+- **iOS: pause and override polish.** Pause and override modals use clearer
+  spacing and alignment for timings and blocklist summaries (shared with
+  desktop).
+- **Version:** 3.1.3 (desktop and iOS aligned).
 
 ## v3.1.2
 
