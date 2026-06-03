@@ -1174,6 +1174,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadData();
     await resetDevOnlyEulaAcceptance();
     detectPlatform(); // Must run early so isIOS is set before other setup
+    setupIOSExternalLinkOpens();
     setupNowBlockingChipScroll();
     setupEventListeners();
     initWelcomeDemoControls();
@@ -5841,12 +5842,39 @@ async function acceptEula() {
     await runPostAcceptanceStartup();
 }
 
+function getExternalLinkTarget(href) {
+    if (!href || typeof href !== 'string') return null;
+    const trimmed = href.trim();
+    const lower = trimmed.toLowerCase();
+    if (lower.startsWith('https://') || lower.startsWith('http://') || lower.startsWith('mailto:')) {
+        return trimmed;
+    }
+    return null;
+}
+
 async function openExternal(target) {
     try {
         await openUrl(target);
-    } catch {
-        window.open(target, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+        console.warn('[openExternal] opener plugin failed:', err);
+        if (!isIOS) {
+            window.open(target, '_blank', 'noopener,noreferrer');
+        }
     }
+}
+
+/** WKWebView on iOS does not open target=_blank links in Safari; route via opener plugin. */
+function setupIOSExternalLinkOpens() {
+    if (!isIOS) return;
+    document.addEventListener('click', (event) => {
+        const anchor = event.target.closest('a[href]');
+        if (!anchor) return;
+        const url = getExternalLinkTarget(anchor.dataset.externalUrl || anchor.getAttribute('href'));
+        if (!url) return;
+        event.preventDefault();
+        event.stopPropagation();
+        void openExternal(url);
+    }, true);
 }
 
 // Load data from main process
@@ -6157,18 +6185,6 @@ function setupEventListeners() {
         eulaRoot.addEventListener(
             'click',
             (event) => {
-                const anchor = event.target.closest('a[data-external-url]');
-                if (anchor && eulaRoot.contains(anchor)) {
-                    const url = anchor.dataset.externalUrl;
-                    if (!url) return;
-                    event.preventDefault();
-                    event.stopImmediatePropagation();
-                    openUrl(url).catch((err) => {
-                        console.warn('[eula] open in browser failed:', err);
-                        window.open(url, '_blank', 'noopener,noreferrer');
-                    });
-                    return;
-                }
                 const toggleHost = event.target.closest('[data-toggle-target]');
                 if (toggleHost && eulaRoot.contains(toggleHost) && !event.target.closest('a')) {
                     const target = document.getElementById(toggleHost.dataset.toggleTarget);
