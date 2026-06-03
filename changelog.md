@@ -12,13 +12,19 @@ User-facing changes for each release. Every app upgrade adds a new entry here.
   the topmost overlay closed first.
 - **iOS: Settings redesign and backup.** Settings uses the same sectioned-card
   layout as desktop, with JSON export/import for blocklists and schedules;
-  export/import buttons stack vertically on narrow iPhone screens.
-- **iOS: one-word override challenges.** For random-words difficulty, override,
-  pause, and Stop all use one-word-at-a-time typing (full challenge text still
-  visible, with a current-word prompt and progress label).
-- **iOS: pause and override polish.** Pause and override modals use clearer
-  spacing and alignment for timings and blocklist summaries (shared with
-  desktop).
+- **iOS: one-word override challenges.** Random-words and gibberish use
+  one-word-at-a-time typing in single-block override, pause, and Stop all
+  (full challenge text still visible, with “Word x of n”, a highlighted
+  current-word card, and a single-line field with Enter/Go).
+- **iOS: gibberish pseudo-words.** Gibberish challenges use spaced
+  six-character chunks (spaces are shown but not counted toward typing
+  workload); the blocklist editor preview shows that format instead of one long
+  string.
+- **iOS: override difficulty in words.** Random-words and gibberish difficulty
+  are set in **words** (max 1000), not characters. Random words are always five
+  letters; time estimates and Stop-all “hardest challenge” selection compare
+  letter workload (words × 5 or × 6) against custom text length. Desktop
+  behavior is unchanged.
 - **Version:** 3.1.3 (desktop and iOS aligned).
 
 ## v3.1.2
