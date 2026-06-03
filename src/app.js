@@ -229,6 +229,14 @@ let lastOverridePreviewType = null;
 const UI_ZOOM_MIN = 0.8;
 const UI_ZOOM_MAX = 1.8;
 const UI_ZOOM_MAX_DESKTOP = 1.5;  // cap on macOS/Windows (native webview zoom)
+const UI_ZOOM_MAX_IOS = 1.4;  // cap on iOS (CSS zoom on html)
+/** Layout breakpoints — CSS `zoom` does not affect @media / @container; tiers use effective width. */
+const UI_ZOOM_LAYOUT_STACK_MAX = 768;
+const UI_ZOOM_LAYOUT_CRAMPED_MAX = 1024;
+const UI_ZOOM_LAYOUT_NARROW_MAX = 800;
+const UI_ZOOM_SCHED_HEADER_ICON_THRESHOLD = 420;
+let uiZoomLayoutRaf = 0;
+let uiZoomLayoutObserverBound = false;
 const UI_ZOOM_STEP = 0.1;
 /** Desktop default — slightly larger for monitor distance. */
 const DEFAULT_UI_ZOOM = 1.2;
@@ -10766,6 +10774,8 @@ function syncSchedulerChromeVisibility() {
     if (mainTitle) mainTitle.classList.toggle('hidden', !show);
     if (modeTabs) modeTabs.classList.toggle('hidden', !show);
     if (sectionHeader) sectionHeader.classList.toggle('scheduler-header-compact', !show);
+    bindUiZoomLayoutObserver();
+    scheduleUiZoomResponsiveLayout();
 }
 
 // Handle blocklist selection
@@ -16759,13 +16769,8 @@ let iosCompactScheduleDayLabelsActive = null;
 /** Smaller iOS viewports, including iPad portrait, use single-letter day pills from first render. */
 function shouldUseCompactIosScheduleDayLabels() {
     if (!document.body.classList.contains('ios')) return false;
-    const viewportWidth = Math.round(
-        window.visualViewport?.width
-        || window.innerWidth
-        || document.documentElement?.clientWidth
-        || 0
-    );
-    return viewportWidth > 0 && viewportWidth <= IOS_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH;
+    const effVp = Math.round(getEffectiveViewportWidth());
+    return effVp > 0 && effVp <= IOS_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH;
 }
 
 function syncIosScheduleDayLabelsViewportMode() {
@@ -17841,6 +17846,7 @@ function applyTheme() {
 }
 
 function getUiZoomMax() {
+    if (isIOS) return UI_ZOOM_MAX_IOS;
     const isDesktop = document.body.classList.contains('windows') || document.body.classList.contains('mac');
     return isDesktop ? UI_ZOOM_MAX_DESKTOP : UI_ZOOM_MAX;
 }
@@ -17859,14 +17865,107 @@ function getSavedUiZoom() {
     return clampUiZoom(parsed);
 }
 
-function applyUiZoom(scale) {
-    if (isIOS) {
-        document.documentElement.style.zoom = '';
-        return;
-    }
+function getActiveUiZoomScale() {
+    const inline = parseFloat(document.documentElement.style.zoom);
+    if (Number.isFinite(inline) && inline > 0) return inline;
+    return getSavedUiZoom();
+}
 
+function getEffectiveViewportWidth() {
+    const zoom = getActiveUiZoomScale();
+    const viewportWidth = window.visualViewport?.width
+        || window.innerWidth
+        || document.documentElement?.clientWidth
+        || 0;
+    return viewportWidth > 0 ? viewportWidth / zoom : viewportWidth;
+}
+
+/** Mirror responsive layout tiers when UI zoom is above 100% (zoom ignores @media queries). */
+function syncUiZoomResponsiveLayout() {
+    const zoom = getActiveUiZoomScale();
+    document.documentElement.style.setProperty('--ui-zoom', String(zoom));
+
+    const effVp = getEffectiveViewportWidth();
+    const cramped = effVp > UI_ZOOM_LAYOUT_STACK_MAX && effVp <= UI_ZOOM_LAYOUT_CRAMPED_MAX;
+
+    document.body.classList.toggle('ui-zoom-tier-stack', effVp > 0 && effVp <= UI_ZOOM_LAYOUT_STACK_MAX);
+    document.body.classList.toggle('ui-zoom-tier-cramped', cramped);
+    document.body.classList.toggle('ui-zoom-tier-narrow', effVp > 0 && effVp <= UI_ZOOM_LAYOUT_NARROW_MAX);
+
+    const schedHeader = document.querySelector('.scheduler-section > .section-header');
+    let schedTabsIcons = cramped;
+    if (schedHeader) {
+        const headerLayoutWidth = schedHeader.getBoundingClientRect().width / zoom;
+        // At higher zoom, switch to icons earlier (same effective space as @container 420px).
+        schedTabsIcons = schedTabsIcons
+            || headerLayoutWidth <= UI_ZOOM_SCHED_HEADER_ICON_THRESHOLD * zoom;
+    }
+    document.body.classList.toggle('ui-zoom-sched-tabs-icons', schedTabsIcons);
+
+    syncZoomControlPlacement();
+    syncIosScheduleDayLabelsViewportMode();
+    syncAllStopBtnLabelFits();
+    const pauseModal = document.getElementById('pause-modal');
+    if (pauseModal && !pauseModal.classList.contains('hidden')) {
+        syncPauseDurationRowLayout();
+    }
+}
+
+function usesStackSettingsPlacement() {
+    if (window.matchMedia('(max-width: 768px)').matches) return true;
+    return document.body.classList.contains('ios')
+        && !document.body.classList.contains('ios-phone')
+        && window.matchMedia('(min-width: 769px) and (max-width: 1024px) and (orientation: portrait)').matches;
+}
+
+/** Keep the single zoom control beside whichever settings button is visible for this layout. */
+function syncZoomControlPlacement() {
+    const zoom = document.getElementById('header-zoom-control');
+    const stackToolbar = document.getElementById('settings-toolbar-stack');
+    const schedToolbar = document.getElementById('settings-toolbar-scheduler');
+    const stackBtn = document.getElementById('settings-btn-stack');
+    const schedBtn = document.getElementById('settings-btn');
+    if (!zoom || !stackToolbar || !schedToolbar || !stackBtn || !schedBtn) return;
+
+    const hostToolbar = usesStackSettingsPlacement() ? stackToolbar : schedToolbar;
+    const hostBtn = usesStackSettingsPlacement() ? stackBtn : schedBtn;
+    if (zoom.parentElement !== hostToolbar) {
+        hostToolbar.insertBefore(zoom, hostBtn);
+    } else if (zoom.nextElementSibling !== hostBtn) {
+        hostToolbar.insertBefore(zoom, hostBtn);
+    }
+}
+
+function scheduleUiZoomResponsiveLayout() {
+    cancelAnimationFrame(uiZoomLayoutRaf);
+    uiZoomLayoutRaf = requestAnimationFrame(() => {
+        uiZoomLayoutRaf = 0;
+        syncUiZoomResponsiveLayout();
+    });
+}
+
+function bindUiZoomLayoutObserver() {
+    if (uiZoomLayoutObserverBound || typeof ResizeObserver === 'undefined') return;
+    const targets = [
+        document.getElementById('main-content'),
+        document.querySelector('.grid-top-row'),
+        document.querySelector('.scheduler-section > .section-header'),
+    ].filter(Boolean);
+    if (!targets.length) return;
+    uiZoomLayoutObserverBound = true;
+    const ro = new ResizeObserver(() => scheduleUiZoomResponsiveLayout());
+    targets.forEach((el) => ro.observe(el));
+}
+
+function applyUiZoom(scale) {
     const clamped = clampUiZoom(scale);
     syncFooterZoomControl(clamped);
+
+    if (isIOS) {
+        document.documentElement.style.zoom = String(clamped);
+        scheduleUiZoomResponsiveLayout();
+        return;
+    }
 
     // On desktop (Windows and macOS), use native webview zoom so content scales correctly
     // and behavior matches across platforms. Fall back to CSS zoom if unavailable (e.g. permission).
@@ -17875,9 +17974,11 @@ function applyUiZoom(scale) {
             getCurrentWebview().setZoom(clamped).then(() => {
                 nativeWebviewZoomSupported = true;
                 document.documentElement.style.zoom = '';
+                scheduleUiZoomResponsiveLayout();
             }).catch(() => {
                 nativeWebviewZoomSupported = false;
                 document.documentElement.style.zoom = String(clamped);
+                scheduleUiZoomResponsiveLayout();
             });
             return;
         }
@@ -17885,6 +17986,7 @@ function applyUiZoom(scale) {
 
     // Fallback path (iOS or if native zoom isn't available).
     document.documentElement.style.zoom = String(clamped);
+    scheduleUiZoomResponsiveLayout();
 }
 
 // Mirror the current zoom level into the footer percentage label and
@@ -17892,20 +17994,26 @@ function applyUiZoom(scale) {
 // point (footer buttons, cmd-+/-/0 shortcuts, native menu items) keeps
 // the UI in sync.
 function syncFooterZoomControl(scale) {
-    const valueDisplay = document.getElementById('footer-zoom-value');
-    const zoomOutBtn = document.getElementById('footer-zoom-out');
-    const zoomInBtn = document.getElementById('footer-zoom-in');
-    if (valueDisplay) valueDisplay.textContent = `${Math.round(scale * 100)}%`;
+    const pct = `${Math.round(scale * 100)}%`;
     const max = getUiZoomMax();
-    if (zoomOutBtn) zoomOutBtn.disabled = scale <= UI_ZOOM_MIN + 1e-6;
-    if (zoomInBtn) zoomInBtn.disabled = scale >= max - 1e-6;
+    document.querySelectorAll('.zoom-value').forEach((el) => {
+        el.textContent = pct;
+    });
+    document.querySelectorAll('.zoom-out-btn').forEach((btn) => {
+        btn.disabled = scale <= UI_ZOOM_MIN + 1e-6;
+    });
+    document.querySelectorAll('.zoom-in-btn').forEach((btn) => {
+        btn.disabled = scale >= max - 1e-6;
+    });
 }
 
 function setupFooterZoomControl() {
-    const zoomOutBtn = document.getElementById('footer-zoom-out');
-    const zoomInBtn = document.getElementById('footer-zoom-in');
-    if (zoomOutBtn) zoomOutBtn.addEventListener('click', () => zoomUiOut());
-    if (zoomInBtn) zoomInBtn.addEventListener('click', () => zoomUiIn());
+    document.querySelectorAll('.header-zoom-control').forEach((control) => {
+        if (control.dataset.bound === '1') return;
+        control.dataset.bound = '1';
+        control.querySelector('.zoom-out-btn')?.addEventListener('click', () => zoomUiOut());
+        control.querySelector('.zoom-in-btn')?.addEventListener('click', () => zoomUiIn());
+    });
 }
 
 function showUiZoomToast(scale) {
@@ -17926,8 +18034,6 @@ function showUiZoomToast(scale) {
 }
 
 function setUiZoom(scale, options = {}) {
-    if (isIOS) return;
-
     const clamped = clampUiZoom(scale);
     applyUiZoom(clamped);
     if (options.showToast) {
@@ -17956,13 +18062,14 @@ function resetUiZoom(options = {}) {
 }
 
 function setupUiZoomShortcuts() {
-    if (isIOS) {
-        applyUiZoom(1);
-        return;
-    }
-
     setupFooterZoomControl();
     applyUiZoom(getSavedUiZoom());
+    syncZoomControlPlacement();
+    bindUiZoomLayoutObserver();
+    window.addEventListener('resize', scheduleUiZoomResponsiveLayout, { passive: true });
+    window.visualViewport?.addEventListener('resize', scheduleUiZoomResponsiveLayout, { passive: true });
+
+    if (isIOS) return;
 
     tauriAPI.onMenuZoomIn(() => zoomUiIn({ showToast: true })).catch(() => { });
     tauriAPI.onMenuZoomOut(() => zoomUiOut({ showToast: true })).catch(() => { });
