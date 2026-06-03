@@ -391,6 +391,13 @@ body.dark-mode .title-bar {
     margin-top: 0;
 }
 
+/* Stack setup / closedown under the update banner without repeating the title-bar offset. */
+#update-banner:not(.hidden)~#behaviour-change-banner:not(.hidden),
+#update-banner:not(.hidden)~.app-blocking-closedown-banner:not(.hidden),
+.app-blocking-closedown-banner:not(.hidden)~#behaviour-change-banner:not(.hidden) {
+    margin-top: 12px;
+}
+
 @keyframes slideDown {
     from {
         opacity: 0;
