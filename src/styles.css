@@ -7617,6 +7617,17 @@ body.ios #blocklist-modal {
     padding-top: env(safe-area-inset-top, 20px);
 }
 
+/* Word count fits in 3 digits (max 500); keep the field compact beside "total words". */
+body.ios #override-count-wrapper .form-input.small {
+    width: 3.25rem;
+    min-width: 3.25rem;
+    max-width: 3.25rem;
+    flex: 0 0 3.25rem;
+    padding-left: 8px;
+    padding-right: 8px;
+    text-align: center;
+}
+
 .modal-content h3 {
     font-size: 22px;
     font-weight: 700;
