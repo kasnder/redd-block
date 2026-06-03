@@ -7615,20 +7615,6 @@ function setupOverrideModalListeners() {
         return overrideWordChallengeState?.typedText ?? challengeInput.value;
     }
 
-    function renderOverrideWordChallenge() {
-        if (!overrideWordChallengeState) return;
-        const currentWord = getCurrentChallengeWord(overrideWordChallengeState);
-        const completedText = getCompletedChallengeText(overrideWordChallengeState);
-        const targetText = completedText ? `${completedText} ${currentWord}` : currentWord;
-        challengeTextEl.textContent = challengeText;
-        challengeCurrentWordEl.textContent = currentWord;
-        challengeWordInput.value = '';
-        progressBar.style.width = challengeText.length > 0
-            ? `${Math.min(100, (targetText.length / challengeText.length) * 100)}%`
-            : '0%';
-        document.getElementById('confirm-override-btn').disabled = !currentWord;
-    }
-
     // Helper to render challenge text with optional error highlight
     function renderChallengeText(errorIndex = -1) {
         if (errorIndex < 0 || errorIndex >= challengeText.length) {
@@ -7824,7 +7810,7 @@ function setupOverrideModalListeners() {
                     ? challengeText
                     : completedText;
                 if (overrideWordChallengeState.currentIndex < overrideWordChallengeState.words.length) {
-                    renderOverrideWordChallenge();
+                    renderOverrideWordChallengeState();
                     challengeWordInput.focus();
                     return;
                 }
