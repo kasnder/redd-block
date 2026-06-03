@@ -214,6 +214,8 @@ let pauseWordChallengeState = null;
 const MIN_OVERRIDE_CHARS = 5;
 const DEFAULT_OVERRIDE_COUNT = 10;
 const TARGET_MAX_OVERRIDE_MINUTES = 30;
+/** iOS random-words / gibberish: max word count (random-words: 5000 letters at max; gibberish: 6000). */
+const MAX_IOS_OVERRIDE_WORD_COUNT = 1000;
 /** When character count >= this, preview text is frozen (no more regeneration) for random words and gibberish. */
 const OVERRIDE_PREVIEW_TRUNCATE_AT = 50;
 /** Max length for blocklist display name (add/edit modal + persisted saves). */
@@ -5991,6 +5993,10 @@ function isVersionHigher(versionA, versionB) {
     return false; // Equal versions
 }
 
+function usesIOSWordCountForOverrideType(type) {
+    return !!(isIOS && (type === 'random-words' || type === 'gibberish'));
+}
+
 /** Key in latest-versions.json — iOS uses its own release line, not desktop macos. */
 function getLatestVersionPlatformKey() {
     if (isIOS) return 'ios';
@@ -7135,6 +7141,7 @@ function setupModalListeners() {
         const warningEl = document.getElementById('override-count-warning');
         const overrideType = document.getElementById('override-type')?.value || 'random-words';
         const maxChars = getMaxOverrideCharsForType(overrideType);
+        const unitLabel = usesIOSWordCountForOverrideType(overrideType) ? 'words' : 'characters';
         e.target.max = String(maxChars);
         const rawValue = e.target.value.trim();
         if (rawValue === '') {
@@ -7150,7 +7157,7 @@ function setupModalListeners() {
             const charsPerMinute = getTypingCharsPerMinuteForType(overrideType);
             const estimatedMinutes = Math.ceil(maxChars / charsPerMinute);
             e.target.value = maxChars;
-            warningEl.textContent = `Max is ${maxChars} characters so it's still possible to override in case of emergency (takes you ~${estimatedMinutes} minutes to type).`;
+            warningEl.textContent = `Max is ${maxChars} ${unitLabel} so it's still possible to override in case of emergency (takes you ~${estimatedMinutes} minutes to type).`;
             warningEl.classList.remove('hidden');
         } else {
             warningEl.classList.add('hidden');
@@ -9697,10 +9704,7 @@ function openScheduleOverrideModal(schedule) {
     const blocklistName = blocklist ? blocklist.name : 'Schedule';
 
     const difficulty = blocklist?.overrideDifficulty || { type: 'random-words', count: 50 };
-    const charCount = difficulty.count || 50;
-    const isRandom = difficulty.type === 'gibberish';
-
-    challengeText = isRandom ? generateGibberish(charCount) : generateRandomWords(charCount);
+    challengeText = generateOverrideChallengeText(difficulty.type, difficulty.count, difficulty.customText);
     overrideBlockId = null;
     overrideBlocklistIdForHelper = null;
 
@@ -9799,7 +9803,9 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
         charCount = difficulty.customText.length;
         charsPerMinute = 200;
     }
-    const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
+    const displayCount = difficulty.type === 'custom' ? charCount : normalizeOverrideCount(charCount, difficulty.type);
+    const generatedCharCount = difficulty.type === 'custom' ? charCount : getOverrideGeneratedCharCount(difficulty.type, displayCount);
+    const estimatedMinutes = Math.ceil(generatedCharCount / charsPerMinute);
     const schedType =
         difficulty.type === 'custom' && difficulty.customText
             ? 'custom'
@@ -9807,7 +9813,7 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
               ? 'gibberish'
               : 'random-words';
     document.getElementById('schedule-confirm-override-text').textContent =
-        formatConfirmModalOverrideTypingLine({ type: schedType, count: charCount, estimatedMinutes });
+        formatConfirmModalOverrideTypingLine({ type: schedType, count: displayCount, estimatedMinutes });
 
     // Swap the proceed button label; the click handler routes via editScheduleData.
     const confirmBtn = document.getElementById('proceed-schedule-confirm-btn');
@@ -11101,7 +11107,10 @@ function startBlock() {
         charsPerMinute = 100;
     }
 
-    const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
+    const displayCount = difficulty.type === 'custom' ? charCount : normalizeOverrideCount(charCount, difficulty.type);
+    const generatedCharCount = difficulty.type === 'custom' ? charCount : getOverrideGeneratedCharCount(difficulty.type, displayCount);
+
+    const estimatedMinutes = Math.ceil(generatedCharCount / charsPerMinute);
     const startType =
         difficulty.type === 'custom' && difficulty.customText
             ? 'custom'
@@ -11111,7 +11120,7 @@ function startBlock() {
 
     const overrideText = formatConfirmModalOverrideTypingLine({
         type: startType,
-        count: charCount,
+        count: displayCount,
         estimatedMinutes
     });
 
@@ -11997,16 +12006,7 @@ function openOverrideModal(blockId) {
     document.getElementById('override-summary').textContent = formatBlocklistModalSummary(blocklist);
 
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-
-    // Generate challenge text
-    if (difficulty.type === 'custom' && difficulty.customText) {
-        challengeText = difficulty.customText;
-    } else if (difficulty.type === 'gibberish') {
-        challengeText = generateGibberish(difficulty.count);
-        if (isIOS) challengeText = formatIOSGibberishChallenge(challengeText);
-    } else {
-        challengeText = generateRandomWords(difficulty.count);
-    }
+    challengeText = generateOverrideChallengeText(difficulty.type, difficulty.count, difficulty.customText);
 
     // Sanitize: remove linebreaks and collapse multiple spaces
     challengeText = challengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
@@ -12165,22 +12165,26 @@ function openResumeConfirmation(blocklistId, type, blockId) {
     let charCount = difficulty.count;
     let estimatedMinutes;
     let resumeType;
+    let displayCount;
 
     if (difficulty.type === 'custom' && difficulty.customText) {
         charCount = difficulty.customText.length;
         estimatedMinutes = Math.ceil(charCount / 200);
         resumeType = 'custom';
+        displayCount = charCount;
     } else if (difficulty.type === 'gibberish') {
-        estimatedMinutes = Math.ceil(charCount / 100);
+        displayCount = normalizeOverrideCount(charCount, difficulty.type);
+        estimatedMinutes = Math.ceil(getOverrideGeneratedCharCount(difficulty.type, displayCount) / 100);
         resumeType = 'gibberish';
     } else {
-        estimatedMinutes = Math.ceil(charCount / 150);
+        displayCount = normalizeOverrideCount(charCount, difficulty.type);
+        estimatedMinutes = Math.ceil(getOverrideGeneratedCharCount(difficulty.type, displayCount) / 150);
         resumeType = 'random-words';
     }
 
     const overrideText = formatConfirmModalOverrideTypingLine({
         type: resumeType,
-        count: charCount,
+        count: displayCount,
         estimatedMinutes,
         resumeShortGibberish: resumeType === 'gibberish'
     });
@@ -12321,14 +12325,7 @@ function openPauseModal(blockId) {
 
     // Generate challenge text
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-    if (difficulty.type === 'custom' && difficulty.customText) {
-        pauseChallengeText = difficulty.customText;
-    } else if (difficulty.type === 'gibberish') {
-        pauseChallengeText = generateGibberish(difficulty.count);
-        if (isIOS) pauseChallengeText = formatIOSGibberishChallenge(pauseChallengeText);
-    } else {
-        pauseChallengeText = generateRandomWords(difficulty.count);
-    }
+    pauseChallengeText = generateOverrideChallengeText(difficulty.type, difficulty.count, difficulty.customText);
 
     pauseChallengeText = pauseChallengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
 
@@ -12675,8 +12672,35 @@ async function proceedWithPause() {
     closePauseModal();
 }
 
-// Generate random words to reach target character count
-// Generate random words to reach target character count exactly
+/** Five-letter words only — used for iOS word-count random-words (predictable length per word). */
+let wordList5Cache = null;
+function getWordList5() {
+    if (!wordList5Cache) {
+        wordList5Cache = wordList.filter(w => w.length === 5);
+    }
+    return wordList5Cache;
+}
+
+/** Typed letters only for N five-letter words (spaces in display are not counted). */
+function getIOSRandomWordsCharCount(wordCount) {
+    const n = Math.max(0, Math.floor(wordCount));
+    return n * 5;
+}
+
+/** iOS: generate exactly `wordCount` random five-letter words. */
+function generateRandomWordsByCount(wordCount) {
+    const n = Math.max(0, Math.floor(wordCount));
+    if (n === 0) return '';
+    const pool = getWordList5();
+    if (pool.length === 0) return '';
+    const words = [];
+    for (let i = 0; i < n; i++) {
+        words.push(pool[Math.floor(Math.random() * pool.length)]);
+    }
+    return words.join(' ');
+}
+
+// Generate random words to reach target character count exactly (desktop / character-count mode)
 function generateRandomWords(targetChars) {
     const words = [];
     let currentLength = 0;
@@ -12729,6 +12753,19 @@ function generateRandomWords(targetChars) {
     return words.join(' ');
 }
 
+function generateOverrideChallengeText(type, count, customText = '') {
+    if (type === 'custom' && customText) return customText;
+    const normalizedCount = normalizeOverrideCount(count, type);
+    if (type === 'gibberish') {
+        const raw = generateGibberish(usesIOSWordCountForOverrideType(type) ? normalizedCount * 6 : normalizedCount);
+        return isIOS ? formatIOSGibberishChallenge(raw) : raw;
+    }
+    if (usesIOSWordCountForOverrideType(type)) {
+        return generateRandomWordsByCount(normalizedCount);
+    }
+    return generateRandomWords(normalizedCount);
+}
+
 // Generate gibberish
 function generateGibberish(count) {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -12742,8 +12779,8 @@ function generateGibberish(count) {
 function normalizeOverrideCount(value, type = 'random-words') {
     const parsed = parseInt(value, 10);
     if (!Number.isFinite(parsed)) return DEFAULT_OVERRIDE_COUNT;
-    const maxChars = getMaxOverrideCharsForType(type);
-    return Math.min(maxChars, Math.max(MIN_OVERRIDE_CHARS, parsed));
+    const maxCount = getMaxOverrideCharsForType(type);
+    return Math.min(maxCount, Math.max(MIN_OVERRIDE_CHARS, parsed));
 }
 
 function normalizeCustomOverrideText(value) {
@@ -12759,8 +12796,33 @@ function getTypingCharsPerMinuteForType(type) {
 }
 
 function getMaxOverrideCharsForType(type) {
+    if (usesIOSWordCountForOverrideType(type)) return MAX_IOS_OVERRIDE_WORD_COUNT;
     if (type === 'gibberish') return 5000;
     return 7500; // random-words and custom: fixed max; estimated time uses CPM
+}
+
+function getOverrideGeneratedCharCount(type, count) {
+    const parsed = Number.parseInt(count, 10);
+    const normalizedCount = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+    if (!usesIOSWordCountForOverrideType(type)) return normalizedCount;
+
+    if (type === 'random-words') {
+        return getIOSRandomWordsCharCount(normalizedCount);
+    }
+    return normalizedCount * 6;
+}
+
+/** Letters-only workload for comparing override difficulties (e.g. override-all hardest). */
+function getDifficultyTypingCharCount(difficulty) {
+    if (!difficulty) return 0;
+    if (difficulty.type === 'custom') {
+        return typeof difficulty.customText === 'string' ? difficulty.customText.length : 0;
+    }
+    const parsed = Number(difficulty.count);
+    const count = difficulty.maxDifficulty === true
+        ? getMaxOverrideCharsForType(difficulty.type)
+        : (Number.isFinite(parsed) && parsed > 0 ? parsed : 50);
+    return getOverrideGeneratedCharCount(difficulty.type, count);
 }
 
 /** Preview text for override difficulty (random words, gibberish, or custom). Used in blocklist modal. */
@@ -12772,6 +12834,7 @@ function getOverridePreviewText(type, count, customText) {
     }
     const num = parseInt(count, 10);
     const countNum = Number.isFinite(num) && num >= 0 ? num : 10;
+    const generatedCharCount = getOverrideGeneratedCharCount(type, countNum);
 
     if (type !== lastOverridePreviewType) {
         lastOverridePreviewType = type;
@@ -12779,23 +12842,26 @@ function getOverridePreviewText(type, count, customText) {
     }
 
     if (type === 'random-words' || type === 'gibberish') {
-        if (countNum >= OVERRIDE_PREVIEW_TRUNCATE_AT) {
+        if (generatedCharCount >= OVERRIDE_PREVIEW_TRUNCATE_AT) {
             let frozen = overridePreviewFrozenByType[type];
             if (frozen != null) return frozen;
             const generated = type === 'gibberish'
-                ? generateGibberish(OVERRIDE_PREVIEW_TRUNCATE_AT)
-                : generateRandomWords(OVERRIDE_PREVIEW_TRUNCATE_AT);
-            frozen = type === 'gibberish' && isIOS
-                ? formatIOSGibberishChallenge(generated)
-                : generated.slice(0, OVERRIDE_PREVIEW_TRUNCATE_AT);
+                ? (isIOS ? formatIOSGibberishChallenge(generateGibberish(countNum * 6)) : generateGibberish(OVERRIDE_PREVIEW_TRUNCATE_AT))
+                : (usesIOSWordCountForOverrideType(type)
+                    ? generateRandomWordsByCount(countNum)
+                    : generateRandomWords(countNum));
+            frozen = generated.slice(0, OVERRIDE_PREVIEW_TRUNCATE_AT);
             overridePreviewFrozenByType[type] = frozen;
             return frozen;
         }
     }
 
     if (type === 'gibberish') {
-        const generated = generateGibberish(countNum);
+        const generated = generateGibberish(usesIOSWordCountForOverrideType(type) ? countNum * 6 : countNum);
         return isIOS ? formatIOSGibberishChallenge(generated) : generated;
+    }
+    if (usesIOSWordCountForOverrideType(type)) {
+        return generateRandomWordsByCount(countNum);
     }
     return generateRandomWords(countNum);
 }
@@ -12804,7 +12870,7 @@ function getOverridePreviewText(type, count, customText) {
 function getOverrideEstimatedMinutes(type, count, customText) {
     const charCount = type === 'custom'
         ? (typeof customText === 'string' ? customText : '').length
-        : (Number.isFinite(parseInt(count, 10)) ? parseInt(count, 10) : 0);
+        : getOverrideGeneratedCharCount(type, count);
     if (charCount <= 0) return 0;
     const cpm = getTypingCharsPerMinuteForType(type);
     return Math.ceil(charCount / cpm);
@@ -12836,6 +12902,15 @@ function updateOverridePreview() {
     previewEl.title = previewText;
 }
 
+function syncOverrideCountUi(type) {
+    const suffixEl = document.getElementById('override-total-characters-label');
+    const countInput = document.getElementById('override-count');
+    if (!suffixEl || !countInput) return;
+    const usesWords = usesIOSWordCountForOverrideType(type);
+    suffixEl.textContent = usesWords ? tSettings('totalWords') : tSettings('totalCharacters');
+    countInput.max = String(getMaxOverrideCharsForType(type));
+}
+
 function applyOverrideTypeUi(type) {
     const customTextArea = document.getElementById('custom-override-text');
     const overrideCountInput = document.getElementById('override-count');
@@ -12844,6 +12919,7 @@ function applyOverrideTypeUi(type) {
     const previewBlockEl = document.getElementById('override-preview-block');
     const maxDifficultyWrapEl = document.getElementById('override-max-difficulty-wrap');
     const maxChars = getMaxOverrideCharsForType(type);
+    syncOverrideCountUi(type);
     overrideCountInput.max = String(maxChars);
 
     if (type === 'custom') {
@@ -15847,6 +15923,7 @@ const SETTINGS_TRANSLATIONS = {
         overrideCustomText: 'Custom Text',
         overrideMaxDifficulty: 'Max difficulty',
         totalCharacters: 'total characters',
+        totalWords: 'total words',
         overridePreviewTimeLine: 'Takes ~{minutes} min{minuteSuffix} to type and will look something like:',
         color: 'Color',
         emoji: 'Emoji',
@@ -15908,8 +15985,12 @@ const SETTINGS_TRANSLATIONS = {
         /** Start/resume confirmation: friction description — placeholders {count},{charUnit},{minutes} */
         confirmOverrideRandomWordsFmt:
             'Type {count} {charUnit} (displayed as random words) exactly as shown (~{minutes} min).',
+        confirmOverrideRandomWordsIosFmt:
+            'Type {count} random {wordUnit} exactly as shown (~{minutes} min).',
         confirmOverrideGibberishLettersFmt:
             'Type {count} random {charUnit} (letters and numbers) exactly as shown (~{minutes} min).',
+        confirmOverrideGibberishWordsFmt:
+            'Type {count} random {wordUnit} (6 characters each) exactly as shown (~{minutes} min).',
         confirmOverrideGibberishShortFmt:
             'Type {count} random characters exactly as shown (~{minutes} min).',
         confirmOverrideCustomPhraseFmt:
@@ -16456,6 +16537,7 @@ const SETTINGS_TRANSLATIONS = {
         overrideCustomText: 'Egen tekst',
         overrideMaxDifficulty: 'Max sværhed',
         totalCharacters: 'tegn i alt',
+        totalWords: 'ord i alt',
         overridePreviewTimeLine: 'Tager cirka {minutes} {unit} at taste og ser nogenlunde sådan her ud:',
         color: 'Farve',
         emoji: 'Emoji',
@@ -16516,8 +16598,12 @@ const SETTINGS_TRANSLATIONS = {
         saveChangesOverrideNeed: 'For at stoppe dette skema skal du:',
         confirmOverrideRandomWordsFmt:
             'Skrive {count} {charUnit}, vist som tilfældige ord, præcis som der står (~{minutes} min).',
+        confirmOverrideRandomWordsIosFmt:
+            'Skrive {count} tilfældige {wordUnit} præcis som der står (~{minutes} min).',
         confirmOverrideGibberishLettersFmt:
             'Skrive {count} tilfældige tegn (bogstaver og tal), præcis som der står (~{minutes} min).',
+        confirmOverrideGibberishWordsFmt:
+            'Skrive {count} tilfældige {wordUnit} (6 tegn hver) præcis som der står (~{minutes} min).',
         confirmOverrideGibberishShortFmt:
             'Skrive {count} tilfældige tegn præcis som der står (~{minutes} min).',
         confirmOverrideCustomPhraseFmt:
@@ -16844,17 +16930,25 @@ function formatConfirmModalOverrideTypingLine({ type, count, estimatedMinutes, r
     const charUnitDa = 'tegn';
     const charUnitEn = count === 1 ? 'character' : 'characters';
     const charUnit = getSettingsLanguage() === 'da' ? charUnitDa : charUnitEn;
+    const wordUnitDa = count === 1 ? 'ord' : 'ord';
+    const wordUnitEn = count === 1 ? 'word' : 'words';
+    const wordUnit = getSettingsLanguage() === 'da' ? wordUnitDa : wordUnitEn;
 
     if (type === 'custom') {
         return tSettingsFmt('confirmOverrideCustomPhraseFmt', { count, minutes });
     }
     if (type === 'gibberish') {
+        if (usesIOSWordCountForOverrideType(type)) {
+            return tSettingsFmt('confirmOverrideGibberishWordsFmt', { count, wordUnit, minutes });
+        }
         if (resumeShortGibberish) {
             return tSettingsFmt('confirmOverrideGibberishShortFmt', { count, minutes });
         }
         return tSettingsFmt('confirmOverrideGibberishLettersFmt', { count, charUnit, minutes });
     }
-    return tSettingsFmt('confirmOverrideRandomWordsFmt', { count, charUnit, minutes });
+    return usesIOSWordCountForOverrideType(type)
+        ? tSettingsFmt('confirmOverrideRandomWordsIosFmt', { count, wordUnit, minutes })
+        : tSettingsFmt('confirmOverrideRandomWordsFmt', { count, charUnit, minutes });
 }
 
 /** Static copy on the migration / extension-setup overlay — call when language changes. */
@@ -18956,14 +19050,11 @@ function setupOverrideAll() {
             const hardestDifficulty = findHardestChallenge();
 
             // Generate challenge text based on hardest difficulty
-            if (hardestDifficulty.type === 'custom' && hardestDifficulty.customText) {
-                overrideAllChallengeText = hardestDifficulty.customText;
-            } else if (hardestDifficulty.type === 'gibberish') {
-                overrideAllChallengeText = generateGibberish(hardestDifficulty.count);
-                if (isIOS) overrideAllChallengeText = formatIOSGibberishChallenge(overrideAllChallengeText);
-            } else {
-                overrideAllChallengeText = generateRandomWords(hardestDifficulty.count);
-            }
+            overrideAllChallengeText = generateOverrideChallengeText(
+                hardestDifficulty.type,
+                hardestDifficulty.count,
+                hardestDifficulty.customText
+            );
 
             // Sanitize: remove linebreaks and collapse multiple spaces
             overrideAllChallengeText = overrideAllChallengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
@@ -19401,9 +19492,7 @@ function findHardestChallenge() {
     // Resolve effective count for maxDifficulty (handles single-block case
     // where compareDifficulties was never called)
     if (hardestDifficulty.maxDifficulty === true && hardestDifficulty.count === undefined) {
-        const MAX_CHARS_RANDOM_WORDS = 7500;
-        const MAX_CHARS_GIBBERISH = 5000;
-        const effectiveCount = hardestDifficulty.type === 'gibberish' ? MAX_CHARS_GIBBERISH : MAX_CHARS_RANDOM_WORDS;
+        const effectiveCount = getMaxOverrideCharsForType(hardestDifficulty.type);
         return { ...hardestDifficulty, count: effectiveCount };
     }
     return hardestDifficulty;
@@ -19414,21 +19503,6 @@ function compareDifficulties(a, b) {
     if (!a) return b;
     if (!b) return a;
 
-    const MAX_CHARS_RANDOM_WORDS = 7500;  // 250 * 30, match getMaxOverrideCharsForType
-    const MAX_CHARS_GIBBERISH = 5000;     // match getMaxOverrideCharsForType
-
-    const getEffectiveCount = (difficulty) => {
-        if (difficulty.type === 'custom' && typeof difficulty.customText === 'string') {
-            return difficulty.customText.length;
-        }
-        if (difficulty.maxDifficulty === true) {
-            if (difficulty.type === 'gibberish') return MAX_CHARS_GIBBERISH;
-            if (difficulty.type === 'random-words') return MAX_CHARS_RANDOM_WORDS;
-        }
-        const parsed = Number(difficulty.count);
-        return Number.isFinite(parsed) && parsed > 0 ? parsed : 50;
-    };
-
     const getTypeRank = (difficulty) => {
         if (difficulty.type === 'custom') return 3;
         if (difficulty.type === 'gibberish') return 2;
@@ -19436,8 +19510,8 @@ function compareDifficulties(a, b) {
         return 0;
     };
 
-    const aCount = getEffectiveCount(a);
-    const bCount = getEffectiveCount(b);
+    const aCount = getDifficultyTypingCharCount(a);
+    const bCount = getDifficultyTypingCharCount(b);
 
     let winner;
     if (bCount > aCount) winner = b;
@@ -19451,10 +19525,12 @@ function compareDifficulties(a, b) {
         else winner = a; // Equal, return a
     }
 
-    // Return with effective count resolved (so maxDifficulty is reflected in .count)
-    const winnerCount = getEffectiveCount(winner);
-    if (winner.count !== winnerCount) {
-        return { ...winner, count: winnerCount };
+    // Resolve stored count for generation when maxDifficulty (keep word counts on iOS)
+    if (winner.maxDifficulty === true) {
+        const genCount = getMaxOverrideCharsForType(winner.type);
+        if (winner.count !== genCount) {
+            return { ...winner, count: genCount };
+        }
     }
     return winner;
 }
