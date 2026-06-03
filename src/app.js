@@ -214,8 +214,8 @@ let pauseWordChallengeState = null;
 const MIN_OVERRIDE_CHARS = 5;
 const DEFAULT_OVERRIDE_COUNT = 10;
 const TARGET_MAX_OVERRIDE_MINUTES = 30;
-/** iOS random-words / gibberish: max word count (random-words: 5000 letters at max; gibberish: 6000). */
-const MAX_IOS_OVERRIDE_WORD_COUNT = 1000;
+/** iOS random-words / gibberish: max word count (random-words: 2500 letters at max; gibberish: 3000). */
+const MAX_IOS_OVERRIDE_WORD_COUNT = 500;
 /** When character count >= this, preview text is frozen (no more regeneration) for random words and gibberish. */
 const OVERRIDE_PREVIEW_TRUNCATE_AT = 50;
 /** Max length for blocklist display name (add/edit modal + persisted saves). */

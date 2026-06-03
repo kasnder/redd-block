@@ -21,7 +21,7 @@ User-facing changes for each release. Every app upgrade adds a new entry here.
   workload); the blocklist editor preview shows that format instead of one long
   string.
 - **iOS: override difficulty in words.** Random-words and gibberish difficulty
-  are set in **words** (max 1000), not characters. Random words are always five
+  are set in **words** (max 500), not characters. Random words are always five
   letters; time estimates and Stop-all “hardest challenge” selection compare
   letter workload (words × 5 or × 6) against custom text length. Desktop
   behavior is unchanged.
