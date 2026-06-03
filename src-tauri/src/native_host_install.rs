@@ -126,6 +126,170 @@ pub fn current_binary_path() -> Option<String> {
         .and_then(|p| p.to_str().map(String::from))
 }
 
+/// Microsoft Store (MSIX) installs live under `WindowsApps`, which
+/// browsers cannot spawn as a native-messaging host.
+#[cfg(target_os = "windows")]
+pub fn is_msix_packaged_exe_path(path: &std::path::Path) -> bool {
+    path.to_string_lossy()
+        .to_ascii_lowercase()
+        .contains("windowsapps")
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn is_msix_packaged_exe_path(_path: &std::path::Path) -> bool {
+    false
+}
+
+/// Path written into native-messaging manifests. MSIX builds stage a
+/// full copy of the install dir under `%LOCALAPPDATA%` (exe + DLLs).
+fn manifest_binary_path() -> std::io::Result<String> {
+    let source = std::env::current_exe().map_err(|e| {
+        std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+    })?;
+    #[cfg(target_os = "windows")]
+    {
+        if is_msix_packaged_exe_path(&source) {
+            return ensure_staged_native_host(&source);
+        }
+    }
+    source
+        .to_str()
+        .map(String::from)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "non-utf8 exe path"))
+}
+
+#[cfg(target_os = "windows")]
+const STAGED_NATIVE_HOST_EXE: &str = "redd-block.exe";
+
+#[cfg(target_os = "windows")]
+fn native_host_stage_dir() -> Option<PathBuf> {
+    let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from)?;
+    Some(
+        local
+            .join("ReDD Block")
+            .join("native-host"),
+    )
+}
+
+#[cfg(target_os = "windows")]
+fn copy_if_newer(src: &std::path::Path, dest: &std::path::Path) -> std::io::Result<()> {
+    let needs_copy = match (src.metadata(), dest.metadata()) {
+        (Ok(src_meta), Ok(dest_meta)) => {
+            src_meta.len() != dest_meta.len()
+                || src_meta.modified().ok() > dest_meta.modified().ok()
+        }
+        _ => true,
+    };
+    if needs_copy {
+        std::fs::copy(src, dest)?;
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn copy_dir_recursive(src: &std::path::Path, dest: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dest)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let target = dest.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&entry.path(), &target)?;
+        } else {
+            copy_if_newer(&entry.path(), &target)?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn sync_install_dir_to_stage(source_dir: &std::path::Path, dest_dir: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dest_dir)?;
+    let mut copied = 0usize;
+    for entry in std::fs::read_dir(source_dir)? {
+        let entry = entry?;
+        let ft = entry.file_type()?;
+        let dest = dest_dir.join(entry.file_name());
+        if ft.is_dir() {
+            if dest.exists() {
+                let _ = std::fs::remove_dir_all(&dest);
+            }
+            copy_dir_recursive(&entry.path(), &dest)?;
+            copied += 1;
+        } else if ft.is_file() {
+            copy_if_newer(&entry.path(), &dest)?;
+            copied += 1;
+        }
+    }
+    log::info!(
+        "native-host: staged {copied} item(s) from {} -> {}",
+        source_dir.display(),
+        dest_dir.display()
+    );
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn ensure_staged_native_host(source_exe: &std::path::Path) -> std::io::Result<String> {
+    let source_dir = source_exe.parent().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::Other, "exe has no parent dir")
+    })?;
+    let dest_dir = native_host_stage_dir().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::Other, "cannot resolve LOCALAPPDATA")
+    })?;
+    sync_install_dir_to_stage(source_dir, &dest_dir)?;
+    let dest_exe = dest_dir.join(STAGED_NATIVE_HOST_EXE);
+    if !dest_exe.exists() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("staged exe missing at {}", dest_exe.display()),
+        ));
+    }
+    dest_exe
+        .to_str()
+        .map(String::from)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "non-utf8 staged path"))
+}
+
+#[cfg(target_os = "windows")]
+fn remove_staged_native_host() {
+    if let Some(dir) = native_host_stage_dir() {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_manifest_path(browser: BrowserTarget) -> Option<PathBuf> {
+    let dir = browser.manifest_dir()?;
+    Some(dir.join(format!("{HOST_NAME}-{}.json", browser_slug(browser))))
+}
+
+/// `true` when the browser manifest exists, points at the expected host
+/// binary, and that binary is on disk.
+#[cfg(target_os = "windows")]
+pub fn native_host_is_current(browser: BrowserTarget) -> bool {
+    let Ok(expected) = manifest_binary_path() else {
+        return false;
+    };
+    if !std::path::Path::new(&expected).exists() {
+        return false;
+    }
+    let Some(manifest_path) = windows_manifest_path(browser) else {
+        return false;
+    };
+    let Ok(raw) = std::fs::read_to_string(manifest_path) else {
+        return false;
+    };
+    let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return false;
+    };
+    val.get("path").and_then(|p| p.as_str()) == Some(expected.as_str())
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn native_host_is_current(_browser: BrowserTarget) -> bool {
+    false
+}
+
 /// Install the native-messaging manifest for every supported browser.
 ///
 /// Marker-gated: if our own bookkeeping file says we already wrote
@@ -163,13 +327,35 @@ pub fn install() -> std::io::Result<()> {
     log::info!("tcc-probe: native_host_install::install() entered, binary={binary}");
 
     if startup_install_already_done_for(&binary) {
+        #[cfg(target_os = "windows")]
+        {
+            if let Ok(source) = std::env::current_exe() {
+                if is_msix_packaged_exe_path(&source) {
+                    if let Err(e) = ensure_staged_native_host(&source) {
+                        log::warn!("native-host: MSIX stage refresh failed: {e}");
+                    } else {
+                        let stale = install_targets()
+                            .iter()
+                            .any(|b| !native_host_is_current(*b));
+                        if stale {
+                            log::info!("native-host: refreshing stale MSIX manifests");
+                            let manifest_binary = manifest_binary_path()?;
+                            install_inner(&manifest_binary);
+                            mark_startup_install_done_for(&binary);
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
         log::info!(
             "tcc-probe: native_host_install::install() marker matches binary path, skipping (no cross-app touches)"
         );
         return Ok(());
     }
 
-    install_inner(&binary);
+    let manifest_binary = manifest_binary_path()?;
+    install_inner(&manifest_binary);
     mark_startup_install_done_for(&binary);
     log::info!("tcc-probe: native_host_install::install() exited (wrote manifests + dropped marker)");
     Ok(())
@@ -178,9 +364,7 @@ pub fn install() -> std::io::Result<()> {
 /// Install the native-messaging manifest for one browser. Used when the
 /// user opts into extension mode on macOS Chromium.
 pub fn install_native_host_for(browser: BrowserTarget) -> std::io::Result<()> {
-    let binary = current_binary_path().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::Other, "cannot resolve current exe")
-    })?;
+    let binary = manifest_binary_path()?;
     install_one(browser, &binary)
 }
 
@@ -270,7 +454,14 @@ pub fn firefox_native_host_is_current() -> bool {
 
 #[cfg(not(target_os = "macos"))]
 pub fn firefox_native_host_is_current() -> bool {
-    true
+    #[cfg(target_os = "windows")]
+    {
+        return native_host_is_current(BrowserTarget::Firefox);
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        true
+    }
 }
 
 /// Remove the native-messaging manifest for one browser.
@@ -294,7 +485,8 @@ pub fn install_force() -> std::io::Result<()> {
         std::io::Error::new(std::io::ErrorKind::Other, "cannot resolve current exe")
     })?;
     log::info!("tcc-probe: native_host_install::install_force() entered, binary={binary}");
-    install_inner(&binary);
+    let manifest_binary = manifest_binary_path()?;
+    install_inner(&manifest_binary);
     mark_startup_install_done_for(&binary);
     log::info!("tcc-probe: native_host_install::install_force() exited");
     Ok(())
@@ -334,6 +526,8 @@ pub fn uninstall() -> std::io::Result<()> {
             log::warn!("native-host uninstall for {browser:?} failed: {e}");
         }
     }
+    #[cfg(target_os = "windows")]
+    remove_staged_native_host();
     clear_startup_install_marker();
     Ok(())
 }

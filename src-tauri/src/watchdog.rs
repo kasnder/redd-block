@@ -27,7 +27,7 @@
 // task too. Real tamper-proofing requires kernel-mode protection,
 // which the migration deliberately moved away from.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::windows_process::hidden_command;
 
@@ -35,19 +35,35 @@ pub const TASK_NAME: &str = "ReDD Block Watchdog";
 const WRAPPER_CMD_FILENAME: &str = "redd-block-watchdog.cmd";
 const WRAPPER_VBS_FILENAME: &str = "redd-block-watchdog.vbs";
 
-fn install_dir() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
-    Some(exe.parent()?.to_path_buf())
+fn wrapper_dir(exe: &Path) -> Option<PathBuf> {
+    if crate::native_host_install::is_msix_packaged_exe_path(exe) {
+        let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from)?;
+        Some(local.join("ReDD Block").join("watchdog"))
+    } else {
+        exe.parent().map(|p| p.to_path_buf())
+    }
 }
 
-fn write_wrappers(exe_name: &str, dir: &PathBuf) -> std::io::Result<PathBuf> {
-    // %~dp0 expands to the directory of the .cmd, so the script is
-    // path-independent — survives a manual move of the install dir.
+fn write_wrappers(exe: &Path) -> std::io::Result<PathBuf> {
+    let dir = wrapper_dir(exe).ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::Other, "cannot resolve wrapper dir")
+    })?;
+    std::fs::create_dir_all(&dir)?;
+
+    let exe_name = exe
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("redd-block.exe");
+    let exe_path = exe.to_string_lossy().replace('"', "\"\"");
+
+    // Use an absolute exe path so wrappers work when stored outside the
+    // install dir (Microsoft Store / MSIX cannot write under WindowsApps).
     let cmd_body = format!(
         "@echo off\r\n\
          tasklist /FI \"IMAGENAME eq {exe}\" /NH | find /I \"{exe}\" >nul\r\n\
-         if errorlevel 1 start \"\" \"%~dp0{exe}\"\r\n",
-        exe = exe_name
+         if errorlevel 1 start \"\" \"{exe_path}\"\r\n",
+        exe = exe_name,
+        exe_path = exe_path,
     );
     std::fs::write(dir.join(WRAPPER_CMD_FILENAME), cmd_body)?;
 
@@ -80,25 +96,11 @@ pub fn register() {
             return;
         }
     };
-    let exe_name = match exe.file_name().and_then(|n| n.to_str()) {
-        Some(n) => n.to_string(),
-        None => {
-            log::warn!("watchdog: exe has no file name");
-            return;
-        }
-    };
-    let dir = match install_dir() {
-        Some(d) => d,
-        None => {
-            log::warn!("watchdog: cannot derive install dir");
-            return;
-        }
-    };
 
-    let vbs_path = match write_wrappers(&exe_name, &dir) {
+    let vbs_path = match write_wrappers(&exe) {
         Ok(p) => p,
         Err(e) => {
-            log::warn!("watchdog: failed to write wrappers under {}: {}", dir.display(), e);
+            log::warn!("watchdog: failed to write wrappers: {e}");
             return;
         }
     };
@@ -149,8 +151,10 @@ pub fn unregister() {
     let _ = hidden_command("schtasks")
         .args(["/Delete", "/TN", TASK_NAME, "/F"])
         .output();
-    if let Some(dir) = install_dir() {
-        let _ = std::fs::remove_file(dir.join(WRAPPER_CMD_FILENAME));
-        let _ = std::fs::remove_file(dir.join(WRAPPER_VBS_FILENAME));
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = wrapper_dir(&exe) {
+            let _ = std::fs::remove_file(dir.join(WRAPPER_CMD_FILENAME));
+            let _ = std::fs::remove_file(dir.join(WRAPPER_VBS_FILENAME));
+        }
     }
 }

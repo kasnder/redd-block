@@ -2,6 +2,14 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
+## v3.1.5
+
+- **Windows (Microsoft Store): website blocking fix.** Store installs now stage
+  the full native-host bundle (exe + DLLs) outside `WindowsApps` so browsers can
+  spawn it and receive block lists. Watchdog wrappers also install to
+  `%LOCALAPPDATA%` on MSIX builds.
+- **Version:** 3.1.5.
+
 ## v3.1.3
 
 - **Windows: uninstall from Settings.** Settings → Manage includes guidance

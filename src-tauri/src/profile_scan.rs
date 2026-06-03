@@ -224,22 +224,34 @@ pub fn scan_filter<F: Fn(&str) -> bool>(should_scan: F) -> ScanResult {
 
     ScanResult {
         firefox: if should_scan("firefox") {
-            scan_firefox().unwrap_or_else(|| empty("firefox"))
+            with_native_host_ready(
+                scan_firefox().unwrap_or_else(|| empty("firefox")),
+                crate::native_host_install::BrowserTarget::Firefox,
+            )
         } else {
             empty("firefox")
         },
         chrome: if should_scan("chrome") {
-            scan_chromium(ChromiumBrowser::Chrome).unwrap_or_else(|| empty("chrome"))
+            with_native_host_ready(
+                scan_chromium(ChromiumBrowser::Chrome).unwrap_or_else(|| empty("chrome")),
+                crate::native_host_install::BrowserTarget::Chrome,
+            )
         } else {
             empty("chrome")
         },
         brave: if should_scan("brave") {
-            scan_chromium(ChromiumBrowser::Brave).unwrap_or_else(|| empty("brave"))
+            with_native_host_ready(
+                scan_chromium(ChromiumBrowser::Brave).unwrap_or_else(|| empty("brave")),
+                crate::native_host_install::BrowserTarget::Brave,
+            )
         } else {
             empty("brave")
         },
         edge: if should_scan("edge") {
-            scan_chromium(ChromiumBrowser::Edge).unwrap_or_else(|| empty("edge"))
+            with_native_host_ready(
+                scan_chromium(ChromiumBrowser::Edge).unwrap_or_else(|| empty("edge")),
+                crate::native_host_install::BrowserTarget::Edge,
+            )
         } else {
             empty("edge")
         },
@@ -253,6 +265,23 @@ pub fn scan_filter<F: Fn(&str) -> bool>(should_scan: F) -> ScanResult {
 
 fn empty(_label: &str) -> BrowserStatus {
     BrowserStatus::default()
+}
+
+#[cfg(target_os = "windows")]
+fn with_native_host_ready(
+    mut status: BrowserStatus,
+    browser: crate::native_host_install::BrowserTarget,
+) -> BrowserStatus {
+    status.native_host_ready = crate::native_host_install::native_host_is_current(browser);
+    status
+}
+
+#[cfg(not(target_os = "windows"))]
+fn with_native_host_ready(
+    status: BrowserStatus,
+    _browser: crate::native_host_install::BrowserTarget,
+) -> BrowserStatus {
+    status
 }
 
 fn firefox_root() -> Option<PathBuf> {

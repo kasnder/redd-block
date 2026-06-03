@@ -27,3 +27,4 @@ $config = @{
 $config | ConvertTo-Json -Depth 4 | Set-Content -Path $outFile -Encoding utf8
 Write-Host "  Signing config: $outFile" -ForegroundColor Gray
 Write-Host "  Sign script: $signBundle" -ForegroundColor Gray
+exit 0
