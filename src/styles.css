@@ -8133,10 +8133,11 @@ body.dark-mode .settings-top-btn {
     opacity: 1;
 }
 
-/* Hide desktop-only settings sections on iOS */
+/* Hide desktop-only settings sections on iOS (#settings-modal .settings-section
+   sets display:flex and would otherwise win over body.ios .desktop-only). */
 body.ios #settings-enforcement-panel,
-body.ios .settings-help-section,
-body.ios .desktop-only {
+body.ios #settings-modal .settings-section.desktop-only,
+body.ios #settings-modal .settings-help-section {
     display: none;
 }
 
