@@ -2000,494 +2000,710 @@ body.dark-mode .app-blocking-closedown-banner {
     }
 }
 
-/* iPad (portrait + landscape): scale modals — add/edit, pause, start confirm,
-   override, override all, and other .modal-overlay dialogs. */
+/* iPad (portrait + landscape): modal UI — content scaled ×1.2 from base sizes,
+   then shells/padding/gaps use the same factor (--ipad-s). */
 @media (min-width: 769px) and (max-width: 1024px) {
+    body.ios:not(.ios-phone) {
+        --ipad-s: 1.2;
+    }
+
+    /* --- Shells (base layout × --ipad-s; height grows with content) --- */
     body.ios:not(.ios-phone) .modal-overlay {
-        padding: 24px;
+        padding: calc(20px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-content {
-        padding: 28px;
-        border-radius: 18px;
-        max-width: 460px;
+        padding: calc(24px * var(--ipad-s));
+        border-radius: calc(16px * var(--ipad-s));
+        max-width: calc(400px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) #blocklist-modal .modal-content {
-        max-width: 560px;
+        max-width: calc(480px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) #settings-modal .modal-content {
+        max-width: calc(520px * var(--ipad-s));
+        --settings-control-width: calc(140px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-content.start-confirm-modal,
     body.ios:not(.ios-phone) #start-block-confirm-modal .modal-content,
     body.ios:not(.ios-phone) #start-schedule-confirm-modal .modal-content {
-        max-width: 500px;
+        max-width: calc(420px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-content.pause-modal,
     body.ios:not(.ios-phone) #pause-modal .modal-content {
-        max-width: 480px;
+        max-width: calc(410px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) #override-modal .modal-content,
     body.ios:not(.ios-phone) #override-all-modal .modal-content {
-        max-width: 480px;
+        max-width: calc(400px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .app-picker-modal-content {
-        max-width: 520px;
-    }
-
-    body.ios:not(.ios-phone) .modal-content h3,
-    body.ios:not(.ios-phone) .start-confirm-modal h3 {
-        font-size: 26px;
-        margin-bottom: 14px;
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay p {
-        font-size: 16px;
-        line-height: 1.5;
+        max-width: calc(420px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-buttons {
-        gap: 10px;
-        margin-top: 24px;
+        gap: calc(8px * var(--ipad-s));
+        margin-top: calc(20px * var(--ipad-s));
+    }
+
+    /* --- Typography & primary controls (base × --ipad-s) --- */
+    body.ios:not(.ios-phone) .modal-content h3 {
+        font-size: calc(22px * var(--ipad-s));
+        margin-bottom: calc(12px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .start-confirm-modal h3 {
+        font-size: calc(20px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .app-picker-modal-content h3 {
+        font-size: calc(18px * var(--ipad-s));
+        margin-bottom: calc(12px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay p {
+        font-size: calc(15px * var(--ipad-s));
+        line-height: 1.5;
     }
 
     body.ios:not(.ios-phone) .modal-btn {
-        padding: 12px 18px;
-        border-radius: 10px;
-        font-size: 17px;
+        padding: calc(10px * var(--ipad-s)) calc(16px * var(--ipad-s));
+        border-radius: calc(8px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .btn-spinner {
-        width: 16px;
-        height: 16px;
-        margin-right: 10px;
+        width: calc(14px * var(--ipad-s));
+        height: calc(14px * var(--ipad-s));
+        margin-right: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .warning-banner {
-        padding: 10px 14px;
-        font-size: 16px;
-        gap: 10px;
-        border-radius: 8px;
-        margin-bottom: 12px;
+        padding: calc(8px * var(--ipad-s)) calc(12px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
+        gap: calc(8px * var(--ipad-s));
+        border-radius: calc(6px * var(--ipad-s));
+        margin-bottom: calc(16px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .warning-banner svg {
-        width: 18px;
-        height: 18px;
+        width: calc(16px * var(--ipad-s));
+        height: calc(16px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .form-group {
-        margin-bottom: 18px;
+        margin-bottom: calc(16px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .form-group > label {
-        font-size: 14px;
-        margin-bottom: 8px;
+        font-size: calc(13px * var(--ipad-s));
+        margin-bottom: calc(6px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .form-input {
-        padding: 12px 14px;
-        font-size: 16px;
-        border-radius: 10px;
+        padding: calc(10px * var(--ipad-s)) calc(12px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
+        border-radius: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .form-input.small {
-        width: 88px;
+        width: calc(80px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay #override-count-wrapper .form-input.small {
-        width: 3.75rem;
-        min-width: 3.75rem;
-        max-width: 3.75rem;
-        flex: 0 0 3.75rem;
-        padding-left: 10px;
-        padding-right: 10px;
-        font-size: 16px;
+        width: calc(3.25rem * var(--ipad-s));
+        min-width: calc(3.25rem * var(--ipad-s));
+        max-width: calc(3.25rem * var(--ipad-s));
+        flex: 0 0 calc(3.25rem * var(--ipad-s));
+        padding-left: calc(8px * var(--ipad-s));
+        padding-right: calc(8px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .input-with-suffix {
-        gap: 10px;
+        gap: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .input-suffix {
-        font-size: 16px;
+        font-size: calc(15px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .form-select {
-        padding: 12px 40px 12px 14px;
-        font-size: 16px;
-        border-radius: 10px;
-        background-size: 18px;
-        background-position: right 12px center;
+        padding: calc(10px * var(--ipad-s)) calc(36px * var(--ipad-s)) calc(10px * var(--ipad-s)) calc(12px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
+        border-radius: calc(8px * var(--ipad-s));
+        background-size: calc(16px * var(--ipad-s));
+        background-position: right calc(10px * var(--ipad-s)) center;
     }
 
     body.ios:not(.ios-phone) .modal-overlay .form-textarea {
-        padding: 12px 14px;
-        font-size: 16px;
-        min-height: 96px;
-        border-radius: 10px;
+        padding: calc(10px * var(--ipad-s)) calc(12px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
+        min-height: calc(80px * var(--ipad-s));
+        border-radius: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .form-hint {
-        font-size: 14px;
-        margin-top: 6px;
+        font-size: calc(13px * var(--ipad-s));
+        margin-top: calc(4px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .input-error-msg {
-        font-size: 14px;
-        margin-top: 8px;
+        font-size: calc(13px * var(--ipad-s));
+        margin-top: calc(6px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .info-icon {
-        width: 18px;
-        height: 18px;
+        width: calc(16px * var(--ipad-s));
+        height: calc(16px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .info-tooltip {
-        font-size: 14px;
-        padding: 10px 14px;
+        font-size: calc(13px * var(--ipad-s));
+        padding: calc(8px * var(--ipad-s)) calc(12px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .tags-input-container {
-        padding: 8px;
-        gap: 8px;
-        min-height: 52px;
-        border-radius: 10px;
+        padding: calc(6px * var(--ipad-s));
+        gap: calc(6px * var(--ipad-s));
+        min-height: calc(44px * var(--ipad-s));
+        border-radius: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .tags-input-container .form-input {
-        padding: 6px 8px;
-        font-size: 16px;
-        min-width: 140px;
+        padding: calc(4px * var(--ipad-s)) calc(6px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
+        min-width: calc(120px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .tags-container {
-        gap: 6px;
+        gap: calc(4px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .tag {
-        gap: 6px;
-        padding: 6px 10px;
-        font-size: 14px;
-        border-radius: 6px;
+        gap: calc(4px * var(--ipad-s));
+        padding: calc(4px * var(--ipad-s)) calc(8px * var(--ipad-s));
+        font-size: calc(13px * var(--ipad-s));
+        border-radius: calc(4px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .tag-remove {
-        font-size: 17px;
+        font-size: calc(15px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .browse-btn {
-        padding: 8px 12px;
-        border-radius: 8px;
+        padding: calc(6px * var(--ipad-s)) calc(8px * var(--ipad-s));
+        border-radius: calc(6px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay #blocklist-modal .tags-input-container > .input-with-button {
-        gap: 8px;
+        gap: calc(6px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay #blocklist-modal .tags-input-container .browse-btn {
-        padding: 12px 14px;
-        gap: 10px;
+        padding: calc(10px * var(--ipad-s)) calc(12px * var(--ipad-s));
+        gap: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay #blocklist-modal .tags-input-container .browse-btn-caption {
-        font-size: 15px;
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .websites-import-menu {
-        min-width: 220px;
-        padding: 6px;
-        border-radius: 10px;
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .websites-import-menu-item {
-        gap: 10px;
-        padding: 8px 12px;
-        font-size: 15px;
-        border-radius: 8px;
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .websites-import-menu-item svg {
-        width: 16px;
-        height: 16px;
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .websites-import-menu-section-label {
-        font-size: 12px;
-        padding: 8px 12px 4px;
+        font-size: calc(13px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .color-swatches {
-        gap: 10px;
+        gap: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .color-swatches .color-swatch {
-        width: 32px;
-        height: 32px;
-        border-radius: 8px;
+        width: calc(28px * var(--ipad-s));
+        height: calc(28px * var(--ipad-s));
+        border-radius: calc(6px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .emoji-swatches {
-        gap: 10px;
+        gap: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .emoji-swatch {
-        width: 32px;
-        height: 32px;
-        font-size: 19px;
-        border-radius: 8px;
+        width: calc(28px * var(--ipad-s));
+        height: calc(28px * var(--ipad-s));
+        font-size: calc(17px * var(--ipad-s));
+        border-radius: calc(6px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .custom-emoji-swatch .custom-icon {
-        font-size: 19px;
+        font-size: calc(17px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .emoji-picker-popover emoji-picker {
-        --emoji-size: 1.35rem;
-        --category-emoji-size: 1.15rem;
-        height: 320px;
+        --emoji-size: calc(1.2rem * var(--ipad-s));
+        --category-emoji-size: calc(1rem * var(--ipad-s));
+        height: calc(280px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-type-row {
-        gap: 18px;
-        margin-bottom: 10px;
+        gap: calc(16px * var(--ipad-s));
+        margin-bottom: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-type-row .override-type-select {
-        max-width: 220px;
+        max-width: calc(200px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .max-difficulty-checkbox-option {
-        gap: 8px;
-        font-size: 16px;
+        gap: calc(6px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .max-difficulty-checkbox-option span {
-        font-size: 16px;
+        font-size: calc(15px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .max-difficulty-checkbox-option input[type="checkbox"] {
-        width: 22px;
-        height: 22px;
+        width: calc(20px * var(--ipad-s));
+        height: calc(20px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-preview-block {
-        margin-top: 12px;
+        margin-top: calc(10px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-preview-time-line {
-        font-size: 15px;
-        margin-bottom: 8px;
+        font-size: calc(14px * var(--ipad-s));
+        margin-bottom: calc(6px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-preview-text {
-        padding: 12px 14px;
-        font-size: 16px;
-        border-radius: 10px;
+        padding: calc(10px * var(--ipad-s)) calc(12px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
+        border-radius: calc(8px * var(--ipad-s));
     }
 
     /* Override / pause challenge */
     body.ios:not(.ios-phone) .modal-overlay .override-summary {
-        font-size: 16px;
-        margin-bottom: 18px;
+        font-size: calc(15px * var(--ipad-s));
+        margin-bottom: calc(16px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-text {
-        padding: 18px;
-        font-size: 16px;
-        line-height: 1.65;
-        margin: 18px 0;
-        max-height: 140px;
-        border-radius: 10px;
+        padding: calc(16px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
+        line-height: 1.6;
+        margin: calc(16px * var(--ipad-s)) 0;
+        max-height: calc(120px * var(--ipad-s));
+        border-radius: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-current-word {
-        padding: 16px 18px;
-        margin: -2px 0 18px;
-        font-size: 22px;
-        border-radius: 12px;
+        padding: calc(14px * var(--ipad-s)) calc(16px * var(--ipad-s));
+        margin: calc(-4px * var(--ipad-s)) 0 calc(16px * var(--ipad-s));
+        font-size: calc(20px * var(--ipad-s));
+        border-radius: calc(10px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-word-progress {
-        margin: -2px 0 10px;
-        font-size: 16px;
+        margin: calc(-4px * var(--ipad-s)) 0 calc(8px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-input {
-        padding: 14px;
-        font-size: 16px;
-        min-height: 96px;
-        border-radius: 10px;
+        padding: calc(12px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
+        min-height: calc(80px * var(--ipad-s));
+        border-radius: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-word-input {
         min-height: 0;
-        height: 54px;
+        height: calc(48px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-progress {
-        height: 5px;
-        margin-top: 10px;
-        border-radius: 3px;
+        height: calc(4px * var(--ipad-s));
+        margin-top: calc(8px * var(--ipad-s));
+        border-radius: calc(2px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-all-warning {
-        padding: 14px 16px;
-        margin-bottom: 18px;
-        border-radius: 10px;
+        padding: calc(12px * var(--ipad-s)) calc(14px * var(--ipad-s));
+        margin-bottom: calc(16px * var(--ipad-s));
+        border-radius: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-all-warning p {
-        font-size: 16px;
+        font-size: calc(15px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-all-warning p:first-child {
-        margin-bottom: 10px;
+        margin-bottom: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-all-subline {
-        font-size: 16px;
-        margin-bottom: 10px;
+        font-size: calc(15px * var(--ipad-s));
+        margin-bottom: calc(8px * var(--ipad-s));
     }
 
     /* Start / schedule confirm */
     body.ios:not(.ios-phone) .modal-overlay .block-details {
-        margin-bottom: 18px;
+        margin-bottom: calc(16px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .block-detail-name {
-        font-size: 19px;
-        margin-bottom: 14px;
+        font-size: calc(17px * var(--ipad-s));
+        margin-bottom: calc(12px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .block-detail-row {
-        gap: 6px;
-        margin-bottom: 8px;
-        font-size: 16px;
+        gap: calc(4px * var(--ipad-s));
+        margin-bottom: calc(6px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .show-all-btn {
-        font-size: 14px;
+        font-size: calc(13px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .schedule-summary {
-        margin-top: 14px;
-        padding-top: 14px;
+        margin-top: calc(12px * var(--ipad-s));
+        padding-top: calc(12px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .edit-schedule-notice {
-        margin-bottom: 16px;
-        font-size: 16px;
+        margin-bottom: calc(14px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .schedule-summary-header {
-        font-size: 16px;
-        margin-bottom: 10px;
+        font-size: calc(15px * var(--ipad-s));
+        margin-bottom: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .schedule-segment-row {
-        gap: 10px;
-        margin-bottom: 8px;
-        font-size: 16px;
+        gap: calc(8px * var(--ipad-s));
+        margin-bottom: calc(6px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .schedule-segment-row .segment-time {
-        min-width: 110px;
+        min-width: calc(100px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-info-box {
-        padding: 14px 16px;
-        border-radius: 10px;
-        margin-bottom: 10px;
+        padding: calc(12px * var(--ipad-s)) calc(14px * var(--ipad-s));
+        border-radius: calc(8px * var(--ipad-s));
+        margin-bottom: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-info-header {
-        gap: 10px;
-        font-size: 16px;
-        margin-bottom: 10px;
+        gap: calc(8px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
+        margin-bottom: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-info-header svg {
-        width: 18px;
-        height: 18px;
+        width: calc(16px * var(--ipad-s));
+        height: calc(16px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-info-box p {
-        font-size: 16px;
+        font-size: calc(15px * var(--ipad-s));
     }
 
     /* Pause modal duration */
     body.ios:not(.ios-phone) .modal-overlay .pause-remaining-info {
-        font-size: 16px;
-        margin-bottom: 20px;
+        font-size: calc(15px * var(--ipad-s));
+        margin-bottom: calc(18px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .pause-duration-section {
-        margin-bottom: 18px;
+        margin-bottom: calc(16px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .pause-duration-row {
-        gap: 18px;
+        gap: calc(16px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .pause-duration-col > .time-label {
-        margin-bottom: 8px;
-        font-size: 14px;
+        margin-bottom: calc(6px * var(--ipad-s));
+        font-size: calc(13px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .pause-duration-inputs,
     body.ios:not(.ios-phone) .modal-overlay .pause-duration-col > .time-picker-row {
-        min-height: 42px;
+        min-height: calc(36px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .pause-duration-section .pause-time-input {
-        width: 40px;
-        height: 42px;
-        font-size: 19px;
-        border-radius: 10px;
+        width: calc(34px * var(--ipad-s));
+        height: calc(36px * var(--ipad-s));
+        font-size: calc(17px * var(--ipad-s));
+        border-radius: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .pause-duration-section .time-part {
-        width: 40px;
-        min-width: 40px;
-        height: 42px;
-        font-size: 19px;
-        border-radius: 10px;
+        width: calc(34px * var(--ipad-s));
+        min-width: calc(34px * var(--ipad-s));
+        height: calc(36px * var(--ipad-s));
+        font-size: calc(17px * var(--ipad-s));
+        border-radius: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .pause-duration-section .time-colon {
-        font-size: 19px;
-        line-height: 42px;
+        font-size: calc(17px * var(--ipad-s));
+        line-height: calc(36px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .pause-time-unit {
-        font-size: 16px;
+        font-size: calc(15px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .pause-arrow svg {
-        width: 20px;
-        height: 20px;
+        width: calc(18px * var(--ipad-s));
+        height: calc(18px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .next-day-badge {
-        padding: 5px 10px;
-        font-size: 12px;
+        padding: calc(4px * var(--ipad-s)) calc(8px * var(--ipad-s));
+        font-size: calc(11px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .time-popover {
-        border-radius: 10px;
+        border-radius: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .popover-option {
-        padding: 10px 14px;
-        font-size: 16px;
-        min-width: 52px;
+        padding: calc(8px * var(--ipad-s)) calc(12px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
+        min-width: calc(48px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .app-picker-modal-content h3 {
-        font-size: 26px;
+    /* Settings rows & submodals (language / theme dropdowns) */
+    body.ios:not(.ios-phone) .modal-overlay .settings-modal-header {
+        gap: calc(12px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .settings-section-heading {
+        font-size: calc(11px * var(--ipad-s));
+        padding: 0 calc(2px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .settings-row {
+        gap: calc(12px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .settings-row-copy {
+        gap: calc(2px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .settings-row-label {
+        font-size: calc(15px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .settings-row-hint {
+        font-size: calc(13px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .settings-section-grid {
+        column-gap: calc(12px * var(--ipad-s));
+        row-gap: calc(10px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .language-picker-trigger {
+        gap: calc(8px * var(--ipad-s));
+        padding: calc(8px * var(--ipad-s)) calc(12px * var(--ipad-s));
+        border-radius: calc(8px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .language-picker-flag-wrap {
+        width: calc(22px * var(--ipad-s));
+        height: calc(14px * var(--ipad-s));
+        border-radius: calc(3px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .language-picker-chevron {
+        width: calc(16px * var(--ipad-s));
+        height: calc(16px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .language-picker-dropdown {
+        top: calc(100% + 6px * var(--ipad-s));
+        min-width: max(100%, calc(12.5rem * var(--ipad-s)));
+        padding: calc(12px * var(--ipad-s)) calc(12px * var(--ipad-s)) calc(10px * var(--ipad-s));
+        border-radius: calc(12px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .language-picker-section-label {
+        font-size: calc(12px * var(--ipad-s));
+        margin-bottom: calc(8px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .language-picker-option {
+        gap: calc(10px * var(--ipad-s));
+        padding: calc(8px * var(--ipad-s)) calc(10px * var(--ipad-s));
+        border-radius: calc(8px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .language-picker-divider {
+        margin: calc(12px * var(--ipad-s)) 0 calc(10px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay #theme-select.settings-select,
+    body.ios:not(.ios-phone) .modal-overlay .settings-select {
+        padding: calc(8px * var(--ipad-s)) calc(38px * var(--ipad-s)) calc(8px * var(--ipad-s)) calc(42px * var(--ipad-s));
+        border-radius: calc(8px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
+        background-size: calc(16px * var(--ipad-s));
+        background-position: right calc(12px * var(--ipad-s)) center;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .settings-help-btn {
+        padding: calc(14px * var(--ipad-s)) calc(10px * var(--ipad-s));
+        border-radius: calc(10px * var(--ipad-s));
+        font-size: calc(13px * var(--ipad-s));
+        gap: calc(8px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .settings-help-btn svg {
+        width: calc(18px * var(--ipad-s));
+        height: calc(18px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .settings-override-all-btn,
+    body.ios:not(.ios-phone) .modal-overlay .uninstall-app-btn {
+        padding: calc(8px * var(--ipad-s)) calc(12px * var(--ipad-s));
+        border-radius: calc(8px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
+        gap: calc(6px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay #settings-modal .settings-blocklists-io-btn {
+        padding: calc(6px * var(--ipad-s)) calc(10px * var(--ipad-s));
+        border-radius: calc(8px * var(--ipad-s));
+        font-size: calc(13px * var(--ipad-s));
+        gap: calc(4px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay #settings-modal .settings-blocklists-io-btn svg {
+        width: calc(13px * var(--ipad-s));
+        height: calc(13px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .settings-blocklists-io-btns {
+        gap: calc(6px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .settings-help-actions {
+        gap: calc(8px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .settings-feedback-footer,
+    body.ios:not(.ios-phone) .modal-overlay #settings-modal .settings-feedback-footer {
+        gap: calc(10px * var(--ipad-s));
+        margin-top: calc(16px * var(--ipad-s));
+        padding: calc(12px * var(--ipad-s)) calc(14px * var(--ipad-s));
+        border-radius: calc(10px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .settings-feedback-text {
+        font-size: calc(14px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .settings-feedback-icon {
+        width: calc(16px * var(--ipad-s));
+        height: calc(16px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .settings-current-version {
+        font-size: calc(13px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .settings-advanced-toggle {
+        gap: calc(6px * var(--ipad-s));
+        padding: calc(4px * var(--ipad-s)) 0 calc(12px * var(--ipad-s));
+        font-size: calc(15px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .settings-advanced-toggle .chevron-icon {
+        width: calc(16px * var(--ipad-s));
+        height: calc(16px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .enforcement-switch {
+        width: calc(44px * var(--ipad-s));
+        height: calc(24px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .enforcement-slider {
+        border-radius: calc(24px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .enforcement-slider::before {
+        width: calc(20px * var(--ipad-s));
+        height: calc(20px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .enforcement-switch input:checked + .enforcement-slider::before {
+        transform: translateX(calc(20px * var(--ipad-s)));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .enforcement-switch-tooltip {
+        bottom: calc(100% + 8px * var(--ipad-s));
+        width: min(calc(240px * var(--ipad-s)), 70vw);
+        padding: calc(8px * var(--ipad-s)) calc(10px * var(--ipad-s));
+        border-radius: calc(6px * var(--ipad-s));
+        font-size: calc(12px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .websites-import-menu {
+        min-width: calc(200px * var(--ipad-s));
+        padding: calc(4px * var(--ipad-s));
+        border-radius: calc(8px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .websites-import-menu-item {
+        gap: calc(8px * var(--ipad-s));
+        padding: calc(6px * var(--ipad-s)) calc(10px * var(--ipad-s));
+        font-size: calc(13px * var(--ipad-s));
+        border-radius: calc(6px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .websites-import-menu-item svg {
+        width: calc(14px * var(--ipad-s));
+        height: calc(14px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .websites-import-menu-section-label {
+        font-size: calc(11px * var(--ipad-s));
+        padding: calc(6px * var(--ipad-s)) calc(10px * var(--ipad-s)) calc(2px * var(--ipad-s));
+    }
+
+    /* Blocklist card ellipsis menu (duplicate / delete) */
+    body.ios:not(.ios-phone) .main-content .blocklist-menu {
+        right: calc(42px * var(--ipad-s));
+        min-width: calc(120px * var(--ipad-s));
+        padding: calc(4px * var(--ipad-s));
+        border-radius: calc(8px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .main-content .blocklist-menu-item {
+        gap: calc(8px * var(--ipad-s));
+        padding: calc(8px * var(--ipad-s)) calc(10px * var(--ipad-s));
+        font-size: calc(13px * var(--ipad-s));
+        border-radius: calc(6px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .main-content .blocklist-menu-item svg {
+        width: calc(14px * var(--ipad-s));
+        height: calc(14px * var(--ipad-s));
+        flex-shrink: 0;
     }
 }
 
