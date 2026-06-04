@@ -2,6 +2,11 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
+## v3.1.6
+
+- **Desktop:** bug fixes and styling improvements
+- **Version:** 3.1.6 (macOS and Windows; iOS unchanged).
+
 ## v3.1.5
 
 - **Windows (Microsoft Store): website blocking fix.** Store installs now stage
