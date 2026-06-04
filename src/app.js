@@ -17879,24 +17879,32 @@ function getEffectiveViewportWidth() {
     return viewportWidth > 0 ? viewportWidth / zoom : viewportWidth;
 }
 
-/** Mirror responsive layout tiers when UI zoom is above 100% (zoom ignores @media queries). */
+/** Mirror responsive layout tiers when UI zoom is above 100% (zoom ignores @media queries). iOS only. */
 function syncUiZoomResponsiveLayout() {
     const zoom = getActiveUiZoomScale();
     document.documentElement.style.setProperty('--ui-zoom', String(zoom));
 
-    const effVp = getEffectiveViewportWidth();
-    const ipadPortraitStack = usesStackSettingsPlacement()
-        && document.body.classList.contains('ios')
-        && !document.body.classList.contains('ios-phone');
-    const cramped = effVp > UI_ZOOM_LAYOUT_STACK_MAX
-        && effVp <= UI_ZOOM_LAYOUT_CRAMPED_MAX
-        && !ipadPortraitStack;
+    if (isIOS) {
+        const effVp = getEffectiveViewportWidth();
+        const ipadPortraitStack = usesStackSettingsPlacement()
+            && !document.body.classList.contains('ios-phone');
+        const cramped = effVp > UI_ZOOM_LAYOUT_STACK_MAX
+            && effVp <= UI_ZOOM_LAYOUT_CRAMPED_MAX
+            && !ipadPortraitStack;
 
-    document.body.classList.toggle('ui-zoom-tier-stack', effVp > 0 && effVp <= UI_ZOOM_LAYOUT_STACK_MAX);
-    document.body.classList.toggle('ui-zoom-tier-cramped', cramped);
-    document.body.classList.toggle('ui-zoom-tier-narrow', effVp > 0 && effVp <= UI_ZOOM_LAYOUT_NARROW_MAX);
+        document.body.classList.toggle('ui-zoom-tier-stack', effVp > 0 && effVp <= UI_ZOOM_LAYOUT_STACK_MAX);
+        document.body.classList.toggle('ui-zoom-tier-cramped', cramped);
+        document.body.classList.toggle('ui-zoom-tier-narrow', effVp > 0 && effVp <= UI_ZOOM_LAYOUT_NARROW_MAX);
 
-    syncSchedulerModeTabLabelMode();
+        syncSchedulerModeTabLabelMode();
+    } else {
+        document.body.classList.remove(
+            'ui-zoom-tier-stack',
+            'ui-zoom-tier-cramped',
+            'ui-zoom-tier-narrow',
+            'ui-zoom-sched-tabs-icons',
+        );
+    }
 
     syncZoomControlPlacement();
     syncIosScheduleDayLabelsViewportMode();
@@ -17942,8 +17950,10 @@ function syncSchedulerModeTabLabelMode() {
     document.body.classList.toggle('ui-zoom-sched-tabs-icons', iconOnly);
 }
 
-/** Keep the single zoom control beside whichever settings button is visible for this layout. */
+/** iOS only: keep the header zoom control beside whichever settings button is visible. */
 function syncZoomControlPlacement() {
+    if (!isIOS) return;
+
     const zoom = document.getElementById('header-zoom-control');
     const stackToolbar = document.getElementById('settings-toolbar-stack');
     const schedToolbar = document.getElementById('settings-toolbar-scheduler');
@@ -18032,7 +18042,7 @@ function syncFooterZoomControl(scale) {
 }
 
 function setupFooterZoomControl() {
-    document.querySelectorAll('.header-zoom-control').forEach((control) => {
+    document.querySelectorAll('.header-zoom-control, .footer-zoom-control').forEach((control) => {
         if (control.dataset.bound === '1') return;
         control.dataset.bound = '1';
         control.querySelector('.zoom-out-btn')?.addEventListener('click', () => zoomUiOut());
