@@ -69,9 +69,13 @@ pub fn is_native_host_invocation() -> bool {
 
 /// Entry point. Blocks until stdin closes.
 pub fn run() -> ! {
+    #[cfg(target_os = "windows")]
+    crate::windows_process::set_native_host_process_directory();
+
     log_to_file(&format!(
-        "spawned pid={} argv={:?}",
+        "spawned pid={} exe={:?} argv={:?}",
         std::process::id(),
+        std::env::current_exe().ok(),
         std::env::args().collect::<Vec<_>>()
     ));
 
@@ -187,6 +191,11 @@ fn send_payload(domains: &[String], blocks: &[BlockInfo]) {
         std::process::exit(0);
     }
     let _ = lock.flush();
+    log_to_file(&format!(
+        "sent blocklist ({} domains, {} blocks)",
+        domains.len(),
+        blocks.len()
+    ));
 }
 
 fn spawn_file_watcher(path: &std::path::Path, tx: mpsc::Sender<HostEvent>) {

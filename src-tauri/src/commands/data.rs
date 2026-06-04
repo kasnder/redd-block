@@ -273,6 +273,22 @@ pub fn get_app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
+/// True when this process is running from a Microsoft Store (MSIX) package.
+/// Store users receive updates via the Store, not reddfocus.org installers.
+#[tauri::command]
+pub fn is_microsoft_store_package() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        std::env::current_exe()
+            .map(|p| crate::native_host_install::is_msix_packaged_exe_path(&p))
+            .unwrap_or(false)
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        false
+    }
+}
+
 /// Check for data files from previous per-user locations (migration sources).
 ///
 /// Returns the path to the most recently modified data file found in any of:

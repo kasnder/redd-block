@@ -159,6 +159,14 @@ npm run build:ios
 
 For Store builds, set `WINDOWS_IDENTITY_NAME` and `WINDOWS_PUBLISHER` in `.env` (Partner Center → Product identity) and upload the `.msix` from `for-distribution/x86_64-pc-windows-msvc/`. Run `node scripts/generate-icons-from-svg.js` first if `assets/icons/1024x1024.png` is missing.
 
+**Local sideload:** `build:win-store` MSIX files are unsigned (Partner Center signs on upload). Sign and install in an **elevated** PowerShell (cert goes in `LocalMachine\TrustedPeople`):
+
+```powershell
+npm run sign:win-store-msix -- -MsixPath "for-distribution/aarch64-pc-windows-msvc/ReDD_Block_3.1.5.0_arm64.msix" -Install
+```
+
+Also turn on **Settings → System → For developers → Developer Mode**. If `0x800B0109` persists, remove old packages first: `Get-AppxPackage *ReDDBlock* | Remove-AppxPackage`.
+
 Built artifacts are copied to `for-distribution/` for upload or direct distribution.
 
 ### Testing

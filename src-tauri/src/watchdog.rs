@@ -56,12 +56,45 @@ fn write_wrappers(exe: &Path) -> std::io::Result<PathBuf> {
         .unwrap_or("redd-block.exe");
     let exe_path = exe.to_string_lossy().replace('"', "\"\"");
 
+    // When the Store package is removed, the WindowsApps exe vanishes but
+    // the per-minute task may still fire. Avoid `start` on a missing path
+    // (Windows shows "The specified path does not exist"). Run `--uninstall`
+    // from the staged copy when present, then delete this task.
+    let missing_exe_block = if crate::native_host_install::is_msix_packaged_exe_path(exe) {
+        let staged = crate::native_host_install::staged_native_host_exe()
+            .map(|p| p.to_string_lossy().replace('"', "\"\""))
+            .unwrap_or_default();
+        let staged_uninstall = if staged.is_empty() {
+            String::new()
+        } else {
+            format!("\"{staged}\" --uninstall >nul 2>&1\r\n")
+        };
+        format!(
+            "if not exist \"{exe_path}\" (\r\n\
+             {staged_uninstall}\
+             schtasks /Delete /TN \"{task}\" /F >nul 2>&1\r\n\
+             exit /b 0\r\n\
+             )\r\n",
+            task = TASK_NAME,
+        )
+    } else {
+        format!(
+            "if not exist \"{exe_path}\" (\r\n\
+             schtasks /Delete /TN \"{task}\" /F >nul 2>&1\r\n\
+             exit /b 0\r\n\
+             )\r\n",
+            task = TASK_NAME,
+        )
+    };
+
     // Use an absolute exe path so wrappers work when stored outside the
     // install dir (Microsoft Store / MSIX cannot write under WindowsApps).
     let cmd_body = format!(
         "@echo off\r\n\
+         {missing_exe_block}\
          tasklist /FI \"IMAGENAME eq {exe}\" /NH | find /I \"{exe}\" >nul\r\n\
          if errorlevel 1 start \"\" \"{exe_path}\"\r\n",
+        missing_exe_block = missing_exe_block,
         exe = exe_name,
         exe_path = exe_path,
     );

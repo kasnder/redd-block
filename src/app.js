@@ -31,6 +31,7 @@ const tauriAPI = {
     loadData: () => invoke('load_data'),
     saveData: (data) => invoke('save_data', { data }),
     getAppVersion: () => invoke('get_app_version'),
+    isMicrosoftStorePackage: () => invoke('is_microsoft_store_package'),
 
     // Window operations
     setWindowSize: (width, height) => invoke('set_window_size', { width, height }),
@@ -202,6 +203,8 @@ let isIOS = false; // Track if running on iOS
 // runtime). Set in `detectPlatform`. Used to gate macOS-only Tauri
 // commands and onboarding copy.
 let isMacOSDesktop = false;
+/** MSIX / Microsoft Store install — updates come from the Store, not reddfocus.org. */
+let isMicrosoftStorePackage = null;
 let screentimeAuthorized = false; // Track if Screen Time is authorized (iOS)
 let startupInitializationPromise = null; // Prevent duplicate post-onboarding startup runs
 let startupInitializationComplete = false; // Track whether post-onboarding startup already ran
@@ -1416,8 +1419,28 @@ async function runPostAcceptanceStartup() {
     }
 }
 
+async function resolveMicrosoftStorePackage() {
+    if (isMicrosoftStorePackage !== null) {
+        return isMicrosoftStorePackage;
+    }
+    if (!document.body.classList.contains('windows')) {
+        isMicrosoftStorePackage = false;
+        return false;
+    }
+    try {
+        isMicrosoftStorePackage = !!(await tauriAPI.isMicrosoftStorePackage());
+    } catch (e) {
+        console.warn('[Update] is_microsoft_store_package failed:', e);
+        isMicrosoftStorePackage = false;
+    }
+    return isMicrosoftStorePackage;
+}
+
 // Check if a newer app version is available and show update banner
 async function checkForAppUpdate() {
+    if (await resolveMicrosoftStorePackage()) {
+        return;
+    }
     try {
         const currentVersion = await tauriAPI.getAppVersion();
         if (!currentVersion) return;
@@ -11293,18 +11316,20 @@ async function proceedWithBlock() {
             result = { success: false, error: err.toString() };
         }
     } else {
-        // Desktop: Try to use the helper daemon (no password required!)
+        // Desktop: persist the block locally first so save_data and the
+        // native-messaging host see it immediately (helperAvailable only
+        // gates legacy helper-daemon wiring, not v2 extension blocking).
+        appData.activeBlocks.push(block);
+        activatedBlockIds.add(block.id);
+
         if (helperAvailable) {
-            // Re-verify helper is still reachable before starting block (avoids stale "available" state on Windows)
             const status = await tauriAPI.checkHelperStatus();
             if (!status.running || !status.version_ok) {
                 helperAvailable = false;
             }
         }
         // v2: the app process IS the helper. startBlockViaHelper is a
-        // no-op shim that just acknowledges the save_data the
-        // frontend already did. The legacy "is the helper installed?"
-        // / install-modal branch was here.
+        // no-op shim; extension blocking follows from save_data below.
         result = await tauriAPI.startBlockViaHelper({
             domains: blocklist.websites || [],
             endTime: blockEnd.getTime(),
@@ -11313,6 +11338,10 @@ async function proceedWithBlock() {
     }
 
     if (!result.success) {
+        if (!isIOS) {
+            appData.activeBlocks = appData.activeBlocks.filter(b => b.id !== block.id);
+            activatedBlockIds.delete(block.id);
+        }
         // Re-enable button
         startBtn.disabled = false;
         startBtn.innerHTML = getStartBlockButtonHTML();
@@ -11327,12 +11356,6 @@ async function proceedWithBlock() {
             }
         }
         return;
-    }
-
-    // Add block to local data (desktop: push here; iOS already pushed in branch above)
-    if (!isIOS && helperAvailable) {
-        appData.activeBlocks.push(block);
-        activatedBlockIds.add(block.id);
     }
 
     // Clear pending duration for this blocklist (it's now committed)
@@ -11562,7 +11585,16 @@ async function updateHostsFile(silent = false) {
         return { success: true, unchanged: true };
     }
 
-    // Try to use helper daemon first (works on all platforms)
+    // Desktop v2+: websites are blocked via the extension/native host (Windows)
+    // or Automation (macOS) — not hosts-file edits. save_data already ran;
+    // the native host re-pushes when redd-block-data.json changes.
+    if (!isIOS) {
+        lastBlockedDomains = allDomains;
+        await updateBlockedApps();
+        return { success: true };
+    }
+
+    // Try to use helper daemon first (legacy path; iOS-only below)
     try {
         console.log('[updateHostsFile] Checking helper status...');
         const status = await tauriAPI.checkHelperStatus();
@@ -17748,24 +17780,23 @@ function setupTheme() {
                 }
 
                 if (latestVersionEl) {
-                    // Hide by default - only show if there's an update available
                     latestVersionEl.style.display = 'none';
                     if (latestVersionWrap) latestVersionWrap.style.display = 'none';
 
-                    try {
-                        const response = await fetch(`https://ulyngs.github.io/redd-block/latest-versions.json?t=${Date.now()}`);
-                        const versions = await response.json();
-                        const latestVersion = versions[getLatestVersionPlatformKey()];
+                    if (!(await resolveMicrosoftStorePackage())) {
+                        try {
+                            const response = await fetch(`https://ulyngs.github.io/redd-block/latest-versions.json?t=${Date.now()}`);
+                            const versions = await response.json();
+                            const latestVersion = versions[getLatestVersionPlatformKey()];
 
-                        // Only show if latest version is higher than current version
-                        if (latestVersion && currentVersion && isVersionHigher(latestVersion, currentVersion)) {
-                            latestVersionEl.textContent = formatLatestVersionText(latestVersion);
-                            latestVersionEl.style.display = 'block';
-                            if (latestVersionWrap) latestVersionWrap.style.display = 'block';
+                            if (latestVersion && currentVersion && isVersionHigher(latestVersion, currentVersion)) {
+                                latestVersionEl.textContent = formatLatestVersionText(latestVersion);
+                                latestVersionEl.style.display = 'block';
+                                if (latestVersionWrap) latestVersionWrap.style.display = 'block';
+                            }
+                        } catch (e) {
+                            console.log('[Version] Could not check for updates (offline or error):', e.message);
                         }
-                    } catch (e) {
-                        // Silently fail if offline - don't show anything
-                        console.log('[Version] Could not check for updates (offline or error):', e.message);
                     }
                 }
             })();

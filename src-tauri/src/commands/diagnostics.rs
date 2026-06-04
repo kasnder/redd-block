@@ -69,6 +69,15 @@ pub struct WatchdogInfo {
     pub task_present: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[cfg(target_os = "windows")]
+pub struct NativeHostInfo {
+    pub staged_exe_path: Option<String>,
+    pub staged_exe_exists: bool,
+    /// Last lines from `native-host.log` next to redd-block-data.json.
+    pub log_tail: Vec<String>,
+}
+
 /// Snapshot of what's actually being enforced right now. The
 /// `domains` / `blocks` fields are produced by reusing
 /// `native_host::derive_payload` — i.e. literally the same function
@@ -138,6 +147,8 @@ pub struct SystemDiagnostics {
     pub automation: AutomationInfo,
     #[cfg(target_os = "windows")]
     pub watchdog: WatchdogInfo,
+    #[cfg(target_os = "windows")]
+    pub native_host: NativeHostInfo,
     /// Last N lines of the rolling app log, newest last. Empty in
     /// release builds (we only enable tauri-plugin-log in debug).
     pub recent_log: Vec<String>,
@@ -177,6 +188,9 @@ pub fn get_system_diagnostics(app: tauri::AppHandle) -> SystemDiagnostics {
         task_present: crate::watchdog::is_registered(),
     };
 
+    #[cfg(target_os = "windows")]
+    let native_host = collect_native_host_info(&app);
+
     let recent_log = read_recent_log_lines(50);
     let current_blocking = collect_current_blocking(&app);
     let app_data = collect_app_data_info(&app);
@@ -191,6 +205,8 @@ pub fn get_system_diagnostics(app: tauri::AppHandle) -> SystemDiagnostics {
         automation,
         #[cfg(target_os = "windows")]
         watchdog,
+        #[cfg(target_os = "windows")]
+        native_host,
         recent_log,
         current_blocking,
         app_data,
@@ -465,6 +481,29 @@ fn read_recent_log_lines(max_lines: usize) -> Vec<String> {
     let lines: Vec<&str> = raw.lines().collect();
     let start = lines.len().saturating_sub(max_lines);
     lines[start..].iter().map(|s| s.to_string()).collect()
+}
+
+#[cfg(target_os = "windows")]
+fn collect_native_host_info(app: &tauri::AppHandle) -> NativeHostInfo {
+    let staged = crate::native_host_install::staged_native_host_exe();
+    let staged_exe_path = staged.as_ref().map(|p| p.display().to_string());
+    let staged_exe_exists = staged.is_some_and(|p| p.exists());
+    let mut log_tail = Vec::new();
+    if let Some(data) = super::canonical_data_path(app) {
+        let mut log_path = data;
+        log_path.pop();
+        log_path.push("native-host.log");
+        if let Ok(raw) = std::fs::read_to_string(&log_path) {
+            let lines: Vec<&str> = raw.lines().collect();
+            let start = lines.len().saturating_sub(30);
+            log_tail = lines[start..].iter().map(|s| s.to_string()).collect();
+        }
+    }
+    NativeHostInfo {
+        staged_exe_path,
+        staged_exe_exists,
+        log_tail,
+    }
 }
 
 fn log_dir_candidates() -> Vec<std::path::PathBuf> {

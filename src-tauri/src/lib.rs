@@ -120,6 +120,8 @@ pub mod safari_services;
 #[cfg(target_os = "windows")]
 pub mod watchdog;
 #[cfg(target_os = "windows")]
+pub mod windows_login;
+#[cfg(target_os = "windows")]
 pub mod windows_process;
 
 /// Add an `applicationShouldTerminate:` override on the existing
@@ -811,6 +813,7 @@ pub fn run() {
 fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
     tauri::generate_handler![
         commands::get_app_version,
+        commands::is_microsoft_store_package,
         commands::load_data,
         commands::save_data,
         commands::set_window_size,
@@ -881,6 +884,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
 fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
     tauri::generate_handler![
         commands::get_app_version,
+        commands::is_microsoft_store_package,
         commands::load_data,
         commands::save_data,
         commands::set_window_size,
@@ -939,6 +943,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
     tauri::generate_handler![
         // Data commands (all platforms)
         commands::get_app_version,
+        commands::is_microsoft_store_package,
         commands::load_data,
         commands::save_data,
         commands::set_window_size,

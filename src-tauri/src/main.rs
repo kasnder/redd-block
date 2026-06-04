@@ -24,6 +24,8 @@ fn main() {
     // native-messaging manifest.
     #[cfg(not(target_os = "ios"))]
     if redd_block_lib::native_host::is_native_host_invocation() {
+        #[cfg(target_os = "windows")]
+        redd_block_lib::windows_process::set_native_host_process_directory();
         redd_block_lib::native_host::run();
     }
 
@@ -37,7 +39,10 @@ fn main() {
         let _ = redd_block_lib::native_host_install::uninstall();
         let _ = redd_block_lib::extension_install::uninstall();
         #[cfg(target_os = "windows")]
-        redd_block_lib::watchdog::unregister();
+        {
+            redd_block_lib::watchdog::unregister();
+            redd_block_lib::windows_login::disable_autostart();
+        }
         let _ = redd_block_lib::commands::migration::strip_hosts_markers_sync();
         let _ = redd_block_lib::commands::migration::uninstall_legacy_helper_sync();
         // Final cleanup: now that the user is uninstalling, the hosts

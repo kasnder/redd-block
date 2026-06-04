@@ -140,22 +140,70 @@ pub fn is_msix_packaged_exe_path(_path: &std::path::Path) -> bool {
     false
 }
 
-/// Path written into native-messaging manifests. MSIX builds stage a
-/// full copy of the install dir under `%LOCALAPPDATA%` (exe + DLLs).
-fn manifest_binary_path() -> std::io::Result<String> {
+/// Path the native-messaging manifest should reference right now.
+/// Does not copy files — safe to call from hot paths like profile scan.
+#[cfg(target_os = "windows")]
+fn host_binary_path_for_manifest() -> std::io::Result<String> {
     let source = std::env::current_exe().map_err(|e| {
         std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
     })?;
-    #[cfg(target_os = "windows")]
-    {
-        if is_msix_packaged_exe_path(&source) {
-            return ensure_staged_native_host(&source);
+    if is_msix_packaged_exe_path(&source) {
+        let dest_dir = native_host_stage_dir().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::Other, "cannot resolve LOCALAPPDATA")
+        })?;
+        let dest_exe = dest_dir.join(STAGED_NATIVE_HOST_EXE);
+        if dest_exe.exists() {
+            if staged_copy_stale(&source, &dest_exe) {
+                ensure_staged_native_host(&source)?;
+            }
+            return dest_exe
+                .to_str()
+                .map(String::from)
+                .ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::Other, "non-utf8 staged path")
+                });
         }
+        return ensure_staged_native_host(&source);
     }
     source
         .to_str()
         .map(String::from)
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "non-utf8 exe path"))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn host_binary_path_for_manifest() -> std::io::Result<String> {
+    std::env::current_exe()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?
+        .to_str()
+        .map(String::from)
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "non-utf8 exe path"))
+}
+
+/// Path written into native-messaging manifests. MSIX builds stage a
+/// full copy of the install dir under `%LOCALAPPDATA%` (exe + DLLs).
+fn manifest_binary_path() -> std::io::Result<String> {
+    #[cfg(target_os = "windows")]
+    {
+        let source = std::env::current_exe().map_err(|e| {
+            std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
+        })?;
+        if is_msix_packaged_exe_path(&source) {
+            return ensure_staged_native_host(&source);
+        }
+    }
+    host_binary_path_for_manifest()
+}
+
+#[cfg(target_os = "windows")]
+fn staged_copy_stale(source_exe: &std::path::Path, dest_exe: &std::path::Path) -> bool {
+    match (source_exe.metadata(), dest_exe.metadata()) {
+        (Ok(src_meta), Ok(dest_meta)) => {
+            src_meta.len() != dest_meta.len()
+                || src_meta.modified().ok() > dest_meta.modified().ok()
+        }
+        _ => true,
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -169,6 +217,13 @@ fn native_host_stage_dir() -> Option<PathBuf> {
             .join("ReDD Block")
             .join("native-host"),
     )
+}
+
+/// Staged copy used for native messaging (and Store uninstall cleanup).
+#[cfg(target_os = "windows")]
+pub fn staged_native_host_exe() -> Option<PathBuf> {
+    let path = native_host_stage_dir()?.join(STAGED_NATIVE_HOST_EXE);
+    path.exists().then_some(path)
 }
 
 #[cfg(target_os = "windows")]
@@ -267,7 +322,7 @@ fn windows_manifest_path(browser: BrowserTarget) -> Option<PathBuf> {
 /// binary, and that binary is on disk.
 #[cfg(target_os = "windows")]
 pub fn native_host_is_current(browser: BrowserTarget) -> bool {
-    let Ok(expected) = manifest_binary_path() else {
+    let Ok(expected) = host_binary_path_for_manifest() else {
         return false;
     };
     if !std::path::Path::new(&expected).exists() {
