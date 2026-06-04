@@ -71,8 +71,13 @@
     --title-bar-height: 44px;
     --title-bar-center-safe-inset: 108px;
 
-    /* Stacked banners: align full-width enforcer rows with inset setup card. */
+    /* Stacked top banners (desktop):
+       - margin-x / margin-y: uniform outer inset — title bar → first inset card,
+         app side edges → setup card, and gap between stacked banners.
+       - padding-x: inner padding inside inset cards (setup / web-automation).
+       - icon-*: align enforcer full-bleed rows with setup card content. */
     --stacked-banner-margin-x: 18px;
+    --stacked-banner-margin-y: var(--stacked-banner-margin-x);
     --stacked-banner-padding-x: 18px;
     --stacked-banner-icon-size: 22px;
     --stacked-banner-icon-gap: 12px;
@@ -391,11 +396,13 @@ body.dark-mode .title-bar {
     margin-top: 0;
 }
 
-/* Stack setup / closedown under the update banner without repeating the title-bar offset. */
-#update-banner:not(.hidden)~#behaviour-change-banner:not(.hidden),
-#update-banner:not(.hidden)~.app-blocking-closedown-banner:not(.hidden),
-.app-blocking-closedown-banner:not(.hidden)~#behaviour-change-banner:not(.hidden) {
-    margin-top: 12px;
+/* Inset card below another visible top banner: drop title-bar offset, use uniform stack gap. */
+#update-banner:not(.hidden) ~ .setup-banner:not(.hidden),
+#update-banner:not(.hidden) ~ .app-blocking-closedown-banner:not(.hidden),
+.app-blocking-closedown-banner:not(.hidden) ~ .setup-banner:not(.hidden),
+.extension-enforcer-action-banner:not(.hidden) ~ .setup-banner:not(.hidden),
+.extension-enforcer-action-banner-closed:not(.hidden) ~ .setup-banner:not(.hidden) {
+    margin-top: var(--stacked-banner-margin-y);
 }
 
 @keyframes slideDown {
@@ -472,7 +479,7 @@ body.dark-mode .title-bar {
     border: 1px solid var(--setup-border);
     border-radius: 10px;
     padding: 14px var(--stacked-banner-padding-x);
-    margin-top: calc(var(--title-bar-height) + 12px);
+    margin-top: calc(var(--title-bar-height) + var(--stacked-banner-margin-y));
     margin-left: var(--stacked-banner-margin-x);
     margin-right: var(--stacked-banner-margin-x);
     box-shadow: 0 1px 2px rgba(26, 34, 56, 0.04);
@@ -679,21 +686,6 @@ body.dark-mode .app-blocking-closedown-banner {
 
 .extension-enforcer-action-banner:not(.hidden)+.extension-enforcer-action-banner {
     margin-top: 8px;
-}
-
-.extension-enforcer-action-banner:not(.hidden)~#behaviour-change-banner:not(.hidden) {
-    margin-top: 12px;
-}
-
-.extension-enforcer-action-banner-closed:not(.hidden)~#behaviour-change-banner:not(.hidden) {
-    margin-top: 12px;
-}
-
-/* The soft web-automation permission banner reuses the setup-banner look
-   and parks just above #behaviour-change-banner. When both are visible,
-   collapse the lower banner's title-bar offset so they read as a stack. */
-#web-automation-permission-banner:not(.hidden)~#behaviour-change-banner:not(.hidden) {
-    margin-top: 12px;
 }
 
 .extension-enforcer-action-banner .update-banner-btn {
