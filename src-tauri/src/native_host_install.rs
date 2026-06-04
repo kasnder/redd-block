@@ -318,8 +318,9 @@ fn windows_manifest_path(browser: BrowserTarget) -> Option<PathBuf> {
     Some(dir.join(format!("{HOST_NAME}-{}.json", browser_slug(browser))))
 }
 
-/// `true` when the browser manifest exists, points at the expected host
-/// binary, and that binary is on disk.
+/// `true` when the manifest file, HKCU registry entry, and host binary
+/// are all present and consistent. Chrome discovers hosts via registry
+/// only — a manifest file on disk without the key yields "host not found".
 #[cfg(target_os = "windows")]
 pub fn native_host_is_current(browser: BrowserTarget) -> bool {
     let Ok(expected) = host_binary_path_for_manifest() else {
@@ -331,13 +332,24 @@ pub fn native_host_is_current(browser: BrowserTarget) -> bool {
     let Some(manifest_path) = windows_manifest_path(browser) else {
         return false;
     };
-    let Ok(raw) = std::fs::read_to_string(manifest_path) else {
+    if !windows_registry_points_at_manifest(browser, &manifest_path) {
+        return false;
+    }
+    let Ok(raw) = std::fs::read_to_string(&manifest_path) else {
         return false;
     };
     let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) else {
         return false;
     };
     val.get("path").and_then(|p| p.as_str()) == Some(expected.as_str())
+}
+
+#[cfg(target_os = "windows")]
+fn windows_registry_points_at_manifest(browser: BrowserTarget, manifest_path: &std::path::Path) -> bool {
+    let Some(registered) = read_hkcu_default(&registry_key_path(browser)) else {
+        return false;
+    };
+    std::path::Path::new(&registered) == manifest_path
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -388,19 +400,18 @@ pub fn install() -> std::io::Result<()> {
                 if is_msix_packaged_exe_path(&source) {
                     if let Err(e) = ensure_staged_native_host(&source) {
                         log::warn!("native-host: MSIX stage refresh failed: {e}");
-                    } else {
-                        let stale = install_targets()
-                            .iter()
-                            .any(|b| !native_host_is_current(*b));
-                        if stale {
-                            log::info!("native-host: refreshing stale MSIX manifests");
-                            let manifest_binary = manifest_binary_path()?;
-                            install_inner(&manifest_binary);
-                            mark_startup_install_done_for(&binary);
-                            return Ok(());
-                        }
                     }
                 }
+            }
+            let stale = install_targets()
+                .iter()
+                .any(|b| !native_host_is_current(*b));
+            if stale {
+                log::info!("native-host: repairing stale manifests or missing registry keys");
+                let manifest_binary = manifest_binary_path()?;
+                install_inner(&manifest_binary);
+                mark_startup_install_done_for(&binary);
+                return Ok(());
             }
         }
         log::info!(
@@ -723,6 +734,62 @@ fn registry_key_path(browser: BrowserTarget) -> String {
         BrowserTarget::Brave => format!(r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\{HOST_NAME}"),
         BrowserTarget::Edge => format!(r"Software\Microsoft\Edge\NativeMessagingHosts\{HOST_NAME}"),
         BrowserTarget::Firefox => format!(r"Software\Mozilla\NativeMessagingHosts\{HOST_NAME}"),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn read_hkcu_default(path: &str) -> Option<String> {
+    use windows::core::PCWSTR;
+    use windows::Win32::Foundation::ERROR_SUCCESS;
+    use windows::Win32::System::Registry::{
+        RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_CURRENT_USER, KEY_READ,
+        REG_VALUE_TYPE, REG_SZ,
+    };
+
+    unsafe {
+        let mut hkey: HKEY = HKEY::default();
+        let subkey = to_wide(path);
+        let status = RegOpenKeyExW(
+            HKEY_CURRENT_USER,
+            PCWSTR(subkey.as_ptr()),
+            Some(0),
+            KEY_READ,
+            &mut hkey,
+        );
+        if status != ERROR_SUCCESS {
+            return None;
+        }
+        let mut reg_type = REG_VALUE_TYPE::default();
+        let mut buf_size: u32 = 0;
+        let _ = RegQueryValueExW(
+            hkey,
+            PCWSTR::null(),
+            None,
+            Some(&mut reg_type),
+            None,
+            Some(&mut buf_size),
+        );
+        if buf_size == 0 {
+            let _ = RegCloseKey(hkey);
+            return None;
+        }
+        let mut buf = vec![0u8; buf_size as usize];
+        let status = RegQueryValueExW(
+            hkey,
+            PCWSTR::null(),
+            None,
+            Some(&mut reg_type),
+            Some(buf.as_mut_ptr()),
+            Some(&mut buf_size),
+        );
+        let _ = RegCloseKey(hkey);
+        if status != ERROR_SUCCESS || reg_type != REG_SZ {
+            return None;
+        }
+        let wide_len = (buf_size as usize / 2).saturating_sub(1);
+        let wide =
+            std::slice::from_raw_parts(buf.as_ptr() as *const u16, wide_len);
+        String::from_utf16(wide).ok()
     }
 }
 
