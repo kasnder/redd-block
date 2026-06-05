@@ -2,6 +2,14 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
+## v3.1.8
+
+- **macOS: fix "What's new" on fresh installs.** The one-time Automation
+  upgrade intro no longer appears for brand-new users. Onboarding is now
+  marked complete only after browser setup is dismissed, not when the
+  default blocklist is created on first launch.
+- **Version:** 3.1.8 (macOS and Windows direct distribution; iOS unchanged).
+
 ## v3.1.7
 
 - **Windows (Microsoft Store): native-messaging registry fix.** MSIX AppxManifest
