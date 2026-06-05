@@ -1744,6 +1744,17 @@ async function persistMacAutomationIntroShown() {
     }
 }
 
+async function persistOnboardingComplete() {
+    if (!appData.settings) appData.settings = {};
+    if (appData.settings.onboardingComplete) return;
+    appData.settings.onboardingComplete = true;
+    try {
+        await saveData();
+    } catch (e) {
+        console.warn('[onboarding] persist onboardingComplete failed:', e);
+    }
+}
+
 function applyMacAutomationIntroCopy() {
     const setText = (id, text) => {
         const el = document.getElementById(id);
@@ -2124,6 +2135,7 @@ function wireMigrationPostPhase(state) {
         // (per-install) which is fine for a UX hint.
         try { localStorage.setItem(EXT_ONBOARDING_DISMISSED_KEY, String(Date.now())); }
         catch (_) { /* localStorage may be disabled; harmless */ }
+        await persistOnboardingComplete();
         await persistMacAutomationIntroShown();
         hideMigrationOnboarding();
         try {
@@ -5966,8 +5978,6 @@ async function loadData() {
                 count: isIOS ? 25 : 50
             }
         });
-        // Mark onboarding as complete for backwards compat
-        appData.settings.onboardingComplete = true;
         shouldSave = true;
     }
 
