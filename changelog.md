@@ -2,6 +2,15 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
+## v3.1.7
+
+- **Windows (Microsoft Store): native-messaging registry fix.** MSIX AppxManifest
+  now declares `unvirtualizedResources` and excludes the four browser
+  `NativeMessagingHosts` HKCU paths from registry virtualization, so Chrome,
+  Edge, Brave, and Firefox can discover the native host and website blocking
+  works in Store builds. See `docs/microsoft-store-msix.md`.
+- **Version:** 3.1.7 (Windows Store; macOS and iOS unchanged).
+
 ## v3.1.6
 
 - **Desktop:** bug fixes and styling improvements
