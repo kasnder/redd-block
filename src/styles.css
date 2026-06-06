@@ -10394,6 +10394,25 @@ body.dark-mode #settings-modal .settings-help-btn {
     height: 18px;
 }
 
+#settings-modal .settings-help-btn .diagnostics-btn-spinner {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    border-color: rgba(30, 45, 62, 0.18);
+    border-top-color: var(--text-primary);
+}
+
+body.dark-mode #settings-modal .settings-help-btn .diagnostics-btn-spinner {
+    border-color: rgba(255, 255, 255, 0.2);
+    border-top-color: var(--text-primary);
+}
+
+#settings-modal .settings-help-btn:disabled {
+    opacity: 0.85;
+    cursor: default;
+}
+
 .settings-override-all-contents.hidden {
     display: none;
 }
@@ -11453,7 +11472,11 @@ body.dark-mode .zoom-toast {
     color: var(--text-secondary);
 }
 
-/* Diagnostics Modal */
+/* Diagnostics Modal — above settings (same z-index tier) when opened from Help */
+#diagnostics-modal {
+    z-index: 210;
+}
+
 .diagnostics-modal {
     max-width: 640px;
     max-height: 85vh;
@@ -11722,6 +11745,21 @@ body.dark-mode .diagnostics-card {
 
 .diagnostics-table td:not(:first-child) {
     text-align: center;
+}
+
+/* Automation table: dot + label on one line, hug the right edge under the header. */
+.diagnostics-table-labeled-status th:not(:first-child),
+.diagnostics-table-labeled-status td:not(:first-child) {
+    text-align: right;
+    width: 1%;
+    white-space: nowrap;
+}
+
+.diagnostics-status-cell {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
 }
 
 .diagnostics-browser-cell {

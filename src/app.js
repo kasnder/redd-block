@@ -15844,6 +15844,7 @@ const SETTINGS_TRANSLATIONS = {
         settingsDiagnosticsLabel: 'Something not working?',
         settingsSetupBtn: 'Setup',
         settingsDiagnosticsBtn: 'Diagnostics',
+        diagnosticsLoadingBtn: 'Loading…',
         diagnosticsModalTitle: 'Diagnostics',
         diagnosticsRefresh: 'Refresh',
         diagnosticsCopyReport: 'Copy to Clipboard',
@@ -16459,6 +16460,7 @@ const SETTINGS_TRANSLATIONS = {
         settingsDiagnosticsLabel: 'Virker noget ikke?',
         settingsSetupBtn: 'Opsætning',
         settingsDiagnosticsBtn: 'Diagnostik',
+        diagnosticsLoadingBtn: 'Indlæser…',
         diagnosticsModalTitle: 'Diagnostik',
         diagnosticsRefresh: 'Opdater',
         diagnosticsCopyReport: 'Kopiér til udklipsholder',
@@ -18536,15 +18538,33 @@ function restoreDiagnosticsScrollState(content, scrollState) {
     });
 }
 
-async function refreshDiagnosticsModalContent({ showLoading = false } = {}) {
+async function refreshDiagnosticsModalContent({ showLoading = false, loadingDelayMs = 0 } = {}) {
     const modal = document.getElementById('diagnostics-modal');
     const content = document.getElementById('diagnostics-content');
     if (!modal || !content) return;
 
     const scrollState = showLoading ? null : captureDiagnosticsScrollState(content);
-    if (showLoading) {
+    let loadingShown = false;
+    let loadingTimer = null;
+    let loadingCancelled = false;
+    if (showLoading && loadingDelayMs > 0) {
+        loadingTimer = setTimeout(() => {
+            if (loadingCancelled) return;
+            content.innerHTML = '<div class="diagnostics-loading">Loading…</div>';
+            loadingShown = true;
+        }, loadingDelayMs);
+    } else if (showLoading) {
         content.innerHTML = '<div class="diagnostics-loading">Loading…</div>';
+        loadingShown = true;
     }
+
+    const stopLoadingTimer = () => {
+        loadingCancelled = true;
+        if (loadingTimer) {
+            clearTimeout(loadingTimer);
+            loadingTimer = null;
+        }
+    };
 
     let diag = null;
     let enforcementEnabled = false;
@@ -18562,10 +18582,14 @@ async function refreshDiagnosticsModalContent({ showLoading = false } = {}) {
         try {
             enforcementEnabled = !!(await invoke('get_enforcement_enabled'));
         } catch (_) { /* non-desktop */ }
+        stopLoadingTimer();
         content.innerHTML = renderSystemDiagnostics(diag, { enforcementEnabled });
         updateDiagnosticsModalChrome(diag);
-        restoreDiagnosticsScrollState(content, scrollState);
+        if (!loadingShown) {
+            restoreDiagnosticsScrollState(content, scrollState);
+        }
     } catch (e) {
+        stopLoadingTimer();
         content.innerHTML = `<div class="diagnostics-error">Failed to load diagnostics: ${escapeHtml(e.message || e)}</div>`;
         updateDiagnosticsModalChrome(null);
     }
@@ -18646,7 +18670,7 @@ function diagnosticsAutomationStatusCell(state) {
     else if (normalized === 'denied') label = tSettings('diagnosticsAutomationDenied');
     else label = tSettings('diagnosticsAutomationUnknown');
     const dotState = normalized === 'granted' ? 'ok' : (normalized === 'denied' ? 'off' : 'na');
-    return `${diagnosticsStatusDot(dotState)} <span class="diag-muted">${escapeHtml(label)}</span>`;
+    return `<span class="diagnostics-status-cell">${diagnosticsStatusDot(dotState)}<span class="diag-muted">${escapeHtml(label)}</span></span>`;
 }
 
 function diagnosticsKvRow(label, valueHtml) {
@@ -18772,7 +18796,7 @@ function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) {
         html += '<div class="diagnostics-section">';
         html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsAutomationSection'))}</div>`;
         html += `<p class="diagnostics-section-desc">${e(tSettings('diagnosticsAutomationSectionHint'))}</p>`;
-        html += '<div class="diagnostics-card diagnostics-table-wrap"><table class="diagnostics-table"><thead><tr>';
+        html += '<div class="diagnostics-card diagnostics-table-wrap"><table class="diagnostics-table diagnostics-table-labeled-status"><thead><tr>';
         html += `<th>${e(tSettings('diagnosticsThBrowser'))}</th>`;
         html += `<th>${e(tSettings('diagnosticsThAutomation'))}</th>`;
         html += '</tr></thead><tbody>';
@@ -18870,28 +18894,89 @@ function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) {
 }
 
 // Diagnostics modal
+function setDiagnosticsButtonLoading(loading) {
+    const btn = document.getElementById('diagnostics-btn');
+    const label = document.getElementById('settings-diagnostics-btn-label');
+    if (!btn || !label) return;
+
+    const icon = btn.querySelector('svg');
+    let spinner = btn.querySelector('.diagnostics-btn-spinner');
+
+    if (loading) {
+        btn.disabled = true;
+        btn.setAttribute('aria-busy', 'true');
+        if (icon) icon.classList.add('hidden');
+        if (!spinner) {
+            spinner = document.createElement('span');
+            spinner.className = 'btn-spinner diagnostics-btn-spinner';
+            spinner.setAttribute('aria-hidden', 'true');
+            btn.insertBefore(spinner, label);
+        } else {
+            spinner.classList.remove('hidden');
+        }
+        label.textContent = tSettings('diagnosticsLoadingBtn');
+    } else {
+        btn.disabled = false;
+        btn.removeAttribute('aria-busy');
+        if (icon) icon.classList.remove('hidden');
+        if (spinner) spinner.classList.add('hidden');
+        label.textContent = tSettings('settingsDiagnosticsBtn');
+    }
+}
+
+function closeDiagnosticsModal() {
+    const modal = document.getElementById('diagnostics-modal');
+    const settingsModal = document.getElementById('settings-modal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    if (modal.dataset.settingsWasOpen === '1') {
+        settingsModal?.classList.remove('hidden');
+        startHelperUiRefreshLoop();
+    }
+    delete modal.dataset.settingsWasOpen;
+}
+
 async function openDiagnosticsModal() {
     const modal = document.getElementById('diagnostics-modal');
     const content = document.getElementById('diagnostics-content');
+    const settingsModal = document.getElementById('settings-modal');
     if (!modal || !content) return;
+    if (modal.dataset.opening === '1') return;
 
-    modal.classList.remove('hidden');
-    await refreshDiagnosticsModalContent({ showLoading: true });
+    modal.dataset.opening = '1';
+    const settingsWasOpen = !!(settingsModal && !settingsModal.classList.contains('hidden'));
+    modal.dataset.settingsWasOpen = settingsWasOpen ? '1' : '';
 
-    // Close button
+    modal.classList.add('hidden');
+    setDiagnosticsButtonLoading(true);
+
     const closeBtn = document.getElementById('close-diagnostics-btn');
     if (closeBtn) {
-        closeBtn.onclick = () => {
-            modal.classList.add('hidden');
-        };
+        closeBtn.onclick = closeDiagnosticsModal;
     }
-
-    // Close on backdrop click (outside the modal content)
     modal.onclick = (e) => {
         if (e.target === modal) {
-            modal.classList.add('hidden');
+            closeDiagnosticsModal();
         }
     };
+
+    try {
+        await refreshDiagnosticsModalContent({ showLoading: false });
+        if (settingsWasOpen) {
+            settingsModal.classList.add('hidden');
+            stopHelperUiRefreshLoop();
+        }
+        modal.classList.remove('hidden');
+    } catch (_) {
+        if (settingsWasOpen) {
+            settingsModal.classList.add('hidden');
+            stopHelperUiRefreshLoop();
+        }
+        modal.classList.remove('hidden');
+    } finally {
+        setDiagnosticsButtonLoading(false);
+        delete modal.dataset.opening;
+    }
 }
 
 async function refreshDiagnosticsModalManual() {
@@ -18899,7 +18984,9 @@ async function refreshDiagnosticsModalManual() {
     if (btn?.disabled) return;
     if (btn) btn.disabled = true;
     try {
-        await refreshDiagnosticsModalContent();
+        // Modal is already open — swap to loading only if the fetch is slow
+        // enough that stale content would mislead; fast refresh updates in place.
+        await refreshDiagnosticsModalContent({ showLoading: true, loadingDelayMs: 400 });
     } finally {
         if (btn) btn.disabled = false;
     }

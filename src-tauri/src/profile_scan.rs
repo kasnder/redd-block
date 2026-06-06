@@ -189,10 +189,12 @@ pub fn scan_for_onboarding() -> ScanResult {
     }
 }
 
-/// Fastest browser snapshot — install/running flags only. Used by the
-/// diagnostics modal so opening it never walks profile trees, syncs
-/// native-messaging manifests, or triggers macOS data-access TCC
-/// prompts that can stall indefinitely behind the modal.
+/// Browser snapshot for the diagnostics modal. On macOS, walk profile
+/// trees only for browsers that actually use the ReDD Focus extension
+/// (Firefox always; Chromium/Safari only when not on Automation).
+/// Automation-mode browsers stay presence-only so opening diagnostics
+/// does not trigger Sequoia data-access prompts for Chrome/Brave/Edge/
+/// Safari the user is not using for extension blocking.
 pub fn scan_for_diagnostics() -> ScanResult {
     #[cfg(target_os = "macos")]
     {
@@ -200,13 +202,31 @@ pub fn scan_for_diagnostics() -> ScanResult {
             log::info!("tcc-probe: profile_scan deferred — onboarding not complete");
             return empty_scan_result();
         }
-        ScanResult {
-            firefox: firefox_presence_only(),
-            chrome: ChromiumBrowser::Chrome.presence_only(),
-            brave: ChromiumBrowser::Brave.presence_only(),
-            edge: ChromiumBrowser::Edge.presence_only(),
-            safari: safari_presence_only(),
+        let path = crate::commands::canonical_data_path_static();
+        let mut result = scan_filter(|label| match label {
+            "firefox" => true,
+            "safari" | "chrome" | "brave" | "edge" => {
+                !crate::blocking_method::uses_automation_at_path(&path, label)
+            }
+            _ => false,
+        });
+        if crate::blocking_method::uses_automation_at_path(&path, "chrome") {
+            result.chrome = ChromiumBrowser::Chrome.presence_only();
         }
+        if crate::blocking_method::uses_automation_at_path(&path, "brave") {
+            result.brave = ChromiumBrowser::Brave.presence_only();
+        }
+        if crate::blocking_method::uses_automation_at_path(&path, "edge") {
+            result.edge = ChromiumBrowser::Edge.presence_only();
+        }
+        if crate::blocking_method::uses_automation_at_path(&path, "safari") {
+            result.safari = safari_presence_only();
+        }
+        if result.firefox.installed {
+            result.firefox.native_host_ready =
+                crate::native_host_install::firefox_native_host_is_current();
+        }
+        result
     }
     #[cfg(not(target_os = "macos"))]
     {
