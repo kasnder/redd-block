@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "ReDD Block",
-  "version": "3.1.9",
+  "version": "3.1.10",
   "identifier": "com.reddblock",
   "build": {
     "frontendDist": "../dist",

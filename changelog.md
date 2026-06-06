@@ -2,6 +2,24 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
+## v3.1.10
+
+- **Desktop: fix app-only schedule blocking.** Blocklists that only block apps
+  (no websites) — e.g. Downtime — now reach the in-process app watcher on
+  macOS and Windows. Active schedule app sets sync from disk on load/save and
+  in a background loop; the legacy helper-daemon gate no longer skips pushing
+  apps to the watcher.
+- **macOS: match blocked apps by bundle path.** Processes inside
+  `/Applications/<AppName>.app/` are recognised even when the system reports a
+  different executable name (e.g. Android Studio → `studio`).
+- **Diagnostics: faster open and accurate browser status.** The modal no
+  longer blocks the UI on macOS; Firefox extension install/enable/private-tab
+  status is scanned again. Opening diagnostics shows loading on the Settings
+  button and opens the full report only when ready.
+- **Diagnostics: automation table layout.** Allowed/Unknown statuses stay on
+  one line and align under the Automation column header.
+- **Version:** 3.1.10 (macOS and Windows).
+
 ## v3.1.8
 
 - **macOS: fix "What's new" on fresh installs.** The one-time Automation
