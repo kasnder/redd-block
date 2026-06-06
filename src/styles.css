@@ -39,6 +39,8 @@
     --redd-teal: #2a9d8f;
     --redd-teal-hover: #21806f;
     --redd-teal-soft: #e5f5f3;
+    --schedule-pending-bg: rgba(42, 157, 143, 0.08);
+    --schedule-pending-border: rgba(42, 157, 143, 0.35);
     --redd-blue: #4a90e2;
     --redd-blue-soft: #e8f1fa;
     --redd-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.08);
@@ -150,6 +152,8 @@ body.dark-mode {
     --redd-teal: #399e90;
     --redd-teal-hover: #4ec0b0;
     --redd-teal-soft: rgba(57, 158, 144, 0.16);
+    --schedule-pending-bg: rgba(57, 158, 144, 0.12);
+    --schedule-pending-border: rgba(57, 158, 144, 0.35);
     --redd-blue: #6aa9ea;
     --redd-blue-soft: rgba(106, 169, 234, 0.14);
     --redd-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2);
@@ -1618,7 +1622,7 @@ body.dark-mode .app-blocking-closedown-banner {
     }
 
     body.ios:not(.ios-phone) .main-content .mode-tab.active {
-        padding: 12px 18px;
+        padding: 12px 19px;
     }
 
     body.ios:not(.ios-phone) .main-content .mode-tab-icon {
@@ -2800,7 +2804,7 @@ body.dark-mode .app-blocking-closedown-banner {
     }
 
     .mode-tab.active {
-        padding: 8px 12px;
+        padding: 8px 13px;
     }
 
     /* Visually hide the label but keep it in the accessibility tree, so the
@@ -2874,7 +2878,7 @@ body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab
 }
 
 body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab.active {
-    padding: 10px 11px;
+    padding: 10px 12px;
 }
 
 body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-icon {
@@ -2992,7 +2996,7 @@ body.ios.ui-zoom-tier-stack .main-content {
     }
 
     .scheduler-section > .section-header .mode-tab.active {
-        padding: 10px 11px;
+        padding: 10px 12px;
     }
 
     .scheduler-section > .section-header .mode-tab-label {
@@ -4862,7 +4866,7 @@ body.ios .mode-tab {
 }
 
 body.ios .mode-tab.active {
-    padding: 10px 16px;
+    padding: 10px 17px;
 }
 
 .mode-tab:hover {
@@ -4870,16 +4874,18 @@ body.ios .mode-tab.active {
 }
 
 .mode-tab.active {
-    background: white;
-    color: var(--text-primary);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    padding: 8px 14px;
+    background: var(--primary-btn-bg);
+    color: var(--primary-btn-text);
+    box-shadow: 0 1px 3px rgba(30, 45, 62, 0.18);
+    padding: 8px 15px;
+}
+
+.mode-tab.active:hover {
+    color: var(--primary-btn-text);
 }
 
 body.dark-mode .mode-tab.active {
-    background: var(--redd-card);
-    color: var(--text-primary);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 /* Schedule Block Panel */
@@ -4916,11 +4922,6 @@ body.dark-mode .mode-tab.active {
 
 .schedule-segment:has(.remove-segment-btn) {
     padding-right: 44px;
-}
-
-/* Draft segments stand out when editing an active schedule with committed blocks. */
-.schedule-segments:has(.segment-locked) .schedule-segment:not(.segment-locked) {
-    background: var(--redd-teal-soft);
 }
 
 .schedule-segment .time-pickers-row {
@@ -5010,7 +5011,7 @@ body.dark-mode .mode-tab.active {
 .add-segment-btn:hover {
     border-color: var(--accent-color);
     color: var(--accent-color);
-    background: rgba(42, 157, 143, 0.05);
+    background: var(--schedule-pending-bg);
 }
 
 body.dark-mode .add-segment-btn {
@@ -5575,19 +5576,7 @@ body.ios .day-toggle {
     display: none;
 }
 
-/* Locked segment (part of active schedule) */
-.schedule-segment.segment-locked {
-    position: relative;
-}
-
-.schedule-segment.segment-locked::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: rgba(128, 128, 128, 0.05);
-    border-radius: var(--radius-sm);
-    pointer-events: none;
-}
+/* Locked segment (part of active schedule) — controls disabled via JS; keep app-bg. */
 
 /* Pending Changes Bar (running schedule with new segments) */
 .schedule-pending-bar {
@@ -5597,8 +5586,8 @@ body.ios .day-toggle {
     gap: 12px;
     padding: 8px 12px;
     margin-top: 4px;
-    border: 1px solid rgba(42, 157, 143, 0.35);
-    background: rgba(42, 157, 143, 0.08);
+    border: 1px solid var(--schedule-pending-border);
+    background: var(--schedule-pending-bg);
     border-radius: 8px;
     font-size: 13px;
 }
