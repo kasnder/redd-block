@@ -2,7 +2,10 @@
 // These replace the helper-mediated `set_blocked_apps_via_helper`
 // path once the migration lands.
 
+use std::collections::HashSet;
 use std::sync::Mutex;
+use std::time::Duration;
+
 use tauri::{AppHandle, Manager, State};
 
 use crate::app_watcher::{self, Handle};
@@ -77,6 +80,43 @@ pub fn lets_go_acknowledge(app: AppHandle) {
     crate::app_watcher::force_dismiss_warning_overlay(Some(&app));
 }
 
-pub fn register<R: tauri::Runtime>(app: &tauri::App<R>) {
+/// Re-read `redd-block-data.json` and push the effective blocked-app
+/// set into the watcher. Mirrors `native_host::derive_blocked_apps`
+/// so app-only schedule segments enforce even when the frontend never
+/// calls `updateBlockedApps` (or only syncs domains).
+pub fn sync_blocked_apps_from_disk(app: &AppHandle) {
+    let path = super::canonical_data_path_static();
+    let desired = crate::native_host::derive_blocked_apps(&path);
+    let state = app.state::<AppWatcherState>();
+    let mut slot = match state.0.lock() {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    if slot.is_none() {
+        *slot = Some(app_watcher::start(Some(app.clone())));
+    }
+    let Some(handle) = slot.as_ref() else {
+        return;
+    };
+    let previous: HashSet<String> = handle.current_apps().into_iter().collect();
+    let newly_added: Vec<String> = desired
+        .iter()
+        .filter(|a| !previous.contains(*a))
+        .cloned()
+        .collect();
+    handle.set_apps(desired, newly_added);
+}
+
+pub fn register(app: &tauri::App) {
     app.manage(AppWatcherState::default());
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        let handle = app.handle().clone();
+        std::thread::spawn(move || {
+            loop {
+                sync_blocked_apps_from_disk(&handle);
+                std::thread::sleep(Duration::from_secs(2));
+            }
+        });
+    }
 }

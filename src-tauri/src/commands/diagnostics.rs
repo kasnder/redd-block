@@ -164,7 +164,16 @@ pub struct SystemDiagnostics {
 }
 
 #[tauri::command]
-pub fn get_system_diagnostics(app: tauri::AppHandle) -> SystemDiagnostics {
+pub async fn get_system_diagnostics(app: tauri::AppHandle) -> SystemDiagnostics {
+    // Build off the WebView thread. The collection path deliberately
+    // avoids profile-tree walks, live TCC probes, and native-host
+    // syncs — those can block forever behind a modal on macOS Sequoia.
+    tauri::async_runtime::spawn_blocking(move || assemble_system_diagnostics(app))
+        .await
+        .unwrap_or_else(|_| assemble_system_diagnostics_minimal())
+}
+
+fn assemble_system_diagnostics(app: tauri::AppHandle) -> SystemDiagnostics {
     let app_info = AppInfo {
         version: env!("CARGO_PKG_VERSION").to_string(),
         build_mode: if cfg!(debug_assertions) { "debug" } else { "release" },
@@ -173,15 +182,15 @@ pub fn get_system_diagnostics(app: tauri::AppHandle) -> SystemDiagnostics {
     };
 
     let migration = collect_migration_info(&app);
-    let browsers = profile_scan::scan();
-    let fda = collect_fda_info(&browsers);
+    let browsers = profile_scan::scan_for_diagnostics();
+    let fda = collect_fda_info_for_diagnostics(&browsers);
     let enforcer = EnforcerInfo {
         grace_seconds: super::grace::get_extension_grace_seconds(app.clone()),
     };
     let autostart = AutostartInfo {
         enabled: autostart_enabled(&app),
     };
-    let automation = collect_automation_info(&app);
+    let automation = collect_automation_info_cached(&app);
 
     #[cfg(target_os = "windows")]
     let watchdog = WatchdogInfo {
@@ -213,6 +222,58 @@ pub fn get_system_diagnostics(app: tauri::AppHandle) -> SystemDiagnostics {
     }
 }
 
+/// Fallback when the blocking worker panics — still returns a valid
+/// shape so the frontend can render an error section.
+fn assemble_system_diagnostics_minimal() -> SystemDiagnostics {
+    SystemDiagnostics {
+        app: AppInfo {
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            build_mode: if cfg!(debug_assertions) { "debug" } else { "release" },
+            os: std::env::consts::OS,
+            arch: std::env::consts::ARCH,
+        },
+        migration: MigrationInfo {
+            residue_items: vec![],
+            came_from_v1x: false,
+            ran_at_version: None,
+            ran_at_ms: None,
+        },
+        fda: FdaInfo {
+            applicable: false,
+            live_granted: None,
+            safari_plist_readable: None,
+            onboarding_choice: String::new(),
+            safari_needs_fda_access: None,
+        },
+        browsers: profile_scan::scan_for_diagnostics(),
+        enforcer: EnforcerInfo { grace_seconds: 0 },
+        autostart: AutostartInfo { enabled: false },
+        automation: AutomationInfo {
+            applicable: false,
+            browsers: vec![],
+        },
+        #[cfg(target_os = "windows")]
+        watchdog: WatchdogInfo { task_present: false },
+        #[cfg(target_os = "windows")]
+        native_host: NativeHostInfo {
+            staged_exe_path: None,
+            staged_exe_exists: false,
+            log_tail: vec![],
+        },
+        recent_log: vec![],
+        current_blocking: CurrentBlocking {
+            domains: vec![],
+            blocks: vec![],
+            apps: vec![],
+        },
+        app_data: AppDataInfo {
+            path: None,
+            pretty_json: None,
+            error: Some("diagnostics worker failed".to_string()),
+        },
+    }
+}
+
 /// Build a snapshot of what's currently being enforced. Reuses
 /// `native_host::derive_payload` for domains (single source of truth
 /// for the extension push) and reads the in-memory app-watcher set
@@ -232,11 +293,18 @@ fn collect_current_blocking(app: &tauri::AppHandle) -> CurrentBlocking {
 fn collect_current_blocked_apps(app: &tauri::AppHandle) -> Vec<String> {
     use tauri::Manager;
     let state = app.state::<super::app_blocking::AppWatcherState>();
-    let slot = match state.0.lock() {
-        Ok(s) => s,
-        Err(_) => return Vec::new(),
+    let from_watcher = match state.0.lock() {
+        Ok(s) => s.as_ref().map(|h| h.current_apps()).unwrap_or_default(),
+        Err(_) => Vec::new(),
     };
-    slot.as_ref().map(|h| h.current_apps()).unwrap_or_default()
+    if !from_watcher.is_empty() {
+        return from_watcher;
+    }
+    // Watcher not seeded yet — show what the on-disk data says should
+    // be active so app-only schedules aren't reported as empty.
+    super::canonical_data_path(app)
+        .map(|p| native_host::derive_blocked_apps(&p))
+        .unwrap_or_default()
 }
 
 fn collect_app_data_info(app: &tauri::AppHandle) -> AppDataInfo {
@@ -277,19 +345,26 @@ fn collect_app_data_info(app: &tauri::AppHandle) -> AppDataInfo {
     }
 }
 
-fn collect_fda_info(browsers: &profile_scan::ScanResult) -> FdaInfo {
+/// FDA snapshot for diagnostics — marker only, no live plist read.
+/// Reading Safari's protected Extensions.plist here can stall on TCC
+/// while the modal is open.
+fn collect_fda_info_for_diagnostics(browsers: &profile_scan::ScanResult) -> FdaInfo {
     #[cfg(target_os = "macos")]
     {
         let safari_ext = !crate::blocking_method::uses_automation_at_path(
             &crate::commands::canonical_data_path_static(),
             "safari",
         );
-        let live = crate::cross_app_consent::safari_extensions_plist_readable();
+        let marker_granted = crate::cross_app_consent::user_chose_to_grant_safari_fda();
         let choice = crate::cross_app_consent::safari_fda_onboarding_choice_label();
         return FdaInfo {
             applicable: safari_ext,
-            live_granted: if safari_ext { Some(live) } else { None },
-            safari_plist_readable: if safari_ext { Some(live) } else { None },
+            live_granted: if safari_ext {
+                Some(marker_granted)
+            } else {
+                None
+            },
+            safari_plist_readable: None,
             onboarding_choice: if safari_ext { choice } else { String::new() },
             safari_needs_fda_access: if safari_ext {
                 Some(browsers.safari.needs_fda_access)
@@ -390,10 +465,11 @@ fn autostart_enabled(app: &tauri::AppHandle) -> bool {
     app.autolaunch().is_enabled().unwrap_or(false)
 }
 
+/// Automation snapshot for diagnostics — watcher cache only. Live TCC
+/// queries and full process scans can contend with the automation tick
+/// and stall the modal on "Loading…".
 #[cfg(target_os = "macos")]
-fn collect_automation_info(app: &tauri::AppHandle) -> AutomationInfo {
-    use std::collections::HashSet;
-
+fn collect_automation_info_cached(app: &tauri::AppHandle) -> AutomationInfo {
     use tauri::Manager;
 
     use crate::commands::web_automation::WebAutomationState;
@@ -407,22 +483,22 @@ fn collect_automation_info(app: &tauri::AppHandle) -> AutomationInfo {
             .and_then(|guard| guard.as_ref().map(|h| h.permission_status()))
     });
 
-    let running: HashSet<_> = web_automation::running_supported_browsers()
-        .into_iter()
-        .collect();
-
     let browsers = SupportedBrowser::all()
         .into_iter()
+        .filter(|b| {
+            let key = match b {
+                SupportedBrowser::Safari => "safari",
+                SupportedBrowser::Chrome => "chrome",
+                SupportedBrowser::Brave => "brave",
+                SupportedBrowser::Edge => "edge",
+            };
+            crate::blocking_method::uses_automation(app, key)
+        })
         .map(|b| {
-            let cached_state = cached.as_ref().and_then(|list| {
-                list.iter().find(|i| i.browser == b).map(|i| i.state)
-            });
-            let state = web_automation::resolve_permission_state_for_status(
-                b,
-                cached_state,
-                running.contains(&b),
-                false,
-            );
+            let state = cached
+                .as_ref()
+                .and_then(|list| list.iter().find(|i| i.browser == b).map(|i| i.state))
+                .unwrap_or(web_automation::PermState::Unknown);
             AutomationBrowserInfo {
                 label: b.label().to_string(),
                 state: match state {
@@ -442,7 +518,7 @@ fn collect_automation_info(app: &tauri::AppHandle) -> AutomationInfo {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn collect_automation_info(_app: &tauri::AppHandle) -> AutomationInfo {
+fn collect_automation_info_cached(_app: &tauri::AppHandle) -> AutomationInfo {
     AutomationInfo {
         applicable: false,
         browsers: vec![],

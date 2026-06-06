@@ -297,9 +297,10 @@ fn list_installed_apps_macos() -> Result<Vec<InstalledApp>, String> {
                         continue;
                     }
                     seen.insert(lower);
+                    let process_name = macos_bundle_executable(&path).unwrap_or_else(|| name.to_string());
                     apps.push(InstalledApp {
                         display_name: name.to_string(),
-                        process_name: name.to_string(),
+                        process_name,
                     });
                 }
             }
@@ -308,6 +309,16 @@ fn list_installed_apps_macos() -> Result<Vec<InstalledApp>, String> {
 
     apps.sort_by(|a, b| a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()));
     Ok(apps)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_bundle_executable(app_path: &std::path::Path) -> Option<String> {
+    let plist_path = app_path.join("Contents/Info.plist");
+    let value = plist::Value::from_file(&plist_path).ok()?;
+    let dict = value.as_dictionary()?;
+    dict.get("CFBundleExecutable")
+        .and_then(|v| v.as_string())
+        .map(|s| s.to_string())
 }
 
 #[cfg(target_os = "macos")]

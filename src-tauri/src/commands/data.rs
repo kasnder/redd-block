@@ -379,6 +379,8 @@ pub fn load_data(app: AppHandle) -> Result<AppData, String> {
             fs::write(&data_path, &migrated).map_err(|e| e.to_string())?;
             set_shared_permissions(&data_path);
         }
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
+        super::app_blocking::sync_blocked_apps_from_disk(&app);
         Ok(data)
     } else {
         // Migrate from per-user location or legacy paths
@@ -444,6 +446,9 @@ pub fn save_data(app: AppHandle, mut data: AppData) -> Result<(), String> {
 
     #[cfg(target_os = "macos")]
     crate::app_group::maybe_mirror_after_save(&data_path, content.as_bytes());
+
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    super::app_blocking::sync_blocked_apps_from_disk(&app);
 
     Ok(())
 }

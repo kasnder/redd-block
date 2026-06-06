@@ -76,7 +76,36 @@ const PROTECTED: &[&str] = &[
 ];
 
 fn is_protected(name: &str) -> bool {
+    is_protected_app_name(name)
+}
+
+/// Whether an app label must never be killed by the watcher.
+pub fn is_protected_app_name(name: &str) -> bool {
     PROTECTED.iter().any(|p| name.eq_ignore_ascii_case(p))
+}
+
+/// Match a running process against a user-facing blocked-app label.
+/// On macOS the label is usually the `.app` bundle name (e.g.
+/// "Android Studio") while `sysinfo` reports the bundle executable
+/// (e.g. "studio") — also accept processes whose path lives inside
+/// `/Applications/<label>.app/`.
+fn process_matches_blocked(blocked: &str, proc_name: &str, proc_exe: Option<&std::path::Path>) -> bool {
+    let stem = proc_name.strip_suffix(".exe").unwrap_or(proc_name);
+    if blocked.eq_ignore_ascii_case(proc_name) || blocked.eq_ignore_ascii_case(stem) {
+        return true;
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(exe) = proc_exe {
+        let needle = format!("/{}.app/", blocked);
+        if exe
+            .to_string_lossy()
+            .to_ascii_lowercase()
+            .contains(&needle.to_ascii_lowercase())
+        {
+            return true;
+        }
+    }
+    false
 }
 
 // ---- Public handle --------------------------------------------------------
@@ -442,10 +471,10 @@ fn sweep(
         if name.is_empty() || is_protected(&name) {
             continue;
         }
-        let stem = name.strip_suffix(".exe").unwrap_or(&name);
+        let proc_exe = proc_.exe();
         let matched_name = match blocked
             .iter()
-            .find(|b| b.eq_ignore_ascii_case(&name) || b.eq_ignore_ascii_case(stem))
+            .find(|b| process_matches_blocked(b, &name, proc_exe))
         {
             Some(n) => n.clone(),
             None => continue,

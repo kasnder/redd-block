@@ -189,6 +189,31 @@ pub fn scan_for_onboarding() -> ScanResult {
     }
 }
 
+/// Fastest browser snapshot — install/running flags only. Used by the
+/// diagnostics modal so opening it never walks profile trees, syncs
+/// native-messaging manifests, or triggers macOS data-access TCC
+/// prompts that can stall indefinitely behind the modal.
+pub fn scan_for_diagnostics() -> ScanResult {
+    #[cfg(target_os = "macos")]
+    {
+        if !crate::cross_app_consent::should_run_profile_scans() {
+            log::info!("tcc-probe: profile_scan deferred — onboarding not complete");
+            return empty_scan_result();
+        }
+        ScanResult {
+            firefox: firefox_presence_only(),
+            chrome: ChromiumBrowser::Chrome.presence_only(),
+            brave: ChromiumBrowser::Brave.presence_only(),
+            edge: ChromiumBrowser::Edge.presence_only(),
+            safari: safari_presence_only(),
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        scan()
+    }
+}
+
 fn empty_scan_result() -> ScanResult {
     ScanResult {
         firefox: empty("firefox"),
@@ -1123,6 +1148,19 @@ fn scan_safari_duplicate_extensions(has_fda: bool, embedded: bool) -> Option<Saf
         Some(SafariDuplicateExtensions { detected: true })
     } else {
         None
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn firefox_presence_only() -> BrowserStatus {
+    BrowserStatus {
+        present: firefox_app_present(),
+        installed: firefox_app_installed(),
+        profiles: vec![],
+        error: None,
+        duplicate_extensions: None,
+        needs_fda_access: false,
+        native_host_ready: false,
     }
 }
 

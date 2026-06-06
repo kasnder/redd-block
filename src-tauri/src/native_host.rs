@@ -355,6 +355,80 @@ pub fn derive_blocklist(data_path: &std::path::Path) -> Vec<String> {
     derive_payload(data_path).0
 }
 
+/// Effective blocked-app set at `now()`, mirroring the frontend's
+/// `updateBlockedApps` merge of active one-offs and live schedule
+/// segments. App-only schedules (no websites) still contribute here
+/// even though `derive_payload` only surfaces domains.
+pub fn derive_blocked_apps(data_path: &std::path::Path) -> Vec<String> {
+    let raw = match std::fs::read_to_string(data_path) {
+        Ok(s) => s,
+        Err(_) => return vec![],
+    };
+    let data: Value = match serde_json::from_str(&raw) {
+        Ok(v) => v,
+        Err(_) => return vec![],
+    };
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
+    let blocklists =
+        data.get("blocklists").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let active =
+        data.get("activeBlocks").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let schedules =
+        data.get("schedules").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+
+    let blocklist_apps = |id: &str| -> Vec<String> {
+        blocklists
+            .iter()
+            .find(|b| b.get("id").and_then(|v| v.as_str()) == Some(id))
+            .and_then(|b| b.get("apps").and_then(|v| v.as_array()))
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+
+    let mut apps: std::collections::BTreeSet<String> = Default::default();
+
+    for ab in &active {
+        let start = ab.get("startTime").and_then(|v| v.as_u64()).unwrap_or(0);
+        let end = ab.get("endTime").and_then(|v| v.as_u64()).unwrap_or(0);
+        let paused = ab.get("isPaused").and_then(|v| v.as_bool()).unwrap_or(false);
+        if paused || now_ms < start || now_ms >= end {
+            continue;
+        }
+        let Some(id) = ab.get("blocklistId").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        for app in blocklist_apps(id) {
+            if !crate::app_watcher::is_protected_app_name(&app) {
+                apps.insert(app);
+            }
+        }
+    }
+
+    for sch in &schedules {
+        if match_schedule_now(sch, now_ms).is_none() {
+            continue;
+        }
+        let Some(id) = sch.get("blocklistId").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        for app in blocklist_apps(id) {
+            if !crate::app_watcher::is_protected_app_name(&app) {
+                apps.insert(app);
+            }
+        }
+    }
+
+    apps.into_iter().collect()
+}
+
 #[derive(Debug, Clone, Copy)]
 struct ScheduleMatch {
     started_at: Option<u64>,

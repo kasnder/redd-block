@@ -70,7 +70,7 @@ const tauriAPI = {
 
     // App blocking via helper daemon (persistent, survives app close)
     setBlockedAppsViaHelper: (apps, newlyAdded) =>
-        invoke('set_blocked_apps_via_helper', { apps, newlyAdded }),
+        invoke('set_blocked_apps_via_helper', { apps, newly_added: newlyAdded ?? [] }),
 
     // Schedule management via helper daemon (persistent, handles transitions autonomously)
     setSchedulesViaHelper: (schedules) => invoke('set_schedules_via_helper', { schedules }),
@@ -1388,6 +1388,10 @@ async function runPostAcceptanceStartup() {
             // Then sync schedules to helper so both enforcement sources are aligned.
             await syncSchedulesToHelper();
             console.log('[startup-sync] Startup helper reconciliation complete');
+            // Push active schedule / block app sets into the in-process watcher
+            // immediately — don't wait for the 1s tick interval.
+            await updateHostsFile();
+            await updateBlockedApps();
             if (!migrationOnboardingActive) {
                 try {
                     await invoke('enforcer_start');
@@ -11698,18 +11702,6 @@ async function updateBlockedApps() {
         .filter(app => !isProtectedApp(app))
         .sort();
 
-    // Send blocked apps to helper daemon
-    let helperReady = helperAvailable;
-    if (!helperReady && appsArray.length > 0) {
-        try {
-            const status = await tauriAPI.checkHelperStatus();
-            helperReady = !!(status.running && status.version_ok);
-            helperAvailable = helperReady;
-        } catch (e) {
-            console.warn('[updateBlockedApps] Helper status re-check failed:', e);
-        }
-    }
-
     // Compute the diff against the last sync so the watcher knows
     // which apps just transitioned to blocked (warning-eligible) vs
     // which were already blocked (silent enforcement). On the very
@@ -11720,22 +11712,22 @@ async function updateBlockedApps() {
         : appsArray.filter((a) => !appBlockingPreviousAppsSet.has(a));
     appBlockingPreviousAppsSet = new Set(appsArray);
 
-    if (helperReady) {
-        try {
-            const result = await tauriAPI.setBlockedAppsViaHelper(appsArray, newlyAddedApps);
-            if (result && result.success) {
-                console.log(
-                    '[updateBlockedApps] Apps set via helper daemon:',
-                    appsArray.length, 'apps,', newlyAddedApps.length, 'newly added',
-                );
-            } else {
-                console.warn('[updateBlockedApps] Helper failed to set blocked apps:', result?.error);
-            }
-        } catch (e) {
-            console.warn('[updateBlockedApps] Failed to set blocked apps via helper:', e);
+    // Desktop v3: `set_blocked_apps_via_helper` routes to the in-process
+    // app watcher — always push while the app is alive. The legacy
+    // helper-daemon gate left schedule app blocking as a no-op whenever
+    // `helperAvailable` was still false at the first tick.
+    try {
+        const result = await tauriAPI.setBlockedAppsViaHelper(appsArray, newlyAddedApps);
+        if (result && result.success) {
+            console.log(
+                '[updateBlockedApps] Apps synced to watcher:',
+                appsArray.length, 'apps,', newlyAddedApps.length, 'newly added',
+            );
+        } else {
+            console.warn('[updateBlockedApps] Watcher sync failed:', result?.error);
         }
-    } else if (appsArray.length > 0) {
-        console.warn('[updateBlockedApps] Helper not available - app blocking requires the helper daemon');
+    } catch (e) {
+        console.warn('[updateBlockedApps] Failed to sync blocked apps to watcher:', e);
     }
 }
 
@@ -18557,7 +18549,16 @@ async function refreshDiagnosticsModalContent({ showLoading = false } = {}) {
     let diag = null;
     let enforcementEnabled = false;
     try {
-        diag = await invoke('get_system_diagnostics');
+        const diagnosticsTimeoutMs = 20_000;
+        diag = await Promise.race([
+            invoke('get_system_diagnostics'),
+            new Promise((_, reject) => {
+                setTimeout(
+                    () => reject(new Error('Diagnostics timed out — try Refresh')),
+                    diagnosticsTimeoutMs,
+                );
+            }),
+        ]);
         try {
             enforcementEnabled = !!(await invoke('get_enforcement_enabled'));
         } catch (_) { /* non-desktop */ }
