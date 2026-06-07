@@ -9302,12 +9302,9 @@ function updateScheduleButtonState() {
 
 
 
-        // Lock icon
+        // Play icon
         if (btnIcon) {
-            btnIcon.innerHTML = `
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-            `;
+            btnIcon.innerHTML = LUCIDE_PLAY_SVG_INNER;
         }
 
         // Enable all controls
@@ -10132,13 +10129,20 @@ async function playAppBlockingLetsGoVoice() {
 }
 
 function syncScheduleConfirmOverlaySummary() {
-    const valueEl = document.getElementById('schedule-confirm-overlay-value');
-    if (!valueEl) return;
+    const titleEl = document.getElementById('schedule-confirm-overlay-value');
+    const descEl = document.getElementById('schedule-confirm-overlay-desc');
+    if (!titleEl) return;
     const overlay = normalizeScheduleStartOverlay(pendingScheduleStartOverlay);
     pendingScheduleStartOverlay = overlay;
-    valueEl.textContent = overlay.custom
-        ? tSettings('scheduleConfirmOverlayCustom')
-        : tSettings('scheduleConfirmOverlayDefault');
+    const isCustom = overlay.custom;
+    titleEl.textContent = isCustom
+        ? tSettings('scheduleConfirmOverlayCustomTitle')
+        : tSettings('scheduleConfirmOverlayDefaultTitle');
+    if (descEl) {
+        descEl.textContent = isCustom
+            ? tSettings('scheduleConfirmOverlayCustomDesc')
+            : tSettings('scheduleConfirmOverlayDefaultDesc');
+    }
 }
 
 function setScheduleOverlayCustomiseTab(tab) {
@@ -10478,118 +10482,199 @@ function setupScheduleOverlayCustomiseModal() {
         });
 }
 
+const START_CONFIRM_ICON_GLOBE = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;
+const START_CONFIRM_ICON_APP = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M10 4v4"></path><path d="M2 8h20"></path><path d="M6 4v4"></path></svg>`;
+const LUCIDE_PLAY_SVG_INNER = '<polygon points="6 3 20 12 6 21 6 3"></polygon>';
+
+function setStartConfirmPrimaryLabel(buttonId, text) {
+    const btn = document.getElementById(buttonId);
+    const label = btn?.querySelector('.start-confirm-primary-label');
+    if (label) label.textContent = text;
+}
+
+function buildStartConfirmBlockingLineHtml(type, labels) {
+    const icon = type === 'website' ? START_CONFIRM_ICON_GLOBE : START_CONFIRM_ICON_APP;
+    const text = labels.map((label) => escapeHtml(label)).join(', ');
+    return `<div class="start-confirm-blocking-line">${icon}<span class="start-confirm-blocking-text">${text}</span></div>`;
+}
+
+function formatStartConfirmBlockingListLabels(items, type, maxShow) {
+    const labels = type === 'website'
+        ? items.map((item) => cleanUrlForDisplay(item))
+        : items.slice();
+    if (labels.length <= maxShow) return labels;
+    return [...labels.slice(0, maxShow), '...'];
+}
+
+function renderStartConfirmBlockingListHtml(blocklist, maxShow) {
+    const websites = blocklist?.websites || [];
+    const apps = getBlocklistDisplayApps(blocklist);
+    const lines = [];
+
+    if (websites.length > 0) {
+        lines.push(buildStartConfirmBlockingLineHtml(
+            'website',
+            formatStartConfirmBlockingListLabels(websites, 'website', maxShow),
+        ));
+    }
+    if (apps.length > 0) {
+        lines.push(buildStartConfirmBlockingLineHtml(
+            'app',
+            formatStartConfirmBlockingListLabels(apps, 'app', maxShow),
+        ));
+    }
+
+    return lines.join('');
+}
+
+function renderStartConfirmBlockingDetails(blocklist, listEl, showAllBtn, rowEl) {
+    if (!listEl || !rowEl) return;
+
+    const websites = blocklist?.websites || [];
+    const apps = getBlocklistDisplayApps(blocklist);
+    const maxShow = 3;
+    const hasOverflow = websites.length > maxShow || apps.length > maxShow;
+
+    if (websites.length === 0 && apps.length === 0) {
+        rowEl.classList.add('hidden');
+        listEl.innerHTML = '';
+        showAllBtn?.classList.add('hidden');
+        return;
+    }
+
+    rowEl.classList.remove('hidden');
+    listEl.innerHTML = renderStartConfirmBlockingListHtml(blocklist, maxShow);
+
+    if (!hasOverflow) {
+        showAllBtn?.classList.add('hidden');
+        return;
+    }
+
+    showAllBtn?.classList.remove('hidden');
+    if (showAllBtn) {
+        showAllBtn.onclick = () => {
+            listEl.innerHTML = renderStartConfirmBlockingListHtml(blocklist, Number.MAX_SAFE_INTEGER);
+            showAllBtn.classList.add('hidden');
+        };
+    }
+}
+
+function buildScheduleConfirmSegmentHtml(seg) {
+    const dayLetters = weekdayLetterMon0List();
+    const startTime = `${String(seg.startHour).padStart(2, '0')}:${String(seg.startMinute).padStart(2, '0')}`;
+    const endTime = `${String(seg.endHour).padStart(2, '0')}:${String(seg.endMinute).padStart(2, '0')}`;
+    const segmentDays = Array.isArray(seg.days) ? seg.days : [];
+    const dayToggles = dayLetters.map((letter, dayIndex) =>
+        `<span class="segment-day-toggle${segmentDays.includes(dayIndex) ? ' active' : ''}" aria-hidden="true">${letter}</span>`,
+    ).join('');
+
+    return `
+        <div class="start-confirm-time-slot">
+            <div class="start-confirm-time-slot-row">
+                <span class="start-confirm-time-range">${startTime} → ${endTime}</span>
+                <div class="start-confirm-segment-days segment-days">${dayToggles}</div>
+            </div>
+        </div>
+    `;
+}
+
+function renderScheduleConfirmSegments(segmentsEl, segments) {
+    if (!segmentsEl) return;
+    segmentsEl.innerHTML = segments.map((seg) =>
+        buildScheduleConfirmSegmentHtml(seg),
+    ).join('');
+}
+
+function formatScheduleConfirmRepeatText() {
+    if (scheduleRepeatType === 'forever') {
+        return tSettings('startConfirmRepeatForever');
+    }
+    if (scheduleRepeatType === 'date' && scheduleRepeatDate) {
+        return tSettingsFmt('startConfirmRepeatUntilFmt', {
+            date: scheduleRepeatDate.toLocaleDateString(tSettings('locale')),
+        });
+    }
+    return tSettings('startConfirmRepeatNone');
+}
+
+function formatStartBlockDurationCopy(isAlwaysOn, blockStart, blockEnd) {
+    if (isAlwaysOn) {
+        return `<strong>${escapeHtml(tSettings('alwaysUntilOff'))}</strong>`;
+    }
+
+    const durationMs = blockEnd.getTime() - blockStart.getTime();
+    const durationMinutes = Math.max(1, Math.round(durationMs / 60000));
+    const hours = Math.floor(durationMinutes / 60);
+    const mins = durationMinutes % 60;
+    let durationLabel;
+    if (hours > 0 && mins > 0) durationLabel = `${hours}h ${mins}m`;
+    else if (hours > 0) durationLabel = `${hours} hour${hours > 1 ? 's' : ''}`;
+    else durationLabel = `${mins} minute${mins > 1 ? 's' : ''}`;
+
+    const ends = blockEnd.toLocaleTimeString(tSettings('locale'), { hour: 'numeric', minute: '2-digit' });
+    return tSettingsFmt('startConfirmDurationLineFmt', {
+        duration: `<strong>${escapeHtml(durationLabel)}</strong>`,
+        ends: escapeHtml(ends),
+    });
+}
+
+function formatStartBlockSubtitle(isAlwaysOn, blockStart, blockEnd) {
+    if (isAlwaysOn) return tSettings('startBlockSubtitleAlways');
+    const durationMs = blockEnd.getTime() - blockStart.getTime();
+    const durationMinutes = Math.max(1, Math.round(durationMs / 60000));
+    const hours = Math.floor(durationMinutes / 60);
+    const mins = durationMinutes % 60;
+    let durationLabel;
+    if (hours > 0 && mins > 0) durationLabel = `${hours}h ${mins}m`;
+    else if (hours > 0) durationLabel = `${hours} hour${hours > 1 ? 's' : ''}`;
+    else durationLabel = `${mins} minute${mins > 1 ? 's' : ''}`;
+    return tSettingsFmt('startBlockSubtitleFmt', { duration: durationLabel });
+}
+
 function getStartScheduleConfirmTitle(blocklist) {
     if (!blocklist) return tSettings('startThisSchedule');
-    return tSettingsFmt('startScheduleTitleFmt', {
-        emoji: blocklist.emoji || '🚫',
-        name: blocklist.name
-    });
+    return tSettingsFmt('startScheduleTitleFmt', { name: blocklist.name });
 }
 
 function getStartBlockConfirmTitle(blocklist) {
     if (!blocklist) return tSettings('startThisBlock');
-    return tSettingsFmt('startBlockTitleFmt', {
-        emoji: blocklist.emoji || '🚫',
-        name: blocklist.name
-    });
+    return tSettingsFmt('startBlockTitleFmt', { name: blocklist.name });
 }
 
 function getResumeBlockConfirmTitle(blocklist) {
     if (!blocklist) return tSettings('resumeThisBlock');
-    return tSettingsFmt('resumeBlockTitleFmt', {
-        emoji: blocklist.emoji || '🚫',
-        name: blocklist.name
-    });
+    return tSettingsFmt('resumeBlockTitleFmt', { name: blocklist.name });
 }
 
 function showScheduleConfirmModal(blocklist) {
     resetScheduleConfirmModalToStartLayout();
-    const dayNames = weekdayAbbrevMon0List();
 
     const titleEl = document.getElementById('start-schedule-confirm-title');
     if (titleEl) titleEl.textContent = getStartScheduleConfirmTitle(blocklist);
+
+    const emojiEl = document.getElementById('schedule-confirm-emoji');
+    if (emojiEl) emojiEl.textContent = blocklist.emoji || '🎯';
+
+    const subtitleEl = document.getElementById('schedule-confirm-subtitle');
+    if (subtitleEl) subtitleEl.innerHTML = tSettings('startScheduleSubtitle');
 
     const existingSchedule = appData.schedules?.find((s) => s.blocklistId === blocklist.id);
     pendingScheduleStartOverlay = cloneScheduleStartOverlay(existingSchedule?.startOverlay);
     syncScheduleConfirmOverlaySummary();
     document.getElementById('schedule-confirm-overlay-row')?.classList.toggle('hidden', isIOS);
+    document.getElementById('schedule-confirm-repeat-divider')?.classList.toggle('hidden', isIOS);
 
-    // Websites
-    const websites = blocklist.websites || [];
-    const websitesRow = document.getElementById('schedule-websites-row');
-    const websitesEl = document.getElementById('schedule-confirm-websites');
-    const showAllWebsitesBtn = document.getElementById('show-all-schedule-websites');
+    renderStartConfirmBlockingDetails(
+        blocklist,
+        document.getElementById('schedule-confirm-blocking-list'),
+        document.getElementById('schedule-confirm-show-all-blocking'),
+        document.getElementById('schedule-confirm-blocking-row'),
+    );
 
-    if (websites.length === 0) {
-        websitesRow.classList.add('hidden');
-    } else {
-        websitesRow.classList.remove('hidden');
-        const maxShow = 3;
-        if (websites.length <= maxShow) {
-            websitesEl.textContent = websites.join(', ');
-            showAllWebsitesBtn.classList.add('hidden');
-        } else {
-            websitesEl.textContent = websites.slice(0, maxShow).join(', ') + '...';
-            websitesEl.dataset.fullList = websites.join(', ');
-            showAllWebsitesBtn.classList.remove('hidden');
-            showAllWebsitesBtn.onclick = () => {
-                websitesEl.textContent = websites.join(', ');
-                showAllWebsitesBtn.classList.add('hidden');
-            };
-        }
-    }
+    renderScheduleConfirmSegments(document.getElementById('schedule-confirm-segments'), scheduleSegments);
 
-    // Apps
-    const apps = getBlocklistDisplayApps(blocklist);
-    const appsRow = document.getElementById('schedule-apps-row');
-    const appsEl = document.getElementById('schedule-confirm-apps');
-    const showAllAppsBtn = document.getElementById('show-all-schedule-apps');
-
-    if (apps.length === 0) {
-        appsRow.classList.add('hidden');
-    } else {
-        appsRow.classList.remove('hidden');
-        const maxShow = 3;
-        if (apps.length <= maxShow) {
-            appsEl.textContent = apps.join(', ');
-            showAllAppsBtn.classList.add('hidden');
-        } else {
-            appsEl.textContent = apps.slice(0, maxShow).join(', ') + '...';
-            showAllAppsBtn.classList.remove('hidden');
-            showAllAppsBtn.onclick = () => {
-                appsEl.textContent = apps.join(', ');
-                showAllAppsBtn.classList.add('hidden');
-            };
-        }
-    }
-
-    // Schedule segments
-    const segmentsEl = document.getElementById('schedule-confirm-segments');
-    segmentsEl.innerHTML = '';
-
-    scheduleSegments.forEach((seg, index) => {
-        const segDays = (seg.days || []).map(d => dayNames[d]).join(', ');
-        const startTime = `${String(seg.startHour).padStart(2, '0')}:${String(seg.startMinute).padStart(2, '0')}`;
-        const endTime = `${String(seg.endHour).padStart(2, '0')}:${String(seg.endMinute).padStart(2, '0')}`;
-
-        const row = document.createElement('div');
-        row.className = 'schedule-segment-row';
-        row.innerHTML = `
-            <span class="segment-time">${startTime} → ${endTime}</span>
-            <span class="segment-days">${segDays || tSettings('noDaysSelected')}</span>
-        `;
-        segmentsEl.appendChild(row);
-    });
-
-    // Repeat info
     const repeatEl = document.getElementById('schedule-confirm-repeat');
-    if (scheduleRepeatType === 'forever') {
-        repeatEl.textContent = tSettings('repeatForever');
-    } else if (scheduleRepeatType === 'date' && scheduleRepeatDate) {
-        repeatEl.textContent = `${tSettings('repeatUntilDate')} ${scheduleRepeatDate.toLocaleDateString(tSettings('locale'))}`;
-    } else {
-        repeatEl.textContent = tSettings('repeatNo');
-    }
+    if (repeatEl) repeatEl.innerHTML = formatScheduleConfirmRepeatText();
 
     // Override info
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
@@ -10625,19 +10710,14 @@ function showScheduleConfirmModal(blocklist) {
 function resetScheduleConfirmModalToStartLayout() {
     document.querySelector('#start-schedule-confirm-modal .start-confirm-modal')
         ?.classList.remove('schedule-confirm-edit-layout');
-    document.getElementById('schedule-summary-header')?.classList.remove('hidden');
-    document.getElementById('schedule-websites-row')?.classList.remove('hidden');
-    document.getElementById('schedule-apps-row')?.classList.remove('hidden');
 
-    const confirmBtn = document.getElementById('proceed-schedule-confirm-btn');
-    if (confirmBtn) confirmBtn.textContent = tSettings('startSchedule');
+    setStartConfirmPrimaryLabel('proceed-schedule-confirm-btn', tSettings('startSchedule'));
     const titleEl = document.getElementById('start-schedule-confirm-title');
     if (titleEl) titleEl.textContent = tSettings('startThisSchedule');
-    const repeatRow = document.getElementById('schedule-confirm-repeat');
-    if (repeatRow && repeatRow.parentElement) repeatRow.parentElement.classList.remove('hidden');
     const overrideHeader = document.getElementById('schedule-confirm-override-header');
-    if (overrideHeader) overrideHeader.textContent = tSettings('confirmScheduleOverrideNeed');
+    if (overrideHeader) overrideHeader.textContent = tSettings('startScheduleHoldHeader');
     document.getElementById('schedule-confirm-overlay-row')?.classList.toggle('hidden', isIOS);
+    document.getElementById('schedule-confirm-repeat-divider')?.classList.toggle('hidden', isIOS);
 }
 
 function closeScheduleConfirmModal() {
@@ -10692,8 +10772,6 @@ function openScheduledBlockEdit(schedule) {
 
 // Show confirmation modal for editing (adding segments to) an existing schedule
 function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) {
-    const dayNames = weekdayAbbrevMon0List();
-
     // Store references for the proceed function
     window.editScheduleData = {
         scheduleId: existingSchedule.id || existingSchedule.blocklistId,
@@ -10708,36 +10786,19 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
         titleEl.textContent = tSettingsFmt('saveChangesTitleFmt', { name: blocklist.name });
     }
 
-    document.getElementById('schedule-confirm-name')?.classList.add('hidden');
-    document.getElementById('schedule-summary-header')?.classList.add('hidden');
+    const emojiEl = document.getElementById('schedule-confirm-emoji');
+    if (emojiEl) emojiEl.textContent = blocklist.emoji || '🎯';
+
     const overrideHeader = document.getElementById('schedule-confirm-override-header');
-    if (overrideHeader) overrideHeader.textContent = tSettings('saveChangesOverrideNeed');
+    if (overrideHeader) overrideHeader.textContent = tSettings('saveChangesHoldHeader');
 
-    // Hide websites and apps rows (not changing those)
-    document.getElementById('schedule-websites-row').classList.add('hidden');
-    document.getElementById('schedule-apps-row').classList.add('hidden');
-    document.getElementById('schedule-confirm-overlay-row')?.classList.add('hidden');
-
-    // Show NEW segments only
     const segmentsEl = document.getElementById('schedule-confirm-segments');
-    segmentsEl.innerHTML = `<div class="edit-schedule-notice">${tSettings('addingTheseSegments')}</div>`;
-
-    newSegments.forEach((seg, index) => {
-        const segDays = (seg.days || []).map(d => dayNames[d]).join(', ');
-        const startTime = `${String(seg.startHour).padStart(2, '0')}:${String(seg.startMinute).padStart(2, '0')}`;
-        const endTime = `${String(seg.endHour).padStart(2, '0')}:${String(seg.endMinute).padStart(2, '0')}`;
-
-        const row = document.createElement('div');
-        row.className = 'schedule-segment-row new-segment';
-        row.innerHTML = `
-            <span class="segment-time">${startTime} → ${endTime}</span>
-            <span class="segment-days">${segDays || tSettings('noDaysSelected')}</span>
-        `;
-        segmentsEl.appendChild(row);
-    });
-
-    // Hide repeat info (not changing)
-    document.getElementById('schedule-confirm-repeat').parentElement.classList.add('hidden');
+    if (segmentsEl) {
+        segmentsEl.innerHTML = `<div class="edit-schedule-notice">${tSettings('addingTheseSegments')}</div>`;
+        newSegments.forEach((seg) => {
+            segmentsEl.insertAdjacentHTML('beforeend', buildScheduleConfirmSegmentHtml(seg));
+        });
+    }
 
     // Populate override info — same computation as showScheduleConfirmModal so users see
     // the actual barrier, not just the header.
@@ -10760,9 +10821,7 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
     document.getElementById('schedule-confirm-override-text').textContent =
         formatConfirmModalOverrideTypingLine({ type: schedType, count: displayCount, estimatedMinutes });
 
-    // Swap the proceed button label; the click handler routes via editScheduleData.
-    const confirmBtn = document.getElementById('proceed-schedule-confirm-btn');
-    if (confirmBtn) confirmBtn.textContent = tSettings('pendingChangesSave');
+    setStartConfirmPrimaryLabel('proceed-schedule-confirm-btn', tSettings('pendingChangesSave'));
 
     // Show modal
     document.getElementById('start-schedule-confirm-modal').classList.remove('hidden');
@@ -11872,17 +11931,14 @@ function handleBlocklistSelect(e) {
                         const alwaysOnMsg = document.getElementById('always-on-message');
                         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
                     } else {
-                        // No active block - show Start Block button (normal) with lock icon
+                        // No active block - show Start Block button (normal) with play icon
                         // Ensure we've already cleared the activeBlockId above
                         setBtnActionLabel(btnLabel, tSettings('startBlockButton'));
                         setStartBtnBlocklistInfo(startBlockBtn, blocklist);
 
-                        // Change to lock icon
+                        // Change to play icon
                         if (btnIcon) {
-                            btnIcon.innerHTML = `
-                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-                            `;
+                            btnIcon.innerHTML = LUCIDE_PLAY_SVG_INNER;
                         }
 
                         // Enable time controls
@@ -11995,88 +12051,35 @@ function startBlock() {
     }
 
     // Calculate duration for display
-    let durationText = '';
-    if (isAlwaysOnMode) {
-        durationText = tSettings('alwaysUntilOff');
-    } else {
-        // Get times for display
-        let blockStart = getStartTimeAsDate();
-        let blockEnd = getEndTimeAsDate();
-        if (blockEnd <= blockStart) {
-            blockEnd.setDate(blockEnd.getDate() + 1);
-        }
-
-        const durationMs = blockEnd.getTime() - blockStart.getTime();
-        const durationMinutes = Math.round(durationMs / 60000);
-        const hours = Math.floor(durationMinutes / 60);
-        const mins = durationMinutes % 60;
-        if (hours > 0 && mins > 0) {
-            durationText = `${hours}h ${mins}m`;
-        } else if (hours > 0) {
-            durationText = `${hours} hour${hours > 1 ? 's' : ''}`;
-        } else {
-            durationText = `${mins} minute${mins > 1 ? 's' : ''}`;
-        }
+    let blockStart = getStartTimeAsDate();
+    let blockEnd = getEndTimeAsDate();
+    if (!isAlwaysOnMode && blockEnd <= blockStart) {
+        blockEnd = new Date(blockEnd);
+        blockEnd.setDate(blockEnd.getDate() + 1);
     }
 
-    // Populate duration
-    document.getElementById('start-confirm-duration').textContent = durationText;
+    const emojiEl = document.getElementById('start-confirm-emoji');
+    if (emojiEl) emojiEl.textContent = blocklist.emoji || '🎯';
 
     const titleEl = document.getElementById('start-block-confirm-title');
     if (titleEl) titleEl.textContent = getStartBlockConfirmTitle(blocklist);
 
-    // Helper to format list with show all
-    const formatListWithShowAll = (items, elementId, showAllBtnId, rowId) => {
-        const valueEl = document.getElementById(elementId);
-        const showAllBtn = document.getElementById(showAllBtnId);
-        const rowEl = document.getElementById(rowId);
-
-        if (!items || items.length === 0) {
-            rowEl.classList.add('hidden');
-            return;
-        }
-
-        rowEl.classList.remove('hidden');
-
-        if (items.length <= 3) {
-            valueEl.textContent = items.map(cleanUrlForDisplay).join(', ');
-            showAllBtn.classList.add('hidden');
-        } else {
-            const displayItems = items.slice(0, 3).map(cleanUrlForDisplay);
-            valueEl.textContent = displayItems.join(', ') + ', ...';
-            showAllBtn.classList.remove('hidden');
-            showAllBtn.onclick = () => {
-                valueEl.textContent = items.map(cleanUrlForDisplay).join(', ');
-                showAllBtn.classList.add('hidden');
-            };
-        }
-    };
-
-    // Populate websites
-    formatListWithShowAll(blocklist.websites, 'start-confirm-websites', 'show-all-websites', 'websites-row');
-
-    // Populate apps (apps don't need URL cleaning)
-    const appsValueEl = document.getElementById('start-confirm-apps');
-    const showAllAppsBtn = document.getElementById('show-all-apps');
-    const appsRowEl = document.getElementById('apps-row');
-
-    const displayApps = getBlocklistDisplayApps(blocklist);
-    if (displayApps.length === 0) {
-        appsRowEl.classList.add('hidden');
-    } else {
-        appsRowEl.classList.remove('hidden');
-        if (displayApps.length <= 3) {
-            appsValueEl.textContent = displayApps.join(', ');
-            showAllAppsBtn.classList.add('hidden');
-        } else {
-            appsValueEl.textContent = displayApps.slice(0, 3).join(', ') + ', ...';
-            showAllAppsBtn.classList.remove('hidden');
-            showAllAppsBtn.onclick = () => {
-                appsValueEl.textContent = displayApps.join(', ');
-                showAllAppsBtn.classList.add('hidden');
-            };
-        }
+    const subtitleEl = document.getElementById('start-confirm-subtitle');
+    if (subtitleEl) {
+        subtitleEl.innerHTML = formatStartBlockSubtitle(isAlwaysOnMode, blockStart, blockEnd);
     }
+
+    const durationEl = document.getElementById('start-confirm-duration');
+    if (durationEl) {
+        durationEl.innerHTML = formatStartBlockDurationCopy(isAlwaysOnMode, blockStart, blockEnd);
+    }
+
+    renderStartConfirmBlockingDetails(
+        blocklist,
+        document.getElementById('start-confirm-blocking-list'),
+        document.getElementById('start-confirm-show-all-blocking'),
+        document.getElementById('start-confirm-blocking-row'),
+    );
 
     // Build override difficulty text with time estimate
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
@@ -12120,7 +12123,7 @@ function closeStartBlockConfirmModal() {
     if (resumeData) {
         resumeData = null;
         document.getElementById('start-block-confirm-title').textContent = tSettings('startThisBlock');
-        document.getElementById('proceed-start-confirm-btn').textContent = tSettings('startBlock');
+        setStartConfirmPrimaryLabel('proceed-start-confirm-btn', tSettings('startBlock'));
     }
 }
 
@@ -12311,9 +12314,8 @@ async function proceedWithBlock() {
 // Helper function for start block button HTML (includes .btn-label and .btn-blocklist-meta wrapper)
 function getStartBlockButtonHTML() {
     return `
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polygon points="6 3 20 12 6 21 6 3"></polygon>
         </svg>
         <span class="btn-label">${getActionLabelHTML(tSettings('startBlockButton'))}</span>
         <span class="btn-blocklist-meta">
@@ -13068,16 +13070,21 @@ function openResumeConfirmation(blocklistId, type, blockId) {
 
     resumeData = { blocklistId, type, blockId };
 
-    // Set heading
+    const emojiEl = document.getElementById('start-confirm-emoji');
+    if (emojiEl) emojiEl.textContent = blocklist.emoji || '🎯';
+
     document.getElementById('start-block-confirm-title').textContent = getResumeBlockConfirmTitle(blocklist);
 
-    // Set duration text
+    const subtitleEl = document.getElementById('start-confirm-subtitle');
+    if (subtitleEl) subtitleEl.innerHTML = tSettings('resumeBlockSubtitle');
+
+    const durationEl = document.getElementById('start-confirm-duration');
     if (type === 'block') {
         const block = appData.activeBlocks.find(b => b.id === blockId);
-        if (block) {
+        if (block && durationEl) {
             const remainingMs = block.endTime - Date.now();
             if (isBlockAlwaysOn(block)) {
-                document.getElementById('start-confirm-duration').textContent = tSettings('alwaysUntilOff');
+                durationEl.innerHTML = `<strong>${escapeHtml(tSettings('alwaysUntilOff'))}</strong>`;
             } else {
                 const remainingMins = Math.max(1, Math.floor(remainingMs / 60000));
                 const hours = Math.floor(remainingMins / 60);
@@ -13086,55 +13093,19 @@ function openResumeConfirmation(blocklistId, type, blockId) {
                 if (hours > 0 && mins > 0) dText = `${hours}h ${mins}m remaining`;
                 else if (hours > 0) dText = `${hours} hour${hours > 1 ? 's' : ''} remaining`;
                 else dText = `${mins} minute${mins > 1 ? 's' : ''} remaining`;
-                document.getElementById('start-confirm-duration').textContent = dText;
+                durationEl.innerHTML = `<strong>${escapeHtml(dText)}</strong>`;
             }
         }
-    } else {
-        document.getElementById('start-confirm-duration').textContent = tSettings('scheduleResumingSegment');
+    } else if (durationEl) {
+        durationEl.innerHTML = `<strong>${escapeHtml(tSettings('scheduleResumingSegment'))}</strong>`;
     }
 
-    // Populate websites
-    const websitesRow = document.getElementById('websites-row');
-    const websitesEl = document.getElementById('start-confirm-websites');
-    const showAllWebsites = document.getElementById('show-all-websites');
-    if (blocklist.websites && blocklist.websites.length > 0) {
-        websitesRow.classList.remove('hidden');
-        if (blocklist.websites.length <= 3) {
-            websitesEl.textContent = blocklist.websites.map(cleanUrlForDisplay).join(', ');
-            showAllWebsites.classList.add('hidden');
-        } else {
-            websitesEl.textContent = blocklist.websites.slice(0, 3).map(cleanUrlForDisplay).join(', ') + ', ...';
-            showAllWebsites.classList.remove('hidden');
-            showAllWebsites.onclick = () => {
-                websitesEl.textContent = blocklist.websites.map(cleanUrlForDisplay).join(', ');
-                showAllWebsites.classList.add('hidden');
-            };
-        }
-    } else {
-        websitesRow.classList.add('hidden');
-    }
-
-    // Populate apps
-    const appsRow = document.getElementById('apps-row');
-    const appsEl = document.getElementById('start-confirm-apps');
-    const showAllApps = document.getElementById('show-all-apps');
-    const displayApps = getBlocklistDisplayApps(blocklist);
-    if (displayApps.length > 0) {
-        appsRow.classList.remove('hidden');
-        if (displayApps.length <= 3) {
-            appsEl.textContent = displayApps.join(', ');
-            showAllApps.classList.add('hidden');
-        } else {
-            appsEl.textContent = displayApps.slice(0, 3).join(', ') + ', ...';
-            showAllApps.classList.remove('hidden');
-            showAllApps.onclick = () => {
-                appsEl.textContent = displayApps.join(', ');
-                showAllApps.classList.add('hidden');
-            };
-        }
-    } else {
-        appsRow.classList.add('hidden');
-    }
+    renderStartConfirmBlockingDetails(
+        blocklist,
+        document.getElementById('start-confirm-blocking-list'),
+        document.getElementById('start-confirm-show-all-blocking'),
+        document.getElementById('start-confirm-blocking-row'),
+    );
 
     // Override info
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
@@ -13166,8 +13137,7 @@ function openResumeConfirmation(blocklistId, type, blockId) {
     });
     document.getElementById('start-confirm-override-text').textContent = overrideText;
 
-    // Change confirm button text
-    document.getElementById('proceed-start-confirm-btn').textContent = tSettings('resumeBlock');
+    setStartConfirmPrimaryLabel('proceed-start-confirm-btn', tSettings('resumeBlock'));
 
     // Show modal
     document.getElementById('start-block-confirm-modal').classList.remove('hidden');
@@ -14604,7 +14574,7 @@ function syncSelectedControlState() {
     } else {
         setBtnActionLabel(btnLabel, tSettings('startBlockButton'));
         setStartBtnBlocklistInfo(startBlockBtn, blocklist);
-        if (btnIcon) btnIcon.innerHTML = `<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path>`;
+        if (btnIcon) btnIcon.innerHTML = LUCIDE_PLAY_SVG_INNER;
         if (pauseBtn) pauseBtn.classList.add('hidden');
         disableTimeControls(false);
         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isAlwaysOnMode);
@@ -16958,8 +16928,22 @@ const SETTINGS_TRANSLATIONS = {
         helperUpdating: 'Updating...',
         helperReinstalling: 'Reinstalling...',
         startThisBlock: 'Start this block?',
-        startBlockTitleFmt: 'Start the block {emoji} {name}?',
-        resumeBlockTitleFmt: 'Resume the block {emoji} {name}?',
+        startBlockTitleFmt: 'Start the block “{name}”?',
+        resumeBlockTitleFmt: 'Resume the block “{name}”?',
+        startBlockSubtitleFmt: 'Distractions go quiet for the next <strong>{duration}</strong>.',
+        startBlockSubtitleAlways: 'Distractions stay quiet until you turn this block off.',
+        resumeBlockSubtitle: 'Pick up where you left off with this block.',
+        startConfirmBlockingLabel: 'Blocking',
+        startConfirmDurationLabel: 'Duration',
+        startConfirmTimesLabel: 'Times',
+        startConfirmRepeatsLabel: 'Repeats',
+        startConfirmDurationLineFmt: '{duration} · <span class="start-confirm-duration-meta">ends ~{ends}</span>',
+        startConfirmRepeatForever: '<strong>Every week</strong> · no end date',
+        startConfirmRepeatUntilFmt: '<strong>Every week</strong> · until {date}',
+        startConfirmRepeatNone: '<strong>One week only</strong> · no repeat',
+        startBlockHoldHeader: 'To stop this blocking, you\'ll need to:',
+        startScheduleHoldHeader: 'To stop this blocking, you\'ll need to:',
+        saveChangesHoldHeader: 'To stop this blocking, you\'ll need to:',
         blockedWebsites: 'Blocked websites:',
         blockedApps: 'Blocked apps:',
         showAll: 'show all',
@@ -16971,8 +16955,15 @@ const SETTINGS_TRANSLATIONS = {
         alwaysUntilOff: 'Always (until turned off)',
         scheduleResumingSegment: 'Schedule (resuming current segment)',
         startThisSchedule: 'Start this schedule?',
-        startScheduleTitleFmt: 'Start the schedule {emoji} {name}?',
-        scheduleConfirmOverlayLabel: 'Overlay displayed if blocked apps are running:',
+        startScheduleTitleFmt: 'Start the schedule “{name}”?',
+        startScheduleSubtitle: 'Blocks run automatically at the times shown below.',
+        scheduleConfirmOverlayLabel: 'Start alert',
+        scheduleConfirmOverlayDefaultTitle: 'Default overlay',
+        scheduleConfirmOverlayCustomTitle: 'Custom overlay',
+        scheduleConfirmOverlayDefaultDesc:
+            'Shown if blocked apps are open when a block begins — lists the apps with a “Let\'s go” button.',
+        scheduleConfirmOverlayCustomDesc:
+            'Your customised message, image, voice, and button label.',
         scheduleConfirmOverlayDefault: 'Default (which apps & Let\'s go button)',
         scheduleConfirmOverlayCustom: 'Custom',
         scheduleOverlayCustomiseTitle: 'Customise schedule overlay',
@@ -17609,8 +17600,22 @@ const SETTINGS_TRANSLATIONS = {
         helperUpdating: 'Opdaterer...',
         helperReinstalling: 'Geninstallerer...',
         startThisBlock: 'Start denne blokering?',
-        startBlockTitleFmt: 'Start blokeringen {emoji} {name}?',
-        resumeBlockTitleFmt: 'Genoptag blokeringen {emoji} {name}?',
+        startBlockTitleFmt: 'Start blokeringen “{name}”?',
+        resumeBlockTitleFmt: 'Genoptag blokeringen “{name}”?',
+        startBlockSubtitleFmt: 'Distraherende apps og sider er stille de næste <strong>{duration}</strong>.',
+        startBlockSubtitleAlways: 'Distraherende apps og sider forbliver stille, indtil du slår blokeringen fra.',
+        resumeBlockSubtitle: 'Fortsæt hvor du slap med denne blokering.',
+        startConfirmBlockingLabel: 'Blokering',
+        startConfirmDurationLabel: 'Varighed',
+        startConfirmTimesLabel: 'Tider',
+        startConfirmRepeatsLabel: 'Gentages',
+        startConfirmDurationLineFmt: '{duration} · <span class="start-confirm-duration-meta">slutter ~{ends}</span>',
+        startConfirmRepeatForever: '<strong>Hver uge</strong> · ingen slutdato',
+        startConfirmRepeatUntilFmt: '<strong>Hver uge</strong> · indtil {date}',
+        startConfirmRepeatNone: '<strong>Kun én uge</strong> · gentages ikke',
+        startBlockHoldHeader: 'For at stoppe denne blokering skal du:',
+        startScheduleHoldHeader: 'For at stoppe denne blokering skal du:',
+        saveChangesHoldHeader: 'For at stoppe denne blokering skal du:',
         blockedWebsites: 'Blokerede hjemmesider:',
         blockedApps: 'Blokerede apps:',
         showAll: 'vis alle',
@@ -17622,8 +17627,15 @@ const SETTINGS_TRANSLATIONS = {
         alwaysUntilOff: 'Altid (indtil den slås fra)',
         scheduleResumingSegment: 'Skema (genoptager nuværende segment)',
         startThisSchedule: 'Start dette skema?',
-        startScheduleTitleFmt: 'Start skemaet {emoji} {name}?',
-        scheduleConfirmOverlayLabel: 'Overlay vist hvis blokerede apps kører:',
+        startScheduleTitleFmt: 'Start skemaet “{name}”?',
+        startScheduleSubtitle: 'Blokeringer kører automatisk på tidspunkterne vist nedenfor.',
+        scheduleConfirmOverlayLabel: 'Startbesked',
+        scheduleConfirmOverlayDefaultTitle: 'Standard-overlay',
+        scheduleConfirmOverlayCustomTitle: 'Tilpasset overlay',
+        scheduleConfirmOverlayDefaultDesc:
+            'Vises hvis blokerede apps er åbne, når en blokering starter — viser apps med en “Lad os komme i gang”-knap.',
+        scheduleConfirmOverlayCustomDesc:
+            'Din tilpassede besked, billede, stemme og knaptekst.',
         scheduleConfirmOverlayDefault: 'Standard (hvilke apps og Lad os komme i gang-knap)',
         scheduleConfirmOverlayCustom: 'Tilpasset',
         scheduleOverlayCustomiseTitle: 'Tilpas schedule-overlay',
@@ -18545,23 +18557,23 @@ function applySettingsLanguage() {
     setText('cancel-pause-btn', tSettings('cancel'));
     setText('confirm-pause-btn', tSettings('pause'));
     setText('start-block-confirm-title', tSettings('startThisBlock'));
-    setText('confirm-blocked-websites-label', tSettings('blockedWebsites'));
-    setText('confirm-blocked-apps-label', tSettings('blockedApps'));
-    setText('show-all-websites', tSettings('showAll'));
-    setText('show-all-apps', tSettings('showAll'));
-    setText('confirm-duration-label', tSettings('confirmDuration'));
-    setText('confirm-override-header', tSettings('confirmOverrideNeed'));
+    setText('start-confirm-blocking-label', tSettings('startConfirmBlockingLabel'));
+    setText('start-confirm-duration-label', tSettings('startConfirmDurationLabel'));
+    setText('start-confirm-show-all-blocking', tSettings('showAll'));
+    setText('confirm-override-header', tSettings('startBlockHoldHeader'));
     setText('cancel-start-confirm-btn', tSettings('cancel'));
-    setText('proceed-start-confirm-btn', tSettings('startBlock'));
+    setStartConfirmPrimaryLabel('proceed-start-confirm-btn', tSettings('startBlock'));
     setText('start-schedule-confirm-title', tSettings('startThisSchedule'));
-    setText('schedule-confirm-blocked-websites-label', tSettings('blockedWebsites'));
-    setText('schedule-confirm-blocked-apps-label', tSettings('blockedApps'));
-    setText('show-all-schedule-websites', tSettings('showAll'));
-    setText('show-all-schedule-apps', tSettings('showAll'));
-    setText('schedule-summary-header', tSettings('scheduleTitle'));
-    setText('schedule-confirm-repeat-label', tSettings('repeatLabel'));
+    setText('schedule-confirm-blocking-label', tSettings('startConfirmBlockingLabel'));
+    setText('schedule-confirm-show-all-blocking', tSettings('showAll'));
+    setText('schedule-confirm-times-label', tSettings('startConfirmTimesLabel'));
+    setText('schedule-confirm-repeat-label', tSettings('startConfirmRepeatsLabel'));
     setText('schedule-confirm-overlay-label', tSettings('scheduleConfirmOverlayLabel'));
     setText('schedule-confirm-overlay-customise-btn', tSettings('scheduleOverlayCustomiseBtn'));
+    const overlayDescEl = document.getElementById('schedule-confirm-overlay-desc');
+    if (overlayDescEl && !overlayDescEl.textContent) {
+        overlayDescEl.textContent = tSettings('scheduleConfirmOverlayDefaultDesc');
+    }
     setText('schedule-overlay-customise-title', tSettings('scheduleOverlayCustomiseTitle'));
     setText('schedule-overlay-tab-message', tSettings('scheduleOverlayTabMessage'));
     setText('schedule-overlay-tab-button', tSettings('scheduleOverlayTabButton'));
@@ -18582,9 +18594,9 @@ function applySettingsLanguage() {
     setText('schedule-overlay-use-default-btn', tSettings('scheduleOverlayUseDefault'));
     setText('schedule-overlay-customise-cancel-btn', tSettings('cancel'));
     setText('schedule-overlay-customise-save-btn', tSettings('save'));
-    setText('schedule-confirm-override-header', tSettings('confirmScheduleOverrideNeed'));
+    setText('schedule-confirm-override-header', tSettings('startScheduleHoldHeader'));
     setText('cancel-schedule-confirm-btn', tSettings('cancel'));
-    setText('proceed-schedule-confirm-btn', tSettings('startSchedule'));
+    setStartConfirmPrimaryLabel('proceed-schedule-confirm-btn', tSettings('startSchedule'));
     setText('undo-toast-btn', tSettings('undo'));
     const undoToastMsg = document.getElementById('undo-toast-message');
     if (undoToastMsg && pendingDelete?.blocklist) {

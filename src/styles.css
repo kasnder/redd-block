@@ -2129,7 +2129,7 @@ body.dark-mode .app-blocking-closedown-banner {
     body.ios:not(.ios-phone) .modal-content.start-confirm-modal,
     body.ios:not(.ios-phone) #start-block-confirm-modal .modal-content,
     body.ios:not(.ios-phone) #start-schedule-confirm-modal .modal-content {
-        max-width: calc(420px * var(--ipad-s));
+        max-width: calc(500px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-content.pause-modal,
@@ -4598,7 +4598,7 @@ body.dark-mode .tag.locked {
     text-align: start;
 }
 
-/* Keep the lock/unlock SVG at a stable size when label + blocklist name wrap. */
+/* Keep the action SVG at a stable size when label + blocklist name wrap. */
 .start-block-btn > svg {
     flex: 0 0 18px;
     width: 18px;
@@ -9269,102 +9269,308 @@ body.ios #override-count-wrapper .form-input.small {
     vertical-align: middle;
 }
 
-/* Start block confirmation modal */
+/* Start block / schedule confirmation modals */
 .start-confirm-modal {
-    max-width: 420px;
+    max-width: 500px;
+    padding: 28px;
+}
+
+.start-confirm-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.start-confirm-emoji-badge {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    line-height: 1;
+}
+
+.start-confirm-header-text {
+    min-width: 0;
+    flex: 1;
 }
 
 .start-confirm-modal h3 {
-    margin: 0 0 12px 0;
-    font-size: 20px;
-    color: var(--text-secondary);
+    margin: 0 0 6px;
+    font-family: var(--font-heading);
+    font-size: 1.45rem;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--redd-navy);
 }
 
-.block-details {
-    margin-bottom: 16px;
-}
-
-.block-detail-name {
-    font-size: 17px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    margin-bottom: 12px;
-}
-
-.block-detail-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 4px;
-    margin-bottom: 6px;
-    font-size: 15px;
-    line-height: 1.5;
-}
-
-.block-detail-row .detail-label {
+.start-confirm-subtitle {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.45;
     color: var(--text-muted);
-    flex-shrink: 0;
 }
 
-.block-detail-row .detail-value {
+.start-confirm-subtitle strong {
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.start-confirm-summary-card {
+    margin-bottom: 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    background: var(--app-bg);
+    overflow: hidden;
+}
+
+.start-confirm-summary-row {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+    gap: 12px;
+    padding: 14px 16px;
+    align-items: start;
+}
+
+.start-confirm-summary-divider {
+    height: 0;
+    margin: 0 16px;
+    border-top: 1px dotted var(--border-color);
+}
+
+.start-confirm-summary-row.hidden + .start-confirm-summary-divider {
+    display: none;
+}
+
+.start-confirm-row-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-top: 2px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
+.start-confirm-row-icon {
+    flex-shrink: 0;
+    opacity: 0.75;
+}
+
+.start-confirm-row-value {
+    min-width: 0;
+}
+
+.start-confirm-blocking-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.start-confirm-blocking-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    font-size: 14px;
+    line-height: 1.45;
     color: var(--text-primary);
 }
 
-.show-all-btn {
-    background: none;
+.start-confirm-blocking-icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: var(--text-muted);
+}
+
+.start-confirm-blocking-text {
+    min-width: 0;
+}
+
+.start-confirm-show-more {
+    margin-top: 8px;
+    padding: 0;
     border: none;
-    color: var(--accent-color);
+    background: none;
+    color: var(--redd-blue);
     font-size: 13px;
     cursor: pointer;
-    padding: 0;
     text-decoration: underline;
 }
 
-.show-all-btn:hover {
+.start-confirm-show-more:hover {
     color: var(--accent-hover);
 }
 
-/* Schedule Summary in Confirmation Modal */
-.schedule-summary {
-    margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--border-color);
+.start-confirm-duration-copy,
+.start-confirm-repeat-copy {
+    font-size: 15px;
+    line-height: 1.45;
+    color: var(--text-primary);
 }
 
-.schedule-confirm-overlay-row {
+.start-confirm-repeat-copy strong {
+    font-weight: 500;
+    color: var(--redd-navy);
+}
+
+.start-confirm-duration-copy strong {
+    font-weight: 700;
+    color: var(--redd-navy);
+}
+
+.start-confirm-duration-meta {
+    color: var(--text-muted);
+    font-weight: 400;
+}
+
+.start-confirm-times-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.start-confirm-time-slot-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: nowrap;
+    min-height: 24px;
+}
+
+#schedule-confirm-times-row .start-confirm-row-label {
+    padding-top: 0;
+    min-height: 24px;
+}
+
+.start-confirm-time-range {
+    flex-shrink: 0;
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--redd-navy);
+    white-space: nowrap;
+}
+
+.start-confirm-segment-days {
+    display: flex;
+    flex-wrap: nowrap;
+    flex-shrink: 1;
+    justify-content: flex-end;
+    gap: 3px;
+    min-width: 0;
+}
+
+.start-confirm-segment-days .segment-day-toggle {
+    pointer-events: none;
+    cursor: default;
+    flex-shrink: 0;
+    min-width: 24px;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    font-size: 11px;
+}
+
+.start-confirm-overlay-row .start-confirm-row-value {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
-    margin: 0 0 16px;
-    padding: 12px 14px;
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    background: var(--element-bg);
 }
 
-.schedule-confirm-overlay-copy {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
+.start-confirm-overlay-copy {
     min-width: 0;
 }
 
-.schedule-confirm-overlay-label {
-    font-size: 13px;
-    color: var(--text-muted);
-    line-height: 1.4;
-}
-
-.schedule-confirm-overlay-value {
+.start-confirm-overlay-title {
     font-size: 15px;
-    color: var(--text-primary);
-    line-height: 1.45;
+    font-weight: 500;
+    color: var(--redd-navy);
+    line-height: 1.35;
 }
 
-.schedule-confirm-overlay-customise-btn {
+.start-confirm-overlay-desc {
+    margin: 4px 0 0;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
+.start-confirm-overlay-customise-btn {
     flex-shrink: 0;
     white-space: nowrap;
+    padding: 8px 12px;
+    font-size: 13px;
+}
+
+.start-confirm-warning .override-info-header {
+    align-items: flex-start;
+}
+
+.start-confirm-warning-icon {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: hsl(30, 70%, 45%);
+}
+
+.start-confirm-warning {
+    margin-top: 16px;
+}
+
+.start-confirm-actions {
+    gap: 10px;
+}
+
+.start-confirm-actions .modal-btn {
+    flex: 1;
+    min-height: 44px;
+}
+
+.start-confirm-primary-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.start-confirm-primary-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+}
+
+.start-confirm-modal.schedule-confirm-edit-layout .start-confirm-subtitle,
+.start-confirm-modal.schedule-confirm-edit-layout #schedule-confirm-blocking-row,
+.start-confirm-modal.schedule-confirm-edit-layout #schedule-confirm-blocking-divider,
+.start-confirm-modal.schedule-confirm-edit-layout #schedule-confirm-times-divider,
+.start-confirm-modal.schedule-confirm-edit-layout #schedule-confirm-repeat-row,
+.start-confirm-modal.schedule-confirm-edit-layout #schedule-confirm-repeat-divider,
+.start-confirm-modal.schedule-confirm-edit-layout #schedule-confirm-overlay-row {
+    display: none;
+}
+
+.edit-schedule-notice {
+    margin-bottom: 10px;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
+body.dark-mode .start-confirm-modal h3,
+body.dark-mode .start-confirm-duration-copy strong,
+body.dark-mode .start-confirm-repeat-copy strong,
+body.dark-mode .start-confirm-time-range,
+body.dark-mode .start-confirm-overlay-title {
+    color: var(--text-primary);
+}
+
+body.dark-mode .start-confirm-blocking-text {
+    color: var(--text-primary);
 }
 
 .schedule-overlay-customise-modal {
@@ -9539,70 +9745,22 @@ body.ios #override-count-wrapper .form-input.small {
     margin-top: 18px;
 }
 
-.start-confirm-modal:not(.schedule-confirm-edit-layout) .block-detail-name {
-    display: none;
-}
-
-.start-confirm-modal.schedule-confirm-edit-layout .block-detail-name,
-.start-confirm-modal.schedule-confirm-edit-layout .schedule-summary-header {
-    display: none;
-}
-
-.start-confirm-modal.schedule-confirm-edit-layout .schedule-summary {
-    margin-top: 0;
-    padding-top: 0;
-    border-top: none;
-}
-
-.edit-schedule-notice {
-    margin-bottom: 14px;
-    font-size: 15px;
-    line-height: 1.45;
-    color: var(--text-secondary);
-}
-
-.schedule-summary-header {
-    font-size: 15px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    margin-bottom: 8px;
-}
-
-.schedule-segment-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 6px;
-    font-size: 15px;
-    color: var(--text-primary);
-}
-
-.schedule-segment-row .segment-time {
-    font-weight: 500;
-    color: var(--text-secondary);
-    min-width: 100px;
-}
-
-.schedule-segment-row .segment-days {
-    color: var(--text-muted);
-}
-
 .override-info-box {
     background: hsl(45, 93%, 94%);
     border: 1px solid hsl(45, 80%, 70%);
-    border-radius: 8px;
-    padding: 12px 14px;
-    margin-bottom: 8px;
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 0;
 }
 
 .override-info-header {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     color: hsl(30, 60%, 35%);
-    font-size: 15px;
-    font-weight: 600;
-    margin-bottom: 8px;
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 6px;
 }
 
 .override-info-header svg {
@@ -9612,9 +9770,15 @@ body.ios #override-count-wrapper .form-input.small {
 
 .override-info-box p {
     margin: 0;
+    padding-left: 38px;
     color: hsl(30, 50%, 30%);
-    font-size: 15px;
+    font-size: 14px;
     line-height: 1.5;
+}
+
+.start-confirm-warning .override-info-box p,
+.start-confirm-warning.override-info-box p {
+    padding-left: 26px;
 }
 
 .modal-btn.primary-btn {
