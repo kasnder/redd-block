@@ -9331,6 +9331,10 @@ body.ios #override-count-wrapper .form-input.small {
     border-top: 1px solid var(--border-color);
 }
 
+.start-confirm-modal:not(.schedule-confirm-edit-layout) .block-detail-name {
+    display: none;
+}
+
 .start-confirm-modal.schedule-confirm-edit-layout .block-detail-name,
 .start-confirm-modal.schedule-confirm-edit-layout .schedule-summary-header {
     display: none;

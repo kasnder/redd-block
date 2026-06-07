@@ -9896,9 +9896,36 @@ async function startSchedule() {
 }
 
 // Show schedule confirmation modal
+function getStartScheduleConfirmTitle(blocklist) {
+    if (!blocklist) return tSettings('startThisSchedule');
+    return tSettingsFmt('startScheduleTitleFmt', {
+        emoji: blocklist.emoji || '🚫',
+        name: blocklist.name
+    });
+}
+
+function getStartBlockConfirmTitle(blocklist) {
+    if (!blocklist) return tSettings('startThisBlock');
+    return tSettingsFmt('startBlockTitleFmt', {
+        emoji: blocklist.emoji || '🚫',
+        name: blocklist.name
+    });
+}
+
+function getResumeBlockConfirmTitle(blocklist) {
+    if (!blocklist) return tSettings('resumeThisBlock');
+    return tSettingsFmt('resumeBlockTitleFmt', {
+        emoji: blocklist.emoji || '🚫',
+        name: blocklist.name
+    });
+}
+
 function showScheduleConfirmModal(blocklist) {
+    resetScheduleConfirmModalToStartLayout();
     const dayNames = weekdayAbbrevMon0List();
-    document.getElementById('schedule-confirm-name').textContent = blocklist.name;
+
+    const titleEl = document.getElementById('start-schedule-confirm-title');
+    if (titleEl) titleEl.textContent = getStartScheduleConfirmTitle(blocklist);
 
     // Websites
     const websites = blocklist.websites || [];
@@ -10011,8 +10038,9 @@ function showScheduleConfirmModal(blocklist) {
 function resetScheduleConfirmModalToStartLayout() {
     document.querySelector('#start-schedule-confirm-modal .start-confirm-modal')
         ?.classList.remove('schedule-confirm-edit-layout');
-    document.getElementById('schedule-confirm-name')?.classList.remove('hidden');
     document.getElementById('schedule-summary-header')?.classList.remove('hidden');
+    document.getElementById('schedule-websites-row')?.classList.remove('hidden');
+    document.getElementById('schedule-apps-row')?.classList.remove('hidden');
 
     const confirmBtn = document.getElementById('proceed-schedule-confirm-btn');
     if (confirmBtn) confirmBtn.textContent = tSettings('startSchedule');
@@ -11400,11 +11428,11 @@ function startBlock() {
         }
     }
 
-    // Populate blocklist name
-    document.getElementById('start-confirm-name').textContent = blocklist.name;
-
     // Populate duration
     document.getElementById('start-confirm-duration').textContent = durationText;
+
+    const titleEl = document.getElementById('start-block-confirm-title');
+    if (titleEl) titleEl.textContent = getStartBlockConfirmTitle(blocklist);
 
     // Helper to format list with show all
     const formatListWithShowAll = (items, elementId, showAllBtnId, rowId) => {
@@ -12450,10 +12478,7 @@ function openResumeConfirmation(blocklistId, type, blockId) {
     resumeData = { blocklistId, type, blockId };
 
     // Set heading
-    document.getElementById('start-block-confirm-title').textContent = tSettings('resumeThisBlock');
-
-    // Set blocklist name
-    document.getElementById('start-confirm-name').textContent = blocklist.name;
+    document.getElementById('start-block-confirm-title').textContent = getResumeBlockConfirmTitle(blocklist);
 
     // Set duration text
     if (type === 'block') {
@@ -16342,6 +16367,8 @@ const SETTINGS_TRANSLATIONS = {
         helperUpdating: 'Updating...',
         helperReinstalling: 'Reinstalling...',
         startThisBlock: 'Start this block?',
+        startBlockTitleFmt: 'Start the block {emoji} {name}?',
+        resumeBlockTitleFmt: 'Resume the block {emoji} {name}?',
         blockedWebsites: 'Blocked websites:',
         blockedApps: 'Blocked apps:',
         showAll: 'show all',
@@ -16353,6 +16380,7 @@ const SETTINGS_TRANSLATIONS = {
         alwaysUntilOff: 'Always (until turned off)',
         scheduleResumingSegment: 'Schedule (resuming current segment)',
         startThisSchedule: 'Start this schedule?',
+        startScheduleTitleFmt: 'Start the schedule {emoji} {name}?',
         repeatLabel: 'Repeat week:',
         confirmScheduleOverrideNeed: 'To stop this blocking schedule, you\'ll need to:',
         saveChangesOverrideNeed: 'To stop this schedule, you\'ll need to:',
@@ -16958,6 +16986,8 @@ const SETTINGS_TRANSLATIONS = {
         helperUpdating: 'Opdaterer...',
         helperReinstalling: 'Geninstallerer...',
         startThisBlock: 'Start denne blokering?',
+        startBlockTitleFmt: 'Start blokeringen {emoji} {name}?',
+        resumeBlockTitleFmt: 'Genoptag blokeringen {emoji} {name}?',
         blockedWebsites: 'Blokerede hjemmesider:',
         blockedApps: 'Blokerede apps:',
         showAll: 'vis alle',
@@ -16969,6 +16999,7 @@ const SETTINGS_TRANSLATIONS = {
         alwaysUntilOff: 'Altid (indtil den slås fra)',
         scheduleResumingSegment: 'Skema (genoptager nuværende segment)',
         startThisSchedule: 'Start dette skema?',
+        startScheduleTitleFmt: 'Start skemaet {emoji} {name}?',
         repeatLabel: 'Gentag ugeskema:',
         confirmScheduleOverrideNeed: 'For at stoppe dette blokeringsskema skal du:',
         saveChangesOverrideNeed: 'For at stoppe dette skema skal du:',
