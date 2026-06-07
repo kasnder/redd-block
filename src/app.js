@@ -8483,16 +8483,15 @@ function disableScheduleControls(disabled) {
     }
 
     if (overlayLabel) {
-        overlayLabel.classList.toggle('repeat-label-disabled', disabled);
+        overlayLabel.classList.toggle('repeat-label-disabled', getGlobalStartOverlays().length === 0);
     }
 
     if (overlayDropdownBtn) {
         const noPresets = getGlobalStartOverlays().length === 0;
-        const shouldDisable = disabled || noPresets;
-        overlayDropdownBtn.disabled = shouldDisable;
-        overlayDropdownBtn.style.pointerEvents = shouldDisable ? 'none' : 'auto';
-        overlayDropdownBtn.style.cursor = shouldDisable ? 'default' : 'pointer';
-        overlayDropdownBtn.classList.toggle('repeat-dropdown-disabled', shouldDisable);
+        overlayDropdownBtn.disabled = noPresets;
+        overlayDropdownBtn.style.pointerEvents = noPresets ? 'none' : 'auto';
+        overlayDropdownBtn.style.cursor = noPresets ? 'default' : 'pointer';
+        overlayDropdownBtn.classList.toggle('repeat-dropdown-disabled', noPresets);
     }
 
     // When schedule is active and repeat is "until date", grey out the date selector.
@@ -10641,6 +10640,11 @@ function renderSchedulePanelOverlayDropdown(selectedId) {
         btn.classList.add('repeat-dropdown-disabled');
         return;
     }
+
+    btn.disabled = false;
+    btn.classList.remove('repeat-dropdown-disabled');
+    btn.style.pointerEvents = 'auto';
+    btn.style.cursor = 'pointer';
 
     const defaultOption = document.createElement('button');
     defaultOption.type = 'button';
