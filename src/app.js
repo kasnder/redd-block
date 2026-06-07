@@ -11095,11 +11095,13 @@ function syncSchedulerChromeVisibility() {
     const modeTabs = document.querySelector('.scheduler-mode-tabs');
     const mainTitle = document.getElementById('main-start-block-title');
     const sectionHeader = document.querySelector('#scheduler-section > .section-header');
+    const gridTopRow = document.querySelector('.grid-top-row');
     const hasLists = (appData.blocklists?.length || 0) > 0;
     const show = hasLists && !!selectedBlocklistId;
     if (mainTitle) mainTitle.classList.toggle('hidden', !show);
     if (modeTabs) modeTabs.classList.toggle('hidden', !show);
     if (sectionHeader) sectionHeader.classList.toggle('scheduler-header-compact', !show);
+    if (gridTopRow) gridTopRow.classList.toggle('grid-top-row--blocklist-selected', show);
     bindUiZoomLayoutObserver();
     scheduleUiZoomResponsiveLayout();
 }

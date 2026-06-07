@@ -1414,16 +1414,27 @@ body.dark-mode .app-blocking-closedown-banner {
     gap: 12px;
 }
 
-/* Grid Top Row - two columns. Left column sizes to the blocklist-card cap so cards
-   don't stretch into empty whitespace; right column takes the remaining width so the
-   START A BLOCK panel can spread out on wide windows. */
+/* Grid Top Row - two columns. Blocklists stay ≤500px (and ≤50% when selected so
+   the Start a Block panel has room). Single-column breakpoints drop the card cap. */
 .grid-top-row {
     display: grid;
-    grid-template-columns: 480px minmax(0, 1fr);
+    grid-template-columns: minmax(0, min(500px, 50%)) minmax(0, 1fr);
     gap: 28px;
     align-items: start;
     position: relative;
     flex-shrink: 0;
+}
+
+/* Stacked / overview: grid is one column but cards must not stretch past 500px. */
+@media (min-width: 769px) {
+    .grid-top-row:not(.grid-top-row--blocklist-selected) .blocklists-section {
+        max-width: 500px;
+        width: 100%;
+    }
+}
+
+.grid-top-row.grid-top-row--blocklist-selected {
+    grid-template-columns: minmax(0, min(500px, 50%)) minmax(0, 1fr);
 }
 
 /* Stack-only settings (My Blocklists row); hidden in two-column layout. */
@@ -1440,6 +1451,10 @@ body.dark-mode .app-blocking-closedown-banner {
     .grid-top-row {
         grid-template-columns: 1fr;
         gap: 12px;
+    }
+
+    .blocklist-card {
+        max-width: none;
     }
 
     #add-blocklist-btn {
@@ -1512,7 +1527,7 @@ body.dark-mode .app-blocking-closedown-banner {
         display: none !important;
     }
 
-    body.ios:not(.ios-phone) .blocklist-card {
+    body.ios:not(.ios-phone) .grid-top-row--blocklist-selected .blocklist-card {
         max-width: none;
     }
 
@@ -1812,6 +1827,11 @@ body.dark-mode .app-blocking-closedown-banner {
 
     body.ios:not(.ios-phone) .main-content .schedule-segments {
         gap: 12px;
+        --schedule-segments-gap: 12px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .schedule-segments:has(.schedule-segment:nth-child(4)) {
+        --schedule-segment-scroll-height: 138px;
     }
 
     body.ios:not(.ios-phone) .main-content .schedule-segment {
@@ -1930,7 +1950,7 @@ body.dark-mode .app-blocking-closedown-banner {
 
     body.ios:not(.ios-phone) .main-content .blocklists-container {
         gap: 12px;
-        max-height: 440px;
+        --blocklists-scroll-max-height: 440px;
         padding-top: 6px;
         padding-bottom: 6px;
     }
@@ -2098,7 +2118,7 @@ body.dark-mode .app-blocking-closedown-banner {
     }
 
     body.ios:not(.ios-phone) #blocklist-modal .modal-content {
-        max-width: calc(480px * var(--ipad-s));
+        max-width: calc(500px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) #settings-modal .modal-content {
@@ -2791,11 +2811,19 @@ body.dark-mode .app-blocking-closedown-banner {
    switches to icon-only only on actual overlap. */
 @media (min-width: 769px) and (max-width: 1024px) and (orientation: landscape) {
     .grid-top-row {
-        grid-template-columns: 380px minmax(0, 1fr);
+        grid-template-columns: minmax(0, min(400px, 50%)) minmax(0, 1fr);
+    }
+
+    .grid-top-row:not(.grid-top-row--blocklist-selected) .blocklists-section {
+        max-width: 400px;
+    }
+
+    .grid-top-row.grid-top-row--blocklist-selected {
+        grid-template-columns: minmax(0, min(400px, 50%)) minmax(0, 1fr);
     }
 
     .blocklist-card {
-        max-width: 380px;
+        max-width: 100%;
     }
 
     .mode-tab {
@@ -2839,11 +2867,19 @@ body.dark-mode .app-blocking-closedown-banner {
 /* UI zoom (iOS): `html { zoom }` scales paint size but not @media / @container queries.
    `syncUiZoomResponsiveLayout()` toggles these tiers from effective viewport width. */
 body.ios.ui-zoom-tier-cramped .grid-top-row {
-    grid-template-columns: 380px minmax(0, 1fr);
+    grid-template-columns: minmax(0, min(400px, 50%)) minmax(0, 1fr);
+}
+
+body.ios.ui-zoom-tier-cramped .grid-top-row:not(.grid-top-row--blocklist-selected) .blocklists-section {
+    max-width: 400px;
+}
+
+body.ios.ui-zoom-tier-cramped .grid-top-row.grid-top-row--blocklist-selected {
+    grid-template-columns: minmax(0, min(400px, 50%)) minmax(0, 1fr);
 }
 
 body.ios.ui-zoom-tier-cramped .blocklist-card {
-    max-width: 380px;
+    max-width: 100%;
 }
 
 body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-label {
@@ -2898,6 +2934,10 @@ body.ios.ui-zoom-tier-narrow .now-blocking-row:not(.idle) .now-blocking-heading 
 body.ios.ui-zoom-tier-stack .grid-top-row {
     grid-template-columns: 1fr;
     gap: 12px;
+}
+
+body.ios.ui-zoom-tier-stack .grid-top-row--blocklist-selected .blocklist-card {
+    max-width: none;
 }
 
 body.ios.ui-zoom-tier-stack .main-content {
@@ -4903,7 +4943,37 @@ body.dark-mode .mode-tab.active {
 .schedule-segments {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--schedule-segments-gap, 10px);
+}
+
+/* Four or more segments: cap the list at ~3.5 rows and scroll the rest. */
+.schedule-segments:has(.schedule-segment:nth-child(4)) {
+    --schedule-segment-scroll-height: 124px;
+    max-height: calc(
+        3.5 * var(--schedule-segment-scroll-height) +
+        2.5 * var(--schedule-segments-gap, 10px)
+    );
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    padding-right: 2px;
+}
+
+.schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar {
+    width: 6px;
+}
+
+.schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 3px;
+}
+
+.schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover);
 }
 
 .schedule-segment {
@@ -5734,7 +5804,8 @@ body.dark-mode .schedule-pending-discard:hover {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    max-height: 320px;
+    --blocklists-scroll-max-height: 320px;
+    max-height: var(--blocklists-scroll-max-height);
     /* ~4.5 cards */
     overflow-y: auto;
     padding: 4px 4px 4px 0;
@@ -5780,10 +5851,8 @@ body.ios .blocklists-container {
     transition: all 0.2s ease;
     cursor: grab;
     position: relative;
-    /* Cap card width so the row content doesn't stretch into a wide expanse of empty
-       space. The grid-top-row left column is sized to match this cap, so cards fill
-       their column without overflowing it. On narrow viewports cards still shrink. */
-    max-width: 480px;
+    /* Fill the blocklists column; width is capped by grid / .blocklists-section. */
+    max-width: 100%;
     width: 100%;
 }
 
@@ -9075,9 +9144,9 @@ body.ios .modal-content {
 
 /* Add/edit blocklist modal — slightly wider than the default 400px so the
    apps tag list, override-difficulty row and colour/emoji pickers have room
-   to breathe. Matches the 480px blocklist-card width for visual rhyme. */
+   to breathe. Matches the 500px blocklist-card width for visual rhyme. */
 #blocklist-modal .modal-content {
-    max-width: 480px;
+    max-width: 500px;
     overscroll-behavior-y: none;
 }
 
