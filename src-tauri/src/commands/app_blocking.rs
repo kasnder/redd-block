@@ -80,6 +80,27 @@ pub fn lets_go_acknowledge(app: AppHandle) {
     crate::app_watcher::force_dismiss_warning_overlay(Some(&app));
 }
 
+/// User clicked "Snooze for 2 mins" on a schedule-block warning. Dismiss
+/// the always-on-top overlay without transitioning awaiting PIDs to
+/// PreQuit — the watcher keeps them in `AwaitingUserAck` until the user
+/// clicks "Let's go!" (or the snooze timer re-shows the overlay).
+#[tauri::command]
+pub fn snooze_blocking_warning(app: AppHandle) {
+    crate::app_watcher::force_dismiss_warning_overlay(Some(&app));
+}
+
+/// Re-enter panel mode after a schedule snooze expires. The frontend
+/// re-renders the overlay DOM; this restores compact-window chrome and
+/// brings the blocked apps forward again.
+#[tauri::command]
+pub fn reshow_blocking_warning(app: AppHandle, pids: Vec<u32>) {
+    crate::app_watcher::blocking_warning_begin(Some(&app));
+    crate::commands::show_blocking_warning_shell_without_stealing_focus(&app);
+    for pid in pids {
+        crate::commands::activate_external_process_by_pid(pid);
+    }
+}
+
 /// Re-read `redd-block-data.json` and push the effective blocked-app
 /// set into the watcher. Mirrors `native_host::derive_blocked_apps`
 /// so app-only schedule segments enforce even when the frontend never

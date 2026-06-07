@@ -23,6 +23,7 @@ import screenshotSafariStep1 from './images/mac-extension-settings-1.png';
 import screenshotSafariStep2 from './images/mac-extension-settings-2.png';
 import screenshotAutomationSettings from './images/automation-settings.png';
 import screenshotEnableFda from './images/enable-fda.png';
+import snoozeIconUrl from './images/snooze.png';
 import welcomeDemoVideoUrl from './reddblock-video.mp4';
 
 // Compatibility layer wrapping Tauri APIs
@@ -129,6 +130,11 @@ const tauriAPI = {
     /// watcher transitions every awaiting PID to the 30-second
     /// PreQuit phase before sending the polite Cmd-Q.
     letsGoAcknowledge: () => invoke('lets_go_acknowledge'),
+    /// Dismiss the warning overlay without starting the PreQuit countdown
+    /// (schedule-block snooze).
+    snoozeBlockingWarning: () => invoke('snooze_blocking_warning'),
+    /// Restore compact-window warning chrome after a snooze expires.
+    reshowBlockingWarning: (pids) => invoke('reshow_blocking_warning', { pids }),
 
     // macOS-only in-app uninstall. Disables launch-at-login, scrubs
     // browser native-messaging manifests, and schedules a delayed
@@ -5486,10 +5492,216 @@ let appBlockingClosedownTickInterval = null;
 /// `app_watcher.rs`. Kept in JS too so the banner can show the right
 /// countdown without a server round-trip.
 const APP_BLOCKING_CLOSEDOWN_PREQUIT_MS = 30 * 1000;
+/// Schedule-block warnings may be snoozed once for this long before the
+/// overlay reappears (without the snooze button on the second show).
+const APP_BLOCKING_SCHEDULE_SNOOZE_MS = 2 * 60 * 1000;
+
+function buildAppBlockingSnoozeIconImg(size) {
+    return `<img src="${snoozeIconUrl}" alt="" class="app-blocking-snooze-icon" width="${size}" height="${size}" aria-hidden="true">`;
+}
+
+const APP_BLOCKING_SNOOZE_ICON_IMG_12 = buildAppBlockingSnoozeIconImg(12);
+
+/** `'schedule'` | `'manual'` | null — set when apps newly enter the blocked set. */
+let appBlockingWarningSnoozeUsed = false;
+let appBlockingWarningSnoozedUntilMs = 0;
+let appBlockingWarningSnoozeTimer = null;
+let appBlockingSnoozedBlocklistId = null;
+let appBlockingSnoozeCardTickInterval = null;
+let appBlockingPreviousManualAppsSet = null;
+let appBlockingPreviousScheduleAppsSet = null;
+/** Per-app attribution for the block that just started blocking it. */
+/** @type {Map<string, { blocklistId: string, source: 'schedule'|'manual' }>} */
+const appBlockingNewlyAddedMeta = new Map();
+
+function clearAppBlockingWarningSnoozeTimer() {
+    if (appBlockingWarningSnoozeTimer !== null) {
+        window.clearTimeout(appBlockingWarningSnoozeTimer);
+        appBlockingWarningSnoozeTimer = null;
+    }
+}
+
+function stopAppBlockingSnoozeCardTick() {
+    if (appBlockingSnoozeCardTickInterval !== null) {
+        window.clearInterval(appBlockingSnoozeCardTickInterval);
+        appBlockingSnoozeCardTickInterval = null;
+    }
+}
+
+function ensureAppBlockingSnoozeCardTick() {
+    if (appBlockingSnoozeCardTickInterval !== null) return;
+    appBlockingSnoozeCardTickInterval = window.setInterval(() => {
+        if (appBlockingWarningSnoozedUntilMs <= Date.now()) {
+            stopAppBlockingSnoozeCardTick();
+            return;
+        }
+        if (typeof renderBlocklists === 'function') renderBlocklists();
+    }, 1000);
+}
+
+function getActiveAppBlockingSnoozeBlocklistId(now = Date.now()) {
+    if (appBlockingWarningSnoozedUntilMs <= now) return null;
+    return appBlockingSnoozedBlocklistId;
+}
+
+function resolveSnoozedBlocklistIdFromWarning() {
+    const unknownApp = tSettings('appBlockingUnknownApp');
+    const rawNames = [];
+    for (const [, row] of appBlockingWarningRows) {
+        if (row.ackedDeadlineMs) continue;
+        const n = (row.name || unknownApp).trim() || unknownApp;
+        rawNames.push(n);
+    }
+    const names = uniqueBlockedAppDisplayNames(rawNames);
+    if (names.length === 0) return null;
+    return findResponsibleBlocklistForWarningApps(names)?.id ?? null;
+}
+
+function formatAppBlockingSnoozeStartsIn(remainingMs) {
+    const mins = Math.max(1, Math.ceil(remainingMs / 60000));
+    if (mins < 60) {
+        return tSettingsFmt('blocklistScheduleStartsInMinutesFmt', { n: String(mins) });
+    }
+    const hrs = Math.floor(mins / 60);
+    const remMins = mins % 60;
+    if (hrs < 24) {
+        if (remMins > 0) {
+            return tSettingsFmt('blocklistScheduleStartsInHoursFmt', { n: String(hrs) })
+                + ` ${remMins}m`;
+        }
+        return tSettingsFmt('blocklistScheduleStartsInHoursFmt', { n: String(hrs) });
+    }
+    return tSettingsFmt('blocklistScheduleStartsInDaysFmt', {
+        n: String(Math.floor(mins / (24 * 60))),
+    });
+}
+
+function resetAppBlockingWarningSnoozeState() {
+    clearAppBlockingWarningSnoozeTimer();
+    stopAppBlockingSnoozeCardTick();
+    appBlockingWarningSnoozedUntilMs = 0;
+    appBlockingWarningSnoozeUsed = false;
+    appBlockingSnoozedBlocklistId = null;
+    appBlockingNewlyAddedMeta.clear();
+    if (typeof renderBlocklists === 'function') renderBlocklists();
+}
+
+function collectManualBlockedApps(now = Date.now()) {
+    const set = new Set();
+    for (const block of appData.activeBlocks || []) {
+        if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
+        const blocklist = appData.blocklists.find((bl) => bl.id === block.blocklistId);
+        for (const app of blocklist?.apps || []) {
+            if (!isProtectedApp(app)) set.add(app);
+        }
+    }
+    return set;
+}
+
+function collectScheduleBlockedApps(now = Date.now()) {
+    const set = new Set();
+    const nowDate = new Date(now);
+    for (const schedule of appData.schedules || []) {
+        if (!schedule.segments) continue;
+        if (isSchedulePausedNow(schedule, now)) continue;
+        if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
+        const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
+        for (const app of blocklist?.apps || []) {
+            if (!isProtectedApp(app)) set.add(app);
+        }
+    }
+    return set;
+}
+
+function findManualBlocklistIdForApp(appName, now = Date.now()) {
+    const target = String(appName || '').trim().toLowerCase();
+    if (!target) return null;
+    for (const block of appData.activeBlocks || []) {
+        if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
+        const blocklist = appData.blocklists.find((bl) => bl.id === block.blocklistId);
+        if (blocklist?.apps?.some((a) => String(a).trim().toLowerCase() === target)) {
+            return blocklist.id;
+        }
+    }
+    return null;
+}
+
+function findScheduleBlocklistIdForApp(appName, now = Date.now(), nowDate = new Date(now)) {
+    const target = String(appName || '').trim().toLowerCase();
+    if (!target) return null;
+    for (const schedule of appData.schedules || []) {
+        if (!schedule.segments) continue;
+        if (isSchedulePausedNow(schedule, now)) continue;
+        if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
+        const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
+        if (blocklist?.apps?.some((a) => String(a).trim().toLowerCase() === target)) {
+            return blocklist.id;
+        }
+    }
+    return null;
+}
+
+function noteAppBlockingNewlyAddedMeta(
+    newlyAddedApps,
+    manualApps,
+    scheduleApps,
+    prevManual,
+    prevSchedule,
+    now,
+    nowDate,
+) {
+    appBlockingNewlyAddedMeta.clear();
+    for (const app of newlyAddedApps) {
+        const newFromManual = !prevManual.has(app) && manualApps.has(app);
+        const newFromSchedule = !prevSchedule.has(app) && scheduleApps.has(app);
+        if (newFromSchedule && !newFromManual) {
+            const blocklistId = findScheduleBlocklistIdForApp(app, now, nowDate);
+            if (blocklistId) appBlockingNewlyAddedMeta.set(app, { blocklistId, source: 'schedule' });
+        } else if (newFromManual) {
+            const blocklistId = findManualBlocklistIdForApp(app, now);
+            if (blocklistId) appBlockingNewlyAddedMeta.set(app, { blocklistId, source: 'manual' });
+        } else if (newFromSchedule) {
+            const blocklistId = findManualBlocklistIdForApp(app, now)
+                ?? findScheduleBlocklistIdForApp(app, now, nowDate);
+            if (blocklistId) appBlockingNewlyAddedMeta.set(app, { blocklistId, source: 'manual' });
+        }
+    }
+}
+
+/** True when the current warning is from a schedule block (not a manual one-off). */
+function isAppBlockingWarningScheduleEligible(appNames) {
+    return appNames.some((appName) => {
+        const meta = appBlockingNewlyAddedMeta.get(appName);
+        if (meta) return meta.source === 'schedule';
+        if (findManualBlocklistIdForApp(appName)) return false;
+        return !!findScheduleBlocklistIdForApp(appName);
+    });
+}
+
+function onAppBlockingSnoozeExpired() {
+    appBlockingWarningSnoozeTimer = null;
+    appBlockingWarningSnoozedUntilMs = 0;
+    appBlockingSnoozedBlocklistId = null;
+    stopAppBlockingSnoozeCardTick();
+    if (typeof renderBlocklists === 'function') renderBlocklists();
+
+    const unackedPids = [...appBlockingWarningRows.entries()]
+        .filter(([, row]) => !row.ackedDeadlineMs)
+        .map(([pid]) => pid);
+    if (unackedPids.length === 0) return;
+
+    renderAppBlockingWarningOverlay();
+    tauriAPI
+        .reshowBlockingWarning(unackedPids)
+        .catch((e) => console.warn('[app-blocking-ui] snooze re-show:', e));
+}
 
 function setupAppBlockingWarningOverlay() {
     if (isIOS || appBlockingWarningUiAttached) return;
     appBlockingWarningUiAttached = true;
+
+    const snoozeIconEl = document.querySelector('#app-blocking-snooze-btn .app-blocking-snooze-icon');
+    if (snoozeIconEl) snoozeIconEl.src = snoozeIconUrl;
 
     // Resolve friendly app names (e.g. "Microsoft Edge") when the warning UI needs them.
     void ensureInstalledAppsCache().then(() => {
@@ -5526,9 +5738,30 @@ function setupAppBlockingWarningOverlay() {
         const pid = Number(p.pid);
         if (!Number.isFinite(pid)) return;
         appBlockingWarningRows.delete(pid);
+        if (appBlockingWarningRows.size === 0) {
+            resetAppBlockingWarningSnoozeState();
+        }
         renderAppBlockingWarningOverlay();
         renderAppBlockingClosedownBanner();
     }).catch(onFail('warning-hide'));
+
+    const snoozeBtn = document.getElementById('app-blocking-snooze-btn');
+    snoozeBtn?.addEventListener('click', () => {
+        appBlockingWarningSnoozeUsed = true;
+        appBlockingWarningSnoozedUntilMs = Date.now() + APP_BLOCKING_SCHEDULE_SNOOZE_MS;
+        appBlockingSnoozedBlocklistId = resolveSnoozedBlocklistIdFromWarning();
+        applyWarningOverlayPresence();
+        clearAppBlockingWarningSnoozeTimer();
+        ensureAppBlockingSnoozeCardTick();
+        if (typeof renderBlocklists === 'function') renderBlocklists();
+        appBlockingWarningSnoozeTimer = window.setTimeout(
+            onAppBlockingSnoozeExpired,
+            APP_BLOCKING_SCHEDULE_SNOOZE_MS,
+        );
+        tauriAPI
+            .snoozeBlockingWarning()
+            .catch((e) => console.warn('[app-blocking-ui] snooze:', e));
+    });
 
     // "Let's go!" button — ack every currently-awaiting row, hide the
     // full-screen overlay immediately, and surface the in-app close-down
@@ -5538,6 +5771,7 @@ function setupAppBlockingWarningOverlay() {
     // have to wrap up.
     const letsGoBtn = document.getElementById('app-blocking-lets-go-btn');
     letsGoBtn?.addEventListener('click', () => {
+        resetAppBlockingWarningSnoozeState();
         const ackedDeadlineMs = Date.now() + APP_BLOCKING_CLOSEDOWN_PREQUIT_MS;
         for (const row of appBlockingWarningRows.values()) {
             if (!row.ackedDeadlineMs) row.ackedDeadlineMs = ackedDeadlineMs;
@@ -5550,9 +5784,58 @@ function setupAppBlockingWarningOverlay() {
     });
 }
 
-/** Find the user's blocklist that contains a given app name (case-insensitive).
- *  Used to surface the matching blocklist's name + emoji in the
- *  force-quit warning so the user knows which block is responsible. */
+/** Find a blocklist that currently enforces blocking for `appName`
+ *  (active schedule segment or one-off), preferring schedules. */
+function findActiveBlocklistForBlockedAppName(appName) {
+    if (!appName) return null;
+    const target = String(appName).trim().toLowerCase();
+    if (!target) return null;
+    const now = Date.now();
+    const nowDate = new Date(now);
+
+    for (const schedule of appData.schedules || []) {
+        if (!schedule.segments) continue;
+        if (isSchedulePausedNow(schedule, now)) continue;
+        if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
+        const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
+        if (blocklist?.apps?.some((a) => String(a).trim().toLowerCase() === target)) {
+            return blocklist;
+        }
+    }
+
+    for (const block of appData.activeBlocks || []) {
+        if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
+        const blocklist = appData.blocklists.find((bl) => bl.id === block.blocklistId);
+        if (blocklist?.apps?.some((a) => String(a).trim().toLowerCase() === target)) {
+            return blocklist;
+        }
+    }
+
+    return null;
+}
+
+/** Pick the blocklist to show in the warning overlay for the given apps. */
+function findResponsibleBlocklistForWarningApps(appNames) {
+    for (const appName of appNames) {
+        const meta = appBlockingNewlyAddedMeta.get(appName);
+        if (meta?.blocklistId) {
+            const blocklist = appData.blocklists.find((bl) => bl.id === meta.blocklistId);
+            if (blocklist) return blocklist;
+        }
+    }
+    for (const appName of appNames) {
+        const blocklist = findActiveBlocklistForBlockedAppName(appName);
+        if (blocklist) return blocklist;
+    }
+    for (const appName of appNames) {
+        const blocklist = findBlocklistForBlockedAppName(appName);
+        if (blocklist) return blocklist;
+    }
+    return null;
+}
+
+/** Find any blocklist that lists `appName` (case-insensitive). Last-resort
+ *  fallback when no active enforcement source can be determined. */
 function findBlocklistForBlockedAppName(appName) {
     if (!appName) return null;
     const target = String(appName).trim().toLowerCase();
@@ -5589,13 +5872,9 @@ function renderAppBlockingWarningOverlay() {
         return;
     }
 
-    // Pick the blocklist responsible for the warnings
-    // single-app case this is unambiguous; for multi-app we fall back to
-    // the first matching blocklist (multiple-blocklist conflicts are
-    // rare and not worth the UI complexity).
-    const responsibleBlocklist = names
-        .map(findBlocklistForBlockedAppName)
-        .find((bl) => bl) || null;
+    // Attribute to the block that actually triggered the warning — not
+    // merely the first blocklist in array order that lists the app.
+    const responsibleBlocklist = findResponsibleBlocklistForWarningApps(names);
     const blocklistName = responsibleBlocklist?.name || tSettings('appBlockingFallbackBlocklistName');
     const blocklistEmoji = responsibleBlocklist?.emoji || '🎯';
 
@@ -5603,6 +5882,7 @@ function renderAppBlockingWarningOverlay() {
     const summaryEl = document.getElementById('app-blocking-warning-summary');
     const emojiEl = document.getElementById('app-blocking-warning-emoji');
     const letsGoBtn = document.getElementById('app-blocking-lets-go-btn');
+    const snoozeBtn = document.getElementById('app-blocking-snooze-btn');
 
     if (headingEl) {
         headingEl.innerHTML = tSettingsFmt('appBlockingWarningHeadingHtml', {
@@ -5615,6 +5895,11 @@ function renderAppBlockingWarningOverlay() {
     // warning event, so any "disabled after click" state from a previous
     // warning needs clearing. (No-op on the very first render.)
     letsGoBtn?.removeAttribute('disabled');
+
+    const showSnooze = isAppBlockingWarningScheduleEligible(names)
+        && !appBlockingWarningSnoozeUsed
+        && appBlockingWarningSnoozedUntilMs <= Date.now();
+    snoozeBtn?.classList.toggle('hidden', !showSnooze);
 
     if (summaryEl) {
         const apps = joinAppListWithLimit(names, 3);
@@ -5645,12 +5930,15 @@ function applyWarningOverlayPresence() {
     // Show the overlay only for rows the user hasn't yet acknowledged
     // — once they've clicked "Let's go!" the row gets an
     // `ackedDeadlineMs` and migrates from the overlay to the banner.
+    // Also hide while a schedule snooze is active.
     const hasUnackedRows = [...appBlockingWarningRows.values()]
         .some((row) => !row.ackedDeadlineMs);
+    const isSnoozed = appBlockingWarningSnoozedUntilMs > Date.now();
 
-    overlay.classList.toggle('hidden', !hasUnackedRows);
-    document.documentElement.classList.toggle('app-blocking-warning-window-mode', hasUnackedRows);
-    document.body.classList.toggle('app-blocking-warning-window-mode', hasUnackedRows);
+    overlay.classList.toggle('hidden', !hasUnackedRows || isSnoozed);
+    const inWarningMode = hasUnackedRows && !isSnoozed;
+    document.documentElement.classList.toggle('app-blocking-warning-window-mode', inWarningMode);
+    document.body.classList.toggle('app-blocking-warning-window-mode', inWarningMode);
 }
 
 /// Render the in-app close-down countdown banner. Idempotent — call
@@ -11669,48 +11957,42 @@ async function updateBlockedApps() {
     // iOS uses Screen Time API for app blocking - skip desktop process watcher
     if (isIOS) return;
 
-    const allBlockedApps = new Set();
     const now = Date.now();
     const nowDate = new Date(now);
+    const manualApps = collectManualBlockedApps(now);
+    const scheduleApps = collectScheduleBlockedApps(now);
+    const allBlockedApps = new Set([...manualApps, ...scheduleApps]);
+    const appsArray = Array.from(allBlockedApps).sort();
 
-    // Collect apps from active one-off blocks (skip paused / out-of-window).
-    appData.activeBlocks
-        .filter(block => block.startTime <= now && block.endTime > now && !block.isPaused)
-        .forEach(block => {
-            const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
-            if (blocklist && blocklist.apps) {
-                blocklist.apps.forEach(app => allBlockedApps.add(app));
-            }
-        });
-
-    // Collect apps from schedules whose segment is currently active (skip paused).
-    // Mirrors the schedule-domain logic in updateHostsFile().
-    if (appData.schedules) {
-        appData.schedules.forEach(schedule => {
-            if (!schedule.segments) return;
-            if (isSchedulePausedNow(schedule, now)) return;
-            if (!isScheduleSegmentActiveNow(schedule, nowDate)) return;
-            const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-            if (blocklist && blocklist.apps) {
-                blocklist.apps.forEach(app => allBlockedApps.add(app));
-            }
-        });
-    }
-
-    // Filter out protected apps (ReDD Block must never block itself)
-    const appsArray = Array.from(allBlockedApps)
-        .filter(app => !isProtectedApp(app))
-        .sort();
+    const prevAll = appBlockingPreviousAppsSet;
+    const prevManual = appBlockingPreviousManualAppsSet ?? new Set();
+    const prevSchedule = appBlockingPreviousScheduleAppsSet ?? new Set();
 
     // Compute the diff against the last sync so the watcher knows
     // which apps just transitioned to blocked (warning-eligible) vs
     // which were already blocked (silent enforcement). On the very
-    // first call `appBlockingPreviousAppsSet` is null — we treat that
-    // as "initial state, no transitions" and skip warnings entirely.
-    const newlyAddedApps = appBlockingPreviousAppsSet === null
+    // first call the previous sets are null — we treat that as
+    // "initial state, no transitions" and skip warnings entirely.
+    const newlyAddedApps = prevAll === null
         ? []
-        : appsArray.filter((a) => !appBlockingPreviousAppsSet.has(a));
+        : appsArray.filter((a) => !prevAll.has(a));
+    if (newlyAddedApps.length > 0) {
+        noteAppBlockingNewlyAddedMeta(
+            newlyAddedApps,
+            manualApps,
+            scheduleApps,
+            prevManual,
+            prevSchedule,
+            now,
+            nowDate,
+        );
+        appBlockingWarningSnoozeUsed = false;
+        clearAppBlockingWarningSnoozeTimer();
+        appBlockingWarningSnoozedUntilMs = 0;
+    }
     appBlockingPreviousAppsSet = new Set(appsArray);
+    appBlockingPreviousManualAppsSet = new Set(manualApps);
+    appBlockingPreviousScheduleAppsSet = new Set(scheduleApps);
 
     // Desktop v3: `set_blocked_apps_via_helper` routes to the in-process
     // app watcher — always push while the app is alive. The legacy
@@ -14764,26 +15046,33 @@ function renderBlocklists() {
                     });
 
                     if (activeSegment) {
-                        // Currently blocking - show time left
+                        // Currently blocking - show time left (or snooze countdown)
                         scheduleSegmentRunning = true;
-                        const startMins = activeSegment.startHour * 60 + activeSegment.startMinute;
-                        const endMins = activeSegment.endHour * 60 + activeSegment.endMinute;
-                        let minsLeft;
-
-                        if (endMins > startMins) {
-                            // Same-day segment
-                            minsLeft = endMins - currentMins;
+                        const snoozedBlocklistId = getActiveAppBlockingSnoozeBlocklistId(now);
+                        if (snoozedBlocklistId === bl.id) {
+                            scheduleTimeText = formatAppBlockingSnoozeStartsIn(
+                                appBlockingWarningSnoozedUntilMs - now,
+                            );
                         } else {
-                            // Cross-midnight segment
-                            if (currentMins >= startMins) {
-                                // In evening portion: time until midnight + morning end
-                                minsLeft = (24 * 60 - currentMins) + endMins;
-                            } else {
-                                // In morning portion: time until end
+                            const startMins = activeSegment.startHour * 60 + activeSegment.startMinute;
+                            const endMins = activeSegment.endHour * 60 + activeSegment.endMinute;
+                            let minsLeft;
+
+                            if (endMins > startMins) {
+                                // Same-day segment
                                 minsLeft = endMins - currentMins;
+                            } else {
+                                // Cross-midnight segment
+                                if (currentMins >= startMins) {
+                                    // In evening portion: time until midnight + morning end
+                                    minsLeft = (24 * 60 - currentMins) + endMins;
+                                } else {
+                                    // In morning portion: time until end
+                                    minsLeft = endMins - currentMins;
+                                }
                             }
+                            scheduleTimeText = formatBlockTimeRemainingShort(minsLeft);
                         }
-                        scheduleTimeText = formatBlockTimeRemainingShort(minsLeft);
                     } else {
                         // Find next upcoming segment
                         let nextStart = null;
@@ -14828,8 +15117,13 @@ function renderBlocklists() {
             // Calendar icon for scheduled blocklists (calendar, then live dot when segment is running)
             const calendarIcon =
                 '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>';
-            const scheduleDot = scheduleSegmentRunning ? runningDot : '';
-            scheduleBadge = `<span class="schedule-badge">${calendarIcon}${scheduleDot} ${scheduleTimeText}</span>`;
+            const isSnoozedCard = getActiveAppBlockingSnoozeBlocklistId(now) === bl.id;
+            if (isSnoozedCard) {
+                scheduleBadge = `<span class="schedule-badge schedule-badge-snoozed">${APP_BLOCKING_SNOOZE_ICON_IMG_12} ${scheduleTimeText}</span>`;
+            } else {
+                const scheduleDot = scheduleSegmentRunning ? runningDot : '';
+                scheduleBadge = `<span class="schedule-badge">${calendarIcon}${scheduleDot} ${scheduleTimeText}</span>`;
+            }
         }
 
         const activeBadge = oneOffBadge + scheduleBadge;
@@ -15926,6 +16220,7 @@ const SETTINGS_TRANSLATIONS = {
         importBlocklistDefaultName: 'Imported blocklist',
         gracePeriodLockedHint: 'Locked while a block is active—only shorter times allowed.',
         appBlockingLetsGo: 'Let’s go!',
+        appBlockingSnoozeBtn: 'Snooze for 2 mins',
         appBlockingFallbackBlocklistName: 'this block',
         appBlockingUnknownApp: 'Unknown app',
         appBlockingBannerAppFallback: 'an app',
@@ -16542,6 +16837,7 @@ const SETTINGS_TRANSLATIONS = {
         importBlocklistDefaultName: 'Importeret blokliste',
         gracePeriodLockedHint: 'Låst mens en blokering er aktiv—kun kortere tider tilladt.',
         appBlockingLetsGo: 'Fortsæt',
+        appBlockingSnoozeBtn: 'Udsæt i 2 min',
         appBlockingFallbackBlocklistName: 'denne blokering',
         appBlockingUnknownApp: 'Ukendt app',
         appBlockingBannerAppFallback: 'en app',
@@ -17669,6 +17965,7 @@ function applySettingsLanguage() {
     setText('grace-period-label-text', tSettings('gracePeriodLabel'));
     setText('grace-period-hint-text', tSettings('gracePeriodHint'));
     setText('app-blocking-lets-go-btn', tSettings('appBlockingLetsGo'));
+    setText('app-blocking-snooze-btn-label', tSettings('appBlockingSnoozeBtn'));
     setHtml('settings-feedback-footer-text', tSettings('settingsFeedbackFooterHtml'));
     updateGraceSettingLock();
     const currentVersionEl = document.getElementById('current-app-version');
