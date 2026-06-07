@@ -4,6 +4,68 @@ import 'quill/dist/quill.snow.css';
 let quillInstance = null;
 let onChangeCallback = null;
 let ignoreNextChange = false;
+let overlayEditorShortcutUnlisten = null;
+
+const OVERLAY_EDITOR_SHORTCUT_FORMATS = {
+    b: 'bold',
+    i: 'italic',
+    u: 'underline',
+};
+
+function makeOverlayFormatKeyboardBinding(format) {
+    return {
+        key: format[0],
+        shortKey: true,
+        handler(range, context) {
+            this.quill.format(format, !context.format[format], Quill.sources.USER);
+            this.quill.getModule('toolbar')?.update(range);
+            return false;
+        },
+    };
+}
+
+function isOverlayEditorFocused() {
+    if (!quillInstance?.root) return false;
+    const modal = document.getElementById('schedule-overlay-customise-modal');
+    if (!modal || modal.classList.contains('hidden')) return false;
+    const active = document.activeElement;
+    return active === quillInstance.root || quillInstance.root.contains(active);
+}
+
+function toggleOverlayEditorFormat(format) {
+    if (!quillInstance) return;
+    const range = quillInstance.getSelection(true);
+    if (!range) return;
+    const current = quillInstance.getFormat(range);
+    quillInstance.format(format, !current[format], Quill.sources.USER);
+    quillInstance.getModule('toolbar')?.update(range);
+}
+
+function bindOverlayEditorShortcutFallback() {
+    if (overlayEditorShortcutUnlisten) return;
+
+    const onKeyDown = (event) => {
+        if (!isOverlayEditorFocused()) return;
+        if (!(event.metaKey || event.ctrlKey) || event.altKey) return;
+
+        const format = OVERLAY_EDITOR_SHORTCUT_FORMATS[event.key.toLowerCase()];
+        if (!format) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        toggleOverlayEditorFormat(format);
+    };
+
+    document.addEventListener('keydown', onKeyDown, true);
+    overlayEditorShortcutUnlisten = () => {
+        document.removeEventListener('keydown', onKeyDown, true);
+        overlayEditorShortcutUnlisten = null;
+    };
+}
+
+function unbindOverlayEditorShortcutFallback() {
+    overlayEditorShortcutUnlisten?.();
+}
 
 function normalizeEditorHtml(value) {
     return String(value || '').replace(/&nbsp;/g, ' ');
@@ -92,14 +154,35 @@ export function initScheduleOverlayMessageEditor(containerEl, { onChange, placeh
         theme: 'snow',
         placeholder: placeholder || '',
         modules: {
-            toolbar: [
-                ['bold', 'italic', 'underline', 'strike'],
-                [{ list: 'ordered' }, { list: 'bullet' }],
-                ['link'],
-            ],
+            toolbar: {
+                container: [
+                    ['bold', 'italic', 'underline', 'strike'],
+                    [{ list: 'ordered' }, { list: 'bullet' }],
+                    ['link'],
+                    ['insertApps', 'insertLetsGo'],
+                ],
+                handlers: {
+                    insertApps: () => insertScheduleOverlayEditorTag('{apps}'),
+                    insertLetsGo: () => insertScheduleOverlayEditorTag('{letsGo}'),
+                },
+            },
+            keyboard: {
+                bindings: {
+                    bold: makeOverlayFormatKeyboardBinding('bold'),
+                    italic: makeOverlayFormatKeyboardBinding('italic'),
+                    underline: makeOverlayFormatKeyboardBinding('underline'),
+                },
+            },
         },
         formats: ['bold', 'italic', 'underline', 'strike', 'list', 'link'],
     });
+
+    quillInstance.getModule('toolbar')?.container
+        ?.querySelector('.ql-insertApps')
+        ?.setAttribute('data-label', '{apps}');
+    quillInstance.getModule('toolbar')?.container
+        ?.querySelector('.ql-insertLetsGo')
+        ?.setAttribute('data-label', '{letsGo}');
 
     quillInstance.on('text-change', () => {
         if (ignoreNextChange) {
@@ -109,11 +192,22 @@ export function initScheduleOverlayMessageEditor(containerEl, { onChange, placeh
         onChangeCallback?.(getScheduleOverlayMessageEditorHtml());
     });
 
+    bindOverlayEditorShortcutFallback();
+
     return quillInstance;
+}
+
+export function insertScheduleOverlayEditorTag(tag) {
+    if (!quillInstance) return;
+    const range = quillInstance.getSelection(true);
+    const index = range ? range.index : Math.max(0, quillInstance.getLength() - 1);
+    quillInstance.insertText(index, tag, 'user');
+    quillInstance.setSelection(index + tag.length);
 }
 
 export function destroyScheduleOverlayMessageEditor() {
     if (!quillInstance) return;
+    unbindOverlayEditorShortcutFallback();
     quillInstance = null;
     onChangeCallback = null;
     ignoreNextChange = false;

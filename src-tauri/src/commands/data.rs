@@ -37,6 +37,8 @@ pub struct Blocklist {
     pub override_difficulty: Option<OverrideDifficulty>,
     #[serde(default = "default_true")]
     pub show_item_details: bool,
+    #[serde(default)]
+    pub start_overlays: Vec<NamedScheduleStartOverlay>,
     #[serde(flatten)]
     pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
@@ -88,6 +90,25 @@ pub struct ScheduleStartOverlay {
     pub image_asset: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub voice_asset: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub heading: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NamedScheduleStartOverlay {
+    pub id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lets_go_label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_asset: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub voice_asset: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub heading: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,6 +126,8 @@ pub struct Schedule {
     pub is_paused: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pause_end_time: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_overlay_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start_overlay: Option<ScheduleStartOverlay>,
     #[serde(flatten)]

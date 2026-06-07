@@ -63,6 +63,37 @@ pub fn save_overlay_image_asset(
     Ok(format!("{blocklist_id}/{filename}"))
 }
 
+/// Write image bytes (from drag-and-drop or in-memory import) into overlay storage.
+#[tauri::command]
+pub fn save_overlay_image_asset_bytes(
+    app: AppHandle,
+    blocklist_id: String,
+    asset_id: String,
+    extension: String,
+    data: Vec<u8>,
+) -> Result<String, String> {
+    let ext = extension.to_ascii_lowercase();
+    let allowed = ["png", "jpg", "jpeg", "gif", "webp"];
+    if !allowed.contains(&ext.as_str()) {
+        return Err("Unsupported image type".into());
+    }
+    if data.is_empty() {
+        return Err("Empty image file".into());
+    }
+    if data.len() > 10 * 1024 * 1024 {
+        return Err("Image is too large (max 10 MB)".into());
+    }
+
+    let dest_dir = blocklist_assets_dir(&app, &blocklist_id)?;
+    fs::create_dir_all(&dest_dir).map_err(|e| e.to_string())?;
+
+    let filename = format!("{asset_id}.{ext}");
+    let dest = dest_dir.join(&filename);
+    fs::write(&dest, &data).map_err(|e| format!("Failed to save image: {e}"))?;
+
+    Ok(format!("{blocklist_id}/{filename}"))
+}
+
 /// Write recorded voice bytes (webm/ogg/wav) into overlay storage.
 #[tauri::command]
 pub fn save_overlay_voice_asset(

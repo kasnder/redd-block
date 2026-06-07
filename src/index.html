@@ -1476,14 +1476,17 @@
                             <span id="schedule-confirm-overlay-label">Start alert</span>
                         </div>
                         <div class="start-confirm-row-value start-confirm-overlay-value-wrap">
-                            <div class="start-confirm-overlay-copy">
+                            <div class="start-confirm-overlay-controls">
                                 <div class="start-confirm-overlay-title" id="schedule-confirm-overlay-value">
                                     Default overlay
                                 </div>
-                                <p class="start-confirm-overlay-desc" id="schedule-confirm-overlay-desc"></p>
+                                <select id="schedule-confirm-overlay-select"
+                                    class="form-input start-confirm-overlay-select hidden"
+                                    aria-label="Start overlay"></select>
+                                <button type="button" id="schedule-confirm-overlay-customise-btn"
+                                    class="modal-btn cancel-btn start-confirm-overlay-customise-btn">Customise</button>
                             </div>
-                            <button type="button" id="schedule-confirm-overlay-customise-btn"
-                                class="modal-btn cancel-btn start-confirm-overlay-customise-btn">Customise</button>
+                            <p class="start-confirm-overlay-desc" id="schedule-confirm-overlay-desc"></p>
                         </div>
                     </div>
                 </div>
@@ -1516,78 +1519,197 @@
         <!-- Schedule start overlay customisation -->
         <div id="schedule-overlay-customise-modal" class="modal-overlay hidden">
             <div class="modal-content schedule-overlay-customise-modal">
+                <button type="button" id="schedule-overlay-customise-close-btn"
+                    class="schedule-overlay-customise-close-btn" aria-label="Close">&times;</button>
                 <div class="schedule-overlay-customise-header">
-                    <h3 id="schedule-overlay-customise-title">Customise schedule overlay</h3>
+                    <div class="schedule-overlay-customise-title-row">
+                        <span class="schedule-overlay-customise-emoji" id="schedule-overlay-customise-emoji"
+                            aria-hidden="true">📚</span>
+                        <div class="schedule-overlay-customise-header-text">
+                            <h3 id="schedule-overlay-customise-title">Customise the start overlay</h3>
+                            <p class="schedule-overlay-customise-subtitle" id="schedule-overlay-customise-subtitle"></p>
+                        </div>
+                    </div>
                 </div>
                 <div class="schedule-overlay-customise-body">
-                    <nav class="schedule-overlay-customise-nav" id="schedule-overlay-customise-nav"
-                        aria-label="Overlay sections">
-                        <button type="button" class="schedule-overlay-nav-btn active" data-overlay-tab="message"
-                            id="schedule-overlay-tab-message">Message</button>
-                        <button type="button" class="schedule-overlay-nav-btn" data-overlay-tab="button"
-                            id="schedule-overlay-tab-button">Let's go button</button>
-                        <button type="button" class="schedule-overlay-nav-btn" data-overlay-tab="image"
-                            id="schedule-overlay-tab-image">Image</button>
-                        <button type="button" class="schedule-overlay-nav-btn" data-overlay-tab="voice"
-                            id="schedule-overlay-tab-voice">Voice message</button>
-                    </nav>
-                    <div class="schedule-overlay-customise-main">
-                        <div class="schedule-overlay-tab-panels">
-                            <section class="schedule-overlay-tab-panel active" data-overlay-panel="message"
-                                id="schedule-overlay-panel-message">
-                                <label class="form-label" for="schedule-overlay-message-editor"
-                                    id="schedule-overlay-message-label">Message shown on the overlay</label>
-                                <p class="schedule-overlay-message-apps-hint" id="schedule-overlay-message-apps-hint"></p>
-                                <div id="schedule-overlay-message-editor-wrap"
-                                    class="schedule-overlay-message-editor-wrap">
-                                    <div id="schedule-overlay-message-editor"></div>
+                    <div class="schedule-overlay-customise-settings">
+                        <section class="schedule-overlay-section schedule-overlay-name-section"
+                            id="schedule-overlay-section-name">
+                            <label class="schedule-overlay-name-label" for="schedule-overlay-name-input"
+                                id="schedule-overlay-name-label">Overlay name</label>
+                            <input type="text" id="schedule-overlay-name-input" class="form-input"
+                                placeholder="e.g. Morning nudge" maxlength="48">
+                        </section>
+
+                        <section class="schedule-overlay-section" id="schedule-overlay-section-image">
+                            <div class="schedule-overlay-section-header">
+                                <div class="schedule-overlay-section-title">
+                                    <svg class="schedule-overlay-section-icon" width="16" height="16"
+                                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                                        <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                                        <polyline points="21 15 16 10 5 21"></polyline>
+                                    </svg>
+                                    <span class="schedule-overlay-section-title-main">
+                                        <span id="schedule-overlay-image-label">Image</span>
+                                        <span class="schedule-overlay-badge schedule-overlay-badge--default"
+                                            id="schedule-overlay-image-badge"></span>
+                                    </span>
                                 </div>
-                                <p class="schedule-overlay-message-format-hint"
-                                    id="schedule-overlay-message-format-hint"></p>
-                            </section>
-                            <section class="schedule-overlay-tab-panel hidden" data-overlay-panel="button"
-                                id="schedule-overlay-panel-button">
-                                <label class="form-label" for="schedule-overlay-lets-go-input"
-                                    id="schedule-overlay-lets-go-label">Let's go button label</label>
-                                <input type="text" id="schedule-overlay-lets-go-input" class="form-input"
-                                    placeholder="Let's go!" maxlength="40">
-                            </section>
-                            <section class="schedule-overlay-tab-panel hidden" data-overlay-panel="image"
-                                id="schedule-overlay-panel-image">
-                                <p class="schedule-overlay-panel-help" id="schedule-overlay-image-help">
-                                    Choose an image from your computer. It appears above the message on the overlay.
-                                </p>
-                                <div class="schedule-overlay-image-controls">
-                                    <button type="button" id="schedule-overlay-choose-image-btn"
-                                        class="modal-btn cancel-btn">Choose image…</button>
-                                    <button type="button" id="schedule-overlay-remove-image-btn"
-                                        class="modal-btn cancel-btn hidden">Remove image</button>
-                                </div>
-                                <img id="schedule-overlay-image-preview" class="schedule-overlay-image-preview hidden"
-                                    alt="">
-                            </section>
-                            <section class="schedule-overlay-tab-panel hidden" data-overlay-panel="voice"
-                                id="schedule-overlay-panel-voice">
-                                <p class="schedule-overlay-panel-help" id="schedule-overlay-voice-help">
-                                    Record or upload a short voice message. It plays when you tap Let's go.
-                                </p>
-                                <div class="schedule-overlay-voice-controls">
-                                    <button type="button" id="schedule-overlay-record-voice-btn"
-                                        class="modal-btn cancel-btn">Record</button>
-                                    <button type="button" id="schedule-overlay-stop-record-voice-btn"
-                                        class="modal-btn cancel-btn hidden">Stop recording</button>
-                                    <button type="button" id="schedule-overlay-choose-voice-btn"
-                                        class="modal-btn cancel-btn">Choose audio file…</button>
-                                    <button type="button" id="schedule-overlay-remove-voice-btn"
-                                        class="modal-btn cancel-btn hidden">Remove voice</button>
-                                </div>
-                                <audio id="schedule-overlay-voice-preview" class="schedule-overlay-voice-preview hidden"
-                                    controls></audio>
-                            </section>
-                        </div>
-                        <div class="schedule-overlay-preview-wrap">
-                            <div class="schedule-overlay-preview-label" id="schedule-overlay-preview-label">Preview
+                                <button type="button" class="schedule-overlay-section-reset hidden"
+                                    id="schedule-overlay-reset-image-btn">Reset</button>
                             </div>
+                            <div class="schedule-overlay-image-dropzone" id="schedule-overlay-image-dropzone">
+                                <div class="schedule-overlay-image-dropzone-preview">
+                                    <img id="schedule-overlay-image-preview"
+                                        class="schedule-overlay-image-preview hidden" alt="">
+                                    <span class="schedule-overlay-image-default-icon"
+                                        id="schedule-overlay-image-default-icon">📚</span>
+                                </div>
+                                <div class="schedule-overlay-image-dropzone-copy">
+                                    <p class="schedule-overlay-image-status" id="schedule-overlay-image-status"></p>
+                                    <p class="schedule-overlay-image-drop-hint" id="schedule-overlay-image-drop-hint"></p>
+                                </div>
+                                <button type="button" id="schedule-overlay-choose-image-btn"
+                                    class="modal-btn cancel-btn schedule-overlay-upload-btn">Upload</button>
+                            </div>
+                        </section>
+
+                        <section class="schedule-overlay-section" id="schedule-overlay-section-heading">
+                            <div class="schedule-overlay-section-header">
+                                <div class="schedule-overlay-section-title">
+                                    <svg class="schedule-overlay-section-icon" width="16" height="16"
+                                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M4 12h16"></path>
+                                        <path d="M4 6h16"></path>
+                                        <path d="M4 18h10"></path>
+                                    </svg>
+                                    <span class="schedule-overlay-section-title-main">
+                                        <span id="schedule-overlay-heading-label">Title</span>
+                                        <span class="schedule-overlay-badge schedule-overlay-badge--default"
+                                            id="schedule-overlay-heading-badge"></span>
+                                    </span>
+                                </div>
+                                <button type="button" class="schedule-overlay-section-reset hidden"
+                                    id="schedule-overlay-reset-heading-btn">Reset</button>
+                            </div>
+                            <p class="schedule-overlay-heading-placeholders-note"
+                                id="schedule-overlay-heading-placeholders-note"></p>
+                            <input type="text" id="schedule-overlay-heading-input" class="form-input"
+                                maxlength="100">
+                        </section>
+
+                        <section class="schedule-overlay-section" id="schedule-overlay-section-message">
+                            <div class="schedule-overlay-section-header">
+                                <div class="schedule-overlay-section-title">
+                                    <svg class="schedule-overlay-section-icon" width="16" height="16"
+                                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                                    </svg>
+                                    <span class="schedule-overlay-section-title-main">
+                                        <span id="schedule-overlay-message-label">Message</span>
+                                        <span class="schedule-overlay-badge schedule-overlay-badge--default hidden"
+                                            id="schedule-overlay-message-badge"></span>
+                                    </span>
+                                </div>
+                                <button type="button" class="schedule-overlay-section-reset hidden"
+                                    id="schedule-overlay-reset-message-btn">Reset</button>
+                            </div>
+                            <p class="schedule-overlay-message-placeholders-note"
+                                id="schedule-overlay-message-placeholders-note"></p>
+                            <div id="schedule-overlay-message-editor-wrap"
+                                class="schedule-overlay-message-editor-wrap">
+                                <div id="schedule-overlay-message-editor"></div>
+                            </div>
+                            <p class="schedule-overlay-no-apps-note hidden" id="schedule-overlay-no-apps-note"></p>
+                        </section>
+
+                        <section class="schedule-overlay-section" id="schedule-overlay-section-button">
+                            <div class="schedule-overlay-section-header">
+                                <div class="schedule-overlay-section-title">
+                                    <svg class="schedule-overlay-section-icon" width="16" height="16"
+                                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <rect x="3" y="8" width="18" height="12" rx="2"></rect>
+                                        <path d="M7 8V6a5 5 0 0 1 10 0v2"></path>
+                                    </svg>
+                                    <span class="schedule-overlay-section-title-main">
+                                        <span id="schedule-overlay-lets-go-label">"Let's go" button</span>
+                                        <span class="schedule-overlay-badge schedule-overlay-badge--default"
+                                            id="schedule-overlay-button-badge"></span>
+                                    </span>
+                                </div>
+                                <button type="button" class="schedule-overlay-section-reset hidden"
+                                    id="schedule-overlay-reset-button-btn">Reset</button>
+                            </div>
+                            <div class="schedule-overlay-lets-go-field">
+                                <input type="text" id="schedule-overlay-lets-go-input" class="form-input"
+                                    placeholder="Let's go!" maxlength="24">
+                                <span class="schedule-overlay-char-count"
+                                    id="schedule-overlay-lets-go-count">0 / 24</span>
+                            </div>
+                        </section>
+
+                        <section class="schedule-overlay-section" id="schedule-overlay-section-voice">
+                            <div class="schedule-overlay-section-header">
+                                <div class="schedule-overlay-section-title">
+                                    <svg class="schedule-overlay-section-icon" width="16" height="16"
+                                        viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                                        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+                                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                                        <line x1="12" y1="19" x2="12" y2="22"></line>
+                                    </svg>
+                                    <span class="schedule-overlay-section-title-main">
+                                        <span id="schedule-overlay-voice-label">Voice message</span>
+                                        <span class="schedule-overlay-badge schedule-overlay-badge--custom hidden"
+                                            id="schedule-overlay-voice-badge"></span>
+                                    </span>
+                                </div>
+                                <button type="button" class="schedule-overlay-section-reset hidden"
+                                    id="schedule-overlay-reset-voice-btn">Reset</button>
+                            </div>
+                            <p class="schedule-overlay-section-desc" id="schedule-overlay-voice-help"></p>
+                            <div class="schedule-overlay-voice-card" id="schedule-overlay-voice-card">
+                                <div class="schedule-overlay-voice-controls">
+                                    <div id="schedule-overlay-record-level"
+                                        class="schedule-overlay-record-level hidden"
+                                        role="meter"
+                                        aria-label="Microphone input level"
+                                        aria-valuemin="0"
+                                        aria-valuemax="100"
+                                        aria-valuenow="0"></div>
+                                    <button type="button" id="schedule-overlay-record-voice-btn"
+                                        class="modal-btn cancel-btn schedule-overlay-record-voice-btn">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                            stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                            stroke-linejoin="round" aria-hidden="true">
+                                            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+                                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                                            <line x1="12" y1="19" x2="12" y2="22"></line>
+                                        </svg>
+                                        <span id="schedule-overlay-record-voice-btn-label">Record</span>
+                                    </button>
+                                    <button type="button" id="schedule-overlay-stop-record-voice-btn"
+                                        class="modal-btn cancel-btn schedule-overlay-stop-record-voice-btn hidden">
+                                        <span class="schedule-overlay-voice-record-dot" aria-hidden="true"></span>
+                                        <span id="schedule-overlay-stop-record-voice-btn-label">Stop recording</span>
+                                    </button>
+                                    <button type="button" id="schedule-overlay-choose-voice-btn"
+                                        class="modal-btn cancel-btn schedule-overlay-choose-voice-btn">Choose file…</button>
+                                </div>
+                            </div>
+                            <audio id="schedule-overlay-voice-preview" class="schedule-overlay-voice-preview hidden"
+                                controls></audio>
+                        </section>
+                    </div>
+
+                    <div class="schedule-overlay-preview-wrap">
+                        <div class="schedule-overlay-preview-label" id="schedule-overlay-preview-label">Preview</div>
+                        <div class="schedule-overlay-preview-stage">
                             <div class="app-blocking-warning-card schedule-overlay-preview-card"
                                 id="schedule-overlay-preview-card">
                                 <div class="app-blocking-warning-media">
@@ -1601,7 +1723,7 @@
                                 <p class="app-blocking-warning-summary" id="schedule-overlay-preview-summary"></p>
                                 <div class="app-blocking-warning-actions schedule-overlay-preview-actions">
                                     <button type="button" class="modal-btn primary-btn app-blocking-lets-go-btn"
-                                        id="schedule-overlay-preview-lets-go" disabled>
+                                        id="schedule-overlay-preview-lets-go">
                                         <span class="app-blocking-lets-go-voice-icon hidden"
                                             id="schedule-overlay-preview-voice-icon" aria-hidden="true">
                                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
@@ -1618,13 +1740,15 @@
                         </div>
                     </div>
                 </div>
-                <div class="modal-buttons schedule-overlay-customise-footer">
+                <div class="schedule-overlay-customise-footer">
                     <button type="button" id="schedule-overlay-use-default-btn"
-                        class="modal-btn cancel-btn">Use default</button>
-                    <button type="button" id="schedule-overlay-customise-cancel-btn"
-                        class="modal-btn cancel-btn">Cancel</button>
-                    <button type="button" id="schedule-overlay-customise-save-btn"
-                        class="modal-btn primary-btn">Save</button>
+                        class="modal-btn cancel-btn schedule-overlay-reset-all-btn">Reset all to default</button>
+                    <div class="schedule-overlay-customise-footer-actions">
+                        <button type="button" id="schedule-overlay-customise-cancel-btn"
+                            class="modal-btn cancel-btn">Cancel</button>
+                        <button type="button" id="schedule-overlay-customise-save-btn"
+                            class="modal-btn black-btn">Save overlay</button>
+                    </div>
                 </div>
             </div>
         </div>
