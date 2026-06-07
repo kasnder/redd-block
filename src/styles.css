@@ -5236,6 +5236,22 @@ body.ios .segment-days.compact-day-labels .segment-day-toggle {
     gap: 8px;
 }
 
+.schedule-active-overlay-section {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.schedule-active-overlay-value {
+    font-size: 15px;
+    color: hsl(215, 20%, 50%);
+}
+
+body.dark-mode .schedule-active-overlay-value {
+    color: var(--text-muted);
+    opacity: 0.85;
+}
+
 .repeat-label {
     font-size: 15px;
     color: var(--text-muted);
@@ -6176,11 +6192,17 @@ body.ios .blocklist-action-btn svg {
     bottom: 0;
     background: var(--container-bg);
     display: flex;
-    align-items: flex-start;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
     z-index: 100;
     padding: 24px;
     overflow-y: auto;
+}
+
+.onboarding-screen > * {
+    flex-shrink: 0;
+    margin: auto;
+    max-width: 100%;
 }
 
 .onboarding-screen.hidden {
@@ -6240,20 +6262,13 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
 #welcome-onboarding.onboarding-screen,
 #eula-onboarding.onboarding-screen,
 #fda-onboarding.onboarding-screen {
-    padding: 12px 20px 16px;
+    padding: 24px 20px;
     overflow-y: auto;
-}
-
-#welcome-onboarding.onboarding-screen,
-#eula-onboarding.onboarding-screen,
-#fda-onboarding.onboarding-screen {
-    padding-top: 24px;
 }
 
 .welcome-onboarding-layout {
     width: 100%;
     max-width: 560px;
-    margin: 0 auto;
     display: flex;
     flex-direction: column;
     align-items: stretch;
@@ -6263,7 +6278,6 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
 /* EULA — desktop welcome hero; iOS compact centered column (shared controls). */
 .eula-onboarding-inner {
     width: 100%;
-    margin: 0 auto;
     display: flex;
     flex-direction: column;
     align-items: stretch;

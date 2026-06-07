@@ -14,6 +14,8 @@ pub struct AppData {
     #[serde(default)]
     pub schedules: Vec<Schedule>,
     pub settings: Settings,
+    #[serde(default)]
+    pub start_overlays: Vec<NamedScheduleStartOverlay>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub migration_version: Option<u32>,
 }
@@ -37,8 +39,6 @@ pub struct Blocklist {
     pub override_difficulty: Option<OverrideDifficulty>,
     #[serde(default = "default_true")]
     pub show_item_details: bool,
-    #[serde(default)]
-    pub start_overlays: Vec<NamedScheduleStartOverlay>,
     #[serde(flatten)]
     pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
@@ -164,6 +164,7 @@ impl Default for AppData {
             active_blocks: Vec::new(),
             schedules: Vec::new(),
             settings: Settings::default(),
+            start_overlays: Vec::new(),
             migration_version: None,
         }
     }

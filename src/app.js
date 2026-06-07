@@ -183,6 +183,7 @@ let appData = {
     blocklists: [],
     activeBlocks: [],
     schedules: [],
+    startOverlays: [],
     settings: {}
 };
 
@@ -521,9 +522,6 @@ function normalizeBlocklist(blocklist) {
     const normalizedBlocklist = { ...blocklist };
     normalizedBlocklist.apps = getBlocklistRegularApps(blocklist);
     normalizedBlocklist.iosScreenTimeSelection = getBlocklistIOSScreenTimeSelection(blocklist);
-    if (!Array.isArray(normalizedBlocklist.startOverlays)) {
-        normalizedBlocklist.startOverlays = [];
-    }
     return normalizedBlocklist;
 }
 
@@ -5944,6 +5942,11 @@ function renderAppBlockingWarningOverlay() {
         && appBlockingWarningSnoozedUntilMs <= Date.now();
     snoozeBtn?.classList.toggle('hidden', !showSnooze);
 
+    // Native code enters full-screen warning mode before this handler runs.
+    // Show the overlay immediately so the window is never a blank white shell
+    // while custom overlay assets load.
+    applyWarningOverlayPresence();
+
     void applyScheduleStartOverlayPresentation({
         overlay: startOverlay,
         blocklistName,
@@ -5958,6 +5961,9 @@ function renderAppBlockingWarningOverlay() {
         letsGoVoiceIconEl,
     }).then((activeOverlay) => {
         appBlockingActiveStartOverlay = activeOverlay;
+        applyWarningOverlayPresence();
+    }).catch((err) => {
+        console.warn('[schedule-overlay] warning presentation failed:', err);
         applyWarningOverlayPresence();
     });
 }
@@ -6301,6 +6307,9 @@ async function loadData() {
         shouldSave = true;
     }
     appData.blocklists = (appData.blocklists || []).map(normalizeBlocklist);
+    if (migrateBlocklistStartOverlaysToGlobal()) {
+        shouldSave = true;
+    }
     if (migrateLegacyScheduleStartOverlays()) {
         shouldSave = true;
     }
@@ -9337,6 +9346,7 @@ function updateScheduleButtonState() {
 
     // Show pending-changes bar only when an active schedule has unsaved new segments
     updateSchedulePendingBar(!!(activeSchedule && hasNewSegments), activeSchedule);
+    syncScheduleActiveOverlayDetail();
 }
 
 // Show or hide the pending-changes bar at the bottom of the schedule panel.
@@ -9948,13 +9958,71 @@ async function startSchedule() {
 // Show schedule confirmation modal
 // ---- Schedule start-overlay customisation --------------------------------
 
-function getBlocklistStartOverlays(blocklist) {
-    return blocklist?.startOverlays || [];
+const GLOBAL_OVERLAY_ASSET_NAMESPACE = 'global';
+
+function ensureGlobalStartOverlays() {
+    if (!Array.isArray(appData.startOverlays)) {
+        appData.startOverlays = [];
+    }
+    return appData.startOverlays;
 }
 
-function getNamedStartOverlayById(blocklist, overlayId) {
-    if (!blocklist || !overlayId) return null;
-    return getBlocklistStartOverlays(blocklist).find((preset) => preset.id === overlayId) || null;
+function getGlobalStartOverlays() {
+    return ensureGlobalStartOverlays();
+}
+
+function getNamedStartOverlayById(overlayId) {
+    if (!overlayId) return null;
+    return getGlobalStartOverlays().find((preset) => preset.id === overlayId) || null;
+}
+
+function upsertGlobalStartOverlay(preset) {
+    const overlays = ensureGlobalStartOverlays();
+    const index = overlays.findIndex((item) => item.id === preset.id);
+    if (index >= 0) overlays[index] = preset;
+    else overlays.push(preset);
+}
+
+function getLastScheduleStartOverlayId() {
+    const stored = appData.settings?.lastScheduleStartOverlayId;
+    if (!stored) return null;
+    return getNamedStartOverlayById(stored) ? stored : null;
+}
+
+function rememberLastScheduleStartOverlayId(overlayId) {
+    if (!appData.settings) appData.settings = {};
+    const normalized = overlayId || null;
+    if (normalized && !getNamedStartOverlayById(normalized)) return;
+    if (normalized) appData.settings.lastScheduleStartOverlayId = normalized;
+    else delete appData.settings.lastScheduleStartOverlayId;
+}
+
+function migrateBlocklistStartOverlaysToGlobal() {
+    let changed = false;
+    ensureGlobalStartOverlays();
+    const knownIds = new Set(appData.startOverlays.map((preset) => preset.id));
+
+    for (const blocklist of appData.blocklists || []) {
+        const legacyPresets = blocklist.startOverlays;
+        if (!Array.isArray(legacyPresets) || legacyPresets.length === 0) {
+            if (legacyPresets != null) {
+                delete blocklist.startOverlays;
+                changed = true;
+            }
+            continue;
+        }
+
+        for (const preset of legacyPresets) {
+            if (!preset?.id || knownIds.has(preset.id)) continue;
+            appData.startOverlays.push({ ...preset });
+            knownIds.add(preset.id);
+            changed = true;
+        }
+        delete blocklist.startOverlays;
+        changed = true;
+    }
+
+    return changed;
 }
 
 function namedPresetToDraft(preset) {
@@ -9973,14 +10041,6 @@ function namedPresetToRuntime(preset) {
     return normalizeScheduleStartOverlay(namedPresetToDraft(preset));
 }
 
-function upsertBlocklistStartOverlay(blocklist, preset) {
-    if (!blocklist) return;
-    if (!Array.isArray(blocklist.startOverlays)) blocklist.startOverlays = [];
-    const index = blocklist.startOverlays.findIndex((item) => item.id === preset.id);
-    if (index >= 0) blocklist.startOverlays[index] = preset;
-    else blocklist.startOverlays.push(preset);
-}
-
 function buildNamedStartOverlayPreset({ id, name, draft }) {
     const normalized = normalizeScheduleStartOverlay(draft);
     return {
@@ -9994,10 +10054,10 @@ function buildNamedStartOverlayPreset({ id, name, draft }) {
     };
 }
 
-function resolveScheduleStartOverlay(blocklist, schedule) {
+function resolveScheduleStartOverlay(schedule) {
     if (!schedule) return null;
     if (schedule.startOverlayId) {
-        const preset = getNamedStartOverlayById(blocklist, schedule.startOverlayId);
+        const preset = getNamedStartOverlayById(schedule.startOverlayId);
         if (preset) return namedPresetToRuntime(preset);
     }
     if (schedule.startOverlay?.custom) {
@@ -10010,10 +10070,8 @@ function migrateLegacyScheduleStartOverlays() {
     let changed = false;
     for (const schedule of appData.schedules || []) {
         if (schedule.startOverlayId || !schedule.startOverlay?.custom) continue;
-        const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
-        if (!blocklist) continue;
         const presetId = crypto.randomUUID();
-        upsertBlocklistStartOverlay(blocklist, {
+        upsertGlobalStartOverlay({
             id: presetId,
             name: tSettings('scheduleOverlayLegacyPresetName'),
             heading: schedule.startOverlay.heading || null,
@@ -10072,9 +10130,8 @@ function normalizeScheduleStartOverlay(overlay) {
 
 function getScheduleStartOverlayForBlocklistId(blocklistId) {
     const schedule = appData.schedules?.find((s) => s.blocklistId === blocklistId);
-    const blocklist = appData.blocklists?.find((bl) => bl.id === blocklistId);
-    if (!schedule || !blocklist) return null;
-    return resolveScheduleStartOverlay(blocklist, schedule);
+    if (!schedule) return null;
+    return resolveScheduleStartOverlay(schedule);
 }
 
 function getScheduleStartOverlayForWarningApps(appNames) {
@@ -10443,10 +10500,47 @@ async function playAppBlockingLetsGoVoice() {
     }
 }
 
-function syncScheduleConfirmOverlaySelector(blocklist) {
+function getScheduleStartOverlayLabel(schedule) {
+    if (!schedule) return tSettings('scheduleConfirmOverlayDefaultTitle');
+    if (schedule.startOverlayId) {
+        const preset = getNamedStartOverlayById(schedule.startOverlayId);
+        if (preset?.name) return preset.name;
+    }
+    if (schedule.startOverlay?.custom) {
+        return tSettings('scheduleConfirmOverlayCustomTitle');
+    }
+    return tSettings('scheduleConfirmOverlayDefaultTitle');
+}
+
+function syncScheduleActiveOverlayDetail() {
+    const section = document.getElementById('schedule-active-overlay-section');
+    if (!section) return;
+
+    if (isIOS) {
+        section.classList.add('hidden');
+        return;
+    }
+
+    const activeSchedule = selectedBlocklistId && appData.schedules
+        ? appData.schedules.find((s) => s.blocklistId === selectedBlocklistId)
+        : null;
+
+    if (!activeSchedule) {
+        section.classList.add('hidden');
+        return;
+    }
+
+    const valueEl = document.getElementById('schedule-active-overlay-value');
+    if (valueEl) {
+        valueEl.textContent = getScheduleStartOverlayLabel(activeSchedule);
+    }
+    section.classList.remove('hidden');
+}
+
+function syncScheduleConfirmOverlaySelector() {
     const select = document.getElementById('schedule-confirm-overlay-select');
     const titleEl = document.getElementById('schedule-confirm-overlay-value');
-    const presets = getBlocklistStartOverlays(blocklist);
+    const presets = getGlobalStartOverlays();
     const hasPresets = presets.length > 0;
 
     titleEl?.classList.toggle('hidden', hasPresets);
@@ -10473,8 +10567,7 @@ function syncScheduleConfirmOverlaySelector(blocklist) {
 function syncScheduleConfirmOverlaySummary() {
     const titleEl = document.getElementById('schedule-confirm-overlay-value');
     const descEl = document.getElementById('schedule-confirm-overlay-desc');
-    const blocklist = appData.blocklists.find((bl) => bl.id === selectedBlocklistId);
-    syncScheduleConfirmOverlaySelector(blocklist);
+    syncScheduleConfirmOverlaySelector();
 
     const select = document.getElementById('schedule-confirm-overlay-select');
     const usingDropdown = select && !select.classList.contains('hidden');
@@ -10724,7 +10817,7 @@ async function openScheduleOverlayCustomiseModal(blocklist) {
     scheduleOverlayCustomisePresetId = pendingScheduleStartOverlayId || null;
 
     const existingPreset = scheduleOverlayCustomisePresetId
-        ? getNamedStartOverlayById(blocklist, scheduleOverlayCustomisePresetId)
+        ? getNamedStartOverlayById(scheduleOverlayCustomisePresetId)
         : null;
     scheduleOverlayCustomiseDraft = cloneScheduleStartOverlay(
         existingPreset ? namedPresetToDraft(existingPreset) : getDefaultScheduleStartOverlay(),
@@ -10855,6 +10948,8 @@ function setupScheduleOverlayCustomiseModal() {
     document.getElementById('schedule-confirm-overlay-select')
         ?.addEventListener('change', (event) => {
             pendingScheduleStartOverlayId = event.target.value || null;
+            rememberLastScheduleStartOverlayId(pendingScheduleStartOverlayId);
+            void saveData();
             syncScheduleConfirmOverlaySummary();
         });
 
@@ -10865,6 +10960,8 @@ function setupScheduleOverlayCustomiseModal() {
     document.getElementById('schedule-overlay-use-default-btn')?.addEventListener('click', async () => {
         await applyScheduleOverlayDefaultsInForm();
         pendingScheduleStartOverlayId = null;
+        rememberLastScheduleStartOverlayId(null);
+        void saveData();
         syncScheduleConfirmOverlaySummary();
     });
     document.getElementById('schedule-overlay-customise-save-btn')?.addEventListener('click', async () => {
@@ -10884,15 +10981,17 @@ function setupScheduleOverlayCustomiseModal() {
                 return;
             }
             const presetId = scheduleOverlayCustomisePresetId || crypto.randomUUID();
-            upsertBlocklistStartOverlay(
-                blocklist,
+            upsertGlobalStartOverlay(
                 buildNamedStartOverlayPreset({ id: presetId, name, draft: normalized }),
             );
             pendingScheduleStartOverlayId = presetId;
             scheduleOverlayCustomisePresetId = presetId;
+            rememberLastScheduleStartOverlayId(presetId);
             await saveData();
         } else {
             pendingScheduleStartOverlayId = null;
+            rememberLastScheduleStartOverlayId(null);
+            await saveData();
         }
 
         syncScheduleConfirmOverlaySummary();
@@ -10946,7 +11045,7 @@ function setupScheduleOverlayCustomiseModal() {
             if (!bytes.length) return;
             const assetId = crypto.randomUUID();
             const relative = await tauriAPI.saveOverlayImageAssetBytes(
-                scheduleOverlayCustomiseBlocklist.id,
+                GLOBAL_OVERLAY_ASSET_NAMESPACE,
                 assetId,
                 ext,
                 bytes,
@@ -10990,7 +11089,7 @@ function setupScheduleOverlayCustomiseModal() {
             const bytes = new Uint8Array(await file.arrayBuffer());
             if (!bytes.length) return;
             const relative = await tauriAPI.saveOverlayImageAssetBytes(
-                scheduleOverlayCustomiseBlocklist.id,
+                GLOBAL_OVERLAY_ASSET_NAMESPACE,
                 assetId,
                 ext,
                 bytes,
@@ -11098,7 +11197,7 @@ function setupScheduleOverlayCustomiseModal() {
             const bytes = await tauriAPI.readOverlaySourceBytes(path);
             const assetId = crypto.randomUUID();
             const relative = await tauriAPI.saveOverlayVoiceAsset(
-                scheduleOverlayCustomiseBlocklist.id,
+                GLOBAL_OVERLAY_ASSET_NAMESPACE,
                 assetId,
                 ext,
                 new Uint8Array(bytes),
@@ -11168,7 +11267,7 @@ function setupScheduleOverlayCustomiseModal() {
                     const assetId = crypto.randomUUID();
                     const ext = overlayMimeTypeToExtension(mimeType);
                     const relative = await tauriAPI.saveOverlayVoiceAsset(
-                        scheduleOverlayCustomiseBlocklist.id,
+                        GLOBAL_OVERLAY_ASSET_NAMESPACE,
                         assetId,
                         ext,
                         new Uint8Array(buffer),
@@ -11390,8 +11489,7 @@ function showScheduleConfirmModal(blocklist) {
     const subtitleEl = document.getElementById('schedule-confirm-subtitle');
     if (subtitleEl) subtitleEl.innerHTML = tSettings('startScheduleSubtitle');
 
-    const existingSchedule = appData.schedules?.find((s) => s.blocklistId === blocklist.id);
-    pendingScheduleStartOverlayId = existingSchedule?.startOverlayId || null;
+    pendingScheduleStartOverlayId = getLastScheduleStartOverlayId();
     syncScheduleConfirmOverlaySummary();
     document.getElementById('schedule-confirm-overlay-row')?.classList.toggle('hidden', isIOS);
     document.getElementById('schedule-confirm-repeat-divider')?.classList.toggle('hidden', isIOS);
@@ -11622,6 +11720,8 @@ async function proceedWithScheduleEdit() {
 
 // Actually create the schedule (called after confirmation)
 async function proceedWithSchedule() {
+    const startOverlayId = pendingScheduleStartOverlayId || null;
+    rememberLastScheduleStartOverlayId(startOverlayId);
     closeScheduleConfirmModal();
 
     const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
@@ -11646,7 +11746,7 @@ async function proceedWithSchedule() {
         repeatType: scheduleRepeatType,
         repeatDate: scheduleRepeatType === 'date' ? scheduleRepeatDate : null,
         createdAt: Date.now(),
-        startOverlayId: pendingScheduleStartOverlayId || null,
+        startOverlayId,
     };
 
     // Save to appData
@@ -17690,6 +17790,7 @@ const SETTINGS_TRANSLATIONS = {
         startScheduleTitleFmt: 'Start the schedule “{name}”?',
         startScheduleSubtitle: 'Blocks run automatically at the times shown below.',
         scheduleConfirmOverlayLabel: 'Start alert',
+        scheduleActiveOverlayLabel: 'Start alert:',
         scheduleConfirmOverlayDefaultTitle: 'Default overlay',
         scheduleConfirmOverlayCustomTitle: 'Custom overlay',
         scheduleConfirmOverlayDefaultDesc:
@@ -18378,6 +18479,7 @@ const SETTINGS_TRANSLATIONS = {
         startScheduleTitleFmt: 'Start skemaet “{name}”?',
         startScheduleSubtitle: 'Blokeringer kører automatisk på tidspunkterne vist nedenfor.',
         scheduleConfirmOverlayLabel: 'Startbesked',
+        scheduleActiveOverlayLabel: 'Startbesked:',
         scheduleConfirmOverlayDefaultTitle: 'Standard-overlay',
         scheduleConfirmOverlayCustomTitle: 'Tilpasset overlay',
         scheduleConfirmOverlayDefaultDesc:
@@ -19233,6 +19335,7 @@ function applySettingsLanguage() {
     setText('schedule-days-label', tSettings('days'));
     setText('add-segment-label', tSettings('add'));
     setText('repeat-label', tSettings('repeat'));
+    setText('schedule-active-overlay-label', tSettings('scheduleActiveOverlayLabel'));
     const repeatNo = document.querySelector('.repeat-option[data-value="no"]');
     const repeatForever = document.querySelector('.repeat-option[data-value="forever"]');
     const repeatDate = document.querySelector('.repeat-option[data-value="date"]');
@@ -19458,7 +19561,7 @@ function applySettingsLanguage() {
     setText('close-settings-btn', tSettings('settingsDone'));
     setText('grace-period-label-text', tSettings('gracePeriodLabel'));
     setText('grace-period-hint-text', tSettings('gracePeriodHint'));
-    setText('app-blocking-lets-go-btn', tSettings('appBlockingLetsGo'));
+    setText('app-blocking-lets-go-btn-label', tSettings('appBlockingLetsGo'));
     setText('app-blocking-snooze-btn-label', tSettings('appBlockingSnoozeBtn'));
     setHtml('settings-feedback-footer-text', tSettings('settingsFeedbackFooterHtml'));
     updateGraceSettingLock();
