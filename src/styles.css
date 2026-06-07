@@ -9331,6 +9331,214 @@ body.ios #override-count-wrapper .form-input.small {
     border-top: 1px solid var(--border-color);
 }
 
+.schedule-confirm-overlay-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 0 16px;
+    padding: 12px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--element-bg);
+}
+
+.schedule-confirm-overlay-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.schedule-confirm-overlay-label {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.schedule-confirm-overlay-value {
+    font-size: 15px;
+    color: var(--text-primary);
+    line-height: 1.45;
+}
+
+.schedule-confirm-overlay-customise-btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+.schedule-overlay-customise-modal {
+    max-width: 920px;
+    width: min(920px, calc(100vw - 32px));
+}
+
+.schedule-overlay-customise-header h3 {
+    margin: 0 0 16px;
+}
+
+.schedule-overlay-customise-body {
+    display: grid;
+    grid-template-columns: 180px minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+}
+
+.schedule-overlay-customise-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.schedule-overlay-nav-btn {
+    width: 100%;
+    text-align: left;
+    padding: 10px 12px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.schedule-overlay-nav-btn:hover {
+    background: var(--element-hover-bg);
+}
+
+.schedule-overlay-nav-btn.active {
+    background: var(--element-bg);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.schedule-overlay-customise-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+    gap: 18px;
+    align-items: start;
+}
+
+.schedule-overlay-tab-panel.hidden {
+    display: none;
+}
+
+.schedule-overlay-panel-help {
+    margin: 0 0 12px;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
+.schedule-overlay-message-editor-wrap {
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--surface-primary);
+}
+
+.schedule-overlay-message-editor-wrap .ql-toolbar.ql-snow {
+    border: none;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--surface-secondary);
+    padding: 6px 8px;
+}
+
+.schedule-overlay-message-editor-wrap .ql-container.ql-snow {
+    border: none;
+    font-family: inherit;
+    font-size: 14px;
+}
+
+.schedule-overlay-message-editor-wrap .ql-editor {
+    min-height: 112px;
+    max-height: 220px;
+    overflow-y: auto;
+    line-height: 1.55;
+    color: var(--text-primary);
+}
+
+.schedule-overlay-message-editor-wrap .ql-editor.ql-blank::before {
+    font-style: normal;
+    color: var(--text-muted);
+}
+
+.schedule-overlay-message-editor-wrap .ql-editor a {
+    color: var(--redd-blue);
+    text-decoration: underline;
+}
+
+.schedule-overlay-message-editor-wrap .ql-tooltip {
+    z-index: 20;
+}
+
+.schedule-overlay-message-format-hint {
+    margin: 8px 0 0;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
+.schedule-overlay-message-apps-hint {
+    margin: 0 0 8px;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
+.schedule-overlay-message-apps-hint strong {
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.schedule-overlay-image-controls,
+.schedule-overlay-voice-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.schedule-overlay-image-preview {
+    display: block;
+    max-width: 100%;
+    max-height: 180px;
+    border-radius: 10px;
+    object-fit: contain;
+}
+
+.schedule-overlay-voice-preview {
+    width: 100%;
+}
+
+.schedule-overlay-preview-wrap {
+    position: sticky;
+    top: 0;
+}
+
+.schedule-overlay-preview-label {
+    margin-bottom: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.schedule-overlay-preview-card {
+    pointer-events: none;
+    transform: scale(0.82);
+    transform-origin: top center;
+}
+
+.schedule-overlay-preview-actions {
+    justify-content: center;
+}
+
+.schedule-overlay-customise-footer {
+    margin-top: 18px;
+}
+
 .start-confirm-modal:not(.schedule-confirm-edit-layout) .block-detail-name {
     display: none;
 }
@@ -12185,6 +12393,43 @@ body.app-blocking-warning-window-mode #app-blocking-warning-overlay.hidden {
     line-height: 1;
 }
 
+.app-blocking-warning-media {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+}
+
+.app-blocking-warning-image {
+    display: block;
+    max-width: min(100%, 320px);
+    max-height: 220px;
+    border-radius: 12px;
+    object-fit: contain;
+}
+
+.app-blocking-warning-image.hidden {
+    display: none;
+}
+
+.app-blocking-lets-go-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.app-blocking-lets-go-voice-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.app-blocking-lets-go-voice-icon.hidden {
+    display: none;
+}
+
 .app-blocking-warning-heading {
     margin: 0;
     font-family: var(--font-body);
@@ -12208,6 +12453,26 @@ body.app-blocking-warning-window-mode #app-blocking-warning-overlay.hidden {
 
 .app-blocking-warning-summary strong {
     font-weight: 700;
+}
+
+.app-blocking-warning-summary a {
+    color: var(--redd-blue);
+    text-decoration: underline;
+}
+
+.app-blocking-warning-summary ul,
+.app-blocking-warning-summary ol {
+    margin: 0.35em 0;
+    padding-left: 1.35em;
+    text-align: left;
+}
+
+.app-blocking-warning-summary p {
+    margin: 0 0 0.65em;
+}
+
+.app-blocking-warning-summary p:last-child {
+    margin-bottom: 0;
 }
 
 .app-blocking-warning-actions {

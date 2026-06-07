@@ -40,7 +40,8 @@
     "@tauri-apps/plugin-fs": "^2.4.5",
     "@tauri-apps/plugin-opener": "^2.5.0",
     "@tauri-apps/plugin-shell": "^2.3.4",
-    "emoji-picker-element": "^1.28.1"
+    "emoji-picker-element": "^1.28.1",
+    "quill": "^2.0.3"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.9.6",

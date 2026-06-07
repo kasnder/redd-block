@@ -877,6 +877,11 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::open_safari_extension_settings,
         commands::open_browser_extension_settings,
         commands::open_url_in_browser,
+        commands::save_overlay_image_asset,
+        commands::save_overlay_voice_asset,
+        commands::resolve_overlay_asset_path,
+        commands::read_overlay_source_bytes,
+        commands::delete_overlay_asset,
         commands::uninstall_self_macos,
     ]
 }
@@ -938,6 +943,11 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::get_helper_diagnostics,
         commands::open_browser_extension_settings,
         commands::open_url_in_browser,
+        commands::save_overlay_image_asset,
+        commands::save_overlay_voice_asset,
+        commands::resolve_overlay_asset_path,
+        commands::read_overlay_source_bytes,
+        commands::delete_overlay_asset,
     ]
 }
 

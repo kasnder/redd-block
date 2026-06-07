@@ -1413,6 +1413,18 @@
                         </div>
                     </div>
                 </div>
+                <div id="schedule-confirm-overlay-row" class="schedule-confirm-overlay-row">
+                    <div class="schedule-confirm-overlay-copy">
+                        <div class="schedule-confirm-overlay-label" id="schedule-confirm-overlay-label">
+                            Overlay displayed if blocked apps are running:
+                        </div>
+                        <div class="schedule-confirm-overlay-value" id="schedule-confirm-overlay-value">
+                            Default (which apps &amp; Let's go button)
+                        </div>
+                    </div>
+                    <button type="button" id="schedule-confirm-overlay-customise-btn"
+                        class="modal-btn cancel-btn schedule-confirm-overlay-customise-btn">Customise</button>
+                </div>
                 <div id="schedule-confirm-override-info" class="override-info-box">
                     <div class="override-info-header">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -1429,6 +1441,122 @@
                 <div class="modal-buttons">
                     <button id="cancel-schedule-confirm-btn" class="modal-btn cancel-btn">Cancel</button>
                     <button id="proceed-schedule-confirm-btn" class="modal-btn primary-btn">Start Schedule</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Schedule start overlay customisation -->
+        <div id="schedule-overlay-customise-modal" class="modal-overlay hidden">
+            <div class="modal-content schedule-overlay-customise-modal">
+                <div class="schedule-overlay-customise-header">
+                    <h3 id="schedule-overlay-customise-title">Customise schedule overlay</h3>
+                </div>
+                <div class="schedule-overlay-customise-body">
+                    <nav class="schedule-overlay-customise-nav" id="schedule-overlay-customise-nav"
+                        aria-label="Overlay sections">
+                        <button type="button" class="schedule-overlay-nav-btn active" data-overlay-tab="message"
+                            id="schedule-overlay-tab-message">Message</button>
+                        <button type="button" class="schedule-overlay-nav-btn" data-overlay-tab="button"
+                            id="schedule-overlay-tab-button">Let's go button</button>
+                        <button type="button" class="schedule-overlay-nav-btn" data-overlay-tab="image"
+                            id="schedule-overlay-tab-image">Image</button>
+                        <button type="button" class="schedule-overlay-nav-btn" data-overlay-tab="voice"
+                            id="schedule-overlay-tab-voice">Voice message</button>
+                    </nav>
+                    <div class="schedule-overlay-customise-main">
+                        <div class="schedule-overlay-tab-panels">
+                            <section class="schedule-overlay-tab-panel active" data-overlay-panel="message"
+                                id="schedule-overlay-panel-message">
+                                <label class="form-label" for="schedule-overlay-message-editor"
+                                    id="schedule-overlay-message-label">Message shown on the overlay</label>
+                                <p class="schedule-overlay-message-apps-hint" id="schedule-overlay-message-apps-hint"></p>
+                                <div id="schedule-overlay-message-editor-wrap"
+                                    class="schedule-overlay-message-editor-wrap">
+                                    <div id="schedule-overlay-message-editor"></div>
+                                </div>
+                                <p class="schedule-overlay-message-format-hint"
+                                    id="schedule-overlay-message-format-hint"></p>
+                            </section>
+                            <section class="schedule-overlay-tab-panel hidden" data-overlay-panel="button"
+                                id="schedule-overlay-panel-button">
+                                <label class="form-label" for="schedule-overlay-lets-go-input"
+                                    id="schedule-overlay-lets-go-label">Let's go button label</label>
+                                <input type="text" id="schedule-overlay-lets-go-input" class="form-input"
+                                    placeholder="Let's go!" maxlength="40">
+                            </section>
+                            <section class="schedule-overlay-tab-panel hidden" data-overlay-panel="image"
+                                id="schedule-overlay-panel-image">
+                                <p class="schedule-overlay-panel-help" id="schedule-overlay-image-help">
+                                    Choose an image from your computer. It appears above the message on the overlay.
+                                </p>
+                                <div class="schedule-overlay-image-controls">
+                                    <button type="button" id="schedule-overlay-choose-image-btn"
+                                        class="modal-btn cancel-btn">Choose image…</button>
+                                    <button type="button" id="schedule-overlay-remove-image-btn"
+                                        class="modal-btn cancel-btn hidden">Remove image</button>
+                                </div>
+                                <img id="schedule-overlay-image-preview" class="schedule-overlay-image-preview hidden"
+                                    alt="">
+                            </section>
+                            <section class="schedule-overlay-tab-panel hidden" data-overlay-panel="voice"
+                                id="schedule-overlay-panel-voice">
+                                <p class="schedule-overlay-panel-help" id="schedule-overlay-voice-help">
+                                    Record or upload a short voice message. It plays when you tap Let's go.
+                                </p>
+                                <div class="schedule-overlay-voice-controls">
+                                    <button type="button" id="schedule-overlay-record-voice-btn"
+                                        class="modal-btn cancel-btn">Record</button>
+                                    <button type="button" id="schedule-overlay-stop-record-voice-btn"
+                                        class="modal-btn cancel-btn hidden">Stop recording</button>
+                                    <button type="button" id="schedule-overlay-choose-voice-btn"
+                                        class="modal-btn cancel-btn">Choose audio file…</button>
+                                    <button type="button" id="schedule-overlay-remove-voice-btn"
+                                        class="modal-btn cancel-btn hidden">Remove voice</button>
+                                </div>
+                                <audio id="schedule-overlay-voice-preview" class="schedule-overlay-voice-preview hidden"
+                                    controls></audio>
+                            </section>
+                        </div>
+                        <div class="schedule-overlay-preview-wrap">
+                            <div class="schedule-overlay-preview-label" id="schedule-overlay-preview-label">Preview
+                            </div>
+                            <div class="app-blocking-warning-card schedule-overlay-preview-card"
+                                id="schedule-overlay-preview-card">
+                                <div class="app-blocking-warning-media">
+                                    <div class="app-blocking-warning-emoji" id="schedule-overlay-preview-emoji-wrap">
+                                        <span id="schedule-overlay-preview-emoji">🎯</span>
+                                    </div>
+                                    <img id="schedule-overlay-preview-image"
+                                        class="app-blocking-warning-image hidden" alt="">
+                                </div>
+                                <h2 class="app-blocking-warning-heading" id="schedule-overlay-preview-heading"></h2>
+                                <p class="app-blocking-warning-summary" id="schedule-overlay-preview-summary"></p>
+                                <div class="app-blocking-warning-actions schedule-overlay-preview-actions">
+                                    <button type="button" class="modal-btn primary-btn app-blocking-lets-go-btn"
+                                        id="schedule-overlay-preview-lets-go" disabled>
+                                        <span class="app-blocking-lets-go-voice-icon hidden"
+                                            id="schedule-overlay-preview-voice-icon" aria-hidden="true">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                                                stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                stroke-linejoin="round">
+                                                <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                                            </svg>
+                                        </span>
+                                        <span id="schedule-overlay-preview-lets-go-label">Let's go!</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-buttons schedule-overlay-customise-footer">
+                    <button type="button" id="schedule-overlay-use-default-btn"
+                        class="modal-btn cancel-btn">Use default</button>
+                    <button type="button" id="schedule-overlay-customise-cancel-btn"
+                        class="modal-btn cancel-btn">Cancel</button>
+                    <button type="button" id="schedule-overlay-customise-save-btn"
+                        class="modal-btn primary-btn">Save</button>
                 </div>
             </div>
         </div>
@@ -1942,8 +2070,11 @@
             aria-modal="true" aria-labelledby="app-blocking-warning-heading">
             <div class="app-blocking-warning-panel-wrap" id="app-blocking-warning-panel">
                 <div class="app-blocking-warning-card">
-                    <div class="app-blocking-warning-emoji" aria-hidden="true">
-                        <span id="app-blocking-warning-emoji">🎯</span>
+                    <div class="app-blocking-warning-media">
+                        <div class="app-blocking-warning-emoji" id="app-blocking-warning-emoji-wrap">
+                            <span id="app-blocking-warning-emoji">🎯</span>
+                        </div>
+                        <img id="app-blocking-warning-image" class="app-blocking-warning-image hidden" alt="">
                     </div>
                     <h2 id="app-blocking-warning-heading" class="app-blocking-warning-heading"></h2>
                     <p id="app-blocking-warning-summary" class="app-blocking-warning-summary"></p>
@@ -1955,7 +2086,17 @@
                             <span id="app-blocking-snooze-btn-label">Snooze for 2 mins</span>
                         </button>
                         <button type="button" id="app-blocking-lets-go-btn"
-                            class="modal-btn primary-btn app-blocking-lets-go-btn">Let's go!</button>
+                            class="modal-btn primary-btn app-blocking-lets-go-btn">
+                            <span class="app-blocking-lets-go-voice-icon hidden" id="app-blocking-lets-go-voice-icon"
+                                aria-hidden="true">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                                </svg>
+                            </span>
+                            <span id="app-blocking-lets-go-btn-label">Let's go!</span>
+                        </button>
                     </div>
                 </div>
             </div>

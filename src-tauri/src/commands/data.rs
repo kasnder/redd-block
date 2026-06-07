@@ -75,6 +75,21 @@ pub struct ActiveBlock {
     pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ScheduleStartOverlay {
+    #[serde(default)]
+    pub custom: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lets_go_label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_asset: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub voice_asset: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Schedule {
@@ -90,6 +105,8 @@ pub struct Schedule {
     pub is_paused: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pause_end_time: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_overlay: Option<ScheduleStartOverlay>,
     #[serde(flatten)]
     pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
@@ -197,7 +214,7 @@ fn per_user_data_path_static() -> PathBuf {
         })
 }
 
-fn get_data_path(app: &AppHandle) -> PathBuf {
+pub(crate) fn get_data_path(app: &AppHandle) -> PathBuf {
     #[cfg(target_os = "ios")]
     {
         return get_per_user_data_path(app);
