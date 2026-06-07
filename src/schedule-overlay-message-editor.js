@@ -235,3 +235,8 @@ export function setScheduleOverlayMessageEditorPlaceholder(placeholder) {
     if (!quillInstance?.root) return;
     quillInstance.root.dataset.placeholder = placeholder || '';
 }
+
+export function setScheduleOverlayMessageEditorEnabled(enabled) {
+    if (!quillInstance) return;
+    quillInstance.enable(enabled);
+}

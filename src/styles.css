@@ -5234,20 +5234,54 @@ body.ios .segment-days.compact-day-labels .segment-day-toggle {
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-wrap: wrap;
 }
 
-.schedule-active-overlay-section {
+.schedule-panel-overlay-group {
     display: flex;
     align-items: center;
     gap: 8px;
 }
 
-.schedule-active-overlay-value {
-    font-size: 15px;
-    color: hsl(215, 20%, 50%);
+.schedule-panel-overlay-controls {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
 }
 
-body.dark-mode .schedule-active-overlay-value {
+.schedule-panel-overlay-controls .repeat-dropdown-menu {
+    min-width: 100%;
+}
+
+.schedule-panel-overlay-customise-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.schedule-panel-overlay-customise-btn:hover:not(:disabled) {
+    background: var(--element-hover-bg);
+    color: var(--text-secondary);
+}
+
+.schedule-panel-overlay-customise-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+    pointer-events: none;
+}
+
+body.dark-mode .schedule-panel-overlay-group .repeat-label.repeat-label-disabled {
     color: var(--text-muted);
     opacity: 0.85;
 }
@@ -9535,6 +9569,15 @@ body.ios #override-count-wrapper .form-input.small {
     line-height: 1.35;
 }
 
+.start-confirm-overlay-controls .schedule-panel-overlay-customise-btn {
+    align-self: center;
+    flex-shrink: 0;
+}
+
+.start-confirm-overlay-controls:has(.schedule-panel-overlay-customise-btn) {
+    gap: 2px;
+}
+
 .start-confirm-overlay-customise-btn {
     flex: 0 0 auto;
     flex-shrink: 0;
@@ -9719,6 +9762,50 @@ body.dark-mode .start-confirm-blocking-text {
     color: var(--text-primary);
 }
 
+.schedule-overlay-select-label-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.schedule-overlay-select-label-row .schedule-overlay-name-label {
+    margin-bottom: 0;
+}
+
+.schedule-overlay-default-notice {
+    margin: 10px 0 0;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
+.schedule-overlay-select-section {
+    display: flex;
+    flex-direction: column;
+}
+
+.schedule-overlay-editable-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 0;
+}
+
+.schedule-overlay-customise-settings--readonly .schedule-overlay-editable-fields {
+    opacity: 0.55;
+}
+
+.schedule-overlay-customise-settings--readonly .schedule-overlay-editable-fields :is(
+    input,
+    button,
+    select,
+    textarea,
+    .schedule-overlay-message-editor-wrap
+) {
+    pointer-events: none;
+}
+
 .schedule-overlay-section-header {
     display: flex;
     align-items: center;
@@ -9777,6 +9864,16 @@ body.dark-mode .start-confirm-blocking-text {
 body.dark-mode .schedule-overlay-badge--custom {
     background: hsl(145, 25%, 20%);
     color: hsl(145, 45%, 72%);
+}
+
+.schedule-overlay-badge--unsaved {
+    background: hsl(38, 90%, 92%);
+    color: hsl(32, 70%, 35%);
+}
+
+body.dark-mode .schedule-overlay-badge--unsaved {
+    background: hsl(38, 35%, 18%);
+    color: hsl(38, 75%, 68%);
 }
 
 .schedule-overlay-section-reset {
@@ -10127,6 +10224,13 @@ body.dark-mode .schedule-overlay-record-level-bar.is-active {
     flex: 0 0 auto;
 }
 
+.schedule-overlay-customise-footer-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 .schedule-overlay-customise-footer-actions {
     display: flex;
     align-items: center;
@@ -10188,6 +10292,7 @@ body.dark-mode .schedule-overlay-record-level-bar.is-active {
         align-items: stretch;
     }
 
+    .schedule-overlay-customise-footer-left,
     .schedule-overlay-reset-all-btn {
         width: 100%;
     }
@@ -11843,6 +11948,69 @@ body.dark-mode #mac-automation-intro-modal .modal-btn.cancel-btn:hover {
     font-size: 15px;
     color: var(--text-muted);
     margin-bottom: 8px;
+}
+
+/* Delete start alert confirmation modal */
+#schedule-overlay-delete-modal {
+    z-index: 220;
+}
+
+#schedule-overlay-delete-modal .modal-content {
+    max-width: 520px;
+    padding: 28px 28px 24px;
+    box-shadow: 0 16px 48px rgba(30, 45, 62, 0.14);
+}
+
+#schedule-overlay-delete-modal h3 {
+    font-family: var(--font-heading);
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.15;
+    margin-bottom: 12px;
+}
+
+#schedule-overlay-delete-modal .schedule-overlay-delete-warning {
+    margin-bottom: 20px;
+}
+
+#schedule-overlay-delete-modal .modal-buttons {
+    gap: 12px;
+    margin-top: 0;
+}
+
+#schedule-overlay-delete-modal .modal-btn {
+    padding: 12px 16px;
+    border-radius: 10px;
+    font-size: 15px;
+}
+
+#schedule-overlay-delete-modal .modal-btn.cancel-btn {
+    background: #ffffff;
+    border: 1px solid var(--border-color-medium);
+    color: var(--text-secondary);
+}
+
+#schedule-overlay-delete-modal .modal-btn.cancel-btn:hover {
+    background: var(--redd-warm-grey);
+}
+
+#schedule-overlay-delete-modal .modal-btn.danger-btn:hover:not(:disabled) {
+    filter: brightness(0.95);
+}
+
+body.dark-mode #schedule-overlay-delete-modal h3 {
+    color: var(--text-primary);
+}
+
+body.dark-mode #schedule-overlay-delete-modal .modal-btn.cancel-btn {
+    background: var(--surface-secondary);
+    border-color: var(--border-color);
+    color: var(--text-secondary);
+}
+
+body.dark-mode #schedule-overlay-delete-modal .modal-btn.cancel-btn:hover {
+    background: rgba(255, 255, 255, 0.06);
 }
 
 /* Helper Settings Section */
