@@ -5554,8 +5554,7 @@ let scheduleOverlayRecordedMimeType = 'audio/webm';
 let scheduleOverlayRecordAudioContext = null;
 let scheduleOverlayRecordAnalyser = null;
 let scheduleOverlayRecordLevelRaf = null;
-let scheduleOverlayMicWarmupStream = null;
-let scheduleOverlayMicWarmupPromise = null;
+let scheduleOverlayRecordStartCancelled = false;
 const SCHEDULE_OVERLAY_RECORD_LEVEL_BAR_COUNT = 12;
 /** Blob URLs created for overlay asset previews — revoked when the modal closes. */
 const overlayAssetBlobUrls = new Set();
@@ -10866,57 +10865,30 @@ async function removeScheduleOverlayAsset(relativePath) {
     }
 }
 
-function releaseScheduleOverlayMicWarmup() {
-    scheduleOverlayMicWarmupPromise = null;
-    if (scheduleOverlayMicWarmupStream) {
-        scheduleOverlayMicWarmupStream.getTracks().forEach((track) => track.stop());
-        scheduleOverlayMicWarmupStream = null;
-    }
-}
-
-function warmScheduleOverlayMicStream() {
-    if (isIOS || !navigator.mediaDevices?.getUserMedia) return;
-    releaseScheduleOverlayMicWarmup();
-    scheduleOverlayMicWarmupPromise = navigator.mediaDevices.getUserMedia({ audio: true })
-        .then((stream) => {
-            scheduleOverlayMicWarmupPromise = null;
-            if (!isScheduleOverlayCustomiseModalOpen()) {
-                stream.getTracks().forEach((track) => track.stop());
-                return stream;
-            }
-            scheduleOverlayMicWarmupStream = stream;
-            return stream;
-        })
-        .catch((err) => {
-            scheduleOverlayMicWarmupPromise = null;
-            scheduleOverlayMicWarmupStream = null;
-            throw err;
-        });
-}
-
 async function acquireScheduleOverlayMicStream() {
-    if (scheduleOverlayMicWarmupStream) {
-        const stream = scheduleOverlayMicWarmupStream;
-        scheduleOverlayMicWarmupStream = null;
-        scheduleOverlayMicWarmupPromise = null;
-        return stream;
-    }
-    if (scheduleOverlayMicWarmupPromise) {
-        try {
-            return await scheduleOverlayMicWarmupPromise;
-        } catch {
-            // Warmup failed — fall through to a fresh request on Record.
-        }
-    }
     return navigator.mediaDevices.getUserMedia({ audio: true });
 }
 
-function setScheduleOverlayRecordingUi(isRecording) {
-    document.getElementById('schedule-overlay-record-voice-btn')?.classList.toggle('hidden', isRecording);
-    document.getElementById('schedule-overlay-stop-record-voice-btn')?.classList.toggle('hidden', !isRecording);
+function setScheduleOverlayRecordingUi(state) {
+    const isStarting = state === 'starting';
+    const isRecording = state === 'recording';
+    const isActive = isStarting || isRecording;
+
+    document.getElementById('schedule-overlay-record-voice-btn')?.classList.toggle('hidden', isActive);
+    document.getElementById('schedule-overlay-stop-record-voice-btn')?.classList.toggle('hidden', !isActive);
+    document.getElementById('schedule-overlay-choose-voice-btn')?.toggleAttribute('disabled', isActive);
+    document.getElementById('schedule-overlay-voice-card')?.classList.toggle('is-starting', isStarting);
     document.getElementById('schedule-overlay-voice-card')?.classList.toggle('is-recording', isRecording);
+
+    const stopLabel = document.getElementById('schedule-overlay-stop-record-voice-btn-label');
+    if (stopLabel) {
+        stopLabel.textContent = isStarting
+            ? tSettings('scheduleOverlayStartingRecording')
+            : tSettings('scheduleOverlayStopRecording');
+    }
+
     const meter = document.getElementById('schedule-overlay-record-level');
-    if (isRecording) {
+    if (isActive) {
         meter?.classList.remove('hidden');
     } else {
         meter?.classList.add('hidden');
@@ -10942,7 +10914,7 @@ function teardownScheduleOverlayRecordLevelAnalyser() {
 
 function stopScheduleOverlayRecordLevelMeter() {
     teardownScheduleOverlayRecordLevelAnalyser();
-    setScheduleOverlayRecordingUi(false);
+    setScheduleOverlayRecordingUi('idle');
 }
 
 async function startScheduleOverlayRecordLevelMeter(stream) {
@@ -11215,7 +11187,6 @@ async function openScheduleOverlayCustomiseModal(blocklist) {
         initialPresetId || SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE,
     );
     document.getElementById('schedule-overlay-customise-modal')?.classList.remove('hidden');
-    warmScheduleOverlayMicStream();
 }
 
 async function applyScheduleOverlayDefaultsInForm() {
@@ -11255,7 +11226,6 @@ async function resetScheduleOverlayVoiceAsset() {
 
 function closeScheduleOverlayCustomiseModal() {
     stopScheduleOverlayRecording();
-    releaseScheduleOverlayMicWarmup();
     revokeOverlayAssetBlobUrls();
     document.getElementById('schedule-overlay-customise-modal')?.classList.add('hidden');
     document.getElementById('schedule-overlay-image-dropzone')?.classList.remove('is-dragover');
@@ -11612,9 +11582,16 @@ function setupScheduleOverlayCustomiseModal() {
         }
         try {
             stopScheduleOverlayRecording();
-            setScheduleOverlayRecordingUi(true);
+            scheduleOverlayRecordStartCancelled = false;
+            setScheduleOverlayRecordingUi('starting');
             scheduleOverlayRecordChunks = [];
             scheduleOverlayRecordStream = await acquireScheduleOverlayMicStream();
+            if (scheduleOverlayRecordStartCancelled) {
+                scheduleOverlayRecordStream.getTracks().forEach((track) => track.stop());
+                scheduleOverlayRecordStream = null;
+                setScheduleOverlayRecordingUi('idle');
+                return;
+            }
             const recordingMimeType = pickOverlayRecordingMimeType();
             scheduleOverlayRecordedMimeType = recordingMimeType || 'audio/webm';
             scheduleOverlayMediaRecorder = recordingMimeType
@@ -11665,6 +11642,7 @@ function setupScheduleOverlayCustomiseModal() {
                 }
             };
             scheduleOverlayMediaRecorder.start(250);
+            setScheduleOverlayRecordingUi('recording');
             void startScheduleOverlayRecordLevelMeter(scheduleOverlayRecordStream);
         } catch (err) {
             console.error('[schedule-overlay] mic access failed:', err);
@@ -11678,6 +11656,13 @@ function setupScheduleOverlayCustomiseModal() {
 
     document.getElementById('schedule-overlay-stop-record-voice-btn')
         ?.addEventListener('click', () => {
+            const voiceCard = document.getElementById('schedule-overlay-voice-card');
+            if (voiceCard?.classList.contains('is-starting')) {
+                scheduleOverlayRecordStartCancelled = true;
+                stopScheduleOverlayRecording();
+                setScheduleOverlayRecordingUi('idle');
+                return;
+            }
             if (scheduleOverlayMediaRecorder && scheduleOverlayMediaRecorder.state === 'recording') {
                 if (typeof scheduleOverlayMediaRecorder.requestData === 'function') {
                     scheduleOverlayMediaRecorder.requestData();
@@ -18218,6 +18203,7 @@ const SETTINGS_TRANSLATIONS = {
             'Plays once the \'Let\'s go\'-button is pressed.',
         scheduleOverlayChooseImage: 'Upload',
         scheduleOverlayRecordVoice: 'Record',
+        scheduleOverlayStartingRecording: 'Starting microphone…',
         scheduleOverlayStopRecording: 'Stop recording',
         scheduleOverlayChooseAudio: 'Choose file…',
         scheduleOverlayPreviewLabel: 'Preview',
@@ -18920,6 +18906,7 @@ const SETTINGS_TRANSLATIONS = {
             'Afspilles én gang, når \'Let\'s go\'-knappen trykkes.',
         scheduleOverlayChooseImage: 'Upload',
         scheduleOverlayRecordVoice: 'Optag',
+        scheduleOverlayStartingRecording: 'Starter mikrofon…',
         scheduleOverlayStopRecording: 'Stop optagelse',
         scheduleOverlayChooseAudio: 'Vælg fil…',
         scheduleOverlayPreviewLabel: 'Forhåndsvisning',

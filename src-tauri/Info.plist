@@ -6,5 +6,7 @@
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>ReDD Block controls Safari and Chromium-based browsers to redirect blocked websites to a block page while a block is active.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>ReDD Block uses the microphone to record voice messages for schedule start overlays.</string>
 </dict>
 </plist>

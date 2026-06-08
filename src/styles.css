@@ -10077,8 +10077,13 @@ body.dark-mode .schedule-overlay-badge--unsaved {
 }
 
 .schedule-overlay-record-voice-btn:hover,
-.schedule-overlay-choose-voice-btn:hover {
+.schedule-overlay-choose-voice-btn:hover:not(:disabled) {
     background: var(--element-hover-bg);
+}
+
+.schedule-overlay-choose-voice-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 .schedule-overlay-voice-record-dot {
@@ -10090,6 +10095,18 @@ body.dark-mode .schedule-overlay-badge--unsaved {
     opacity: 0;
 }
 
+.schedule-overlay-voice-card.is-starting .schedule-overlay-voice-record-dot {
+    opacity: 0.45;
+}
+
+.schedule-overlay-voice-card.is-starting .schedule-overlay-record-level-bar {
+    animation: schedule-overlay-record-waiting 1.1s ease-in-out infinite;
+}
+
+.schedule-overlay-voice-card.is-starting .schedule-overlay-record-level-bar:nth-child(odd) {
+    animation-delay: 0.15s;
+}
+
 .schedule-overlay-voice-card.is-recording .schedule-overlay-voice-record-dot {
     opacity: 1;
     animation: schedule-overlay-record-pulse 1.2s ease-in-out infinite;
@@ -10098,6 +10115,17 @@ body.dark-mode .schedule-overlay-badge--unsaved {
 @keyframes schedule-overlay-record-pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.45; }
+}
+
+@keyframes schedule-overlay-record-waiting {
+    0%, 100% {
+        transform: scaleY(0.45);
+        background: hsl(0, 0%, 0%, 0.08);
+    }
+    50% {
+        transform: scaleY(0.85);
+        background: hsl(0, 0%, 0%, 0.18);
+    }
 }
 
 .schedule-overlay-voice-controls {
@@ -10126,6 +10154,7 @@ body.dark-mode .schedule-overlay-badge--unsaved {
     height: 14px;
     border-radius: 999px;
     background: hsl(0, 0%, 0%, 0.08);
+    transform-origin: center bottom;
     transition: background-color 60ms linear;
 }
 

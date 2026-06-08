@@ -14,5 +14,9 @@
 	     Chromium tabs). -->
 	<key>com.apple.security.automation.apple-events</key>
 	<true/>
+	<!-- Required for WKWebView getUserMedia in hardened-runtime builds
+	     distributed outside the Mac App Store (Developer ID .pkg/.dmg). -->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
 </dict>
 </plist>
