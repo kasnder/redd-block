@@ -1565,7 +1565,7 @@
                         <span class="schedule-overlay-customise-emoji" id="schedule-overlay-customise-emoji"
                             aria-hidden="true">📚</span>
                         <div class="schedule-overlay-customise-header-text">
-                            <h3 id="schedule-overlay-customise-title">Customise the start alert</h3>
+                            <h3 id="schedule-overlay-customise-title">Customise the alert</h3>
                             <p class="schedule-overlay-customise-subtitle" id="schedule-overlay-customise-subtitle"></p>
                         </div>
                     </div>
@@ -1612,7 +1612,7 @@
                                     </svg>
                                     <span class="schedule-overlay-section-title-main">
                                         <span id="schedule-overlay-image-label">Image</span>
-                                        <span class="schedule-overlay-badge schedule-overlay-badge--default"
+                                        <span class="schedule-overlay-badge schedule-overlay-badge--unsaved hidden"
                                             id="schedule-overlay-image-badge"></span>
                                     </span>
                                 </div>
@@ -1647,7 +1647,7 @@
                                     </svg>
                                     <span class="schedule-overlay-section-title-main">
                                         <span id="schedule-overlay-heading-label">Title</span>
-                                        <span class="schedule-overlay-badge schedule-overlay-badge--default"
+                                        <span class="schedule-overlay-badge schedule-overlay-badge--unsaved hidden"
                                             id="schedule-overlay-heading-badge"></span>
                                     </span>
                                 </div>
@@ -1670,7 +1670,7 @@
                                     </svg>
                                     <span class="schedule-overlay-section-title-main">
                                         <span id="schedule-overlay-message-label">Message</span>
-                                        <span class="schedule-overlay-badge schedule-overlay-badge--default hidden"
+                                        <span class="schedule-overlay-badge schedule-overlay-badge--unsaved hidden"
                                             id="schedule-overlay-message-badge"></span>
                                     </span>
                                 </div>
@@ -1697,7 +1697,7 @@
                                     </svg>
                                     <span class="schedule-overlay-section-title-main">
                                         <span id="schedule-overlay-lets-go-label">"Let's go" button</span>
-                                        <span class="schedule-overlay-badge schedule-overlay-badge--default"
+                                        <span class="schedule-overlay-badge schedule-overlay-badge--unsaved hidden"
                                             id="schedule-overlay-button-badge"></span>
                                     </span>
                                 </div>
@@ -1724,7 +1724,7 @@
                                     </svg>
                                     <span class="schedule-overlay-section-title-main">
                                         <span id="schedule-overlay-voice-label">Voice message</span>
-                                        <span class="schedule-overlay-badge schedule-overlay-badge--custom hidden"
+                                        <span class="schedule-overlay-badge schedule-overlay-badge--unsaved hidden"
                                             id="schedule-overlay-voice-badge"></span>
                                     </span>
                                 </div>
@@ -1802,8 +1802,6 @@
                 </div>
                 <div class="schedule-overlay-customise-footer">
                     <div class="schedule-overlay-customise-footer-left">
-                        <button type="button" id="schedule-overlay-use-default-btn"
-                            class="modal-btn cancel-btn schedule-overlay-reset-all-btn">Reset all to default</button>
                         <button type="button" id="schedule-overlay-delete-btn"
                             class="modal-btn danger-btn schedule-overlay-delete-btn hidden">Delete alert</button>
                     </div>
@@ -1813,6 +1811,23 @@
                         <button type="button" id="schedule-overlay-customise-save-btn"
                             class="modal-btn black-btn">Save alert</button>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Discard unsaved start alert changes -->
+        <div id="schedule-overlay-discard-modal" class="modal-overlay hidden">
+            <div class="modal-content schedule-overlay-discard-modal">
+                <h3 id="schedule-overlay-discard-title">Discard unsaved changes?</h3>
+                <div class="override-all-warning schedule-overlay-discard-warning">
+                    <p><strong id="schedule-overlay-discard-warning-strong"></strong></p>
+                    <p id="schedule-overlay-discard-warning-body"></p>
+                </div>
+                <div class="modal-buttons">
+                    <button type="button" id="cancel-schedule-overlay-discard-btn"
+                        class="modal-btn cancel-btn">Keep editing</button>
+                    <button type="button" id="confirm-schedule-overlay-discard-btn"
+                        class="modal-btn danger-btn">Discard changes</button>
                 </div>
             </div>
         </div>

@@ -10267,10 +10267,6 @@ body.dark-mode .schedule-overlay-record-level-bar.is-active {
     margin-left: auto;
 }
 
-.schedule-overlay-reset-all-btn {
-    flex: 0 0 auto;
-}
-
 @media (max-width: 960px) {
     .schedule-overlay-customise-modal {
         padding-top: 22px;
@@ -10321,8 +10317,7 @@ body.dark-mode .schedule-overlay-record-level-bar.is-active {
         align-items: stretch;
     }
 
-    .schedule-overlay-customise-footer-left,
-    .schedule-overlay-reset-all-btn {
+    .schedule-overlay-customise-footer-left {
         width: 100%;
     }
 
@@ -11979,17 +11974,20 @@ body.dark-mode #mac-automation-intro-modal .modal-btn.cancel-btn:hover {
     margin-bottom: 8px;
 }
 
-/* Delete start alert confirmation modal */
+/* Start alert confirmation modals (discard + delete) */
+#schedule-overlay-discard-modal,
 #schedule-overlay-delete-modal {
     z-index: 220;
 }
 
+#schedule-overlay-discard-modal .modal-content,
 #schedule-overlay-delete-modal .modal-content {
     max-width: 520px;
     padding: 28px 28px 24px;
     box-shadow: 0 16px 48px rgba(30, 45, 62, 0.14);
 }
 
+#schedule-overlay-discard-modal h3,
 #schedule-overlay-delete-modal h3 {
     font-family: var(--font-heading);
     font-size: 24px;
@@ -11999,45 +11997,54 @@ body.dark-mode #mac-automation-intro-modal .modal-btn.cancel-btn:hover {
     margin-bottom: 12px;
 }
 
+#schedule-overlay-discard-modal .schedule-overlay-discard-warning,
 #schedule-overlay-delete-modal .schedule-overlay-delete-warning {
     margin-bottom: 20px;
 }
 
+#schedule-overlay-discard-modal .modal-buttons,
 #schedule-overlay-delete-modal .modal-buttons {
     gap: 12px;
     margin-top: 0;
 }
 
+#schedule-overlay-discard-modal .modal-btn,
 #schedule-overlay-delete-modal .modal-btn {
     padding: 12px 16px;
     border-radius: 10px;
     font-size: 15px;
 }
 
+#schedule-overlay-discard-modal .modal-btn.cancel-btn,
 #schedule-overlay-delete-modal .modal-btn.cancel-btn {
     background: #ffffff;
     border: 1px solid var(--border-color-medium);
     color: var(--text-secondary);
 }
 
+#schedule-overlay-discard-modal .modal-btn.cancel-btn:hover,
 #schedule-overlay-delete-modal .modal-btn.cancel-btn:hover {
     background: var(--redd-warm-grey);
 }
 
+#schedule-overlay-discard-modal .modal-btn.danger-btn:hover:not(:disabled),
 #schedule-overlay-delete-modal .modal-btn.danger-btn:hover:not(:disabled) {
     filter: brightness(0.95);
 }
 
+body.dark-mode #schedule-overlay-discard-modal h3,
 body.dark-mode #schedule-overlay-delete-modal h3 {
     color: var(--text-primary);
 }
 
+body.dark-mode #schedule-overlay-discard-modal .modal-btn.cancel-btn,
 body.dark-mode #schedule-overlay-delete-modal .modal-btn.cancel-btn {
     background: var(--surface-secondary);
     border-color: var(--border-color);
     color: var(--text-secondary);
 }
 
+body.dark-mode #schedule-overlay-discard-modal .modal-btn.cancel-btn:hover,
 body.dark-mode #schedule-overlay-delete-modal .modal-btn.cancel-btn:hover {
     background: rgba(255, 255, 255, 0.06);
 }

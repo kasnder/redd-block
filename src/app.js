@@ -5545,6 +5545,8 @@ let scheduleOverlayCustomiseBlocklist = null;
 /** Preset id being edited in the customise modal (null = new). */
 let scheduleOverlayCustomisePresetId = null;
 let scheduleOverlayCustomiseSelection = null;
+/** Saved form state when the customise modal loaded the current selection. */
+let scheduleOverlayCustomiseBaseline = null;
 const SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE = '__default__';
 const SCHEDULE_OVERLAY_NEW_PRESET_VALUE = '__new__';
 let scheduleOverlayMediaRecorder = null;
@@ -10401,83 +10403,142 @@ function syncScheduleOverlayLetsGoCounter() {
     counter.textContent = tSettingsFmt('scheduleOverlayCharCountFmt', { count: length, max });
 }
 
-function setScheduleOverlaySectionBadge(badgeEl, resetBtn, { isCustom, customLabel, defaultLabel }) {
-    if (!badgeEl) return;
-    badgeEl.textContent = isCustom ? customLabel : defaultLabel;
-    badgeEl.classList.toggle('schedule-overlay-badge--custom', isCustom);
-    badgeEl.classList.toggle('schedule-overlay-badge--default', !isCustom);
-    badgeEl.classList.remove('hidden');
-    if (resetBtn) resetBtn.classList.toggle('hidden', !isCustom);
+function normalizeScheduleOverlayMessageForCompare(message) {
+    const normalized = normalizeStoredOverlayMessage(message);
+    return isOverlayMessageEmpty(normalized) ? null : normalized;
 }
 
-function syncScheduleOverlaySectionBadges(draft) {
-    const normalized = normalizeScheduleStartOverlay(draft);
+function normalizeScheduleOverlayLetsGoForCompare(letsGoLabel) {
+    const defaultLabel = tSettings('appBlockingLetsGo');
+    const value = letsGoLabel?.trim() || '';
+    if (!value || value === defaultLabel) return null;
+    return value;
+}
+
+function scheduleOverlayDraftFieldForCompare(draft, field) {
+    if (!draft) return null;
+    switch (field) {
+        case 'heading':
+            return draft.heading?.trim() || null;
+        case 'message':
+            return normalizeScheduleOverlayMessageForCompare(draft.message);
+        case 'letsGoLabel':
+            return normalizeScheduleOverlayLetsGoForCompare(draft.letsGoLabel);
+        case 'imageAsset':
+            return draft.imageAsset || null;
+        case 'voiceAsset':
+            return draft.voiceAsset || null;
+        default:
+            return null;
+    }
+}
+
+function isScheduleOverlayDraftFieldUnsaved(field, currentDraft, baselineDraft) {
+    return scheduleOverlayDraftFieldForCompare(currentDraft, field)
+        !== scheduleOverlayDraftFieldForCompare(baselineDraft, field);
+}
+
+function readScheduleOverlayCustomiseFormState() {
+    return {
+        name: document.getElementById('schedule-overlay-name-input')?.value?.trim() || '',
+        draft: readScheduleOverlayCustomiseDraftFromForm(),
+    };
+}
+
+function captureScheduleOverlayCustomiseBaseline() {
+    scheduleOverlayCustomiseBaseline = {
+        selectionValue: scheduleOverlayCustomiseSelection,
+        ...readScheduleOverlayCustomiseFormState(),
+    };
+}
+
+function hasUnsavedScheduleOverlayCustomiseChanges() {
+    if (scheduleOverlayCustomiseSelection === SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE) return false;
+    if (!scheduleOverlayCustomiseBaseline) return false;
+
+    const current = readScheduleOverlayCustomiseFormState();
+    if (current.name !== scheduleOverlayCustomiseBaseline.name) return true;
+
+    const fields = ['heading', 'message', 'letsGoLabel', 'imageAsset', 'voiceAsset'];
+    return fields.some((field) => isScheduleOverlayDraftFieldUnsaved(
+        field,
+        current.draft,
+        scheduleOverlayCustomiseBaseline.draft,
+    ));
+}
+
+function setScheduleOverlaySectionUnsavedBadge(badgeEl, isUnsaved) {
+    if (!badgeEl) return;
+    badgeEl.textContent = tSettings('scheduleOverlayUnsavedBadge');
+    badgeEl.classList.toggle('hidden', !isUnsaved);
+}
+
+function syncScheduleOverlaySectionBadges() {
+    if (scheduleOverlayCustomiseSelection === SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE) {
+        [
+            'schedule-overlay-heading-badge',
+            'schedule-overlay-message-badge',
+            'schedule-overlay-button-badge',
+            'schedule-overlay-image-badge',
+            'schedule-overlay-voice-badge',
+        ].forEach((id) => document.getElementById(id)?.classList.add('hidden'));
+        return;
+    }
+
+    const current = readScheduleOverlayCustomiseFormState();
+    const baselineDraft = scheduleOverlayCustomiseBaseline?.draft || getDefaultScheduleStartOverlay();
     const defaultLetsGo = tSettings('appBlockingLetsGo');
     const letsGoValue = document.getElementById('schedule-overlay-lets-go-input')?.value?.trim() || '';
     const headingValue = document.getElementById('schedule-overlay-heading-input')?.value?.trim() || '';
     const messageCustom = !isOverlayMessageEmpty(getScheduleOverlayMessageEditorHtml());
     const headingCustom = !!headingValue;
     const buttonCustom = !!(letsGoValue && letsGoValue !== defaultLetsGo);
-    const imageCustom = !!normalized.imageAsset;
-    const voiceCustom = !!normalized.voiceAsset;
+    const imageCustom = !!current.draft.imageAsset;
+    const voiceCustom = !!current.draft.voiceAsset;
 
-    setScheduleOverlaySectionBadge(
+    setScheduleOverlaySectionUnsavedBadge(
         document.getElementById('schedule-overlay-heading-badge'),
-        document.getElementById('schedule-overlay-reset-heading-btn'),
-        {
-            isCustom: headingCustom,
-            customLabel: tSettings('scheduleOverlayBadgeCustomised'),
-            defaultLabel: tSettings('scheduleOverlayBadgeDefault'),
-        },
+        isScheduleOverlayDraftFieldUnsaved('heading', current.draft, baselineDraft),
     );
+    document.getElementById('schedule-overlay-reset-heading-btn')
+        ?.classList.toggle('hidden', !headingCustom);
 
-    const messageBadge = document.getElementById('schedule-overlay-message-badge');
-    const messageReset = document.getElementById('schedule-overlay-reset-message-btn');
-    if (messageCustom) {
-        setScheduleOverlaySectionBadge(
-            messageBadge,
-            messageReset,
-            {
-                isCustom: true,
-                customLabel: tSettings('scheduleOverlayBadgeCustomised'),
-                defaultLabel: tSettings('scheduleOverlayBadgeDefault'),
-            },
-        );
-    } else {
-        messageBadge?.classList.add('hidden');
-        messageReset?.classList.add('hidden');
-    }
+    setScheduleOverlaySectionUnsavedBadge(
+        document.getElementById('schedule-overlay-message-badge'),
+        isScheduleOverlayDraftFieldUnsaved('message', current.draft, baselineDraft),
+    );
+    document.getElementById('schedule-overlay-reset-message-btn')
+        ?.classList.toggle('hidden', !messageCustom);
 
-    setScheduleOverlaySectionBadge(
+    setScheduleOverlaySectionUnsavedBadge(
         document.getElementById('schedule-overlay-button-badge'),
-        document.getElementById('schedule-overlay-reset-button-btn'),
-        {
-            isCustom: buttonCustom,
-            customLabel: tSettings('scheduleOverlayBadgeCustomised'),
-            defaultLabel: tSettings('scheduleOverlayBadgeDefault'),
-        },
+        isScheduleOverlayDraftFieldUnsaved('letsGoLabel', current.draft, baselineDraft),
     );
-    setScheduleOverlaySectionBadge(
+    document.getElementById('schedule-overlay-reset-button-btn')
+        ?.classList.toggle('hidden', !buttonCustom);
+
+    setScheduleOverlaySectionUnsavedBadge(
         document.getElementById('schedule-overlay-image-badge'),
-        document.getElementById('schedule-overlay-reset-image-btn'),
-        {
-            isCustom: imageCustom,
-            customLabel: tSettings('scheduleOverlayBadgeCustomImage'),
-            defaultLabel: tSettings('scheduleOverlayBadgeDefaultIcon'),
-        },
+        isScheduleOverlayDraftFieldUnsaved('imageAsset', current.draft, baselineDraft),
     );
-    setScheduleOverlaySectionBadge(
+    document.getElementById('schedule-overlay-reset-image-btn')
+        ?.classList.toggle('hidden', !imageCustom);
+
+    setScheduleOverlaySectionUnsavedBadge(
         document.getElementById('schedule-overlay-voice-badge'),
-        document.getElementById('schedule-overlay-reset-voice-btn'),
-        {
-            isCustom: voiceCustom,
-            customLabel: tSettings('scheduleOverlayBadgeCustomised'),
-            defaultLabel: tSettings('scheduleOverlayBadgeDefault'),
-        },
+        isScheduleOverlayDraftFieldUnsaved('voiceAsset', current.draft, baselineDraft),
     );
-    if (!voiceCustom) {
-        document.getElementById('schedule-overlay-voice-badge')?.classList.add('hidden');
+    document.getElementById('schedule-overlay-reset-voice-btn')
+        ?.classList.toggle('hidden', !voiceCustom);
+}
+
+function syncScheduleOverlayCustomiseDirtyState() {
+    const unsavedBadge = document.getElementById('schedule-overlay-select-unsaved-badge');
+    if (unsavedBadge) {
+        unsavedBadge.textContent = tSettings('scheduleOverlayUnsavedBadge');
+        unsavedBadge.classList.toggle('hidden', !hasUnsavedScheduleOverlayCustomiseChanges());
     }
+    syncScheduleOverlaySectionBadges();
 }
 
 function syncScheduleOverlayImageDropzone(normalized, blocklistEmoji) {
@@ -10832,7 +10893,7 @@ async function renderScheduleOverlayCustomisePreview(blocklist, draft) {
         }
     }
 
-    syncScheduleOverlaySectionBadges(normalized);
+    syncScheduleOverlayCustomiseDirtyState();
     syncScheduleOverlayLetsGoCounter();
 }
 
@@ -11006,19 +11067,10 @@ function syncScheduleOverlayCustomiseEditorState(selectionValue) {
     const saveBtn = document.getElementById('schedule-overlay-customise-save-btn');
     if (saveBtn) saveBtn.classList.toggle('hidden', isDefault);
 
-    const resetAllBtn = document.getElementById('schedule-overlay-use-default-btn');
-    if (resetAllBtn) resetAllBtn.classList.toggle('hidden', isDefault);
-
     const canDelete = !!scheduleOverlayCustomisePresetId
         && selectionValue !== SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE
         && selectionValue !== SCHEDULE_OVERLAY_NEW_PRESET_VALUE;
     document.getElementById('schedule-overlay-delete-btn')?.classList.toggle('hidden', !canDelete);
-
-    const unsavedBadge = document.getElementById('schedule-overlay-select-unsaved-badge');
-    if (unsavedBadge) {
-        unsavedBadge.textContent = tSettings('scheduleOverlaySelectUnsavedBadge');
-        unsavedBadge.classList.toggle('hidden', selectionValue !== SCHEDULE_OVERLAY_NEW_PRESET_VALUE);
-    }
 
     setScheduleOverlayMessageEditorEnabled(!isDefault);
 
@@ -11110,7 +11162,7 @@ async function loadScheduleOverlayCustomiseSelection(selectionValue) {
 
     syncScheduleOverlayCustomiseTitle(selectionValue);
     syncScheduleOverlayMessageFieldHints(blocklist);
-    syncScheduleOverlaySectionBadges(isDefault ? getDefaultScheduleStartOverlay() : scheduleOverlayCustomiseDraft);
+    captureScheduleOverlayCustomiseBaseline();
     syncScheduleOverlayLetsGoCounter();
     await renderScheduleOverlayCustomisePreview(blocklist, scheduleOverlayCustomiseDraft);
 }
@@ -11136,6 +11188,55 @@ async function handleDeleteScheduleOverlayCustomise() {
 }
 
 let scheduleOverlayDeleteConfirmResolver = null;
+let scheduleOverlayDiscardConfirmResolver = null;
+
+function showScheduleOverlayDiscardConfirmModal() {
+    const modal = document.getElementById('schedule-overlay-discard-modal');
+    if (!modal) return Promise.resolve(false);
+
+    const strongEl = document.getElementById('schedule-overlay-discard-warning-strong');
+    const bodyEl = document.getElementById('schedule-overlay-discard-warning-body');
+    if (strongEl) {
+        strongEl.textContent = tSettings('scheduleOverlayDiscardConfirmStrong');
+    }
+    if (bodyEl) {
+        bodyEl.textContent = tSettings('scheduleOverlayDiscardConfirmBody');
+    }
+
+    return new Promise((resolve) => {
+        scheduleOverlayDiscardConfirmResolver = resolve;
+        modal.classList.remove('hidden');
+    });
+}
+
+function closeScheduleOverlayDiscardConfirmModal(confirmed) {
+    document.getElementById('schedule-overlay-discard-modal')?.classList.add('hidden');
+    if (scheduleOverlayDiscardConfirmResolver) {
+        scheduleOverlayDiscardConfirmResolver(!!confirmed);
+        scheduleOverlayDiscardConfirmResolver = null;
+    }
+}
+
+async function requestCloseScheduleOverlayCustomiseModal() {
+    if (!hasUnsavedScheduleOverlayCustomiseChanges()) {
+        closeScheduleOverlayCustomiseModal();
+        return;
+    }
+    const confirmed = await showScheduleOverlayDiscardConfirmModal();
+    if (confirmed) closeScheduleOverlayCustomiseModal();
+}
+
+async function requestLoadScheduleOverlayCustomiseSelection(selectionValue) {
+    if (selectionValue === scheduleOverlayCustomiseSelection) return;
+    if (hasUnsavedScheduleOverlayCustomiseChanges()) {
+        const confirmed = await showScheduleOverlayDiscardConfirmModal();
+        if (!confirmed) {
+            populateScheduleOverlayCustomiseSelector(scheduleOverlayCustomiseSelection);
+            return;
+        }
+    }
+    await loadScheduleOverlayCustomiseSelection(selectionValue);
+}
 
 function showScheduleOverlayDeleteConfirmModal(presetName) {
     const modal = document.getElementById('schedule-overlay-delete-modal');
@@ -11189,13 +11290,6 @@ async function openScheduleOverlayCustomiseModal(blocklist) {
     document.getElementById('schedule-overlay-customise-modal')?.classList.remove('hidden');
 }
 
-async function applyScheduleOverlayDefaultsInForm() {
-    const draft = scheduleOverlayCustomiseDraft;
-    if (draft?.imageAsset) await removeScheduleOverlayAsset(draft.imageAsset);
-    if (draft?.voiceAsset) await removeScheduleOverlayAsset(draft.voiceAsset);
-    await loadScheduleOverlayCustomiseSelection(SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE);
-}
-
 async function resetScheduleOverlayImageAsset() {
     const prev = scheduleOverlayCustomiseDraft?.imageAsset;
     if (prev) await removeScheduleOverlayAsset(prev);
@@ -11231,6 +11325,7 @@ function closeScheduleOverlayCustomiseModal() {
     document.getElementById('schedule-overlay-image-dropzone')?.classList.remove('is-dragover');
     scheduleOverlayCustomiseBlocklist = null;
     scheduleOverlayCustomiseDraft = null;
+    scheduleOverlayCustomiseBaseline = null;
     scheduleOverlayCustomisePresetId = null;
     scheduleOverlayCustomiseSelection = null;
 }
@@ -11281,17 +11376,17 @@ function setupScheduleOverlayCustomiseModal() {
         });
 
     document.getElementById('schedule-overlay-customise-close-btn')
-        ?.addEventListener('click', closeScheduleOverlayCustomiseModal);
+        ?.addEventListener('click', () => { void requestCloseScheduleOverlayCustomiseModal(); });
     document.getElementById('schedule-overlay-customise-cancel-btn')
-        ?.addEventListener('click', closeScheduleOverlayCustomiseModal);
+        ?.addEventListener('click', () => { void requestCloseScheduleOverlayCustomiseModal(); });
     document.getElementById('schedule-overlay-customise-modal')?.addEventListener('click', (e) => {
-        if (e.target === e.currentTarget) closeScheduleOverlayCustomiseModal();
+        if (e.target === e.currentTarget) void requestCloseScheduleOverlayCustomiseModal();
     });
     document.getElementById('schedule-overlay-select')?.addEventListener('change', (event) => {
-        void loadScheduleOverlayCustomiseSelection(event.target.value);
+        void requestLoadScheduleOverlayCustomiseSelection(event.target.value);
     });
     document.getElementById('schedule-overlay-add-new-btn')?.addEventListener('click', () => {
-        void loadScheduleOverlayCustomiseSelection(SCHEDULE_OVERLAY_NEW_PRESET_VALUE);
+        void requestLoadScheduleOverlayCustomiseSelection(SCHEDULE_OVERLAY_NEW_PRESET_VALUE);
     });
     document.getElementById('schedule-overlay-delete-btn')
         ?.addEventListener('click', () => { void handleDeleteScheduleOverlayCustomise(); });
@@ -11302,10 +11397,12 @@ function setupScheduleOverlayCustomiseModal() {
     document.getElementById('schedule-overlay-delete-modal')?.addEventListener('click', (e) => {
         if (e.target === e.currentTarget) closeScheduleOverlayDeleteConfirmModal(false);
     });
-    document.getElementById('schedule-overlay-use-default-btn')?.addEventListener('click', async () => {
-        await applyScheduleOverlayDefaultsInForm();
-        setEffectiveScheduleStartOverlayId(null);
-        syncScheduleConfirmOverlaySummary();
+    document.getElementById('cancel-schedule-overlay-discard-btn')
+        ?.addEventListener('click', () => closeScheduleOverlayDiscardConfirmModal(false));
+    document.getElementById('confirm-schedule-overlay-discard-btn')
+        ?.addEventListener('click', () => closeScheduleOverlayDiscardConfirmModal(true));
+    document.getElementById('schedule-overlay-discard-modal')?.addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeScheduleOverlayDiscardConfirmModal(false);
     });
     document.getElementById('schedule-overlay-customise-save-btn')?.addEventListener('click', async () => {
         const blocklist = scheduleOverlayCustomiseBlocklist;
@@ -11369,18 +11466,19 @@ function setupScheduleOverlayCustomiseModal() {
 
     document.getElementById('schedule-overlay-lets-go-input')?.addEventListener('input', () => {
         syncScheduleOverlayLetsGoCounter();
-        syncScheduleOverlaySectionBadges(readScheduleOverlayCustomiseDraftFromForm());
+        syncScheduleOverlayCustomiseDirtyState();
         void refreshScheduleOverlayCustomisePreview();
     });
 
     document.getElementById('schedule-overlay-heading-input')?.addEventListener('input', () => {
-        syncScheduleOverlaySectionBadges(readScheduleOverlayCustomiseDraftFromForm());
+        syncScheduleOverlayCustomiseDirtyState();
         void refreshScheduleOverlayCustomisePreview();
     });
 
     document.getElementById('schedule-overlay-name-input')?.addEventListener('input', () => {
         syncScheduleOverlayCustomiseTitle(scheduleOverlayCustomiseSelection);
         syncScheduleOverlayCustomiseSelectorDisplayName();
+        syncScheduleOverlayCustomiseDirtyState();
     });
 
     const saveOverlayImageFromPath = async (path) => {
@@ -18160,12 +18258,17 @@ const SETTINGS_TRANSLATIONS = {
             'Your customised title, message, image, voice, and button label.',
         scheduleConfirmOverlayDefault: 'Default (which apps & Let\'s go button)',
         scheduleConfirmOverlayCustom: 'Custom',
-        scheduleOverlayCustomiseTitleFmt: 'Customise the {name} start alert',
-        scheduleOverlayCustomiseTitleDefault: 'Customise the start alert',
-        scheduleOverlayCustomiseDefaultTitle: 'Default start alert',
+        scheduleOverlayCustomiseTitleFmt: 'Customise the "{name}" alert',
+        scheduleOverlayCustomiseTitleDefault: 'Customise the alert',
+        scheduleOverlayCustomiseDefaultTitle: 'Default alert',
         scheduleOverlaySelectLabel: 'Select alert',
-        scheduleOverlaySelectUnsavedBadge: 'Unsaved',
+        scheduleOverlayUnsavedBadge: 'Unsaved',
         scheduleOverlaySelectNew: 'New alert',
+        scheduleOverlayDiscardConfirmTitle: 'Discard unsaved changes?',
+        scheduleOverlayDiscardConfirmStrong: 'You have unsaved changes to this alert.',
+        scheduleOverlayDiscardConfirmBody: 'If you leave now, your edits will be lost.',
+        scheduleOverlayDiscardConfirmBtn: 'Discard changes',
+        scheduleOverlayKeepEditingBtn: 'Keep editing',
         scheduleOverlayDefaultNotice:
             'The default start alert can\'t be edited. Add a new alert to customise with your own title, message, image, and/or voice.',
         scheduleOverlayAddNewBtn: 'Add new alert',
@@ -18207,12 +18310,7 @@ const SETTINGS_TRANSLATIONS = {
         scheduleOverlayStopRecording: 'Stop recording',
         scheduleOverlayChooseAudio: 'Choose file…',
         scheduleOverlayPreviewLabel: 'Preview',
-        scheduleOverlayUseDefault: 'Reset all to default',
         scheduleOverlaySaveBtn: 'Save alert',
-        scheduleOverlayBadgeDefault: 'Default',
-        scheduleOverlayBadgeDefaultIcon: 'Blocklist emoji',
-        scheduleOverlayBadgeCustomised: 'Customised',
-        scheduleOverlayBadgeCustomImage: 'Custom image',
         scheduleOverlayCharCountFmt: '{count} / {max}',
         scheduleOverlaySectionReset: 'Reset',
         scheduleOverlayMicUnavailable: 'Microphone access is unavailable. Try choosing an audio file instead.',
@@ -18863,11 +18961,16 @@ const SETTINGS_TRANSLATIONS = {
             'Din tilpassede titel, besked, billede, stemme og knaptekst.',
         scheduleConfirmOverlayDefault: 'Standard (hvilke apps og Lad os komme i gang-knap)',
         scheduleConfirmOverlayCustom: 'Tilpasset',
-        scheduleOverlayCustomiseTitleFmt: 'Tilpas {name} startbeskeden',
-        scheduleOverlayCustomiseTitleDefault: 'Tilpas startbeskeden',
-        scheduleOverlayCustomiseDefaultTitle: 'Standard startbesked',
+        scheduleOverlayCustomiseTitleFmt: 'Tilpas "{name}"-beskeden',
+        scheduleOverlayCustomiseTitleDefault: 'Tilpas beskeden',
+        scheduleOverlayCustomiseDefaultTitle: 'Standardbesked',
         scheduleOverlaySelectLabel: 'Vælg besked',
-        scheduleOverlaySelectUnsavedBadge: 'Ikke gemt',
+        scheduleOverlayUnsavedBadge: 'Ikke gemt',
+        scheduleOverlayDiscardConfirmTitle: 'Kassér ikke-gemte ændringer?',
+        scheduleOverlayDiscardConfirmStrong: 'Du har ikke-gemte ændringer til denne besked.',
+        scheduleOverlayDiscardConfirmBody: 'Hvis du forlader nu, går dine ændringer tabt.',
+        scheduleOverlayDiscardConfirmBtn: 'Kassér ændringer',
+        scheduleOverlayKeepEditingBtn: 'Fortsæt redigering',
         scheduleOverlaySelectNew: 'Ny besked',
         scheduleOverlayDefaultNotice:
             'Standard startbeskeden kan ikke redigeres. Tilføj en ny besked for at tilpasse med din egen titel, besked, billede og/eller stemme.',
@@ -18910,12 +19013,7 @@ const SETTINGS_TRANSLATIONS = {
         scheduleOverlayStopRecording: 'Stop optagelse',
         scheduleOverlayChooseAudio: 'Vælg fil…',
         scheduleOverlayPreviewLabel: 'Forhåndsvisning',
-        scheduleOverlayUseDefault: 'Nulstil alt til standard',
         scheduleOverlaySaveBtn: 'Gem besked',
-        scheduleOverlayBadgeDefault: 'Standard',
-        scheduleOverlayBadgeDefaultIcon: 'Blocklist-emoji',
-        scheduleOverlayBadgeCustomised: 'Tilpasset',
-        scheduleOverlayBadgeCustomImage: 'Tilpasset billede',
         scheduleOverlayCharCountFmt: '{count} / {max}',
         scheduleOverlaySectionReset: 'Nulstil',
         scheduleOverlayMicUnavailable: 'Mikrofon er ikke tilgængelig. Prøv at vælge en lydfil i stedet.',
@@ -19841,16 +19939,20 @@ function applySettingsLanguage() {
     }
     syncScheduleOverlayCustomiseTitle();
     setText('schedule-overlay-select-label', tSettings('scheduleOverlaySelectLabel'));
-    setText('schedule-overlay-select-unsaved-badge', tSettings('scheduleOverlaySelectUnsavedBadge'));
+    setText('schedule-overlay-select-unsaved-badge', tSettings('scheduleOverlayUnsavedBadge'));
     setText('schedule-overlay-add-new-btn', tSettings('scheduleOverlayAddNewBtn'));
     setText('schedule-overlay-delete-btn', tSettings('scheduleOverlayDeleteBtn'));
     setText('schedule-overlay-delete-title', tSettings('scheduleOverlayDeleteConfirmTitle'));
     setText('cancel-schedule-overlay-delete-btn', tSettings('cancel'));
     setText('confirm-schedule-overlay-delete-btn', tSettings('scheduleOverlayDeleteBtn'));
+    setText('schedule-overlay-discard-title', tSettings('scheduleOverlayDiscardConfirmTitle'));
+    setText('cancel-schedule-overlay-discard-btn', tSettings('scheduleOverlayKeepEditingBtn'));
+    setText('confirm-schedule-overlay-discard-btn', tSettings('scheduleOverlayDiscardConfirmBtn'));
     if (isScheduleOverlayCustomiseModalOpen() && scheduleOverlayCustomiseSelection) {
         populateScheduleOverlayCustomiseSelector(scheduleOverlayCustomiseSelection);
         syncScheduleOverlayCustomiseEditorState(scheduleOverlayCustomiseSelection);
         syncScheduleOverlayCustomiseTitle(scheduleOverlayCustomiseSelection);
+        syncScheduleOverlayCustomiseDirtyState();
         const noticeEl = document.getElementById('schedule-overlay-default-notice');
         if (noticeEl && scheduleOverlayCustomiseSelection === SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE) {
             noticeEl.textContent = tSettings('scheduleOverlayDefaultNotice');
@@ -19875,7 +19977,6 @@ function applySettingsLanguage() {
     setText('schedule-overlay-stop-record-voice-btn-label', tSettings('scheduleOverlayStopRecording'));
     setText('schedule-overlay-choose-voice-btn', tSettings('scheduleOverlayChooseAudio'));
     setText('schedule-overlay-preview-label', tSettings('scheduleOverlayPreviewLabel'));
-    setText('schedule-overlay-use-default-btn', tSettings('scheduleOverlayUseDefault'));
     setText('schedule-overlay-customise-cancel-btn', tSettings('cancel'));
     setText('schedule-overlay-customise-save-btn', tSettings('scheduleOverlaySaveBtn'));
     setText('schedule-overlay-reset-heading-btn', tSettings('scheduleOverlaySectionReset'));
