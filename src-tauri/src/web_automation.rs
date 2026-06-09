@@ -100,6 +100,16 @@ impl SupportedBrowser {
         }
     }
 
+    /// Settings key (`chrome`, `edge`, …) for blocking-method lookups.
+    pub fn settings_key(self) -> &'static str {
+        match self {
+            SupportedBrowser::Safari => "safari",
+            SupportedBrowser::Chrome => "chrome",
+            SupportedBrowser::Brave => "brave",
+            SupportedBrowser::Edge => "edge",
+        }
+    }
+
     /// Name used in `tell application "<name>"`. Must match the app's
     /// registered name exactly or the Apple Event won't reach it.
     fn applescript_name(self) -> &'static str {
@@ -819,6 +829,18 @@ pub fn resolve_permission_state(browser: SupportedBrowser, cached: Option<PermSt
     let probe = probe_automation_access(browser);
     let tcc = query_automation_permission(browser);
     combine_permission_signals(probe, tcc, cached)
+}
+
+/// True when `target` names this browser (label or settings key from the UI).
+pub fn browser_matches_launch_probe_target(browser: SupportedBrowser, target: &str) -> bool {
+    let t = target.trim().to_ascii_lowercase();
+    if t.is_empty() {
+        return false;
+    }
+    if browser.label().eq_ignore_ascii_case(target) {
+        return true;
+    }
+    browser.settings_key() == t
 }
 
 /// Permission snapshot for UI polling. Running browsers get a live probe;

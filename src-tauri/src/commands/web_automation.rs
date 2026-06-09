@@ -86,9 +86,17 @@ pub async fn web_automation_permission_status(
     app: AppHandle,
     state: State<'_, WebAutomationState>,
     launch_probe: Option<bool>,
+    launch_probe_browser: Option<String>,
+    launch_probe_browsers: Option<Vec<String>>,
 ) -> Result<Vec<PermissionInfo>, String> {
     use crate::web_automation::PermState;
-    let launch_probe = launch_probe.unwrap_or(false);
+    let launch_probe_all = launch_probe.unwrap_or(false);
+    let launch_probe_browser = launch_probe_browser.filter(|s| !s.trim().is_empty());
+    let launch_probe_browsers: Vec<String> = launch_probe_browsers
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|s| !s.trim().is_empty())
+        .collect();
     let app_for_filter = app.clone();
     let cached = state
         .0
@@ -103,23 +111,26 @@ pub async fn web_automation_permission_status(
         SupportedBrowser::all()
             .into_iter()
             .filter(|b| {
-                let key = match b {
-                    SupportedBrowser::Safari => "safari",
-                    SupportedBrowser::Chrome => "chrome",
-                    SupportedBrowser::Brave => "brave",
-                    SupportedBrowser::Edge => "edge",
-                };
-                crate::blocking_method::uses_automation(&app_for_filter, key)
+                crate::blocking_method::uses_automation(&app_for_filter, b.settings_key())
             })
             .map(|b| {
                 let cached_state = cached.as_ref().and_then(|list| {
                     list.iter().find(|i| i.browser == b).map(|i| i.state)
                 });
+                let probe_launch = if !launch_probe_browsers.is_empty() {
+                    launch_probe_browsers
+                        .iter()
+                        .any(|t| web_automation::browser_matches_launch_probe_target(b, t))
+                } else if let Some(ref target) = launch_probe_browser {
+                    web_automation::browser_matches_launch_probe_target(b, target)
+                } else {
+                    launch_probe_all
+                };
                 let st = web_automation::resolve_permission_state_for_status(
                     b,
                     cached_state,
                     running.contains(&b),
-                    launch_probe,
+                    probe_launch,
                 );
                 PermissionInfo {
                     browser: b,

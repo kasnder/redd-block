@@ -941,6 +941,15 @@ body.dark-mode .app-blocking-closedown-banner {
     .extension-enforcer-browser-action-row {
         grid-template-columns: var(--stacked-banner-icon-size) max-content max-content minmax(120px, 1fr);
     }
+
+    .extension-enforcer-automation-row,
+    .extension-enforcer-action-banner:not(.extension-enforcer-action-banner-closed) .extension-enforcer-automation-row {
+        grid-template-columns: max-content max-content minmax(120px, 1fr);
+    }
+
+    .extension-enforcer-action-banner:not(.extension-enforcer-action-banner-closed) .extension-enforcer-automation-row {
+        padding-left: calc(var(--stacked-banner-icon-size) + 10px);
+    }
 }
 
 @media (max-width: 640px) {
@@ -974,11 +983,21 @@ body.dark-mode .app-blocking-closedown-banner {
         grid-template-columns: var(--stacked-banner-icon-size) minmax(0, 1fr);
     }
 
+    .extension-enforcer-automation-row,
+    .extension-enforcer-action-banner:not(.extension-enforcer-action-banner-closed) .extension-enforcer-automation-row {
+        grid-template-columns: minmax(0, 1fr);
+        padding-left: calc(var(--stacked-banner-icon-size) + var(--stacked-banner-icon-gap));
+    }
+
     .extension-enforcer-browser-action-row .extension-enforcer-show-me-btn,
     .extension-enforcer-browser-action-row .extension-enforcer-action-url {
         grid-column: 2;
         justify-self: start;
         margin-left: 0;
+    }
+
+    .extension-enforcer-automation-row .extension-enforcer-show-me-btn {
+        grid-column: 1;
     }
 }
 
@@ -1078,6 +1097,18 @@ body.dark-mode .app-blocking-closedown-banner {
     grid-template-columns: 18px max-content max-content minmax(150px, 1fr);
     align-items: center;
     gap: 10px;
+}
+
+/* Collapsed automation row has no per-browser icon — skip the icon
+   track so the action button is not squeezed into a 18px column. */
+.extension-enforcer-automation-row,
+.extension-enforcer-action-banner-closed .extension-enforcer-automation-row,
+.extension-enforcer-action-banner:not(.extension-enforcer-action-banner-closed) .extension-enforcer-automation-row {
+    grid-template-columns: max-content max-content minmax(150px, 1fr);
+}
+
+.extension-enforcer-action-banner:not(.extension-enforcer-action-banner-closed) .extension-enforcer-automation-row {
+    padding-left: calc(var(--stacked-banner-icon-size) + var(--stacked-banner-icon-gap));
 }
 
 .extension-enforcer-browser-action-icon {

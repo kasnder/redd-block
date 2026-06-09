@@ -126,6 +126,8 @@ const tauriAPI = {
     webAutomationStart: () => invoke('web_automation_start'),
     webAutomationPermissionStatus: (opts) => invoke('web_automation_permission_status', {
         launchProbe: opts?.launchProbe ?? false,
+        launchProbeBrowser: opts?.launchProbeBrowser ?? null,
+        launchProbeBrowsers: opts?.launchProbeBrowsers ?? null,
     }),
     getBlockingMethods: () => invoke('get_blocking_methods'),
     setBlockingMethod: (browser, method) => invoke('set_blocking_method', { browser, method }),
@@ -2745,15 +2747,30 @@ const AUTOMATION_PERMISSION_FETCH_MIN_MS = 2000;
 // Pull the live per-browser Automation decision (no consent prompt) and
 // cache it by browser key. Safe to call on any platform — no-ops off
 // macOS. Returns the cached map for convenience.
-async function refreshAutomationPermissionStatus({ force = false, launchProbe = false } = {}) {
+function normalizeLaunchProbeBrowsers(browserKeyOrLabels) {
+    if (browserKeyOrLabels == null) return null;
+    const list = Array.isArray(browserKeyOrLabels) ? browserKeyOrLabels : [browserKeyOrLabels];
+    const keys = list.map((b) => browserKeyFromLabel(b) || b).filter(Boolean);
+    return keys.length > 0 ? keys : null;
+}
+
+async function refreshAutomationPermissionStatus({
+    force = false,
+    launchProbe = false,
+    launchProbeBrowser = null,
+    launchProbeBrowsers = null,
+} = {}) {
     if (!isMacOSDesktop) return lastAutomationPermissionByKey;
     const now = Date.now();
     if (!force && now - lastAutomationPermissionFetchAt < AUTOMATION_PERMISSION_FETCH_MIN_MS) {
         return lastAutomationPermissionByKey;
     }
     try {
+        const probeList = launchProbeBrowsers ?? normalizeLaunchProbeBrowsers(launchProbeBrowser);
         const list = await tauriAPI.webAutomationPermissionStatus({
             launchProbe,
+            launchProbeBrowser: probeList ? null : launchProbeBrowser,
+            launchProbeBrowsers: probeList,
         });
         lastAutomationPermissionFetchAt = now;
         const map = {};
@@ -3198,9 +3215,14 @@ function schedulePostGrantPoll() {
     setTimeout(() => pollMigrationCompliance({ launchProbe: true }), 3500);
 }
 
-function scheduleAutomationVerificationPoll() {
+function scheduleAutomationVerificationPoll(browserKeyOrLabels = null) {
+    const probeTargets = normalizeLaunchProbeBrowsers(browserKeyOrLabels);
     const verify = async () => {
-        await refreshAutomationPermissionStatus({ force: true, launchProbe: true });
+        await refreshAutomationPermissionStatus({
+            force: true,
+            launchProbe: false,
+            launchProbeBrowsers: probeTargets,
+        });
         try {
             const fresh = await invoke('onboarding_state');
             lastOnboardingState = fresh;
@@ -4940,15 +4962,10 @@ async function openEnforcerFix(payload) {
     const key = browserKeyFromLabel(browser);
     try {
         if (payload.issue === 'automation') {
-            // macOS Automation grant was revoked — deep-link straight to
-            // System Settings → Privacy & Security → Automation.
             await tauriAPI.openAutomationSettings();
-            scheduleAutomationVerificationPoll();
             return;
         }
         if (payload.issue === 'missing' && key && BROWSER_STORE_LINKS[key]?.url) {
-            // Open the store page in the correct browser so Windows
-            // doesn't show a "choose an app" dialog.
             try {
                 await invoke('open_url_in_browser', { browser: key, url: BROWSER_STORE_LINKS[key].url });
             } catch (_) {
@@ -4960,10 +4977,6 @@ async function openEnforcerFix(payload) {
             await openExtensionSettings('safari');
             return;
         }
-        // For disabled/private/websiteaccess issues, open the extension
-        // settings page inside the correct browser. Goes through the
-        // helper so Safari uses the SafariServices deep-link rather
-        // than the Accessibility-gated AppleScript path.
         await openExtensionSettings(key || browser);
     } catch (e) {
         console.warn('[enforcer-ui] fix action failed:', e);
@@ -5200,6 +5213,77 @@ function ensureClosedBannerBrowserIcon(banner) {
     return icon;
 }
 
+function partitionEnforcerStates(states) {
+    const automation = [];
+    const focus = [];
+    for (const state of states) {
+        if (state.payload?.issue === 'automation') automation.push(state);
+        else focus.push(state);
+    }
+    return { automation, focus };
+}
+
+function renderEnforcerAutomationActionRow(automationStates, mode) {
+    const row = document.createElement('div');
+    row.className = 'extension-enforcer-browser-action-row extension-enforcer-automation-row';
+
+    const action = document.createElement('button');
+    action.className = 'update-banner-btn extension-enforcer-action-btn';
+    action.type = 'button';
+    action.textContent = tSettings('migrationOpenAutomationSettings');
+    const keys = automationStates.map((s) => s.key);
+    action.onclick = async () => {
+        try {
+            await tauriAPI.openAutomationSettings();
+            if (mode === 'closed') scheduleAutomationVerificationPoll(keys);
+        } catch (e) {
+            console.warn('[enforcer-ui] automation fix failed:', e);
+        }
+    };
+    row.appendChild(action);
+
+    const steps = automationScreenshotSteps();
+    const showMe = document.createElement('button');
+    showMe.className = 'extension-enforcer-show-me-btn';
+    showMe.type = 'button';
+    showMe.setAttribute('aria-expanded', 'false');
+    showMe.innerHTML = enforcerShowMeHowButtonHtml();
+    showMe.classList.toggle('hidden', !steps?.length);
+    showMe.onclick = () => {
+        const banner = mode === 'closed'
+            ? ensureClosedEnforcerActionBanner()
+            : ensureActiveEnforcerActionBanner();
+        const screenshotsWrap = banner.querySelector('.extension-enforcer-screenshots-wrap');
+        const screenshots = banner.querySelector('.extension-enforcer-screenshots');
+        if (!steps?.length || !screenshotsWrap || !screenshots) return;
+        const browserKey = keys[0] || 'chrome';
+        const wasOpen = !screenshotsWrap.classList.contains('hidden')
+            && screenshots.dataset.stepsKey?.startsWith(`${browserKey}:`);
+        if (wasOpen) {
+            screenshotsWrap.classList.add('hidden');
+            showMe.classList.remove('open');
+            showMe.setAttribute('aria-expanded', 'false');
+        } else {
+            renderEnforcerScreenshots(screenshots, steps, browserKey);
+            screenshotsWrap.classList.remove('hidden');
+            showMe.classList.add('open');
+            showMe.setAttribute('aria-expanded', 'true');
+            scheduleEnforcerScreenshotSync(screenshotsWrap);
+        }
+    };
+    row.appendChild(showMe);
+
+    return row;
+}
+
+function renderEnforcerActionRows(states, mode) {
+    const { automation, focus } = partitionEnforcerStates(states);
+    const frag = document.createDocumentFragment();
+    if (automation.length) frag.appendChild(renderEnforcerAutomationActionRow(automation, mode));
+    for (const state of focus) frag.appendChild(renderEnforcerBrowserActionRow(state, mode));
+    return frag;
+}
+
 function renderEnforcerBrowserActionRow(state, mode) {
     const row = document.createElement('div');
     row.className = 'extension-enforcer-browser-action-row';
@@ -5328,8 +5412,11 @@ function renderCombinedEnforcerActionBanner() {
 
     const instruction = banner.querySelector('.extension-enforcer-action-instruction');
     if (instruction) {
+        const { automation, focus } = partitionEnforcerStates(activeStates);
         const base = activeStates.length > 1
-            ? tSettings('enforcerCountdownInstrMultiple')
+            ? (automation.length && !focus.length
+                ? tSettings('enforcerCountdownInstrAutomation')
+                : tSettings('enforcerCountdownInstrMultiple'))
             : (timerState.copy.countdownInstruction || '');
         renderEnforcerCountdownInstruction(instruction, base);
     }
@@ -5365,9 +5452,7 @@ function renderCombinedEnforcerActionBanner() {
     const actions = banner.querySelector('.extension-enforcer-active-actions');
     if (actions) {
         actions.innerHTML = '';
-        activeStates.forEach(state => {
-            actions.appendChild(renderEnforcerBrowserActionRow(state, 'active'));
-        });
+        actions.appendChild(renderEnforcerActionRows(activeStates, 'active'));
     }
 
     banner.classList.remove('hidden', 'extension-enforcer-action-banner-closed');
@@ -5466,10 +5551,18 @@ function renderCombinedEnforcerClosedBanner() {
 
     const instruction = banner.querySelector('.extension-enforcer-action-instruction');
     if (instruction) {
+        const { automation, focus } = partitionEnforcerStates(states);
         if (states.length > 1) {
-            // Multi-browser case: `enforcerClosedInstrMultiple` has no
-            // `{browser}` placeholder — same copy for all browsers.
-            instruction.textContent = tSettings('enforcerClosedInstrMultiple');
+            if (automation.length && !focus.length) {
+                instruction.textContent = tSettingsFmt(
+                    'enforcerClosedInstrAutomationGeneric',
+                    { browser: formatBrowserList(automation.map((s) => (
+                        s.payload.label || s.payload.browser || BROWSER_STORE_LINKS[s.key]?.label || s.key
+                    ))) }
+                );
+            } else {
+                instruction.textContent = tSettings('enforcerClosedInstrMultiple');
+            }
         } else {
             // Single-browser case: pass the browser name in for
             // `{browser}` substitution. Several of these instruction
@@ -5491,9 +5584,7 @@ function renderCombinedEnforcerClosedBanner() {
     const actions = banner.querySelector('.extension-enforcer-closed-actions');
     if (actions) {
         actions.innerHTML = '';
-        states.forEach(state => {
-            actions.appendChild(renderEnforcerBrowserActionRow(state, 'closed'));
-        });
+        actions.appendChild(renderEnforcerActionRows(states, 'closed'));
     }
 
     banner.classList.remove('hidden');
