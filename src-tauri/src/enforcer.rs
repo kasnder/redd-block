@@ -334,8 +334,11 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
     // running there's nothing to enforce — bail before touching disk.
     let running = running_browsers();
     if running.is_empty() {
+        // User quit every browser (or the last one we were timing) —
+        // tell the UI to drop any in-flight grace banner, same as
+        // app_watcher's warning-hide on PID gone.
         for &key in BrowserKey::enforced() {
-            cancel_timer(app, state, key, false);
+            cancel_timer(app, state, key, true);
         }
         return;
     }
@@ -381,7 +384,9 @@ fn tick(app: &AppHandle, state: &Arc<Mutex<EnforcerState>>) {
         let is_running = running.contains(&key);
 
         if !is_running {
-            cancel_timer(app, state, key, false);
+            // Browser exited on its own during grace — not a force-close,
+            // so emit grace-resolved (not browser-closed).
+            cancel_timer(app, state, key, true);
             continue;
         }
 
