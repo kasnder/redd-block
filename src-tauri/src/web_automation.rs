@@ -311,8 +311,11 @@ impl WebAutomationHandle {
     pub fn record_permission(&self, browser: SupportedBrowser, state: PermState) {
         if let Ok(mut s) = self.shared.lock() {
             let rt = s.runtimes.entry(browser).or_default();
+            let prev = rt.state;
             rt.state = state;
-            if state == PermState::Denied {
+            // Only arm the denial backoff on a fresh transition — UI
+            // polls every ~2.5 s and must not keep pushing retries back.
+            if state == PermState::Denied && prev != PermState::Denied {
                 rt.next_attempt = Instant::now() + DENIED_RETRY;
             }
         }
@@ -791,20 +794,31 @@ fn probe_automation_access_launching_rate_limited(browser: SupportedBrowser) -> 
     Some(probe_automation_access_launching(browser))
 }
 
-/// Combine watcher cache and a live osascript probe for the UI.
-/// Skips the silent TCC read — it often returns Unknown in dev builds
-/// and used to share the osascript mutex, starving the blocking tick.
-pub fn resolve_permission_state(browser: SupportedBrowser, cached: Option<PermState>) -> PermState {
-    match probe_automation_access(browser) {
-        probe @ (PermState::Granted | PermState::Denied) => probe,
-        PermState::Unknown => {
-            if cached == Some(PermState::Granted) {
-                PermState::Granted
-            } else {
-                cached.unwrap_or(PermState::Unknown)
-            }
-        }
+/// Merge osascript probe, silent TCC read, and session cache.
+/// Denied from any live source wins over a stale Granted cache.
+fn combine_permission_signals(
+    probe: PermState,
+    tcc: PermState,
+    cached: Option<PermState>,
+) -> PermState {
+    if probe == PermState::Denied || tcc == PermState::Denied {
+        return PermState::Denied;
     }
+    if probe == PermState::Granted || tcc == PermState::Granted {
+        return PermState::Granted;
+    }
+    match cached {
+        Some(PermState::Denied) => PermState::Denied,
+        Some(PermState::Granted) => PermState::Granted,
+        _ => PermState::Unknown,
+    }
+}
+
+/// Live permission while the browser process is running.
+pub fn resolve_permission_state(browser: SupportedBrowser, cached: Option<PermState>) -> PermState {
+    let probe = probe_automation_access(browser);
+    let tcc = query_automation_permission(browser);
+    combine_permission_signals(probe, tcc, cached)
 }
 
 /// Permission snapshot for UI polling. Running browsers get a live probe;
@@ -828,12 +842,14 @@ pub fn resolve_permission_state_for_status(
             }
         }
     }
-    match query_automation_permission(browser) {
-        tcc @ (PermState::Granted | PermState::Denied) => tcc,
+    let tcc = query_automation_permission(browser);
+    match tcc {
+        PermState::Denied => PermState::Denied,
+        PermState::Granted => PermState::Granted,
         PermState::Unknown => {
-            // Stale watcher denial while the browser is closed is not
-            // trustworthy — the user may have re-enabled Automation in
-            // Settings; TCC can't confirm until the app receives an event.
+            // TCC returns -600 when the target app is not running. Only
+            // trust a previous grant while closed; any other cached state
+            // (denied / unknown) means we cannot show "Allowed".
             if cached == Some(PermState::Granted) {
                 PermState::Granted
             } else {

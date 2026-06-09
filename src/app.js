@@ -3213,17 +3213,28 @@ function scheduleAutomationVerificationPoll() {
 }
 
 // Build an onboarding row for a macOS Automation-blocked browser
-// (Safari / Chromium). Three states:
-//   granted  -> green "Allowed" badge, no action
-//   unknown  -> not asked yet: "Grant access" launches the browser and
-//               surfaces the system Automation prompt
-//   denied   -> already refused / revoked: the OS won't re-prompt, so we
-//               deep-link to System Settings → Automation instead
-function buildAutomationBrowserRow(key, entry) {
-    const state = (lastAutomationPermissionByKey[key] || 'unknown');
-    const granted = state === 'granted';
-    const denied = state === 'denied';
-    const status = granted ? 'compliant' : 'needs-enable';
+// (Safari / Chromium). States:
+//   granted           -> green "Allowed" badge (only when last live check
+//                        was granted — may stay while the browser is closed)
+//   awaiting-open     -> grey row: browser not running and we cannot confirm
+//                        a grant (unknown / denied / never probed)
+//   needs-grant       -> browser open, not granted yet: "Grant access" prompt
+//   denied            -> browser open, revoked: deep-link to System Settings
+function automationBrowserRowMode(key, browserScan) {
+    const perm = lastAutomationPermissionByKey[key] || 'unknown';
+    const running = !!browserScan?.present;
+    if (perm === 'granted') return 'granted';
+    if (!running) return 'awaiting-open';
+    if (perm === 'denied') return 'denied';
+    return 'needs-grant';
+}
+
+function buildAutomationBrowserRow(key, entry, browserScan) {
+    const mode = automationBrowserRowMode(key, browserScan);
+    const granted = mode === 'granted';
+    const denied = mode === 'denied';
+    const awaitingOpen = mode === 'awaiting-open';
+    const status = granted ? 'compliant' : (awaitingOpen ? 'automation-awaiting-open' : 'needs-enable');
 
     const row = document.createElement('div');
     row.className = `migration-browser-row ${status}`;
@@ -3246,7 +3257,9 @@ function buildAutomationBrowserRow(key, entry) {
     badge.className = `migration-browser-badge ${status}`;
     badge.textContent = granted
         ? tSettings('migrationBadgeAutomationOn')
-        : tSettings('migrationBadgeAutomationOff');
+        : (awaitingOpen
+            ? tSettings('migrationBadgeAutomationUnknown')
+            : tSettings('migrationBadgeAutomationOff'));
     header.appendChild(badge);
     row.appendChild(header);
 
@@ -3254,10 +3267,20 @@ function buildAutomationBrowserRow(key, entry) {
 
     const hint = document.createElement('div');
     hint.className = 'migration-browser-hint';
-    hint.textContent = denied
-        ? tSettingsFmt('migrationAutomationDeniedHint', { browser: entry.label })
-        : tSettingsFmt('migrationAutomationGrantHint', { browser: entry.label });
+    hint.textContent = awaitingOpen
+        ? tSettingsFmt('migrationAutomationAwaitingOpenHint', { browser: entry.label })
+        : (denied
+            ? tSettingsFmt('migrationAutomationDeniedHint', { browser: entry.label })
+            : tSettingsFmt('migrationAutomationGrantHint', { browser: entry.label }));
     row.appendChild(hint);
+
+    if (awaitingOpen) {
+        const delayNote = document.createElement('div');
+        delayNote.className = 'migration-browser-hint migration-delay-note';
+        delayNote.textContent = tSettings('migrationDelayDetectionNote');
+        row.appendChild(delayNote);
+        return row;
+    }
 
     const actionsRow = document.createElement('div');
     actionsRow.className = 'migration-actions-row';
@@ -3371,7 +3394,8 @@ function migrationBrowserRenderSignature(state) {
     const browsers = state?.browsers || {};
     return migrationBrowserKeys(state).map(k => {
         if (browserUsesAutomation(k)) {
-            return `${k}:auto:${lastAutomationPermissionByKey[k] || 'unknown'}`;
+            const present = browsers[k]?.present ? 1 : 0;
+            return `${k}:auto:${lastAutomationPermissionByKey[k] || 'unknown'}:${present}`;
         }
         const b = browsers[k];
         const status = browserComplianceStatus(k, b) || 'needs-install';
@@ -3450,7 +3474,7 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
         // macOS: Safari + Chromium block via Automation, not the
         // extension — render a permission-grant row instead.
         if (browserUsesAutomation(key)) {
-            container.appendChild(buildAutomationBrowserRow(key, entry));
+            container.appendChild(buildAutomationBrowserRow(key, entry, browsers[key]));
             continue;
         }
 
@@ -4199,6 +4223,11 @@ function setupWebAutomationUiAlerts() {
     tauriAPI.onWebAutomationPermissionNeeded(async (event) => {
         const label = event?.payload?.label || event?.payload?.browser;
         if (!label) return;
+        const key = browserKeyFromLabel(label);
+        if (key) lastAutomationPermissionByKey[key] = 'denied';
+        if (migrationOnboardingActive && lastMigrationBrowserState) {
+            renderBrowserInstallButtons(lastMigrationBrowserState, { force: true });
+        }
         // When enforcement is enabled, the extension enforcer already runs
         // a grace countdown for the denied browser and force-closes it,
         // surfacing its own banner + deep-link. Showing this soft banner
@@ -17822,6 +17851,8 @@ const SETTINGS_TRANSLATIONS = {
         migrationHowtoLi3Html: 'Once enabled, <strong>allow it in private/incognito tabs</strong> so blocking works in private windows too.',
         migrationBadgeAutomationOn: 'Allowed',
         migrationBadgeAutomationOff: 'Permission needed',
+        migrationBadgeAutomationUnknown: 'Status unknown',
+        migrationAutomationAwaitingOpenHint: 'Please open {browser} so we can check whether Automation has been granted. macOS only reports this permission while the browser is running.',
         migrationAutomationGrantHint: 'Allow ReDD Block to control {browser} so it can close distracting tabs while a block is running.',
         migrationAutomationDeniedHint: 'Permission for {browser} is turned off. Switch ReDD Block back on under Automation so blocking works again.',
         migrationGrantAutomation: 'Grant access to {browser}',
@@ -18543,6 +18574,8 @@ const SETTINGS_TRANSLATIONS = {
         migrationHowtoLi3Html: 'Når den er aktiveret, <strong>tillad den i privat/inkognito-faner</strong>, så blokering også virker i private vinduer.',
         migrationBadgeAutomationOn: 'Tilladt',
         migrationBadgeAutomationOff: 'Tilladelse mangler',
+        migrationBadgeAutomationUnknown: 'Status ukendt',
+        migrationAutomationAwaitingOpenHint: 'Åbn {browser}, så vi kan tjekke, om Automatisering er tilladt. macOS viser kun denne tilladelse, mens browseren kører.',
         migrationAutomationGrantHint: 'Tillad ReDD Block at styre {browser}, så den kan lukke distraherende faner, mens en blokering kører.',
         migrationAutomationDeniedHint: 'Tilladelse til {browser} er slået fra. Slå ReDD Block til igen under Automatisering, så blokering virker igen.',
         migrationGrantAutomation: 'Giv adgang til {browser}',

@@ -7428,6 +7428,25 @@ body.dark-mode .settings-safari-fda-grant-btn.modal-btn.primary-btn:hover:not(:d
     border-color: rgba(245, 158, 11, 0.20);
 }
 
+.migration-browser-row.automation-awaiting-open {
+    background: rgba(107, 114, 128, 0.07);
+    border-color: rgba(107, 114, 128, 0.18);
+}
+
+.migration-browser-row.automation-awaiting-open .migration-browser-icon {
+    opacity: 0.5;
+    filter: grayscale(0.4);
+}
+
+.migration-browser-row.automation-awaiting-open .migration-browser-name {
+    color: var(--text-muted);
+}
+
+.migration-browser-badge.automation-awaiting-open {
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
 .migration-browser-header {
     display: flex;
     align-items: center;
@@ -8353,6 +8372,15 @@ body.dark-mode #migration-onboarding .migration-browser-row.needs-website-access
 body.dark-mode #migration-onboarding .migration-browser-row.needs-deduplicate {
     background: rgba(245, 158, 11, 0.14);
     border-color: rgba(251, 191, 36, 0.35);
+}
+
+body.dark-mode #migration-onboarding .migration-browser-row.automation-awaiting-open {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+body.dark-mode #migration-onboarding .migration-browser-badge.automation-awaiting-open {
+    color: var(--text-muted);
 }
 
 body.dark-mode #migration-onboarding .migration-browser-name {

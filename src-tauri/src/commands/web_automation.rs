@@ -134,10 +134,10 @@ pub async fn web_automation_permission_status(
     if let Ok(guard) = state.0.lock() {
         if let Some(h) = guard.as_ref() {
             for info in &list {
-                // Only persist positive grants for the watcher loop.
-                // Writing Denied here (from UI polling every ~2s) was
-                // resetting the denial backoff and preventing retries.
-                if info.state == PermState::Granted {
+                // Keep the watcher cache aligned with UI polls so a grant
+                // survives a browser quit but a revocation while open is
+                // not overwritten by stale Granted on the next closed poll.
+                if matches!(info.state, PermState::Granted | PermState::Denied) {
                     h.record_permission(info.browser, info.state);
                 }
             }
