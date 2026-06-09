@@ -622,8 +622,14 @@ fn sweep(
 /// unsaved-work prompts. Crucially NOT the same as a POSIX signal:
 /// SIGTERM bypasses Cocoa's `applicationShouldTerminate:` and would
 /// silently destroy unsaved documents.
+/// Polite per-PID quit used by the enforcer as well as this watcher.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub(crate) fn request_graceful_quit(pid: sysinfo::Pid, name: &str, proc_: &sysinfo::Process) {
+    request_graceful_quit_impl(pid, name, proc_);
+}
+
 #[cfg(target_os = "macos")]
-fn request_graceful_quit(pid: sysinfo::Pid, name: &str, proc_: &sysinfo::Process) {
+fn request_graceful_quit_impl(pid: sysinfo::Pid, name: &str, proc_: &sysinfo::Process) {
     crate::commands::activate_external_process_by_pid(pid.as_u32());
     // -[NSRunningApplication terminate] sends the AppKit quit Apple
     // Event (`'aevt' 'quit'`) — the same event Cmd-Q dispatches.
@@ -668,7 +674,7 @@ fn request_graceful_quit(pid: sysinfo::Pid, name: &str, proc_: &sysinfo::Process
 }
 
 #[cfg(target_os = "windows")]
-fn request_graceful_quit(pid: sysinfo::Pid, name: &str, _proc: &sysinfo::Process) {
+fn request_graceful_quit_impl(pid: sysinfo::Pid, name: &str, _proc: &sysinfo::Process) {
     crate::commands::activate_external_process_by_pid(pid.as_u32());
     // `taskkill /PID <pid>` (without `/F`) posts WM_CLOSE to the
     // process's top-level windows — the closest Win32 primitive to

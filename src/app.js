@@ -5371,6 +5371,13 @@ function promoteEnforcerActionToClosed(key, payload) {
     });
 }
 
+function resetEnforcerClosedBannerCycle() {
+    if (enforcerClosedBannerStates.size === 0) return;
+    enforcerClosedBannerStates.clear();
+    stopEnforcerClosedBannerPoll();
+    document.getElementById(ENFORCER_CLOSED_BANNER_ID)?.classList.add('hidden');
+}
+
 function renderCombinedEnforcerActionBanner() {
     const banner = ensureActiveEnforcerActionBanner();
     const states = [...enforcerActionBannerStates.entries()].map(([key, state]) => ({ key, ...state }));
@@ -5469,11 +5476,10 @@ function updateEnforcerActionBannerCountdown() {
             remainingSecs,
         };
         state.payload = payload;
-
+        // Smooth handoff: once the local countdown reaches zero, keep
+        // the active banner alive in "Closing..." mode until the
+        // backend confirms the browser is gone (post-close) or resolved.
         if (remainingSecs <= 0) {
-            // Grace expired on the client — wait for the backend
-            // `enforcer://browser-closed` event before showing the
-            // post-close banner. quit_browser can take several seconds.
             state.closing = true;
         }
     }
@@ -5487,13 +5493,19 @@ function updateEnforcerActionBannerCountdown() {
 function renderEnforcerActionBanner(payload) {
     if (!payload || !payload.browser) return;
     const key = enforcerBannerKey(payload);
+    if (enforcerActionBannerStates.size === 0) {
+        // A fresh countdown starts a new enforcement cycle. Drop any
+        // previous post-close browsers so the next closed banner only
+        // reflects browsers involved in this cycle.
+        resetEnforcerClosedBannerCycle();
+    }
 
     const remainingSecs = Math.max(0, Number(payload.remaining_secs ?? payload.remainingSecs ?? 0));
     const existing = enforcerActionBannerStates.get(key);
     enforcerActionBannerStates.set(key, {
         payload: { ...payload, remaining_secs: remainingSecs, remainingSecs },
         deadline: Date.now() + remainingSecs * 1000,
-        closing: false,
+        closing: payload.closing != null ? !!payload.closing : (existing?.closing ?? false),
         urlCopiedUntil: existing?.urlCopiedUntil,
     });
 
