@@ -3313,11 +3313,11 @@ function buildAutomationBrowserRow(key, entry, browserScan) {
                 // prompt for it. If the prompt can't appear (already
                 // answered once), fall back to the Settings deep-link.
                 await tauriAPI.requestAutomationPermission(entry.label);
-                btn.textContent = tSettings('migrationOpened');
+                btn.textContent = tSettings('migrationGrantAutomationOpened');
             } catch (e) {
                 console.warn('[automation] request permission failed, opening settings:', e);
                 try { await tauriAPI.openAutomationSettings(); } catch (_) { /* no-op */ }
-                btn.textContent = tSettings('migrationOpened');
+                btn.textContent = tSettings('migrationGrantAutomationOpened');
             }
             restore(label);
             schedulePostGrantPoll();
@@ -17856,6 +17856,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationAutomationGrantHint: 'Allow ReDD Block to control {browser} so it can close distracting tabs while a block is running.',
         migrationAutomationDeniedHint: 'Permission for {browser} is turned off. Switch ReDD Block back on under Automation so blocking works again.',
         migrationGrantAutomation: 'Grant access to {browser}',
+        migrationGrantAutomationOpened: 'Opened Automation settings',
         migrationOpenAutomationSettings: 'Open Automation settings',
         webAutomationBannerHeadline: 'Allow ReDD Block to control your browser',
         webAutomationBannerBody: 'ReDD Block needs permission to control {browsers} to block websites. Enable it under Privacy & Security → Automation, then the block will take effect.',
@@ -18579,6 +18580,7 @@ const SETTINGS_TRANSLATIONS = {
         migrationAutomationGrantHint: 'Tillad ReDD Block at styre {browser}, så den kan lukke distraherende faner, mens en blokering kører.',
         migrationAutomationDeniedHint: 'Tilladelse til {browser} er slået fra. Slå ReDD Block til igen under Automatisering, så blokering virker igen.',
         migrationGrantAutomation: 'Giv adgang til {browser}',
+        migrationGrantAutomationOpened: 'Åbnede Automatisering',
         migrationOpenAutomationSettings: 'Åbn Automatisering',
         webAutomationBannerHeadline: 'Tillad ReDD Block at styre din browser',
         webAutomationBannerBody: 'ReDD Block skal have tilladelse til at styre {browsers} for at blokere websteder. Slå det til under Anonymitet & sikkerhed → Automatisering, så træder blokeringen i kraft.',
