@@ -2,6 +2,27 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
+## v3.2.1
+
+- **macOS: browser Automation status in set-up screen.** The set-up browsers screen
+  now updates when Automation permissions are removed for a given browser. When status cannot
+  be detected (when browser is closed), it is now made clear.
+- **Desktop: manual browser close during enforcement.** If you close a browser
+  yourself during the grace countdown, the enforcement banner is cancelled
+  instead of continuing to count down.
+- **Update banner: What's new?** When release notes exist in the changelog for
+  the available version, the update banner shows an expandable **What's new?**
+  section with formatted bullet points.
+- **Desktop: design improvements and style tweaks.** Set-up buttons now give clear
+  feedback. Layout of content has been improved on desktop for thinner screens.
+- **Desktop: browser enforcement banners.** Improve transitions between enforcement
+  banners. Post-close state resets at the start of each new enforcement cycle.
+  Automation permission issues for multiple browsers collapse to one action row.
+  Post-close **Open browser** actions only target browsers that were
+  force-closed, not every browser with an issue. Enforcement banners are now more
+  reactive to real status of browsers.
+- **Version:** 3.2.1 (macOS and Windows).
+
 ## v3.1.10
 
 - **Desktop: fix app-only schedule blocking.** Blocklists that only block apps
