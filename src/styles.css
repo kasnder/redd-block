@@ -1529,6 +1529,7 @@ body.dark-mode .app-blocking-closedown-banner {
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior-y: none;
+    position: relative;
     padding: 12px 24px 2px 24px;
     margin-top: var(--title-bar-height);
     /* Account for fixed title bar */
@@ -1588,8 +1589,8 @@ body.dark-mode .app-blocking-closedown-banner {
         height: 22px;
     }
 
-    /* Settings gear on My Blocklists row — keeps Now/Schedule full width below. */
-    #settings-btn-stack {
+    /* iOS only: settings gear on My Blocklists row — desktop keeps scheduler header settings. */
+    body.ios #settings-btn-stack {
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1598,26 +1599,42 @@ body.dark-mode .app-blocking-closedown-banner {
         padding: 0;
     }
 
-    #settings-btn-stack svg {
+    body.ios #settings-btn-stack svg {
         width: 22px;
         height: 22px;
     }
 
-    #settings-toolbar-stack {
+    body.ios #settings-toolbar-stack {
         display: flex;
     }
 
-    .scheduler-section .section-header #settings-btn {
+    body.ios .scheduler-section .section-header #settings-btn {
         display: none !important;
     }
 
-    .scheduler-section .section-header #settings-toolbar-scheduler {
+    body.ios .scheduler-section .section-header #settings-toolbar-scheduler {
         display: none !important;
     }
 
     .main-content {
         padding-left: 18px;
         padding-right: 18px;
+    }
+
+    body:not(.ios) #settings-toolbar-scheduler {
+        right: 18px;
+    }
+
+    /* Stacked overview: keep the toolbar anchored at the page top-right, but let
+       the compact scheduler header collapse so the prompt sits directly below. */
+    body:not(.ios) .grid-top-row:not(.grid-top-row--blocklist-selected) .scheduler-section > .section-header.scheduler-header-compact {
+        margin-bottom: 0;
+        min-height: 0;
+    }
+
+    body:not(.ios) .grid-top-row:not(.grid-top-row--blocklist-selected) .selection-prompt {
+        margin-top: 0;
+        padding-top: 4px;
     }
 }
 
@@ -2927,9 +2944,7 @@ body.dark-mode .app-blocking-closedown-banner {
     }
 }
 
-/* Cramped two-column zone (iPad landscape / narrow desktop columns only).
-   Portrait stack keeps Now/Schedule labels — syncSchedulerModeTabLabelMode()
-   switches to icon-only only on actual overlap. */
+/* Cramped two-column zone (iPad landscape / narrow desktop columns only). */
 @media (min-width: 769px) and (max-width: 1024px) and (orientation: landscape) {
     .grid-top-row {
         grid-template-columns: minmax(0, min(400px, 50%)) minmax(0, 1fr);
@@ -2956,32 +2971,18 @@ body.dark-mode .app-blocking-closedown-banner {
         padding: 8px 13px;
     }
 
-    /* Visually hide the label but keep it in the accessibility tree, so the
-       button still has a clear accessible name ("Now" / "Schedule"). */
-    .mode-tab-label {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        padding: 0;
-        margin: -1px;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-        white-space: nowrap;
-        border: 0;
+    body:not(.ios) .scheduler-section > .section-header .mode-tab {
+        padding-top: 0;
+        padding-bottom: 0;
+        padding-left: 12px;
+        padding-right: 12px;
     }
 
-    .mode-tab-icon {
-        width: 16px;
-        height: 16px;
-    }
-
-    /* Keep Start buttons full. Only the edit-schedule action still collapses
-       to just the verb here; Stop buttons use JS to decide from their actual
-       rendered width whether to keep "Stop Block/Schedule: [name]" or
-       shorten to "Stop Block/Schedule". */
-    .start-block-btn.edit-schedule .btn-label-context,
-    .start-block-btn.edit-schedule .btn-blocklist-meta {
-        display: none;
+    body:not(.ios) .scheduler-section > .section-header .mode-tab.active {
+        padding-top: 0;
+        padding-bottom: 0;
+        padding-left: 12px;
+        padding-right: 12px;
     }
 }
 
@@ -3015,11 +3016,6 @@ body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab
     border: 0;
 }
 
-body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-icon {
-    width: 16px;
-    height: 16px;
-}
-
 body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .scheduler-mode-tabs {
     max-width: none;
     flex: 0 1 auto;
@@ -3043,8 +3039,7 @@ body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab
     height: 18px;
 }
 
-body.ios.ui-zoom-tier-cramped .start-block-btn.edit-schedule .btn-label-context,
-body.ios.ui-zoom-tier-cramped .start-block-btn.edit-schedule .btn-blocklist-meta {
+body:not(.ios).ui-zoom-sched-hide-title #main-start-block-title {
     display: none;
 }
 
@@ -3121,6 +3116,10 @@ body.ios.ui-zoom-tier-stack .main-content {
     justify-content: flex-end;
 }
 
+body:not(.ios) .scheduler-section > .section-header.scheduler-header-compact {
+    justify-content: flex-start;
+}
+
 /* Stacked layout: minimal gap under lone settings row — prompt sits highest */
 @media (max-width: 768px) {
     .scheduler-section > .section-header.scheduler-header-compact {
@@ -3142,40 +3141,94 @@ body.ios.ui-zoom-tier-stack .main-content {
     container-name: sched-header;
 }
 
-/* Very narrow header only: icon-only tabs. Above ~200px (e.g. phone landscape) keep Now/Schedule text. */
-@container sched-header (max-width: 420px) {
-    .scheduler-section > .section-header .scheduler-mode-tabs {
-        max-width: none;
-    }
+body:not(.ios) .scheduler-section > .section-header {
+    flex-wrap: nowrap;
+    padding-right: 172px;
+}
 
-    .scheduler-section > .section-header .mode-tab {
-        padding: 8px 11px;
-        gap: 0;
-        font-size: 15px;
-        flex: 0 0 auto;
-        white-space: nowrap;
-    }
+body.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
 
-    .scheduler-section > .section-header .mode-tab.active {
-        padding: 10px 12px;
-    }
+body.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .scheduler-mode-tabs {
+    max-width: none;
+}
 
-    .scheduler-section > .section-header .mode-tab-label {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        padding: 0;
-        margin: -1px;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-        white-space: nowrap;
-        border: 0;
-    }
+body.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab {
+    gap: 0;
+    font-size: 15px;
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
 
-    .scheduler-section > .section-header .mode-tab-icon {
-        width: 18px;
-        height: 18px;
-    }
+body.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab.active {
+    white-space: nowrap;
+}
+
+body:not(.ios).ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab {
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-left: 11px;
+    padding-right: 11px;
+}
+
+body:not(.ios).ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab.active {
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-left: 11px;
+    padding-right: 11px;
+}
+
+body:not(.ios).ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-icon {
+    width: 16px;
+    height: 16px;
+}
+
+/* Desktop scheduler header tabs: fixed height so icon-only breakpoints never grow the bar
+   when the schedule panel wraps (e.g. Start alert onto its own row). */
+body:not(.ios) .scheduler-section > .section-header .scheduler-mode-tabs {
+    --scheduler-tab-height: 34px;
+    --scheduler-tab-bar-padding: 3px;
+    flex: 0 1 auto;
+    flex-shrink: 0;
+    min-width: 0;
+    align-self: center;
+    padding: var(--scheduler-tab-bar-padding);
+    box-sizing: border-box;
+}
+
+body:not(.ios) .scheduler-section > .section-header .mode-tab {
+    position: relative;
+    height: var(--scheduler-tab-height);
+    min-height: var(--scheduler-tab-height);
+    max-height: var(--scheduler-tab-height);
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-left: 14px;
+    padding-right: 14px;
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    line-height: 1;
+}
+
+body:not(.ios) .scheduler-section > .section-header .mode-tab.active {
+    padding-top: 0;
+    padding-bottom: 0;
+    padding-left: 15px;
+    padding-right: 15px;
+}
+
+body:not(.ios) .scheduler-section > .section-header .mode-tab-icon {
+    width: 16px;
+    height: 16px;
 }
 
 .scheduler-section > .section-header .scheduler-mode-tabs {
@@ -3186,6 +3239,16 @@ body.ios.ui-zoom-tier-stack .main-content {
 .scheduler-section > .section-header .settings-toolbar {
     flex-shrink: 0;
     margin-left: auto;
+}
+
+/* Desktop: keep the toolbar in one stable top-right spot inside main content so
+   banners can still push it down with the rest of the page. */
+body:not(.ios) #settings-toolbar-scheduler {
+    position: absolute;
+    top: 4px;
+    right: 0px;
+    z-index: 20;
+    margin-left: 0;
 }
 
 .scheduler-section > .section-header .settings-top-btn {
@@ -4784,14 +4847,20 @@ body.dark-mode .start-block-btn.stop-schedule:hover:not(:disabled) {
     flex: 0 1 auto;
 }
 
-.start-block-btn.stop-block:not(.stop-meta-collapsed) .btn-label-context::after,
-.start-block-btn.stop-schedule:not(.stop-meta-collapsed) .btn-label-context::after {
+.block-action-buttons .start-block-btn:not(.stop-meta-collapsed) .btn-label-context::after,
+.block-action-buttons .start-schedule-btn:not(.stop-meta-collapsed) .btn-label-context::after {
     content: ':';
 }
 
-.start-block-btn.stop-block.stop-meta-collapsed .btn-blocklist-meta,
-.start-block-btn.stop-schedule.stop-meta-collapsed .btn-blocklist-meta {
+.start-block-btn.stop-meta-collapsed .btn-blocklist-meta,
+.start-schedule-btn.stop-meta-collapsed .btn-blocklist-meta {
     display: none;
+}
+
+.block-action-buttons .start-block-btn,
+.block-action-buttons .start-schedule-btn {
+    white-space: nowrap;
+    min-width: 0;
 }
 
 /* Pause Block Button — filled secondary. Pause is the gentler, undoable action
@@ -5041,6 +5110,11 @@ body.ios .mode-tab.active {
     padding: 8px 15px;
 }
 
+body:not(.ios) .scheduler-section > .section-header .mode-tab.active {
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
 .mode-tab.active:hover {
     color: var(--primary-btn-text);
 }
@@ -5109,6 +5183,10 @@ body.dark-mode .mode-tab.active {
     --schedule-segment-label-size: 13px;
     --schedule-segment-label-line-height: 1.3;
     --schedule-segment-remove-size: 30px;
+}
+
+body:not(.ios) .schedule-segment {
+    container-type: inline-size;
 }
 
 .schedule-segment:has(.remove-segment-btn) {
@@ -5218,6 +5296,25 @@ body.dark-mode .add-segment-btn {
     align-items: flex-start;
     flex-wrap: wrap;
     gap: 12px 16px;
+}
+
+body:not(.ios) .segment-row > .time-pickers-row {
+    min-width: 0;
+}
+
+@container (max-width: 260px) {
+    body:not(.ios) .schedule-segment .time-pickers-row {
+        flex-wrap: wrap;
+        row-gap: 6px;
+    }
+
+    body:not(.ios) .schedule-segment .time-separator {
+        display: none;
+    }
+
+    body:not(.ios) .schedule-segment .time-picker-group:last-child {
+        flex-basis: 100%;
+    }
 }
 
 @media (max-width: 768px) {

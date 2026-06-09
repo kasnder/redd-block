@@ -9556,6 +9556,7 @@ function updateScheduleButtonState() {
     // Show pending-changes bar only when an active schedule has unsaved new segments
     updateSchedulePendingBar(!!(activeSchedule && hasNewSegments), activeSchedule);
     syncSchedulePanelOverlayControls();
+    syncStopBtnLabelFit(startScheduleBtn);
 }
 
 // Show or hide the pending-changes bar at the bottom of the schedule panel.
@@ -13799,7 +13800,9 @@ function getStartBlockButtonHTML() {
 // at the first space so it works for any locale that follows verb-then-noun.
 function getActionLabelHTML(fullText) {
     const safe = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    const text = String(fullText ?? '');
+    let text = String(fullText ?? '').trimEnd();
+    // Colon before blocklist meta is added in CSS when meta is visible (see .btn-label-context::after).
+    if (text.endsWith(':')) text = text.slice(0, -1);
     const spaceIdx = text.indexOf(' ');
     if (spaceIdx <= 0) return safe(text);
     const action = text.slice(0, spaceIdx);
@@ -13845,8 +13848,8 @@ function syncStopBtnLabelFit(btn) {
     btn.classList.remove('stop-meta-collapsed');
     syncStartBtnBlocklistMetaLead(btn);
 
-    const isStopBtn = btn.classList.contains('stop-block') || btn.classList.contains('stop-schedule');
-    if (!isStopBtn || btn.classList.contains('hidden') || btn.clientWidth <= 0) return;
+    const isActionBtn = btn.id === 'start-block-btn' || btn.id === 'start-schedule-btn';
+    if (!isActionBtn || btn.classList.contains('hidden') || btn.clientWidth <= 0) return;
 
     const buttonRow = btn.parentElement;
     const rowStyle = buttonRow ? window.getComputedStyle(buttonRow) : null;
@@ -13871,9 +13874,10 @@ function syncStopBtnLabelFit(btn) {
 }
 
 function syncAllStopBtnLabelFits() {
-    document
-        .querySelectorAll('.start-block-btn.stop-block, .start-block-btn.stop-schedule')
-        .forEach(syncStopBtnLabelFit);
+    ['start-block-btn', 'start-schedule-btn'].forEach((id) => {
+        const btn = document.getElementById(id);
+        if (btn) syncStopBtnLabelFit(btn);
+    });
 }
 
 // Update both the emoji and name on a start/stop button so they stay in sync.
@@ -16047,6 +16051,7 @@ function syncSelectedControlState() {
         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isAlwaysOnMode);
     }
     startBlockBtn.disabled = !selectedBlocklistId;
+    syncStopBtnLabelFit(startBlockBtn);
     updateOverrideAllButtonVisibility();
     updateCleanHostsBtnState();
 }
@@ -18327,8 +18332,8 @@ const SETTINGS_TRANSLATIONS = {
         repeatForever: 'Forever',
         repeatUntilDate: 'Until date',
         pause: 'Pause',
-        startBlockButton: 'Start Block:',
-        startScheduleButton: 'Start Schedule:',
+        startBlockButton: 'Start Block',
+        startScheduleButton: 'Start Schedule',
         stopScheduleButton: 'Stop Schedule',
         /** Shown inside .btn-blocklist-meta before emoji+name when Stop is shown; hidden with meta on narrow layouts. */
         stopBlockMetaColon: ':',
@@ -19036,8 +19041,8 @@ const SETTINGS_TRANSLATIONS = {
         repeatForever: 'For evigt',
         repeatUntilDate: 'Indtil dato',
         pause: 'Pause',
-        startBlockButton: 'Start blokering:',
-        startScheduleButton: 'Start skema:',
+        startBlockButton: 'Start blokering',
+        startScheduleButton: 'Start skema',
         stopScheduleButton: 'Stop skema',
         stopBlockMetaColon: ':',
         stopScheduleMetaColon: ':',
@@ -20531,17 +20536,15 @@ function syncUiZoomResponsiveLayout() {
         document.body.classList.toggle('ui-zoom-tier-stack', effVp > 0 && effVp <= UI_ZOOM_LAYOUT_STACK_MAX);
         document.body.classList.toggle('ui-zoom-tier-cramped', cramped);
         document.body.classList.toggle('ui-zoom-tier-narrow', effVp > 0 && effVp <= UI_ZOOM_LAYOUT_NARROW_MAX);
-
-        syncSchedulerModeTabLabelMode();
     } else {
         document.body.classList.remove(
             'ui-zoom-tier-stack',
             'ui-zoom-tier-cramped',
             'ui-zoom-tier-narrow',
-            'ui-zoom-sched-tabs-icons',
         );
     }
 
+    syncSchedulerModeTabLabelMode();
     syncZoomControlPlacement();
     syncIosScheduleDayLabelsViewportMode();
     syncAllStopBtnLabelFits();
@@ -20558,32 +20561,52 @@ function usesStackSettingsPlacement() {
         && window.matchMedia('(min-width: 769px) and (max-width: 1024px) and (orientation: portrait)').matches;
 }
 
-/** Icon-only Now/Schedule tabs only when labels would overlap settings or overflow the header row. */
+/** Keep desktop/iOS scheduler header chrome from overlapping as space tightens. */
 function syncSchedulerModeTabLabelMode() {
     const header = document.querySelector('.scheduler-section > .section-header');
     const modeTabs = header?.querySelector('.scheduler-mode-tabs');
+    const body = document.body;
+    body.classList.remove('ui-zoom-sched-hide-title', 'ui-zoom-sched-tabs-icons');
     if (!header || !modeTabs || modeTabs.classList.contains('hidden')) {
-        document.body.classList.remove('ui-zoom-sched-tabs-icons');
         return;
     }
 
-    document.body.classList.remove('ui-zoom-sched-tabs-icons');
     void header.offsetWidth;
 
+    const mainTitle = header.querySelector('#main-start-block-title');
     const toolbar = header.querySelector('#settings-toolbar-scheduler');
-    let iconOnly = false;
-    if (toolbar && getComputedStyle(toolbar).display !== 'none') {
+    const toolbarVisible = toolbar && getComputedStyle(toolbar).display !== 'none';
+    const hasCollision = () => {
+        let collision = false;
+        if (toolbarVisible) {
+            const tabsRect = modeTabs.getBoundingClientRect();
+            const toolbarRect = toolbar.getBoundingClientRect();
+            if (tabsRect.right > toolbarRect.left - 6) {
+                collision = true;
+            }
+        }
+        if (header.scrollWidth > header.clientWidth + 1) {
+            collision = true;
+        }
+        return collision;
+    };
+
+    if (!isIOS && mainTitle && !mainTitle.classList.contains('hidden') && hasCollision()) {
+        body.classList.add('ui-zoom-sched-hide-title');
+        void header.offsetWidth;
+    }
+
+    const iconOnly = hasCollision();
+    if (toolbarVisible) {
         const tabsRect = modeTabs.getBoundingClientRect();
         const toolbarRect = toolbar.getBoundingClientRect();
         if (tabsRect.right > toolbarRect.left - 6) {
-            iconOnly = true;
+            body.classList.add('ui-zoom-sched-tabs-icons');
+            return;
         }
     }
-    if (header.scrollWidth > header.clientWidth + 1) {
-        iconOnly = true;
-    }
 
-    document.body.classList.toggle('ui-zoom-sched-tabs-icons', iconOnly);
+    body.classList.toggle('ui-zoom-sched-tabs-icons', iconOnly);
 }
 
 /** iOS only: keep the header zoom control beside whichever settings button is visible. */
