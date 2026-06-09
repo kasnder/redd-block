@@ -55,25 +55,34 @@
 
         <!-- Update Banner (shown when a newer version is available) -->
         <div id="update-banner" class="update-banner hidden">
-            <div class="update-banner-content">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <polyline points="7 10 12 15 17 10" />
-                    <line x1="12" y1="15" x2="12" y2="3" />
-                </svg>
-                <span><span id="update-banner-prefix">Version</span> <strong id="update-banner-version"></strong> <span
-                        id="update-banner-suffix">is available</span></span>
-                <a id="update-banner-link" href="https://reddfocus.org/tools/reddblock" target="_blank"
-                    class="update-banner-btn">Reinstall from reddfocus.org</a>
+            <div class="update-banner-inner">
+                <div class="update-banner-row">
+                    <div class="update-banner-content">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                        <span><span id="update-banner-prefix">Version</span> <strong id="update-banner-version"></strong> <span
+                                id="update-banner-suffix">is available</span></span>
+                        <a id="update-banner-link" href="https://reddfocus.org/tools/reddblock" target="_blank"
+                            class="update-banner-btn">Reinstall from reddfocus.org</a>
+                        <button id="update-banner-whats-new" class="update-banner-whats-new-btn hidden" type="button"
+                            aria-expanded="false"></button>
+                    </div>
+                    <button id="update-banner-dismiss" class="update-banner-dismiss" title="Dismiss">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                            stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18" />
+                            <line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                    </button>
+                </div>
+                <div id="update-banner-notes" class="update-banner-notes hidden" aria-live="polite">
+                    <ul id="update-banner-notes-list" class="update-banner-notes-list"></ul>
+                </div>
             </div>
-            <button id="update-banner-dismiss" class="update-banner-dismiss" title="Dismiss">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="18" y1="6" x2="6" y2="18" />
-                    <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-            </button>
         </div>
 
         <!-- Persistent "set up the extension" reminder. Surfaces on

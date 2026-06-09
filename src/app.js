@@ -36,6 +36,7 @@ import {
     normalizeStoredOverlayMessage,
     isOverlayMessageEmpty,
 } from './schedule-overlay-message-editor.js';
+import { getReleaseNotesForVersion } from './changelog.js';
 
 // Compatibility layer wrapping Tauri APIs
 const tauriAPI = {
@@ -1473,6 +1474,63 @@ async function resolveMicrosoftStorePackage() {
     return isMicrosoftStorePackage;
 }
 
+function updateBannerWhatsNewButtonHtml() {
+    return `<span>${tSettings('updateBannerWhatsNew')}</span><svg class="update-banner-whats-new-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>`;
+}
+
+function formatChangelogBulletHtml(text) {
+    const escaped = String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    return escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+}
+
+function showUpdateBanner(latestVersion) {
+    const banner = document.getElementById('update-banner');
+    const versionEl = document.getElementById('update-banner-version');
+    const dismissBtn = document.getElementById('update-banner-dismiss');
+    const whatsNewBtn = document.getElementById('update-banner-whats-new');
+    const notesPanel = document.getElementById('update-banner-notes');
+    const notesList = document.getElementById('update-banner-notes-list');
+
+    if (!banner || !versionEl) return;
+
+    versionEl.textContent = latestVersion;
+    banner.classList.remove('hidden');
+
+    const bullets = getReleaseNotesForVersion(latestVersion);
+    if (bullets.length && whatsNewBtn && notesPanel && notesList) {
+        whatsNewBtn.innerHTML = updateBannerWhatsNewButtonHtml();
+        whatsNewBtn.classList.remove('hidden');
+        notesList.innerHTML = bullets
+            .map((bullet) => `<li>${formatChangelogBulletHtml(bullet)}</li>`)
+            .join('');
+    } else {
+        whatsNewBtn?.classList.add('hidden');
+        notesPanel?.classList.add('hidden');
+        whatsNewBtn?.classList.remove('open');
+        whatsNewBtn?.setAttribute('aria-expanded', 'false');
+        if (notesList) notesList.innerHTML = '';
+    }
+
+    if (dismissBtn && !dismissBtn.dataset.wired) {
+        dismissBtn.dataset.wired = '1';
+        dismissBtn.addEventListener('click', () => {
+            banner.classList.add('hidden');
+        });
+    }
+
+    if (whatsNewBtn && !whatsNewBtn.dataset.wired) {
+        whatsNewBtn.dataset.wired = '1';
+        whatsNewBtn.addEventListener('click', () => {
+            const isOpen = whatsNewBtn.classList.toggle('open');
+            notesPanel?.classList.toggle('hidden', !isOpen);
+            whatsNewBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        });
+    }
+}
+
 // Check if a newer app version is available and show update banner
 async function checkForAppUpdate() {
     if (await resolveMicrosoftStorePackage()) {
@@ -1484,24 +1542,10 @@ async function checkForAppUpdate() {
 
         const response = await fetch(`https://ulyngs.github.io/redd-block/latest-versions.json?t=${Date.now()}`);
         const versions = await response.json();
-
         const latestVersion = versions[getLatestVersionPlatformKey()];
 
         if (latestVersion && isVersionHigher(latestVersion, currentVersion)) {
-            const banner = document.getElementById('update-banner');
-            const versionEl = document.getElementById('update-banner-version');
-            const dismissBtn = document.getElementById('update-banner-dismiss');
-
-            if (banner && versionEl) {
-                versionEl.textContent = latestVersion;
-                banner.classList.remove('hidden');
-
-                if (dismissBtn) {
-                    dismissBtn.addEventListener('click', () => {
-                        banner.classList.add('hidden');
-                    });
-                }
-            }
+            showUpdateBanner(latestVersion);
         }
     } catch (e) {
         // Silently fail if offline
@@ -17839,6 +17883,7 @@ const SETTINGS_TRANSLATIONS = {
         updateBannerPrefix: 'Version',
         updateBannerSuffix: 'is available',
         updateBannerCta: 'Reinstall from reddfocus.org',
+        updateBannerWhatsNew: "What's new?",
         mainStartBlockTitle: 'Start a Block',
         modeNow: 'Now',
         modeSchedule: 'Schedule',
@@ -18564,6 +18609,7 @@ const SETTINGS_TRANSLATIONS = {
         updateBannerPrefix: 'Version',
         updateBannerSuffix: 'er tilgængelig',
         updateBannerCta: 'Geninstaller fra reddfocus.org',
+        updateBannerWhatsNew: 'Hvad er nyt?',
         mainStartBlockTitle: 'Start blokering',
         modeNow: 'Nu',
         modeSchedule: 'Skema',
@@ -19927,6 +19973,10 @@ function applySettingsLanguage() {
     setText('update-banner-prefix', tSettings('updateBannerPrefix'));
     setText('update-banner-suffix', tSettings('updateBannerSuffix'));
     setText('update-banner-link', tSettings('updateBannerCta'));
+    const updateWhatsNewBtn = document.getElementById('update-banner-whats-new');
+    if (updateWhatsNewBtn && !updateWhatsNewBtn.classList.contains('hidden')) {
+        updateWhatsNewBtn.innerHTML = updateBannerWhatsNewButtonHtml();
+    }
     setText('setup-banner-headline', tSettings('setupBrowsersBannerHeadline'));
     setText('behaviour-change-help', tSettings('setupBrowsersBannerCta'));
     const behaviourDismissBtn = document.getElementById('behaviour-change-dismiss');
