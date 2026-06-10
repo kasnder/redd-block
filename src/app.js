@@ -2831,15 +2831,17 @@ async function refreshAutomationPermissionStatus({
 }
 
 // Unified onboarding compliance status that knows about the macOS
-// Automation model. For Automation browsers, 'compliant' iff the grant
-// is present; otherwise 'needs-automation'. Falls back to the extension
-// compliance for Firefox / non-macOS.
+// Automation model. For Automation browsers, mirrors
+// `automationBrowserRowMode`: only flag when the browser is running
+// and we know access is missing — closed browsers with unknown status
+// stay compliant so the setup banner doesn't nag prematurely. Falls
+// back to the extension compliance for Firefox / non-macOS.
 function effectiveBrowserComplianceStatus(key, browsers) {
     if (browserUsesAutomation(key)) {
         if (!automationPermissionStatusReady) return 'compliant';
-        return (lastAutomationPermissionByKey[key] || 'unknown') === 'granted'
-            ? 'compliant'
-            : 'needs-automation';
+        const mode = automationBrowserRowMode(key, (browsers || {})[key]);
+        if (mode === 'granted' || mode === 'awaiting-open') return 'compliant';
+        return 'needs-automation';
     }
     return browserComplianceStatus(key, (browsers || {})[key]) || 'needs-install';
 }
