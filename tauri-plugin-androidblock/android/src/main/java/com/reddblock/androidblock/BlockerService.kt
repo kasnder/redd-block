@@ -1,0 +1,274 @@
+package com.reddblock.androidblock
+
+import android.accessibilityservice.AccessibilityService
+import android.annotation.SuppressLint
+import android.app.KeyguardManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.util.Log
+import android.view.accessibility.AccessibilityEvent
+import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
+import com.reddblock.androidblock.NotificationHelper.createNotificationChannels
+
+/**
+ * The blocking engine, ported 1:1 from redd-block-android. Watches
+ * foreground window changes: blocked apps are bounced to the home
+ * screen, blocked websites are redirected to reddfocus.org by reading
+ * the URL bar of supported browsers. Runs entirely independently of
+ * the Tauri webview, so blocking keeps working when the app is closed.
+ */
+@SuppressLint("AccessibilityPolicy")
+class BlockerService : AccessibilityService() {
+
+    private val scheduleChangeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == Schedules.ACTION_CHANGED) {
+                Log.d(TAG, "Schedule state changed")
+            }
+        }
+    }
+
+    private var lastCheckedUrl: String? = null
+    private var lastUrlCheckTime: Long = 0
+    private val URL_CHECK_THROTTLE_MS = 500L
+
+    override fun onServiceConnected() {
+        super.onServiceConnected()
+        createNotificationChannels()
+
+        val filter = IntentFilter(Schedules.ACTION_CHANGED)
+        ContextCompat.registerReceiver(
+            this, scheduleChangeReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+
+        scheduleWatcher(this)
+    }
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        val keyguardManager = getSystemService(KEYGUARD_SERVICE) as KeyguardManager
+        if (keyguardManager.isKeyguardLocked) return
+
+        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
+        if (event.contentChangeTypes == AccessibilityEvent.CONTENT_CHANGE_TYPE_CONTENT_DESCRIPTION) return
+
+        val pkg = event.packageName?.toString() ?: return
+        if (pkg == packageName) return
+
+        // Check for website blocking in supported browsers
+        if (isSupportedBrowser(pkg)) {
+            val currentTime = System.currentTimeMillis()
+            if (currentTime - lastUrlCheckTime >= URL_CHECK_THROTTLE_MS) {
+                lastUrlCheckTime = currentTime
+                val url = extractUrlFromEvent(event)
+                if (url != null && url != lastCheckedUrl) {
+                    lastCheckedUrl = url
+                    val domain = extractDomain(url)
+                    if (domain != null && Schedules.isWebsiteBlocked(this, domain)) {
+                        Log.d(TAG, "Blocking website $domain in browser ($pkg)")
+                        navigateBrowserToBlank(pkg)
+                        showWebsiteBlockedNotification(domain)
+                        return
+                    }
+                }
+            }
+        }
+
+        // Check app blocking
+        if (shouldSkipPackage(pkg)) return
+
+        if (Schedules.isAppBlocked(this, pkg)) {
+            Log.d(TAG, "Blocking app $pkg")
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            showAppBlockedNotification(pkg)
+        }
+    }
+
+    private fun shouldSkipPackage(packageName: String): Boolean {
+        return try {
+            val info = this.packageManager.getApplicationInfo(packageName, 0)
+            val isSystem = (info.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+            if (isSystem) {
+                this.packageManager.getLaunchIntentForPackage(packageName) == null
+            } else {
+                false
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /** Maps browser package names to their URL bar view IDs */
+    private val browserUrlViewIds = mapOf(
+        // Firefox variants
+        "org.mozilla.firefox" to listOf("mozac_browser_toolbar_url_view", "url_bar_title"),
+        "org.mozilla.firefox_beta" to listOf("mozac_browser_toolbar_url_view", "url_bar_title"),
+        "org.mozilla.fenix" to listOf("mozac_browser_toolbar_url_view", "url_bar_title"),
+        "org.mozilla.fenix.nightly" to listOf("mozac_browser_toolbar_url_view", "url_bar_title"),
+        "org.mozilla.focus" to listOf("mozac_browser_toolbar_url_view", "url_bar_title"),
+        // Chrome / Chromium
+        "com.android.chrome" to listOf("url_bar", "origin"),
+        "com.chrome.beta" to listOf("url_bar"),
+        "org.chromium.chrome" to listOf("url_bar"),
+        // Brave
+        "com.brave.browser" to listOf("url_bar"),
+        "com.brave.browser_beta" to listOf("url_bar"),
+        "com.brave.browser_nightly" to listOf("url_bar"),
+        // Samsung Internet
+        "com.sec.android.app.sbrowser" to listOf("location_bar_edit_text"),
+        // Microsoft Edge
+        "com.microsoft.emmx" to listOf("url_bar"),
+        // Opera variants
+        "com.opera.browser" to listOf("url_field"),
+        "com.opera.browser.beta" to listOf("url_field"),
+        "com.opera.mini.native" to listOf("url_field"),
+        "com.opera.mini.native.beta" to listOf("url_field"),
+        "com.opera.touch" to listOf("addressbarEdit"),
+        // Vivaldi
+        "com.vivaldi.browser" to listOf("url_bar"),
+        // Kiwi Browser
+        "com.kiwibrowser.browser" to listOf("url_bar"),
+        // DuckDuckGo
+        "com.duckduckgo.mobile.android" to listOf("omnibarTextInput"),
+        // Ecosia
+        "com.ecosia.android" to listOf("url_bar"),
+        // Huawei Browser
+        "com.huawei.browser" to listOf("url_bar"),
+        // Android system browser (AOSP)
+        "com.android.browser" to listOf("url"),
+        // Google Search app (in-app browser)
+        "com.google.android.googlequicksearchbox" to listOf("googleapp_srp_search_box_text"),
+    )
+
+    private fun isSupportedBrowser(packageName: String): Boolean {
+        return packageName in browserUrlViewIds
+    }
+
+    private fun navigateBrowserToBlank(browserPackage: String) {
+        try {
+            val uri = Uri.parse("https://reddfocus.org")
+            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                setPackage(browserPackage)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            lastCheckedUrl = null
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to navigate browser to blocked page", e)
+            performGlobalAction(GLOBAL_ACTION_HOME)
+        }
+    }
+
+    private fun extractUrlFromEvent(event: AccessibilityEvent): String? {
+        val root = rootInActiveWindow ?: return null
+        try {
+            val pkg = event.packageName?.toString() ?: return null
+            val viewIds = browserUrlViewIds[pkg] ?: return null
+            val knownUrlViewIds = viewIds.map { "$pkg:id/$it" }
+
+            for (viewId in knownUrlViewIds) {
+                val nodes = root.findAccessibilityNodeInfosByViewId(viewId)
+                if (nodes.isNullOrEmpty()) continue
+                for (node in nodes) {
+                    try {
+                        // Skip if the URL bar is focused — user is typing,
+                        // don't block on autocomplete suggestions
+                        if (node.isFocused) continue
+                        val text = node.text?.toString()
+                        if (text != null && isValidUrlFormat(text)) {
+                            return text
+                        }
+                    } finally {
+                        node.recycle()
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error extracting URL", e)
+        } finally {
+            root.recycle()
+        }
+        return null
+    }
+
+    private fun isValidUrlFormat(text: String): Boolean {
+        val trimmed = text.trim()
+        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return true
+        if (trimmed.contains(" ") || trimmed.length < 4) return false
+        val domainPattern = Regex("^[a-zA-Z0-9][a-zA-Z0-9.-]*\\.[a-zA-Z]{2,}(/.*)?$")
+        return domainPattern.matches(trimmed)
+    }
+
+    private fun extractDomain(url: String): String? {
+        return try {
+            var normalizedUrl = url.trim()
+            if (!normalizedUrl.startsWith("http://") && !normalizedUrl.startsWith("https://")) {
+                normalizedUrl = "https://$normalizedUrl"
+            }
+            val uri = java.net.URI(normalizedUrl)
+            uri.host?.lowercase()?.removePrefix("www.")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error extracting domain from URL: $url", e)
+            null
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun showAppBlockedNotification(pkg: String) {
+        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return
+
+        val appName = try {
+            packageManager.getApplicationLabel(
+                packageManager.getApplicationInfo(pkg, 0)
+            )
+        } catch (_: PackageManager.NameNotFoundException) {
+            pkg
+        }
+
+        val notification = NotificationCompat.Builder(this, NotificationHelper.BLOCKER_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_block)
+            .setContentTitle(getString(R.string.app_blocked))
+            .setContentText(getString(R.string.blocked_by_schedule, appName))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+
+        NotificationManagerCompat.from(this).notify(pkg.hashCode(), notification)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun showWebsiteBlockedNotification(domain: String) {
+        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return
+
+        val notification = NotificationCompat.Builder(this, NotificationHelper.BLOCKER_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_block)
+            .setContentTitle(getString(R.string.website_blocked))
+            .setContentText(getString(R.string.website_blocked_by_schedule, domain))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+
+        NotificationManagerCompat.from(this).notify(domain.hashCode(), notification)
+    }
+
+    override fun onInterrupt() {}
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            unregisterReceiver(scheduleChangeReceiver)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error unregistering receiver", e)
+        }
+    }
+
+    companion object {
+        private const val TAG = "BlockerService"
+    }
+}
