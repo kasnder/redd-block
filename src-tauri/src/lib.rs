@@ -566,7 +566,7 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             {
                 let win_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
-                    .title("ReDD Block")
+                    .title("Fristed")
                     .inner_size(840.0, 750.0)
                     .min_inner_size(600.0, 500.0)
                     .resizable(true)
@@ -595,7 +595,7 @@ pub fn run() {
                 let _tray = TrayIconBuilder::new()
                     .icon(tauri::include_image!("icons/tray-template.png"))
                     .icon_as_template(true)
-                    .tooltip("ReDD Block")
+                    .tooltip("Fristed")
                     .on_tray_icon_event(|tray, event| {
                         if let TrayIconEvent::Click {
                             button: MouseButton::Left,

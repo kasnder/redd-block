@@ -165,7 +165,7 @@ const tauriAPI = {
 
     // macOS-only in-app uninstall. Disables launch-at-login, scrubs
     // browser native-messaging manifests, and schedules a delayed
-    // self-delete of /Applications/ReDD Block.app. Caller is responsible
+    // self-delete of /Applications/Fristed.app. Caller is responsible
     // for confirming with the user and refusing to invoke while blocks
     // are running. See src-tauri/src/commands/uninstall.rs.
     uninstallSelfMacos: (deleteUserData = false) =>
@@ -339,7 +339,7 @@ let scheduleSegments = getDefaultScheduleSegments(); // Array of time segments w
 // Far-future timestamp used for "always on" blocks (year 9999)
 const ALWAYS_ON_END_TIME = new Date(9999, 11, 31, 23, 59, 59, 999).getTime();
 
-// Protected app names — ReDD Block must never block itself
+// Protected app names — Fristed must never block itself
 const PROTECTED_APP_NAMES = ['redd block', 'redd-block', 'redd-block-helper'];
 
 // Protected domains — blocking these would break networking or the app itself
@@ -1748,7 +1748,7 @@ let firstRunExtensionSetupPending = false;
 // While the migration post-phase is on screen, the user is bouncing
 // between this window and Safari (or Chrome/Firefox/etc.) toggling
 // extension settings. The window-`focus` listener below already
-// re-polls on tab-back, but a user who has Safari and ReDD Block
+// re-polls on tab-back, but a user who has Safari and Fristed
 // side-by-side never triggers focus events as they click toggles.
 // Run a low-frequency poll so the checklist ticks itself off within
 // the "up to 20 seconds" window the UI already promises. Cleared
@@ -2990,7 +2990,7 @@ function privateModeNoun(key) {
 // launching Safari when needed, then falls back to AppleScript for
 // dev builds (`cargo tauri dev`) and other cases where SafariServices
 // can't find the host extension. AppleScript needs Accessibility
-// permission for ReDD Block (or your terminal, when running dev).
+// permission for Fristed (or your terminal, when running dev).
 async function openExtensionSettings(key) {
     if (key === 'safari') {
         try {
@@ -3700,7 +3700,7 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
             const isSafari = key === 'safari';
 
             // "✓ Extension installed" line. Always show for Safari —
-            // we bundle the .appex inside ReDD Block.app, so install
+            // we bundle the .appex inside Fristed.app, so install
             // is structurally guaranteed at this point. For Chromium /
             // Firefox we only show it once we've moved past the
             // install step (status !== 'needs-enable') because there
@@ -3913,7 +3913,7 @@ function setupAppForegroundRefresh() {
     });
     // Keep the setup banner in sync when extension state changes
     // without a window focus (e.g. user toggles an extension while
-    // ReDD Block stays visible). Matches enforcer tick (~5 s).
+    // Fristed stays visible). Matches enforcer tick (~5 s).
     setInterval(() => {
         if (!startupInitializationComplete || migrationOnboardingActive) return;
         if (!hasAcceptedEula()) return;
@@ -3995,7 +3995,10 @@ async function updateBehaviourChangeBanner(state) {
 
     const headlineEl = document.getElementById('setup-banner-headline');
     if (headlineEl) {
-        headlineEl.textContent = tSettings('setupBrowsersBannerHeadline');
+        const headlineKey = isMacOSDesktop
+            ? 'setupBrowsersBannerHeadlineMac'
+            : 'setupBrowsersBannerHeadline';
+        headlineEl.textContent = tSettings(headlineKey);
     }
 
     const parts = [];
@@ -4260,7 +4263,7 @@ function setupEnforcerUiAlerts() {
 //
 // The Automation watcher (src-tauri/src/web_automation.rs) drives
 // Safari + Chromium blocking via Apple Events. The first event to each
-// browser surfaces the system "ReDD Block wants to control <App>"
+// browser surfaces the system "Fristed wants to control <App>"
 // prompt; if the user denies it, the watcher emits
 // `web-automation://permission-needed` (and `...resolved` once granted).
 // Without the grant, website blocking silently does nothing, so we show
@@ -4556,7 +4559,7 @@ function enforcerCopy(payload) {
         };
     }
     if (issue === 'automation') {
-        // macOS: ReDD Block lost the Automation grant for this browser,
+        // macOS: Fristed lost the Automation grant for this browser,
         // so it can't redirect blocked tabs. No extension URL applies —
         // the only fix is re-enabling the grant in System Settings.
         return {
@@ -6793,7 +6796,7 @@ function setupEventListeners() {
             }
         } else if (note) {
             if (result.status === 'denied') {
-                note.textContent = 'Screen Time access was denied. Please tap the button again, or enable ReDD Block in Settings > Screen Time > Apps With Screen Time Access.';
+                note.textContent = 'Screen Time access was denied. Please tap the button again, or enable Fristed in Settings > Screen Time > Apps With Screen Time Access.';
             } else if (result.error) {
                 note.textContent = `Screen Time access failed: ${result.error}`;
             }
@@ -7559,7 +7562,7 @@ function setupModalListeners() {
             e.preventDefault();
             const app = modalAppInput.value.trim();
             if (isProtectedApp(app)) {
-                // Show brief warning — ReDD Block cannot block itself
+                // Show brief warning — Fristed cannot block itself
                 modalAppInput.value = '';
                 modalAppInput.placeholder = tSettings('cannotBlockSelfAppPlaceholder');
                 modalAppInput.classList.add('input-error');
@@ -13665,7 +13668,7 @@ async function proceedWithBlock() {
                 startBtn.disabled = false;
                 startBtn.innerHTML = getStartBlockButtonHTML();
                 if (authResult.status === 'denied') {
-                    alert('Screen Time authorization was denied. Please go to Settings > Screen Time > ReDD Block and enable access.');
+                    alert('Screen Time authorization was denied. Please go to Settings > Screen Time > Fristed and enable access.');
                 } else if (authResult.error) {
                     alert('Screen Time authorization failed: ' + authResult.error);
                 } else {
@@ -17929,7 +17932,8 @@ const SETTINGS_TRANSLATIONS = {
         nowBlockingMenuPause: 'Pause',
         nowBlockingMenuStop: 'Stop',
         scheduleFooterHint: 'Click any block to edit',
-        setupBrowsersBannerHeadline: 'Enable ReDD Block in your browsers',
+        setupBrowsersBannerHeadline: 'Enable ReDD Focus in your browsers',
+        setupBrowsersBannerHeadlineMac: 'Allow Fristed in your browsers',
         setupBrowsersBannerCta: 'Set up browsers',
         setupBrowsersBannerDismissTitle: 'Dismiss for this session',
         bannerTurnOnBrowserProtection: 'Turn on browser protection',
@@ -17949,17 +17953,17 @@ const SETTINGS_TRANSLATIONS = {
         eulaContinueBusy: 'Continuing…',
         eulaBackBtn: 'Back',
         eulaAcceptSaveFailedAlert: 'Could not save your agreement. Please try again.',
-        eulaWelcomeIconAlt: 'ReDD Block app icon',
+        eulaWelcomeIconAlt: 'Fristed app icon',
         eulaProjectBlurb:
-            'ReDD Block is developed by the Reduce Digital Distraction Project, in collaboration with researchers at the University of Oxford and University of Maastricht. The ReDD Project is a not-for-profit creating insights & open-source digital focus tools for everyone to thrive in the digital world.',
+            'Fristed is developed by the Reduce Digital Distraction Project, in collaboration with researchers at the University of Oxford and University of Maastricht. The ReDD Project is a not-for-profit creating insights & open-source digital focus tools for everyone to thrive in the digital world.',
         // Welcome onboarding (before EULA)
-        welcomeOnboardingTitle: 'Welcome to ReDD Block',
+        welcomeOnboardingTitle: 'Welcome to Fristed',
         welcomeOnboardingSubtitle:
             'An open-source tool for blocking the websites\nand apps that pull you away from your focus.',
         welcomeHowHeading: 'STEPS TO GET STARTED (we\'ll guide you through it 😊)',
         welcomeStep1TitleAutomationHtml: 'Allow {APPLE}Automation',
         welcomeStep1BodyAutomationHtml:
-            'In Safari, Chrome, Brave, and Edge, ReDD Block uses Automation to block websites. We\'ll prompt you to allow access.',
+            'In Safari, Chrome, Brave, and Edge, Fristed uses Automation to block websites. We\'ll prompt you to allow access.',
         welcomeStep2TitleFirefoxHtml: 'Set up {LOGO}ReDD Focus in Firefox',
         welcomeStep2BodyFirefoxHtml:
             'Firefox blocking uses our {LOGO}<strong>ReDD Focus</strong> extension. We\'ll guide you through installing it from the Firefox Add-ons store.',
@@ -17968,7 +17972,7 @@ const SETTINGS_TRANSLATIONS = {
             'Our {LOGO}<strong>ReDD Focus</strong> extension is what actually blocks websites. We\'ll auto-install it in your browsers where we can, and show you what to do.',
         welcomeStep3TitleHtml: 'Start blocking! 🥳',
         welcomeStep3BodyHtml:
-            'Pick the websites and apps that pull you off task, and set the times you want them out of reach. ReDD Block takes care of the rest.',
+            'Pick the websites and apps that pull you off task, and set the times you want them out of reach. Fristed takes care of the rest.',
         welcomeDemoToggleLabel: 'See it in action — 30s',
         welcomeDemoVideoCaption: 'Quick demo — creating blocklists & how blocks feel',
         welcomeDemoPlayAriaLabel: 'Play demo video',
@@ -17983,38 +17987,38 @@ const SETTINGS_TRANSLATIONS = {
             '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">View the source code on GitHub</a>.',
         welcomeOnboardingContinueBtn: 'Get started',
         // Migration / extension onboarding overlay
-        migrationPreWelcomeTitle: 'Welcome to ReDD Block 2.0',
+        migrationPreWelcomeTitle: 'Welcome to Fristed 2.0',
         migrationPreSubtitle: 'A one-time cleanup is needed to finish your upgrade.',
-        migrationPreExplainerHtml: 'ReDD Block now blocks websites through a browser extension instead of a system-level helper.<br>We need to:',
+        migrationPreExplainerHtml: 'Fristed now blocks websites through a browser extension instead of a system-level helper.<br>We need to:',
         migrationPreBulletHelper: 'Stop and remove the old privileged helper',
         migrationPreBulletHostsHtml: 'Restore your <code>/etc/hosts</code> file (a backup is kept)',
         migrationPreBulletBlocklists: 'Keep all your existing blocklists intact',
-        migrationPreWarnHtml: 'You\'ll see <strong>one</strong> admin password prompt. Blocking will pause briefly during the changeover. After cleanup, ReDD Block sets up the <strong>ReDD Focus</strong> browser extension in your browsers automatically — you just need to allow it in private/incognito tabs.',
+        migrationPreWarnHtml: 'You\'ll see <strong>one</strong> admin password prompt. Blocking will pause briefly during the changeover. After cleanup, Fristed sets up the <strong>ReDD Focus</strong> browser extension in your browsers automatically — you just need to allow it in private/incognito tabs.',
         migrationContinue: 'Continue',
         migrationPostTitleCleanup: 'Cleanup complete',
         migrationPostSubtitleCleanup: 'Almost done — finish setting up ReDD Focus in each browser you use.',
         migrationChecklistCleanedOld: 'Old version cleaned up',
         migrationChecklistBlocklistsPreserved: 'Your blocklists are preserved',
         migrationChecklistExtLinesHtml: 'Enable {LOGO}ReDD Focus in your browsers<br><span style="font-weight:400;opacity:0.7">and allow it in private/incognito tabs</span>',
-        migrationExtTitleMac: 'Enable ReDD Block in your browsers',
+        migrationExtTitleMac: 'Allow Fristed in your browsers',
         migrationExtSubMac: 'Website blocking uses <strong>macOS automation</strong> for Safari, Chrome & Edge.',
         migrationExtSubMacFirefox: 'Website blocking uses <strong>macOS automation</strong> for Safari, Chrome & Edge, and the <strong>ReDD Focus extension</strong> for Firefox.',
-        migrationExtStep1Mac: 'Click <strong>Grant access</strong> on each browser below and approve the macOS permission prompt. If you see <strong>Open Automation settings</strong>, click it and switch ReDD Block back on.',
+        migrationExtStep1Mac: 'Click <strong>Grant access</strong> on each browser below and approve the macOS permission prompt. If you see <strong>Open Automation settings</strong>, click it and switch Fristed back on.',
         migrationExtStep2MacFirefox: 'For Firefox, click <strong>Install</strong> below to add {FOCUS}<strong>ReDD Focus</strong> from the Add-ons store, then allow it in private windows.',
         migrationHowtoHeading: 'Setting up',
-        migrationHowtoLi1Html: 'ReDD Block has tried to install ReDD Focus in your browsers. If it shows as not installed below, click the <strong>Install</strong> buttons to add it manually.',
+        migrationHowtoLi1Html: 'Fristed has tried to install ReDD Focus in your browsers. If it shows as not installed below, click the <strong>Install</strong> buttons to add it manually.',
         migrationHowtoLi3Html: 'Once enabled, <strong>allow it in private/incognito tabs</strong> so blocking works in private windows too.',
         migrationBadgeAutomationOn: 'Allowed',
         migrationBadgeAutomationOff: 'Permission needed',
         migrationBadgeAutomationUnknown: 'Status unknown',
         migrationAutomationAwaitingOpenHint: 'Please open {browser} so we can check whether Automation has been granted. macOS only reports this permission while the browser is running.',
-        migrationAutomationGrantHint: 'Allow ReDD Block to control {browser} so it can close distracting tabs while a block is running.',
-        migrationAutomationDeniedHint: 'Permission for {browser} is turned off. Switch ReDD Block back on under Automation so blocking works again.',
+        migrationAutomationGrantHint: 'Allow Fristed to control {browser} so it can close distracting tabs while a block is running.',
+        migrationAutomationDeniedHint: 'Permission for {browser} is turned off. Switch Fristed back on under Automation so blocking works again.',
         migrationGrantAutomation: 'Grant access to {browser}',
         migrationGrantAutomationOpened: 'Opened Automation settings',
         migrationOpenAutomationSettings: 'Open Automation settings',
-        webAutomationBannerHeadline: 'Allow ReDD Block to control your browser',
-        webAutomationBannerBody: 'ReDD Block needs permission to control {browsers} to block websites. Enable it under Privacy & Security → Automation, then the block will take effect.',
+        webAutomationBannerHeadline: 'Allow Fristed to control your browser',
+        webAutomationBannerBody: 'Fristed needs permission to control {browsers} to block websites. Enable it under Privacy & Security → Automation, then the block will take effect.',
         migrationDone: 'I\'m all set up',
         migrationSkip: 'Skip for now',
         migrationSetupAllReadyOne: '<strong>Your browser is ready.</strong> You can finish setup.',
@@ -18043,22 +18047,22 @@ const SETTINGS_TRANSLATIONS = {
         migrationBadgeNoWebsiteAccess: 'No website access',
         migrationBadgeDuplicateSafari: '⚠ Two copies installed',
         migrationStatusDuplicateSafari: 'Disable the extra copy',
-        migrationSafariDuplicateIntroHtml: 'You have <strong>ReDD Focus: Hide Distractions</strong> from the App Store <em>and</em> the copy that ships inside ReDD Block. They conflict — keep only one.',
+        migrationSafariDuplicateIntroHtml: 'You have <strong>ReDD Focus: Hide Distractions</strong> from the App Store <em>and</em> the copy that ships inside Fristed. They conflict — keep only one.',
         migrationSafariDuplicateInstructionsHeading: 'In Safari → Settings → Extensions',
-        migrationSafariDuplicateStep1Html: 'Find <strong>ReDD Focus: Hide Distractions</strong> — the App Store copy (not “via ReDD Block”) — and uncheck <span class="safari-duplicate-checkbox" role="img" aria-label="Unchecked"></span> it.',
-        migrationSafariDuplicateStep2Html: 'Make sure <span class="safari-duplicate-checkbox safari-duplicate-checkbox-checked" role="img" aria-label="Checked"></span> is checked for <strong>ReDD Focus (via ReDD Block)</strong>. That\'s the one this app controls.',
+        migrationSafariDuplicateStep1Html: 'Find <strong>ReDD Focus: Hide Distractions</strong> — the App Store copy (not “via Fristed”) — and uncheck <span class="safari-duplicate-checkbox" role="img" aria-label="Unchecked"></span> it.',
+        migrationSafariDuplicateStep2Html: 'Make sure <span class="safari-duplicate-checkbox safari-duplicate-checkbox-checked" role="img" aria-label="Checked"></span> is checked for <strong>ReDD Focus (via Fristed)</strong>. That\'s the one this app controls.',
         migrationSafariDuplicateOpenBtn: 'Open Safari Extensions…',
         migrationSafariDuplicateHelpLink: 'How did this happen?',
-        migrationSafariDuplicateHelpText: 'If you previously installed ReDD Focus from the App Store and later installed ReDD Block, Safari keeps both extensions registered. ReDD Block only works with the bundled copy.',
+        migrationSafariDuplicateHelpText: 'If you previously installed ReDD Focus from the App Store and later installed Fristed, Safari keeps both extensions registered. Fristed only works with the bundled copy.',
         migrationStatusAllowAllWebsites: 'Allow on all websites',
         migrationStatusAllowPrivate: 'Allow in private browsing',
         migrationStatusEnableExtension: 'Enable extension',
         migrationStatusInstall: 'Install',
         migrationStatusGrantFda: 'Grant Full Disk Access',
-        migrationStatusNativeHost: 'Connect ReDD Block',
+        migrationStatusNativeHost: 'Connect Fristed',
         bannerActionGrantFdaIn: 'Grant Full Disk Access in',
         safariFdaOnboardingTitle: 'Grant Full Disk Access for Safari',
-        safariFdaOnboardingWhyHtml: 'Blocking on Safari through the ReDD Focus browser extension requires Full Disk Access to ensure the extension is installed, enabled, and allowed in private browsing. Open System Settings below, then toggle <strong>ReDD Block</strong> on (use + if it is not listed).',
+        safariFdaOnboardingWhyHtml: 'Blocking on Safari through the ReDD Focus browser extension requires Full Disk Access to ensure the extension is installed, enabled, and allowed in private browsing. Open System Settings below, then toggle <strong>Fristed</strong> on (use + if it is not listed).',
         safariFdaOnboardingGrantBtn: 'Open Full Disk Access settings',
         safariFdaOnboardingAlreadyGrantedBtn: '✓ Proceed',
         safariFdaOnboardingAlreadyGrantedWhy: 'Full Disk Access is already granted. Click below to continue Safari setup.',
@@ -18066,12 +18070,12 @@ const SETTINGS_TRANSLATIONS = {
         safariFdaOnboardingWaiting: 'Waiting for Full Disk Access… leave this window open while you grant it.',
         safariFdaOnboardingOpeningSettings: 'Opening settings…',
         safariFdaOnboardingHowto: 'System Settings → Privacy & Security → Full Disk Access',
-        safariFdaSetupHintHtml: 'ReDD Block must read Safari\'s protected extension settings. Grant <strong>Full Disk Access</strong> for ReDD Block, then return here.',
+        safariFdaSetupHintHtml: 'Fristed must read Safari\'s protected extension settings. Grant <strong>Full Disk Access</strong> for Fristed, then return here.',
         safariFdaSettingsGranted: 'Full Disk Access: granted (Safari extension settings readable).',
         safariFdaSettingsNotGranted: 'Full Disk Access: not granted — required to verify ReDD Focus in Safari.',
         safariFdaSettingsGrantBtn: 'Grant access',
-        migrationBadgeNativeHost: 'Connect ReDD Block',
-        migrationFirefoxNativeHostHtml: 'ReDD Focus is installed. ReDD Block still needs to register its connection with Firefox (one small setup step).',
+        migrationBadgeNativeHost: 'Connect Fristed',
+        migrationFirefoxNativeHostHtml: 'ReDD Focus is installed. Fristed still needs to register its connection with Firefox (one small setup step).',
         migrationFirefoxNativeHostButton: 'Connect to Firefox',
         migrationInstallButton: 'Install',
         migrationInstallOpened: 'Opened extension store',
@@ -18090,11 +18094,11 @@ const SETTINGS_TRANSLATIONS = {
         migrationSafariChecklistLine: 'Step {n} — {label}',
         migrationOpenExtensionSettings: 'Open Extension Settings',
         migrationShowMeHow: 'Show me how',
-        migrationPostInstallFirefoxHtml: 'ReDD Block already set up auto-install for ReDD Focus in Firefox — <strong>restart Firefox</strong> to pick it up. (Or click <strong>Install</strong> below to add it manually — check <strong>Allow extension to run in private windows</strong> during install.)',
+        migrationPostInstallFirefoxHtml: 'Fristed already set up auto-install for ReDD Focus in Firefox — <strong>restart Firefox</strong> to pick it up. (Or click <strong>Install</strong> below to add it manually — check <strong>Allow extension to run in private windows</strong> during install.)',
         migrationPostInstallFirefoxMacHtml: 'Install ReDD Focus from the Firefox Add-ons store — click <strong>Install</strong> below and check <strong>Allow extension to run in private windows</strong> during install.',
         migrationPostInstallSafariHtml: 'Install ReDD Focus from the Mac App Store — click <strong>Install</strong> below. After it\u2019s installed, return here and we\u2019ll walk you through enabling it in Safari.',
         migrationPostInstallChromiumMacHtml: 'Install ReDD Focus from the {BROWSER} store — click <strong>Install</strong> below. After it\u2019s installed, return here and we\u2019ll walk you through enabling it and allowing it in {PRIV} tabs.',
-        migrationPostInstallChromiumHtml: 'ReDD Block already set up auto-install for ReDD Focus in {BROWSER} — <strong>restart {BROWSER}</strong> to pick it up. (Or click <strong>Install</strong> below to add it manually now.)',
+        migrationPostInstallChromiumHtml: 'Fristed already set up auto-install for ReDD Focus in {BROWSER} — <strong>restart {BROWSER}</strong> to pick it up. (Or click <strong>Install</strong> below to add it manually now.)',
         migrationInstructionEnableHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → find <strong>ReDD Focus</strong> → enable the extension.',
         migrationInstructionWebsiteAccessHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → click <strong>Details</strong> on ReDD Focus → allow on <strong>all websites</strong>.',
         migrationInstructionFirefoxPrivateHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → click <strong>ReDD Focus</strong> → turn on <strong>Run in {PRIV}</strong>.',
@@ -18132,7 +18136,7 @@ const SETTINGS_TRANSLATIONS = {
         enforcerCountdownDelayNote: '(changes can take up to 20 seconds to detect).',
         enforcerCountdownInstrPrivate: 'Blocking is not enabled in private windows. Enable Allow in incognito for ReDD Focus to stop the countdown.',
         enforcerCountdownInstrWebsiteAccess: 'ReDD Focus is not allowed on all websites. Allow all websites to stop the countdown.',
-        enforcerCountdownInstrAccess: 'ReDD Block can’t verify ReDD Focus. Grant access to stop the countdown.',
+        enforcerCountdownInstrAccess: 'Fristed can’t verify ReDD Focus. Grant access to stop the countdown.',
         enforcerCountdownInstrDefault: 'ReDD Focus is not ready. Finish setup to stop the countdown.',
         enforcerCountdownInstrMultiple: 'Fix ReDD Focus in each browser below to stop the countdown.',
         enforcerCountdownDefault: '{browser} will be auto-closed if ReDD Focus is not ready, to support your blocking.',
@@ -18147,9 +18151,9 @@ const SETTINGS_TRANSLATIONS = {
         enforcerHeadlinePrivate: 'Private windows in {browser} aren’t covered by ReDD Focus yet.',
         enforcerHeadlineWebsiteAccess: '{browser} hasn’t given ReDD Focus access on every website yet.',
         enforcerInstrWebsiteAccessPlain: 'In {browser} extension settings, allow ReDD Focus on all websites.',
-        enforcerHeadlineAccess: 'ReDD Block can’t verify ReDD Focus in {browser}.',
+        enforcerHeadlineAccess: 'Fristed can’t verify ReDD Focus in {browser}.',
         enforcerInstrAccessSafari: 'Open Safari extension settings and finish ReDD Focus setup.',
-        enforcerInstrAccessBrowser: 'Grant access so ReDD Block can help verify {browser}.',
+        enforcerInstrAccessBrowser: 'Grant access so Fristed can help verify {browser}.',
         enforcerHeadlineDefault: 'ReDD Focus isn’t ready in {browser} yet.',
         enforcerInstrDefault: 'Finish ReDD Focus setup in {browser} extensions.',
         enforcerActionInstall: 'Install ReDD Focus',
@@ -18159,13 +18163,13 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedDisabled: '{browser} was closed to support your block—ReDD Focus was turned off.',
         enforcerClosedPrivate: '{browser} was closed to support your block—private windows were still a loophole.',
         enforcerClosedWebsiteAccess: '{browser} was closed to support your block—ReDD Focus couldn’t cover every site yet.',
-        enforcerClosedAccess: '{browser} was closed so your protection could stay clear—ReDD Block couldn’t verify ReDD Focus.',
+        enforcerClosedAccess: '{browser} was closed so your protection could stay clear—Fristed couldn’t verify ReDD Focus.',
         enforcerClosedDefault: '{browser} was closed to support your block—ReDD Focus wasn’t fully ready.',
         enforcerClosedCombinedMissing: '{browser} were closed to support your block—ReDD Focus wasn’t installed yet.',
         enforcerClosedCombinedDisabled: '{browser} were closed to support your block—ReDD Focus was turned off.',
         enforcerClosedCombinedPrivate: '{browser} were closed to support your block—private windows were still a loophole.',
         enforcerClosedCombinedWebsiteAccess: '{browser} were closed to support your block—ReDD Focus couldn’t cover every site yet.',
-        enforcerClosedCombinedAccess: '{browser} were closed so your protection could stay clear—ReDD Block couldn’t verify ReDD Focus.',
+        enforcerClosedCombinedAccess: '{browser} were closed so your protection could stay clear—Fristed couldn’t verify ReDD Focus.',
         enforcerClosedCombinedDefault: '{browser} were closed to support your block—ReDD Focus wasn’t fully ready.',
         enforcerClosedInstrPrivateChrome: 'In Chrome: ReDD Focus → Details → Allow in Incognito.',
         enforcerClosedInstrPrivateFirefox: 'In Firefox: ReDD Focus → Run in Private Windows → Allow.',
@@ -18176,15 +18180,15 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedInstrWebsiteAccess: 'In {browser} extension settings, allow ReDD Focus on all websites.',
         enforcerClosedInstrAccessSafari: 'Open Safari → Settings → Extensions and finish ReDD Focus setup.',
         enforcerClosedInstrDefault: 'Finish ReDD Focus setup in {browser} extensions.',
-        // macOS Automation issue: ReDD Block lost the per-browser
+        // macOS Automation issue: Fristed lost the per-browser
         // Automation grant, so it can't redirect blocked tabs.
-        enforcerHeadlineAutomation: 'ReDD Block can’t control {browser} right now.',
+        enforcerHeadlineAutomation: 'Fristed can’t control {browser} right now.',
         enforcerCountdownInstrAutomation: 'Switch Automation back on to keep your block.',
-        enforcerInstrAutomation: 'Switch ReDD Block back on for {browser} under System Settings → Privacy & Security → Automation, then your block will work again.',
-        enforcerClosedAutomation: '{browser} was closed because ReDD Block couldn’t control it.',
-        enforcerClosedInstrAutomation: 'Switch ReDD Block back on for {browser} under Privacy & Security → Automation.',
-        enforcerClosedCombinedAutomation: '{browser} were closed because ReDD Block couldn’t control them.',
-        enforcerClosedInstrAutomationGeneric: 'Switch ReDD Block back on for {browser} under Privacy & Security → Automation.',
+        enforcerInstrAutomation: 'Switch Fristed back on for {browser} under System Settings → Privacy & Security → Automation, then your block will work again.',
+        enforcerClosedAutomation: '{browser} was closed because Fristed couldn’t control it.',
+        enforcerClosedInstrAutomation: 'Switch Fristed back on for {browser} under Privacy & Security → Automation.',
+        enforcerClosedCombinedAutomation: '{browser} were closed because Fristed couldn’t control them.',
+        enforcerClosedInstrAutomationGeneric: 'Switch Fristed back on for {browser} under Privacy & Security → Automation.',
         enforcerBrowserFallback: 'your browser',
         gracePeriodLabel: 'Grace period',
         gracePeriodHint: 'Seconds to re-enable before the browser closes.',
@@ -18225,7 +18229,7 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsBrowsersSectionHintMacExtension: 'Browsers listed here use the ReDD Focus extension (install, enable, and allow private browsing).',
         diagnosticsBrowsersSectionHint: 'Status of the ReDD Focus extension in browsers on this computer.',
         diagnosticsAutomationSection: 'Automation (macOS)',
-        diagnosticsAutomationSectionHint: 'ReDD Block needs Automation permission to redirect blocked tabs in each browser. Grant in System Settings → Privacy & Security → Automation.',
+        diagnosticsAutomationSectionHint: 'Fristed needs Automation permission to redirect blocked tabs in each browser. Grant in System Settings → Privacy & Security → Automation.',
         diagnosticsThAutomation: 'Automation',
         diagnosticsAutomationGranted: 'Allowed',
         diagnosticsAutomationDenied: 'Denied',
@@ -18317,7 +18321,7 @@ const SETTINGS_TRANSLATIONS = {
         placeholderAppExample: 'e.g., Safari',
         invalidDomainMsg: 'Please enter a valid domain (e.g. reddit.com)',
         cannotBlockDomainPlaceholder: '⚠️ Can\'t block this domain!',
-        cannotBlockSelfAppPlaceholder: '⚠️ Can\'t block ReDD Block itself!',
+        cannotBlockSelfAppPlaceholder: '⚠️ Can\'t block Fristed itself!',
         // Start/schedule controls
         durationQuickAlways: 'Always',
         alwaysOnMessage: 'This block will stay on until you pause it or turn it off',
@@ -18395,12 +18399,12 @@ const SETTINGS_TRANSLATIONS = {
         restartsAt: 'RESTARTS AT',
         pauseInstruction: 'To pause this block, type the following:',
         helperSetupTitle: 'Setup Required',
-        helperSetupText: 'To block websites when the app is closed, ReDD Block needs to install a small background service. Your computer will prompt you for your password once — after that, blocks will start instantly without asking again.',
+        helperSetupText: 'To block websites when the app is closed, Fristed needs to install a small background service. Your computer will prompt you for your password once — after that, blocks will start instantly without asking again.',
         helperRepairTitle: 'Helper Repair Required',
-        helperRepairText: 'A helper service is already installed, but it is not running right now. ReDD Block needs to reinstall or repair it before this block can start. Your computer may prompt you for your password to complete the repair.',
+        helperRepairText: 'A helper service is already installed, but it is not running right now. Fristed needs to reinstall or repair it before this block can start. Your computer may prompt you for your password to complete the repair.',
         helperUpdateTitle: 'Helper Update Required',
         helperUpdateText: 'A helper service is already installed, but it needs an update before this block can start. Your computer will prompt you for your password to apply the update.',
-        helperOpenSourceLink: 'open source code for ReDD Block here',
+        helperOpenSourceLink: 'open source code for Fristed here',
         proceed: 'Proceed',
         reinstallHelper: 'Reinstall Helper',
         helperInstalling: 'Installing...',
@@ -18555,14 +18559,14 @@ const SETTINGS_TRANSLATIONS = {
         settingsOverrideAllLabel: 'Stop all blocks & schedules',
         settingsOverrideAllBtn: 'Stop all',
         // In-app uninstall (macOS only)
-        uninstallApp: 'Uninstall ReDD Block',
+        uninstallApp: 'Uninstall Fristed',
         uninstallAppBtn: 'Uninstall…',
         uninstallDisabledHint: 'Stop running blocks first before you can uninstall.',
-        uninstallConfirmTitle: 'Uninstall ReDD Block?',
-        uninstallConfirmLeadHtml: 'ReDD Block will be moved to the Trash. Your blocklists and schedules are <strong>kept on disk</strong>, so they\u2019ll be restored if you reinstall later.',
-        uninstallConfirmLeadDeleteHtml: 'ReDD Block will be moved to the Trash. Your blocklists, schedules, and settings will be <strong>permanently deleted</strong> from this Mac.',
+        uninstallConfirmTitle: 'Uninstall Fristed?',
+        uninstallConfirmLeadHtml: 'Fristed will be moved to the Trash. Your blocklists and schedules are <strong>kept on disk</strong>, so they\u2019ll be restored if you reinstall later.',
+        uninstallConfirmLeadDeleteHtml: 'Fristed will be moved to the Trash. Your blocklists, schedules, and settings will be <strong>permanently deleted</strong> from this Mac.',
         uninstallDeleteDataLabel: 'Also delete my blocklists, schedules, and settings',
-        uninstallFinderWarningHtml: 'If macOS asks you to allow ReDD Block to control <strong>Finder</strong>, click <strong>Allow</strong> \u2014 that\u2019s how the app moves itself to the Trash.',
+        uninstallFinderWarningHtml: 'If macOS asks you to allow Fristed to control <strong>Finder</strong>, click <strong>Allow</strong> \u2014 that\u2019s how the app moves itself to the Trash.',
         uninstallFirefoxCalloutTitle: 'ReDD Focus extension in Firefox',
         uninstallExtFirefoxBadge: 'Stays installed',
         uninstallFirefoxCalloutDetailHtml: 'You can continue to use ReDD Focus to hide distracting parts of websites. To remove it, open Firefox add-ons settings \u2014 copy {URL_CHIP} and paste it into the address bar.',
@@ -18570,10 +18574,10 @@ const SETTINGS_TRANSLATIONS = {
         uninstallFailedTitle: 'Uninstall failed',
         uninstallFailed: 'Could not complete uninstall.',
         // Windows Settings uninstall guidance
-        windowsUninstallHint: 'Settings \u2192 Installed apps \u2192 ReDD Block',
+        windowsUninstallHint: 'Settings \u2192 Installed apps \u2192 Fristed',
         windowsUninstallOpenSettingsBtn: 'Open settings',
         windowsUninstallOpenFailedTitle: 'Could not open Settings',
-        windowsUninstallOpenFailed: 'Windows Settings could not be opened. Open Settings manually, go to Apps \u2192 Installed apps, and search for ReDD Block.',
+        windowsUninstallOpenFailed: 'Windows Settings could not be opened. Open Settings manually, go to Apps \u2192 Installed apps, and search for Fristed.',
         macAutomationIntroBadge: 'What\u2019s new',
         macAutomationIntroTitle: 'Website blocking on macOS works a little differently now',
         macAutomationIntroLeadHtml: 'To make blocking easier to set up, most browsers now use <strong>macOS Automation</strong> instead of the ReDD Focus extension. Here\u2019s the new setup.',
@@ -18600,7 +18604,7 @@ const SETTINGS_TRANSLATIONS = {
         helperRemovedFallback: 'Helper service removed using fallback cleanup because the installed helper was not responding normally.',
         helperRemoveStaleHint: 'Installed, but not currently running. You can remove the stale helper before reinstalling it.',
         cleanHostsFile: 'Clean hosts file',
-        helperHint: 'Remove all ReDD Block entries from your system\'s hosts file. Use this if websites remain blocked after all blocks have been stopped.',
+        helperHint: 'Remove all Fristed entries from your system\'s hosts file. Use this if websites remain blocked after all blocks have been stopped.',
         close: 'Close',
         // Time/date words
         dayAbbrev: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
@@ -18655,7 +18659,8 @@ const SETTINGS_TRANSLATIONS = {
         nowBlockingMenuPause: 'Pause',
         nowBlockingMenuStop: 'Stop',
         scheduleFooterHint: 'Klik på en blok for at redigere',
-        setupBrowsersBannerHeadline: 'Aktivér ReDD Block i dine browsere',
+        setupBrowsersBannerHeadline: 'Aktivér ReDD Focus i dine browsere',
+        setupBrowsersBannerHeadlineMac: 'Tillad Fristed i dine browsere',
         setupBrowsersBannerCta: 'Opsæt browsere',
         setupBrowsersBannerDismissTitle: 'Skjul for denne session',
         bannerTurnOnBrowserProtection: 'Slå browser-beskyttelse til',
@@ -18675,17 +18680,17 @@ const SETTINGS_TRANSLATIONS = {
         eulaContinueBusy: 'Arbejder…',
         eulaBackBtn: 'Tilbage',
         eulaAcceptSaveFailedAlert: 'Vi kunne ikke gemme din godkendelse. Prøv igen.',
-        eulaWelcomeIconAlt: 'ReDD Block-appikon',
+        eulaWelcomeIconAlt: 'Fristed-appikon',
         eulaProjectBlurb:
-            'ReDD Block er udviklet af Reduce Digital Distraction Project i samarbejde med forskere ved University of Oxford og Maastricht University. ReDD-projektet er en non-profit, der skaber indsigt og open source digitale fokusværktøjer, så alle kan trives i den digitale verden.',
+            'Fristed er udviklet af Reduce Digital Distraction Project i samarbejde med forskere ved University of Oxford og Maastricht University. ReDD-projektet er en non-profit, der skaber indsigt og open source digitale fokusværktøjer, så alle kan trives i den digitale verden.',
         // Welcome onboarding (before EULA)
-        welcomeOnboardingTitle: 'Velkommen til ReDD Block',
+        welcomeOnboardingTitle: 'Velkommen til Fristed',
         welcomeOnboardingSubtitle:
             'Et open source-værktøj der blokerer distraherende hjemmesider og apps, når du har brug for at fokusere.',
         welcomeHowHeading: 'TRIN FOR AT KOMME I GANG (vi guider dig igennem det 😊)',
         welcomeStep1TitleAutomationHtml: 'Tillad {APPLE}Automatisering',
         welcomeStep1BodyAutomationHtml:
-            'I Safari, Chrome, Brave og Edge bruger ReDD Block Automatisering til at blokere websites. Vi beder dig om at tillade adgang.',
+            'I Safari, Chrome, Brave og Edge bruger Fristed Automatisering til at blokere websites. Vi beder dig om at tillade adgang.',
         welcomeStep2TitleFirefoxHtml: 'Opsæt {LOGO}ReDD Focus i Firefox',
         welcomeStep2BodyFirefoxHtml:
             'Blokering i Firefox bruger vores {LOGO}<strong>ReDD Focus</strong>-udvidelse. Vi guider dig gennem installation fra Firefoxs tilføjelsesbutik.',
@@ -18694,7 +18699,7 @@ const SETTINGS_TRANSLATIONS = {
             'Vores {LOGO}<strong>ReDD Focus</strong>-udvidelse er det, der faktisk blokerer websites. Vi installerer den automatisk i dine browsere, hvor vi kan, og viser dig, hvad du skal gøre.',
         welcomeStep3TitleHtml: 'Vælg, hvad der skal blokeres',
         welcomeStep3BodyHtml:
-            'Vælg de websites og apps, der distraherer dig, og bestem hvornår de skal være utilgængelige. ReDD Block klarer resten.',
+            'Vælg de websites og apps, der distraherer dig, og bestem hvornår de skal være utilgængelige. Fristed klarer resten.',
         welcomeDemoToggleLabel: 'Se det i aktion — 30 sek.',
         welcomeDemoVideoCaption: 'Demo — blokeringslister og hvordan blokering føles',
         welcomeDemoPlayAriaLabel: 'Afspil demovideo',
@@ -18709,38 +18714,38 @@ const SETTINGS_TRANSLATIONS = {
             '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Se kildekoden på GitHub</a>.',
         welcomeOnboardingContinueBtn: 'Kom i gang',
         // Migration / extension onboarding overlay
-        migrationPreWelcomeTitle: 'Velkommen til ReDD Block 2.0',
+        migrationPreWelcomeTitle: 'Velkommen til Fristed 2.0',
         migrationPreSubtitle: 'Et engangskridt er nødvendigt for at afslutte opgraderingen.',
-        migrationPreExplainerHtml: 'ReDD Block blokerer nu websites via en browserudvidelse i stedet for et systemværktøj.<br>Vi skal:',
+        migrationPreExplainerHtml: 'Fristed blokerer nu websites via en browserudvidelse i stedet for et systemværktøj.<br>Vi skal:',
         migrationPreBulletHelper: 'Stoppe og fjerne det gamle privilegerede hjælpeprogram',
         migrationPreBulletHostsHtml: 'Gendanne din <code>/etc/hosts</code>-fil (en backup beholdes)',
         migrationPreBulletBlocklists: 'Beholde alle dine eksisterende bloklister',
-        migrationPreWarnHtml: 'Du vil få <strong>én</strong> prompt om administratoradgang. Under skiftet sættes blokering kortvarigt på pause. Efter oprydningen sætter ReDD Block <strong>ReDD Focus</strong> op i dine browsere automatisk — du skal bare tillade den i private/inkognitofaner.',
+        migrationPreWarnHtml: 'Du vil få <strong>én</strong> prompt om administratoradgang. Under skiftet sættes blokering kortvarigt på pause. Efter oprydningen sætter Fristed <strong>ReDD Focus</strong> op i dine browsere automatisk — du skal bare tillade den i private/inkognitofaner.',
         migrationContinue: 'Fortsæt',
         migrationPostTitleCleanup: 'Oprydning fuldført',
         migrationPostSubtitleCleanup: 'Næsten færdig — afslut opsætningen af ReDD Focus i hver browser, du bruger.',
         migrationChecklistCleanedOld: 'Gammel version fjernet',
         migrationChecklistBlocklistsPreserved: 'Dine bloklister er bevaret',
         migrationChecklistExtLinesHtml: 'Aktivér {LOGO}ReDD Focus i dine browsere<br><span style="font-weight:400;opacity:0.7">og tillad den i privat- eller inkognitofaner</span>',
-        migrationExtTitleMac: 'Aktivér ReDD Block i dine browsere',
+        migrationExtTitleMac: 'Tillad Fristed i dine browsere',
         migrationExtSubMac: 'Websiteblokering bruger <strong>macOS-automatisering</strong> i Safari, Chrome og Edge.',
         migrationExtSubMacFirefox: 'Websiteblokering bruger <strong>macOS-automatisering</strong> i Safari, Chrome og Edge og <strong>ReDD Focus-udvidelsen</strong> i Firefox.',
-        migrationExtStep1Mac: 'Klik på <strong>Giv adgang</strong> for hver browser nedenfor, og godkend macOS-prompten. Hvis du ser <strong>Åbn Automatisering</strong>, klik på den og slå ReDD Block til igen.',
+        migrationExtStep1Mac: 'Klik på <strong>Giv adgang</strong> for hver browser nedenfor, og godkend macOS-prompten. Hvis du ser <strong>Åbn Automatisering</strong>, klik på den og slå Fristed til igen.',
         migrationExtStep2MacFirefox: 'Til Firefox: klik på <strong>Installer</strong> nedenfor for at tilføje {FOCUS}<strong>ReDD Focus</strong> fra tilføjelsesbutikken, og tillad den derefter i private vinduer.',
         migrationHowtoHeading: 'Opsætning',
-        migrationHowtoLi1Html: 'ReDD Block har forsøgt at installere ReDD Focus i dine browsere. Hvis den vises som ikke installeret nedenfor, klik på <strong>Installer</strong>-knapperne for at tilføje den manuelt.',
+        migrationHowtoLi1Html: 'Fristed har forsøgt at installere ReDD Focus i dine browsere. Hvis den vises som ikke installeret nedenfor, klik på <strong>Installer</strong>-knapperne for at tilføje den manuelt.',
         migrationHowtoLi3Html: 'Når den er aktiveret, <strong>tillad den i privat/inkognito-faner</strong>, så blokering også virker i private vinduer.',
         migrationBadgeAutomationOn: 'Tilladt',
         migrationBadgeAutomationOff: 'Tilladelse mangler',
         migrationBadgeAutomationUnknown: 'Status ukendt',
         migrationAutomationAwaitingOpenHint: 'Åbn {browser}, så vi kan tjekke, om Automatisering er tilladt. macOS viser kun denne tilladelse, mens browseren kører.',
-        migrationAutomationGrantHint: 'Tillad ReDD Block at styre {browser}, så den kan lukke distraherende faner, mens en blokering kører.',
-        migrationAutomationDeniedHint: 'Tilladelse til {browser} er slået fra. Slå ReDD Block til igen under Automatisering, så blokering virker igen.',
+        migrationAutomationGrantHint: 'Tillad Fristed at styre {browser}, så den kan lukke distraherende faner, mens en blokering kører.',
+        migrationAutomationDeniedHint: 'Tilladelse til {browser} er slået fra. Slå Fristed til igen under Automatisering, så blokering virker igen.',
         migrationGrantAutomation: 'Giv adgang til {browser}',
         migrationGrantAutomationOpened: 'Åbnede Automatisering',
         migrationOpenAutomationSettings: 'Åbn Automatisering',
-        webAutomationBannerHeadline: 'Tillad ReDD Block at styre din browser',
-        webAutomationBannerBody: 'ReDD Block skal have tilladelse til at styre {browsers} for at blokere websteder. Slå det til under Anonymitet & sikkerhed → Automatisering, så træder blokeringen i kraft.',
+        webAutomationBannerHeadline: 'Tillad Fristed at styre din browser',
+        webAutomationBannerBody: 'Fristed skal have tilladelse til at styre {browsers} for at blokere websteder. Slå det til under Anonymitet & sikkerhed → Automatisering, så træder blokeringen i kraft.',
         migrationDone: 'Jeg er klar',
         migrationSkip: 'Spring over for nu',
         migrationSetupAllReadyOne: '<strong>Din browser er klar.</strong> Du kan afslutte opsætningen.',
@@ -18769,20 +18774,20 @@ const SETTINGS_TRANSLATIONS = {
         migrationBadgeNoWebsiteAccess: 'Ingen webadgang',
         migrationBadgeDuplicateSafari: '⚠ To kopier installeret',
         migrationStatusDuplicateSafari: 'Deaktivér den ekstra kopi',
-        migrationSafariDuplicateIntroHtml: 'Du har <strong>ReDD Focus: Hide Distractions</strong> fra App Store <em>og</em> kopien, der følger med ReDD Block. De kan ikke begge være aktive — behold kun én.',
+        migrationSafariDuplicateIntroHtml: 'Du har <strong>ReDD Focus: Hide Distractions</strong> fra App Store <em>og</em> kopien, der følger med Fristed. De kan ikke begge være aktive — behold kun én.',
         migrationSafariDuplicateInstructionsHeading: 'I Safari → Indstillinger → Udvidelser',
-        migrationSafariDuplicateStep1Html: 'Find <strong>ReDD Focus: Hide Distractions</strong> — App Store-kopien (ikke “via ReDD Block”) — og fjern markeringen <span class="safari-duplicate-checkbox" role="img" aria-label="Ikke markeret"></span>.',
-        migrationSafariDuplicateStep2Html: 'Sørg for, at afkrydsningsfeltet <span class="safari-duplicate-checkbox safari-duplicate-checkbox-checked" role="img" aria-label="Markeret"></span> er markeret for <strong>ReDD Focus (via ReDD Block)</strong>. Det er den, denne app styrer.',
+        migrationSafariDuplicateStep1Html: 'Find <strong>ReDD Focus: Hide Distractions</strong> — App Store-kopien (ikke “via Fristed”) — og fjern markeringen <span class="safari-duplicate-checkbox" role="img" aria-label="Ikke markeret"></span>.',
+        migrationSafariDuplicateStep2Html: 'Sørg for, at afkrydsningsfeltet <span class="safari-duplicate-checkbox safari-duplicate-checkbox-checked" role="img" aria-label="Markeret"></span> er markeret for <strong>ReDD Focus (via Fristed)</strong>. Det er den, denne app styrer.',
         migrationSafariDuplicateOpenBtn: 'Åbn Safari-udvidelser…',
         migrationSafariDuplicateHelpLink: 'Hvordan skete det?',
-        migrationSafariDuplicateHelpText: 'Hvis du tidligere installerede ReDD Focus fra App Store og senere installerede ReDD Block, beholder Safari begge udvidelser. ReDD Block virker kun med den bundtede kopi.',
+        migrationSafariDuplicateHelpText: 'Hvis du tidligere installerede ReDD Focus fra App Store og senere installerede Fristed, beholder Safari begge udvidelser. Fristed virker kun med den bundtede kopi.',
         migrationStatusAllowAllWebsites: 'Tillad på alle websites',
         migrationStatusAllowPrivate: 'Tillad privat browsing',
         migrationStatusEnableExtension: 'Aktivér udvidelse',
         migrationStatusInstall: 'Installer',
-        migrationStatusNativeHost: 'Forbind ReDD Block',
-        migrationBadgeNativeHost: 'Forbind ReDD Block',
-        migrationFirefoxNativeHostHtml: 'ReDD Focus er installeret. ReDD Block skal stadig registrere forbindelsen til Firefox (ét lille trin).',
+        migrationStatusNativeHost: 'Forbind Fristed',
+        migrationBadgeNativeHost: 'Forbind Fristed',
+        migrationFirefoxNativeHostHtml: 'ReDD Focus er installeret. Fristed skal stadig registrere forbindelsen til Firefox (ét lille trin).',
         migrationFirefoxNativeHostButton: 'Forbind til Firefox',
         migrationInstallButton: 'Installer',
         migrationInstallOpened: 'Åbnede udvidelsesbutik',
@@ -18801,11 +18806,11 @@ const SETTINGS_TRANSLATIONS = {
         migrationSafariChecklistLine: 'Trin {n} — {label}',
         migrationOpenExtensionSettings: 'Åbn udvidelsesindstillinger',
         migrationShowMeHow: 'Vis mig hvordan',
-        migrationPostInstallFirefoxHtml: 'ReDD Block har allerede sat auto-installation op for ReDD Focus i Firefox — <strong>genstart Firefox</strong> for at hente den ind. (Eller klik på <strong>Installer</strong> nedenfor for at tilføje den manuelt — markér <strong>Allow extension to run in private windows</strong> under installationen.)',
+        migrationPostInstallFirefoxHtml: 'Fristed har allerede sat auto-installation op for ReDD Focus i Firefox — <strong>genstart Firefox</strong> for at hente den ind. (Eller klik på <strong>Installer</strong> nedenfor for at tilføje den manuelt — markér <strong>Allow extension to run in private windows</strong> under installationen.)',
         migrationPostInstallFirefoxMacHtml: 'Installer ReDD Focus fra Firefoxs tilføjelsesbutik — klik på <strong>Installer</strong> nedenfor, og markér <strong>Allow extension to run in private windows</strong> under installationen.',
         migrationPostInstallSafariHtml: 'Installer ReDD Focus fra Mac App Store — klik på <strong>Installer</strong> nedenfor. Når den er installeret, vend tilbage hertil, så guider vi dig gennem aktivering i Safari.',
         migrationPostInstallChromiumMacHtml: 'Installer ReDD Focus fra {BROWSER}-butikken — klik på <strong>Installer</strong> nedenfor. Når den er installeret, vend tilbage hertil, så guider vi dig gennem aktivering og tilladelse i {PRIV}-faner.',
-        migrationPostInstallChromiumHtml: 'ReDD Block har allerede sat auto-installation op for ReDD Focus i {BROWSER} — <strong>genstart {BROWSER}</strong> for at hente den ind. (Eller klik på <strong>Installer</strong> nedenfor for at tilføje den manuelt nu.)',
+        migrationPostInstallChromiumHtml: 'Fristed har allerede sat auto-installation op for ReDD Focus i {BROWSER} — <strong>genstart {BROWSER}</strong> for at hente den ind. (Eller klik på <strong>Installer</strong> nedenfor for at tilføje den manuelt nu.)',
         migrationInstructionEnableHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → find <strong>ReDD Focus</strong> → aktivér udvidelsen.',
         migrationInstructionWebsiteAccessHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → klik på <strong>Details</strong> ved ReDD Focus → tillad på <strong>alle websites</strong>.',
         migrationInstructionFirefoxPrivateHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → klik på <strong>ReDD Focus</strong> → slå <strong>Run in {PRIV}</strong> til.',
@@ -18843,7 +18848,7 @@ const SETTINGS_TRANSLATIONS = {
         enforcerCountdownDelayNote: '(ændringer kan tage op til 20 sekunder at registrere).',
         enforcerCountdownInstrPrivate: 'Blokering er ikke aktiveret i private vinduer. Aktivér Tillad i privat browsing for ReDD Focus for at stoppe nedtællingen.',
         enforcerCountdownInstrWebsiteAccess: 'ReDD Focus er ikke tilladt på alle websites. Tillad alle websites for at stoppe nedtællingen.',
-        enforcerCountdownInstrAccess: 'ReDD Block kan ikke bekræfte ReDD Focus. Giv adgang for at stoppe nedtællingen.',
+        enforcerCountdownInstrAccess: 'Fristed kan ikke bekræfte ReDD Focus. Giv adgang for at stoppe nedtællingen.',
         enforcerCountdownInstrDefault: 'ReDD Focus er ikke klar. Færdiggør opsætningen for at stoppe nedtællingen.',
         enforcerCountdownInstrMultiple: 'Ret ReDD Focus i hver browser nedenfor for at stoppe nedtællingen.',
         enforcerCountdownDefault: '{browser} lukkes automatisk hvis ReDD Focus ikke er klar, for at understøtte din blokering.',
@@ -18858,9 +18863,9 @@ const SETTINGS_TRANSLATIONS = {
         enforcerHeadlinePrivate: 'Privat browsing i {browser} er ikke dækket af ReDD Focus endnu.',
         enforcerHeadlineWebsiteAccess: '{browser} har ikke givet ReDD Focus adgang på alle websites endnu.',
         enforcerInstrWebsiteAccessPlain: 'I {browser}s udvidelsesindstillinger: tillad ReDD Focus på alle websites.',
-        enforcerHeadlineAccess: 'ReDD Block kan ikke bekræfte ReDD Focus i {browser}.',
+        enforcerHeadlineAccess: 'Fristed kan ikke bekræfte ReDD Focus i {browser}.',
         enforcerInstrAccessSafari: 'Åbn Safaris udvidelsesindstillinger, og færdiggør opsætningen af ReDD Focus.',
-        enforcerInstrAccessBrowser: 'Giv adgang, så ReDD Block kan hjælpe med at tjekke {browser}.',
+        enforcerInstrAccessBrowser: 'Giv adgang, så Fristed kan hjælpe med at tjekke {browser}.',
         enforcerHeadlineDefault: 'ReDD Focus er ikke helt klar i {browser} endnu.',
         enforcerInstrDefault: 'Færdiggør ReDD Focus i {browser}s udvidelsesindstillinger.',
         enforcerActionInstall: 'Installer ReDD Focus',
@@ -18870,13 +18875,13 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedDisabled: '{browser} blev lukket for at bakke din blok op—ReDD Focus var slået fra.',
         enforcerClosedPrivate: '{browser} blev lukket for at bakke din blok op—private faner var stadig en åbning.',
         enforcerClosedWebsiteAccess: '{browser} blev lukket for at bakke din blok op—ReDD Focus kunne ikke dække alle websites endnu.',
-        enforcerClosedAccess: '{browser} blev lukket, så din beskyttelse kunne være tydelig—ReDD Block kunne ikke bekræfte ReDD Focus.',
+        enforcerClosedAccess: '{browser} blev lukket, så din beskyttelse kunne være tydelig—Fristed kunne ikke bekræfte ReDD Focus.',
         enforcerClosedDefault: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke helt klar.',
         enforcerClosedCombinedMissing: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke installeret endnu.',
         enforcerClosedCombinedDisabled: '{browser} blev lukket for at bakke din blok op—ReDD Focus var slået fra.',
         enforcerClosedCombinedPrivate: '{browser} blev lukket for at bakke din blok op—private faner var stadig en åbning.',
         enforcerClosedCombinedWebsiteAccess: '{browser} blev lukket for at bakke din blok op—ReDD Focus kunne ikke dække alle websites endnu.',
-        enforcerClosedCombinedAccess: '{browser} blev lukket, så din beskyttelse kunne være tydelig—ReDD Block kunne ikke bekræfte ReDD Focus.',
+        enforcerClosedCombinedAccess: '{browser} blev lukket, så din beskyttelse kunne være tydelig—Fristed kunne ikke bekræfte ReDD Focus.',
         enforcerClosedCombinedDefault: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke helt klar.',
         enforcerClosedInstrPrivateChrome: 'I Chrome: ReDD Focus → Details → Allow in Incognito.',
         enforcerClosedInstrPrivateFirefox: 'I Firefox: ReDD Focus → Run in Private Windows → Allow.',
@@ -18887,13 +18892,13 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedInstrWebsiteAccess: 'I {browser}s udvidelsesindstillinger: tillad ReDD Focus på alle websites.',
         enforcerClosedInstrAccessSafari: 'Åbn Safari → Indstillinger → Udvidelser, og færdiggør opsætningen af ReDD Focus.',
         enforcerClosedInstrDefault: 'Færdiggør ReDD Focus i {browser}s udvidelsesindstillinger.',
-        enforcerHeadlineAutomation: 'ReDD Block kan ikke styre {browser} lige nu.',
+        enforcerHeadlineAutomation: 'Fristed kan ikke styre {browser} lige nu.',
         enforcerCountdownInstrAutomation: 'Slå Automatisering til igen for at bevare din blokering.',
-        enforcerInstrAutomation: 'Slå ReDD Block til igen for {browser} under Systemindstillinger → Anonymitet & sikkerhed → Automatisering, så virker din blokering igen.',
-        enforcerClosedAutomation: '{browser} blev lukket, fordi ReDD Block ikke kunne styre den.',
-        enforcerClosedInstrAutomation: 'Slå ReDD Block til igen for {browser} under Anonymitet & sikkerhed → Automatisering.',
-        enforcerClosedCombinedAutomation: '{browser} blev lukket, fordi ReDD Block ikke kunne styre dem.',
-        enforcerClosedInstrAutomationGeneric: 'Slå ReDD Block til igen for {browser} under Anonymitet & sikkerhed → Automatisering.',
+        enforcerInstrAutomation: 'Slå Fristed til igen for {browser} under Systemindstillinger → Anonymitet & sikkerhed → Automatisering, så virker din blokering igen.',
+        enforcerClosedAutomation: '{browser} blev lukket, fordi Fristed ikke kunne styre den.',
+        enforcerClosedInstrAutomation: 'Slå Fristed til igen for {browser} under Anonymitet & sikkerhed → Automatisering.',
+        enforcerClosedCombinedAutomation: '{browser} blev lukket, fordi Fristed ikke kunne styre dem.',
+        enforcerClosedInstrAutomationGeneric: 'Slå Fristed til igen for {browser} under Anonymitet & sikkerhed → Automatisering.',
         enforcerBrowserFallback: 'din browser',
         gracePeriodLabel: 'Henstandsperiode',
         gracePeriodHint: 'Sekunder til at slå til igen, før browseren lukkes.',
@@ -18934,7 +18939,7 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsBrowsersSectionHintMacExtension: 'Browsere her bruger ReDD Focus-udvidelsen (installer, aktiver og tillad privat browsing).',
         diagnosticsBrowsersSectionHint: 'Status for ReDD Focus-udvidelsen i browsere på denne computer.',
         diagnosticsAutomationSection: 'Automatisering (macOS)',
-        diagnosticsAutomationSectionHint: 'ReDD Block skal have Automatisering-tilladelse for at omdirigere blokerede faner i hver browser. Giv tilladelse i Systemindstillinger → Privatliv og sikkerhed → Automatisering.',
+        diagnosticsAutomationSectionHint: 'Fristed skal have Automatisering-tilladelse for at omdirigere blokerede faner i hver browser. Giv tilladelse i Systemindstillinger → Privatliv og sikkerhed → Automatisering.',
         diagnosticsThAutomation: 'Automatisering',
         diagnosticsAutomationGranted: 'Tilladt',
         diagnosticsAutomationDenied: 'Afvist',
@@ -19026,7 +19031,7 @@ const SETTINGS_TRANSLATIONS = {
         placeholderAppExample: 'f.eks. Safari',
         invalidDomainMsg: 'Indtast et gyldigt domæne (f.eks. reddit.com)',
         cannotBlockDomainPlaceholder: '⚠️ Dette domæne kan ikke blokeres!',
-        cannotBlockSelfAppPlaceholder: '⚠️ ReDD Block kan ikke blokere sig selv!',
+        cannotBlockSelfAppPlaceholder: '⚠️ Fristed kan ikke blokere sig selv!',
         // Start/schedule controls
         durationQuickAlways: 'Altid',
         alwaysOnMessage: 'Denne blokering forbliver aktiv, indtil du pauser den eller slår den fra',
@@ -19103,12 +19108,12 @@ const SETTINGS_TRANSLATIONS = {
         restartsAt: 'STARTER IGEN KL.',
         pauseInstruction: 'For at pause denne blokering, skriv følgende:',
         helperSetupTitle: 'Opsætning påkrævet',
-        helperSetupText: 'For at blokere websites, når appen er lukket, skal ReDD Block installere en lille baggrundstjeneste. Din computer beder om adgangskode én gang — derefter starter blokeringer med det samme uden ny prompt.',
+        helperSetupText: 'For at blokere websites, når appen er lukket, skal Fristed installere en lille baggrundstjeneste. Din computer beder om adgangskode én gang — derefter starter blokeringer med det samme uden ny prompt.',
         helperRepairTitle: 'Reparation af helper påkrævet',
-        helperRepairText: 'Der er allerede installeret en helper-tjeneste, men den kører ikke lige nu. ReDD Block skal geninstallere eller reparere den, før denne blokering kan starte. Din computer kan bede om adgangskode for at fuldføre reparationen.',
+        helperRepairText: 'Der er allerede installeret en helper-tjeneste, men den kører ikke lige nu. Fristed skal geninstallere eller reparere den, før denne blokering kan starte. Din computer kan bede om adgangskode for at fuldføre reparationen.',
         helperUpdateTitle: 'Helper-opdatering påkrævet',
         helperUpdateText: 'Der er allerede installeret en helper-tjeneste, men den skal opdateres, før denne blokering kan starte. Din computer beder om adgangskode for at gennemføre opdateringen.',
-        helperOpenSourceLink: 'open source-koden til ReDD Block her',
+        helperOpenSourceLink: 'open source-koden til Fristed her',
         proceed: 'Fortsæt',
         reinstallHelper: 'Geninstaller helper',
         helperInstalling: 'Installerer...',
@@ -19261,24 +19266,24 @@ const SETTINGS_TRANSLATIONS = {
         settingsOverrideAllLabel: 'Stop alle blokeringer og tidsplaner',
         settingsOverrideAllBtn: 'Stop alle',
         // In-app uninstall (macOS only)
-        uninstallApp: 'Afinstaller ReDD Block',
+        uninstallApp: 'Afinstaller Fristed',
         uninstallAppBtn: 'Afinstaller…',
         uninstallDisabledHint: 'Stop kørende blokeringer først, før du kan afinstallere.',
-        uninstallConfirmTitle: 'Afinstaller ReDD Block?',
-        uninstallConfirmLeadHtml: 'ReDD Block flyttes til papirkurven. Dine blokeringslister og skemaer <strong>bevares p\u00e5 harddisken</strong>, s\u00e5 de kan gendannes, hvis du geninstallerer senere.',
-        uninstallConfirmLeadDeleteHtml: 'ReDD Block flyttes til papirkurven. Dine blokeringslister, skemaer og indstillinger bliver <strong>permanent slettet</strong> fra denne Mac.',
+        uninstallConfirmTitle: 'Afinstaller Fristed?',
+        uninstallConfirmLeadHtml: 'Fristed flyttes til papirkurven. Dine blokeringslister og skemaer <strong>bevares p\u00e5 harddisken</strong>, s\u00e5 de kan gendannes, hvis du geninstallerer senere.',
+        uninstallConfirmLeadDeleteHtml: 'Fristed flyttes til papirkurven. Dine blokeringslister, skemaer og indstillinger bliver <strong>permanent slettet</strong> fra denne Mac.',
         uninstallDeleteDataLabel: 'Slet ogs\u00e5 mine blokeringslister, skemaer og indstillinger',
-        uninstallFinderWarningHtml: 'Hvis macOS spørger, om ReDD Block må styre <strong>Finder</strong>, skal du klikke <strong>Tillad</strong> \u2014 det er sådan, appen flytter sig selv til papirkurven.',
+        uninstallFinderWarningHtml: 'Hvis macOS spørger, om Fristed må styre <strong>Finder</strong>, skal du klikke <strong>Tillad</strong> \u2014 det er sådan, appen flytter sig selv til papirkurven.',
         uninstallFirefoxCalloutTitle: 'ReDD Focus-udvidelse i Firefox',
         uninstallExtFirefoxBadge: 'Forbliver installeret',
         uninstallFirefoxCalloutDetailHtml: 'Du kan forts\u00e6tte med at bruge ReDD Focus til at skjule distraherende dele af websites. For at fjerne den, \u00e5bn Firefox\u2019 udvidelsesindstillinger \u2014 kopier {URL_CHIP} og inds\u00e6t den i adresselinjen.',
         uninstallConfirmOk: 'Afinstaller',
         uninstallFailedTitle: 'Afinstallation mislykkedes',
         uninstallFailed: 'Kunne ikke gennemføre afinstallation.',
-        windowsUninstallHint: 'Indstillinger \u2192 Installerede apps \u2192 ReDD Block',
+        windowsUninstallHint: 'Indstillinger \u2192 Installerede apps \u2192 Fristed',
         windowsUninstallOpenSettingsBtn: 'Åbn indstillinger',
         windowsUninstallOpenFailedTitle: 'Kunne ikke åbne Indstillinger',
-        windowsUninstallOpenFailed: 'Windows Indstillinger kunne ikke åbnes. Åbn Indstillinger manuelt, gå til Apps \u2192 Installerede apps, og søg efter ReDD Block.',
+        windowsUninstallOpenFailed: 'Windows Indstillinger kunne ikke åbnes. Åbn Indstillinger manuelt, gå til Apps \u2192 Installerede apps, og søg efter Fristed.',
         macAutomationIntroBadge: 'Nyhed',
         macAutomationIntroTitle: 'Websiteblokering på macOS fungerer lidt anderledes nu',
         macAutomationIntroLeadHtml: 'For at gøre blokering nemmere at opsætte bruger de fleste browsere nu <strong>macOS Automatisering</strong> i stedet for ReDD Focus-udvidelsen. Sådan ser opsætningen ud nu.',
@@ -19305,7 +19310,7 @@ const SETTINGS_TRANSLATIONS = {
         helperRemovedFallback: 'Hjælperen blev fjernet via reserveoprydning, fordi den installerede hjælper ikke svarede normalt.',
         helperRemoveStaleHint: 'Installeret, men kører ikke lige nu. Du kan fjerne den gamle hjælper her, før du geninstallerer den.',
         cleanHostsFile: 'Ryd hosts-fil',
-        helperHint: 'Fjern alle ReDD Block-indsætninger fra systemets hosts-fil. Brug kun dette, hvis websites stadig er utilgængelige efter du har stoppet alle blokeringer.',
+        helperHint: 'Fjern alle Fristed-indsætninger fra systemets hosts-fil. Brug kun dette, hvis websites stadig er utilgængelige efter du har stoppet alle blokeringer.',
         close: 'Luk',
         // Time/date words
         dayAbbrev: ['Søn', 'Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør'],
@@ -19984,7 +19989,10 @@ function applySettingsLanguage() {
     if (updateWhatsNewBtn && !updateWhatsNewBtn.classList.contains('hidden')) {
         updateWhatsNewBtn.innerHTML = updateBannerWhatsNewButtonHtml();
     }
-    setText('setup-banner-headline', tSettings('setupBrowsersBannerHeadline'));
+    setText(
+        'setup-banner-headline',
+        tSettings(isMacOSDesktop ? 'setupBrowsersBannerHeadlineMac' : 'setupBrowsersBannerHeadline'),
+    );
     setText('behaviour-change-help', tSettings('setupBrowsersBannerCta'));
     const behaviourDismissBtn = document.getElementById('behaviour-change-dismiss');
     if (behaviourDismissBtn) {
@@ -20832,7 +20840,7 @@ function setupHelperSettings() {
             if (cleanHostsBtn.disabled) return;
 
             const confirmed = await ask(
-                'This will remove all ReDD Block entries from your system\'s hosts file. ' +
+                'This will remove all Fristed entries from your system\'s hosts file. ' +
                 'Only use this if websites remain blocked after all blocks have been stopped.\n\n' +
                 'Your computer may ask for your password or show a security prompt.',
                 { title: 'Clean hosts file?', kind: 'warning' }
@@ -20934,7 +20942,7 @@ async function confirmHelperRemoved() {
         return {
             removed: false,
             status,
-            error: 'ReDD Block could not confirm that the helper was fully removed. It still appears to be installed.'
+            error: 'Fristed could not confirm that the helper was fully removed. It still appears to be installed.'
         };
     }
 

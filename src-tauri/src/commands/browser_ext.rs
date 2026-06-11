@@ -567,7 +567,7 @@ p { margin: 0; font-size: 15px; line-height: 1.5; font-weight: 650; }
   <div class="card">
     <div class="emoji">💪</div>
     <h1>Downtime is starting</h1>
-    <p>Use the main ReDD Block warning and click <strong>Let's go!</strong> to start your wrap-up time.</p>
+    <p>Use the main Fristed warning and click <strong>Let's go!</strong> to start your wrap-up time.</p>
   </div>
 </body>
 </html>"#
