@@ -1,4 +1,4 @@
-# ReDD Block Testing Tiers
+# Fristed Testing Tiers
 
 This document expands the `README.md` testing section with a deeper technical explanation of each tier, how to run it, what it validates, and what it does not validate.
 

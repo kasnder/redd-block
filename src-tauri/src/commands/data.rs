@@ -261,7 +261,16 @@ fn get_shared_dir() -> PathBuf {
     {
         let program_data = std::env::var("PROGRAMDATA")
             .unwrap_or_else(|_| "C:\\ProgramData".to_string());
-        PathBuf::from(program_data).join("ReDD Block")
+        let root = PathBuf::from(program_data);
+        let fristed_dir = root.join("Fristed");
+        let legacy_dir = root.join("ReDD Block");
+        if legacy_dir.join("redd-block-data.json").exists()
+            && !fristed_dir.join("redd-block-data.json").exists()
+        {
+            legacy_dir
+        } else {
+            fristed_dir
+        }
     }
     #[cfg(not(target_os = "windows"))]
     {

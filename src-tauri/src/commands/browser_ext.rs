@@ -204,7 +204,7 @@ pub fn activate_external_process_by_pid(target_pid: u32) {
 #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
 pub fn activate_external_process_by_pid(_pid: u32) {}
 
-/// Visible compact warning chrome without activating ReDD Block as the key
+/// Visible compact warning chrome without activating Fristed as the key
 /// app — keeps keyboard focus with the blocked app so the user can type in
 /// save dialogs while the countdown stays `always_on_top`.
 #[cfg(target_os = "macos")]
@@ -285,7 +285,7 @@ pub fn set_blocking_warning_attention(app: &AppHandle, active: bool) {
 /// runtime properties that distinguish a panel-style overlay:
 ///
 /// * `NSWindowStyleMaskNonactivatingPanel` — the panel can come to the
-///   front without making ReDD Block the active app, so the user can keep
+///   front without making Fristed the active app, so the user can keep
 ///   typing into the save dialog of the blocked app.
 /// * `PanelLevel::Floating` — sits above normal windows.
 /// * `FullScreenAuxiliary` collection behavior — the missing piece that

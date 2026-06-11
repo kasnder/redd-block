@@ -21,7 +21,7 @@ module.exports = async function (params) {
         return;
     }
 
-    const appName = 'ReDD Block.app';
+    const appName = 'Fristed.app';
     const appPath = path.join(appOutDir, appName);
 
     if (!fs.existsSync(appPath)) {

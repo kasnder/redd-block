@@ -29,7 +29,7 @@
 // Why a dylib (and not a CLI sidecar): SFSafariExtensionManager
 // requires the call to come from the *registered main executable*
 // of the host bundle. A sidecar binary in Contents/MacOS/ — even
-// when NSBundle.main resolves to ReDD Block correctly — fails with
+// when NSBundle.main resolves to Fristed correctly — fails with
 // SFErrorDomain error 1 (extensionNotFound). Linking the Swift code
 // directly into the main redd-block binary places the call in the
 // right process context.
@@ -109,7 +109,7 @@ public func redd_safari_extension_state(
     return exitCode
 }
 
-/// Launch Safari without stealing focus from ReDD Block. Returns true
+/// Launch Safari without stealing focus from Fristed. Returns true
 /// when the open request succeeded.
 private func launchSafari() -> Bool {
     guard let safariURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.Safari") else {

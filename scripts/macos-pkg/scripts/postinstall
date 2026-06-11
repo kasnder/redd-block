@@ -2,7 +2,7 @@
 # postinstall — runs as root after the .pkg payload is laid down.
 #
 # Auto-launches the new app for the user who triggered the install,
-# mirroring the Windows NSIS finish-page "Run ReDD Block" checkbox.
+# mirroring the Windows NSIS finish-page "Run Fristed" checkbox.
 # Without this, macOS users who installed via .pkg would be left
 # staring at the Installer.app "Install Successful" screen with no
 # clear next step.
@@ -25,8 +25,8 @@ fi
 
 # launchctl asuser runs the command in the target user's bootstrap
 # domain so the GUI shows up on their session.
-launchctl asuser "$TARGET_UID" /usr/bin/open '/Applications/ReDD Block.app' || \
-    sudo -u "$TARGET_USER" /usr/bin/open '/Applications/ReDD Block.app'
+launchctl asuser "$TARGET_UID" /usr/bin/open '/Applications/Fristed.app' || \
+    sudo -u "$TARGET_USER" /usr/bin/open '/Applications/Fristed.app'
 
-echo "postinstall launched ReDD Block for $TARGET_USER"
+echo "postinstall launched Fristed for $TARGET_USER"
 exit 0

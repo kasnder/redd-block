@@ -451,9 +451,13 @@ fn current_residue_items() -> Vec<String> {
     }
     #[cfg(target_os = "windows")]
     {
-        let p = r"C:\ProgramData\ReDD Block\helper-state.json";
-        if std::path::Path::new(p).exists() {
-            items.push(p.to_string());
+        for p in [
+            r"C:\ProgramData\Fristed\helper-state.json",
+            r"C:\ProgramData\ReDD Block\helper-state.json",
+        ] {
+            if std::path::Path::new(p).exists() {
+                items.push(p.to_string());
+            }
         }
     }
 

@@ -1,7 +1,7 @@
 {
   "name": "redd-block",
   "version": "3.2.1",
-  "description": "ReDD Block - block distracting websites and apps to stay focused",
+  "description": "Fristed: Block Apps & Sites",
   "scripts": {
     "dev": "tauri dev",
     "dev:ios": "bash ./scripts/ios-dev.sh",

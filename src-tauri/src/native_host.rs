@@ -611,7 +611,7 @@ pub fn resolve_data_path() -> Option<PathBuf> {
     }
     #[cfg(target_os = "windows")]
     {
-        let shared = PathBuf::from(r"C:\ProgramData\ReDD Block\redd-block-data.json");
+        let shared = PathBuf::from(r"C:\ProgramData\Fristed\redd-block-data.json");
         if shared.exists() {
             return Some(shared);
         }

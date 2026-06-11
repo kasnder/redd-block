@@ -1,5 +1,5 @@
 #!/bin/bash
-# Version bump script for ReDD Block
+# Version bump script for Fristed
 # Usage: ./scripts/bump-version.sh 0.4.3
 #
 # This script updates the version in all necessary files:

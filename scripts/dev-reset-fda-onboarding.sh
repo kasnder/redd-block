@@ -9,7 +9,7 @@
 #   scripts/dev-reset-fda-onboarding.sh --nuke    # delete everything (incl. blocklists)
 #
 # Always:
-#   - Quits any running ReDD Block process.
+#   - Quits any running Fristed process.
 #   - Resets every TCC consent for `com.reddblock` (FDA + per-prompt
 #     data-isolation consents, etc.) so macOS treats the next launch
 #     as a brand-new (app, target-container) pair.
@@ -48,11 +48,11 @@ done
 
 APP_DATA_DIR="$HOME/Library/Application Support/com.reddblock"
 SHARED_DATA_DIR="/var/lib/redd-block"
-LOG_FILE="$HOME/Library/Logs/com.reddblock/ReDD Block.log"
+LOG_FILE="$HOME/Library/Logs/com.reddblock/Fristed.log"
 
-echo "==> Quitting any running ReDD Block process"
-pkill -9 -f "ReDD Block.app/Contents/MacOS/redd-block" 2>/dev/null || true
-pkill -9 -x "ReDD Block" 2>/dev/null || true
+echo "==> Quitting any running Fristed process"
+pkill -9 -f "Fristed.app/Contents/MacOS/redd-block" 2>/dev/null || true
+pkill -9 -x "Fristed" 2>/dev/null || true
 sleep 0.5
 
 echo "==> Resetting all TCC consents for com.reddblock"
@@ -161,7 +161,7 @@ cat <<EOF
   2. (Then) rebuild and launch (required — source fixes are not in
      /Applications until you rebuild):
        npm run tauri build
-       open "/Applications/ReDD Block.app"
+       open "/Applications/Fristed.app"
 
   Or for dev:
        npm run tauri dev

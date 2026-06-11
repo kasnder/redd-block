@@ -37,7 +37,7 @@
 // PIDs that disappear at any phase (the user saved + quit themselves)
 // just dissolve out of the state machine; the warning hides cleanly.
 //
-// `is_protected` keeps us from ever quitting ReDD Block, the OS
+// `is_protected` keeps us from ever quitting Fristed, the OS
 // loginwindow, Finder, etc.
 
 use std::collections::hash_map::Entry;
@@ -70,7 +70,7 @@ pub fn user_acknowledge_warning() {
 }
 
 const PROTECTED: &[&str] = &[
-    "ReDD Block", "redd-block", "ReddBlock",
+    "Fristed", "ReDD Block", "redd-block", "ReddBlock",
     "System Events", "Finder", "loginwindow", "WindowServer",
     "explorer.exe", "dwm.exe", "winlogon.exe", "svchost.exe",
 ];

@@ -41,7 +41,7 @@
 //!      detached `bash` that waits a moment and then tries
 //!      `mv → ~/.Trash`, then a Finder AppleScript, then `rm -rf`.
 //!      The Finder fallback DOES surface an Automation TCC prompt
-//!      ("ReDD Block would like to control Finder") — we warn the
+//!      ("Fristed would like to control Finder") — we warn the
 //!      user about this in the uninstall confirmation dialog so it
 //!      isn't a surprise. The 2 s sleep in the script gives this
 //!      process time to exit so any further attempts run cleanly.
@@ -114,7 +114,7 @@ pub fn uninstall_self_macos(
     }
 
     // 3. Resolve the .app bundle path from the running executable
-    //    rather than hardcoding `/Applications/ReDD Block.app` so a
+    //    rather than hardcoding `/Applications/Fristed.app` so a
     //    copy launched from elsewhere (rare, but happens during dev)
     //    deletes the right bundle.
     let bundle = app_bundle_path()
@@ -135,7 +135,7 @@ pub fn uninstall_self_macos(
         Err(e) => {
             // Fall back to the detached bash script (mv → osascript →
             // rm). This is the path that may surface the
-            // "ReDD Block would like to control Finder" Automation
+            // "Fristed would like to control Finder" Automation
             // prompt — the user has been warned about it in the
             // confirmation dialog (see `uninstall-confirm-modal` in
             // `src/app.js`).
@@ -185,18 +185,18 @@ pub fn uninstall_self_macos(
 ///     `target/debug/redd-block` isn't taken out alongside an installed
 ///     copy. After NSFileManager moves the bundle to `~/.Trash/`, the
 ///     child processes' argv still reflects their launched path
-///     (containing `ReDD Block.app/Contents/MacOS/redd-block`), so
+///     (containing `Fristed.app/Contents/MacOS/redd-block`), so
 ///     matching on that substring catches them whether the bundle has
 ///     been trashed yet or not.
 #[cfg(target_os = "macos")]
 fn spawn_native_host_killer(bundle: &str) -> std::io::Result<()> {
-    // Pull just the bundle name (e.g. "ReDD Block.app") so the match
+    // Pull just the bundle name (e.g. "Fristed.app") so the match
     // works both pre- and post-trash. We don't want to pin to
     // /Applications/ — users sometimes install elsewhere.
     let bundle_name = std::path::Path::new(bundle)
         .file_name()
         .and_then(|s| s.to_str())
-        .unwrap_or("ReDD Block.app");
+        .unwrap_or("Fristed.app");
     let match_pattern = format!("{bundle_name}/Contents/MacOS/redd-block");
 
     let log_path = uninstall_log_path();
@@ -259,7 +259,7 @@ fn try_trash_via_nsfilemanager(bundle: &str) -> Result<(), String> {
 }
 
 /// Resolve the path to the running app bundle (e.g.
-/// "/Applications/ReDD Block.app"). Walks up from the executable
+/// "/Applications/Fristed.app"). Walks up from the executable
 /// location until we find the `.app` parent. Returns `None` if the
 /// binary isn't inside an `.app` (e.g. a debug build run via
 /// `cargo run`), in which case the caller should bail rather than
@@ -316,7 +316,7 @@ fn scrub_launch_agents() {
 ///      prompt the first time. Useful if `mv` failed because of an
 ///      ownership oddity but Finder can still see the bundle.
 ///   3. `rm -rf` — last-ditch. Will fail on macOS 14+ if the user
-///      hasn't granted ReDD Block "App Management" permission, but
+///      hasn't granted Fristed "App Management" permission, but
 ///      worth trying for older macOS / unsigned dev bundles where
 ///      it's the only thing that works.
 ///

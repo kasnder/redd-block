@@ -6,7 +6,7 @@
 //     browser auto-installs from the Chrome Web Store on next launch.
 //     Light touch: extension shows up in `chrome://extensions` like
 //     a normal store install; user can disable / remove from the UI.
-//     Trade-off: no auto-uninstall when ReDD Block goes away (user
+//     Trade-off: no auto-uninstall when Fristed goes away (user
 //     keeps the extension until they remove it themselves).
 //   - Windows: nested registry keys under
 //     `HKCU\Software\Policies\<vendor>\<browser>\ExtensionSettings\<ext-id>`.
@@ -32,7 +32,7 @@
 //   Incognito" on Chromium browsers.
 //
 //   We clean up any stale ExtensionSettings entries from the prior
-//   ReDD Block release on macOS install — that release tried the
+//   Fristed release on macOS install — that release tried the
 //   policy approach before we discovered the Recommended-scope
 //   limitation, and the leftover plist entries would otherwise
 //   show forever in `chrome://policy` as ignored Recommended hints.
@@ -43,7 +43,7 @@
 //   installed extension, and from that point on the External
 //   Extensions hint becomes a permanent no-op for that ID. The scrub
 //   is gated by a marker file in the app-data dir so it runs exactly
-//   once per ReDD Block install — re-installs after a deliberate user
+//   once per Fristed install — re-installs after a deliberate user
 //   removal are respected, but a fresh install (or a recovery from
 //   an earlier failed-policy pass that left the user mid-loop) gets
 //   a clean slate.
@@ -319,7 +319,7 @@ fn install_chromium(browser: BrowserTarget) -> std::io::Result<()> {
     let desired = serde_json::to_vec_pretty(&body)?;
 
     // Idempotency: if the file already has the bytes we'd write, do
-    // nothing. Avoids the macOS Sonoma+ "ReDD Block would like to
+    // nothing. Avoids the macOS Sonoma+ "Fristed would like to
     // access data from other apps" TCC prompt that fires on every
     // write into another app's data dir, even when the write is a
     // no-op.
@@ -415,7 +415,7 @@ fn uninstall_chromium(browser: BrowserTarget) -> std::io::Result<()> {
 
 /// Strip the `ExtensionSettings.<ext-id>` entry from the per-browser
 /// policy plist on macOS — only relevant for users upgrading from the
-/// brief ReDD Block release that tried the policy approach before we
+/// brief Fristed release that tried the policy approach before we
 /// discovered Chromium treats user-level CFPreferences as Recommended
 /// scope only. Without this cleanup, the entry would linger forever
 /// in the user's plist, showing in `chrome://policy` as an ignored
@@ -482,7 +482,7 @@ fn cleanup_failed_policy_plist_entry(_browser: BrowserTarget) {}
 /// that ID — Chrome silently refuses to ever re-install it from the
 /// same external source.
 ///
-/// At ReDD Block install time we want a one-shot scrub: clear the
+/// At Fristed install time we want a one-shot scrub: clear the
 /// tombstone (if any) from every Chromium profile so the hint can do
 /// its job. We deliberately do NOT scrub on every launch — once the
 /// user has actively removed the extension after install, that's a

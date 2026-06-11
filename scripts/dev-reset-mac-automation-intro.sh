@@ -17,16 +17,16 @@
 #   - Safari and/or Chrome/Brave/Edge is installed
 #
 # Turn Automation off first:
-#   System Settings → Privacy & Security → Automation → ReDD Block off
+#   System Settings → Privacy & Security → Automation → Fristed off
 
 set -euo pipefail
 
 EXT_DISMISS_KEY='reddBlockExtOnboardingDismissed'
 
-echo "==> Quitting any running ReDD Block process"
-pkill -9 -f "ReDD Block.app/Contents/MacOS/redd-block" 2>/dev/null || true
+echo "==> Quitting any running Fristed process"
+pkill -9 -f "Fristed.app/Contents/MacOS/redd-block" 2>/dev/null || true
 pkill -9 -f "tauri dev" 2>/dev/null || true
-pkill -9 -x "ReDD Block" 2>/dev/null || true
+pkill -9 -x "Fristed" 2>/dev/null || true
 sleep 0.5
 
 echo "==> Resetting Automation / TCC for com.reddblock"
@@ -90,7 +90,7 @@ cat <<EOF
 
 ==> Done. To see the intro modal:
 
-  1. Turn Automation OFF for ReDD Block in System Settings
+  1. Turn Automation OFF for Fristed in System Settings
      (Privacy & Security → Automation) for Chrome/Safari/etc.
 
   2. Launch WITHOUT re-accepting the EULA:

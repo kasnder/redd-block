@@ -1,7 +1,7 @@
 [package]
 name = "redd-block"
 version = "3.2.1"
-description = "ReDD Block - block distracting websites and apps to stay focused"
+description = "Fristed: Block Apps & Sites"
 authors = ["The Reduce Digital Distraction Project <team@reddfocus.org>"]
 license = "CC-BY-NC-ND-3.0"
 repository = "https://github.com/ulyngs/redd-block"

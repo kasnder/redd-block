@@ -83,7 +83,7 @@
 		5D52354D5701D21663C48685 /* MetalKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalKit.framework; path = System/Library/Frameworks/MetalKit.framework; sourceTree = SDKROOT; };
 		68374B73766D32FB3B3FC15B /* watcher.rs */ = {isa = PBXFileReference; lastKnownFileType = file; path = watcher.rs; sourceTree = "<group>"; };
 		6937C8528EFA584D6536FAC9 /* main.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = main.mm; sourceTree = "<group>"; };
-		6942A89B110F57A4103A405E /* ReDD Block.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "ReDD Block.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		6942A89B110F57A4103A405E /* Fristed.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Fristed.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		744D7F2E51914811C4C6CB0F /* FamilyControls.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = FamilyControls.framework; path = System/Library/Frameworks/FamilyControls.framework; sourceTree = SDKROOT; };
 		7E9C6D010000000000000001 /* ShieldConfigurationExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShieldConfigurationExtension.swift; sourceTree = "<group>"; };
 		BD9C6D010000000000000002 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -167,7 +167,7 @@
 		395766D498A20D80E3E45DFE /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				6942A89B110F57A4103A405E /* ReDD Block.app */,
+				6942A89B110F57A4103A405E /* Fristed.app */,
 				96B1304436C5E5A028057DE4 /* ReddBlockMonitor.appex */,
 				FE9C6D010000000000000001 /* ReddBlockShield.appex */,
 			);
@@ -326,7 +326,7 @@
 			packageProductDependencies = (
 			);
 			productName = "redd-block_iOS";
-			productReference = 6942A89B110F57A4103A405E /* ReDD Block.app */;
+			productReference = 6942A89B110F57A4103A405E /* Fristed.app */;
 			productType = "com.apple.product-type.application";
 		};
 		C19C6D010000000000000001 /* ReddBlockShield */ = {
@@ -704,7 +704,7 @@
 					"-lapp",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.reddblock;
-				PRODUCT_NAME = "ReDD Block";
+				PRODUCT_NAME = "Fristed";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALID_ARCHS = arm64;
@@ -750,7 +750,7 @@
 					"-lapp",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.reddblock;
-				PRODUCT_NAME = "ReDD Block";
+				PRODUCT_NAME = "Fristed";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				VALID_ARCHS = arm64;

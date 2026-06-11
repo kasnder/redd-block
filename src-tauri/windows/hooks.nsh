@@ -1,6 +1,6 @@
 !macro NSIS_HOOK_POSTINSTALL
-  ; Always launch ReDD Block after install completes. The MUI finish
-  ; page also has a "Run ReDD Block" checkbox (default checked); if
+  ; Always launch Fristed after install completes. The MUI finish
+  ; page also has a "Run Fristed" checkbox (default checked); if
   ; the user leaves it checked we'd briefly run the app twice — the
   ; tauri-plugin-single-instance plugin (registered in lib.rs)
   ; collapses any second instance into a focus-the-existing-window
@@ -19,6 +19,8 @@
   ;    redd-block.exe between the kill below and the actual file
   ;    deletion that NSIS does after this hook returns. Idempotent —
   ;    schtasks /Delete /F is silent if the task isn't present.
+  nsExec::ExecToLog 'schtasks /Delete /TN "Fristed Watchdog" /F'
+  Pop $0
   nsExec::ExecToLog 'schtasks /Delete /TN "ReDD Block Watchdog" /F'
   Pop $0
 
@@ -42,7 +44,7 @@
 
   ; 3. Run the app's `--uninstall` mode to remove per-browser
   ;    native-messaging manifests and the matching HKCU registry keys.
-  ;    Without this, manifests under %LOCALAPPDATA%\ReDD Block\
+  ;    Without this, manifests under %LOCALAPPDATA%\Fristed\
   ;    native-host\ and HKCU\Software\<vendor>\<browser>\
   ;    NativeMessagingHosts\com.ulriklyngs.mindshield would be orphaned
   ;    after uninstall. The binary still exists at this point — NSIS
@@ -52,7 +54,7 @@
   ;
   ; Note: 2.0 dropped v1.x's "Keep Blocking after uninstall" feature
   ; entirely (no daemon = no enforcement after the binary is removed).
-  ; The user's blocklists / settings in C:\ProgramData\ReDD Block\
+  ; The user's blocklists / settings in C:\ProgramData\Fristed\
   ; redd-block-data.json are intentionally preserved so a future
   ; reinstall picks them back up — only the daemon-state file (now
   ; absent) and the helper-state.json are scrubbed during migration.
