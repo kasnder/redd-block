@@ -611,7 +611,7 @@ pub fn resolve_data_path() -> Option<PathBuf> {
     }
     #[cfg(target_os = "windows")]
     {
-        let shared = PathBuf::from(r"C:\ProgramData\Fristed\redd-block-data.json");
+        let shared = crate::commands::canonical_data_path_static();
         if shared.exists() {
             return Some(shared);
         }
@@ -622,7 +622,7 @@ pub fn resolve_data_path() -> Option<PathBuf> {
                 return Some(p);
             }
         }
-        Some(appdata.join("com.reddblock").join("redd-block-data.json"))
+        Some(shared)
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
