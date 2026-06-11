@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager};
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 use tauri::WebviewWindow;
 
 /// App data structure - matches the Electron version exactly
@@ -175,17 +175,17 @@ fn get_per_user_data_path(app: &AppHandle) -> PathBuf {
     app_data_dir.join("redd-block-data.json")
 }
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn get_shared_data_path() -> PathBuf {
     get_shared_dir().join("redd-block-data.json")
 }
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn get_shared_helper_state_path() -> PathBuf {
     get_shared_dir().join("helper-state.json")
 }
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn should_use_shared_data_path() -> bool {
     let shared_data_path = get_shared_data_path();
     if shared_data_path.exists() {
@@ -218,7 +218,7 @@ pub fn canonical_data_path(app: &AppHandle) -> Option<PathBuf> {
 /// [`AppHandle`]. Used by macOS startup gating (`cross_app_consent`)
 /// before the frontend has loaded — must NOT scan legacy bundle-id
 /// paths, only the canonical shared or per-user location.
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub fn canonical_data_path_static() -> PathBuf {
     if should_use_shared_data_path() {
         get_shared_data_path()
@@ -227,7 +227,7 @@ pub fn canonical_data_path_static() -> PathBuf {
     }
 }
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn per_user_data_path_static() -> PathBuf {
     dirs::data_dir()
         .map(|d| d.join("com.reddblock").join("redd-block-data.json"))
@@ -239,12 +239,12 @@ fn per_user_data_path_static() -> PathBuf {
 }
 
 pub(crate) fn get_data_path(app: &AppHandle) -> PathBuf {
-    #[cfg(target_os = "ios")]
+    #[cfg(any(target_os = "ios", target_os = "android"))]
     {
         return get_per_user_data_path(app);
     }
 
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     {
         if should_use_shared_data_path() {
             get_shared_data_path()
@@ -255,7 +255,7 @@ pub(crate) fn get_data_path(app: &AppHandle) -> PathBuf {
 }
 
 /// Get the system-wide shared directory (same location as helper-state.json).
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn get_shared_dir() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
@@ -270,7 +270,7 @@ fn get_shared_dir() -> PathBuf {
 }
 
 /// Check if a directory is writable by attempting to create and remove a temp file.
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn is_dir_writable(dir: &std::path::Path) -> bool {
     let test_path = dir.join(".write-test");
     match fs::write(&test_path, b"test") {
@@ -524,7 +524,7 @@ fn preserve_backend_settings(data_path: &std::path::Path, data: &mut AppData) {
 
 /// Set window size (used after onboarding) - desktop only
 #[tauri::command]
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub fn set_window_size(window: WebviewWindow, width: f64, height: f64) -> Result<(), String> {
     use tauri::LogicalSize;
     window.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
@@ -532,9 +532,9 @@ pub fn set_window_size(window: WebviewWindow, width: f64, height: f64) -> Result
     Ok(())
 }
 
-/// Set window size - no-op on iOS (always fullscreen)
+/// Set window size - no-op on iOS/Android (always fullscreen)
 #[tauri::command]
-#[cfg(target_os = "ios")]
+#[cfg(any(target_os = "ios", target_os = "android"))]
 pub fn set_window_size(_width: f64, _height: f64) -> Result<(), String> {
     Ok(())
 }
@@ -542,7 +542,7 @@ pub fn set_window_size(_width: f64, _height: f64) -> Result<(), String> {
 /// Remove blocklists, schedules, settings, and related on-disk state.
 /// Best-effort: logs and continues when individual paths are missing or
 /// not writable. Logs are intentionally preserved.
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub fn wipe_user_data(app: &AppHandle) {
     use std::collections::HashSet;
 
@@ -594,7 +594,7 @@ pub fn wipe_user_data(app: &AppHandle) {
     }
 }
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn wipe_path(path: &PathBuf) {
     if !path.exists() {
         return;

@@ -388,7 +388,7 @@ fn set_macos_traffic_lights_visible(app: &AppHandle, visible: bool) {
 /// in `app_watcher` untouched — the warning UX it powers has flipped
 /// from "tiny floating card" to "full-screen take-over", but the
 /// enter/leave protocol is the same.
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub fn enter_blocking_warning_compact_window(app: &AppHandle) {
     let Some(w) = app.get_webview_window("main") else {
         return;
@@ -452,14 +452,14 @@ pub fn enter_blocking_warning_compact_window(app: &AppHandle) {
     }
 }
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn monitor_logical_size(monitor: &tauri::Monitor) -> LogicalSize<f64> {
     let scale = monitor.scale_factor();
     let size = monitor.size();
     LogicalSize::new(size.width as f64 / scale, size.height as f64 / scale)
 }
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn create_aux_blocking_warning_windows(app: &AppHandle, main_x: i32, main_y: i32) {
     close_aux_blocking_warning_windows(app);
 
@@ -513,7 +513,7 @@ fn create_aux_blocking_warning_windows(app: &AppHandle, main_x: i32, main_y: i32
     }
 }
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn close_aux_blocking_warning_windows(app: &AppHandle) {
     let labels = BLOCKING_WARNING_AUX_WINDOWS
         .lock()
@@ -528,7 +528,7 @@ fn close_aux_blocking_warning_windows(app: &AppHandle) {
     }
 }
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn aux_blocking_warning_html() -> &'static str {
     r#"<!doctype html>
 <html>
@@ -577,7 +577,7 @@ p { margin: 0; font-size: 15px; line-height: 1.5; font-weight: 650; }
 /// `center()` — preserves user drag). Used to drop the empty margin below
 /// the force-quit warning once the DOM has laid out.
 #[tauri::command]
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub fn resize_blocking_warning_inner_size(
     window: tauri::WebviewWindow,
     width: f64,
@@ -601,13 +601,13 @@ pub fn resize_blocking_warning_inner_size(
 /// warnings share one refcount and panel mode stays on as long as any
 /// warning layer is up.
 #[tauri::command]
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub fn enter_blocking_warning_panel_mode(app: AppHandle) {
     crate::app_watcher::blocking_warning_begin(Some(&app));
 }
 
 #[tauri::command]
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub fn leave_blocking_warning_panel_mode(app: AppHandle) {
     crate::app_watcher::blocking_warning_end(Some(&app));
 }
@@ -625,7 +625,7 @@ pub fn leave_blocking_warning_panel_mode(_app: AppHandle) {}
 #[cfg(target_os = "ios")]
 pub fn enter_blocking_warning_compact_window(_app: &AppHandle) {}
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub fn leave_blocking_warning_compact_window(app: &AppHandle) {
     let Some(w) = app.get_webview_window("main") else {
         return;

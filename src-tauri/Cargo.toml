@@ -55,6 +55,9 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.
 [target.'cfg(target_os = "ios")'.dependencies]
 tauri-plugin-screentime = { path = "../tauri-plugin-screentime" }
 
+[target.'cfg(target_os = "android")'.dependencies]
+tauri-plugin-androidblock = { path = "../tauri-plugin-androidblock" }
+
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.61", features = [
   "Win32_UI_Shell",
@@ -76,7 +79,7 @@ windows = { version = "0.61", features = [
 sysinfo = "0.33"
 tauri-plugin-notification = "2"
 
-[target.'cfg(not(target_os = "ios"))'.dependencies]
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 # Single-instance enforcement so the NSIS post-install hook (which always
 # launches redd-block.exe) and the optional finish-page "Run" checkbox
 # can't produce two running instances. Also benefits day-to-day usage —

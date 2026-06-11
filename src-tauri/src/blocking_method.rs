@@ -119,7 +119,7 @@ pub fn validate_method(method: &str) -> Result<Method, String> {
     Method::parse(method).ok_or_else(|| format!("invalid blocking method: {method}"))
 }
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub fn native_host_target(key: &str) -> Option<crate::native_host_install::BrowserTarget> {
     use crate::native_host_install::BrowserTarget;
     match key {
@@ -131,7 +131,7 @@ pub fn native_host_target(key: &str) -> Option<crate::native_host_install::Brows
     }
 }
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub fn extension_hint_target(key: &str) -> Option<crate::extension_install::BrowserTarget> {
     use crate::extension_install::BrowserTarget;
     match key {
