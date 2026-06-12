@@ -6628,7 +6628,7 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card {
     margin-bottom: 8px;
 }
 
-.welcome-shield-logo {
+.welcome-fristed-logo {
     display: block;
     width: 40px;
     height: auto;
@@ -7081,7 +7081,7 @@ body.dark-mode .welcome-demo-toggle:hover {
         gap: 10px;
     }
 
-    .welcome-shield-logo {
+    .welcome-fristed-logo {
         width: 34px;
     }
 

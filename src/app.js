@@ -6,7 +6,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ask, message, open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import logoReddFocusUrl from './images/logo-reddfocus.svg';
-import logoReddShieldUrl from './images/logo-redd-shield.svg';
+import fristedIconUrl from './fristed-icon.svg';
 import appleLogoUrl from './images/apple-logo.svg';
 import iconChromeUrl from './images/icon-chrome.svg';
 import iconBraveUrl from './images/icon-brave.svg';
@@ -3222,12 +3222,12 @@ function syncMigrationPostHeader(state) {
     header.classList.remove('hidden');
     const copy = migrationExtHeaderCopy(state);
     if (copy) {
-        const shieldLogo = document.getElementById('migration-post-header-shield-logo');
+        const shieldLogo = document.getElementById('migration-post-header-fristed-logo');
         const titleEl = document.getElementById('migration-post-header-title');
         const subEl = document.getElementById('migration-post-header-subtitle');
         const copyKey = migrationMacCopyKey(state);
         if (copyKey !== lastMigrationHeaderCopyKey) {
-            if (shieldLogo) shieldLogo.src = logoReddShieldUrl;
+            if (shieldLogo) shieldLogo.src = fristedIconUrl;
             if (titleEl) titleEl.textContent = copy.titleHtml;
             if (subEl) subEl.innerHTML = copy.subtitleHtml;
             lastMigrationHeaderCopyKey = copyKey;
@@ -19623,9 +19623,9 @@ function applyMigrationOverlayStaticCopy() {
 function applyEulaOnboardingLanguage() {
     const title = tSettings('welcomeOnboardingTitle');
 
-    const shieldLogo = document.getElementById('eula-onboarding-shield-logo');
+    const shieldLogo = document.getElementById('eula-onboarding-fristed-logo');
     if (shieldLogo) {
-        shieldLogo.src = logoReddShieldUrl;
+        shieldLogo.src = fristedIconUrl;
         shieldLogo.alt = '';
     }
 
@@ -19671,9 +19671,9 @@ function applyEulaOnboardingLanguage() {
 
 /** Safari FDA onboarding — same layout/copy pattern as the EULA screen. */
 function applySafariFdaOnboardingLanguage() {
-    const shield = document.getElementById('fda-onboarding-shield-logo');
+    const shield = document.getElementById('fda-onboarding-fristed-logo');
     if (shield) {
-        shield.src = logoReddShieldUrl;
+        shield.src = fristedIconUrl;
         shield.alt = '';
     }
     const screenshot = document.getElementById('fda-onboarding-screenshot');
@@ -19693,9 +19693,9 @@ function applySafariFdaOnboardingLanguage() {
 
 /** Welcome onboarding screen — localized in the same way as the EULA screen. */
 function applyWelcomeOnboardingLanguage() {
-    const shieldLogo = document.getElementById('welcome-onboarding-shield-logo');
+    const shieldLogo = document.getElementById('welcome-onboarding-fristed-logo');
     if (shieldLogo) {
-        shieldLogo.src = logoReddShieldUrl;
+        shieldLogo.src = fristedIconUrl;
         shieldLogo.alt = '';
     }
 

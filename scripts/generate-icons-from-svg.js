@@ -1,5 +1,5 @@
 /**
- * Generate all app icons from the new SVG logo
+ * Generate all app icons from assets/fristed-icon.svg
  * Run with: node scripts/generate-icons-from-svg.js
  */
 const sharp = require('sharp');
@@ -7,9 +7,25 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-const SVG_PATH = path.join(__dirname, '../assets/reddblock-icon.svg');
+const SVG_PATH = path.join(__dirname, '../assets/fristed-icon.svg');
 const ASSETS_DIR = path.join(__dirname, '../assets');
 const ICONS_DIR = path.join(ASSETS_DIR, 'icons');
+const SRC_SVG_PATH = path.join(__dirname, '../src/fristed-icon.svg');
+const BLOCKED_SVG_PATH = path.join(__dirname, '../src-tauri/blocked/fristed-icon.svg');
+
+function syncFristedIconCopies() {
+    if (!fs.existsSync(SVG_PATH)) {
+        console.error('SVG not found at:', SVG_PATH);
+        process.exit(1);
+    }
+
+    fs.copyFileSync(SVG_PATH, SRC_SVG_PATH);
+    console.log('✓ Synced src/fristed-icon.svg');
+
+    fs.mkdirSync(path.dirname(BLOCKED_SVG_PATH), { recursive: true });
+    fs.copyFileSync(SVG_PATH, BLOCKED_SVG_PATH);
+    console.log('✓ Synced src-tauri/blocked/fristed-icon.svg');
+}
 
 // Icon sizes needed for various platforms
 const ICON_SIZES = [16, 24, 32, 48, 64, 128, 256, 512, 1024];
@@ -163,6 +179,9 @@ async function generateIcns() {
 
 async function main() {
     console.log('Starting icon generation from:', SVG_PATH);
+    console.log('');
+
+    syncFristedIconCopies();
     console.log('');
 
     await generatePngIcons();
