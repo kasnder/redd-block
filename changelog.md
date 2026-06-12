@@ -5,7 +5,7 @@ User-facing changes for each release. Every app upgrade adds a new entry here.
 ## v3.3.0
 
 - **Meet Fristed: Block Apps & Sites!** ReDD Block has a new name — same
-  powerful blocking you rely on, now called **Fristed: Block Apps & Sites**.
+  powerful blocking you love, now called **Fristed: Block Apps & Sites**.
   Block distracting websites and apps, keep your schedules, and stay focused —
   nothing else changes.
 - **Version:** 3.3.0 (macOS, Windows, and iOS).
