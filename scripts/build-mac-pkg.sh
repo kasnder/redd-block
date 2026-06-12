@@ -40,6 +40,7 @@ if [[ "${1:-}" == "--release" ]]; then
 fi
 
 APP_NAME="Fristed"
+PKG_SLUG="fristed"
 BUNDLE_ID="com.reddblock"
 SCRIPTS_DIR="scripts/macos-pkg/scripts"
 
@@ -86,7 +87,7 @@ OUT_DIR="${BUNDLE_BASE}/pkg"
 mkdir -p "$OUT_DIR"
 
 COMPONENT_PKG="$OUT_DIR/component.pkg"
-DIST_PKG="$OUT_DIR/reddblock-${VERSION}.pkg"
+DIST_PKG="$OUT_DIR/${PKG_SLUG}-${VERSION}.pkg"
 DIST_DIR=$(mktemp -d /tmp/redd-block-dist.XXXXXX)
 DIST_FILE="$DIST_DIR/distribution.xml"
 

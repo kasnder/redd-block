@@ -4,7 +4,7 @@
 # S3 and/or attaches them to a GitHub Release (optional checkboxes on manual runs).
 #
 # S3 layout matches redd-next download links (ReDDBlockClient.tsx):
-#   s3://redd-website-assets/reddblock/reddblock-{version}.pkg
+#   s3://redd-website-assets/reddblock/fristed-{version}.pkg
 #   s3://redd-website-assets/reddblock/redd-block_{version}_x64-setup.exe
 #   s3://redd-website-assets/reddblock/redd-block_{version}_arm64-setup.exe
 #
@@ -127,7 +127,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-installer
-          path: for-distribution/reddblock-*.pkg
+          path: for-distribution/fristed-*.pkg
           if-no-files-found: error
           retention-days: 30
 
@@ -232,7 +232,7 @@ jobs:
       - name: Stage installers for publish
         run: |
           mkdir -p for-distribution
-          find artifacts -type f -name 'reddblock-*.pkg' -exec cp {} for-distribution/ \;
+          find artifacts -type f -name 'fristed-*.pkg' -exec cp {} for-distribution/ \;
           find artifacts -type f -name 'redd-block_*-setup.exe' -exec cp {} for-distribution/ \;
           echo "Staged installers:"
           ls -la for-distribution/
@@ -293,7 +293,7 @@ jobs:
           name: Fristed ${{ steps.meta.outputs.version }}
           body_path: release-notes.md
           files: |
-            for-distribution/reddblock-*.pkg
+            for-distribution/fristed-*.pkg
             for-distribution/redd-block_*-setup.exe
           draft: false
           prerelease: false

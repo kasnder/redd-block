@@ -2,7 +2,7 @@
 # Upload Fristed release installers to S3.
 #
 # Uses the same bucket, region, and key layout as redd-next download links:
-#   https://redd-website-assets.s3.eu-north-1.amazonaws.com/reddblock/reddblock-{version}.pkg
+#   https://redd-website-assets.s3.eu-north-1.amazonaws.com/reddblock/fristed-{version}.pkg
 #   https://redd-website-assets.s3.eu-north-1.amazonaws.com/reddblock/redd-block_{version}_x64-setup.exe
 #   https://redd-website-assets.s3.eu-north-1.amazonaws.com/reddblock/redd-block_{version}_arm64-setup.exe
 #
@@ -37,7 +37,7 @@ upload_file() {
 }
 
 upload_mac() {
-  local pkg="for-distribution/reddblock-${VERSION}.pkg"
+  local pkg="for-distribution/fristed-${VERSION}.pkg"
   if [[ ! -f "$pkg" ]]; then
     echo "Missing macOS installer: $pkg" >&2
     exit 1
