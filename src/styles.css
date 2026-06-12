@@ -9768,6 +9768,29 @@ body.ios #override-count-wrapper .form-input.small {
     font-size: 11px;
 }
 
+/* iOS has a broader `.segment-day-toggle` upsize rule for the editable
+   schedule builder. In the read-only schedule-start confirmation, place the
+   weekday pills underneath the time so they never collide on narrower screens. */
+body.ios #start-schedule-confirm-modal .start-confirm-time-slot-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+body.ios #start-schedule-confirm-modal .start-confirm-segment-days {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 2px;
+}
+
+body.ios #start-schedule-confirm-modal .start-confirm-segment-days .segment-day-toggle {
+    min-width: 22px;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    font-size: 10px;
+}
+
 .start-confirm-overlay-row .start-confirm-row-label {
     padding-top: 11px;
 }
