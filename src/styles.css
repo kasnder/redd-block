@@ -6502,11 +6502,11 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
 }
 
 .onboarding-app-icon {
-    width: 56px;
-    height: 56px;
+    width: 72px;
+    height: 72px;
     display: block;
     margin: 0 auto;
-    border-radius: 14px;
+    border-radius: 18px;
     box-shadow: 0 6px 18px rgba(10, 45, 123, 0.12);
 }
 
@@ -6630,7 +6630,7 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card {
 
 .welcome-fristed-logo {
     display: block;
-    width: 40px;
+    width: 52px;
     height: auto;
     flex-shrink: 0;
     margin: 0;
@@ -7082,7 +7082,7 @@ body.dark-mode .welcome-demo-toggle:hover {
     }
 
     .welcome-fristed-logo {
-        width: 34px;
+        width: 44px;
     }
 
     #welcome-onboarding-title,
