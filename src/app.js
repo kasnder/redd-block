@@ -17958,8 +17958,10 @@ const SETTINGS_TRANSLATIONS = {
             'Fristed is developed by the Reduce Digital Distraction Project, in collaboration with researchers at the University of Oxford and University of Maastricht. The ReDD Project is a not-for-profit creating insights & open-source digital focus tools for everyone to thrive in the digital world.',
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Welcome to Fristed',
+        fristedDefinitionHtml:
+            '<strong class="fristed-definition-word">fristed</strong><span class="fristed-definition-sep" aria-hidden="true"> · </span>Danish for “a free space, a haven”',
         welcomeOnboardingSubtitle:
-            'An open-source tool for blocking the websites\nand apps that pull you away from your focus.',
+            'Block the websites and apps that pull you away, and keep a clear space to focus.',
         welcomeHowHeading: 'STEPS TO GET STARTED (we\'ll guide you through it 😊)',
         welcomeStep1TitleAutomationHtml: 'Allow {APPLE}Automation',
         welcomeStep1BodyAutomationHtml:
@@ -18686,7 +18688,7 @@ const SETTINGS_TRANSLATIONS = {
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Velkommen til Fristed',
         welcomeOnboardingSubtitle:
-            'Et open source-værktøj der blokerer distraherende hjemmesider og apps, når du har brug for at fokusere.',
+            'Bloker de websites og apps, der distraherer dig, og skab plads og ro til fokus.',
         welcomeHowHeading: 'TRIN FOR AT KOMME I GANG (vi guider dig igennem det 😊)',
         welcomeStep1TitleAutomationHtml: 'Tillad {APPLE}Automatisering',
         welcomeStep1BodyAutomationHtml:
@@ -19619,6 +19621,14 @@ function applyMigrationOverlayStaticCopy() {
     setText('migration-post-subtitle', tSettings('migrationPostSubtitleCleanup'));
 }
 
+function applyFristedDefinitionPills() {
+    const show = getSettingsLanguage() !== 'da';
+    document.querySelectorAll('.fristed-definition-pill').forEach(el => {
+        el.classList.toggle('hidden', !show);
+        if (show) el.innerHTML = tSettings('fristedDefinitionHtml');
+    });
+}
+
 /** First-run EULA screen — localized from current UI language / saved preference / browser locale (da). */
 function applyEulaOnboardingLanguage() {
     const title = tSettings('welcomeOnboardingTitle');
@@ -20327,6 +20337,8 @@ function applySettingsLanguage() {
     applyEulaOnboardingLanguage();
     applyWelcomeOnboardingLanguage();
     applySafariFdaOnboardingLanguage();
+    applyFristedDefinitionPills();
+    setText('ios-screentime-onboarding-title', tSettings('welcomeOnboardingTitle'));
 
     if (migrationOnboardingActive && lastMigrationBrowserState) {
         renderBrowserInstallButtons(lastMigrationBrowserState, { force: true });

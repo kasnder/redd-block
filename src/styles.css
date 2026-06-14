@@ -6650,6 +6650,43 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card {
     text-align: left;
 }
 
+.fristed-definition-pill {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin: 0 auto 10px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    background: rgba(30, 45, 62, 0.06);
+    font-size: 13px;
+    line-height: 1.35;
+    color: var(--text-secondary);
+    text-wrap: balance;
+}
+
+.fristed-definition-word {
+    font-weight: 600;
+    font-style: italic;
+}
+
+.fristed-definition-sep {
+    margin: 0 0.35em;
+    opacity: 0.55;
+}
+
+body.dark-mode .fristed-definition-pill {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+body.ios .eula-definition-pill-ios {
+    margin-bottom: 14px;
+}
+
+body:not(.ios) .eula-definition-pill-ios {
+    display: none;
+}
+
 .welcome-onboarding-subtitle {
     margin: 0 auto;
     max-width: 30em;
