@@ -17959,22 +17959,22 @@ const SETTINGS_TRANSLATIONS = {
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Welcome to Fristed',
         fristedDefinitionHtml:
-            '<strong class="fristed-definition-word">fristed</strong><span class="fristed-definition-sep" aria-hidden="true"> · </span>Danish for “a free space, a haven”',
+            '<strong class="fristed-definition-word">fristed</strong><span class="fristed-definition-pronunciation">(free-sted)</span><span class="fristed-definition-sep" aria-hidden="true"> · </span>Danish for ‘a free space, a haven’',
         welcomeOnboardingSubtitle:
             'Block the websites and apps that pull you away, and keep a clear space to focus.',
         welcomeHowHeading: 'STEPS TO GET STARTED (we\'ll guide you through it 😊)',
         welcomeStep1TitleAutomationHtml: 'Allow {APPLE}Automation',
         welcomeStep1BodyAutomationHtml:
-            'In Safari, Chrome, Brave, and Edge, Fristed uses Automation to block websites. We\'ll prompt you to allow access.',
+            'In Safari, Chrome, Brave, and Edge, <em>Fristed</em> uses Automation to block websites. We\'ll prompt you to allow access.',
         welcomeStep2TitleFirefoxHtml: 'Set up {LOGO}ReDD Focus in Firefox',
         welcomeStep2BodyFirefoxHtml:
-            'Firefox blocking uses our {LOGO}<strong>ReDD Focus</strong> extension. We\'ll guide you through installing it from the Firefox Add-ons store.',
+            'Firefox blocking uses our extension <em>ReDD Focus</em>. We\'ll guide you through installing it from the Firefox Add-ons store.',
         welcomeStep2TitleHtml: 'Enable blocking in your browser & allow it in private/incognito tabs',
         welcomeStep2BodyHtml:
             'Our {LOGO}<strong>ReDD Focus</strong> extension is what actually blocks websites. We\'ll auto-install it in your browsers where we can, and show you what to do.',
         welcomeStep3TitleHtml: 'Start blocking! 🥳',
         welcomeStep3BodyHtml:
-            'Pick the websites and apps that pull you off task, and set the times you want them out of reach. Fristed takes care of the rest.',
+            'Pick the websites and apps that pull you off task, and set the times you want them out of reach. <em>Fristed</em> takes care of the rest.',
         welcomeDemoToggleLabel: 'See it in action — 30s',
         welcomeDemoVideoCaption: 'Quick demo — creating blocklists & how blocks feel',
         welcomeDemoPlayAriaLabel: 'Play demo video',
@@ -18692,16 +18692,16 @@ const SETTINGS_TRANSLATIONS = {
         welcomeHowHeading: 'TRIN FOR AT KOMME I GANG (vi guider dig igennem det 😊)',
         welcomeStep1TitleAutomationHtml: 'Tillad {APPLE}Automatisering',
         welcomeStep1BodyAutomationHtml:
-            'I Safari, Chrome, Brave og Edge bruger Fristed Automatisering til at blokere websites. Vi beder dig om at tillade adgang.',
+            'I Safari, Chrome, Brave og Edge bruger <em>Fristed</em> Automatisering til at blokere websites. Vi beder dig om at tillade adgang.',
         welcomeStep2TitleFirefoxHtml: 'Opsæt {LOGO}ReDD Focus i Firefox',
         welcomeStep2BodyFirefoxHtml:
-            'Blokering i Firefox bruger vores {LOGO}<strong>ReDD Focus</strong>-udvidelse. Vi guider dig gennem installation fra Firefoxs tilføjelsesbutik.',
+            'Blokering i Firefox bruger vores <strong>ReDD Focus</strong>-udvidelse. Vi guider dig gennem installation fra Firefoxs tilføjelsesbutik.',
         welcomeStep2TitleHtml: 'Slå blokering til i din browser og tillad den i private/incognito-faner',
         welcomeStep2BodyHtml:
             'Vores {LOGO}<strong>ReDD Focus</strong>-udvidelse er det, der faktisk blokerer websites. Vi installerer den automatisk i dine browsere, hvor vi kan, og viser dig, hvad du skal gøre.',
         welcomeStep3TitleHtml: 'Vælg, hvad der skal blokeres',
         welcomeStep3BodyHtml:
-            'Vælg de websites og apps, der distraherer dig, og bestem hvornår de skal være utilgængelige. Fristed klarer resten.',
+            'Vælg de websites og apps, der distraherer dig, og bestem hvornår de skal være utilgængelige. <em>Fristed</em> klarer resten.',
         welcomeDemoToggleLabel: 'Se det i aktion — 30 sek.',
         welcomeDemoVideoCaption: 'Demo — blokeringslister og hvordan blokering føles',
         welcomeDemoPlayAriaLabel: 'Afspil demovideo',
@@ -19747,7 +19747,7 @@ function applyWelcomeOnboardingLanguage() {
                     .replace('{LOGO}', focusLogoHtml);
             }
             if (step2Body) {
-                step2Body.innerHTML = tSettings('welcomeStep2BodyFirefoxHtml').replace('{LOGO}', focusLogoHtml);
+                step2Body.innerHTML = tSettings('welcomeStep2BodyFirefoxHtml');
             }
         }
     } else {

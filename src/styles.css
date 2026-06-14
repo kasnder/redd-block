@@ -6667,7 +6667,13 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card {
 
 .fristed-definition-word {
     font-weight: 600;
+}
+
+.fristed-definition-pronunciation {
+    margin-left: 0.25em;
+    font-weight: 400;
     font-style: italic;
+    opacity: 0.8;
 }
 
 .fristed-definition-sep {
