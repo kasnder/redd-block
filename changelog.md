@@ -4,6 +4,10 @@ User-facing changes for each release. Every app upgrade adds a new entry here.
 
 ## v3.3.1
 
+- **Meet Fristed: Block Apps & Sites!** ReDD Block has a new name — same
+  powerful blocking you love, now called **Fristed: Block Apps & Sites**.
+  Block distracting websites and apps, keep your schedules, and stay focused —
+  nothing else changes.
 - **Fristed rebrand onboarding for existing users.** Existing ReDD Block users
   now see a one-time Fristed rebrand screen before the regular welcome flow, so
   the rename is explained without changing any blocklists, schedules, or settings.
@@ -19,14 +23,6 @@ User-facing changes for each release. Every app upgrade adds a new entry here.
 - **iOS: onboarding and UI polish.** The Fristed branding updates continue
   across iOS, and the overlapping-days issue in the schedule start view is fixed.
 - **Version:** 3.3.1 (macOS, Windows, and iOS).
-
-## v3.3.0
-
-- **Meet Fristed: Block Apps & Sites!** ReDD Block has a new name — same
-  powerful blocking you love, now called **Fristed: Block Apps & Sites**.
-  Block distracting websites and apps, keep your schedules, and stay focused —
-  nothing else changes.
-- **Version:** 3.3.0 (macOS, Windows, and iOS).
 
 ## v3.2.1
 
