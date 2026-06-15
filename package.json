@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "tauri dev",
     "dev:ios": "bash ./scripts/ios-dev.sh",
-    "dev:android": "powershell -ExecutionPolicy Bypass -File ./scripts/android-dev.ps1",
+    "dev:android": "node ./scripts/android-dev.js",
     "build": "tauri build",
     "build:mac": "bash ./scripts/build-mac.sh",
     "build:mac-pkg": "./scripts/build-mac-pkg.sh --release",
