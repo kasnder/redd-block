@@ -1323,6 +1323,9 @@ function syncNowBlockingChipsScrollability() {
 }
 
 function isLocalDevRun() {
+    if (import.meta?.env?.DEV) {
+        return true;
+    }
     return ['http:', 'https:'].includes(window.location.protocol)
         && ['localhost', '127.0.0.1'].includes(window.location.hostname);
 }
@@ -1577,6 +1580,10 @@ async function persistWelcomeOnboardingShown() {
 }
 
 async function runInitialDesktopOnboardingSequence() {
+    if (await shouldShowRebrandOnboarding()) {
+        await presentRebrandOnboarding();
+        return;
+    }
     if (!hasWelcomeOnboardingBeenShown()) {
         await presentWelcomeOnboarding();
         await persistWelcomeOnboardingShown();
@@ -1592,11 +1599,9 @@ function presentWelcomeOnboarding(onContinue) {
             return;
         }
 
-        document.getElementById('eula-onboarding')?.classList.add('hidden');
-        document.getElementById('migration-onboarding')?.classList.add('hidden');
+        showExclusiveOnboardingScreen('welcome-onboarding');
         document.getElementById('main-content')?.classList.add('hidden');
         document.getElementById('now-blocking-row')?.classList.add('hidden');
-        overlay.classList.remove('hidden');
         resetWelcomeDemoPanel();
         welcomeFirefoxInstalled = await detectWelcomeFirefoxInstalled();
         applyWelcomeOnboardingLanguage();
@@ -1613,10 +1618,70 @@ function presentWelcomeOnboarding(onContinue) {
     })();
 }
 
+function hasSeenRebrandOnboarding() {
+    return appData?.settings?.extra?.rebrandOnboardingShown === true;
+}
+
+function hasLegacyReddBlockData() {
+    return (appData?.blocklists?.length || 0) > 0
+        || (appData?.activeBlocks?.length || 0) > 0
+        || (appData?.schedules?.length || 0) > 0
+        || hasAcceptedEula()
+        || getAcceptedEulaRevision() != null
+        || appData?.settings?.onboardingComplete === true
+        || appData?.settings?.welcomeOnboardingShown === true
+        || !!localStorage.getItem(EXT_ONBOARDING_DISMISSED_KEY);
+}
+
+async function shouldShowRebrandOnboarding() {
+    if (isIOS) return false;
+    return hasLegacyReddBlockData()
+        && !hasSeenRebrandOnboarding();
+}
+
+async function persistRebrandOnboardingShown() {
+    if (!appData.settings) appData.settings = {};
+    if (!appData.settings.extra) appData.settings.extra = {};
+    appData.settings.extra.rebrandOnboardingShown = true;
+    await saveData();
+}
+
+async function presentRebrandOnboarding() {
+    const overlay = document.getElementById('rebrand-onboarding');
+    const btn = document.getElementById('rebrand-onboarding-continue-btn');
+    if (!overlay || !btn) return;
+
+    showExclusiveOnboardingScreen('rebrand-onboarding');
+    document.getElementById('main-content')?.classList.add('hidden');
+    document.getElementById('now-blocking-row')?.classList.add('hidden');
+    applyRebrandOnboardingLanguage();
+
+    await new Promise((resolve) => {
+        const onClick = async () => {
+            btn.removeEventListener('click', onClick);
+            await persistRebrandOnboardingShown();
+            overlay.classList.add('hidden');
+            updateOnboardingVisibility();
+            resolve();
+        };
+        btn.addEventListener('click', onClick);
+    });
+}
+
+function syncSetupBannerHeadline() {
+    const headlineEl = document.getElementById('setup-banner-headline');
+    if (!headlineEl) return;
+    const browsers = lastOnboardingState?.browsers;
+    if (!browsers) {
+        headlineEl.textContent = tSettings(isMacOSDesktop ? 'setupBrowsersBannerHeadlineMac' : 'setupBrowsersBannerHeadline');
+        return;
+    }
+    const detectedKeys = Object.keys(BROWSER_STORE_LINKS).filter(k => browsers[k] && browsers[k].installed);
+    headlineEl.textContent = tSettings(bannerHeadlineKey(browsers, detectedKeys));
+}
+
 function showEulaOnboardingScreen() {
-    document.getElementById('welcome-onboarding')?.classList.add('hidden');
-    document.getElementById('migration-onboarding')?.classList.add('hidden');
-    document.getElementById('eula-onboarding')?.classList.remove('hidden');
+    showExclusiveOnboardingScreen('eula-onboarding');
     document.getElementById('main-content')?.classList.add('hidden');
     document.getElementById('now-blocking-row')?.classList.add('hidden');
     applyEulaOnboardingLanguage();
@@ -2029,11 +2094,9 @@ async function showMigrationOnboarding(phase, state, opts = {}) {
 
     migrationOnboardingActive = true;
     startMigrationPolling();
-    document.getElementById('welcome-onboarding')?.classList.add('hidden');
-    document.getElementById('eula-onboarding')?.classList.add('hidden');
+    showExclusiveOnboardingScreen('migration-onboarding');
     document.getElementById('now-blocking-row')?.classList.add('hidden');
     if (main) main.classList.add('hidden');
-    screen.classList.remove('hidden');
 
     // Bring our window back to the front. The osascript admin
     // prompt steals focus, and on macOS we run as a menu-bar
@@ -2576,12 +2639,9 @@ async function presentSafariFdaOnboardingUi() {
     if (!session) return;
     document.getElementById('settings-modal')?.classList.add('hidden');
     setLanguagePickerOpen(false);
-    document.getElementById('eula-onboarding')?.classList.add('hidden');
-    document.getElementById('welcome-onboarding')?.classList.add('hidden');
-    document.getElementById('migration-onboarding')?.classList.add('hidden');
+    showExclusiveOnboardingScreen('fda-onboarding');
     document.getElementById('main-content')?.classList.add('hidden');
     document.getElementById('now-blocking-row')?.classList.add('hidden');
-    session.overlay.classList.remove('hidden');
     const statusEl = document.getElementById('fda-onboarding-status');
     if (statusEl && !session.pollHandle) {
         statusEl.classList.add('hidden');
@@ -3995,9 +4055,7 @@ async function updateBehaviourChangeBanner(state) {
 
     const headlineEl = document.getElementById('setup-banner-headline');
     if (headlineEl) {
-        const headlineKey = isMacOSDesktop
-            ? 'setupBrowsersBannerHeadlineMac'
-            : 'setupBrowsersBannerHeadline';
+        const headlineKey = bannerHeadlineKey(browsers, detectedKeys);
         headlineEl.textContent = tSettings(headlineKey);
     }
 
@@ -4031,6 +4089,28 @@ async function updateBehaviourChangeBanner(state) {
             banner.classList.add('hidden');
         });
     }
+}
+
+function bannerHeadlineKey(browsers, detectedKeys) {
+    if (!isMacOSDesktop) {
+        return 'setupBrowsersBannerHeadline';
+    }
+
+    const extensionStatuses = new Set([
+        'needs-install',
+        'needs-native-host',
+        'needs-enable',
+        'needs-private',
+        'needs-website-access',
+    ]);
+
+    const hasExtensionIssue = detectedKeys.some((key) =>
+        extensionStatuses.has(effectiveBrowserComplianceStatus(key, browsers))
+    );
+
+    return hasExtensionIssue
+        ? 'setupBrowsersBannerHeadline'
+        : 'setupBrowsersBannerHeadlineMac';
 }
 
 // Build a compact, action-grouped summary of what's still missing
@@ -6369,6 +6449,9 @@ async function initializeIOSBlockingState() {
 }
 
 function updateOnboardingVisibility() {
+    if (activeExclusiveOnboardingScreenId()) {
+        return;
+    }
     const eulaOverlay = document.getElementById('eula-onboarding');
     const screentimeOverlay = document.getElementById('ios-screentime-onboarding');
     const main = document.getElementById('main-content');
@@ -6392,6 +6475,30 @@ function updateOnboardingVisibility() {
     if (nowBlockingRow) {
         nowBlockingRow.classList.toggle('hidden', blockMainUi);
     }
+}
+
+function activeExclusiveOnboardingScreenId() {
+    const screenIds = [
+        'rebrand-onboarding',
+        'welcome-onboarding',
+        'fda-onboarding',
+        'migration-onboarding',
+    ];
+    return screenIds.find((id) => !document.getElementById(id)?.classList.contains('hidden')) || null;
+}
+
+function showExclusiveOnboardingScreen(activeId) {
+    const screenIds = [
+        'rebrand-onboarding',
+        'welcome-onboarding',
+        'eula-onboarding',
+        'fda-onboarding',
+        'migration-onboarding',
+        'ios-screentime-onboarding',
+    ];
+    screenIds.forEach((id) => {
+        document.getElementById(id)?.classList.toggle('hidden', id !== activeId);
+    });
 }
 
 async function acceptEula() {
@@ -6704,6 +6811,27 @@ async function updateMaximizeButton() {
     }
 }
 
+async function updateRebrandMaximizeButton() {
+    const maximizeBtn = document.getElementById('rebrand-titlebar-maximize');
+    const maximizeIcon = document.getElementById('rebrand-maximize-icon');
+    const restoreIcon = document.getElementById('rebrand-restore-icon');
+
+    if (!maximizeBtn || !maximizeIcon || !restoreIcon) return;
+
+    const win = getCurrentWindow();
+    const isMaximized = await win.isMaximized();
+
+    if (isMaximized) {
+        maximizeIcon.style.display = 'none';
+        restoreIcon.style.display = 'block';
+        maximizeBtn.title = 'Restore';
+    } else {
+        maximizeIcon.style.display = 'block';
+        restoreIcon.style.display = 'none';
+        maximizeBtn.title = 'Maximize';
+    }
+}
+
 // Setup event listeners
 function setupEventListeners() {
     // Window controls (using Tauri docs naming)
@@ -6718,6 +6846,19 @@ function setupEventListeners() {
     });
 
     document.getElementById('titlebar-close')?.addEventListener('click', () => {
+        tauriAPI.closeWindow();
+    });
+
+    document.getElementById('rebrand-titlebar-minimize')?.addEventListener('click', () => {
+        tauriAPI.minimizeWindow();
+    });
+
+    document.getElementById('rebrand-titlebar-maximize')?.addEventListener('click', async () => {
+        await tauriAPI.maximizeWindow();
+        setTimeout(updateRebrandMaximizeButton, 100);
+    });
+
+    document.getElementById('rebrand-titlebar-close')?.addEventListener('click', () => {
         tauriAPI.closeWindow();
     });
 
@@ -17956,6 +18097,13 @@ const SETTINGS_TRANSLATIONS = {
         eulaWelcomeIconAlt: 'Fristed app icon',
         eulaProjectBlurb:
             'Fristed is developed by the Reduce Digital Distraction Project, in collaboration with researchers at the University of Oxford and University of Maastricht. The ReDD Project is a not-for-profit creating insights & open-source digital focus tools for everyone to thrive in the digital world.',
+        rebrandOnboardingTitle: 'ReDD Block has a new look!',
+        rebrandOnboardingSubtitle: 'Meet Fristed: Block Apps & Sites',
+        rebrandOnboardingBody1:
+            '"Fristed" is a Danish word that means "a free space, a haven", which perfectly reflects the idea of the app: helping you block the websites and apps that pull you away, and keep a clear space to focus.',
+        rebrandOnboardingBody2:
+            'This is just a new look - your blocklists, schedules, and settings are all unchanged.',
+        rebrandOnboardingContinueBtn: 'Continue',
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Welcome to Fristed',
         fristedDefinitionHtml:
@@ -18685,6 +18833,13 @@ const SETTINGS_TRANSLATIONS = {
         eulaWelcomeIconAlt: 'Fristed-appikon',
         eulaProjectBlurb:
             'Fristed er udviklet af Reduce Digital Distraction Project i samarbejde med forskere ved University of Oxford og Maastricht University. ReDD-projektet er en non-profit, der skaber indsigt og open source digitale fokusværktøjer, så alle kan trives i den digitale verden.',
+        rebrandOnboardingTitle: 'ReDD Block har fået et nyt look!',
+        rebrandOnboardingSubtitle: 'Mød Fristed: Bloker apps og websites.',
+        rebrandOnboardingBody1:
+            '"Fristed" er et dansk ord for et frit sted eller et frirum: et lille sted med ro og beskyttelse.',
+        rebrandOnboardingBody2:
+            'Det er den samme idé, appen bygger på. Navnet og det visuelle udtryk er nyt, men dine bloklister, tidsplaner og indstillinger er stadig her og uændrede.',
+        rebrandOnboardingContinueBtn: 'Fortsæt',
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Velkommen til Fristed',
         welcomeOnboardingSubtitle:
@@ -19629,6 +19784,26 @@ function applyFristedDefinitionPills() {
     });
 }
 
+function applyRebrandOnboardingLanguage() {
+    const title = document.getElementById('rebrand-onboarding-title');
+    if (title) title.textContent = tSettings('rebrandOnboardingTitle');
+
+    const subtitle = document.getElementById('rebrand-onboarding-subtitle');
+    if (subtitle) subtitle.textContent = tSettings('rebrandOnboardingSubtitle');
+
+    const body1 = document.getElementById('rebrand-onboarding-body-1');
+    if (body1) body1.textContent = tSettings('rebrandOnboardingBody1');
+
+    const body2 = document.getElementById('rebrand-onboarding-body-2');
+    if (body2) body2.textContent = tSettings('rebrandOnboardingBody2');
+
+    const continueBtn = document.getElementById('rebrand-onboarding-continue-btn');
+    if (continueBtn) continueBtn.textContent = tSettings('rebrandOnboardingContinueBtn');
+
+    const appIcon = document.getElementById('rebrand-onboarding-app-icon');
+    if (appIcon) appIcon.setAttribute('alt', tSettings('eulaWelcomeIconAlt'));
+}
+
 /** First-run EULA screen — localized from current UI language / saved preference / browser locale (da). */
 function applyEulaOnboardingLanguage() {
     const title = tSettings('welcomeOnboardingTitle');
@@ -20003,6 +20178,7 @@ function applySettingsLanguage() {
         'setup-banner-headline',
         tSettings(isMacOSDesktop ? 'setupBrowsersBannerHeadlineMac' : 'setupBrowsersBannerHeadline'),
     );
+    syncSetupBannerHeadline();
     setText('behaviour-change-help', tSettings('setupBrowsersBannerCta'));
     const behaviourDismissBtn = document.getElementById('behaviour-change-dismiss');
     if (behaviourDismissBtn) {
@@ -20334,6 +20510,7 @@ function applySettingsLanguage() {
     }
 
     applyMigrationOverlayStaticCopy();
+    applyRebrandOnboardingLanguage();
     applyEulaOnboardingLanguage();
     applyWelcomeOnboardingLanguage();
     applySafariFdaOnboardingLanguage();

@@ -9,6 +9,54 @@
 </head>
 
 <body>
+    <div id="rebrand-onboarding" class="onboarding-screen hidden">
+        <div class="eula-title-bar" data-tauri-drag-region aria-hidden="true">
+            <div id="rebrand-window-controls" class="window-controls hidden">
+                <button id="rebrand-titlebar-minimize" class="win-btn" title="Minimize">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="0" y="5" width="12" height="1" fill="currentColor" />
+                    </svg>
+                </button>
+                <button id="rebrand-titlebar-maximize" class="win-btn" title="Maximize">
+                    <svg id="rebrand-maximize-icon" width="12" height="12" viewBox="0 0 12 12" fill="none"
+                        xmlns="http://www.w3.org/2000/svg">
+                        <rect x="1" y="1" width="10" height="10" stroke="currentColor" stroke-width="1.2" fill="none" />
+                    </svg>
+                    <svg id="rebrand-restore-icon" width="12" height="12" viewBox="0 0 12 12" fill="none"
+                        xmlns="http://www.w3.org/2000/svg" style="display: none;">
+                        <rect x="2" y="2" width="8" height="8" stroke="currentColor" stroke-width="1.2" fill="none" />
+                        <rect x="0" y="0" width="8" height="8" stroke="currentColor" stroke-width="1.2" fill="none" />
+                    </svg>
+                </button>
+                <button id="rebrand-titlebar-close" class="win-btn close-btn" title="Close">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M1 1L11 11M11 1L1 11" stroke="currentColor" stroke-width="1.5"
+                            stroke-linecap="round" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <div class="eula-onboarding-scroll">
+            <div class="onboarding-content legal-onboarding-content rebrand-onboarding-content">
+                <div class="onboarding-icon">
+                    <img id="rebrand-onboarding-app-icon" src="/fristed-icon.svg" alt="Fristed app icon"
+                        class="onboarding-app-icon">
+                </div>
+                <h1 id="rebrand-onboarding-title">ReDD Block has a new look!</h1>
+                <p id="rebrand-onboarding-subtitle" class="rebrand-onboarding-subtitle">Meet Fristed: Block Apps &amp; Sites</p>
+                <div class="onboarding-focus-card legal-onboarding-card rebrand-onboarding-card">
+                    <p id="rebrand-onboarding-body-1">
+                        "Fristed" is a Danish word that means "a free space, a haven", which perfectly reflects the idea of the app: helping you block distracting websites &amp; apps and focus on what matters.
+                    </p>
+                    <p id="rebrand-onboarding-body-2">
+                        This is just a new look - your blocklists, schedules, and settings are all unchanged.
+                    </p>
+                    <button id="rebrand-onboarding-continue-btn" type="button"
+                        class="modal-btn primary-btn onboarding-primary-btn">Continue</button>
+                </div>
+            </div>
+        </div>
+    </div>
     <div class="app-container">
         <!-- Title Bar -->
         <div class="title-bar" data-tauri-drag-region>
