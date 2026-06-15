@@ -36,22 +36,30 @@ echo "=== preinstall $(date '+%F %T') ==="
 #      by browsers (those hold open file handles inside the .app
 #      bundle and would block the payload swap).
 APP_PATH='/Applications/Fristed.app'
+LEGACY_APP_PATH='/Applications/ReDD Block.app'
 if [ -d "$APP_PATH" ]; then
     osascript -e 'tell application id "com.reddblock" to quit' 2>/dev/null || true
+fi
+if [ -d "$LEGACY_APP_PATH" ]; then
+    osascript -e 'tell application "ReDD Block" to quit' 2>/dev/null || true
 fi
 
 # `redd-block` is the Tauri binary stem inside the .app; that's the
 # name `ps` shows, not the bundle display name "Fristed". Match
 # both as a belt-and-braces.
 pgrep -f '/Applications/Fristed.app/Contents/MacOS/redd-block' | xargs -r kill -TERM 2>/dev/null
+pgrep -f '/Applications/ReDD Block.app/Contents/MacOS/redd-block' | xargs -r kill -TERM 2>/dev/null
 pkill -x 'redd-block' 2>/dev/null
 pkill -x 'Fristed' 2>/dev/null
+pkill -x 'ReDD Block' 2>/dev/null
 sleep 2
 
 # Anything still running gets SIGKILL'd.
 pgrep -f '/Applications/Fristed.app/Contents/MacOS/redd-block' | xargs -r kill -KILL 2>/dev/null
+pgrep -f '/Applications/ReDD Block.app/Contents/MacOS/redd-block' | xargs -r kill -KILL 2>/dev/null
 pkill -KILL -x 'redd-block' 2>/dev/null
 pkill -KILL -x 'Fristed' 2>/dev/null
+pkill -KILL -x 'ReDD Block' 2>/dev/null
 sleep 1
 
 # 1b. Clean up stale Tauri DMG temp files that earlier builds of this

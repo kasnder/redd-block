@@ -13,6 +13,11 @@ LOG=/var/log/redd-block-pkg-postinstall.log
 exec > >(tee -a "$LOG") 2>&1
 echo "=== postinstall $(date '+%F %T') ==="
 
+LEGACY_APP_PATH='/Applications/ReDD Block.app'
+if [ -d "$LEGACY_APP_PATH" ]; then
+    rm -rf "$LEGACY_APP_PATH" && echo "removed legacy app: $LEGACY_APP_PATH"
+fi
+
 # The Installer.app stashes the invoking user in $USER (their actual
 # console user, not root). Use it to launch the GUI in their session.
 TARGET_USER="${USER:-$(stat -f '%Su' /dev/console)}"
