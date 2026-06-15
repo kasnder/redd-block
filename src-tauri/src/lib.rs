@@ -589,14 +589,13 @@ pub fn run() {
                     .build()?;
             }
 
-            // Create main window on Android — full screen webview
-            // loading the Android-specific frontend (src/android.html),
-            // not the desktop/iOS index.html.
+            // Create main window on Android — full screen webview loading the
+            // shared frontend (index.html). The legacy android.html stack
+            // remains in src/ as a fallback during migration.
             #[cfg(target_os = "android")]
             {
-                let _window =
-                    WebviewWindowBuilder::new(app, "main", WebviewUrl::App("android.html".into()))
-                        .build()?;
+                let _window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+                    .build()?;
             }
 
             // Tray icon (desktop only) — no right-click menu by design:

@@ -37,6 +37,17 @@ import {
     isOverlayMessageEmpty,
 } from './schedule-overlay-message-editor.js';
 import { getReleaseNotesForVersion } from './changelog.js';
+import {
+    androidPluginState,
+    androidAccessibilityGranted,
+    refreshAndroidPluginState,
+    hydrateAppDataFromAndroid,
+    syncAppDataToAndroidPlugin,
+    androidGetInstalledApps,
+    androidOpenAccessibilitySettings,
+    androidOpenNotificationSettings,
+    androidOpenBatterySettings,
+} from './android-bridge.js';
 
 // Compatibility layer wrapping Tauri APIs
 const tauriAPI = {
@@ -233,6 +244,7 @@ let lastDesktopHelperStatus = null;
 let lastDesktopHelperStatusAt = 0;
 let draggedBlocklistId = null; // Track which blocklist is being dragged
 let isIOS = false; // Track if running on iOS
+let isAndroid = false; // Track if running on Android (Tauri mobile)
 // True on macOS desktop (i.e. Mac platform AND not the iOS Tauri
 // runtime). Set in `detectPlatform`. Used to gate macOS-only Tauri
 // commands and onboarding copy.
@@ -689,6 +701,17 @@ function getSingleOccurrenceSegmentDates(schedule, segment) {
 }
 
 async function syncSchedulesToHelper() {
+    if (isAndroid) {
+        try {
+            stampAndroidScheduleExtras();
+            await syncAppDataToAndroidPlugin(appData);
+            hydrateAppDataFromAndroid(appData, androidPluginState);
+            console.log('[syncSchedulesToHelper] Android: synced', appData.schedules?.length || 0, 'schedules');
+        } catch (e) {
+            console.warn('[syncSchedulesToHelper] Android error:', e);
+        }
+        return;
+    }
     if (isIOS) {
         try {
             const flatEntries = [];
@@ -823,7 +846,7 @@ async function syncSchedulesToHelper() {
 }
 
 async function syncActiveBlocksToHelper() {
-    if (isIOS) return;
+    if (isIOS || isAndroid) return;
     try {
         const status = await tauriAPI.checkHelperStatus();
         if (!status.running || !status.version_ok) return;
@@ -1230,15 +1253,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupBlocklistsImportExportButtons();
     setupAppForegroundRefresh();
     setupOverrideAll();
-    setupInAppUninstall();
-    setupWindowsUninstallGuidance();
-    setupMacAutomationIntroModal();
+    if (!isAndroid) {
+        setupInAppUninstall();
+        setupWindowsUninstallGuidance();
+        setupMacAutomationIntroModal();
+    }
+    setupAndroidPermissionsOnboarding();
     setupGraceSetting();
     setupSettingsEnforcementSection();
-    void wireEnforcementToggle();
+    if (!isIOS && !isAndroid) {
+        void wireEnforcementToggle();
+    }
     if (isIOS && hasAcceptedEula()) {
         await checkScreentimeAuth();
-    } else if (!isIOS) {
+    } else if (isAndroid && hasAcceptedEula()) {
+        await checkAndroidPermissions();
+    } else if (!isIOS && !isAndroid) {
         await runInitialDesktopOnboardingSequence();
     } else {
         updateOnboardingVisibility();
@@ -1406,6 +1436,11 @@ async function runPostAcceptanceStartup() {
             if (screentimeAuthorized) {
                 await initializeIOSBlockingState();
             }
+        } else if (isAndroid) {
+            await checkAndroidPermissions();
+            await refreshAndroidPluginState();
+            hydrateAppDataFromAndroid(appData, androidPluginState);
+            await syncSchedulesToHelper();
         } else {
             // Run first-launch migration off the legacy helper + check
             // Automation TCC (macOS) + extension compliance. Idempotent;
@@ -1442,7 +1477,7 @@ async function runPostAcceptanceStartup() {
         startTickInterval();
 
         // Check for app updates (non-blocking, desktop only)
-        if (!isIOS) {
+        if (!isIOS && !isAndroid) {
             checkForAppUpdate();
         }
         startupInitializationComplete = true;
@@ -2348,6 +2383,7 @@ async function onEnforcementToggleChange(changedToggle) {
 }
 
 async function wireEnforcementToggle() {
+    if (isIOS || isAndroid) return;
     const toggles = getEnforcementToggleInputs();
     if (!toggles.length) return;
 
@@ -6251,7 +6287,20 @@ function displayNameForBlockedApp(processName) {
 }
 
 async function ensureInstalledAppsCache() {
-    if (isIOS || installedAppsCache) return;
+    if (installedAppsCache) return;
+    if (isIOS) return;
+    if (isAndroid) {
+        try {
+            const apps = await androidGetInstalledApps();
+            installedAppsCache = apps.map((a) => ({
+                process_name: a.packageName,
+                display_name: a.label,
+            }));
+        } catch (e) {
+            console.warn('[installed-apps] Android preload failed:', e);
+        }
+        return;
+    }
     try {
         installedAppsCache = await tauriAPI.listInstalledApps();
     } catch (e) {
@@ -6320,6 +6369,62 @@ function isHelperConnectionError(errorMsg) {
     return errorMsg.includes('Failed to connect to helper') || errorMsg.includes('refused') || errorMsg.includes('10061');
 }
 
+async function checkAndroidPermissions() {
+    try {
+        await refreshAndroidPluginState();
+    } catch (err) {
+        console.error('Error checking Android permissions:', err);
+    }
+    updateOnboardingVisibility();
+}
+
+function renderAndroidPermissionCards() {
+    if (!isAndroid) return;
+    const perms = androidPluginState.permissions || {};
+    const setCard = (id, granted, title, desc) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.toggle('android-perm-granted', !!granted);
+        el.innerHTML = `
+            <span class="android-perm-title">${title}</span>
+            <span class="android-perm-desc">${desc}</span>
+            <span class="android-perm-status">${granted ? 'Enabled' : 'Tap to open settings'}</span>`;
+    };
+    setCard('android-perm-accessibility', perms.accessibility, 'Accessibility Service',
+        'Required to detect and block apps and websites');
+    setCard('android-perm-notifications', perms.notifications, 'Notifications',
+        'Show alerts when apps or websites are blocked');
+    setCard('android-perm-battery', perms.batteryOptimization, 'Battery Optimization',
+        'Ensure blocking runs reliably in the background');
+}
+
+function setupAndroidPermissionsOnboarding() {
+    if (!isAndroid) return;
+
+    document.getElementById('android-perm-accessibility')?.addEventListener('click', async () => {
+        await androidOpenAccessibilitySettings();
+        setTimeout(checkAndroidPermissions, 500);
+    });
+    document.getElementById('android-perm-notifications')?.addEventListener('click', async () => {
+        await androidOpenNotificationSettings();
+        setTimeout(checkAndroidPermissions, 500);
+    });
+    document.getElementById('android-perm-battery')?.addEventListener('click', async () => {
+        await androidOpenBatterySettings();
+        setTimeout(checkAndroidPermissions, 500);
+    });
+    document.getElementById('android-permissions-continue-btn')?.addEventListener('click', () => {
+        if (!androidAccessibilityGranted()) return;
+        updateOnboardingVisibility();
+    });
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            void checkAndroidPermissions();
+        }
+    });
+}
+
 // Check Screen Time authorization (iOS only)
 async function checkScreentimeAuth() {
     try {
@@ -6368,20 +6473,24 @@ async function initializeIOSBlockingState() {
 function updateOnboardingVisibility() {
     const eulaOverlay = document.getElementById('eula-onboarding');
     const screentimeOverlay = document.getElementById('ios-screentime-onboarding');
+    const androidOverlay = document.getElementById('android-permissions-onboarding');
     const main = document.getElementById('main-content');
     const showEula = !hasAcceptedEula();
     const showScreentime = isIOS && !showEula && !screentimeAuthorized;
-    const keepEulaVisibleForPendingSetup = !isIOS
+    const showAndroidPermissions = isAndroid && !showEula && !androidAccessibilityGranted();
+    const keepEulaVisibleForPendingSetup = !isIOS && !isAndroid
         && isFirstRunOnboardingInProgress()
         && !migrationOnboardingActive;
     const showEulaScreen = showEula || keepEulaVisibleForPendingSetup;
     const blockMainUi = showEulaScreen
         || showScreentime
+        || showAndroidPermissions
         || migrationOnboardingActive
-        || (!isIOS && isFirstRunOnboardingInProgress());
+        || (!isIOS && !isAndroid && isFirstRunOnboardingInProgress());
 
     eulaOverlay?.classList.toggle('hidden', !showEulaScreen);
     screentimeOverlay?.classList.toggle('hidden', !showScreentime);
+    androidOverlay?.classList.toggle('hidden', !showAndroidPermissions);
     main?.classList.toggle('hidden', blockMainUi);
 
     // Hide the BLOCKING NOW title-bar row on onboarding screens
@@ -6389,6 +6498,8 @@ function updateOnboardingVisibility() {
     if (nowBlockingRow) {
         nowBlockingRow.classList.toggle('hidden', blockMainUi);
     }
+
+    renderAndroidPermissionCards();
 }
 
 async function acceptEula() {
@@ -6404,6 +6515,9 @@ async function acceptEula() {
     }
     if (isIOS) {
         await checkScreentimeAuth();
+    } else if (isAndroid) {
+        await checkAndroidPermissions();
+        updateOnboardingVisibility();
     } else {
         if (!appData.settings.onboardingComplete) {
             firstRunExtensionSetupPending = true;
@@ -6496,6 +6610,15 @@ async function loadData() {
     if (migrateLegacyScheduleStartOverlays()) {
         shouldSave = true;
     }
+
+    if (isAndroid) {
+        await refreshAndroidPluginState();
+        const hydrated = hydrateAppDataFromAndroid(appData, androidPluginState);
+        if (hydrated) {
+            shouldSave = false; // enforcement state comes from the plugin
+        }
+    }
+
     // Create default blocklist on first launch (no blocklists yet)
     if (appData.blocklists.length === 0) {
         appData.blocklists.push({
@@ -6510,7 +6633,7 @@ async function loadData() {
             iosScreenTimeSelection: null,
             overrideDifficulty: {
                 type: 'random-words',
-                count: isIOS ? 25 : 50
+                count: isIOS ? 25 : (isAndroid ? 15 : 50)
             }
         });
         shouldSave = true;
@@ -6605,12 +6728,55 @@ function usesIOSWordCountForOverrideType(type) {
 /** Key in latest-versions.json — iOS uses its own release line, not desktop macos. */
 function getLatestVersionPlatformKey() {
     if (isIOS) return 'ios';
+    if (isAndroid) return 'android';
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
     return isMac ? 'macos' : 'windows';
 }
 
-// Detect platform for window controls and iOS
+function stampAndroidScheduleExtra(schedule) {
+    if (!isAndroid || !schedule) return;
+    if (!schedule.extra) schedule.extra = {};
+    if (!schedule.extra.androidTimingType) {
+        const seg = schedule.segments?.[0];
+        const days = seg?.days || [];
+        schedule.extra.androidTimingType = days.length >= 7 ? 'DAILY' : 'WEEKLY';
+    }
+    if (schedule.extra.androidIsEnabled === undefined) {
+        schedule.extra.androidIsEnabled = true;
+    }
+    if (schedule.extra.frictionWordCount === undefined) {
+        schedule.extra.frictionWordCount = 15;
+    }
+    if (schedule.extra.autoReenableMinutes === undefined) {
+        schedule.extra.autoReenableMinutes = 1440;
+    }
+}
+
+function stampAndroidScheduleExtras() {
+    if (!isAndroid) return;
+    for (const schedule of appData.schedules || []) {
+        stampAndroidScheduleExtra(schedule);
+    }
+}
+
+// Detect platform for window controls, iOS, and Android
 function detectPlatform() {
+    // Android Tauri webview (check before generic Linux/desktop fallbacks)
+    const isAndroidDevice = /Android/i.test(navigator.userAgent);
+
+    if (isAndroidDevice) {
+        isAndroid = true;
+        document.body.classList.add('android');
+        document.body.classList.add('android-phone');
+        document.getElementById('window-controls')?.classList.add('hidden');
+        document.querySelector('.title-bar')?.classList.add('hidden');
+        document.getElementById('helper-settings-section')?.classList.add('hidden');
+        setScheduleMode(true);
+        document.querySelector('.scheduler-mode-tabs')?.classList.add('hidden');
+        updateManageSectionVisibility();
+        return;
+    }
+
     // Check for iOS (Tauri iOS uses a WKWebView with standard iOS user agent)
     const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -12387,6 +12553,10 @@ async function proceedWithSchedule() {
         startOverlayId,
     };
 
+    if (isAndroid) {
+        stampAndroidScheduleExtra(schedule);
+    }
+
     // Save to appData
     appData.schedules.push(schedule);
 
@@ -13896,6 +14066,11 @@ function setStartBtnBlocklistInfo(btn, blocklist) {
 // Update hosts file based on active blocks
 // silent = true means don't prompt for password (used for cleanup)
 async function updateHostsFile(silent = false) {
+    if (isAndroid) {
+        await syncSchedulesToHelper();
+        return { success: true };
+    }
+
     const allDomains = new Set();
     const now = Date.now();
 
@@ -14050,8 +14225,8 @@ async function updateHostsFile(silent = false) {
 let appBlockingPreviousAppsSet = null;
 
 async function updateBlockedApps() {
-    // iOS uses Screen Time API for app blocking - skip desktop process watcher
-    if (isIOS) return;
+    // iOS uses Screen Time API; Android uses the accessibility plugin engine
+    if (isIOS || isAndroid) return;
 
     const now = Date.now();
     const nowDate = new Date(now);
@@ -20810,6 +20985,7 @@ function setupHelpMenuLinks() {
 
 // Setup Helper Settings in the settings modal
 function setupHelperSettings() {
+    if (isIOS || isAndroid) return;
     const statusIndicator = document.getElementById('helper-status-indicator');
     const cleanHostsBtn = document.getElementById('clean-hosts-btn');
 
@@ -22357,6 +22533,7 @@ function refreshUninstallButtonState() {
 }
 
 function setupWindowsUninstallGuidance() {
+    if (isIOS || isAndroid) return;
     const btn = document.getElementById('windows-uninstall-open-settings-btn');
     if (!btn) return;
 

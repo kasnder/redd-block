@@ -569,6 +569,26 @@
             </div>
         </div>
 
+        <div id="android-permissions-onboarding" class="onboarding-screen hidden">
+            <div class="onboarding-content android-permissions-onboarding-content">
+                <div class="onboarding-icon">
+                    <img src="/reddblock-icon.svg" alt="ReDD Block app icon" class="onboarding-app-icon">
+                </div>
+                <h1>Welcome to ReDD Block</h1>
+                <p class="onboarding-primary-copy">Enable the permissions below so ReDD Block can block distracting
+                    apps and websites. Tap each row to open the matching Android settings page.</p>
+                <div class="android-permissions-list">
+                    <button id="android-perm-accessibility" class="android-perm-card" type="button"></button>
+                    <button id="android-perm-notifications" class="android-perm-card" type="button"></button>
+                    <button id="android-perm-battery" class="android-perm-card" type="button"></button>
+                </div>
+                <button id="android-permissions-continue-btn"
+                    class="modal-btn primary-btn onboarding-primary-btn">Continue</button>
+                <p class="subtle">ReDD Block is open-source and built by the Reduce Digital Distraction Project
+                    (reddfocus.org).</p>
+            </div>
+        </div>
+
         <!-- Main Content - Grid Layout (hidden until JS clears onboarding gate; avoids flash before EULA on iOS).
              The "BLOCKING NOW" row that used to live here has moved into
              the title bar (see `#now-blocking-row` near the top of body),
