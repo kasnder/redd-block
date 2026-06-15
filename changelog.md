@@ -2,6 +2,24 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
+## v3.3.1
+
+- **Fristed rebrand onboarding for existing users.** Existing ReDD Block users
+  now see a one-time Fristed rebrand screen before the regular welcome flow, so
+  the rename is explained without changing any blocklists, schedules, or settings.
+- **Desktop: clearer browser setup banner wording.** Setup banner headlines now
+  use **ReDD Focus** wording when the outstanding issue is with a browser
+  extension, and keep Fristed wording for macOS Automation-related setup.
+- **Desktop: smoother onboarding transitions.** Rebrand, welcome, Safari access,
+  and migration onboarding surfaces now switch more cleanly without visual bleed
+  between screens.
+- **Welcome and onboarding polish.** Onboarding app icons are larger, the
+  Fristed meaning pill appears in onboarding copy, and welcome/rebrand spacing
+  and text have been refined across the app.
+- **iOS: onboarding and UI polish.** The Fristed branding updates continue
+  across iOS, and the overlapping-days issue in the schedule start view is fixed.
+- **Version:** 3.3.1 (macOS, Windows, and iOS).
+
 ## v3.3.0
 
 - **Meet Fristed: Block Apps & Sites!** ReDD Block has a new name — same
