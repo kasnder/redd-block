@@ -2101,7 +2101,8 @@ body.dark-mode .app-blocking-closedown-banner {
         gap: 14px 18px;
     }
 
-    body.ios:not(.ios-phone) .main-content .segment-day-toggle {
+    body.ios:not(.ios-phone) .main-content .segment-day-toggle,
+    body.android:not(.android-phone) .main-content .segment-day-toggle {
         min-width: 54px;
         height: 38px;
         padding: 0 12px;
@@ -2109,20 +2110,24 @@ body.dark-mode .app-blocking-closedown-banner {
         border-radius: 8px;
     }
 
-    body.ios:not(.ios-phone) .main-content .segment-days.compact-day-labels .segment-day-toggle {
+    body.ios:not(.ios-phone) .main-content .segment-days.compact-day-labels .segment-day-toggle,
+    body.android:not(.android-phone) .main-content .segment-days.compact-day-labels .segment-day-toggle {
         min-width: 38px;
         padding: 0 6px;
     }
 
-    body.ios:not(.ios-phone) .main-content .segment-days {
+    body.ios:not(.ios-phone) .main-content .segment-days,
+    body.android:not(.android-phone) .main-content .segment-days {
         gap: 6px;
     }
 
-    body.ios:not(.ios-phone) .main-content .segment-days-group {
+    body.ios:not(.ios-phone) .main-content .segment-days-group,
+    body.android:not(.android-phone) .main-content .segment-days-group {
         gap: 4px;
     }
 
-    body.ios:not(.ios-phone) .main-content .schedule-block-panel .segment-days {
+    body.ios:not(.ios-phone) .main-content .schedule-block-panel .segment-days,
+    body.android:not(.android-phone) .main-content .schedule-block-panel .segment-days {
         min-height: 42px;
     }
 
@@ -5469,12 +5474,12 @@ body:not(.ios) .segment-row > .time-pickers-row {
         width: 100%;
     }
 
-    body.ios.ios-phone .segment-days-group {
+    body.handset-device .segment-days-group {
         width: max-content;
         max-width: 100%;
     }
 
-    body.ios.ios-phone .segment-days {
+    body.handset-device .segment-days {
         flex-wrap: nowrap;
     }
 }
@@ -5516,7 +5521,8 @@ body:not(.ios) .segment-row > .time-pickers-row {
     transition: all 0.15s ease;
 }
 
-body.ios .segment-day-toggle {
+body.ios .segment-day-toggle,
+body.android .segment-day-toggle {
     min-width: 48px;
     height: 32px;
     padding: 0 10px;
@@ -5524,7 +5530,8 @@ body.ios .segment-day-toggle {
 }
 
 /* Only the compact single-letter fallback gets tighter horizontal sizing. */
-body.ios .segment-days.compact-day-labels .segment-day-toggle {
+body.ios .segment-days.compact-day-labels .segment-day-toggle,
+body.android .segment-days.compact-day-labels .segment-day-toggle {
     min-width: 32px;
     padding: 0 4px;
 }
