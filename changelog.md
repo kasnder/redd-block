@@ -2,27 +2,32 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
-## v3.3.1
+## v3.3.2
 
 - **Meet Fristed: Block Apps & Sites!** ReDD Block has a new name — same
   powerful blocking you love, now called **Fristed: Block Apps & Sites**.
   Block distracting websites and apps, keep your schedules, and stay focused —
   nothing else changes.
 - **Fristed rebrand onboarding for existing users.** Existing ReDD Block users
-  now see a one-time Fristed rebrand screen before the regular welcome flow, so
-  the rename is explained without changing any blocklists, schedules, or settings.
+  see a one-time Fristed rebrand screen before the regular welcome flow. 
+  Rebrand, welcome, Safari access, and migration screens switch more cleanly 
+  between each other, with larger onboarding icons, the Fristed meaning pill 
+  in copy, and refined spacing and text.
+- **Desktop: blocking mechanism settings show only installed browsers.** On macOS,
+  the per-browser blocking method rows in Settings now appear only for browsers
+  that are actually installed on your Mac. The Safari Full Disk Access row is
+  hidden when Safari is not installed.
 - **Desktop: clearer browser setup banner wording.** Setup banner headlines now
   use **ReDD Focus** wording when the outstanding issue is with a browser
   extension, and keep Fristed wording for macOS Automation-related setup.
-- **Desktop: smoother onboarding transitions.** Rebrand, welcome, Safari access,
-  and migration onboarding surfaces now switch more cleanly without visual bleed
-  between screens.
-- **Welcome and onboarding polish.** Onboarding app icons are larger, the
-  Fristed meaning pill appears in onboarding copy, and welcome/rebrand spacing
-  and text have been refined across the app.
+- **Desktop: updated Full Disk Access screenshot.** The macOS Safari setup
+  guide now uses an up-to-date System Settings screenshot for granting Full
+  Disk Access.
 - **iOS: onboarding and UI polish.** The Fristed branding updates continue
   across iOS, and the overlapping-days issue in the schedule start view is fixed.
-- **Version:** 3.3.1 (macOS, Windows, and iOS).
+- **Dark mode: snooze icon visibility.** The snooze control icon is easier to
+  see in dark mode.
+- **Version:** 3.3.2 (macOS, Windows, and iOS).
 
 ## v3.2.1
 
