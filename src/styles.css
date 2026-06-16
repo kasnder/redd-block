@@ -2407,7 +2407,8 @@ body.dark-mode .app-blocking-closedown-banner {
         margin-bottom: calc(12px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .start-confirm-modal h3 {
+    body.ios:not(.ios-phone) .start-confirm-modal h3,
+    body.ios:not(.ios-phone) .start-confirm-header-text h3 {
         font-size: calc(20px * var(--ipad-s));
     }
 
@@ -5032,8 +5033,8 @@ body.dark-mode .pause-block-btn.resume-mode:hover {
     background: color-mix(in srgb, var(--redd-teal) 22%, transparent);
 }
 
-/* Pause Modal */
-.modal-content.pause-modal {
+/* Pause Modal — popup width only; handset full-screen modals expand to viewport. */
+body:not(.handset-device) .modal-content.pause-modal {
     max-width: 410px;
 }
 
@@ -9577,6 +9578,12 @@ body.ios .modal-overlay {
     -webkit-overflow-scrolling: touch;
 }
 
+body.handset-device.ios .modal-overlay.mobile-fullscreen-modal {
+    align-items: stretch;
+    padding: 0;
+    overflow: hidden;
+}
+
 body.ios .modal-content {
     max-height: calc(100vh - env(safe-area-inset-top, 20px) - env(safe-area-inset-bottom, 20px) - 40px);
     overflow-y: auto;
@@ -9598,20 +9605,166 @@ body.ios .modal-content {
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
 }
 
+.mobile-modal-header {
+    display: none;
+}
+
+body.handset-device .mobile-fullscreen-modal {
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: none;
+    background: var(--app-bg);
+    padding: 0;
+    align-items: stretch;
+    justify-content: stretch;
+    overflow: hidden;
+}
+
+body.handset-device .mobile-fullscreen-modal .modal-content,
+body.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-content,
+body.handset-device #settings-modal.mobile-fullscreen-modal .modal-content,
+body.handset-device #override-modal.mobile-fullscreen-modal .modal-content,
+body.handset-device #override-all-modal.mobile-fullscreen-modal .modal-content,
+body.handset-device #pause-modal.mobile-fullscreen-modal .modal-content,
+body.handset-device #start-block-confirm-modal.mobile-fullscreen-modal .modal-content,
+body.handset-device #start-schedule-confirm-modal.mobile-fullscreen-modal .modal-content {
+    width: 100%;
+    max-width: none;
+    max-height: none;
+    height: 100%;
+    border-radius: 0;
+    padding:
+        calc(env(safe-area-inset-top, 0px) + 12px)
+        max(18px, env(safe-area-inset-right, 0px))
+        calc(env(safe-area-inset-bottom, 0px) + 20px)
+        max(18px, env(safe-area-inset-left, 0px));
+    box-shadow: none;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+body.handset-device .mobile-fullscreen-modal .mobile-modal-header {
+    position: sticky;
+    top: calc(env(safe-area-inset-top, 0px) * -1 - 12px);
+    z-index: 2;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 10px;
+    margin:
+        calc(env(safe-area-inset-top, 0px) * -1 - 12px)
+        calc(max(18px, env(safe-area-inset-right, 0px)) * -1)
+        18px
+        calc(max(18px, env(safe-area-inset-left, 0px)) * -1);
+    padding:
+        calc(env(safe-area-inset-top, 0px) + 12px)
+        max(18px, env(safe-area-inset-right, 0px))
+        12px
+        max(18px, env(safe-area-inset-left, 0px));
+    background: color-mix(in srgb, var(--app-bg) 92%, transparent);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(225, 220, 214, 0.88);
+}
+
+body.handset-device .mobile-fullscreen-modal .mobile-modal-back-btn {
+    width: 40px;
+    height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+body.handset-device .mobile-fullscreen-modal .mobile-modal-back-btn:hover {
+    background: var(--element-hover-bg);
+}
+
+body.handset-device .mobile-fullscreen-modal .mobile-modal-back-btn svg {
+    width: 22px;
+    height: 22px;
+}
+
+body.handset-device .mobile-fullscreen-modal .mobile-modal-header-title {
+    min-width: 0;
+    text-align: left;
+    font-family: var(--font-heading);
+    font-size: 1.45rem;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--text-primary);
+}
+
+body.handset-device .mobile-fullscreen-modal .mobile-modal-header::after {
+    content: '';
+    width: 40px;
+    height: 1px;
+}
+
+body.handset-device .mobile-fullscreen-modal .mobile-modal-title-source {
+    display: none;
+}
+
+body.handset-device .mobile-fullscreen-modal .modal-buttons {
+    margin-top: 24px;
+    padding-bottom: 0;
+}
+
+/* Android landscape: WebView safe-area env() often reports 0 on the short edge while
+   visualViewport is inset — use --handset-modal-side-inset (set in app.js) for equal gutters. */
+@media (orientation: landscape) {
+    body.handset-device.android .mobile-fullscreen-modal .modal-content,
+    body.handset-device.android #blocklist-modal.mobile-fullscreen-modal .modal-content,
+    body.handset-device.android #settings-modal.mobile-fullscreen-modal .modal-content,
+    body.handset-device.android #override-modal.mobile-fullscreen-modal .modal-content,
+    body.handset-device.android #override-all-modal.mobile-fullscreen-modal .modal-content,
+    body.handset-device.android #pause-modal.mobile-fullscreen-modal .modal-content,
+    body.handset-device.android #start-block-confirm-modal.mobile-fullscreen-modal .modal-content,
+    body.handset-device.android #start-schedule-confirm-modal.mobile-fullscreen-modal .modal-content {
+        padding-left: var(--handset-modal-side-inset, 18px);
+        padding-right: var(--handset-modal-side-inset, 18px);
+    }
+
+    body.handset-device.android .mobile-fullscreen-modal .mobile-modal-header {
+        margin-right: calc(var(--handset-modal-side-inset, 18px) * -1);
+        margin-left: calc(var(--handset-modal-side-inset, 18px) * -1);
+        padding-right: var(--handset-modal-side-inset, 18px);
+        padding-left: var(--handset-modal-side-inset, 18px);
+    }
+}
+
 /* Add/edit blocklist modal — slightly wider than the default 400px so the
    apps tag list, override-difficulty row and colour/emoji pickers have room
-   to breathe. Matches the 500px blocklist-card width for visual rhyme. */
-#blocklist-modal .modal-content {
+   to breathe. Matches the 500px blocklist-card width for visual rhyme.
+   Handset full-screen modals ignore this and expand to the viewport width. */
+body:not(.handset-device) #blocklist-modal .modal-content {
     max-width: 500px;
     overscroll-behavior-y: none;
 }
 
-#settings-modal .modal-content {
+body:not(.handset-device) #settings-modal .modal-content {
     max-width: 520px;
     --settings-control-width: 140px;
 }
 
-body.ios #blocklist-modal {
+#blocklist-modal .modal-content {
+    overscroll-behavior-y: none;
+}
+
+#settings-modal .modal-content {
+    --settings-control-width: 140px;
+}
+
+/* Popup-style blocklist modal on iPad only — handset full-screen modals handle safe area in .mobile-modal-header. */
+body.ios:not(.handset-device) #blocklist-modal {
     padding-top: env(safe-area-inset-top, 20px);
 }
 
@@ -9725,15 +9878,19 @@ body.ios #override-count-wrapper .form-input.small {
     vertical-align: middle;
 }
 
-/* Start block / schedule confirmation modals */
-.start-confirm-modal {
+/* Start block / schedule confirmation modals — popup width only on non-handset. */
+body:not(.handset-device) .start-confirm-modal {
     max-width: 500px;
+    padding: 28px;
+}
+
+.start-confirm-modal {
     padding: 28px;
 }
 
 .start-confirm-header {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 14px;
     margin-bottom: 18px;
 }
@@ -9743,16 +9900,20 @@ body.ios #override-count-wrapper .form-input.small {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 28px;
+    font-size: 22px;
     line-height: 1;
 }
 
 .start-confirm-header-text {
     min-width: 0;
     flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
 }
 
-.start-confirm-modal h3 {
+.start-confirm-modal h3,
+.start-confirm-header-text h3 {
     margin: 0 0 6px;
     font-family: var(--font-heading);
     font-size: 1.45rem;
@@ -10055,6 +10216,7 @@ body.ios #override-count-wrapper .form-input.small {
 }
 
 body.dark-mode .start-confirm-modal h3,
+body.dark-mode .start-confirm-header-text h3,
 body.dark-mode .start-confirm-duration-copy strong,
 body.dark-mode .start-confirm-repeat-copy strong,
 body.dark-mode .start-confirm-time-range,
@@ -10862,6 +11024,10 @@ body.dark-mode .modal-btn.black-btn:hover {
     color: hsl(215, 20%, 50%);
     margin-bottom: 16px;
     line-height: 1.4;
+}
+
+.start-confirm-header .override-summary {
+    margin-bottom: 0;
 }
 
 .override-challenge .challenge-text {

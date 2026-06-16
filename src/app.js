@@ -1241,6 +1241,7 @@ const wordList = [
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     detectPlatform(); // Before loadData so first-launch defaults can differ on iOS
+    setupHandsetModalScreens();
     await loadData();
     await resetDevOnlyEulaAcceptance();
     resetDevOnlyAndroidPermissionsOnboarding();
@@ -6803,11 +6804,135 @@ function stampAndroidScheduleExtras() {
     }
 }
 
+function isAndroidHandsetDevice() {
+    if (!/Android/i.test(navigator.userAgent)) return false;
+    if (typeof navigator.userAgentData?.mobile === 'boolean') {
+        return navigator.userAgentData.mobile;
+    }
+    return /Mobile/i.test(navigator.userAgent);
+}
+
 /** Same 768px stack breakpoint as iOS layout tiers — toggles phone layout on Android. */
 function syncAndroidLayoutTier() {
     if (!isAndroid) return;
     const isPhoneLayout = window.matchMedia('(max-width: 768px)').matches;
+    const isHandset = isAndroidHandsetDevice();
     document.body.classList.toggle('android-phone', isPhoneLayout);
+    document.body.classList.toggle('android-handset', isHandset);
+    document.body.classList.toggle('handset-device', isHandset);
+    syncAndroidHandsetModalSideInset();
+}
+
+/** Android landscape: safe-area env() is often 0 on the short edge; use visualViewport offsets. */
+function readCssSafeAreaInsets() {
+    const probe = document.createElement('div');
+    probe.style.cssText = [
+        'position:fixed',
+        'visibility:hidden',
+        'pointer-events:none',
+        'padding-top:env(safe-area-inset-top)',
+        'padding-right:env(safe-area-inset-right)',
+        'padding-bottom:env(safe-area-inset-bottom)',
+        'padding-left:env(safe-area-inset-left)',
+    ].join(';');
+    document.body.appendChild(probe);
+    const styles = getComputedStyle(probe);
+    const insets = {
+        top: parseFloat(styles.paddingTop) || 0,
+        right: parseFloat(styles.paddingRight) || 0,
+        bottom: parseFloat(styles.paddingBottom) || 0,
+        left: parseFloat(styles.paddingLeft) || 0,
+    };
+    probe.remove();
+    return insets;
+}
+
+function syncAndroidHandsetModalSideInset() {
+    if (!isAndroid || !document.body.classList.contains('handset-device')) {
+        document.documentElement.style.removeProperty('--handset-modal-side-inset');
+        return;
+    }
+
+    const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+    if (!isLandscape) {
+        document.documentElement.style.removeProperty('--handset-modal-side-inset');
+        return;
+    }
+
+    const viewport = window.visualViewport;
+    const layoutWidth = window.innerWidth;
+    const visualLeft = Math.max(0, viewport?.offsetLeft ?? 0);
+    const visualWidth = viewport?.width ?? layoutWidth;
+    const visualRight = Math.max(0, layoutWidth - visualLeft - visualWidth);
+    const safeArea = readCssSafeAreaInsets();
+    const sideInset = Math.max(18, visualLeft, visualRight, safeArea.left, safeArea.right);
+
+    document.documentElement.style.setProperty('--handset-modal-side-inset', `${sideInset}px`);
+}
+
+function getModalDismissButton(modalOverlay) {
+    if (!modalOverlay) return null;
+    return modalOverlay.querySelector('.modal-buttons .cancel-btn, [id^="cancel-"], [id^="close-"]');
+}
+
+function setupHandsetModalScreens() {
+    const modalIds = [
+        'blocklist-modal',
+        'override-modal',
+        'pause-modal',
+        'start-block-confirm-modal',
+        'start-schedule-confirm-modal',
+        'settings-modal',
+        'override-all-modal'
+    ];
+
+    for (const modalId of modalIds) {
+        const overlay = document.getElementById(modalId);
+        const content = overlay?.querySelector('.modal-content');
+        const titleSource = content?.querySelector('h3');
+        if (!overlay || !content || !titleSource || content.querySelector('.mobile-modal-header')) continue;
+
+        overlay.classList.add('mobile-fullscreen-modal');
+        titleSource.classList.add('mobile-modal-title-source');
+
+        const header = document.createElement('div');
+        header.className = 'mobile-modal-header';
+
+        const backButton = document.createElement('button');
+        backButton.type = 'button';
+        backButton.className = 'mobile-modal-back-btn';
+        backButton.setAttribute('aria-label', 'Back');
+        backButton.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M15 18l-6-6 6-6"></path>
+            </svg>
+        `;
+
+        const headerTitle = document.createElement('div');
+        headerTitle.className = 'mobile-modal-header-title';
+
+        const syncHeaderTitle = () => {
+            const nextTitle = titleSource.textContent?.trim() || titleSource.innerText?.trim() || '';
+            headerTitle.textContent = nextTitle;
+            backButton.setAttribute('aria-label', nextTitle ? `Back from ${nextTitle}` : 'Back');
+        };
+
+        syncHeaderTitle();
+        new MutationObserver(syncHeaderTitle).observe(titleSource, {
+            childList: true,
+            characterData: true,
+            subtree: true
+        });
+
+        backButton.addEventListener('click', () => {
+            const dismissButton = getModalDismissButton(overlay);
+            if (dismissButton) dismissButton.click();
+            else overlay.classList.add('hidden');
+        });
+
+        header.append(backButton, headerTitle);
+        content.prepend(header);
+    }
 }
 
 // Detect platform for window controls, iOS, and Android
@@ -6842,6 +6967,7 @@ function detectPlatform() {
             (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         if (!isIPad) {
             document.body.classList.add('ios-phone');
+            document.body.classList.add('handset-device');
         }
         // Hide desktop-only UI on iOS
         document.getElementById('window-controls')?.classList.add('hidden');
@@ -9193,6 +9319,7 @@ function updateAndroidViewportMetrics() {
     document.documentElement.style.setProperty('--android-app-height', `${viewportHeight}px`);
     document.documentElement.style.setProperty('--android-keyboard-inset', `${keyboardInset}px`);
     document.body.classList.toggle('android-keyboard-open', keyboardInset > 80);
+    syncAndroidHandsetModalSideInset();
 }
 
 function setupAndroidKeyboardScroll() {
@@ -12552,6 +12679,7 @@ function openScheduleOverrideModal(schedule) {
     if (titleEl) {
         titleEl.textContent = `${tSettings('stopSchedule')} ${blocklistName}`;
     }
+    document.getElementById('override-confirm-emoji').textContent = blocklist?.emoji || '🎯';
     document.getElementById('override-summary').textContent = formatBlocklistModalSummary(blocklist);
     initializeOverrideModalChallenge(difficulty, blocklist?.color);
 }
@@ -14809,6 +14937,7 @@ function openOverrideModal(blockId) {
     // Set modal title with blocklist name
     document.getElementById('override-modal-title').textContent = `Override ${blocklist.name}?`;
 
+    document.getElementById('override-confirm-emoji').textContent = blocklist.emoji || '🎯';
     document.getElementById('override-summary').textContent = formatBlocklistModalSummary(blocklist);
 
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
@@ -15036,6 +15165,7 @@ function openPauseModal(blockId) {
     // Set modal title
     document.getElementById('pause-modal-title').textContent = `Pause ${blocklist.name}`;
 
+    document.getElementById('pause-confirm-emoji').textContent = blocklist.emoji || '🎯';
     document.getElementById('pause-summary').textContent = formatBlocklistModalSummary(blocklist);
 
     // Calculate remaining time and max pause duration

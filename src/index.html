@@ -1295,8 +1295,13 @@
         <!-- Override Challenge Modal -->
         <div id="override-modal" class="modal-overlay hidden">
             <div class="modal-content override-challenge">
-                <h3 id="override-modal-title">Override Block?</h3>
-                <div id="override-summary" class="override-summary"></div>
+                <div class="start-confirm-header">
+                    <div class="start-confirm-emoji-badge" id="override-confirm-emoji" aria-hidden="true">🎯</div>
+                    <div class="start-confirm-header-text">
+                        <h3 id="override-modal-title">Override Block?</h3>
+                        <p id="override-summary" class="start-confirm-subtitle override-summary"></p>
+                    </div>
+                </div>
                 <p id="override-modal-instruction">To stop this block early, type the following:</p>
                 <div id="challenge-text" class="challenge-text"></div>
                 <div id="challenge-word-progress" class="challenge-word-progress hidden"></div>
@@ -1319,9 +1324,13 @@
         <!-- Pause Block Modal -->
         <div id="pause-modal" class="modal-overlay hidden">
             <div class="modal-content override-challenge pause-modal">
-                <h3 id="pause-modal-title">Pause Block</h3>
-                <div id="pause-summary" class="override-summary"></div>
-
+                <div class="start-confirm-header">
+                    <div class="start-confirm-emoji-badge" id="pause-confirm-emoji" aria-hidden="true">🎯</div>
+                    <div class="start-confirm-header-text">
+                        <h3 id="pause-modal-title">Pause Block</h3>
+                        <p id="pause-summary" class="start-confirm-subtitle override-summary"></p>
+                    </div>
+                </div>
 
                 <!-- Pause duration picker -->
                 <div class="pause-duration-section">
