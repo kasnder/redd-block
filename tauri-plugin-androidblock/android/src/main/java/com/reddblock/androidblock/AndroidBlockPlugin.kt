@@ -76,6 +76,8 @@ class AndroidBlockPlugin(private val activity: Activity) : Plugin(activity) {
             invoke.reject("Invalid schedule JSON")
             return
         }
+        ScheduleManager.cancelSchedule(ctx, schedule.id)
+        Schedules.stopSession(ctx, schedule.id)
         Schedules.save(schedule, ctx)
         // Same post-save behaviour as redd-block-android's editor screen:
         // (re)register WorkManager triggers for timed schedules.

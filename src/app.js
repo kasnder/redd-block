@@ -8661,6 +8661,8 @@ function setupOverrideModalListeners() {
                     lastBlockedDomains = new Set();
                     await updateHostsFile();
                     await syncSchedulesToHelper();
+                } else if (isAndroid) {
+                    await syncSchedulesToHelper();
                 } else {
                     const status = await refreshDesktopHelperStatus();
                     if (status.helperReady) {
@@ -13937,6 +13939,10 @@ async function proceedWithBlock() {
             activatedBlockIds.delete(block.id);
             result = { success: false, error: err.toString() };
         }
+    } else if (isAndroid) {
+        appData.activeBlocks.push(block);
+        activatedBlockIds.add(block.id);
+        result = { success: true };
     } else {
         // Desktop: persist the block locally first so save_data and the
         // native-messaging host see it immediately (helperAvailable only

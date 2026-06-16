@@ -12,7 +12,11 @@ data class Schedule(
     val blockedWebsites: List<String> = emptyList(),
     val frictionWordCount: Int = 15,
     val autoReenableMinutes: Int = 1440, // default 24 hours; 0 = stays disabled
-    val disabledUntil: Long? = null
+    val disabledUntil: Long? = null,
+    val uiKind: String? = null,
+    val uiScheduleId: String? = null,
+    val uiBlocklistId: String? = null,
+    val uiSegmentIndex: Int? = null
 )
 
 data class ScheduleTiming(
@@ -22,7 +26,9 @@ data class ScheduleTiming(
     val endTimeHour: Int? = null,
     val endTimeMinute: Int? = null,
     val daysOfWeek: Set<DayOfWeek> = emptySet(),
-    val isRecurring: Boolean = true
+    val isRecurring: Boolean = true,
+    val activeFromTimestampMs: Long? = null,
+    val activeUntilTimestampMs: Long? = null
 ) {
     enum class ScheduleType {
         DAILY,

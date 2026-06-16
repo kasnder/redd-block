@@ -117,6 +117,13 @@ object ScheduleManager {
     }
 
     fun getScheduleStartTime(schedule: Schedule): Long? {
+        val activeFrom = schedule.timing.activeFromTimestampMs
+        val activeUntil = schedule.timing.activeUntilTimestampMs
+        if (activeFrom != null && activeUntil != null) {
+            val now = System.currentTimeMillis()
+            return if (now >= activeFrom && now < activeUntil) activeFrom else null
+        }
+
         val now = LocalDateTime.now()
         val timing = schedule.timing
 
@@ -152,6 +159,11 @@ object ScheduleManager {
     }
 
     fun calculateNextTriggerTime(timing: ScheduleTiming, useStartTime: Boolean): Long? {
+        if (!timing.isRecurring) {
+            val target = if (useStartTime) timing.activeFromTimestampMs else timing.activeUntilTimestampMs
+            return target?.takeIf { it > System.currentTimeMillis() }
+        }
+
         val now = LocalDateTime.now()
         val time = if (useStartTime) timing.time else timing.endTime
         if (time == null) return null
@@ -170,6 +182,14 @@ object ScheduleManager {
     }
 
     fun getMaxScheduleDuration(timing: ScheduleTiming): Long {
+        if (!timing.isRecurring) {
+            val activeFrom = timing.activeFromTimestampMs
+            val activeUntil = timing.activeUntilTimestampMs
+            if (activeFrom != null && activeUntil != null && activeUntil > activeFrom) {
+                return activeUntil - activeFrom
+            }
+        }
+
         val startTime = timing.time
         val endTime = timing.endTime
 

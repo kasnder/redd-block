@@ -5,6 +5,8 @@ import { invoke } from '@tauri-apps/api/core';
 const ANDROID_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
 const ANDROID_DAY_TO_INDEX = Object.fromEntries(ANDROID_DAYS.map((d, i) => [d, i]));
 const INDEX_TO_ANDROID_DAY = ANDROID_DAYS;
+const ANDROID_UI_KIND_SCHEDULE_SEGMENT = 'schedule-segment';
+const ANDROID_UI_KIND_ONE_OFF_BLOCK = 'one-off-block';
 
 /** Latest plugin state: schedules, activeScheduleIds, permissions. */
 export let androidPluginState = {
@@ -69,7 +71,7 @@ export async function androidOpenBatterySettings() {
 
 function androidScheduleToBlocklist(androidSchedule) {
     return {
-        id: androidSchedule.id,
+        id: androidSchedule.uiBlocklistId || androidSchedule.id,
         name: androidSchedule.name,
         mode: 'blocklist',
         websites: [...(androidSchedule.blockedWebsites || [])],
@@ -82,6 +84,19 @@ function androidScheduleToBlocklist(androidSchedule) {
 }
 
 function androidTimingToSegments(timing) {
+    if (timing?.activeFromTimestampMs != null && timing?.activeUntilTimestampMs != null) {
+        const start = new Date(timing.activeFromTimestampMs);
+        const end = new Date(timing.activeUntilTimestampMs);
+        const dayIndex = (start.getDay() + 6) % 7;
+        return [{
+            startHour: start.getHours(),
+            startMinute: start.getMinutes(),
+            endHour: end.getHours(),
+            endMinute: end.getMinutes(),
+            days: [dayIndex],
+        }];
+    }
+
     if (!timing || timing.type === 'MANUAL') {
         return [{
             startHour: 0,
@@ -110,11 +125,11 @@ function androidTimingToSegments(timing) {
 function androidScheduleToSharedSchedule(androidSchedule) {
     const timing = androidSchedule.schedule || { type: 'MANUAL' };
     return {
-        id: androidSchedule.id,
-        blocklistId: androidSchedule.id,
+        id: androidSchedule.uiScheduleId || androidSchedule.id,
+        blocklistId: androidSchedule.uiBlocklistId || androidSchedule.id,
         segments: androidTimingToSegments(timing),
-        repeatType: 'forever',
-        createdAt: Date.now(),
+        repeatType: timing.isRecurring ? 'forever' : 'once',
+        createdAt: timing.activeFromTimestampMs ?? Date.now(),
         extra: {
             androidTimingType: timing.type || 'MANUAL',
             androidIsEnabled: androidSchedule.isEnabled !== false,
@@ -125,75 +140,256 @@ function androidScheduleToSharedSchedule(androidSchedule) {
     };
 }
 
-/** Overlay plugin schedules onto appData (one blocklist per Android schedule). */
+function androidScheduleToSharedBlock(androidSchedule) {
+    const timing = androidSchedule.schedule || {};
+    const startTime = timing.activeFromTimestampMs ?? Date.now();
+    const endTime = timing.activeUntilTimestampMs ?? startTime;
+    const block = {
+        id: androidSchedule.uiScheduleId || androidSchedule.id,
+        blocklistId: androidSchedule.uiBlocklistId || androidSchedule.id,
+        startTime,
+        endTime,
+    };
+    if (androidSchedule.disabledUntil && androidSchedule.disabledUntil > Date.now()) {
+        block.isPaused = true;
+        block.pauseEndTime = androidSchedule.disabledUntil;
+    }
+    return block;
+}
+
+function isAndroidPluginScheduleExpired(androidSchedule, pluginState = androidPluginState) {
+    const activeIds = new Set(pluginState.activeScheduleIds || []);
+    const activeUntil = androidSchedule?.schedule?.activeUntilTimestampMs;
+    return activeUntil != null && activeUntil <= Date.now() && !activeIds.has(androidSchedule.id);
+}
+
+function ensureAndroidBlocklist(appData, androidSchedule) {
+    const blocklistId = androidSchedule.uiBlocklistId || androidSchedule.id;
+    let blocklist = (appData.blocklists || []).find((bl) => bl.id === blocklistId);
+    if (!blocklist) {
+        blocklist = androidScheduleToBlocklist(androidSchedule);
+        if (!appData.blocklists) appData.blocklists = [];
+        appData.blocklists.push(blocklist);
+        return blocklist;
+    }
+    blocklist.name = androidSchedule.name || blocklist.name;
+    blocklist.apps = [...(androidSchedule.blockedApps || [])];
+    blocklist.websites = [...(androidSchedule.blockedWebsites || [])];
+    blocklist.androidManaged = true;
+    return blocklist;
+}
+
+/** Merge plugin schedules into appData without destroying shared-shell metadata. */
 export function hydrateAppDataFromAndroid(appData, pluginState = androidPluginState) {
     const schedules = pluginState.schedules || [];
     if (schedules.length === 0) {
         return false;
     }
 
-    appData.blocklists = schedules.map(androidScheduleToBlocklist);
-    appData.schedules = schedules.map(androidScheduleToSharedSchedule);
-    appData.activeBlocks = [];
+    const scheduleGroups = new Map();
+    const nextActiveBlocks = [];
+
+    for (const androidSchedule of schedules) {
+        if (isAndroidPluginScheduleExpired(androidSchedule, pluginState)) continue;
+        ensureAndroidBlocklist(appData, androidSchedule);
+
+        if (androidSchedule.uiKind === ANDROID_UI_KIND_ONE_OFF_BLOCK) {
+            nextActiveBlocks.push(androidScheduleToSharedBlock(androidSchedule));
+            continue;
+        }
+
+        const groupId = androidSchedule.uiScheduleId || androidSchedule.id;
+        if (!scheduleGroups.has(groupId)) scheduleGroups.set(groupId, []);
+        scheduleGroups.get(groupId).push(androidSchedule);
+    }
+
+    const existingSchedulesById = new Map((appData.schedules || []).map((schedule) => [schedule.id, schedule]));
+    const nextSchedules = [];
+
+    for (const [groupId, groupSchedules] of scheduleGroups.entries()) {
+        const existing = existingSchedulesById.get(groupId);
+        const seed = existing ? { ...existing } : androidScheduleToSharedSchedule(groupSchedules[0]);
+        seed.id = groupId;
+        seed.blocklistId = groupSchedules[0].uiBlocklistId || seed.blocklistId;
+
+        if (!existing || !Array.isArray(existing.segments) || existing.segments.length === 0) {
+            const ordered = [...groupSchedules].sort((a, b) => {
+                const segA = a.uiSegmentIndex ?? 0;
+                const segB = b.uiSegmentIndex ?? 0;
+                return segA - segB || a.id.localeCompare(b.id);
+            });
+            seed.segments = ordered.flatMap((schedule) => androidTimingToSegments(schedule.schedule || {}));
+        }
+
+        const pausedUntil = groupSchedules
+            .map((schedule) => schedule.disabledUntil ?? null)
+            .find((value) => value != null && value > Date.now());
+
+        if (pausedUntil != null) {
+            seed.isPaused = true;
+            seed.pauseEndTime = pausedUntil;
+        } else {
+            delete seed.isPaused;
+            delete seed.pauseEndTime;
+        }
+
+        if (!seed.extra) seed.extra = {};
+        seed.extra.androidIsEnabled = groupSchedules.some((schedule) => schedule.isEnabled !== false);
+        seed.extra.disabledUntil = pausedUntil ?? null;
+        nextSchedules.push(seed);
+    }
+
+    appData.schedules = nextSchedules;
+    appData.activeBlocks = nextActiveBlocks;
     return true;
 }
 
-function sharedScheduleToAndroid(blocklist, schedule) {
-    const extra = schedule.extra || {};
-    const timingType = extra.androidTimingType || 'WEEKLY';
-    const seg = schedule.segments?.[0] || {
-        startHour: 9,
-        startMinute: 0,
-        endHour: 17,
-        endMinute: 0,
-        days: [0, 1, 2, 3, 4, 5],
-    };
-
-    const timing = {
-        type: timingType,
-        isRecurring: true,
-        daysOfWeek: [],
-    };
-
-    if (timingType !== 'MANUAL') {
-        timing.timeHour = seg.startHour;
-        timing.timeMinute = seg.startMinute;
-        timing.endTimeHour = seg.endHour;
-        timing.endTimeMinute = seg.endMinute;
-    }
-
-    if (timingType === 'DAILY') {
-        timing.daysOfWeek = [...ANDROID_DAYS];
-    } else if (timingType === 'WEEKLY') {
-        timing.daysOfWeek = (seg.days || [])
-            .map((i) => INDEX_TO_ANDROID_DAY[i])
-            .filter(Boolean);
-    }
-
-    const androidSchedule = {
-        id: schedule.id,
-        name: blocklist?.name || schedule.id,
-        isEnabled: extra.androidIsEnabled !== false,
-        schedule: timing,
-        blockedApps: [...(blocklist?.apps || [])],
-        blockedWebsites: [...(blocklist?.websites || [])],
-        frictionWordCount: extra.frictionWordCount ?? 15,
-        autoReenableMinutes: extra.autoReenableMinutes ?? 1440,
-    };
-
-    if (extra.disabledUntil != null) {
-        androidSchedule.disabledUntil = extra.disabledUntil;
-    }
-
-    return androidSchedule;
+function isSharedOneShotSchedule(schedule) {
+    return !!schedule && schedule.repeatType !== 'forever' && !(schedule.repeatType === 'date' && schedule.repeatDate);
 }
 
-/** Push all shared schedules to the Android plugin (enforcement source of truth). */
-export async function syncAppDataToAndroidPlugin(appData) {
-    const androidSchedules = (appData.schedules || []).map((schedule) => {
-        const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
-        return sharedScheduleToAndroid(blocklist, schedule);
+function resolveSharedOneShotOccurrences(schedule) {
+    if (!isSharedOneShotSchedule(schedule) || !Array.isArray(schedule.segments)) return [];
+    const createdAt = new Date(schedule.createdAt || Date.now());
+    if (Number.isNaN(createdAt.getTime())) return [];
+
+    const createdDay = (createdAt.getDay() + 6) % 7;
+    const occurrences = [];
+
+    schedule.segments.forEach((segment, segmentIndex) => {
+        const segmentDays = Array.isArray(segment.days)
+            ? segment.days.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
+            : [];
+
+        segmentDays.forEach((dayIndex, occurrenceIndex) => {
+            let daysUntil = dayIndex - createdDay;
+            if (daysUntil < 0) daysUntil += 7;
+
+            const start = new Date(createdAt);
+            start.setDate(start.getDate() + daysUntil);
+            start.setHours(segment.startHour, segment.startMinute, 0, 0);
+
+            const end = new Date(start);
+            end.setHours(segment.endHour, segment.endMinute, 0, 0);
+            if (end <= start) end.setDate(end.getDate() + 1);
+
+            occurrences.push({ segment, segmentIndex, occurrenceIndex, dayIndex, start, end });
+        });
     });
+
+    occurrences.sort((a, b) => a.start.getTime() - b.start.getTime() || a.segmentIndex - b.segmentIndex);
+    return occurrences;
+}
+
+function sharedSegmentToAndroidSchedules(blocklist, schedule) {
+    const extra = schedule.extra || {};
+    const frictionWordCount = extra.frictionWordCount ?? 15;
+    const autoReenableMinutes = extra.autoReenableMinutes ?? 1440;
+    const pausedUntil = schedule.isPaused ? (schedule.pauseEndTime || extra.disabledUntil || null) : null;
+    const boundedRepeatUntil = schedule.repeatType === 'date' && schedule.repeatDate
+        ? new Date(new Date(schedule.repeatDate).setHours(23, 59, 59, 999)).getTime()
+        : null;
+
+    if (isSharedOneShotSchedule(schedule)) {
+        return resolveSharedOneShotOccurrences(schedule).map((occurrence) => ({
+            id: `${schedule.id}::seg:${occurrence.segmentIndex}::occ:${occurrence.occurrenceIndex}`,
+            name: blocklist?.name || schedule.id,
+            isEnabled: !(pausedUntil && pausedUntil > Date.now()),
+            schedule: {
+                type: 'DAILY',
+                timeHour: occurrence.start.getHours(),
+                timeMinute: occurrence.start.getMinutes(),
+                endTimeHour: occurrence.end.getHours(),
+                endTimeMinute: occurrence.end.getMinutes(),
+                daysOfWeek: [INDEX_TO_ANDROID_DAY[occurrence.dayIndex]].filter(Boolean),
+                isRecurring: false,
+                activeFromTimestampMs: occurrence.start.getTime(),
+                activeUntilTimestampMs: occurrence.end.getTime(),
+            },
+            blockedApps: [...(blocklist?.apps || [])],
+            blockedWebsites: [...(blocklist?.websites || [])],
+            frictionWordCount,
+            autoReenableMinutes,
+            ...(pausedUntil != null ? { disabledUntil: pausedUntil } : {}),
+            uiKind: ANDROID_UI_KIND_SCHEDULE_SEGMENT,
+            uiScheduleId: schedule.id,
+            uiBlocklistId: schedule.blocklistId,
+            uiSegmentIndex: occurrence.segmentIndex,
+        }));
+    }
+
+    return (schedule.segments || []).map((segment, segmentIndex) => {
+        const days = Array.isArray(segment.days) ? segment.days : [];
+        const timingType = days.length >= 7 ? 'DAILY' : 'WEEKLY';
+        return {
+            id: `${schedule.id}::seg:${segmentIndex}`,
+            name: blocklist?.name || schedule.id,
+            isEnabled: !(pausedUntil && pausedUntil > Date.now()),
+            schedule: {
+                type: timingType,
+                timeHour: segment.startHour,
+                timeMinute: segment.startMinute,
+                endTimeHour: segment.endHour,
+                endTimeMinute: segment.endMinute,
+                daysOfWeek: timingType === 'DAILY'
+                    ? [...ANDROID_DAYS]
+                    : days.map((index) => INDEX_TO_ANDROID_DAY[index]).filter(Boolean),
+                isRecurring: true,
+                ...(boundedRepeatUntil != null ? { activeUntilTimestampMs: boundedRepeatUntil } : {}),
+            },
+            blockedApps: [...(blocklist?.apps || [])],
+            blockedWebsites: [...(blocklist?.websites || [])],
+            frictionWordCount,
+            autoReenableMinutes,
+            ...(pausedUntil != null ? { disabledUntil: pausedUntil } : {}),
+            uiKind: ANDROID_UI_KIND_SCHEDULE_SEGMENT,
+            uiScheduleId: schedule.id,
+            uiBlocklistId: schedule.blocklistId,
+            uiSegmentIndex: segmentIndex,
+        };
+    });
+}
+
+function sharedBlockToAndroid(blocklist, block) {
+    return {
+        id: `block:${block.id}`,
+        name: blocklist?.name || block.blocklistId || block.id,
+        isEnabled: !(block.isPaused && block.pauseEndTime > Date.now()),
+        schedule: {
+            type: 'DAILY',
+            timeHour: new Date(block.startTime).getHours(),
+            timeMinute: new Date(block.startTime).getMinutes(),
+            endTimeHour: new Date(block.endTime).getHours(),
+            endTimeMinute: new Date(block.endTime).getMinutes(),
+            daysOfWeek: [INDEX_TO_ANDROID_DAY[(new Date(block.startTime).getDay() + 6) % 7]].filter(Boolean),
+            isRecurring: false,
+            activeFromTimestampMs: block.startTime,
+            activeUntilTimestampMs: block.endTime,
+        },
+        blockedApps: [...(blocklist?.apps || [])],
+        blockedWebsites: [...(blocklist?.websites || [])],
+        frictionWordCount: blocklist?.overrideDifficulty?.count ?? 25,
+        autoReenableMinutes: 0,
+        ...(block.isPaused && block.pauseEndTime ? { disabledUntil: block.pauseEndTime } : {}),
+        uiKind: ANDROID_UI_KIND_ONE_OFF_BLOCK,
+        uiScheduleId: block.id,
+        uiBlocklistId: block.blocklistId,
+    };
+}
+
+/** Push all shared schedules + one-off blocks to the Android plugin (enforcement source of truth). */
+export async function syncAppDataToAndroidPlugin(appData) {
+    const androidSchedules = [];
+
+    for (const schedule of appData.schedules || []) {
+        const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
+        androidSchedules.push(...sharedSegmentToAndroidSchedules(blocklist, schedule));
+    }
+
+    for (const block of appData.activeBlocks || []) {
+        const blocklist = appData.blocklists.find((bl) => bl.id === block.blocklistId);
+        androidSchedules.push(sharedBlockToAndroid(blocklist, block));
+    }
 
     const existingIds = new Set((androidPluginState.schedules || []).map((s) => s.id));
     const nextIds = new Set(androidSchedules.map((s) => s.id));

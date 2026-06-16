@@ -324,7 +324,9 @@ object Schedules {
                     try { DayOfWeek.valueOf(arr.getString(it)) } catch (_: Exception) { null }
                 }.toSet()
             } ?: emptySet(),
-            isRecurring = timingJson.optBoolean("isRecurring", true)
+            isRecurring = timingJson.optBoolean("isRecurring", true),
+            activeFromTimestampMs = timingJson.optLong("activeFromTimestampMs").takeIf { timingJson.has("activeFromTimestampMs") },
+            activeUntilTimestampMs = timingJson.optLong("activeUntilTimestampMs").takeIf { timingJson.has("activeUntilTimestampMs") }
         )
 
         val blockedApps = json.optJSONArray("blockedApps")?.let { arr ->
@@ -344,7 +346,11 @@ object Schedules {
             blockedWebsites = blockedWebsites,
             frictionWordCount = json.optInt("frictionWordCount", 15),
             autoReenableMinutes = json.optInt("autoReenableMinutes", 1440),
-            disabledUntil = if (json.has("disabledUntil")) json.optLong("disabledUntil") else null
+            disabledUntil = if (json.has("disabledUntil")) json.optLong("disabledUntil") else null,
+            uiKind = json.optString("uiKind").takeIf { json.has("uiKind") && it.isNotBlank() },
+            uiScheduleId = json.optString("uiScheduleId").takeIf { json.has("uiScheduleId") && it.isNotBlank() },
+            uiBlocklistId = json.optString("uiBlocklistId").takeIf { json.has("uiBlocklistId") && it.isNotBlank() },
+            uiSegmentIndex = json.optInt("uiSegmentIndex").takeIf { json.has("uiSegmentIndex") }
         )
     } catch (_: Exception) {
         null
@@ -366,6 +372,8 @@ object Schedules {
                 s.daysOfWeek.forEach { put(it.name) }
             })
             put("isRecurring", s.isRecurring)
+            s.activeFromTimestampMs?.let { put("activeFromTimestampMs", it) }
+            s.activeUntilTimestampMs?.let { put("activeUntilTimestampMs", it) }
         })
 
         put("blockedApps", JSONArray(schedule.blockedApps))
@@ -373,5 +381,9 @@ object Schedules {
         put("frictionWordCount", schedule.frictionWordCount)
         put("autoReenableMinutes", schedule.autoReenableMinutes)
         schedule.disabledUntil?.let { put("disabledUntil", it) }
+        schedule.uiKind?.let { put("uiKind", it) }
+        schedule.uiScheduleId?.let { put("uiScheduleId", it) }
+        schedule.uiBlocklistId?.let { put("uiBlocklistId", it) }
+        schedule.uiSegmentIndex?.let { put("uiSegmentIndex", it) }
     }
 }
