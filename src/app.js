@@ -1245,7 +1245,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupIOSExternalLinkOpens();
     setupNowBlockingChipScroll();
     setupAndroidKeyboardScroll();
-    setupAndroidTouchFocusCleanup();
     setupEventListeners();
     initWelcomeDemoControls();
     setupTheme();
@@ -6516,7 +6515,7 @@ function updateOnboardingVisibility() {
     const main = document.getElementById('main-content');
     const showEula = !hasAcceptedEula();
     const showScreentime = isIOS && !showEula && !screentimeAuthorized;
-    const showAndroidPermissions = !showEula && shouldShowAndroidPermissionsOnboarding();
+    const showAndroidPermissions = isAndroid && !showEula && shouldShowAndroidPermissionsOnboarding();
     const keepEulaVisibleForPendingSetup = !isIOS && !isAndroid
         && isFirstRunOnboardingInProgress()
         && !migrationOnboardingActive;
@@ -6933,6 +6932,15 @@ function setupHandsetModalScreens() {
     }
 }
 
+function syncAndroidOnlyPermissionUiVisibility() {
+    const show = isAndroid;
+    document.getElementById('settings-android-permissions-section')
+        ?.classList.toggle('hidden', !show);
+    if (!show) {
+        document.getElementById('android-permissions-onboarding')?.classList.add('hidden');
+    }
+}
+
 // Detect platform for window controls, iOS, and Android
 function detectPlatform() {
     // Android Tauri webview (check before generic Linux/desktop fallbacks)
@@ -6950,6 +6958,7 @@ function detectPlatform() {
         // Android: apps are chosen via the installed-apps picker, not typed names.
         const modalAppInput = document.getElementById('modal-app-input');
         if (modalAppInput) modalAppInput.style.display = 'none';
+        syncAndroidOnlyPermissionUiVisibility();
         return;
     }
 
@@ -7003,6 +7012,7 @@ function detectPlatform() {
             document.getElementById('window-controls')?.classList.remove('hidden');
         }
     }
+    syncAndroidOnlyPermissionUiVisibility();
     updateManageSectionVisibility();
 }
 
@@ -9344,32 +9354,6 @@ function setupAndroidKeyboardScroll() {
             requestAnimationFrame(() => ensureAndroidEditableAboveKeyboard(target));
         });
     });
-}
-
-/** WebView keeps :focus on tapped controls and paints a blue ring; blur after tap unless editing. */
-function setupAndroidTouchFocusCleanup() {
-    if (!isAndroid) return;
-
-    const shouldKeepFocus = (el) => {
-        if (!(el instanceof Element)) return false;
-        return !!el.closest('input, textarea, select, [contenteditable="true"]');
-    };
-
-    const blurTransientFocus = () => {
-        const active = document.activeElement;
-        if (!(active instanceof HTMLElement)) return;
-        if (active === document.body || active === document.documentElement) return;
-        if (shouldKeepFocus(active)) return;
-        active.blur();
-    };
-
-    document.addEventListener('touchend', () => {
-        window.setTimeout(blurTransientFocus, 0);
-    }, { passive: true });
-
-    document.addEventListener('mouseup', () => {
-        window.setTimeout(blurTransientFocus, 0);
-    }, { passive: true });
 }
 
 function bindAndroidTimePartPointerGuard(el) {
@@ -20746,10 +20730,12 @@ function applySettingsLanguage() {
     setText('settings-windows-uninstall-hint', tSettings('windowsUninstallHint'));
     setText('settings-windows-uninstall-btn-label', tSettings('windowsUninstallOpenSettingsBtn'));
     setText('settings-help-label', tSettings('settingsDiagnosticsLabel'));
-    setText('settings-android-permissions-label', tSettings('settingsAndroidPermissionsHeading'));
-    setText('settings-android-perm-accessibility-label', tSettings('settingsAndroidPermAccessibility'));
-    setText('settings-android-perm-notifications-label', tSettings('settingsAndroidPermNotifications'));
-    setText('settings-android-perm-background-label', tSettings('settingsAndroidPermBackground'));
+    if (isAndroid) {
+        setText('settings-android-permissions-label', tSettings('settingsAndroidPermissionsHeading'));
+        setText('settings-android-perm-accessibility-label', tSettings('settingsAndroidPermAccessibility'));
+        setText('settings-android-perm-notifications-label', tSettings('settingsAndroidPermNotifications'));
+        setText('settings-android-perm-background-label', tSettings('settingsAndroidPermBackground'));
+    }
     setText('settings-enforcement-heading', tSettings('settingsEnforcementHeading'));
     setText('settings-blocking-method-toggle-label', tSettings('settingsBlockingMethodHeading'));
     setText('settings-blocking-method-hint', tSettings('settingsBlockingMethodHint'));
