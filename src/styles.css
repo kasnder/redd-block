@@ -3310,8 +3310,9 @@ body.ios .section-header h2 {
     margin-top: 14px;
 }
 
-/* iPhone / iPod only: no room for week calendar — hide entire Schedule section (iPad keeps it) */
-body.ios.ios-phone .week-calendar-section {
+/* iPhone / iPod / narrow Android: no room for week calendar — hide Schedule section (iPad / large Android keep it) */
+body.ios.ios-phone .week-calendar-section,
+body.android.android-phone .week-calendar-section {
     display: none !important;
 }
 
@@ -7164,6 +7165,12 @@ body.dark-mode .onboarding-focus-card {
     margin: 16px 0;
 }
 
+.android-permissions-onboarding-content .onboarding-primary-btn:disabled,
+.android-permissions-onboarding-content .onboarding-primary-btn:disabled:hover {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 .android-perm-card {
     display: flex;
     flex-direction: column;
@@ -7199,18 +7206,23 @@ body.dark-mode .onboarding-focus-card {
     margin-top: 2px;
 }
 
+#settings-modal .settings-android-perm-btn.android-settings-perm-granted {
+    border-color: var(--redd-green, #2d8a4e);
+    color: var(--redd-green, #2d8a4e);
+}
+
 .android-perm-card.android-perm-granted .android-perm-status {
     color: var(--success-color, #2e7d32);
 }
 
-/* Android: stack scheduler above blocklists like iOS phone */
-body.android .grid-top-row {
+/* Android phone/narrow: stack scheduler above blocklists (same 768px breakpoint as global stack rules) */
+body.android.android-phone .grid-top-row {
     grid-template-columns: 1fr;
     grid-template-rows: auto auto;
 }
 
-body.android .scheduler-section,
-body.android .blocklists-section {
+body.android.android-phone .scheduler-section,
+body.android.android-phone .blocklists-section {
     width: 100%;
 }
 
@@ -10977,6 +10989,12 @@ body.ios #settings-modal .settings-help-section {
     display: none;
 }
 
+body.android #settings-enforcement-panel,
+body.android #settings-modal .settings-section.desktop-only,
+body.android #settings-modal .settings-help-section {
+    display: none;
+}
+
 /* Settings Modal Section */
 .settings-stack {
     display: flex;
@@ -11684,8 +11702,13 @@ body.dark-mode #settings-modal .settings-feedback-footer {
    macOS: in-app uninstall (`body.mac`). Windows: opens Settings → Installed apps
    (`body.windows`). See `windows/hooks.nsh` NSIS_HOOK_PREUNINSTALL. */
 .macos-only,
-.windows-only { display: none; }
+.windows-only,
+.android-only { display: none; }
 body.mac .macos-only { display: block; }
+body.android .android-only { display: flex; }
+body.android #settings-modal .settings-section.android-only {
+    display: flex;
+}
 body.mac .settings-uninstall-contents.macos-only.settings-row {
     display: grid;
 }

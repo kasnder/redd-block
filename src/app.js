@@ -1223,6 +1223,8 @@ let activeScheduleSegmentCount = 0; // Number of segments locked in the active s
 let hasShownIOSScheduleSyncError = false;
 const CURRENT_EULA_REVISION = 1;
 let forceShowEulaThisSession = false;
+/** Android permissions onboarding stays up until Continue is tapped (not when settings return). */
+let androidPermissionsDismissedThisSession = false;
 
 // Word list for random word challenges
 const wordList = [
@@ -1241,6 +1243,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     detectPlatform(); // Before loadData so first-launch defaults can differ on iOS
     await loadData();
     await resetDevOnlyEulaAcceptance();
+    resetDevOnlyAndroidPermissionsOnboarding();
     setupIOSExternalLinkOpens();
     setupNowBlockingChipScroll();
     setupEventListeners();
@@ -1359,6 +1362,19 @@ function isLocalDevRun() {
 
 async function resetDevOnlyEulaAcceptance() {
     forceShowEulaThisSession = isLocalDevRun();
+}
+
+function resetDevOnlyAndroidPermissionsOnboarding() {
+    if (import.meta.env.DEV) {
+        androidPermissionsDismissedThisSession = false;
+    }
+}
+
+function shouldShowAndroidPermissionsOnboarding() {
+    if (!isAndroid || androidPermissionsDismissedThisSession) return false;
+    if (import.meta.env.DEV) return true;
+    if (!androidAccessibilityGranted()) return true;
+    return !appData.settings?.androidPermissionsOnboardingComplete;
 }
 
 function getAcceptedEulaRevision() {
@@ -6396,25 +6412,48 @@ function renderAndroidPermissionCards() {
         'Show alerts when apps or websites are blocked');
     setCard('android-perm-battery', perms.batteryOptimization, 'Battery Optimization',
         'Ensure blocking runs reliably in the background');
+
+    const setSettingsBtn = (id, granted) => {
+        const btn = document.getElementById(id);
+        if (btn) btn.classList.toggle('android-settings-perm-granted', !!granted);
+    };
+    setSettingsBtn('settings-android-perm-accessibility', perms.accessibility);
+    setSettingsBtn('settings-android-perm-notifications', perms.notifications);
+    setSettingsBtn('settings-android-perm-background', perms.batteryOptimization);
+
+    const continueBtn = document.getElementById('android-permissions-continue-btn');
+    if (continueBtn) {
+        continueBtn.disabled = !perms.accessibility;
+    }
+}
+
+function wireAndroidPermissionOpenButton(elementId, openFn) {
+    const el = document.getElementById(elementId);
+    if (!el || el.dataset.wired) return;
+    el.dataset.wired = '1';
+    el.addEventListener('click', async () => {
+        await openFn();
+        setTimeout(checkAndroidPermissions, 500);
+    });
 }
 
 function setupAndroidPermissionsOnboarding() {
     if (!isAndroid) return;
 
-    document.getElementById('android-perm-accessibility')?.addEventListener('click', async () => {
-        await androidOpenAccessibilitySettings();
-        setTimeout(checkAndroidPermissions, 500);
-    });
-    document.getElementById('android-perm-notifications')?.addEventListener('click', async () => {
-        await androidOpenNotificationSettings();
-        setTimeout(checkAndroidPermissions, 500);
-    });
-    document.getElementById('android-perm-battery')?.addEventListener('click', async () => {
-        await androidOpenBatterySettings();
-        setTimeout(checkAndroidPermissions, 500);
-    });
-    document.getElementById('android-permissions-continue-btn')?.addEventListener('click', () => {
+    wireAndroidPermissionOpenButton('android-perm-accessibility', androidOpenAccessibilitySettings);
+    wireAndroidPermissionOpenButton('android-perm-notifications', androidOpenNotificationSettings);
+    wireAndroidPermissionOpenButton('android-perm-battery', androidOpenBatterySettings);
+    wireAndroidPermissionOpenButton('settings-android-perm-accessibility', androidOpenAccessibilitySettings);
+    wireAndroidPermissionOpenButton('settings-android-perm-notifications', androidOpenNotificationSettings);
+    wireAndroidPermissionOpenButton('settings-android-perm-background', androidOpenBatterySettings);
+    document.getElementById('android-permissions-continue-btn')?.addEventListener('click', async () => {
         if (!androidAccessibilityGranted()) return;
+        androidPermissionsDismissedThisSession = true;
+        if (!import.meta.env.DEV) {
+            if (!appData.settings) appData.settings = {};
+            appData.settings.androidPermissionsOnboardingComplete = true;
+            await saveData();
+        }
         updateOnboardingVisibility();
     });
 
@@ -6477,7 +6516,7 @@ function updateOnboardingVisibility() {
     const main = document.getElementById('main-content');
     const showEula = !hasAcceptedEula();
     const showScreentime = isIOS && !showEula && !screentimeAuthorized;
-    const showAndroidPermissions = isAndroid && !showEula && !androidAccessibilityGranted();
+    const showAndroidPermissions = !showEula && shouldShowAndroidPermissionsOnboarding();
     const keepEulaVisibleForPendingSetup = !isIOS && !isAndroid
         && isFirstRunOnboardingInProgress()
         && !migrationOnboardingActive;
@@ -6759,6 +6798,13 @@ function stampAndroidScheduleExtras() {
     }
 }
 
+/** Same 768px stack breakpoint as iOS layout tiers — toggles phone layout on Android. */
+function syncAndroidLayoutTier() {
+    if (!isAndroid) return;
+    const isPhoneLayout = window.matchMedia('(max-width: 768px)').matches;
+    document.body.classList.toggle('android-phone', isPhoneLayout);
+}
+
 // Detect platform for window controls, iOS, and Android
 function detectPlatform() {
     // Android Tauri webview (check before generic Linux/desktop fallbacks)
@@ -6767,12 +6813,12 @@ function detectPlatform() {
     if (isAndroidDevice) {
         isAndroid = true;
         document.body.classList.add('android');
-        document.body.classList.add('android-phone');
         document.getElementById('window-controls')?.classList.add('hidden');
         document.querySelector('.title-bar')?.classList.add('hidden');
         document.getElementById('helper-settings-section')?.classList.add('hidden');
         setScheduleMode(true);
         document.querySelector('.scheduler-mode-tabs')?.classList.add('hidden');
+        syncAndroidLayoutTier();
         updateManageSectionVisibility();
         return;
     }
@@ -8544,7 +8590,9 @@ function setupOverrideModalListeners() {
     }
     window.addEventListener('resize', () => syncAllStopBtnLabelFits());
     window.addEventListener('resize', () => syncIosScheduleDayLabelsViewportMode());
+    window.addEventListener('resize', () => syncAndroidLayoutTier());
     window.visualViewport?.addEventListener('resize', syncIosScheduleDayLabelsViewportMode);
+    window.visualViewport?.addEventListener('resize', syncAndroidLayoutTier);
 
     document.getElementById('confirm-override-btn').addEventListener('click', async () => {
         if (overrideWordChallengeState) {
@@ -18378,6 +18426,10 @@ const SETTINGS_TRANSLATIONS = {
         settingsEnforcementRowHintExtension: 'If ReDD Focus is disabled mid-block.',
         settingsEnforcementLockedTooltip: 'To change this setting, first stop all active blocks.',
         settingsDiagnosticsLabel: 'Something not working?',
+        settingsAndroidPermissionsHeading: 'Permissions',
+        settingsAndroidPermAccessibility: 'Accessibility',
+        settingsAndroidPermNotifications: 'Notifications',
+        settingsAndroidPermBackground: 'Run in Background',
         settingsSetupBtn: 'Setup',
         settingsDiagnosticsBtn: 'Diagnostics',
         diagnosticsLoadingBtn: 'Loading…',
@@ -19087,6 +19139,10 @@ const SETTINGS_TRANSLATIONS = {
         settingsEnforcementRowHintExtension: 'Hvis ReDD Focus deaktiveres midt i en blokering.',
         settingsEnforcementLockedTooltip: 'For at ændre denne indstilling skal du først stoppe alle aktive blokeringer.',
         settingsDiagnosticsLabel: 'Virker noget ikke?',
+        settingsAndroidPermissionsHeading: 'Tilladelser',
+        settingsAndroidPermAccessibility: 'Tilgængelighed',
+        settingsAndroidPermNotifications: 'Notifikationer',
+        settingsAndroidPermBackground: 'Kør i baggrunden',
         settingsSetupBtn: 'Opsætning',
         settingsDiagnosticsBtn: 'Diagnostik',
         diagnosticsLoadingBtn: 'Indlæser…',
@@ -20392,6 +20448,10 @@ function applySettingsLanguage() {
     setText('settings-windows-uninstall-hint', tSettings('windowsUninstallHint'));
     setText('settings-windows-uninstall-btn-label', tSettings('windowsUninstallOpenSettingsBtn'));
     setText('settings-help-label', tSettings('settingsDiagnosticsLabel'));
+    setText('settings-android-permissions-label', tSettings('settingsAndroidPermissionsHeading'));
+    setText('settings-android-perm-accessibility-label', tSettings('settingsAndroidPermAccessibility'));
+    setText('settings-android-perm-notifications-label', tSettings('settingsAndroidPermNotifications'));
+    setText('settings-android-perm-background-label', tSettings('settingsAndroidPermBackground'));
     setText('settings-enforcement-heading', tSettings('settingsEnforcementHeading'));
     setText('settings-blocking-method-toggle-label', tSettings('settingsBlockingMethodHeading'));
     setText('settings-blocking-method-hint', tSettings('settingsBlockingMethodHint'));
@@ -20533,6 +20593,7 @@ function setupTheme() {
             settingsBtn.addEventListener('click', () => {
             settingsModal.classList.remove('hidden');
             resetSettingsEnforcementSection();
+            if (isAndroid) void checkAndroidPermissions();
             void applyEnforcementDescCopy(lastMigrationBrowserState);
             // Re-evaluate the in-app Uninstall button (Mac only): a
             // schedule could have fired since the modal was last open,
