@@ -9328,26 +9328,30 @@ body.dark-mode .websites-import-menu {
     border-color: transparent;
 }
 
-/* Blocklist modal: full-width stacked row on iOS; captions only on iOS (desktop stays icon-only). */
-body:not(.ios) #blocklist-modal .browse-btn-caption {
+/* Blocklist modal: full-width stacked row on iOS/Android; captions only on mobile (desktop stays icon-only). */
+body:not(.ios):not(.android) #blocklist-modal .browse-btn-caption {
     display: none;
 }
 
-body.ios #blocklist-modal .tags-input-container {
+body.ios #blocklist-modal .tags-input-container,
+body.android #blocklist-modal .tags-input-container {
     align-items: stretch;
 }
 
-body.ios #blocklist-modal .tags-input-container > .tags-container {
+body.ios #blocklist-modal .tags-input-container > .tags-container,
+body.android #blocklist-modal .tags-input-container > .tags-container {
     flex: 1 1 100%;
     width: 100%;
 }
 
 /* Empty chip wells still participate in flex gap — removes the extra space above the apps/websites row until tags exist. */
-body.ios #blocklist-modal .tags-input-container > .tags-container:empty {
+body.ios #blocklist-modal .tags-input-container > .tags-container:empty,
+body.android #blocklist-modal .tags-input-container > .tags-container:empty {
     display: none;
 }
 
-body.ios #blocklist-modal .tags-input-container > .input-with-button {
+body.ios #blocklist-modal .tags-input-container > .input-with-button,
+body.android #blocklist-modal .tags-input-container > .input-with-button {
     flex: 1 1 100%;
     width: 100%;
     min-width: 0;
@@ -9357,14 +9361,16 @@ body.ios #blocklist-modal .tags-input-container > .input-with-button {
     gap: 6px;
 }
 
-body.ios #blocklist-modal .tags-input-container > .input-with-button .form-input {
+body.ios #blocklist-modal .tags-input-container > .input-with-button .form-input,
+body.android #blocklist-modal .tags-input-container > .input-with-button .form-input {
     width: 100%;
     min-width: 0;
     flex: 0 0 auto;
     box-sizing: border-box;
 }
 
-body.ios #blocklist-modal .tags-input-container .browse-btn {
+body.ios #blocklist-modal .tags-input-container .browse-btn,
+body.android #blocklist-modal .tags-input-container .browse-btn {
     width: 100%;
     box-sizing: border-box;
     justify-content: center;
@@ -9372,7 +9378,8 @@ body.ios #blocklist-modal .tags-input-container .browse-btn {
     padding: 10px 12px;
 }
 
-body.ios #blocklist-modal .tags-input-container .browse-btn-caption {
+body.ios #blocklist-modal .tags-input-container .browse-btn-caption,
+body.android #blocklist-modal .tags-input-container .browse-btn-caption {
     font-size: 13px;
     font-weight: 500;
 }
@@ -13842,6 +13849,14 @@ body.dark-mode .app-blocking-warning-card {
     justify-content: space-between;
     margin-top: 12px;
     gap: 8px;
+}
+
+body.android .app-picker-footer {
+    justify-content: flex-end;
+}
+
+body.android #app-picker-browse-btn {
+    display: none;
 }
 
 .app-picker-browse-link {

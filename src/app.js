@@ -6824,6 +6824,10 @@ function detectPlatform() {
         document.querySelector('.scheduler-mode-tabs')?.classList.add('hidden');
         syncAndroidLayoutTier();
         updateManageSectionVisibility();
+
+        // Android: apps are chosen via the installed-apps picker, not typed names.
+        const modalAppInput = document.getElementById('modal-app-input');
+        if (modalAppInput) modalAppInput.style.display = 'none';
         return;
     }
 
@@ -18587,6 +18591,7 @@ const SETTINGS_TRANSLATIONS = {
         websitesTooltip: 'Blocking applies to entire domains. For example, typing "facebook.com" blocks all of Facebook, not just specific pages.',
         apps: 'Apps',
         appsTooltip: 'Enter the exact name of the application (e.g. \'Safari\'). You can also use the folder button to find the app.',
+        appsTooltipAndroid: 'Tap the button to choose which installed apps to block.',
         overrideDifficulty: 'Override Difficulty',
         overrideRandomWords: 'Random Words',
         overrideGibberish: 'Random Gibberish',
@@ -19299,6 +19304,7 @@ const SETTINGS_TRANSLATIONS = {
         websitesTooltip: 'Blokering gælder hele domæner. Hvis du fx skriver "facebook.com", blokeres hele Facebook, ikke kun specifikke sider.',
         apps: 'Apps',
         appsTooltip: 'Indtast det præcise navn på appen (fx "Safari"). Du kan også bruge mappeknappen til at finde appen.',
+        appsTooltipAndroid: 'Tryk på knappen for at vælge hvilke installerede apps der skal blokeres.',
         overrideDifficulty: 'Sværhedsgrad',
         overrideRandomWords: 'Tilfældige ord',
         overrideGibberish: 'Tilfældig volapyk',
@@ -20294,7 +20300,9 @@ function applySettingsLanguage() {
     setText('blocklist-websites-label', tSettings('websites'));
     setText('blocklist-websites-tooltip', tSettings('websitesTooltip'));
     setText('blocklist-apps-label', tSettings('apps'));
-    setText('blocklist-apps-tooltip', tSettings('appsTooltip'));
+    setText('blocklist-apps-tooltip', tSettings(
+        document.body.classList.contains('android') ? 'appsTooltipAndroid' : 'appsTooltip'
+    ));
     setText('override-difficulty-label', tSettings('overrideDifficulty'));
     setText('override-option-random-words', tSettings('overrideRandomWords'));
     setText('override-option-gibberish', tSettings('overrideGibberish'));
@@ -20324,7 +20332,12 @@ function applySettingsLanguage() {
     const modalBrowseAppsBtn = document.getElementById('modal-browse-apps-btn');
     if (modalBrowseAppsBtn) {
         const ios = document.body.classList.contains('ios');
-        const browseTitle = ios ? tSettings('modalBrowseAppsTitleIos') : tSettings('browseApplicationsTitle');
+        const android = document.body.classList.contains('android');
+        const browseTitle = ios
+            ? tSettings('modalBrowseAppsTitleIos')
+            : android
+                ? tSettings('modalBrowseAppsCaption')
+                : tSettings('browseApplicationsTitle');
         modalBrowseAppsBtn.title = browseTitle;
         modalBrowseAppsBtn.setAttribute('aria-label', browseTitle);
     }
@@ -21956,7 +21969,9 @@ async function openInstalledAppsPicker() {
     // Fetch installed apps (cached after first call)
     await ensureInstalledAppsCache();
     if (!installedAppsCache) {
-        listEl.innerHTML = '<div class="app-picker-empty">Could not scan installed apps. Use "Browse manually..." below.</div>';
+        listEl.innerHTML = isAndroid
+            ? '<div class="app-picker-empty">Could not load installed apps.</div>'
+            : '<div class="app-picker-empty">Could not scan installed apps. Use "Browse manually..." below.</div>';
     }
 
     const apps = installedAppsCache || [];
@@ -22071,8 +22086,10 @@ async function openInstalledAppsPicker() {
         closePickerModal();
     };
 
-    // Browse manually — fall back to the OS file picker
-    browseBtn.onclick = async () => {
+    // Browse manually — fall back to the OS file picker (desktop only)
+    if (browseBtn && !isAndroid) {
+        browseBtn.classList.remove('hidden');
+        browseBtn.onclick = async () => {
         closePickerModal();
         const appNames = await tauriAPI.openAppPicker();
         if (appNames && appNames.length > 0) {
@@ -22095,6 +22112,9 @@ async function openInstalledAppsPicker() {
             window.renderModalTags();
         }
     };
+    } else if (browseBtn) {
+        browseBtn.classList.add('hidden');
+    }
 
     // Focus search input
     requestAnimationFrame(() => searchInput.focus());
