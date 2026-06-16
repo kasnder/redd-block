@@ -1246,6 +1246,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     resetDevOnlyAndroidPermissionsOnboarding();
     setupIOSExternalLinkOpens();
     setupNowBlockingChipScroll();
+    setupAndroidKeyboardScroll();
     setupEventListeners();
     initWelcomeDemoControls();
     setupTheme();
@@ -9107,10 +9108,13 @@ function setupEndTimeDirectInputs() {
         if (e.key === 'Enter') {
             e.preventDefault();
             hourEl.blur();
-            minuteEl.focus();
+            minuteEl.focus({ preventScroll: true });
             if (typeof minuteEl.select === 'function') minuteEl.select();
         }
     });
+
+    bindAndroidTimePartPointerGuard(hourEl);
+    bindAndroidTimePartPointerGuard(minuteEl);
 
     minuteEl.addEventListener('input', () => {
         closeAllPopovers();
@@ -9125,6 +9129,112 @@ function setupEndTimeDirectInputs() {
     });
 }
 
+/** Scroll inside a popover list only — never the page (scrollIntoView would pan main-content). */
+function scrollPopoverOptionIntoView(scrollContainer, option) {
+    if (!scrollContainer || !option) return;
+    const optionTop = option.offsetTop;
+    const optionHeight = option.offsetHeight;
+    const containerHeight = scrollContainer.clientHeight;
+    scrollContainer.scrollTop = Math.max(0, optionTop - (containerHeight - optionHeight) / 2);
+}
+
+function isAndroidEditableField(el) {
+    if (!(el instanceof HTMLElement)) return false;
+    const tag = el.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    return el.isContentEditable;
+}
+
+function getAndroidVisibleViewportBottom() {
+    const viewport = window.visualViewport;
+    if (viewport) {
+        return viewport.offsetTop + viewport.height;
+    }
+    return window.innerHeight;
+}
+
+function getAndroidScrollContainer(el) {
+    return el.closest('.modal-overlay:not(.hidden)')
+        || el.closest('.onboarding-screen:not(.hidden)')
+        || document.querySelector('body.android .main-content');
+}
+
+function isAndroidFieldObscuredByKeyboard(el) {
+    if (!isAndroid || !(el instanceof HTMLElement)) return false;
+    const rect = el.getBoundingClientRect();
+    const margin = 12;
+    return rect.bottom > getAndroidVisibleViewportBottom() - margin;
+}
+
+function ensureAndroidEditableAboveKeyboard(el) {
+    if (!isAndroid || !(el instanceof HTMLElement)) return;
+    if (!isAndroidFieldObscuredByKeyboard(el)) return;
+
+    const scrollContainer = getAndroidScrollContainer(el);
+    if (!scrollContainer) return;
+
+    const rect = el.getBoundingClientRect();
+    const margin = 16;
+    const overflow = rect.bottom - (getAndroidVisibleViewportBottom() - margin);
+    if (overflow <= 0) return;
+
+    scrollContainer.scrollBy({ top: overflow, behavior: 'auto' });
+}
+
+function updateAndroidViewportMetrics() {
+    if (!isAndroid) return;
+
+    const viewport = window.visualViewport;
+    const viewportHeight = viewport?.height ?? window.innerHeight;
+    const layoutHeight = window.innerHeight;
+    const viewportTop = viewport?.offsetTop ?? 0;
+    const keyboardInset = Math.max(0, layoutHeight - viewportTop - viewportHeight);
+
+    document.documentElement.style.setProperty('--android-app-height', `${viewportHeight}px`);
+    document.documentElement.style.setProperty('--android-keyboard-inset', `${keyboardInset}px`);
+    document.body.classList.toggle('android-keyboard-open', keyboardInset > 80);
+}
+
+function setupAndroidKeyboardScroll() {
+    if (!isAndroid) return;
+
+    updateAndroidViewportMetrics();
+
+    const handleViewportChange = () => {
+        updateAndroidViewportMetrics();
+        const active = document.activeElement;
+        if (isAndroidEditableField(active)) {
+            ensureAndroidEditableAboveKeyboard(active);
+        }
+    };
+
+    window.visualViewport?.addEventListener('resize', handleViewportChange, { passive: true });
+    window.visualViewport?.addEventListener('scroll', handleViewportChange, { passive: true });
+    window.addEventListener('resize', handleViewportChange, { passive: true });
+
+    document.addEventListener('focusin', (e) => {
+        const target = e.target;
+        if (!isAndroidEditableField(target)) return;
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => ensureAndroidEditableAboveKeyboard(target));
+        });
+    });
+}
+
+function bindAndroidTimePartPointerGuard(el) {
+    if (!isAndroid || !el || el.dataset.androidPointerGuard === '1') return;
+    el.dataset.androidPointerGuard = '1';
+    el.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'mouse') return;
+        e.preventDefault();
+    }, { passive: false });
+}
+
+function focusAndroidTimeInput(el) {
+    if (!isAndroid || !(el instanceof HTMLInputElement)) return;
+    el.focus({ preventScroll: true });
+}
+
 // Handle click on time part (button or instant-end input): open list and mark active.
 function handleTimePartClick(e) {
     e.stopPropagation();
@@ -9132,7 +9242,7 @@ function handleTimePartClick(e) {
     const type = btn.dataset.type;
     const target = btn.dataset.target;
 
-    // Close all popovers first
+    // Close all popovers first (keep row scroll position when switching fields)
     closeAllPopovers();
 
     // Open the relevant popover
@@ -9140,12 +9250,12 @@ function handleTimePartClick(e) {
     if (!popover) return;
     popover.classList.remove('hidden');
     btn.classList.add('active');
+    focusAndroidTimeInput(btn);
 
-    // Scroll to selected option
+    // Scroll to selected option inside the popover only
+    const scroll = popover.querySelector('.popover-scroll');
     const selectedOption = popover.querySelector('.popover-option.selected');
-    if (selectedOption) {
-        selectedOption.scrollIntoView({ block: 'center', behavior: 'instant' });
-    }
+    scrollPopoverOptionIntoView(scroll, selectedOption);
 }
 
 
@@ -9174,6 +9284,7 @@ function selectTimeOption(e) {
 // Close all popovers
 function closeAllPopovers() {
     document.querySelectorAll('.time-popover:not(.schedule-time-popover)').forEach(p => p.classList.add('hidden'));
+    document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
     document.querySelectorAll('.time-part.active, .time-popover-anchor.active').forEach(el =>
         el.classList.remove('active'));
 }
@@ -9183,6 +9294,9 @@ function handlePopoverOutsideClick(e) {
     if (
         e.target.closest('.time-popover') ||
         e.target.closest('.time-popover-anchor') ||
+        e.target.closest('.schedule-start-display input.time-part') ||
+        e.target.closest('.schedule-end-display input.time-part') ||
+        e.target.closest('input.time-part.time-popover-anchor') ||
         e.target.closest('button.time-part')
     ) {
         return;
@@ -10113,7 +10227,7 @@ function bindScheduleTimePartInput(el) {
                 : null;
             el.blur();
             if (minIn) {
-                minIn.focus();
+                minIn.focus({ preventScroll: true });
                 if (typeof minIn.select === 'function') minIn.select();
             }
         } else {
@@ -10161,6 +10275,7 @@ function attachScheduleSegmentTimeInteractions(segment) {
             el.dataset.scheduleUiBound = '1';
             el.addEventListener('click', handleScheduleTimeClick);
             bindScheduleTimePartInput(el);
+            bindAndroidTimePartPointerGuard(el);
         });
 }
 
@@ -10180,8 +10295,11 @@ function handleScheduleTimeClick(e) {
     const isStart = parts[1] === 'start';
     const segmentIndex = parseInt(parts[2]);
 
+    document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
+
     // Create and show popover for time selection
     showScheduleTimePopover(el, type, isStart, segmentIndex);
+    focusAndroidTimeInput(el);
 }
 
 // Show time popover for schedule time selection (anchored to editable time pill)
@@ -10342,11 +10460,9 @@ function showScheduleTimePopover(field, type, isStart, segmentIndex) {
     popover.appendChild(scroll);
     field.parentElement.appendChild(popover);
 
-    // Scroll to current value
+    // Scroll to current value inside the popover only
     const activeOption = scroll.querySelector('.selected');
-    if (activeOption) {
-        activeOption.scrollIntoView({ block: 'center' });
-    }
+    scrollPopoverOptionIntoView(scroll, activeOption);
 
     // Close on outside click
     setTimeout(() => {

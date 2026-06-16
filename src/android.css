@@ -754,6 +754,17 @@ input[type="range"] {
     flex-direction: column;
 }
 
+body.android.android-phone .modal-list {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+body.android.android-phone .modal-list::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+}
+
 .modal-loading {
     color: var(--text-muted);
     font-size: 14px;
