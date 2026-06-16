@@ -1245,6 +1245,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupIOSExternalLinkOpens();
     setupNowBlockingChipScroll();
     setupAndroidKeyboardScroll();
+    setupAndroidTouchFocusCleanup();
     setupEventListeners();
     initWelcomeDemoControls();
     setupTheme();
@@ -9343,6 +9344,32 @@ function setupAndroidKeyboardScroll() {
             requestAnimationFrame(() => ensureAndroidEditableAboveKeyboard(target));
         });
     });
+}
+
+/** WebView keeps :focus on tapped controls and paints a blue ring; blur after tap unless editing. */
+function setupAndroidTouchFocusCleanup() {
+    if (!isAndroid) return;
+
+    const shouldKeepFocus = (el) => {
+        if (!(el instanceof Element)) return false;
+        return !!el.closest('input, textarea, select, [contenteditable="true"]');
+    };
+
+    const blurTransientFocus = () => {
+        const active = document.activeElement;
+        if (!(active instanceof HTMLElement)) return;
+        if (active === document.body || active === document.documentElement) return;
+        if (shouldKeepFocus(active)) return;
+        active.blur();
+    };
+
+    document.addEventListener('touchend', () => {
+        window.setTimeout(blurTransientFocus, 0);
+    }, { passive: true });
+
+    document.addEventListener('mouseup', () => {
+        window.setTimeout(blurTransientFocus, 0);
+    }, { passive: true });
 }
 
 function bindAndroidTimePartPointerGuard(el) {

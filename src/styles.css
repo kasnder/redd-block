@@ -261,6 +261,49 @@ body.android .main-content {
     padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px) + var(--android-keyboard-inset, 0px));
 }
 
+/* Android WebView: suppress default tap flash and post-tap focus ring (iOS/desktop unchanged). */
+body.android,
+body.android * {
+    -webkit-tap-highlight-color: transparent;
+}
+
+body.android button,
+body.android a,
+body.android [role="button"],
+body.android .icon-btn,
+body.android .modal-btn,
+body.android .mode-tab,
+body.android .blocklist-card,
+body.android .settings-row,
+body.android .language-picker-trigger,
+body.android .zoom-btn {
+    touch-action: manipulation;
+}
+
+body.android :focus:not(:focus-visible) {
+    outline: none;
+}
+
+body.android button:focus:not(:focus-visible),
+body.android a:focus:not(:focus-visible),
+body.android [role="button"]:focus:not(:focus-visible),
+body.android .icon-btn:focus:not(:focus-visible),
+body.android .modal-btn:focus:not(:focus-visible),
+body.android .mode-tab:focus:not(:focus-visible),
+body.android .blocklist-card:focus:not(:focus-visible),
+body.android .language-picker-trigger:focus:not(:focus-visible),
+body.android .zoom-btn:focus:not(:focus-visible),
+body.android label:focus:not(:focus-visible),
+body.android h1:focus:not(:focus-visible),
+body.android h2:focus:not(:focus-visible),
+body.android h3:focus:not(:focus-visible),
+body.android p:focus:not(:focus-visible),
+body.android span:focus:not(:focus-visible),
+body.android div:focus:not(:focus-visible) {
+    outline: none;
+    box-shadow: none;
+}
+
 /* iPhone / Android phone */
 body.ios .app-container,
 body.android .app-container {
