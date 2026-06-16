@@ -628,13 +628,6 @@
                             </button>
                         </div>
                         <div class="settings-toolbar settings-toolbar--scheduler" id="settings-toolbar-scheduler">
-                            <div class="header-zoom-control" id="header-zoom-control" role="group" aria-label="UI zoom">
-                                <button type="button" class="zoom-btn zoom-out-btn" title="Zoom out"
-                                    aria-label="Zoom out">−</button>
-                                <span class="zoom-value">120%</span>
-                                <button type="button" class="zoom-btn zoom-in-btn" title="Zoom in"
-                                    aria-label="Zoom in">+</button>
-                            </div>
                             <button id="settings-btn" class="settings-top-btn icon-btn" title="Settings">
                                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                                     stroke-linecap="round" stroke-linejoin="round">
@@ -1895,7 +1888,7 @@
 
         <!-- Zoom Toast -->
         <div id="zoom-toast" class="zoom-toast hidden">
-            <span id="zoom-toast-message">Zoom 120%</span>
+            <span id="zoom-toast-message">Zoom 100%</span>
         </div>
 
         <!-- Settings Modal -->
@@ -1964,6 +1957,20 @@
                                         <option id="theme-option-light" value="light">Light</option>
                                         <option id="theme-option-dark" value="dark">Dark</option>
                                     </select>
+                                </div>
+                            </div>
+
+                            <div class="settings-row">
+                                <span id="settings-zoom-label" class="settings-row-label">Zoom level</span>
+                                <div class="settings-row-control">
+                                    <div class="settings-zoom-control" id="settings-zoom-control" role="group"
+                                        aria-labelledby="settings-zoom-label">
+                                        <button type="button" class="zoom-btn zoom-out-btn" id="settings-zoom-out"
+                                            title="Zoom out" aria-label="Zoom out">−</button>
+                                        <span class="zoom-value" id="settings-zoom-value">100%</span>
+                                        <button type="button" class="zoom-btn zoom-in-btn" id="settings-zoom-in"
+                                            title="Zoom in" aria-label="Zoom in">+</button>
+                                    </div>
                                 </div>
                             </div>
 
@@ -2447,18 +2454,6 @@
         <div class="footer">
             <span class="footer-text"><span id="footer-made-with">Made with</span> <span class="heart">♥</span> <span
                     id="footer-by">by</span> <a href="https://reddfocus.org" target="_blank">reddfocus.org</a></span>
-            <div class="footer-zoom-control" id="footer-zoom-control" role="group" aria-label="UI zoom">
-                <button type="button" class="footer-zoom-btn zoom-out-btn" id="footer-zoom-out" title="Zoom out"
-                    aria-label="Zoom out">−</button>
-                <svg class="footer-zoom-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <circle cx="11" cy="11" r="7"></circle>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                </svg>
-                <span class="footer-zoom-value zoom-value" id="footer-zoom-value">120%</span>
-                <button type="button" class="footer-zoom-btn zoom-in-btn" id="footer-zoom-in" title="Zoom in"
-                    aria-label="Zoom in">+</button>
-            </div>
         </div>
     </div>
 

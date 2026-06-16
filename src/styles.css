@@ -1827,18 +1827,17 @@ body.dark-mode .app-blocking-closedown-banner {
         gap: 8px;
     }
 
-    body.ios:not(.ios-phone) .main-content .zoom-btn,
-    body.android:not(.android-phone) .main-content .zoom-btn {
-        width: 28px;
-        height: 28px;
-        font-size: 18px;
-        border-radius: 6px;
+    body.ios:not(.ios-phone) #settings-modal .settings-zoom-control .zoom-btn,
+    body.android:not(.android-phone) #settings-modal .settings-zoom-control .zoom-btn {
+        width: calc(28px * var(--ipad-s, 1));
+        height: calc(28px * var(--ipad-s, 1));
+        font-size: calc(18px * var(--ipad-s, 1));
+        border-radius: calc(6px * var(--ipad-s, 1));
     }
 
-    body.ios:not(.ios-phone) .main-content .zoom-value,
-    body.android:not(.android-phone) .main-content .zoom-value {
-        font-size: 14px;
-        min-width: 44px;
+    body.ios:not(.ios-phone) #settings-modal .settings-zoom-control .zoom-value,
+    body.android:not(.android-phone) #settings-modal .settings-zoom-control .zoom-value {
+        font-size: calc(14px * var(--ipad-s, 1));
     }
 
     body.ios:not(.ios-phone) .main-content #add-blocklist-btn svg,
@@ -2912,6 +2911,22 @@ body.dark-mode .app-blocking-closedown-banner {
         font-size: calc(15px * var(--ipad-s));
         background-size: calc(16px * var(--ipad-s));
         background-position: right calc(12px * var(--ipad-s)) center;
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .settings-zoom-control {
+        padding: calc(4px * var(--ipad-s)) calc(8px * var(--ipad-s));
+        border-radius: calc(8px * var(--ipad-s));
+        gap: calc(4px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .settings-zoom-control .zoom-btn {
+        width: calc(28px * var(--ipad-s));
+        height: calc(28px * var(--ipad-s));
+        font-size: calc(16px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .settings-zoom-control .zoom-value {
+        font-size: calc(15px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .settings-help-btn {
@@ -6120,13 +6135,6 @@ body.dark-mode .schedule-pending-discard:hover {
     align-items: center;
     gap: 6px;
     flex-shrink: 0;
-}
-
-.header-zoom-control {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    color: var(--text-muted);
 }
 
 .zoom-btn {
@@ -11115,81 +11123,10 @@ body.dark-mode .modal-btn.black-btn:hover {
     color: var(--text-muted);
 }
 
-/* Desktop: 3-col grid centers made-with text; zoom sits bottom-right. */
-body:not(.ios):not(.android) .footer {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-}
-
-body:not(.ios):not(.android) .footer-text {
-    grid-column: 2;
-    text-align: center;
-}
-
-.footer-zoom-control {
-    display: none;
-}
-
-body:not(.ios):not(.android) .footer-zoom-control {
-    grid-column: 3;
-    justify-self: end;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--text-muted);
-    padding-bottom: 2px;
-}
-
-.footer-zoom-btn {
-    width: 22px;
-    height: 22px;
-    border: none;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 16px;
-    line-height: 1;
-    padding: 0;
-    transition: background 0.15s ease, color 0.15s ease;
-}
-
-.footer-zoom-btn:hover:not(:disabled) {
-    background: var(--element-hover-bg);
-    color: var(--text-primary);
-}
-
-.footer-zoom-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
-
-.footer-zoom-icon {
-    width: 14px;
-    height: 14px;
-    color: var(--text-muted);
-    flex-shrink: 0;
-}
-
-.footer-zoom-value {
-    font-variant-numeric: tabular-nums;
-    min-width: 40px;
-    text-align: right;
-    font-size: 12px;
-}
-
 .footer-text {
     text-align: center;
     font-size: 13px;
     padding-bottom: 2px;
-}
-
-/* Mobile: zoom beside settings gear in the header, not in the footer. */
-body:not(.ios):not(.android) .header-zoom-control {
-    display: none !important;
 }
 
 body.ios.ios-phone .footer,
@@ -11332,6 +11269,7 @@ body.windows .settings-panel-rows > #settings-override-all-row:not(.hidden) ~ #w
 
 #settings-modal .settings-row-control:has(.language-picker),
 #settings-modal .settings-row-control:has(#theme-select),
+#settings-modal .settings-row-control:has(.settings-zoom-control),
 #settings-modal .settings-row-control:has(.settings-override-all-btn),
 #settings-modal .settings-row-control.settings-uninstall-btn-wrap {
     width: var(--settings-control-width);
@@ -11340,6 +11278,7 @@ body.windows .settings-panel-rows > #settings-override-all-row:not(.hidden) ~ #w
 
 #settings-modal .settings-row-control .language-picker,
 #settings-modal .settings-row-control #theme-select,
+#settings-modal .settings-row-control .settings-zoom-control,
 #settings-modal .settings-row-control .settings-override-all-btn,
 #settings-modal .settings-row-control.settings-uninstall-btn-wrap .uninstall-app-btn,
 #settings-modal .settings-row-control.settings-uninstall-btn-wrap #windows-uninstall-open-settings-btn {
@@ -11365,6 +11304,7 @@ body.windows .settings-panel-rows > #settings-override-all-row:not(.hidden) ~ #w
 
 #settings-modal .settings-section-grid .language-picker,
 #settings-modal .settings-section-grid #theme-select,
+#settings-modal .settings-section-grid .settings-zoom-control,
 #settings-modal .settings-section-grid .settings-override-all-btn,
 #settings-modal .settings-section-grid .uninstall-app-btn,
 #settings-modal .settings-uninstall-btn-wrap {
@@ -11473,6 +11413,40 @@ body.windows .settings-panel-rows > #settings-override-all-row:not(.hidden) ~ #w
 
 #settings-modal .settings-select:hover {
     border-color: var(--border-color-strong, var(--border-color-medium));
+}
+
+#settings-modal .settings-zoom-control {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 4px 8px;
+    border: 1px solid var(--border-color-medium);
+    border-radius: 8px;
+    background-color: var(--modal-bg);
+    color: var(--text-muted);
+    cursor: default;
+}
+
+#settings-modal .settings-zoom-control .zoom-btn {
+    flex: none;
+    width: 28px;
+    height: 28px;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+#settings-modal .settings-zoom-control .zoom-value {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+    font-size: 15px;
+    line-height: 1.25;
+    color: var(--text-primary);
+    pointer-events: none;
+    user-select: none;
 }
 
 body.dark-mode #settings-modal .settings-select {

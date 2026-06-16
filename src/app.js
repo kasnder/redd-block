@@ -286,10 +286,7 @@ const UI_ZOOM_LAYOUT_NARROW_MAX = 800;
 let uiZoomLayoutRaf = 0;
 let uiZoomLayoutObserverBound = false;
 const UI_ZOOM_STEP = 0.1;
-/** Desktop default — slightly larger for monitor distance. */
-const DEFAULT_UI_ZOOM = 1.2;
-/** iOS uses CSS zoom on `html`; 1.0 matches the layout viewport and avoids horizontal overflow. */
-const DEFAULT_UI_ZOOM_IOS = 1.0;
+const DEFAULT_UI_ZOOM = 1.0;
 let zoomToastHideTimeout = null;
 let nativeWebviewZoomSupported = null;
 
@@ -19032,6 +19029,7 @@ const SETTINGS_TRANSLATIONS = {
         yourVersionPrefix: 'Version',
         latestVersionPrefix: 'Latest version:',
         lightDarkMode: 'Theme',
+        zoomLevel: 'Zoom level',
         language: 'Language',
         themeAuto: 'Auto',
         themeLight: 'Light',
@@ -19744,6 +19742,7 @@ const SETTINGS_TRANSLATIONS = {
         yourVersionPrefix: 'Version',
         latestVersionPrefix: 'Nyeste version:',
         lightDarkMode: 'Tema',
+        zoomLevel: 'Zoomniveau',
         language: 'Sprog',
         themeAuto: 'Auto',
         themeLight: 'Lys',
@@ -20704,6 +20703,7 @@ function applySettingsLanguage() {
     setText('settings-general-heading', tSettings('settingsGeneralHeading'));
     setText('settings-manage-heading', tSettings('settingsManageHeading'));
     setText('settings-theme-label', tSettings('lightDarkMode'));
+    setText('settings-zoom-label', tSettings('zoomLevel'));
     setText('settings-language-label', tSettings('language'));
     syncLanguagePickerUI();
     setText('theme-option-system', tSettings('themeAuto'));
@@ -20863,6 +20863,7 @@ function setupTheme() {
         settingsTriggers.forEach((settingsBtn) => {
             settingsBtn.addEventListener('click', () => {
             settingsModal.classList.remove('hidden');
+            syncFooterZoomControl(getActiveUiZoomScale());
             resetSettingsEnforcementSection();
             if (isAndroid) void checkAndroidPermissions();
             void applyEnforcementDescCopy(lastMigrationBrowserState);
@@ -21005,7 +21006,7 @@ function clampUiZoom(scale) {
 }
 
 function getDefaultUiZoom() {
-    return (isIOS || isAndroid) ? DEFAULT_UI_ZOOM_IOS : DEFAULT_UI_ZOOM;
+    return DEFAULT_UI_ZOOM;
 }
 
 function getSavedUiZoom() {
@@ -21055,7 +21056,6 @@ function syncUiZoomResponsiveLayout() {
     }
 
     syncSchedulerModeTabLabelMode();
-    syncZoomControlPlacement();
     syncIosScheduleDayLabelsViewportMode();
     syncAllStopBtnLabelFits();
     const pauseModal = document.getElementById('pause-modal');
@@ -21120,26 +21120,6 @@ function syncSchedulerModeTabLabelMode() {
     body.classList.toggle('ui-zoom-sched-tabs-icons', iconOnly);
 }
 
-/** iOS/Android: keep the header zoom control beside whichever settings button is visible. */
-function syncZoomControlPlacement() {
-    if (!isIOS && !isAndroid) return;
-
-    const zoom = document.getElementById('header-zoom-control');
-    const stackToolbar = document.getElementById('settings-toolbar-stack');
-    const schedToolbar = document.getElementById('settings-toolbar-scheduler');
-    const stackBtn = document.getElementById('settings-btn-stack');
-    const schedBtn = document.getElementById('settings-btn');
-    if (!zoom || !stackToolbar || !schedToolbar || !stackBtn || !schedBtn) return;
-
-    const hostToolbar = usesStackSettingsPlacement() ? stackToolbar : schedToolbar;
-    const hostBtn = usesStackSettingsPlacement() ? stackBtn : schedBtn;
-    if (zoom.parentElement !== hostToolbar) {
-        hostToolbar.insertBefore(zoom, hostBtn);
-    } else if (zoom.nextElementSibling !== hostBtn) {
-        hostToolbar.insertBefore(zoom, hostBtn);
-    }
-}
-
 function scheduleUiZoomResponsiveLayout() {
     cancelAnimationFrame(uiZoomLayoutRaf);
     uiZoomLayoutRaf = requestAnimationFrame(() => {
@@ -21193,10 +21173,7 @@ function applyUiZoom(scale) {
     scheduleUiZoomResponsiveLayout();
 }
 
-// Mirror the current zoom level into the footer percentage label and
-// +/- button enabled state. Called from applyUiZoom so every entry
-// point (footer buttons, cmd-+/-/0 shortcuts, native menu items) keeps
-// the UI in sync.
+/** Mirror the current zoom level into the settings control and +/- button state. */
 function syncFooterZoomControl(scale) {
     const pct = `${Math.round(scale * 100)}%`;
     const max = getUiZoomMax();
@@ -21212,12 +21189,11 @@ function syncFooterZoomControl(scale) {
 }
 
 function setupFooterZoomControl() {
-    document.querySelectorAll('.header-zoom-control, .footer-zoom-control').forEach((control) => {
-        if (control.dataset.bound === '1') return;
-        control.dataset.bound = '1';
-        control.querySelector('.zoom-out-btn')?.addEventListener('click', () => zoomUiOut());
-        control.querySelector('.zoom-in-btn')?.addEventListener('click', () => zoomUiIn());
-    });
+    const control = document.getElementById('settings-zoom-control');
+    if (!control || control.dataset.bound === '1') return;
+    control.dataset.bound = '1';
+    control.querySelector('.zoom-out-btn')?.addEventListener('click', () => zoomUiOut());
+    control.querySelector('.zoom-in-btn')?.addEventListener('click', () => zoomUiIn());
 }
 
 function showUiZoomToast(scale) {
@@ -21268,7 +21244,6 @@ function resetUiZoom(options = {}) {
 function setupUiZoomShortcuts() {
     setupFooterZoomControl();
     applyUiZoom(getSavedUiZoom());
-    syncZoomControlPlacement();
     bindUiZoomLayoutObserver();
     window.addEventListener('resize', scheduleUiZoomResponsiveLayout, { passive: true });
     window.visualViewport?.addEventListener('resize', scheduleUiZoomResponsiveLayout, { passive: true });
