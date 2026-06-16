@@ -18128,12 +18128,16 @@ const SETTINGS_TRANSLATIONS = {
         eulaWelcomeIconAlt: 'Fristed app icon',
         eulaProjectBlurb:
             'Fristed is developed by the Reduce Digital Distraction Project, in collaboration with researchers at the University of Oxford and University of Maastricht. The ReDD Project is a not-for-profit creating insights & open-source digital focus tools for everyone to thrive in the digital world.',
-        rebrandOnboardingTitle: 'ReDD Block has a new look!',
-        rebrandOnboardingSubtitle: 'Meet Fristed: Block Apps & Sites',
-        rebrandOnboardingBody1:
-            '"Fristed" is a Danish word that means "a free space, a haven", which perfectly reflects the idea of the app: helping you block the websites and apps that pull you away, and keep a clear space to focus.',
-        rebrandOnboardingBody2:
-            'This is just a new look - your blocklists, schedules, and settings are all unchanged.',
+        rebrandOnboardingTitleHtml:
+            'ReDD Block is now <span class="rebrand-onboarding-title-brand">Fristed</span>',
+        rebrandOnboardingSubtitle:
+            'All functionality is unchanged \u2014 it\u2019s just a new name that reflects what the app is for.',
+        rebrandOnboardingWord: 'fri·sted',
+        rebrandOnboardingIpa: '/ˈfriːstæð/',
+        rebrandOnboardingLanguage: 'Danish',
+        rebrandOnboardingPartOfSpeech: 'noun',
+        rebrandOnboardingDefinitionHtml:
+            '<em class="rebrand-definition-quote">\u201ca free place; a haven.\u201d</em> A clear and undistracted space, kept free of the apps and sites that pull you away.',
         rebrandOnboardingContinueBtn: 'Continue',
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Welcome to Fristed',
@@ -18864,12 +18868,16 @@ const SETTINGS_TRANSLATIONS = {
         eulaWelcomeIconAlt: 'Fristed-appikon',
         eulaProjectBlurb:
             'Fristed er udviklet af Reduce Digital Distraction Project i samarbejde med forskere ved University of Oxford og Maastricht University. ReDD-projektet er en non-profit, der skaber indsigt og open source digitale fokusværktøjer, så alle kan trives i den digitale verden.',
-        rebrandOnboardingTitle: 'ReDD Block har fået et nyt look!',
-        rebrandOnboardingSubtitle: 'Mød Fristed: Bloker apps og websites.',
-        rebrandOnboardingBody1:
-            '"Fristed" er et dansk ord for et frit sted eller et frirum: et lille sted med ro og beskyttelse.',
-        rebrandOnboardingBody2:
-            'Det er den samme idé, appen bygger på. Navnet og det visuelle udtryk er nyt, men dine bloklister, tidsplaner og indstillinger er stadig her og uændrede.',
+        rebrandOnboardingTitleHtml:
+            'ReDD Block hedder nu <span class="rebrand-onboarding-title-brand">Fristed</span>',
+        rebrandOnboardingSubtitle:
+            'Al funktionalitet er u\u00e6ndret \u2014 det er bare et nyt navn, der afspejler, hvad appen er til.',
+        rebrandOnboardingWord: 'fri·sted',
+        rebrandOnboardingIpa: '/ˈfriːstæð/',
+        rebrandOnboardingLanguage: 'Dansk',
+        rebrandOnboardingPartOfSpeech: 'substantiv',
+        rebrandOnboardingDefinitionHtml:
+            '<em class="rebrand-definition-quote">\u201cet frit sted; et frirum.\u201d</em> Et klart og uforstyrret rum, fri for de apps og websites, der tr\u00e6kker dig v\u00e6k.',
         rebrandOnboardingContinueBtn: 'Fortsæt',
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Velkommen til Fristed',
@@ -19817,16 +19825,25 @@ function applyFristedDefinitionPills() {
 
 function applyRebrandOnboardingLanguage() {
     const title = document.getElementById('rebrand-onboarding-title');
-    if (title) title.textContent = tSettings('rebrandOnboardingTitle');
+    if (title) title.innerHTML = tSettings('rebrandOnboardingTitleHtml');
 
     const subtitle = document.getElementById('rebrand-onboarding-subtitle');
     if (subtitle) subtitle.textContent = tSettings('rebrandOnboardingSubtitle');
 
-    const body1 = document.getElementById('rebrand-onboarding-body-1');
-    if (body1) body1.textContent = tSettings('rebrandOnboardingBody1');
+    const word = document.getElementById('rebrand-onboarding-word');
+    if (word) word.textContent = tSettings('rebrandOnboardingWord');
 
-    const body2 = document.getElementById('rebrand-onboarding-body-2');
-    if (body2) body2.textContent = tSettings('rebrandOnboardingBody2');
+    const ipa = document.getElementById('rebrand-onboarding-ipa');
+    if (ipa) ipa.textContent = tSettings('rebrandOnboardingIpa');
+
+    const language = document.getElementById('rebrand-onboarding-language');
+    if (language) language.textContent = tSettings('rebrandOnboardingLanguage');
+
+    const partOfSpeech = document.getElementById('rebrand-onboarding-part-of-speech');
+    if (partOfSpeech) partOfSpeech.textContent = tSettings('rebrandOnboardingPartOfSpeech');
+
+    const definition = document.getElementById('rebrand-onboarding-definition');
+    if (definition) definition.innerHTML = tSettings('rebrandOnboardingDefinitionHtml');
 
     const continueBtn = document.getElementById('rebrand-onboarding-continue-btn');
     if (continueBtn) continueBtn.textContent = tSettings('rebrandOnboardingContinueBtn');
