@@ -3438,9 +3438,8 @@ body.ios .section-header h2 {
     margin-top: 14px;
 }
 
-/* iPhone / iPod / narrow Android: no room for week calendar — hide Schedule section (iPad / large Android keep it) */
-body.ios.ios-phone .week-calendar-section,
-body.android.android-phone .week-calendar-section {
+/* Handsets (iPhone, Android phones): hide week calendar in all orientations; tablets keep it. */
+body.handset-device .week-calendar-section {
     display: none !important;
 }
 
