@@ -284,7 +284,8 @@ body.android .blocklists-section {
 
 /* iPad only — iPhone landscape is often ≥768px wide; must not use iPad padding */
 @media (min-width: 768px) {
-    body.ios:not(.ios-phone) .app-container {
+    body.ios:not(.ios-phone) .app-container,
+    body.android:not(.android-phone) .app-container {
         padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px));
     }
 }
@@ -1656,8 +1657,18 @@ body.dark-mode .app-blocking-closedown-banner {
         grid-template-columns: 1fr;
         gap: 18px;
     }
+    body.android:not(.android-phone) .grid-top-row {
+        grid-template-columns: 1fr;
+        gap: 18px;
+    }
 
     body.ios:not(.ios-phone) #settings-btn-stack {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+    }
+    body.android:not(.android-phone) #settings-btn-stack {
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1667,20 +1678,35 @@ body.dark-mode .app-blocking-closedown-banner {
     body.ios:not(.ios-phone) #settings-toolbar-stack {
         display: flex;
     }
+    body.android:not(.android-phone) #settings-toolbar-stack {
+        display: flex;
+    }
 
     body.ios:not(.ios-phone) .scheduler-section .section-header #settings-btn {
+        display: none !important;
+    }
+    body.android:not(.android-phone) .scheduler-section .section-header #settings-btn {
         display: none !important;
     }
 
     body.ios:not(.ios-phone) .scheduler-section .section-header #settings-toolbar-scheduler {
         display: none !important;
     }
+    body.android:not(.android-phone) .scheduler-section .section-header #settings-toolbar-scheduler {
+        display: none !important;
+    }
 
     body.ios:not(.ios-phone) .grid-top-row--blocklist-selected .blocklist-card {
         max-width: none;
     }
+    body.android:not(.android-phone) .grid-top-row--blocklist-selected .blocklist-card {
+        max-width: none;
+    }
 
     body.ios:not(.ios-phone) .scheduler-section > .section-header.scheduler-header-compact {
+        margin-bottom: 2px;
+    }
+    body.android:not(.android-phone) .scheduler-section > .section-header.scheduler-header-compact {
         margin-bottom: 2px;
     }
 
@@ -1688,13 +1714,31 @@ body.dark-mode .app-blocking-closedown-banner {
         padding: 0 0 18px 20px;
         margin-top: -32px;
     }
+    body.android:not(.android-phone) .selection-prompt {
+        padding: 0 0 18px 20px;
+        margin-top: -32px;
+    }
 
     body.ios:not(.ios-phone) .selection-prompt svg {
+        transform: rotate(90deg);
+    }
+    body.android:not(.android-phone) .selection-prompt svg {
         transform: rotate(90deg);
     }
 
     /* Portrait stack: show Now/Schedule text unless JS detects overlap (ui-zoom-sched-tabs-icons). */
     body.ios:not(.ios-phone) .scheduler-section > .section-header .mode-tab-label {
+        position: static;
+        width: auto;
+        height: auto;
+        padding: 0;
+        margin: 0;
+        overflow: visible;
+        clip: auto;
+        white-space: nowrap;
+        border: 0;
+    }
+    body.android:not(.android-phone) .scheduler-section > .section-header .mode-tab-label {
         position: static;
         width: auto;
         height: auto;
@@ -1717,140 +1761,178 @@ body.dark-mode .app-blocking-closedown-banner {
         white-space: nowrap;
         border: 0;
     }
+    body.android:not(.android-phone).ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+    }
 
     /* -------------------------------------------------------------------------
        Portrait iPad: scale main-content UI (blocklists, scheduler, week calendar).
        Scoped under .main-content so modals / onboarding overlays are unchanged.
        ------------------------------------------------------------------------- */
-    body.ios:not(.ios-phone) .main-content {
+    body.ios:not(.ios-phone) .main-content,
+    body.android:not(.android-phone) .main-content {
         padding: 16px 28px 6px;
         gap: 18px;
         --day-label-width: 76px;
     }
 
-    body.ios:not(.ios-phone) .main-content .section-header {
+    body.ios:not(.ios-phone) .main-content .section-header,
+    body.android:not(.android-phone) .main-content .section-header {
         gap: 14px;
         margin-bottom: 14px;
         min-height: 44px;
     }
 
-    body.ios:not(.ios-phone) .main-content .grid-top-row .section-header {
+    body.ios:not(.ios-phone) .main-content .grid-top-row .section-header,
+    body.android:not(.android-phone) .main-content .grid-top-row .section-header {
         min-height: 44px;
     }
 
-    body.ios:not(.ios-phone) .main-content .section-header h2 {
+    body.ios:not(.ios-phone) .main-content .section-header h2,
+    body.android:not(.android-phone) .main-content .section-header h2 {
         font-size: 19px;
     }
 
     body.ios:not(.ios-phone) .main-content .icon-btn,
     body.ios:not(.ios-phone) .main-content #add-blocklist-btn,
-    body.ios:not(.ios-phone) .main-content #settings-btn-stack {
+    body.ios:not(.ios-phone) .main-content #settings-btn-stack,
+    body.android:not(.android-phone) .main-content .icon-btn,
+    body.android:not(.android-phone) .main-content #add-blocklist-btn,
+    body.android:not(.android-phone) .main-content #settings-btn-stack {
         width: 44px;
         height: 44px;
         border-radius: 8px;
     }
 
-    body.ios:not(.ios-phone) .main-content .settings-toolbar {
+    body.ios:not(.ios-phone) .main-content .settings-toolbar,
+    body.android:not(.android-phone) .main-content .settings-toolbar {
         gap: 8px;
     }
 
-    body.ios:not(.ios-phone) .main-content .zoom-btn {
+    body.ios:not(.ios-phone) .main-content .zoom-btn,
+    body.android:not(.android-phone) .main-content .zoom-btn {
         width: 28px;
         height: 28px;
         font-size: 18px;
         border-radius: 6px;
     }
 
-    body.ios:not(.ios-phone) .main-content .zoom-value {
+    body.ios:not(.ios-phone) .main-content .zoom-value,
+    body.android:not(.android-phone) .main-content .zoom-value {
         font-size: 14px;
         min-width: 44px;
     }
 
     body.ios:not(.ios-phone) .main-content #add-blocklist-btn svg,
-    body.ios:not(.ios-phone) .main-content #settings-btn-stack svg {
+    body.ios:not(.ios-phone) .main-content #settings-btn-stack svg,
+    body.android:not(.android-phone) .main-content #add-blocklist-btn svg,
+    body.android:not(.android-phone) .main-content #settings-btn-stack svg {
         width: 24px;
         height: 24px;
     }
 
-    body.ios:not(.ios-phone) .main-content .scheduler-mode-tabs {
+    body.ios:not(.ios-phone) .main-content .scheduler-mode-tabs,
+    body.android:not(.android-phone) .main-content .scheduler-mode-tabs {
         gap: 4px;
         padding: 5px;
         border-radius: 12px;
         max-width: none;
     }
 
-    body.ios:not(.ios-phone) .main-content .mode-tab {
+    body.ios:not(.ios-phone) .main-content .mode-tab,
+    body.android:not(.android-phone) .main-content .mode-tab {
         padding: 10px 18px;
         gap: 8px;
         font-size: 17px;
     }
 
-    body.ios:not(.ios-phone) .main-content .mode-tab.active {
+    body.ios:not(.ios-phone) .main-content .mode-tab.active,
+    body.android:not(.android-phone) .main-content .mode-tab.active {
         padding: 12px 19px;
     }
 
-    body.ios:not(.ios-phone) .main-content .mode-tab-icon {
+    body.ios:not(.ios-phone) .main-content .mode-tab-icon,
+    body.android:not(.android-phone) .main-content .mode-tab-icon {
         width: 18px;
         height: 18px;
     }
 
-    body.ios:not(.ios-phone) .main-content .selection-prompt {
+    body.ios:not(.ios-phone) .main-content .selection-prompt,
+    body.android:not(.android-phone) .main-content .selection-prompt {
         gap: 13px;
         padding: 0 0 22px 22px;
         margin-top: -28px;
         font-size: 18px;
     }
 
-    body.ios:not(.ios-phone) .main-content .selection-prompt svg {
+    body.ios:not(.ios-phone) .main-content .selection-prompt svg,
+    body.android:not(.android-phone) .main-content .selection-prompt svg {
         width: 26px;
         height: 26px;
     }
 
-    body.ios:not(.ios-phone) .main-content .time-picker-container {
+    body.ios:not(.ios-phone) .main-content .time-picker-container,
+    body.android:not(.android-phone) .main-content .time-picker-container {
         gap: 18px;
         margin-bottom: 12px;
         border-radius: 14px;
         padding: 20px;
     }
 
-    body.ios:not(.ios-phone) .main-content .quick-select-row {
+    body.ios:not(.ios-phone) .main-content .quick-select-row,
+    body.android:not(.android-phone) .main-content .quick-select-row {
         gap: 6px;
         margin-bottom: 14px;
     }
 
-    body.ios:not(.ios-phone) .main-content .time-label {
+    body.ios:not(.ios-phone) .main-content .time-label,
+    body.android:not(.android-phone) .main-content .time-label {
         font-size: 14px;
     }
 
-    body.ios:not(.ios-phone) .main-content .duration-input {
+    body.ios:not(.ios-phone) .main-content .duration-input,
+    body.android:not(.android-phone) .main-content .duration-input {
         width: 68px;
         padding: 8px 8px;
         font-size: 18px;
     }
 
-    body.ios:not(.ios-phone) .main-content .duration-unit {
+    body.ios:not(.ios-phone) .main-content .duration-unit,
+    body.android:not(.android-phone) .main-content .duration-unit {
         font-size: 16px;
     }
 
-    body.ios:not(.ios-phone) .main-content .duration-quick-btn {
+    body.ios:not(.ios-phone) .main-content .duration-quick-btn,
+    body.android:not(.android-phone) .main-content .duration-quick-btn {
         padding: 8px 12px;
         font-size: 14px;
         border-radius: 8px;
     }
 
-    body.ios:not(.ios-phone) .main-content .duration-quick-btn-always svg {
+    body.ios:not(.ios-phone) .main-content .duration-quick-btn-always svg,
+    body.android:not(.android-phone) .main-content .duration-quick-btn-always svg {
         width: 14px;
         height: 14px;
     }
 
-    body.ios:not(.ios-phone) .main-content .always-on-message {
+    body.ios:not(.ios-phone) .main-content .always-on-message,
+    body.android:not(.android-phone) .main-content .always-on-message {
         gap: 12px;
         padding: 16px 18px;
         font-size: 16px;
         border-radius: 10px;
     }
 
-    body.ios:not(.ios-phone) .main-content .always-on-message svg {
+    body.ios:not(.ios-phone) .main-content .always-on-message svg,
+    body.android:not(.android-phone) .main-content .always-on-message svg {
         width: 18px;
         height: 18px;
     }
@@ -1935,7 +2017,9 @@ body.dark-mode .app-blocking-closedown-banner {
     }
 
     body.ios:not(.ios-phone) .main-content .start-block-btn,
-    body.ios:not(.ios-phone) .main-content .start-schedule-btn {
+    body.ios:not(.ios-phone) .main-content .start-schedule-btn,
+    body.android:not(.android-phone) .main-content .start-block-btn,
+    body.android:not(.android-phone) .main-content .start-schedule-btn {
         padding: 16px 18px;
         border-radius: 12px;
         font-size: 18px;
@@ -1943,12 +2027,16 @@ body.dark-mode .app-blocking-closedown-banner {
     }
 
     body.ios:not(.ios-phone) .main-content .start-block-btn.stop-block,
-    body.ios:not(.ios-phone) .main-content .start-block-btn.stop-schedule {
+    body.ios:not(.ios-phone) .main-content .start-block-btn.stop-schedule,
+    body.android:not(.android-phone) .main-content .start-block-btn.stop-block,
+    body.android:not(.android-phone) .main-content .start-block-btn.stop-schedule {
         padding: 16px 20px;
     }
 
     body.ios:not(.ios-phone) .main-content .start-block-btn > svg,
-    body.ios:not(.ios-phone) .main-content .start-schedule-btn > svg {
+    body.ios:not(.ios-phone) .main-content .start-schedule-btn > svg,
+    body.android:not(.android-phone) .main-content .start-block-btn > svg,
+    body.android:not(.android-phone) .main-content .start-schedule-btn > svg {
         flex: 0 0 20px;
         width: 20px;
         height: 20px;
@@ -1958,19 +2046,22 @@ body.dark-mode .app-blocking-closedown-banner {
         max-height: 20px;
     }
 
-    body.ios:not(.ios-phone) .main-content .pause-block-btn {
+    body.ios:not(.ios-phone) .main-content .pause-block-btn,
+    body.android:not(.android-phone) .main-content .pause-block-btn {
         padding: 16px 18px;
         border-radius: 12px;
         font-size: 18px;
         gap: 8px;
     }
 
-    body.ios:not(.ios-phone) .main-content .pause-block-btn svg {
+    body.ios:not(.ios-phone) .main-content .pause-block-btn svg,
+    body.android:not(.android-phone) .main-content .pause-block-btn svg {
         width: 20px;
         height: 20px;
     }
 
-    body.ios:not(.ios-phone) .main-content .block-action-buttons {
+    body.ios:not(.ios-phone) .main-content .block-action-buttons,
+    body.android:not(.android-phone) .main-content .block-action-buttons {
         gap: 10px;
     }
 

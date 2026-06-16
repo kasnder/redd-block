@@ -6820,8 +6820,6 @@ function detectPlatform() {
         document.getElementById('window-controls')?.classList.add('hidden');
         document.querySelector('.title-bar')?.classList.add('hidden');
         document.getElementById('helper-settings-section')?.classList.add('hidden');
-        setScheduleMode(true);
-        document.querySelector('.scheduler-mode-tabs')?.classList.add('hidden');
         syncAndroidLayoutTier();
         updateManageSectionVisibility();
 
@@ -19588,13 +19586,13 @@ let iosCompactScheduleDayLabelsActive = null;
 
 /** Smaller iOS viewports, including iPad portrait, use single-letter day pills from first render. */
 function shouldUseCompactIosScheduleDayLabels() {
-    if (!document.body.classList.contains('ios')) return false;
+    if (!document.body.classList.contains('ios') && !document.body.classList.contains('android')) return false;
     const effVp = Math.round(getEffectiveViewportWidth());
     return effVp > 0 && effVp <= IOS_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH;
 }
 
 function syncIosScheduleDayLabelsViewportMode() {
-    if (!document.body.classList.contains('ios')) return;
+    if (!document.body.classList.contains('ios') && !document.body.classList.contains('android')) return;
     const nextCompact = shouldUseCompactIosScheduleDayLabels();
     if (nextCompact === iosCompactScheduleDayLabelsActive) return;
     iosCompactScheduleDayLabelsActive = nextCompact;
@@ -20812,8 +20810,9 @@ function syncUiZoomResponsiveLayout() {
 
 function usesStackSettingsPlacement() {
     if (window.matchMedia('(max-width: 768px)').matches) return true;
-    return document.body.classList.contains('ios')
+    return (document.body.classList.contains('ios') || document.body.classList.contains('android'))
         && !document.body.classList.contains('ios-phone')
+        && !document.body.classList.contains('android-phone')
         && window.matchMedia('(min-width: 769px) and (max-width: 1024px) and (orientation: portrait)').matches;
 }
 
