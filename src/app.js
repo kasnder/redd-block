@@ -6672,7 +6672,7 @@ async function loadData() {
             iosScreenTimeSelection: null,
             overrideDifficulty: {
                 type: 'random-words',
-                count: isIOS ? 25 : (isAndroid ? 15 : 50)
+                count: (isIOS || isAndroid) ? 25 : 50
             }
         });
         shouldSave = true;
@@ -6760,8 +6760,12 @@ function isVersionHigher(versionA, versionB) {
     return false; // Equal versions
 }
 
-function usesIOSWordCountForOverrideType(type) {
-    return !!(isIOS && (type === 'random-words' || type === 'gibberish'));
+function usesMobileWordCountForOverrideType(type) {
+    return !!((isIOS || isAndroid) && (type === 'random-words' || type === 'gibberish'));
+}
+
+function isMobileOverrideChallengePlatform() {
+    return isIOS || isAndroid;
 }
 
 /** Key in latest-versions.json — iOS uses its own release line, not desktop macos. */
@@ -7952,7 +7956,7 @@ function setupModalListeners() {
         const warningEl = document.getElementById('override-count-warning');
         const overrideType = document.getElementById('override-type')?.value || 'random-words';
         const maxChars = getMaxOverrideCharsForType(overrideType);
-        const unitLabel = usesIOSWordCountForOverrideType(overrideType) ? 'words' : 'characters';
+        const unitLabel = usesMobileWordCountForOverrideType(overrideType) ? 'words' : 'characters';
         e.target.max = String(maxChars);
         const rawValue = e.target.value.trim();
         if (rawValue === '') {
@@ -12343,8 +12347,8 @@ function showScheduleConfirmModal(blocklist) {
 
     pendingScheduleStartOverlayId = getEffectiveScheduleStartOverlayId();
     syncScheduleConfirmOverlaySummary();
-    document.getElementById('schedule-confirm-overlay-row')?.classList.toggle('hidden', isIOS);
-    document.getElementById('schedule-confirm-repeat-divider')?.classList.toggle('hidden', isIOS);
+    document.getElementById('schedule-confirm-overlay-row')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
+    document.getElementById('schedule-confirm-repeat-divider')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
 
     renderStartConfirmBlockingDetails(
         blocklist,
@@ -12398,8 +12402,8 @@ function resetScheduleConfirmModalToStartLayout() {
     if (titleEl) titleEl.textContent = tSettings('startThisSchedule');
     const overrideHeader = document.getElementById('schedule-confirm-override-header');
     if (overrideHeader) overrideHeader.textContent = tSettings('startScheduleHoldHeader');
-    document.getElementById('schedule-confirm-overlay-row')?.classList.toggle('hidden', isIOS);
-    document.getElementById('schedule-confirm-repeat-divider')?.classList.toggle('hidden', isIOS);
+    document.getElementById('schedule-confirm-overlay-row')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
+    document.getElementById('schedule-confirm-repeat-divider')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
 }
 
 function closeScheduleConfirmModal() {
@@ -14706,7 +14710,7 @@ function initializeOverrideModalChallenge(difficulty, progressColor = null) {
     document.getElementById('challenge-text').textContent = challengeText;
     document.getElementById('challenge-input').value = '';
     document.getElementById('challenge-word-input').value = '';
-    overrideWordChallengeState = isIOSWordByWordChallenge(difficulty) ? buildWordChallengeState(challengeText) : null;
+    overrideWordChallengeState = isMobileWordByWordChallenge(difficulty) ? buildWordChallengeState(challengeText) : null;
     setOverrideWordChallengeMode(!!overrideWordChallengeState);
 
     const progressBar = document.getElementById('challenge-progress-bar');
@@ -14974,7 +14978,7 @@ function openPauseModal(blockId) {
     document.getElementById('pause-challenge-text').textContent = pauseChallengeText;
     document.getElementById('pause-challenge-input').value = '';
     document.getElementById('pause-challenge-word-input').value = '';
-    pauseWordChallengeState = isIOSWordByWordChallenge(difficulty) ? buildWordChallengeState(pauseChallengeText) : null;
+    pauseWordChallengeState = isMobileWordByWordChallenge(difficulty) ? buildWordChallengeState(pauseChallengeText) : null;
     setPauseWordChallengeMode(!!pauseWordChallengeState);
     document.getElementById('confirm-pause-btn').disabled = true;
 
@@ -15399,10 +15403,10 @@ function generateOverrideChallengeText(type, count, customText = '') {
     if (type === 'custom' && customText) return customText;
     const normalizedCount = normalizeOverrideCount(count, type);
     if (type === 'gibberish') {
-        const raw = generateGibberish(usesIOSWordCountForOverrideType(type) ? normalizedCount * 6 : normalizedCount);
-        return isIOS ? formatIOSGibberishChallenge(raw) : raw;
+        const raw = generateGibberish(usesMobileWordCountForOverrideType(type) ? normalizedCount * 6 : normalizedCount);
+        return isMobileOverrideChallengePlatform() ? formatIOSGibberishChallenge(raw) : raw;
     }
-    if (usesIOSWordCountForOverrideType(type)) {
+    if (usesMobileWordCountForOverrideType(type)) {
         return generateRandomWordsByCount(normalizedCount);
     }
     return generateRandomWords(normalizedCount);
@@ -15438,7 +15442,7 @@ function getTypingCharsPerMinuteForType(type) {
 }
 
 function getMaxOverrideCharsForType(type) {
-    if (usesIOSWordCountForOverrideType(type)) return MAX_IOS_OVERRIDE_WORD_COUNT;
+    if (usesMobileWordCountForOverrideType(type)) return MAX_IOS_OVERRIDE_WORD_COUNT;
     if (type === 'gibberish') return 5000;
     return 7500; // random-words and custom: fixed max; estimated time uses CPM
 }
@@ -15446,7 +15450,7 @@ function getMaxOverrideCharsForType(type) {
 function getOverrideGeneratedCharCount(type, count) {
     const parsed = Number.parseInt(count, 10);
     const normalizedCount = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
-    if (!usesIOSWordCountForOverrideType(type)) return normalizedCount;
+    if (!usesMobileWordCountForOverrideType(type)) return normalizedCount;
 
     if (type === 'random-words') {
         return getIOSRandomWordsCharCount(normalizedCount);
@@ -15488,8 +15492,8 @@ function getOverridePreviewText(type, count, customText) {
             let frozen = overridePreviewFrozenByType[type];
             if (frozen != null) return frozen;
             const generated = type === 'gibberish'
-                ? (isIOS ? formatIOSGibberishChallenge(generateGibberish(countNum * 6)) : generateGibberish(OVERRIDE_PREVIEW_TRUNCATE_AT))
-                : (usesIOSWordCountForOverrideType(type)
+                ? (isMobileOverrideChallengePlatform() ? formatIOSGibberishChallenge(generateGibberish(countNum * 6)) : generateGibberish(OVERRIDE_PREVIEW_TRUNCATE_AT))
+                : (usesMobileWordCountForOverrideType(type)
                     ? generateRandomWordsByCount(countNum)
                     : generateRandomWords(countNum));
             frozen = generated.slice(0, OVERRIDE_PREVIEW_TRUNCATE_AT);
@@ -15499,10 +15503,10 @@ function getOverridePreviewText(type, count, customText) {
     }
 
     if (type === 'gibberish') {
-        const generated = generateGibberish(usesIOSWordCountForOverrideType(type) ? countNum * 6 : countNum);
-        return isIOS ? formatIOSGibberishChallenge(generated) : generated;
+        const generated = generateGibberish(usesMobileWordCountForOverrideType(type) ? countNum * 6 : countNum);
+        return isMobileOverrideChallengePlatform() ? formatIOSGibberishChallenge(generated) : generated;
     }
-    if (usesIOSWordCountForOverrideType(type)) {
+    if (usesMobileWordCountForOverrideType(type)) {
         return generateRandomWordsByCount(countNum);
     }
     return generateRandomWords(countNum);
@@ -15548,7 +15552,7 @@ function syncOverrideCountUi(type) {
     const suffixEl = document.getElementById('override-total-characters-label');
     const countInput = document.getElementById('override-count');
     if (!suffixEl || !countInput) return;
-    const usesWords = usesIOSWordCountForOverrideType(type);
+    const usesWords = usesMobileWordCountForOverrideType(type);
     suffixEl.textContent = usesWords ? tSettings('totalWords') : tSettings('totalCharacters');
     countInput.max = String(getMaxOverrideCharsForType(type));
 }
@@ -17969,8 +17973,8 @@ function formatIOSGibberishChallenge(text) {
     return compact.replace(/(.{6})(?=.)/g, '$1 ');
 }
 
-function isIOSWordByWordChallenge(difficulty) {
-    return !!(isIOS && (difficulty?.type === 'random-words' || difficulty?.type === 'gibberish'));
+function isMobileWordByWordChallenge(difficulty) {
+    return !!(isMobileOverrideChallengePlatform() && (difficulty?.type === 'random-words' || difficulty?.type === 'gibberish'));
 }
 
 function getCurrentChallengeWord(state) {
@@ -19784,7 +19788,7 @@ function formatConfirmModalOverrideTypingLine({ type, count, estimatedMinutes, r
         return tSettingsFmt('confirmOverrideCustomPhraseFmt', { count, minutes });
     }
     if (type === 'gibberish') {
-        if (usesIOSWordCountForOverrideType(type)) {
+        if (usesMobileWordCountForOverrideType(type)) {
             return tSettingsFmt('confirmOverrideGibberishWordsFmt', { count, wordUnit, minutes });
         }
         if (resumeShortGibberish) {
@@ -19792,7 +19796,7 @@ function formatConfirmModalOverrideTypingLine({ type, count, estimatedMinutes, r
         }
         return tSettingsFmt('confirmOverrideGibberishLettersFmt', { count, charUnit, minutes });
     }
-    return usesIOSWordCountForOverrideType(type)
+    return usesMobileWordCountForOverrideType(type)
         ? tSettingsFmt('confirmOverrideRandomWordsIosFmt', { count, wordUnit, minutes })
         : tSettingsFmt('confirmOverrideRandomWordsFmt', { count, charUnit, minutes });
 }
@@ -22227,7 +22231,7 @@ function setupOverrideAll() {
             renderOverrideAllChallengeText();
             overrideAllChallengeInput.value = '';
             overrideAllChallengeWordInput.value = '';
-            overrideAllWordChallengeState = isIOSWordByWordChallenge(hardestDifficulty)
+            overrideAllWordChallengeState = isMobileWordByWordChallenge(hardestDifficulty)
                 ? buildWordChallengeState(overrideAllChallengeText)
                 : null;
             setOverrideAllWordChallengeMode(!!overrideAllWordChallengeState);
@@ -22715,6 +22719,8 @@ async function performOverrideAll() {
         // Full cleanup on the helper side
         if (isIOS) {
             await tauriAPI.screentimeClearBlock();
+        } else if (isAndroid) {
+            await syncSchedulesToHelper();
         } else {
             const status = await refreshDesktopHelperStatus();
             if (status.helperReady) {
