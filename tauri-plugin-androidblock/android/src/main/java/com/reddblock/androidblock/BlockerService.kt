@@ -30,14 +30,18 @@ class BlockerService : AccessibilityService() {
     private val scheduleChangeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == Schedules.ACTION_CHANGED) {
-                Log.d(TAG, "Schedule state changed")
+                Log.d(TAG, "Schedule state changed, re-checking foreground browser")
+                lastCheckedUrl = null
+                checkCurrentBrowserUrl(allowFocusedUrlBar = true)
             }
         }
     }
 
     private var lastCheckedUrl: String? = null
     private var lastUrlCheckTime: Long = 0
+    private var lastRedirectTime: Long = 0
     private val URL_CHECK_THROTTLE_MS = 500L
+    private val REDIRECT_THROTTLE_MS = 2000L
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -55,29 +59,26 @@ class BlockerService : AccessibilityService() {
         val keyguardManager = getSystemService(KEYGUARD_SERVICE) as KeyguardManager
         if (keyguardManager.isKeyguardLocked) return
 
-        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
-        if (event.contentChangeTypes == AccessibilityEvent.CONTENT_CHANGE_TYPE_CONTENT_DESCRIPTION) return
-
         val pkg = event.packageName?.toString() ?: return
         if (pkg == packageName) return
 
-        // Check for website blocking in supported browsers
-        if (isSupportedBrowser(pkg)) {
-            val currentTime = System.currentTimeMillis()
-            if (currentTime - lastUrlCheckTime >= URL_CHECK_THROTTLE_MS) {
-                lastUrlCheckTime = currentTime
-                val url = extractUrlFromEvent(event)
-                if (url != null && url != lastCheckedUrl) {
-                    lastCheckedUrl = url
-                    val domain = extractDomain(url)
-                    if (domain != null && Schedules.isWebsiteBlocked(this, domain)) {
-                        Log.d(TAG, "Blocking website $domain in browser ($pkg)")
-                        navigateBrowserToBlank(pkg)
-                        showWebsiteBlockedNotification(domain)
-                        return
-                    }
+        when (event.eventType) {
+            AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
+                if (event.contentChangeTypes == AccessibilityEvent.CONTENT_CHANGE_TYPE_CONTENT_DESCRIPTION) {
+                    return
+                }
+                if (isSupportedBrowser(pkg)) {
+                    maybeBlockBrowserWebsite(pkg) { extractUrlFromEvent(event) }
+                    return
                 }
             }
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                if (isSupportedBrowser(pkg)) {
+                    maybeBlockBrowserWebsite(pkg) { extractUrlFromRoot(pkg, allowFocusedUrlBar = false) }
+                    return
+                }
+            }
+            else -> return
         }
 
         // Check app blocking
@@ -87,6 +88,41 @@ class BlockerService : AccessibilityService() {
             Log.d(TAG, "Blocking app $pkg")
             performGlobalAction(GLOBAL_ACTION_HOME)
             showAppBlockedNotification(pkg)
+        }
+    }
+
+    private fun maybeBlockBrowserWebsite(
+        browserPackage: String,
+        force: Boolean = false,
+        extractUrl: () -> String?
+    ) {
+        val currentTime = System.currentTimeMillis()
+        if (!force && currentTime - lastUrlCheckTime < URL_CHECK_THROTTLE_MS) return
+        lastUrlCheckTime = currentTime
+
+        val url = extractUrl() ?: return
+        lastCheckedUrl = url
+
+        val domain = extractDomain(url) ?: return
+        if (!Schedules.isWebsiteBlocked(this, domain)) return
+        if (currentTime - lastRedirectTime < REDIRECT_THROTTLE_MS) return
+
+        Log.d(TAG, "Blocking website $domain in browser ($browserPackage)")
+        lastRedirectTime = currentTime
+        navigateBrowserToBlank(browserPackage)
+        showWebsiteBlockedNotification(domain)
+    }
+
+    private fun checkCurrentBrowserUrl(allowFocusedUrlBar: Boolean) {
+        val root = rootInActiveWindow ?: return
+        try {
+            val pkg = root.packageName?.toString() ?: return
+            if (!isSupportedBrowser(pkg)) return
+            maybeBlockBrowserWebsite(pkg, force = true) {
+                extractUrlFromRoot(pkg, allowFocusedUrlBar)
+            }
+        } finally {
+            root.recycle()
         }
     }
 
@@ -166,20 +202,34 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun extractUrlFromEvent(event: AccessibilityEvent): String? {
+        val pkg = event.packageName?.toString() ?: return null
         val root = rootInActiveWindow ?: return null
         try {
-            val pkg = event.packageName?.toString() ?: return null
+            return extractUrlFromRoot(pkg, allowFocusedUrlBar = false, root = root)
+        } finally {
+            root.recycle()
+        }
+    }
+
+    private fun extractUrlFromRoot(
+        pkg: String,
+        allowFocusedUrlBar: Boolean,
+        root: android.view.accessibility.AccessibilityNodeInfo? = null
+    ): String? {
+        val windowRoot = root ?: rootInActiveWindow ?: return null
+        val shouldRecycleRoot = root == null
+        try {
             val viewIds = browserUrlViewIds[pkg] ?: return null
             val knownUrlViewIds = viewIds.map { "$pkg:id/$it" }
 
             for (viewId in knownUrlViewIds) {
-                val nodes = root.findAccessibilityNodeInfosByViewId(viewId)
+                val nodes = windowRoot.findAccessibilityNodeInfosByViewId(viewId)
                 if (nodes.isNullOrEmpty()) continue
                 for (node in nodes) {
                     try {
-                        // Skip if the URL bar is focused — user is typing,
-                        // don't block on autocomplete suggestions
-                        if (node.isFocused) continue
+                        // Skip focused URL bar while typing so autocomplete
+                        // suggestions are not treated as navigation.
+                        if (!allowFocusedUrlBar && node.isFocused) continue
                         val text = node.text?.toString()
                         if (text != null && isValidUrlFormat(text)) {
                             return text
@@ -192,7 +242,9 @@ class BlockerService : AccessibilityService() {
         } catch (e: Exception) {
             Log.e(TAG, "Error extracting URL", e)
         } finally {
-            root.recycle()
+            if (shouldRecycleRoot) {
+                windowRoot.recycle()
+            }
         }
         return null
     }
