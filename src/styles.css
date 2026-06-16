@@ -1595,8 +1595,9 @@ body.dark-mode .app-blocking-closedown-banner {
         height: 22px;
     }
 
-    /* iOS only: settings gear on My Blocklists row — desktop keeps scheduler header settings. */
-    body.ios #settings-btn-stack {
+    /* iOS/Android: settings gear on My Blocklists row — desktop keeps scheduler header settings. */
+    body.ios #settings-btn-stack,
+    body.android #settings-btn-stack {
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1605,20 +1606,24 @@ body.dark-mode .app-blocking-closedown-banner {
         padding: 0;
     }
 
-    body.ios #settings-btn-stack svg {
+    body.ios #settings-btn-stack svg,
+    body.android #settings-btn-stack svg {
         width: 22px;
         height: 22px;
     }
 
-    body.ios #settings-toolbar-stack {
+    body.ios #settings-toolbar-stack,
+    body.android #settings-toolbar-stack {
         display: flex;
     }
 
-    body.ios .scheduler-section .section-header #settings-btn {
+    body.ios .scheduler-section .section-header #settings-btn,
+    body.android .scheduler-section .section-header #settings-btn {
         display: none !important;
     }
 
-    body.ios .scheduler-section .section-header #settings-toolbar-scheduler {
+    body.ios .scheduler-section .section-header #settings-toolbar-scheduler,
+    body.android .scheduler-section .section-header #settings-toolbar-scheduler {
         display: none !important;
     }
 
@@ -1627,18 +1632,18 @@ body.dark-mode .app-blocking-closedown-banner {
         padding-right: 18px;
     }
 
-    body:not(.ios) #settings-toolbar-scheduler {
+    body:not(.ios):not(.android) #settings-toolbar-scheduler {
         right: 18px;
     }
 
     /* Stacked overview: keep the toolbar anchored at the page top-right, but let
        the compact scheduler header collapse so the prompt sits directly below. */
-    body:not(.ios) .grid-top-row:not(.grid-top-row--blocklist-selected) .scheduler-section > .section-header.scheduler-header-compact {
+    body:not(.ios):not(.android) .grid-top-row:not(.grid-top-row--blocklist-selected) .scheduler-section > .section-header.scheduler-header-compact {
         margin-bottom: 0;
         min-height: 0;
     }
 
-    body:not(.ios) .grid-top-row:not(.grid-top-row--blocklist-selected) .selection-prompt {
+    body:not(.ios):not(.android) .grid-top-row:not(.grid-top-row--blocklist-selected) .selection-prompt {
         margin-top: 0;
         padding-top: 4px;
     }
@@ -3249,7 +3254,7 @@ body:not(.ios) .scheduler-section > .section-header .mode-tab-icon {
 
 /* Desktop: keep the toolbar in one stable top-right spot inside main content so
    banners can still push it down with the rest of the page. */
-body:not(.ios) #settings-toolbar-scheduler {
+body:not(.ios):not(.android) #settings-toolbar-scheduler {
     position: absolute;
     top: 4px;
     right: 0px;
@@ -10880,12 +10885,12 @@ body.dark-mode .modal-btn.black-btn:hover {
 }
 
 /* Desktop: 3-col grid centers made-with text; zoom sits bottom-right. */
-body:not(.ios) .footer {
+body:not(.ios):not(.android) .footer {
     display: grid;
     grid-template-columns: 1fr auto 1fr;
 }
 
-body:not(.ios) .footer-text {
+body:not(.ios):not(.android) .footer-text {
     grid-column: 2;
     text-align: center;
 }
@@ -10894,7 +10899,7 @@ body:not(.ios) .footer-text {
     display: none;
 }
 
-body:not(.ios) .footer-zoom-control {
+body:not(.ios):not(.android) .footer-zoom-control {
     grid-column: 3;
     justify-self: end;
     display: flex;
@@ -10951,18 +10956,21 @@ body:not(.ios) .footer-zoom-control {
     padding-bottom: 2px;
 }
 
-/* iOS: zoom beside settings gear in the header, not in the footer. */
-body:not(.ios) .header-zoom-control {
+/* Mobile: zoom beside settings gear in the header, not in the footer. */
+body:not(.ios):not(.android) .header-zoom-control {
     display: none !important;
 }
 
 body.ios.ios-phone .footer,
-body.ios.ios-phone .footer-text {
+body.ios.ios-phone .footer-text,
+body.android.android-phone .footer,
+body.android.android-phone .footer-text {
     font-size: 13px;
     line-height: 1.25;
 }
 
-body.ios .footer {
+body.ios .footer,
+body.android .footer {
     padding: 0 max(14px, env(safe-area-inset-left, 0px)) max(8px, env(safe-area-inset-bottom, 0px))
         max(14px, env(safe-area-inset-right, 0px));
 }
@@ -12818,7 +12826,8 @@ body.dark-mode .undo-btn:hover {
     animation: zoomToastIn 0.18s ease;
 }
 
-body.ios .zoom-toast {
+body.ios .zoom-toast,
+body.android .zoom-toast {
     top: calc(20px + env(safe-area-inset-top, 20px));
 }
 

@@ -20741,7 +20741,7 @@ function applyTheme() {
 }
 
 function getUiZoomMax() {
-    if (isIOS) return UI_ZOOM_MAX_IOS;
+    if (isIOS || isAndroid) return UI_ZOOM_MAX_IOS;
     const isDesktop = document.body.classList.contains('windows') || document.body.classList.contains('mac');
     return isDesktop ? UI_ZOOM_MAX_DESKTOP : UI_ZOOM_MAX;
 }
@@ -20751,7 +20751,7 @@ function clampUiZoom(scale) {
 }
 
 function getDefaultUiZoom() {
-    return isIOS ? DEFAULT_UI_ZOOM_IOS : DEFAULT_UI_ZOOM;
+    return (isIOS || isAndroid) ? DEFAULT_UI_ZOOM_IOS : DEFAULT_UI_ZOOM;
 }
 
 function getSavedUiZoom() {
@@ -20780,9 +20780,10 @@ function syncUiZoomResponsiveLayout() {
     const zoom = getActiveUiZoomScale();
     document.documentElement.style.setProperty('--ui-zoom', String(zoom));
 
-    if (isIOS) {
+    if (isIOS || isAndroid) {
         const effVp = getEffectiveViewportWidth();
-        const ipadPortraitStack = usesStackSettingsPlacement()
+        const ipadPortraitStack = isIOS
+            && usesStackSettingsPlacement()
             && !document.body.classList.contains('ios-phone');
         const cramped = effVp > UI_ZOOM_LAYOUT_STACK_MAX
             && effVp <= UI_ZOOM_LAYOUT_CRAMPED_MAX
@@ -20864,9 +20865,9 @@ function syncSchedulerModeTabLabelMode() {
     body.classList.toggle('ui-zoom-sched-tabs-icons', iconOnly);
 }
 
-/** iOS only: keep the header zoom control beside whichever settings button is visible. */
+/** iOS/Android: keep the header zoom control beside whichever settings button is visible. */
 function syncZoomControlPlacement() {
-    if (!isIOS) return;
+    if (!isIOS && !isAndroid) return;
 
     const zoom = document.getElementById('header-zoom-control');
     const stackToolbar = document.getElementById('settings-toolbar-stack');
@@ -20909,7 +20910,7 @@ function applyUiZoom(scale) {
     const clamped = clampUiZoom(scale);
     syncFooterZoomControl(clamped);
 
-    if (isIOS) {
+    if (isIOS || isAndroid) {
         document.documentElement.style.zoom = String(clamped);
         scheduleUiZoomResponsiveLayout();
         return;
@@ -21017,7 +21018,7 @@ function setupUiZoomShortcuts() {
     window.addEventListener('resize', scheduleUiZoomResponsiveLayout, { passive: true });
     window.visualViewport?.addEventListener('resize', scheduleUiZoomResponsiveLayout, { passive: true });
 
-    if (isIOS) return;
+    if (isIOS || isAndroid) return;
 
     tauriAPI.onMenuZoomIn(() => zoomUiIn({ showToast: true })).catch(() => { });
     tauriAPI.onMenuZoomOut(() => zoomUiOut({ showToast: true })).catch(() => { });
