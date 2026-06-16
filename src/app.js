@@ -2433,6 +2433,20 @@ async function wireEnforcementToggle() {
 }
 
 let blockingMethodSettingsWired = false;
+let lastSettingsBlockingMethodBrowsers = null;
+
+function syncBlockingMethodRowVisibility(browsers = {}) {
+    if (!isMacOSDesktop) return;
+    lastSettingsBlockingMethodBrowsers = browsers;
+    const installed = new Set(installedMacBlockingMethodKeys(browsers));
+    for (const key of MAC_BLOCKING_METHOD_KEYS) {
+        const select = document.getElementById(`blocking-method-${key}`);
+        const row = select?.closest('.settings-row');
+        if (row) row.classList.toggle('hidden', !installed.has(key));
+    }
+    const section = document.getElementById('settings-blocking-method-section');
+    if (section) section.classList.toggle('hidden', installed.size === 0);
+}
 
 function syncBlockingMethodLabelIcons() {
     for (const key of MAC_BLOCKING_METHOD_KEYS) {
@@ -2453,6 +2467,15 @@ function syncBlockingMethodSelects(methods = getBlockingMethodsMap()) {
 
 async function wireBlockingMethodSettings() {
     if (!isMacOSDesktop) return;
+
+    let browsers = lastOnboardingState?.browsers || lastMigrationBrowserState?.browsers || {};
+    try {
+        const fresh = await invoke('onboarding_state');
+        if (fresh?.browsers) browsers = fresh.browsers;
+    } catch (e) {
+        console.warn('[blocking-method] browser scan failed:', e);
+    }
+    syncBlockingMethodRowVisibility(browsers);
 
     let methods = getBlockingMethodsMap();
     try {
@@ -2696,7 +2719,11 @@ async function syncSafariFdaSettingsRow() {
     const statusEl = document.getElementById('settings-safari-fda-status');
     const grantBtn = document.getElementById('settings-safari-fda-grant-btn');
     if (!row || !statusEl) return;
-    if (!safariUsesExtensionMode()) {
+    const browsers = lastSettingsBlockingMethodBrowsers
+        || lastOnboardingState?.browsers
+        || lastMigrationBrowserState?.browsers
+        || {};
+    if (!safariUsesExtensionMode() || !browsers.safari?.installed) {
         row.classList.add('hidden');
         return;
     }
@@ -2815,6 +2842,10 @@ const AUTOMATION_BROWSER_KEYS = ['chrome', 'brave', 'edge', 'safari'];
 const MAC_BLOCKING_METHOD_KEYS = ['safari', 'chrome', 'edge', 'brave'];
 /** @deprecated use MAC_BLOCKING_METHOD_KEYS */
 const MAC_CHROMIUM_BLOCKING_KEYS = MAC_BLOCKING_METHOD_KEYS;
+
+function installedMacBlockingMethodKeys(browsers = {}) {
+    return MAC_BLOCKING_METHOD_KEYS.filter((key) => browsers[key]?.installed);
+}
 
 function getBlockingMethodsMap() {
     return appData?.settings?.blockingMethods || {};
