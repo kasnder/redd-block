@@ -40,6 +40,7 @@ import { getReleaseNotesForVersion } from './changelog.js';
 import {
     androidPluginState,
     androidAccessibilityGranted,
+    androidPermissionsReady,
     refreshAndroidPluginState,
     hydrateAppDataFromAndroid,
     syncAppDataToAndroidPlugin,
@@ -6403,27 +6404,53 @@ function renderAndroidPermissionCards() {
         el.innerHTML = `
             <span class="android-perm-title">${title}</span>
             <span class="android-perm-desc">${desc}</span>
-            <span class="android-perm-status">${granted ? 'Enabled' : 'Tap to open settings'}</span>`;
+            <span class="android-perm-status">${granted ? 'Enabled' : tSettings('androidPermissionsTapToGrant')}</span>`;
     };
     setCard('android-perm-accessibility', perms.accessibility, 'Accessibility Service',
-        'Required to detect and block apps and websites');
+        tSettings('settingsAndroidPermAccessibilityDesc'));
     setCard('android-perm-notifications', perms.notifications, 'Notifications',
-        'Show alerts when apps or websites are blocked');
+        tSettings('settingsAndroidPermNotificationsDesc'));
     setCard('android-perm-battery', perms.batteryOptimization, 'Battery Optimization',
-        'Ensure blocking runs reliably in the background');
+        tSettings('settingsAndroidPermBackgroundDesc'));
 
-    const setSettingsBtn = (id, granted) => {
-        const btn = document.getElementById(id);
-        if (btn) btn.classList.toggle('android-settings-perm-granted', !!granted);
+    const setSettingsRow = (rowId, granted) => {
+        const row = document.getElementById(rowId);
+        if (!row) return;
+        const statusEl = row.querySelector('.settings-android-perm-status');
+        const grantBtn = row.querySelector('.settings-android-perm-grant-btn');
+        if (statusEl) {
+            const dot = granted
+                ? '<span class="diagnostics-status-dot ok" aria-hidden="true">✓</span>'
+                : '<span class="diagnostics-status-dot off" aria-hidden="true">✗</span>';
+            const label = granted
+                ? tSettings('settingsAndroidPermGranted')
+                : tSettings('settingsAndroidPermNotGranted');
+            statusEl.innerHTML = `<span class="diagnostics-status-cell">${dot}<span class="diag-muted">${label}</span></span>`;
+        }
+        if (grantBtn) grantBtn.classList.toggle('hidden', !!granted);
     };
-    setSettingsBtn('settings-android-perm-accessibility', perms.accessibility);
-    setSettingsBtn('settings-android-perm-notifications', perms.notifications);
-    setSettingsBtn('settings-android-perm-background', perms.batteryOptimization);
+    setSettingsRow('settings-android-perm-accessibility', perms.accessibility);
+    setSettingsRow('settings-android-perm-notifications', perms.notifications);
+    setSettingsRow('settings-android-perm-background', perms.batteryOptimization);
 
     const continueBtn = document.getElementById('android-permissions-continue-btn');
     if (continueBtn) {
-        continueBtn.disabled = !perms.accessibility;
+        continueBtn.disabled = !androidPermissionsReady();
     }
+    const setupLaterBtn = document.getElementById('android-permissions-setup-later-btn');
+    if (setupLaterBtn) {
+        setupLaterBtn.classList.toggle('hidden', androidPermissionsReady());
+    }
+}
+
+async function dismissAndroidPermissionsOnboarding() {
+    androidPermissionsDismissedThisSession = true;
+    if (!import.meta.env.DEV) {
+        if (!appData.settings) appData.settings = {};
+        appData.settings.androidPermissionsOnboardingComplete = true;
+        await saveData();
+    }
+    updateOnboardingVisibility();
 }
 
 function wireAndroidPermissionOpenButton(elementId, openFn) {
@@ -6442,18 +6469,15 @@ function setupAndroidPermissionsOnboarding() {
     wireAndroidPermissionOpenButton('android-perm-accessibility', androidOpenAccessibilitySettings);
     wireAndroidPermissionOpenButton('android-perm-notifications', androidOpenNotificationSettings);
     wireAndroidPermissionOpenButton('android-perm-battery', androidOpenBatterySettings);
-    wireAndroidPermissionOpenButton('settings-android-perm-accessibility', androidOpenAccessibilitySettings);
-    wireAndroidPermissionOpenButton('settings-android-perm-notifications', androidOpenNotificationSettings);
-    wireAndroidPermissionOpenButton('settings-android-perm-background', androidOpenBatterySettings);
+    wireAndroidPermissionOpenButton('settings-android-perm-accessibility-grant', androidOpenAccessibilitySettings);
+    wireAndroidPermissionOpenButton('settings-android-perm-notifications-grant', androidOpenNotificationSettings);
+    wireAndroidPermissionOpenButton('settings-android-perm-background-grant', androidOpenBatterySettings);
     document.getElementById('android-permissions-continue-btn')?.addEventListener('click', async () => {
-        if (!androidAccessibilityGranted()) return;
-        androidPermissionsDismissedThisSession = true;
-        if (!import.meta.env.DEV) {
-            if (!appData.settings) appData.settings = {};
-            appData.settings.androidPermissionsOnboardingComplete = true;
-            await saveData();
-        }
-        updateOnboardingVisibility();
+        if (!androidPermissionsReady()) return;
+        await dismissAndroidPermissionsOnboarding();
+    });
+    document.getElementById('android-permissions-setup-later-btn')?.addEventListener('click', async () => {
+        await dismissAndroidPermissionsOnboarding();
     });
 
     document.addEventListener('visibilitychange', () => {
@@ -18698,8 +18722,19 @@ const SETTINGS_TRANSLATIONS = {
         settingsDiagnosticsLabel: 'Something not working?',
         settingsAndroidPermissionsHeading: 'Permissions',
         settingsAndroidPermAccessibility: 'Accessibility',
+        settingsAndroidPermAccessibilityDesc: 'Required to detect and block apps and websites.',
         settingsAndroidPermNotifications: 'Notifications',
+        settingsAndroidPermNotificationsDesc: 'Show alerts when apps or websites are blocked.',
         settingsAndroidPermBackground: 'Run in Background',
+        settingsAndroidPermBackgroundDesc: 'Ensure active blocks work when the app is closed.',
+        settingsAndroidPermGranted: 'Granted',
+        settingsAndroidPermNotGranted: 'Not granted',
+        settingsAndroidPermOpenSettings: 'Grant access',
+        settingsAndroidPermThPermission: 'Permission',
+        settingsAndroidPermThStatus: 'Status',
+        androidPermissionsSetupLater: 'Setup later',
+        androidPermissionsTapToGrant: 'Tap to grant access',
+        androidPermissionsOnboardingCopy: 'Grant ReDD Block access to the permissions below so blocking works reliably.',
         settingsSetupBtn: 'Setup',
         settingsDiagnosticsBtn: 'Diagnostics',
         diagnosticsLoadingBtn: 'Loading…',
@@ -19413,8 +19448,19 @@ const SETTINGS_TRANSLATIONS = {
         settingsDiagnosticsLabel: 'Virker noget ikke?',
         settingsAndroidPermissionsHeading: 'Tilladelser',
         settingsAndroidPermAccessibility: 'Tilgængelighed',
+        settingsAndroidPermAccessibilityDesc: 'Kræves for at registrere og blokere apps og websites.',
         settingsAndroidPermNotifications: 'Notifikationer',
+        settingsAndroidPermNotificationsDesc: 'Vis beskeder, når apps eller websites blokeres.',
         settingsAndroidPermBackground: 'Kør i baggrunden',
+        settingsAndroidPermBackgroundDesc: 'Sikrer at aktive blokeringer virker, når appen er lukket.',
+        settingsAndroidPermGranted: 'Givet',
+        settingsAndroidPermNotGranted: 'Ikke givet',
+        settingsAndroidPermOpenSettings: 'Giv adgang',
+        settingsAndroidPermThPermission: 'Tilladelse',
+        settingsAndroidPermThStatus: 'Status',
+        androidPermissionsSetupLater: 'Opsæt senere',
+        androidPermissionsTapToGrant: 'Tryk for at give adgang',
+        androidPermissionsOnboardingCopy: 'Giv ReDD Block adgang til tilladelserne nedenfor, så blokering fungerer stabilt.',
         settingsSetupBtn: 'Opsætning',
         settingsDiagnosticsBtn: 'Diagnostik',
         diagnosticsLoadingBtn: 'Indlæser…',
@@ -20732,9 +20778,19 @@ function applySettingsLanguage() {
     setText('settings-help-label', tSettings('settingsDiagnosticsLabel'));
     if (isAndroid) {
         setText('settings-android-permissions-label', tSettings('settingsAndroidPermissionsHeading'));
+        setText('settings-android-perm-th-permission', tSettings('settingsAndroidPermThPermission'));
+        setText('settings-android-perm-th-status', tSettings('settingsAndroidPermThStatus'));
         setText('settings-android-perm-accessibility-label', tSettings('settingsAndroidPermAccessibility'));
+        setText('settings-android-perm-accessibility-desc', tSettings('settingsAndroidPermAccessibilityDesc'));
         setText('settings-android-perm-notifications-label', tSettings('settingsAndroidPermNotifications'));
+        setText('settings-android-perm-notifications-desc', tSettings('settingsAndroidPermNotificationsDesc'));
         setText('settings-android-perm-background-label', tSettings('settingsAndroidPermBackground'));
+        setText('settings-android-perm-background-desc', tSettings('settingsAndroidPermBackgroundDesc'));
+        document.querySelectorAll('.settings-android-perm-grant-label')
+            .forEach((el) => { el.textContent = tSettings('settingsAndroidPermOpenSettings'); });
+        setText('android-permissions-setup-later-btn', tSettings('androidPermissionsSetupLater'));
+        setText('android-permissions-onboarding-copy', tSettings('androidPermissionsOnboardingCopy'));
+        renderAndroidPermissionCards();
     }
     setText('settings-enforcement-heading', tSettings('settingsEnforcementHeading'));
     setText('settings-blocking-method-toggle-label', tSettings('settingsBlockingMethodHeading'));
