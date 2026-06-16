@@ -13994,6 +13994,10 @@ async function proceedWithBlock() {
     // Save data and reset UI
     await saveData();
 
+    if (isAndroid) {
+        await syncSchedulesToHelper();
+    }
+
     // Update blocked apps (handles both active blocks and schedules)
     await updateBlockedApps();
 
