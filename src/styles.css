@@ -13833,6 +13833,15 @@ body.app-blocking-warning-window-mode #app-blocking-warning-overlay.hidden {
     display: block;
 }
 
+body.dark-mode .app-blocking-snooze-icon {
+    filter: brightness(0) invert(1);
+    opacity: 0.72;
+}
+
+body.dark-mode .schedule-badge-snoozed .app-blocking-snooze-icon {
+    opacity: 0.88;
+}
+
 .app-blocking-warning-actions .modal-btn.cancel-btn {
     -webkit-app-region: no-drag;
     box-sizing: border-box;
