@@ -6701,6 +6701,8 @@ body.android .legal-onboarding-body.eula-ios-blurb {
 .onboarding-content .onboarding-footnote {
     margin-top: 16px;
     margin-bottom: 0;
+    font-size: 14px;
+    line-height: 1.45;
 }
 
 body:not(.ios):not(.android) .eula-mobile-subtitle {
