@@ -6661,7 +6661,7 @@ body.android .eula-onboarding-ios-hero {
 body.ios .eula-welcome-title-ios,
 body.android .eula-welcome-title-ios {
     display: block;
-    margin: 0 0 12px;
+    margin: 0 0 8px;
     font-family: var(--font-heading);
     font-size: 24px;
     font-weight: 700;
@@ -6683,14 +6683,24 @@ body.android .eula-mobile-subtitle {
 }
 
 body.ios .legal-onboarding-body.eula-ios-blurb,
-body.android .legal-onboarding-body.eula-ios-blurb {
+body.android .legal-onboarding-body.eula-ios-blurb,
+.onboarding-footnote {
     margin: 0 auto;
     max-width: 30em;
     font-size: 14px;
     line-height: 1.45;
     color: var(--text-muted);
-    white-space: pre-line;
     text-wrap: balance;
+}
+
+body.ios .legal-onboarding-body.eula-ios-blurb,
+body.android .legal-onboarding-body.eula-ios-blurb {
+    white-space: pre-line;
+}
+
+.onboarding-content .onboarding-footnote {
+    margin-top: 16px;
+    margin-bottom: 0;
 }
 
 body:not(.ios):not(.android) .eula-mobile-subtitle {
@@ -7277,8 +7287,26 @@ body.dark-mode .onboarding-focus-card {
     max-width: 420px;
 }
 
+body.ios .ios-screentime-onboarding-content h1 {
+    margin-bottom: 8px;
+}
+
 .android-permissions-onboarding-content {
     max-width: 420px;
+}
+
+body.android .android-permissions-onboarding-content .onboarding-icon {
+    margin-bottom: 12px;
+}
+
+body.android .android-permissions-onboarding-content h1 {
+    margin-bottom: 8px;
+}
+
+.android-permissions-onboarding-content .onboarding-primary-copy {
+    font-size: 14px;
+    line-height: 1.45;
+    margin-bottom: 0;
 }
 
 .android-permissions-list {

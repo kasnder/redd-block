@@ -18735,6 +18735,8 @@ const SETTINGS_TRANSLATIONS = {
         androidPermissionsSetupLater: 'Setup later',
         androidPermissionsTapToGrant: 'Tap to grant access',
         androidPermissionsOnboardingCopy: 'Grant ReDD Block access to the permissions below so blocking works reliably.',
+        onboardingOpenSourceFootnote:
+            'ReDD Block is open-source and built by the Reduce Digital Distraction Project at (reddfocus.org). It is based on our 10+ years of research at the University of Oxford.',
         settingsSetupBtn: 'Setup',
         settingsDiagnosticsBtn: 'Diagnostics',
         diagnosticsLoadingBtn: 'Loading…',
@@ -19461,6 +19463,8 @@ const SETTINGS_TRANSLATIONS = {
         androidPermissionsSetupLater: 'Opsæt senere',
         androidPermissionsTapToGrant: 'Tryk for at give adgang',
         androidPermissionsOnboardingCopy: 'Giv ReDD Block adgang til tilladelserne nedenfor, så blokering fungerer stabilt.',
+        onboardingOpenSourceFootnote:
+            'ReDD Block er open source og bygget af Reduce Digital Distraction Project på (reddfocus.org). Det bygger på mere end 10 års forskning ved University of Oxford.',
         settingsSetupBtn: 'Opsætning',
         settingsDiagnosticsBtn: 'Diagnostik',
         diagnosticsLoadingBtn: 'Indlæser…',
@@ -20793,7 +20797,11 @@ function applySettingsLanguage() {
             .forEach((el) => { el.textContent = tSettings('settingsAndroidPermOpenSettings'); });
         setText('android-permissions-setup-later-btn', tSettings('androidPermissionsSetupLater'));
         setText('android-permissions-onboarding-copy', tSettings('androidPermissionsOnboardingCopy'));
+        setText('android-permissions-onboarding-footnote', tSettings('onboardingOpenSourceFootnote'));
         renderAndroidPermissionCards();
+    }
+    if (isIOS) {
+        setText('ios-screentime-onboarding-note', tSettings('onboardingOpenSourceFootnote'));
     }
     setText('settings-enforcement-heading', tSettings('settingsEnforcementHeading'));
     setText('settings-blocking-method-toggle-label', tSettings('settingsBlockingMethodHeading'));
