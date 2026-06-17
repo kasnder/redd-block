@@ -11493,7 +11493,7 @@ function syncSchedulePanelOverlayControls() {
     const section = document.getElementById('schedule-panel-overlay-section');
     if (!section) return;
 
-    if (isIOS) {
+    if (isMobileOverrideChallengePlatform()) {
         section.classList.add('hidden');
         return;
     }
@@ -12027,7 +12027,7 @@ function isPhysicalPointOverElement(physicalX, physicalY, element) {
 }
 
 function setupScheduleOverlayCustomiseModal() {
-    if (isIOS) {
+    if (isMobileOverrideChallengePlatform()) {
         document.getElementById('schedule-confirm-overlay-row')?.classList.add('hidden');
         document.getElementById('schedule-panel-overlay-section')?.classList.add('hidden');
         return;
