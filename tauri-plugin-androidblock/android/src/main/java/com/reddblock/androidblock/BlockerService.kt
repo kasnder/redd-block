@@ -34,9 +34,9 @@ class BlockerService : AccessibilityService() {
 
     private var lastCheckedUrl: String? = null
     private var lastUrlCheckTime: Long = 0
-    private var lastBlockTime: Long = 0
+    private val lastBlockTimeByTarget = mutableMapOf<String, Long>()
     private val URL_CHECK_THROTTLE_MS = 500L
-    private val BLOCK_THROTTLE_MS = 2000L
+    private val BLOCK_THROTTLE_SAME_TARGET_MS = 400L
 
     private lateinit var blockOverlay: BlockOverlayController
 
@@ -45,6 +45,7 @@ class BlockerService : AccessibilityService() {
         blockOverlay = BlockOverlayController(this) {
             performGlobalAction(GLOBAL_ACTION_HOME)
         }
+        blockOverlay.prepare()
 
         val filter = IntentFilter(Schedules.ACTION_CHANGED)
         ContextCompat.registerReceiver(
@@ -62,27 +63,30 @@ class BlockerService : AccessibilityService() {
         if (pkg == packageName) return
 
         when (event.eventType) {
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                if (isSupportedBrowser(pkg)) {
+                    maybeBlockBrowserWebsite(pkg) { extractUrlFromRoot(pkg, allowFocusedUrlBar = false) }
+                } else {
+                    maybeBlockApp(pkg)
+                }
+            }
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
                 if (event.contentChangeTypes == AccessibilityEvent.CONTENT_CHANGE_TYPE_CONTENT_DESCRIPTION) {
                     return
                 }
                 if (isSupportedBrowser(pkg)) {
                     maybeBlockBrowserWebsite(pkg) { extractUrlFromEvent(event) }
-                    return
-                }
-            }
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
-                if (isSupportedBrowser(pkg)) {
-                    maybeBlockBrowserWebsite(pkg) { extractUrlFromRoot(pkg, allowFocusedUrlBar = false) }
-                    return
+                } else {
+                    maybeBlockApp(pkg)
                 }
             }
             else -> return
         }
+    }
 
-        if (shouldSkipPackage(pkg)) return
-
-        val match = Schedules.findAppBlockMatch(this, pkg) ?: return
+    private fun maybeBlockApp(packageName: String) {
+        if (shouldSkipPackage(packageName)) return
+        val match = Schedules.findAppBlockMatch(this, packageName) ?: return
         showBlockOverlay(match)
     }
 
@@ -104,7 +108,6 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun showBlockOverlay(match: BlockMatch) {
-        val currentTime = System.currentTimeMillis()
         val targetKey = when (match.blockKind) {
             BlockKind.APP -> "app:${match.blockedPackage}"
             BlockKind.WEBSITE -> "site:${match.blockedDomain}"
@@ -113,13 +116,16 @@ class BlockerService : AccessibilityService() {
             blockOverlay.show(match)
             return
         }
-        if (currentTime - lastBlockTime < BLOCK_THROTTLE_MS) return
+
+        val now = System.currentTimeMillis()
+        val lastShown = lastBlockTimeByTarget[targetKey] ?: 0L
+        if (now - lastShown < BLOCK_THROTTLE_SAME_TARGET_MS) return
 
         Log.d(
             TAG,
             "Blocking ${match.blockKind.name.lowercase()} ${match.blockedLabel} for blocklist ${match.blocklistName}"
         )
-        lastBlockTime = currentTime
+        lastBlockTimeByTarget[targetKey] = now
         blockOverlay.show(match)
     }
 
@@ -270,7 +276,7 @@ class BlockerService : AccessibilityService() {
 
     override fun onDestroy() {
         if (::blockOverlay.isInitialized) {
-            blockOverlay.dismiss(sendHome = false)
+            blockOverlay.destroy()
         }
         super.onDestroy()
         try {

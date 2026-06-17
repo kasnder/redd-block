@@ -23,7 +23,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
-import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -47,10 +46,13 @@ class BlockOverlayController(
     private var windowManager: WindowManager? = null
     private var currentTargetKey: String? = null
     private var activeMatch: BlockMatch? = null
+    private var preparedRoot: View? = null
+    private var cachedHeaderLogo: Drawable? = null
 
     private val handler = Handler(Looper.getMainLooper())
     private var tickRunnable: Runnable? = null
     private var scheduleReceiver: BroadcastReceiver? = null
+    private var pendingHomeRemoval: Runnable? = null
 
     fun isShowing(): Boolean = overlayView != null
 
@@ -58,23 +60,112 @@ class BlockOverlayController(
         return overlayView != null && currentTargetKey == targetKey
     }
 
+    /** Pre-inflate the overlay so the first block can paint an opaque scrim immediately. */
+    fun prepare() {
+        if (preparedRoot != null) return
+        preparedRoot = inflateRoot().also { applyOpaqueScrim(it) }
+    }
+
     fun show(match: BlockMatch) {
         val targetKey = targetKeyFor(match)
         activeMatch = match
 
         if (isShowingFor(targetKey)) {
-            overlayView?.let { bindContent(it, match) }
+            bindContent(overlayView!!, match, deferIcons = false)
             return
         }
 
-        dismiss(sendHome = false)
+        if (overlayView != null) {
+            removeOverlayView()
+        }
 
+        val root = preparedRoot ?: inflateRoot().also {
+            preparedRoot = it
+            applyOpaqueScrim(it)
+        }
+
+        val params = overlayLayoutParams()
+        val closeAction = View.OnClickListener { closeToHome() }
+        root.findViewById<Button>(R.id.block_overlay_close).setOnClickListener(closeAction)
+        root.setOnKeyListener { _, keyCode, event ->
+            if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
+                closeToHome()
+                true
+            } else {
+                false
+            }
+        }
+
+        val wm = service.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        wm.addView(root, params)
+        applyWindowInsets(root)
+        root.requestFocus()
+
+        overlayView = root
+        windowManager = wm
+        currentTargetKey = targetKey
+
+        bindContent(root, match, deferIcons = true)
+        startLiveUpdates()
+    }
+
+    fun destroy() {
+        cancelPendingHomeRemoval()
+        stopLiveUpdates()
+        removeOverlayView()
+        preparedRoot = null
+        cachedHeaderLogo = null
+    }
+
+    fun dismiss(sendHome: Boolean) {
+        cancelPendingHomeRemoval()
+        stopLiveUpdates()
+        if (sendHome) {
+            closeToHome()
+            return
+        }
+        removeOverlayView()
+    }
+
+    private fun closeToHome() {
+        cancelPendingHomeRemoval()
+        stopLiveUpdates()
+        if (overlayView == null) {
+            onClose()
+            return
+        }
+        onClose()
+        pendingHomeRemoval = Runnable {
+            pendingHomeRemoval = null
+            removeOverlayView()
+        }
+        handler.postDelayed(pendingHomeRemoval!!, HOME_TRANSITION_HOLD_MS)
+    }
+
+    private fun cancelPendingHomeRemoval() {
+        pendingHomeRemoval?.let { handler.removeCallbacks(it) }
+        pendingHomeRemoval = null
+    }
+
+    private fun removeOverlayView() {
+        val view = overlayView ?: return
+        try {
+            windowManager?.removeView(view)
+        } catch (_: Exception) {
+            // View may already be detached if the service is stopping.
+        }
+        overlayView = null
+        windowManager = null
+        currentTargetKey = null
+        activeMatch = null
+    }
+
+    private fun inflateRoot(): View {
         val themedContext = service.createConfigurationContext(service.resources.configuration)
-        val inflater = LayoutInflater.from(themedContext)
-        val root = inflater.inflate(R.layout.block_overlay, null)
-        applyOpaqueScrim(root)
-        bindContent(root, match)
+        return LayoutInflater.from(themedContext).inflate(R.layout.block_overlay, null)
+    }
 
+    private fun overlayLayoutParams(): WindowManager.LayoutParams {
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.MATCH_PARENT,
@@ -87,45 +178,7 @@ class BlockOverlayController(
             params.layoutInDisplayCutoutMode =
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
         }
-
-        val closeAction = View.OnClickListener {
-            dismiss(sendHome = true)
-        }
-        root.findViewById<ImageButton>(R.id.block_overlay_dismiss).setOnClickListener(closeAction)
-        root.findViewById<Button>(R.id.block_overlay_close).setOnClickListener(closeAction)
-        root.setOnKeyListener { _, keyCode, event ->
-            if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
-                dismiss(sendHome = true)
-                true
-            } else {
-                false
-            }
-        }
-        root.requestFocus()
-
-        val wm = service.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        wm.addView(root, params)
-        applyWindowInsets(root)
-
-        overlayView = root
-        windowManager = wm
-        currentTargetKey = targetKey
-        startLiveUpdates()
-    }
-
-    fun dismiss(sendHome: Boolean) {
-        stopLiveUpdates()
-        val view = overlayView ?: return
-        try {
-            windowManager?.removeView(view)
-        } catch (_: Exception) {
-            // View may already be detached if the service is stopping.
-        }
-        overlayView = null
-        windowManager = null
-        currentTargetKey = null
-        activeMatch = null
-        if (sendHome) onClose()
+        return params
     }
 
     private fun startLiveUpdates() {
@@ -184,7 +237,7 @@ class BlockOverlayController(
 
         if (updated != activeMatch) {
             activeMatch = updated
-            overlayView?.let { bindContent(it, updated) }
+            overlayView?.let { bindContent(it, updated, deferIcons = false) }
         } else {
             overlayView?.let { updateTimingDisplay(it, updated) }
         }
@@ -225,14 +278,7 @@ class BlockOverlayController(
         return Color.rgb(Color.red(color), Color.green(color), Color.blue(color))
     }
 
-    private fun bindContent(root: View, match: BlockMatch) {
-        root.findViewById<ImageView>(R.id.block_overlay_header_logo)?.setImageDrawable(
-            loadRoundedAppLogo()
-        )
-
-        val heroIcon = root.findViewById<ImageView>(R.id.block_overlay_hero_icon)
-        heroIcon.setImageDrawable(resolveHeroIcon(match))
-
+    private fun bindContent(root: View, match: BlockMatch, deferIcons: Boolean) {
         val subtitleRes = subtitleResFor(match)
         root.findViewById<TextView>(R.id.block_overlay_subtitle).text =
             service.getString(subtitleRes, match.blockedLabel)
@@ -265,6 +311,19 @@ class BlockOverlayController(
 
         bindStartedRow(root, match)
         updateTimingDisplay(root, match)
+
+        val heroIcon = root.findViewById<ImageView>(R.id.block_overlay_hero_icon)
+        val headerLogo = root.findViewById<ImageView>(R.id.block_overlay_header_logo)
+        if (deferIcons) {
+            handler.post { bindIcons(headerLogo, heroIcon, match) }
+        } else {
+            bindIcons(headerLogo, heroIcon, match)
+        }
+    }
+
+    private fun bindIcons(headerLogo: ImageView?, heroIcon: ImageView, match: BlockMatch) {
+        headerLogo?.setImageDrawable(loadRoundedAppLogo())
+        heroIcon.setImageDrawable(resolveHeroIcon(match))
     }
 
     private fun bindStartedRow(root: View, match: BlockMatch) {
@@ -328,6 +387,7 @@ class BlockOverlayController(
     }
 
     private fun loadRoundedAppLogo(): Drawable {
+        cachedHeaderLogo?.let { return it }
         val source = loadSquareAppIcon()
         val sizePx = service.resources.getDimensionPixelSize(R.dimen.block_header_logo_size)
         val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
@@ -336,6 +396,7 @@ class BlockOverlayController(
         source.draw(canvas)
         val rounded = RoundedBitmapDrawableFactory.create(service.resources, bitmap)
         rounded.cornerRadius = sizePx * 0.146f
+        cachedHeaderLogo = rounded
         return rounded
     }
 
@@ -375,6 +436,7 @@ class BlockOverlayController(
 
     companion object {
         private const val TICK_MS = 1000L
+        private const val HOME_TRANSITION_HOLD_MS = 250L
 
         fun parseBlocklistColor(context: Context, raw: String?): Int {
             val fallback = ContextCompat.getColor(context, R.color.block_accent)
