@@ -245,6 +245,11 @@ body.android {
     text-size-adjust: 100%;
 }
 
+/* Android: use system/Roboto for body UI text; keep iOS Inter stack on :root. */
+body.android {
+    --font-body: system-ui, Roboto, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif;
+}
+
 body.ios .main-content,
 body.android .main-content {
     margin-top: 0;
@@ -296,6 +301,22 @@ body.android .scheduler-section,
 body.android .blocklists-section {
     min-width: 0;
     max-width: 100%;
+}
+
+/* Handset settings: let the language control grow with its label (140px min). */
+body.handset-device #settings-modal .settings-row-control:has(.language-picker) {
+    width: auto;
+    min-width: var(--settings-control-width);
+}
+
+body.handset-device #settings-modal .settings-row-control:has(.language-picker) .language-picker {
+    width: max-content;
+    min-width: var(--settings-control-width);
+}
+
+body.handset-device #settings-modal .language-picker-trigger .language-picker-code {
+    overflow: visible;
+    text-overflow: clip;
 }
 
 /* iPad only — iPhone landscape is often ≥768px wide; must not use iPad padding */
@@ -1669,7 +1690,8 @@ body.dark-mode .app-blocking-closedown-banner {
 /* Portrait iPad: same vertical stack as iPhone — blocklists, then scheduler, then
    week calendar (calendar stays in .main-content below .grid-top-row). */
 @media (min-width: 769px) and (max-width: 1024px) and (orientation: portrait) {
-    body.ios:not(.ios-phone) .grid-top-row {
+    body.ios:not(.ios-phone) .grid-top-row,
+    body.android:not(.android-phone) .grid-top-row {
         grid-template-columns: 1fr;
         gap: 18px;
     }
@@ -1678,7 +1700,8 @@ body.dark-mode .app-blocking-closedown-banner {
         gap: 18px;
     }
 
-    body.ios:not(.ios-phone) #settings-btn-stack {
+    body.ios:not(.ios-phone) #settings-btn-stack,
+    body.android:not(.android-phone) #settings-btn-stack {
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1691,42 +1714,48 @@ body.dark-mode .app-blocking-closedown-banner {
         padding: 0;
     }
 
-    body.ios:not(.ios-phone) #settings-toolbar-stack {
+    body.ios:not(.ios-phone) #settings-toolbar-stack,
+    body.android:not(.android-phone) #settings-toolbar-stack {
         display: flex;
     }
     body.android:not(.android-phone) #settings-toolbar-stack {
         display: flex;
     }
 
-    body.ios:not(.ios-phone) .scheduler-section .section-header #settings-btn {
+    body.ios:not(.ios-phone) .scheduler-section .section-header #settings-btn,
+    body.android:not(.android-phone) .scheduler-section .section-header #settings-btn {
         display: none !important;
     }
     body.android:not(.android-phone) .scheduler-section .section-header #settings-btn {
         display: none !important;
     }
 
-    body.ios:not(.ios-phone) .scheduler-section .section-header #settings-toolbar-scheduler {
+    body.ios:not(.ios-phone) .scheduler-section .section-header #settings-toolbar-scheduler,
+    body.android:not(.android-phone) .scheduler-section .section-header #settings-toolbar-scheduler {
         display: none !important;
     }
     body.android:not(.android-phone) .scheduler-section .section-header #settings-toolbar-scheduler {
         display: none !important;
     }
 
-    body.ios:not(.ios-phone) .grid-top-row--blocklist-selected .blocklist-card {
+    body.ios:not(.ios-phone) .grid-top-row--blocklist-selected .blocklist-card,
+    body.android:not(.android-phone) .grid-top-row--blocklist-selected .blocklist-card {
         max-width: none;
     }
     body.android:not(.android-phone) .grid-top-row--blocklist-selected .blocklist-card {
         max-width: none;
     }
 
-    body.ios:not(.ios-phone) .scheduler-section > .section-header.scheduler-header-compact {
+    body.ios:not(.ios-phone) .scheduler-section > .section-header.scheduler-header-compact,
+    body.android:not(.android-phone) .scheduler-section > .section-header.scheduler-header-compact {
         margin-bottom: 2px;
     }
     body.android:not(.android-phone) .scheduler-section > .section-header.scheduler-header-compact {
         margin-bottom: 2px;
     }
 
-    body.ios:not(.ios-phone) .selection-prompt {
+    body.ios:not(.ios-phone) .selection-prompt,
+    body.android:not(.android-phone) .selection-prompt {
         padding: 0 0 18px 20px;
         margin-top: -32px;
     }
@@ -1735,7 +1764,8 @@ body.dark-mode .app-blocking-closedown-banner {
         margin-top: -32px;
     }
 
-    body.ios:not(.ios-phone) .selection-prompt svg {
+    body.ios:not(.ios-phone) .selection-prompt svg,
+    body.android:not(.android-phone) .selection-prompt svg {
         transform: rotate(90deg);
     }
     body.android:not(.android-phone) .selection-prompt svg {
@@ -1743,17 +1773,7 @@ body.dark-mode .app-blocking-closedown-banner {
     }
 
     /* Portrait stack: show Now/Schedule text unless JS detects overlap (ui-zoom-sched-tabs-icons). */
-    body.ios:not(.ios-phone) .scheduler-section > .section-header .mode-tab-label {
-        position: static;
-        width: auto;
-        height: auto;
-        padding: 0;
-        margin: 0;
-        overflow: visible;
-        clip: auto;
-        white-space: nowrap;
-        border: 0;
-    }
+    body.ios:not(.ios-phone) .scheduler-section > .section-header .mode-tab-label,
     body.android:not(.android-phone) .scheduler-section > .section-header .mode-tab-label {
         position: static;
         width: auto;
@@ -1765,18 +1785,7 @@ body.dark-mode .app-blocking-closedown-banner {
         white-space: nowrap;
         border: 0;
     }
-
-    body.ios:not(.ios-phone).ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-label {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        padding: 0;
-        margin: -1px;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-        white-space: nowrap;
-        border: 0;
-    }
+    body.ios:not(.ios-phone).ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-label,
     body.android:not(.android-phone).ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-label {
         position: absolute;
         width: 1px;
@@ -1952,38 +1961,46 @@ body.dark-mode .app-blocking-closedown-banner {
         height: 18px;
     }
 
-    body.ios:not(.ios-phone) .main-content .time-pickers-row {
+    body.ios:not(.ios-phone) .main-content .time-pickers-row,
+    body.android:not(.android-phone) .main-content .time-pickers-row {
         gap: 18px;
     }
 
-    body.ios:not(.ios-phone) .main-content .time-picker-group {
+    body.ios:not(.ios-phone) .main-content .time-picker-group,
+    body.android:not(.android-phone) .main-content .time-picker-group {
         gap: 6px;
     }
 
     body.ios:not(.ios-phone) .main-content #timed-controls .duration-input-wrapper,
-    body.ios:not(.ios-phone) .main-content #timed-controls .time-picker-row {
+    body.android:not(.android-phone) .main-content #timed-controls .duration-input-wrapper,
+    body.ios:not(.ios-phone) .main-content #timed-controls .time-picker-row,
+    body.android:not(.android-phone) .main-content #timed-controls .time-picker-row {
         min-height: 42px;
     }
 
-    body.ios:not(.ios-phone) .main-content #timed-controls .time-separator {
+    body.ios:not(.ios-phone) .main-content #timed-controls .time-separator,
+    body.android:not(.android-phone) .main-content #timed-controls .time-separator {
         height: 42px;
         font-size: 22px;
     }
 
-    body.ios:not(.ios-phone) .main-content .now-btn {
+    body.ios:not(.ios-phone) .main-content .now-btn,
+    body.android:not(.android-phone) .main-content .now-btn {
         padding: 10px 18px;
         font-size: 16px;
         border-radius: 10px;
     }
 
-    body.ios:not(.ios-phone) .main-content .time-select {
+    body.ios:not(.ios-phone) .main-content .time-select,
+    body.android:not(.android-phone) .main-content .time-select {
         padding: 10px 6px;
         font-size: 16px;
         border-radius: 8px;
         min-width: 58px;
     }
 
-    body.ios:not(.ios-phone) .main-content .time-part {
+    body.ios:not(.ios-phone) .main-content .time-part,
+    body.android:not(.android-phone) .main-content .time-part {
         padding: 6px 6px;
         font-size: 19px;
         min-width: 42px;
@@ -1991,17 +2008,22 @@ body.dark-mode .app-blocking-closedown-banner {
     }
 
     body.ios:not(.ios-phone) .main-content #end-time-display input.time-part.time-popover-anchor,
+    body.android:not(.android-phone) .main-content #end-time-display input.time-part.time-popover-anchor,
     body.ios:not(.ios-phone) .main-content .schedule-block-panel .schedule-start-display input.time-part,
-    body.ios:not(.ios-phone) .main-content .schedule-block-panel .schedule-end-display input.time-part {
+    body.android:not(.android-phone) .main-content .schedule-block-panel .schedule-start-display input.time-part,
+    body.ios:not(.ios-phone) .main-content .schedule-block-panel .schedule-end-display input.time-part,
+    body.android:not(.android-phone) .main-content .schedule-block-panel .schedule-end-display input.time-part {
         min-width: 42px;
         max-width: 54px;
     }
 
-    body.ios:not(.ios-phone) .main-content .schedule-block-panel .time-picker-row {
+    body.ios:not(.ios-phone) .main-content .schedule-block-panel .time-picker-row,
+    body.android:not(.android-phone) .main-content .schedule-block-panel .time-picker-row {
         min-height: 42px;
     }
 
-    body.ios:not(.ios-phone) .main-content .schedule-block-panel .time-separator {
+    body.ios:not(.ios-phone) .main-content .schedule-block-panel .time-separator,
+    body.android:not(.android-phone) .main-content .schedule-block-panel .time-separator {
         align-self: flex-end;
         display: inline-flex;
         align-items: center;
@@ -2012,20 +2034,24 @@ body.dark-mode .app-blocking-closedown-banner {
         font-size: 22px;
     }
 
-    body.ios:not(.ios-phone) .main-content .time-colon {
+    body.ios:not(.ios-phone) .main-content .time-colon,
+    body.android:not(.android-phone) .main-content .time-colon {
         font-size: 22px;
     }
 
-    body.ios:not(.ios-phone) .main-content .next-day-badge {
+    body.ios:not(.ios-phone) .main-content .next-day-badge,
+    body.android:not(.android-phone) .main-content .next-day-badge {
         padding: 5px 10px;
         font-size: 12px;
     }
 
-    body.ios:not(.ios-phone) .main-content .time-separator {
+    body.ios:not(.ios-phone) .main-content .time-separator,
+    body.android:not(.android-phone) .main-content .time-separator {
         font-size: 22px;
     }
 
-    body.ios:not(.ios-phone) .main-content .popover-option {
+    body.ios:not(.ios-phone) .main-content .popover-option,
+    body.android:not(.android-phone) .main-content .popover-option {
         padding: 10px 14px;
         font-size: 16px;
         min-width: 52px;
@@ -2080,16 +2106,19 @@ body.dark-mode .app-blocking-closedown-banner {
         gap: 10px;
     }
 
-    body.ios:not(.ios-phone) .main-content .schedule-segments {
+    body.ios:not(.ios-phone) .main-content .schedule-segments,
+    body.android:not(.android-phone) .main-content .schedule-segments {
         gap: 12px;
         --schedule-segments-gap: 12px;
     }
 
-    body.ios:not(.ios-phone) .main-content .schedule-segments:has(.schedule-segment:nth-child(4)) {
+    body.ios:not(.ios-phone) .main-content .schedule-segments:has(.schedule-segment:nth-child(4)),
+    body.android:not(.android-phone) .main-content .schedule-segments:has(.schedule-segment:nth-child(4)) {
         --schedule-segment-scroll-height: 138px;
     }
 
-    body.ios:not(.ios-phone) .main-content .schedule-segment {
+    body.ios:not(.ios-phone) .main-content .schedule-segment,
+    body.android:not(.android-phone) .main-content .schedule-segment {
         padding: 14px 16px;
         border-radius: 10px;
         --schedule-segment-pad-y: 14px;
@@ -2097,7 +2126,8 @@ body.dark-mode .app-blocking-closedown-banner {
         --schedule-segment-remove-size: 34px;
     }
 
-    body.ios:not(.ios-phone) .main-content .segment-row {
+    body.ios:not(.ios-phone) .main-content .segment-row,
+    body.android:not(.android-phone) .main-content .segment-row {
         gap: 14px 18px;
     }
 
@@ -2131,21 +2161,25 @@ body.dark-mode .app-blocking-closedown-banner {
         min-height: 42px;
     }
 
-    body.ios:not(.ios-phone) .main-content .schedule-segment:has(.remove-segment-btn) {
+    body.ios:not(.ios-phone) .main-content .schedule-segment:has(.remove-segment-btn),
+    body.android:not(.android-phone) .main-content .schedule-segment:has(.remove-segment-btn) {
         padding-right: 48px;
     }
 
-    body.ios:not(.ios-phone) .main-content .schedule-segment .remove-segment-btn {
+    body.ios:not(.ios-phone) .main-content .schedule-segment .remove-segment-btn,
+    body.android:not(.android-phone) .main-content .schedule-segment .remove-segment-btn {
         width: 34px;
         height: 34px;
     }
 
-    body.ios:not(.ios-phone) .main-content .remove-segment-btn svg {
+    body.ios:not(.ios-phone) .main-content .remove-segment-btn svg,
+    body.android:not(.android-phone) .main-content .remove-segment-btn svg {
         width: 20px;
         height: 20px;
     }
 
-    body.ios:not(.ios-phone) .main-content .add-segment-btn {
+    body.ios:not(.ios-phone) .main-content .add-segment-btn,
+    body.android:not(.android-phone) .main-content .add-segment-btn {
         gap: 8px;
         padding: 12px 16px;
         font-size: 16px;
@@ -2153,36 +2187,43 @@ body.dark-mode .app-blocking-closedown-banner {
         width: 148px;
     }
 
-    body.ios:not(.ios-phone) .main-content .add-segment-btn svg {
+    body.ios:not(.ios-phone) .main-content .add-segment-btn svg,
+    body.android:not(.android-phone) .main-content .add-segment-btn svg {
         width: 16px;
         height: 16px;
     }
 
-    body.ios:not(.ios-phone) .main-content .schedule-repeat-section {
+    body.ios:not(.ios-phone) .main-content .schedule-repeat-section,
+    body.android:not(.android-phone) .main-content .schedule-repeat-section {
         gap: 10px;
     }
 
-    body.ios:not(.ios-phone) .main-content .repeat-label {
+    body.ios:not(.ios-phone) .main-content .repeat-label,
+    body.android:not(.android-phone) .main-content .repeat-label {
         font-size: 16px;
     }
 
-    body.ios:not(.ios-phone) .main-content .repeat-dropdown-btn {
+    body.ios:not(.ios-phone) .main-content .repeat-dropdown-btn,
+    body.android:not(.android-phone) .main-content .repeat-dropdown-btn {
         gap: 6px;
         padding: 8px 12px;
         font-size: 16px;
         border-radius: 8px;
     }
 
-    body.ios:not(.ios-phone) .main-content .repeat-option {
+    body.ios:not(.ios-phone) .main-content .repeat-option,
+    body.android:not(.android-phone) .main-content .repeat-option {
         padding: 10px 14px;
         font-size: 16px;
     }
 
-    body.ios:not(.ios-phone) .main-content .repeat-date-overlay {
+    body.ios:not(.ios-phone) .main-content .repeat-date-overlay,
+    body.android:not(.android-phone) .main-content .repeat-date-overlay {
         font-size: 16px;
     }
 
-    body.ios:not(.ios-phone) .main-content .schedule-pending-bar {
+    body.ios:not(.ios-phone) .main-content .schedule-pending-bar,
+    body.android:not(.android-phone) .main-content .schedule-pending-bar {
         gap: 14px;
         padding: 10px 14px;
         font-size: 14px;
@@ -2190,103 +2231,126 @@ body.dark-mode .app-blocking-closedown-banner {
     }
 
     body.ios:not(.ios-phone) .main-content .schedule-pending-discard,
-    body.ios:not(.ios-phone) .main-content .schedule-pending-save {
+    body.android:not(.android-phone) .main-content .schedule-pending-discard,
+    body.ios:not(.ios-phone) .main-content .schedule-pending-save,
+    body.android:not(.android-phone) .main-content .schedule-pending-save {
         padding: 8px 14px;
         font-size: 14px;
         border-radius: 8px;
     }
 
-    body.ios:not(.ios-phone) .main-content .warning-banner {
+    body.ios:not(.ios-phone) .main-content .warning-banner,
+    body.android:not(.android-phone) .main-content .warning-banner {
         padding: 10px 14px;
         font-size: 16px;
         gap: 10px;
         border-radius: 8px;
     }
 
-    body.ios:not(.ios-phone) .main-content .warning-banner svg {
+    body.ios:not(.ios-phone) .main-content .warning-banner svg,
+    body.android:not(.android-phone) .main-content .warning-banner svg {
         width: 18px;
         height: 18px;
     }
 
-    body.ios:not(.ios-phone) .main-content .blocklists-container {
+    body.ios:not(.ios-phone) .main-content .blocklists-container,
+    body.android:not(.android-phone) .main-content .blocklists-container {
         gap: 12px;
         --blocklists-scroll-max-height: 440px;
         padding-top: 6px;
         padding-bottom: 6px;
     }
 
-    body.ios:not(.ios-phone) .main-content .blocklist-card {
+    body.ios:not(.ios-phone) .main-content .blocklist-card,
+    body.android:not(.android-phone) .main-content .blocklist-card {
         --blocklist-card-padding-y: 12px;
         border-radius: 12px;
         padding-right: 6px;
     }
 
-    body.ios:not(.ios-phone) .main-content .blocklist-stripe {
+    body.ios:not(.ios-phone) .main-content .blocklist-stripe,
+    body.android:not(.android-phone) .main-content .blocklist-stripe {
         flex: 0 0 8px;
         width: 8px;
     }
 
-    body.ios:not(.ios-phone) .main-content .blocklist-info {
+    body.ios:not(.ios-phone) .main-content .blocklist-info,
+    body.android:not(.android-phone) .main-content .blocklist-info {
         padding-left: 12px;
     }
 
-    body.ios:not(.ios-phone) .main-content .blocklist-name {
+    body.ios:not(.ios-phone) .main-content .blocklist-name,
+    body.android:not(.android-phone) .main-content .blocklist-name {
         font-size: 22px;
         gap: 10px;
         margin-bottom: 4px;
     }
 
-    body.ios:not(.ios-phone) .main-content .blocklist-meta {
+    body.ios:not(.ios-phone) .main-content .blocklist-meta,
+    body.android:not(.android-phone) .main-content .blocklist-meta {
         font-size: 19px;
     }
 
     body.ios:not(.ios-phone) .main-content .active-badge,
-    body.ios:not(.ios-phone) .main-content .schedule-badge {
+    body.android:not(.android-phone) .main-content .active-badge,
+    body.ios:not(.ios-phone) .main-content .schedule-badge,
+    body.android:not(.android-phone) .main-content .schedule-badge {
         font-size: 12px;
         gap: 6px;
         padding: 3px 0;
     }
 
-    body.ios:not(.ios-phone) .main-content .badge-running-dot {
+    body.ios:not(.ios-phone) .main-content .badge-running-dot,
+    body.android:not(.android-phone) .main-content .badge-running-dot {
         width: 8px;
         height: 8px;
     }
 
-    body.ios:not(.ios-phone) .main-content .paused-badge {
+    body.ios:not(.ios-phone) .main-content .paused-badge,
+    body.android:not(.android-phone) .main-content .paused-badge {
         padding: 3px 10px;
         font-size: 12px;
     }
 
-    body.ios:not(.ios-phone) .main-content .time-remaining {
+    body.ios:not(.ios-phone) .main-content .time-remaining,
+    body.android:not(.android-phone) .main-content .time-remaining {
         font-size: 14px;
     }
 
-    body.ios:not(.ios-phone) .main-content .blocklist-action-btn {
+    body.ios:not(.ios-phone) .main-content .blocklist-action-btn,
+    body.android:not(.android-phone) .main-content .blocklist-action-btn {
         width: 48px;
         height: 48px;
         border-radius: 12px;
     }
 
-    body.ios:not(.ios-phone) .main-content .blocklist-action-btn svg {
+    body.ios:not(.ios-phone) .main-content .blocklist-action-btn svg,
+    body.android:not(.android-phone) .main-content .blocklist-action-btn svg {
         width: 24px;
         height: 24px;
     }
 
-    body.ios:not(.ios-phone) .main-content .week-calendar-section {
+    body.ios:not(.ios-phone) .main-content .week-calendar-section,
+    body.android:not(.android-phone) .main-content .week-calendar-section {
         margin-top: 16px;
     }
 
     body.ios:not(.ios-phone) .main-content .week-calendar-section .section-header,
-    body.ios:not(.ios-phone) .main-content .blocklists-section > .section-header {
+    body.android:not(.android-phone) .main-content .week-calendar-section .section-header,
+    body.ios:not(.ios-phone) .main-content .blocklists-section > .section-header,
+    body.android:not(.android-phone) .main-content .blocklists-section > .section-header {
         margin-bottom: 10px;
     }
 
-    body.ios:not(.ios-phone) .main-content .always-on-label {
+    body.ios:not(.ios-phone) .main-content .always-on-label,
+    body.android:not(.android-phone) .main-content .always-on-label {
         font-size: 15px;
     }
 
     body.ios:not(.ios-phone) .main-content .schedule-visibility-chip,
-    body.ios:not(.ios-phone) .main-content .always-on-chip {
+    body.android:not(.android-phone) .main-content .schedule-visibility-chip,
+    body.ios:not(.ios-phone) .main-content .always-on-chip,
+    body.android:not(.android-phone) .main-content .always-on-chip {
         gap: 8px;
         padding: 5px 12px;
         font-size: 14px;
@@ -2294,45 +2358,56 @@ body.dark-mode .app-blocking-closedown-banner {
     }
 
     body.ios:not(.ios-phone) .main-content .schedule-visibility-chip svg,
-    body.ios:not(.ios-phone) .main-content .always-on-chip svg {
+    body.android:not(.android-phone) .main-content .schedule-visibility-chip svg,
+    body.ios:not(.ios-phone) .main-content .always-on-chip svg,
+    body.android:not(.android-phone) .main-content .always-on-chip svg {
         width: 16px;
         height: 16px;
     }
 
-    body.ios:not(.ios-phone) .main-content .always-on-chip-emoji {
+    body.ios:not(.ios-phone) .main-content .always-on-chip-emoji,
+    body.android:not(.android-phone) .main-content .always-on-chip-emoji {
         font-size: 15px;
     }
 
-    body.ios:not(.ios-phone) .main-content .week-calendar-container {
+    body.ios:not(.ios-phone) .main-content .week-calendar-container,
+    body.android:not(.android-phone) .main-content .week-calendar-container {
         border-radius: 10px;
     }
 
-    body.ios:not(.ios-phone) .main-content .grid-header-row {
+    body.ios:not(.ios-phone) .main-content .grid-header-row,
+    body.android:not(.android-phone) .main-content .grid-header-row {
         height: 28px;
     }
 
-    body.ios:not(.ios-phone) .main-content .hour-marker {
+    body.ios:not(.ios-phone) .main-content .hour-marker,
+    body.android:not(.android-phone) .main-content .hour-marker {
         font-size: 12px;
     }
 
-    body.ios:not(.ios-phone) .main-content .day-row {
+    body.ios:not(.ios-phone) .main-content .day-row,
+    body.android:not(.android-phone) .main-content .day-row {
         height: 46px;
     }
 
-    body.ios:not(.ios-phone) .main-content .day-label {
+    body.ios:not(.ios-phone) .main-content .day-label,
+    body.android:not(.android-phone) .main-content .day-label {
         padding: 0 10px 0 12px;
         font-size: 12px;
     }
 
-    body.ios:not(.ios-phone) .main-content .day-label .day-name {
+    body.ios:not(.ios-phone) .main-content .day-label .day-name,
+    body.android:not(.android-phone) .main-content .day-label .day-name {
         font-size: 15px;
     }
 
-    body.ios:not(.ios-phone) .main-content .day-label .day-date {
+    body.ios:not(.ios-phone) .main-content .day-label .day-date,
+    body.android:not(.android-phone) .main-content .day-label .day-date {
         font-size: 12px;
     }
 
-    body.ios:not(.ios-phone) .main-content .calendar-block {
+    body.ios:not(.ios-phone) .main-content .calendar-block,
+    body.android:not(.android-phone) .main-content .calendar-block {
         padding: 0 10px;
         font-size: 13px;
         gap: 5px;
@@ -2341,20 +2416,24 @@ body.dark-mode .app-blocking-closedown-banner {
         bottom: 5px;
     }
 
-    body.ios:not(.ios-phone) .main-content .calendar-block .block-emoji {
+    body.ios:not(.ios-phone) .main-content .calendar-block .block-emoji,
+    body.android:not(.android-phone) .main-content .calendar-block .block-emoji {
         font-size: 15px;
     }
 
-    body.ios:not(.ios-phone) .main-content .calendar-block .block-time {
+    body.ios:not(.ios-phone) .main-content .calendar-block .block-time,
+    body.android:not(.android-phone) .main-content .calendar-block .block-time {
         font-size: 12px;
     }
 
-    body.ios:not(.ios-phone) .main-content .schedule-footer-hint {
+    body.ios:not(.ios-phone) .main-content .schedule-footer-hint,
+    body.android:not(.android-phone) .main-content .schedule-footer-hint {
         margin-top: 10px;
         font-size: 12px;
     }
 
-    body.ios:not(.ios-phone) .main-content .no-blocks-message p {
+    body.ios:not(.ios-phone) .main-content .no-blocks-message p,
+    body.android:not(.android-phone) .main-content .no-blocks-message p {
         font-size: 15px;
     }
 }
@@ -2362,89 +2441,111 @@ body.dark-mode .app-blocking-closedown-banner {
 /* iPad (portrait + landscape): modal UI — content scaled ×1.2 from base sizes,
    then shells/padding/gaps use the same factor (--ipad-s). */
 @media (min-width: 769px) and (max-width: 1024px) {
-    body.ios:not(.ios-phone) {
+    body.ios:not(.ios-phone),
+    body.android:not(.android-phone) {
         --ipad-s: 1.2;
     }
 
     /* --- Shells (base layout × --ipad-s; height grows with content) --- */
-    body.ios:not(.ios-phone) .modal-overlay {
+    body.ios:not(.ios-phone) .modal-overlay,
+    body.android:not(.android-phone) .modal-overlay {
         padding: calc(20px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-content {
+    body.ios:not(.ios-phone) .modal-content,
+    body.android:not(.android-phone) .modal-content {
         padding: calc(24px * var(--ipad-s));
         border-radius: calc(16px * var(--ipad-s));
         max-width: calc(400px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) #blocklist-modal .modal-content {
+    body.ios:not(.ios-phone) #blocklist-modal .modal-content,
+    body.android:not(.android-phone) #blocklist-modal .modal-content {
         max-width: calc(500px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) #settings-modal .modal-content {
+    body.ios:not(.ios-phone) #settings-modal .modal-content,
+    body.android:not(.android-phone) #settings-modal .modal-content {
         max-width: calc(520px * var(--ipad-s));
         --settings-control-width: calc(140px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-content.start-confirm-modal,
+    body.android:not(.android-phone) .modal-content.start-confirm-modal,
     body.ios:not(.ios-phone) #start-block-confirm-modal .modal-content,
-    body.ios:not(.ios-phone) #start-schedule-confirm-modal .modal-content {
+    body.android:not(.android-phone) #start-block-confirm-modal .modal-content,
+    body.ios:not(.ios-phone) #start-schedule-confirm-modal .modal-content,
+    body.android:not(.android-phone) #start-schedule-confirm-modal .modal-content {
         max-width: calc(500px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-content.pause-modal,
-    body.ios:not(.ios-phone) #pause-modal .modal-content {
+    body.android:not(.android-phone) .modal-content.pause-modal,
+    body.ios:not(.ios-phone) #pause-modal .modal-content,
+    body.android:not(.android-phone) #pause-modal .modal-content {
         max-width: calc(410px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) #override-modal .modal-content,
-    body.ios:not(.ios-phone) #override-all-modal .modal-content {
+    body.android:not(.android-phone) #override-modal .modal-content,
+    body.ios:not(.ios-phone) #override-all-modal .modal-content,
+    body.android:not(.android-phone) #override-all-modal .modal-content {
         max-width: calc(400px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .app-picker-modal-content {
+    body.ios:not(.ios-phone) .app-picker-modal-content,
+    body.android:not(.android-phone) .app-picker-modal-content {
         max-width: calc(420px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-buttons {
+    body.ios:not(.ios-phone) .modal-buttons,
+    body.android:not(.android-phone) .modal-buttons {
         gap: calc(8px * var(--ipad-s));
         margin-top: calc(20px * var(--ipad-s));
     }
 
     /* --- Typography & primary controls (base × --ipad-s) --- */
-    body.ios:not(.ios-phone) .modal-content h3 {
+    body.ios:not(.ios-phone) .modal-content h3,
+    body.android:not(.android-phone) .modal-content h3 {
         font-size: calc(22px * var(--ipad-s));
         margin-bottom: calc(12px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .start-confirm-modal h3,
-    body.ios:not(.ios-phone) .start-confirm-header-text h3 {
+    body.android:not(.android-phone) .start-confirm-modal h3,
+    body.ios:not(.ios-phone) .start-confirm-header-text h3,
+    body.android:not(.android-phone) .start-confirm-header-text h3 {
         font-size: calc(20px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .app-picker-modal-content h3 {
+    body.ios:not(.ios-phone) .app-picker-modal-content h3,
+    body.android:not(.android-phone) .app-picker-modal-content h3 {
         font-size: calc(18px * var(--ipad-s));
         margin-bottom: calc(12px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay p {
+    body.ios:not(.ios-phone) .modal-overlay p,
+    body.android:not(.android-phone) .modal-overlay p {
         font-size: calc(15px * var(--ipad-s));
         line-height: 1.5;
     }
 
-    body.ios:not(.ios-phone) .modal-btn {
+    body.ios:not(.ios-phone) .modal-btn,
+    body.android:not(.android-phone) .modal-btn {
         padding: calc(10px * var(--ipad-s)) calc(16px * var(--ipad-s));
         border-radius: calc(8px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .btn-spinner {
+    body.ios:not(.ios-phone) .modal-overlay .btn-spinner,
+    body.android:not(.android-phone) .modal-overlay .btn-spinner {
         width: calc(14px * var(--ipad-s));
         height: calc(14px * var(--ipad-s));
         margin-right: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .warning-banner {
+    body.ios:not(.ios-phone) .modal-overlay .warning-banner,
+    body.android:not(.android-phone) .modal-overlay .warning-banner {
         padding: calc(8px * var(--ipad-s)) calc(12px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
         gap: calc(8px * var(--ipad-s));
@@ -2452,31 +2553,37 @@ body.dark-mode .app-blocking-closedown-banner {
         margin-bottom: calc(16px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .warning-banner svg {
+    body.ios:not(.ios-phone) .modal-overlay .warning-banner svg,
+    body.android:not(.android-phone) .modal-overlay .warning-banner svg {
         width: calc(16px * var(--ipad-s));
         height: calc(16px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .form-group {
+    body.ios:not(.ios-phone) .modal-overlay .form-group,
+    body.android:not(.android-phone) .modal-overlay .form-group {
         margin-bottom: calc(16px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .form-group > label {
+    body.ios:not(.ios-phone) .modal-overlay .form-group > label,
+    body.android:not(.android-phone) .modal-overlay .form-group > label {
         font-size: calc(13px * var(--ipad-s));
         margin-bottom: calc(6px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .form-input {
+    body.ios:not(.ios-phone) .modal-overlay .form-input,
+    body.android:not(.android-phone) .modal-overlay .form-input {
         padding: calc(10px * var(--ipad-s)) calc(12px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
         border-radius: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .form-input.small {
+    body.ios:not(.ios-phone) .modal-overlay .form-input.small,
+    body.android:not(.android-phone) .modal-overlay .form-input.small {
         width: calc(80px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay #override-count-wrapper .form-input.small {
+    body.ios:not(.ios-phone) .modal-overlay #override-count-wrapper .form-input.small,
+    body.android:not(.android-phone) .modal-overlay #override-count-wrapper .form-input.small {
         width: calc(3.25rem * var(--ipad-s));
         min-width: calc(3.25rem * var(--ipad-s));
         max-width: calc(3.25rem * var(--ipad-s));
@@ -2486,15 +2593,18 @@ body.dark-mode .app-blocking-closedown-banner {
         font-size: calc(15px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .input-with-suffix {
+    body.ios:not(.ios-phone) .modal-overlay .input-with-suffix,
+    body.android:not(.android-phone) .modal-overlay .input-with-suffix {
         gap: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .input-suffix {
+    body.ios:not(.ios-phone) .modal-overlay .input-suffix,
+    body.android:not(.android-phone) .modal-overlay .input-suffix {
         font-size: calc(15px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .form-select {
+    body.ios:not(.ios-phone) .modal-overlay .form-select,
+    body.android:not(.android-phone) .modal-overlay .form-select {
         padding: calc(10px * var(--ipad-s)) calc(36px * var(--ipad-s)) calc(10px * var(--ipad-s)) calc(12px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
         border-radius: calc(8px * var(--ipad-s));
@@ -2502,156 +2612,186 @@ body.dark-mode .app-blocking-closedown-banner {
         background-position: right calc(10px * var(--ipad-s)) center;
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .form-textarea {
+    body.ios:not(.ios-phone) .modal-overlay .form-textarea,
+    body.android:not(.android-phone) .modal-overlay .form-textarea {
         padding: calc(10px * var(--ipad-s)) calc(12px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
         min-height: calc(80px * var(--ipad-s));
         border-radius: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .form-hint {
+    body.ios:not(.ios-phone) .modal-overlay .form-hint,
+    body.android:not(.android-phone) .modal-overlay .form-hint {
         font-size: calc(13px * var(--ipad-s));
         margin-top: calc(4px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .input-error-msg {
+    body.ios:not(.ios-phone) .modal-overlay .input-error-msg,
+    body.android:not(.android-phone) .modal-overlay .input-error-msg {
         font-size: calc(13px * var(--ipad-s));
         margin-top: calc(6px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .info-icon {
+    body.ios:not(.ios-phone) .modal-overlay .info-icon,
+    body.android:not(.android-phone) .modal-overlay .info-icon {
         width: calc(16px * var(--ipad-s));
         height: calc(16px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .info-tooltip {
+    body.ios:not(.ios-phone) .modal-overlay .info-tooltip,
+    body.android:not(.android-phone) .modal-overlay .info-tooltip {
         font-size: calc(13px * var(--ipad-s));
         padding: calc(8px * var(--ipad-s)) calc(12px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .tags-input-container {
+    body.ios:not(.ios-phone) .modal-overlay .tags-input-container,
+    body.android:not(.android-phone) .modal-overlay .tags-input-container {
         padding: calc(6px * var(--ipad-s));
         gap: calc(6px * var(--ipad-s));
         min-height: calc(44px * var(--ipad-s));
         border-radius: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .tags-input-container .form-input {
+    body.ios:not(.ios-phone) .modal-overlay .tags-input-container .form-input,
+    body.android:not(.android-phone) .modal-overlay .tags-input-container .form-input {
         padding: calc(4px * var(--ipad-s)) calc(6px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
         min-width: calc(120px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .tags-container {
+    body.ios:not(.ios-phone) .modal-overlay .tags-container,
+    body.android:not(.android-phone) .modal-overlay .tags-container {
         gap: calc(4px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .tag {
+    body.ios:not(.ios-phone) .modal-overlay .tag,
+    body.android:not(.android-phone) .modal-overlay .tag {
         gap: calc(4px * var(--ipad-s));
         padding: calc(4px * var(--ipad-s)) calc(8px * var(--ipad-s));
         font-size: calc(13px * var(--ipad-s));
         border-radius: calc(4px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .tag-remove {
+    body.ios:not(.ios-phone) .modal-overlay .tag-remove,
+    body.android:not(.android-phone) .modal-overlay .tag-remove {
         font-size: calc(15px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .browse-btn {
+    body.ios:not(.ios-phone) .modal-overlay .browse-btn,
+    body.android:not(.android-phone) .modal-overlay .browse-btn {
         padding: calc(6px * var(--ipad-s)) calc(8px * var(--ipad-s));
         border-radius: calc(6px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay #blocklist-modal .tags-input-container > .input-with-button {
+    body.ios:not(.ios-phone) .modal-overlay #blocklist-modal .tags-input-container > .input-with-button,
+    body.android:not(.android-phone) .modal-overlay #blocklist-modal .tags-input-container > .input-with-button {
         gap: calc(6px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay #blocklist-modal .tags-input-container .browse-btn {
+    body.ios:not(.ios-phone) .modal-overlay #blocklist-modal .tags-input-container .browse-btn,
+    body.android:not(.android-phone) .modal-overlay #blocklist-modal .tags-input-container .browse-btn {
         padding: calc(10px * var(--ipad-s)) calc(12px * var(--ipad-s));
         gap: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay #blocklist-modal .tags-input-container .browse-btn-caption {
+    body.ios:not(.ios-phone) .modal-overlay #blocklist-modal .tags-input-container .browse-btn-caption,
+    body.android:not(.android-phone) .modal-overlay #blocklist-modal .tags-input-container .browse-btn-caption {
         font-size: calc(13px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .color-swatches {
+    body.ios:not(.ios-phone) .modal-overlay .color-swatches,
+    body.android:not(.android-phone) .modal-overlay .color-swatches {
         gap: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .color-swatches .color-swatch {
+    body.ios:not(.ios-phone) .modal-overlay .color-swatches .color-swatch,
+    body.android:not(.android-phone) .modal-overlay .color-swatches .color-swatch {
         width: calc(28px * var(--ipad-s));
         height: calc(28px * var(--ipad-s));
         border-radius: calc(6px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .emoji-swatches {
+    body.ios:not(.ios-phone) .modal-overlay .emoji-swatches,
+    body.android:not(.android-phone) .modal-overlay .emoji-swatches {
         gap: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .emoji-swatch {
+    body.ios:not(.ios-phone) .modal-overlay .emoji-swatch,
+    body.android:not(.android-phone) .modal-overlay .emoji-swatch {
         width: calc(28px * var(--ipad-s));
         height: calc(28px * var(--ipad-s));
         font-size: calc(17px * var(--ipad-s));
         border-radius: calc(6px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .custom-emoji-swatch .custom-icon {
+    body.ios:not(.ios-phone) .modal-overlay .custom-emoji-swatch .custom-icon,
+    body.android:not(.android-phone) .modal-overlay .custom-emoji-swatch .custom-icon {
         font-size: calc(17px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .emoji-picker-popover emoji-picker {
+    body.ios:not(.ios-phone) .emoji-picker-popover emoji-picker,
+    body.android:not(.android-phone) .emoji-picker-popover emoji-picker {
         --emoji-size: calc(1.2rem * var(--ipad-s));
         --category-emoji-size: calc(1rem * var(--ipad-s));
         height: calc(280px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-type-row {
+    body.ios:not(.ios-phone) .modal-overlay .override-type-row,
+    body.android:not(.android-phone) .modal-overlay .override-type-row {
         gap: calc(16px * var(--ipad-s));
         margin-bottom: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-type-row .override-type-select {
+    body.ios:not(.ios-phone) .modal-overlay .override-type-row .override-type-select,
+    body.android:not(.android-phone) .modal-overlay .override-type-row .override-type-select {
         max-width: calc(200px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .max-difficulty-checkbox-option {
+    body.ios:not(.ios-phone) .modal-overlay .max-difficulty-checkbox-option,
+    body.android:not(.android-phone) .modal-overlay .max-difficulty-checkbox-option {
         gap: calc(6px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .max-difficulty-checkbox-option span {
+    body.ios:not(.ios-phone) .modal-overlay .max-difficulty-checkbox-option span,
+    body.android:not(.android-phone) .modal-overlay .max-difficulty-checkbox-option span {
         font-size: calc(15px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .max-difficulty-checkbox-option input[type="checkbox"] {
+    body.ios:not(.ios-phone) .modal-overlay .max-difficulty-checkbox-option input[type="checkbox"],
+    body.android:not(.android-phone) .modal-overlay .max-difficulty-checkbox-option input[type="checkbox"] {
         width: calc(20px * var(--ipad-s));
         height: calc(20px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-preview-block {
+    body.ios:not(.ios-phone) .modal-overlay .override-preview-block,
+    body.android:not(.android-phone) .modal-overlay .override-preview-block {
         margin-top: calc(10px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-preview-time-line {
+    body.ios:not(.ios-phone) .modal-overlay .override-preview-time-line,
+    body.android:not(.android-phone) .modal-overlay .override-preview-time-line {
         font-size: calc(14px * var(--ipad-s));
         margin-bottom: calc(6px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-preview-text {
+    body.ios:not(.ios-phone) .modal-overlay .override-preview-text,
+    body.android:not(.android-phone) .modal-overlay .override-preview-text {
         padding: calc(10px * var(--ipad-s)) calc(12px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
         border-radius: calc(8px * var(--ipad-s));
     }
 
     /* Override / pause challenge */
-    body.ios:not(.ios-phone) .modal-overlay .override-summary {
+    body.ios:not(.ios-phone) .modal-overlay .override-summary,
+    body.android:not(.android-phone) .modal-overlay .override-summary {
         font-size: calc(15px * var(--ipad-s));
         margin-bottom: calc(16px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-text {
+    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-text,
+    body.android:not(.android-phone) .modal-overlay .override-challenge .challenge-text {
         padding: calc(16px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
         line-height: 1.6;
@@ -2660,153 +2800,183 @@ body.dark-mode .app-blocking-closedown-banner {
         border-radius: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-current-word {
+    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-current-word,
+    body.android:not(.android-phone) .modal-overlay .override-challenge .challenge-current-word {
         padding: calc(14px * var(--ipad-s)) calc(16px * var(--ipad-s));
         margin: calc(-4px * var(--ipad-s)) 0 calc(16px * var(--ipad-s));
         font-size: calc(20px * var(--ipad-s));
         border-radius: calc(10px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-word-progress {
+    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-word-progress,
+    body.android:not(.android-phone) .modal-overlay .override-challenge .challenge-word-progress {
         margin: calc(-4px * var(--ipad-s)) 0 calc(8px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-input {
+    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-input,
+    body.android:not(.android-phone) .modal-overlay .override-challenge .challenge-input {
         padding: calc(12px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
         min-height: calc(80px * var(--ipad-s));
         border-radius: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-word-input {
+    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-word-input,
+    body.android:not(.android-phone) .modal-overlay .override-challenge .challenge-word-input {
         min-height: 0;
         height: calc(48px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-progress {
+    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-progress,
+    body.android:not(.android-phone) .modal-overlay .override-challenge .challenge-progress {
         height: calc(4px * var(--ipad-s));
         margin-top: calc(8px * var(--ipad-s));
         border-radius: calc(2px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-all-warning {
+    body.ios:not(.ios-phone) .modal-overlay .override-all-warning,
+    body.android:not(.android-phone) .modal-overlay .override-all-warning {
         padding: calc(12px * var(--ipad-s)) calc(14px * var(--ipad-s));
         margin-bottom: calc(16px * var(--ipad-s));
         border-radius: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-all-warning p {
+    body.ios:not(.ios-phone) .modal-overlay .override-all-warning p,
+    body.android:not(.android-phone) .modal-overlay .override-all-warning p {
         font-size: calc(15px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-all-warning p:first-child {
+    body.ios:not(.ios-phone) .modal-overlay .override-all-warning p:first-child,
+    body.android:not(.android-phone) .modal-overlay .override-all-warning p:first-child {
         margin-bottom: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-all-subline {
+    body.ios:not(.ios-phone) .modal-overlay .override-all-subline,
+    body.android:not(.android-phone) .modal-overlay .override-all-subline {
         font-size: calc(15px * var(--ipad-s));
         margin-bottom: calc(8px * var(--ipad-s));
     }
 
     /* Start / schedule confirm */
-    body.ios:not(.ios-phone) .modal-overlay .block-details {
+    body.ios:not(.ios-phone) .modal-overlay .block-details,
+    body.android:not(.android-phone) .modal-overlay .block-details {
         margin-bottom: calc(16px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .block-detail-name {
+    body.ios:not(.ios-phone) .modal-overlay .block-detail-name,
+    body.android:not(.android-phone) .modal-overlay .block-detail-name {
         font-size: calc(17px * var(--ipad-s));
         margin-bottom: calc(12px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .block-detail-row {
+    body.ios:not(.ios-phone) .modal-overlay .block-detail-row,
+    body.android:not(.android-phone) .modal-overlay .block-detail-row {
         gap: calc(4px * var(--ipad-s));
         margin-bottom: calc(6px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .show-all-btn {
+    body.ios:not(.ios-phone) .modal-overlay .show-all-btn,
+    body.android:not(.android-phone) .modal-overlay .show-all-btn {
         font-size: calc(13px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .schedule-summary {
+    body.ios:not(.ios-phone) .modal-overlay .schedule-summary,
+    body.android:not(.android-phone) .modal-overlay .schedule-summary {
         margin-top: calc(12px * var(--ipad-s));
         padding-top: calc(12px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .edit-schedule-notice {
+    body.ios:not(.ios-phone) .modal-overlay .edit-schedule-notice,
+    body.android:not(.android-phone) .modal-overlay .edit-schedule-notice {
         margin-bottom: calc(14px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .schedule-summary-header {
+    body.ios:not(.ios-phone) .modal-overlay .schedule-summary-header,
+    body.android:not(.android-phone) .modal-overlay .schedule-summary-header {
         font-size: calc(15px * var(--ipad-s));
         margin-bottom: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .schedule-segment-row {
+    body.ios:not(.ios-phone) .modal-overlay .schedule-segment-row,
+    body.android:not(.android-phone) .modal-overlay .schedule-segment-row {
         gap: calc(8px * var(--ipad-s));
         margin-bottom: calc(6px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .schedule-segment-row .segment-time {
+    body.ios:not(.ios-phone) .modal-overlay .schedule-segment-row .segment-time,
+    body.android:not(.android-phone) .modal-overlay .schedule-segment-row .segment-time {
         min-width: calc(100px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-info-box {
+    body.ios:not(.ios-phone) .modal-overlay .override-info-box,
+    body.android:not(.android-phone) .modal-overlay .override-info-box {
         padding: calc(12px * var(--ipad-s)) calc(14px * var(--ipad-s));
         border-radius: calc(8px * var(--ipad-s));
         margin-bottom: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-info-header {
+    body.ios:not(.ios-phone) .modal-overlay .override-info-header,
+    body.android:not(.android-phone) .modal-overlay .override-info-header {
         gap: calc(8px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
         margin-bottom: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-info-header svg {
+    body.ios:not(.ios-phone) .modal-overlay .override-info-header svg,
+    body.android:not(.android-phone) .modal-overlay .override-info-header svg {
         width: calc(16px * var(--ipad-s));
         height: calc(16px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-info-box p {
+    body.ios:not(.ios-phone) .modal-overlay .override-info-box p,
+    body.android:not(.android-phone) .modal-overlay .override-info-box p {
         font-size: calc(15px * var(--ipad-s));
     }
 
     /* Pause modal duration */
-    body.ios:not(.ios-phone) .modal-overlay .pause-remaining-info {
+    body.ios:not(.ios-phone) .modal-overlay .pause-remaining-info,
+    body.android:not(.android-phone) .modal-overlay .pause-remaining-info {
         font-size: calc(15px * var(--ipad-s));
         margin-bottom: calc(18px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .pause-duration-section {
+    body.ios:not(.ios-phone) .modal-overlay .pause-duration-section,
+    body.android:not(.android-phone) .modal-overlay .pause-duration-section {
         margin-bottom: calc(16px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .pause-duration-row {
+    body.ios:not(.ios-phone) .modal-overlay .pause-duration-row,
+    body.android:not(.android-phone) .modal-overlay .pause-duration-row {
         gap: calc(16px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .pause-duration-col > .time-label {
+    body.ios:not(.ios-phone) .modal-overlay .pause-duration-col > .time-label,
+    body.android:not(.android-phone) .modal-overlay .pause-duration-col > .time-label {
         margin-bottom: calc(6px * var(--ipad-s));
         font-size: calc(13px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .pause-duration-inputs,
-    body.ios:not(.ios-phone) .modal-overlay .pause-duration-col > .time-picker-row {
+    body.android:not(.android-phone) .modal-overlay .pause-duration-inputs,
+    body.ios:not(.ios-phone) .modal-overlay .pause-duration-col > .time-picker-row,
+    body.android:not(.android-phone) .modal-overlay .pause-duration-col > .time-picker-row {
         min-height: calc(36px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .pause-duration-section .pause-time-input {
+    body.ios:not(.ios-phone) .modal-overlay .pause-duration-section .pause-time-input,
+    body.android:not(.android-phone) .modal-overlay .pause-duration-section .pause-time-input {
         width: calc(34px * var(--ipad-s));
         height: calc(36px * var(--ipad-s));
         font-size: calc(17px * var(--ipad-s));
         border-radius: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .pause-duration-section .time-part {
+    body.ios:not(.ios-phone) .modal-overlay .pause-duration-section .time-part,
+    body.android:not(.android-phone) .modal-overlay .pause-duration-section .time-part {
         width: calc(34px * var(--ipad-s));
         min-width: calc(34px * var(--ipad-s));
         height: calc(36px * var(--ipad-s));
@@ -2814,109 +2984,131 @@ body.dark-mode .app-blocking-closedown-banner {
         border-radius: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .pause-duration-section .time-colon {
+    body.ios:not(.ios-phone) .modal-overlay .pause-duration-section .time-colon,
+    body.android:not(.android-phone) .modal-overlay .pause-duration-section .time-colon {
         font-size: calc(17px * var(--ipad-s));
         line-height: calc(36px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .pause-time-unit {
+    body.ios:not(.ios-phone) .modal-overlay .pause-time-unit,
+    body.android:not(.android-phone) .modal-overlay .pause-time-unit {
         font-size: calc(15px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .pause-arrow svg {
+    body.ios:not(.ios-phone) .modal-overlay .pause-arrow svg,
+    body.android:not(.android-phone) .modal-overlay .pause-arrow svg {
         width: calc(18px * var(--ipad-s));
         height: calc(18px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .next-day-badge {
+    body.ios:not(.ios-phone) .modal-overlay .next-day-badge,
+    body.android:not(.android-phone) .modal-overlay .next-day-badge {
         padding: calc(4px * var(--ipad-s)) calc(8px * var(--ipad-s));
         font-size: calc(11px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .time-popover {
+    body.ios:not(.ios-phone) .modal-overlay .time-popover,
+    body.android:not(.android-phone) .modal-overlay .time-popover {
         border-radius: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .popover-option {
+    body.ios:not(.ios-phone) .modal-overlay .popover-option,
+    body.android:not(.android-phone) .modal-overlay .popover-option {
         padding: calc(8px * var(--ipad-s)) calc(12px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
         min-width: calc(48px * var(--ipad-s));
     }
 
     /* Settings rows & submodals (language / theme dropdowns) */
-    body.ios:not(.ios-phone) .modal-overlay .settings-modal-header {
+    body.ios:not(.ios-phone) .modal-overlay .settings-modal-header,
+    body.android:not(.android-phone) .modal-overlay .settings-modal-header {
         gap: calc(12px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .settings-section-heading {
+    body.ios:not(.ios-phone) .modal-overlay .settings-section-heading,
+    body.android:not(.android-phone) .modal-overlay .settings-section-heading {
         font-size: calc(11px * var(--ipad-s));
         padding: 0 calc(2px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .settings-row {
+    body.ios:not(.ios-phone) .modal-overlay .settings-row,
+    body.android:not(.android-phone) .modal-overlay .settings-row {
         gap: calc(12px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .settings-row-copy {
+    body.ios:not(.ios-phone) .modal-overlay .settings-row-copy,
+    body.android:not(.android-phone) .modal-overlay .settings-row-copy {
         gap: calc(2px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .settings-row-label {
+    body.ios:not(.ios-phone) .modal-overlay .settings-row-label,
+    body.android:not(.android-phone) .modal-overlay .settings-row-label {
         font-size: calc(15px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .settings-row-hint {
+    body.ios:not(.ios-phone) .modal-overlay .settings-row-hint,
+    body.android:not(.android-phone) .modal-overlay .settings-row-hint {
         font-size: calc(13px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .settings-section-grid {
+    body.ios:not(.ios-phone) .modal-overlay .settings-section-grid,
+    body.android:not(.android-phone) .modal-overlay .settings-section-grid {
         column-gap: calc(12px * var(--ipad-s));
         row-gap: calc(10px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .language-picker-trigger {
+    body.ios:not(.ios-phone) .modal-overlay .language-picker-trigger,
+    body.android:not(.android-phone) .modal-overlay .language-picker-trigger {
         gap: calc(8px * var(--ipad-s));
         padding: calc(8px * var(--ipad-s)) calc(12px * var(--ipad-s));
         border-radius: calc(8px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .language-picker-flag-wrap {
+    body.ios:not(.ios-phone) .modal-overlay .language-picker-flag-wrap,
+    body.android:not(.android-phone) .modal-overlay .language-picker-flag-wrap {
         width: calc(22px * var(--ipad-s));
         height: calc(14px * var(--ipad-s));
         border-radius: calc(3px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .language-picker-chevron {
+    body.ios:not(.ios-phone) .modal-overlay .language-picker-chevron,
+    body.android:not(.android-phone) .modal-overlay .language-picker-chevron {
         width: calc(16px * var(--ipad-s));
         height: calc(16px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .language-picker-dropdown {
+    body.ios:not(.ios-phone) .modal-overlay .language-picker-dropdown,
+    body.android:not(.android-phone) .modal-overlay .language-picker-dropdown {
         top: calc(100% + 6px * var(--ipad-s));
         min-width: max(100%, calc(12.5rem * var(--ipad-s)));
         padding: calc(12px * var(--ipad-s)) calc(12px * var(--ipad-s)) calc(10px * var(--ipad-s));
         border-radius: calc(12px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .language-picker-section-label {
+    body.ios:not(.ios-phone) .modal-overlay .language-picker-section-label,
+    body.android:not(.android-phone) .modal-overlay .language-picker-section-label {
         font-size: calc(12px * var(--ipad-s));
         margin-bottom: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .language-picker-option {
+    body.ios:not(.ios-phone) .modal-overlay .language-picker-option,
+    body.android:not(.android-phone) .modal-overlay .language-picker-option {
         gap: calc(10px * var(--ipad-s));
         padding: calc(8px * var(--ipad-s)) calc(10px * var(--ipad-s));
         border-radius: calc(8px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .language-picker-divider {
+    body.ios:not(.ios-phone) .modal-overlay .language-picker-divider,
+    body.android:not(.android-phone) .modal-overlay .language-picker-divider {
         margin: calc(12px * var(--ipad-s)) 0 calc(10px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay #theme-select.settings-select,
-    body.ios:not(.ios-phone) .modal-overlay .settings-select {
+    body.android:not(.android-phone) .modal-overlay #theme-select.settings-select,
+    body.ios:not(.ios-phone) .modal-overlay .settings-select,
+    body.android:not(.android-phone) .modal-overlay .settings-select {
         padding: calc(8px * var(--ipad-s)) calc(38px * var(--ipad-s)) calc(8px * var(--ipad-s)) calc(42px * var(--ipad-s));
         border-radius: calc(8px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
@@ -2924,113 +3116,136 @@ body.dark-mode .app-blocking-closedown-banner {
         background-position: right calc(12px * var(--ipad-s)) center;
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .settings-zoom-control {
+    body.ios:not(.ios-phone) .modal-overlay .settings-zoom-control,
+    body.android:not(.android-phone) .modal-overlay .settings-zoom-control {
         padding: calc(4px * var(--ipad-s)) calc(8px * var(--ipad-s));
         border-radius: calc(8px * var(--ipad-s));
         gap: calc(4px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .settings-zoom-control .zoom-btn {
+    body.ios:not(.ios-phone) .modal-overlay .settings-zoom-control .zoom-btn,
+    body.android:not(.android-phone) .modal-overlay .settings-zoom-control .zoom-btn {
         width: calc(28px * var(--ipad-s));
         height: calc(28px * var(--ipad-s));
         font-size: calc(16px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .settings-zoom-control .zoom-value {
+    body.ios:not(.ios-phone) .modal-overlay .settings-zoom-control .zoom-value,
+    body.android:not(.android-phone) .modal-overlay .settings-zoom-control .zoom-value {
         font-size: calc(15px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .settings-help-btn {
+    body.ios:not(.ios-phone) .modal-overlay .settings-help-btn,
+    body.android:not(.android-phone) .modal-overlay .settings-help-btn {
         padding: calc(14px * var(--ipad-s)) calc(10px * var(--ipad-s));
         border-radius: calc(10px * var(--ipad-s));
         font-size: calc(13px * var(--ipad-s));
         gap: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .settings-help-btn svg {
+    body.ios:not(.ios-phone) .modal-overlay .settings-help-btn svg,
+    body.android:not(.android-phone) .modal-overlay .settings-help-btn svg {
         width: calc(18px * var(--ipad-s));
         height: calc(18px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .settings-override-all-btn,
-    body.ios:not(.ios-phone) .modal-overlay .uninstall-app-btn {
+    body.android:not(.android-phone) .modal-overlay .settings-override-all-btn,
+    body.ios:not(.ios-phone) .modal-overlay .uninstall-app-btn,
+    body.android:not(.android-phone) .modal-overlay .uninstall-app-btn {
         padding: calc(8px * var(--ipad-s)) calc(12px * var(--ipad-s));
         border-radius: calc(8px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
         gap: calc(6px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay #settings-modal .settings-blocklists-io-btn {
+    body.ios:not(.ios-phone) .modal-overlay #settings-modal .settings-blocklists-io-btn,
+    body.android:not(.android-phone) .modal-overlay #settings-modal .settings-blocklists-io-btn {
         padding: calc(6px * var(--ipad-s)) calc(10px * var(--ipad-s));
         border-radius: calc(8px * var(--ipad-s));
         font-size: calc(13px * var(--ipad-s));
         gap: calc(4px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay #settings-modal .settings-blocklists-io-btn svg {
+    body.ios:not(.ios-phone) .modal-overlay #settings-modal .settings-blocklists-io-btn svg,
+    body.android:not(.android-phone) .modal-overlay #settings-modal .settings-blocklists-io-btn svg {
         width: calc(13px * var(--ipad-s));
         height: calc(13px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .settings-blocklists-io-btns {
+    body.ios:not(.ios-phone) .modal-overlay .settings-blocklists-io-btns,
+    body.android:not(.android-phone) .modal-overlay .settings-blocklists-io-btns {
         gap: calc(6px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .settings-help-actions {
+    body.ios:not(.ios-phone) .modal-overlay .settings-help-actions,
+    body.android:not(.android-phone) .modal-overlay .settings-help-actions {
         gap: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .settings-feedback-footer,
-    body.ios:not(.ios-phone) .modal-overlay #settings-modal .settings-feedback-footer {
+    body.android:not(.android-phone) .modal-overlay .settings-feedback-footer,
+    body.ios:not(.ios-phone) .modal-overlay #settings-modal .settings-feedback-footer,
+    body.android:not(.android-phone) .modal-overlay #settings-modal .settings-feedback-footer {
         gap: calc(10px * var(--ipad-s));
         margin-top: calc(16px * var(--ipad-s));
         padding: calc(12px * var(--ipad-s)) calc(14px * var(--ipad-s));
         border-radius: calc(10px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .settings-feedback-text {
+    body.ios:not(.ios-phone) .modal-overlay .settings-feedback-text,
+    body.android:not(.android-phone) .modal-overlay .settings-feedback-text {
         font-size: calc(14px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .settings-feedback-icon {
+    body.ios:not(.ios-phone) .modal-overlay .settings-feedback-icon,
+    body.android:not(.android-phone) .modal-overlay .settings-feedback-icon {
         width: calc(16px * var(--ipad-s));
         height: calc(16px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .settings-current-version {
+    body.ios:not(.ios-phone) .modal-overlay .settings-current-version,
+    body.android:not(.android-phone) .modal-overlay .settings-current-version {
         font-size: calc(13px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .settings-advanced-toggle {
+    body.ios:not(.ios-phone) .modal-overlay .settings-advanced-toggle,
+    body.android:not(.android-phone) .modal-overlay .settings-advanced-toggle {
         gap: calc(6px * var(--ipad-s));
         padding: calc(4px * var(--ipad-s)) 0 calc(12px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .settings-advanced-toggle .chevron-icon {
+    body.ios:not(.ios-phone) .modal-overlay .settings-advanced-toggle .chevron-icon,
+    body.android:not(.android-phone) .modal-overlay .settings-advanced-toggle .chevron-icon {
         width: calc(16px * var(--ipad-s));
         height: calc(16px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .enforcement-switch {
+    body.ios:not(.ios-phone) .modal-overlay .enforcement-switch,
+    body.android:not(.android-phone) .modal-overlay .enforcement-switch {
         width: calc(44px * var(--ipad-s));
         height: calc(24px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .enforcement-slider {
+    body.ios:not(.ios-phone) .modal-overlay .enforcement-slider,
+    body.android:not(.android-phone) .modal-overlay .enforcement-slider {
         border-radius: calc(24px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .enforcement-slider::before {
+    body.ios:not(.ios-phone) .modal-overlay .enforcement-slider::before,
+    body.android:not(.android-phone) .modal-overlay .enforcement-slider::before {
         width: calc(20px * var(--ipad-s));
         height: calc(20px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .enforcement-switch input:checked + .enforcement-slider::before {
+    body.ios:not(.ios-phone) .modal-overlay .enforcement-switch input:checked + .enforcement-slider::before,
+    body.android:not(.android-phone) .modal-overlay .enforcement-switch input:checked + .enforcement-slider::before {
         transform: translateX(calc(20px * var(--ipad-s)));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .enforcement-switch-tooltip {
+    body.ios:not(.ios-phone) .modal-overlay .enforcement-switch-tooltip,
+    body.android:not(.android-phone) .modal-overlay .enforcement-switch-tooltip {
         bottom: calc(100% + 8px * var(--ipad-s));
         width: min(calc(240px * var(--ipad-s)), 70vw);
         padding: calc(8px * var(--ipad-s)) calc(10px * var(--ipad-s));
@@ -3038,45 +3253,52 @@ body.dark-mode .app-blocking-closedown-banner {
         font-size: calc(12px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .websites-import-menu {
+    body.ios:not(.ios-phone) .modal-overlay .websites-import-menu,
+    body.android:not(.android-phone) .modal-overlay .websites-import-menu {
         min-width: calc(200px * var(--ipad-s));
         padding: calc(4px * var(--ipad-s));
         border-radius: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .websites-import-menu-item {
+    body.ios:not(.ios-phone) .modal-overlay .websites-import-menu-item,
+    body.android:not(.android-phone) .modal-overlay .websites-import-menu-item {
         gap: calc(8px * var(--ipad-s));
         padding: calc(6px * var(--ipad-s)) calc(10px * var(--ipad-s));
         font-size: calc(13px * var(--ipad-s));
         border-radius: calc(6px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .websites-import-menu-item svg {
+    body.ios:not(.ios-phone) .modal-overlay .websites-import-menu-item svg,
+    body.android:not(.android-phone) .modal-overlay .websites-import-menu-item svg {
         width: calc(14px * var(--ipad-s));
         height: calc(14px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .websites-import-menu-section-label {
+    body.ios:not(.ios-phone) .modal-overlay .websites-import-menu-section-label,
+    body.android:not(.android-phone) .modal-overlay .websites-import-menu-section-label {
         font-size: calc(11px * var(--ipad-s));
         padding: calc(6px * var(--ipad-s)) calc(10px * var(--ipad-s)) calc(2px * var(--ipad-s));
     }
 
     /* Blocklist card ellipsis menu (duplicate / delete) */
-    body.ios:not(.ios-phone) .main-content .blocklist-menu {
+    body.ios:not(.ios-phone) .main-content .blocklist-menu,
+    body.android:not(.android-phone) .main-content .blocklist-menu {
         right: calc(42px * var(--ipad-s));
         min-width: calc(120px * var(--ipad-s));
         padding: calc(4px * var(--ipad-s));
         border-radius: calc(8px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .main-content .blocklist-menu-item {
+    body.ios:not(.ios-phone) .main-content .blocklist-menu-item,
+    body.android:not(.android-phone) .main-content .blocklist-menu-item {
         gap: calc(8px * var(--ipad-s));
         padding: calc(8px * var(--ipad-s)) calc(10px * var(--ipad-s));
         font-size: calc(13px * var(--ipad-s));
         border-radius: calc(6px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .main-content .blocklist-menu-item svg {
+    body.ios:not(.ios-phone) .main-content .blocklist-menu-item svg,
+    body.android:not(.android-phone) .main-content .blocklist-menu-item svg {
         width: calc(14px * var(--ipad-s));
         height: calc(14px * var(--ipad-s));
         flex-shrink: 0;
@@ -3110,14 +3332,14 @@ body.dark-mode .app-blocking-closedown-banner {
         padding: 8px 13px;
     }
 
-    body:not(.ios) .scheduler-section > .section-header .mode-tab {
+    body:not(.ios):not(.android) .scheduler-section > .section-header .mode-tab {
         padding-top: 0;
         padding-bottom: 0;
         padding-left: 12px;
         padding-right: 12px;
     }
 
-    body:not(.ios) .scheduler-section > .section-header .mode-tab.active {
+    body:not(.ios):not(.android) .scheduler-section > .section-header .mode-tab.active {
         padding-top: 0;
         padding-bottom: 0;
         padding-left: 12px;
@@ -3127,19 +3349,23 @@ body.dark-mode .app-blocking-closedown-banner {
 
 /* UI zoom (iOS): `html { zoom }` scales paint size but not @media / @container queries.
    `syncUiZoomResponsiveLayout()` toggles these tiers from effective viewport width. */
-body.ios.ui-zoom-tier-cramped .grid-top-row {
+body.ios.ui-zoom-tier-cramped .grid-top-row,
+body.android.ui-zoom-tier-cramped .grid-top-row {
     grid-template-columns: minmax(0, min(400px, 50%)) minmax(0, 1fr);
 }
 
-body.ios.ui-zoom-tier-cramped .grid-top-row:not(.grid-top-row--blocklist-selected) .blocklists-section {
+body.ios.ui-zoom-tier-cramped .grid-top-row:not(.grid-top-row--blocklist-selected) .blocklists-section,
+body.android.ui-zoom-tier-cramped .grid-top-row:not(.grid-top-row--blocklist-selected) .blocklists-section {
     max-width: 400px;
 }
 
-body.ios.ui-zoom-tier-cramped .grid-top-row.grid-top-row--blocklist-selected {
+body.ios.ui-zoom-tier-cramped .grid-top-row.grid-top-row--blocklist-selected,
+body.android.ui-zoom-tier-cramped .grid-top-row.grid-top-row--blocklist-selected {
     grid-template-columns: minmax(0, min(400px, 50%)) minmax(0, 1fr);
 }
 
-body.ios.ui-zoom-tier-cramped .blocklist-card {
+body.ios.ui-zoom-tier-cramped .blocklist-card,
+body.android.ui-zoom-tier-cramped .blocklist-card {
     max-width: 100%;
 }
 
@@ -3194,24 +3420,28 @@ body.android:not(.ui-zoom-sched-tabs-icons) .scheduler-section > .section-header
     flex: 0 0 auto;
 }
 
-body:not(.ios).ui-zoom-sched-hide-title #main-start-block-title {
+body:not(.ios):not(.android).ui-zoom-sched-hide-title #main-start-block-title {
     display: none;
 }
 
-body.ios.ui-zoom-tier-narrow .now-blocking-row:not(.idle) .now-blocking-heading {
+body.ios.ui-zoom-tier-narrow .now-blocking-row:not(.idle) .now-blocking-heading,
+body.android.ui-zoom-tier-narrow .now-blocking-row:not(.idle) .now-blocking-heading {
     display: none;
 }
 
-body.ios.ui-zoom-tier-stack .grid-top-row {
+body.ios.ui-zoom-tier-stack .grid-top-row,
+body.android.ui-zoom-tier-stack .grid-top-row {
     grid-template-columns: 1fr;
     gap: 12px;
 }
 
-body.ios.ui-zoom-tier-stack .grid-top-row--blocklist-selected .blocklist-card {
+body.ios.ui-zoom-tier-stack .grid-top-row--blocklist-selected .blocklist-card,
+body.android.ui-zoom-tier-stack .grid-top-row--blocklist-selected .blocklist-card {
     max-width: none;
 }
 
-body.ios.ui-zoom-tier-stack .main-content {
+body.ios.ui-zoom-tier-stack .main-content,
+body.android.ui-zoom-tier-stack .main-content {
     padding-left: 18px;
     padding-right: 18px;
 }
@@ -3219,31 +3449,36 @@ body.ios.ui-zoom-tier-stack .main-content {
 /* iPhone landscape: keep two columns, but let the scheduler claim the width it
    needs before blocklists, and keep the whole app inset from the screen edges. */
 @media (orientation: landscape) {
-    body.ios.ios-phone .app-container {
+    body.ios.ios-phone .app-container,
+    body.android.android-phone .app-container {
         width: auto;
         margin-left: 12px;
         margin-right: 12px;
     }
 
-    body.ios.ios-phone .main-content {
+    body.ios.ios-phone .main-content,
+    body.android.android-phone .main-content {
         padding-left: 18px;
         padding-right: 18px;
     }
 
-    body.ios.ios-phone .grid-top-row {
+    body.ios.ios-phone .grid-top-row,
+    body.android.android-phone .grid-top-row {
         display: flex;
         gap: 12px;
         align-items: flex-start;
         min-width: 0;
     }
 
-    body.ios.ios-phone .blocklists-section {
+    body.ios.ios-phone .blocklists-section,
+    body.android.android-phone .blocklists-section {
         flex: 45 1 0;
         max-width: 45%;
         min-width: 0;
     }
 
-    body.ios.ios-phone .scheduler-section {
+    body.ios.ios-phone .scheduler-section,
+    body.android.android-phone .scheduler-section {
         flex: 55 1 0;
         min-width: 0;
         max-width: 55%;
@@ -3271,7 +3506,7 @@ body.ios.ui-zoom-tier-stack .main-content {
     justify-content: flex-end;
 }
 
-body:not(.ios) .scheduler-section > .section-header.scheduler-header-compact {
+body:not(.ios):not(.android) .scheduler-section > .section-header.scheduler-header-compact {
     justify-content: flex-start;
 }
 
@@ -3296,7 +3531,7 @@ body:not(.ios) .scheduler-section > .section-header.scheduler-header-compact {
     container-name: sched-header;
 }
 
-body:not(.ios) .scheduler-section > .section-header {
+body:not(.ios):not(.android) .scheduler-section > .section-header {
     flex-wrap: nowrap;
     padding-right: 172px;
 }
@@ -3328,28 +3563,28 @@ body.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab.act
     white-space: nowrap;
 }
 
-body:not(.ios).ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab {
+body:not(.ios):not(.android).ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab {
     padding-top: 0;
     padding-bottom: 0;
     padding-left: 11px;
     padding-right: 11px;
 }
 
-body:not(.ios).ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab.active {
+body:not(.ios):not(.android).ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab.active {
     padding-top: 0;
     padding-bottom: 0;
     padding-left: 11px;
     padding-right: 11px;
 }
 
-body:not(.ios).ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-icon {
+body:not(.ios):not(.android).ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-icon {
     width: 16px;
     height: 16px;
 }
 
 /* Desktop scheduler header tabs: fixed height so icon-only breakpoints never grow the bar
    when the schedule panel wraps (e.g. Start alert onto its own row). */
-body:not(.ios) .scheduler-section > .section-header .scheduler-mode-tabs {
+body:not(.ios):not(.android) .scheduler-section > .section-header .scheduler-mode-tabs {
     --scheduler-tab-height: 34px;
     --scheduler-tab-bar-padding: 3px;
     flex: 0 1 auto;
@@ -3360,7 +3595,7 @@ body:not(.ios) .scheduler-section > .section-header .scheduler-mode-tabs {
     box-sizing: border-box;
 }
 
-body:not(.ios) .scheduler-section > .section-header .mode-tab {
+body:not(.ios):not(.android) .scheduler-section > .section-header .mode-tab {
     position: relative;
     height: var(--scheduler-tab-height);
     min-height: var(--scheduler-tab-height);
@@ -3374,14 +3609,14 @@ body:not(.ios) .scheduler-section > .section-header .mode-tab {
     line-height: 1;
 }
 
-body:not(.ios) .scheduler-section > .section-header .mode-tab.active {
+body:not(.ios):not(.android) .scheduler-section > .section-header .mode-tab.active {
     padding-top: 0;
     padding-bottom: 0;
     padding-left: 15px;
     padding-right: 15px;
 }
 
-body:not(.ios) .scheduler-section > .section-header .mode-tab-icon {
+body:not(.ios):not(.android) .scheduler-section > .section-header .mode-tab-icon {
     width: 16px;
     height: 16px;
 }
@@ -3421,12 +3656,6 @@ body:not(.ios):not(.android) #settings-toolbar-scheduler {
     color: var(--header-text);
     text-transform: uppercase;
     letter-spacing: 0.06em;
-}
-
-body.ios .section-header h2 {
-    /* Slightly above desktop (16px); 19px read too heavy after layout fixes. */
-    font-size: 17px;
-    letter-spacing: 0.05em;
 }
 
 /* Icon Button */
@@ -5245,15 +5474,6 @@ body.dark-mode .scheduler-mode-tabs {
     opacity: 1;
 }
 
-body.ios .mode-tab {
-    padding: 8px 16px;
-    font-size: 16px;
-}
-
-body.ios .mode-tab.active {
-    padding: 10px 17px;
-}
-
 .mode-tab:hover {
     color: var(--text-secondary);
 }
@@ -5265,7 +5485,7 @@ body.ios .mode-tab.active {
     padding: 8px 15px;
 }
 
-body:not(.ios) .scheduler-section > .section-header .mode-tab.active {
+body:not(.ios):not(.android) .scheduler-section > .section-header .mode-tab.active {
     padding-top: 0;
     padding-bottom: 0;
 }
@@ -5322,7 +5542,7 @@ body.dark-mode .mode-tab.active {
     --schedule-segment-remove-size: 30px;
 }
 
-body:not(.ios) .schedule-segment {
+body:not(.ios):not(.android) .schedule-segment {
     container-type: inline-size;
 }
 
@@ -5435,21 +5655,21 @@ body.dark-mode .add-segment-btn {
     gap: 12px 16px;
 }
 
-body:not(.ios) .segment-row > .time-pickers-row {
+body:not(.ios):not(.android) .segment-row > .time-pickers-row {
     min-width: 0;
 }
 
 @container (max-width: 260px) {
-    body:not(.ios) .schedule-segment .time-pickers-row {
+    body:not(.ios):not(.android) .schedule-segment .time-pickers-row {
         flex-wrap: wrap;
         row-gap: 6px;
     }
 
-    body:not(.ios) .schedule-segment .time-separator {
+    body:not(.ios):not(.android) .schedule-segment .time-separator {
         display: none;
     }
 
-    body:not(.ios) .schedule-segment .time-picker-group:last-child {
+    body:not(.ios):not(.android) .schedule-segment .time-picker-group:last-child {
         flex-basis: 100%;
     }
 }
@@ -5462,22 +5682,32 @@ body:not(.ios) .segment-row > .time-pickers-row {
 
 @media (orientation: landscape) {
     body.ios.ios-phone .scheduler-content,
+    body.android.android-phone .scheduler-content,
     body.ios.ios-phone .time-picker-container,
+    body.android.android-phone .time-picker-container,
     body.ios.ios-phone .schedule-block-panel,
+    body.android.android-phone .schedule-block-panel,
     body.ios.ios-phone .schedule-segments,
+    body.android.android-phone .schedule-segments,
     body.ios.ios-phone .schedule-segment,
+    body.android.android-phone .schedule-segment,
     body.ios.ios-phone .segment-row,
+    body.android.android-phone .segment-row,
     body.ios.ios-phone .time-pickers-row,
-    body.ios.ios-phone .segment-days-group {
+    body.android.android-phone .time-pickers-row,
+    body.ios.ios-phone .segment-days-group,
+    body.android.android-phone .segment-days-group {
         min-width: 0;
     }
 
-    body.ios.ios-phone .schedule-segment {
+    body.ios.ios-phone .schedule-segment,
+    body.android.android-phone .schedule-segment {
         display: block;
         width: 100%;
     }
 
-    body.ios.ios-phone .segment-row {
+    body.ios.ios-phone .segment-row,
+    body.android.android-phone .segment-row {
         display: flex;
         flex-wrap: wrap;
         column-gap: 0;
@@ -5485,7 +5715,8 @@ body:not(.ios) .segment-row > .time-pickers-row {
         align-items: flex-start;
     }
 
-    body.ios.ios-phone .segment-row>.time-pickers-row {
+    body.ios.ios-phone .segment-row>.time-pickers-row,
+    body.android.android-phone .segment-row>.time-pickers-row {
         min-width: 0;
         width: 100%;
     }
@@ -5852,7 +6083,8 @@ body.dark-mode .schedule-panel-overlay-group .repeat-label.repeat-label-disabled
     transition: all 0.15s ease;
 }
 
-body.ios .day-toggle {
+body.ios .day-toggle,
+body.android .day-toggle {
     width: 44px;
     height: 44px;
     padding: 0;
@@ -6212,7 +6444,8 @@ body.dark-mode .schedule-pending-discard:hover {
 }
 
 /* iOS/touch: reliable swipe scroll and momentum */
-body.ios .blocklists-container {
+body.ios .blocklists-container,
+body.android .blocklists-container {
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
 }
@@ -6287,7 +6520,8 @@ body.ios .blocklists-container {
     opacity: 0.55;
 }
 
-body.ios .selection-prompt {
+body.ios .selection-prompt,
+body.android .selection-prompt {
     font-size: 17px;
 }
 
@@ -6444,10 +6678,12 @@ body.ios .selection-prompt {
 }
 
 @media (min-width: 768px) {
-    body.ios:not(.ios-phone) .blocklist-name {
+    body.ios:not(.ios-phone) .blocklist-name,
+    body.android:not(.android-phone) .blocklist-name {
         font-size: 20px;
     }
-    body.ios:not(.ios-phone) .blocklist-meta {
+    body.ios:not(.ios-phone) .blocklist-meta,
+    body.android:not(.android-phone) .blocklist-meta {
         font-size: 17px;
     }
 }
@@ -6459,7 +6695,8 @@ body.ios .selection-prompt {
     align-self: center;
 }
 
-body.ios .blocklist-actions {
+body.ios .blocklist-actions,
+body.android .blocklist-actions {
     gap: 0px;
 }
 
@@ -6477,7 +6714,8 @@ body.ios .blocklist-actions {
     transition: all 0.2s ease;
 }
 
-body.ios .blocklist-action-btn {
+body.ios .blocklist-action-btn,
+body.android .blocklist-action-btn {
     width: 44px;
     height: 44px;
 }
@@ -6487,7 +6725,8 @@ body.ios .blocklist-action-btn {
     height: 18px;
 }
 
-body.ios .blocklist-action-btn svg {
+body.ios .blocklist-action-btn svg,
+body.android .blocklist-action-btn svg {
     width: 22px;
     height: 22px;
 }
@@ -9754,7 +9993,8 @@ body.android #blocklist-modal .tags-input-container .browse-btn-caption {
     padding: 20px;
 }
 
-body.ios .modal-overlay {
+body.ios .modal-overlay,
+body.android .modal-overlay {
     align-items: flex-start;
     padding-top: calc(env(safe-area-inset-top, 20px) + 10px);
     padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 10px);
@@ -9768,7 +10008,8 @@ body.handset-device.ios .modal-overlay.mobile-fullscreen-modal {
     overflow: hidden;
 }
 
-body.ios .modal-content {
+body.ios .modal-content,
+body.android .modal-content {
     max-height: calc(100vh - env(safe-area-inset-top, 20px) - env(safe-area-inset-bottom, 20px) - 40px);
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
@@ -9948,12 +10189,14 @@ body:not(.handset-device) #settings-modal .modal-content {
 }
 
 /* Popup-style blocklist modal on iPad only — handset full-screen modals handle safe area in .mobile-modal-header. */
-body.ios:not(.handset-device) #blocklist-modal {
+body.ios:not(.handset-device) #blocklist-modal,
+body.android:not(.handset-device) #blocklist-modal {
     padding-top: env(safe-area-inset-top, 20px);
 }
 
 /* Word count fits in 3 digits (max 500); keep the field compact beside "total words". */
-body.ios #override-count-wrapper .form-input.small {
+body.ios #override-count-wrapper .form-input.small,
+body.android #override-count-wrapper .form-input.small {
     width: 3.25rem;
     min-width: 3.25rem;
     max-width: 3.25rem;
@@ -11340,16 +11583,13 @@ body.dark-mode .settings-top-btn {
     opacity: 1;
 }
 
-/* Hide desktop-only settings sections on iOS (#settings-modal .settings-section
-   sets display:flex and would otherwise win over body.ios .desktop-only). */
+/* Hide desktop-only settings sections on iOS/Android (#settings-modal .settings-section
+   sets display:flex and would otherwise win over .desktop-only). */
 body.ios #settings-enforcement-panel,
-body.ios #settings-modal .settings-section.desktop-only,
-body.ios #settings-modal .settings-help-section {
-    display: none;
-}
-
 body.android #settings-enforcement-panel,
+body.ios #settings-modal .settings-section.desktop-only,
 body.android #settings-modal .settings-section.desktop-only,
+body.ios #settings-modal .settings-help-section,
 body.android #settings-modal .settings-help-section {
     display: none;
 }
@@ -12140,7 +12380,7 @@ body.windows .settings-uninstall-windows-row.settings-row {
     align-items: start;
 }
 
-body:not(.ios) .settings-override-all-contents:not(.hidden) {
+body:not(.ios):not(.android) .settings-override-all-contents:not(.hidden) {
     display: grid;
 }
 
@@ -13227,7 +13467,8 @@ body.android.android-phone .schedule-segments:has(.schedule-segment:nth-child(4)
     animation: slideUp 0.3s ease;
 }
 
-body.ios .undo-toast {
+body.ios .undo-toast,
+body.android .undo-toast {
     bottom: calc(20px + env(safe-area-inset-bottom, 20px));
 }
 

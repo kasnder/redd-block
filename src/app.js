@@ -284,8 +284,10 @@ const UI_ZOOM_MAX_IOS = 1.4;  // cap on iOS (CSS zoom on html)
 const UI_ZOOM_LAYOUT_STACK_MAX = 768;
 const UI_ZOOM_LAYOUT_CRAMPED_MAX = 1024;
 const UI_ZOOM_LAYOUT_NARROW_MAX = 800;
+const SCHED_TABS_ICON_ONLY_EXIT_WIDTH_DELTA = 8;
 let uiZoomLayoutRaf = 0;
 let uiZoomLayoutObserverBound = false;
+let schedTabsIconOnlyEnteredAtWidth = 0;
 const UI_ZOOM_STEP = 0.1;
 const DEFAULT_UI_ZOOM = 1.0;
 let zoomToastHideTimeout = null;
@@ -21193,23 +21195,42 @@ function syncSchedulerModeTabLabelMode() {
     const header = document.querySelector('.scheduler-section > .section-header');
     const modeTabs = header?.querySelector('.scheduler-mode-tabs');
     const body = document.body;
-    body.classList.remove('ui-zoom-sched-hide-title', 'ui-zoom-sched-tabs-icons');
     if (!header || !modeTabs || modeTabs.classList.contains('hidden')) {
+        body.classList.remove('ui-zoom-sched-hide-title', 'ui-zoom-sched-tabs-icons');
+        schedTabsIconOnlyEnteredAtWidth = 0;
         return;
     }
 
+    const hadIconOnly = body.classList.contains('ui-zoom-sched-tabs-icons');
+    const headerWidth = header.clientWidth;
+
+    // If icon-only was the last stable state, only retry full labels after the
+    // row actually gets wider. Otherwise the ResizeObserver can bounce forever
+    // between the two near-identical layouts right at the threshold.
+    if (hadIconOnly) {
+        if (!schedTabsIconOnlyEnteredAtWidth) {
+            schedTabsIconOnlyEnteredAtWidth = headerWidth;
+            return;
+        }
+        if (headerWidth <= schedTabsIconOnlyEnteredAtWidth + SCHED_TABS_ICON_ONLY_EXIT_WIDTH_DELTA) {
+            return;
+        }
+    }
+
+    body.classList.remove('ui-zoom-sched-hide-title', 'ui-zoom-sched-tabs-icons');
     void header.offsetWidth;
 
     const mainTitle = header.querySelector('#main-start-block-title');
     const toolbar = header.querySelector('#settings-toolbar-scheduler');
-    const toolbarVisible = toolbar && getComputedStyle(toolbar).display !== 'none';
+    const iconOnly = schedulerModeTabsNeedIconOnly(header, modeTabs, toolbar);
 
-    if (!isIOS && !isAndroid && mainTitle && !mainTitle.classList.contains('hidden') && schedulerModeTabsNeedIconOnly(header, modeTabs, toolbar)) {
+    if (!isIOS && !isAndroid && mainTitle && !mainTitle.classList.contains('hidden') && iconOnly) {
         body.classList.add('ui-zoom-sched-hide-title');
         void header.offsetWidth;
     }
 
-    body.classList.toggle('ui-zoom-sched-tabs-icons', schedulerModeTabsNeedIconOnly(header, modeTabs, toolbar));
+    body.classList.toggle('ui-zoom-sched-tabs-icons', iconOnly);
+    schedTabsIconOnlyEnteredAtWidth = iconOnly ? header.clientWidth : 0;
 }
 
 function scheduleUiZoomResponsiveLayout() {
