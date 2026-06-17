@@ -20,6 +20,7 @@ object Schedules {
     private const val ACTIVE_SESSIONS_KEY = "active_routine_sessions" // keep legacy key
 
     const val ACTION_CHANGED = "com.reddblock.androidblock.SCHEDULE_CHANGED"
+    private const val UI_KIND_ONE_OFF = "one-off-block"
 
     data class ActiveSession(
         val scheduleId: String,
@@ -203,20 +204,17 @@ object Schedules {
         Log.d(TAG, "Started session for ${schedule.name} with ${schedule.blockedApps.size} blocked apps and ${schedule.blockedWebsites.size} blocked websites")
 
         broadcast(context)
-        NotificationHelper.showScheduleActivatedNotification(context, schedule)
     }
 
     fun stopSession(context: Context, scheduleId: String) {
         Log.d(TAG, "Stopping session for schedule: $scheduleId")
 
-        val schedule = get(context, scheduleId)
         val sessions = getActiveSessions(context).toMutableList()
         val removed = sessions.removeAll { it.scheduleId == scheduleId }
 
         if (removed) {
             saveActiveSessions(context, sessions)
             broadcast(context)
-            schedule?.let { NotificationHelper.showScheduleDeactivatedNotification(context, it) }
         }
     }
 
@@ -273,35 +271,127 @@ object Schedules {
         Prefs.get(context).edit { putString(ACTIVE_SESSIONS_KEY, json.toString()) }
     }
 
-    /**
-     * Check if an app is blocked by ANY active schedule.
-     */
     fun isAppBlocked(context: Context, packageName: String): Boolean {
-        val sessions = getActiveSessions(context)
-        if (sessions.isEmpty()) return false
+        return findAppBlockMatch(context, packageName) != null
+    }
 
-        return sessions.any { session ->
-            val schedule = get(context, session.scheduleId) ?: return@any false
+    fun findAppBlockMatch(context: Context, packageName: String): BlockMatch? {
+        return pickBlockMatch(collectAppBlockMatches(context, packageName))
+    }
+
+    private fun collectAppBlockMatches(context: Context, packageName: String): List<BlockMatch> {
+        val sessions = getActiveSessions(context)
+        if (sessions.isEmpty()) return emptyList()
+
+        val now = System.currentTimeMillis()
+        val pm = context.packageManager
+        val matches = mutableListOf<BlockMatch>()
+
+        for (session in sessions) {
+            val schedule = get(context, session.scheduleId) ?: continue
             val maxDuration = ScheduleManager.getMaxScheduleDuration(schedule.timing)
-            if (System.currentTimeMillis() - session.startTime > maxDuration) return@any false
-            session.blockedApps.contains(packageName)
+            if (now - session.startTime > maxDuration) continue
+            if (!session.blockedApps.contains(packageName)) continue
+
+            val appLabel = try {
+                pm.getApplicationLabel(pm.getApplicationInfo(packageName, 0)).toString()
+            } catch (_: Exception) {
+                packageName
+            }
+
+            matches.add(
+                blockMatchFromSchedule(
+                    schedule = schedule,
+                    targetLabel = appLabel,
+                    blockedPackage = packageName,
+                    blockedDomain = null,
+                    blockKind = BlockKind.APP
+                )
+            )
         }
+        return matches
     }
 
     /**
      * Check if a website domain is blocked by ANY active schedule.
      */
     fun isWebsiteBlocked(context: Context, domain: String): Boolean {
-        val sessions = getActiveSessions(context)
-        if (sessions.isEmpty()) return false
+        return findWebsiteBlockMatch(context, domain) != null
+    }
 
-        return sessions.any { session ->
-            val schedule = get(context, session.scheduleId) ?: return@any false
+    fun findWebsiteBlockMatch(
+        context: Context,
+        domain: String,
+        browserPackage: String? = null
+    ): BlockMatch? {
+        return pickBlockMatch(collectWebsiteBlockMatches(context, domain, browserPackage))
+    }
+
+    private fun collectWebsiteBlockMatches(
+        context: Context,
+        domain: String,
+        browserPackage: String?
+    ): List<BlockMatch> {
+        val sessions = getActiveSessions(context)
+        if (sessions.isEmpty()) return emptyList()
+
+        val now = System.currentTimeMillis()
+        val matches = mutableListOf<BlockMatch>()
+
+        for (session in sessions) {
+            val schedule = get(context, session.scheduleId) ?: continue
             val maxDuration = ScheduleManager.getMaxScheduleDuration(schedule.timing)
-            if (System.currentTimeMillis() - session.startTime > maxDuration) return@any false
-            session.blockedWebsites.any { blocked ->
-                domain == blocked || domain.endsWith(".$blocked")
+            if (now - session.startTime > maxDuration) continue
+            val matchesDomain = session.blockedWebsites.any { blockedSite ->
+                domain == blockedSite || domain.endsWith(".$blockedSite")
             }
+            if (!matchesDomain) continue
+
+            matches.add(
+                blockMatchFromSchedule(
+                    schedule = schedule,
+                    targetLabel = domain,
+                    blockedPackage = browserPackage,
+                    blockedDomain = domain,
+                    blockKind = BlockKind.WEBSITE
+                )
+            )
+        }
+        return matches
+    }
+
+    private fun pickBlockMatch(matches: List<BlockMatch>): BlockMatch? {
+        if (matches.isEmpty()) return null
+        return matches.firstOrNull { it.blockSource == BlockSource.ONE_OFF } ?: matches.first()
+    }
+
+    private fun blockMatchFromSchedule(
+        schedule: Schedule,
+        targetLabel: String,
+        blockedPackage: String?,
+        blockedDomain: String?,
+        blockKind: BlockKind
+    ): BlockMatch {
+        val window = ScheduleManager.getActiveSegmentWindow(schedule)
+        return BlockMatch(
+            blocklistName = schedule.name,
+            blocklistColor = schedule.uiBlocklistColor,
+            blocklistEmoji = schedule.uiBlocklistEmoji,
+            blockedLabel = targetLabel,
+            blockedPackage = blockedPackage,
+            blockedDomain = blockedDomain,
+            blockKind = blockKind,
+            blockSource = blockSourceFrom(schedule),
+            segmentStartedAtMs = window?.first,
+            segmentEndsAtMs = window?.second
+        )
+    }
+
+    private fun blockSourceFrom(schedule: Schedule): BlockSource {
+        return if (schedule.uiKind == UI_KIND_ONE_OFF) {
+            BlockSource.ONE_OFF
+        } else {
+            BlockSource.SCHEDULE
         }
     }
 
@@ -350,7 +440,9 @@ object Schedules {
             uiKind = json.optString("uiKind").takeIf { json.has("uiKind") && it.isNotBlank() },
             uiScheduleId = json.optString("uiScheduleId").takeIf { json.has("uiScheduleId") && it.isNotBlank() },
             uiBlocklistId = json.optString("uiBlocklistId").takeIf { json.has("uiBlocklistId") && it.isNotBlank() },
-            uiSegmentIndex = json.optInt("uiSegmentIndex").takeIf { json.has("uiSegmentIndex") }
+            uiSegmentIndex = json.optInt("uiSegmentIndex").takeIf { json.has("uiSegmentIndex") },
+            uiBlocklistColor = json.optString("uiBlocklistColor").takeIf { json.has("uiBlocklistColor") && it.isNotBlank() },
+            uiBlocklistEmoji = json.optString("uiBlocklistEmoji").takeIf { json.has("uiBlocklistEmoji") && it.isNotBlank() }
         )
     } catch (_: Exception) {
         null
@@ -385,5 +477,7 @@ object Schedules {
         schedule.uiScheduleId?.let { put("uiScheduleId", it) }
         schedule.uiBlocklistId?.let { put("uiBlocklistId", it) }
         schedule.uiSegmentIndex?.let { put("uiSegmentIndex", it) }
+        schedule.uiBlocklistColor?.let { put("uiBlocklistColor", it) }
+        schedule.uiBlocklistEmoji?.let { put("uiBlocklistEmoji", it) }
     }
 }

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="block_canvas">#14202c</color>
+    <color name="block_card_bg">#1e2d3e</color>
+    <color name="block_card_border">#1affffff</color>
+    <color name="block_text_primary">#f5f0e8</color>
+    <color name="block_text_secondary">#e6e2d8</color>
+    <color name="block_text_muted">#9aa3b0</color>
+    <color name="block_divider">#1affffff</color>
+    <color name="block_accent">#4ec0b0</color>
+    <color name="block_button_text">#ffffff</color>
+    <color name="block_pill_text">#ffffff</color>
+    <color name="block_hero_ring">#33ffffff</color>
+    <color name="block_badge_bg">#4ec0b0</color>
+</resources>

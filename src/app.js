@@ -46,7 +46,6 @@ import {
     syncAppDataToAndroidPlugin,
     androidGetInstalledApps,
     androidOpenAccessibilitySettings,
-    androidOpenNotificationSettings,
     androidOpenBatterySettings,
 } from './android-bridge.js';
 
@@ -6410,8 +6409,6 @@ function renderAndroidPermissionCards() {
     };
     setCard('android-perm-accessibility', perms.accessibility, 'Accessibility Service',
         tSettings('settingsAndroidPermAccessibilityDesc'));
-    setCard('android-perm-notifications', perms.notifications, 'Notifications',
-        tSettings('settingsAndroidPermNotificationsDesc'));
     setCard('android-perm-battery', perms.batteryOptimization, 'Battery Optimization',
         tSettings('settingsAndroidPermBackgroundDesc'));
 
@@ -6432,7 +6429,6 @@ function renderAndroidPermissionCards() {
         if (grantBtn) grantBtn.classList.toggle('hidden', !!granted);
     };
     setSettingsRow('settings-android-perm-accessibility', perms.accessibility);
-    setSettingsRow('settings-android-perm-notifications', perms.notifications);
     setSettingsRow('settings-android-perm-background', perms.batteryOptimization);
 
     const continueBtn = document.getElementById('android-permissions-continue-btn');
@@ -6469,10 +6465,8 @@ function setupAndroidPermissionsOnboarding() {
     if (!isAndroid) return;
 
     wireAndroidPermissionOpenButton('android-perm-accessibility', androidOpenAccessibilitySettings);
-    wireAndroidPermissionOpenButton('android-perm-notifications', androidOpenNotificationSettings);
     wireAndroidPermissionOpenButton('android-perm-battery', androidOpenBatterySettings);
     wireAndroidPermissionOpenButton('settings-android-perm-accessibility-grant', androidOpenAccessibilitySettings);
-    wireAndroidPermissionOpenButton('settings-android-perm-notifications-grant', androidOpenNotificationSettings);
     wireAndroidPermissionOpenButton('settings-android-perm-background-grant', androidOpenBatterySettings);
     document.getElementById('android-permissions-continue-btn')?.addEventListener('click', async () => {
         if (!androidPermissionsReady()) return;
@@ -20803,8 +20797,6 @@ function applySettingsLanguage() {
         setText('settings-android-perm-th-status', tSettings('settingsAndroidPermThStatus'));
         setText('settings-android-perm-accessibility-label', tSettings('settingsAndroidPermAccessibility'));
         setText('settings-android-perm-accessibility-desc', tSettings('settingsAndroidPermAccessibilityDesc'));
-        setText('settings-android-perm-notifications-label', tSettings('settingsAndroidPermNotifications'));
-        setText('settings-android-perm-notifications-desc', tSettings('settingsAndroidPermNotificationsDesc'));
         setText('settings-android-perm-background-label', tSettings('settingsAndroidPermBackground'));
         setText('settings-android-perm-background-desc', tSettings('settingsAndroidPermBackgroundDesc'));
         document.querySelectorAll('.settings-android-perm-grant-label')

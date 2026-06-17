@@ -16,7 +16,9 @@ data class Schedule(
     val uiKind: String? = null,
     val uiScheduleId: String? = null,
     val uiBlocklistId: String? = null,
-    val uiSegmentIndex: Int? = null
+    val uiSegmentIndex: Int? = null,
+    val uiBlocklistColor: String? = null,
+    val uiBlocklistEmoji: String? = null
 )
 
 data class ScheduleTiming(

@@ -56,12 +56,6 @@ impl<R: Runtime> Androidblock<R> {
       .map_err(Into::into)
   }
 
-  pub fn open_notification_settings(&self) -> crate::Result<SuccessResponse> {
-    self.0
-      .run_mobile_plugin("openNotificationSettings", EmptyRequest {})
-      .map_err(Into::into)
-  }
-
   pub fn open_battery_settings(&self) -> crate::Result<SuccessResponse> {
     self.0
       .run_mobile_plugin("openBatterySettings", EmptyRequest {})

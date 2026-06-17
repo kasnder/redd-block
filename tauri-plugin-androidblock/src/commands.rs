@@ -49,13 +49,6 @@ pub(crate) async fn open_accessibility_settings<R: Runtime>(
 }
 
 #[command]
-pub(crate) async fn open_notification_settings<R: Runtime>(
-    app: AppHandle<R>,
-) -> Result<SuccessResponse> {
-    app.androidblock().open_notification_settings()
-}
-
-#[command]
 pub(crate) async fn open_battery_settings<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<SuccessResponse> {

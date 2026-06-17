@@ -55,10 +55,6 @@ impl<R: Runtime> Androidblock<R> {
     Self::unsupported()
   }
 
-  pub fn open_notification_settings(&self) -> crate::Result<SuccessResponse> {
-    Self::unsupported()
-  }
-
   pub fn open_battery_settings(&self) -> crate::Result<SuccessResponse> {
     Self::unsupported()
   }

@@ -21,7 +21,7 @@ export function androidAccessibilityGranted() {
 
 export function androidPermissionsReady() {
     const p = androidPluginState.permissions || {};
-    return !!(p.accessibility && p.notifications && p.batteryOptimization);
+    return !!(p.accessibility && p.batteryOptimization);
 }
 
 export async function refreshAndroidPluginState() {
@@ -59,10 +59,6 @@ export async function androidGetInstalledApps() {
 
 export async function androidOpenAccessibilitySettings() {
     return invoke('plugin:androidblock|open_accessibility_settings');
-}
-
-export async function androidOpenNotificationSettings() {
-    return invoke('plugin:androidblock|open_notification_settings');
 }
 
 export async function androidOpenBatterySettings() {
@@ -315,6 +311,8 @@ function sharedSegmentToAndroidSchedules(blocklist, schedule) {
             uiScheduleId: schedule.id,
             uiBlocklistId: schedule.blocklistId,
             uiSegmentIndex: occurrence.segmentIndex,
+            uiBlocklistColor: blocklist?.color ?? null,
+            uiBlocklistEmoji: blocklist?.emoji ?? null,
         }));
     }
 
@@ -346,6 +344,8 @@ function sharedSegmentToAndroidSchedules(blocklist, schedule) {
             uiScheduleId: schedule.id,
             uiBlocklistId: schedule.blocklistId,
             uiSegmentIndex: segmentIndex,
+            uiBlocklistColor: blocklist?.color ?? null,
+            uiBlocklistEmoji: blocklist?.emoji ?? null,
         };
     });
 }
@@ -374,6 +374,8 @@ function sharedBlockToAndroid(blocklist, block) {
         uiKind: ANDROID_UI_KIND_ONE_OFF_BLOCK,
         uiScheduleId: block.id,
         uiBlocklistId: block.blocklistId,
+        uiBlocklistColor: blocklist?.color ?? null,
+        uiBlocklistEmoji: blocklist?.emoji ?? null,
     };
 }
 

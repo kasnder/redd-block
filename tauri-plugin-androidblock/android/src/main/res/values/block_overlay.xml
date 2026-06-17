@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Colors -->
+    <color name="block_canvas">#faf8f5</color>
+    <color name="block_card_bg">#ffffff</color>
+    <color name="block_card_border">#e1dcd6</color>
+    <color name="block_text_primary">#1e2d3e</color>
+    <color name="block_text_secondary">#2c2c35</color>
+    <color name="block_text_muted">#696977</color>
+    <color name="block_divider">#e1dcd6</color>
+    <color name="block_accent">#2a9d8f</color>
+    <color name="block_button_text">#ffffff</color>
+    <color name="block_pill_text">#ffffff</color>
+    <color name="block_hero_ring">#e1dcd6</color>
+    <color name="block_badge_bg">#2a9d8f</color>
+
+    <!-- Dimens -->
+    <dimen name="block_card_radius">16dp</dimen>
+    <dimen name="block_card_padding">28dp</dimen>
+    <dimen name="block_hero_size">88dp</dimen>
+    <dimen name="block_badge_size">32dp</dimen>
+    <dimen name="block_header_logo_size">26dp</dimen>
+    <dimen name="block_pill_radius">999dp</dimen>
+
+    <!-- Strings -->
+    <string name="block_overlay_brand">ReDD Block</string>
+    <string name="block_overlay_title">Blocked by ReDD Block</string>
+    <string name="block_overlay_subtitle_app_blocklist">%1$s is on your current blocklist.</string>
+    <string name="block_overlay_subtitle_app_schedule">%1$s is on your current schedule.</string>
+    <string name="block_overlay_subtitle_site_blocklist">%1$s is on your current blocklist.</string>
+    <string name="block_overlay_subtitle_site_schedule">%1$s is on your current schedule.</string>
+    <string name="block_overlay_target_app">App</string>
+    <string name="block_overlay_target_site">Site</string>
+    <string name="block_overlay_blocklist_label">Blocklist</string>
+    <string name="block_overlay_ends_in">Ends in</string>
+    <string name="block_overlay_ends_at">Ends</string>
+    <string name="block_overlay_ends_at_suffix"> · at %1$s</string>
+    <string name="block_overlay_started_at">Started at</string>
+    <string name="block_overlay_close">Close</string>
+
+    <!-- Styles -->
+    <style name="BlockDetailLabel">
+        <item name="android:textColor">@color/block_text_muted</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+
+    <style name="BlockDetailValue">
+        <item name="android:textColor">@color/block_text_primary</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+</resources>

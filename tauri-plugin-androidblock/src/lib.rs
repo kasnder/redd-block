@@ -42,7 +42,6 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
       commands::toggle_schedule,
       commands::get_installed_apps,
       commands::open_accessibility_settings,
-      commands::open_notification_settings,
       commands::open_battery_settings,
     ])
     .setup(|app, api| {

@@ -51,7 +51,6 @@ class AndroidBlockPlugin(private val activity: Activity) : Plugin(activity) {
             put("activeScheduleIds", JSONArray(Schedules.getActiveSessions(ctx).map { it.scheduleId }))
             put("permissions", JSONObject().apply {
                 put("accessibility", ctx.isAccessibilityServiceEnabled())
-                put("notifications", ctx.hasNotificationPermission())
                 put("batteryOptimization", ctx.isBatteryOptimizationDisabled())
             })
         }
@@ -140,14 +139,6 @@ class AndroidBlockPlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun openAccessibilitySettings(invoke: Invoke) {
         openSettings(invoke, Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-    }
-
-    @Command
-    fun openNotificationSettings(invoke: Invoke) {
-        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-            putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
-        }
-        openSettings(invoke, intent)
     }
 
     @SuppressLint("BatteryLife")

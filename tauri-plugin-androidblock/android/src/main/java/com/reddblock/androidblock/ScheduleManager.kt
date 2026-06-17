@@ -117,15 +117,28 @@ object ScheduleManager {
     }
 
     fun getScheduleStartTime(schedule: Schedule): Long? {
-        val activeFrom = schedule.timing.activeFromTimestampMs
-        val activeUntil = schedule.timing.activeUntilTimestampMs
+        return getActiveSegmentWindow(schedule)?.first
+    }
+
+    fun getScheduleEndTime(schedule: Schedule): Long? {
+        return getActiveSegmentWindow(schedule)?.second
+    }
+
+    /** Wall-clock start/end of the schedule segment that is active right now. */
+    fun getActiveSegmentWindow(schedule: Schedule): Pair<Long, Long>? {
+        val timing = schedule.timing
+        val activeFrom = timing.activeFromTimestampMs
+        val activeUntil = timing.activeUntilTimestampMs
         if (activeFrom != null && activeUntil != null) {
             val now = System.currentTimeMillis()
-            return if (now >= activeFrom && now < activeUntil) activeFrom else null
+            return if (now >= activeFrom && now < activeUntil) {
+                activeFrom to activeUntil
+            } else {
+                null
+            }
         }
 
         val now = LocalDateTime.now()
-        val timing = schedule.timing
 
         if (timing.type == ScheduleTiming.ScheduleType.MANUAL) return null
 
@@ -145,13 +158,16 @@ object ScheduleManager {
             }
 
             if ((now.isEqual(startCandidate) || now.isAfter(startCandidate)) && now.isBefore(endCandidate)) {
-                if (timing.type == ScheduleTiming.ScheduleType.WEEKLY) {
-                    if (timing.daysOfWeek.contains(startCandidate.dayOfWeek)) {
-                        return startCandidate.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
-                    }
-                } else {
-                    return startCandidate.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+                val matchesDay = when (timing.type) {
+                    ScheduleTiming.ScheduleType.WEEKLY -> timing.daysOfWeek.contains(startCandidate.dayOfWeek)
+                    else -> true
                 }
+                if (!matchesDay) continue
+
+                val zone = ZoneId.systemDefault()
+                val startMs = startCandidate.atZone(zone).toInstant().toEpochMilli()
+                val endMs = endCandidate.atZone(zone).toInstant().toEpochMilli()
+                return startMs to endMs
             }
         }
 

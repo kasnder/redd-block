@@ -1,25 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Native-side strings only (notifications + accessibility settings entry).
-     All screen copy lives in the webview frontend (src/android.js). -->
 <resources>
-    <!-- Accessibility Service config -->
     <string name="accessibility_service_label">ReDD Block</string>
     <string name="accessibility_service_summary">Monitors app launches and browser navigation to enforce blocking schedules.</string>
-
-    <!-- Notification channels -->
-    <string name="blocker_channel_name">Blocker</string>
-    <string name="blocker_channel_desc">Notifications when apps or websites are blocked</string>
-    <string name="schedule_channel_name">Schedules</string>
-    <string name="schedule_channel_desc">Schedule activation and deactivation alerts</string>
-
-    <!-- Notifications -->
-    <string name="app_blocked">App Blocked</string>
-    <string name="blocked_by_schedule">%s is blocked by an active schedule</string>
-    <string name="website_blocked">Website Blocked</string>
-    <string name="website_blocked_by_schedule">%s is blocked by an active schedule</string>
-
-    <string name="schedule_activated">Schedule Activated</string>
-    <string name="schedule_activated_desc">%s is now active</string>
-    <string name="schedule_deactivated">Schedule Ended</string>
-    <string name="schedule_deactivated_desc">%s has been deactivated</string>
 </resources>

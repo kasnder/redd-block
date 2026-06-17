@@ -9,20 +9,15 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
-import android.net.Uri
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
-import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import com.reddblock.androidblock.NotificationHelper.createNotificationChannels
 
 /**
  * The blocking engine, ported 1:1 from redd-block-android. Watches
- * foreground window changes: blocked apps are bounced to the home
- * screen, blocked websites are redirected to reddfocus.org by reading
- * the URL bar of supported browsers. Runs entirely independently of
- * the Tauri webview, so blocking keeps working when the app is closed.
+ * foreground window changes: blocked apps and websites show a branded
+ * fullscreen overlay with blocklist context. Runs entirely independently
+ * of the Tauri webview, so blocking keeps working when the app is closed.
  */
 @SuppressLint("AccessibilityPolicy")
 class BlockerService : AccessibilityService() {
@@ -39,13 +34,17 @@ class BlockerService : AccessibilityService() {
 
     private var lastCheckedUrl: String? = null
     private var lastUrlCheckTime: Long = 0
-    private var lastRedirectTime: Long = 0
+    private var lastBlockTime: Long = 0
     private val URL_CHECK_THROTTLE_MS = 500L
-    private val REDIRECT_THROTTLE_MS = 2000L
+    private val BLOCK_THROTTLE_MS = 2000L
+
+    private lateinit var blockOverlay: BlockOverlayController
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        createNotificationChannels()
+        blockOverlay = BlockOverlayController(this) {
+            performGlobalAction(GLOBAL_ACTION_HOME)
+        }
 
         val filter = IntentFilter(Schedules.ACTION_CHANGED)
         ContextCompat.registerReceiver(
@@ -81,14 +80,10 @@ class BlockerService : AccessibilityService() {
             else -> return
         }
 
-        // Check app blocking
         if (shouldSkipPackage(pkg)) return
 
-        if (Schedules.isAppBlocked(this, pkg)) {
-            Log.d(TAG, "Blocking app $pkg")
-            performGlobalAction(GLOBAL_ACTION_HOME)
-            showAppBlockedNotification(pkg)
-        }
+        val match = Schedules.findAppBlockMatch(this, pkg) ?: return
+        showBlockOverlay(match)
     }
 
     private fun maybeBlockBrowserWebsite(
@@ -104,13 +99,28 @@ class BlockerService : AccessibilityService() {
         lastCheckedUrl = url
 
         val domain = extractDomain(url) ?: return
-        if (!Schedules.isWebsiteBlocked(this, domain)) return
-        if (currentTime - lastRedirectTime < REDIRECT_THROTTLE_MS) return
+        val match = Schedules.findWebsiteBlockMatch(this, domain, browserPackage) ?: return
+        showBlockOverlay(match)
+    }
 
-        Log.d(TAG, "Blocking website $domain in browser ($browserPackage)")
-        lastRedirectTime = currentTime
-        navigateBrowserToBlank(browserPackage)
-        showWebsiteBlockedNotification(domain)
+    private fun showBlockOverlay(match: BlockMatch) {
+        val currentTime = System.currentTimeMillis()
+        val targetKey = when (match.blockKind) {
+            BlockKind.APP -> "app:${match.blockedPackage}"
+            BlockKind.WEBSITE -> "site:${match.blockedDomain}"
+        }
+        if (blockOverlay.isShowingFor(targetKey)) {
+            blockOverlay.show(match)
+            return
+        }
+        if (currentTime - lastBlockTime < BLOCK_THROTTLE_MS) return
+
+        Log.d(
+            TAG,
+            "Blocking ${match.blockKind.name.lowercase()} ${match.blockedLabel} for blocklist ${match.blocklistName}"
+        )
+        lastBlockTime = currentTime
+        blockOverlay.show(match)
     }
 
     private fun checkCurrentBrowserUrl(allowFocusedUrlBar: Boolean) {
@@ -186,21 +196,6 @@ class BlockerService : AccessibilityService() {
         return packageName in browserUrlViewIds
     }
 
-    private fun navigateBrowserToBlank(browserPackage: String) {
-        try {
-            val uri = Uri.parse("https://reddfocus.org")
-            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
-                setPackage(browserPackage)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            startActivity(intent)
-            lastCheckedUrl = null
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to navigate browser to blocked page", e)
-            performGlobalAction(GLOBAL_ACTION_HOME)
-        }
-    }
-
     private fun extractUrlFromEvent(event: AccessibilityEvent): String? {
         val pkg = event.packageName?.toString() ?: return null
         val root = rootInActiveWindow ?: return null
@@ -271,47 +266,12 @@ class BlockerService : AccessibilityService() {
         }
     }
 
-    @SuppressLint("MissingPermission")
-    private fun showAppBlockedNotification(pkg: String) {
-        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return
-
-        val appName = try {
-            packageManager.getApplicationLabel(
-                packageManager.getApplicationInfo(pkg, 0)
-            )
-        } catch (_: PackageManager.NameNotFoundException) {
-            pkg
-        }
-
-        val notification = NotificationCompat.Builder(this, NotificationHelper.BLOCKER_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_block)
-            .setContentTitle(getString(R.string.app_blocked))
-            .setContentText(getString(R.string.blocked_by_schedule, appName))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .build()
-
-        NotificationManagerCompat.from(this).notify(pkg.hashCode(), notification)
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun showWebsiteBlockedNotification(domain: String) {
-        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return
-
-        val notification = NotificationCompat.Builder(this, NotificationHelper.BLOCKER_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_block)
-            .setContentTitle(getString(R.string.website_blocked))
-            .setContentText(getString(R.string.website_blocked_by_schedule, domain))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .build()
-
-        NotificationManagerCompat.from(this).notify(domain.hashCode(), notification)
-    }
-
     override fun onInterrupt() {}
 
     override fun onDestroy() {
+        if (::blockOverlay.isInitialized) {
+            blockOverlay.dismiss(sendHome = false)
+        }
         super.onDestroy()
         try {
             unregisterReceiver(scheduleChangeReceiver)
