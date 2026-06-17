@@ -6952,6 +6952,18 @@ function setupHandsetModalScreens() {
         });
 
         header.append(backButton, headerTitle);
+        if (modalId === 'settings-modal') {
+            const versionEl = content.querySelector('#current-app-version');
+            const generalHeading = content.querySelector('#settings-general-heading');
+            const settingsHeader = content.querySelector('.settings-modal-header');
+            if (versionEl && generalHeading && !generalHeading.parentElement?.classList.contains('settings-section-heading-row')) {
+                const row = document.createElement('div');
+                row.className = 'settings-section-heading-row';
+                generalHeading.parentNode.insertBefore(row, generalHeading);
+                row.append(generalHeading, versionEl);
+            }
+            settingsHeader?.classList.add('hidden');
+        }
         content.prepend(header);
     }
 }
@@ -19898,8 +19910,6 @@ function weekdayLetterMon0List() {
 }
 
 const IOS_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH = 1024;
-/** Handset portrait widths: Now/Schedule text tabs cram in the 250px equal-flex bar. */
-const IOS_SCHED_TABS_ICON_ONLY_MAX_VIEWPORT_WIDTH = 430;
 let iosCompactScheduleDayLabelsActive = null;
 
 /** Smaller iOS viewports, including iPad portrait, use single-letter day pills from first render. */
@@ -21154,6 +21164,30 @@ function usesStackSettingsPlacement() {
         && window.matchMedia('(min-width: 769px) and (max-width: 1024px) and (orientation: portrait)').matches;
 }
 
+/** True when labelled Now/Schedule tabs do not fit in the scheduler header row. */
+function schedulerModeTabsNeedIconOnly(header, modeTabs, toolbar) {
+    const toolbarVisible = toolbar && getComputedStyle(toolbar).display !== 'none';
+    if (toolbarVisible) {
+        const tabsRect = modeTabs.getBoundingClientRect();
+        const toolbarRect = toolbar.getBoundingClientRect();
+        if (tabsRect.right > toolbarRect.left - 6) {
+            return true;
+        }
+    }
+    if (header.scrollWidth > header.clientWidth + 1) {
+        return true;
+    }
+    if (modeTabs.scrollWidth > modeTabs.clientWidth + 1) {
+        return true;
+    }
+    for (const tab of modeTabs.querySelectorAll('.mode-tab')) {
+        if (tab.scrollWidth > tab.clientWidth + 1) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /** Keep desktop/iOS scheduler header chrome from overlapping as space tightens. */
 function syncSchedulerModeTabLabelMode() {
     const header = document.querySelector('.scheduler-section > .section-header');
@@ -21169,32 +21203,13 @@ function syncSchedulerModeTabLabelMode() {
     const mainTitle = header.querySelector('#main-start-block-title');
     const toolbar = header.querySelector('#settings-toolbar-scheduler');
     const toolbarVisible = toolbar && getComputedStyle(toolbar).display !== 'none';
-    const hasCollision = () => {
-        let collision = false;
-        if (toolbarVisible) {
-            const tabsRect = modeTabs.getBoundingClientRect();
-            const toolbarRect = toolbar.getBoundingClientRect();
-            if (tabsRect.right > toolbarRect.left - 6) {
-                collision = true;
-            }
-        }
-        if (header.scrollWidth > header.clientWidth + 1) {
-            collision = true;
-        }
-        return collision;
-    };
 
-    if (!isIOS && !isAndroid && mainTitle && !mainTitle.classList.contains('hidden') && hasCollision()) {
+    if (!isIOS && !isAndroid && mainTitle && !mainTitle.classList.contains('hidden') && schedulerModeTabsNeedIconOnly(header, modeTabs, toolbar)) {
         body.classList.add('ui-zoom-sched-hide-title');
         void header.offsetWidth;
     }
 
-    const effVp = getEffectiveViewportWidth();
-    const narrowViewport = (isIOS || isAndroid)
-        && effVp > 0
-        && effVp <= IOS_SCHED_TABS_ICON_ONLY_MAX_VIEWPORT_WIDTH;
-
-    body.classList.toggle('ui-zoom-sched-tabs-icons', narrowViewport || hasCollision());
+    body.classList.toggle('ui-zoom-sched-tabs-icons', schedulerModeTabsNeedIconOnly(header, modeTabs, toolbar));
 }
 
 function scheduleUiZoomResponsiveLayout() {

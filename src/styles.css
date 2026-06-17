@@ -3143,7 +3143,8 @@ body.ios.ui-zoom-tier-cramped .blocklist-card {
     max-width: 100%;
 }
 
-body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-label {
+body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-label,
+body.android.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-label {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -3155,13 +3156,15 @@ body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab
     border: 0;
 }
 
-body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .scheduler-mode-tabs {
+body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .scheduler-mode-tabs,
+body.android.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .scheduler-mode-tabs {
     max-width: none;
     flex: 0 1 auto;
     min-width: 0;
 }
 
-body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab {
+body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab,
+body.android.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab {
     padding: 8px 11px;
     gap: 0;
     font-size: 15px;
@@ -3169,11 +3172,13 @@ body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab
     white-space: nowrap;
 }
 
-body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab.active {
+body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab.active,
+body.android.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab.active {
     padding: 10px 12px;
 }
 
-body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-icon {
+body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-icon,
+body.android.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-icon {
     width: 18px;
     height: 18px;
 }
@@ -11910,6 +11915,23 @@ body.dark-mode #settings-modal .settings-feedback-footer {
     font-size: 13px;
     color: var(--text-muted);
     white-space: nowrap;
+}
+
+body.handset-device #settings-modal.mobile-fullscreen-modal .settings-section-heading-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+body.handset-device #settings-modal.mobile-fullscreen-modal .settings-section-heading-row .settings-section-heading {
+    margin: 0;
+    padding: 0 2px;
+}
+
+body.handset-device #settings-modal.mobile-fullscreen-modal .settings-section-heading-row .settings-current-version {
+    flex-shrink: 0;
+    text-align: right;
 }
 
 /* Advanced Options Toggle */
