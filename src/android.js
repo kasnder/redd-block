@@ -12,7 +12,7 @@ import { invoke } from '@tauri-apps/api/core';
 // ---------------------------------------------------------------------------
 
 // { schedules: [...legacy schedule JSON...], activeScheduleIds: [...],
-//   permissions: { accessibility, notifications, batteryOptimization } }
+//   permissions: { accessibility, batteryOptimization } }
 let state = { schedules: [], activeScheduleIds: [], permissions: {} };
 
 function applyState(response) {
@@ -120,7 +120,7 @@ function describeSchedule(s) {
 
 function renderHome() {
     const perms = state.permissions;
-    const allGranted = perms.accessibility && perms.notifications && perms.batteryOptimization;
+    const allGranted = perms.accessibility && perms.batteryOptimization;
     const activeCount = state.activeScheduleIds.length;
 
     const statusCard = document.getElementById('home-status-card');
@@ -574,7 +574,6 @@ document.getElementById('website-input').addEventListener('keydown', (e) => {
 function renderPermissions() {
     const perms = state.permissions;
     renderPermCard('perm-accessibility', perms.accessibility, true);
-    renderPermCard('perm-notifications', perms.notifications, false);
     renderPermCard('perm-battery', perms.batteryOptimization, false);
 }
 
@@ -597,8 +596,6 @@ function renderPermCard(id, granted, required) {
 
 document.getElementById('perm-accessibility').addEventListener('click', () =>
     invoke('plugin:androidblock|open_accessibility_settings'));
-document.getElementById('perm-notifications').addEventListener('click', () =>
-    invoke('plugin:androidblock|open_notification_settings'));
 document.getElementById('perm-battery').addEventListener('click', () =>
     invoke('plugin:androidblock|open_battery_settings'));
 

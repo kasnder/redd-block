@@ -7,6 +7,5 @@ permissions = [
     "allow-toggle-schedule",
     "allow-get-installed-apps",
     "allow-open-accessibility-settings",
-    "allow-open-notification-settings",
     "allow-open-battery-settings",
 ]
