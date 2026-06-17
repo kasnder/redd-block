@@ -10,7 +10,7 @@
 #   - assets/icons/1024x1024.png (run: node scripts/generate-icons-from-svg.js)
 #
 # Output:
-#   for-distribution/x86_64-pc-windows-msvc/ReDD_Block_<version>.0_x64.msix  <- submit this
+#   for-distribution/x86_64-pc-windows-msvc/fristed_<version>.0_x64.msix  <- submit this
 #   for-distribution/x86_64-pc-windows-msvc/nsis|msi/  (optional sideload artifacts)
 #
 # Direct-distribution signing (AZURE_*) is only used by npm run build:win, not this script.

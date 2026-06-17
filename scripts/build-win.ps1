@@ -150,12 +150,12 @@ if ($buildX64) {
     $nsisSource = Join-Path $x64Bundle "nsis\Fristed_${AppVersion}_x64-setup.exe"
     $msiSource = Join-Path $x64Bundle "msi\Fristed_${AppVersion}_x64_en-US.msi"
     if (Test-Path $nsisSource) {
-        Copy-Item $nsisSource (Join-Path $distDir "redd-block_${AppVersion}_x64-setup.exe")
-        Write-Host "    redd-block_${AppVersion}_x64-setup.exe" -ForegroundColor Gray
+        Copy-Item $nsisSource (Join-Path $distDir "fristed_${AppVersion}_x64-setup.exe")
+        Write-Host "    fristed_${AppVersion}_x64-setup.exe" -ForegroundColor Gray
     }
     if (Test-Path $msiSource) {
-        Copy-Item $msiSource (Join-Path $distDir "redd-block_${AppVersion}_x64.msi")
-        Write-Host "    redd-block_${AppVersion}_x64.msi" -ForegroundColor Gray
+        Copy-Item $msiSource (Join-Path $distDir "fristed_${AppVersion}_x64.msi")
+        Write-Host "    fristed_${AppVersion}_x64.msi" -ForegroundColor Gray
     }
 }
 if ($buildArm64) {
@@ -163,12 +163,12 @@ if ($buildArm64) {
     $nsisSource = Join-Path $arm64Bundle "nsis\Fristed_${AppVersion}_arm64-setup.exe"
     $msiSource = Join-Path $arm64Bundle "msi\Fristed_${AppVersion}_arm64_en-US.msi"
     if (Test-Path $nsisSource) {
-        Copy-Item $nsisSource (Join-Path $distDir "redd-block_${AppVersion}_arm64-setup.exe")
-        Write-Host "    redd-block_${AppVersion}_arm64-setup.exe" -ForegroundColor Gray
+        Copy-Item $nsisSource (Join-Path $distDir "fristed_${AppVersion}_arm64-setup.exe")
+        Write-Host "    fristed_${AppVersion}_arm64-setup.exe" -ForegroundColor Gray
     }
     if (Test-Path $msiSource) {
-        Copy-Item $msiSource (Join-Path $distDir "redd-block_${AppVersion}_arm64.msi")
-        Write-Host "    redd-block_${AppVersion}_arm64.msi" -ForegroundColor Gray
+        Copy-Item $msiSource (Join-Path $distDir "fristed_${AppVersion}_arm64.msi")
+        Write-Host "    fristed_${AppVersion}_arm64.msi" -ForegroundColor Gray
     }
 }
 

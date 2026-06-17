@@ -5,7 +5,7 @@
 # cert in LocalMachine\TrustedPeople, and Appx sideload policy enabled.
 #
 # Usage (run PowerShell as Administrator for -Install):
-#   .\scripts\sign-msix-dev.ps1 -MsixPath "for-distribution\aarch64-pc-windows-msvc\ReDD_Block_3.1.5.0_arm64.msix" -Install
+#   .\scripts\sign-msix-dev.ps1 -MsixPath "for-distribution\aarch64-pc-windows-msvc\fristed_3.1.5.0_arm64.msix" -Install
 
 param(
     [Parameter(Mandatory = $true)]

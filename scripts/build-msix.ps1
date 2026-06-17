@@ -233,7 +233,7 @@ Write-Host "  [4/4] Creating MSIX package..." -ForegroundColor Gray
 
 $distDir = Join-Path $ProjectRoot "for-distribution\$target"
 if (-not (Test-Path $distDir)) { New-Item -ItemType Directory -Path $distDir | Out-Null }
-$msixPath = Join-Path $distDir "ReDD_Block_${MsixVersion}_${msixArch}.msix"
+$msixPath = Join-Path $distDir "fristed_${MsixVersion}_${msixArch}.msix"
 
 & $makeappx.FullName pack /d $stagingDir /p $msixPath /o
 if ($LASTEXITCODE -ne 0) {
