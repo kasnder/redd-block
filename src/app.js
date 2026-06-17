@@ -1243,7 +1243,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadData();
     await resetDevOnlyEulaAcceptance();
     resetDevOnlyAndroidPermissionsOnboarding();
-    setupIOSExternalLinkOpens();
+    setupMobileExternalLinkOpens();
     setupNowBlockingChipScroll();
     setupAndroidKeyboardScroll();
     setupEventListeners();
@@ -6604,15 +6604,15 @@ async function openExternal(target) {
         await openUrl(target);
     } catch (err) {
         console.warn('[openExternal] opener plugin failed:', err);
-        if (!isIOS) {
+        if (!isIOS && !isAndroid) {
             window.open(target, '_blank', 'noopener,noreferrer');
         }
     }
 }
 
-/** WKWebView on iOS does not open target=_blank links in Safari; route via opener plugin. */
-function setupIOSExternalLinkOpens() {
-    if (!isIOS) return;
+/** Mobile WebViews do not open target=_blank links in the system browser; route via opener plugin. */
+function setupMobileExternalLinkOpens() {
+    if (!isIOS && !isAndroid) return;
     document.addEventListener('click', (event) => {
         const anchor = event.target.closest('a[href]');
         if (!anchor) return;

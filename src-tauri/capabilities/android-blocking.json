@@ -9,6 +9,7 @@
         "main"
     ],
     "permissions": [
-        "androidblock:default"
+        "androidblock:default",
+        "opener:default"
     ]
 }
