@@ -20184,6 +20184,9 @@ function applyEulaOnboardingLanguage() {
     const subtitle = document.getElementById('eula-onboarding-subtitle');
     if (subtitle) subtitle.textContent = tSettings('welcomeOnboardingSubtitle');
 
+    const mobileSubtitle = document.getElementById('eula-mobile-subtitle');
+    if (mobileSubtitle) mobileSubtitle.textContent = tSettings('welcomeOnboardingSubtitle');
+
     const appIcon = document.getElementById('eula-onboarding-app-icon');
     if (appIcon) appIcon.setAttribute('alt', tSettings('eulaWelcomeIconAlt'));
 
@@ -20211,7 +20214,7 @@ function applyEulaOnboardingLanguage() {
     const backBtn = document.getElementById('eula-back-btn');
     if (backBtn) {
         backBtn.textContent = tSettings('eulaBackBtn');
-        backBtn.classList.toggle('hidden', isIOS);
+        backBtn.classList.toggle('hidden', isIOS || isAndroid);
     }
 }
 

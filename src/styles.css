@@ -6625,7 +6625,7 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
     gap: 12px;
 }
 
-/* EULA — desktop welcome hero; iOS compact centered column (shared controls). */
+/* EULA — desktop welcome hero; iOS/Android compact centered column (shared controls). */
 .eula-onboarding-inner {
     width: 100%;
     display: flex;
@@ -6634,28 +6634,34 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled) {
     gap: 12px;
 }
 
-body:not(.ios) .eula-onboarding-inner {
+body:not(.ios):not(.android) .eula-onboarding-inner {
     max-width: 560px;
 }
 
-body.ios .eula-onboarding-inner {
+body.ios .eula-onboarding-inner,
+body.android .eula-onboarding-inner {
     max-width: 360px;
     text-align: center;
+    gap: 0;
 }
 
 body.ios .eula-onboarding-desktop-header,
-body.ios .eula-onboarding-desktop-footer {
+body.ios .eula-onboarding-desktop-footer,
+body.android .eula-onboarding-desktop-header,
+body.android .eula-onboarding-desktop-footer {
     display: none;
 }
 
-body.ios .eula-onboarding-ios-hero {
+body.ios .eula-onboarding-ios-hero,
+body.android .eula-onboarding-ios-hero {
     display: block;
-    margin-bottom: 0;
+    margin-bottom: 12px;
 }
 
-body.ios .eula-welcome-title-ios {
+body.ios .eula-welcome-title-ios,
+body.android .eula-welcome-title-ios {
     display: block;
-    margin: 0 0 8px;
+    margin: 0 0 12px;
     font-family: var(--font-heading);
     font-size: 24px;
     font-weight: 700;
@@ -6663,30 +6669,54 @@ body.ios .eula-welcome-title-ios {
     color: var(--text-secondary);
 }
 
-body:not(.ios) .eula-onboarding-ios-hero,
-body:not(.ios) .eula-welcome-title-ios,
-body:not(.ios) .eula-ios-blurb {
+body.ios .eula-mobile-subtitle,
+body.android .eula-mobile-subtitle {
+    display: block;
+    margin: 0 0 0;
+    max-width: none;
+    width: 100%;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--text-muted);
+    white-space: pre-line;
+    text-wrap: wrap;
+}
+
+body.ios .legal-onboarding-body.eula-ios-blurb,
+body.android .legal-onboarding-body.eula-ios-blurb {
+    margin: 0 auto;
+    max-width: 30em;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--text-muted);
+    white-space: pre-line;
+    text-wrap: balance;
+}
+
+body:not(.ios):not(.android) .eula-mobile-subtitle {
     display: none;
 }
 
-body.ios .legal-onboarding-body.eula-ios-blurb {
-    margin: 0;
-    font-size: 15px;
-    line-height: 1.5;
-    color: var(--text-muted);
+body:not(.ios):not(.android) .eula-onboarding-ios-hero,
+body:not(.ios):not(.android) .eula-welcome-title-ios,
+body:not(.ios):not(.android) .eula-ios-blurb {
+    display: none;
 }
 
-body.ios #eula-onboarding .onboarding-focus-card {
+body.ios #eula-onboarding .onboarding-focus-card,
+body.android #eula-onboarding .onboarding-focus-card {
     margin: 20px 0 18px;
     padding: 28px 24px;
 }
 
 body.ios #eula-onboarding .legal-onboarding-checkbox-row,
-body.ios #eula-onboarding .legal-onboarding-note {
+body.ios #eula-onboarding .legal-onboarding-note,
+body.android #eula-onboarding .legal-onboarding-checkbox-row,
+body.android #eula-onboarding .legal-onboarding-note {
     font-size: 15px;
 }
 
-body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card {
+body:not(.ios):not(.android) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card {
     background: var(--redd-card);
     border: 1px solid rgba(30, 45, 62, 0.06);
     border-radius: 16px;
@@ -7088,15 +7118,18 @@ body.dark-mode .welcome-apple-inline-logo {
     background: var(--redd-warm-grey);
 }
 
-body.ios .eula-back-btn {
+body.ios .eula-back-btn,
+body.android .eula-back-btn {
     display: none;
 }
 
-body.ios .eula-onboarding-actions {
+body.ios .eula-onboarding-actions,
+body.android .eula-onboarding-actions {
     margin-top: 16px;
 }
 
-body.ios .eula-onboarding-actions .eula-continue-btn {
+body.ios .eula-onboarding-actions .eula-continue-btn,
+body.android .eula-onboarding-actions .eula-continue-btn {
     width: 100%;
 }
 
