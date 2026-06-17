@@ -3178,6 +3178,17 @@ body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab
     height: 18px;
 }
 
+/* Wider iOS/Android viewports: size tabs to label content instead of equal-flex in 250px bar. */
+body.ios:not(.ui-zoom-sched-tabs-icons) .scheduler-section > .section-header .scheduler-mode-tabs,
+body.android:not(.ui-zoom-sched-tabs-icons) .scheduler-section > .section-header .scheduler-mode-tabs {
+    max-width: none;
+}
+
+body.ios:not(.ui-zoom-sched-tabs-icons) .scheduler-section > .section-header .mode-tab,
+body.android:not(.ui-zoom-sched-tabs-icons) .scheduler-section > .section-header .mode-tab {
+    flex: 0 0 auto;
+}
+
 body:not(.ios).ui-zoom-sched-hide-title #main-start-block-title {
     display: none;
 }

@@ -19898,6 +19898,8 @@ function weekdayLetterMon0List() {
 }
 
 const IOS_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH = 1024;
+/** Handset portrait widths: Now/Schedule text tabs cram in the 250px equal-flex bar. */
+const IOS_SCHED_TABS_ICON_ONLY_MAX_VIEWPORT_WIDTH = 430;
 let iosCompactScheduleDayLabelsActive = null;
 
 /** Smaller iOS viewports, including iPad portrait, use single-letter day pills from first render. */
@@ -21182,22 +21184,17 @@ function syncSchedulerModeTabLabelMode() {
         return collision;
     };
 
-    if (!isIOS && mainTitle && !mainTitle.classList.contains('hidden') && hasCollision()) {
+    if (!isIOS && !isAndroid && mainTitle && !mainTitle.classList.contains('hidden') && hasCollision()) {
         body.classList.add('ui-zoom-sched-hide-title');
         void header.offsetWidth;
     }
 
-    const iconOnly = hasCollision();
-    if (toolbarVisible) {
-        const tabsRect = modeTabs.getBoundingClientRect();
-        const toolbarRect = toolbar.getBoundingClientRect();
-        if (tabsRect.right > toolbarRect.left - 6) {
-            body.classList.add('ui-zoom-sched-tabs-icons');
-            return;
-        }
-    }
+    const effVp = getEffectiveViewportWidth();
+    const narrowViewport = (isIOS || isAndroid)
+        && effVp > 0
+        && effVp <= IOS_SCHED_TABS_ICON_ONLY_MAX_VIEWPORT_WIDTH;
 
-    body.classList.toggle('ui-zoom-sched-tabs-icons', iconOnly);
+    body.classList.toggle('ui-zoom-sched-tabs-icons', narrowViewport || hasCollision());
 }
 
 function scheduleUiZoomResponsiveLayout() {
