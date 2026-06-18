@@ -16286,7 +16286,7 @@ function blocklistFromImportedEntry(entry) {
 async function exportBlocklistsToFile() {
     const blocklists = appData.blocklists || [];
     if (blocklists.length === 0) {
-        await message(tSettings('exportBlocklistsEmpty'), { title: tSettings('settingsExportBlocklistsBtn'), kind: 'info' });
+        await message(tSettings('exportBlocklistsEmpty'), { title: tSettings('exportBlocklistsFailedTitle'), kind: 'info' });
         return;
     }
 
@@ -16302,11 +16302,11 @@ async function exportBlocklistsToFile() {
         await writeTextFile(selectedPath, `${JSON.stringify(payload, null, 2)}\n`);
         await message(
             tSettingsFmt('exportBlocklistsSuccessFmt', { n: blocklists.length, path: selectedPath }),
-            { title: tSettings('settingsExportBlocklistsBtn'), kind: 'info' }
+            { title: tSettings('exportBlocklistsSuccessTitle'), kind: 'info' }
         );
     } catch (err) {
         console.warn('[export] blocklists:', err);
-        await message(tSettings('exportBlocklistsFailed'), { title: tSettings('settingsExportBlocklistsBtn'), kind: 'error' });
+        await message(tSettings('exportBlocklistsFailed'), { title: tSettings('exportBlocklistsFailedTitle'), kind: 'error' });
     }
 }
 
@@ -16327,18 +16327,18 @@ async function importBlocklistsFromFile() {
             importedEntries = parseBlocklistsImportPayload(await readTextFile(selectedPath));
         } catch (err) {
             console.warn('[import] parse blocklists:', err);
-            await message(tSettings('importBlocklistsParseFailed'), { title: tSettings('settingsImportBlocklistsBtn'), kind: 'error' });
+            await message(tSettings('importBlocklistsParseFailed'), { title: tSettings('importBlocklistsFailedTitle'), kind: 'error' });
             return;
         }
 
         if (importedEntries.length === 0) {
-            await message(tSettings('importBlocklistsInvalidFile'), { title: tSettings('settingsImportBlocklistsBtn'), kind: 'warning' });
+            await message(tSettings('importBlocklistsInvalidFile'), { title: tSettings('importBlocklistsFailedTitle'), kind: 'warning' });
             return;
         }
 
         const confirmed = await ask(
             tSettingsFmt('importBlocklistsConfirmFmt', { n: importedEntries.length }),
-            { title: tSettings('settingsImportBlocklistsBtn'), kind: 'warning' }
+            { title: tSettings('importBlocklistsDialogTitle'), kind: 'warning' }
         );
         if (!confirmed) return;
 
@@ -16355,11 +16355,11 @@ async function importBlocklistsFromFile() {
 
         await message(
             tSettingsFmt('importBlocklistsSuccessFmt', { n: importedEntries.length }),
-            { title: tSettings('settingsImportBlocklistsBtn'), kind: 'info' }
+            { title: tSettings('importBlocklistsSuccessTitle'), kind: 'info' }
         );
     } catch (err) {
         console.warn('[import] blocklists:', err);
-        await message(tSettings('importBlocklistsFailed'), { title: tSettings('settingsImportBlocklistsBtn'), kind: 'error' });
+        await message(tSettings('importBlocklistsFailed'), { title: tSettings('importBlocklistsFailedTitle'), kind: 'error' });
     }
 }
 
@@ -18434,9 +18434,9 @@ const SETTINGS_TRANSLATIONS = {
         blocklistScheduleCompactDaysFmt: 'in {n}d',
         blocklistScheduleFallback: 'scheduled',
         deleteBlocklistDeniedActiveBlockFmt:
-            'Cannot delete "{name}" while a block is running. Stop the block first.',
+            'Cannot delete "{name}" while the block is active. Stop the block first.',
         deleteBlocklistDeniedActiveScheduleFmt:
-            'Cannot delete "{name}" while a schedule is active. Stop the schedule first.',
+            'Cannot delete "{name}" while the schedule is active. Stop the schedule first.',
         scheduleTitle: 'Week Schedule',
         today: 'Today',
         noActiveBlocks: 'No active blocks',
@@ -18473,7 +18473,7 @@ const SETTINGS_TRANSLATIONS = {
         eulaContinueBtn: 'Continue',
         eulaContinueBusy: 'Continuing…',
         eulaBackBtn: 'Back',
-        eulaAcceptSaveFailedAlert: 'Could not save your agreement. Please try again.',
+        eulaAcceptSaveFailedAlert: 'We couldn\'t save your agreement. Please try again to continue.',
         eulaWelcomeIconAlt: 'ReDD Block app icon',
         eulaProjectBlurb:
             'ReDD Block is developed by the Reduce Digital Distraction Project, in collaboration with researchers at the University of Oxford and University of Maastricht. The ReDD Project is a not-for-profit creating insights & open-source digital focus tools for everyone to thrive in the digital world.',
@@ -18815,17 +18815,22 @@ const SETTINGS_TRANSLATIONS = {
         settingsBlocklistsIoHint: 'Save a backup or restore from a file.',
         settingsExportBlocklistsBtn: 'Export',
         settingsImportBlocklistsBtn: 'Import',
-        exportBlocklistsSaveTitle: 'Export blocklists & schedules',
-        exportBlocklistsEmpty: 'You have no blocklists to export.',
+        exportBlocklistsSaveTitle: 'Export blocklists',
+        exportBlocklistsFailedTitle: 'Failed to export blocklists',
+        exportBlocklistsSuccessTitle: 'Successfully exported blocklists',
+        exportBlocklistsEmpty: 'There are no blocklists to export.',
         exportBlocklistsSuccessFmt: 'Exported {n} blocklist(s) and their schedules to:\n{path}',
-        exportBlocklistsFailed: 'Could not export blocklists.',
-        importBlocklistsOpenTitle: 'Import blocklists & schedules',
-        importBlocklistsInvalidFile: 'That file does not contain any valid blocklists.',
-        importBlocklistsParseFailed: 'Could not read that file. Make sure it is valid JSON.',
+        exportBlocklistsFailed: 'There was an error exporting your blocklists. Please try again.',
+        importBlocklistsOpenTitle: 'Import blocklists',
+        importBlocklistsDialogTitle: 'Import blocklists',
+        importBlocklistsFailedTitle: 'Failed to import blocklists',
+        importBlocklistsSuccessTitle: 'Successfully imported blocklists',
+        importBlocklistsInvalidFile: 'The selected file does not contain any valid blocklists.',
+        importBlocklistsParseFailed: 'There was an error reading the selected file. Please make sure it is valid JSON.',
         importBlocklistsConfirmFmt:
             'Import {n} blocklist(s) from this file?\n\nThey will be added to your existing blocklists. Any schedules will be restored as drafts — start them manually when you are ready.',
-        importBlocklistsSuccessFmt: 'Imported {n} blocklist(s). Schedules were saved as drafts and are not running yet.',
-        importBlocklistsFailed: 'Could not import blocklists.',
+        importBlocklistsSuccessFmt: 'Imported {n} blocklist(s) and their schedules. Schedules were restored as drafts — start them manually when you are ready.',
+        importBlocklistsFailed: 'There was an error importing your blocklists. Please try again.',
         importBlocklistDefaultName: 'Imported blocklist',
         gracePeriodLockedHint: 'Locked while a block is active—only shorter times allowed.',
         appBlockingLetsGo: 'Let’s go!',
@@ -19179,9 +19184,9 @@ const SETTINGS_TRANSLATIONS = {
         blocklistScheduleCompactDaysFmt: 'om {n}d',
         blocklistScheduleFallback: 'planlagt',
         deleteBlocklistDeniedActiveBlockFmt:
-            'Kan ikke slette "{name}", mens en blokering kører. Stop blokeringen først.',
+            'Kan ikke slette "{name}", mens blokeringen er aktiv. Stop blokeringen først.',
         deleteBlocklistDeniedActiveScheduleFmt:
-            'Kan ikke slette "{name}", mens et skema er aktivt. Stop skemaet først.',
+            'Kan ikke slette "{name}", mens skemaet er aktivt. Stop skemaet først.',
         scheduleTitle: 'Ugeskema',
         today: 'I dag',
         noActiveBlocks: 'Ingen aktive blokeringer',
@@ -19218,7 +19223,7 @@ const SETTINGS_TRANSLATIONS = {
         eulaContinueBtn: 'Fortsæt',
         eulaContinueBusy: 'Arbejder…',
         eulaBackBtn: 'Tilbage',
-        eulaAcceptSaveFailedAlert: 'Vi kunne ikke gemme din godkendelse. Prøv igen.',
+        eulaAcceptSaveFailedAlert: 'Vi kunne ikke gemme din godkendelse. Prøv igen for at fortsætte.',
         eulaWelcomeIconAlt: 'ReDD Block-appikon',
         eulaProjectBlurb:
             'ReDD Block er udviklet af Reduce Digital Distraction Project i samarbejde med forskere ved University of Oxford og Maastricht University. ReDD-projektet er en non-profit, der skaber indsigt og open source digitale fokusværktøjer, så alle kan trives i den digitale verden.',
@@ -19543,17 +19548,22 @@ const SETTINGS_TRANSLATIONS = {
         settingsBlocklistsIoHint: 'Gem en sikkerhedskopi, eller gendan fra en fil.',
         settingsExportBlocklistsBtn: 'Eksportér',
         settingsImportBlocklistsBtn: 'Importér',
-        exportBlocklistsSaveTitle: 'Eksportér bloklister og tidsplaner',
-        exportBlocklistsEmpty: 'Du har ingen bloklister at eksportere.',
+        exportBlocklistsSaveTitle: 'Eksportér bloklister',
+        exportBlocklistsFailedTitle: 'Kunne ikke eksportere bloklister',
+        exportBlocklistsSuccessTitle: 'Bloklister eksporteret',
+        exportBlocklistsEmpty: 'Der er ingen bloklister at eksportere.',
         exportBlocklistsSuccessFmt: 'Eksporterede {n} blokliste(r) og deres tidsplaner til:\n{path}',
-        exportBlocklistsFailed: 'Kunne ikke eksportere bloklister.',
-        importBlocklistsOpenTitle: 'Importér bloklister og tidsplaner',
-        importBlocklistsInvalidFile: 'Filen indeholder ingen gyldige bloklister.',
-        importBlocklistsParseFailed: 'Kunne ikke læse filen. Tjek at den er gyldig JSON.',
+        exportBlocklistsFailed: 'Der opstod en fejl under eksport af dine bloklister. Prøv igen.',
+        importBlocklistsOpenTitle: 'Importér bloklister',
+        importBlocklistsDialogTitle: 'Importér bloklister',
+        importBlocklistsFailedTitle: 'Kunne ikke importere bloklister',
+        importBlocklistsSuccessTitle: 'Bloklister importeret',
+        importBlocklistsInvalidFile: 'Den valgte fil indeholder ingen gyldige bloklister.',
+        importBlocklistsParseFailed: 'Der opstod en fejl under læsning af den valgte fil. Tjek at den er gyldig JSON.',
         importBlocklistsConfirmFmt:
             'Importér {n} blokliste(r) fra denne fil?\n\nDe tilføjes til dine eksisterende bloklister. Eventuelle tidsplaner gendannes som kladder — start dem manuelt, når du er klar.',
-        importBlocklistsSuccessFmt: 'Importerede {n} blokliste(r). Tidsplaner er gemt som kladder og kører ikke endnu.',
-        importBlocklistsFailed: 'Kunne ikke importere bloklister.',
+        importBlocklistsSuccessFmt: 'Importerede {n} blokliste(r) og deres tidsplaner. Tidsplaner er gendannet som kladder — start dem manuelt, når du er klar.',
+        importBlocklistsFailed: 'Der opstod en fejl under import af dine bloklister. Prøv igen.',
         importBlocklistDefaultName: 'Importeret blokliste',
         gracePeriodLockedHint: 'Låst mens en blokering er aktiv—kun kortere tider tilladt.',
         appBlockingLetsGo: 'Fortsæt',
