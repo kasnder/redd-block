@@ -1459,6 +1459,7 @@ async function runPostAcceptanceStartup() {
             await checkAndroidPermissions();
             await refreshAndroidPluginState();
             hydrateAppDataFromAndroid(appData, androidPluginState);
+            await ensureInstalledAppsCache();
             await syncSchedulesToHelper();
         } else {
             // Run first-launch migration off the legacy helper + check
@@ -6295,6 +6296,10 @@ function normalizeBlockedAppKey(name) {
     return String(name || '').trim().replace(/\.exe$/i, '').toLowerCase();
 }
 
+function looksLikeAndroidPackageId(name) {
+    return /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]+)+$/i.test(String(name || '').trim());
+}
+
 function displayNameForBlockedApp(processName) {
     const key = normalizeBlockedAppKey(processName);
     if (!key) return processName;
@@ -6302,6 +6307,21 @@ function displayNameForBlockedApp(processName) {
         (a) => normalizeBlockedAppKey(a.process_name) === key,
     );
     if (match?.display_name) return match.display_name;
+
+    if (isAndroid) {
+        if (!looksLikeAndroidPackageId(key)) {
+            return String(processName).trim();
+        }
+        if (!installedAppsCache) {
+            void ensureInstalledAppsCache().then(() => {
+                if (!installedAppsCache) return;
+                renderBlocklists();
+                window.renderModalTags?.();
+            });
+        }
+        return String(processName).trim();
+    }
+
     return key.charAt(0).toUpperCase() + key.slice(1);
 }
 
