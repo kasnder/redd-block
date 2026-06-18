@@ -278,7 +278,7 @@ let lastOverridePreviewType = null;
 const UI_ZOOM_MIN = 0.8;
 const UI_ZOOM_MAX = 1.8;
 const UI_ZOOM_MAX_DESKTOP = 1.5;  // cap on macOS/Windows (native webview zoom)
-const UI_ZOOM_MAX_IOS = 1.4;  // cap on iOS (CSS zoom on html)
+const UI_ZOOM_MAX_IOS = 1.4;  // cap on iOS (CSS zoom on phone; transform scale on iPad)
 /** Layout breakpoints — CSS `zoom` does not affect @media / @container; tiers use effective width. */
 const UI_ZOOM_LAYOUT_STACK_MAX = 768;
 const UI_ZOOM_LAYOUT_CRAMPED_MAX = 1024;
@@ -21165,9 +21165,23 @@ function getSavedUiZoom() {
     return clampUiZoom(parsed);
 }
 
+function isIosTablet() {
+    return isIOS && !document.body.classList.contains('ios-phone');
+}
+
+/** Desktop only — iPad uses transform scaling; phones use CSS zoom. */
+function usesNativeWebviewZoom() {
+    if (!isIOS && (document.body.classList.contains('windows') || document.body.classList.contains('mac'))) {
+        return nativeWebviewZoomSupported !== false;
+    }
+    return false;
+}
+
 function getActiveUiZoomScale() {
     const inline = parseFloat(document.documentElement.style.zoom);
     if (Number.isFinite(inline) && inline > 0) return inline;
+    const cssVar = parseFloat(document.documentElement.style.getPropertyValue('--ui-zoom'));
+    if (Number.isFinite(cssVar) && cssVar > 0) return cssVar;
     return getSavedUiZoom();
 }
 
@@ -21435,6 +21449,28 @@ function bindUiZoomLayoutObserver() {
 function applyUiZoom(scale) {
     const clamped = clampUiZoom(scale);
     syncFooterZoomControl(clamped);
+    document.documentElement.style.setProperty('--ui-zoom', String(clamped));
+
+    if (usesNativeWebviewZoom()) {
+        getCurrentWebview().setZoom(clamped).then(() => {
+            nativeWebviewZoomSupported = true;
+            document.documentElement.style.zoom = '';
+            scheduleUiZoomResponsiveLayout();
+        }).catch(() => {
+            nativeWebviewZoomSupported = false;
+            document.documentElement.style.zoom = String(clamped);
+            scheduleUiZoomResponsiveLayout();
+        });
+        return;
+    }
+
+    // iPad WKWebView uses desktop content mode: neither CSS zoom nor pageZoom scales text.
+    // `.app-container { transform: scale(var(--ui-zoom)) }` in styles.css handles iPad instead.
+    if (isIosTablet()) {
+        document.documentElement.style.zoom = '';
+        scheduleUiZoomResponsiveLayout();
+        return;
+    }
 
     if (isIOS || isAndroid) {
         document.documentElement.style.zoom = String(clamped);
@@ -21442,24 +21478,7 @@ function applyUiZoom(scale) {
         return;
     }
 
-    // On desktop (Windows and macOS), use native webview zoom so content scales correctly
-    // and behavior matches across platforms. Fall back to CSS zoom if unavailable (e.g. permission).
-    if (!isIOS && (document.body.classList.contains('windows') || document.body.classList.contains('mac'))) {
-        if (nativeWebviewZoomSupported !== false) {
-            getCurrentWebview().setZoom(clamped).then(() => {
-                nativeWebviewZoomSupported = true;
-                document.documentElement.style.zoom = '';
-                scheduleUiZoomResponsiveLayout();
-            }).catch(() => {
-                nativeWebviewZoomSupported = false;
-                document.documentElement.style.zoom = String(clamped);
-                scheduleUiZoomResponsiveLayout();
-            });
-            return;
-        }
-    }
-
-    // Fallback path (iOS or if native zoom isn't available).
+    // Fallback when native webview zoom is unavailable (e.g. permission).
     document.documentElement.style.zoom = String(clamped);
     scheduleUiZoomResponsiveLayout();
 }

@@ -25,6 +25,7 @@
    ======================================== */
 :root {
     color-scheme: light;
+    --ui-zoom: 1;
     --android-app-height: 100vh;
     --android-viewport-offset-top: 0px;
     --android-keyboard-inset: 0px;
@@ -300,6 +301,17 @@ body.android .app-container {
     height: calc(var(--android-app-height, 100vh) - env(safe-area-inset-top, 20px));
 }
 
+/* iPad: WKWebView "desktop" content mode ignores CSS zoom and pageZoom for text/emoji sizing.
+   Scale the app shell so typography and icons grow/shrink like iPhone/Android CSS zoom. */
+body.ios:not(.ios-phone) .app-container {
+    transform: scale(var(--ui-zoom, 1));
+    transform-origin: top left;
+    width: calc(100% / var(--ui-zoom, 1));
+    max-width: none;
+    height: calc((100vh - env(safe-area-inset-top, 20px)) / var(--ui-zoom, 1));
+    padding-bottom: calc(var(--app-footer-height) / var(--ui-zoom, 1));
+}
+
 /* Let grid columns shrink below intrinsic content width on narrow iOS / split-view. */
 body.ios .grid-top-row,
 body.android .grid-top-row {
@@ -337,6 +349,7 @@ body.handset-device #settings-modal .language-picker-trigger .language-picker-co
     body.android:not(.android-phone) {
         --app-footer-pad-top: 12px;
         --app-footer-pad-bottom: 12px;
+        --app-footer-text-line: 16.25px;
     }
 }
 
@@ -3269,8 +3282,8 @@ body.dark-mode .app-blocking-closedown-banner {
     }
 }
 
-/* UI zoom (iOS): `html { zoom }` scales paint size but not @media / @container queries.
-   `syncUiZoomResponsiveLayout()` toggles these tiers from effective viewport width. */
+/* UI zoom: phones use CSS `html { zoom }`; iPad uses `.app-container { transform: scale() }`.
+   Neither affects @media / @container queries — `syncUiZoomResponsiveLayout()` mirrors tiers. */
 body.ios.ui-zoom-tier-cramped .grid-top-row,
 body.android.ui-zoom-tier-cramped .grid-top-row {
     grid-template-columns: minmax(0, min(400px, 50%)) minmax(0, 1fr);
