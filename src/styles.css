@@ -1646,38 +1646,7 @@ body.dark-mode .app-blocking-closedown-banner {
         height: 22px;
     }
 
-    /* iOS/Android: settings gear on My Blocklists row — desktop keeps scheduler header settings. */
-    body.ios #settings-btn-stack,
-    body.android #settings-btn-stack {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 36px;
-        height: 36px;
-        padding: 0;
-    }
-
-    body.ios #settings-btn-stack svg,
-    body.android #settings-btn-stack svg {
-        width: 22px;
-        height: 22px;
-    }
-
-    body.ios #settings-toolbar-stack,
-    body.android #settings-toolbar-stack {
-        display: flex;
-    }
-
-    body.ios .scheduler-section .section-header #settings-btn,
-    body.android .scheduler-section .section-header #settings-btn {
-        display: none !important;
-    }
-
-    body.ios .scheduler-section .section-header #settings-toolbar-scheduler,
-    body.android .scheduler-section .section-header #settings-toolbar-scheduler {
-        display: none !important;
-    }
-
+    /* iOS/Android: settings live in main-content top-right (see unified rules below). */
     .main-content {
         padding-left: 18px;
         padding-right: 18px;
@@ -1692,11 +1661,6 @@ body.dark-mode .app-blocking-closedown-banner {
     body:not(.ios):not(.android) .grid-top-row:not(.grid-top-row--blocklist-selected) .scheduler-section > .section-header.scheduler-header-compact {
         margin-bottom: 0;
         min-height: 0;
-    }
-
-    body:not(.ios):not(.android) .grid-top-row:not(.grid-top-row--blocklist-selected) .selection-prompt {
-        margin-top: 0;
-        padding-top: 4px;
     }
 }
 
@@ -1713,44 +1677,6 @@ body.dark-mode .app-blocking-closedown-banner {
         gap: 18px;
     }
 
-    body.ios:not(.ios-phone) #settings-btn-stack,
-    body.android:not(.android-phone) #settings-btn-stack {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 0;
-    }
-    body.android:not(.android-phone) #settings-btn-stack {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 0;
-    }
-
-    body.ios:not(.ios-phone) #settings-toolbar-stack,
-    body.android:not(.android-phone) #settings-toolbar-stack {
-        display: flex;
-    }
-    body.android:not(.android-phone) #settings-toolbar-stack {
-        display: flex;
-    }
-
-    body.ios:not(.ios-phone) .scheduler-section .section-header #settings-btn,
-    body.android:not(.android-phone) .scheduler-section .section-header #settings-btn {
-        display: none !important;
-    }
-    body.android:not(.android-phone) .scheduler-section .section-header #settings-btn {
-        display: none !important;
-    }
-
-    body.ios:not(.ios-phone) .scheduler-section .section-header #settings-toolbar-scheduler,
-    body.android:not(.android-phone) .scheduler-section .section-header #settings-toolbar-scheduler {
-        display: none !important;
-    }
-    body.android:not(.android-phone) .scheduler-section .section-header #settings-toolbar-scheduler {
-        display: none !important;
-    }
-
     body.ios:not(.ios-phone) .grid-top-row--blocklist-selected .blocklist-card,
     body.android:not(.android-phone) .grid-top-row--blocklist-selected .blocklist-card {
         max-width: none;
@@ -1765,24 +1691,6 @@ body.dark-mode .app-blocking-closedown-banner {
     }
     body.android:not(.android-phone) .scheduler-section > .section-header.scheduler-header-compact {
         margin-bottom: 2px;
-    }
-
-    body.ios:not(.ios-phone) .selection-prompt,
-    body.android:not(.android-phone) .selection-prompt {
-        padding: 0 0 18px 20px;
-        margin-top: -32px;
-    }
-    body.android:not(.android-phone) .selection-prompt {
-        padding: 0 0 18px 20px;
-        margin-top: -32px;
-    }
-
-    body.ios:not(.ios-phone) .selection-prompt svg,
-    body.android:not(.android-phone) .selection-prompt svg {
-        transform: rotate(90deg);
-    }
-    body.android:not(.android-phone) .selection-prompt svg {
-        transform: rotate(90deg);
     }
 
     /* Portrait stack: show Now/Schedule text unless JS detects overlap (ui-zoom-sched-tabs-icons). */
@@ -1820,6 +1728,9 @@ body.dark-mode .app-blocking-closedown-banner {
         padding: 16px 28px 6px;
         gap: 18px;
         --day-label-width: 76px;
+        --app-header-row-height: 44px;
+        --app-settings-top: calc((var(--app-header-row-height) - var(--app-settings-size)) / 2);
+        --app-settings-right: 28px;
     }
 
     body.ios:not(.ios-phone) .main-content .section-header,
@@ -1905,8 +1816,6 @@ body.dark-mode .app-blocking-closedown-banner {
     body.ios:not(.ios-phone) .main-content .selection-prompt,
     body.android:not(.android-phone) .main-content .selection-prompt {
         gap: 13px;
-        padding: 0 0 22px 22px;
-        margin-top: -28px;
         font-size: 18px;
     }
 
@@ -3457,6 +3366,7 @@ body.ios.ui-zoom-tier-stack .main-content,
 body.android.ui-zoom-tier-stack .main-content {
     padding-left: 18px;
     padding-right: 18px;
+    --app-settings-right: 18px;
 }
 
 /* iPhone landscape: keep two columns, but let the scheduler claim the width it
@@ -3473,6 +3383,7 @@ body.android.ui-zoom-tier-stack .main-content {
     body.android.android-phone .main-content {
         padding-left: 18px;
         padding-right: 18px;
+        --app-settings-right: 18px;
     }
 
     body.ios.ios-phone .grid-top-row,
@@ -3644,6 +3555,84 @@ body:not(.ios):not(.android) .scheduler-section > .section-header .mode-tab-icon
     margin-left: auto;
 }
 
+/* iOS/Android: settings pinned to top-right of the header row in every layout
+   (stacked or two-column). Offset is from .grid-top-row (nearest positioned
+   ancestor), vertically centered on the section-header row. */
+body.ios .main-content,
+body.android .main-content {
+    --app-header-row-height: 40px;
+    --app-settings-size: 36px;
+    --app-settings-top: calc((var(--app-header-row-height) - var(--app-settings-size)) / 2);
+    --app-settings-right: 24px;
+}
+
+body.ios:not(.ios-phone),
+body.android:not(.android-phone) {
+    --app-settings-size: 44px;
+}
+
+@media (max-width: 768px) {
+
+    body.ios .main-content,
+    body.android .main-content {
+        --app-settings-right: 18px;
+    }
+}
+
+body.ios #settings-toolbar-stack,
+body.android #settings-toolbar-stack,
+body.ios #settings-btn-stack,
+body.android #settings-btn-stack,
+body.ios .blocklists-heading-controls,
+body.android .blocklists-heading-controls {
+    display: none !important;
+}
+
+body.ios #settings-toolbar-scheduler,
+body.android #settings-toolbar-scheduler {
+    position: absolute;
+    top: var(--app-settings-top);
+    right: var(--app-settings-right);
+    z-index: 20;
+    margin-left: 0;
+    display: flex !important;
+}
+
+body.ios .scheduler-section .section-header #settings-btn,
+body.android .scheduler-section .section-header #settings-btn {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    width: var(--app-settings-size);
+    height: var(--app-settings-size);
+    padding: 0;
+}
+
+body.ios .grid-top-row .section-header,
+body.android .grid-top-row .section-header {
+    padding-right: calc(var(--app-settings-size) + 8px);
+}
+
+body.ios .grid-top-row:not(.grid-top-row--blocklist-selected) .scheduler-section > .section-header.scheduler-header-compact,
+body.android .grid-top-row:not(.grid-top-row--blocklist-selected) .scheduler-section > .section-header.scheduler-header-compact {
+    min-height: 0;
+    height: 0;
+    margin-bottom: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+body.ios:not(.ios-phone) #settings-btn svg,
+body.android:not(.android-phone) #settings-btn svg {
+    width: 24px;
+    height: 24px;
+}
+
+body.ios .scheduler-section > .section-header,
+body.android .scheduler-section > .section-header {
+    flex-wrap: nowrap;
+}
+
 /* Desktop: keep the toolbar in one stable top-right spot inside main content so
    banners can still push it down with the rest of the page. */
 body:not(.ios):not(.android) #settings-toolbar-scheduler {
@@ -3709,6 +3698,12 @@ body.handset-device .week-calendar-section {
 .week-calendar-section .section-header,
 .blocklists-section > .section-header {
     margin-bottom: 8px;
+    justify-content: flex-start;
+}
+
+.blocklists-section > .section-header #add-blocklist-btn {
+    margin-left: 0;
+    flex-shrink: 0;
 }
 
 /* Schedule heading row: SCHEDULE title on the left, status chips pushed to the right. */
@@ -6509,20 +6504,54 @@ body.android .blocklists-container {
     transform: translateY(-1px);
 }
 
-/* Selection Prompt — pull nearer the pane top; stacked layout sits highest */
+/* Selection Prompt — positioned by syncSelectionPromptLayout() on the first card */
 .selection-prompt {
     display: flex;
     align-items: center;
     justify-content: flex-start;
     gap: 11px;
-    padding: 0 0 18px 20px;
-    margin-top: -32px;
+    margin: 0;
+    padding: 0;
     color: var(--text-muted);
     font-size: 15px;
     font-weight: 400;
     border: none;
     border-radius: 8px;
     background: transparent;
+}
+
+.grid-top-row--selection-prompt-active .selection-prompt {
+    z-index: 5;
+}
+
+body.selection-prompt-layout-two-col .grid-top-row--selection-prompt-active .selection-prompt {
+    position: absolute;
+}
+
+body.selection-prompt-layout-stack .grid-top-row--selection-prompt-active .scheduler-section {
+    min-height: 24px;
+}
+
+body.selection-prompt-layout-stack .grid-top-row--selection-prompt-active .scheduler-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+body.selection-prompt-layout-stack .grid-top-row--selection-prompt-active .selection-prompt {
+    position: static;
+    padding: 12px 0 0 24px;
+    margin: 0;
+    flex-shrink: 0;
+}
+
+body.selection-prompt-layout-two-col .selection-prompt svg {
+    transform: none;
+}
+
+body.selection-prompt-layout-stack .selection-prompt svg {
+    transform: rotate(90deg);
 }
 
 .selection-prompt svg {
@@ -6538,18 +6567,9 @@ body.android .selection-prompt {
     font-size: 17px;
 }
 
-@media (min-width: 769px) {
-    /* Two-column: modest top inset under header */
-    .selection-prompt {
-        padding: 21px 0 26px 0;
-        margin-top: 0;
-    }
-}
-
-@media (max-width: 768px) {
-    .selection-prompt svg {
-        transform: rotate(90deg);
-    }
+.grid-top-row:not(.grid-top-row--blocklist-selected) .scheduler-content {
+    min-height: 0;
+    padding-top: 0;
 }
 
 .blocklist-card.dragging {
