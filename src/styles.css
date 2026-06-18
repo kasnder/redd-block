@@ -10389,13 +10389,23 @@ body:not(.handset-device) .start-confirm-modal {
     border-radius: 14px;
     background: var(--app-bg);
     overflow: hidden;
+    --start-confirm-content-size: 14px;
+    --start-confirm-content-line-height: 1.45;
+    --start-confirm-label-size: 13px;
+    --start-confirm-row-pad-y: 14px;
+    --start-confirm-row-pad-x: 16px;
+    --start-confirm-content-gap: 6px;
+    --start-confirm-time-segment-gap: 12px;
+    --start-confirm-content-line-box: calc(var(--start-confirm-content-size) * var(--start-confirm-content-line-height));
+    --start-confirm-label-offset: calc((var(--start-confirm-content-line-box) - var(--start-confirm-label-size) * var(--start-confirm-content-line-height)) / 2);
+    --start-confirm-icon-offset: calc((var(--start-confirm-content-line-box) - 16px) / 2);
 }
 
 .start-confirm-summary-row {
     display: grid;
     grid-template-columns: 92px minmax(0, 1fr);
     gap: 12px;
-    padding: 14px 16px;
+    padding: var(--start-confirm-row-pad-y) var(--start-confirm-row-pad-x);
     align-items: start;
 }
 
@@ -10411,18 +10421,26 @@ body:not(.handset-device) .start-confirm-modal {
 
 .start-confirm-row-label {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 6px;
-    padding-top: 2px;
-    font-size: 13px;
+    padding-top: 0;
+    font-size: var(--start-confirm-label-size);
     font-weight: 500;
+    line-height: var(--start-confirm-content-line-height);
     color: var(--text-muted);
     white-space: nowrap;
 }
 
+.start-confirm-row-label > span {
+    margin-top: var(--start-confirm-label-offset);
+}
+
 .start-confirm-row-icon {
     flex-shrink: 0;
+    width: 16px;
+    height: 16px;
     opacity: 0.75;
+    margin-top: var(--start-confirm-icon-offset);
 }
 
 .start-confirm-row-value {
@@ -10432,22 +10450,25 @@ body:not(.handset-device) .start-confirm-modal {
 .start-confirm-blocking-list {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--start-confirm-content-gap);
 }
 
 .start-confirm-blocking-line {
     display: flex;
     align-items: flex-start;
     gap: 8px;
-    font-size: 14px;
-    line-height: 1.45;
+    font-size: var(--start-confirm-content-size);
+    line-height: var(--start-confirm-content-line-height);
+    font-weight: 400;
     color: var(--text-primary);
 }
 
 .start-confirm-blocking-icon {
     flex-shrink: 0;
-    margin-top: 2px;
+    width: 16px;
+    height: 16px;
     color: var(--text-muted);
+    margin-top: var(--start-confirm-icon-offset);
 }
 
 .start-confirm-blocking-text {
@@ -10469,16 +10490,17 @@ body:not(.handset-device) .start-confirm-modal {
     color: var(--accent-hover);
 }
 
-.start-confirm-duration-copy,
-.start-confirm-repeat-copy {
+.start-confirm-duration-copy {
     font-size: 15px;
     line-height: 1.45;
     color: var(--text-primary);
 }
 
-.start-confirm-repeat-copy strong {
-    font-weight: 500;
-    color: var(--redd-navy);
+.start-confirm-repeat-copy {
+    font-size: var(--start-confirm-content-size);
+    line-height: var(--start-confirm-content-line-height);
+    font-weight: 400;
+    color: var(--text-primary);
 }
 
 .start-confirm-duration-copy strong {
@@ -10494,28 +10516,23 @@ body:not(.handset-device) .start-confirm-modal {
 .start-confirm-times-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--start-confirm-time-segment-gap);
 }
 
 .start-confirm-time-slot-row {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 8px;
+    gap: var(--start-confirm-content-gap);
     min-height: 0;
-}
-
-#schedule-confirm-times-row .start-confirm-row-label {
-    padding-top: 0;
-    min-height: 24px;
 }
 
 .start-confirm-time-range {
     flex-shrink: 0;
-    font-size: 15px;
-    font-weight: 500;
-    line-height: 1;
-    color: var(--redd-navy);
+    font-size: var(--start-confirm-content-size);
+    font-weight: 400;
+    line-height: var(--start-confirm-content-line-height);
+    color: var(--text-primary);
     white-space: nowrap;
 }
 
@@ -10684,8 +10701,6 @@ body.android .start-confirm-segment-days.compact-day-labels .segment-day-toggle 
 body.dark-mode .start-confirm-modal h3,
 body.dark-mode .start-confirm-header-text h3,
 body.dark-mode .start-confirm-duration-copy strong,
-body.dark-mode .start-confirm-repeat-copy strong,
-body.dark-mode .start-confirm-time-range,
 body.dark-mode .start-confirm-overlay-title {
     color: var(--text-primary);
 }
