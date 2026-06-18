@@ -6892,6 +6892,29 @@ function getModalDismissButton(modalOverlay) {
     return modalOverlay.querySelector('.modal-buttons .cancel-btn, [id^="cancel-"], [id^="close-"]');
 }
 
+function resetModalScrollPosition(modalEl) {
+    if (!modalEl) return;
+    const apply = () => {
+        modalEl.scrollTop = 0;
+        const content = modalEl.querySelector('.modal-content');
+        if (content) content.scrollTop = 0;
+        const scrollBody = modalEl.querySelector('.mobile-modal-scroll-body');
+        if (scrollBody) scrollBody.scrollTop = 0;
+    };
+    apply();
+    requestAnimationFrame(apply);
+}
+
+function attachModalScrollResetOnShow(modalEl) {
+    if (!modalEl || modalEl.dataset.scrollResetOnShow === '1') return;
+    modalEl.dataset.scrollResetOnShow = '1';
+    new MutationObserver(() => {
+        if (!modalEl.classList.contains('hidden')) {
+            resetModalScrollPosition(modalEl);
+        }
+    }).observe(modalEl, { attributes: true, attributeFilter: ['class'] });
+}
+
 function setupHandsetModalScreens() {
     const modalIds = [
         'blocklist-modal',
@@ -6961,6 +6984,14 @@ function setupHandsetModalScreens() {
             settingsHeader?.classList.add('hidden');
         }
         content.prepend(header);
+
+        const scrollBody = document.createElement('div');
+        scrollBody.className = 'mobile-modal-scroll-body';
+        while (header.nextSibling) {
+            scrollBody.appendChild(header.nextSibling);
+        }
+        content.appendChild(scrollBody);
+        attachModalScrollResetOnShow(overlay);
     }
 }
 
@@ -7771,6 +7802,85 @@ function setupModalListeners() {
     focusInputOnTagAreaClick(modalWebsitesTags, modalWebsiteInput);
     focusInputOnTagAreaClick(modalAppsTags, modalAppInput);
 
+    function confirmModalWebsiteInputValue() {
+        const raw = modalWebsiteInput.value.trim();
+        if (!raw) return null;
+
+        const result = processWebsiteInput(raw);
+        const errorMsg = document.getElementById('website-input-error');
+
+        if (result.websiteInvalid) {
+            if (errorMsg) {
+                errorMsg.classList.remove('hidden');
+                setTimeout(() => errorMsg.classList.add('hidden'), 3000);
+            }
+        } else if (errorMsg) {
+            errorMsg.classList.add('hidden');
+        }
+
+        if (result.hadProtected) {
+            modalWebsiteInput.placeholder = tSettings('cannotBlockDomainPlaceholder');
+            modalWebsiteInput.classList.add('input-error');
+            setTimeout(() => {
+                modalWebsiteInput.placeholder = tSettings('placeholderWebsiteExample');
+                modalWebsiteInput.classList.remove('input-error');
+            }, 2000);
+        }
+
+        if (result.toAdd.length > 0) {
+            const toAddCopy = [...result.toAdd];
+            pushModalUndo('website', () => {
+                toAddCopy.forEach(w => {
+                    const i = modalWebsites.indexOf(w);
+                    if (i !== -1) modalWebsites.splice(i, 1);
+                });
+                window.renderModalTags();
+            });
+            result.toAdd.forEach(website => {
+                if (!modalWebsites.includes(website)) modalWebsites.push(website);
+            });
+            window.renderModalTags();
+        }
+        modalWebsiteInput.value = result.inputValueToSet;
+        return result;
+    }
+
+    function focusModalWebsiteInputFromNameField() {
+        modalWebsiteInput.focus({ preventScroll: true });
+        const pendingLen = modalWebsiteInput.value.length;
+        const caret = pendingLen > 0 ? pendingLen : 0;
+        modalWebsiteInput.setSelectionRange(caret, caret);
+        if (isAndroid) {
+            requestAnimationFrame(() => ensureAndroidEditableAboveKeyboard(modalWebsiteInput));
+        }
+    }
+
+    // Android IME "Enter"/"Done" moves focus to the next field by default — confirm
+    // the domain in-place instead (same as desktop Enter).
+    if (isAndroid) {
+        modalWebsiteInput.setAttribute('enterkeyhint', 'done');
+        modalWebsiteInput.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.keyCode !== 13) return;
+            e.preventDefault();
+            e.stopPropagation();
+            confirmModalWebsiteInputValue();
+        }, true);
+    }
+
+    // Mobile: Name → websites. iOS shows plain Return (no default advance); Android
+    // loses native advance when the websites field already has pills or pending text.
+    if (isAndroid || isIOS) {
+        const nameInput = document.getElementById('blocklist-name');
+        nameInput.setAttribute('enterkeyhint', 'next');
+        nameInput.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.keyCode !== 13) return;
+            if (isAndroid && modalWebsites.length === 0 && modalWebsiteInput.value.length === 0) return;
+            e.preventDefault();
+            e.stopPropagation();
+            focusModalWebsiteInputFromNameField();
+        }, true);
+    }
+
     document.getElementById('blocklist-name').addEventListener('input', () => {
         const nameInput = document.getElementById('blocklist-name');
         nameInput.classList.remove('input-error');
@@ -7836,42 +7946,7 @@ function setupModalListeners() {
         // Enter or Space confirms the website(s) — supports multiple domains separated by space, newline, or comma
         if ((e.key === 'Enter' || e.key === ' ') && modalWebsiteInput.value.trim()) {
             e.preventDefault();
-            const result = processWebsiteInput(modalWebsiteInput.value.trim());
-            const errorMsg = document.getElementById('website-input-error');
-
-            if (result.websiteInvalid) {
-                if (errorMsg) {
-                    errorMsg.classList.remove('hidden');
-                    setTimeout(() => errorMsg.classList.add('hidden'), 3000);
-                }
-            } else {
-                if (errorMsg) errorMsg.classList.add('hidden');
-            }
-
-            if (result.hadProtected) {
-                modalWebsiteInput.placeholder = tSettings('cannotBlockDomainPlaceholder');
-                modalWebsiteInput.classList.add('input-error');
-                setTimeout(() => {
-                    modalWebsiteInput.placeholder = tSettings('placeholderWebsiteExample');
-                    modalWebsiteInput.classList.remove('input-error');
-                }, 2000);
-            }
-
-            if (result.toAdd.length > 0) {
-                const toAddCopy = [...result.toAdd];
-                pushModalUndo('website', () => {
-                    toAddCopy.forEach(w => {
-                        const i = modalWebsites.indexOf(w);
-                        if (i !== -1) modalWebsites.splice(i, 1);
-                    });
-                    window.renderModalTags();
-                });
-                result.toAdd.forEach(website => {
-                    if (!modalWebsites.includes(website)) modalWebsites.push(website);
-                });
-                window.renderModalTags();
-            }
-            modalWebsiteInput.value = result.inputValueToSet;
+            confirmModalWebsiteInputValue();
         }
     });
 
@@ -8295,45 +8370,9 @@ function setupModalListeners() {
         let websiteInvalid = false;
         const pendingWebsiteRaw = modalWebsiteInput.value.trim();
         if (pendingWebsiteRaw) {
-            const result = processWebsiteInput(pendingWebsiteRaw);
-            const errorMsg = document.getElementById('website-input-error');
-
-            if (result.websiteInvalid) {
-                if (errorMsg) {
-                    errorMsg.classList.remove('hidden');
-                    setTimeout(() => errorMsg.classList.add('hidden'), 3000);
-                }
-                websiteInvalid = true;
-            } else {
-                if (errorMsg) errorMsg.classList.add('hidden');
-            }
-
-            if (result.hadProtected) {
-                modalWebsiteInput.value = '';
-                modalWebsiteInput.placeholder = tSettings('cannotBlockDomainPlaceholder');
-                modalWebsiteInput.classList.add('input-error');
-                setTimeout(() => {
-                    modalWebsiteInput.placeholder = tSettings('placeholderWebsiteExample');
-                    modalWebsiteInput.classList.remove('input-error');
-                }, 2000);
-                return; // Block save so behavior matches explicit add interactions.
-            }
-
-            if (result.toAdd.length > 0) {
-                const toAddCopy = [...result.toAdd];
-                pushModalUndo('website', () => {
-                    toAddCopy.forEach(w => {
-                        const i = modalWebsites.indexOf(w);
-                        if (i !== -1) modalWebsites.splice(i, 1);
-                    });
-                    window.renderModalTags();
-                });
-            }
-            result.toAdd.forEach(pendingWebsite => {
-                if (!modalWebsites.includes(pendingWebsite)) modalWebsites.push(pendingWebsite);
-            });
-            if (result.toAdd.length > 0) window.renderModalTags();
-            modalWebsiteInput.value = result.inputValueToSet;
+            const result = confirmModalWebsiteInputValue();
+            if (result?.hadProtected) return;
+            if (result?.websiteInvalid) websiteInvalid = true;
         }
 
         if (nameEmpty || websiteInvalid) return;
@@ -9320,9 +9359,16 @@ function getAndroidVisibleViewportBottom() {
 }
 
 function getAndroidScrollContainer(el) {
-    return el.closest('.modal-overlay:not(.hidden)')
-        || el.closest('.onboarding-screen:not(.hidden)')
-        || document.querySelector('body.android .main-content');
+    const fullscreenModal = el.closest('.modal-overlay.mobile-fullscreen-modal:not(.hidden)');
+    if (fullscreenModal) {
+        return fullscreenModal.querySelector('.mobile-modal-scroll-body')
+            || fullscreenModal.querySelector('.modal-content');
+    }
+    const modal = el.closest('.modal-overlay:not(.hidden)');
+    if (modal) return modal;
+    const onboarding = el.closest('.onboarding-screen:not(.hidden)');
+    if (onboarding) return onboarding;
+    return document.querySelector('body.android .main-content');
 }
 
 function isAndroidFieldObscuredByKeyboard(el) {
@@ -9357,6 +9403,7 @@ function updateAndroidViewportMetrics() {
     const keyboardInset = Math.max(0, layoutHeight - viewportTop - viewportHeight);
 
     document.documentElement.style.setProperty('--android-app-height', `${viewportHeight}px`);
+    document.documentElement.style.setProperty('--android-viewport-offset-top', `${viewportTop}px`);
     document.documentElement.style.setProperty('--android-keyboard-inset', `${keyboardInset}px`);
     document.body.classList.toggle('android-keyboard-open', keyboardInset > 80);
     syncAndroidHandsetModalSideInset();
@@ -14884,10 +14931,6 @@ function openBlocklistModal(blocklist = null) {
     }
 
     document.getElementById('blocklist-modal').classList.remove('hidden');
-
-    // Reset scroll position after modal is shown
-    const modalContent = document.querySelector('#blocklist-modal .modal-content');
-    if (modalContent) modalContent.scrollTop = 0;
 }
 
 // Close blocklist modal

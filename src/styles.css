@@ -26,6 +26,7 @@
 :root {
     color-scheme: light;
     --android-app-height: 100vh;
+    --android-viewport-offset-top: 0px;
     --android-keyboard-inset: 0px;
 
     /* --- Canonical ReDD brand tokens (palette, fonts, shadows, radii) --- */
@@ -10048,6 +10049,13 @@ body.handset-device .mobile-fullscreen-modal {
     overflow: hidden;
 }
 
+/* Shrink the shell to the visible viewport while the keyboard is open. */
+body.handset-device.android .mobile-fullscreen-modal {
+    top: var(--android-viewport-offset-top, 0px);
+    bottom: auto;
+    height: var(--android-app-height, 100vh);
+}
+
 body.handset-device .mobile-fullscreen-modal .modal-content,
 body.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #settings-modal.mobile-fullscreen-modal .modal-content,
@@ -10056,34 +10064,44 @@ body.handset-device #override-all-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #pause-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #start-block-confirm-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #start-schedule-confirm-modal.mobile-fullscreen-modal .modal-content {
+    display: flex;
+    flex-direction: column;
     width: 100%;
     max-width: none;
     max-height: none;
     height: 100%;
     border-radius: 0;
-    padding:
-        calc(env(safe-area-inset-top, 0px) + 12px)
-        max(18px, env(safe-area-inset-right, 0px))
-        calc(env(safe-area-inset-bottom, 0px) + 20px)
-        max(18px, env(safe-area-inset-left, 0px));
+    padding: 0;
     box-shadow: none;
+    overflow: hidden;
+}
+
+body.handset-device .mobile-fullscreen-modal .mobile-modal-scroll-body {
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
     overscroll-behavior-y: contain;
     -webkit-overflow-scrolling: touch;
+    padding:
+        18px
+        max(18px, env(safe-area-inset-right, 0px))
+        calc(env(safe-area-inset-bottom, 0px) + 20px)
+        max(18px, env(safe-area-inset-left, 0px));
 }
 
 body.handset-device .mobile-fullscreen-modal .mobile-modal-header {
-    position: sticky;
-    top: calc(env(safe-area-inset-top, 0px) * -1 - 12px);
+    position: relative;
+    top: auto;
+    flex-shrink: 0;
     z-index: 2;
     display: grid;
     grid-template-columns: auto 1fr auto;
     align-items: center;
     gap: 10px;
     margin:
-        calc(env(safe-area-inset-top, 0px) * -1 - 12px)
+        0
         calc(max(18px, env(safe-area-inset-right, 0px)) * -1)
-        18px
+        0
         calc(max(18px, env(safe-area-inset-left, 0px)) * -1);
     padding:
         calc(env(safe-area-inset-top, 0px) + 12px)
@@ -10154,6 +10172,10 @@ body.handset-device .mobile-fullscreen-modal .modal-buttons {
     body.handset-device.android #pause-modal.mobile-fullscreen-modal .modal-content,
     body.handset-device.android #start-block-confirm-modal.mobile-fullscreen-modal .modal-content,
     body.handset-device.android #start-schedule-confirm-modal.mobile-fullscreen-modal .modal-content {
+        padding: 0;
+    }
+
+    body.handset-device.android .mobile-fullscreen-modal .mobile-modal-scroll-body {
         padding-left: var(--handset-modal-side-inset, 18px);
         padding-right: var(--handset-modal-side-inset, 18px);
     }
@@ -12212,7 +12234,7 @@ body.handset-device #settings-modal.mobile-fullscreen-modal .settings-section-he
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 0;
+    padding: 12px 0 4px;
     cursor: pointer;
     font-size: 15px;
     color: var(--text-muted);
@@ -12234,11 +12256,15 @@ body.handset-device #settings-modal.mobile-fullscreen-modal .settings-section-he
 }
 
 .blocklist-advanced-content {
-    padding-bottom: 12px;
+    padding-bottom: 8px;
 }
 
 .blocklist-advanced-content.hidden {
     display: none;
+}
+
+#blocklist-modal .modal-buttons {
+    margin-top: 12px;
 }
 
 .checkbox-option {
