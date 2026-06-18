@@ -251,6 +251,16 @@ body.android {
     --font-body: system-ui, Roboto, -apple-system, 'Segoe UI', Arial, Helvetica, sans-serif;
 }
 
+body.ios,
+body.android {
+    --app-footer-pad-top: 10px;
+    --app-footer-pad-bottom: 10px;
+    --app-footer-text-line: calc(13px * 1.25);
+    --app-footer-height: calc(
+        var(--app-footer-pad-top) + var(--app-footer-text-line) + var(--app-footer-pad-bottom) + env(safe-area-inset-bottom, 0px)
+    );
+}
+
 body.ios .main-content,
 body.android .main-content {
     margin-top: 0;
@@ -261,10 +271,11 @@ body.android .main-content {
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
+    padding-bottom: var(--app-footer-height);
 }
 
 body.android .main-content {
-    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px) + var(--android-keyboard-inset, 0px));
+    padding-bottom: calc(var(--app-footer-height) + var(--android-keyboard-inset, 0px));
 }
 
 /* Android WebView: suppress default blue tap flash only (keep normal focus styling). */
@@ -280,7 +291,7 @@ body.android .app-container {
     width: 100%;
     max-width: 100%;
     height: calc(100vh - env(safe-area-inset-top, 20px));
-    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: var(--app-footer-height);
     overflow: hidden;
     box-sizing: border-box;
 }
@@ -322,9 +333,10 @@ body.handset-device #settings-modal .language-picker-trigger .language-picker-co
 
 /* iPad only — iPhone landscape is often ≥768px wide; must not use iPad padding */
 @media (min-width: 768px) {
-    body.ios:not(.ios-phone) .app-container,
-    body.android:not(.android-phone) .app-container {
-        padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+    body.ios:not(.ios-phone),
+    body.android:not(.android-phone) {
+        --app-footer-pad-top: 12px;
+        --app-footer-pad-bottom: 12px;
     }
 }
 
@@ -11612,8 +11624,17 @@ body.android.android-phone .footer-text {
 
 body.ios .footer,
 body.android .footer {
-    padding: 0 max(14px, env(safe-area-inset-left, 0px)) max(8px, env(safe-area-inset-bottom, 0px))
+    padding:
+        var(--app-footer-pad-top)
+        max(14px, env(safe-area-inset-left, 0px))
+        calc(var(--app-footer-pad-bottom) + env(safe-area-inset-bottom, 0px))
         max(14px, env(safe-area-inset-right, 0px));
+    background: var(--container-bg);
+}
+
+body.ios .footer-text,
+body.android .footer-text {
+    padding-bottom: 0;
 }
 
 .settings-top-btn {
