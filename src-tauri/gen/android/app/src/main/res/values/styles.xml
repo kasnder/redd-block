@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Generous corner radius for native system dialogs -->
+    <style name="ShapeAppearance.redd_block.Dialog" parent="ShapeAppearance.MaterialComponents.MediumComponent">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">32dp</item>
+    </style>
+
+    <!-- Native alert()/confirm() and Tauri message()/ask() dialogs -->
+    <style name="Theme.redd_block.AlertDialog" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
+        <item name="colorPrimary">@color/redd_teal</item>
+        <item name="colorSecondary">@color/redd_teal</item>
+        <item name="colorAccent">@color/redd_teal</item>
+        <item name="dialogCornerRadius">16dp</item>
+        <item name="shapeAppearanceMediumComponent">@style/ShapeAppearance.redd_block.Dialog</item>
+        <item name="buttonBarPositiveButtonStyle">@style/Widget.redd_block.Dialog.Button</item>
+        <item name="buttonBarNegativeButtonStyle">@style/Widget.redd_block.Dialog.Button</item>
+        <item name="buttonBarNeutralButtonStyle">@style/Widget.redd_block.Dialog.Button</item>
+    </style>
+
+    <style name="Widget.redd_block.Dialog.Button" parent="Widget.MaterialComponents.Button.TextButton.Dialog">
+        <item name="android:textColor">@color/redd_teal</item>
+    </style>
+</resources>
