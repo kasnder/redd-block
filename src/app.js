@@ -12581,19 +12581,21 @@ function renderStartConfirmBlockingDetails(blocklist, listEl, showAllBtn, rowEl)
 }
 
 function buildScheduleConfirmSegmentHtml(seg) {
-    const dayLetters = weekdayLetterMon0List();
+    const fullDayLabels = weekdayAbbrevMon0List();
+    const useCompactDayLabels = shouldUseCompactIosScheduleDayLabels();
+    const dayLabels = useCompactDayLabels ? weekdayLetterMon0List() : fullDayLabels;
     const startTime = `${String(seg.startHour).padStart(2, '0')}:${String(seg.startMinute).padStart(2, '0')}`;
     const endTime = `${String(seg.endHour).padStart(2, '0')}:${String(seg.endMinute).padStart(2, '0')}`;
     const segmentDays = Array.isArray(seg.days) ? seg.days : [];
-    const dayToggles = dayLetters.map((letter, dayIndex) =>
-        `<span class="segment-day-toggle${segmentDays.includes(dayIndex) ? ' active' : ''}" aria-hidden="true">${letter}</span>`,
+    const dayToggles = dayLabels.map((label, dayIndex) =>
+        `<span class="segment-day-toggle${segmentDays.includes(dayIndex) ? ' active' : ''}" aria-label="${fullDayLabels[dayIndex]}"${useCompactDayLabels ? ' aria-hidden="true"' : ''}>${label}</span>`,
     ).join('');
 
     return `
         <div class="start-confirm-time-slot">
             <div class="start-confirm-time-slot-row">
                 <span class="start-confirm-time-range">${startTime} → ${endTime}</span>
-                <div class="start-confirm-segment-days segment-days">${dayToggles}</div>
+                <div class="start-confirm-segment-days segment-days${useCompactDayLabels ? ' compact-day-labels' : ''}">${dayToggles}</div>
             </div>
         </div>
     `;
@@ -19977,6 +19979,11 @@ function syncIosScheduleDayLabelsViewportMode() {
     const schedulePanel = document.getElementById('schedule-block-panel');
     if (isScheduleMode && schedulePanel && !schedulePanel.classList.contains('hidden')) {
         rebuildScheduleSegments();
+    }
+
+    const scheduleConfirmModal = document.getElementById('start-schedule-confirm-modal');
+    if (scheduleConfirmModal && !scheduleConfirmModal.classList.contains('hidden')) {
+        renderScheduleConfirmSegments(document.getElementById('schedule-confirm-segments'), scheduleSegments);
     }
 }
 

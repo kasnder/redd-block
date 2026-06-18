@@ -10499,11 +10499,10 @@ body:not(.handset-device) .start-confirm-modal {
 
 .start-confirm-time-slot-row {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
+    align-items: flex-start;
     gap: 8px;
-    flex-wrap: nowrap;
-    min-height: 24px;
+    min-height: 0;
 }
 
 #schedule-confirm-times-row .start-confirm-row-label {
@@ -10522,22 +10521,40 @@ body:not(.handset-device) .start-confirm-modal {
 
 .start-confirm-segment-days {
     display: flex;
-    flex-wrap: nowrap;
-    flex-shrink: 1;
-    justify-content: flex-end;
-    gap: 3px;
+    flex-wrap: wrap;
+    gap: 4px;
+    width: 100%;
+    max-width: 100%;
     min-width: 0;
 }
 
 .start-confirm-segment-days .segment-day-toggle {
     pointer-events: none;
     cursor: default;
-    flex-shrink: 0;
-    min-width: 24px;
-    width: 24px;
-    height: 24px;
-    padding: 0;
-    font-size: 11px;
+    min-width: 34px;
+    height: 28px;
+    padding: 0 6px;
+    font-size: 13px;
+    border-radius: 6px;
+}
+
+.start-confirm-segment-days.compact-day-labels .segment-day-toggle {
+    min-width: 28px;
+    padding: 0 4px;
+}
+
+body.ios .start-confirm-segment-days .segment-day-toggle,
+body.android .start-confirm-segment-days .segment-day-toggle {
+    min-width: 34px;
+    height: 28px;
+    padding: 0 6px;
+    font-size: 13px;
+}
+
+body.ios .start-confirm-segment-days.compact-day-labels .segment-day-toggle,
+body.android .start-confirm-segment-days.compact-day-labels .segment-day-toggle {
+    min-width: 28px;
+    padding: 0 4px;
 }
 
 .start-confirm-overlay-row .start-confirm-row-label {
