@@ -92,6 +92,12 @@
         object-fit: contain;
       }
 
+      /* Hide the globe fallback whenever the browser icon is shown (WebView can
+         ignore [hidden] on SVG, so this sibling rule is the reliable guard). */
+      .hero-ring img:not([hidden]) ~ .hero-fallback {
+        display: none !important;
+      }
+
       .hero-badge {
         position: absolute;
         top: 0;

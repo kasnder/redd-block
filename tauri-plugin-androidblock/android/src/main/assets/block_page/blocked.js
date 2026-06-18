@@ -32,18 +32,28 @@
 
   const heroIcon = document.getElementById("hero-icon");
   const heroFallback = document.getElementById("hero-fallback");
+
+  function showHeroIcon() {
+    if (heroFallback) {
+      heroFallback.hidden = true;
+      heroFallback.style.display = "none";
+    }
+    if (heroIcon) heroIcon.hidden = false;
+  }
+
+  function showHeroFallback() {
+    if (heroIcon) heroIcon.hidden = true;
+    if (heroFallback) {
+      heroFallback.hidden = false;
+      heroFallback.style.display = "";
+    }
+  }
+
   if (browserPkg && heroIcon) {
-    if (heroFallback) heroFallback.hidden = true;
-    heroIcon.hidden = false;
+    showHeroIcon();
+    heroIcon.onload = showHeroIcon;
+    heroIcon.onerror = showHeroFallback;
     heroIcon.src = `/blocked-icon?pkg=${encodeURIComponent(browserPkg)}`;
-    heroIcon.onload = () => {
-      heroIcon.hidden = false;
-      if (heroFallback) heroFallback.hidden = true;
-    };
-    heroIcon.onerror = () => {
-      heroIcon.hidden = true;
-      if (heroFallback) heroFallback.hidden = false;
-    };
   }
 
   const pill = document.getElementById("pill");
