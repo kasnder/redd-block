@@ -28,6 +28,13 @@
     --ui-zoom: 1;
     --android-app-height: 100vh;
     --android-viewport-offset-top: 0px;
+    --android-native-safe-area-top: 0px;
+    --android-native-safe-area-bottom: 0px;
+    --android-safe-area-top: 20px;
+    --android-safe-area-bottom: 20px;
+    --android-safe-area-content-gap: 0px;
+    --android-safe-area-content-gap-bottom: 0px;
+    --android-safe-area-bottom-min: 0px;
     --android-keyboard-inset: 0px;
 
     /* --- Canonical ReDD brand tokens (palette, fonts, shadows, radii) --- */
@@ -237,7 +244,6 @@ h3 {
 /* iOS / Android safe area adjustments */
 body.ios,
 body.android {
-    padding-top: env(safe-area-inset-top, 20px);
     padding-bottom: 0;
     overflow: hidden;
     overflow-x: hidden;
@@ -245,6 +251,32 @@ body.android {
     /* Avoid Safari boosting text / chrome when rotating to landscape (narrow height, wide width) */
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+}
+
+body.ios {
+    padding-top: env(safe-area-inset-top, 20px);
+}
+
+/* Edge-to-edge WebView often reports env(safe-area-inset-*) as 0; JS mirrors
+   visualViewport.offsetTop into --android-safe-area-top. MainActivity injects
+   real WindowInsets into --android-native-safe-area-* (authoritative on tablets). */
+body.android {
+    --android-safe-area-top-effective: max(
+        var(--android-native-safe-area-top, 0px),
+        var(--android-safe-area-top, 20px)
+    );
+    --android-safe-area-bottom-effective: max(
+        var(--android-native-safe-area-bottom, 0px),
+        var(--android-safe-area-bottom, 20px),
+        var(--android-safe-area-bottom-min, 0px)
+    );
+    --android-safe-area-top-with-gap: calc(
+        var(--android-safe-area-top-effective) + var(--android-safe-area-content-gap, 0px)
+    );
+    --android-safe-area-bottom-with-gap: calc(
+        var(--android-safe-area-bottom-effective) + var(--android-safe-area-content-gap-bottom, 0px)
+    );
+    padding-top: var(--android-safe-area-top-with-gap);
 }
 
 /* Android: use system/Roboto for body UI text; keep iOS Inter stack on :root. */
@@ -257,8 +289,17 @@ body.android {
     --app-footer-pad-top: 10px;
     --app-footer-pad-bottom: 10px;
     --app-footer-text-line: calc(13px * 1.25);
+    --app-footer-chrome-height: calc(
+        var(--app-footer-pad-top) + var(--app-footer-text-line) + var(--app-footer-pad-bottom)
+    );
     --app-footer-height: calc(
-        var(--app-footer-pad-top) + var(--app-footer-text-line) + var(--app-footer-pad-bottom) + env(safe-area-inset-bottom, 0px)
+        var(--app-footer-chrome-height) + env(safe-area-inset-bottom, 0px)
+    );
+}
+
+body.android {
+    --app-footer-height: calc(
+        var(--app-footer-chrome-height) + var(--android-safe-area-bottom-with-gap, 0px)
     );
 }
 
@@ -276,7 +317,8 @@ body.android .main-content {
 }
 
 body.android .main-content {
-    padding-bottom: calc(var(--app-footer-height) + var(--android-keyboard-inset, 0px));
+    /* Chrome only: .app-container height already excludes --android-safe-area-bottom-with-gap. */
+    padding-bottom: calc(var(--app-footer-chrome-height) + var(--android-keyboard-inset, 0px));
 }
 
 /* Android WebView: suppress default blue tap flash only (keep normal focus styling). */
@@ -298,7 +340,12 @@ body.android .app-container {
 }
 
 body.android .app-container {
-    height: calc(var(--android-app-height, 100vh) - env(safe-area-inset-top, 20px));
+    height: calc(
+        var(--android-app-height, 100vh)
+        - var(--android-safe-area-top-with-gap, 20px)
+        - var(--android-safe-area-bottom-with-gap, 0px)
+    );
+    padding-bottom: var(--app-footer-chrome-height);
 }
 
 /* iPad: WKWebView "desktop" content mode ignores CSS zoom and pageZoom for text/emoji sizing.
@@ -350,6 +397,26 @@ body.handset-device #settings-modal .language-picker-trigger .language-picker-co
         --app-footer-pad-top: 12px;
         --app-footer-pad-bottom: 12px;
         --app-footer-text-line: 16.25px;
+    }
+}
+
+/* Android tablet: top/bottom breathing room; bottom min matches 3-button nav height. */
+@media (min-width: 769px) {
+    body.android:not(.android-phone) {
+        --android-safe-area-content-gap: 12px;
+        --android-safe-area-content-gap-bottom: 12px;
+        --android-safe-area-bottom-min: 48px;
+    }
+
+    body.android:not(.android-phone) .main-content {
+        padding-top: 16px;
+        padding-right: 28px;
+        padding-left: 28px;
+        padding-bottom: calc(var(--app-footer-chrome-height) + var(--android-keyboard-inset, 0px));
+        gap: 18px;
+        --app-header-row-height: 44px;
+        --app-settings-top: calc((var(--app-header-row-height) - var(--app-settings-size)) / 2);
+        --app-settings-right: 28px;
     }
 }
 
@@ -1738,12 +1805,19 @@ body.dark-mode .app-blocking-closedown-banner {
        ------------------------------------------------------------------------- */
     body.ios:not(.ios-phone) .main-content,
     body.android:not(.android-phone) .main-content {
-        padding: 16px 28px 6px;
+        padding-top: 16px;
+        padding-right: 28px;
+        padding-left: 28px;
+        padding-bottom: var(--app-footer-height);
         gap: 18px;
         --day-label-width: 76px;
         --app-header-row-height: 44px;
         --app-settings-top: calc((var(--app-header-row-height) - var(--app-settings-size)) / 2);
         --app-settings-right: 28px;
+    }
+
+    body.android:not(.android-phone) .main-content {
+        padding-bottom: calc(var(--app-footer-chrome-height) + var(--android-keyboard-inset, 0px));
     }
 
     body.ios:not(.ios-phone) .main-content .section-header,
@@ -1916,7 +1990,12 @@ body.dark-mode .app-blocking-closedown-banner {
     body.ios:not(.ios-phone) .main-content #timed-controls .time-separator,
     body.android:not(.android-phone) .main-content #timed-controls .time-separator {
         height: 42px;
-        font-size: 22px;
+    }
+
+    body.ios:not(.ios-phone) .main-content #timed-controls .time-separator svg,
+    body.android:not(.android-phone) .main-content #timed-controls .time-separator svg {
+        width: 22px;
+        height: 22px;
     }
 
     body.ios:not(.ios-phone) .main-content .now-btn,
@@ -1965,8 +2044,14 @@ body.dark-mode .app-blocking-closedown-banner {
         justify-content: center;
         height: 42px;
         padding-bottom: 0;
-        line-height: 1;
-        font-size: 22px;
+        line-height: 0;
+        min-width: 22px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .schedule-block-panel .time-separator svg,
+    body.android:not(.android-phone) .main-content .schedule-block-panel .time-separator svg {
+        width: 22px;
+        height: 22px;
     }
 
     body.ios:not(.ios-phone) .main-content .time-colon,
@@ -1978,11 +2063,6 @@ body.dark-mode .app-blocking-closedown-banner {
     body.android:not(.android-phone) .main-content .next-day-badge {
         padding: 5px 10px;
         font-size: 12px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .time-separator,
-    body.android:not(.android-phone) .main-content .time-separator {
-        font-size: 22px;
     }
 
     body.ios:not(.ios-phone) .main-content .popover-option,
@@ -2058,7 +2138,7 @@ body.dark-mode .app-blocking-closedown-banner {
         border-radius: 10px;
         --schedule-segment-pad-y: 14px;
         --schedule-segment-label-size: 14px;
-        --schedule-segment-remove-size: 34px;
+        --schedule-segment-remove-size: 30px;
     }
 
     body.ios:not(.ios-phone) .main-content .segment-row,
@@ -2094,23 +2174,6 @@ body.dark-mode .app-blocking-closedown-banner {
     body.ios:not(.ios-phone) .main-content .schedule-block-panel .segment-days,
     body.android:not(.android-phone) .main-content .schedule-block-panel .segment-days {
         min-height: 42px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .schedule-segment:has(.remove-segment-btn),
-    body.android:not(.android-phone) .main-content .schedule-segment:has(.remove-segment-btn) {
-        padding-right: 48px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .schedule-segment .remove-segment-btn,
-    body.android:not(.android-phone) .main-content .schedule-segment .remove-segment-btn {
-        width: 34px;
-        height: 34px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .remove-segment-btn svg,
-    body.android:not(.android-phone) .main-content .remove-segment-btn svg {
-        width: 20px;
-        height: 20px;
     }
 
     body.ios:not(.ios-phone) .main-content .add-segment-btn,
@@ -3569,8 +3632,8 @@ body:not(.ios):not(.android) .scheduler-section > .section-header .mode-tab-icon
 }
 
 /* iOS/Android: settings pinned to top-right of the header row in every layout
-   (stacked or two-column). Offset is from .grid-top-row (nearest positioned
-   ancestor), vertically centered on the section-header row. */
+   (stacked or two-column). Anchor is .grid-top-row; button lives in the
+   blocklists header so it is not clipped when the scheduler header collapses. */
 body.ios .main-content,
 body.android .main-content {
     --app-header-row-height: 40px;
@@ -3592,17 +3655,22 @@ body.android:not(.android-phone) {
     }
 }
 
-body.ios #settings-toolbar-stack,
-body.android #settings-toolbar-stack,
-body.ios #settings-btn-stack,
-body.android #settings-btn-stack,
-body.ios .blocklists-heading-controls,
-body.android .blocklists-heading-controls {
+/* iOS/Android: settings pinned to top-right of .grid-top-row (not the scheduler
+   header — that row uses container-type and collapses when no blocklist is selected). */
+body.ios #settings-toolbar-scheduler,
+body.android #settings-toolbar-scheduler,
+body.ios #settings-btn,
+body.android #settings-btn {
     display: none !important;
 }
 
-body.ios #settings-toolbar-scheduler,
-body.android #settings-toolbar-scheduler {
+body.ios .blocklists-heading-controls,
+body.android .blocklists-heading-controls {
+    display: contents !important;
+}
+
+body.ios #settings-toolbar-stack,
+body.android #settings-toolbar-stack {
     position: absolute;
     top: var(--app-settings-top);
     right: var(--app-settings-right);
@@ -3611,8 +3679,8 @@ body.android #settings-toolbar-scheduler {
     display: flex !important;
 }
 
-body.ios .scheduler-section .section-header #settings-btn,
-body.android .scheduler-section .section-header #settings-btn {
+body.ios #settings-btn-stack,
+body.android #settings-btn-stack {
     display: flex !important;
     align-items: center;
     justify-content: center;
@@ -3635,8 +3703,8 @@ body.android .grid-top-row:not(.grid-top-row--blocklist-selected) .scheduler-sec
     overflow: hidden;
 }
 
-body.ios:not(.ios-phone) #settings-btn svg,
-body.android:not(.android-phone) #settings-btn svg {
+body.ios:not(.ios-phone) #settings-btn-stack svg,
+body.android:not(.android-phone) #settings-btn-stack svg {
     width: 24px;
     height: 24px;
 }
@@ -4755,7 +4823,12 @@ body.dark-mode .day-row.weekend {
     justify-content: center;
     height: 36px;
     padding-bottom: 0;
-    line-height: 1;
+    line-height: 0;
+}
+
+#timed-controls .time-separator svg {
+    width: 20px;
+    height: 20px;
 }
 
 .time-label {
@@ -5053,9 +5126,20 @@ body.dark-mode .time-part.active {
 }
 
 .time-separator {
-    font-size: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
     color: hsl(215, 20%, 65%);
-    padding-bottom: 8px;
+    opacity: 0.75;
+    padding-bottom: 0;
+    line-height: 0;
+}
+
+.time-separator svg {
+    width: 20px;
+    height: 20px;
+    display: block;
 }
 
 .duration-display {
@@ -5587,7 +5671,80 @@ body:not(.ios):not(.android) .schedule-segment {
     justify-content: center;
     height: 36px;
     padding-bottom: 0;
-    line-height: 1;
+    line-height: 0;
+}
+
+.schedule-block-panel .time-separator svg {
+    width: 20px;
+    height: 20px;
+}
+
+/* iOS/Android: schedule-segment delete clearance + vertically centered start→end arrow.
+   Portrait iPad rules in the @media block below scale these same values up further. */
+body.ios .main-content .schedule-segment .time-pickers-row,
+body.android .main-content .schedule-segment .time-pickers-row {
+    align-items: center;
+    gap: 8px;
+}
+
+body.ios .schedule-block-panel .time-picker-row,
+body.android .schedule-block-panel .time-picker-row {
+    min-height: 42px;
+}
+
+body.ios .schedule-block-panel .time-separator,
+body.android .schedule-block-panel .time-separator {
+    align-self: flex-end;
+    height: 42px;
+    min-width: 22px;
+    opacity: 0.75;
+}
+
+body.ios .schedule-block-panel .time-separator svg,
+body.android .schedule-block-panel .time-separator svg {
+    width: 22px;
+    height: 22px;
+}
+
+body.ios .schedule-segment,
+body.android .schedule-segment {
+    --schedule-segment-pad-y: 14px;
+    --schedule-segment-label-size: 14px;
+    --schedule-segment-remove-size: 30px;
+}
+
+body.ios .schedule-segment .remove-segment-btn,
+body.android .schedule-segment .remove-segment-btn {
+    right: 6px;
+}
+
+/* Android tablet landscape / two-column: match iPad spacing (portrait iPad rules
+   live in the portrait-only @media above; do not override those here). */
+@media (min-width: 769px) and (orientation: landscape) {
+    body.android:not(.android-phone) .main-content .time-pickers-row {
+        gap: 12px;
+    }
+
+    body.android:not(.android-phone) .main-content .schedule-segments {
+        gap: 12px;
+        --schedule-segments-gap: 12px;
+    }
+
+    body.android:not(.android-phone) .main-content .schedule-segments:has(.schedule-segment:nth-child(4)) {
+        --schedule-segment-scroll-height: 138px;
+    }
+
+    body.android:not(.android-phone) .main-content .schedule-segment {
+        padding: 14px 16px;
+        border-radius: 10px;
+        --schedule-segment-pad-y: 14px;
+        --schedule-segment-label-size: 14px;
+        --schedule-segment-remove-size: 30px;
+    }
+
+    body.android:not(.android-phone) .main-content .segment-row {
+        gap: 14px 18px;
+    }
 }
 
 /* Remove Segment Button */
@@ -5617,7 +5774,7 @@ body:not(.ios):not(.android) .schedule-segment {
         var(--schedule-segment-pad-y) +
         (var(--schedule-segment-label-size) * var(--schedule-segment-label-line-height) - var(--schedule-segment-remove-size)) / 2
     );
-    right: 8px;
+    right: 10px;
     z-index: 1;
     margin-left: 0;
 }
@@ -10042,10 +10199,17 @@ body.android #blocklist-modal .tags-input-container .browse-btn-caption {
 body.ios .modal-overlay,
 body.android .modal-overlay {
     align-items: flex-start;
-    padding-top: calc(env(safe-area-inset-top, 20px) + 10px);
     padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 10px);
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+}
+
+body.ios .modal-overlay {
+    padding-top: calc(env(safe-area-inset-top, 20px) + 10px);
+}
+
+body.android .modal-overlay {
+    padding-top: calc(var(--android-safe-area-top-with-gap, 20px) + 10px);
 }
 
 body.handset-device.ios .modal-overlay.mobile-fullscreen-modal {
@@ -10259,6 +10423,10 @@ body:not(.handset-device) #settings-modal .modal-content {
 body.ios:not(.handset-device) #blocklist-modal,
 body.android:not(.handset-device) #blocklist-modal {
     padding-top: env(safe-area-inset-top, 20px);
+}
+
+body.android:not(.handset-device) #blocklist-modal {
+    padding-top: var(--android-safe-area-top-with-gap, 20px);
 }
 
 /* Word count fits in 3 digits (max 500); keep the field compact beside "total words". */
@@ -11668,6 +11836,14 @@ body.android .footer {
 body.ios .footer-text,
 body.android .footer-text {
     padding-bottom: 0;
+}
+
+body.android .footer {
+    padding:
+        var(--app-footer-pad-top)
+        max(14px, env(safe-area-inset-left, 0px))
+        calc(var(--app-footer-pad-bottom) + var(--android-safe-area-bottom-with-gap, 0px))
+        max(14px, env(safe-area-inset-right, 0px));
 }
 
 .settings-top-btn {
@@ -13650,6 +13826,10 @@ body.dark-mode .undo-btn:hover {
 body.ios .zoom-toast,
 body.android .zoom-toast {
     top: calc(20px + env(safe-area-inset-top, 20px));
+}
+
+body.android .zoom-toast {
+    top: calc(20px + var(--android-safe-area-top-with-gap, 20px));
 }
 
 body.dark-mode .zoom-toast {

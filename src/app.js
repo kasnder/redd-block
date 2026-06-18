@@ -290,6 +290,7 @@ let uiZoomLayoutObserverBound = false;
 let schedTabsIconOnlyEnteredAtWidth = 0;
 const UI_ZOOM_STEP = 0.1;
 const DEFAULT_UI_ZOOM = 1.0;
+const TIME_SEPARATOR_ARROW_HTML = '<span class="time-separator" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg></span>';
 let zoomToastHideTimeout = null;
 let nativeWebviewZoomSupported = null;
 
@@ -6838,6 +6839,7 @@ function syncAndroidLayoutTier() {
     document.body.classList.toggle('android-phone', isPhoneLayout);
     document.body.classList.toggle('android-handset', isHandset);
     document.body.classList.toggle('handset-device', isHandset);
+    updateAndroidViewportMetrics();
     syncAndroidHandsetModalSideInset();
 }
 
@@ -9402,9 +9404,26 @@ function updateAndroidViewportMetrics() {
     const layoutHeight = window.innerHeight;
     const viewportTop = viewport?.offsetTop ?? 0;
     const keyboardInset = Math.max(0, layoutHeight - viewportTop - viewportHeight);
+    const safeArea = readCssSafeAreaInsets();
+    const minTop = document.body.classList.contains('android-phone') ? 20 : 28;
+    const statusBarCandidates = [safeArea.top, minTop];
+    // offsetTop reflects the status bar under edge-to-edge; ignore while the keyboard is open.
+    if (keyboardInset <= 80) {
+        statusBarCandidates.push(viewportTop);
+    }
+    const safeAreaTop = Math.max(...statusBarCandidates);
+    const minBottom = document.body.classList.contains('android-phone') ? 20 : 48;
+    const bottomCandidates = [safeArea.bottom, minBottom];
+    // visualViewport shrinkage reflects the nav/gesture bar under edge-to-edge; ignore while keyboard is open.
+    if (keyboardInset <= 80) {
+        bottomCandidates.push(keyboardInset);
+    }
+    const safeAreaBottom = Math.max(...bottomCandidates);
 
     document.documentElement.style.setProperty('--android-app-height', `${viewportHeight}px`);
     document.documentElement.style.setProperty('--android-viewport-offset-top', `${viewportTop}px`);
+    document.documentElement.style.setProperty('--android-safe-area-top', `${safeAreaTop}px`);
+    document.documentElement.style.setProperty('--android-safe-area-bottom', `${safeAreaBottom}px`);
     document.documentElement.style.setProperty('--android-keyboard-inset', `${keyboardInset}px`);
     document.body.classList.toggle('android-keyboard-open', keyboardInset > 80);
     syncAndroidHandsetModalSideInset();
@@ -10355,7 +10374,7 @@ function rebuildScheduleSegments() {
                             </div>
                         </div>
                     </div>
-                    <span class="time-separator">→</span>
+                    ${TIME_SEPARATOR_ARROW_HTML}
                     <div class="time-picker-group">
                         ${showLabels ? `<label class="time-label">${labelEnd}</label>` : ''}
                         <div class="time-picker-row">
