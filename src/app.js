@@ -37,18 +37,6 @@ import {
     isOverlayMessageEmpty,
 } from './schedule-overlay-message-editor.js';
 import { getReleaseNotesForVersion } from './changelog.js';
-import {
-    androidPluginState,
-    androidAccessibilityGranted,
-    androidPermissionsReady,
-    refreshAndroidPluginState,
-    hydrateAppDataFromAndroid,
-    syncAppDataToAndroidPlugin,
-    androidGetInstalledApps,
-    androidOpenAccessibilitySettings,
-    androidOpenBatterySettings,
-} from './android-bridge.js';
-
 // Compatibility layer wrapping Tauri APIs
 const tauriAPI = {
     // Core data operations
@@ -702,17 +690,6 @@ function getSingleOccurrenceSegmentDates(schedule, segment) {
 }
 
 async function syncSchedulesToHelper() {
-    if (isAndroid) {
-        try {
-            stampAndroidScheduleExtras();
-            await syncAppDataToAndroidPlugin(appData);
-            hydrateAppDataFromAndroid(appData, androidPluginState);
-            console.log('[syncSchedulesToHelper] Android: synced', appData.schedules?.length || 0, 'schedules');
-        } catch (e) {
-            console.warn('[syncSchedulesToHelper] Android error:', e);
-        }
-        return;
-    }
     if (isIOS) {
         try {
             const flatEntries = [];
@@ -1225,7 +1202,6 @@ let hasShownIOSScheduleSyncError = false;
 const CURRENT_EULA_REVISION = 1;
 let forceShowEulaThisSession = false;
 /** Android permissions onboarding stays up until Continue is tapped (not when settings return). */
-let androidPermissionsDismissedThisSession = false;
 
 // Word list for random word challenges
 const wordList = [
@@ -1245,10 +1221,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupHandsetModalScreens();
     await loadData();
     await resetDevOnlyEulaAcceptance();
-    resetDevOnlyAndroidPermissionsOnboarding();
     setupMobileExternalLinkOpens();
     setupNowBlockingChipScroll();
-    setupAndroidKeyboardScroll();
     setupEventListeners();
     initWelcomeDemoControls();
     setupTheme();
@@ -1259,12 +1233,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupBlocklistsImportExportButtons();
     setupAppForegroundRefresh();
     setupOverrideAll();
-    if (!isAndroid) {
-        setupInAppUninstall();
-        setupWindowsUninstallGuidance();
-        setupMacAutomationIntroModal();
-    }
-    setupAndroidPermissionsOnboarding();
+    setupInAppUninstall();
+    setupWindowsUninstallGuidance();
+    setupMacAutomationIntroModal();
     setupGraceSetting();
     setupSettingsEnforcementSection();
     if (!isIOS && !isAndroid) {
@@ -1272,8 +1243,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (isIOS && hasAcceptedEula()) {
         await checkScreentimeAuth();
-    } else if (isAndroid && hasAcceptedEula()) {
-        await checkAndroidPermissions();
     } else if (!isIOS && !isAndroid) {
         await runInitialDesktopOnboardingSequence();
     } else {
@@ -1367,18 +1336,7 @@ async function resetDevOnlyEulaAcceptance() {
     forceShowEulaThisSession = isLocalDevRun();
 }
 
-function resetDevOnlyAndroidPermissionsOnboarding() {
-    if (import.meta.env.DEV) {
-        androidPermissionsDismissedThisSession = false;
-    }
-}
 
-function shouldShowAndroidPermissionsOnboarding() {
-    if (!isAndroid || androidPermissionsDismissedThisSession) return false;
-    if (import.meta.env.DEV) return true;
-    if (!androidAccessibilityGranted()) return true;
-    return !appData.settings?.androidPermissionsOnboardingComplete;
-}
 
 function getAcceptedEulaRevision() {
     const rawRevision = appData?.settings?.eulaAcceptedRevision;
@@ -1455,12 +1413,6 @@ async function runPostAcceptanceStartup() {
             if (screentimeAuthorized) {
                 await initializeIOSBlockingState();
             }
-        } else if (isAndroid) {
-            await checkAndroidPermissions();
-            await refreshAndroidPluginState();
-            hydrateAppDataFromAndroid(appData, androidPluginState);
-            await ensureInstalledAppsCache();
-            await syncSchedulesToHelper();
         } else {
             // Run first-launch migration off the legacy helper + check
             // Automation TCC (macOS) + extension compliance. Idempotent;
@@ -6296,10 +6248,6 @@ function normalizeBlockedAppKey(name) {
     return String(name || '').trim().replace(/\.exe$/i, '').toLowerCase();
 }
 
-function looksLikeAndroidPackageId(name) {
-    return /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]+)+$/i.test(String(name || '').trim());
-}
-
 function displayNameForBlockedApp(processName) {
     const key = normalizeBlockedAppKey(processName);
     if (!key) return processName;
@@ -6308,38 +6256,12 @@ function displayNameForBlockedApp(processName) {
     );
     if (match?.display_name) return match.display_name;
 
-    if (isAndroid) {
-        if (!looksLikeAndroidPackageId(key)) {
-            return String(processName).trim();
-        }
-        if (!installedAppsCache) {
-            void ensureInstalledAppsCache().then(() => {
-                if (!installedAppsCache) return;
-                renderBlocklists();
-                window.renderModalTags?.();
-            });
-        }
-        return String(processName).trim();
-    }
-
     return key.charAt(0).toUpperCase() + key.slice(1);
 }
 
 async function ensureInstalledAppsCache() {
     if (installedAppsCache) return;
     if (isIOS) return;
-    if (isAndroid) {
-        try {
-            const apps = await androidGetInstalledApps();
-            installedAppsCache = apps.map((a) => ({
-                process_name: a.packageName,
-                display_name: a.label,
-            }));
-        } catch (e) {
-            console.warn('[installed-apps] Android preload failed:', e);
-        }
-        return;
-    }
     try {
         installedAppsCache = await tauriAPI.listInstalledApps();
     } catch (e) {
@@ -6408,106 +6330,6 @@ function isHelperConnectionError(errorMsg) {
     return errorMsg.includes('Failed to connect to helper') || errorMsg.includes('refused') || errorMsg.includes('10061');
 }
 
-async function checkAndroidPermissions() {
-    try {
-        await refreshAndroidPluginState();
-    } catch (err) {
-        console.error('Error checking Android permissions:', err);
-    }
-    updateOnboardingVisibility();
-}
-
-function renderAndroidPermissionCards() {
-    if (!isAndroid) return;
-    const perms = androidPluginState.permissions || {};
-    const setCard = (id, granted, title, desc) => {
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.classList.toggle('android-perm-granted', !!granted);
-        el.innerHTML = `
-            <span class="android-perm-title">${title}</span>
-            <span class="android-perm-desc">${desc}</span>
-            <span class="android-perm-status">${granted ? 'Enabled' : tSettings('androidPermissionsTapToGrant')}</span>`;
-    };
-    setCard('android-perm-accessibility', perms.accessibility, 'Accessibility Service',
-        tSettings('settingsAndroidPermAccessibilityDesc'));
-    setCard('android-perm-battery', perms.batteryOptimization, 'Battery Optimization',
-        tSettings('settingsAndroidPermBackgroundDesc'));
-
-    const setSettingsRow = (rowId, granted) => {
-        const row = document.getElementById(rowId);
-        if (!row) return;
-        const statusEl = row.querySelector('.settings-android-perm-status');
-        const grantBtn = row.querySelector('.settings-android-perm-grant-btn');
-        if (statusEl) {
-            const dot = granted
-                ? '<span class="diagnostics-status-dot ok" aria-hidden="true">✓</span>'
-                : '<span class="diagnostics-status-dot off" aria-hidden="true">✗</span>';
-            const label = granted
-                ? tSettings('settingsAndroidPermGranted')
-                : tSettings('settingsAndroidPermNotGranted');
-            statusEl.innerHTML = `<span class="diagnostics-status-cell">${dot}<span class="diag-muted">${label}</span></span>`;
-        }
-        if (grantBtn) grantBtn.classList.toggle('hidden', !!granted);
-    };
-    setSettingsRow('settings-android-perm-accessibility', perms.accessibility);
-    setSettingsRow('settings-android-perm-background', perms.batteryOptimization);
-
-    const continueBtn = document.getElementById('android-permissions-continue-btn');
-    if (continueBtn) {
-        continueBtn.disabled = !androidPermissionsReady();
-    }
-    const setupLaterBtn = document.getElementById('android-permissions-setup-later-btn');
-    if (setupLaterBtn) {
-        setupLaterBtn.classList.toggle('hidden', androidPermissionsReady());
-    }
-}
-
-async function dismissAndroidPermissionsOnboarding() {
-    androidPermissionsDismissedThisSession = true;
-    if (!import.meta.env.DEV) {
-        if (!appData.settings) appData.settings = {};
-        appData.settings.androidPermissionsOnboardingComplete = true;
-        await saveData();
-    }
-    updateOnboardingVisibility();
-}
-
-function wireAndroidPermissionOpenButton(elementId, openFn) {
-    const el = document.getElementById(elementId);
-    if (!el || el.dataset.wired) return;
-    el.dataset.wired = '1';
-    el.addEventListener('click', async () => {
-        await openFn();
-        setTimeout(checkAndroidPermissions, 500);
-    });
-}
-
-function setupAndroidPermissionsOnboarding() {
-    if (!isAndroid) return;
-
-    for (const [elementId, openFn] of [
-        ['android-perm-accessibility', androidOpenAccessibilitySettings],
-        ['android-perm-battery', androidOpenBatterySettings],
-        ['settings-android-perm-accessibility-grant', androidOpenAccessibilitySettings],
-        ['settings-android-perm-background-grant', androidOpenBatterySettings],
-    ]) {
-        wireAndroidPermissionOpenButton(elementId, openFn);
-    }
-    document.getElementById('android-permissions-continue-btn')?.addEventListener('click', async () => {
-        if (!androidPermissionsReady()) return;
-        await dismissAndroidPermissionsOnboarding();
-    });
-    document.getElementById('android-permissions-setup-later-btn')?.addEventListener('click', async () => {
-        await dismissAndroidPermissionsOnboarding();
-    });
-
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') {
-            void checkAndroidPermissions();
-        }
-    });
-}
 
 // Check Screen Time authorization (iOS only)
 async function checkScreentimeAuth() {
@@ -6557,27 +6379,22 @@ async function initializeIOSBlockingState() {
 function updateOnboardingVisibility() {
     const eulaOverlay = document.getElementById('eula-onboarding');
     const screentimeOverlay = document.getElementById('ios-screentime-onboarding');
-    const androidOverlay = document.getElementById('android-permissions-onboarding');
     const main = document.getElementById('main-content');
     const showEula = !hasAcceptedEula();
     const showScreentime = isIOS && !showEula && !screentimeAuthorized;
-    const showAndroidPermissions = isAndroid && !showEula && shouldShowAndroidPermissionsOnboarding();
     const keepEulaVisibleForPendingSetup = !isIOS && !isAndroid
         && isFirstRunOnboardingInProgress()
         && !migrationOnboardingActive;
     const showEulaScreen = showEula || keepEulaVisibleForPendingSetup;
     const blockMainUi = showEulaScreen
         || showScreentime
-        || showAndroidPermissions
         || migrationOnboardingActive
         || (!isIOS && !isAndroid && isFirstRunOnboardingInProgress());
 
     eulaOverlay?.classList.toggle('hidden', !showEulaScreen);
     screentimeOverlay?.classList.toggle('hidden', !showScreentime);
-    androidOverlay?.classList.toggle('hidden', !showAndroidPermissions);
     main?.classList.toggle('hidden', blockMainUi);
     if (!blockMainUi) {
-        scheduleAndroidTabletMainContentScrollPadding();
     }
 
     // Hide the BLOCKING NOW title-bar row on onboarding screens
@@ -6586,7 +6403,6 @@ function updateOnboardingVisibility() {
         nowBlockingRow.classList.toggle('hidden', blockMainUi);
     }
 
-    renderAndroidPermissionCards();
 }
 
 async function acceptEula() {
@@ -6602,9 +6418,6 @@ async function acceptEula() {
     }
     if (isIOS) {
         await checkScreentimeAuth();
-    } else if (isAndroid) {
-        await checkAndroidPermissions();
-        updateOnboardingVisibility();
     } else {
         if (!appData.settings.onboardingComplete) {
             firstRunExtensionSetupPending = true;
@@ -6698,13 +6511,6 @@ async function loadData() {
         shouldSave = true;
     }
 
-    if (isAndroid) {
-        await refreshAndroidPluginState();
-        const hydrated = hydrateAppDataFromAndroid(appData, androidPluginState);
-        if (hydrated) {
-            shouldSave = false; // enforcement state comes from the plugin
-        }
-    }
 
     // Create default blocklist on first launch (no blocklists yet)
     if (appData.blocklists.length === 0) {
@@ -6819,102 +6625,17 @@ function isMobileOverrideChallengePlatform() {
 /** Key in latest-versions.json — iOS uses its own release line, not desktop macos. */
 function getLatestVersionPlatformKey() {
     if (isIOS) return 'ios';
-    if (isAndroid) return 'android';
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
     return isMac ? 'macos' : 'windows';
 }
 
-function stampAndroidScheduleExtra(schedule) {
-    if (!isAndroid || !schedule) return;
-    if (!schedule.extra) schedule.extra = {};
-    if (!schedule.extra.androidTimingType) {
-        const seg = schedule.segments?.[0];
-        const days = seg?.days || [];
-        schedule.extra.androidTimingType = days.length >= 7 ? 'DAILY' : 'WEEKLY';
-    }
-    if (schedule.extra.androidIsEnabled === undefined) {
-        schedule.extra.androidIsEnabled = true;
-    }
-    if (schedule.extra.frictionWordCount === undefined) {
-        schedule.extra.frictionWordCount = 15;
-    }
-    if (schedule.extra.autoReenableMinutes === undefined) {
-        schedule.extra.autoReenableMinutes = 1440;
-    }
-}
 
-function stampAndroidScheduleExtras() {
-    if (!isAndroid) return;
-    for (const schedule of appData.schedules || []) {
-        stampAndroidScheduleExtra(schedule);
-    }
-}
 
-function isAndroidHandsetDevice() {
-    if (!/Android/i.test(navigator.userAgent)) return false;
-    if (typeof navigator.userAgentData?.mobile === 'boolean') {
-        return navigator.userAgentData.mobile;
-    }
-    return /Mobile/i.test(navigator.userAgent);
-}
 
 /** Same 768px stack breakpoint as iOS layout tiers — toggles phone layout on Android. */
-function syncAndroidLayoutTier() {
-    if (!isAndroid) return;
-    const isPhoneLayout = window.matchMedia('(max-width: 768px)').matches;
-    const isHandset = isAndroidHandsetDevice();
-    document.body.classList.toggle('android-phone', isPhoneLayout);
-    document.body.classList.toggle('handset-device', isHandset);
-    updateAndroidViewportMetrics();
-    syncAndroidHandsetModalSideInset();
-}
 
 /** Android landscape: safe-area env() is often 0 on the short edge; use visualViewport offsets. */
-function readCssSafeAreaInsets() {
-    const probe = document.createElement('div');
-    probe.style.cssText = [
-        'position:fixed',
-        'visibility:hidden',
-        'pointer-events:none',
-        'padding-top:env(safe-area-inset-top)',
-        'padding-right:env(safe-area-inset-right)',
-        'padding-bottom:env(safe-area-inset-bottom)',
-        'padding-left:env(safe-area-inset-left)',
-    ].join(';');
-    document.body.appendChild(probe);
-    const styles = getComputedStyle(probe);
-    const insets = {
-        top: parseFloat(styles.paddingTop) || 0,
-        right: parseFloat(styles.paddingRight) || 0,
-        bottom: parseFloat(styles.paddingBottom) || 0,
-        left: parseFloat(styles.paddingLeft) || 0,
-    };
-    probe.remove();
-    return insets;
-}
 
-function syncAndroidHandsetModalSideInset() {
-    if (!isAndroid || !document.body.classList.contains('handset-device')) {
-        document.documentElement.style.removeProperty('--handset-modal-side-inset');
-        return;
-    }
-
-    const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-    if (!isLandscape) {
-        document.documentElement.style.removeProperty('--handset-modal-side-inset');
-        return;
-    }
-
-    const viewport = window.visualViewport;
-    const layoutWidth = window.innerWidth;
-    const visualLeft = Math.max(0, viewport?.offsetLeft ?? 0);
-    const visualWidth = viewport?.width ?? layoutWidth;
-    const visualRight = Math.max(0, layoutWidth - visualLeft - visualWidth);
-    const safeArea = readCssSafeAreaInsets();
-    const sideInset = Math.max(18, visualLeft, visualRight, safeArea.left, safeArea.right);
-
-    document.documentElement.style.setProperty('--handset-modal-side-inset', `${sideInset}px`);
-}
 
 function getModalDismissButton(modalOverlay) {
     if (!modalOverlay) return null;
@@ -7024,36 +6745,9 @@ function setupHandsetModalScreens() {
     }
 }
 
-function syncAndroidOnlyPermissionUiVisibility() {
-    const show = isAndroid;
-    document.getElementById('settings-android-permissions-section')
-        ?.classList.toggle('hidden', !show);
-    if (!show) {
-        document.getElementById('android-permissions-onboarding')?.classList.add('hidden');
-    }
-}
 
 // Detect platform for window controls, iOS, and Android
 function detectPlatform() {
-    // Android Tauri webview (check before generic Linux/desktop fallbacks)
-    const isAndroidDevice = /Android/i.test(navigator.userAgent);
-
-    if (isAndroidDevice) {
-        isAndroid = true;
-        document.body.classList.add('android');
-        document.getElementById('window-controls')?.classList.add('hidden');
-        document.querySelector('.title-bar')?.classList.add('hidden');
-        document.getElementById('helper-settings-section')?.classList.add('hidden');
-        syncAndroidLayoutTier();
-        updateManageSectionVisibility();
-
-        // Android: apps are chosen via the installed-apps picker, not typed names.
-        const modalAppInput = document.getElementById('modal-app-input');
-        if (modalAppInput) modalAppInput.style.display = 'none';
-        syncAndroidOnlyPermissionUiVisibility();
-        return;
-    }
-
     // Check for iOS (Tauri iOS uses a WKWebView with standard iOS user agent)
     const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -7104,7 +6798,6 @@ function detectPlatform() {
             document.getElementById('window-controls')?.classList.remove('hidden');
         }
     }
-    syncAndroidOnlyPermissionUiVisibility();
     updateManageSectionVisibility();
 }
 
@@ -7879,21 +7572,6 @@ function setupModalListeners() {
         const pendingLen = modalWebsiteInput.value.length;
         const caret = pendingLen > 0 ? pendingLen : 0;
         modalWebsiteInput.setSelectionRange(caret, caret);
-        if (isAndroid) {
-            requestAnimationFrame(() => ensureAndroidEditableAboveKeyboard(modalWebsiteInput));
-        }
-    }
-
-    // Android IME "Enter"/"Done" moves focus to the next field by default — confirm
-    // the domain in-place instead (same as desktop Enter).
-    if (isAndroid) {
-        modalWebsiteInput.setAttribute('enterkeyhint', 'done');
-        modalWebsiteInput.addEventListener('keydown', (e) => {
-            if (e.key !== 'Enter' && e.keyCode !== 13) return;
-            e.preventDefault();
-            e.stopPropagation();
-            confirmModalWebsiteInputValue();
-        }, true);
     }
 
     // Mobile: Name → websites. iOS shows plain Return (no default advance); Android
@@ -8831,9 +8509,7 @@ function setupOverrideModalListeners() {
     }
     window.addEventListener('resize', () => syncAllStopBtnLabelFits());
     window.addEventListener('resize', () => syncIosScheduleDayLabelsViewportMode());
-    window.addEventListener('resize', () => syncAndroidLayoutTier());
     window.visualViewport?.addEventListener('resize', syncIosScheduleDayLabelsViewportMode);
-    window.visualViewport?.addEventListener('resize', syncAndroidLayoutTier);
 
     document.getElementById('confirm-override-btn').addEventListener('click', async () => {
         if (overrideWordChallengeState) {
@@ -8895,8 +8571,6 @@ function setupOverrideModalListeners() {
                     await tauriAPI.screentimeClearBlock();
                     lastBlockedDomains = new Set();
                     await updateHostsFile();
-                    await syncSchedulesToHelper();
-                } else if (isAndroid) {
                     await syncSchedulesToHelper();
                 } else {
                     const status = await refreshDesktopHelperStatus();
@@ -9347,9 +9021,6 @@ function setupEndTimeDirectInputs() {
         }
     });
 
-    bindAndroidTimePartPointerGuard(hourEl);
-    bindAndroidTimePartPointerGuard(minuteEl);
-
     minuteEl.addEventListener('input', () => {
         closeAllPopovers();
         digitsOnly(minuteEl);
@@ -9372,57 +9043,10 @@ function scrollPopoverOptionIntoView(scrollContainer, option) {
     scrollContainer.scrollTop = Math.max(0, optionTop - (containerHeight - optionHeight) / 2);
 }
 
-function isAndroidEditableField(el) {
-    if (!(el instanceof HTMLElement)) return false;
-    const tag = el.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
-    return el.isContentEditable;
-}
 
-function getAndroidVisibleViewportBottom() {
-    const viewport = window.visualViewport;
-    if (viewport) {
-        return viewport.offsetTop + viewport.height;
-    }
-    return window.innerHeight;
-}
 
-function getAndroidScrollContainer(el) {
-    const fullscreenModal = el.closest('.modal-overlay.mobile-fullscreen-modal:not(.hidden)');
-    if (fullscreenModal) {
-        return fullscreenModal.querySelector('.mobile-modal-scroll-body')
-            || fullscreenModal.querySelector('.modal-content');
-    }
-    const modal = el.closest('.modal-overlay:not(.hidden)');
-    if (modal) return modal;
-    const onboarding = el.closest('.onboarding-screen:not(.hidden)');
-    if (onboarding) return onboarding;
-    return document.querySelector('body.android .main-content');
-}
 
-function isAndroidFieldObscuredByKeyboard(el) {
-    if (!isAndroid || !(el instanceof HTMLElement)) return false;
-    const rect = el.getBoundingClientRect();
-    const margin = 12;
-    return rect.bottom > getAndroidVisibleViewportBottom() - margin;
-}
 
-function ensureAndroidEditableAboveKeyboard(el) {
-    if (!isAndroid || !(el instanceof HTMLElement)) return;
-    if (!isAndroidFieldObscuredByKeyboard(el)) return;
-
-    const scrollContainer = getAndroidScrollContainer(el);
-    if (!scrollContainer) return;
-
-    const rect = el.getBoundingClientRect();
-    const margin = 16;
-    const overflow = rect.bottom - (getAndroidVisibleViewportBottom() - margin);
-    if (overflow <= 0) return;
-
-    scrollContainer.scrollBy({ top: overflow, behavior: 'auto' });
-}
-
-let androidTabletScrollPaddingRaf = 0;
 
 function readRootCssPx(varName) {
     const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
@@ -9436,135 +9060,12 @@ function readRootCssPx(varName) {
 }
 
 /** Android tablets: html { zoom } can outgrow scrollHeight — pad #main-content to match visual content. */
-function scheduleAndroidTabletMainContentScrollPadding() {
-    if (!isAndroid || document.body.classList.contains('android-phone')) return;
-    cancelAnimationFrame(androidTabletScrollPaddingRaf);
-    androidTabletScrollPaddingRaf = requestAnimationFrame(() => {
-        androidTabletScrollPaddingRaf = requestAnimationFrame(() => {
-            androidTabletScrollPaddingRaf = 0;
-            syncAndroidTabletMainContentScrollPadding();
-        });
-    });
-}
 
-function getAndroidTabletScrollSpacer(main) {
-    let spacer = document.getElementById('android-tablet-scroll-spacer');
-    if (!spacer) {
-        spacer = document.createElement('div');
-        spacer.id = 'android-tablet-scroll-spacer';
-        spacer.setAttribute('aria-hidden', 'true');
-        main.appendChild(spacer);
-    } else if (spacer.parentElement !== main) {
-        main.appendChild(spacer);
-    }
-    return spacer;
-}
 
-function syncAndroidTabletMainContentScrollPadding() {
-    if (!isAndroid || document.body.classList.contains('android-phone')) return;
 
-    const main = document.getElementById('main-content');
-    const calendar = main?.querySelector('.week-calendar-section');
-    if (!main || !calendar || main.classList.contains('hidden')) return;
 
-    const spacer = getAndroidTabletScrollSpacer(main);
-    const savedScroll = main.scrollTop;
-    let spacerHeight = 0;
 
-    for (let attempt = 0; attempt < 10; attempt++) {
-        spacer.style.height = spacerHeight > 0 ? `${spacerHeight}px` : '0px';
-        void main.offsetHeight;
 
-        const maxScroll = Math.max(0, main.scrollHeight - main.clientHeight);
-        main.scrollTop = maxScroll;
-
-        const calRect = calendar.getBoundingClientRect();
-        const mainRect = main.getBoundingClientRect();
-        const paddingBottom = parseFloat(getComputedStyle(main).paddingBottom) || 0;
-        const visibleBottom = mainRect.bottom - paddingBottom;
-        const overflow = calRect.bottom - visibleBottom;
-
-        if (overflow <= 2) break;
-        spacerHeight += Math.ceil(overflow);
-    }
-
-    main.scrollTop = savedScroll;
-    spacer.style.height = spacerHeight > 0 ? `${spacerHeight}px` : '0px';
-}
-
-function updateAndroidViewportMetrics() {
-    if (!isAndroid) return;
-
-    const viewport = window.visualViewport;
-    const viewportHeight = viewport?.height ?? window.innerHeight;
-    const layoutHeight = window.innerHeight;
-    const viewportTop = viewport?.offsetTop ?? 0;
-    const keyboardInset = Math.max(0, layoutHeight - viewportTop - viewportHeight);
-    const safeArea = readCssSafeAreaInsets();
-    const minTop = document.body.classList.contains('android-phone') ? 20 : 28;
-    const statusBarCandidates = [safeArea.top, minTop];
-    // offsetTop reflects the status bar under edge-to-edge; ignore while the keyboard is open.
-    if (keyboardInset <= 80) {
-        statusBarCandidates.push(viewportTop);
-    }
-    const safeAreaTop = Math.max(...statusBarCandidates);
-    const minBottom = document.body.classList.contains('android-phone') ? 20 : 48;
-    const bottomCandidates = [safeArea.bottom, minBottom];
-    // visualViewport shrinkage reflects the nav/gesture bar under edge-to-edge; ignore while keyboard is open.
-    if (keyboardInset <= 80) {
-        bottomCandidates.push(keyboardInset);
-    }
-    const safeAreaBottom = Math.max(...bottomCandidates);
-
-    document.documentElement.style.setProperty('--android-app-height', `${viewportHeight}px`);
-    document.documentElement.style.setProperty('--android-viewport-offset-top', `${viewportTop}px`);
-    document.documentElement.style.setProperty('--android-safe-area-top', `${safeAreaTop}px`);
-    document.documentElement.style.setProperty('--android-safe-area-bottom', `${safeAreaBottom}px`);
-    document.documentElement.style.setProperty('--android-keyboard-inset', `${keyboardInset}px`);
-    document.body.classList.toggle('android-keyboard-open', keyboardInset > 80);
-    syncAndroidHandsetModalSideInset();
-    scheduleAndroidTabletMainContentScrollPadding();
-}
-
-function setupAndroidKeyboardScroll() {
-    if (!isAndroid) return;
-
-    updateAndroidViewportMetrics();
-
-    const handleViewportChange = () => {
-        updateAndroidViewportMetrics();
-        const active = document.activeElement;
-        if (isAndroidEditableField(active)) {
-            ensureAndroidEditableAboveKeyboard(active);
-        }
-    };
-
-    window.visualViewport?.addEventListener('resize', handleViewportChange, { passive: true });
-    window.visualViewport?.addEventListener('scroll', handleViewportChange, { passive: true });
-    window.addEventListener('resize', handleViewportChange, { passive: true });
-
-    document.addEventListener('focusin', (e) => {
-        const target = e.target;
-        if (!isAndroidEditableField(target)) return;
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => ensureAndroidEditableAboveKeyboard(target));
-        });
-    });
-}
-
-function bindAndroidTimePartPointerGuard(el) {
-    if (!isAndroid || !el || el.dataset.androidPointerGuard === '1') return;
-    el.dataset.androidPointerGuard = '1';
-    el.addEventListener('pointerdown', (e) => {
-        if (e.pointerType === 'mouse') return;
-        e.preventDefault();
-    }, { passive: false });
-}
-
-function focusAndroidTimeInput(el) {
-    if (!isAndroid || !(el instanceof HTMLInputElement)) return;
-    el.focus({ preventScroll: true });
-}
 
 // Handle click on time part (button or instant-end input): open list and mark active.
 function handleTimePartClick(e) {
@@ -9581,7 +9082,6 @@ function handleTimePartClick(e) {
     if (!popover) return;
     popover.classList.remove('hidden');
     btn.classList.add('active');
-    focusAndroidTimeInput(btn);
 
     // Scroll to selected option inside the popover only
     const scroll = popover.querySelector('.popover-scroll');
@@ -10606,7 +10106,6 @@ function attachScheduleSegmentTimeInteractions(segment) {
             el.dataset.scheduleUiBound = '1';
             el.addEventListener('click', handleScheduleTimeClick);
             bindScheduleTimePartInput(el);
-            bindAndroidTimePartPointerGuard(el);
         });
 }
 
@@ -10630,7 +10129,6 @@ function handleScheduleTimeClick(e) {
 
     // Create and show popover for time selection
     showScheduleTimePopover(el, type, isStart, segmentIndex);
-    focusAndroidTimeInput(el);
 }
 
 // Show time popover for schedule time selection (anchored to editable time pill)
@@ -13059,10 +12557,6 @@ async function proceedWithSchedule() {
         startOverlayId,
     };
 
-    if (isAndroid) {
-        stampAndroidScheduleExtra(schedule);
-    }
-
     // Save to appData
     appData.schedules.push(schedule);
 
@@ -14390,10 +13884,6 @@ async function proceedWithBlock() {
             activatedBlockIds.delete(block.id);
             result = { success: false, error: err.toString() };
         }
-    } else if (isAndroid) {
-        appData.activeBlocks.push(block);
-        activatedBlockIds.add(block.id);
-        result = { success: true };
     } else {
         // Desktop: persist the block locally first so save_data and the
         // native-messaging host see it immediately (helperAvailable only
@@ -14444,10 +13934,6 @@ async function proceedWithBlock() {
 
     // Save data and reset UI
     await saveData();
-
-    if (isAndroid) {
-        await syncSchedulesToHelper();
-    }
 
     // Update blocked apps (handles both active blocks and schedules)
     await updateBlockedApps();
@@ -14581,11 +14067,6 @@ function setStartBtnBlocklistInfo(btn, blocklist) {
 // Update hosts file based on active blocks
 // silent = true means don't prompt for password (used for cleanup)
 async function updateHostsFile(silent = false) {
-    if (isAndroid) {
-        await syncSchedulesToHelper();
-        return { success: true };
-    }
-
     const allDomains = new Set();
     const now = Date.now();
 
@@ -16817,7 +16298,6 @@ function updateWeekCalendar() {
     }
 
     renderWeekBlocks();
-    scheduleAndroidTabletMainContentScrollPadding();
 }
 
 // Convert a time interval (clamped to a single day) into horizontal positioning for the
@@ -20972,24 +20452,6 @@ function applySettingsLanguage() {
     setText('settings-windows-uninstall-hint', tSettings('windowsUninstallHint'));
     setText('settings-windows-uninstall-btn-label', tSettings('windowsUninstallOpenSettingsBtn'));
     setText('settings-help-label', tSettings('settingsDiagnosticsLabel'));
-    if (isAndroid) {
-        setText('settings-android-permissions-label', tSettings('settingsAndroidPermissionsHeading'));
-        setText('settings-android-perm-th-permission', tSettings('settingsAndroidPermThPermission'));
-        setText('settings-android-perm-th-status', tSettings('settingsAndroidPermThStatus'));
-        setText('settings-android-perm-accessibility-label', tSettings('settingsAndroidPermAccessibility'));
-        setText('settings-android-perm-accessibility-desc', tSettings('settingsAndroidPermAccessibilityDesc'));
-        setText('settings-android-perm-background-label', tSettings('settingsAndroidPermBackground'));
-        setText('settings-android-perm-background-desc', tSettings('settingsAndroidPermBackgroundDesc'));
-        document.querySelectorAll('.settings-android-perm-grant-label')
-            .forEach((el) => { el.textContent = tSettings('settingsAndroidPermOpenSettings'); });
-        setText('android-permissions-setup-later-btn', tSettings('androidPermissionsSetupLater'));
-        setText('android-permissions-onboarding-copy', tSettings('androidPermissionsOnboardingCopy'));
-        setText('android-permissions-onboarding-footnote', tSettings('onboardingOpenSourceFootnote'));
-        renderAndroidPermissionCards();
-    }
-    if (isIOS) {
-        setText('ios-screentime-onboarding-note', tSettings('onboardingOpenSourceFootnote'));
-    }
     setText('settings-enforcement-heading', tSettings('settingsEnforcementHeading'));
     setText('settings-blocking-method-toggle-label', tSettings('settingsBlockingMethodHeading'));
     setText('settings-blocking-method-hint', tSettings('settingsBlockingMethodHint'));
@@ -21132,7 +20594,6 @@ function setupTheme() {
             settingsModal.classList.remove('hidden');
             syncFooterZoomControl(getActiveUiZoomScale());
             resetSettingsEnforcementSection();
-            if (isAndroid) void checkAndroidPermissions();
             void applyEnforcementDescCopy(lastMigrationBrowserState);
             // Re-evaluate the in-app Uninstall button (Mac only): a
             // schedule could have fired since the modal was last open,
@@ -21346,7 +20807,6 @@ function syncUiZoomResponsiveLayout() {
     if (pauseModal && !pauseModal.classList.contains('hidden')) {
         syncPauseDurationRowLayout();
     }
-    scheduleAndroidTabletMainContentScrollPadding();
 }
 
 function usesStackSettingsPlacement() {
@@ -21563,7 +21023,6 @@ function bindUiZoomLayoutObserver() {
     const ro = new ResizeObserver(() => {
         scheduleUiZoomResponsiveLayout();
         scheduleSelectionPromptLayout();
-        scheduleAndroidTabletMainContentScrollPadding();
     });
     targets.forEach((el) => ro.observe(el));
 }
@@ -21597,9 +21056,6 @@ function applyUiZoom(scale) {
     if (isIOS || isAndroid) {
         document.documentElement.style.zoom = String(clamped);
         scheduleUiZoomResponsiveLayout();
-        if (isAndroid && !document.body.classList.contains('android-phone')) {
-            scheduleAndroidTabletMainContentScrollPadding();
-        }
         return;
     }
 
@@ -22635,9 +22091,7 @@ async function openInstalledAppsPicker() {
     // Fetch installed apps (cached after first call)
     await ensureInstalledAppsCache();
     if (!installedAppsCache) {
-        listEl.innerHTML = isAndroid
-            ? '<div class="app-picker-empty">Could not load installed apps.</div>'
-            : '<div class="app-picker-empty">Could not scan installed apps. Use "Browse manually..." below.</div>';
+        listEl.innerHTML = '<div class="app-picker-empty">Could not scan installed apps. Use "Browse manually..." below.</div>';
     }
 
     const apps = installedAppsCache || [];
@@ -23405,8 +22859,6 @@ async function performOverrideAll() {
         // Full cleanup on the helper side
         if (isIOS) {
             await tauriAPI.screentimeClearBlock();
-        } else if (isAndroid) {
-            await syncSchedulesToHelper();
         } else {
             const status = await refreshDesktopHelperStatus();
             if (status.helperReady) {

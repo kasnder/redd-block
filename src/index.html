@@ -570,28 +570,6 @@
             </div>
         </div>
 
-        <div id="android-permissions-onboarding" class="onboarding-screen hidden">
-            <div class="onboarding-content android-permissions-onboarding-content">
-                <div class="onboarding-icon">
-                    <img src="/reddblock-icon.svg" alt="ReDD Block app icon" class="onboarding-app-icon">
-                </div>
-                <h1>Welcome to ReDD Block</h1>
-                <p id="android-permissions-onboarding-copy" class="onboarding-primary-copy">Grant ReDD Block access to the permissions below so blocking works reliably.</p>
-                <div class="android-permissions-list">
-                    <button id="android-perm-accessibility" class="android-perm-card" type="button"></button>
-                    <button id="android-perm-battery" class="android-perm-card" type="button"></button>
-                </div>
-                <div class="android-permissions-actions">
-                    <button id="android-permissions-continue-btn"
-                        class="modal-btn primary-btn onboarding-primary-btn" type="button">Continue</button>
-                    <button id="android-permissions-setup-later-btn" class="migration-skip-btn" type="button">Setup later</button>
-                </div>
-                <p id="android-permissions-onboarding-footnote" class="onboarding-footnote">ReDD Block is open-source and built by the Reduce
-                    Digital Distraction Project at (reddfocus.org). It is based on our 10+ years of research at the
-                    University of Oxford.</p>
-            </div>
-        </div>
-
         <!-- Main Content - Grid Layout (hidden until JS clears onboarding gate; avoids flash before EULA on iOS).
              The "BLOCKING NOW" row that used to live here has moved into
              the title bar (see `#now-blocking-row` near the top of body),
@@ -2184,55 +2162,6 @@
                         </div>
                     </section>
 
-                    <section id="settings-android-permissions-section" class="settings-section settings-android-permissions-section android-only" aria-labelledby="settings-android-permissions-label">
-                        <h4 id="settings-android-permissions-label" class="settings-section-heading">Permissions</h4>
-                        <div class="settings-panel settings-android-permissions-panel">
-                            <div class="diagnostics-table-wrap">
-                                <table class="diagnostics-table diagnostics-table-labeled-status settings-android-permissions-table">
-                                    <thead>
-                                        <tr>
-                                            <th id="settings-android-perm-th-permission" scope="col">Permission</th>
-                                            <th id="settings-android-perm-th-status" scope="col">Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr id="settings-android-perm-accessibility">
-                                            <td>
-                                                <div class="settings-android-perm-name-cell">
-                                                    <span id="settings-android-perm-accessibility-label" class="settings-row-label">Accessibility</span>
-                                                    <span id="settings-android-perm-accessibility-desc" class="settings-row-hint">Required to detect and block apps and websites.</span>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <div class="settings-android-perm-status-col">
-                                                    <span class="settings-android-perm-status" aria-live="polite"></span>
-                                                    <button id="settings-android-perm-accessibility-grant" type="button" class="settings-android-perm-grant-btn hidden">
-                                                        <span class="settings-android-perm-grant-label">Grant access</span>
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                        <tr id="settings-android-perm-background">
-                                            <td>
-                                                <div class="settings-android-perm-name-cell">
-                                                    <span id="settings-android-perm-background-label" class="settings-row-label">Run in Background</span>
-                                                    <span id="settings-android-perm-background-desc" class="settings-row-hint">Ensure active blocks work when the app is closed.</span>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <div class="settings-android-perm-status-col">
-                                                    <span class="settings-android-perm-status" aria-live="polite"></span>
-                                                    <button id="settings-android-perm-background-grant" type="button" class="settings-android-perm-grant-btn hidden">
-                                                        <span class="settings-android-perm-grant-label">Grant access</span>
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </section>
 
                     <section id="settings-help-section" class="settings-section settings-help-section desktop-only" aria-labelledby="settings-help-label">
                         <h4 id="settings-help-label" class="settings-section-heading">Something not working?</h4>

@@ -368,12 +368,6 @@ body.android:not(.android-phone) .main-content {
     );
 }
 
-#android-tablet-scroll-spacer {
-    flex-shrink: 0;
-    width: 100%;
-    height: 0;
-    pointer-events: none;
-}
 
 /* iPad: WKWebView "desktop" content mode ignores CSS zoom and pageZoom for text/emoji sizing.
    Scale the app shell so typography and icons grow/shrink like iPhone/Android CSS zoom. */
@@ -7779,167 +7773,6 @@ body.ios .ios-screentime-onboarding-content h1 {
     margin-bottom: 8px;
 }
 
-.android-permissions-onboarding-content {
-    max-width: 420px;
-}
-
-body.android .android-permissions-onboarding-content .onboarding-icon {
-    margin-bottom: 12px;
-}
-
-body.android .android-permissions-onboarding-content h1 {
-    margin-bottom: 8px;
-}
-
-.android-permissions-onboarding-content .onboarding-primary-copy {
-    font-size: 14px;
-    line-height: 1.45;
-    margin-bottom: 0;
-}
-
-.android-permissions-list {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    width: 100%;
-    margin: 16px 0;
-}
-
-.android-permissions-onboarding-content .onboarding-primary-btn:disabled,
-.android-permissions-onboarding-content .onboarding-primary-btn:disabled:hover {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.android-permissions-actions {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-    width: 100%;
-    margin: 0 0 16px;
-}
-
-.android-permissions-onboarding-content .android-permissions-actions .onboarding-primary-btn {
-    width: 100%;
-    margin: 0;
-    justify-content: center;
-}
-
-body.dark-mode #android-permissions-onboarding .migration-skip-btn {
-    color: var(--text-secondary);
-    border-color: transparent;
-}
-
-body.dark-mode #android-permissions-onboarding .migration-skip-btn:hover {
-    background: rgba(255, 255, 255, 0.06);
-    color: var(--text-primary);
-}
-
-.android-perm-card {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-    width: 100%;
-    padding: 14px 16px;
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    background: var(--card-bg);
-    color: var(--text-primary);
-    text-align: left;
-    cursor: pointer;
-}
-
-.android-perm-card.android-perm-granted {
-    border-color: var(--success-color, #2e7d32);
-}
-
-.android-perm-title {
-    font-weight: 600;
-    font-size: 15px;
-}
-
-.android-perm-desc {
-    font-size: 13px;
-    color: var(--text-muted);
-}
-
-.android-perm-status {
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-top: 2px;
-}
-
-.settings-android-permissions-panel {
-    overflow: hidden;
-}
-
-.settings-android-permissions-table th,
-.settings-android-permissions-table td {
-    padding-left: 14px;
-    padding-right: 14px;
-}
-
-.settings-android-perm-name-cell {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-}
-
-.settings-android-perm-status-col {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 8px;
-    min-width: 120px;
-}
-
-.settings-android-perm-grant-btn {
-    box-sizing: border-box;
-    width: 100%;
-    min-width: 0;
-    padding: 7px 10px;
-    font-size: 13px;
-    font-family: var(--font-body);
-    font-weight: 500;
-    line-height: 1.3;
-    color: var(--text-primary);
-    background: var(--surface-raised, var(--redd-warm-grey));
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background-color 0.15s ease, border-color 0.15s ease;
-}
-
-body.dark-mode .settings-android-perm-grant-btn {
-    background: rgba(255, 255, 255, 0.06);
-}
-
-.settings-android-perm-grant-btn:hover:not(:disabled) {
-    background: var(--element-hover-bg);
-    border-color: var(--border-color-medium);
-}
-
-.settings-android-perm-grant-btn.hidden {
-    display: none;
-}
-
-.settings-android-permissions-panel .diagnostics-status-dot.off {
-    background: var(--redd-coral-soft);
-    color: var(--redd-coral);
-}
-
-body.dark-mode .settings-android-permissions-panel .diagnostics-status-dot.off {
-    background: rgba(212, 96, 90, 0.18);
-    color: #e07b75;
-}
-
-.android-perm-card.android-perm-granted .android-perm-status {
-    color: var(--success-color, #2e7d32);
-}
-
 /* Android phone/narrow: stack scheduler above blocklists (same 768px breakpoint as global stack rules) */
 body.android.android-phone .grid-top-row {
     grid-template-columns: 1fr;
@@ -10286,12 +10119,6 @@ body.handset-device .mobile-fullscreen-modal {
     overflow: hidden;
 }
 
-/* Shrink the shell to the visible viewport while the keyboard is open. */
-body.handset-device.android .mobile-fullscreen-modal {
-    top: var(--android-viewport-offset-top, 0px);
-    bottom: auto;
-    height: var(--android-app-height, 100vh);
-}
 
 body.handset-device .mobile-fullscreen-modal .modal-content,
 body.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-content,
@@ -10396,33 +10223,6 @@ body.handset-device .mobile-fullscreen-modal .mobile-modal-title-source {
 body.handset-device .mobile-fullscreen-modal .modal-buttons {
     margin-top: 24px;
     padding-bottom: 0;
-}
-
-/* Android landscape: WebView safe-area env() often reports 0 on the short edge while
-   visualViewport is inset — use --handset-modal-side-inset (set in app.js) for equal gutters. */
-@media (orientation: landscape) {
-    body.handset-device.android .mobile-fullscreen-modal .modal-content,
-    body.handset-device.android #blocklist-modal.mobile-fullscreen-modal .modal-content,
-    body.handset-device.android #settings-modal.mobile-fullscreen-modal .modal-content,
-    body.handset-device.android #override-modal.mobile-fullscreen-modal .modal-content,
-    body.handset-device.android #override-all-modal.mobile-fullscreen-modal .modal-content,
-    body.handset-device.android #pause-modal.mobile-fullscreen-modal .modal-content,
-    body.handset-device.android #start-block-confirm-modal.mobile-fullscreen-modal .modal-content,
-    body.handset-device.android #start-schedule-confirm-modal.mobile-fullscreen-modal .modal-content {
-        padding: 0;
-    }
-
-    body.handset-device.android .mobile-fullscreen-modal .mobile-modal-scroll-body {
-        padding-left: var(--handset-modal-side-inset, 18px);
-        padding-right: var(--handset-modal-side-inset, 18px);
-    }
-
-    body.handset-device.android .mobile-fullscreen-modal .mobile-modal-header {
-        margin-right: calc(var(--handset-modal-side-inset, 18px) * -1);
-        margin-left: calc(var(--handset-modal-side-inset, 18px) * -1);
-        padding-right: var(--handset-modal-side-inset, 18px);
-        padding-left: var(--handset-modal-side-inset, 18px);
-    }
 }
 
 /* Add/edit blocklist modal — slightly wider than the default 400px so the
@@ -11906,13 +11706,6 @@ body.android #settings-modal .settings-help-section {
     display: none;
 }
 
-/* Hide Android-only permissions UI on iOS/desktop (.android-only loses to
-   #settings-modal .settings-section { display:flex } specificity). */
-body:not(.android) #settings-modal .settings-section.android-only,
-body:not(.android) #android-permissions-onboarding {
-    display: none !important;
-}
-
 /* Settings Modal Section */
 .settings-stack {
     display: flex;
@@ -12679,12 +12472,7 @@ body.handset-device #settings-modal.mobile-fullscreen-modal .settings-section-he
    (`body.windows`). See `windows/hooks.nsh` NSIS_HOOK_PREUNINSTALL. */
 .macos-only,
 .windows-only,
-.android-only { display: none; }
 body.mac .macos-only { display: block; }
-body.android .android-only { display: flex; }
-body.android #settings-modal .settings-section.android-only {
-    display: flex;
-}
 body.mac .settings-uninstall-contents.macos-only.settings-row {
     display: grid;
 }
