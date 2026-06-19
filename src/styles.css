@@ -11935,13 +11935,19 @@ body.handset-device #settings-modal.mobile-fullscreen-modal .settings-section-he
    macOS: in-app uninstall (`body.mac`). Windows: opens Settings → Installed apps
    (`body.windows`). See `windows/hooks.nsh` NSIS_HOOK_PREUNINSTALL. */
 .macos-only,
-.windows-only,
-body.mac .macos-only{ display: block; }
-body.mac .settings-uninstall-contents.macos-only.settings-row{
+.windows-only {
+    display: none;
+}
+body.mac .macos-only {
+    display: block;
+}
+body.mac .settings-uninstall-contents.macos-only.settings-row {
     display: grid;
 }
-body.windows .windows-only{ display: block; }
-body.windows .settings-uninstall-contents.windows-only.settings-row{
+body.windows .windows-only {
+    display: block;
+}
+body.windows .settings-uninstall-contents.windows-only.settings-row {
     display: grid;
 }
 body.windows .settings-uninstall-windows-row.settings-row{
