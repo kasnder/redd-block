@@ -532,7 +532,7 @@ pub fn set_window_size(window: WebviewWindow, width: f64, height: f64) -> Result
     Ok(())
 }
 
-/// Set window size - no-op on iOS/Android (always fullscreen)
+/// Set window size - no-op on iOS (always fullscreen)
 #[tauri::command]
 #[cfg(target_os = "ios")]
 pub fn set_window_size(_width: f64, _height: f64) -> Result<(), String> {

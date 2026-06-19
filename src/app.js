@@ -232,7 +232,6 @@ let lastDesktopHelperStatus = null;
 let lastDesktopHelperStatusAt = 0;
 let draggedBlocklistId = null; // Track which blocklist is being dragged
 let isIOS = false; // Track if running on iOS
-let isAndroid = false; // Track if running on Android (Tauri mobile)
 // True on macOS desktop (i.e. Mac platform AND not the iOS Tauri
 // runtime). Set in `detectPlatform`. Used to gate macOS-only Tauri
 // commands and onboarding copy.
@@ -824,7 +823,7 @@ async function syncSchedulesToHelper() {
 }
 
 async function syncActiveBlocksToHelper() {
-    if (isIOS || isAndroid) return;
+    if (isIOS) return;
     try {
         const status = await tauriAPI.checkHelperStatus();
         if (!status.running || !status.version_ok) return;
@@ -1201,8 +1200,6 @@ let activeScheduleSegmentCount = 0; // Number of segments locked in the active s
 let hasShownIOSScheduleSyncError = false;
 const CURRENT_EULA_REVISION = 1;
 let forceShowEulaThisSession = false;
-/** Android permissions onboarding stays up until Continue is tapped (not when settings return). */
-
 // Word list for random word challenges
 const wordList = [
     // 1-2 chars
@@ -1238,12 +1235,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupMacAutomationIntroModal();
     setupGraceSetting();
     setupSettingsEnforcementSection();
-    if (!isIOS && !isAndroid) {
+    if (!isIOS) {
         void wireEnforcementToggle();
     }
     if (isIOS && hasAcceptedEula()) {
         await checkScreentimeAuth();
-    } else if (!isIOS && !isAndroid) {
+    } else if (!isIOS) {
         await runInitialDesktopOnboardingSequence();
     } else {
         updateOnboardingVisibility();
@@ -1449,7 +1446,7 @@ async function runPostAcceptanceStartup() {
         startTickInterval();
 
         // Check for app updates (non-blocking, desktop only)
-        if (!isIOS && !isAndroid) {
+        if (!isIOS) {
             checkForAppUpdate();
         }
         startupInitializationComplete = true;
@@ -2355,7 +2352,7 @@ async function onEnforcementToggleChange(changedToggle) {
 }
 
 async function wireEnforcementToggle() {
-    if (isIOS || isAndroid) return;
+    if (isIOS) return;
     const toggles = getEnforcementToggleInputs();
     if (!toggles.length) return;
 
@@ -6382,14 +6379,14 @@ function updateOnboardingVisibility() {
     const main = document.getElementById('main-content');
     const showEula = !hasAcceptedEula();
     const showScreentime = isIOS && !showEula && !screentimeAuthorized;
-    const keepEulaVisibleForPendingSetup = !isIOS && !isAndroid
+    const keepEulaVisibleForPendingSetup = !isIOS
         && isFirstRunOnboardingInProgress()
         && !migrationOnboardingActive;
     const showEulaScreen = showEula || keepEulaVisibleForPendingSetup;
     const blockMainUi = showEulaScreen
         || showScreentime
         || migrationOnboardingActive
-        || (!isIOS && !isAndroid && isFirstRunOnboardingInProgress());
+        || (!isIOS && isFirstRunOnboardingInProgress());
 
     eulaOverlay?.classList.toggle('hidden', !showEulaScreen);
     screentimeOverlay?.classList.toggle('hidden', !showScreentime);
@@ -6442,15 +6439,15 @@ async function openExternal(target) {
         await openUrl(target);
     } catch (err) {
         console.warn('[openExternal] opener plugin failed:', err);
-        if (!isIOS && !isAndroid) {
+        if (!isIOS) {
             window.open(target, '_blank', 'noopener,noreferrer');
         }
     }
 }
 
-/** Mobile WebViews do not open target=_blank links in the system browser; route via opener plugin. */
+/** iOS WebView does not open target=_blank links in the system browser; route via opener plugin. */
 function setupMobileExternalLinkOpens() {
-    if (!isIOS && !isAndroid) return;
+    if (!isIOS) return;
     document.addEventListener('click', (event) => {
         const anchor = event.target.closest('a[href]');
         if (!anchor) return;
@@ -6526,7 +6523,7 @@ async function loadData() {
             iosScreenTimeSelection: null,
             overrideDifficulty: {
                 type: 'random-words',
-                count: (isIOS || isAndroid) ? 25 : 50
+                count: (isIOS) ? 25 : 50
             }
         });
         shouldSave = true;
@@ -6615,11 +6612,11 @@ function isVersionHigher(versionA, versionB) {
 }
 
 function usesMobileWordCountForOverrideType(type) {
-    return !!((isIOS || isAndroid) && (type === 'random-words' || type === 'gibberish'));
+    return !!((isIOS) && (type === 'random-words' || type === 'gibberish'));
 }
 
 function isMobileOverrideChallengePlatform() {
-    return isIOS || isAndroid;
+    return isIOS;
 }
 
 /** Key in latest-versions.json — iOS uses its own release line, not desktop macos. */
@@ -6630,11 +6627,6 @@ function getLatestVersionPlatformKey() {
 }
 
 
-
-
-/** Same 768px stack breakpoint as iOS layout tiers — toggles phone layout on Android. */
-
-/** Android landscape: safe-area env() is often 0 on the short edge; use visualViewport offsets. */
 
 
 function getModalDismissButton(modalOverlay) {
@@ -6746,7 +6738,7 @@ function setupHandsetModalScreens() {
 }
 
 
-// Detect platform for window controls, iOS, and Android
+// Detect platform for window controls and iOS
 function detectPlatform() {
     // Check for iOS (Tauri iOS uses a WKWebView with standard iOS user agent)
     const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
@@ -7574,14 +7566,12 @@ function setupModalListeners() {
         modalWebsiteInput.setSelectionRange(caret, caret);
     }
 
-    // Mobile: Name → websites. iOS shows plain Return (no default advance); Android
-    // loses native advance when the websites field already has pills or pending text.
-    if (isAndroid || isIOS) {
+    // Mobile: Name → websites. iOS shows plain Return (no default advance).
+    if (isIOS) {
         const nameInput = document.getElementById('blocklist-name');
         nameInput.setAttribute('enterkeyhint', 'next');
         nameInput.addEventListener('keydown', (e) => {
             if (e.key !== 'Enter' && e.keyCode !== 13) return;
-            if (isAndroid && modalWebsites.length === 0 && modalWebsiteInput.value.length === 0) return;
             e.preventDefault();
             e.stopPropagation();
             focusModalWebsiteInputFromNameField();
@@ -9058,14 +9048,6 @@ function readRootCssPx(varName) {
     probe.remove();
     return px;
 }
-
-/** Android tablets: html { zoom } can outgrow scrollHeight — pad #main-content to match visual content. */
-
-
-
-
-
-
 
 // Handle click on time part (button or instant-end input): open list and mark active.
 function handleTimePartClick(e) {
@@ -14221,8 +14203,8 @@ async function updateHostsFile(silent = false) {
 let appBlockingPreviousAppsSet = null;
 
 async function updateBlockedApps() {
-    // iOS uses Screen Time API; Android uses the accessibility plugin engine
-    if (isIOS || isAndroid) return;
+    // iOS uses Screen Time API for app blocking
+    if (isIOS) return;
 
     const now = Date.now();
     const nowDate = new Date(now);
@@ -18374,21 +18356,6 @@ const SETTINGS_TRANSLATIONS = {
         settingsEnforcementRowHintExtension: 'If ReDD Focus is disabled mid-block.',
         settingsEnforcementLockedTooltip: 'To change this setting, first stop all active blocks.',
         settingsDiagnosticsLabel: 'Something not working?',
-        settingsAndroidPermissionsHeading: 'Permissions',
-        settingsAndroidPermAccessibility: 'Accessibility',
-        settingsAndroidPermAccessibilityDesc: 'Required to detect and block apps and websites.',
-        settingsAndroidPermNotifications: 'Notifications',
-        settingsAndroidPermNotificationsDesc: 'Show alerts when apps or websites are blocked.',
-        settingsAndroidPermBackground: 'Run in Background',
-        settingsAndroidPermBackgroundDesc: 'Ensure active blocks work when the app is closed.',
-        settingsAndroidPermGranted: 'Granted',
-        settingsAndroidPermNotGranted: 'Not granted',
-        settingsAndroidPermOpenSettings: 'Grant access',
-        settingsAndroidPermThPermission: 'Permission',
-        settingsAndroidPermThStatus: 'Status',
-        androidPermissionsSetupLater: 'Setup later',
-        androidPermissionsTapToGrant: 'Tap to grant access',
-        androidPermissionsOnboardingCopy: 'Grant ReDD Block access to the permissions below so blocking works reliably.',
         onboardingOpenSourceFootnote:
             'ReDD Block is open-source and built by the Reduce Digital Distraction Project at (reddfocus.org). It is based on our 10+ years of research at the University of Oxford.',
         settingsSetupBtn: 'Setup',
@@ -18549,7 +18516,6 @@ const SETTINGS_TRANSLATIONS = {
         websitesTooltip: 'Blocking applies to entire domains. For example, typing "facebook.com" blocks all of Facebook, not just specific pages.',
         apps: 'Apps',
         appsTooltip: 'Enter the exact name of the application (e.g. \'Safari\'). You can also use the folder button to find the app.',
-        appsTooltipAndroid: 'Tap the button to choose which installed apps to block.',
         overrideDifficulty: 'Override Difficulty',
         overrideRandomWords: 'Random Words',
         overrideGibberish: 'Random Gibberish',
@@ -19107,21 +19073,6 @@ const SETTINGS_TRANSLATIONS = {
         settingsEnforcementRowHintExtension: 'Hvis ReDD Focus deaktiveres midt i en blokering.',
         settingsEnforcementLockedTooltip: 'For at ændre denne indstilling skal du først stoppe alle aktive blokeringer.',
         settingsDiagnosticsLabel: 'Virker noget ikke?',
-        settingsAndroidPermissionsHeading: 'Tilladelser',
-        settingsAndroidPermAccessibility: 'Tilgængelighed',
-        settingsAndroidPermAccessibilityDesc: 'Kræves for at registrere og blokere apps og websites.',
-        settingsAndroidPermNotifications: 'Notifikationer',
-        settingsAndroidPermNotificationsDesc: 'Vis beskeder, når apps eller websites blokeres.',
-        settingsAndroidPermBackground: 'Kør i baggrunden',
-        settingsAndroidPermBackgroundDesc: 'Sikrer at aktive blokeringer virker, når appen er lukket.',
-        settingsAndroidPermGranted: 'Givet',
-        settingsAndroidPermNotGranted: 'Ikke givet',
-        settingsAndroidPermOpenSettings: 'Giv adgang',
-        settingsAndroidPermThPermission: 'Tilladelse',
-        settingsAndroidPermThStatus: 'Status',
-        androidPermissionsSetupLater: 'Opsæt senere',
-        androidPermissionsTapToGrant: 'Tryk for at give adgang',
-        androidPermissionsOnboardingCopy: 'Giv ReDD Block adgang til tilladelserne nedenfor, så blokering fungerer stabilt.',
         onboardingOpenSourceFootnote:
             'ReDD Block er open source og bygget af Reduce Digital Distraction Project på (reddfocus.org). Det bygger på mere end 10 års forskning ved University of Oxford.',
         settingsSetupBtn: 'Opsætning',
@@ -19281,7 +19232,6 @@ const SETTINGS_TRANSLATIONS = {
         websitesTooltip: 'Blokering gælder hele domæner. Hvis du fx skriver "facebook.com", blokeres hele Facebook, ikke kun specifikke sider.',
         apps: 'Apps',
         appsTooltip: 'Indtast det præcise navn på appen (fx "Safari"). Du kan også bruge mappeknappen til at finde appen.',
-        appsTooltipAndroid: 'Tryk på knappen for at vælge hvilke installerede apps der skal blokeres.',
         overrideDifficulty: 'Sværhedsgrad',
         overrideRandomWords: 'Tilfældige ord',
         overrideGibberish: 'Tilfældig volapyk',
@@ -19566,13 +19516,13 @@ let iosCompactScheduleDayLabelsActive = null;
 
 /** Smaller iOS viewports, including iPad portrait, use single-letter day pills from first render. */
 function shouldUseCompactIosScheduleDayLabels() {
-    if (!document.body.classList.contains('ios') && !document.body.classList.contains('android')) return false;
+    if (!document.body.classList.contains('ios')) return false;
     const effVp = Math.round(getEffectiveViewportWidth());
     return effVp > 0 && effVp <= IOS_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH;
 }
 
 function syncIosScheduleDayLabelsViewportMode() {
-    if (!document.body.classList.contains('ios') && !document.body.classList.contains('android')) return;
+    if (!document.body.classList.contains('ios')) return;
     const nextCompact = shouldUseCompactIosScheduleDayLabels();
     if (nextCompact === iosCompactScheduleDayLabelsActive) return;
     iosCompactScheduleDayLabelsActive = nextCompact;
@@ -19887,7 +19837,7 @@ function applyEulaOnboardingLanguage() {
     const backBtn = document.getElementById('eula-back-btn');
     if (backBtn) {
         backBtn.textContent = tSettings('eulaBackBtn');
-        backBtn.classList.toggle('hidden', isIOS || isAndroid);
+        backBtn.classList.toggle('hidden', isIOS);
     }
 }
 
@@ -20287,7 +20237,7 @@ function applySettingsLanguage() {
     setText('blocklist-websites-tooltip', tSettings('websitesTooltip'));
     setText('blocklist-apps-label', tSettings('apps'));
     setText('blocklist-apps-tooltip', tSettings(
-        document.body.classList.contains('android') ? 'appsTooltipAndroid' : 'appsTooltip'
+        'appsTooltip'
     ));
     setText('override-difficulty-label', tSettings('overrideDifficulty'));
     setText('override-option-random-words', tSettings('overrideRandomWords'));
@@ -20317,13 +20267,9 @@ function applySettingsLanguage() {
     setText('modal-browse-apps-caption', tSettings('modalBrowseAppsCaption'));
     const modalBrowseAppsBtn = document.getElementById('modal-browse-apps-btn');
     if (modalBrowseAppsBtn) {
-        const ios = document.body.classList.contains('ios');
-        const android = document.body.classList.contains('android');
-        const browseTitle = ios
+        const browseTitle = document.body.classList.contains('ios')
             ? tSettings('modalBrowseAppsTitleIos')
-            : android
-                ? tSettings('modalBrowseAppsCaption')
-                : tSettings('browseApplicationsTitle');
+            : tSettings('browseApplicationsTitle');
         modalBrowseAppsBtn.title = browseTitle;
         modalBrowseAppsBtn.setAttribute('aria-label', browseTitle);
     }
@@ -20724,7 +20670,7 @@ function applyTheme() {
 }
 
 function getUiZoomMax() {
-    if (isIOS || isAndroid) return UI_ZOOM_MAX_IOS;
+    if (isIOS) return UI_ZOOM_MAX_IOS;
     const isDesktop = document.body.classList.contains('windows') || document.body.classList.contains('mac');
     return isDesktop ? UI_ZOOM_MAX_DESKTOP : UI_ZOOM_MAX;
 }
@@ -20777,7 +20723,7 @@ function syncUiZoomResponsiveLayout() {
     const zoom = getActiveUiZoomScale();
     document.documentElement.style.setProperty('--ui-zoom', String(zoom));
 
-    if (isIOS || isAndroid) {
+    if (isIOS) {
         const effVp = getEffectiveViewportWidth();
         const ipadPortraitStack = isIOS
             && usesStackSettingsPlacement()
@@ -20811,9 +20757,8 @@ function syncUiZoomResponsiveLayout() {
 
 function usesStackSettingsPlacement() {
     if (window.matchMedia('(max-width: 768px)').matches) return true;
-    return (document.body.classList.contains('ios') || document.body.classList.contains('android'))
+    return document.body.classList.contains('ios')
         && !document.body.classList.contains('ios-phone')
-        && !document.body.classList.contains('android-phone')
         && window.matchMedia('(min-width: 769px) and (max-width: 1024px) and (orientation: portrait)').matches;
 }
 
@@ -20875,7 +20820,7 @@ function syncSchedulerModeTabLabelMode() {
     const toolbar = header.querySelector('#settings-toolbar-scheduler');
     const iconOnly = schedulerModeTabsNeedIconOnly(header, modeTabs, toolbar);
 
-    if (!isIOS && !isAndroid && mainTitle && !mainTitle.classList.contains('hidden') && iconOnly) {
+    if (!isIOS && mainTitle && !mainTitle.classList.contains('hidden') && iconOnly) {
         body.classList.add('ui-zoom-sched-hide-title');
         void header.offsetWidth;
     }
@@ -21053,7 +20998,7 @@ function applyUiZoom(scale) {
         return;
     }
 
-    if (isIOS || isAndroid) {
+    if (isIOS) {
         document.documentElement.style.zoom = String(clamped);
         scheduleUiZoomResponsiveLayout();
         return;
@@ -21139,7 +21084,7 @@ function setupUiZoomShortcuts() {
     window.addEventListener('resize', scheduleUiZoomResponsiveLayout, { passive: true });
     window.visualViewport?.addEventListener('resize', scheduleUiZoomResponsiveLayout, { passive: true });
 
-    if (isIOS || isAndroid) return;
+    if (isIOS) return;
 
     tauriAPI.onMenuZoomIn(() => zoomUiIn({ showToast: true })).catch(() => { });
     tauriAPI.onMenuZoomOut(() => zoomUiOut({ showToast: true })).catch(() => { });
@@ -21185,7 +21130,7 @@ function setupHelpMenuLinks() {
 
 // Setup Helper Settings in the settings modal
 function setupHelperSettings() {
-    if (isIOS || isAndroid) return;
+    if (isIOS) return;
     const statusIndicator = document.getElementById('helper-status-indicator');
     const cleanHostsBtn = document.getElementById('clean-hosts-btn');
 
@@ -22207,7 +22152,7 @@ async function openInstalledAppsPicker() {
     };
 
     // Browse manually — fall back to the OS file picker (desktop only)
-    if (browseBtn && !isAndroid) {
+    if (browseBtn) {
         browseBtn.classList.remove('hidden');
         browseBtn.onclick = async () => {
         closePickerModal();
@@ -22738,7 +22683,7 @@ function refreshUninstallButtonState() {
 }
 
 function setupWindowsUninstallGuidance() {
-    if (isIOS || isAndroid) return;
+    if (isIOS) return;
     const btn = document.getElementById('windows-uninstall-open-settings-btn');
     if (!btn) return;
 

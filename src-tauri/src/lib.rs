@@ -953,7 +953,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
     ]
 }
 
-/// Commands for mobile (iOS and Android). Only the shared data
+/// Commands for mobile (iOS). Only the shared data
 /// commands — platform blocking goes through the Screen Time /
 /// screentime plugin, which registers its own commands.
 #[cfg(target_os = "ios")]
