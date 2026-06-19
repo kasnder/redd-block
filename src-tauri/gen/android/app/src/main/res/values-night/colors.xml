@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- ReDD Block brand — matches src/styles.css dark-mode CTA / accent tokens -->
-    <color name="redd_teal">#FF4EC0B0</color>
-    <color name="redd_teal_hover">#FF399E90</color>
-</resources>
