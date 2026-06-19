@@ -6572,6 +6572,9 @@ function updateOnboardingVisibility() {
     screentimeOverlay?.classList.toggle('hidden', !showScreentime);
     androidOverlay?.classList.toggle('hidden', !showAndroidPermissions);
     main?.classList.toggle('hidden', blockMainUi);
+    if (!blockMainUi) {
+        scheduleAndroidTabletMainContentScrollPadding();
+    }
 
     // Hide the BLOCKING NOW title-bar row on onboarding screens
     const nowBlockingRow = document.getElementById('now-blocking-row');
@@ -9416,6 +9419,76 @@ function ensureAndroidEditableAboveKeyboard(el) {
     scrollContainer.scrollBy({ top: overflow, behavior: 'auto' });
 }
 
+let androidTabletScrollPaddingRaf = 0;
+
+function readRootCssPx(varName) {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    if (!raw) return 0;
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;height:' + raw;
+    document.body.appendChild(probe);
+    const px = parseFloat(getComputedStyle(probe).height) || 0;
+    probe.remove();
+    return px;
+}
+
+/** Android tablets: html { zoom } can outgrow scrollHeight — pad #main-content to match visual content. */
+function scheduleAndroidTabletMainContentScrollPadding() {
+    if (!isAndroid || document.body.classList.contains('android-phone')) return;
+    cancelAnimationFrame(androidTabletScrollPaddingRaf);
+    androidTabletScrollPaddingRaf = requestAnimationFrame(() => {
+        androidTabletScrollPaddingRaf = requestAnimationFrame(() => {
+            androidTabletScrollPaddingRaf = 0;
+            syncAndroidTabletMainContentScrollPadding();
+        });
+    });
+}
+
+function getAndroidTabletScrollSpacer(main) {
+    let spacer = document.getElementById('android-tablet-scroll-spacer');
+    if (!spacer) {
+        spacer = document.createElement('div');
+        spacer.id = 'android-tablet-scroll-spacer';
+        spacer.setAttribute('aria-hidden', 'true');
+        main.appendChild(spacer);
+    } else if (spacer.parentElement !== main) {
+        main.appendChild(spacer);
+    }
+    return spacer;
+}
+
+function syncAndroidTabletMainContentScrollPadding() {
+    if (!isAndroid || document.body.classList.contains('android-phone')) return;
+
+    const main = document.getElementById('main-content');
+    const calendar = main?.querySelector('.week-calendar-section');
+    if (!main || !calendar || main.classList.contains('hidden')) return;
+
+    const spacer = getAndroidTabletScrollSpacer(main);
+    const savedScroll = main.scrollTop;
+    let spacerHeight = 0;
+
+    for (let attempt = 0; attempt < 10; attempt++) {
+        spacer.style.height = spacerHeight > 0 ? `${spacerHeight}px` : '0px';
+        void main.offsetHeight;
+
+        const maxScroll = Math.max(0, main.scrollHeight - main.clientHeight);
+        main.scrollTop = maxScroll;
+
+        const calRect = calendar.getBoundingClientRect();
+        const mainRect = main.getBoundingClientRect();
+        const paddingBottom = parseFloat(getComputedStyle(main).paddingBottom) || 0;
+        const visibleBottom = mainRect.bottom - paddingBottom;
+        const overflow = calRect.bottom - visibleBottom;
+
+        if (overflow <= 2) break;
+        spacerHeight += Math.ceil(overflow);
+    }
+
+    main.scrollTop = savedScroll;
+    spacer.style.height = spacerHeight > 0 ? `${spacerHeight}px` : '0px';
+}
+
 function updateAndroidViewportMetrics() {
     if (!isAndroid) return;
 
@@ -9447,6 +9520,7 @@ function updateAndroidViewportMetrics() {
     document.documentElement.style.setProperty('--android-keyboard-inset', `${keyboardInset}px`);
     document.body.classList.toggle('android-keyboard-open', keyboardInset > 80);
     syncAndroidHandsetModalSideInset();
+    scheduleAndroidTabletMainContentScrollPadding();
 }
 
 function setupAndroidKeyboardScroll() {
@@ -16740,6 +16814,7 @@ function updateWeekCalendar() {
     }
 
     renderWeekBlocks();
+    scheduleAndroidTabletMainContentScrollPadding();
 }
 
 // Convert a time interval (clamped to a single day) into horizontal positioning for the
@@ -21268,6 +21343,7 @@ function syncUiZoomResponsiveLayout() {
     if (pauseModal && !pauseModal.classList.contains('hidden')) {
         syncPauseDurationRowLayout();
     }
+    scheduleAndroidTabletMainContentScrollPadding();
 }
 
 function usesStackSettingsPlacement() {
@@ -21475,12 +21551,16 @@ function bindUiZoomLayoutObserver() {
         document.getElementById('scheduler-section'),
         document.getElementById('blocklists-container'),
         document.getElementById('selection-prompt'),
+        document.querySelector('.week-calendar-section'),
+        document.getElementById('day-rows'),
+        document.querySelector('.footer'),
     ].filter(Boolean);
     if (!targets.length) return;
     uiZoomLayoutObserverBound = true;
     const ro = new ResizeObserver(() => {
         scheduleUiZoomResponsiveLayout();
         scheduleSelectionPromptLayout();
+        scheduleAndroidTabletMainContentScrollPadding();
     });
     targets.forEach((el) => ro.observe(el));
 }
@@ -21514,6 +21594,9 @@ function applyUiZoom(scale) {
     if (isIOS || isAndroid) {
         document.documentElement.style.zoom = String(clamped);
         scheduleUiZoomResponsiveLayout();
+        if (isAndroid && !document.body.classList.contains('android-phone')) {
+            scheduleAndroidTabletMainContentScrollPadding();
+        }
         return;
     }
 

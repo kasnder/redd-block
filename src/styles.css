@@ -348,6 +348,33 @@ body.android .app-container {
     padding-bottom: var(--app-footer-chrome-height);
 }
 
+/* Android tablet: shrink shell layout by zoom so html { zoom } fits the viewport (same idea as iPad / var(--ui-zoom), without transform). */
+body.android:not(.android-phone) .app-container {
+    height: calc(
+        (var(--android-app-height, 100vh) / var(--ui-zoom, 1))
+        - var(--android-safe-area-top-with-gap, 20px)
+        - var(--android-safe-area-bottom-with-gap, 0px)
+    );
+    padding-bottom: calc(var(--app-footer-chrome-height) / var(--ui-zoom, 1));
+}
+
+body.android:not(.android-phone) .main-content {
+    flex: 1 1 0;
+    height: 0;
+    min-height: 0;
+    max-height: 100%;
+    padding-bottom: calc(
+        (var(--app-footer-chrome-height) + var(--android-keyboard-inset, 0px)) / var(--ui-zoom, 1)
+    );
+}
+
+#android-tablet-scroll-spacer {
+    flex-shrink: 0;
+    width: 100%;
+    height: 0;
+    pointer-events: none;
+}
+
 /* iPad: WKWebView "desktop" content mode ignores CSS zoom and pageZoom for text/emoji sizing.
    Scale the app shell so typography and icons grow/shrink like iPhone/Android CSS zoom. */
 body.ios:not(.ios-phone) .app-container {
@@ -412,7 +439,6 @@ body.handset-device #settings-modal .language-picker-trigger .language-picker-co
         padding-top: 16px;
         padding-right: 28px;
         padding-left: 28px;
-        padding-bottom: calc(var(--app-footer-chrome-height) + var(--android-keyboard-inset, 0px));
         gap: 18px;
         --app-header-row-height: 44px;
         --app-settings-top: calc((var(--app-header-row-height) - var(--app-settings-size)) / 2);
@@ -1817,7 +1843,9 @@ body.dark-mode .app-blocking-closedown-banner {
     }
 
     body.android:not(.android-phone) .main-content {
-        padding-bottom: calc(var(--app-footer-chrome-height) + var(--android-keyboard-inset, 0px));
+        padding-bottom: calc(
+            (var(--app-footer-chrome-height) + var(--android-keyboard-inset, 0px)) / var(--ui-zoom, 1)
+        );
     }
 
     body.ios:not(.ios-phone) .main-content .section-header,
