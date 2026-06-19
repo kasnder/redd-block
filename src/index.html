@@ -617,7 +617,7 @@
                     <button id="ios-screentime-grant-btn" class="modal-btn primary-btn onboarding-primary-btn">Grant
                         access to Screen Time</button>
                 </div>
-                <p id="ios-screentime-onboarding-note" class="subtle">Fristed is open-source and built by the Reduce
+                <p id="ios-screentime-onboarding-note" class="onboarding-footnote">Fristed is open-source and built by the Reduce
                     Digital Distraction Project at (reddfocus.org). It is based on our 10+ years of research at the
                     University of Oxford.</p>
             </div>
@@ -662,13 +662,6 @@
                             </button>
                         </div>
                         <div class="settings-toolbar settings-toolbar--scheduler" id="settings-toolbar-scheduler">
-                            <div class="header-zoom-control" id="header-zoom-control" role="group" aria-label="UI zoom">
-                                <button type="button" class="zoom-btn zoom-out-btn" title="Zoom out"
-                                    aria-label="Zoom out">−</button>
-                                <span class="zoom-value">120%</span>
-                                <button type="button" class="zoom-btn zoom-in-btn" title="Zoom in"
-                                    aria-label="Zoom in">+</button>
-                            </div>
                             <button id="settings-btn" class="settings-top-btn icon-btn" title="Settings">
                                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                                     stroke-linecap="round" stroke-linejoin="round">
@@ -749,7 +742,7 @@
                                                 <span class="duration-unit" id="duration-unit-label">min</span>
                                             </div>
                                         </div>
-                                        <span class="time-separator">→</span>
+                                        <span class="time-separator" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg></span>
                                         <div class="time-picker-group">
                                             <label class="time-label" id="end-label">End</label>
                                             <div class="time-picker-row">
@@ -810,7 +803,7 @@
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <span class="time-separator">→</span>
+                                                <span class="time-separator" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg></span>
                                                 <div class="time-picker-group">
                                                     <label class="time-label" id="schedule-end-label">End</label>
                                                     <div class="time-picker-row">
@@ -1329,8 +1322,13 @@
         <!-- Override Challenge Modal -->
         <div id="override-modal" class="modal-overlay hidden">
             <div class="modal-content override-challenge">
-                <h3 id="override-modal-title">Override Block?</h3>
-                <div id="override-summary" class="override-summary"></div>
+                <div class="start-confirm-header">
+                    <div class="start-confirm-emoji-badge" id="override-confirm-emoji" aria-hidden="true">🎯</div>
+                    <div class="start-confirm-header-text">
+                        <h3 id="override-modal-title">Override Block?</h3>
+                        <p id="override-summary" class="start-confirm-subtitle override-summary"></p>
+                    </div>
+                </div>
                 <p id="override-modal-instruction">To stop this block early, type the following:</p>
                 <div id="challenge-text" class="challenge-text"></div>
                 <div id="challenge-word-progress" class="challenge-word-progress hidden"></div>
@@ -1353,9 +1351,13 @@
         <!-- Pause Block Modal -->
         <div id="pause-modal" class="modal-overlay hidden">
             <div class="modal-content override-challenge pause-modal">
-                <h3 id="pause-modal-title">Pause Block</h3>
-                <div id="pause-summary" class="override-summary"></div>
-
+                <div class="start-confirm-header">
+                    <div class="start-confirm-emoji-badge" id="pause-confirm-emoji" aria-hidden="true">🎯</div>
+                    <div class="start-confirm-header-text">
+                        <h3 id="pause-modal-title">Pause Block</h3>
+                        <p id="pause-summary" class="start-confirm-subtitle override-summary"></p>
+                    </div>
+                </div>
 
                 <!-- Pause duration picker -->
                 <div class="pause-duration-section">
@@ -1920,7 +1922,7 @@
 
         <!-- Zoom Toast -->
         <div id="zoom-toast" class="zoom-toast hidden">
-            <span id="zoom-toast-message">Zoom 120%</span>
+            <span id="zoom-toast-message">Zoom 100%</span>
         </div>
 
         <!-- Settings Modal -->
@@ -1982,13 +1984,27 @@
                             </div>
 
                             <div class="settings-row">
-                                <label id="settings-theme-label" class="settings-row-label" for="theme-select">Appearance</label>
+                                <label id="settings-theme-label" class="settings-row-label" for="theme-select">Theme</label>
                                 <div class="settings-row-control">
                                     <select id="theme-select" class="settings-select">
                                         <option id="theme-option-system" value="system">Auto</option>
                                         <option id="theme-option-light" value="light">Light</option>
                                         <option id="theme-option-dark" value="dark">Dark</option>
                                     </select>
+                                </div>
+                            </div>
+
+                            <div class="settings-row">
+                                <span id="settings-zoom-label" class="settings-row-label">Zoom level</span>
+                                <div class="settings-row-control">
+                                    <div class="settings-zoom-control" id="settings-zoom-control" role="group"
+                                        aria-labelledby="settings-zoom-label">
+                                        <button type="button" class="zoom-btn zoom-out-btn" id="settings-zoom-out"
+                                            title="Zoom out" aria-label="Zoom out">−</button>
+                                        <span class="zoom-value" id="settings-zoom-value">100%</span>
+                                        <button type="button" class="zoom-btn zoom-in-btn" id="settings-zoom-in"
+                                            title="Zoom in" aria-label="Zoom in">+</button>
+                                    </div>
                                 </div>
                             </div>
 
@@ -2198,6 +2214,7 @@
                         </div>
                         </div>
                     </section>
+
 
                     <section id="settings-help-section" class="settings-section settings-help-section desktop-only" aria-labelledby="settings-help-label">
                         <h4 id="settings-help-label" class="settings-section-heading">Something not working?</h4>
@@ -2457,18 +2474,6 @@
         <div class="footer">
             <span class="footer-text"><span id="footer-made-with">Made with</span> <span class="heart">♥</span> <span
                     id="footer-by">by</span> <a href="https://reddfocus.org" target="_blank">reddfocus.org</a></span>
-            <div class="footer-zoom-control" id="footer-zoom-control" role="group" aria-label="UI zoom">
-                <button type="button" class="footer-zoom-btn zoom-out-btn" id="footer-zoom-out" title="Zoom out"
-                    aria-label="Zoom out">−</button>
-                <svg class="footer-zoom-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <circle cx="11" cy="11" r="7"></circle>
-                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                </svg>
-                <span class="footer-zoom-value zoom-value" id="footer-zoom-value">120%</span>
-                <button type="button" class="footer-zoom-btn zoom-in-btn" id="footer-zoom-in" title="Zoom in"
-                    aria-label="Zoom in">+</button>
-            </div>
         </div>
     </div>
 

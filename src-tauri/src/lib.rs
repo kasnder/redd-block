@@ -953,7 +953,9 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
     ]
 }
 
-/// Commands for iOS (only shared commands for now; Screen Time plugin will add more)
+/// Commands for mobile (iOS). Only the shared data
+/// commands — platform blocking goes through the Screen Time /
+/// screentime plugin, which registers its own commands.
 #[cfg(target_os = "ios")]
 fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
     tauri::generate_handler![

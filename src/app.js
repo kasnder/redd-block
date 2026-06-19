@@ -37,7 +37,6 @@ import {
     isOverlayMessageEmpty,
 } from './schedule-overlay-message-editor.js';
 import { getReleaseNotesForVersion } from './changelog.js';
-
 // Compatibility layer wrapping Tauri APIs
 const tauriAPI = {
     // Core data operations
@@ -266,18 +265,19 @@ let lastOverridePreviewType = null;
 const UI_ZOOM_MIN = 0.8;
 const UI_ZOOM_MAX = 1.8;
 const UI_ZOOM_MAX_DESKTOP = 1.5;  // cap on macOS/Windows (native webview zoom)
-const UI_ZOOM_MAX_IOS = 1.4;  // cap on iOS (CSS zoom on html)
+const UI_ZOOM_MAX_IOS = 1.4;  // cap on iOS (CSS zoom on phone; transform scale on iPad)
 /** Layout breakpoints — CSS `zoom` does not affect @media / @container; tiers use effective width. */
 const UI_ZOOM_LAYOUT_STACK_MAX = 768;
 const UI_ZOOM_LAYOUT_CRAMPED_MAX = 1024;
 const UI_ZOOM_LAYOUT_NARROW_MAX = 800;
+const SCHED_TABS_ICON_ONLY_EXIT_WIDTH_DELTA = 8;
 let uiZoomLayoutRaf = 0;
+let selectionPromptLayoutRaf = 0;
 let uiZoomLayoutObserverBound = false;
+let schedTabsIconOnlyEnteredAtWidth = 0;
 const UI_ZOOM_STEP = 0.1;
-/** Desktop default — slightly larger for monitor distance. */
-const DEFAULT_UI_ZOOM = 1.2;
-/** iOS uses CSS zoom on `html`; 1.0 matches the layout viewport and avoids horizontal overflow. */
-const DEFAULT_UI_ZOOM_IOS = 1.0;
+const DEFAULT_UI_ZOOM = 1.0;
+const TIME_SEPARATOR_ARROW_HTML = '<span class="time-separator" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg></span>';
 let zoomToastHideTimeout = null;
 let nativeWebviewZoomSupported = null;
 
@@ -1200,7 +1200,6 @@ let activeScheduleSegmentCount = 0; // Number of segments locked in the active s
 let hasShownIOSScheduleSyncError = false;
 const CURRENT_EULA_REVISION = 1;
 let forceShowEulaThisSession = false;
-
 // Word list for random word challenges
 const wordList = [
     // 1-2 chars
@@ -1216,9 +1215,10 @@ const wordList = [
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     detectPlatform(); // Before loadData so first-launch defaults can differ on iOS
+    setupHandsetModalScreens();
     await loadData();
     await resetDevOnlyEulaAcceptance();
-    setupIOSExternalLinkOpens();
+    setupMobileExternalLinkOpens();
     setupNowBlockingChipScroll();
     setupEventListeners();
     initWelcomeDemoControls();
@@ -1235,7 +1235,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupMacAutomationIntroModal();
     setupGraceSetting();
     setupSettingsEnforcementSection();
-    void wireEnforcementToggle();
+    if (!isIOS) {
+        void wireEnforcementToggle();
+    }
     if (isIOS && hasAcceptedEula()) {
         await checkScreentimeAuth();
     } else if (!isIOS) {
@@ -1333,6 +1335,8 @@ function isLocalDevRun() {
 async function resetDevOnlyEulaAcceptance() {
     forceShowEulaThisSession = isLocalDevRun();
 }
+
+
 
 function getAcceptedEulaRevision() {
     const rawRevision = appData?.settings?.eulaAcceptedRevision;
@@ -2411,6 +2415,7 @@ async function onEnforcementToggleChange(changedToggle) {
 }
 
 async function wireEnforcementToggle() {
+    if (isIOS) return;
     const toggles = getEnforcementToggleInputs();
     if (!toggles.length) return;
 
@@ -6361,11 +6366,13 @@ function displayNameForBlockedApp(processName) {
         (a) => normalizeBlockedAppKey(a.process_name) === key,
     );
     if (match?.display_name) return match.display_name;
+
     return key.charAt(0).toUpperCase() + key.slice(1);
 }
 
 async function ensureInstalledAppsCache() {
-    if (isIOS || installedAppsCache) return;
+    if (installedAppsCache) return;
+    if (isIOS) return;
     try {
         installedAppsCache = await tauriAPI.listInstalledApps();
     } catch (e) {
@@ -6434,6 +6441,7 @@ function isHelperConnectionError(errorMsg) {
     return errorMsg.includes('Failed to connect to helper') || errorMsg.includes('refused') || errorMsg.includes('10061');
 }
 
+
 // Check Screen Time authorization (iOS only)
 async function checkScreentimeAuth() {
     try {
@@ -6500,12 +6508,15 @@ function updateOnboardingVisibility() {
     eulaOverlay?.classList.toggle('hidden', !showEulaScreen);
     screentimeOverlay?.classList.toggle('hidden', !showScreentime);
     main?.classList.toggle('hidden', blockMainUi);
+    if (!blockMainUi) {
+    }
 
     // Hide the BLOCKING NOW title-bar row on onboarding screens
     const nowBlockingRow = document.getElementById('now-blocking-row');
     if (nowBlockingRow) {
         nowBlockingRow.classList.toggle('hidden', blockMainUi);
     }
+
 }
 
 function activeExclusiveOnboardingScreenId() {
@@ -6575,8 +6586,8 @@ async function openExternal(target) {
     }
 }
 
-/** WKWebView on iOS does not open target=_blank links in Safari; route via opener plugin. */
-function setupIOSExternalLinkOpens() {
+/** iOS WebView does not open target=_blank links in the system browser; route via opener plugin. */
+function setupMobileExternalLinkOpens() {
     if (!isIOS) return;
     document.addEventListener('click', (event) => {
         const anchor = event.target.closest('a[href]');
@@ -6637,6 +6648,8 @@ async function loadData() {
     if (migrateLegacyScheduleStartOverlays()) {
         shouldSave = true;
     }
+
+
     // Create default blocklist on first launch (no blocklists yet)
     if (appData.blocklists.length === 0) {
         appData.blocklists.push({
@@ -6651,7 +6664,7 @@ async function loadData() {
             iosScreenTimeSelection: null,
             overrideDifficulty: {
                 type: 'random-words',
-                count: isIOS ? 25 : 50
+                count: (isIOS) ? 25 : 50
             }
         });
         shouldSave = true;
@@ -6739,8 +6752,12 @@ function isVersionHigher(versionA, versionB) {
     return false; // Equal versions
 }
 
-function usesIOSWordCountForOverrideType(type) {
-    return !!(isIOS && (type === 'random-words' || type === 'gibberish'));
+function usesMobileWordCountForOverrideType(type) {
+    return !!((isIOS) && (type === 'random-words' || type === 'gibberish'));
+}
+
+function isMobileOverrideChallengePlatform() {
+    return isIOS;
 }
 
 /** Key in latest-versions.json — iOS uses its own release line, not desktop macos. */
@@ -6749,6 +6766,118 @@ function getLatestVersionPlatformKey() {
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
     return isMac ? 'macos' : 'windows';
 }
+
+
+
+
+function getModalDismissButton(modalOverlay) {
+    if (!modalOverlay) return null;
+    return modalOverlay.querySelector('.modal-buttons .cancel-btn, [id^="cancel-"], [id^="close-"]');
+}
+
+function resetModalScrollPosition(modalEl) {
+    if (!modalEl) return;
+    const apply = () => {
+        modalEl.scrollTop = 0;
+        const content = modalEl.querySelector('.modal-content');
+        if (content) content.scrollTop = 0;
+        const scrollBody = modalEl.querySelector('.mobile-modal-scroll-body');
+        if (scrollBody) scrollBody.scrollTop = 0;
+    };
+    apply();
+    requestAnimationFrame(apply);
+}
+
+function attachModalScrollResetOnShow(modalEl) {
+    if (!modalEl || modalEl.dataset.scrollResetOnShow === '1') return;
+    modalEl.dataset.scrollResetOnShow = '1';
+    new MutationObserver(() => {
+        if (!modalEl.classList.contains('hidden')) {
+            resetModalScrollPosition(modalEl);
+        }
+    }).observe(modalEl, { attributes: true, attributeFilter: ['class'] });
+}
+
+function setupHandsetModalScreens() {
+    const modalIds = [
+        'blocklist-modal',
+        'override-modal',
+        'pause-modal',
+        'start-block-confirm-modal',
+        'start-schedule-confirm-modal',
+        'settings-modal',
+        'override-all-modal'
+    ];
+
+    for (const modalId of modalIds) {
+        const overlay = document.getElementById(modalId);
+        const content = overlay?.querySelector('.modal-content');
+        const titleSource = content?.querySelector('h3');
+        if (!overlay || !content || !titleSource || content.querySelector('.mobile-modal-header')) continue;
+
+        overlay.classList.add('mobile-fullscreen-modal');
+        titleSource.classList.add('mobile-modal-title-source');
+
+        const header = document.createElement('div');
+        header.className = 'mobile-modal-header';
+
+        const backButton = document.createElement('button');
+        backButton.type = 'button';
+        backButton.className = 'mobile-modal-back-btn';
+        backButton.setAttribute('aria-label', 'Back');
+        backButton.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M15 18l-6-6 6-6"></path>
+            </svg>
+        `;
+
+        const headerTitle = document.createElement('div');
+        headerTitle.className = 'mobile-modal-header-title';
+
+        const syncHeaderTitle = () => {
+            const nextTitle = titleSource.textContent?.trim() || titleSource.innerText?.trim() || '';
+            headerTitle.textContent = nextTitle;
+            backButton.setAttribute('aria-label', nextTitle ? `Back from ${nextTitle}` : 'Back');
+        };
+
+        syncHeaderTitle();
+        new MutationObserver(syncHeaderTitle).observe(titleSource, {
+            childList: true,
+            characterData: true,
+            subtree: true
+        });
+
+        backButton.addEventListener('click', () => {
+            const dismissButton = getModalDismissButton(overlay);
+            if (dismissButton) dismissButton.click();
+            else overlay.classList.add('hidden');
+        });
+
+        header.append(backButton, headerTitle);
+        if (modalId === 'settings-modal') {
+            const versionEl = content.querySelector('#current-app-version');
+            const generalHeading = content.querySelector('#settings-general-heading');
+            const settingsHeader = content.querySelector('.settings-modal-header');
+            if (versionEl && generalHeading && !generalHeading.parentElement?.classList.contains('settings-section-heading-row')) {
+                const row = document.createElement('div');
+                row.className = 'settings-section-heading-row';
+                generalHeading.parentNode.insertBefore(row, generalHeading);
+                row.append(generalHeading, versionEl);
+            }
+            settingsHeader?.classList.add('hidden');
+        }
+        content.prepend(header);
+
+        const scrollBody = document.createElement('div');
+        scrollBody.className = 'mobile-modal-scroll-body';
+        while (header.nextSibling) {
+            scrollBody.appendChild(header.nextSibling);
+        }
+        content.appendChild(scrollBody);
+        attachModalScrollResetOnShow(overlay);
+    }
+}
+
 
 // Detect platform for window controls and iOS
 function detectPlatform() {
@@ -6764,6 +6893,7 @@ function detectPlatform() {
             (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         if (!isIPad) {
             document.body.classList.add('ios-phone');
+            document.body.classList.add('handset-device');
         }
         // Hide desktop-only UI on iOS
         document.getElementById('window-controls')?.classList.add('hidden');
@@ -7561,6 +7691,68 @@ function setupModalListeners() {
     focusInputOnTagAreaClick(modalWebsitesTags, modalWebsiteInput);
     focusInputOnTagAreaClick(modalAppsTags, modalAppInput);
 
+    function confirmModalWebsiteInputValue() {
+        const raw = modalWebsiteInput.value.trim();
+        if (!raw) return null;
+
+        const result = processWebsiteInput(raw);
+        const errorMsg = document.getElementById('website-input-error');
+
+        if (result.websiteInvalid) {
+            if (errorMsg) {
+                errorMsg.classList.remove('hidden');
+                setTimeout(() => errorMsg.classList.add('hidden'), 3000);
+            }
+        } else if (errorMsg) {
+            errorMsg.classList.add('hidden');
+        }
+
+        if (result.hadProtected) {
+            modalWebsiteInput.placeholder = tSettings('cannotBlockDomainPlaceholder');
+            modalWebsiteInput.classList.add('input-error');
+            setTimeout(() => {
+                modalWebsiteInput.placeholder = tSettings('placeholderWebsiteExample');
+                modalWebsiteInput.classList.remove('input-error');
+            }, 2000);
+        }
+
+        if (result.toAdd.length > 0) {
+            const toAddCopy = [...result.toAdd];
+            pushModalUndo('website', () => {
+                toAddCopy.forEach(w => {
+                    const i = modalWebsites.indexOf(w);
+                    if (i !== -1) modalWebsites.splice(i, 1);
+                });
+                window.renderModalTags();
+            });
+            result.toAdd.forEach(website => {
+                if (!modalWebsites.includes(website)) modalWebsites.push(website);
+            });
+            window.renderModalTags();
+        }
+        modalWebsiteInput.value = result.inputValueToSet;
+        return result;
+    }
+
+    function focusModalWebsiteInputFromNameField() {
+        modalWebsiteInput.focus({ preventScroll: true });
+        const pendingLen = modalWebsiteInput.value.length;
+        const caret = pendingLen > 0 ? pendingLen : 0;
+        modalWebsiteInput.setSelectionRange(caret, caret);
+    }
+
+    // Mobile: Name → websites. iOS shows plain Return (no default advance).
+    if (isIOS) {
+        const nameInput = document.getElementById('blocklist-name');
+        nameInput.setAttribute('enterkeyhint', 'next');
+        nameInput.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.keyCode !== 13) return;
+            e.preventDefault();
+            e.stopPropagation();
+            focusModalWebsiteInputFromNameField();
+        }, true);
+    }
+
     document.getElementById('blocklist-name').addEventListener('input', () => {
         const nameInput = document.getElementById('blocklist-name');
         nameInput.classList.remove('input-error');
@@ -7626,42 +7818,7 @@ function setupModalListeners() {
         // Enter or Space confirms the website(s) — supports multiple domains separated by space, newline, or comma
         if ((e.key === 'Enter' || e.key === ' ') && modalWebsiteInput.value.trim()) {
             e.preventDefault();
-            const result = processWebsiteInput(modalWebsiteInput.value.trim());
-            const errorMsg = document.getElementById('website-input-error');
-
-            if (result.websiteInvalid) {
-                if (errorMsg) {
-                    errorMsg.classList.remove('hidden');
-                    setTimeout(() => errorMsg.classList.add('hidden'), 3000);
-                }
-            } else {
-                if (errorMsg) errorMsg.classList.add('hidden');
-            }
-
-            if (result.hadProtected) {
-                modalWebsiteInput.placeholder = tSettings('cannotBlockDomainPlaceholder');
-                modalWebsiteInput.classList.add('input-error');
-                setTimeout(() => {
-                    modalWebsiteInput.placeholder = tSettings('placeholderWebsiteExample');
-                    modalWebsiteInput.classList.remove('input-error');
-                }, 2000);
-            }
-
-            if (result.toAdd.length > 0) {
-                const toAddCopy = [...result.toAdd];
-                pushModalUndo('website', () => {
-                    toAddCopy.forEach(w => {
-                        const i = modalWebsites.indexOf(w);
-                        if (i !== -1) modalWebsites.splice(i, 1);
-                    });
-                    window.renderModalTags();
-                });
-                result.toAdd.forEach(website => {
-                    if (!modalWebsites.includes(website)) modalWebsites.push(website);
-                });
-                window.renderModalTags();
-            }
-            modalWebsiteInput.value = result.inputValueToSet;
+            confirmModalWebsiteInputValue();
         }
     });
 
@@ -7915,7 +8072,7 @@ function setupModalListeners() {
         const warningEl = document.getElementById('override-count-warning');
         const overrideType = document.getElementById('override-type')?.value || 'random-words';
         const maxChars = getMaxOverrideCharsForType(overrideType);
-        const unitLabel = usesIOSWordCountForOverrideType(overrideType) ? 'words' : 'characters';
+        const unitLabel = usesMobileWordCountForOverrideType(overrideType) ? 'words' : 'characters';
         e.target.max = String(maxChars);
         const rawValue = e.target.value.trim();
         if (rawValue === '') {
@@ -8085,45 +8242,9 @@ function setupModalListeners() {
         let websiteInvalid = false;
         const pendingWebsiteRaw = modalWebsiteInput.value.trim();
         if (pendingWebsiteRaw) {
-            const result = processWebsiteInput(pendingWebsiteRaw);
-            const errorMsg = document.getElementById('website-input-error');
-
-            if (result.websiteInvalid) {
-                if (errorMsg) {
-                    errorMsg.classList.remove('hidden');
-                    setTimeout(() => errorMsg.classList.add('hidden'), 3000);
-                }
-                websiteInvalid = true;
-            } else {
-                if (errorMsg) errorMsg.classList.add('hidden');
-            }
-
-            if (result.hadProtected) {
-                modalWebsiteInput.value = '';
-                modalWebsiteInput.placeholder = tSettings('cannotBlockDomainPlaceholder');
-                modalWebsiteInput.classList.add('input-error');
-                setTimeout(() => {
-                    modalWebsiteInput.placeholder = tSettings('placeholderWebsiteExample');
-                    modalWebsiteInput.classList.remove('input-error');
-                }, 2000);
-                return; // Block save so behavior matches explicit add interactions.
-            }
-
-            if (result.toAdd.length > 0) {
-                const toAddCopy = [...result.toAdd];
-                pushModalUndo('website', () => {
-                    toAddCopy.forEach(w => {
-                        const i = modalWebsites.indexOf(w);
-                        if (i !== -1) modalWebsites.splice(i, 1);
-                    });
-                    window.renderModalTags();
-                });
-            }
-            result.toAdd.forEach(pendingWebsite => {
-                if (!modalWebsites.includes(pendingWebsite)) modalWebsites.push(pendingWebsite);
-            });
-            if (result.toAdd.length > 0) window.renderModalTags();
-            modalWebsiteInput.value = result.inputValueToSet;
+            const result = confirmModalWebsiteInputValue();
+            if (result?.hadProtected) return;
+            if (result?.websiteInvalid) websiteInvalid = true;
         }
 
         if (nameEmpty || websiteInvalid) return;
@@ -9060,7 +9181,7 @@ function setupEndTimeDirectInputs() {
         if (e.key === 'Enter') {
             e.preventDefault();
             hourEl.blur();
-            minuteEl.focus();
+            minuteEl.focus({ preventScroll: true });
             if (typeof minuteEl.select === 'function') minuteEl.select();
         }
     });
@@ -9078,6 +9199,31 @@ function setupEndTimeDirectInputs() {
     });
 }
 
+/** Scroll inside a popover list only — never the page (scrollIntoView would pan main-content). */
+function scrollPopoverOptionIntoView(scrollContainer, option) {
+    if (!scrollContainer || !option) return;
+    const optionTop = option.offsetTop;
+    const optionHeight = option.offsetHeight;
+    const containerHeight = scrollContainer.clientHeight;
+    scrollContainer.scrollTop = Math.max(0, optionTop - (containerHeight - optionHeight) / 2);
+}
+
+
+
+
+
+
+function readRootCssPx(varName) {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    if (!raw) return 0;
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;height:' + raw;
+    document.body.appendChild(probe);
+    const px = parseFloat(getComputedStyle(probe).height) || 0;
+    probe.remove();
+    return px;
+}
+
 // Handle click on time part (button or instant-end input): open list and mark active.
 function handleTimePartClick(e) {
     e.stopPropagation();
@@ -9085,7 +9231,7 @@ function handleTimePartClick(e) {
     const type = btn.dataset.type;
     const target = btn.dataset.target;
 
-    // Close all popovers first
+    // Close all popovers first (keep row scroll position when switching fields)
     closeAllPopovers();
 
     // Open the relevant popover
@@ -9094,11 +9240,10 @@ function handleTimePartClick(e) {
     popover.classList.remove('hidden');
     btn.classList.add('active');
 
-    // Scroll to selected option
+    // Scroll to selected option inside the popover only
+    const scroll = popover.querySelector('.popover-scroll');
     const selectedOption = popover.querySelector('.popover-option.selected');
-    if (selectedOption) {
-        selectedOption.scrollIntoView({ block: 'center', behavior: 'instant' });
-    }
+    scrollPopoverOptionIntoView(scroll, selectedOption);
 }
 
 
@@ -9127,6 +9272,7 @@ function selectTimeOption(e) {
 // Close all popovers
 function closeAllPopovers() {
     document.querySelectorAll('.time-popover:not(.schedule-time-popover)').forEach(p => p.classList.add('hidden'));
+    document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
     document.querySelectorAll('.time-part.active, .time-popover-anchor.active').forEach(el =>
         el.classList.remove('active'));
 }
@@ -9136,6 +9282,9 @@ function handlePopoverOutsideClick(e) {
     if (
         e.target.closest('.time-popover') ||
         e.target.closest('.time-popover-anchor') ||
+        e.target.closest('.schedule-start-display input.time-part') ||
+        e.target.closest('.schedule-end-display input.time-part') ||
+        e.target.closest('input.time-part.time-popover-anchor') ||
         e.target.closest('button.time-part')
     ) {
         return;
@@ -9979,7 +10128,7 @@ function rebuildScheduleSegments() {
                             </div>
                         </div>
                     </div>
-                    <span class="time-separator">→</span>
+                    ${TIME_SEPARATOR_ARROW_HTML}
                     <div class="time-picker-group">
                         ${showLabels ? `<label class="time-label">${labelEnd}</label>` : ''}
                         <div class="time-picker-row">
@@ -10066,7 +10215,7 @@ function bindScheduleTimePartInput(el) {
                 : null;
             el.blur();
             if (minIn) {
-                minIn.focus();
+                minIn.focus({ preventScroll: true });
                 if (typeof minIn.select === 'function') minIn.select();
             }
         } else {
@@ -10132,6 +10281,8 @@ function handleScheduleTimeClick(e) {
     const parts = target.split('-');
     const isStart = parts[1] === 'start';
     const segmentIndex = parseInt(parts[2]);
+
+    document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
 
     // Create and show popover for time selection
     showScheduleTimePopover(el, type, isStart, segmentIndex);
@@ -10295,11 +10446,9 @@ function showScheduleTimePopover(field, type, isStart, segmentIndex) {
     popover.appendChild(scroll);
     field.parentElement.appendChild(popover);
 
-    // Scroll to current value
+    // Scroll to current value inside the popover only
     const activeOption = scroll.querySelector('.selected');
-    if (activeOption) {
-        activeOption.scrollIntoView({ block: 'center' });
-    }
+    scrollPopoverOptionIntoView(scroll, activeOption);
 
     // Close on outside click
     setTimeout(() => {
@@ -11171,7 +11320,7 @@ function syncSchedulePanelOverlayControls() {
     const section = document.getElementById('schedule-panel-overlay-section');
     if (!section) return;
 
-    if (isIOS) {
+    if (isMobileOverrideChallengePlatform()) {
         section.classList.add('hidden');
         return;
     }
@@ -11705,7 +11854,7 @@ function isPhysicalPointOverElement(physicalX, physicalY, element) {
 }
 
 function setupScheduleOverlayCustomiseModal() {
-    if (isIOS) {
+    if (isMobileOverrideChallengePlatform()) {
         document.getElementById('schedule-confirm-overlay-row')?.classList.add('hidden');
         document.getElementById('schedule-panel-overlay-section')?.classList.add('hidden');
         return;
@@ -12204,19 +12353,21 @@ function renderStartConfirmBlockingDetails(blocklist, listEl, showAllBtn, rowEl)
 }
 
 function buildScheduleConfirmSegmentHtml(seg) {
-    const dayLetters = weekdayLetterMon0List();
+    const fullDayLabels = weekdayAbbrevMon0List();
+    const useCompactDayLabels = shouldUseCompactIosScheduleDayLabels();
+    const dayLabels = useCompactDayLabels ? weekdayLetterMon0List() : fullDayLabels;
     const startTime = `${String(seg.startHour).padStart(2, '0')}:${String(seg.startMinute).padStart(2, '0')}`;
     const endTime = `${String(seg.endHour).padStart(2, '0')}:${String(seg.endMinute).padStart(2, '0')}`;
     const segmentDays = Array.isArray(seg.days) ? seg.days : [];
-    const dayToggles = dayLetters.map((letter, dayIndex) =>
-        `<span class="segment-day-toggle${segmentDays.includes(dayIndex) ? ' active' : ''}" aria-hidden="true">${letter}</span>`,
+    const dayToggles = dayLabels.map((label, dayIndex) =>
+        `<span class="segment-day-toggle${segmentDays.includes(dayIndex) ? ' active' : ''}" aria-label="${fullDayLabels[dayIndex]}"${useCompactDayLabels ? ' aria-hidden="true"' : ''}>${label}</span>`,
     ).join('');
 
     return `
         <div class="start-confirm-time-slot">
             <div class="start-confirm-time-slot-row">
                 <span class="start-confirm-time-range">${startTime} → ${endTime}</span>
-                <div class="start-confirm-segment-days segment-days">${dayToggles}</div>
+                <div class="start-confirm-segment-days segment-days${useCompactDayLabels ? ' compact-day-labels' : ''}">${dayToggles}</div>
             </div>
         </div>
     `;
@@ -12304,8 +12455,8 @@ function showScheduleConfirmModal(blocklist) {
 
     pendingScheduleStartOverlayId = getEffectiveScheduleStartOverlayId();
     syncScheduleConfirmOverlaySummary();
-    document.getElementById('schedule-confirm-overlay-row')?.classList.toggle('hidden', isIOS);
-    document.getElementById('schedule-confirm-repeat-divider')?.classList.toggle('hidden', isIOS);
+    document.getElementById('schedule-confirm-overlay-row')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
+    document.getElementById('schedule-confirm-repeat-divider')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
 
     renderStartConfirmBlockingDetails(
         blocklist,
@@ -12359,8 +12510,8 @@ function resetScheduleConfirmModalToStartLayout() {
     if (titleEl) titleEl.textContent = tSettings('startThisSchedule');
     const overrideHeader = document.getElementById('schedule-confirm-override-header');
     if (overrideHeader) overrideHeader.textContent = tSettings('startScheduleHoldHeader');
-    document.getElementById('schedule-confirm-overlay-row')?.classList.toggle('hidden', isIOS);
-    document.getElementById('schedule-confirm-repeat-divider')?.classList.toggle('hidden', isIOS);
+    document.getElementById('schedule-confirm-overlay-row')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
+    document.getElementById('schedule-confirm-repeat-divider')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
 }
 
 function closeScheduleConfirmModal() {
@@ -12389,6 +12540,7 @@ function openScheduleOverrideModal(schedule) {
     if (titleEl) {
         titleEl.textContent = `${tSettings('stopSchedule')} ${blocklistName}`;
     }
+    document.getElementById('override-confirm-emoji').textContent = blocklist?.emoji || '🎯';
     document.getElementById('override-summary').textContent = formatBlocklistModalSummary(blocklist);
     initializeOverrideModalChallenge(difficulty, blocklist?.color);
 }
@@ -13427,6 +13579,7 @@ function syncSchedulerChromeVisibility() {
     if (gridTopRow) gridTopRow.classList.toggle('grid-top-row--blocklist-selected', show);
     bindUiZoomLayoutObserver();
     scheduleUiZoomResponsiveLayout();
+    scheduleSelectionPromptLayout();
 }
 
 // Handle blocklist selection
@@ -14225,7 +14378,7 @@ async function updateHostsFile(silent = false) {
 let appBlockingPreviousAppsSet = null;
 
 async function updateBlockedApps() {
-    // iOS uses Screen Time API for app blocking - skip desktop process watcher
+    // iOS uses Screen Time API for app blocking
     if (isIOS) return;
 
     const now = Date.now();
@@ -14536,10 +14689,6 @@ function openBlocklistModal(blocklist = null) {
     }
 
     document.getElementById('blocklist-modal').classList.remove('hidden');
-
-    // Reset scroll position after modal is shown
-    const modalContent = document.querySelector('#blocklist-modal .modal-content');
-    if (modalContent) modalContent.scrollTop = 0;
 }
 
 // Close blocklist modal
@@ -14629,6 +14778,7 @@ function openOverrideModal(blockId) {
     // Set modal title with blocklist name
     document.getElementById('override-modal-title').textContent = `Override ${blocklist.name}?`;
 
+    document.getElementById('override-confirm-emoji').textContent = blocklist.emoji || '🎯';
     document.getElementById('override-summary').textContent = formatBlocklistModalSummary(blocklist);
 
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
@@ -14658,7 +14808,7 @@ function initializeOverrideModalChallenge(difficulty, progressColor = null) {
     document.getElementById('challenge-text').textContent = challengeText;
     document.getElementById('challenge-input').value = '';
     document.getElementById('challenge-word-input').value = '';
-    overrideWordChallengeState = isIOSWordByWordChallenge(difficulty) ? buildWordChallengeState(challengeText) : null;
+    overrideWordChallengeState = isMobileWordByWordChallenge(difficulty) ? buildWordChallengeState(challengeText) : null;
     setOverrideWordChallengeMode(!!overrideWordChallengeState);
 
     const progressBar = document.getElementById('challenge-progress-bar');
@@ -14856,6 +15006,7 @@ function openPauseModal(blockId) {
     // Set modal title
     document.getElementById('pause-modal-title').textContent = `Pause ${blocklist.name}`;
 
+    document.getElementById('pause-confirm-emoji').textContent = blocklist.emoji || '🎯';
     document.getElementById('pause-summary').textContent = formatBlocklistModalSummary(blocklist);
 
     // Calculate remaining time and max pause duration
@@ -14926,7 +15077,7 @@ function openPauseModal(blockId) {
     document.getElementById('pause-challenge-text').textContent = pauseChallengeText;
     document.getElementById('pause-challenge-input').value = '';
     document.getElementById('pause-challenge-word-input').value = '';
-    pauseWordChallengeState = isIOSWordByWordChallenge(difficulty) ? buildWordChallengeState(pauseChallengeText) : null;
+    pauseWordChallengeState = isMobileWordByWordChallenge(difficulty) ? buildWordChallengeState(pauseChallengeText) : null;
     setPauseWordChallengeMode(!!pauseWordChallengeState);
     document.getElementById('confirm-pause-btn').disabled = true;
 
@@ -15351,10 +15502,10 @@ function generateOverrideChallengeText(type, count, customText = '') {
     if (type === 'custom' && customText) return customText;
     const normalizedCount = normalizeOverrideCount(count, type);
     if (type === 'gibberish') {
-        const raw = generateGibberish(usesIOSWordCountForOverrideType(type) ? normalizedCount * 6 : normalizedCount);
-        return isIOS ? formatIOSGibberishChallenge(raw) : raw;
+        const raw = generateGibberish(usesMobileWordCountForOverrideType(type) ? normalizedCount * 6 : normalizedCount);
+        return isMobileOverrideChallengePlatform() ? formatIOSGibberishChallenge(raw) : raw;
     }
-    if (usesIOSWordCountForOverrideType(type)) {
+    if (usesMobileWordCountForOverrideType(type)) {
         return generateRandomWordsByCount(normalizedCount);
     }
     return generateRandomWords(normalizedCount);
@@ -15390,7 +15541,7 @@ function getTypingCharsPerMinuteForType(type) {
 }
 
 function getMaxOverrideCharsForType(type) {
-    if (usesIOSWordCountForOverrideType(type)) return MAX_IOS_OVERRIDE_WORD_COUNT;
+    if (usesMobileWordCountForOverrideType(type)) return MAX_IOS_OVERRIDE_WORD_COUNT;
     if (type === 'gibberish') return 5000;
     return 7500; // random-words and custom: fixed max; estimated time uses CPM
 }
@@ -15398,7 +15549,7 @@ function getMaxOverrideCharsForType(type) {
 function getOverrideGeneratedCharCount(type, count) {
     const parsed = Number.parseInt(count, 10);
     const normalizedCount = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
-    if (!usesIOSWordCountForOverrideType(type)) return normalizedCount;
+    if (!usesMobileWordCountForOverrideType(type)) return normalizedCount;
 
     if (type === 'random-words') {
         return getIOSRandomWordsCharCount(normalizedCount);
@@ -15440,8 +15591,8 @@ function getOverridePreviewText(type, count, customText) {
             let frozen = overridePreviewFrozenByType[type];
             if (frozen != null) return frozen;
             const generated = type === 'gibberish'
-                ? (isIOS ? formatIOSGibberishChallenge(generateGibberish(countNum * 6)) : generateGibberish(OVERRIDE_PREVIEW_TRUNCATE_AT))
-                : (usesIOSWordCountForOverrideType(type)
+                ? (isMobileOverrideChallengePlatform() ? formatIOSGibberishChallenge(generateGibberish(countNum * 6)) : generateGibberish(OVERRIDE_PREVIEW_TRUNCATE_AT))
+                : (usesMobileWordCountForOverrideType(type)
                     ? generateRandomWordsByCount(countNum)
                     : generateRandomWords(countNum));
             frozen = generated.slice(0, OVERRIDE_PREVIEW_TRUNCATE_AT);
@@ -15451,10 +15602,10 @@ function getOverridePreviewText(type, count, customText) {
     }
 
     if (type === 'gibberish') {
-        const generated = generateGibberish(usesIOSWordCountForOverrideType(type) ? countNum * 6 : countNum);
-        return isIOS ? formatIOSGibberishChallenge(generated) : generated;
+        const generated = generateGibberish(usesMobileWordCountForOverrideType(type) ? countNum * 6 : countNum);
+        return isMobileOverrideChallengePlatform() ? formatIOSGibberishChallenge(generated) : generated;
     }
-    if (usesIOSWordCountForOverrideType(type)) {
+    if (usesMobileWordCountForOverrideType(type)) {
         return generateRandomWordsByCount(countNum);
     }
     return generateRandomWords(countNum);
@@ -15500,7 +15651,7 @@ function syncOverrideCountUi(type) {
     const suffixEl = document.getElementById('override-total-characters-label');
     const countInput = document.getElementById('override-count');
     if (!suffixEl || !countInput) return;
-    const usesWords = usesIOSWordCountForOverrideType(type);
+    const usesWords = usesMobileWordCountForOverrideType(type);
     suffixEl.textContent = usesWords ? tSettings('totalWords') : tSettings('totalCharacters');
     countInput.max = String(getMaxOverrideCharsForType(type));
 }
@@ -15936,7 +16087,7 @@ function blocklistFromImportedEntry(entry) {
 async function exportBlocklistsToFile() {
     const blocklists = appData.blocklists || [];
     if (blocklists.length === 0) {
-        await message(tSettings('exportBlocklistsEmpty'), { title: tSettings('settingsExportBlocklistsBtn'), kind: 'info' });
+        await message(tSettings('exportBlocklistsEmpty'), { title: tSettings('exportBlocklistsFailedTitle'), kind: 'info' });
         return;
     }
 
@@ -15952,11 +16103,11 @@ async function exportBlocklistsToFile() {
         await writeTextFile(selectedPath, `${JSON.stringify(payload, null, 2)}\n`);
         await message(
             tSettingsFmt('exportBlocklistsSuccessFmt', { n: blocklists.length, path: selectedPath }),
-            { title: tSettings('settingsExportBlocklistsBtn'), kind: 'info' }
+            { title: tSettings('exportBlocklistsSuccessTitle'), kind: 'info' }
         );
     } catch (err) {
         console.warn('[export] blocklists:', err);
-        await message(tSettings('exportBlocklistsFailed'), { title: tSettings('settingsExportBlocklistsBtn'), kind: 'error' });
+        await message(tSettings('exportBlocklistsFailed'), { title: tSettings('exportBlocklistsFailedTitle'), kind: 'error' });
     }
 }
 
@@ -15977,18 +16128,18 @@ async function importBlocklistsFromFile() {
             importedEntries = parseBlocklistsImportPayload(await readTextFile(selectedPath));
         } catch (err) {
             console.warn('[import] parse blocklists:', err);
-            await message(tSettings('importBlocklistsParseFailed'), { title: tSettings('settingsImportBlocklistsBtn'), kind: 'error' });
+            await message(tSettings('importBlocklistsParseFailed'), { title: tSettings('importBlocklistsFailedTitle'), kind: 'error' });
             return;
         }
 
         if (importedEntries.length === 0) {
-            await message(tSettings('importBlocklistsInvalidFile'), { title: tSettings('settingsImportBlocklistsBtn'), kind: 'warning' });
+            await message(tSettings('importBlocklistsInvalidFile'), { title: tSettings('importBlocklistsFailedTitle'), kind: 'warning' });
             return;
         }
 
         const confirmed = await ask(
             tSettingsFmt('importBlocklistsConfirmFmt', { n: importedEntries.length }),
-            { title: tSettings('settingsImportBlocklistsBtn'), kind: 'warning' }
+            { title: tSettings('importBlocklistsDialogTitle'), kind: 'warning' }
         );
         if (!confirmed) return;
 
@@ -16005,11 +16156,11 @@ async function importBlocklistsFromFile() {
 
         await message(
             tSettingsFmt('importBlocklistsSuccessFmt', { n: importedEntries.length }),
-            { title: tSettings('settingsImportBlocklistsBtn'), kind: 'info' }
+            { title: tSettings('importBlocklistsSuccessTitle'), kind: 'info' }
         );
     } catch (err) {
         console.warn('[import] blocklists:', err);
-        await message(tSettings('importBlocklistsFailed'), { title: tSettings('settingsImportBlocklistsBtn'), kind: 'error' });
+        await message(tSettings('importBlocklistsFailed'), { title: tSettings('importBlocklistsFailedTitle'), kind: 'error' });
     }
 }
 
@@ -16175,6 +16326,8 @@ function render() {
     }
 
     syncSchedulerChromeVisibility();
+
+    scheduleSelectionPromptLayout();
 
     // Adjust window height to fit content
     updateWindowHeight();
@@ -17921,8 +18074,8 @@ function formatIOSGibberishChallenge(text) {
     return compact.replace(/(.{6})(?=.)/g, '$1 ');
 }
 
-function isIOSWordByWordChallenge(difficulty) {
-    return !!(isIOS && (difficulty?.type === 'random-words' || difficulty?.type === 'gibberish'));
+function isMobileWordByWordChallenge(difficulty) {
+    return !!(isMobileOverrideChallengePlatform() && (difficulty?.type === 'random-words' || difficulty?.type === 'gibberish'));
 }
 
 function getCurrentChallengeWord(state) {
@@ -18084,9 +18237,9 @@ const SETTINGS_TRANSLATIONS = {
         blocklistScheduleCompactDaysFmt: 'in {n}d',
         blocklistScheduleFallback: 'scheduled',
         deleteBlocklistDeniedActiveBlockFmt:
-            'Cannot delete "{name}" while a block is running. Stop the block first.',
+            'Cannot delete "{name}" while the block is active. Stop the block first.',
         deleteBlocklistDeniedActiveScheduleFmt:
-            'Cannot delete "{name}" while a schedule is active. Stop the schedule first.',
+            'Cannot delete "{name}" while the schedule is active. Stop the schedule first.',
         scheduleTitle: 'Week Schedule',
         today: 'Today',
         noActiveBlocks: 'No active blocks',
@@ -18124,7 +18277,7 @@ const SETTINGS_TRANSLATIONS = {
         eulaContinueBtn: 'Continue',
         eulaContinueBusy: 'Continuing…',
         eulaBackBtn: 'Back',
-        eulaAcceptSaveFailedAlert: 'Could not save your agreement. Please try again.',
+        eulaAcceptSaveFailedAlert: 'We could not save your agreement. Please try again to continue.',
         eulaWelcomeIconAlt: 'Fristed app icon',
         eulaProjectBlurb:
             'Fristed is developed by the Reduce Digital Distraction Project, in collaboration with researchers at the University of Oxford and University of Maastricht. The ReDD Project is a not-for-profit creating insights & open-source digital focus tools for everyone to thrive in the digital world.',
@@ -18392,6 +18545,8 @@ const SETTINGS_TRANSLATIONS = {
         settingsEnforcementRowHintExtension: 'If ReDD Focus is disabled mid-block.',
         settingsEnforcementLockedTooltip: 'To change this setting, first stop all active blocks.',
         settingsDiagnosticsLabel: 'Something not working?',
+        onboardingOpenSourceFootnote:
+            'ReDD Block is open-source and built by the Reduce Digital Distraction Project at (reddfocus.org). It is based on our 10+ years of research at the University of Oxford.',
         settingsSetupBtn: 'Setup',
         settingsDiagnosticsBtn: 'Diagnostics',
         diagnosticsLoadingBtn: 'Loading…',
@@ -18462,17 +18617,22 @@ const SETTINGS_TRANSLATIONS = {
         settingsBlocklistsIoHint: 'Save a backup or restore from a file.',
         settingsExportBlocklistsBtn: 'Export',
         settingsImportBlocklistsBtn: 'Import',
-        exportBlocklistsSaveTitle: 'Export blocklists & schedules',
-        exportBlocklistsEmpty: 'You have no blocklists to export.',
+        exportBlocklistsSaveTitle: 'Export blocklists',
+        exportBlocklistsFailedTitle: 'Failed to export blocklists',
+        exportBlocklistsSuccessTitle: 'Successfully exported blocklists',
+        exportBlocklistsEmpty: 'There are no blocklists to export.',
         exportBlocklistsSuccessFmt: 'Exported {n} blocklist(s) and their schedules to:\n{path}',
-        exportBlocklistsFailed: 'Could not export blocklists.',
-        importBlocklistsOpenTitle: 'Import blocklists & schedules',
-        importBlocklistsInvalidFile: 'That file does not contain any valid blocklists.',
-        importBlocklistsParseFailed: 'Could not read that file. Make sure it is valid JSON.',
+        exportBlocklistsFailed: 'There was an error exporting your blocklists. Please try again.',
+        importBlocklistsOpenTitle: 'Import blocklists',
+        importBlocklistsDialogTitle: 'Import blocklists',
+        importBlocklistsFailedTitle: 'Failed to import blocklists',
+        importBlocklistsSuccessTitle: 'Successfully imported blocklists',
+        importBlocklistsInvalidFile: 'The selected file does not contain any valid blocklists.',
+        importBlocklistsParseFailed: 'There was an error reading the selected file. Please make sure it is valid JSON.',
         importBlocklistsConfirmFmt:
             'Import {n} blocklist(s) from this file?\n\nThey will be added to your existing blocklists. Any schedules will be restored as drafts — start them manually when you are ready.',
-        importBlocklistsSuccessFmt: 'Imported {n} blocklist(s). Schedules were saved as drafts and are not running yet.',
-        importBlocklistsFailed: 'Could not import blocklists.',
+        importBlocklistsSuccessFmt: 'Imported {n} blocklist(s) and their schedules. Schedules were restored as drafts — start them manually when you are ready.',
+        importBlocklistsFailed: 'There was an error importing your blocklists. Please try again.',
         importBlocklistDefaultName: 'Imported blocklist',
         gracePeriodLockedHint: 'Locked while a block is active—only shorter times allowed.',
         appBlockingLetsGo: 'Let’s go!',
@@ -18606,9 +18766,9 @@ const SETTINGS_TRANSLATIONS = {
         startConfirmTimesLabel: 'Times',
         startConfirmRepeatsLabel: 'Repeats',
         startConfirmDurationLineFmt: '{duration} · <span class="start-confirm-duration-meta">ends ~{ends}</span>',
-        startConfirmRepeatForever: '<strong>Every week</strong> · no end date',
-        startConfirmRepeatUntilFmt: '<strong>Every week</strong> · until {date}',
-        startConfirmRepeatNone: '<strong>One week only</strong> · no repeat',
+        startConfirmRepeatForever: 'Every week · no end date',
+        startConfirmRepeatUntilFmt: 'Every week · until {date}',
+        startConfirmRepeatNone: 'One week only · no repeat',
         startBlockHoldHeader: 'To stop this blocking, you\'ll need to:',
         startScheduleHoldHeader: 'To stop this blocking, you\'ll need to:',
         saveChangesHoldHeader: 'To stop this blocking, you\'ll need to:',
@@ -18730,7 +18890,8 @@ const SETTINGS_TRANSLATIONS = {
         settingsUninstallHint: 'Your blocklists are kept on disk.',
         yourVersionPrefix: 'Version',
         latestVersionPrefix: 'Latest version:',
-        lightDarkMode: 'Appearance',
+        lightDarkMode: 'Theme',
+        zoomLevel: 'Zoom level',
         language: 'Language',
         themeAuto: 'Auto',
         themeLight: 'Light',
@@ -18824,9 +18985,9 @@ const SETTINGS_TRANSLATIONS = {
         blocklistScheduleCompactDaysFmt: 'om {n}d',
         blocklistScheduleFallback: 'planlagt',
         deleteBlocklistDeniedActiveBlockFmt:
-            'Kan ikke slette "{name}", mens en blokering kører. Stop blokeringen først.',
+            'Kan ikke slette "{name}", mens blokeringen er aktiv. Stop blokeringen først.',
         deleteBlocklistDeniedActiveScheduleFmt:
-            'Kan ikke slette "{name}", mens et skema er aktivt. Stop skemaet først.',
+            'Kan ikke slette "{name}", mens skemaet er aktivt. Stop skemaet først.',
         scheduleTitle: 'Ugeskema',
         today: 'I dag',
         noActiveBlocks: 'Ingen aktive blokeringer',
@@ -18864,7 +19025,7 @@ const SETTINGS_TRANSLATIONS = {
         eulaContinueBtn: 'Fortsæt',
         eulaContinueBusy: 'Arbejder…',
         eulaBackBtn: 'Tilbage',
-        eulaAcceptSaveFailedAlert: 'Vi kunne ikke gemme din godkendelse. Prøv igen.',
+        eulaAcceptSaveFailedAlert: 'Vi kunne ikke gemme din godkendelse. Prøv igen for at fortsætte.',
         eulaWelcomeIconAlt: 'Fristed-appikon',
         eulaProjectBlurb:
             'Fristed er udviklet af Reduce Digital Distraction Project i samarbejde med forskere ved University of Oxford og Maastricht University. ReDD-projektet er en non-profit, der skaber indsigt og open source digitale fokusværktøjer, så alle kan trives i den digitale verden.',
@@ -19113,6 +19274,8 @@ const SETTINGS_TRANSLATIONS = {
         settingsEnforcementRowHintExtension: 'Hvis ReDD Focus deaktiveres midt i en blokering.',
         settingsEnforcementLockedTooltip: 'For at ændre denne indstilling skal du først stoppe alle aktive blokeringer.',
         settingsDiagnosticsLabel: 'Virker noget ikke?',
+        onboardingOpenSourceFootnote:
+            'ReDD Block er open source og bygget af Reduce Digital Distraction Project på (reddfocus.org). Det bygger på mere end 10 års forskning ved University of Oxford.',
         settingsSetupBtn: 'Opsætning',
         settingsDiagnosticsBtn: 'Diagnostik',
         diagnosticsLoadingBtn: 'Indlæser…',
@@ -19183,17 +19346,22 @@ const SETTINGS_TRANSLATIONS = {
         settingsBlocklistsIoHint: 'Gem en sikkerhedskopi, eller gendan fra en fil.',
         settingsExportBlocklistsBtn: 'Eksportér',
         settingsImportBlocklistsBtn: 'Importér',
-        exportBlocklistsSaveTitle: 'Eksportér bloklister og tidsplaner',
-        exportBlocklistsEmpty: 'Du har ingen bloklister at eksportere.',
+        exportBlocklistsSaveTitle: 'Eksportér bloklister',
+        exportBlocklistsFailedTitle: 'Kunne ikke eksportere bloklister',
+        exportBlocklistsSuccessTitle: 'Bloklister eksporteret',
+        exportBlocklistsEmpty: 'Der er ingen bloklister at eksportere.',
         exportBlocklistsSuccessFmt: 'Eksporterede {n} blokliste(r) og deres tidsplaner til:\n{path}',
-        exportBlocklistsFailed: 'Kunne ikke eksportere bloklister.',
-        importBlocklistsOpenTitle: 'Importér bloklister og tidsplaner',
-        importBlocklistsInvalidFile: 'Filen indeholder ingen gyldige bloklister.',
-        importBlocklistsParseFailed: 'Kunne ikke læse filen. Tjek at den er gyldig JSON.',
+        exportBlocklistsFailed: 'Der opstod en fejl under eksport af dine bloklister. Prøv igen.',
+        importBlocklistsOpenTitle: 'Importér bloklister',
+        importBlocklistsDialogTitle: 'Importér bloklister',
+        importBlocklistsFailedTitle: 'Kunne ikke importere bloklister',
+        importBlocklistsSuccessTitle: 'Bloklister importeret',
+        importBlocklistsInvalidFile: 'Den valgte fil indeholder ingen gyldige bloklister.',
+        importBlocklistsParseFailed: 'Der opstod en fejl under læsning af den valgte fil. Tjek at den er gyldig JSON.',
         importBlocklistsConfirmFmt:
             'Importér {n} blokliste(r) fra denne fil?\n\nDe tilføjes til dine eksisterende bloklister. Eventuelle tidsplaner gendannes som kladder — start dem manuelt, når du er klar.',
-        importBlocklistsSuccessFmt: 'Importerede {n} blokliste(r). Tidsplaner er gemt som kladder og kører ikke endnu.',
-        importBlocklistsFailed: 'Kunne ikke importere bloklister.',
+        importBlocklistsSuccessFmt: 'Importerede {n} blokliste(r) og deres tidsplaner. Tidsplaner er gendannet som kladder — start dem manuelt, når du er klar.',
+        importBlocklistsFailed: 'Der opstod en fejl under import af dine bloklister. Prøv igen.',
         importBlocklistDefaultName: 'Importeret blokliste',
         gracePeriodLockedHint: 'Låst mens en blokering er aktiv—kun kortere tider tilladt.',
         appBlockingLetsGo: 'Fortsæt',
@@ -19326,9 +19494,9 @@ const SETTINGS_TRANSLATIONS = {
         startConfirmTimesLabel: 'Tider',
         startConfirmRepeatsLabel: 'Gentages',
         startConfirmDurationLineFmt: '{duration} · <span class="start-confirm-duration-meta">slutter ~{ends}</span>',
-        startConfirmRepeatForever: '<strong>Hver uge</strong> · ingen slutdato',
-        startConfirmRepeatUntilFmt: '<strong>Hver uge</strong> · indtil {date}',
-        startConfirmRepeatNone: '<strong>Kun én uge</strong> · gentages ikke',
+        startConfirmRepeatForever: 'Hver uge · ingen slutdato',
+        startConfirmRepeatUntilFmt: 'Hver uge · indtil {date}',
+        startConfirmRepeatNone: 'Kun én uge · gentages ikke',
         startBlockHoldHeader: 'For at stoppe denne blokering skal du:',
         startScheduleHoldHeader: 'For at stoppe denne blokering skal du:',
         saveChangesHoldHeader: 'For at stoppe denne blokering skal du:',
@@ -19449,7 +19617,8 @@ const SETTINGS_TRANSLATIONS = {
         settingsUninstallHint: 'Dine bloklister gemmes på disken.',
         yourVersionPrefix: 'Version',
         latestVersionPrefix: 'Nyeste version:',
-        lightDarkMode: 'Udseende',
+        lightDarkMode: 'Tema',
+        zoomLevel: 'Zoomniveau',
         language: 'Sprog',
         themeAuto: 'Auto',
         themeLight: 'Lys',
@@ -19562,6 +19731,11 @@ function syncIosScheduleDayLabelsViewportMode() {
     const schedulePanel = document.getElementById('schedule-block-panel');
     if (isScheduleMode && schedulePanel && !schedulePanel.classList.contains('hidden')) {
         rebuildScheduleSegments();
+    }
+
+    const scheduleConfirmModal = document.getElementById('start-schedule-confirm-modal');
+    if (scheduleConfirmModal && !scheduleConfirmModal.classList.contains('hidden')) {
+        renderScheduleConfirmSegments(document.getElementById('schedule-confirm-segments'), scheduleSegments);
     }
 }
 
@@ -19754,7 +19928,7 @@ function formatConfirmModalOverrideTypingLine({ type, count, estimatedMinutes, r
         return tSettingsFmt('confirmOverrideCustomPhraseFmt', { count, minutes });
     }
     if (type === 'gibberish') {
-        if (usesIOSWordCountForOverrideType(type)) {
+        if (usesMobileWordCountForOverrideType(type)) {
             return tSettingsFmt('confirmOverrideGibberishWordsFmt', { count, wordUnit, minutes });
         }
         if (resumeShortGibberish) {
@@ -19762,7 +19936,7 @@ function formatConfirmModalOverrideTypingLine({ type, count, estimatedMinutes, r
         }
         return tSettingsFmt('confirmOverrideGibberishLettersFmt', { count, charUnit, minutes });
     }
-    return usesIOSWordCountForOverrideType(type)
+    return usesMobileWordCountForOverrideType(type)
         ? tSettingsFmt('confirmOverrideRandomWordsIosFmt', { count, wordUnit, minutes })
         : tSettingsFmt('confirmOverrideRandomWordsFmt', { count, charUnit, minutes });
 }
@@ -20301,7 +20475,9 @@ function applySettingsLanguage() {
     setText('blocklist-websites-label', tSettings('websites'));
     setText('blocklist-websites-tooltip', tSettings('websitesTooltip'));
     setText('blocklist-apps-label', tSettings('apps'));
-    setText('blocklist-apps-tooltip', tSettings('appsTooltip'));
+    setText('blocklist-apps-tooltip', tSettings(
+        'appsTooltip'
+    ));
     setText('override-difficulty-label', tSettings('overrideDifficulty'));
     setText('override-option-random-words', tSettings('overrideRandomWords'));
     setText('override-option-gibberish', tSettings('overrideGibberish'));
@@ -20330,8 +20506,9 @@ function applySettingsLanguage() {
     setText('modal-browse-apps-caption', tSettings('modalBrowseAppsCaption'));
     const modalBrowseAppsBtn = document.getElementById('modal-browse-apps-btn');
     if (modalBrowseAppsBtn) {
-        const ios = document.body.classList.contains('ios');
-        const browseTitle = ios ? tSettings('modalBrowseAppsTitleIos') : tSettings('browseApplicationsTitle');
+        const browseTitle = document.body.classList.contains('ios')
+            ? tSettings('modalBrowseAppsTitleIos')
+            : tSettings('browseApplicationsTitle');
         modalBrowseAppsBtn.title = browseTitle;
         modalBrowseAppsBtn.setAttribute('aria-label', browseTitle);
     }
@@ -20444,6 +20621,7 @@ function applySettingsLanguage() {
     setText('settings-general-heading', tSettings('settingsGeneralHeading'));
     setText('settings-manage-heading', tSettings('settingsManageHeading'));
     setText('settings-theme-label', tSettings('lightDarkMode'));
+    setText('settings-zoom-label', tSettings('zoomLevel'));
     setText('settings-language-label', tSettings('language'));
     syncLanguagePickerUI();
     setText('theme-option-system', tSettings('themeAuto'));
@@ -20602,6 +20780,7 @@ function setupTheme() {
         settingsTriggers.forEach((settingsBtn) => {
             settingsBtn.addEventListener('click', () => {
             settingsModal.classList.remove('hidden');
+            syncFooterZoomControl(getActiveUiZoomScale());
             resetSettingsEnforcementSection();
             void applyEnforcementDescCopy(lastMigrationBrowserState);
             // Re-evaluate the in-app Uninstall button (Mac only): a
@@ -20743,7 +20922,7 @@ function clampUiZoom(scale) {
 }
 
 function getDefaultUiZoom() {
-    return isIOS ? DEFAULT_UI_ZOOM_IOS : DEFAULT_UI_ZOOM;
+    return DEFAULT_UI_ZOOM;
 }
 
 function getSavedUiZoom() {
@@ -20752,9 +20931,23 @@ function getSavedUiZoom() {
     return clampUiZoom(parsed);
 }
 
+function isIosTablet() {
+    return isIOS && !document.body.classList.contains('ios-phone');
+}
+
+/** Desktop only — iPad uses transform scaling; phones use CSS zoom. */
+function usesNativeWebviewZoom() {
+    if (!isIOS && (document.body.classList.contains('windows') || document.body.classList.contains('mac'))) {
+        return nativeWebviewZoomSupported !== false;
+    }
+    return false;
+}
+
 function getActiveUiZoomScale() {
     const inline = parseFloat(document.documentElement.style.zoom);
     if (Number.isFinite(inline) && inline > 0) return inline;
+    const cssVar = parseFloat(document.documentElement.style.getPropertyValue('--ui-zoom'));
+    if (Number.isFinite(cssVar) && cssVar > 0) return cssVar;
     return getSavedUiZoom();
 }
 
@@ -20774,7 +20967,8 @@ function syncUiZoomResponsiveLayout() {
 
     if (isIOS) {
         const effVp = getEffectiveViewportWidth();
-        const ipadPortraitStack = usesStackSettingsPlacement()
+        const ipadPortraitStack = isIOS
+            && usesStackSettingsPlacement()
             && !document.body.classList.contains('ios-phone');
         const cramped = effVp > UI_ZOOM_LAYOUT_STACK_MAX
             && effVp <= UI_ZOOM_LAYOUT_CRAMPED_MAX
@@ -20783,7 +20977,9 @@ function syncUiZoomResponsiveLayout() {
         document.body.classList.toggle('ui-zoom-tier-stack', effVp > 0 && effVp <= UI_ZOOM_LAYOUT_STACK_MAX);
         document.body.classList.toggle('ui-zoom-tier-cramped', cramped);
         document.body.classList.toggle('ui-zoom-tier-narrow', effVp > 0 && effVp <= UI_ZOOM_LAYOUT_NARROW_MAX);
+        document.body.classList.toggle('settings-placement-stack', usesStackSettingsPlacement());
     } else {
+        document.body.classList.remove('settings-placement-stack');
         document.body.classList.remove(
             'ui-zoom-tier-stack',
             'ui-zoom-tier-cramped',
@@ -20792,9 +20988,9 @@ function syncUiZoomResponsiveLayout() {
     }
 
     syncSchedulerModeTabLabelMode();
-    syncZoomControlPlacement();
     syncIosScheduleDayLabelsViewportMode();
     syncAllStopBtnLabelFits();
+    scheduleSelectionPromptLayout();
     const pauseModal = document.getElementById('pause-modal');
     if (pauseModal && !pauseModal.classList.contains('hidden')) {
         syncPauseDurationRowLayout();
@@ -20808,72 +21004,184 @@ function usesStackSettingsPlacement() {
         && window.matchMedia('(min-width: 769px) and (max-width: 1024px) and (orientation: portrait)').matches;
 }
 
+/** True when labelled Now/Schedule tabs do not fit in the scheduler header row. */
+function schedulerModeTabsNeedIconOnly(header, modeTabs, toolbar) {
+    const toolbarVisible = toolbar && getComputedStyle(toolbar).display !== 'none';
+    if (toolbarVisible) {
+        const tabsRect = modeTabs.getBoundingClientRect();
+        const toolbarRect = toolbar.getBoundingClientRect();
+        if (tabsRect.right > toolbarRect.left - 6) {
+            return true;
+        }
+    }
+    if (header.scrollWidth > header.clientWidth + 1) {
+        return true;
+    }
+    if (modeTabs.scrollWidth > modeTabs.clientWidth + 1) {
+        return true;
+    }
+    for (const tab of modeTabs.querySelectorAll('.mode-tab')) {
+        if (tab.scrollWidth > tab.clientWidth + 1) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /** Keep desktop/iOS scheduler header chrome from overlapping as space tightens. */
 function syncSchedulerModeTabLabelMode() {
     const header = document.querySelector('.scheduler-section > .section-header');
     const modeTabs = header?.querySelector('.scheduler-mode-tabs');
     const body = document.body;
-    body.classList.remove('ui-zoom-sched-hide-title', 'ui-zoom-sched-tabs-icons');
     if (!header || !modeTabs || modeTabs.classList.contains('hidden')) {
+        body.classList.remove('ui-zoom-sched-hide-title', 'ui-zoom-sched-tabs-icons');
+        schedTabsIconOnlyEnteredAtWidth = 0;
         return;
     }
 
-    void header.offsetWidth;
+    const hadIconOnly = body.classList.contains('ui-zoom-sched-tabs-icons');
+    const headerWidth = header.clientWidth;
 
-    const mainTitle = header.querySelector('#main-start-block-title');
-    const toolbar = header.querySelector('#settings-toolbar-scheduler');
-    const toolbarVisible = toolbar && getComputedStyle(toolbar).display !== 'none';
-    const hasCollision = () => {
-        let collision = false;
-        if (toolbarVisible) {
-            const tabsRect = modeTabs.getBoundingClientRect();
-            const toolbarRect = toolbar.getBoundingClientRect();
-            if (tabsRect.right > toolbarRect.left - 6) {
-                collision = true;
-            }
+    // If icon-only was the last stable state, only retry full labels after the
+    // row actually gets wider. Otherwise the ResizeObserver can bounce forever
+    // between the two near-identical layouts right at the threshold.
+    if (hadIconOnly) {
+        if (!schedTabsIconOnlyEnteredAtWidth) {
+            schedTabsIconOnlyEnteredAtWidth = headerWidth;
+            return;
         }
-        if (header.scrollWidth > header.clientWidth + 1) {
-            collision = true;
-        }
-        return collision;
-    };
-
-    if (!isIOS && mainTitle && !mainTitle.classList.contains('hidden') && hasCollision()) {
-        body.classList.add('ui-zoom-sched-hide-title');
-        void header.offsetWidth;
-    }
-
-    const iconOnly = hasCollision();
-    if (toolbarVisible) {
-        const tabsRect = modeTabs.getBoundingClientRect();
-        const toolbarRect = toolbar.getBoundingClientRect();
-        if (tabsRect.right > toolbarRect.left - 6) {
-            body.classList.add('ui-zoom-sched-tabs-icons');
+        if (headerWidth <= schedTabsIconOnlyEnteredAtWidth + SCHED_TABS_ICON_ONLY_EXIT_WIDTH_DELTA) {
             return;
         }
     }
 
+    body.classList.remove('ui-zoom-sched-hide-title', 'ui-zoom-sched-tabs-icons');
+    void header.offsetWidth;
+
+    const mainTitle = header.querySelector('#main-start-block-title');
+    const toolbar = header.querySelector('#settings-toolbar-scheduler');
+    const iconOnly = schedulerModeTabsNeedIconOnly(header, modeTabs, toolbar);
+
+    if (!isIOS && mainTitle && !mainTitle.classList.contains('hidden') && iconOnly) {
+        body.classList.add('ui-zoom-sched-hide-title');
+        void header.offsetWidth;
+    }
+
     body.classList.toggle('ui-zoom-sched-tabs-icons', iconOnly);
+    schedTabsIconOnlyEnteredAtWidth = iconOnly ? header.clientWidth : 0;
 }
 
-/** iOS only: keep the header zoom control beside whichever settings button is visible. */
-function syncZoomControlPlacement() {
-    if (!isIOS) return;
+function scheduleSelectionPromptLayout() {
+    cancelAnimationFrame(selectionPromptLayoutRaf);
+    selectionPromptLayoutRaf = requestAnimationFrame(() => {
+        selectionPromptLayoutRaf = 0;
+        syncSelectionPromptLayout();
+    });
+}
 
-    const zoom = document.getElementById('header-zoom-control');
-    const stackToolbar = document.getElementById('settings-toolbar-stack');
-    const schedToolbar = document.getElementById('settings-toolbar-scheduler');
-    const stackBtn = document.getElementById('settings-btn-stack');
-    const schedBtn = document.getElementById('settings-btn');
-    if (!zoom || !stackToolbar || !schedToolbar || !stackBtn || !schedBtn) return;
+function isGridTopRowStacked() {
+    const blocklists = document.getElementById('blocklists-section');
+    const scheduler = document.getElementById('scheduler-section');
+    if (!blocklists || !scheduler) return true;
+    const blocklistsRect = blocklists.getBoundingClientRect();
+    const schedulerRect = scheduler.getBoundingClientRect();
+    return schedulerRect.top > blocklistsRect.top + 16;
+}
 
-    const hostToolbar = usesStackSettingsPlacement() ? stackToolbar : schedToolbar;
-    const hostBtn = usesStackSettingsPlacement() ? stackBtn : schedBtn;
-    if (zoom.parentElement !== hostToolbar) {
-        hostToolbar.insertBefore(zoom, hostBtn);
-    } else if (zoom.nextElementSibling !== hostBtn) {
-        hostToolbar.insertBefore(zoom, hostBtn);
+function clearSelectionPromptLayout() {
+    const prompt = document.getElementById('selection-prompt');
+    const gridTopRow = document.querySelector('.grid-top-row');
+    const schedulerSection = document.getElementById('scheduler-section');
+    if (prompt) {
+        prompt.style.top = '';
+        prompt.style.left = '';
+        prompt.style.right = '';
     }
+    if (schedulerSection) {
+        schedulerSection.style.removeProperty('--time-picker-placeholder-height');
+    }
+    if (gridTopRow) gridTopRow.classList.remove('grid-top-row--selection-prompt-active');
+    document.body.classList.remove('selection-prompt-layout-two-col', 'selection-prompt-layout-stack');
+}
+
+function measureTimePickerPlaceholderHeight(section) {
+    const mainContent = document.getElementById('main-content');
+    const timePicker = section?.querySelector('#time-picker-container');
+    if (!section || !mainContent || !timePicker || section.clientWidth <= 0) return 0;
+
+    let measurer = document.getElementById('scheduler-placeholder-measurer');
+    if (!measurer) {
+        measurer = document.createElement('div');
+        measurer.id = 'scheduler-placeholder-measurer';
+        measurer.setAttribute('aria-hidden', 'true');
+        measurer.style.cssText = 'position:absolute;left:-10000px;top:0;visibility:hidden;pointer-events:none;box-sizing:border-box;';
+        mainContent.appendChild(measurer);
+    }
+
+    measurer.className = 'scheduler-content';
+    measurer.style.width = `${section.clientWidth}px`;
+    measurer.innerHTML = timePicker.outerHTML;
+
+    const measuredPicker = measurer.querySelector('#time-picker-container');
+    measuredPicker?.classList.remove('hidden');
+    measuredPicker?.querySelector('#instant-block-panel')?.classList.remove('hidden');
+    measuredPicker?.querySelector('#schedule-block-panel')?.classList.add('hidden');
+    measuredPicker?.querySelector('.always-on-message')?.classList.add('hidden');
+    measuredPicker?.querySelector('#timed-controls')?.classList.add('hidden');
+    measuredPicker?.querySelector('#block-action-buttons')?.classList.add('hidden');
+
+    return measuredPicker?.offsetHeight || 0;
+}
+
+/** Pin the empty-state hint to the first blocklist card (two-column) or reserve time-picker space (stack). */
+function syncSelectionPromptLayout() {
+    const prompt = document.getElementById('selection-prompt');
+    const gridTopRow = document.querySelector('.grid-top-row');
+    const schedulerSection = document.getElementById('scheduler-section');
+    const firstCard = document.querySelector('#blocklists-container .blocklist-card');
+    if (!prompt || !gridTopRow) return;
+
+    const active = !prompt.classList.contains('hidden')
+        && !gridTopRow.classList.contains('grid-top-row--blocklist-selected')
+        && !!firstCard;
+
+    if (!active) {
+        clearSelectionPromptLayout();
+        return;
+    }
+
+    const gap = 48;
+    const stacked = isGridTopRowStacked();
+    const anchorRect = gridTopRow.getBoundingClientRect();
+    const cardRect = firstCard.getBoundingClientRect();
+    const promptHeight = prompt.offsetHeight || 24;
+
+    gridTopRow.classList.add('grid-top-row--selection-prompt-active');
+    document.body.classList.toggle('selection-prompt-layout-two-col', !stacked);
+    document.body.classList.toggle('selection-prompt-layout-stack', stacked);
+
+    if (stacked) {
+        prompt.style.top = '';
+        prompt.style.left = '';
+        prompt.style.right = '';
+        if (schedulerSection) {
+            const placeholderHeight = measureTimePickerPlaceholderHeight(schedulerSection);
+            if (placeholderHeight > 0) {
+                schedulerSection.style.setProperty('--time-picker-placeholder-height', `${placeholderHeight}px`);
+            }
+        }
+        return;
+    }
+
+    if (schedulerSection) {
+        schedulerSection.style.removeProperty('--time-picker-placeholder-height');
+    }
+
+    const top = cardRect.top - anchorRect.top + (cardRect.height - promptHeight) / 2;
+    const left = cardRect.right - anchorRect.left + gap;
+    prompt.style.top = `${Math.round(top)}px`;
+    prompt.style.left = `${Math.round(left)}px`;
+    prompt.style.right = '';
 }
 
 function scheduleUiZoomResponsiveLayout() {
@@ -20890,16 +21198,47 @@ function bindUiZoomLayoutObserver() {
         document.getElementById('main-content'),
         document.querySelector('.grid-top-row'),
         document.querySelector('.scheduler-section > .section-header'),
+        document.getElementById('scheduler-section'),
+        document.getElementById('blocklists-container'),
+        document.getElementById('selection-prompt'),
+        document.querySelector('.week-calendar-section'),
+        document.getElementById('day-rows'),
+        document.querySelector('.footer'),
     ].filter(Boolean);
     if (!targets.length) return;
     uiZoomLayoutObserverBound = true;
-    const ro = new ResizeObserver(() => scheduleUiZoomResponsiveLayout());
+    const ro = new ResizeObserver(() => {
+        scheduleUiZoomResponsiveLayout();
+        scheduleSelectionPromptLayout();
+    });
     targets.forEach((el) => ro.observe(el));
 }
 
 function applyUiZoom(scale) {
     const clamped = clampUiZoom(scale);
     syncFooterZoomControl(clamped);
+    document.documentElement.style.setProperty('--ui-zoom', String(clamped));
+
+    if (usesNativeWebviewZoom()) {
+        getCurrentWebview().setZoom(clamped).then(() => {
+            nativeWebviewZoomSupported = true;
+            document.documentElement.style.zoom = '';
+            scheduleUiZoomResponsiveLayout();
+        }).catch(() => {
+            nativeWebviewZoomSupported = false;
+            document.documentElement.style.zoom = String(clamped);
+            scheduleUiZoomResponsiveLayout();
+        });
+        return;
+    }
+
+    // iPad WKWebView uses desktop content mode: neither CSS zoom nor pageZoom scales text.
+    // `.app-container { transform: scale(var(--ui-zoom)) }` in styles.css handles iPad instead.
+    if (isIosTablet()) {
+        document.documentElement.style.zoom = '';
+        scheduleUiZoomResponsiveLayout();
+        return;
+    }
 
     if (isIOS) {
         document.documentElement.style.zoom = String(clamped);
@@ -20907,32 +21246,12 @@ function applyUiZoom(scale) {
         return;
     }
 
-    // On desktop (Windows and macOS), use native webview zoom so content scales correctly
-    // and behavior matches across platforms. Fall back to CSS zoom if unavailable (e.g. permission).
-    if (!isIOS && (document.body.classList.contains('windows') || document.body.classList.contains('mac'))) {
-        if (nativeWebviewZoomSupported !== false) {
-            getCurrentWebview().setZoom(clamped).then(() => {
-                nativeWebviewZoomSupported = true;
-                document.documentElement.style.zoom = '';
-                scheduleUiZoomResponsiveLayout();
-            }).catch(() => {
-                nativeWebviewZoomSupported = false;
-                document.documentElement.style.zoom = String(clamped);
-                scheduleUiZoomResponsiveLayout();
-            });
-            return;
-        }
-    }
-
-    // Fallback path (iOS or if native zoom isn't available).
+    // Fallback when native webview zoom is unavailable (e.g. permission).
     document.documentElement.style.zoom = String(clamped);
     scheduleUiZoomResponsiveLayout();
 }
 
-// Mirror the current zoom level into the footer percentage label and
-// +/- button enabled state. Called from applyUiZoom so every entry
-// point (footer buttons, cmd-+/-/0 shortcuts, native menu items) keeps
-// the UI in sync.
+/** Mirror the current zoom level into the settings control and +/- button state. */
 function syncFooterZoomControl(scale) {
     const pct = `${Math.round(scale * 100)}%`;
     const max = getUiZoomMax();
@@ -20948,12 +21267,11 @@ function syncFooterZoomControl(scale) {
 }
 
 function setupFooterZoomControl() {
-    document.querySelectorAll('.header-zoom-control, .footer-zoom-control').forEach((control) => {
-        if (control.dataset.bound === '1') return;
-        control.dataset.bound = '1';
-        control.querySelector('.zoom-out-btn')?.addEventListener('click', () => zoomUiOut());
-        control.querySelector('.zoom-in-btn')?.addEventListener('click', () => zoomUiIn());
-    });
+    const control = document.getElementById('settings-zoom-control');
+    if (!control || control.dataset.bound === '1') return;
+    control.dataset.bound = '1';
+    control.querySelector('.zoom-out-btn')?.addEventListener('click', () => zoomUiOut());
+    control.querySelector('.zoom-in-btn')?.addEventListener('click', () => zoomUiIn());
 }
 
 function showUiZoomToast(scale) {
@@ -21004,7 +21322,6 @@ function resetUiZoom(options = {}) {
 function setupUiZoomShortcuts() {
     setupFooterZoomControl();
     applyUiZoom(getSavedUiZoom());
-    syncZoomControlPlacement();
     bindUiZoomLayoutObserver();
     window.addEventListener('resize', scheduleUiZoomResponsiveLayout, { passive: true });
     window.visualViewport?.addEventListener('resize', scheduleUiZoomResponsiveLayout, { passive: true });
@@ -21055,6 +21372,7 @@ function setupHelpMenuLinks() {
 
 // Setup Helper Settings in the settings modal
 function setupHelperSettings() {
+    if (isIOS) return;
     const statusIndicator = document.getElementById('helper-status-indicator');
     const cleanHostsBtn = document.getElementById('clean-hosts-btn');
 
@@ -22075,8 +22393,10 @@ async function openInstalledAppsPicker() {
         closePickerModal();
     };
 
-    // Browse manually — fall back to the OS file picker
-    browseBtn.onclick = async () => {
+    // Browse manually — fall back to the OS file picker (desktop only)
+    if (browseBtn) {
+        browseBtn.classList.remove('hidden');
+        browseBtn.onclick = async () => {
         closePickerModal();
         const appNames = await tauriAPI.openAppPicker();
         if (appNames && appNames.length > 0) {
@@ -22099,6 +22419,9 @@ async function openInstalledAppsPicker() {
             window.renderModalTags();
         }
     };
+    } else if (browseBtn) {
+        browseBtn.classList.add('hidden');
+    }
 
     // Focus search input
     requestAnimationFrame(() => searchInput.focus());
@@ -22235,7 +22558,7 @@ function setupOverrideAll() {
             renderOverrideAllChallengeText();
             overrideAllChallengeInput.value = '';
             overrideAllChallengeWordInput.value = '';
-            overrideAllWordChallengeState = isIOSWordByWordChallenge(hardestDifficulty)
+            overrideAllWordChallengeState = isMobileWordByWordChallenge(hardestDifficulty)
                 ? buildWordChallengeState(overrideAllChallengeText)
                 : null;
             setOverrideAllWordChallengeMode(!!overrideAllWordChallengeState);
@@ -22602,6 +22925,7 @@ function refreshUninstallButtonState() {
 }
 
 function setupWindowsUninstallGuidance() {
+    if (isIOS) return;
     const btn = document.getElementById('windows-uninstall-open-settings-btn');
     if (!btn) return;
 

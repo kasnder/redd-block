@@ -1,4 +1,5 @@
 import { defineConfig } from 'vite';
+import { fileURLToPath } from 'node:url';
 
 // In dev (vite dev), index.html loads test-utils.js / blocking-tests.js /
 // integration-tests.js so the developer can call runBlockingTests() and
@@ -21,10 +22,14 @@ export default defineConfig({
     // Root directory is src/
     root: 'src',
 
-    // Output to dist/ for production builds
     build: {
         outDir: '../dist',
         emptyOutDir: true,
+        rollupOptions: {
+            input: {
+                main: fileURLToPath(new URL('./src/index.html', import.meta.url)),
+            },
+        },
     },
 
     // Dev server config
