@@ -6486,10 +6486,14 @@ function wireAndroidPermissionOpenButton(elementId, openFn) {
 function setupAndroidPermissionsOnboarding() {
     if (!isAndroid) return;
 
-    wireAndroidPermissionOpenButton('android-perm-accessibility', androidOpenAccessibilitySettings);
-    wireAndroidPermissionOpenButton('android-perm-battery', androidOpenBatterySettings);
-    wireAndroidPermissionOpenButton('settings-android-perm-accessibility-grant', androidOpenAccessibilitySettings);
-    wireAndroidPermissionOpenButton('settings-android-perm-background-grant', androidOpenBatterySettings);
+    for (const [elementId, openFn] of [
+        ['android-perm-accessibility', androidOpenAccessibilitySettings],
+        ['android-perm-battery', androidOpenBatterySettings],
+        ['settings-android-perm-accessibility-grant', androidOpenAccessibilitySettings],
+        ['settings-android-perm-background-grant', androidOpenBatterySettings],
+    ]) {
+        wireAndroidPermissionOpenButton(elementId, openFn);
+    }
     document.getElementById('android-permissions-continue-btn')?.addEventListener('click', async () => {
         if (!androidPermissionsReady()) return;
         await dismissAndroidPermissionsOnboarding();
@@ -6860,7 +6864,6 @@ function syncAndroidLayoutTier() {
     const isPhoneLayout = window.matchMedia('(max-width: 768px)').matches;
     const isHandset = isAndroidHandsetDevice();
     document.body.classList.toggle('android-phone', isPhoneLayout);
-    document.body.classList.toggle('android-handset', isHandset);
     document.body.classList.toggle('handset-device', isHandset);
     updateAndroidViewportMetrics();
     syncAndroidHandsetModalSideInset();

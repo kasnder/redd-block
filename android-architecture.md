@@ -10,13 +10,13 @@ The Android app is a port of [redd-block-android](https://github.com/kasnder/red
 
 ReDD Block Android is **two programs in one APK** that share a data store but run independently:
 
-1. **The UI** — a Tauri webview (`src/android.html` + `android.js` + `android.css`) where the user manages schedules and permissions. It is *never* needed for blocking.
+1. **The UI** — the shared Tauri webview (`src/index.html` + `app.js` + `styles.css`, with `android-bridge.js` for native sync) where the user manages schedules and permissions. It is *never* needed for blocking.
 2. **The blocking engine** — native Kotlin living in `tauri-plugin-androidblock/android/`: an Accessibility Service watches the foreground app/browser, and WorkManager fires schedule start/stop times. It keeps running when the app is swiped away and resumes after reboot.
 
 ```mermaid
 flowchart TB
     subgraph UI["UI process (only runs while app is open)"]
-        WV[Webview<br/>src/android.html + android.js]
+        WV[Webview<br/>src/index.html + app.js]
         RUST[Rust core<br/>src-tauri — thin on Android]
         PLUG[AndroidBlockPlugin.kt<br/>command bridge]
         WV -->|"invoke plugin commands"| RUST
@@ -130,7 +130,7 @@ A schedule being *enabled* is not the same as *blocking right now*. When a sched
 
 ### The friction gate & auto-re-enable
 
-While a schedule has an active session, **editing or disabling it requires typing N random words** (`frictionWordCount`, 1–50) — the word list and check live in the UI ([src/android.js](src/android.js)), same words as redd-block-android. When an active schedule *is* disabled, `disabledUntil` is set and a WorkManager job re-enables it after `autoReenableMinutes` ("Never" = stays off). As a belt-and-braces, every UI state fetch also re-enables any schedule whose `disabledUntil` has passed.
+While a schedule has an active session, **editing or disabling it requires typing N random words** (`frictionWordCount`, 1–50) — the word list and check live in the shared UI ([src/app.js](src/app.js)), same words as redd-block-android. When an active schedule *is* disabled, `disabledUntil` is set and a WorkManager job re-enables it after `autoReenableMinutes` ("Never" = stays off). As a belt-and-braces, every UI state fetch also re-enables any schedule whose `disabledUntil` has passed.
 
 ### Scheduling machinery (WorkManager)
 
@@ -190,7 +190,7 @@ All are declared in the plugin's [AndroidManifest.xml](tauri-plugin-androidblock
 ```
 redd-block/
 ├── src/
-│   ├── android.html / android.js / android.css   # Android UI (the desktop/iOS app uses index.html)
+│   ├── index.html / app.js / styles.css / android-bridge.js   # Shared UI (desktop + iOS + Android)
 ├── src-tauri/
 │   ├── tauri.android.conf.json     # Android config overlay (minSdk 26)
 │   ├── capabilities/android-blocking.json  # grants the webview the plugin commands
@@ -266,7 +266,7 @@ In Android Studio: *Device Manager → Create device* (any Pixel profile, **API 
 ### UI-only iteration without a device
 
 ```bash
-npm run vite:dev   # → open http://localhost:5173/android.html in a browser
+npm run vite:dev   # → open http://localhost:5173/ in a browser
 ```
 
 Plugin calls no-op in a plain browser; inject any state via the console hook:
@@ -358,7 +358,7 @@ Functionality is 1:1; these implementation details changed:
 | Accessibility check | substring match on the service name | `ComponentName` comparison (same semantics, more robust) |
 | Notification channels | created only on service connect | also ensured before each schedule notification (fixes a silent-drop edge) |
 | Schedule-changed broadcast | `net.kollnig…SCHEDULE_CHANGED` | `com.reddblock.androidblock.SCHEDULE_CHANGED` (internal only) |
-| Word challenge | in Compose screen | in `src/android.js` (same word list, same rules) |
+| Word challenge | in Compose screen | in `src/app.js` (same word list, same rules) |
 
 ## 12. Troubleshooting
 

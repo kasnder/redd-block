@@ -22,15 +22,12 @@ export default defineConfig({
     // Root directory is src/
     root: 'src',
 
-    // Output to dist/ for production builds. Two entry pages: index.html
-    // (desktop + iOS) and android.html (Android-specific frontend).
     build: {
         outDir: '../dist',
         emptyOutDir: true,
         rollupOptions: {
             input: {
                 main: fileURLToPath(new URL('./src/index.html', import.meta.url)),
-                android: fileURLToPath(new URL('./src/android.html', import.meta.url)),
             },
         },
     },

@@ -590,8 +590,7 @@ pub fn run() {
             }
 
             // Create main window on Android — full screen webview loading the
-            // shared frontend (index.html). The legacy android.html stack
-            // remains in src/ as a fallback during migration.
+            // shared frontend (index.html), same shell as desktop and iOS.
             #[cfg(target_os = "android")]
             {
                 let _window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())

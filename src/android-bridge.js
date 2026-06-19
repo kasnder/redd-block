@@ -4,7 +4,6 @@ import { invoke } from '@tauri-apps/api/core';
 
 const ANDROID_DAYS = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
 const ANDROID_DAY_TO_INDEX = Object.fromEntries(ANDROID_DAYS.map((d, i) => [d, i]));
-const INDEX_TO_ANDROID_DAY = ANDROID_DAYS;
 const ANDROID_UI_KIND_SCHEDULE_SEGMENT = 'schedule-segment';
 const ANDROID_UI_KIND_ONE_OFF_BLOCK = 'one-off-block';
 
@@ -24,32 +23,27 @@ export function androidPermissionsReady() {
     return !!(p.accessibility && p.batteryOptimization);
 }
 
+async function invokeStateCommand(command, payload = {}) {
+    const response = await invoke(`plugin:androidblock|${command}`, payload);
+    androidPluginState = JSON.parse(response.stateJson);
+    return androidPluginState;
+}
+
 export async function refreshAndroidPluginState() {
     try {
-        const response = await invoke('plugin:androidblock|get_state');
-        androidPluginState = JSON.parse(response.stateJson);
+        return await invokeStateCommand('get_state');
     } catch (e) {
         console.warn('[android-bridge] get_state failed:', e);
     }
     return androidPluginState;
 }
 
-export async function androidSaveSchedule(scheduleJson) {
-    const response = await invoke('plugin:androidblock|save_schedule', { scheduleJson });
-    androidPluginState = JSON.parse(response.stateJson);
-    return androidPluginState;
+async function androidSaveSchedule(scheduleJson) {
+    return invokeStateCommand('save_schedule', { scheduleJson });
 }
 
-export async function androidDeleteSchedule(id) {
-    const response = await invoke('plugin:androidblock|delete_schedule', { id });
-    androidPluginState = JSON.parse(response.stateJson);
-    return androidPluginState;
-}
-
-export async function androidToggleSchedule(id) {
-    const response = await invoke('plugin:androidblock|toggle_schedule', { id });
-    androidPluginState = JSON.parse(response.stateJson);
-    return androidPluginState;
+async function androidDeleteSchedule(id) {
+    return invokeStateCommand('delete_schedule', { id });
 }
 
 export async function androidGetInstalledApps() {
@@ -297,7 +291,7 @@ function sharedSegmentToAndroidSchedules(blocklist, schedule) {
                 timeMinute: occurrence.start.getMinutes(),
                 endTimeHour: occurrence.end.getHours(),
                 endTimeMinute: occurrence.end.getMinutes(),
-                daysOfWeek: [INDEX_TO_ANDROID_DAY[occurrence.dayIndex]].filter(Boolean),
+                daysOfWeek: [ANDROID_DAYS[occurrence.dayIndex]].filter(Boolean),
                 isRecurring: false,
                 activeFromTimestampMs: occurrence.start.getTime(),
                 activeUntilTimestampMs: occurrence.end.getTime(),
@@ -331,7 +325,7 @@ function sharedSegmentToAndroidSchedules(blocklist, schedule) {
                 endTimeMinute: segment.endMinute,
                 daysOfWeek: timingType === 'DAILY'
                     ? [...ANDROID_DAYS]
-                    : days.map((index) => INDEX_TO_ANDROID_DAY[index]).filter(Boolean),
+                    : days.map((index) => ANDROID_DAYS[index]).filter(Boolean),
                 isRecurring: true,
                 ...(boundedRepeatUntil != null ? { activeUntilTimestampMs: boundedRepeatUntil } : {}),
             },
@@ -361,7 +355,7 @@ function sharedBlockToAndroid(blocklist, block) {
             timeMinute: new Date(block.startTime).getMinutes(),
             endTimeHour: new Date(block.endTime).getHours(),
             endTimeMinute: new Date(block.endTime).getMinutes(),
-            daysOfWeek: [INDEX_TO_ANDROID_DAY[(new Date(block.startTime).getDay() + 6) % 7]].filter(Boolean),
+            daysOfWeek: [ANDROID_DAYS[(new Date(block.startTime).getDay() + 6) % 7]].filter(Boolean),
             isRecurring: false,
             activeFromTimestampMs: block.startTime,
             activeUntilTimestampMs: block.endTime,
