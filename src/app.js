@@ -6894,8 +6894,9 @@ function setupHandsetModalScreens() {
         if (!overlay || !content || !titleSource || content.querySelector('.mobile-modal-header')) continue;
 
         overlay.classList.add('mobile-fullscreen-modal');
-        const isRoomConfirmModal = modalId === 'start-block-confirm-modal';
-        if (!isRoomConfirmModal) {
+        const isRoomStyleConfirmModal =
+            modalId === 'start-block-confirm-modal' || modalId === 'start-schedule-confirm-modal';
+        if (!isRoomStyleConfirmModal) {
             titleSource.classList.add('mobile-modal-title-source');
         }
 
@@ -6917,7 +6918,7 @@ function setupHandsetModalScreens() {
 
         const syncHeaderTitle = () => {
             const nextTitle = titleSource.textContent?.trim() || titleSource.innerText?.trim() || '';
-            if (!isRoomConfirmModal) {
+            if (!isRoomStyleConfirmModal) {
                 headerTitle.textContent = nextTitle;
             }
             backButton.setAttribute('aria-label', nextTitle ? `Back from ${nextTitle}` : 'Back');
@@ -6937,7 +6938,7 @@ function setupHandsetModalScreens() {
         });
 
         header.append(backButton);
-        if (!isRoomConfirmModal) {
+        if (!isRoomStyleConfirmModal) {
             header.append(headerTitle);
         }
         if (modalId === 'settings-modal') {
@@ -6954,7 +6955,7 @@ function setupHandsetModalScreens() {
         }
         content.prepend(header);
 
-        if (isRoomConfirmModal) {
+        if (isRoomStyleConfirmModal) {
             const roomHeader = content.querySelector('.start-confirm-header-room');
             if (roomHeader) {
                 header.appendChild(roomHeader);
@@ -12372,7 +12373,7 @@ function setStartConfirmPrimaryLabel(buttonId, text) {
     const btn = document.getElementById(buttonId);
     const label = btn?.querySelector('.start-confirm-primary-label');
     if (label) label.textContent = text;
-    if (buttonId === 'proceed-start-confirm-btn') {
+    if (buttonId === 'proceed-start-confirm-btn' || buttonId === 'proceed-schedule-confirm-btn') {
         const icon = btn?.querySelector('.start-confirm-primary-icon');
         if (icon && icon.tagName === 'IMG') icon.src = rumMarkUrl;
     }
@@ -12519,10 +12520,14 @@ function formatStartBlockSubtitle(isAlwaysOn, blockStart, blockEnd) {
     return tSettingsFmt('startBlockSubtitleFmt', { duration: durationLabel });
 }
 
-function setStartConfirmRoomChip(blocklist) {
-    const chip = document.getElementById('start-confirm-room-chip');
-    const emojiEl = document.getElementById('start-confirm-room-chip-emoji');
-    const nameEl = document.getElementById('start-confirm-room-chip-name');
+function setStartConfirmRoomChip(blocklist, {
+    chipId = 'start-confirm-room-chip',
+    emojiId = 'start-confirm-room-chip-emoji',
+    nameId = 'start-confirm-room-chip-name',
+} = {}) {
+    const chip = document.getElementById(chipId);
+    const emojiEl = document.getElementById(emojiId);
+    const nameEl = document.getElementById(nameId);
     if (!chip) return;
 
     if (emojiEl) emojiEl.textContent = blocklist?.emoji || '🎯';
@@ -12533,8 +12538,14 @@ function setStartConfirmRoomChip(blocklist) {
     chip.style.borderColor = '';
 }
 
-function setStartConfirmOverrideDescription(options) {
-    const overrideTextEl = document.getElementById('start-confirm-override-text');
+const SCHEDULE_CONFIRM_ROOM_CHIP_IDS = {
+    chipId: 'schedule-confirm-room-chip',
+    emojiId: 'schedule-confirm-room-chip-emoji',
+    nameId: 'schedule-confirm-room-chip-name',
+};
+
+function setStartConfirmOverrideDescription(options, textElId = 'start-confirm-override-text') {
+    const overrideTextEl = document.getElementById(textElId);
     if (!overrideTextEl) return;
 
     const line = formatConfirmModalOverrideTypingLine(options);
@@ -12560,10 +12571,9 @@ function showScheduleConfirmModal(blocklist) {
     resetScheduleConfirmModalToStartLayout();
 
     const titleEl = document.getElementById('start-schedule-confirm-title');
-    if (titleEl) titleEl.textContent = getStartScheduleConfirmTitle(blocklist);
+    if (titleEl) titleEl.textContent = tSettings('startThisSchedule');
 
-    const emojiEl = document.getElementById('schedule-confirm-emoji');
-    if (emojiEl) emojiEl.textContent = blocklist.emoji || '🎯';
+    setStartConfirmRoomChip(blocklist, SCHEDULE_CONFIRM_ROOM_CHIP_IDS);
 
     const subtitleEl = document.getElementById('schedule-confirm-subtitle');
     if (subtitleEl) subtitleEl.innerHTML = tSettings('startScheduleSubtitle');
@@ -12603,13 +12613,11 @@ function showScheduleConfirmModal(blocklist) {
             : difficulty.type === 'gibberish'
               ? 'gibberish'
               : 'random-words';
-    const overrideText = formatConfirmModalOverrideTypingLine({
+    setStartConfirmOverrideDescription({
         type: schedType,
         count: charCount,
         estimatedMinutes
-    });
-
-    document.getElementById('schedule-confirm-override-text').innerHTML = overrideText;
+    }, 'schedule-confirm-override-text');
 
     // Show modal
     document.getElementById('start-schedule-confirm-modal').classList.remove('hidden');
@@ -12696,8 +12704,7 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
         titleEl.textContent = tSettingsFmt('saveChangesTitleFmt', { name: blocklist.name });
     }
 
-    const emojiEl = document.getElementById('schedule-confirm-emoji');
-    if (emojiEl) emojiEl.textContent = blocklist.emoji || '🎯';
+    setStartConfirmRoomChip(blocklist, SCHEDULE_CONFIRM_ROOM_CHIP_IDS);
 
     const overrideHeader = document.getElementById('schedule-confirm-override-header');
     if (overrideHeader) overrideHeader.textContent = tSettings('saveChangesHoldHeader');
@@ -12728,8 +12735,11 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
             : difficulty.type === 'gibberish'
               ? 'gibberish'
               : 'random-words';
-    document.getElementById('schedule-confirm-override-text').innerHTML =
-        formatConfirmModalOverrideTypingLine({ type: schedType, count: displayCount, estimatedMinutes });
+    setStartConfirmOverrideDescription({
+        type: schedType,
+        count: displayCount,
+        estimatedMinutes
+    }, 'schedule-confirm-override-text');
 
     setStartConfirmPrimaryLabel('proceed-schedule-confirm-btn', tSettings('pendingChangesSave'));
 
@@ -18867,8 +18877,8 @@ const SETTINGS_TRANSLATIONS = {
         startConfirmRepeatUntilFmt: 'Every week · until {date}',
         startConfirmRepeatNone: 'One week only · no repeat',
         startBlockHoldHeader: 'Leaving early takes a moment — on purpose.',
-        startScheduleHoldHeader: 'To stop this blocking, you\'ll need to:',
-        saveChangesHoldHeader: 'To stop this blocking, you\'ll need to:',
+        startScheduleHoldHeader: 'Leaving early takes a moment — on purpose.',
+        saveChangesHoldHeader: 'Leaving early takes a moment — on purpose.',
         blockedWebsites: 'Blocked websites:',
         blockedApps: 'Blocked apps:',
         showAll: 'show all',
@@ -18881,7 +18891,7 @@ const SETTINGS_TRANSLATIONS = {
         scheduleResumingSegment: 'Schedule (resuming current segment)',
         startThisSchedule: 'Start this schedule?',
         startScheduleTitleFmt: 'Start the schedule “{name}”?',
-        startScheduleSubtitle: 'Blocks run automatically at the times shown below.',
+        startScheduleSubtitle: 'Your blocked websites and apps go quiet at the times shown below.',
         scheduleConfirmOverlayLabel: 'Start alert',
         scheduleActiveOverlayLabel: 'Start alert:',
         scheduleConfirmOverlayDefaultTitle: 'Default',
@@ -19597,8 +19607,8 @@ const SETTINGS_TRANSLATIONS = {
         startConfirmRepeatUntilFmt: 'Hver uge · indtil {date}',
         startConfirmRepeatNone: 'Kun én uge · gentages ikke',
         startBlockHoldHeader: 'At forlade rummet tidligt tager et øjeblik — med vilje.',
-        startScheduleHoldHeader: 'For at stoppe denne blokering skal du:',
-        saveChangesHoldHeader: 'For at stoppe denne blokering skal du:',
+        startScheduleHoldHeader: 'At forlade rummet tidligt tager et øjeblik — med vilje.',
+        saveChangesHoldHeader: 'At forlade rummet tidligt tager et øjeblik — med vilje.',
         blockedWebsites: 'Blokerede hjemmesider:',
         blockedApps: 'Blokerede apps:',
         showAll: 'vis alle',
@@ -19611,7 +19621,7 @@ const SETTINGS_TRANSLATIONS = {
         scheduleResumingSegment: 'Skema (genoptager nuværende segment)',
         startThisSchedule: 'Start dette skema?',
         startScheduleTitleFmt: 'Start skemaet “{name}”?',
-        startScheduleSubtitle: 'Blokeringer kører automatisk på tidspunkterne vist nedenfor.',
+        startScheduleSubtitle: 'Dine blokerede hjemmesider og apps er stille på tidspunkterne vist nedenfor.',
         scheduleConfirmOverlayLabel: 'Startbesked',
         scheduleActiveOverlayLabel: 'Startbesked:',
         scheduleConfirmOverlayDefaultTitle: 'Standard',

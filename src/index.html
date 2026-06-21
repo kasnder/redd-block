@@ -1537,12 +1537,21 @@
         <!-- Start Schedule Confirmation Modal -->
         <div id="start-schedule-confirm-modal" class="modal-overlay hidden">
             <div class="modal-content start-confirm-modal">
-                <div class="start-confirm-header">
-                    <div class="start-confirm-emoji-badge" id="schedule-confirm-emoji" aria-hidden="true">🎯</div>
-                    <div class="start-confirm-header-text">
-                        <h3 id="start-schedule-confirm-title">Start the schedule?</h3>
-                        <p class="start-confirm-subtitle" id="schedule-confirm-subtitle"></p>
+                <div class="start-confirm-header-room">
+                    <h3 id="start-schedule-confirm-title">Start this schedule?</h3>
+                    <div class="start-confirm-room-chip" id="schedule-confirm-room-chip">
+                        <span class="start-confirm-room-chip-emoji" id="schedule-confirm-room-chip-emoji" aria-hidden="true">🎯</span>
+                        <span class="start-confirm-room-chip-name" id="schedule-confirm-room-chip-name"></span>
                     </div>
+                </div>
+                <div class="start-confirm-status-row" id="schedule-confirm-status-row">
+                    <div class="start-confirm-status-icon" aria-hidden="true">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path>
+                        </svg>
+                    </div>
+                    <p class="start-confirm-subtitle" id="schedule-confirm-subtitle"></p>
                 </div>
                 <div class="start-confirm-summary-card">
                     <div class="start-confirm-summary-row" id="schedule-confirm-blocking-row">
@@ -1630,21 +1639,18 @@
                         <span class="start-confirm-warning-icon" aria-hidden="true">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2">
-                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
                             </svg>
                         </span>
-                        <span id="schedule-confirm-override-header">To stop this blocking, you'll need to:</span>
+                        <span id="schedule-confirm-override-header">Leaving early takes a moment — on purpose.</span>
                     </div>
                     <p id="schedule-confirm-override-text"></p>
                 </div>
                 <div class="modal-buttons start-confirm-actions">
                     <button id="cancel-schedule-confirm-btn" class="modal-btn cancel-btn">Cancel</button>
                     <button id="proceed-schedule-confirm-btn" class="modal-btn black-btn start-confirm-primary-btn">
-                        <svg class="start-confirm-primary-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <polygon points="6 3 20 12 6 21 6 3"></polygon>
-                        </svg>
+                        <img class="start-confirm-primary-icon" src="/rum-mark.svg" alt="" aria-hidden="true">
                         <span class="start-confirm-primary-label">Start Schedule</span>
                     </button>
                 </div>
