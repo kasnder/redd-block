@@ -18361,13 +18361,14 @@ const SETTINGS_TRANSLATIONS = {
         rebrandOnboardingTitleHtml:
             'ReDD Block is now <span class="rebrand-onboarding-title-brand">Rum</span>',
         rebrandOnboardingSubtitle:
-            'All functionality is unchanged \u2014 it\u2019s just a new name that reflects what the app is for.',
+            'All functionality is unchanged. It\u2019s just a new name that reflects what the app is for.',
         rebrandOnboardingWord: 'rum',
-        rebrandOnboardingIpa: '/ʁɔmˀ/',
-        rebrandOnboardingLanguage: 'Danish',
-        rebrandOnboardingPartOfSpeech: 'noun',
+        rebrandOnboardingPronunciationHtml: '/rɔmˀ/ · say “rom”',
+        rebrandOnboardingMetaHtml: 'Danish · noun',
         rebrandOnboardingDefinitionHtml:
-            '<em class="rebrand-definition-quote">\u201ca space; a room.\u201d</em> A clear and undistracted space, kept free of the apps and sites that pull you away.',
+            '<em class="rebrand-definition-quote">“a space; a room.”</em> A clear space, kept free of the distractions that pull you away.',
+        rebrandOnboardingFootnoteHtml:
+            'The same word as English <span class="rebrand-definition-highlight">“room”</span> — not the drink.',
         rebrandOnboardingContinueBtn: 'Continue',
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Welcome to Rum',
@@ -19111,11 +19112,12 @@ const SETTINGS_TRANSLATIONS = {
         rebrandOnboardingSubtitle:
             'Al funktionalitet er u\u00e6ndret \u2014 det er bare et nyt navn, der afspejler, hvad appen er til.',
         rebrandOnboardingWord: 'rum',
-        rebrandOnboardingIpa: '/ʁɔmˀ/',
-        rebrandOnboardingLanguage: 'Dansk',
-        rebrandOnboardingPartOfSpeech: 'substantiv',
+        rebrandOnboardingPronunciationHtml: '/rumˀ/ · sig “rum”',
+        rebrandOnboardingMetaHtml: 'Dansk · substantiv',
         rebrandOnboardingDefinitionHtml:
-            '<em class="rebrand-definition-quote">\u201cet rum; et frirum.\u201d</em> Et klart og uforstyrret rum, fri for de apps og websites, der tr\u00e6kker dig v\u00e6k.',
+            '<em class="rebrand-definition-quote">“et rum; et frirum.”</em> Et klart og uforstyrret rum, fri for de apps og websites, der trækker dig væk.',
+        rebrandOnboardingFootnoteHtml:
+            'Samme ord som engelsk <span class="rebrand-definition-highlight">“room”</span> — ikke drinken.',
         rebrandOnboardingContinueBtn: 'Fortsæt',
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Velkommen til Rum',
@@ -20084,17 +20086,17 @@ function applyRebrandOnboardingLanguage() {
     const word = document.getElementById('rebrand-onboarding-word');
     if (word) word.textContent = tSettings('rebrandOnboardingWord');
 
-    const ipa = document.getElementById('rebrand-onboarding-ipa');
-    if (ipa) ipa.textContent = tSettings('rebrandOnboardingIpa');
+    const pronunciation = document.getElementById('rebrand-onboarding-pronunciation');
+    if (pronunciation) pronunciation.textContent = tSettings('rebrandOnboardingPronunciationHtml');
 
-    const language = document.getElementById('rebrand-onboarding-language');
-    if (language) language.textContent = tSettings('rebrandOnboardingLanguage');
-
-    const partOfSpeech = document.getElementById('rebrand-onboarding-part-of-speech');
-    if (partOfSpeech) partOfSpeech.textContent = tSettings('rebrandOnboardingPartOfSpeech');
+    const meta = document.getElementById('rebrand-onboarding-meta');
+    if (meta) meta.textContent = tSettings('rebrandOnboardingMetaHtml');
 
     const definition = document.getElementById('rebrand-onboarding-definition');
     if (definition) definition.innerHTML = tSettings('rebrandOnboardingDefinitionHtml');
+
+    const footnote = document.getElementById('rebrand-onboarding-footnote');
+    if (footnote) footnote.innerHTML = tSettings('rebrandOnboardingFootnoteHtml');
 
     const continueBtn = document.getElementById('rebrand-onboarding-continue-btn');
     if (continueBtn) continueBtn.textContent = tSettings('rebrandOnboardingContinueBtn');

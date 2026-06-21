@@ -6726,69 +6726,78 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled){
 }
 
 .rebrand-definition-card {
+    --rebrand-card-bg: #f2efe8;
+    --rebrand-card-border: #1a3c34;
+    --rebrand-card-accent: #4a7c6e;
+    --rebrand-card-pill-bg: #e8eeea;
     margin-top: 12px;
     margin-bottom: 18px;
-    padding: 18px 20px;
-    border: 1px solid var(--border-color);
-    border-left: 3px solid var(--accent-color);
-    border-radius: 12px;
-    background: rgba(30, 45, 62, 0.06);
+    padding: 18px 20px 16px;
+    border: none;
+    border-left: 4px solid var(--rebrand-card-border);
+    border-radius: 14px;
+    background: var(--rebrand-card-bg);
     text-align: left;
 }
 
 body.dark-mode .rebrand-definition-card {
-    background: rgba(255, 255, 255, 0.04);
+    --rebrand-card-bg: rgba(255, 255, 255, 0.06);
+    --rebrand-card-border: #6db8a8;
+    --rebrand-card-accent: #8fd0c0;
+    --rebrand-card-pill-bg: rgba(255, 255, 255, 0.08);
 }
 
-.rebrand-definition-title-line {
+.rebrand-definition-header {
     display: flex;
     flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.45em 0.65em;
-    margin-bottom: 2px;
+    align-items: center;
+    gap: 10px 12px;
+    margin-bottom: 12px;
+    min-height: 28px;
 }
 
 .rebrand-definition-word {
     font-family: var(--font-heading);
-    font-size: 22px;
-    font-weight: 600;
-    line-height: 1.2;
+    font-size: 24px;
+    font-weight: 700;
+    line-height: 28px;
     color: var(--text-primary);
 }
 
-.rebrand-definition-ipa {
-    font-size: 14px;
-    line-height: 1.3;
-    color: var(--text-muted);
+.rebrand-definition-pronunciation-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: var(--rebrand-card-pill-bg);
+    font-family: var(--font-body);
+    font-size: 12px;
+    line-height: 1.15;
+    color: var(--rebrand-card-accent);
+    white-space: nowrap;
 }
 
-.rebrand-definition-meta-line {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.35em;
-    margin-bottom: 10px;
-}
-
-.rebrand-definition-language {
-    font-size: 13px;
+.rebrand-definition-meta {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    align-self: center;
+    height: 28px;
+    font-family: var(--font-body);
+    font-size: 11px;
     font-weight: 600;
-    line-height: 1.3;
-    color: var(--accent-color);
-}
-
-.rebrand-definition-part-of-speech {
-    font-size: 13px;
-    font-style: italic;
-    line-height: 1.3;
-    color: var(--text-muted);
+    line-height: 1;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--rebrand-card-accent);
+    white-space: nowrap;
 }
 
 .rebrand-definition-body {
     margin: 0;
-    font-size: 14px;
-    line-height: 1.55;
-    color: var(--text-secondary);
+    font-size: 16px;
+    line-height: 1.45;
+    color: var(--text-primary);
     text-wrap: pretty;
 }
 
@@ -6801,6 +6810,30 @@ body.dark-mode .rebrand-definition-card {
 
 body.dark-mode #rebrand-onboarding .rebrand-definition-body .rebrand-definition-quote {
     color: #ffffff;
+}
+
+.rebrand-definition-divider {
+    margin: 14px 0 12px;
+    border: 0;
+    border-top: 1px solid rgba(26, 60, 52, 0.12);
+}
+
+body.dark-mode .rebrand-definition-divider {
+    border-top-color: rgba(255, 255, 255, 0.12);
+}
+
+.rebrand-definition-footnote {
+    margin: 0;
+    font-family: var(--font-body);
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-muted);
+    text-wrap: pretty;
+}
+
+.rebrand-definition-highlight {
+    color: var(--rebrand-card-accent);
+    font-weight: 600;
 }
 
 .rebrand-onboarding-continue-btn {
