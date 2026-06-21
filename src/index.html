@@ -1188,7 +1188,7 @@
                                 "facebook.com" blocks all of Facebook, not just specific pages.</span>
                         </span>
                     </label>
-                    <div class="tags-input-container">
+                    <div class="tags-input-container tags-input-stacked">
                         <div id="modal-websites-tags" class="tags-container"></div>
                         <div class="input-with-button websites-input-with-import">
                             <input type="text" id="modal-website-input" placeholder="e.g., facebook.com"
@@ -1280,24 +1280,58 @@
 
                 <div class="form-group">
                     <label id="override-difficulty-label">Exit Difficulty</label>
-                    <div class="override-type-row">
-                        <select id="override-type" class="form-select override-type-select">
-                            <option id="override-option-random-words" value="random-words">Random Words</option>
-                            <option id="override-option-gibberish" value="gibberish">Random Gibberish</option>
-                            <option id="override-option-custom" value="custom">Custom Text</option>
-                        </select>
-                        <div class="checkbox-option max-difficulty-checkbox-option" id="override-max-difficulty-wrap">
-                            <input type="checkbox" id="override-max-difficulty-checkbox">
-                            <span id="override-max-difficulty-label">Max difficulty</span>
+                    <div class="exit-difficulty-panel settings-panel" id="exit-difficulty-panel">
+                        <div class="exit-difficulty-rows settings-panel-rows">
+                            <div class="exit-difficulty-row settings-row" id="override-method-row">
+                                <div class="exit-difficulty-row-copy settings-row-copy">
+                                    <span class="exit-difficulty-row-label settings-row-label"
+                                        id="override-method-label">Method</span>
+                                </div>
+                                <div class="exit-difficulty-row-control settings-row-control">
+                                    <select id="override-type" class="form-select override-type-select">
+                                        <option id="override-option-random-words" value="random-words">Random Words</option>
+                                        <option id="override-option-gibberish" value="gibberish">Random Gibberish</option>
+                                        <option id="override-option-custom" value="custom">Custom Text</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="exit-difficulty-row settings-row" id="override-count-wrapper">
+                                <div class="exit-difficulty-row-copy settings-row-copy">
+                                    <span class="exit-difficulty-row-label settings-row-label"
+                                        id="override-count-label">Words to type</span>
+                                </div>
+                                <div class="exit-difficulty-row-control exit-difficulty-count-control">
+                                    <div class="override-count-stepper" id="override-count-stepper">
+                                        <button type="button" id="override-count-minus" class="override-count-step-btn"
+                                            aria-label="Decrease">−</button>
+                                        <input type="number" id="override-count" class="override-count-input form-input"
+                                            value="50" min="5" max="6600">
+                                        <button type="button" id="override-count-plus" class="override-count-step-btn"
+                                            aria-label="Increase">+</button>
+                                    </div>
+                                    <span class="exit-difficulty-time-estimate"
+                                        id="override-count-time-estimate">~0 min</span>
+                                </div>
+                            </div>
+                            <div class="exit-difficulty-row settings-row" id="override-max-difficulty-wrap">
+                                <div class="exit-difficulty-row-copy settings-row-copy">
+                                    <span class="exit-difficulty-row-label settings-row-label"
+                                        id="override-max-difficulty-label">Max difficulty</span>
+                                    <span class="exit-difficulty-row-hint settings-row-hint"
+                                        id="override-max-difficulty-hint">500 words</span>
+                                </div>
+                                <div class="exit-difficulty-row-control">
+                                    <label class="toggle-switch" for="override-max-difficulty-checkbox">
+                                        <input type="checkbox" id="override-max-difficulty-checkbox">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                    <div class="input-with-suffix" id="override-count-wrapper">
-                        <input type="number" id="override-count" class="form-input small" value="50" min="5" max="6600">
-                        <span class="input-suffix" id="override-total-characters-label">total characters</span>
-                    </div>
-                    <div id="override-preview-block" class="override-preview-block">
-                        <p id="override-preview-time-line" class="override-preview-time-line">Takes ~0 mins to type and will look something like:</p>
-                        <div id="override-preview-text" class="override-preview-text" title=""></div>
+                        <div id="override-preview-block" class="exit-difficulty-preview">
+                            <span class="exit-difficulty-preview-label" id="override-preview-label">Looks like</span>
+                            <div id="override-preview-text" class="override-preview-text" title=""></div>
+                        </div>
                     </div>
                     <textarea id="custom-override-text" class="form-textarea hidden"
                         placeholder="Enter your custom text (e.g., a motivational statement)"></textarea>

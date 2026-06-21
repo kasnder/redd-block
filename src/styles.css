@@ -2388,13 +2388,10 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
         width: calc(80px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay #override-count-wrapper .form-input.small{
+    body.ios:not(.ios-phone) .modal-overlay #blocklist-modal .override-count-input{
         width: calc(3.25rem * var(--ipad-s));
         min-width: calc(3.25rem * var(--ipad-s));
         max-width: calc(3.25rem * var(--ipad-s));
-        flex: 0 0 calc(3.25rem * var(--ipad-s));
-        padding-left: calc(8px * var(--ipad-s));
-        padding-right: calc(8px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
     }
 
@@ -2519,42 +2516,37 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
         height: calc(280px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-type-row{
-        gap: calc(16px * var(--ipad-s));
-        margin-bottom: calc(8px * var(--ipad-s));
+    body.ios:not(.ios-phone) .modal-overlay #blocklist-modal .exit-difficulty-panel .override-type-select{
+        min-width: calc(140px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-type-row .override-type-select{
-        max-width: calc(200px * var(--ipad-s));
+    body.ios:not(.ios-phone) .modal-overlay .exit-difficulty-preview{
+        padding: calc(10px * var(--ipad-s)) calc(14px * var(--ipad-s)) calc(12px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .max-difficulty-checkbox-option{
-        gap: calc(6px * var(--ipad-s));
+    body.ios:not(.ios-phone) .modal-overlay .exit-difficulty-preview-label{
+        font-size: calc(13px * var(--ipad-s));
+        margin-bottom: calc(4px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-count-step-btn{
+        min-width: calc(36px * var(--ipad-s));
+        font-size: calc(18px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-count-input{
+        width: calc(2.75rem * var(--ipad-s));
+        min-width: calc(2.75rem * var(--ipad-s));
+        max-width: calc(2.75rem * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .max-difficulty-checkbox-option span{
+    body.ios:not(.ios-phone) .modal-overlay .exit-difficulty-time-estimate{
+        font-size: calc(13px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .exit-difficulty-preview .override-preview-text{
         font-size: calc(15px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .max-difficulty-checkbox-option input[type="checkbox"]{
-        width: calc(20px * var(--ipad-s));
-        height: calc(20px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .override-preview-block{
-        margin-top: calc(10px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .override-preview-time-line{
-        font-size: calc(14px * var(--ipad-s));
-        margin-bottom: calc(6px * var(--ipad-s));
-    }
-
-    body.ios:not(.ios-phone) .modal-overlay .override-preview-text{
-        padding: calc(10px * var(--ipad-s)) calc(12px * var(--ipad-s));
-        font-size: calc(15px * var(--ipad-s));
-        border-radius: calc(8px * var(--ipad-s));
     }
 
     /* Override / pause challenge */
@@ -3331,7 +3323,41 @@ body.ios #settings-btn {
 }
 
 body.ios .blocklists-heading-controls {
-    display: contents !important;
+    display: flex !important;
+    align-items: center;
+    margin-left: auto;
+}
+
+body.ios .blocklists-section > .section-header #settings-toolbar-stack {
+    position: static;
+    top: auto;
+    right: auto;
+    margin-left: 0;
+    display: flex !important;
+    align-items: center;
+}
+
+body.ios .blocklists-section > .section-header {
+    padding-right: 0;
+    align-items: center;
+}
+
+body.ios .blocklists-section > .section-header #settings-btn-stack {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+}
+
+@media (max-width: 768px) {
+    body.ios .blocklists-section > .section-header #settings-btn-stack {
+        width: 32px;
+        height: 32px;
+    }
+}
+
+body.ios:not(.ios-phone) .blocklists-section > .section-header #settings-btn-stack {
+    width: 38px;
+    height: 38px;
 }
 
 body.ios #settings-toolbar-stack {
@@ -9902,6 +9928,97 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     opacity: 1;
 }
 
+/* Websites: tags on top, bordered input + Lists button on their own row below. */
+#blocklist-modal .tags-input-container.tags-input-stacked{
+    flex-direction: column;
+    align-items: stretch;
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding: 8px;
+    cursor: default;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: visible;
+}
+
+#blocklist-modal .tags-input-stacked:focus-within{
+    border-color: var(--input-border);
+    box-shadow: none;
+}
+
+#blocklist-modal .tags-input-stacked > .tags-container{
+    width: 100%;
+    flex: none;
+    cursor: text;
+}
+
+#blocklist-modal .tags-input-stacked > .tags-container:empty{
+    display: none;
+}
+
+#blocklist-modal .tags-input-stacked > .input-with-button{
+    width: 100%;
+    max-width: 100%;
+    flex: none;
+    min-width: 0;
+    box-sizing: border-box;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 8px;
+}
+
+#blocklist-modal .tags-input-stacked .form-input{
+    flex: 1 1 0%;
+    min-width: 0;
+    width: auto;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    background: var(--input-bg);
+    padding: 8px 12px;
+    box-sizing: border-box;
+    color: var(--text-primary);
+}
+
+#blocklist-modal .tags-input-stacked .form-input::placeholder{
+    color: var(--text-muted);
+    opacity: 1;
+}
+
+#blocklist-modal .tags-input-stacked .form-input:focus{
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
+}
+
+#blocklist-modal .tags-input-stacked .browse-btn{
+    flex: 0 0 auto;
+    align-self: stretch;
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    color: var(--text-primary);
+    border-radius: 8px;
+    padding: 8px 12px;
+    white-space: nowrap;
+}
+
+#blocklist-modal .tags-input-stacked .browse-btn:hover{
+    background: var(--button-bg);
+    color: white;
+    border-color: transparent;
+}
+
+#blocklist-modal .tags-input-stacked .browse-btn-caption{
+    display: inline;
+}
+
+body:not(.ios) #blocklist-modal .browse-btn-caption{
+    display: none;
+}
+
+body:not(.ios) #blocklist-modal .tags-input-stacked .browse-btn-caption{
+    display: inline;
+}
+
 .tags-input-container .form-input{
     flex: 1;
     min-width: 120px;
@@ -9949,6 +10066,7 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     right: 0;
     z-index: 1000;
     min-width: 200px;
+    max-height: min(280px, calc(100dvh - 160px));
     padding: 4px;
     border-radius: 8px;
     background: var(--panel-bg);
@@ -9957,6 +10075,15 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     display: flex;
     flex-direction: column;
     gap: 1px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
+}
+
+.websites-import-menu.websites-import-menu-fixed{
+    position: fixed;
+    z-index: 10050;
 }
 
 body.dark-mode .websites-import-menu{
@@ -10029,11 +10156,7 @@ body.dark-mode .websites-import-menu{
     border-color: transparent;
 }
 
-/* Blocklist modal: full-width stacked row on iOS; captions only on mobile (desktop stays icon-only). */
-body:not(.ios) #blocklist-modal .browse-btn-caption{
-    display: none;
-}
-
+/* Blocklist modal: iOS apps row uses full-width browse buttons; websites stacked row is side-by-side. */
 body.ios #blocklist-modal .tags-input-container {
     align-items: stretch;
 }
@@ -10048,7 +10171,7 @@ body.ios #blocklist-modal .tags-input-container > .tags-container:empty {
     display: none;
 }
 
-body.ios #blocklist-modal .tags-input-container > .input-with-button {
+body.ios #blocklist-modal .tags-input-container:not(.tags-input-stacked) > .input-with-button {
     flex: 1 1 100%;
     width: 100%;
     min-width: 0;
@@ -10058,19 +10181,42 @@ body.ios #blocklist-modal .tags-input-container > .input-with-button {
     gap: 6px;
 }
 
-body.ios #blocklist-modal .tags-input-container > .input-with-button .form-input {
+body.ios #blocklist-modal .tags-input-stacked > .input-with-button {
+    flex-direction: row;
+    align-items: stretch;
+    gap: 8px;
+}
+
+body.ios #blocklist-modal .tags-input-stacked > .input-with-button .form-input {
+    flex: 1 1 0%;
+    min-width: 0;
+    width: auto;
+}
+
+body.ios #blocklist-modal .tags-input-container:not(.tags-input-stacked) > .input-with-button .form-input {
     width: 100%;
     min-width: 0;
     flex: 0 0 auto;
     box-sizing: border-box;
 }
 
-body.ios #blocklist-modal .tags-input-container .browse-btn {
+body.ios #blocklist-modal .tags-input-container:not(.tags-input-stacked) .browse-btn {
     width: 100%;
     box-sizing: border-box;
     justify-content: center;
     gap: 8px;
     padding: 10px 12px;
+}
+
+body.ios #blocklist-modal .tags-input-stacked .browse-btn {
+    width: auto;
+    flex: 0 0 auto;
+    flex-shrink: 0;
+}
+
+body.handset-device #blocklist-modal .tags-input-stacked .browse-btn{
+    padding: 8px 10px;
+    gap: 6px;
 }
 
 body.ios #blocklist-modal .tags-input-container .browse-btn-caption {
@@ -10360,36 +10506,61 @@ body.handset-device .mobile-fullscreen-modal .modal-buttons{
    Handset full-screen modals ignore this and expand to the viewport width. */
 body:not(.handset-device) #blocklist-modal .modal-content{
     max-width: 500px;
-    overscroll-behavior-y: none;
-}
-
-body:not(.handset-device) #settings-modal .modal-content{
-    max-width: 520px;
-    --settings-control-width: 140px;
 }
 
 #blocklist-modal .modal-content{
+    display: flex;
+    flex-direction: column;
+    max-height: 95vh;
+    overflow: hidden;
     overscroll-behavior-y: none;
+    padding: 16px 24px 0;
+}
+
+#blocklist-modal #modal-title{
+    margin-top: 0;
+}
+
+#blocklist-modal .mobile-modal-scroll-body{
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+}
+
+body.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-content{
+    padding: 0;
+}
+
+/* Word count fits in 3 digits (max 500); keep the stepper compact on iOS. */
+body.ios #blocklist-modal .override-count-input {
+    width: 3.25rem;
+    min-width: 3.25rem;
+    max-width: 3.25rem;
 }
 
 #settings-modal .modal-content{
     --settings-control-width: 140px;
 }
 
-/* Popup-style blocklist modal on iPad only — handset full-screen modals handle safe area in .mobile-modal-header. */
-body.ios:not(.handset-device) #blocklist-modal{
-    padding-top: env(safe-area-inset-top, 20px);
+body:not(.handset-device) #settings-modal .modal-content{
+    max-width: 520px;
 }
 
-/* Word count fits in 3 digits (max 500); keep the field compact beside "total words". */
-body.ios #override-count-wrapper .form-input.small {
-    width: 3.25rem;
-    min-width: 3.25rem;
-    max-width: 3.25rem;
-    flex: 0 0 3.25rem;
-    padding-left: 8px;
-    padding-right: 8px;
-    text-align: center;
+/* Popup-style blocklist modal on iPad only — handset full-screen modals handle safe area in .mobile-modal-header. */
+body.ios:not(.handset-device) #blocklist-modal{
+    padding-top: env(safe-area-inset-top, 8px);
+}
+
+body.handset-device #blocklist-modal.mobile-fullscreen-modal .mobile-modal-header{
+    padding-top: calc(env(safe-area-inset-top, 0px) + 4px);
+    padding-bottom: 8px;
+}
+
+body.handset-device #blocklist-modal.mobile-fullscreen-modal .mobile-modal-scroll-body{
+    padding-top: 12px;
+    padding-bottom: 16px;
 }
 
 .modal-content h3{
@@ -12622,7 +12793,31 @@ body.handset-device #settings-modal.mobile-fullscreen-modal .settings-section-he
 }
 
 #blocklist-modal .modal-buttons{
-    margin-top: 12px;
+    flex-shrink: 0;
+    margin: 0 -24px 0;
+    padding: 12px 24px 24px;
+    border-top: 1px solid var(--border-color-medium);
+    background: #ffffff;
+    z-index: 2;
+}
+
+body.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-buttons{
+    margin: 0;
+    padding:
+        12px
+        max(18px, env(safe-area-inset-right, 0px))
+        calc(env(safe-area-inset-bottom, 0px) + 12px)
+        max(18px, env(safe-area-inset-left, 0px));
+    background: #ffffff;
+    border-top: 1px solid var(--border-color-medium);
+}
+
+body.dark-mode #blocklist-modal .modal-buttons{
+    background: var(--redd-card);
+}
+
+body.dark-mode.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-buttons{
+    border-top-color: var(--border-color-medium);
 }
 
 .checkbox-option{
@@ -12642,96 +12837,169 @@ body.handset-device #settings-modal.mobile-fullscreen-modal .settings-section-he
 }
 
 /* Override type row: dropdown + max difficulty checkbox */
-.override-type-row{
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    margin-bottom: 8px;
+#blocklist-modal .exit-difficulty-panel + #custom-override-text:not(.hidden){
+    margin-top: 8px;
 }
 
-.override-type-row .override-type-select{
-    max-width: 200px;
-    flex-shrink: 0;
+#blocklist-modal .exit-difficulty-panel{
+    margin-top: 8px;
+    background: #ffffff;
+    overflow: hidden;
 }
 
-.max-difficulty-checkbox-option{
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 15px;
-    color: var(--text-secondary);
-    line-height: 1.4;
-    cursor: default;
+body.dark-mode #blocklist-modal .exit-difficulty-panel{
+    background: var(--redd-card);
 }
 
-/* Style "Max difficulty" text like "total characters" but bold; text cursor like copyable text */
-.max-difficulty-checkbox-option span{
-    text-transform: none;
-    font-size: 15px;
+#blocklist-modal .exit-difficulty-preview{
+    background: var(--redd-warm-grey);
+    border-radius: 0 0 11px 11px;
+}
+
+#blocklist-modal .exit-difficulty-row-label{
     font-weight: 600;
-    color: var(--text-secondary);
-    cursor: text;
 }
 
-.max-difficulty-checkbox-option input[type="checkbox"]{
-    margin: 0;
-    cursor: pointer;
-    accent-color: var(--accent-color);
-    width: 20px;
-    height: 20px;
+#blocklist-modal .exit-difficulty-row-control .override-type-select{
+    min-width: 140px;
+    width: auto;
+    padding-top: 8px;
+    padding-bottom: 8px;
+}
+
+.exit-difficulty-count-control{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: nowrap;
+}
+
+.exit-difficulty-time-estimate{
+    font-size: 13px;
+    color: var(--text-muted);
+    white-space: nowrap;
     flex-shrink: 0;
 }
 
-/* Count input non-interactive when max difficulty (not greyed out) */
-.override-count-max-mode,
-.override-count-max-mode input{
-    pointer-events: none;
+.override-count-stepper{
+    display: inline-flex;
+    align-items: stretch;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--input-bg);
 }
 
-/* Keep same dimensions when greyed out (avoid jump from border: none on .form-input-disabled) */
-.override-count-max-mode .form-input.form-input-disabled{
-    border: 1px solid rgba(128, 128, 128, 0.2);
-    box-sizing: border-box;
-}
-
-.max-difficulty-checkbox-option.max-difficulty-disabled{
-    pointer-events: none;
-    opacity: 0.7;
-    cursor: default;
-}
-
-/* When blocklist has active block or schedule: grey out override type row and character count row */
-.override-type-row.blocklist-active-locked,
-#override-count-wrapper.blocklist-active-locked{
-    pointer-events: none;
-    opacity: 0.7;
-}
-
-#override-count-wrapper.blocklist-active-locked .form-input,
-#override-count-wrapper.blocklist-active-locked .input-suffix{
-    cursor: default;
-}
-
-/* Override difficulty: dynamic time + preview (one line, truncate with ...) */
-.override-preview-block{
-    margin-top: 10px;
-    width: 100%;
-}
-
-.override-preview-time-line{
-    font-size: 14px;
+.override-count-step-btn{
+    border: none;
+    background: transparent;
+    padding: 0 10px;
+    font-size: 18px;
+    line-height: 1;
     color: var(--text-secondary);
-    margin: 0 0 6px 0;
-    line-height: 1.4;
+    cursor: pointer;
+    min-width: 36px;
+}
+
+.override-count-step-btn:hover:not(:disabled){
+    background: var(--element-hover-bg);
+    color: var(--text-primary);
+}
+
+.override-count-step-btn:disabled{
+    opacity: 0.45;
+    cursor: default;
+}
+
+.override-count-input{
+    width: 2.75rem;
+    min-width: 2.75rem;
+    max-width: 2.75rem;
+    margin: 0;
+    padding: 7px 4px;
+    border: none;
+    border-left: 1px solid var(--input-border);
+    border-right: 1px solid var(--input-border);
+    border-radius: 0;
+    text-align: center;
+    font-size: 15px;
+    box-shadow: none;
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+.override-count-input:focus{
+    box-shadow: none;
+}
+
+.override-count-input::-webkit-outer-spin-button,
+.override-count-input::-webkit-inner-spin-button{
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.exit-difficulty-preview{
+    padding: 10px 14px 12px;
+    border-top: 1px solid var(--border-color-medium);
+}
+
+.exit-difficulty-preview-label{
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+/* Count stepper non-interactive when max difficulty is on */
+.override-count-max-mode,
+.override-count-max-mode .override-count-input{
+    pointer-events: none;
+}
+
+.override-count-max-mode .override-count-input.form-input-disabled{
+    border-left-color: var(--input-border);
+    border-right-color: var(--input-border);
+    opacity: 0.65;
+}
+
+.exit-difficulty-time-estimate.time-estimate-disabled{
+    opacity: 0.65;
+}
+
+#override-max-difficulty-wrap.max-difficulty-disabled{
+    pointer-events: none;
+    opacity: 0.7;
+    cursor: default;
+}
+
+/* When blocklist has active block or schedule: grey out override panel rows */
+#override-method-row.blocklist-active-locked,
+#override-count-wrapper.blocklist-active-locked,
+#override-max-difficulty-wrap.blocklist-active-locked,
+#override-preview-block.blocklist-active-locked{
+    pointer-events: none;
+    opacity: 0.7;
+}
+
+#override-count-wrapper.blocklist-active-locked .override-count-input,
+#override-count-wrapper.blocklist-active-locked .exit-difficulty-time-estimate{
+    cursor: default;
+}
+
+/* Override difficulty: preview text (truncate with ...) */
+.exit-difficulty-preview .override-preview-text{
+    margin-top: 0;
+    width: 100%;
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
 }
 
 .override-preview-text{
     width: 100%;
     box-sizing: border-box;
-    background: var(--redd-warm-grey);
     color: var(--text-primary);
-    padding: 10px 12px;
-    border-radius: 8px;
     font-family: monospace;
     font-size: 15px;
     line-height: 1.4;
@@ -14027,6 +14295,57 @@ body.ios.ios-phone .modal-overlay .websites-import-menu-item svg{
     font-size: 17px;
     font-weight: bold;
     color: hsl(215, 20%, 50%);
+}
+
+/* Edit Room — full-width emoji/color grids on mobile */
+body.handset-device #blocklist-modal .emoji-picker-container,
+body.handset-device #blocklist-modal .color-picker-container{
+    width: 100%;
+}
+
+body.handset-device #blocklist-modal .emoji-swatches,
+body.handset-device #blocklist-modal .color-swatches{
+    display: grid;
+    grid-template-columns: repeat(9, minmax(0, 1fr));
+    gap: 6px;
+    width: 100%;
+}
+
+body.handset-device #blocklist-modal .emoji-swatch,
+body.handset-device #blocklist-modal .color-swatches .color-swatch{
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+    min-height: 0;
+    border-radius: 12px;
+}
+
+body.handset-device #blocklist-modal .emoji-swatch{
+    font-size: clamp(18px, 4.8vw, 26px);
+}
+
+body.handset-device #blocklist-modal .custom-emoji-wrapper{
+    display: block;
+    width: 100%;
+    min-width: 0;
+}
+
+body.handset-device #blocklist-modal .custom-emoji-swatch{
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+}
+
+body.handset-device #blocklist-modal .custom-emoji-swatch .custom-icon{
+    font-size: clamp(16px, 4.2vw, 22px);
+}
+
+body.handset-device #blocklist-modal .color-swatches .color-swatch.selected::after{
+    font-size: clamp(12px, 3.2vw, 16px);
+}
+
+body.handset-device #blocklist-modal .custom-swatch .custom-icon{
+    font-size: clamp(14px, 3.8vw, 20px);
 }
 
 /* Blocklist entry emoji */
