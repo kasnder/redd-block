@@ -1804,6 +1804,10 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack svg{
         font-size: 14px;
     }
 
+    body.ios:not(.ios-phone) .main-content .quick-select-row .time-label{
+        font-size: 15px;
+    }
+
     body.ios:not(.ios-phone) .main-content .duration-input{
         width: 68px;
         padding: 8px 8px;
@@ -1814,15 +1818,15 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack svg{
         font-size: 16px;
     }
 
-    body.ios:not(.ios-phone) .main-content .duration-quick-btn{
-        padding: 8px 12px;
-        font-size: 14px;
+    body.ios:not(.ios-phone) .main-content .quick-select-row .duration-quick-btn{
+        padding: 9px 13px;
+        font-size: 16px;
         border-radius: 8px;
     }
 
-    body.ios:not(.ios-phone) .main-content .duration-quick-btn-always svg{
-        width: 14px;
-        height: 14px;
+    body.ios:not(.ios-phone) .main-content .quick-select-row .duration-quick-btn-always svg{
+        width: 15px;
+        height: 15px;
     }
 
     body.ios:not(.ios-phone) .main-content .always-on-message{
@@ -4418,6 +4422,20 @@ body.dark-mode .day-row.weekend{
     margin-bottom: 12px;
 }
 
+.quick-select-row .time-label{
+    font-size: 14px;
+}
+
+.quick-select-row .duration-quick-btn{
+    font-size: 15px;
+    padding: 7px 11px;
+}
+
+.quick-select-row .duration-quick-btn-always svg{
+    width: 13px;
+    height: 13px;
+}
+
 .time-picker-group{
     display: flex;
     flex-direction: column;
@@ -6431,7 +6449,7 @@ body.ios .selection-prompt {
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    gap: 8px;
+    gap: 5px;
     min-width: 0;
     font-weight: 600;
     font-size: 17px;
@@ -13480,7 +13498,6 @@ body.ios.ios-phone .schedule-segments:has(.schedule-segment:nth-child(4))::-webk
 /* Blocklist entry emoji */
 .blocklist-emoji{
     font-size: 17px;
-    margin-right: 3px;
 }
 
 /* Undo Toast */

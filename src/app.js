@@ -6736,7 +6736,7 @@ async function loadData() {
             mode: 'blocklist',
             // First colour in the palette (matches the openBlocklistModal default).
             color: '#B8D1DE',
-            emoji: '🚫',
+            emoji: '📱',
             websites: ['instagram.com', 'youtube.com', 'reddit.com'],
             apps: [],
             iosScreenTimeSelection: null,
@@ -8372,7 +8372,7 @@ function setupModalListeners() {
         const selectedSwatch = document.querySelector('.color-swatch.selected');
         const color = selectedSwatch ? selectedSwatch.dataset.color : null;
         const selectedEmoji = document.querySelector('.emoji-swatch.selected');
-        const emoji = selectedEmoji ? selectedEmoji.dataset.emoji : '🚫';
+        const emoji = selectedEmoji ? selectedEmoji.dataset.emoji : '📱';
 
         const showItemDetails = document.getElementById('show-item-details-checkbox').checked;
         // Preserve the blocklist's existing schedule visibility (toggled via the chips above the
@@ -14665,7 +14665,7 @@ function openBlocklistModal(blocklist = null) {
             emojiToSelect = emojiSwatches[0].dataset.emoji;
         } else {
             // Fallback default
-            emojiToSelect = '🚫';
+            emojiToSelect = '📱';
         }
     }
 
