@@ -10,7 +10,7 @@ configs:
 settingGroups:
   app:
     base:
-      PRODUCT_NAME: Fristed
+      PRODUCT_NAME: Rum
       PRODUCT_BUNDLE_IDENTIFIER: com.reddblock
 targetTemplates:
   app:

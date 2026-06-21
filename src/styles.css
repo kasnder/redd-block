@@ -6857,7 +6857,7 @@ body.ios .eula-welcome-title-ios {
 
 body.ios .eula-mobile-subtitle {
     display: block;
-    margin: 0 0 0;
+    margin: 8px 0 12px;
     max-width: none;
     width: 100%;
     font-size: 14px;
@@ -6948,7 +6948,7 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
     margin-bottom: 8px;
 }
 
-.welcome-fristed-logo {
+.welcome-rum-logo {
     display: block;
     width: 52px;
     height: auto;
@@ -6970,7 +6970,7 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
     text-align: left;
 }
 
-.fristed-definition-pill {
+.rum-definition-pill {
     display: inline-flex;
     align-items: center;
     flex-wrap: wrap;
@@ -6985,23 +6985,23 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
     text-wrap: balance;
 }
 
-.fristed-definition-word {
+.rum-definition-word {
     font-weight: 600;
 }
 
-.fristed-definition-pronunciation {
+.rum-definition-pronunciation {
     margin-left: 0.25em;
     font-weight: 400;
     font-style: italic;
     opacity: 0.8;
 }
 
-.fristed-definition-sep {
+.rum-definition-sep {
     margin: 0 0.35em;
     opacity: 0.55;
 }
 
-body.dark-mode .fristed-definition-pill {
+body.dark-mode .rum-definition-pill {
     background: rgba(255, 255, 255, 0.08);
 }
 
@@ -7444,7 +7444,7 @@ body.dark-mode .welcome-demo-toggle:hover{
         gap: 10px;
     }
 
-    .welcome-fristed-logo {
+    .welcome-rum-logo {
         width: 44px;
     }
 

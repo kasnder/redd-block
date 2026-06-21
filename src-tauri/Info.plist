@@ -5,8 +5,8 @@
 	<key>LSUIElement</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Fristed controls Safari and Chromium-based browsers to redirect blocked websites to a block page while a block is active.</string>
+	<string>Rum controls Safari and Chromium-based browsers to redirect blocked websites to a block page while a block is active.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Fristed uses the microphone to record voice messages for schedule start overlays.</string>
+	<string>Rum uses the microphone to record voice messages for schedule start overlays.</string>
 </dict>
 </plist>

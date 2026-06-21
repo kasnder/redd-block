@@ -14,7 +14,7 @@ This is a planning/analysis doc — no code edits proposed unless you choose opt
 
 Trace: NSIS installer → first launch → frontend full-screen onboarding → Rust migration.
 
-1. **Installer** (`src-tauri/tauri.conf.json` + `src-tauri/windows/hooks.nsh`): Tauri's NSIS bundle in default mode **overwrites** v1.x files. It does **not** run the v1.x uninstaller and has **no pre-install hook**. The pre-uninstall hook in `hooks.nsh:1-39` only fires during *uninstall*, not upgrade. Installer launches `redd-block.exe` at the end (or the user does, if they unchecked "Run Fristed" on the finish page).
+1. **Installer** (`src-tauri/tauri.conf.json` + `src-tauri/windows/hooks.nsh`): Tauri's NSIS bundle in default mode **overwrites** v1.x files. It does **not** run the v1.x uninstaller and has **no pre-install hook**. The pre-uninstall hook in `hooks.nsh:1-39` only fires during *uninstall*, not upgrade. Installer launches `redd-block.exe` at the end (or the user does, if they unchecked "Run Rum" on the finish page).
 2. **App startup** (`src-tauri/src/lib.rs::run()`): the Rust `setup` block calls `commands::enforcement::auto_start`, which checks `migration_pending_sync()` and starts the enforcer **paused** if v1.x residue is on disk. Without this, the enforcer would fire 30-60 s after launch and kill the user's browser before they had a chance to install the ReDD Focus extension.
 3. **Frontend** (`src/app.js::runDesktopOnboarding`): on every non-iOS launch, calls the lightweight `migration_pending` check. Two outcomes:
    - **Pending** → show full-screen `#migration-onboarding` overlay in **"pre"** phase (welcome card + Continue button). The main UI is gated until the user dismisses the overlay.
@@ -42,10 +42,10 @@ npm run tauri -- build --debug --bundles nsis
 # inject residue first if you want to simulate v1.x upgrade
 scripts/test-migration.ps1 inject
 # install
-src-tauri/target/debug/bundle/nsis/Fristed_<ver>_x64-setup.exe
-# Tauri auto-launches at install end (finish-page "Run Fristed").
+src-tauri/target/debug/bundle/nsis/Rum_<ver>_x64-setup.exe
+# Tauri auto-launches at install end (finish-page "Run Rum").
 # Expect:
-#   1. Full-screen "Welcome to Fristed 2.0" overlay (not the main UI)
+#   1. Full-screen "Welcome to Rum 2.0" overlay (not the main UI)
 #   2. Click Continue → UAC fires
 #   3. Accept → overlay swaps to post-cleanup checklist with per-browser buttons
 #   4. Click "I've installed it" → main UI shows, enforcer resumes
@@ -128,16 +128,16 @@ Move cleanup into a `NSIS_HOOK_PREINSTALL` macro in `windows/hooks.nsh` that cal
 # settings.eulaAcceptedAt, settings.onboardingComplete must
 # round-trip identically.
 scripts\test-migration.ps1 inject
-$pre = Get-Content 'C:\ProgramData\Fristed\redd-block-data.json' -Raw | ConvertFrom-Json
+$pre = Get-Content 'C:\ProgramData\Rum\redd-block-data.json' -Raw | ConvertFrom-Json
 
 # build + install
 npm run tauri -- build --debug --bundles nsis
-& "src-tauri\target\debug\bundle\nsis\Fristed_*_x64-setup.exe"
+& "src-tauri\target\debug\bundle\nsis\Rum_*_x64-setup.exe"
 # Tauri's installer launches the app at end. UAC should fire.
 
 # verify
 scripts\test-migration.ps1 check                    # all (absent)
-$post = Get-Content 'C:\ProgramData\Fristed\redd-block-data.json' -Raw | ConvertFrom-Json
+$post = Get-Content 'C:\ProgramData\Rum\redd-block-data.json' -Raw | ConvertFrom-Json
 # preserved (must match):
 ($post.blocklists | ConvertTo-Json -Depth 10) -eq ($pre.blocklists | ConvertTo-Json -Depth 10)
 ($post.schedules | ConvertTo-Json -Depth 10) -eq ($pre.schedules | ConvertTo-Json -Depth 10)

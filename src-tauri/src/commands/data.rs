@@ -186,73 +186,68 @@ fn get_shared_helper_state_path() -> PathBuf {
 }
 
 #[cfg(target_os = "windows")]
-fn get_windows_shared_dirs() -> (PathBuf, PathBuf) {
+fn get_windows_primary_shared_dir() -> PathBuf {
     let program_data = std::env::var("PROGRAMDATA")
         .unwrap_or_else(|_| "C:\\ProgramData".to_string());
-    let root = PathBuf::from(program_data);
-    (root.join("Fristed"), root.join("ReDD Block"))
+    PathBuf::from(program_data).join("Rum")
 }
 
 #[cfg(target_os = "windows")]
-fn get_windows_fristed_shared_data_path() -> PathBuf {
-    let (fristed_dir, _) = get_windows_shared_dirs();
-    fristed_dir.join("redd-block-data.json")
+fn get_windows_legacy_shared_dirs() -> [PathBuf; 2] {
+    let program_data = std::env::var("PROGRAMDATA")
+        .unwrap_or_else(|_| "C:\\ProgramData".to_string());
+    let root = PathBuf::from(program_data);
+    [root.join("Rum"), root.join("ReDD Block")]
 }
 
 #[cfg(target_os = "windows")]
 fn get_windows_legacy_shared_data_path() -> PathBuf {
-    let (_, legacy_dir) = get_windows_shared_dirs();
-    legacy_dir.join("redd-block-data.json")
-}
-
-#[cfg(target_os = "windows")]
-fn get_windows_fristed_helper_state_path() -> PathBuf {
-    let (fristed_dir, _) = get_windows_shared_dirs();
-    fristed_dir.join("helper-state.json")
+    get_windows_legacy_shared_dirs()[1].join("redd-block-data.json")
 }
 
 #[cfg(target_os = "windows")]
 fn get_windows_legacy_helper_state_path() -> PathBuf {
-    let (_, legacy_dir) = get_windows_shared_dirs();
-    legacy_dir.join("helper-state.json")
+    get_windows_legacy_shared_dirs()[1].join("helper-state.json")
 }
 
 #[cfg(target_os = "windows")]
 fn migrate_windows_shared_storage_copy() {
-    let (fristed_dir, legacy_dir) = get_windows_shared_dirs();
+    let primary_dir = get_windows_primary_shared_dir();
 
-    if !legacy_dir.exists() {
-        return;
-    }
-
-    if let Err(e) = fs::create_dir_all(&fristed_dir) {
+    if let Err(e) = fs::create_dir_all(&primary_dir) {
         log::warn!(
             "windows shared storage migration: failed to create {}: {e}",
-            fristed_dir.display()
+            primary_dir.display()
         );
         return;
     }
 
-    for name in ["redd-block-data.json", "helper-state.json"] {
-        let src = legacy_dir.join(name);
-        let dst = fristed_dir.join(name);
-        if !src.exists() || dst.exists() {
+    for legacy_dir in get_windows_legacy_shared_dirs() {
+        if !legacy_dir.exists() {
             continue;
         }
-        match fs::copy(&src, &dst) {
-            Ok(_) => {
-                log::info!(
-                    "windows shared storage migration: copied {} -> {}",
-                    src.display(),
-                    dst.display()
-                );
+
+        for name in ["redd-block-data.json", "helper-state.json"] {
+            let src = legacy_dir.join(name);
+            let dst = primary_dir.join(name);
+            if !src.exists() || dst.exists() {
+                continue;
             }
-            Err(e) => {
-                log::warn!(
-                    "windows shared storage migration: failed to copy {} -> {}: {e}",
-                    src.display(),
-                    dst.display()
-                );
+            match fs::copy(&src, &dst) {
+                Ok(_) => {
+                    log::info!(
+                        "windows shared storage migration: copied {} -> {}",
+                        src.display(),
+                        dst.display()
+                    );
+                }
+                Err(e) => {
+                    log::warn!(
+                        "windows shared storage migration: failed to copy {} -> {}: {e}",
+                        src.display(),
+                        dst.display()
+                    );
+                }
             }
         }
     }
@@ -335,8 +330,7 @@ pub(crate) fn get_data_path(app: &AppHandle) -> PathBuf {
 fn get_shared_dir() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
-        let (fristed_dir, _) = get_windows_shared_dirs();
-        fristed_dir
+        get_windows_primary_shared_dir()
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -647,8 +641,10 @@ pub fn wipe_user_data(app: &AppHandle) {
 
     #[cfg(target_os = "windows")]
     {
-        files.push(get_windows_legacy_shared_data_path());
-        files.push(get_windows_legacy_helper_state_path());
+        for legacy_dir in get_windows_legacy_shared_dirs() {
+            files.push(legacy_dir.join("redd-block-data.json"));
+            files.push(legacy_dir.join("helper-state.json"));
+        }
     }
 
     #[cfg(target_os = "macos")]
