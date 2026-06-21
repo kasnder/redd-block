@@ -18624,7 +18624,7 @@ const SETTINGS_TRANSLATIONS = {
         settingsEnforcementLockedTooltip: 'To change this setting, first stop all active blocks.',
         settingsDiagnosticsLabel: 'Something not working?',
         onboardingOpenSourceFootnote:
-            'ReDD Block is open-source and built by the Reduce Digital Distraction Project at (reddfocus.org). It is based on our 10+ years of research at the University of Oxford.',
+            'Developed by the Reduce Digital Distraction Project, with researchers at the University of Oxford and University of Maastricht. ReDD is a not-for-profit creating open-source digital focus tools.',
         settingsSetupBtn: 'Setup',
         settingsDiagnosticsBtn: 'Diagnostics',
         diagnosticsLoadingBtn: 'Loading…',
@@ -19354,7 +19354,7 @@ const SETTINGS_TRANSLATIONS = {
         settingsEnforcementLockedTooltip: 'For at ændre denne indstilling skal du først stoppe alle aktive blokeringer.',
         settingsDiagnosticsLabel: 'Virker noget ikke?',
         onboardingOpenSourceFootnote:
-            'ReDD Block er open source og bygget af Reduce Digital Distraction Project på (reddfocus.org). Det bygger på mere end 10 års forskning ved University of Oxford.',
+            'Udviklet af Reduce Digital Distraction Project sammen med forskere ved University of Oxford og Maastricht University. ReDD er en non-profit, der skaber open source digitale fokusværktøjer.',
         settingsSetupBtn: 'Opsætning',
         settingsDiagnosticsBtn: 'Diagnostik',
         diagnosticsLoadingBtn: 'Indlæser…',
@@ -20076,6 +20076,32 @@ function applyRumDefinitionPills() {
     });
 }
 
+function applyRumDefinitionCardContent(ids, { hiddenForDanish = false } = {}) {
+    if (hiddenForDanish) {
+        const show = getSettingsLanguage() !== 'da';
+        if (ids.card) {
+            const card = document.getElementById(ids.card);
+            if (card) card.classList.toggle('hidden', !show);
+        }
+        if (!show) return;
+    }
+
+    const word = document.getElementById(ids.word);
+    if (word) word.textContent = tSettings('rebrandOnboardingWord');
+
+    const pronunciation = document.getElementById(ids.pronunciation);
+    if (pronunciation) pronunciation.textContent = tSettings('rebrandOnboardingPronunciationHtml');
+
+    const meta = document.getElementById(ids.meta);
+    if (meta) meta.textContent = tSettings('rebrandOnboardingMetaHtml');
+
+    const definition = document.getElementById(ids.definition);
+    if (definition) definition.innerHTML = tSettings('rebrandOnboardingDefinitionHtml');
+
+    const footnote = document.getElementById(ids.footnote);
+    if (footnote) footnote.innerHTML = tSettings('rebrandOnboardingFootnoteHtml');
+}
+
 function applyRebrandOnboardingLanguage() {
     const title = document.getElementById('rebrand-onboarding-title');
     if (title) title.innerHTML = tSettings('rebrandOnboardingTitleHtml');
@@ -20083,20 +20109,13 @@ function applyRebrandOnboardingLanguage() {
     const subtitle = document.getElementById('rebrand-onboarding-subtitle');
     if (subtitle) subtitle.textContent = tSettings('rebrandOnboardingSubtitle');
 
-    const word = document.getElementById('rebrand-onboarding-word');
-    if (word) word.textContent = tSettings('rebrandOnboardingWord');
-
-    const pronunciation = document.getElementById('rebrand-onboarding-pronunciation');
-    if (pronunciation) pronunciation.textContent = tSettings('rebrandOnboardingPronunciationHtml');
-
-    const meta = document.getElementById('rebrand-onboarding-meta');
-    if (meta) meta.textContent = tSettings('rebrandOnboardingMetaHtml');
-
-    const definition = document.getElementById('rebrand-onboarding-definition');
-    if (definition) definition.innerHTML = tSettings('rebrandOnboardingDefinitionHtml');
-
-    const footnote = document.getElementById('rebrand-onboarding-footnote');
-    if (footnote) footnote.innerHTML = tSettings('rebrandOnboardingFootnoteHtml');
+    applyRumDefinitionCardContent({
+        word: 'rebrand-onboarding-word',
+        pronunciation: 'rebrand-onboarding-pronunciation',
+        meta: 'rebrand-onboarding-meta',
+        definition: 'rebrand-onboarding-definition',
+        footnote: 'rebrand-onboarding-footnote',
+    });
 
     const continueBtn = document.getElementById('rebrand-onboarding-continue-btn');
     if (continueBtn) continueBtn.textContent = tSettings('rebrandOnboardingContinueBtn');
@@ -20156,6 +20175,15 @@ function applyEulaOnboardingLanguage() {
         backBtn.textContent = tSettings('eulaBackBtn');
         backBtn.classList.toggle('hidden', isIOS);
     }
+
+    applyRumDefinitionCardContent({
+        card: 'eula-onboarding-definition-card',
+        word: 'eula-onboarding-word',
+        pronunciation: 'eula-onboarding-pronunciation',
+        meta: 'eula-onboarding-meta',
+        definition: 'eula-onboarding-definition',
+        footnote: 'eula-onboarding-footnote',
+    }, { hiddenForDanish: true });
 }
 
 /** Safari FDA onboarding — same layout/copy pattern as the EULA screen. */
@@ -20824,6 +20852,7 @@ function applySettingsLanguage() {
     applySafariFdaOnboardingLanguage();
     applyRumDefinitionPills();
     setText('ios-screentime-onboarding-title', tSettings('welcomeOnboardingTitle'));
+    setText('ios-screentime-onboarding-note', tSettings('eulaProjectBlurb'));
 
     if (migrationOnboardingActive && lastMigrationBrowserState) {
         renderBrowserInstallButtons(lastMigrationBrowserState, { force: true });
