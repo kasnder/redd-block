@@ -17631,13 +17631,14 @@ function renderBlocklists() {
         const selectedStyle = isSelected
             ? `style="border-top-color: ${accent}; border-right-color: ${accent}; border-bottom-color: ${accent}; border-left-width: 0; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);"`
             : '';
-
-        // Dim if something is selected but this one isn't
-        const isDimmed = selectedBlocklistId && !isSelected;
-        const dimmedClass = isDimmed ? ' dimmed' : '';
+        const enteringChipColor = getEnteringChipColor(accent);
+        const enteringChip = isSelected
+            ? `<span class="blocklist-entering-chip" style="background-color: ${enteringChipColor}; color: ${getContrastTextColor(enteringChipColor)}">${tSettings('blocklistEnteringChip')}</span>`
+            : '';
 
         return `
-      <div class="blocklist-card${activeClass}${selectedClass}${dimmedClass}" data-id="${bl.id}" data-active="${isActive}" ${selectedStyle}>
+      <div class="blocklist-card${activeClass}${selectedClass}" data-id="${bl.id}" data-active="${isActive}" ${selectedStyle}>
+        ${enteringChip}
         <div class="blocklist-stripe" style="background: ${borderColor}"></div>
         <div class="blocklist-info">
           <div class="blocklist-name">
@@ -18277,45 +18278,134 @@ function cleanUrlForDisplay(url) {
         .replace(/\/$/, '');           // Remove trailing slash
 }
 
+// Parse #rgb / #rrggbb into { r, g, b } or null.
+function parseRgbFromColorString(color) {
+    if (!color || typeof color !== 'string') return null;
+
+    if (color.startsWith('#')) {
+        const hex = color.slice(1);
+        if (hex.length === 3) {
+            return {
+                r: parseInt(hex[0] + hex[0], 16),
+                g: parseInt(hex[1] + hex[1], 16),
+                b: parseInt(hex[2] + hex[2], 16),
+            };
+        }
+        if (hex.length >= 6) {
+            return {
+                r: parseInt(hex.slice(0, 2), 16),
+                g: parseInt(hex.slice(2, 4), 16),
+                b: parseInt(hex.slice(4, 6), 16),
+            };
+        }
+        return null;
+    }
+
+    if (color.startsWith('rgb')) {
+        const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        if (!match) return null;
+        return {
+            r: parseInt(match[1], 10),
+            g: parseInt(match[2], 10),
+            b: parseInt(match[3], 10),
+        };
+    }
+
+    return null;
+}
+
+function rgbToHex(r, g, b) {
+    const clamp = (value) => Math.max(0, Math.min(255, Math.round(value)));
+    return `#${[clamp(r), clamp(g), clamp(b)].map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function rgbToHsl(r, g, b) {
+    const rn = r / 255;
+    const gn = g / 255;
+    const bn = b / 255;
+    const max = Math.max(rn, gn, bn);
+    const min = Math.min(rn, gn, bn);
+    const lightness = (max + min) / 2;
+    let hue = 0;
+    let saturation = 0;
+
+    if (max !== min) {
+        const delta = max - min;
+        saturation = lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+        switch (max) {
+            case rn:
+                hue = ((gn - bn) / delta + (gn < bn ? 6 : 0)) / 6;
+                break;
+            case gn:
+                hue = ((bn - rn) / delta + 2) / 6;
+                break;
+            default:
+                hue = ((rn - gn) / delta + 4) / 6;
+        }
+    }
+
+    return { h: hue * 360, s: saturation * 100, l: lightness * 100 };
+}
+
+function hslToRgb(h, s, l) {
+    const hue = ((h % 360) + 360) % 360 / 360;
+    const saturation = Math.max(0, Math.min(100, s)) / 100;
+    const lightness = Math.max(0, Math.min(100, l)) / 100;
+
+    if (saturation === 0) {
+        const gray = lightness * 255;
+        return [gray, gray, gray];
+    }
+
+    const q = lightness < 0.5
+        ? lightness * (1 + saturation)
+        : lightness + saturation - lightness * saturation;
+    const p = 2 * lightness - q;
+    const hueToRgb = (t) => {
+        let value = t;
+        if (value < 0) value += 1;
+        if (value > 1) value -= 1;
+        if (value < 1 / 6) return p + (q - p) * 6 * value;
+        if (value < 1 / 2) return q;
+        if (value < 2 / 3) return p + (q - p) * (2 / 3 - value) * 6;
+        return p;
+    };
+
+    return [
+        hueToRgb(hue + 1 / 3) * 255,
+        hueToRgb(hue) * 255,
+        hueToRgb(hue - 1 / 3) * 255,
+    ];
+}
+
+function getRelativeLuminance(r, g, b) {
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+}
+
+/** Room accent on the ENTERING chip — darkens faded pastels while keeping the hue. */
+function getEnteringChipColor(accentColor) {
+    const rgb = parseRgbFromColorString(accentColor);
+    if (!rgb) return accentColor || '#667eea';
+
+    const luminance = getRelativeLuminance(rgb.r, rgb.g, rgb.b);
+    if (luminance <= 0.42) return accentColor;
+
+    const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b);
+    const fadeAmount = Math.min(1, (luminance - 0.42) / 0.45);
+    const targetLightness = Math.max(36, l - fadeAmount * Math.max(0, l - 40));
+    const targetSaturation = Math.min(100, s + fadeAmount * 18);
+    const [r, g, b] = hslToRgb(h, targetSaturation, targetLightness);
+    return rgbToHex(r, g, b);
+}
+
 // Get contrasting text color (black or white) based on background color
 function getContrastTextColor(backgroundColor) {
     if (!backgroundColor) return '#ffffff';
 
-    // Parse color - handle hex, rgb, rgba, and named colors
-    let r, g, b;
+    const rgb = parseRgbFromColorString(backgroundColor);
+    if (!rgb) return '#ffffff';
 
-    if (backgroundColor.startsWith('#')) {
-        // Hex color
-        const hex = backgroundColor.slice(1);
-        if (hex.length === 3) {
-            r = parseInt(hex[0] + hex[0], 16);
-            g = parseInt(hex[1] + hex[1], 16);
-            b = parseInt(hex[2] + hex[2], 16);
-        } else if (hex.length >= 6) {
-            r = parseInt(hex.slice(0, 2), 16);
-            g = parseInt(hex.slice(2, 4), 16);
-            b = parseInt(hex.slice(4, 6), 16);
-        }
-    } else if (backgroundColor.startsWith('rgb')) {
-        // RGB or RGBA
-        const match = backgroundColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-        if (match) {
-            r = parseInt(match[1]);
-            g = parseInt(match[2]);
-            b = parseInt(match[3]);
-        }
-    }
-
-    // If we couldn't parse, default to white text
-    if (r === undefined || g === undefined || b === undefined) {
-        return '#ffffff';
-    }
-
-    // Calculate relative luminance using WCAG formula
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-
-    // Return black for light backgrounds, white for dark backgrounds
-    return luminance > 0.5 ? '#000000' : '#ffffff';
+    return getRelativeLuminance(rgb.r, rgb.g, rgb.b) > 0.5 ? '#000000' : '#ffffff';
 }
 
 const SETTINGS_TRANSLATIONS = {
@@ -18335,6 +18425,7 @@ const SETTINGS_TRANSLATIONS = {
         blocklistCardDuplicate: 'Duplicate',
         blocklistCardDelete: 'Delete',
         blocklistCardEditTooltip: 'Edit',
+        blocklistEnteringChip: 'Entering',
         blocklistScheduleStartsInMinutesFmt: 'starts in {n}m',
         blocklistScheduleStartsInHoursFmt: 'starts in {n}h',
         blocklistScheduleStartsInDaysFmt: 'starts in {n}d',
@@ -19085,6 +19176,7 @@ const SETTINGS_TRANSLATIONS = {
         blocklistCardDuplicate: 'Duplikér',
         blocklistCardDelete: 'Slet',
         blocklistCardEditTooltip: 'Rediger',
+        blocklistEnteringChip: 'Går ind',
         blocklistScheduleStartsInMinutesFmt: 'starter om {n}m',
         blocklistScheduleStartsInHoursFmt: 'starter om {n}t',
         blocklistScheduleStartsInDaysFmt: 'starter om {n}d',
