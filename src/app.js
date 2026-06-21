@@ -6894,7 +6894,10 @@ function setupHandsetModalScreens() {
         if (!overlay || !content || !titleSource || content.querySelector('.mobile-modal-header')) continue;
 
         overlay.classList.add('mobile-fullscreen-modal');
-        titleSource.classList.add('mobile-modal-title-source');
+        const isRoomConfirmModal = modalId === 'start-block-confirm-modal';
+        if (!isRoomConfirmModal) {
+            titleSource.classList.add('mobile-modal-title-source');
+        }
 
         const header = document.createElement('div');
         header.className = 'mobile-modal-header';
@@ -6914,7 +6917,9 @@ function setupHandsetModalScreens() {
 
         const syncHeaderTitle = () => {
             const nextTitle = titleSource.textContent?.trim() || titleSource.innerText?.trim() || '';
-            headerTitle.textContent = nextTitle;
+            if (!isRoomConfirmModal) {
+                headerTitle.textContent = nextTitle;
+            }
             backButton.setAttribute('aria-label', nextTitle ? `Back from ${nextTitle}` : 'Back');
         };
 
@@ -6931,7 +6936,10 @@ function setupHandsetModalScreens() {
             else overlay.classList.add('hidden');
         });
 
-        header.append(backButton, headerTitle);
+        header.append(backButton);
+        if (!isRoomConfirmModal) {
+            header.append(headerTitle);
+        }
         if (modalId === 'settings-modal') {
             const versionEl = content.querySelector('#current-app-version');
             const generalHeading = content.querySelector('#settings-general-heading');
@@ -6945,6 +6953,13 @@ function setupHandsetModalScreens() {
             settingsHeader?.classList.add('hidden');
         }
         content.prepend(header);
+
+        if (isRoomConfirmModal) {
+            const roomHeader = content.querySelector('.start-confirm-header-room');
+            if (roomHeader) {
+                header.appendChild(roomHeader);
+            }
+        }
 
         const scrollBody = document.createElement('div');
         scrollBody.className = 'mobile-modal-scroll-body';
@@ -12339,6 +12354,7 @@ function setupScheduleOverlayCustomiseModal() {
 
 const START_CONFIRM_ICON_GLOBE = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;
 const START_CONFIRM_ICON_APP = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M10 4v4"></path><path d="M2 8h20"></path><path d="M6 4v4"></path></svg>`;
+const EXIT_ROOM_DOOR_OPEN_ICON = `<svg class="start-block-btn-unlock-icon start-block-btn-leading hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 20H2"></path><path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"></path><path d="M11 4H8a2 2 0 0 0-2 2v14"></path><path d="M14 12h.01"></path><path d="M22 20h-3"></path></svg>`;
 
 function setStartBlockBtnLeadingIcon(btn, mode) {
     if (!btn || (btn.id !== 'start-block-btn' && btn.id !== 'start-schedule-btn')) return;
@@ -12503,6 +12519,28 @@ function formatStartBlockSubtitle(isAlwaysOn, blockStart, blockEnd) {
     return tSettingsFmt('startBlockSubtitleFmt', { duration: durationLabel });
 }
 
+function setStartConfirmRoomChip(blocklist) {
+    const chip = document.getElementById('start-confirm-room-chip');
+    const emojiEl = document.getElementById('start-confirm-room-chip-emoji');
+    const nameEl = document.getElementById('start-confirm-room-chip-name');
+    if (!chip) return;
+
+    if (emojiEl) emojiEl.textContent = blocklist?.emoji || '🎯';
+    if (nameEl) nameEl.textContent = blocklist?.name || '';
+
+    chip.style.background = '';
+    chip.style.color = '';
+    chip.style.borderColor = '';
+}
+
+function setStartConfirmOverrideDescription(options) {
+    const overrideTextEl = document.getElementById('start-confirm-override-text');
+    if (!overrideTextEl) return;
+
+    const line = formatConfirmModalOverrideTypingLine(options);
+    overrideTextEl.innerHTML = `${line} ${escapeHtml(tSettings('confirmOverrideIntentionSuffix'))}`;
+}
+
 function getStartScheduleConfirmTitle(blocklist) {
     if (!blocklist) return tSettings('startThisSchedule');
     return tSettingsFmt('startScheduleTitleFmt', { name: blocklist.name });
@@ -12571,7 +12609,7 @@ function showScheduleConfirmModal(blocklist) {
         estimatedMinutes
     });
 
-    document.getElementById('schedule-confirm-override-text').textContent = overrideText;
+    document.getElementById('schedule-confirm-override-text').innerHTML = overrideText;
 
     // Show modal
     document.getElementById('start-schedule-confirm-modal').classList.remove('hidden');
@@ -12690,7 +12728,7 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
             : difficulty.type === 'gibberish'
               ? 'gibberish'
               : 'random-words';
-    document.getElementById('schedule-confirm-override-text').textContent =
+    document.getElementById('schedule-confirm-override-text').innerHTML =
         formatConfirmModalOverrideTypingLine({ type: schedType, count: displayCount, estimatedMinutes });
 
     setStartConfirmPrimaryLabel('proceed-schedule-confirm-btn', tSettings('pendingChangesSave'));
@@ -13777,7 +13815,7 @@ function handleBlocklistSelect(e) {
                     const pauseBtn = document.getElementById('pause-block-btn');
 
                     if (activeBlock) {
-                        // Active block - show Stop Block button (ghost) with unlock icon
+                        // Active block - show Exit Room button (ghost) with door-open icon
                         startBlockBtn.classList.add('stop-block');
                         setBtnActionLabel(btnLabel, tSettings('stopBlock'));
                         setStartBtnBlocklistInfo(startBlockBtn, blocklist);
@@ -13923,11 +13961,10 @@ function startBlock() {
         blockEnd.setDate(blockEnd.getDate() + 1);
     }
 
-    const emojiEl = document.getElementById('start-confirm-emoji');
-    if (emojiEl) emojiEl.textContent = blocklist.emoji || '🎯';
+    setStartConfirmRoomChip(blocklist);
 
     const titleEl = document.getElementById('start-block-confirm-title');
-    if (titleEl) titleEl.textContent = getStartBlockConfirmTitle(blocklist);
+    if (titleEl) titleEl.textContent = tSettings('startThisBlock');
 
     const subtitleEl = document.getElementById('start-confirm-subtitle');
     if (subtitleEl) {
@@ -13969,13 +14006,11 @@ function startBlock() {
               ? 'gibberish'
               : 'random-words';
 
-    const overrideText = formatConfirmModalOverrideTypingLine({
+    setStartConfirmOverrideDescription({
         type: startType,
         count: displayCount,
         estimatedMinutes
     });
-
-    document.getElementById('start-confirm-override-text').textContent = overrideText;
 
     // Show modal
     document.getElementById('start-block-confirm-modal').classList.remove('hidden');
@@ -14180,10 +14215,7 @@ async function proceedWithBlock() {
 function getStartBlockButtonHTML() {
     return `
         <img class="start-block-btn-app-icon start-block-btn-leading" src="${rumMarkUrl}" alt="" aria-hidden="true">
-        <svg class="start-block-btn-unlock-icon start-block-btn-leading hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-            <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
-        </svg>
+        ${EXIT_ROOM_DOOR_OPEN_ICON}
         <span class="btn-label">${getActionLabelHTML(tSettings('startBlockButton'))}</span>
         <span class="btn-blocklist-meta">
             <span class="btn-blocklist-lead" aria-hidden="true"></span>
@@ -14937,8 +14969,7 @@ function openResumeConfirmation(blocklistId, type, blockId) {
 
     resumeData = { blocklistId, type, blockId };
 
-    const emojiEl = document.getElementById('start-confirm-emoji');
-    if (emojiEl) emojiEl.textContent = blocklist.emoji || '🎯';
+    setStartConfirmRoomChip(blocklist);
 
     document.getElementById('start-block-confirm-title').textContent = getResumeBlockConfirmTitle(blocklist);
 
@@ -14996,13 +15027,12 @@ function openResumeConfirmation(blocklistId, type, blockId) {
         resumeType = 'random-words';
     }
 
-    const overrideText = formatConfirmModalOverrideTypingLine({
+    setStartConfirmOverrideDescription({
         type: resumeType,
         count: displayCount,
         estimatedMinutes,
         resumeShortGibberish: resumeType === 'gibberish'
     });
-    document.getElementById('start-confirm-override-text').textContent = overrideText;
 
     setStartConfirmPrimaryLabel('proceed-start-confirm-btn', tSettings('resumeBlock'));
 
@@ -16806,12 +16836,10 @@ function openNowBlockingChipMenu(triggerBtn, entry) {
     menu.className = 'now-blocking-chip-menu';
     menu.setAttribute('role', 'menu');
 
-    // Match the icons used elsewhere in the app: pencil = blocklist-card edit button,
-    // open-padlock = "Stop Block" button (the bottom shackle ends "open" so it reads as
-    // unlocking/stopping the block).
+    // door-open = Exit Room button (matches the Lucide icon on the main action button).
     const editIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>';
     const pauseIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
-    const stopIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>';
+    const stopIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20H2"/><path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/><path d="M11 4H8a2 2 0 0 0-2 2v14"/><path d="M14 12h.01"/><path d="M22 20h-3"/></svg>';
 
     const items = [
         { label: tSettings('nowBlockingMenuEdit'), icon: editIcon, action: () => handleNowBlockingEdit(entry) },
@@ -18738,7 +18766,7 @@ const SETTINGS_TRANSLATIONS = {
         cannotBlockSelfAppPlaceholder: '⚠️ Can\'t block Rum itself!',
         // Start/schedule controls
         durationQuickAlways: 'Always',
-        alwaysOnMessage: 'This block will stay on until you pause it or turn it off',
+        alwaysOnMessage: 'You will stay in this room until you pause or exit it',
         duration: 'Duration',
         durationUnitMin: 'min',
         end: 'End',
@@ -18806,7 +18834,7 @@ const SETTINGS_TRANSLATIONS = {
         // Override / pause / confirmation modals
         overrideBlockTitle: 'Override Block?',
         overrideInstruction: 'To stop this block early, type the following:',
-        stopBlock: 'Stop Block',
+        stopBlock: 'Exit Room',
         stopSchedule: 'Stop Schedule',
         pauseBlockTitle: 'Pause Block',
         pauseFor: 'PAUSE FOR',
@@ -18824,11 +18852,11 @@ const SETTINGS_TRANSLATIONS = {
         helperInstalling: 'Installing...',
         helperUpdating: 'Updating...',
         helperReinstalling: 'Reinstalling...',
-        startThisBlock: 'Enter this room?',
+        startThisBlock: 'Enter the room?',
         startBlockTitleFmt: 'Enter the room “{name}”?',
         resumeBlockTitleFmt: 'Resume the block “{name}”?',
-        startBlockSubtitleFmt: 'Distractions go quiet for the next <strong>{duration}</strong>.',
-        startBlockSubtitleAlways: 'Distractions stay quiet until you turn this block off.',
+        startBlockSubtitleFmt: 'Your blocked websites and apps go quiet for the next <strong>{duration}</strong>.',
+        startBlockSubtitleAlways: 'Your blocked websites and apps go quiet until you exit the room.',
         resumeBlockSubtitle: 'Pick up where you left off with this block.',
         startConfirmBlockingLabel: 'Blocking',
         startConfirmDurationLabel: 'Duration',
@@ -18838,7 +18866,7 @@ const SETTINGS_TRANSLATIONS = {
         startConfirmRepeatForever: 'Every week · no end date',
         startConfirmRepeatUntilFmt: 'Every week · until {date}',
         startConfirmRepeatNone: 'One week only · no repeat',
-        startBlockHoldHeader: 'To exit the room and stop its blocking, you\'ll need to:',
+        startBlockHoldHeader: 'Leaving early takes a moment — on purpose.',
         startScheduleHoldHeader: 'To stop this blocking, you\'ll need to:',
         saveChangesHoldHeader: 'To stop this blocking, you\'ll need to:',
         blockedWebsites: 'Blocked websites:',
@@ -18849,7 +18877,7 @@ const SETTINGS_TRANSLATIONS = {
         startBlock: 'Enter Room',
         resumeBlock: 'Resume Block',
         resumeThisBlock: 'Resume this block?',
-        alwaysUntilOff: 'Always (until turned off)',
+        alwaysUntilOff: 'Always (until you pause or exit)',
         scheduleResumingSegment: 'Schedule (resuming current segment)',
         startThisSchedule: 'Start this schedule?',
         startScheduleTitleFmt: 'Start the schedule “{name}”?',
@@ -18928,17 +18956,18 @@ const SETTINGS_TRANSLATIONS = {
         saveChangesOverrideNeed: 'To stop this schedule, you\'ll need to:',
         /** Start/resume confirmation: friction description — placeholders {count},{charUnit},{minutes} */
         confirmOverrideRandomWordsFmt:
-            'Type {count} {charUnit} (displayed as random words) exactly as shown (~{minutes} min).',
+            'Type <strong>{count} {charUnit} exactly as shown</strong> (~{minutes} min) to exit.',
         confirmOverrideRandomWordsIosFmt:
-            'Type {count} random {wordUnit} exactly as shown (~{minutes} min).',
+            'Type <strong>{count} random {wordUnit} exactly as shown</strong> (~{minutes} min) to exit.',
         confirmOverrideGibberishLettersFmt:
-            'Type {count} random {charUnit} (letters and numbers) exactly as shown (~{minutes} min).',
+            'Type <strong>{count} random {charUnit} exactly as shown</strong> (~{minutes} min) to exit.',
         confirmOverrideGibberishWordsFmt:
-            'Type {count} random {wordUnit} (6 characters each) exactly as shown (~{minutes} min).',
+            'Type <strong>{count} random {wordUnit} exactly as shown</strong> (~{minutes} min) to exit.',
         confirmOverrideGibberishShortFmt:
-            'Type {count} random characters exactly as shown (~{minutes} min).',
+            'Type <strong>{count} random characters exactly as shown</strong> (~{minutes} min) to exit.',
         confirmOverrideCustomPhraseFmt:
-            'Type a specific {count}-character phrase exactly as shown (~{minutes} min).',
+            'Type a <strong>{count}-character phrase exactly as shown</strong> (~{minutes} min) to exit.',
+        confirmOverrideIntentionSuffix: 'That helps you stick with your intention.',
         startSchedule: 'Start Schedule',
         noDaysSelected: 'No days selected',
         runningSuffix: ' (Running)',
@@ -19468,7 +19497,7 @@ const SETTINGS_TRANSLATIONS = {
         cannotBlockSelfAppPlaceholder: '⚠️ Rum kan ikke blokere sig selv!',
         // Start/schedule controls
         durationQuickAlways: 'Altid',
-        alwaysOnMessage: 'Denne blokering forbliver aktiv, indtil du pauser den eller slår den fra',
+        alwaysOnMessage: 'Du bliver i dette rum, indtil du pauser eller forlader det',
         duration: 'Varighed',
         durationUnitMin: 'min',
         end: 'Slut',
@@ -19535,7 +19564,7 @@ const SETTINGS_TRANSLATIONS = {
         // Override / pause / confirmation modals
         overrideBlockTitle: 'Overstyr blokering?',
         overrideInstruction: 'For at stoppe denne blokering tidligt, skriv følgende:',
-        stopBlock: 'Stop blokering',
+        stopBlock: 'Forlad rum',
         stopSchedule: 'Stop skema',
         pauseBlockTitle: 'Sæt blokering på pause',
         pauseFor: 'PAUSE I',
@@ -19553,11 +19582,11 @@ const SETTINGS_TRANSLATIONS = {
         helperInstalling: 'Installerer...',
         helperUpdating: 'Opdaterer...',
         helperReinstalling: 'Geninstallerer...',
-        startThisBlock: 'Gå ind i dette rum?',
+        startThisBlock: 'Gå ind i rummet?',
         startBlockTitleFmt: 'Gå ind i rummet “{name}”?',
         resumeBlockTitleFmt: 'Genoptag blokeringen “{name}”?',
-        startBlockSubtitleFmt: 'Distraherende apps og sider er stille de næste <strong>{duration}</strong>.',
-        startBlockSubtitleAlways: 'Distraherende apps og sider forbliver stille, indtil du slår blokeringen fra.',
+        startBlockSubtitleFmt: 'Dine blokerede hjemmesider og apps er stille de næste <strong>{duration}</strong>.',
+        startBlockSubtitleAlways: 'Dine blokerede hjemmesider og apps er stille, indtil du forlader rummet.',
         resumeBlockSubtitle: 'Fortsæt hvor du slap med denne blokering.',
         startConfirmBlockingLabel: 'Blokering',
         startConfirmDurationLabel: 'Varighed',
@@ -19567,7 +19596,7 @@ const SETTINGS_TRANSLATIONS = {
         startConfirmRepeatForever: 'Hver uge · ingen slutdato',
         startConfirmRepeatUntilFmt: 'Hver uge · indtil {date}',
         startConfirmRepeatNone: 'Kun én uge · gentages ikke',
-        startBlockHoldHeader: 'For at forlade rummet og stoppe dets blokering skal du:',
+        startBlockHoldHeader: 'At forlade rummet tidligt tager et øjeblik — med vilje.',
         startScheduleHoldHeader: 'For at stoppe denne blokering skal du:',
         saveChangesHoldHeader: 'For at stoppe denne blokering skal du:',
         blockedWebsites: 'Blokerede hjemmesider:',
@@ -19578,7 +19607,7 @@ const SETTINGS_TRANSLATIONS = {
         startBlock: 'Gå ind i rum',
         resumeBlock: 'Genoptag blokering',
         resumeThisBlock: 'Genoptag blokering?',
-        alwaysUntilOff: 'Altid (indtil den slås fra)',
+        alwaysUntilOff: 'Altid (indtil du pauser eller forlader)',
         scheduleResumingSegment: 'Skema (genoptager nuværende segment)',
         startThisSchedule: 'Start dette skema?',
         startScheduleTitleFmt: 'Start skemaet “{name}”?',
@@ -19656,17 +19685,18 @@ const SETTINGS_TRANSLATIONS = {
         confirmScheduleOverrideNeed: 'For at stoppe dette blokeringsskema skal du:',
         saveChangesOverrideNeed: 'For at stoppe dette skema skal du:',
         confirmOverrideRandomWordsFmt:
-            'Skrive {count} {charUnit}, vist som tilfældige ord, præcis som der står (~{minutes} min).',
+            'Skriv <strong>{count} {charUnit} præcis som vist</strong> (~{minutes} min) for at forlade.',
         confirmOverrideRandomWordsIosFmt:
-            'Skrive {count} tilfældige {wordUnit} præcis som der står (~{minutes} min).',
+            'Skriv <strong>{count} tilfældige {wordUnit} præcis som vist</strong> (~{minutes} min) for at forlade.',
         confirmOverrideGibberishLettersFmt:
-            'Skrive {count} tilfældige tegn (bogstaver og tal), præcis som der står (~{minutes} min).',
+            'Skriv <strong>{count} tilfældige {charUnit} præcis som vist</strong> (~{minutes} min) for at forlade.',
         confirmOverrideGibberishWordsFmt:
-            'Skrive {count} tilfældige {wordUnit} (6 tegn hver) præcis som der står (~{minutes} min).',
+            'Skriv <strong>{count} tilfældige {wordUnit} præcis som vist</strong> (~{minutes} min) for at forlade.',
         confirmOverrideGibberishShortFmt:
-            'Skrive {count} tilfældige tegn præcis som der står (~{minutes} min).',
+            'Skriv <strong>{count} tilfældige tegn præcis som vist</strong> (~{minutes} min) for at forlade.',
         confirmOverrideCustomPhraseFmt:
-            'Skrive et bestemt udtryk på {count} tegn præcis som der står (~{minutes} min).',
+            'Skriv en <strong>bestemt sætning på {count} tegn præcis som vist</strong> (~{minutes} min) for at forlade.',
+        confirmOverrideIntentionSuffix: 'Det hjælper dig med at holde fast i din intention.',
         startSchedule: 'Start skema',
         noDaysSelected: 'Ingen dage valgt',
         runningSuffix: ' (Kører)',
