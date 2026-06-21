@@ -279,6 +279,8 @@ let schedTabsIconOnlyEnteredAtWidth = 0;
 const UI_ZOOM_STEP = 0.1;
 const DEFAULT_UI_ZOOM = 1.0;
 const TIME_SEPARATOR_ARROW_HTML = '<span class="time-separator" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg></span>';
+const SEGMENT_SUMMARY_CLOCK_ICON = '<svg class="segment-summary-clock" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>';
+const SEGMENT_SUMMARY_CHEVRON_ICON = '<svg class="segment-summary-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>';
 let zoomToastHideTimeout = null;
 let nativeWebviewZoomSupported = null;
 
@@ -336,6 +338,7 @@ const WEBSITES_PRESET_LISTS = {
 let isScheduleMode = false; // false = instant mode, true = schedule mode
 let isAlwaysOnMode = false; // false = timed block, true = always-on (permanent) block
 let scheduleSegments = getDefaultScheduleSegments(); // Array of time segments with per-segment days
+let expandedScheduleSegmentIndex = 0; // Which segment shows the full editor when multiple exist (-1 = all collapsed)
 
 // Far-future timestamp used for "always on" blocks (year 9999)
 const ALWAYS_ON_END_TIME = new Date(9999, 11, 31, 23, 59, 59, 999).getTime();
@@ -7224,6 +7227,8 @@ function setupEventListeners() {
         // Don't deselect if clicking on interactive elements
         if (e.target.closest('.blocklist-card') ||
             e.target.closest('.scheduler-section') ||
+            e.target.closest('.time-picker-container') ||
+            e.target.closest('.schedule-block-panel') ||
             e.target.closest('.repeat-dropdown-wrapper') ||
             e.target.closest('.repeat-dropdown-menu') ||
             e.target.closest('.modal-overlay') ||
@@ -7339,7 +7344,7 @@ function setupEventListeners() {
         });
     }
 
-    // Quick-select buttons: timed durations (15/30/45/60) + "Always" option
+    // Quick-select buttons: timed durations + until-I-stop option
     document.querySelectorAll('.duration-quick-btn').forEach(btn => {
         btn.addEventListener('click', handleDurationQuickBtn);
     });
@@ -9100,7 +9105,9 @@ function disableScheduleControls(disabled) {
 
         if (disabled && isExistingSegment) {
             // Disable this segment's controls
-            segment.querySelectorAll('.time-part, .segment-day-toggle, .remove-segment-btn').forEach(el => {
+            segment.querySelectorAll(
+                '.time-part, .segment-day-toggle, .remove-segment-btn, .segment-delete-btn, .segment-done-btn, .segment-day-preset, .segment-summary-btn'
+            ).forEach(el => {
                 el.disabled = true;
                 el.style.opacity = '0.5';
                 el.style.pointerEvents = 'none';
@@ -9108,7 +9115,9 @@ function disableScheduleControls(disabled) {
             segment.classList.add('segment-locked');
         } else {
             // Enable this segment's controls
-            segment.querySelectorAll('.time-part, .segment-day-toggle, .remove-segment-btn').forEach(el => {
+            segment.querySelectorAll(
+                '.time-part, .segment-day-toggle, .remove-segment-btn, .segment-delete-btn, .segment-done-btn, .segment-day-preset, .segment-summary-btn'
+            ).forEach(el => {
                 el.disabled = false;
                 el.style.opacity = '1';
                 el.style.pointerEvents = 'auto';
@@ -9561,7 +9570,7 @@ function setScheduleMode(isSchedule) {
     document.getElementById('schedule-mode-tab').classList.toggle('active', isSchedule);
 
     // Update section heading
-    const heading = document.querySelector('#scheduler-section .section-header h2');
+    const heading = document.getElementById('main-start-block-title');
     if (heading) {
         heading.textContent = tSettings('mainStartBlockTitle');
     }
@@ -9631,6 +9640,11 @@ function setScheduleMode(isSchedule) {
             }
             activeScheduleSegmentCount = 0;
         }
+        expandedScheduleSegmentIndex = scheduleSegments.length > 1
+            ? (activeScheduleSegmentCount > 0 && activeScheduleSegmentCount < scheduleSegments.length
+                ? activeScheduleSegmentCount
+                : 0)
+            : 0;
         rebuildScheduleSegments();
 
         instantPanel.classList.add('hidden');
@@ -9679,7 +9693,7 @@ function setScheduleMode(isSchedule) {
                 if (pauseBtn) pauseBtn.classList.add('hidden');
                 startBlockBtn.classList.remove('stop-block');
                 delete startBlockBtn.dataset.activeBlockId;
-                setBtnActionLabel(startBlockBtn.querySelector('.btn-label'), tSettings('startBlockButton'));
+                setBtnActionLabel(startBlockBtn.querySelector('.btn-label'), tSettings('startBlockButton'), { simple: true });
                 setStartBtnBlocklistInfo(startBlockBtn, blocklist);
                 setStartBlockBtnLeadingIcon(startBlockBtn, 'enter');
             }
@@ -10059,6 +10073,8 @@ function addScheduleSegment() {
         days: defaultDays
     });
 
+    expandedScheduleSegmentIndex = scheduleSegments.length - 1;
+
     // Rebuild all segments to ensure consistent rendering
     rebuildScheduleSegments();
 
@@ -10093,8 +10109,29 @@ function handleSegmentDayToggle(segmentIndex, dayIndex, btn) {
     }
 
     // Update preview and button state
+    syncSegmentDayPresetButtons(segmentIndex);
     handleTimeChange();
     updateScheduleButtonState();
+}
+
+function syncSegmentDayPresetButtons(segmentIndex) {
+    const segment = document.querySelector(`.schedule-segment[data-segment-index="${segmentIndex}"]`);
+    const segmentDays = scheduleSegments[segmentIndex]?.days;
+    if (!segment || !segmentDays) return;
+
+    const presetMap = {
+        weekdays: [0, 1, 2, 3, 4],
+        weekends: [5, 6],
+        everyday: [0, 1, 2, 3, 4, 5, 6],
+    };
+
+    segment.querySelectorAll('.segment-day-preset').forEach(btn => {
+        const presetDays = presetMap[btn.dataset.preset];
+        btn.classList.toggle('active', presetDays ? arraysEqual(
+            [...segmentDays].sort((a, b) => a - b),
+            presetDays,
+        ) : false);
+    });
 }
 
 // Remove a time segment
@@ -10106,6 +10143,12 @@ function removeScheduleSegment(index) {
 
     // Remove from state
     scheduleSegments.splice(index, 1);
+
+    if (expandedScheduleSegmentIndex === index) {
+        expandedScheduleSegmentIndex = scheduleSegments.length > 1 ? -1 : 0;
+    } else if (expandedScheduleSegmentIndex > index) {
+        expandedScheduleSegmentIndex -= 1;
+    }
 
     // Rebuild DOM (simpler than updating indices)
     rebuildScheduleSegments();
@@ -10137,51 +10180,119 @@ function sortScheduleSegments() {
     }
 }
 
-// Rebuild schedule segments DOM from state
-function rebuildScheduleSegments() {
-    // Sort chronologically before rebuilding
-    sortScheduleSegments();
+function normalizeExpandedScheduleSegmentIndex() {
+    if (scheduleSegments.length <= 1) {
+        expandedScheduleSegmentIndex = 0;
+        return;
+    }
+    if (expandedScheduleSegmentIndex >= scheduleSegments.length) {
+        expandedScheduleSegmentIndex = scheduleSegments.length - 1;
+    }
+}
 
-    const container = document.getElementById('schedule-segments');
-    container.innerHTML = '';
+function formatScheduleSegmentTimeRange(seg) {
+    const start = `${String(seg.startHour).padStart(2, '0')}:${String(seg.startMinute).padStart(2, '0')}`;
+    const end = `${String(seg.endHour).padStart(2, '0')}:${String(seg.endMinute).padStart(2, '0')}`;
+    return `${start} – ${end}`;
+}
 
-    const fullDayLabels = weekdayAbbrevMon0List();
-    const useCompactDayLabels = shouldUseCompactIosScheduleDayLabels();
-    const dayLabels = useCompactDayLabels ? weekdayLetterMon0List() : fullDayLabels;
-    const labelStart = tSettings('start');
-    const labelEnd = tSettings('end');
-    const labelDays = tSettings('days');
+function formatScheduleSegmentDaysSummary(days) {
+    const selected = Array.isArray(days) ? [...days].sort((a, b) => a - b) : [];
+    if (selected.length === 0) return tSettings('segmentDaysNone');
+    const labels = weekdayAbbrevMon0List();
+    return selected.map((dayIndex) => labels[dayIndex]).join(', ');
+}
 
-    iosCompactScheduleDayLabelsActive = useCompactDayLabels;
+function arraysEqual(a, b) {
+    return Array.isArray(a) && Array.isArray(b)
+        && a.length === b.length
+        && a.every((value, index) => value === b[index]);
+}
 
-    scheduleSegments.forEach((seg, index) => {
-        const segment = document.createElement('div');
-        segment.className = 'schedule-segment';
-        segment.dataset.segmentIndex = index;
+function getSegmentDayPresetActiveClass(segmentDays, presetDays) {
+    const selected = Array.isArray(segmentDays) ? [...segmentDays].sort((a, b) => a - b) : [];
+    return arraysEqual(selected, presetDays) ? ' active' : '';
+}
 
-        const showRemove = scheduleSegments.length > 1;
-        const segmentDays = seg.days || [];
+function expandScheduleSegment(index) {
+    if (index < activeScheduleSegmentCount) return;
+    if (scheduleSegments.length <= 1) return;
+    expandedScheduleSegmentIndex = index;
+    rebuildScheduleSegments();
+}
 
-        // Generate day toggles HTML
-        const dayTogglesHtml = dayLabels.map((label, i) =>
-            `<button type="button" class="segment-day-toggle${segmentDays.includes(i) ? ' active' : ''}" data-day="${i}" aria-label="${fullDayLabels[i]}">${label}</button>`
-        ).join('');
+function collapseExpandedScheduleSegment() {
+    if (scheduleSegments.length <= 1) return;
+    expandedScheduleSegmentIndex = -1;
+    rebuildScheduleSegments();
+}
 
-        // Only show labels on the first segment
-        const showLabels = index === 0;
+function applySegmentDayPreset(segmentIndex, preset) {
+    if (segmentIndex < activeScheduleSegmentCount) return;
+    const segment = scheduleSegments[segmentIndex];
+    if (!segment) return;
 
-        segment.innerHTML = `
-            ${showRemove ? `
-                <button type="button" class="remove-segment-btn" data-segment-index="${index}"
-                    title="${tSettings('blocklistCardDelete')}" aria-label="${tSettings('blocklistCardDelete')}">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M3 6h18"></path>
-                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                    </svg>
-                </button>
-            ` : ''}
+    const presetDays = {
+        weekdays: [0, 1, 2, 3, 4],
+        weekends: [5, 6],
+        everyday: [0, 1, 2, 3, 4, 5, 6],
+    }[preset];
+
+    if (!presetDays) return;
+    segment.days = [...presetDays];
+
+    const segmentEl = document.querySelector(`.schedule-segment[data-segment-index="${segmentIndex}"]`);
+    if (segmentEl) {
+        segmentEl.querySelectorAll('.segment-day-toggle').forEach(btn => {
+            const dayIndex = parseInt(btn.dataset.day, 10);
+            btn.classList.toggle('active', segment.days.includes(dayIndex));
+        });
+        syncSegmentDayPresetButtons(segmentIndex);
+    }
+
+    handleTimeChange();
+    updateScheduleButtonState();
+}
+
+function buildScheduleSegmentEditorHtml(seg, index, {
+    showLabels,
+    showMultiSegmentChrome,
+    dayLabels,
+    fullDayLabels,
+    useCompactDayLabels,
+    labelStart,
+    labelEnd,
+    labelDays,
+}) {
+    const segmentDays = seg.days || [];
+    const dayTogglesHtml = dayLabels.map((label, i) =>
+        `<button type="button" class="segment-day-toggle${segmentDays.includes(i) ? ' active' : ''}" data-day="${i}" aria-label="${fullDayLabels[i]}">${label}</button>`
+    ).join('');
+
+    const dayPresetsHtml = showMultiSegmentChrome ? `
+        <div class="segment-day-presets">
+            <button type="button" class="segment-day-preset${getSegmentDayPresetActiveClass(segmentDays, [0, 1, 2, 3, 4])}" data-preset="weekdays">${tSettings('segmentDaysWeekdays')}</button>
+            <button type="button" class="segment-day-preset${getSegmentDayPresetActiveClass(segmentDays, [5, 6])}" data-preset="weekends">${tSettings('segmentDaysWeekends')}</button>
+            <button type="button" class="segment-day-preset${getSegmentDayPresetActiveClass(segmentDays, [0, 1, 2, 3, 4, 5, 6])}" data-preset="everyday">${tSettings('segmentDaysEveryDay')}</button>
+        </div>
+    ` : '';
+
+    const footerHtml = showMultiSegmentChrome ? `
+        <div class="segment-editor-footer">
+            <button type="button" class="segment-delete-btn" data-segment-index="${index}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M3 6h18"></path>
+                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                </svg>
+                ${tSettings('segmentDelete')}
+            </button>
+            <button type="button" class="segment-done-btn" data-segment-index="${index}">${tSettings('segmentDone')}</button>
+        </div>
+    ` : '';
+
+    return `
+        <div class="segment-editor">
             <div class="segment-row">
                 <div class="time-pickers-row">
                     <div class="time-picker-group">
@@ -10237,30 +10348,119 @@ function rebuildScheduleSegments() {
                     </div>
                 </div>
             </div>
-        `;
+            ${dayPresetsHtml}
+            ${footerHtml}
+        </div>
+    `;
+}
+
+function buildScheduleSegmentSummaryHtml(seg, index) {
+    return `
+        <button type="button" class="segment-summary-btn" data-segment-index="${index}" aria-expanded="false">
+            ${SEGMENT_SUMMARY_CLOCK_ICON}
+            <span class="segment-summary-time">${formatScheduleSegmentTimeRange(seg)}</span>
+            <span class="segment-summary-days">${formatScheduleSegmentDaysSummary(seg.days)}</span>
+            ${SEGMENT_SUMMARY_CHEVRON_ICON}
+        </button>
+    `;
+}
+
+function wireScheduleSegmentElement(segment, index) {
+    attachScheduleSegmentTimeInteractions(segment);
+
+    segment.querySelectorAll('.segment-day-toggle').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const dayIndex = parseInt(btn.dataset.day, 10);
+            handleSegmentDayToggle(index, dayIndex, btn);
+        });
+    });
+
+    segment.querySelectorAll('.segment-day-preset').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            applySegmentDayPreset(index, btn.dataset.preset);
+        });
+    });
+
+    const deleteBtn = segment.querySelector('.segment-delete-btn');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            removeScheduleSegment(index);
+        });
+    }
+
+    const doneBtn = segment.querySelector('.segment-done-btn');
+    if (doneBtn) {
+        doneBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            collapseExpandedScheduleSegment();
+        });
+    }
+
+    const summaryBtn = segment.querySelector('.segment-summary-btn');
+    if (summaryBtn) {
+        summaryBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            expandScheduleSegment(index);
+        });
+    }
+
+    const removeBtn = segment.querySelector('.remove-segment-btn');
+    if (removeBtn) {
+        removeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            removeScheduleSegment(index);
+        });
+    }
+}
+
+// Rebuild schedule segments DOM from state
+function rebuildScheduleSegments() {
+    // Sort chronologically before rebuilding
+    sortScheduleSegments();
+    normalizeExpandedScheduleSegmentIndex();
+
+    const container = document.getElementById('schedule-segments');
+    container.innerHTML = '';
+
+    const fullDayLabels = weekdayAbbrevMon0List();
+    const useCompactDayLabels = shouldUseCompactIosScheduleDayLabels();
+    const dayLabels = useCompactDayLabels ? weekdayLetterMon0List() : fullDayLabels;
+    const labelStart = tSettings('start');
+    const labelEnd = tSettings('end');
+    const labelDays = tSettings('days');
+    const multiSegment = scheduleSegments.length > 1;
+
+    iosCompactScheduleDayLabelsActive = useCompactDayLabels;
+
+    scheduleSegments.forEach((seg, index) => {
+        const segment = document.createElement('div');
+        const isExpanded = !multiSegment || index === expandedScheduleSegmentIndex;
+        segment.className = `schedule-segment${
+            isExpanded ? ' schedule-segment-expanded' : ' schedule-segment-collapsed'
+        }`;
+        segment.dataset.segmentIndex = index;
+
+        if (isExpanded) {
+            const showLabels = !multiSegment || index === 0 || expandedScheduleSegmentIndex === index;
+            segment.innerHTML = buildScheduleSegmentEditorHtml(seg, index, {
+                showLabels: multiSegment ? true : showLabels,
+                showMultiSegmentChrome: multiSegment,
+                dayLabels,
+                fullDayLabels,
+                useCompactDayLabels,
+                labelStart,
+                labelEnd,
+                labelDays,
+            });
+        } else {
+            segment.innerHTML = buildScheduleSegmentSummaryHtml(seg, index);
+        }
 
         container.appendChild(segment);
-
-        // Wire schedule time pills (popover + typing)
-        attachScheduleSegmentTimeInteractions(segment);
-
-        // Add click handlers for day toggles
-        segment.querySelectorAll('.segment-day-toggle').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const dayIndex = parseInt(btn.dataset.day);
-                handleSegmentDayToggle(index, dayIndex, btn);
-            });
-        });
-
-        // Add click handler for remove button
-        const removeBtn = segment.querySelector('.remove-segment-btn');
-        if (removeBtn) {
-            removeBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const idx = parseInt(removeBtn.dataset.segmentIndex);
-                removeScheduleSegment(idx);
-            });
-        }
+        wireScheduleSegmentElement(segment, index);
     });
 }
 
@@ -12544,6 +12744,26 @@ const SCHEDULE_CONFIRM_ROOM_CHIP_IDS = {
     nameId: 'schedule-confirm-room-chip-name',
 };
 
+const SCHEDULER_ROOM_CHIP_IDS = {
+    chipId: 'scheduler-room-chip',
+    emojiId: 'scheduler-room-chip-emoji',
+    nameId: 'scheduler-room-chip-name',
+};
+
+function applyRoomChipTint(chip, accentColor) {
+    if (!chip || !accentColor) return;
+    chip.style.background = `color-mix(in srgb, ${accentColor} 16%, var(--redd-card))`;
+    chip.style.borderColor = `color-mix(in srgb, ${accentColor} 32%, var(--redd-border))`;
+    chip.style.color = getEnteringChipColor(accentColor);
+}
+
+function setSchedulerRoomChip(blocklist) {
+    setStartConfirmRoomChip(blocklist, SCHEDULER_ROOM_CHIP_IDS);
+    if (blocklist?.color) {
+        applyRoomChipTint(document.getElementById('scheduler-room-chip'), blocklist.color);
+    }
+}
+
 function setStartConfirmOverrideDescription(options, textElId = 'start-confirm-override-text') {
     const overrideTextEl = document.getElementById(textElId);
     if (!overrideTextEl) return;
@@ -12788,6 +13008,7 @@ async function proceedWithScheduleEdit() {
     // Rebuild the DOM so it matches the new scheduleSegments order and locks the
     // formerly-pending segments. Without this, time-edit handlers attached to the
     // pre-save DOM nodes could write to the wrong scheduleSegments index.
+    expandedScheduleSegmentIndex = scheduleSegments.length > 1 ? -1 : 0;
     rebuildScheduleSegments();
     disableScheduleControls(true);
 
@@ -13692,16 +13913,16 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
 
 /** Start-a-block heading + Now/Schedule tabs — only meaningful once a blocklist is chosen. */
 function syncSchedulerChromeVisibility() {
-    const modeTabs = document.querySelector('.scheduler-mode-tabs');
-    const mainTitle = document.getElementById('main-start-block-title');
-    const sectionHeader = document.querySelector('#scheduler-section > .section-header');
     const gridTopRow = document.querySelector('.grid-top-row');
+    const sectionHeader = document.querySelector('#scheduler-section > .section-header');
     const hasLists = (appData.blocklists?.length || 0) > 0;
     const show = hasLists && !!selectedBlocklistId;
-    if (mainTitle) mainTitle.classList.toggle('hidden', !show);
-    if (modeTabs) modeTabs.classList.toggle('hidden', !show);
-    if (sectionHeader) sectionHeader.classList.toggle('scheduler-header-compact', !show);
+    if (sectionHeader) sectionHeader.classList.add('scheduler-header-compact');
     if (gridTopRow) gridTopRow.classList.toggle('grid-top-row--blocklist-selected', show);
+    if (show) {
+        const blocklist = appData.blocklists.find((bl) => bl.id === selectedBlocklistId);
+        setSchedulerRoomChip(blocklist);
+    }
     bindUiZoomLayoutObserver();
     scheduleUiZoomResponsiveLayout();
     scheduleSelectionPromptLayout();
@@ -13849,8 +14070,8 @@ function handleBlocklistSelect(e) {
                     } else {
                         // No active block - show Enter Room button with app icon
                         // Ensure we've already cleared the activeBlockId above
-                        setBtnActionLabel(btnLabel, tSettings('startBlockButton'));
-                        setStartBtnBlocklistInfo(startBlockBtn, blocklist);
+                setBtnActionLabel(btnLabel, tSettings('startBlockButton'), { simple: true });
+                setStartBtnBlocklistInfo(startBlockBtn, blocklist);
 
                         setStartBlockBtnLeadingIcon(startBlockBtn, 'enter');
 
@@ -14226,7 +14447,7 @@ function getStartBlockButtonHTML() {
     return `
         <img class="start-block-btn-app-icon start-block-btn-leading" src="${rumMarkUrl}" alt="" aria-hidden="true">
         ${EXIT_ROOM_DOOR_OPEN_ICON}
-        <span class="btn-label">${getActionLabelHTML(tSettings('startBlockButton'))}</span>
+        <span class="btn-label">${escapeHtml(tSettings('startBlockButton'))}</span>
         <span class="btn-blocklist-meta">
             <span class="btn-blocklist-lead" aria-hidden="true"></span>
             <span class="btn-emoji" aria-hidden="true"></span>
@@ -14251,8 +14472,12 @@ function getActionLabelHTML(fullText) {
     return `<span class="btn-label-action">${safe(action)}</span><span class="btn-label-context">${safe(context)}</span>`;
 }
 
-function setBtnActionLabel(el, fullText) {
+function setBtnActionLabel(el, fullText, { simple = false } = {}) {
     if (!el) return;
+    if (simple) {
+        el.textContent = String(fullText ?? '').trimEnd();
+        return;
+    }
     el.innerHTML = getActionLabelHTML(fullText);
 }
 
@@ -14292,6 +14517,9 @@ function syncStopBtnLabelFit(btn) {
     const isActionBtn = btn.id === 'start-block-btn' || btn.id === 'start-schedule-btn';
     if (!isActionBtn || btn.classList.contains('hidden') || btn.clientWidth <= 0) return;
 
+    const isStop = btn.classList.contains('stop-block') || btn.classList.contains('stop-schedule');
+    if (!isStop) return;
+
     const buttonRow = btn.parentElement;
     const rowStyle = buttonRow ? window.getComputedStyle(buttonRow) : null;
     const rowGap = rowStyle ? (parseFloat(rowStyle.columnGap || rowStyle.gap) || 0) : 0;
@@ -14321,11 +14549,18 @@ function syncAllStopBtnLabelFits() {
     });
 }
 
-// Update both the emoji and name on a start/stop button so they stay in sync.
+// Update emoji and name on stop buttons only — enter/start labels stand alone.
 function setStartBtnBlocklistInfo(btn, blocklist) {
     if (!btn) return;
     const btnEmoji = btn.querySelector('.btn-emoji');
     const btnName = btn.querySelector('.btn-name');
+    const isStop = btn.classList.contains('stop-block') || btn.classList.contains('stop-schedule');
+    if (!isStop) {
+        if (btnEmoji) btnEmoji.textContent = '';
+        if (btnName) btnName.textContent = '';
+        btn.classList.remove('stop-meta-collapsed');
+        return;
+    }
     if (btnEmoji) btnEmoji.textContent = blocklist ? (blocklist.emoji || '🚫') : '';
     if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
     syncStopBtnLabelFit(btn);
@@ -16481,8 +16716,8 @@ function syncSelectedControlState() {
         disableTimeControls(true);
         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
     } else {
-        setBtnActionLabel(btnLabel, tSettings('startBlockButton'));
-        setStartBtnBlocklistInfo(startBlockBtn, blocklist);
+                setBtnActionLabel(btnLabel, tSettings('startBlockButton'), { simple: true });
+                setStartBtnBlocklistInfo(startBlockBtn, blocklist);
         setStartBlockBtnLeadingIcon(startBlockBtn, 'enter');
         if (pauseBtn) pauseBtn.classList.add('hidden');
         disableTimeControls(false);
@@ -17428,17 +17663,7 @@ function renderBlocklists() {
         let metaParts = [];
 
         if (websiteCount > 0) {
-            if (showDetails) {
-                const displaySites = bl.websites.map(cleanUrlForDisplay);
-                const maxDisplay = appCount === 0 ? 3 : 2;
-                if (websiteCount <= maxDisplay) {
-                    metaParts.push(`${websiteCount} ${websiteWord(websiteCount)} (${displaySites.join(', ')})`);
-                } else {
-                    metaParts.push(`${websiteCount} ${websiteWord(websiteCount)} (${displaySites.slice(0, maxDisplay).join(', ')}, ...)`);
-                }
-            } else {
-                metaParts.push(`${websiteCount} ${websiteWord(websiteCount)}`);
-            }
+            metaParts.push(formatBlocklistCardSitesSummary(websiteCount, bl.websites, showDetails));
         }
 
         if (appCount > 0) {
@@ -17633,7 +17858,7 @@ function renderBlocklists() {
             : '';
         const enteringChipColor = getEnteringChipColor(accent);
         const enteringChip = isSelected
-            ? `<span class="blocklist-entering-chip" style="background-color: ${enteringChipColor}; color: ${getContrastTextColor(enteringChipColor)}">${tSettings('blocklistEnteringChip')}</span>`
+            ? `<span class="blocklist-entering-chip" style="background-color: ${enteringChipColor}">${tSettings('blocklistEnteringChip')}</span>`
             : '';
 
         return `
@@ -18415,11 +18640,12 @@ const SETTINGS_TRANSLATIONS = {
         updateBannerSuffix: 'is available',
         updateBannerCta: 'Reinstall from reddfocus.org',
         updateBannerWhatsNew: "What's new?",
-        mainStartBlockTitle: 'Enter Room',
+        mainStartBlockTitle: 'Enter',
         modeNow: 'Now',
+        modeTimer: 'Timer',
         modeSchedule: 'Schedule',
-        selectionPrompt: 'Select a blocklist',
-        selectionPromptOption: 'Select a blocklist...',
+        selectionPrompt: 'Select a room',
+        selectionPromptOption: 'Select a room...',
         yourBlocklists: 'My Rooms',
         blocklistCardMenuTitle: 'Blocklist options',
         blocklistCardDuplicate: 'Duplicate',
@@ -18866,16 +19092,28 @@ const SETTINGS_TRANSLATIONS = {
         cannotBlockDomainPlaceholder: '⚠️ Can\'t block this domain!',
         cannotBlockSelfAppPlaceholder: '⚠️ Can\'t block Rum itself!',
         // Start/schedule controls
-        durationQuickAlways: 'Always',
+        durationQuick15m: '15m',
+        durationQuick30m: '30m',
+        durationQuick45m: '45m',
+        durationQuick1Hour: '1 hour',
+        durationQuick2Hours: '2 hours',
+        durationQuickAlways: 'Until I stop',
         alwaysOnMessage: 'You will stay in this room until you pause or exit it',
         duration: 'Duration',
         durationUnitMin: 'min',
         end: 'End',
         nextDay: 'day',
-        quickSelect: 'Quick Select',
+        quickSelect: 'For how long?',
         start: 'Start',
         days: 'Days',
         add: 'Add times',
+        scheduleWhenHeading: 'When this room opens',
+        segmentDaysWeekdays: 'Weekdays',
+        segmentDaysWeekends: 'Weekends',
+        segmentDaysEveryDay: 'Every day',
+        segmentDaysNone: 'No days',
+        segmentDone: 'Done',
+        segmentDelete: 'Delete',
         repeat: 'Repeat:',
         repeatNo: 'No',
         repeatForever: 'Forever',
@@ -19166,11 +19404,12 @@ const SETTINGS_TRANSLATIONS = {
         updateBannerSuffix: 'er tilgængelig',
         updateBannerCta: 'Geninstaller fra reddfocus.org',
         updateBannerWhatsNew: 'Hvad er nyt?',
-        mainStartBlockTitle: 'Ind i rum',
+        mainStartBlockTitle: 'Ind',
         modeNow: 'Nu',
+        modeTimer: 'Timer',
         modeSchedule: 'Skema',
-        selectionPrompt: 'Vælg en blokeringsliste',
-        selectionPromptOption: 'Vælg en blokeringsliste...',
+        selectionPrompt: 'Vælg et rum',
+        selectionPromptOption: 'Vælg et rum...',
         yourBlocklists: 'Mine rum',
         blocklistCardMenuTitle: 'Valgmuligheder for blokliste',
         blocklistCardDuplicate: 'Duplikér',
@@ -19598,16 +19837,28 @@ const SETTINGS_TRANSLATIONS = {
         cannotBlockDomainPlaceholder: '⚠️ Dette domæne kan ikke blokeres!',
         cannotBlockSelfAppPlaceholder: '⚠️ Rum kan ikke blokere sig selv!',
         // Start/schedule controls
-        durationQuickAlways: 'Altid',
+        durationQuick15m: '15m',
+        durationQuick30m: '30m',
+        durationQuick45m: '45m',
+        durationQuick1Hour: '1 time',
+        durationQuick2Hours: '2 timer',
+        durationQuickAlways: 'Indtil jeg stopper',
         alwaysOnMessage: 'Du bliver i dette rum, indtil du pauser eller forlader det',
         duration: 'Varighed',
         durationUnitMin: 'min',
         end: 'Slut',
         nextDay: 'dag',
-        quickSelect: 'Hurtigvalg',
+        quickSelect: 'Hvor længe?',
         start: 'Start',
         days: 'Dage',
         add: 'Tilføj tider',
+        scheduleWhenHeading: 'Når dette rum åbner',
+        segmentDaysWeekdays: 'Hverdage',
+        segmentDaysWeekends: 'Weekender',
+        segmentDaysEveryDay: 'Hver dag',
+        segmentDaysNone: 'Ingen dage',
+        segmentDone: 'Færdig',
+        segmentDelete: 'Slet',
         repeat: 'Gentag ugeskema:',
         repeatNo: 'Nej',
         repeatForever: 'For evigt',
@@ -20594,6 +20845,30 @@ function websiteWord(count) {
     return count === 1 ? 'website' : 'websites';
 }
 
+function siteWord(count) {
+    if (getSettingsLanguage() === 'da') {
+        return count === 1 ? 'websted' : 'websteder';
+    }
+    return count === 1 ? 'site' : 'sites';
+}
+
+/** Short label from a blocked domain, e.g. instagram.com → instagram. */
+function siteNameForDisplay(url) {
+    const host = cleanUrlForDisplay(url).split('/')[0].split(':')[0];
+    const parts = host.split('.').filter(Boolean);
+    if (parts.length === 0) return host;
+    if (parts.length === 1) return parts[0];
+    return parts[parts.length - 2];
+}
+
+/** Room card line, e.g. "3 sites · instagram, youtube, reddit". */
+function formatBlocklistCardSitesSummary(websiteCount, websites, showDetails) {
+    const countLabel = `${websiteCount} ${siteWord(websiteCount)}`;
+    if (!showDetails || websiteCount === 0) return countLabel;
+    const names = (websites || []).map(siteNameForDisplay);
+    return names.length > 0 ? `${countLabel} · ${names.join(', ')}` : countLabel;
+}
+
 function formatCurrentVersionText(version) {
     return `${tSettings('yourVersionPrefix')} ${version || 'Unknown'}`;
 }
@@ -20640,7 +20915,7 @@ function applySettingsLanguage() {
         behaviourDismissBtn.title = tSettings('setupBrowsersBannerDismissTitle');
     }
     setText('main-start-block-title', tSettings('mainStartBlockTitle'));
-    setText('instant-mode-tab-label', tSettings('modeNow'));
+    setText('instant-mode-tab-label', tSettings('modeTimer'));
     setText('schedule-mode-tab-label', tSettings('modeSchedule'));
     setText('selection-prompt-label', tSettings('selectionPrompt'));
     const blocklistSelect = document.getElementById('blocklist-select');
@@ -20657,6 +20932,11 @@ function applySettingsLanguage() {
     );
     setText('now-blocking-label-text', tSettings('nowBlockingLabel'));
     setText('schedule-footer-hint', tSettings('scheduleFooterHint'));
+    setText('duration-quick-btn-15', tSettings('durationQuick15m'));
+    setText('duration-quick-btn-30', tSettings('durationQuick30m'));
+    setText('duration-quick-btn-45', tSettings('durationQuick45m'));
+    setText('duration-quick-btn-60', tSettings('durationQuick1Hour'));
+    setText('duration-quick-btn-120', tSettings('durationQuick2Hours'));
     setText('duration-quick-btn-always-label', tSettings('durationQuickAlways'));
     setText('always-on-message-text', tSettings('alwaysOnMessage'));
     setText('duration-label', tSettings('duration'));
@@ -20667,6 +20947,7 @@ function applySettingsLanguage() {
     setText('schedule-end-label', tSettings('end'));
     setText('schedule-days-label', tSettings('days'));
     setText('add-segment-label', tSettings('add'));
+    setText('schedule-segments-heading', tSettings('scheduleWhenHeading'));
     setText('repeat-label', tSettings('repeat'));
     setText('schedule-panel-overlay-label', tSettings('scheduleActiveOverlayLabel'));
     const repeatNo = document.querySelector('.repeat-option[data-value="no"]');
@@ -20682,7 +20963,7 @@ function applySettingsLanguage() {
         else repeatDropdownText.textContent = tSettings('repeatNo');
     }
     setText('pause-btn-label', tSettings('pause'));
-    setBtnActionLabel(document.getElementById('start-block-btn-label'), tSettings('startBlockButton'));
+    setBtnActionLabel(document.getElementById('start-block-btn-label'), tSettings('startBlockButton'), { simple: true });
     const startBlockBtn = document.getElementById('start-block-btn');
     if (startBlockBtn) {
         setStartBlockBtnLeadingIcon(
@@ -21278,17 +21559,18 @@ function schedulerModeTabsNeedIconOnly(header, modeTabs, toolbar) {
 
 /** Keep desktop/iOS scheduler header chrome from overlapping as space tightens. */
 function syncSchedulerModeTabLabelMode() {
-    const header = document.querySelector('.scheduler-section > .section-header');
-    const modeTabs = header?.querySelector('.scheduler-mode-tabs');
+    const enterHeader = document.getElementById('scheduler-enter-header');
+    const timePicker = document.getElementById('time-picker-container');
+    const modeTabs = enterHeader?.querySelector('.scheduler-mode-tabs');
     const body = document.body;
-    if (!header || !modeTabs || modeTabs.classList.contains('hidden')) {
+    if (!enterHeader || !modeTabs || !timePicker || timePicker.classList.contains('hidden')) {
         body.classList.remove('ui-zoom-sched-hide-title', 'ui-zoom-sched-tabs-icons');
         schedTabsIconOnlyEnteredAtWidth = 0;
         return;
     }
 
     const hadIconOnly = body.classList.contains('ui-zoom-sched-tabs-icons');
-    const headerWidth = header.clientWidth;
+    const headerWidth = enterHeader.clientWidth;
 
     // If icon-only was the last stable state, only retry full labels after the
     // row actually gets wider. Otherwise the ResizeObserver can bounce forever
@@ -21304,19 +21586,19 @@ function syncSchedulerModeTabLabelMode() {
     }
 
     body.classList.remove('ui-zoom-sched-hide-title', 'ui-zoom-sched-tabs-icons');
-    void header.offsetWidth;
+    void enterHeader.offsetWidth;
 
-    const mainTitle = header.querySelector('#main-start-block-title');
-    const toolbar = header.querySelector('#settings-toolbar-scheduler');
-    const iconOnly = schedulerModeTabsNeedIconOnly(header, modeTabs, toolbar);
+    const mainTitle = document.getElementById('main-start-block-title');
+    const toolbar = document.querySelector('#settings-toolbar-scheduler');
+    const iconOnly = schedulerModeTabsNeedIconOnly(enterHeader, modeTabs, toolbar);
 
-    if (!isIOS && mainTitle && !mainTitle.classList.contains('hidden') && iconOnly) {
+    if (!isIOS && mainTitle && iconOnly) {
         body.classList.add('ui-zoom-sched-hide-title');
-        void header.offsetWidth;
+        void enterHeader.offsetWidth;
     }
 
     body.classList.toggle('ui-zoom-sched-tabs-icons', iconOnly);
-    schedTabsIconOnlyEnteredAtWidth = iconOnly ? header.clientWidth : 0;
+    schedTabsIconOnlyEnteredAtWidth = iconOnly ? enterHeader.clientWidth : 0;
 }
 
 function scheduleSelectionPromptLayout() {
@@ -21445,7 +21727,7 @@ function bindUiZoomLayoutObserver() {
     const targets = [
         document.getElementById('main-content'),
         document.querySelector('.grid-top-row'),
-        document.querySelector('.scheduler-section > .section-header'),
+        document.getElementById('scheduler-enter-header'),
         document.getElementById('scheduler-section'),
         document.getElementById('blocklists-container'),
         document.getElementById('selection-prompt'),

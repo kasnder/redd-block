@@ -1680,7 +1680,7 @@ body.dark-mode .app-blocking-closedown-banner{
     
 
     /* Portrait stack: show Now/Schedule text unless JS detects overlap (ui-zoom-sched-tabs-icons). */
-    body.ios:not(.ios-phone) .scheduler-section > .section-header .mode-tab-label{
+    body.ios:not(.ios-phone) .scheduler-enter-header .mode-tab-label{
         position: static;
         width: auto;
         height: auto;
@@ -1691,7 +1691,7 @@ body.dark-mode .app-blocking-closedown-banner{
         white-space: nowrap;
         border: 0;
     }
-    body.ios:not(.ios-phone).ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-label{
+    body.ios:not(.ios-phone).ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab-label{
         position: absolute;
         width: 1px;
         height: 1px;
@@ -1830,7 +1830,8 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack svg{
         font-size: 14px;
     }
 
-    body.ios:not(.ios-phone) .main-content .quick-select-row .time-label{
+    body.ios:not(.ios-phone) .main-content .quick-select-row .time-label,
+    body.ios:not(.ios-phone) .main-content #schedule-segments-heading{
         font-size: 15px;
     }
 
@@ -1845,14 +1846,14 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack svg{
     }
 
     body.ios:not(.ios-phone) .main-content .quick-select-row .duration-quick-btn{
-        padding: 9px 13px;
+        padding: 10px 16px;
         font-size: 16px;
-        border-radius: 8px;
+        border-radius: 12px;
     }
 
     body.ios:not(.ios-phone) .main-content .quick-select-row .duration-quick-btn-always svg{
-        width: 15px;
-        height: 15px;
+        width: 16px;
+        height: 16px;
     }
 
     body.ios:not(.ios-phone) .main-content .always-on-message{
@@ -2008,13 +2009,20 @@ body.ios:not(.ios-phone) .main-content .start-schedule-btn > svg{
     }
 
     body.ios:not(.ios-phone) .main-content .schedule-segments:has(.schedule-segment:nth-child(4)){
-        --schedule-segment-scroll-height: 138px;
+        --schedule-segment-scroll-height: 80px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .schedule-segment-expanded{
+        padding: 16px;
+        border-radius: 12px;
+    }
+
+    body.ios:not(.ios-phone) .main-content .segment-summary-btn{
+        padding: 14px 16px;
+        font-size: 16px;
     }
 
     body.ios:not(.ios-phone) .main-content .schedule-segment{
-        padding: 14px 16px;
-        border-radius: 10px;
-        --schedule-segment-pad-y: 14px;
         --schedule-segment-label-size: 14px;
         --schedule-segment-remove-size: 30px;
     }
@@ -2050,10 +2058,10 @@ body.ios:not(.ios-phone) .main-content .start-schedule-btn > svg{
 
     body.ios:not(.ios-phone) .main-content .add-segment-btn{
         gap: 8px;
-        padding: 12px 16px;
+        padding: 14px 18px;
         font-size: 16px;
-        border-radius: 10px;
-        width: 148px;
+        border-radius: 14px;
+        width: 100%;
     }
 
     body.ios:not(.ios-phone) .main-content .add-segment-btn svg{
@@ -3014,14 +3022,14 @@ body.ios:not(.ios-phone) .modal-overlay #settings-modal .settings-feedback-foote
         padding: 8px 13px;
     }
 
-    body:not(.ios) .scheduler-section > .section-header .mode-tab{
+    body:not(.ios) .scheduler-enter-header .mode-tab{
         padding-top: 0;
         padding-bottom: 0;
         padding-left: 12px;
         padding-right: 12px;
     }
 
-    body:not(.ios) .scheduler-section > .section-header .mode-tab.active{
+    body:not(.ios) .scheduler-enter-header .mode-tab.active{
         padding-top: 0;
         padding-bottom: 0;
         padding-left: 12px;
@@ -3047,7 +3055,7 @@ body.ios.ui-zoom-tier-cramped .blocklist-card{
     max-width: 100%;
 }
 
-body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-label{
+body.ios.ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab-label{
     position: absolute;
     width: 1px;
     height: 1px;
@@ -3059,13 +3067,13 @@ body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab
     border: 0;
 }
 
-body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .scheduler-mode-tabs{
+body.ios.ui-zoom-sched-tabs-icons .scheduler-enter-header .scheduler-mode-tabs{
     max-width: none;
     flex: 0 1 auto;
     min-width: 0;
 }
 
-body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab{
+body.ios.ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab{
     padding: 8px 11px;
     gap: 0;
     font-size: 15px;
@@ -3073,22 +3081,23 @@ body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab
     white-space: nowrap;
 }
 
-body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab.active{
+body.ios.ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab.active{
     padding: 10px 12px;
 }
 
-body.ios.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-icon{
+body.ios.ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab-icon{
     width: 18px;
     height: 18px;
 }
 
 /* Wider iOS viewports: size tabs to label content instead of equal-flex in 250px bar. */
-body.ios:not(.ui-zoom-sched-tabs-icons) .scheduler-section > .section-header .scheduler-mode-tabs{
+body.ios:not(.ui-zoom-sched-tabs-icons) .scheduler-enter-header .scheduler-mode-tabs{
     max-width: none;
 }
 
-body.ios:not(.ui-zoom-sched-tabs-icons) .scheduler-section > .section-header .mode-tab{
-    flex: 0 0 auto;
+body.ios:not(.ui-zoom-sched-tabs-icons) .scheduler-enter-header .mode-tab{
+    flex: 1 1 0;
+    width: 0;
 }
 
 body:not(.ios).ui-zoom-sched-hide-title #main-start-block-title{
@@ -3194,9 +3203,6 @@ body:not(.ios) .scheduler-section > .section-header.scheduler-header-compact{
 
 .scheduler-section > .section-header{
     width: 100%;
-    /* Size-based Now / Schedule chrome: icon-only when this row is too narrow for text + padding. */
-    container-type: inline-size;
-    container-name: sched-header;
 }
 
 body:not(.ios) .scheduler-section > .section-header{
@@ -3204,7 +3210,7 @@ body:not(.ios) .scheduler-section > .section-header{
     padding-right: 172px;
 }
 
-body.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-label{
+body.ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab-label{
     position: absolute;
     width: 1px;
     height: 1px;
@@ -3216,54 +3222,55 @@ body.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-lab
     border: 0;
 }
 
-body.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .scheduler-mode-tabs{
+body.ui-zoom-sched-tabs-icons .scheduler-enter-header .scheduler-mode-tabs{
     max-width: none;
 }
 
-body.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab{
+body.ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab{
     gap: 0;
     font-size: 15px;
-    flex: 0 0 auto;
+    flex: 1 1 0;
+    width: 0;
     white-space: nowrap;
 }
 
-body.ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab.active{
+body.ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab.active{
     white-space: nowrap;
 }
 
-body:not(.ios).ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab{
+body:not(.ios).ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab{
     padding-top: 0;
     padding-bottom: 0;
     padding-left: 11px;
     padding-right: 11px;
 }
 
-body:not(.ios).ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab.active{
+body:not(.ios).ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab.active{
     padding-top: 0;
     padding-bottom: 0;
     padding-left: 11px;
     padding-right: 11px;
 }
 
-body:not(.ios).ui-zoom-sched-tabs-icons .scheduler-section > .section-header .mode-tab-icon{
+body:not(.ios).ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab-icon{
     width: 16px;
     height: 16px;
 }
 
 /* Desktop scheduler header tabs: fixed height so icon-only breakpoints never grow the bar
    when the schedule panel wraps (e.g. Start alert onto its own row). */
-body:not(.ios) .scheduler-section > .section-header .scheduler-mode-tabs{
+body:not(.ios) .scheduler-enter-header .scheduler-mode-tabs{
     --scheduler-tab-height: 34px;
     --scheduler-tab-bar-padding: 3px;
-    flex: 0 1 auto;
+    width: 100%;
     flex-shrink: 0;
     min-width: 0;
-    align-self: center;
+    align-self: stretch;
     padding: var(--scheduler-tab-bar-padding);
     box-sizing: border-box;
 }
 
-body:not(.ios) .scheduler-section > .section-header .mode-tab{
+body:not(.ios) .scheduler-enter-header .mode-tab{
     position: relative;
     height: var(--scheduler-tab-height);
     min-height: var(--scheduler-tab-height);
@@ -3273,25 +3280,21 @@ body:not(.ios) .scheduler-section > .section-header .mode-tab{
     padding-left: 14px;
     padding-right: 14px;
     box-sizing: border-box;
-    flex: 0 0 auto;
+    flex: 1 1 0;
+    width: 0;
     line-height: 1;
 }
 
-body:not(.ios) .scheduler-section > .section-header .mode-tab.active{
+body:not(.ios) .scheduler-enter-header .mode-tab.active{
     padding-top: 0;
     padding-bottom: 0;
-    padding-left: 15px;
-    padding-right: 15px;
+    padding-left: 14px;
+    padding-right: 14px;
 }
 
-body:not(.ios) .scheduler-section > .section-header .mode-tab-icon{
+body:not(.ios) .scheduler-enter-header .mode-tab-icon{
     width: 16px;
     height: 16px;
-}
-
-.scheduler-section > .section-header .scheduler-mode-tabs{
-    flex: 0 1 auto;
-    min-width: 0;
 }
 
 .scheduler-section > .section-header .settings-toolbar{
@@ -4350,6 +4353,63 @@ body.dark-mode .day-row.weekend{
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
+.scheduler-enter-header{
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 4px;
+    container-type: inline-size;
+    container-name: sched-enter-header;
+}
+
+.scheduler-enter-header-row{
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.scheduler-enter-header-row h2{
+    margin: 0;
+    flex-shrink: 0;
+    font-family: var(--font-section-label);
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-subtle);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.scheduler-enter-header .scheduler-room-chip{
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: min(100%, 220px);
+}
+
+.scheduler-enter-header .scheduler-mode-tabs{
+    display: flex;
+    width: 100%;
+    max-width: none;
+    box-sizing: border-box;
+}
+
+.scheduler-enter-header .mode-tab{
+    flex: 1 1 0;
+    width: 0;
+    min-width: 0;
+}
+
+.grid-top-row--blocklist-selected .scheduler-section > .section-header{
+    min-height: 0;
+    height: 0;
+    margin-bottom: 0;
+    padding: 0;
+    overflow: visible;
+    border: none;
+}
+
 /* Duration Picker */
 .duration-input-wrapper{
     display: flex;
@@ -4394,44 +4454,54 @@ body.dark-mode .day-row.weekend{
 
 .duration-quick-btns{
     display: flex;
-    gap: 4px;
+    flex-wrap: wrap;
+    gap: 8px;
 }
 
 .duration-quick-btn{
-    padding: 6px 10px;
-    font-size: 13px;
-    font-weight: 600;
-    border: 1px solid var(--input-border);
-    border-radius: 6px;
-    background: var(--input-bg);
-    color: var(--text-subtle);
+    padding: 9px 14px;
+    font-family: var(--font-body);
+    font-size: 15px;
+    font-weight: 700;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    background: var(--element-bg);
+    color: var(--redd-navy);
     cursor: pointer;
-    transition: all 0.15s ease;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.duration-quick-btn:hover{
-    border-color: var(--accent-color);
-    color: var(--accent-color);
+.duration-quick-btn:hover:not(.active){
+    border-color: var(--border-color-medium);
+    color: var(--redd-navy);
 }
 
 .duration-quick-btn.active{
-    background: var(--accent-color);
-    border-color: var(--accent-color);
-    color: white;
+    background: var(--redd-teal);
+    border-color: var(--redd-teal);
+    color: #ffffff;
+    box-shadow: 0 4px 12px rgba(42, 157, 143, 0.22);
 }
 
-/* The "Always" quick-select option is conceptually distinct from the timed durations
-   (no specific length), so it gets a small visual separation and an icon. */
+.duration-quick-btn.active:hover{
+    color: #ffffff;
+}
+
+/* Until-I-stop sits after timed pills — keep the power icon + label grouped. */
 .duration-quick-btn-always{
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    margin-right: 4px;
+    margin-left: 0;
 }
 
 .duration-quick-btn-always svg{
     flex-shrink: 0;
-    opacity: 0.85;
+    opacity: 0.9;
+}
+
+.duration-quick-btn-always.active svg{
+    opacity: 1;
 }
 
 /* Always-on message */
@@ -4473,22 +4543,30 @@ body.dark-mode .day-row.weekend{
 .quick-select-row{
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 10px;
     margin-bottom: 12px;
 }
 
-.quick-select-row .time-label{
+.quick-select-row .time-label,
+#schedule-segments-heading{
     font-size: 14px;
+}
+
+.quick-select-row .duration-quick-btns{
+    flex-wrap: wrap;
+    gap: 8px;
 }
 
 .quick-select-row .duration-quick-btn{
     font-size: 15px;
-    padding: 7px 11px;
+    font-weight: 700;
+    padding: 9px 14px;
+    border-radius: 12px;
 }
 
 .quick-select-row .duration-quick-btn-always svg{
-    width: 13px;
-    height: 13px;
+    width: 14px;
+    height: 14px;
 }
 
 .time-picker-group{
@@ -5043,8 +5121,13 @@ body.dark-mode .start-block-btn.stop-schedule:hover:not(:disabled){
     flex: 0 1 auto;
 }
 
-.block-action-buttons .start-block-btn:not(.stop-meta-collapsed) .btn-label-context::after,
-.block-action-buttons .start-schedule-btn:not(.stop-meta-collapsed) .btn-label-context::after{
+.start-block-btn:not(.stop-block) .btn-blocklist-meta,
+.start-schedule-btn:not(.stop-schedule) .btn-blocklist-meta{
+    display: none;
+}
+
+.block-action-buttons .start-block-btn.stop-block:not(.stop-meta-collapsed) .btn-label-context::after,
+.block-action-buttons .start-schedule-btn.stop-schedule:not(.stop-meta-collapsed) .btn-label-context::after{
     content: ':';
 }
 
@@ -5245,7 +5328,7 @@ body:not(.handset-device) .modal-content.pause-modal{
 .scheduler-mode-tabs{
     display: inline-flex;
     gap: 2px;
-    background: rgba(0, 0, 0, 0.05);
+    background: var(--container-bg);
     padding: 4px;
     border-radius: 10px;
     max-width: 250px;
@@ -5253,7 +5336,7 @@ body:not(.handset-device) .modal-content.pause-modal{
 }
 
 body.dark-mode .scheduler-mode-tabs{
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--container-bg);
 }
 
 .mode-tab{
@@ -5266,7 +5349,7 @@ body.dark-mode .scheduler-mode-tabs{
     padding: 6px 14px;
     border: none;
     border-radius: 8px;
-    background: transparent;
+    background: var(--container-bg);
     color: var(--text-muted);
     font-size: 15px;
     font-weight: 500;
@@ -5284,7 +5367,7 @@ body.dark-mode .scheduler-mode-tabs{
     opacity: 1;
 }
 
-.mode-tab:hover{
+.mode-tab:hover:not(.active){
     color: var(--text-secondary);
 }
 
@@ -5295,7 +5378,7 @@ body.dark-mode .scheduler-mode-tabs{
     padding: 8px 15px;
 }
 
-body:not(.ios) .scheduler-section > .section-header .mode-tab.active{
+body:not(.ios) .scheduler-enter-header .mode-tab.active{
     padding-top: 0;
     padding-bottom: 0;
 }
@@ -5328,7 +5411,7 @@ body.dark-mode .mode-tab.active{
 
 /* Four or more segments: cap the list at ~3.5 rows and scroll the rest. */
 .schedule-segments:has(.schedule-segment:nth-child(4)){
-    --schedule-segment-scroll-height: 124px;
+    --schedule-segment-scroll-height: 72px;
     max-height: calc(
         3.5 * var(--schedule-segment-scroll-height) +
         2.5 * var(--schedule-segments-gap, 10px)
@@ -5343,13 +5426,156 @@ body.dark-mode .mode-tab.active{
     display: block;
     width: 100%;
     box-sizing: border-box;
-    padding: 12px 14px;
-    border-radius: var(--radius-sm);
-    background: var(--app-bg);
-    --schedule-segment-pad-y: 12px;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    --schedule-segment-pad-y: 0;
     --schedule-segment-label-size: 13px;
     --schedule-segment-label-line-height: 1.3;
     --schedule-segment-remove-size: 30px;
+}
+
+.schedule-segment-expanded{
+    padding: 14px;
+    border: none;
+    border-radius: 12px;
+    background: var(--app-bg);
+}
+
+.schedule-segment-collapsed{
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--panel-bg);
+    overflow: hidden;
+}
+
+.schedule-segment-collapsed.segment-locked{
+    opacity: 0.72;
+}
+
+.segment-summary-btn{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 12px 14px;
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    box-sizing: border-box;
+}
+
+.segment-summary-btn:hover:not(:disabled){
+    background: var(--element-hover-bg);
+}
+
+.segment-summary-clock{
+    flex-shrink: 0;
+    color: var(--text-muted);
+}
+
+.segment-summary-time{
+    flex: 0 0 auto;
+    min-width: 0;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.segment-summary-days{
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-left: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--accent-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.segment-summary-chevron{
+    flex-shrink: 0;
+    margin-left: 8px;
+    color: var(--text-muted);
+}
+
+.segment-day-presets{
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 6px;
+    margin-top: 12px;
+}
+
+.segment-day-preset{
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 6px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 999px;
+    background: var(--panel-bg);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.segment-day-preset:hover:not(:disabled){
+    border-color: color-mix(in srgb, var(--accent-color) 40%, var(--border-color));
+}
+
+.segment-day-preset.active{
+    border-color: var(--accent-color);
+    background: color-mix(in srgb, var(--accent-color) 12%, var(--panel-bg));
+    color: var(--accent-color);
+}
+
+.segment-editor-footer{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 14px;
+    padding-top: 0;
+}
+
+.segment-delete-btn{
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: hsl(0, 65%, 48%);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.segment-delete-btn:hover:not(:disabled){
+    color: hsl(0, 70%, 42%);
+}
+
+.segment-done-btn{
+    padding: 8px 18px;
+    border: none;
+    border-radius: 999px;
+    background: var(--accent-color);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.segment-done-btn:hover:not(:disabled){
+    filter: brightness(0.95);
 }
 
 body:not(.ios) .schedule-segment{
@@ -5408,7 +5634,6 @@ body.ios .schedule-block-panel .time-separator svg {
 }
 
 body.ios .schedule-segment {
-    --schedule-segment-pad-y: 14px;
     --schedule-segment-label-size: 14px;
     --schedule-segment-remove-size: 30px;
 }
@@ -5467,38 +5692,59 @@ body.ios .schedule-segment .remove-segment-btn {
     color: hsl(0, 70%, 50%);
 }
 
-/* Add Segment Button - align from start hour left edge to end minute right edge */
+/* Add Segment Button */
 .add-segment-btn{
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 6px;
-    padding: 10px 14px;
-    border: 1px dashed var(--border-color);
-    border-radius: 8px;
-    background: transparent;
-    color: var(--text-muted);
+    gap: 8px;
+    padding: 14px 18px;
+    border: 1px dashed color-mix(in srgb, var(--border-color) 88%, transparent);
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--redd-teal-soft) 38%, var(--panel-bg));
+    color: var(--redd-teal-hover);
     font-size: 15px;
+    font-weight: 700;
     cursor: pointer;
-    transition: all 0.15s ease;
-    width: 134px;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    width: 100%;
     box-sizing: border-box;
 }
 
+.add-segment-btn svg{
+    flex-shrink: 0;
+    opacity: 0.92;
+}
+
 .add-segment-btn:hover{
-    border-color: var(--accent-color);
-    color: var(--accent-color);
-    background: var(--schedule-pending-bg);
+    border-color: color-mix(in srgb, var(--accent-color) 22%, var(--border-color));
+    color: var(--redd-teal-hover);
+    background: color-mix(in srgb, var(--redd-teal-soft) 52%, var(--panel-bg));
 }
 
 body.dark-mode .add-segment-btn{
-    /* Dashed strokes read thinner than solids; bump vs --border-color (0.10) for readability */
-    border-color: rgba(255, 255, 255, 0.17);
+    border-color: rgba(255, 255, 255, 0.14);
+    background: color-mix(in srgb, var(--redd-teal-soft) 18%, var(--panel-bg));
+    color: color-mix(in srgb, var(--accent-color) 78%, white);
 }
 
-/* Segment Row - contains time pickers and day toggles inline. Wraps so the days group
-   can drop below the time pickers when the panel is too narrow to hold both side-by-side
-   (otherwise the day pills overflow off the right of the window). */
+body.dark-mode .add-segment-btn:hover{
+    border-color: rgba(255, 255, 255, 0.22);
+    background: color-mix(in srgb, var(--redd-teal-soft) 28%, var(--panel-bg));
+}
+
+/* Segment Row - times on top, days full-width below (schedule enter panel). */
+.schedule-block-panel .segment-row{
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+}
+
+.schedule-block-panel .segment-row > .time-pickers-row,
+.schedule-block-panel .segment-row > .segment-days-group{
+    width: 100%;
+}
+
 .segment-row{
     display: flex;
     align-items: flex-start;
@@ -5734,9 +5980,9 @@ body.dark-mode .schedule-panel-overlay-group .repeat-label.repeat-label-disabled
     border: 1px solid var(--border-color);
     border-radius: 6px;
     background: var(--element-bg);
-    color: var(--accent-color);
+    color: color-mix(in srgb, var(--text-secondary) 58%, var(--text-muted));
     font-size: 15px;
-    font-weight: 500;
+    font-weight: 700;
     cursor: pointer;
     transition: all 0.15s ease;
 }
@@ -5802,9 +6048,9 @@ body.dark-mode .schedule-panel-overlay-group .repeat-label.repeat-label-disabled
 }
 
 .repeat-option.active{
-    background: rgba(42, 157, 143, 0.15);
-    color: var(--accent-color);
-    font-weight: 500;
+    background: var(--element-hover-bg);
+    color: color-mix(in srgb, var(--text-secondary) 58%, var(--text-muted));
+    font-weight: 700;
 }
 
 .repeat-date-wrapper{
@@ -6327,6 +6573,7 @@ body.ios .blocklists-container {
     letter-spacing: 0.06em;
     text-transform: uppercase;
     line-height: 1.2;
+    color: #fff;
     pointer-events: none;
     white-space: nowrap;
 }
@@ -13465,12 +13712,11 @@ body.ios.ios-phone .main-content .schedule-block-panel .segment-days{
 
 body.ios.ios-phone .main-content .add-segment-btn{
     gap: 8px;
-    padding: 12px 16px;
+    padding: 14px 18px;
     font-size: 16px;
-    min-height: 44px;
-    border-radius: 10px;
-    width: auto;
-    min-width: 148px;
+    min-height: 48px;
+    border-radius: 14px;
+    width: 100%;
     box-sizing: border-box;
 }
 
