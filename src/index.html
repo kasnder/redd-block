@@ -646,7 +646,7 @@
                 <!-- Block Scheduler (Left Column) -->
                 <div id="scheduler-section" class="scheduler-section">
                     <div class="section-header">
-                        <h2 id="main-start-block-title" class="hidden">Start a Block</h2>
+                        <h2 id="main-start-block-title" class="hidden">Enter Room</h2>
                         <div class="scheduler-mode-tabs hidden">
                             <button class="mode-tab active" id="instant-mode-tab" data-mode="instant" title="One-off">
                                 <svg class="mode-tab-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
@@ -952,13 +952,17 @@
 
                                 <!-- Start/Stop Block Button (for instant mode) -->
                                 <button id="start-block-btn" class="start-block-btn hidden" disabled>
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    <img class="start-block-btn-app-icon start-block-btn-leading" src="/rum-mark.svg"
+                                        alt="" aria-hidden="true">
+                                    <svg class="start-block-btn-unlock-icon start-block-btn-leading hidden" width="18"
+                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                        <polygon points="6 3 20 12 6 21 6 3"></polygon>
+                                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                        <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
                                     </svg>
                                     <span class="btn-label" id="start-block-btn-label"><span
-                                            class="btn-label-action">Start</span><span class="btn-label-context">
-                                            Block</span></span>
+                                            class="btn-label-action">Enter</span><span class="btn-label-context">
+                                            Room</span></span>
                                     <span class="btn-blocklist-meta">
                                         <span class="btn-blocklist-lead" aria-hidden="true"></span>
                                         <span class="btn-emoji" aria-hidden="true"></span>
@@ -969,9 +973,13 @@
                                 <!-- Start Schedule Button (for schedule mode) -->
                                 <button id="start-schedule-btn" class="start-block-btn start-schedule-btn hidden"
                                     disabled>
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    <img class="start-block-btn-app-icon start-block-btn-leading" src="/rum-mark.svg"
+                                        alt="" aria-hidden="true">
+                                    <svg class="start-block-btn-unlock-icon start-block-btn-leading hidden" width="18"
+                                        height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                        <polygon points="6 3 20 12 6 21 6 3"></polygon>
+                                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                        <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
                                     </svg>
                                     <span class="btn-label" id="start-schedule-btn-label"><span
                                             class="btn-label-action">Start</span><span class="btn-label-context">
@@ -990,7 +998,7 @@
                 <!-- Blocklists Section (Right Column) -->
                 <div id="blocklists-section" class="blocklists-section">
                     <div class="section-header blocklists-section-header">
-                        <h2 id="main-blocklists-title">My Blocklists</h2>
+                        <h2 id="main-blocklists-title">My Rooms</h2>
                         <button id="add-blocklist-btn" class="icon-btn" title="Add blocklist">
                             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1072,7 +1080,7 @@
         <!-- Blocklist Modal -->
         <div id="blocklist-modal" class="modal-overlay hidden">
             <div class="modal-content">
-                <h3 id="modal-title">Create Blocklist</h3>
+                <h3 id="modal-title">Create Room</h3>
 
                 <div id="active-blocklist-warning" class="warning-banner hidden">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -1152,7 +1160,7 @@
 
                 <div class="form-group">
                     <label class="label-with-info">
-                        <span id="blocklist-websites-label">Websites</span>
+                        <span id="blocklist-websites-label">Websites to block</span>
                         <span class="info-tooltip-wrapper">
                             <svg class="info-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
                                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1224,7 +1232,7 @@
 
                 <div class="form-group">
                     <label class="label-with-info">
-                        <span id="blocklist-apps-label">Apps</span>
+                        <span id="blocklist-apps-label">Apps to block</span>
                         <span class="info-tooltip-wrapper">
                             <svg class="info-icon" width="14" height="14" viewBox="0 0 24 24" fill="none"
                                 stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1256,7 +1264,7 @@
                 </div>
 
                 <div class="form-group">
-                    <label id="override-difficulty-label">Override Difficulty</label>
+                    <label id="override-difficulty-label">Exit Difficulty</label>
                     <div class="override-type-row">
                         <select id="override-type" class="form-select override-type-select">
                             <option id="override-option-random-words" value="random-words">Random Words</option>
@@ -1456,7 +1464,7 @@
                 <div class="start-confirm-header">
                     <div class="start-confirm-emoji-badge" id="start-confirm-emoji" aria-hidden="true">🎯</div>
                     <div class="start-confirm-header-text">
-                        <h3 id="start-block-confirm-title">Start the block?</h3>
+                        <h3 id="start-block-confirm-title">Enter the room?</h3>
                         <p class="start-confirm-subtitle" id="start-confirm-subtitle"></p>
                     </div>
                 </div>
@@ -1499,18 +1507,15 @@
                                 <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
                             </svg>
                         </span>
-                        <span id="confirm-override-header">To stop this blocking, you'll need to:</span>
+                        <span id="confirm-override-header">To exit the room and stop its blocking, you'll need to:</span>
                     </div>
                     <p id="start-confirm-override-text"></p>
                 </div>
                 <div class="modal-buttons start-confirm-actions">
                     <button id="cancel-start-confirm-btn" class="modal-btn cancel-btn">Cancel</button>
                     <button id="proceed-start-confirm-btn" class="modal-btn black-btn start-confirm-primary-btn">
-                        <svg class="start-confirm-primary-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <polygon points="6 3 20 12 6 21 6 3"></polygon>
-                        </svg>
-                        <span class="start-confirm-primary-label">Start Block</span>
+                        <img class="start-confirm-primary-icon" src="/rum-mark.svg" alt="" aria-hidden="true">
+                        <span class="start-confirm-primary-label">Enter Room</span>
                     </button>
                 </div>
             </div>

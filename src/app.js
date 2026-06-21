@@ -7,6 +7,7 @@ import { ask, message, open as openDialog, save as saveDialog } from '@tauri-app
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import logoReddFocusUrl from './images/logo-reddfocus.svg';
 import rumIconUrl from './fristed-icon.svg';
+import rumMarkUrl from './rum-mark.svg';
 import appleLogoUrl from './images/apple-logo.svg';
 import iconChromeUrl from './images/icon-chrome.svg';
 import iconBraveUrl from './images/icon-brave.svg';
@@ -9647,18 +9648,12 @@ function setScheduleMode(isSchedule) {
 
                 // Also update button to show Stop state
                 const btnLabel = startBlockBtn.querySelector('.btn-label');
-                const btnIcon = startBlockBtn.querySelector('svg');
                 startBlockBtn.classList.add('stop-block');
                 setBtnActionLabel(btnLabel, tSettings('stopBlock'));
                 setStartBtnBlocklistInfo(startBlockBtn, blocklist);
                 startBlockBtn.disabled = false;
                 startBlockBtn.dataset.activeBlockId = activeBlock.id;
-                if (btnIcon) {
-                    btnIcon.innerHTML = `
-                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                        <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
-                    `;
-                }
+                setStartBlockBtnLeadingIcon(startBlockBtn, 'stop');
                 disableTimeControls(true);
 
                 // Keep the info message visible for active always-on blocks.
@@ -9668,7 +9663,9 @@ function setScheduleMode(isSchedule) {
                 if (pauseBtn) pauseBtn.classList.add('hidden');
                 startBlockBtn.classList.remove('stop-block');
                 delete startBlockBtn.dataset.activeBlockId;
+                setBtnActionLabel(startBlockBtn.querySelector('.btn-label'), tSettings('startBlockButton'));
                 setStartBtnBlocklistInfo(startBlockBtn, blocklist);
+                setStartBlockBtnLeadingIcon(startBlockBtn, 'enter');
             }
         }
     }
@@ -9888,7 +9885,6 @@ function updateScheduleButtonState() {
         : null;
 
     const btnLabel = startScheduleBtn.querySelector('.btn-label');
-    const btnIcon = startScheduleBtn.querySelector('svg');
 
     // Check if there are new segments (beyond the locked count)
     const committedSegmentCount = getCommittedScheduleSegmentCount(activeSchedule);
@@ -9923,13 +9919,7 @@ function updateScheduleButtonState() {
         startScheduleBtn.disabled = false;
         startScheduleBtn.dataset.activeScheduleId = activeSchedule.id || activeSchedule.blocklistId;
 
-        // Change to unlock icon
-        if (btnIcon) {
-            btnIcon.innerHTML = `
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
-            `;
-        }
+        setStartBlockBtnLeadingIcon(startScheduleBtn, 'stop');
 
         // Disable controls for existing (committed) segments; new ones stay editable
         disableScheduleControls(true);
@@ -9941,12 +9931,7 @@ function updateScheduleButtonState() {
         startScheduleBtn.classList.remove('edit-schedule');
         delete startScheduleBtn.dataset.activeScheduleId;
 
-
-
-        // Play icon
-        if (btnIcon) {
-            btnIcon.innerHTML = LUCIDE_PLAY_SVG_INNER;
-        }
+        setStartBlockBtnLeadingIcon(startScheduleBtn, 'enter');
 
         // Enable all controls
         disableScheduleControls(false);
@@ -12354,12 +12339,27 @@ function setupScheduleOverlayCustomiseModal() {
 
 const START_CONFIRM_ICON_GLOBE = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;
 const START_CONFIRM_ICON_APP = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M10 4v4"></path><path d="M2 8h20"></path><path d="M6 4v4"></path></svg>`;
-const LUCIDE_PLAY_SVG_INNER = '<polygon points="6 3 20 12 6 21 6 3"></polygon>';
+
+function setStartBlockBtnLeadingIcon(btn, mode) {
+    if (!btn || (btn.id !== 'start-block-btn' && btn.id !== 'start-schedule-btn')) return;
+    const appIcon = btn.querySelector('.start-block-btn-app-icon');
+    const unlockIcon = btn.querySelector('.start-block-btn-unlock-icon');
+    const isStop = mode === 'stop';
+    if (appIcon) {
+        appIcon.src = rumMarkUrl;
+        appIcon.classList.toggle('hidden', isStop);
+    }
+    if (unlockIcon) unlockIcon.classList.toggle('hidden', !isStop);
+}
 
 function setStartConfirmPrimaryLabel(buttonId, text) {
     const btn = document.getElementById(buttonId);
     const label = btn?.querySelector('.start-confirm-primary-label');
     if (label) label.textContent = text;
+    if (buttonId === 'proceed-start-confirm-btn') {
+        const icon = btn?.querySelector('.start-confirm-primary-icon');
+        if (icon && icon.tagName === 'IMG') icon.src = rumMarkUrl;
+    }
 }
 
 function buildStartConfirmBlockingLineHtml(type, labels) {
@@ -13769,7 +13769,6 @@ function handleBlocklistSelect(e) {
 
                 if (blocklist) {
                     const btnLabel = startBlockBtn.querySelector('.btn-label');
-                    const btnIcon = startBlockBtn.querySelector('svg');
 
                     // Always clear the activeBlockId first to prevent cross-blocklist issues
                     delete startBlockBtn.dataset.activeBlockId;
@@ -13791,13 +13790,7 @@ function handleBlocklistSelect(e) {
                             updatePauseButtonAppearance(!!activeBlock.isPaused);
                         }
 
-                        // Change to unlock icon
-                        if (btnIcon) {
-                            btnIcon.innerHTML = `
-                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                                <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
-                            `;
-                        }
+                        setStartBlockBtnLeadingIcon(startBlockBtn, 'stop');
 
                         // Disable time controls
                         disableTimeControls(true);
@@ -13806,15 +13799,12 @@ function handleBlocklistSelect(e) {
                         const alwaysOnMsg = document.getElementById('always-on-message');
                         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
                     } else {
-                        // No active block - show Start Block button (normal) with play icon
+                        // No active block - show Enter Room button with app icon
                         // Ensure we've already cleared the activeBlockId above
                         setBtnActionLabel(btnLabel, tSettings('startBlockButton'));
                         setStartBtnBlocklistInfo(startBlockBtn, blocklist);
 
-                        // Change to play icon
-                        if (btnIcon) {
-                            btnIcon.innerHTML = LUCIDE_PLAY_SVG_INNER;
-                        }
+                        setStartBlockBtnLeadingIcon(startBlockBtn, 'enter');
 
                         // Enable time controls
                         disableTimeControls(false);
@@ -14189,8 +14179,10 @@ async function proceedWithBlock() {
 // Helper function for start block button HTML (includes .btn-label and .btn-blocklist-meta wrapper)
 function getStartBlockButtonHTML() {
     return `
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <polygon points="6 3 20 12 6 21 6 3"></polygon>
+        <img class="start-block-btn-app-icon start-block-btn-leading" src="${rumMarkUrl}" alt="" aria-hidden="true">
+        <svg class="start-block-btn-unlock-icon start-block-btn-leading hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
         </svg>
         <span class="btn-label">${getActionLabelHTML(tSettings('startBlockButton'))}</span>
         <span class="btn-blocklist-meta">
@@ -16432,7 +16424,6 @@ function syncSelectedControlState() {
     const now = Date.now();
     const activeBlock = appData.activeBlocks.find(b => b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now);
     const btnLabel = startBlockBtn.querySelector('.btn-label');
-    const btnIcon = startBlockBtn.querySelector('svg');
     const pauseBtn = document.getElementById('pause-block-btn');
     const alwaysOnMsg = document.getElementById('always-on-message');
     delete startBlockBtn.dataset.activeBlockId;
@@ -16442,7 +16433,7 @@ function syncSelectedControlState() {
         setBtnActionLabel(btnLabel, tSettings('stopBlock'));
         setStartBtnBlocklistInfo(startBlockBtn, blocklist);
         startBlockBtn.dataset.activeBlockId = activeBlock.id;
-        if (btnIcon) btnIcon.innerHTML = `<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path>`;
+        setStartBlockBtnLeadingIcon(startBlockBtn, 'stop');
         if (pauseBtn) {
             pauseBtn.classList.remove('hidden');
             updatePauseButtonAppearance(!!activeBlock.isPaused);
@@ -16452,7 +16443,7 @@ function syncSelectedControlState() {
     } else {
         setBtnActionLabel(btnLabel, tSettings('startBlockButton'));
         setStartBtnBlocklistInfo(startBlockBtn, blocklist);
-        if (btnIcon) btnIcon.innerHTML = LUCIDE_PLAY_SVG_INNER;
+        setStartBlockBtnLeadingIcon(startBlockBtn, 'enter');
         if (pauseBtn) pauseBtn.classList.add('hidden');
         disableTimeControls(false);
         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isAlwaysOnMode);
@@ -18296,12 +18287,12 @@ const SETTINGS_TRANSLATIONS = {
         updateBannerSuffix: 'is available',
         updateBannerCta: 'Reinstall from reddfocus.org',
         updateBannerWhatsNew: "What's new?",
-        mainStartBlockTitle: 'Start a Block',
+        mainStartBlockTitle: 'Enter Room',
         modeNow: 'Now',
         modeSchedule: 'Schedule',
         selectionPrompt: 'Select a blocklist',
         selectionPromptOption: 'Select a blocklist...',
-        yourBlocklists: 'My Blocklists',
+        yourBlocklists: 'My Rooms',
         blocklistCardMenuTitle: 'Blocklist options',
         blocklistCardDuplicate: 'Duplicate',
         blocklistCardDelete: 'Delete',
@@ -18761,7 +18752,7 @@ const SETTINGS_TRANSLATIONS = {
         repeatForever: 'Forever',
         repeatUntilDate: 'Until date',
         pause: 'Pause',
-        startBlockButton: 'Start Block',
+        startBlockButton: 'Enter Room',
         startScheduleButton: 'Start Schedule',
         stopScheduleButton: 'Stop Schedule',
         /** Shown inside .btn-blocklist-meta before emoji+name when Stop is shown; hidden with meta on narrow layouts. */
@@ -18775,15 +18766,15 @@ const SETTINGS_TRANSLATIONS = {
         saveChangesTitleFmt: 'Save changes to {name}?',
         addingTheseSegments: 'Adding these time segments:',
         // Blocklist modal
-        createBlocklist: 'Create Blocklist',
-        editBlocklist: 'Edit Blocklist',
+        createBlocklist: 'Create Room',
+        editBlocklist: 'Edit Room',
         activeBlocklistWarning: 'This blocklist is active. Some settings are locked.',
         name: 'Name',
-        websites: 'Websites',
+        websites: 'Websites to block',
         websitesTooltip: 'Blocking applies to entire domains. For example, typing "facebook.com" blocks all of Facebook, not just specific pages.',
-        apps: 'Apps',
+        apps: 'Apps to block',
         appsTooltip: 'Enter the exact name of the application (e.g. \'Safari\'). You can also use the folder button to find the app.',
-        overrideDifficulty: 'Override Difficulty',
+        overrideDifficulty: 'Exit Difficulty',
         overrideRandomWords: 'Random Words',
         overrideGibberish: 'Random Gibberish',
         overrideCustomText: 'Custom Text',
@@ -18833,8 +18824,8 @@ const SETTINGS_TRANSLATIONS = {
         helperInstalling: 'Installing...',
         helperUpdating: 'Updating...',
         helperReinstalling: 'Reinstalling...',
-        startThisBlock: 'Start this block?',
-        startBlockTitleFmt: 'Start the block “{name}”?',
+        startThisBlock: 'Enter this room?',
+        startBlockTitleFmt: 'Enter the room “{name}”?',
         resumeBlockTitleFmt: 'Resume the block “{name}”?',
         startBlockSubtitleFmt: 'Distractions go quiet for the next <strong>{duration}</strong>.',
         startBlockSubtitleAlways: 'Distractions stay quiet until you turn this block off.',
@@ -18847,7 +18838,7 @@ const SETTINGS_TRANSLATIONS = {
         startConfirmRepeatForever: 'Every week · no end date',
         startConfirmRepeatUntilFmt: 'Every week · until {date}',
         startConfirmRepeatNone: 'One week only · no repeat',
-        startBlockHoldHeader: 'To stop this blocking, you\'ll need to:',
+        startBlockHoldHeader: 'To exit the room and stop its blocking, you\'ll need to:',
         startScheduleHoldHeader: 'To stop this blocking, you\'ll need to:',
         saveChangesHoldHeader: 'To stop this blocking, you\'ll need to:',
         blockedWebsites: 'Blocked websites:',
@@ -18855,7 +18846,7 @@ const SETTINGS_TRANSLATIONS = {
         showAll: 'show all',
         confirmDuration: 'Duration:',
         confirmOverrideNeed: 'To stop this block early, you\'ll need to:',
-        startBlock: 'Start Block',
+        startBlock: 'Enter Room',
         resumeBlock: 'Resume Block',
         resumeThisBlock: 'Resume this block?',
         alwaysUntilOff: 'Always (until turned off)',
@@ -19045,12 +19036,12 @@ const SETTINGS_TRANSLATIONS = {
         updateBannerSuffix: 'er tilgængelig',
         updateBannerCta: 'Geninstaller fra reddfocus.org',
         updateBannerWhatsNew: 'Hvad er nyt?',
-        mainStartBlockTitle: 'Start blokering',
+        mainStartBlockTitle: 'Ind i rum',
         modeNow: 'Nu',
         modeSchedule: 'Skema',
         selectionPrompt: 'Vælg en blokeringsliste',
         selectionPromptOption: 'Vælg en blokeringsliste...',
-        yourBlocklists: 'Mine blokeringlister',
+        yourBlocklists: 'Mine rum',
         blocklistCardMenuTitle: 'Valgmuligheder for blokliste',
         blocklistCardDuplicate: 'Duplikér',
         blocklistCardDelete: 'Slet',
@@ -19491,7 +19482,7 @@ const SETTINGS_TRANSLATIONS = {
         repeatForever: 'For evigt',
         repeatUntilDate: 'Indtil dato',
         pause: 'Pause',
-        startBlockButton: 'Start blokering',
+        startBlockButton: 'Gå ind i rum',
         startScheduleButton: 'Start skema',
         stopScheduleButton: 'Stop skema',
         stopBlockMetaColon: ':',
@@ -19504,15 +19495,15 @@ const SETTINGS_TRANSLATIONS = {
         saveChangesTitleFmt: 'Gem ændringer til {name}?',
         addingTheseSegments: 'Tilføjer disse tidssegmenter:',
         // Blocklist modal
-        createBlocklist: 'Opret blokliste',
-        editBlocklist: 'Rediger blokliste',
+        createBlocklist: 'Opret rum',
+        editBlocklist: 'Rediger rum',
         activeBlocklistWarning: 'Denne blokliste er aktiv. Nogle indstillinger er låst.',
         name: 'Navn',
-        websites: 'hjemmesider',
+        websites: 'Hjemmesider at blokere',
         websitesTooltip: 'Blokering gælder hele domæner. Hvis du fx skriver "facebook.com", blokeres hele Facebook, ikke kun specifikke sider.',
-        apps: 'Apps',
+        apps: 'Apps at blokere',
         appsTooltip: 'Indtast det præcise navn på appen (fx "Safari"). Du kan også bruge mappeknappen til at finde appen.',
-        overrideDifficulty: 'Sværhedsgrad',
+        overrideDifficulty: 'Sværhedsgrad ved exit',
         overrideRandomWords: 'Tilfældige ord',
         overrideGibberish: 'Tilfældig volapyk',
         overrideCustomText: 'Egen tekst',
@@ -19562,8 +19553,8 @@ const SETTINGS_TRANSLATIONS = {
         helperInstalling: 'Installerer...',
         helperUpdating: 'Opdaterer...',
         helperReinstalling: 'Geninstallerer...',
-        startThisBlock: 'Start denne blokering?',
-        startBlockTitleFmt: 'Start blokeringen “{name}”?',
+        startThisBlock: 'Gå ind i dette rum?',
+        startBlockTitleFmt: 'Gå ind i rummet “{name}”?',
         resumeBlockTitleFmt: 'Genoptag blokeringen “{name}”?',
         startBlockSubtitleFmt: 'Distraherende apps og sider er stille de næste <strong>{duration}</strong>.',
         startBlockSubtitleAlways: 'Distraherende apps og sider forbliver stille, indtil du slår blokeringen fra.',
@@ -19576,7 +19567,7 @@ const SETTINGS_TRANSLATIONS = {
         startConfirmRepeatForever: 'Hver uge · ingen slutdato',
         startConfirmRepeatUntilFmt: 'Hver uge · indtil {date}',
         startConfirmRepeatNone: 'Kun én uge · gentages ikke',
-        startBlockHoldHeader: 'For at stoppe denne blokering skal du:',
+        startBlockHoldHeader: 'For at forlade rummet og stoppe dets blokering skal du:',
         startScheduleHoldHeader: 'For at stoppe denne blokering skal du:',
         saveChangesHoldHeader: 'For at stoppe denne blokering skal du:',
         blockedWebsites: 'Blokerede hjemmesider:',
@@ -19584,7 +19575,7 @@ const SETTINGS_TRANSLATIONS = {
         showAll: 'vis alle',
         confirmDuration: 'Varighed:',
         confirmOverrideNeed: 'For at stoppe denne blokering tidligt skal du:',
-        startBlock: 'Start blokering',
+        startBlock: 'Gå ind i rum',
         resumeBlock: 'Genoptag blokering',
         resumeThisBlock: 'Genoptag blokering?',
         alwaysUntilOff: 'Altid (indtil den slås fra)',
@@ -20560,7 +20551,21 @@ function applySettingsLanguage() {
     }
     setText('pause-btn-label', tSettings('pause'));
     setBtnActionLabel(document.getElementById('start-block-btn-label'), tSettings('startBlockButton'));
+    const startBlockBtn = document.getElementById('start-block-btn');
+    if (startBlockBtn) {
+        setStartBlockBtnLeadingIcon(
+            startBlockBtn,
+            startBlockBtn.classList.contains('stop-block') ? 'stop' : 'enter',
+        );
+    }
     setBtnActionLabel(document.getElementById('start-schedule-btn-label'), tSettings('startScheduleButton'));
+    const startScheduleBtn = document.getElementById('start-schedule-btn');
+    if (startScheduleBtn) {
+        setStartBlockBtnLeadingIcon(
+            startScheduleBtn,
+            startScheduleBtn.classList.contains('stop-schedule') ? 'stop' : 'enter',
+        );
+    }
     setText('footer-made-with', tSettings('madeWith'));
     setText('footer-by', tSettings('by'));
     const setPlaceholder = (id, text) => {
