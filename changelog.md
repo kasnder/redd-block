@@ -2,6 +2,35 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
+## v3.4.1
+
+- **Focus Rooms.** Blocklists are now named **Focus Rooms** throughout the app 
+  — **My Focus Rooms**, **Select a room**, and **Enter the room?** copy, plus 
+  a room chip on the scheduler and in start confirmations.
+- **Entering a room.** The start-block and schedule-start confirmations use a
+  clearer header with room chip, subtitle, and summary card; you can dismiss
+  them by clicking outside on desktop.
+- **Room list.** A selected room shows an **Entering** chip; the default
+  **Distractions** starter room uses 📱.
+- **Add/edit room modal.** **Exit Difficulty** is a dedicated panel with live
+  preview and typing-time estimate; Save/Cancel sit in a sticky footer; the
+  websites **Lists** browse button has clearer icon spacing.
+- **Schedule segments.** Multiple schedule segments collapse so only one editor
+  is expanded at a time; active segments stay readable when collapsed.
+- **Scheduler polish.** The detail card shows the room chip and refined enter/stop
+  button styling; desktop **Now** / **Schedule** tabs keep text labels when
+  there is room.
+- **Settings.** Version appears in the settings header; Save sits in a sticky
+  footer; the **Settings** title matches other modal titles; grace-period
+  seconds are centered in the input.
+- **Desktop: modal scrollbars and layout.** Vertical overflow scrollbars sit on
+  the modal edge; at narrow widths the scheduler and room list stack vertically
+  even when a room is selected.
+- **iOS: full-screen modal fixes.** Full-screen sheets no longer rubber-band
+  horizontally when content scrolls vertically; back button, title, and version
+  line align correctly in the settings header.
+- **Version:** 3.4.1 (macOS, Windows, and iOS).
+
 ## v3.3.3
 
 - **iPhone: full-screen modals.** Add/edit blocklist, settings, override, pause,
