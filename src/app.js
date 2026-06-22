@@ -13975,10 +13975,8 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
 /** Start-a-block heading + Now/Schedule tabs — only meaningful once a blocklist is chosen. */
 function syncSchedulerChromeVisibility() {
     const gridTopRow = document.querySelector('.grid-top-row');
-    const sectionHeader = document.querySelector('#scheduler-section > .section-header');
     const hasLists = (appData.blocklists?.length || 0) > 0;
     const show = hasLists && !!selectedBlocklistId;
-    if (sectionHeader) sectionHeader.classList.add('scheduler-header-compact');
     if (gridTopRow) gridTopRow.classList.toggle('grid-top-row--blocklist-selected', show);
     if (show) {
         const blocklist = appData.blocklists.find((bl) => bl.id === selectedBlocklistId);
@@ -19786,9 +19784,9 @@ const SETTINGS_TRANSLATIONS = {
         enforcerBrowserFallback: 'din browser',
         gracePeriodLabel: 'Henstandsperiode',
         gracePeriodHint: 'Sekunder til at slå til igen, før browseren lukkes.',
-        settingsEnforcementHeading: 'Håndhævelse',
+        settingsEnforcementHeading: 'Støtte til selvkontrol',
         settingsBlockingMethodHeading: 'Blokeringsmekanisme',
-        settingsBlockingMethodHint: 'Om websiteblokering skal bruge Automatisering eller ReDD Focus-browserudvidelsen (prøv sidstnævnte, hvis blokeringen hænger).',
+        settingsBlockingMethodHint: 'Om websiteblokering skal bruge Automatisering eller ReDD Focus-browserudvidelsen (prøv sidstnævnte hvis blokering er forsinket).',
         settingsBlockingMethodAutomation: 'Automatisering',
         settingsBlockingMethodExtension: 'Udvidelse',
         settingsBlockingMethodChrome: 'Chrome',
@@ -19830,7 +19828,7 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsAutomationGranted: 'Tilladt',
         diagnosticsAutomationDenied: 'Afvist',
         diagnosticsAutomationUnknown: 'Ukendt',
-        diagnosticsEnforcementSection: 'Håndhævelse',
+        diagnosticsEnforcementSection: 'Støtte til selvkontrol',
         diagnosticsMigrationSection: 'Migration fra v1.x',
         diagnosticsGracePeriod: 'Henstandsperiode',
         diagnosticsAutostart: 'Start ved login',

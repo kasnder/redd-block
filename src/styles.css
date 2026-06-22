@@ -1575,7 +1575,7 @@ body.dark-mode .app-blocking-closedown-banner{
     overflow-y: auto;
     overscroll-behavior-y: none;
     position: relative;
-    padding: 12px 24px 2px 24px;
+    padding: 0 24px 2px 24px;
     margin-top: var(--title-bar-height);
     /* Account for fixed title bar */
     gap: 12px;
@@ -1648,17 +1648,6 @@ body.dark-mode .app-blocking-closedown-banner{
         padding-left: 18px;
         padding-right: 18px;
     }
-
-    body:not(.ios) #settings-toolbar-scheduler{
-        right: 18px;
-    }
-
-    /* Stacked overview: keep the toolbar anchored at the page top-right, but let
-       the compact scheduler header collapse so the prompt sits directly below. */
-    body:not(.ios) .grid-top-row:not(.grid-top-row--blocklist-selected) .scheduler-section > .section-header.scheduler-header-compact{
-        margin-bottom: 0;
-        min-height: 0;
-    }
 }
 
 /* Portrait iPad: same vertical stack as iPhone — blocklists, then scheduler, then
@@ -1709,7 +1698,7 @@ body.dark-mode .app-blocking-closedown-banner{
        Scoped under .main-content so modals / onboarding overlays are unchanged.
        ------------------------------------------------------------------------- */
     body.ios:not(.ios-phone) .main-content{
-        padding-top: 16px;
+        padding-top: 0;
         padding-right: 28px;
         padding-left: 28px;
         padding-bottom: var(--app-footer-height);
@@ -1740,8 +1729,8 @@ body.dark-mode .app-blocking-closedown-banner{
         line-height: 38px;
     }
 
-    body.ios:not(.ios-phone) .main-content .grid-top-row .blocklists-section > .section-header{
-        min-height: 38px;
+    body.ios:not(.ios-phone) .main-content .grid-top-row .blocklists-section > .section-header.blocklists-section-header{
+        min-height: 0;
     }
 
     body.ios:not(.ios-phone) .main-content .blocklists-section > .section-header #add-blocklist-btn{
@@ -3168,12 +3157,12 @@ body.ios.ui-zoom-tier-stack .main-content{
 }
 
 /* Keep "Start a Block" and "My Blocklists" titles aligned in the top row */
-.grid-top-row .section-header{
+.grid-top-row .section-header:not(.blocklists-section-header){
     min-height: 40px;
 }
 
 .grid-top-row .blocklists-section > .section-header{
-    min-height: 30px;
+    min-height: 0;
 }
 
 /* Scheduler: settings stays on the far right; title + Now/Schedule sit on the left. */
@@ -3380,10 +3369,10 @@ body.ios:not(.ios-phone) .blocklists-section > .section-header #settings-btn-sta
 }
 
 body.ios #settings-toolbar-stack {
-    position: absolute;
-    top: var(--app-settings-top);
-    right: var(--app-settings-right);
-    z-index: 20;
+    position: static;
+    top: auto;
+    right: auto;
+    z-index: auto;
     margin-left: 0;
     display: flex !important;
 }
@@ -3397,18 +3386,6 @@ body.ios #settings-btn-stack {
     padding: 0;
 }
 
-body.ios .grid-top-row .section-header {
-    padding-right: calc(var(--app-settings-size) + 8px);
-}
-
-body.ios .grid-top-row:not(.grid-top-row--blocklist-selected) .scheduler-section > .section-header.scheduler-header-compact {
-    min-height: 0;
-    height: 0;
-    margin-bottom: 0;
-    padding: 0;
-    overflow: hidden;
-}
-
 body.ios:not(.ios-phone) #settings-btn-stack svg{
     width: 24px;
     height: 24px;
@@ -3418,14 +3395,35 @@ body.ios .scheduler-section > .section-header {
     flex-wrap: nowrap;
 }
 
-/* Desktop: keep the toolbar in one stable top-right spot inside main content so
-   banners can still push it down with the rest of the page. */
-body:not(.ios) #settings-toolbar-scheduler{
-    position: absolute;
-    top: 4px;
-    right: 0px;
-    z-index: 20;
-    margin-left: 0;
+/* Two-column desktop/tablet: one full-width sticky heading row, then blocklists + detail below. */
+@media (min-width: 769px) {
+    .grid-top-row{
+        grid-template-rows: auto auto;
+        row-gap: 0;
+    }
+
+    .grid-top-row .blocklists-section,
+    .grid-top-row .scheduler-section{
+        display: contents;
+    }
+
+    .grid-top-row .blocklists-section > .section-header.blocklists-section-header{
+        grid-column: 1 / -1;
+        grid-row: 1;
+        margin-top: 0;
+    }
+
+    .grid-top-row .blocklists-container{
+        grid-column: 1;
+        grid-row: 2;
+    }
+
+    .grid-top-row .scheduler-content{
+        grid-column: 2;
+        grid-row: 2;
+        padding-top: 8px;
+        min-width: 0;
+    }
 }
 
 .scheduler-section > .section-header .settings-top-btn{
@@ -3494,6 +3492,29 @@ body.handset-device .week-calendar-section{
     margin: 0;
 }
 
+/* Sticky focus-spaces heading while scrolling `.main-content` (week schedule, etc.). */
+.blocklists-section > .section-header.blocklists-section-header{
+    position: sticky;
+    top: 0;
+    z-index: 25;
+    background: var(--container-bg);
+    padding-top: 10px;
+    padding-bottom: 6px;
+    margin-top: 0;
+    margin-bottom: 8px;
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 0;
+}
+
+body:not(.ios) #settings-toolbar-stack{
+    display: none !important;
+}
+
+body:not(.ios) #settings-toolbar-scheduler{
+    display: flex !important;
+}
+
 .blocklists-section > .section-header #add-blocklist-btn{
     margin-left: 0;
     flex-shrink: 0;
@@ -3514,6 +3535,12 @@ body.handset-device .week-calendar-section{
     background: var(--element-bg);
     border-color: var(--border-color-medium);
     box-shadow: var(--redd-shadow-card-hover);
+}
+
+.blocklists-section > .section-header.blocklists-section-header .settings-top-btn{
+    width: 30px;
+    height: 30px;
+    padding: 0;
 }
 
 /* Schedule heading row: SCHEDULE title on the left, status chips pushed to the right. */
@@ -4480,53 +4507,13 @@ body.dark-mode .day-row.weekend{
 }
 
 .grid-top-row--blocklist-selected .scheduler-section > .section-header{
-    min-height: 0;
-    height: 0;
-    margin-bottom: 0;
-    padding: 0;
-    overflow: visible;
-    border: none;
+    display: none;
 }
 
-/* Desktop two-column: MY FOCUS SPACES header on row 1 left; room cards and the detail
-   card share row 2 so their tops align. Keep row-gap at 0 so header-to-content
-   spacing matches the unselected stacked layout (grid gap is column-only). */
+/* Legacy alias — grid placement now handled by the shared two-column rules above. */
 @media (min-width: 769px) {
     body:not(.ios) .grid-top-row.grid-top-row--blocklist-selected{
-        grid-template-rows: auto auto;
         row-gap: 0;
-    }
-
-    body:not(.ios) .grid-top-row.grid-top-row--blocklist-selected .blocklists-section,
-    body:not(.ios) .grid-top-row.grid-top-row--blocklist-selected .scheduler-section{
-        display: contents;
-    }
-
-    body:not(.ios) .grid-top-row.grid-top-row--blocklist-selected .blocklists-section > .section-header{
-        grid-column: 1;
-        grid-row: 1;
-    }
-
-    body:not(.ios) .grid-top-row.grid-top-row--blocklist-selected .blocklists-container{
-        grid-column: 1;
-        grid-row: 2;
-    }
-
-    body:not(.ios) .grid-top-row.grid-top-row--blocklist-selected .scheduler-section > .section-header{
-        grid-column: 2;
-        grid-row: 1;
-        min-height: 0;
-        height: 0;
-        margin-bottom: 0;
-        padding: 0;
-        overflow: visible;
-    }
-
-    body:not(.ios) .grid-top-row.grid-top-row--blocklist-selected .scheduler-content{
-        grid-column: 2;
-        grid-row: 2;
-        padding-top: 8px;
-        min-width: 0;
     }
 }
 
@@ -12396,6 +12383,13 @@ body.ios .footer-text {
     color: #5f5e5e;
     padding: 4px;
     flex-shrink: 0;
+}
+
+.settings-top-btn svg{
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+    display: block;
 }
 
 body.dark-mode .settings-top-btn{
