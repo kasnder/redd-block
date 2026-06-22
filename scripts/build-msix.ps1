@@ -27,6 +27,7 @@ if (Test-Path $envFile) {
 $TauriConfig = Get-Content (Join-Path $ProjectRoot "src-tauri\tauri.conf.json") | ConvertFrom-Json
 $AppVersion = $TauriConfig.version
 $MsixVersion = "$AppVersion.0"
+$ReleaseSlug = "redd-blocker"
 
 $IdentityName = $env:WINDOWS_IDENTITY_NAME
 $Publisher = $env:WINDOWS_PUBLISHER
@@ -233,7 +234,7 @@ Write-Host "  [4/4] Creating MSIX package..." -ForegroundColor Gray
 
 $distDir = Join-Path $ProjectRoot "for-distribution\$target"
 if (-not (Test-Path $distDir)) { New-Item -ItemType Directory -Path $distDir | Out-Null }
-$msixPath = Join-Path $distDir "fristed_${MsixVersion}_${msixArch}.msix"
+$msixPath = Join-Path $distDir "${ReleaseSlug}_${MsixVersion}_${msixArch}.msix"
 
 & $makeappx.FullName pack /d $stagingDir /p $msixPath /o
 if ($LASTEXITCODE -ne 0) {

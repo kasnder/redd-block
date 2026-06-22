@@ -141,7 +141,7 @@ The app will open automatically. Hot-reloading is enabled for both frontend (Vit
 npm run build:mac
 
 # macOS: Wrap the .app into a signed/notarized .pkg installer
-# (outputs fristed-{version}.pkg)
+# (outputs redd-blocker-{version}.pkg)
 npm run build:mac-pkg
 
 # macOS: Both in one go (.app + .pkg)
