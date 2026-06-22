@@ -1,6 +1,6 @@
 [package]
 name = "redd-block"
-version = "3.3.3"
+version = "3.4.0"
 description = "Rum: Block Apps & Sites"
 authors = ["The Reduce Digital Distraction Project <team@reddfocus.org>"]
 license = "CC-BY-NC-ND-3.0"

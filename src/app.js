@@ -9721,11 +9721,7 @@ function setScheduleMode(isSchedule) {
             }
             activeScheduleSegmentCount = 0;
         }
-        expandedScheduleSegmentIndex = scheduleSegments.length > 1
-            ? (activeScheduleSegmentCount > 0 && activeScheduleSegmentCount < scheduleSegments.length
-                ? activeScheduleSegmentCount
-                : 0)
-            : 0;
+        expandedScheduleSegmentIndex = getInitialExpandedScheduleSegmentIndex();
         rebuildScheduleSegments();
 
         instantPanel.classList.add('hidden');
@@ -10226,7 +10222,7 @@ function removeScheduleSegment(index) {
     scheduleSegments.splice(index, 1);
 
     if (expandedScheduleSegmentIndex === index) {
-        expandedScheduleSegmentIndex = scheduleSegments.length > 1 ? -1 : 0;
+        expandedScheduleSegmentIndex = usesScheduleSegmentCollapse() ? -1 : 0;
     } else if (expandedScheduleSegmentIndex > index) {
         expandedScheduleSegmentIndex -= 1;
     }
@@ -10261,11 +10257,37 @@ function sortScheduleSegments() {
     }
 }
 
+function usesScheduleSegmentCollapse() {
+    return scheduleSegments.length > 1 || activeScheduleSegmentCount > 0;
+}
+
+function scheduleHasPendingSegments() {
+    return activeScheduleSegmentCount > 0 && scheduleSegments.length > activeScheduleSegmentCount;
+}
+
+function getInitialExpandedScheduleSegmentIndex() {
+    if (!usesScheduleSegmentCollapse()) return 0;
+    if (scheduleHasPendingSegments()) return activeScheduleSegmentCount;
+    if (activeScheduleSegmentCount > 0) return -1;
+    return 0;
+}
+
 function normalizeExpandedScheduleSegmentIndex() {
-    if (scheduleSegments.length <= 1) {
+    if (!usesScheduleSegmentCollapse()) {
         expandedScheduleSegmentIndex = 0;
         return;
     }
+
+    const allCommitted = activeScheduleSegmentCount >= scheduleSegments.length && activeScheduleSegmentCount > 0;
+    if (allCommitted) {
+        expandedScheduleSegmentIndex = -1;
+        return;
+    }
+
+    if (scheduleHasPendingSegments() && expandedScheduleSegmentIndex < activeScheduleSegmentCount) {
+        expandedScheduleSegmentIndex = activeScheduleSegmentCount;
+    }
+
     if (expandedScheduleSegmentIndex >= scheduleSegments.length) {
         expandedScheduleSegmentIndex = scheduleSegments.length - 1;
     }
@@ -10513,12 +10535,13 @@ function rebuildScheduleSegments() {
     const labelEnd = tSettings('end');
     const labelDays = tSettings('days');
     const multiSegment = scheduleSegments.length > 1;
+    const useCollapse = usesScheduleSegmentCollapse();
 
     iosCompactScheduleDayLabelsActive = useCompactDayLabels;
 
     scheduleSegments.forEach((seg, index) => {
         const segment = document.createElement('div');
-        const isExpanded = !multiSegment || index === expandedScheduleSegmentIndex;
+        const isExpanded = !useCollapse || index === expandedScheduleSegmentIndex;
         segment.className = `schedule-segment${
             isExpanded ? ' schedule-segment-expanded' : ' schedule-segment-collapsed'
         }`;
@@ -13087,7 +13110,7 @@ async function proceedWithScheduleEdit() {
     // Rebuild the DOM so it matches the new scheduleSegments order and locks the
     // formerly-pending segments. Without this, time-edit handlers attached to the
     // pre-save DOM nodes could write to the wrong scheduleSegments index.
-    expandedScheduleSegmentIndex = scheduleSegments.length > 1 ? -1 : 0;
+    expandedScheduleSegmentIndex = getInitialExpandedScheduleSegmentIndex();
     rebuildScheduleSegments();
     disableScheduleControls(true);
 
@@ -14554,9 +14577,7 @@ function setBtnActionLabel(el, fullText, { simple = false } = {}) {
     el.innerHTML = getActionLabelHTML(fullText);
 }
 
-// The visible colon is added in CSS on .btn-label-context when the full stop
-// label fits. Keep this spacer empty so punctuation stays visually attached to
-// "Block"/"Schedule" rather than becoming a separate flex item.
+// The visible colon is added in CSS on .btn-label-context for stop-block only.
 function syncStartBtnBlocklistMetaLead(btn) {
     if (!btn) return;
     const lead = btn.querySelector('.btn-blocklist-lead');
@@ -21735,8 +21756,8 @@ function syncSchedulerModeTabLabelMode() {
         void enterHeader.offsetWidth;
     }
 
-    body.classList.toggle('ui-zoom-sched-tabs-icons', iconOnly);
-    schedTabsIconOnlyEnteredAtWidth = iconOnly ? enterHeader.clientWidth : 0;
+    body.classList.toggle('ui-zoom-sched-tabs-icons', iconOnly && isIOS);
+    schedTabsIconOnlyEnteredAtWidth = iconOnly && isIOS ? enterHeader.clientWidth : 0;
 }
 
 function scheduleSelectionPromptLayout() {

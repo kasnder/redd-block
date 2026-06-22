@@ -3202,7 +3202,7 @@ body:not(.ios) .scheduler-section > .section-header{
     padding-right: 172px;
 }
 
-body.ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab-label{
+body.ios.ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab-label{
     position: absolute;
     width: 1px;
     height: 1px;
@@ -3214,7 +3214,7 @@ body.ui-zoom-sched-tabs-icons .scheduler-enter-header .mode-tab-label{
     border: 0;
 }
 
-body.ui-zoom-sched-tabs-icons .scheduler-enter-header .scheduler-mode-tabs{
+body.ios.ui-zoom-sched-tabs-icons .scheduler-enter-header .scheduler-mode-tabs{
     max-width: none;
 }
 
@@ -3275,6 +3275,19 @@ body:not(.ios) .scheduler-enter-header .mode-tab{
     flex: 1 1 0;
     width: 0;
     line-height: 1;
+    gap: 6px;
+}
+
+body:not(.ios) .scheduler-enter-header .mode-tab-label{
+    position: static;
+    width: auto;
+    height: auto;
+    padding: 0;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+    white-space: nowrap;
+    border: 0;
 }
 
 body:not(.ios) .scheduler-enter-header .mode-tab.active{
@@ -5152,8 +5165,7 @@ body.dark-mode .start-block-btn.stop-schedule:hover:not(:disabled){
     display: none;
 }
 
-.block-action-buttons .start-block-btn.stop-block:not(.stop-meta-collapsed) .btn-label-context::after,
-.block-action-buttons .start-schedule-btn.stop-schedule:not(.stop-meta-collapsed) .btn-label-context::after{
+.block-action-buttons .start-block-btn.stop-block:not(.stop-meta-collapsed) .btn-label-context::after{
     content: ':';
 }
 
