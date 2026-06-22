@@ -3,7 +3,7 @@
   "version": "3.4.1",
   "description": "ReDD Blocker: Block Apps & Sites",
   "scripts": {
-    "dev": "bash ./scripts/ensure-dev-icons.sh && tauri dev",
+    "dev": "node ./scripts/ensure-dev-icons.js && tauri dev",
     "icons:generate": "node ./scripts/generate-icons-from-svg.js",
     "dev:ios": "bash ./scripts/ios-dev.sh",
     "build": "tauri build",
@@ -47,6 +47,7 @@
   "devDependencies": {
     "@tauri-apps/cli": "^2.9.6",
     "dotenv": "^17.2.3",
+    "png-to-ico": "^3.0.1",
     "sharp": "^0.34.5",
     "vite": "^7.3.1"
   }
