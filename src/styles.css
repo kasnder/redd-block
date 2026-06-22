@@ -7354,6 +7354,15 @@ body.dark-mode .rebrand-definition-divider {
     align-items: stretch;
     gap: 12px;
     text-align: center;
+    --onboarding-align-inset: 20px;
+}
+
+body:not(.ios) .eula-onboarding-inner {
+    --onboarding-align-inset: 20px;
+}
+
+.migration-onboarding-content {
+    --onboarding-align-inset: 28px;
 }
 
 .welcome-onboarding-layout .welcome-onboarding-card,
@@ -7431,7 +7440,9 @@ body.ios .eula-mobile-subtitle {
 
 .migration-onboarding-title-row{
     margin-bottom: 16px;
-    margin-inline: auto;
+    margin-inline: 0;
+    padding-left: var(--onboarding-align-inset, 28px);
+    box-sizing: border-box;
 }
 
 .migration-onboarding-title-row .onboarding-icon{
@@ -7539,8 +7550,10 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
 
 .welcome-onboarding-header{
     display: grid;
-    justify-items: center;
+    justify-items: start;
     width: 100%;
+    padding-left: var(--onboarding-align-inset, 20px);
+    box-sizing: border-box;
 }
 
 .welcome-onboarding-title-row{
@@ -8025,6 +8038,11 @@ body.dark-mode .welcome-demo-toggle:hover{
 }
 
 @media (max-width: 640px) {
+    .welcome-onboarding-layout,
+    body:not(.ios) .eula-onboarding-inner {
+        --onboarding-align-inset: 14px;
+    }
+
     .welcome-onboarding-title-row{
         gap: 10px;
     }
@@ -8111,6 +8129,10 @@ body.ios .ios-screentime-onboarding-content h1 {
     margin: 0 0 16px;
 }
 
+#migration-post-header .welcome-onboarding-title-text{
+    max-width: none;
+}
+
 #migration-post-header-subtitle .welcome-reddfocus-inline-logo{
     width: 24px;
     height: 24px;
@@ -8126,6 +8148,7 @@ body.ios .ios-screentime-onboarding-content h1 {
     font-weight: 400;
     font-style: normal;
     color: var(--text-muted);
+    white-space: pre-line;
     text-wrap: balance;
     text-align: left;
 }

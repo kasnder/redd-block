@@ -19550,7 +19550,7 @@ const SETTINGS_TRANSLATIONS = {
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Velkommen til ReDD Blocker',
         welcomeOnboardingSubtitle:
-            'Bloker de websites og apps, der distraherer dig,\nog skab plads og ro til fokus.',
+            'Bloker distraherende apps og websites,\nog skab plads og ro til fokus.',
         welcomeHowHeading: 'TRIN FOR AT KOMME I GANG (vi guider dig igennem det 😊)',
         welcomeStep1TitleAutomationHtml: 'Tillad {APPLE}Automatisering',
         welcomeStep1BodyAutomationHtml:
@@ -19591,9 +19591,9 @@ const SETTINGS_TRANSLATIONS = {
         migrationChecklistCleanedOld: 'Gammel version fjernet',
         migrationChecklistBlocklistsPreserved: 'Dine bloklister er bevaret',
         migrationChecklistExtLinesHtml: 'Aktivér {LOGO}ReDD Focus i dine browsere<br><span style="font-weight:400;opacity:0.7">og tillad den i privat- eller inkognitofaner</span>',
-        migrationExtTitleMac: 'Tillad ReDD Blocker i dine browsere',
+        migrationExtTitleMac: 'Tillad ReDD Blocker i browsere',
         migrationExtSubMac: 'Websiteblokering bruger <strong>macOS-automatisering</strong> i Safari, Chrome og Edge.',
-        migrationExtSubMacFirefox: 'Websiteblokering bruger <strong>macOS-automatisering</strong> i Safari, Chrome og Edge og <strong>ReDD Focus-udvidelsen</strong> i Firefox.',
+        migrationExtSubMacFirefox: 'I Safari, Chrome og Edge: <strong>macOS-automatisering</strong>.\nI Firefox: <strong>ReDD Focus-udvidelsen</strong>.',
         migrationExtStep1Mac: 'Klik på <strong>Giv adgang</strong> for hver browser nedenfor, og godkend macOS-prompten. Hvis du ser <strong>Åbn Automatisering</strong>, klik på den og slå ReDD Blocker til igen.',
         migrationExtStep2MacFirefox: 'Til Firefox: klik på <strong>Installer</strong> nedenfor for at tilføje {FOCUS}<strong>ReDD Focus</strong> fra tilføjelsesbutikken, og tillad den derefter i private vinduer.',
         migrationHowtoHeading: 'Opsætning',
@@ -19931,7 +19931,7 @@ const SETTINGS_TRANSLATIONS = {
         repeatForever: 'For evigt',
         repeatUntilDate: 'Indtil dato',
         pause: 'Pause',
-        startBlockButton: 'Gå ind i rum',
+        startBlockButton: 'Start fokusrum',
         startScheduleButton: 'Start skema',
         stopScheduleButton: 'Stop skema',
         stopBlockMetaColon: ':',
@@ -20040,7 +20040,7 @@ const SETTINGS_TRANSLATIONS = {
         showAll: 'vis alle',
         confirmDuration: 'Varighed:',
         confirmOverrideNeed: 'For at stoppe denne blokering tidligt skal du:',
-        startBlock: 'Gå ind i rum',
+        startBlock: 'Start fokusrum',
         resumeBlock: 'Genoptag blokering',
         resumeThisBlock: 'Genoptag blokering?',
         alwaysUntilOff: 'Altid (indtil du pauser eller forlader)',
