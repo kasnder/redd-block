@@ -1,9 +1,10 @@
 {
   "name": "redd-block",
   "version": "3.4.1",
-  "description": "Fristed: Block Apps & Sites",
+  "description": "ReDD Blocker: Block Apps & Sites",
   "scripts": {
-    "dev": "tauri dev",
+    "dev": "bash ./scripts/ensure-dev-icons.sh && tauri dev",
+    "icons:generate": "node ./scripts/generate-icons-from-svg.js",
     "dev:ios": "bash ./scripts/ios-dev.sh",
     "build": "tauri build",
     "build:mac": "bash ./scripts/build-mac.sh",

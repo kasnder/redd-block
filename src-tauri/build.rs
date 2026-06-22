@@ -11,7 +11,31 @@ fn main() {
         build_and_link_safari_bridge();
     }
 
+    watch_icon_assets();
+
     tauri_build::build();
+}
+
+fn watch_icon_assets() {
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let svg = manifest_dir.join("../assets/reddblock-icon.svg");
+    if svg.exists() {
+        println!("cargo:rerun-if-changed={}", svg.display());
+    }
+    for name in [
+        "icon.icns",
+        "icon.png",
+        "128x128.png",
+        "128x128@2x.png",
+        "256x256.png",
+        "512x512.png",
+        "1024x1024.png",
+    ] {
+        let path = manifest_dir.join("icons").join(name);
+        if path.exists() {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
+    }
 }
 
 /// Compile + link the SafariServices Swift bridge on macOS desktop targets.

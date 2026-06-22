@@ -2307,12 +2307,12 @@ body.ios:not(.ios-phone) #start-schedule-confirm-modal .modal-content{
 
     body.ios:not(.ios-phone) .modal-content.pause-modal,
 body.ios:not(.ios-phone) #pause-modal .modal-content{
-        max-width: calc(410px * var(--ipad-s));
+        max-width: calc(500px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) #override-modal .modal-content,
 body.ios:not(.ios-phone) #override-all-modal .modal-content{
-        max-width: calc(400px * var(--ipad-s));
+        max-width: calc(500px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .app-picker-modal-content{
@@ -4484,7 +4484,7 @@ body.dark-mode .day-row.weekend{
     border: none;
 }
 
-/* Desktop two-column: MY FOCUS ROOMS header on row 1 left; room cards and the detail
+/* Desktop two-column: MY FOCUS SPACES header on row 1 left; room cards and the detail
    card share row 2 so their tops align. Keep row-gap at 0 so header-to-content
    spacing matches the unselected stacked layout (grid gap is column-only). */
 @media (min-width: 769px) {
@@ -5320,8 +5320,13 @@ body.dark-mode .pause-block-btn.resume-mode:hover{
 }
 
 /* Pause Modal — popup width only; handset full-screen modals expand to viewport. */
-body:not(.handset-device) .modal-content.pause-modal{
-    max-width: 410px;
+body:not(.handset-device) .modal-content.pause-modal,
+body:not(.handset-device) .start-confirm-modal.pause-modal{
+    max-width: 500px;
+}
+
+.start-confirm-modal.pause-modal .pause-duration-section{
+    margin-bottom: 16px;
 }
 
 .pause-remaining-info{
@@ -7344,6 +7349,12 @@ body.dark-mode .rebrand-definition-divider {
     flex-direction: column;
     align-items: stretch;
     gap: 12px;
+    text-align: center;
+}
+
+.welcome-onboarding-layout .welcome-onboarding-card,
+.welcome-onboarding-layout .welcome-how-it-works {
+    text-align: left;
 }
 
 /* EULA — desktop welcome hero; iOS compact centered column (shared controls). */
@@ -7371,30 +7382,38 @@ body.ios .eula-onboarding-desktop-footer {
 }
 
 body.ios .eula-onboarding-ios-hero {
-    display: block;
     margin-bottom: 12px;
+}
+
+body.ios .eula-onboarding-ios-hero .onboarding-app-icon {
+    width: 52px;
+    height: 52px;
+    margin: 0;
+    flex-shrink: 0;
 }
 
 body.ios .eula-welcome-title-ios {
     display: block;
-    margin: 0 0 4px;
+    margin: 0;
     font-family: var(--font-heading);
     font-size: 24px;
     font-weight: 700;
     line-height: 1.2;
     color: var(--text-secondary);
+    text-align: left;
 }
 
 body.ios .eula-mobile-subtitle {
     display: block;
-    margin: 2px 0 6px;
+    margin: 6px 0 0;
     max-width: none;
-    width: 100%;
+    width: auto;
     font-size: 14px;
     line-height: 1.45;
     color: var(--text-muted);
     white-space: pre-line;
     text-wrap: wrap;
+    text-align: left;
 }
 
 #eula-onboarding .rebrand-definition-card {
@@ -7403,15 +7422,40 @@ body.ios .eula-mobile-subtitle {
 }
 
 #eula-onboarding .welcome-onboarding-title-row {
-    margin-bottom: 4px;
+    margin-bottom: 8px;
 }
 
-#eula-onboarding .welcome-onboarding-header .welcome-onboarding-subtitle {
-    margin-bottom: 6px;
+.migration-onboarding-title-row{
+    margin-bottom: 16px;
+    margin-inline: auto;
 }
 
-body:not(.ios) #eula-onboarding .eula-onboarding-inner {
+.migration-onboarding-title-row .onboarding-icon{
+    margin-bottom: 0;
+    flex-shrink: 0;
+}
+
+.migration-onboarding-title-row .onboarding-app-icon{
+    width: 52px;
+    height: 52px;
+    margin: 0;
+    border-radius: 12px;
+}
+
+.welcome-onboarding-title-text .legal-onboarding-subtitle{
+    margin: 6px 0 0;
+    font-size: 14px;
+    text-align: left;
+}
+
+body:not(.ios) .eula-onboarding-inner {
     gap: 8px;
+}
+
+body:not(.ios) .eula-onboarding-inner .onboarding-focus-card,
+body:not(.ios) .eula-onboarding-inner .legal-onboarding-card,
+body:not(.ios) .eula-onboarding-inner .welcome-onboarding-card {
+    text-align: left;
 }
 
 body.ios #eula-onboarding .rebrand-definition-card {
@@ -7490,18 +7534,40 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
 }
 
 .welcome-onboarding-header{
-    text-align: center;
+    display: grid;
+    justify-items: center;
+    width: 100%;
 }
 
 .welcome-onboarding-title-row{
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 12px;
-    margin-bottom: 8px;
+    margin: 0 0 8px;
+    width: max-content;
+    max-width: 100%;
+    text-align: left;
 }
 
-.welcome-fristed-logo {
+/* iOS EULA hero is itself the title row — center the whole block in the column */
+#eula-onboarding .eula-onboarding-ios-hero.welcome-onboarding-title-row{
+    align-self: center;
+    width: max-content;
+    max-width: 100%;
+}
+
+.welcome-onboarding-title-text{
+    min-width: 0;
+    max-width: 22em;
+    text-align: left;
+}
+
+.welcome-onboarding-title-text h1{
+    margin-bottom: 0;
+}
+
+.welcome-shield-logo {
     display: block;
     width: 52px;
     height: auto;
@@ -7523,57 +7589,15 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
     text-align: left;
 }
 
-.fristed-definition-pill {
-    display: inline-flex;
-    align-items: center;
-    flex-wrap: wrap;
-    justify-content: center;
-    margin: 0 auto 10px;
-    padding: 5px 12px;
-    border-radius: 999px;
-    background: rgba(30, 45, 62, 0.06);
-    font-size: 13px;
-    line-height: 1.35;
-    color: var(--text-secondary);
-    text-wrap: balance;
-}
-
-.fristed-definition-word {
-    font-weight: 600;
-}
-
-.fristed-definition-pronunciation {
-    margin-left: 0.25em;
-    font-weight: 400;
-    font-style: italic;
-    opacity: 0.8;
-}
-
-.fristed-definition-sep {
-    margin: 0 0.35em;
-    opacity: 0.55;
-}
-
-body.dark-mode .fristed-definition-pill {
-    background: rgba(255, 255, 255, 0.08);
-}
-
-body.ios .eula-definition-pill-ios {
-    margin-bottom: 14px;
-}
-
-body:not(.ios) .eula-definition-pill-ios {
-    display: none;
-}
-
 .welcome-onboarding-subtitle {
-    margin: 0 auto;
-    max-width: 30em;
+    margin: 6px 0 0;
+    max-width: 22em;
     font-size: 14px;
     line-height: 1.45;
     color: var(--text-muted);
     white-space: pre-line;
     text-wrap: balance;
+    text-align: left;
 }
 
 .welcome-onboarding-card{
@@ -8001,7 +8025,7 @@ body.dark-mode .welcome-demo-toggle:hover{
         gap: 10px;
     }
 
-    .welcome-fristed-logo {
+    .welcome-shield-logo {
         width: 44px;
     }
 
@@ -8091,14 +8115,15 @@ body.ios .ios-screentime-onboarding-content h1 {
 }
 
 .migration-post-header-subtitle{
-    margin: 0 auto;
-    max-width: 36em;
+    margin: 6px 0 0;
+    max-width: none;
     font-size: 14px;
     line-height: 1.45;
     font-weight: 400;
     font-style: normal;
     color: var(--text-muted);
     text-wrap: balance;
+    text-align: left;
 }
 
 .migration-post-header-subtitle strong{
@@ -8166,12 +8191,12 @@ body.dark-mode #migration-onboarding .migration-setup-ready-banner{
 }
 
 /* No outer headline in fresh-install post phase; tighten space above checklist “title”. */
-#migration-phase-post:has(#migration-post-title.hidden) .migration-card{
+#migration-phase-post:has(#migration-post-title-row.hidden) .migration-card{
     margin-top: 10px;
     padding-top: 18px;
 }
 
-#migration-phase-post:has(#migration-post-title.hidden)
+#migration-phase-post:has(#migration-post-title-row.hidden)
     .migration-checklist
     li:first-child{
     padding-top: 4px;
@@ -12204,6 +12229,21 @@ body.dark-mode .modal-btn.black-btn:hover{
     margin-bottom: 0;
 }
 
+.start-confirm-modal.override-challenge .override-challenge-instruction{
+    margin: 16px 0 8px;
+    font-size: 14px;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
+.start-confirm-modal.override-challenge.pause-modal .override-challenge-instruction{
+    margin-top: 0;
+}
+
+.start-confirm-modal.override-challenge .challenge-text{
+    margin-top: 12px;
+}
+
 .override-challenge .challenge-text{
     background: var(--redd-warm-grey);
     color: var(--text-primary);
@@ -14505,7 +14545,7 @@ body.ios.ios-phone .modal-overlay .websites-import-menu-item svg{
     color: hsl(215, 20%, 50%);
 }
 
-/* Edit Room — full-width emoji/color grids on mobile */
+/* Edit focus space — full-width emoji/color grids on mobile */
 body.handset-device #blocklist-modal .emoji-picker-container,
 body.handset-device #blocklist-modal .color-picker-container{
     width: 100%;

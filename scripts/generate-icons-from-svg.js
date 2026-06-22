@@ -1,5 +1,5 @@
 /**
- * Generate all app icons from assets/fristed-icon.svg
+ * Generate all app icons from assets/reddblock-icon.svg
  * Run with: node scripts/generate-icons-from-svg.js
  */
 const sharp = require('sharp');
@@ -7,24 +7,47 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-const SVG_PATH = path.join(__dirname, '../assets/fristed-icon.svg');
+const SVG_PATH = path.join(__dirname, '../assets/reddblock-icon.svg');
 const ASSETS_DIR = path.join(__dirname, '../assets');
 const ICONS_DIR = path.join(ASSETS_DIR, 'icons');
-const SRC_SVG_PATH = path.join(__dirname, '../src/fristed-icon.svg');
-const BLOCKED_SVG_PATH = path.join(__dirname, '../src-tauri/blocked/fristed-icon.svg');
+const SRC_SVG_PATH = path.join(__dirname, '../src/reddblock-icon.svg');
+const BLOCKED_SVG_PATH = path.join(__dirname, '../src-tauri/blocked/reddblock-icon.svg');
 
-function syncFristedIconCopies() {
+const TAURI_ICONS_DIR = path.join(__dirname, '../src-tauri/icons');
+
+function syncReddBlockIconCopies() {
     if (!fs.existsSync(SVG_PATH)) {
         console.error('SVG not found at:', SVG_PATH);
         process.exit(1);
     }
 
     fs.copyFileSync(SVG_PATH, SRC_SVG_PATH);
-    console.log('✓ Synced src/fristed-icon.svg');
+    console.log('✓ Synced src/reddblock-icon.svg');
 
     fs.mkdirSync(path.dirname(BLOCKED_SVG_PATH), { recursive: true });
     fs.copyFileSync(SVG_PATH, BLOCKED_SVG_PATH);
-    console.log('✓ Synced src-tauri/blocked/fristed-icon.svg');
+    console.log('✓ Synced src-tauri/blocked/reddblock-icon.svg');
+}
+
+function syncTauriBundleIcons() {
+    if (!fs.existsSync(TAURI_ICONS_DIR)) {
+        fs.mkdirSync(TAURI_ICONS_DIR, { recursive: true });
+    }
+
+    for (const size of ICON_SIZES) {
+        const name = `${size}x${size}.png`;
+        fs.copyFileSync(path.join(ICONS_DIR, name), path.join(TAURI_ICONS_DIR, name));
+    }
+
+    for (const name of ['icon.icns', 'icon.ico']) {
+        fs.copyFileSync(path.join(ICONS_DIR, name), path.join(TAURI_ICONS_DIR, name));
+    }
+
+    fs.copyFileSync(path.join(ASSETS_DIR, 'icon.png'), path.join(TAURI_ICONS_DIR, 'icon.png'));
+
+    // Tauri macOS bundle also references these sizes.
+    fs.copyFileSync(path.join(ICONS_DIR, '128x128.png'), path.join(TAURI_ICONS_DIR, '128x128@2x.png'));
+    console.log('✓ Synced src-tauri/icons/');
 }
 
 // Icon sizes needed for various platforms
@@ -181,12 +204,13 @@ async function main() {
     console.log('Starting icon generation from:', SVG_PATH);
     console.log('');
 
-    syncFristedIconCopies();
+    syncReddBlockIconCopies();
     console.log('');
 
     await generatePngIcons();
     await generateIco();
     await generateIcns();
+    syncTauriBundleIcons();
 
     console.log('\n=== Icon generation complete ===');
     console.log('');

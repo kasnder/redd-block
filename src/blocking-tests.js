@@ -1333,9 +1333,9 @@
 
         const { isProtectedApp } = window.__REDDBLOCK_INTERNALS__;
 
-        // T43: "Fristed" is protected
+        // T43: "ReDD Blocker" is protected
         (function T43() {
-            assert(isProtectedApp('Fristed'), 'T43: "Fristed" is protected');
+            assert(isProtectedApp('ReDD Blocker'), 'T43: "ReDD Blocker" is protected');
         })();
 
         // T44: "redd-block" is protected
@@ -1350,9 +1350,9 @@
 
         // T46: Case variations are protected
         (function T46() {
-            assert(isProtectedApp('FRISTED'), 'T46: "FRISTED" (uppercase) is protected');
-            assert(isProtectedApp('Fristed'), 'T46: "Fristed" (title case) is protected');
-            assert(isProtectedApp('  Fristed  '), 'T46: Leading/trailing spaces handled');
+            assert(isProtectedApp('FRISTED'), 'T46: "FRISTED" (legacy name) is protected');
+            assert(isProtectedApp('REDD BLOCKER'), 'T46: "REDD BLOCKER" (uppercase) is protected');
+            assert(isProtectedApp('  ReDD Blocker  '), 'T46: Leading/trailing spaces handled');
         })();
 
         // T47: Normal apps are NOT protected
