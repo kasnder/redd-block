@@ -5176,11 +5176,6 @@ body.dark-mode .tag.locked{
     align-self: center;
 }
 
-.start-block-btn .fristed-house-mark path,
-svg.start-confirm-primary-icon.fristed-house-mark path{
-    stroke-width: 68;
-}
-
 /* Stop Block / Stop Schedule — ghost. Pause carries the visual weight in
    the action row; stop is available but steps back. */
 .start-block-btn.stop-block,
