@@ -1,6 +1,6 @@
 !macro NSIS_HOOK_PREINSTALL
   ; Best-effort cleanup of a legacy direct-install app so the direct
-  ; Fristed installer leaves only one desktop app installed. This is
+  ; Rum installer leaves only one desktop app installed. This is
   ; intentionally scoped to direct NSIS/MSI installs; MSIX does not run
   ; these hooks. We do NOT touch shared ProgramData storage here.
   ;
@@ -12,8 +12,8 @@
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
-  ; Always launch Fristed after install completes. The MUI finish
-  ; page also has a "Run Fristed" checkbox (default checked); if
+  ; Always launch Rum after install completes. The MUI finish
+  ; page also has a "Run Rum" checkbox (default checked); if
   ; the user leaves it checked we'd briefly run the app twice — the
   ; tauri-plugin-single-instance plugin (registered in lib.rs)
   ; collapses any second instance into a focus-the-existing-window
@@ -32,7 +32,9 @@
   ;    redd-block.exe between the kill below and the actual file
   ;    deletion that NSIS does after this hook returns. Idempotent —
   ;    schtasks /Delete /F is silent if the task isn't present.
-  nsExec::ExecToLog 'schtasks /Delete /TN "Fristed Watchdog" /F'
+  nsExec::ExecToLog 'schtasks /Delete /TN "Rum Watchdog" /F'
+  Pop $0
+  nsExec::ExecToLog 'schtasks /Delete /TN "Rum Watchdog" /F'
   Pop $0
   nsExec::ExecToLog 'schtasks /Delete /TN "ReDD Block Watchdog" /F'
   Pop $0
@@ -57,7 +59,7 @@
 
   ; 3. Run the app's `--uninstall` mode to remove per-browser
   ;    native-messaging manifests and the matching HKCU registry keys.
-  ;    Without this, manifests under %LOCALAPPDATA%\Fristed\
+  ;    Without this, manifests under %LOCALAPPDATA%\Rum\
   ;    native-host\ and HKCU\Software\<vendor>\<browser>\
   ;    NativeMessagingHosts\com.ulriklyngs.mindshield would be orphaned
   ;    after uninstall. The binary still exists at this point — NSIS
@@ -67,7 +69,7 @@
   ;
   ; Note: 2.0 dropped v1.x's "Keep Blocking after uninstall" feature
   ; entirely (no daemon = no enforcement after the binary is removed).
-  ; The user's blocklists / settings in C:\ProgramData\Fristed\
+  ; The user's blocklists / settings in C:\ProgramData\Rum\
   ; redd-block-data.json are intentionally preserved so a future
   ; reinstall picks them back up — only the daemon-state file (now
   ; absent) and the helper-state.json are scrubbed during migration.

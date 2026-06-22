@@ -13,7 +13,7 @@
 //     `powershell -WindowStyle Hidden`) flashes a console because the
 //     window is created before any hide flag is applied. wscript.exe
 //     has no console at all, and SW_HIDE keeps the spawned cmd hidden.
-//   - `\Fristed Watchdog` Scheduled Task: action is
+//   - `\Rum Watchdog` Scheduled Task: action is
 //     `wscript.exe "<path>\redd-block-watchdog.vbs"`, every minute,
 //     current user, no admin.
 //
@@ -31,14 +31,14 @@ use std::path::{Path, PathBuf};
 
 use crate::windows_process::hidden_command;
 
-pub const TASK_NAME: &str = "Fristed Watchdog";
+pub const TASK_NAME: &str = "Rum Watchdog";
 const WRAPPER_CMD_FILENAME: &str = "redd-block-watchdog.cmd";
 const WRAPPER_VBS_FILENAME: &str = "redd-block-watchdog.vbs";
 
 fn wrapper_dir(exe: &Path) -> Option<PathBuf> {
     if crate::native_host_install::is_msix_packaged_exe_path(exe) {
         let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from)?;
-        Some(local.join("Fristed").join("watchdog"))
+        Some(local.join("Rum").join("watchdog"))
     } else {
         exe.parent().map(|p| p.to_path_buf())
     }
@@ -103,7 +103,7 @@ fn write_wrappers(exe: &Path) -> std::io::Result<PathBuf> {
     // VBS resolves its own dir + invokes the sibling .cmd hidden.
     // The four-double-quote sequence `""""` is a VBS literal for a
     // single `"` — used to wrap the .cmd path in case it contains
-    // spaces (e.g. `C:\Program Files\Fristed\`).
+    // spaces (e.g. `C:\Program Files\Rum\`).
     let vbs_body: String = [
         r#"dir = CreateObject("Scripting.FileSystemObject").GetParentFolderName(WScript.ScriptFullName)"#,
         &format!(

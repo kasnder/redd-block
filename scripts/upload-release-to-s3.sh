@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Upload Fristed release installers to S3.
+# Upload Rum release installers to S3.
 #
 # Uses the same bucket, region, and key layout as redd-next download links:
 #   https://redd-website-assets.s3.eu-north-1.amazonaws.com/reddblock/fristed-{version}.pkg

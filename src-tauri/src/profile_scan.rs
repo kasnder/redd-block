@@ -17,7 +17,7 @@ use serde_json::Value;
 const FIREFOX_ID: &str = "mindshield@example.com";
 #[cfg(target_os = "macos")]
 const SAFARI_EXTENSION_KEYS: &[&str] = &[
-    // Legacy: Safari Web Extension embedded in older Fristed.app builds.
+    // Legacy: Safari Web Extension embedded in older Rum.app builds.
     "com.reddblock.SafariExtension (JD647S9RT6)",
     // Standalone "ReDD Focus" macOS app from the App Store. Still recognised
     // so users who installed it before we switched Safari to Automation
@@ -29,7 +29,7 @@ const SAFARI_BUNDLED_PLIST_KEY: &str = "com.reddblock.SafariExtension (JD647S9RT
 #[cfg(target_os = "macos")]
 const SAFARI_STANDALONE_PLIST_KEY: &str = "com.ulriklyngs.mind-shield.mind-shield (JD647S9RT6)";
 
-/// Both the bundled (Fristed) and standalone (ReDD Focus app) Safari
+/// Both the bundled (Rum) and standalone (ReDD Focus app) Safari
 /// Web Extensions are registered at once — Safari lists two "ReDD Focus"
 /// rows and blocking/native-messaging can get confused.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,7 +106,7 @@ pub struct BrowserStatus {
     #[serde(rename = "needsFdaAccess", default)]
     pub needs_fda_access: bool,
     /// macOS Firefox only: native-messaging manifest points at the
-    /// current Fristed binary (extension blocking bridge).
+    /// current Rum binary (extension blocking bridge).
     #[serde(rename = "nativeHostReady", default)]
     pub native_host_ready: bool,
 }
@@ -250,7 +250,7 @@ fn empty_scan_result() -> ScanResult {
 ///
 /// Why this exists: the underlying scan reads each browser's
 /// `~/Library/Application Support/<vendor>/...` data files. On
-/// macOS Sequoia 15+ that triggers a per-app "Fristed would like
+/// macOS Sequoia 15+ that triggers a per-app "Rum would like
 /// to access data from other apps" TCC prompt for *each* browser
 /// data folder we touch — so a user with Chrome + Brave + Edge +
 /// Firefox installed gets four serial prompts on a single tick. The
@@ -912,13 +912,13 @@ fn safari_profiles_dir() -> Option<PathBuf> {
     ))
 }
 
-/// True when this Fristed.app still has a Safari Web Extension
+/// True when this Rum.app still has a Safari Web Extension
 /// `.appex` in `Contents/PlugIns/` (legacy builds only — release builds
 /// no longer embed one). Used to short-circuit plist-based install
 /// detection when the host bundle carries its own copy.
 #[cfg(target_os = "macos")]
 fn embedded_safari_extension_present() -> bool {
-    // current_exe() resolves to .../Fristed.app/Contents/MacOS/redd-block.
+    // current_exe() resolves to .../Rum.app/Contents/MacOS/redd-block.
     // Walk up two levels to reach .../Contents and look for our .appex.
     let Ok(exe) = std::env::current_exe() else {
         return false;

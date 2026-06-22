@@ -173,7 +173,7 @@ pub async fn request_automation_permission(browser: String) -> Result<(), String
 }
 
 /// Open System Settings → Privacy & Security → Automation so the user can
-/// toggle the per-app grants Fristed needs.
+/// toggle the per-app grants Rum needs.
 #[tauri::command]
 pub fn open_automation_settings() -> Result<(), String> {
     web_automation::open_automation_settings()

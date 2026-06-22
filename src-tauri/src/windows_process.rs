@@ -17,7 +17,7 @@ pub fn hidden_command(program: &str) -> Command {
 /// often the browser's install dir, not our exe dir. Set cwd + DLL
 /// search path to the host binary's folder so WebView2Loader and other
 /// siblings next to `redd-block.exe` resolve (MSIX staged copy under
-/// `%LOCALAPPDATA%\\Fristed\\native-host\\`).
+/// `%LOCALAPPDATA%\\Rum\\native-host\\`).
 #[cfg(target_os = "windows")]
 pub fn set_native_host_process_directory() {
     let Ok(exe) = std::env::current_exe() else {

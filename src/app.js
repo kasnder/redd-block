@@ -6,7 +6,8 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ask, message, open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import logoReddFocusUrl from './images/logo-reddfocus.svg';
-import fristedIconUrl from './fristed-icon.svg';
+import rumIconUrl from './fristed-icon.svg';
+import rumMarkUrl from './rum-mark.svg';
 import appleLogoUrl from './images/apple-logo.svg';
 import iconChromeUrl from './images/icon-chrome.svg';
 import iconBraveUrl from './images/icon-brave.svg';
@@ -37,7 +38,6 @@ import {
     isOverlayMessageEmpty,
 } from './schedule-overlay-message-editor.js';
 import { getReleaseNotesForVersion } from './changelog.js';
-
 // Compatibility layer wrapping Tauri APIs
 const tauriAPI = {
     // Core data operations
@@ -165,7 +165,7 @@ const tauriAPI = {
 
     // macOS-only in-app uninstall. Disables launch-at-login, scrubs
     // browser native-messaging manifests, and schedules a delayed
-    // self-delete of /Applications/Fristed.app. Caller is responsible
+    // self-delete of /Applications/Rum.app. Caller is responsible
     // for confirming with the user and refusing to invoke while blocks
     // are running. See src-tauri/src/commands/uninstall.rs.
     uninstallSelfMacos: (deleteUserData = false) =>
@@ -253,6 +253,8 @@ const DEFAULT_OVERRIDE_COUNT = 10;
 const TARGET_MAX_OVERRIDE_MINUTES = 30;
 /** iOS random-words / gibberish: max word count (random-words: 2500 letters at max; gibberish: 3000). */
 const MAX_IOS_OVERRIDE_WORD_COUNT = 500;
+/** iOS word-count override UI: ~30 min at max (500 words). */
+const IOS_OVERRIDE_WORDS_PER_MINUTE = MAX_IOS_OVERRIDE_WORD_COUNT / TARGET_MAX_OVERRIDE_MINUTES;
 /** When character count >= this, preview text is frozen (no more regeneration) for random words and gibberish. */
 const OVERRIDE_PREVIEW_TRUNCATE_AT = 50;
 /** Max length for blocklist display name (add/edit modal + persisted saves). */
@@ -266,18 +268,21 @@ let lastOverridePreviewType = null;
 const UI_ZOOM_MIN = 0.8;
 const UI_ZOOM_MAX = 1.8;
 const UI_ZOOM_MAX_DESKTOP = 1.5;  // cap on macOS/Windows (native webview zoom)
-const UI_ZOOM_MAX_IOS = 1.4;  // cap on iOS (CSS zoom on html)
+const UI_ZOOM_MAX_IOS = 1.4;  // cap on iOS (CSS zoom on phone; transform scale on iPad)
 /** Layout breakpoints — CSS `zoom` does not affect @media / @container; tiers use effective width. */
 const UI_ZOOM_LAYOUT_STACK_MAX = 768;
 const UI_ZOOM_LAYOUT_CRAMPED_MAX = 1024;
 const UI_ZOOM_LAYOUT_NARROW_MAX = 800;
+const SCHED_TABS_ICON_ONLY_EXIT_WIDTH_DELTA = 8;
 let uiZoomLayoutRaf = 0;
+let selectionPromptLayoutRaf = 0;
 let uiZoomLayoutObserverBound = false;
+let schedTabsIconOnlyEnteredAtWidth = 0;
 const UI_ZOOM_STEP = 0.1;
-/** Desktop default — slightly larger for monitor distance. */
-const DEFAULT_UI_ZOOM = 1.2;
-/** iOS uses CSS zoom on `html`; 1.0 matches the layout viewport and avoids horizontal overflow. */
-const DEFAULT_UI_ZOOM_IOS = 1.0;
+const DEFAULT_UI_ZOOM = 1.0;
+const TIME_SEPARATOR_ARROW_HTML = '<span class="time-separator" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg></span>';
+const SEGMENT_SUMMARY_CLOCK_ICON = '<svg class="segment-summary-clock" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>';
+const SEGMENT_SUMMARY_CHEVRON_ICON = '<svg class="segment-summary-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>';
 let zoomToastHideTimeout = null;
 let nativeWebviewZoomSupported = null;
 
@@ -335,11 +340,12 @@ const WEBSITES_PRESET_LISTS = {
 let isScheduleMode = false; // false = instant mode, true = schedule mode
 let isAlwaysOnMode = false; // false = timed block, true = always-on (permanent) block
 let scheduleSegments = getDefaultScheduleSegments(); // Array of time segments with per-segment days
+let expandedScheduleSegmentIndex = 0; // Which segment shows the full editor when multiple exist (-1 = all collapsed)
 
 // Far-future timestamp used for "always on" blocks (year 9999)
 const ALWAYS_ON_END_TIME = new Date(9999, 11, 31, 23, 59, 59, 999).getTime();
 
-// Protected app names — Fristed must never block itself
+// Protected app names — Rum must never block itself
 const PROTECTED_APP_NAMES = ['redd block', 'redd-block', 'redd-block-helper'];
 
 // Protected domains — blocking these would break networking or the app itself
@@ -1133,6 +1139,7 @@ function closeEscapeSubLayer() {
     if (importMenu && !importMenu.classList.contains('hidden')) {
         importMenu.classList.add('hidden');
         document.getElementById('modal-import-websites-btn')?.setAttribute('aria-expanded', 'false');
+        resetWebsitesImportMenuPosition();
         return true;
     }
     if (document.querySelector('.blocklist-menu:not(.hidden)')) {
@@ -1200,7 +1207,6 @@ let activeScheduleSegmentCount = 0; // Number of segments locked in the active s
 let hasShownIOSScheduleSyncError = false;
 const CURRENT_EULA_REVISION = 1;
 let forceShowEulaThisSession = false;
-
 // Word list for random word challenges
 const wordList = [
     // 1-2 chars
@@ -1216,9 +1222,10 @@ const wordList = [
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     detectPlatform(); // Before loadData so first-launch defaults can differ on iOS
+    setupHandsetModalScreens();
     await loadData();
     await resetDevOnlyEulaAcceptance();
-    setupIOSExternalLinkOpens();
+    setupMobileExternalLinkOpens();
     setupNowBlockingChipScroll();
     setupEventListeners();
     initWelcomeDemoControls();
@@ -1235,13 +1242,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupMacAutomationIntroModal();
     setupGraceSetting();
     setupSettingsEnforcementSection();
-    void wireEnforcementToggle();
+    if (!isIOS) {
+        void wireEnforcementToggle();
+    }
+    await runInitialOnboardingSequence();
     if (isIOS && hasAcceptedEula()) {
         await checkScreentimeAuth();
-    } else if (!isIOS) {
-        await runInitialDesktopOnboardingSequence();
-    } else {
-        updateOnboardingVisibility();
     }
 
     if (hasAcceptedEula()) {
@@ -1333,6 +1339,8 @@ function isLocalDevRun() {
 async function resetDevOnlyEulaAcceptance() {
     forceShowEulaThisSession = isLocalDevRun();
 }
+
+
 
 function getAcceptedEulaRevision() {
     const rawRevision = appData?.settings?.eulaAcceptedRevision;
@@ -1579,15 +1587,17 @@ async function persistWelcomeOnboardingShown() {
     }
 }
 
-async function runInitialDesktopOnboardingSequence() {
+async function runInitialOnboardingSequence() {
     if (await shouldShowRebrandOnboarding()) {
         await presentRebrandOnboarding();
+        await persistLaunchIdentity();
         return;
     }
-    if (!hasWelcomeOnboardingBeenShown()) {
+    if (!isIOS && !hasWelcomeOnboardingBeenShown()) {
         await presentWelcomeOnboarding();
         await persistWelcomeOnboardingShown();
     }
+    await persistLaunchIdentity();
     updateOnboardingVisibility();
 }
 
@@ -1618,31 +1628,109 @@ function presentWelcomeOnboarding(onContinue) {
     })();
 }
 
-function hasSeenRebrandOnboarding() {
-    return appData?.settings?.extra?.rebrandOnboardingShown === true;
+const CURRENT_PRODUCT_NAME = 'Rum';
+const PREVIOUS_PRODUCT_NAMES = ['ReDD Block', 'Fristed: Block Apps & Sites', 'Fristed'];
+// First release that ships the Rum rename onboarding.
+const RUM_REBRAND_RELEASE_VERSION = '3.3.3';
+
+let startupAppVersionPromise = null;
+
+function getStartupAppVersion() {
+    if (!startupAppVersionPromise) {
+        startupAppVersionPromise = tauriAPI.getAppVersion().catch(() => '');
+    }
+    return startupAppVersionPromise;
 }
 
-function hasLegacyReddBlockData() {
+function getKnownProductName() {
+    return appData?.settings?.extra?.knownProductName ?? null;
+}
+
+function getLastLaunchedVersion() {
+    return appData?.settings?.extra?.lastLaunchedVersion ?? null;
+}
+
+function isPreviousProductName(name) {
+    return PREVIOUS_PRODUCT_NAMES.includes(name);
+}
+
+function hasPreRumAppUsage() {
     return (appData?.blocklists?.length || 0) > 0
         || (appData?.activeBlocks?.length || 0) > 0
         || (appData?.schedules?.length || 0) > 0
-        || hasAcceptedEula()
-        || getAcceptedEulaRevision() != null
         || appData?.settings?.onboardingComplete === true
         || appData?.settings?.welcomeOnboardingShown === true
         || !!localStorage.getItem(EXT_ONBOARDING_DISMISSED_KEY);
 }
 
+function isVersionAtLeast(version, minimum) {
+    if (!version || !minimum) return false;
+    return isVersionHigher(version, minimum) || version === minimum;
+}
+
+function crossedIntoRumRebrandRelease(previousVersion, currentVersion) {
+    if (!isVersionAtLeast(currentVersion, RUM_REBRAND_RELEASE_VERSION)) return false;
+    if (!previousVersion) return false;
+    if (previousVersion === currentVersion) return false;
+    return !isVersionAtLeast(previousVersion, RUM_REBRAND_RELEASE_VERSION);
+}
+
+function hasSeenRumRebrandOnboarding() {
+    return appData?.settings?.extra?.rumRebrandOnboardingShown === true;
+}
+
+function sawPreviousRebrandOnboarding() {
+    return appData?.settings?.extra?.rebrandOnboardingShown === true;
+}
+
 async function shouldShowRebrandOnboarding() {
-    if (isIOS) return false;
-    return hasLegacyReddBlockData()
-        && !hasSeenRebrandOnboarding();
+    if (hasSeenRumRebrandOnboarding()) return false;
+
+    const known = getKnownProductName();
+    if (known === CURRENT_PRODUCT_NAME) return false;
+    if (!hasPreRumAppUsage()) return false;
+
+    // Last session was still under a previous product name.
+    if (known && isPreviousProductName(known)) return true;
+
+    const previousVersion = getLastLaunchedVersion();
+    const currentVersion = await getStartupAppVersion();
+
+    // Crossed into the Rum rename release on update.
+    if (crossedIntoRumRebrandRelease(previousVersion, currentVersion)) return true;
+
+    // Saw the earlier Fristed rename screen but not the Rum one yet.
+    if (sawPreviousRebrandOnboarding()) {
+        return isVersionAtLeast(currentVersion, RUM_REBRAND_RELEASE_VERSION);
+    }
+
+    // First Rum launch for an existing user before we tracked product identity.
+    if (!known && !previousVersion && isVersionAtLeast(currentVersion, RUM_REBRAND_RELEASE_VERSION)) {
+        return true;
+    }
+
+    return false;
+}
+
+async function persistLaunchIdentity() {
+    if (!appData.settings) appData.settings = {};
+    if (!appData.settings.extra) appData.settings.extra = {};
+    const currentVersion = await getStartupAppVersion();
+    if (currentVersion) {
+        appData.settings.extra.lastLaunchedVersion = currentVersion;
+    }
+    appData.settings.extra.knownProductName = CURRENT_PRODUCT_NAME;
+    try {
+        await saveData();
+    } catch (e) {
+        console.warn('[launch-identity] persist failed:', e);
+    }
 }
 
 async function persistRebrandOnboardingShown() {
     if (!appData.settings) appData.settings = {};
     if (!appData.settings.extra) appData.settings.extra = {};
-    appData.settings.extra.rebrandOnboardingShown = true;
+    appData.settings.extra.rumRebrandOnboardingShown = true;
     await saveData();
 }
 
@@ -1813,7 +1901,7 @@ let firstRunExtensionSetupPending = false;
 // While the migration post-phase is on screen, the user is bouncing
 // between this window and Safari (or Chrome/Firefox/etc.) toggling
 // extension settings. The window-`focus` listener below already
-// re-polls on tab-back, but a user who has Safari and Fristed
+// re-polls on tab-back, but a user who has Safari and Rum
 // side-by-side never triggers focus events as they click toggles.
 // Run a low-frequency poll so the checklist ticks itself off within
 // the "up to 20 seconds" window the UI already promises. Cleared
@@ -2411,6 +2499,7 @@ async function onEnforcementToggleChange(changedToggle) {
 }
 
 async function wireEnforcementToggle() {
+    if (isIOS) return;
     const toggles = getEnforcementToggleInputs();
     if (!toggles.length) return;
 
@@ -3081,7 +3170,7 @@ function privateModeNoun(key) {
 // launching Safari when needed, then falls back to AppleScript for
 // dev builds (`cargo tauri dev`) and other cases where SafariServices
 // can't find the host extension. AppleScript needs Accessibility
-// permission for Fristed (or your terminal, when running dev).
+// permission for Rum (or your terminal, when running dev).
 async function openExtensionSettings(key) {
     if (key === 'safari') {
         try {
@@ -3313,12 +3402,12 @@ function syncMigrationPostHeader(state) {
     header.classList.remove('hidden');
     const copy = migrationExtHeaderCopy(state);
     if (copy) {
-        const shieldLogo = document.getElementById('migration-post-header-fristed-logo');
+        const shieldLogo = document.getElementById('migration-post-header-rum-logo');
         const titleEl = document.getElementById('migration-post-header-title');
         const subEl = document.getElementById('migration-post-header-subtitle');
         const copyKey = migrationMacCopyKey(state);
         if (copyKey !== lastMigrationHeaderCopyKey) {
-            if (shieldLogo) shieldLogo.src = fristedIconUrl;
+            if (shieldLogo) shieldLogo.src = rumIconUrl;
             if (titleEl) titleEl.textContent = copy.titleHtml;
             if (subEl) subEl.innerHTML = copy.subtitleHtml;
             lastMigrationHeaderCopyKey = copyKey;
@@ -3791,7 +3880,7 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
             const isSafari = key === 'safari';
 
             // "✓ Extension installed" line. Always show for Safari —
-            // we bundle the .appex inside Fristed.app, so install
+            // we bundle the .appex inside Rum.app, so install
             // is structurally guaranteed at this point. For Chromium /
             // Firefox we only show it once we've moved past the
             // install step (status !== 'needs-enable') because there
@@ -4004,7 +4093,7 @@ function setupAppForegroundRefresh() {
     });
     // Keep the setup banner in sync when extension state changes
     // without a window focus (e.g. user toggles an extension while
-    // Fristed stays visible). Matches enforcer tick (~5 s).
+    // Rum stays visible). Matches enforcer tick (~5 s).
     setInterval(() => {
         if (!startupInitializationComplete || migrationOnboardingActive) return;
         if (!hasAcceptedEula()) return;
@@ -4374,7 +4463,7 @@ function setupEnforcerUiAlerts() {
 //
 // The Automation watcher (src-tauri/src/web_automation.rs) drives
 // Safari + Chromium blocking via Apple Events. The first event to each
-// browser surfaces the system "Fristed wants to control <App>"
+// browser surfaces the system "Rum wants to control <App>"
 // prompt; if the user denies it, the watcher emits
 // `web-automation://permission-needed` (and `...resolved` once granted).
 // Without the grant, website blocking silently does nothing, so we show
@@ -4670,7 +4759,7 @@ function enforcerCopy(payload) {
         };
     }
     if (issue === 'automation') {
-        // macOS: Fristed lost the Automation grant for this browser,
+        // macOS: Rum lost the Automation grant for this browser,
         // so it can't redirect blocked tabs. No extension URL applies —
         // the only fix is re-enabling the grant in System Settings.
         return {
@@ -6361,11 +6450,13 @@ function displayNameForBlockedApp(processName) {
         (a) => normalizeBlockedAppKey(a.process_name) === key,
     );
     if (match?.display_name) return match.display_name;
+
     return key.charAt(0).toUpperCase() + key.slice(1);
 }
 
 async function ensureInstalledAppsCache() {
-    if (isIOS || installedAppsCache) return;
+    if (installedAppsCache) return;
+    if (isIOS) return;
     try {
         installedAppsCache = await tauriAPI.listInstalledApps();
     } catch (e) {
@@ -6434,6 +6525,7 @@ function isHelperConnectionError(errorMsg) {
     return errorMsg.includes('Failed to connect to helper') || errorMsg.includes('refused') || errorMsg.includes('10061');
 }
 
+
 // Check Screen Time authorization (iOS only)
 async function checkScreentimeAuth() {
     try {
@@ -6500,12 +6592,15 @@ function updateOnboardingVisibility() {
     eulaOverlay?.classList.toggle('hidden', !showEulaScreen);
     screentimeOverlay?.classList.toggle('hidden', !showScreentime);
     main?.classList.toggle('hidden', blockMainUi);
+    if (!blockMainUi) {
+    }
 
     // Hide the BLOCKING NOW title-bar row on onboarding screens
     const nowBlockingRow = document.getElementById('now-blocking-row');
     if (nowBlockingRow) {
         nowBlockingRow.classList.toggle('hidden', blockMainUi);
     }
+
 }
 
 function activeExclusiveOnboardingScreenId() {
@@ -6575,8 +6670,8 @@ async function openExternal(target) {
     }
 }
 
-/** WKWebView on iOS does not open target=_blank links in Safari; route via opener plugin. */
-function setupIOSExternalLinkOpens() {
+/** iOS WebView does not open target=_blank links in the system browser; route via opener plugin. */
+function setupMobileExternalLinkOpens() {
     if (!isIOS) return;
     document.addEventListener('click', (event) => {
         const anchor = event.target.closest('a[href]');
@@ -6637,6 +6732,8 @@ async function loadData() {
     if (migrateLegacyScheduleStartOverlays()) {
         shouldSave = true;
     }
+
+
     // Create default blocklist on first launch (no blocklists yet)
     if (appData.blocklists.length === 0) {
         appData.blocklists.push({
@@ -6645,13 +6742,13 @@ async function loadData() {
             mode: 'blocklist',
             // First colour in the palette (matches the openBlocklistModal default).
             color: '#B8D1DE',
-            emoji: '🚫',
+            emoji: '📱',
             websites: ['instagram.com', 'youtube.com', 'reddit.com'],
             apps: [],
             iosScreenTimeSelection: null,
             overrideDifficulty: {
                 type: 'random-words',
-                count: isIOS ? 25 : 50
+                count: (isIOS) ? 25 : 50
             }
         });
         shouldSave = true;
@@ -6739,8 +6836,12 @@ function isVersionHigher(versionA, versionB) {
     return false; // Equal versions
 }
 
-function usesIOSWordCountForOverrideType(type) {
-    return !!(isIOS && (type === 'random-words' || type === 'gibberish'));
+function usesMobileWordCountForOverrideType(type) {
+    return !!((isIOS) && (type === 'random-words' || type === 'gibberish'));
+}
+
+function isMobileOverrideChallengePlatform() {
+    return isIOS;
 }
 
 /** Key in latest-versions.json — iOS uses its own release line, not desktop macos. */
@@ -6749,6 +6850,147 @@ function getLatestVersionPlatformKey() {
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
     return isMac ? 'macos' : 'windows';
 }
+
+
+
+
+function getModalDismissButton(modalOverlay) {
+    if (!modalOverlay) return null;
+    return modalOverlay.querySelector('.modal-buttons .cancel-btn, [id^="cancel-"], [id^="close-"]');
+}
+
+function resetModalScrollPosition(modalEl) {
+    if (!modalEl) return;
+    const apply = () => {
+        modalEl.scrollTop = 0;
+        const content = modalEl.querySelector('.modal-content');
+        if (content) content.scrollTop = 0;
+        const scrollBody = modalEl.querySelector('.mobile-modal-scroll-body');
+        if (scrollBody) scrollBody.scrollTop = 0;
+    };
+    apply();
+    requestAnimationFrame(apply);
+}
+
+function attachModalScrollResetOnShow(modalEl) {
+    if (!modalEl || modalEl.dataset.scrollResetOnShow === '1') return;
+    modalEl.dataset.scrollResetOnShow = '1';
+    new MutationObserver(() => {
+        if (!modalEl.classList.contains('hidden')) {
+            resetModalScrollPosition(modalEl);
+        }
+    }).observe(modalEl, { attributes: true, attributeFilter: ['class'] });
+}
+
+function setupHandsetModalScreens() {
+    const modalIds = [
+        'blocklist-modal',
+        'override-modal',
+        'pause-modal',
+        'start-block-confirm-modal',
+        'start-schedule-confirm-modal',
+        'settings-modal',
+        'override-all-modal'
+    ];
+
+    for (const modalId of modalIds) {
+        const overlay = document.getElementById(modalId);
+        const content = overlay?.querySelector('.modal-content');
+        const titleSource = content?.querySelector('h3');
+        if (!overlay || !content || !titleSource || content.querySelector('.mobile-modal-header')) continue;
+
+        overlay.classList.add('mobile-fullscreen-modal');
+        const isRoomStyleConfirmModal =
+            modalId === 'start-block-confirm-modal' || modalId === 'start-schedule-confirm-modal';
+        if (!isRoomStyleConfirmModal) {
+            titleSource.classList.add('mobile-modal-title-source');
+        }
+
+        const header = document.createElement('div');
+        header.className = 'mobile-modal-header';
+
+        const backButton = document.createElement('button');
+        backButton.type = 'button';
+        backButton.className = 'mobile-modal-back-btn';
+        backButton.setAttribute('aria-label', 'Back');
+        backButton.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M15 18l-6-6 6-6"></path>
+            </svg>
+        `;
+
+        const headerTitle = document.createElement('div');
+        headerTitle.className = 'mobile-modal-header-title';
+
+        const syncHeaderTitle = () => {
+            const nextTitle = titleSource.textContent?.trim() || titleSource.innerText?.trim() || '';
+            if (!isRoomStyleConfirmModal) {
+                headerTitle.textContent = nextTitle;
+            }
+            backButton.setAttribute('aria-label', nextTitle ? `Back from ${nextTitle}` : 'Back');
+        };
+
+        syncHeaderTitle();
+        new MutationObserver(syncHeaderTitle).observe(titleSource, {
+            childList: true,
+            characterData: true,
+            subtree: true
+        });
+
+        backButton.addEventListener('click', () => {
+            const dismissButton = getModalDismissButton(overlay);
+            if (dismissButton) dismissButton.click();
+            else overlay.classList.add('hidden');
+        });
+
+        header.append(backButton);
+        if (!isRoomStyleConfirmModal) {
+            header.append(headerTitle);
+        }
+        if (modalId === 'settings-modal') {
+            const versionEl = content.querySelector('#current-app-version');
+            const generalHeading = content.querySelector('#settings-general-heading');
+            const settingsHeader = content.querySelector('.settings-modal-header');
+            if (versionEl && generalHeading && !generalHeading.parentElement?.classList.contains('settings-section-heading-row')) {
+                const row = document.createElement('div');
+                row.className = 'settings-section-heading-row';
+                generalHeading.parentNode.insertBefore(row, generalHeading);
+                row.append(generalHeading, versionEl);
+            }
+            settingsHeader?.classList.add('hidden');
+        }
+        content.prepend(header);
+
+        if (isRoomStyleConfirmModal) {
+            const roomHeader = content.querySelector('.start-confirm-header-room');
+            if (roomHeader) {
+                header.appendChild(roomHeader);
+            }
+        }
+
+        const scrollBody = document.createElement('div');
+        scrollBody.className = 'mobile-modal-scroll-body';
+        const keepFooterOutsideScroll = modalId === 'blocklist-modal';
+        while (header.nextSibling) {
+            const node = header.nextSibling;
+            if (
+                keepFooterOutsideScroll
+                && node.nodeType === Node.ELEMENT_NODE
+                && node.classList.contains('modal-buttons')
+            ) {
+                break;
+            }
+            scrollBody.appendChild(node);
+        }
+        content.appendChild(scrollBody);
+        if (keepFooterOutsideScroll) {
+            const footer = content.querySelector(':scope > .modal-buttons');
+            if (footer) content.appendChild(footer);
+        }
+        attachModalScrollResetOnShow(overlay);
+    }
+}
+
 
 // Detect platform for window controls and iOS
 function detectPlatform() {
@@ -6764,6 +7006,7 @@ function detectPlatform() {
             (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         if (!isIPad) {
             document.body.classList.add('ios-phone');
+            document.body.classList.add('handset-device');
         }
         // Hide desktop-only UI on iOS
         document.getElementById('window-controls')?.classList.add('hidden');
@@ -6968,7 +7211,7 @@ function setupEventListeners() {
             }
         } else if (note) {
             if (result.status === 'denied') {
-                note.textContent = 'Screen Time access was denied. Please tap the button again, or enable Fristed in Settings > Screen Time > Apps With Screen Time Access.';
+                note.textContent = 'Screen Time access was denied. Please tap the button again, or enable Rum in Settings > Screen Time > Apps With Screen Time Access.';
             } else if (result.error) {
                 note.textContent = `Screen Time access failed: ${result.error}`;
             }
@@ -7000,6 +7243,8 @@ function setupEventListeners() {
         // Don't deselect if clicking on interactive elements
         if (e.target.closest('.blocklist-card') ||
             e.target.closest('.scheduler-section') ||
+            e.target.closest('.time-picker-container') ||
+            e.target.closest('.schedule-block-panel') ||
             e.target.closest('.repeat-dropdown-wrapper') ||
             e.target.closest('.repeat-dropdown-menu') ||
             e.target.closest('.modal-overlay') ||
@@ -7115,7 +7360,7 @@ function setupEventListeners() {
         });
     }
 
-    // Quick-select buttons: timed durations (15/30/45/60) + "Always" option
+    // Quick-select buttons: timed durations + until-I-stop option
     document.querySelectorAll('.duration-quick-btn').forEach(btn => {
         btn.addEventListener('click', handleDurationQuickBtn);
     });
@@ -7257,6 +7502,19 @@ function parseTextFileDomains(content) {
     return out;
 }
 
+function resetWebsitesImportMenuPosition() {
+    const menu = document.getElementById('websites-import-menu');
+    if (!menu) return;
+    menu.classList.remove('websites-import-menu-fixed');
+    menu.style.top = '';
+    menu.style.bottom = '';
+    menu.style.left = '';
+    menu.style.right = '';
+    menu.style.width = '';
+    menu.style.minWidth = '';
+    menu.style.maxHeight = '';
+}
+
 // Wire up the Edit Blocklist "Import" popover for the websites field. The
 // caller supplies a callback that receives an array of cleaned domain
 // strings; it's responsible for de-duplicating against current modal state
@@ -7266,13 +7524,47 @@ function setupWebsitesImportMenu({ addDomainsToModal }) {
     const menu = document.getElementById('websites-import-menu');
     if (!importBtn || !menu) return;
 
+    const resetMenuPosition = () => {
+        resetWebsitesImportMenuPosition();
+    };
+
+    const positionMenu = () => {
+        const rect = importBtn.getBoundingClientRect();
+        const viewportPadding = 12;
+        const gap = 4;
+        const minWidth = Math.max(rect.width, 220);
+        const maxMenuHeight = Math.min(320, Math.round(window.innerHeight * 0.45));
+
+        menu.classList.add('websites-import-menu-fixed');
+        menu.style.left = 'auto';
+        menu.style.right = `${Math.max(viewportPadding, window.innerWidth - rect.right)}px`;
+        menu.style.width = `${minWidth}px`;
+        menu.style.minWidth = `${minWidth}px`;
+
+        const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
+        const spaceAbove = rect.top - viewportPadding;
+        const openUpward = spaceBelow < 180 && spaceAbove > spaceBelow;
+
+        if (openUpward) {
+            menu.style.top = 'auto';
+            menu.style.bottom = `${Math.max(viewportPadding, window.innerHeight - rect.top + gap)}px`;
+            menu.style.maxHeight = `${Math.max(120, Math.min(maxMenuHeight, spaceAbove - gap))}px`;
+        } else {
+            menu.style.bottom = 'auto';
+            menu.style.top = `${Math.max(viewportPadding, rect.bottom + gap)}px`;
+            menu.style.maxHeight = `${Math.max(120, Math.min(maxMenuHeight, spaceBelow - gap))}px`;
+        }
+    };
+
     const closeMenu = () => {
         menu.classList.add('hidden');
         importBtn.setAttribute('aria-expanded', 'false');
+        resetMenuPosition();
     };
     const openMenu = () => {
         menu.classList.remove('hidden');
         importBtn.setAttribute('aria-expanded', 'true');
+        requestAnimationFrame(positionMenu);
     };
 
     importBtn.addEventListener('click', (e) => {
@@ -7295,6 +7587,12 @@ function setupWebsitesImportMenu({ addDomainsToModal }) {
         if (e.key === 'Escape' && !menu.classList.contains('hidden')) {
             closeMenu();
         }
+    });
+
+    menu.addEventListener('touchmove', (e) => e.stopPropagation(), { passive: true });
+    menu.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
+    window.addEventListener('resize', () => {
+        if (!menu.classList.contains('hidden')) positionMenu();
     });
 
     const textFileBtn = document.getElementById('websites-import-menu-text-file');
@@ -7561,6 +7859,68 @@ function setupModalListeners() {
     focusInputOnTagAreaClick(modalWebsitesTags, modalWebsiteInput);
     focusInputOnTagAreaClick(modalAppsTags, modalAppInput);
 
+    function confirmModalWebsiteInputValue() {
+        const raw = modalWebsiteInput.value.trim();
+        if (!raw) return null;
+
+        const result = processWebsiteInput(raw);
+        const errorMsg = document.getElementById('website-input-error');
+
+        if (result.websiteInvalid) {
+            if (errorMsg) {
+                errorMsg.classList.remove('hidden');
+                setTimeout(() => errorMsg.classList.add('hidden'), 3000);
+            }
+        } else if (errorMsg) {
+            errorMsg.classList.add('hidden');
+        }
+
+        if (result.hadProtected) {
+            modalWebsiteInput.placeholder = tSettings('cannotBlockDomainPlaceholder');
+            modalWebsiteInput.classList.add('input-error');
+            setTimeout(() => {
+                modalWebsiteInput.placeholder = tSettings('placeholderWebsiteExample');
+                modalWebsiteInput.classList.remove('input-error');
+            }, 2000);
+        }
+
+        if (result.toAdd.length > 0) {
+            const toAddCopy = [...result.toAdd];
+            pushModalUndo('website', () => {
+                toAddCopy.forEach(w => {
+                    const i = modalWebsites.indexOf(w);
+                    if (i !== -1) modalWebsites.splice(i, 1);
+                });
+                window.renderModalTags();
+            });
+            result.toAdd.forEach(website => {
+                if (!modalWebsites.includes(website)) modalWebsites.push(website);
+            });
+            window.renderModalTags();
+        }
+        modalWebsiteInput.value = result.inputValueToSet;
+        return result;
+    }
+
+    function focusModalWebsiteInputFromNameField() {
+        modalWebsiteInput.focus({ preventScroll: true });
+        const pendingLen = modalWebsiteInput.value.length;
+        const caret = pendingLen > 0 ? pendingLen : 0;
+        modalWebsiteInput.setSelectionRange(caret, caret);
+    }
+
+    // Mobile: Name → websites. iOS shows plain Return (no default advance).
+    if (isIOS) {
+        const nameInput = document.getElementById('blocklist-name');
+        nameInput.setAttribute('enterkeyhint', 'next');
+        nameInput.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.keyCode !== 13) return;
+            e.preventDefault();
+            e.stopPropagation();
+            focusModalWebsiteInputFromNameField();
+        }, true);
+    }
+
     document.getElementById('blocklist-name').addEventListener('input', () => {
         const nameInput = document.getElementById('blocklist-name');
         nameInput.classList.remove('input-error');
@@ -7626,42 +7986,7 @@ function setupModalListeners() {
         // Enter or Space confirms the website(s) — supports multiple domains separated by space, newline, or comma
         if ((e.key === 'Enter' || e.key === ' ') && modalWebsiteInput.value.trim()) {
             e.preventDefault();
-            const result = processWebsiteInput(modalWebsiteInput.value.trim());
-            const errorMsg = document.getElementById('website-input-error');
-
-            if (result.websiteInvalid) {
-                if (errorMsg) {
-                    errorMsg.classList.remove('hidden');
-                    setTimeout(() => errorMsg.classList.add('hidden'), 3000);
-                }
-            } else {
-                if (errorMsg) errorMsg.classList.add('hidden');
-            }
-
-            if (result.hadProtected) {
-                modalWebsiteInput.placeholder = tSettings('cannotBlockDomainPlaceholder');
-                modalWebsiteInput.classList.add('input-error');
-                setTimeout(() => {
-                    modalWebsiteInput.placeholder = tSettings('placeholderWebsiteExample');
-                    modalWebsiteInput.classList.remove('input-error');
-                }, 2000);
-            }
-
-            if (result.toAdd.length > 0) {
-                const toAddCopy = [...result.toAdd];
-                pushModalUndo('website', () => {
-                    toAddCopy.forEach(w => {
-                        const i = modalWebsites.indexOf(w);
-                        if (i !== -1) modalWebsites.splice(i, 1);
-                    });
-                    window.renderModalTags();
-                });
-                result.toAdd.forEach(website => {
-                    if (!modalWebsites.includes(website)) modalWebsites.push(website);
-                });
-                window.renderModalTags();
-            }
-            modalWebsiteInput.value = result.inputValueToSet;
+            confirmModalWebsiteInputValue();
         }
     });
 
@@ -7734,7 +8059,7 @@ function setupModalListeners() {
             e.preventDefault();
             const app = modalAppInput.value.trim();
             if (isProtectedApp(app)) {
-                // Show brief warning — Fristed cannot block itself
+                // Show brief warning — Rum cannot block itself
                 modalAppInput.value = '';
                 modalAppInput.placeholder = tSettings('cannotBlockSelfAppPlaceholder');
                 modalAppInput.classList.add('input-error');
@@ -7915,7 +8240,7 @@ function setupModalListeners() {
         const warningEl = document.getElementById('override-count-warning');
         const overrideType = document.getElementById('override-type')?.value || 'random-words';
         const maxChars = getMaxOverrideCharsForType(overrideType);
-        const unitLabel = usesIOSWordCountForOverrideType(overrideType) ? 'words' : 'characters';
+        const unitLabel = usesMobileWordCountForOverrideType(overrideType) ? 'words' : 'characters';
         e.target.max = String(maxChars);
         const rawValue = e.target.value.trim();
         if (rawValue === '') {
@@ -7928,8 +8253,7 @@ function setupModalListeners() {
 
         const parsed = parseInt(rawValue, 10);
         if (Number.isFinite(parsed) && parsed > maxChars) {
-            const charsPerMinute = getTypingCharsPerMinuteForType(overrideType);
-            const estimatedMinutes = Math.ceil(maxChars / charsPerMinute);
+            const estimatedMinutes = getOverrideEstimatedMinutes(overrideType, maxChars, '');
             e.target.value = maxChars;
             warningEl.textContent = `Max is ${maxChars} ${unitLabel} so it's still possible to override in case of emergency (takes you ~${estimatedMinutes} minutes to type).`;
             warningEl.classList.remove('hidden');
@@ -7945,6 +8269,19 @@ function setupModalListeners() {
         e.target.value = normalizeOverrideCount(e.target.value, overrideType);
         updateOverridePreview();
     });
+
+    const adjustOverrideCount = (delta) => {
+        const overrideCountInput = document.getElementById('override-count');
+        const maxDifficultyCb = document.getElementById('override-max-difficulty-checkbox');
+        if (!overrideCountInput || maxDifficultyCb?.checked) return;
+        const overrideType = document.getElementById('override-type')?.value || 'random-words';
+        const parsed = Number.parseInt(overrideCountInput.value, 10);
+        const current = Number.isFinite(parsed) ? parsed : DEFAULT_OVERRIDE_COUNT;
+        overrideCountInput.value = normalizeOverrideCount(String(current + delta), overrideType);
+        overrideCountInput.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    document.getElementById('override-count-minus')?.addEventListener('click', () => adjustOverrideCount(-1));
+    document.getElementById('override-count-plus')?.addEventListener('click', () => adjustOverrideCount(1));
 
     document.querySelectorAll('.color-swatch').forEach(swatch => {
         swatch.addEventListener('click', () => {
@@ -8085,45 +8422,9 @@ function setupModalListeners() {
         let websiteInvalid = false;
         const pendingWebsiteRaw = modalWebsiteInput.value.trim();
         if (pendingWebsiteRaw) {
-            const result = processWebsiteInput(pendingWebsiteRaw);
-            const errorMsg = document.getElementById('website-input-error');
-
-            if (result.websiteInvalid) {
-                if (errorMsg) {
-                    errorMsg.classList.remove('hidden');
-                    setTimeout(() => errorMsg.classList.add('hidden'), 3000);
-                }
-                websiteInvalid = true;
-            } else {
-                if (errorMsg) errorMsg.classList.add('hidden');
-            }
-
-            if (result.hadProtected) {
-                modalWebsiteInput.value = '';
-                modalWebsiteInput.placeholder = tSettings('cannotBlockDomainPlaceholder');
-                modalWebsiteInput.classList.add('input-error');
-                setTimeout(() => {
-                    modalWebsiteInput.placeholder = tSettings('placeholderWebsiteExample');
-                    modalWebsiteInput.classList.remove('input-error');
-                }, 2000);
-                return; // Block save so behavior matches explicit add interactions.
-            }
-
-            if (result.toAdd.length > 0) {
-                const toAddCopy = [...result.toAdd];
-                pushModalUndo('website', () => {
-                    toAddCopy.forEach(w => {
-                        const i = modalWebsites.indexOf(w);
-                        if (i !== -1) modalWebsites.splice(i, 1);
-                    });
-                    window.renderModalTags();
-                });
-            }
-            result.toAdd.forEach(pendingWebsite => {
-                if (!modalWebsites.includes(pendingWebsite)) modalWebsites.push(pendingWebsite);
-            });
-            if (result.toAdd.length > 0) window.renderModalTags();
-            modalWebsiteInput.value = result.inputValueToSet;
+            const result = confirmModalWebsiteInputValue();
+            if (result?.hadProtected) return;
+            if (result?.websiteInvalid) websiteInvalid = true;
         }
 
         if (nameEmpty || websiteInvalid) return;
@@ -8158,7 +8459,7 @@ function setupModalListeners() {
         const selectedSwatch = document.querySelector('.color-swatch.selected');
         const color = selectedSwatch ? selectedSwatch.dataset.color : null;
         const selectedEmoji = document.querySelector('.emoji-swatch.selected');
-        const emoji = selectedEmoji ? selectedEmoji.dataset.emoji : '🚫';
+        const emoji = selectedEmoji ? selectedEmoji.dataset.emoji : '📱';
 
         const showItemDetails = document.getElementById('show-item-details-checkbox').checked;
         // Preserve the blocklist's existing schedule visibility (toggled via the chips above the
@@ -8885,7 +9186,9 @@ function disableScheduleControls(disabled) {
 
         if (disabled && isExistingSegment) {
             // Disable this segment's controls
-            segment.querySelectorAll('.time-part, .segment-day-toggle, .remove-segment-btn').forEach(el => {
+            segment.querySelectorAll(
+                '.time-part, .segment-day-toggle, .remove-segment-btn, .segment-delete-btn, .segment-done-btn, .segment-day-preset, .segment-summary-btn'
+            ).forEach(el => {
                 el.disabled = true;
                 el.style.opacity = '0.5';
                 el.style.pointerEvents = 'none';
@@ -8893,7 +9196,9 @@ function disableScheduleControls(disabled) {
             segment.classList.add('segment-locked');
         } else {
             // Enable this segment's controls
-            segment.querySelectorAll('.time-part, .segment-day-toggle, .remove-segment-btn').forEach(el => {
+            segment.querySelectorAll(
+                '.time-part, .segment-day-toggle, .remove-segment-btn, .segment-delete-btn, .segment-done-btn, .segment-day-preset, .segment-summary-btn'
+            ).forEach(el => {
                 el.disabled = false;
                 el.style.opacity = '1';
                 el.style.pointerEvents = 'auto';
@@ -9060,7 +9365,7 @@ function setupEndTimeDirectInputs() {
         if (e.key === 'Enter') {
             e.preventDefault();
             hourEl.blur();
-            minuteEl.focus();
+            minuteEl.focus({ preventScroll: true });
             if (typeof minuteEl.select === 'function') minuteEl.select();
         }
     });
@@ -9078,6 +9383,31 @@ function setupEndTimeDirectInputs() {
     });
 }
 
+/** Scroll inside a popover list only — never the page (scrollIntoView would pan main-content). */
+function scrollPopoverOptionIntoView(scrollContainer, option) {
+    if (!scrollContainer || !option) return;
+    const optionTop = option.offsetTop;
+    const optionHeight = option.offsetHeight;
+    const containerHeight = scrollContainer.clientHeight;
+    scrollContainer.scrollTop = Math.max(0, optionTop - (containerHeight - optionHeight) / 2);
+}
+
+
+
+
+
+
+function readRootCssPx(varName) {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    if (!raw) return 0;
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;height:' + raw;
+    document.body.appendChild(probe);
+    const px = parseFloat(getComputedStyle(probe).height) || 0;
+    probe.remove();
+    return px;
+}
+
 // Handle click on time part (button or instant-end input): open list and mark active.
 function handleTimePartClick(e) {
     e.stopPropagation();
@@ -9085,7 +9415,7 @@ function handleTimePartClick(e) {
     const type = btn.dataset.type;
     const target = btn.dataset.target;
 
-    // Close all popovers first
+    // Close all popovers first (keep row scroll position when switching fields)
     closeAllPopovers();
 
     // Open the relevant popover
@@ -9094,11 +9424,10 @@ function handleTimePartClick(e) {
     popover.classList.remove('hidden');
     btn.classList.add('active');
 
-    // Scroll to selected option
+    // Scroll to selected option inside the popover only
+    const scroll = popover.querySelector('.popover-scroll');
     const selectedOption = popover.querySelector('.popover-option.selected');
-    if (selectedOption) {
-        selectedOption.scrollIntoView({ block: 'center', behavior: 'instant' });
-    }
+    scrollPopoverOptionIntoView(scroll, selectedOption);
 }
 
 
@@ -9127,6 +9456,7 @@ function selectTimeOption(e) {
 // Close all popovers
 function closeAllPopovers() {
     document.querySelectorAll('.time-popover:not(.schedule-time-popover)').forEach(p => p.classList.add('hidden'));
+    document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
     document.querySelectorAll('.time-part.active, .time-popover-anchor.active').forEach(el =>
         el.classList.remove('active'));
 }
@@ -9136,6 +9466,9 @@ function handlePopoverOutsideClick(e) {
     if (
         e.target.closest('.time-popover') ||
         e.target.closest('.time-popover-anchor') ||
+        e.target.closest('.schedule-start-display input.time-part') ||
+        e.target.closest('.schedule-end-display input.time-part') ||
+        e.target.closest('input.time-part.time-popover-anchor') ||
         e.target.closest('button.time-part')
     ) {
         return;
@@ -9318,7 +9651,7 @@ function setScheduleMode(isSchedule) {
     document.getElementById('schedule-mode-tab').classList.toggle('active', isSchedule);
 
     // Update section heading
-    const heading = document.querySelector('#scheduler-section .section-header h2');
+    const heading = document.getElementById('main-start-block-title');
     if (heading) {
         heading.textContent = tSettings('mainStartBlockTitle');
     }
@@ -9388,6 +9721,11 @@ function setScheduleMode(isSchedule) {
             }
             activeScheduleSegmentCount = 0;
         }
+        expandedScheduleSegmentIndex = scheduleSegments.length > 1
+            ? (activeScheduleSegmentCount > 0 && activeScheduleSegmentCount < scheduleSegments.length
+                ? activeScheduleSegmentCount
+                : 0)
+            : 0;
         rebuildScheduleSegments();
 
         instantPanel.classList.add('hidden');
@@ -9421,18 +9759,12 @@ function setScheduleMode(isSchedule) {
 
                 // Also update button to show Stop state
                 const btnLabel = startBlockBtn.querySelector('.btn-label');
-                const btnIcon = startBlockBtn.querySelector('svg');
                 startBlockBtn.classList.add('stop-block');
                 setBtnActionLabel(btnLabel, tSettings('stopBlock'));
                 setStartBtnBlocklistInfo(startBlockBtn, blocklist);
                 startBlockBtn.disabled = false;
                 startBlockBtn.dataset.activeBlockId = activeBlock.id;
-                if (btnIcon) {
-                    btnIcon.innerHTML = `
-                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                        <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
-                    `;
-                }
+                setStartBlockBtnLeadingIcon(startBlockBtn, 'stop');
                 disableTimeControls(true);
 
                 // Keep the info message visible for active always-on blocks.
@@ -9442,7 +9774,9 @@ function setScheduleMode(isSchedule) {
                 if (pauseBtn) pauseBtn.classList.add('hidden');
                 startBlockBtn.classList.remove('stop-block');
                 delete startBlockBtn.dataset.activeBlockId;
+                setBtnActionLabel(startBlockBtn.querySelector('.btn-label'), tSettings('startBlockButton'), { simple: true });
                 setStartBtnBlocklistInfo(startBlockBtn, blocklist);
+                setStartBlockBtnLeadingIcon(startBlockBtn, 'enter');
             }
         }
     }
@@ -9662,7 +9996,6 @@ function updateScheduleButtonState() {
         : null;
 
     const btnLabel = startScheduleBtn.querySelector('.btn-label');
-    const btnIcon = startScheduleBtn.querySelector('svg');
 
     // Check if there are new segments (beyond the locked count)
     const committedSegmentCount = getCommittedScheduleSegmentCount(activeSchedule);
@@ -9697,13 +10030,7 @@ function updateScheduleButtonState() {
         startScheduleBtn.disabled = false;
         startScheduleBtn.dataset.activeScheduleId = activeSchedule.id || activeSchedule.blocklistId;
 
-        // Change to unlock icon
-        if (btnIcon) {
-            btnIcon.innerHTML = `
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
-            `;
-        }
+        setStartBlockBtnLeadingIcon(startScheduleBtn, 'stop');
 
         // Disable controls for existing (committed) segments; new ones stay editable
         disableScheduleControls(true);
@@ -9715,12 +10042,7 @@ function updateScheduleButtonState() {
         startScheduleBtn.classList.remove('edit-schedule');
         delete startScheduleBtn.dataset.activeScheduleId;
 
-
-
-        // Play icon
-        if (btnIcon) {
-            btnIcon.innerHTML = LUCIDE_PLAY_SVG_INNER;
-        }
+        setStartBlockBtnLeadingIcon(startScheduleBtn, 'enter');
 
         // Enable all controls
         disableScheduleControls(false);
@@ -9832,6 +10154,8 @@ function addScheduleSegment() {
         days: defaultDays
     });
 
+    expandedScheduleSegmentIndex = scheduleSegments.length - 1;
+
     // Rebuild all segments to ensure consistent rendering
     rebuildScheduleSegments();
 
@@ -9866,8 +10190,29 @@ function handleSegmentDayToggle(segmentIndex, dayIndex, btn) {
     }
 
     // Update preview and button state
+    syncSegmentDayPresetButtons(segmentIndex);
     handleTimeChange();
     updateScheduleButtonState();
+}
+
+function syncSegmentDayPresetButtons(segmentIndex) {
+    const segment = document.querySelector(`.schedule-segment[data-segment-index="${segmentIndex}"]`);
+    const segmentDays = scheduleSegments[segmentIndex]?.days;
+    if (!segment || !segmentDays) return;
+
+    const presetMap = {
+        weekdays: [0, 1, 2, 3, 4],
+        weekends: [5, 6],
+        everyday: [0, 1, 2, 3, 4, 5, 6],
+    };
+
+    segment.querySelectorAll('.segment-day-preset').forEach(btn => {
+        const presetDays = presetMap[btn.dataset.preset];
+        btn.classList.toggle('active', presetDays ? arraysEqual(
+            [...segmentDays].sort((a, b) => a - b),
+            presetDays,
+        ) : false);
+    });
 }
 
 // Remove a time segment
@@ -9879,6 +10224,12 @@ function removeScheduleSegment(index) {
 
     // Remove from state
     scheduleSegments.splice(index, 1);
+
+    if (expandedScheduleSegmentIndex === index) {
+        expandedScheduleSegmentIndex = scheduleSegments.length > 1 ? -1 : 0;
+    } else if (expandedScheduleSegmentIndex > index) {
+        expandedScheduleSegmentIndex -= 1;
+    }
 
     // Rebuild DOM (simpler than updating indices)
     rebuildScheduleSegments();
@@ -9910,51 +10261,119 @@ function sortScheduleSegments() {
     }
 }
 
-// Rebuild schedule segments DOM from state
-function rebuildScheduleSegments() {
-    // Sort chronologically before rebuilding
-    sortScheduleSegments();
+function normalizeExpandedScheduleSegmentIndex() {
+    if (scheduleSegments.length <= 1) {
+        expandedScheduleSegmentIndex = 0;
+        return;
+    }
+    if (expandedScheduleSegmentIndex >= scheduleSegments.length) {
+        expandedScheduleSegmentIndex = scheduleSegments.length - 1;
+    }
+}
 
-    const container = document.getElementById('schedule-segments');
-    container.innerHTML = '';
+function formatScheduleSegmentTimeRange(seg) {
+    const start = `${String(seg.startHour).padStart(2, '0')}:${String(seg.startMinute).padStart(2, '0')}`;
+    const end = `${String(seg.endHour).padStart(2, '0')}:${String(seg.endMinute).padStart(2, '0')}`;
+    return `${start} – ${end}`;
+}
 
-    const fullDayLabels = weekdayAbbrevMon0List();
-    const useCompactDayLabels = shouldUseCompactIosScheduleDayLabels();
-    const dayLabels = useCompactDayLabels ? weekdayLetterMon0List() : fullDayLabels;
-    const labelStart = tSettings('start');
-    const labelEnd = tSettings('end');
-    const labelDays = tSettings('days');
+function formatScheduleSegmentDaysSummary(days) {
+    const selected = Array.isArray(days) ? [...days].sort((a, b) => a - b) : [];
+    if (selected.length === 0) return tSettings('segmentDaysNone');
+    const labels = weekdayAbbrevMon0List();
+    return selected.map((dayIndex) => labels[dayIndex]).join(', ');
+}
 
-    iosCompactScheduleDayLabelsActive = useCompactDayLabels;
+function arraysEqual(a, b) {
+    return Array.isArray(a) && Array.isArray(b)
+        && a.length === b.length
+        && a.every((value, index) => value === b[index]);
+}
 
-    scheduleSegments.forEach((seg, index) => {
-        const segment = document.createElement('div');
-        segment.className = 'schedule-segment';
-        segment.dataset.segmentIndex = index;
+function getSegmentDayPresetActiveClass(segmentDays, presetDays) {
+    const selected = Array.isArray(segmentDays) ? [...segmentDays].sort((a, b) => a - b) : [];
+    return arraysEqual(selected, presetDays) ? ' active' : '';
+}
 
-        const showRemove = scheduleSegments.length > 1;
-        const segmentDays = seg.days || [];
+function expandScheduleSegment(index) {
+    if (index < activeScheduleSegmentCount) return;
+    if (scheduleSegments.length <= 1) return;
+    expandedScheduleSegmentIndex = index;
+    rebuildScheduleSegments();
+}
 
-        // Generate day toggles HTML
-        const dayTogglesHtml = dayLabels.map((label, i) =>
-            `<button type="button" class="segment-day-toggle${segmentDays.includes(i) ? ' active' : ''}" data-day="${i}" aria-label="${fullDayLabels[i]}">${label}</button>`
-        ).join('');
+function collapseExpandedScheduleSegment() {
+    if (scheduleSegments.length <= 1) return;
+    expandedScheduleSegmentIndex = -1;
+    rebuildScheduleSegments();
+}
 
-        // Only show labels on the first segment
-        const showLabels = index === 0;
+function applySegmentDayPreset(segmentIndex, preset) {
+    if (segmentIndex < activeScheduleSegmentCount) return;
+    const segment = scheduleSegments[segmentIndex];
+    if (!segment) return;
 
-        segment.innerHTML = `
-            ${showRemove ? `
-                <button type="button" class="remove-segment-btn" data-segment-index="${index}"
-                    title="${tSettings('blocklistCardDelete')}" aria-label="${tSettings('blocklistCardDelete')}">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <path d="M3 6h18"></path>
-                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                    </svg>
-                </button>
-            ` : ''}
+    const presetDays = {
+        weekdays: [0, 1, 2, 3, 4],
+        weekends: [5, 6],
+        everyday: [0, 1, 2, 3, 4, 5, 6],
+    }[preset];
+
+    if (!presetDays) return;
+    segment.days = [...presetDays];
+
+    const segmentEl = document.querySelector(`.schedule-segment[data-segment-index="${segmentIndex}"]`);
+    if (segmentEl) {
+        segmentEl.querySelectorAll('.segment-day-toggle').forEach(btn => {
+            const dayIndex = parseInt(btn.dataset.day, 10);
+            btn.classList.toggle('active', segment.days.includes(dayIndex));
+        });
+        syncSegmentDayPresetButtons(segmentIndex);
+    }
+
+    handleTimeChange();
+    updateScheduleButtonState();
+}
+
+function buildScheduleSegmentEditorHtml(seg, index, {
+    showLabels,
+    showMultiSegmentChrome,
+    dayLabels,
+    fullDayLabels,
+    useCompactDayLabels,
+    labelStart,
+    labelEnd,
+    labelDays,
+}) {
+    const segmentDays = seg.days || [];
+    const dayTogglesHtml = dayLabels.map((label, i) =>
+        `<button type="button" class="segment-day-toggle${segmentDays.includes(i) ? ' active' : ''}" data-day="${i}" aria-label="${fullDayLabels[i]}">${label}</button>`
+    ).join('');
+
+    const dayPresetsHtml = showMultiSegmentChrome ? `
+        <div class="segment-day-presets">
+            <button type="button" class="segment-day-preset${getSegmentDayPresetActiveClass(segmentDays, [0, 1, 2, 3, 4])}" data-preset="weekdays">${tSettings('segmentDaysWeekdays')}</button>
+            <button type="button" class="segment-day-preset${getSegmentDayPresetActiveClass(segmentDays, [5, 6])}" data-preset="weekends">${tSettings('segmentDaysWeekends')}</button>
+            <button type="button" class="segment-day-preset${getSegmentDayPresetActiveClass(segmentDays, [0, 1, 2, 3, 4, 5, 6])}" data-preset="everyday">${tSettings('segmentDaysEveryDay')}</button>
+        </div>
+    ` : '';
+
+    const footerHtml = showMultiSegmentChrome ? `
+        <div class="segment-editor-footer">
+            <button type="button" class="segment-delete-btn" data-segment-index="${index}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M3 6h18"></path>
+                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
+                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
+                </svg>
+                ${tSettings('segmentDelete')}
+            </button>
+            <button type="button" class="segment-done-btn" data-segment-index="${index}">${tSettings('segmentDone')}</button>
+        </div>
+    ` : '';
+
+    return `
+        <div class="segment-editor">
             <div class="segment-row">
                 <div class="time-pickers-row">
                     <div class="time-picker-group">
@@ -9979,7 +10398,7 @@ function rebuildScheduleSegments() {
                             </div>
                         </div>
                     </div>
-                    <span class="time-separator">→</span>
+                    ${TIME_SEPARATOR_ARROW_HTML}
                     <div class="time-picker-group">
                         ${showLabels ? `<label class="time-label">${labelEnd}</label>` : ''}
                         <div class="time-picker-row">
@@ -10010,30 +10429,119 @@ function rebuildScheduleSegments() {
                     </div>
                 </div>
             </div>
-        `;
+            ${dayPresetsHtml}
+            ${footerHtml}
+        </div>
+    `;
+}
+
+function buildScheduleSegmentSummaryHtml(seg, index) {
+    return `
+        <button type="button" class="segment-summary-btn" data-segment-index="${index}" aria-expanded="false">
+            ${SEGMENT_SUMMARY_CLOCK_ICON}
+            <span class="segment-summary-time">${formatScheduleSegmentTimeRange(seg)}</span>
+            <span class="segment-summary-days">${formatScheduleSegmentDaysSummary(seg.days)}</span>
+            ${SEGMENT_SUMMARY_CHEVRON_ICON}
+        </button>
+    `;
+}
+
+function wireScheduleSegmentElement(segment, index) {
+    attachScheduleSegmentTimeInteractions(segment);
+
+    segment.querySelectorAll('.segment-day-toggle').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const dayIndex = parseInt(btn.dataset.day, 10);
+            handleSegmentDayToggle(index, dayIndex, btn);
+        });
+    });
+
+    segment.querySelectorAll('.segment-day-preset').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            applySegmentDayPreset(index, btn.dataset.preset);
+        });
+    });
+
+    const deleteBtn = segment.querySelector('.segment-delete-btn');
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            removeScheduleSegment(index);
+        });
+    }
+
+    const doneBtn = segment.querySelector('.segment-done-btn');
+    if (doneBtn) {
+        doneBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            collapseExpandedScheduleSegment();
+        });
+    }
+
+    const summaryBtn = segment.querySelector('.segment-summary-btn');
+    if (summaryBtn) {
+        summaryBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            expandScheduleSegment(index);
+        });
+    }
+
+    const removeBtn = segment.querySelector('.remove-segment-btn');
+    if (removeBtn) {
+        removeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            removeScheduleSegment(index);
+        });
+    }
+}
+
+// Rebuild schedule segments DOM from state
+function rebuildScheduleSegments() {
+    // Sort chronologically before rebuilding
+    sortScheduleSegments();
+    normalizeExpandedScheduleSegmentIndex();
+
+    const container = document.getElementById('schedule-segments');
+    container.innerHTML = '';
+
+    const fullDayLabels = weekdayAbbrevMon0List();
+    const useCompactDayLabels = shouldUseCompactIosScheduleDayLabels();
+    const dayLabels = useCompactDayLabels ? weekdayLetterMon0List() : fullDayLabels;
+    const labelStart = tSettings('start');
+    const labelEnd = tSettings('end');
+    const labelDays = tSettings('days');
+    const multiSegment = scheduleSegments.length > 1;
+
+    iosCompactScheduleDayLabelsActive = useCompactDayLabels;
+
+    scheduleSegments.forEach((seg, index) => {
+        const segment = document.createElement('div');
+        const isExpanded = !multiSegment || index === expandedScheduleSegmentIndex;
+        segment.className = `schedule-segment${
+            isExpanded ? ' schedule-segment-expanded' : ' schedule-segment-collapsed'
+        }`;
+        segment.dataset.segmentIndex = index;
+
+        if (isExpanded) {
+            const showLabels = !multiSegment || index === 0 || expandedScheduleSegmentIndex === index;
+            segment.innerHTML = buildScheduleSegmentEditorHtml(seg, index, {
+                showLabels: multiSegment ? true : showLabels,
+                showMultiSegmentChrome: multiSegment,
+                dayLabels,
+                fullDayLabels,
+                useCompactDayLabels,
+                labelStart,
+                labelEnd,
+                labelDays,
+            });
+        } else {
+            segment.innerHTML = buildScheduleSegmentSummaryHtml(seg, index);
+        }
 
         container.appendChild(segment);
-
-        // Wire schedule time pills (popover + typing)
-        attachScheduleSegmentTimeInteractions(segment);
-
-        // Add click handlers for day toggles
-        segment.querySelectorAll('.segment-day-toggle').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const dayIndex = parseInt(btn.dataset.day);
-                handleSegmentDayToggle(index, dayIndex, btn);
-            });
-        });
-
-        // Add click handler for remove button
-        const removeBtn = segment.querySelector('.remove-segment-btn');
-        if (removeBtn) {
-            removeBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const idx = parseInt(removeBtn.dataset.segmentIndex);
-                removeScheduleSegment(idx);
-            });
-        }
+        wireScheduleSegmentElement(segment, index);
     });
 }
 
@@ -10066,7 +10574,7 @@ function bindScheduleTimePartInput(el) {
                 : null;
             el.blur();
             if (minIn) {
-                minIn.focus();
+                minIn.focus({ preventScroll: true });
                 if (typeof minIn.select === 'function') minIn.select();
             }
         } else {
@@ -10132,6 +10640,8 @@ function handleScheduleTimeClick(e) {
     const parts = target.split('-');
     const isStart = parts[1] === 'start';
     const segmentIndex = parseInt(parts[2]);
+
+    document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
 
     // Create and show popover for time selection
     showScheduleTimePopover(el, type, isStart, segmentIndex);
@@ -10295,11 +10805,9 @@ function showScheduleTimePopover(field, type, isStart, segmentIndex) {
     popover.appendChild(scroll);
     field.parentElement.appendChild(popover);
 
-    // Scroll to current value
+    // Scroll to current value inside the popover only
     const activeOption = scroll.querySelector('.selected');
-    if (activeOption) {
-        activeOption.scrollIntoView({ block: 'center' });
-    }
+    scrollPopoverOptionIntoView(scroll, activeOption);
 
     // Close on outside click
     setTimeout(() => {
@@ -11171,7 +11679,7 @@ function syncSchedulePanelOverlayControls() {
     const section = document.getElementById('schedule-panel-overlay-section');
     if (!section) return;
 
-    if (isIOS) {
+    if (isMobileOverrideChallengePlatform()) {
         section.classList.add('hidden');
         return;
     }
@@ -11705,7 +12213,7 @@ function isPhysicalPointOverElement(physicalX, physicalY, element) {
 }
 
 function setupScheduleOverlayCustomiseModal() {
-    if (isIOS) {
+    if (isMobileOverrideChallengePlatform()) {
         document.getElementById('schedule-confirm-overlay-row')?.classList.add('hidden');
         document.getElementById('schedule-panel-overlay-section')?.classList.add('hidden');
         return;
@@ -12128,12 +12636,28 @@ function setupScheduleOverlayCustomiseModal() {
 
 const START_CONFIRM_ICON_GLOBE = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;
 const START_CONFIRM_ICON_APP = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M10 4v4"></path><path d="M2 8h20"></path><path d="M6 4v4"></path></svg>`;
-const LUCIDE_PLAY_SVG_INNER = '<polygon points="6 3 20 12 6 21 6 3"></polygon>';
+const EXIT_ROOM_DOOR_OPEN_ICON = `<svg class="start-block-btn-unlock-icon start-block-btn-leading hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 20H2"></path><path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"></path><path d="M11 4H8a2 2 0 0 0-2 2v14"></path><path d="M14 12h.01"></path><path d="M22 20h-3"></path></svg>`;
+
+function setStartBlockBtnLeadingIcon(btn, mode) {
+    if (!btn || (btn.id !== 'start-block-btn' && btn.id !== 'start-schedule-btn')) return;
+    const appIcon = btn.querySelector('.start-block-btn-app-icon');
+    const unlockIcon = btn.querySelector('.start-block-btn-unlock-icon');
+    const isStop = mode === 'stop';
+    if (appIcon) {
+        appIcon.src = rumMarkUrl;
+        appIcon.classList.toggle('hidden', isStop);
+    }
+    if (unlockIcon) unlockIcon.classList.toggle('hidden', !isStop);
+}
 
 function setStartConfirmPrimaryLabel(buttonId, text) {
     const btn = document.getElementById(buttonId);
     const label = btn?.querySelector('.start-confirm-primary-label');
     if (label) label.textContent = text;
+    if (buttonId === 'proceed-start-confirm-btn' || buttonId === 'proceed-schedule-confirm-btn') {
+        const icon = btn?.querySelector('.start-confirm-primary-icon');
+        if (icon && icon.tagName === 'IMG') icon.src = rumMarkUrl;
+    }
 }
 
 function buildStartConfirmBlockingLineHtml(type, labels) {
@@ -12204,19 +12728,21 @@ function renderStartConfirmBlockingDetails(blocklist, listEl, showAllBtn, rowEl)
 }
 
 function buildScheduleConfirmSegmentHtml(seg) {
-    const dayLetters = weekdayLetterMon0List();
+    const fullDayLabels = weekdayAbbrevMon0List();
+    const useCompactDayLabels = shouldUseCompactIosScheduleDayLabels();
+    const dayLabels = useCompactDayLabels ? weekdayLetterMon0List() : fullDayLabels;
     const startTime = `${String(seg.startHour).padStart(2, '0')}:${String(seg.startMinute).padStart(2, '0')}`;
     const endTime = `${String(seg.endHour).padStart(2, '0')}:${String(seg.endMinute).padStart(2, '0')}`;
     const segmentDays = Array.isArray(seg.days) ? seg.days : [];
-    const dayToggles = dayLetters.map((letter, dayIndex) =>
-        `<span class="segment-day-toggle${segmentDays.includes(dayIndex) ? ' active' : ''}" aria-hidden="true">${letter}</span>`,
+    const dayToggles = dayLabels.map((label, dayIndex) =>
+        `<span class="segment-day-toggle${segmentDays.includes(dayIndex) ? ' active' : ''}" aria-label="${fullDayLabels[dayIndex]}"${useCompactDayLabels ? ' aria-hidden="true"' : ''}>${label}</span>`,
     ).join('');
 
     return `
         <div class="start-confirm-time-slot">
             <div class="start-confirm-time-slot-row">
                 <span class="start-confirm-time-range">${startTime} → ${endTime}</span>
-                <div class="start-confirm-segment-days segment-days">${dayToggles}</div>
+                <div class="start-confirm-segment-days segment-days${useCompactDayLabels ? ' compact-day-labels' : ''}">${dayToggles}</div>
             </div>
         </div>
     `;
@@ -12275,6 +12801,58 @@ function formatStartBlockSubtitle(isAlwaysOn, blockStart, blockEnd) {
     return tSettingsFmt('startBlockSubtitleFmt', { duration: durationLabel });
 }
 
+function setStartConfirmRoomChip(blocklist, {
+    chipId = 'start-confirm-room-chip',
+    emojiId = 'start-confirm-room-chip-emoji',
+    nameId = 'start-confirm-room-chip-name',
+} = {}) {
+    const chip = document.getElementById(chipId);
+    const emojiEl = document.getElementById(emojiId);
+    const nameEl = document.getElementById(nameId);
+    if (!chip) return;
+
+    if (emojiEl) emojiEl.textContent = blocklist?.emoji || '🎯';
+    if (nameEl) nameEl.textContent = blocklist?.name || '';
+
+    chip.style.background = '';
+    chip.style.color = '';
+    chip.style.borderColor = '';
+}
+
+const SCHEDULE_CONFIRM_ROOM_CHIP_IDS = {
+    chipId: 'schedule-confirm-room-chip',
+    emojiId: 'schedule-confirm-room-chip-emoji',
+    nameId: 'schedule-confirm-room-chip-name',
+};
+
+const SCHEDULER_ROOM_CHIP_IDS = {
+    chipId: 'scheduler-room-chip',
+    emojiId: 'scheduler-room-chip-emoji',
+    nameId: 'scheduler-room-chip-name',
+};
+
+function applyRoomChipTint(chip, accentColor) {
+    if (!chip || !accentColor) return;
+    chip.style.background = `color-mix(in srgb, ${accentColor} 16%, var(--redd-card))`;
+    chip.style.borderColor = `color-mix(in srgb, ${accentColor} 32%, var(--redd-border))`;
+    chip.style.color = getEnteringChipColor(accentColor);
+}
+
+function setSchedulerRoomChip(blocklist) {
+    setStartConfirmRoomChip(blocklist, SCHEDULER_ROOM_CHIP_IDS);
+    if (blocklist?.color) {
+        applyRoomChipTint(document.getElementById('scheduler-room-chip'), blocklist.color);
+    }
+}
+
+function setStartConfirmOverrideDescription(options, textElId = 'start-confirm-override-text') {
+    const overrideTextEl = document.getElementById(textElId);
+    if (!overrideTextEl) return;
+
+    const line = formatConfirmModalOverrideTypingLine(options);
+    overrideTextEl.innerHTML = `${line} ${escapeHtml(tSettings('confirmOverrideIntentionSuffix'))}`;
+}
+
 function getStartScheduleConfirmTitle(blocklist) {
     if (!blocklist) return tSettings('startThisSchedule');
     return tSettingsFmt('startScheduleTitleFmt', { name: blocklist.name });
@@ -12294,18 +12872,17 @@ function showScheduleConfirmModal(blocklist) {
     resetScheduleConfirmModalToStartLayout();
 
     const titleEl = document.getElementById('start-schedule-confirm-title');
-    if (titleEl) titleEl.textContent = getStartScheduleConfirmTitle(blocklist);
+    if (titleEl) titleEl.textContent = tSettings('startThisSchedule');
 
-    const emojiEl = document.getElementById('schedule-confirm-emoji');
-    if (emojiEl) emojiEl.textContent = blocklist.emoji || '🎯';
+    setStartConfirmRoomChip(blocklist, SCHEDULE_CONFIRM_ROOM_CHIP_IDS);
 
     const subtitleEl = document.getElementById('schedule-confirm-subtitle');
     if (subtitleEl) subtitleEl.innerHTML = tSettings('startScheduleSubtitle');
 
     pendingScheduleStartOverlayId = getEffectiveScheduleStartOverlayId();
     syncScheduleConfirmOverlaySummary();
-    document.getElementById('schedule-confirm-overlay-row')?.classList.toggle('hidden', isIOS);
-    document.getElementById('schedule-confirm-repeat-divider')?.classList.toggle('hidden', isIOS);
+    document.getElementById('schedule-confirm-overlay-row')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
+    document.getElementById('schedule-confirm-repeat-divider')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
 
     renderStartConfirmBlockingDetails(
         blocklist,
@@ -12321,15 +12898,14 @@ function showScheduleConfirmModal(blocklist) {
 
     // Override info
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-    let charCount = difficulty.count || 50;
-    let charsPerMinute = 100;
-
-    if (difficulty.type === 'custom' && difficulty.customText) {
-        charCount = difficulty.customText.length;
-        charsPerMinute = 200;
-    }
-
-    const estimatedMinutes = Math.ceil(charCount / charsPerMinute);
+    const displayCount = difficulty.type === 'custom'
+        ? (difficulty.customText?.length || 0)
+        : normalizeOverrideCount(difficulty.count || 50, difficulty.type);
+    const estimatedMinutes = getOverrideEstimatedMinutes(
+        difficulty.type,
+        displayCount,
+        difficulty.customText || ''
+    );
 
     const schedType =
         difficulty.type === 'custom' && difficulty.customText
@@ -12337,13 +12913,11 @@ function showScheduleConfirmModal(blocklist) {
             : difficulty.type === 'gibberish'
               ? 'gibberish'
               : 'random-words';
-    const overrideText = formatConfirmModalOverrideTypingLine({
+    setStartConfirmOverrideDescription({
         type: schedType,
-        count: charCount,
+        count: displayCount,
         estimatedMinutes
-    });
-
-    document.getElementById('schedule-confirm-override-text').textContent = overrideText;
+    }, 'schedule-confirm-override-text');
 
     // Show modal
     document.getElementById('start-schedule-confirm-modal').classList.remove('hidden');
@@ -12359,8 +12933,8 @@ function resetScheduleConfirmModalToStartLayout() {
     if (titleEl) titleEl.textContent = tSettings('startThisSchedule');
     const overrideHeader = document.getElementById('schedule-confirm-override-header');
     if (overrideHeader) overrideHeader.textContent = tSettings('startScheduleHoldHeader');
-    document.getElementById('schedule-confirm-overlay-row')?.classList.toggle('hidden', isIOS);
-    document.getElementById('schedule-confirm-repeat-divider')?.classList.toggle('hidden', isIOS);
+    document.getElementById('schedule-confirm-overlay-row')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
+    document.getElementById('schedule-confirm-repeat-divider')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
 }
 
 function closeScheduleConfirmModal() {
@@ -12389,6 +12963,7 @@ function openScheduleOverrideModal(schedule) {
     if (titleEl) {
         titleEl.textContent = `${tSettings('stopSchedule')} ${blocklistName}`;
     }
+    document.getElementById('override-confirm-emoji').textContent = blocklist?.emoji || '🎯';
     document.getElementById('override-summary').textContent = formatBlocklistModalSummary(blocklist);
     initializeOverrideModalChallenge(difficulty, blocklist?.color);
 }
@@ -12429,8 +13004,7 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
         titleEl.textContent = tSettingsFmt('saveChangesTitleFmt', { name: blocklist.name });
     }
 
-    const emojiEl = document.getElementById('schedule-confirm-emoji');
-    if (emojiEl) emojiEl.textContent = blocklist.emoji || '🎯';
+    setStartConfirmRoomChip(blocklist, SCHEDULE_CONFIRM_ROOM_CHIP_IDS);
 
     const overrideHeader = document.getElementById('schedule-confirm-override-header');
     if (overrideHeader) overrideHeader.textContent = tSettings('saveChangesHoldHeader');
@@ -12446,23 +13020,25 @@ function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) 
     // Populate override info — same computation as showScheduleConfirmModal so users see
     // the actual barrier, not just the header.
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-    let charCount = difficulty.count || 50;
-    let charsPerMinute = 100;
-    if (difficulty.type === 'custom' && difficulty.customText) {
-        charCount = difficulty.customText.length;
-        charsPerMinute = 200;
-    }
-    const displayCount = difficulty.type === 'custom' ? charCount : normalizeOverrideCount(charCount, difficulty.type);
-    const generatedCharCount = difficulty.type === 'custom' ? charCount : getOverrideGeneratedCharCount(difficulty.type, displayCount);
-    const estimatedMinutes = Math.ceil(generatedCharCount / charsPerMinute);
+    const displayCount = difficulty.type === 'custom'
+        ? (difficulty.customText?.length || 0)
+        : normalizeOverrideCount(difficulty.count || 50, difficulty.type);
+    const estimatedMinutes = getOverrideEstimatedMinutes(
+        difficulty.type,
+        displayCount,
+        difficulty.customText || ''
+    );
     const schedType =
         difficulty.type === 'custom' && difficulty.customText
             ? 'custom'
             : difficulty.type === 'gibberish'
               ? 'gibberish'
               : 'random-words';
-    document.getElementById('schedule-confirm-override-text').textContent =
-        formatConfirmModalOverrideTypingLine({ type: schedType, count: displayCount, estimatedMinutes });
+    setStartConfirmOverrideDescription({
+        type: schedType,
+        count: displayCount,
+        estimatedMinutes
+    }, 'schedule-confirm-override-text');
 
     setStartConfirmPrimaryLabel('proceed-schedule-confirm-btn', tSettings('pendingChangesSave'));
 
@@ -12511,6 +13087,7 @@ async function proceedWithScheduleEdit() {
     // Rebuild the DOM so it matches the new scheduleSegments order and locks the
     // formerly-pending segments. Without this, time-edit handlers attached to the
     // pre-save DOM nodes could write to the wrong scheduleSegments index.
+    expandedScheduleSegmentIndex = scheduleSegments.length > 1 ? -1 : 0;
     rebuildScheduleSegments();
     disableScheduleControls(true);
 
@@ -13415,18 +13992,19 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
 
 /** Start-a-block heading + Now/Schedule tabs — only meaningful once a blocklist is chosen. */
 function syncSchedulerChromeVisibility() {
-    const modeTabs = document.querySelector('.scheduler-mode-tabs');
-    const mainTitle = document.getElementById('main-start-block-title');
-    const sectionHeader = document.querySelector('#scheduler-section > .section-header');
     const gridTopRow = document.querySelector('.grid-top-row');
+    const sectionHeader = document.querySelector('#scheduler-section > .section-header');
     const hasLists = (appData.blocklists?.length || 0) > 0;
     const show = hasLists && !!selectedBlocklistId;
-    if (mainTitle) mainTitle.classList.toggle('hidden', !show);
-    if (modeTabs) modeTabs.classList.toggle('hidden', !show);
-    if (sectionHeader) sectionHeader.classList.toggle('scheduler-header-compact', !show);
+    if (sectionHeader) sectionHeader.classList.add('scheduler-header-compact');
     if (gridTopRow) gridTopRow.classList.toggle('grid-top-row--blocklist-selected', show);
+    if (show) {
+        const blocklist = appData.blocklists.find((bl) => bl.id === selectedBlocklistId);
+        setSchedulerRoomChip(blocklist);
+    }
     bindUiZoomLayoutObserver();
     scheduleUiZoomResponsiveLayout();
+    scheduleSelectionPromptLayout();
 }
 
 // Handle blocklist selection
@@ -13539,7 +14117,6 @@ function handleBlocklistSelect(e) {
 
                 if (blocklist) {
                     const btnLabel = startBlockBtn.querySelector('.btn-label');
-                    const btnIcon = startBlockBtn.querySelector('svg');
 
                     // Always clear the activeBlockId first to prevent cross-blocklist issues
                     delete startBlockBtn.dataset.activeBlockId;
@@ -13548,7 +14125,7 @@ function handleBlocklistSelect(e) {
                     const pauseBtn = document.getElementById('pause-block-btn');
 
                     if (activeBlock) {
-                        // Active block - show Stop Block button (ghost) with unlock icon
+                        // Active block - show Exit Room button (ghost) with door-open icon
                         startBlockBtn.classList.add('stop-block');
                         setBtnActionLabel(btnLabel, tSettings('stopBlock'));
                         setStartBtnBlocklistInfo(startBlockBtn, blocklist);
@@ -13561,13 +14138,7 @@ function handleBlocklistSelect(e) {
                             updatePauseButtonAppearance(!!activeBlock.isPaused);
                         }
 
-                        // Change to unlock icon
-                        if (btnIcon) {
-                            btnIcon.innerHTML = `
-                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-                                <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
-                            `;
-                        }
+                        setStartBlockBtnLeadingIcon(startBlockBtn, 'stop');
 
                         // Disable time controls
                         disableTimeControls(true);
@@ -13576,15 +14147,12 @@ function handleBlocklistSelect(e) {
                         const alwaysOnMsg = document.getElementById('always-on-message');
                         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
                     } else {
-                        // No active block - show Start Block button (normal) with play icon
+                        // No active block - show Enter Room button with app icon
                         // Ensure we've already cleared the activeBlockId above
-                        setBtnActionLabel(btnLabel, tSettings('startBlockButton'));
-                        setStartBtnBlocklistInfo(startBlockBtn, blocklist);
+                setBtnActionLabel(btnLabel, tSettings('startBlockButton'), { simple: true });
+                setStartBtnBlocklistInfo(startBlockBtn, blocklist);
 
-                        // Change to play icon
-                        if (btnIcon) {
-                            btnIcon.innerHTML = LUCIDE_PLAY_SVG_INNER;
-                        }
+                        setStartBlockBtnLeadingIcon(startBlockBtn, 'enter');
 
                         // Enable time controls
                         disableTimeControls(false);
@@ -13703,11 +14271,10 @@ function startBlock() {
         blockEnd.setDate(blockEnd.getDate() + 1);
     }
 
-    const emojiEl = document.getElementById('start-confirm-emoji');
-    if (emojiEl) emojiEl.textContent = blocklist.emoji || '🎯';
+    setStartConfirmRoomChip(blocklist);
 
     const titleEl = document.getElementById('start-block-confirm-title');
-    if (titleEl) titleEl.textContent = getStartBlockConfirmTitle(blocklist);
+    if (titleEl) titleEl.textContent = tSettings('startThisBlock');
 
     const subtitleEl = document.getElementById('start-confirm-subtitle');
     if (subtitleEl) {
@@ -13728,20 +14295,14 @@ function startBlock() {
 
     // Build override difficulty text with time estimate
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-    let charCount = difficulty.count;
-    let charsPerMinute = 150;
-
-    if (difficulty.type === 'custom' && difficulty.customText) {
-        charCount = difficulty.customText.length;
-        charsPerMinute = 200;
-    } else if (difficulty.type === 'gibberish') {
-        charsPerMinute = 100;
-    }
-
-    const displayCount = difficulty.type === 'custom' ? charCount : normalizeOverrideCount(charCount, difficulty.type);
-    const generatedCharCount = difficulty.type === 'custom' ? charCount : getOverrideGeneratedCharCount(difficulty.type, displayCount);
-
-    const estimatedMinutes = Math.ceil(generatedCharCount / charsPerMinute);
+    const displayCount = difficulty.type === 'custom'
+        ? (difficulty.customText?.length || 0)
+        : normalizeOverrideCount(difficulty.count, difficulty.type);
+    const estimatedMinutes = getOverrideEstimatedMinutes(
+        difficulty.type,
+        displayCount,
+        difficulty.customText || ''
+    );
     const startType =
         difficulty.type === 'custom' && difficulty.customText
             ? 'custom'
@@ -13749,13 +14310,11 @@ function startBlock() {
               ? 'gibberish'
               : 'random-words';
 
-    const overrideText = formatConfirmModalOverrideTypingLine({
+    setStartConfirmOverrideDescription({
         type: startType,
         count: displayCount,
         estimatedMinutes
     });
-
-    document.getElementById('start-confirm-override-text').textContent = overrideText;
 
     // Show modal
     document.getElementById('start-block-confirm-modal').classList.remove('hidden');
@@ -13840,7 +14399,7 @@ async function proceedWithBlock() {
                 startBtn.disabled = false;
                 startBtn.innerHTML = getStartBlockButtonHTML();
                 if (authResult.status === 'denied') {
-                    alert('Screen Time authorization was denied. Please go to Settings > Screen Time > Fristed and enable access.');
+                    alert('Screen Time authorization was denied. Please go to Settings > Screen Time > Rum and enable access.');
                 } else if (authResult.error) {
                     alert('Screen Time authorization failed: ' + authResult.error);
                 } else {
@@ -13959,10 +14518,9 @@ async function proceedWithBlock() {
 // Helper function for start block button HTML (includes .btn-label and .btn-blocklist-meta wrapper)
 function getStartBlockButtonHTML() {
     return `
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <polygon points="6 3 20 12 6 21 6 3"></polygon>
-        </svg>
-        <span class="btn-label">${getActionLabelHTML(tSettings('startBlockButton'))}</span>
+        <img class="start-block-btn-app-icon start-block-btn-leading" src="${rumMarkUrl}" alt="" aria-hidden="true">
+        ${EXIT_ROOM_DOOR_OPEN_ICON}
+        <span class="btn-label">${escapeHtml(tSettings('startBlockButton'))}</span>
         <span class="btn-blocklist-meta">
             <span class="btn-blocklist-lead" aria-hidden="true"></span>
             <span class="btn-emoji" aria-hidden="true"></span>
@@ -13987,8 +14545,12 @@ function getActionLabelHTML(fullText) {
     return `<span class="btn-label-action">${safe(action)}</span><span class="btn-label-context">${safe(context)}</span>`;
 }
 
-function setBtnActionLabel(el, fullText) {
+function setBtnActionLabel(el, fullText, { simple = false } = {}) {
     if (!el) return;
+    if (simple) {
+        el.textContent = String(fullText ?? '').trimEnd();
+        return;
+    }
     el.innerHTML = getActionLabelHTML(fullText);
 }
 
@@ -14028,6 +14590,9 @@ function syncStopBtnLabelFit(btn) {
     const isActionBtn = btn.id === 'start-block-btn' || btn.id === 'start-schedule-btn';
     if (!isActionBtn || btn.classList.contains('hidden') || btn.clientWidth <= 0) return;
 
+    const isStop = btn.classList.contains('stop-block') || btn.classList.contains('stop-schedule');
+    if (!isStop) return;
+
     const buttonRow = btn.parentElement;
     const rowStyle = buttonRow ? window.getComputedStyle(buttonRow) : null;
     const rowGap = rowStyle ? (parseFloat(rowStyle.columnGap || rowStyle.gap) || 0) : 0;
@@ -14057,11 +14622,18 @@ function syncAllStopBtnLabelFits() {
     });
 }
 
-// Update both the emoji and name on a start/stop button so they stay in sync.
+// Update emoji and name on stop buttons only — enter/start labels stand alone.
 function setStartBtnBlocklistInfo(btn, blocklist) {
     if (!btn) return;
     const btnEmoji = btn.querySelector('.btn-emoji');
     const btnName = btn.querySelector('.btn-name');
+    const isStop = btn.classList.contains('stop-block') || btn.classList.contains('stop-schedule');
+    if (!isStop) {
+        if (btnEmoji) btnEmoji.textContent = '';
+        if (btnName) btnName.textContent = '';
+        btn.classList.remove('stop-meta-collapsed');
+        return;
+    }
     if (btnEmoji) btnEmoji.textContent = blocklist ? (blocklist.emoji || '🚫') : '';
     if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
     syncStopBtnLabelFit(btn);
@@ -14225,7 +14797,7 @@ async function updateHostsFile(silent = false) {
 let appBlockingPreviousAppsSet = null;
 
 async function updateBlockedApps() {
-    // iOS uses Screen Time API for app blocking - skip desktop process watcher
+    // iOS uses Screen Time API for app blocking
     if (isIOS) return;
 
     const now = Date.now();
@@ -14411,7 +14983,7 @@ function openBlocklistModal(blocklist = null) {
             emojiToSelect = emojiSwatches[0].dataset.emoji;
         } else {
             // Fallback default
-            emojiToSelect = '🚫';
+            emojiToSelect = '📱';
         }
     }
 
@@ -14452,7 +15024,9 @@ function openBlocklistModal(blocklist = null) {
     const overrideTypeSelect = document.getElementById('override-type');
     const overrideCountInput = document.getElementById('override-count');
     const overrideCountWrapperEl = document.getElementById('override-count-wrapper');
-    const inputSuffix = overrideCountWrapperEl?.querySelector('.input-suffix');
+    const overrideMethodRowEl = document.getElementById('override-method-row');
+    const overridePreviewBlockEl = document.getElementById('override-preview-block');
+    const overrideTimeEstimateEl = document.getElementById('override-count-time-estimate');
 
     if (isActive) {
         warningEl.classList.remove('hidden');
@@ -14469,11 +15043,15 @@ function openBlocklistModal(blocklist = null) {
             overrideCountInput.classList.add('form-input-disabled');
         }
 
-        // Style the "total characters" text (same color as Start/End labels)
-        if (inputSuffix) {
-            inputSuffix.classList.add('input-suffix-disabled');
+        if (overrideTimeEstimateEl) {
+            overrideTimeEstimateEl.classList.add('time-estimate-disabled');
         }
-        if (maxDifficultyWrap) maxDifficultyWrap.classList.add('max-difficulty-disabled');
+        if (overrideMethodRowEl) overrideMethodRowEl.classList.add('blocklist-active-locked');
+        if (overrideCountWrapperEl) overrideCountWrapperEl.classList.add('blocklist-active-locked');
+        if (maxDifficultyWrap) maxDifficultyWrap.classList.add('max-difficulty-disabled', 'blocklist-active-locked');
+        if (overridePreviewBlockEl) overridePreviewBlockEl.classList.add('blocklist-active-locked');
+        document.getElementById('override-count-minus')?.setAttribute('disabled', '');
+        document.getElementById('override-count-plus')?.setAttribute('disabled', '');
 
         // Pass existing items as locked
         window.setModalData(
@@ -14495,10 +15073,16 @@ function openBlocklistModal(blocklist = null) {
         if (overrideCountInput) {
             overrideCountInput.classList.remove('form-input-disabled');
         }
-        if (inputSuffix) {
-            inputSuffix.classList.remove('input-suffix-disabled');
+        if (overrideTimeEstimateEl) {
+            overrideTimeEstimateEl.classList.remove('time-estimate-disabled');
         }
-        if (maxDifficultyWrap) maxDifficultyWrap.classList.remove('max-difficulty-disabled');
+        if (overrideMethodRowEl) overrideMethodRowEl.classList.remove('blocklist-active-locked');
+        if (overrideCountWrapperEl) overrideCountWrapperEl.classList.remove('blocklist-active-locked');
+        if (maxDifficultyWrap) maxDifficultyWrap.classList.remove('max-difficulty-disabled', 'blocklist-active-locked');
+        if (overridePreviewBlockEl) overridePreviewBlockEl.classList.remove('blocklist-active-locked');
+        const maxDifficultyOn = document.getElementById('override-max-difficulty-checkbox')?.checked;
+        document.getElementById('override-count-minus')?.toggleAttribute('disabled', !!maxDifficultyOn);
+        document.getElementById('override-count-plus')?.toggleAttribute('disabled', !!maxDifficultyOn);
 
         window.setModalData(
             blocklist?.websites || [],
@@ -14536,10 +15120,6 @@ function openBlocklistModal(blocklist = null) {
     }
 
     document.getElementById('blocklist-modal').classList.remove('hidden');
-
-    // Reset scroll position after modal is shown
-    const modalContent = document.querySelector('#blocklist-modal .modal-content');
-    if (modalContent) modalContent.scrollTop = 0;
 }
 
 // Close blocklist modal
@@ -14572,7 +15152,10 @@ function closeBlocklistModal() {
     // Reset the websites Import popover so it starts closed next open.
     const importMenu = document.getElementById('websites-import-menu');
     const importBtn = document.getElementById('modal-import-websites-btn');
-    if (importMenu) importMenu.classList.add('hidden');
+    if (importMenu) {
+        importMenu.classList.add('hidden');
+        resetWebsitesImportMenuPosition();
+    }
     if (importBtn) importBtn.setAttribute('aria-expanded', 'false');
 
     blocklistModalPreviewSnapshot = null;
@@ -14629,6 +15212,7 @@ function openOverrideModal(blockId) {
     // Set modal title with blocklist name
     document.getElementById('override-modal-title').textContent = `Override ${blocklist.name}?`;
 
+    document.getElementById('override-confirm-emoji').textContent = blocklist.emoji || '🎯';
     document.getElementById('override-summary').textContent = formatBlocklistModalSummary(blocklist);
 
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
@@ -14658,7 +15242,7 @@ function initializeOverrideModalChallenge(difficulty, progressColor = null) {
     document.getElementById('challenge-text').textContent = challengeText;
     document.getElementById('challenge-input').value = '';
     document.getElementById('challenge-word-input').value = '';
-    overrideWordChallengeState = isIOSWordByWordChallenge(difficulty) ? buildWordChallengeState(challengeText) : null;
+    overrideWordChallengeState = isMobileWordByWordChallenge(difficulty) ? buildWordChallengeState(challengeText) : null;
     setOverrideWordChallengeMode(!!overrideWordChallengeState);
 
     const progressBar = document.getElementById('challenge-progress-bar');
@@ -14718,8 +15302,7 @@ function openResumeConfirmation(blocklistId, type, blockId) {
 
     resumeData = { blocklistId, type, blockId };
 
-    const emojiEl = document.getElementById('start-confirm-emoji');
-    if (emojiEl) emojiEl.textContent = blocklist.emoji || '🎯';
+    setStartConfirmRoomChip(blocklist);
 
     document.getElementById('start-block-confirm-title').textContent = getResumeBlockConfirmTitle(blocklist);
 
@@ -14757,33 +15340,27 @@ function openResumeConfirmation(blocklistId, type, blockId) {
 
     // Override info
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-    let charCount = difficulty.count;
-    let estimatedMinutes;
-    let resumeType;
-    let displayCount;
+    const displayCount = difficulty.type === 'custom'
+        ? (difficulty.customText?.length || 0)
+        : normalizeOverrideCount(difficulty.count, difficulty.type);
+    const estimatedMinutes = getOverrideEstimatedMinutes(
+        difficulty.type,
+        displayCount,
+        difficulty.customText || ''
+    );
+    const resumeType =
+        difficulty.type === 'custom' && difficulty.customText
+            ? 'custom'
+            : difficulty.type === 'gibberish'
+              ? 'gibberish'
+              : 'random-words';
 
-    if (difficulty.type === 'custom' && difficulty.customText) {
-        charCount = difficulty.customText.length;
-        estimatedMinutes = Math.ceil(charCount / 200);
-        resumeType = 'custom';
-        displayCount = charCount;
-    } else if (difficulty.type === 'gibberish') {
-        displayCount = normalizeOverrideCount(charCount, difficulty.type);
-        estimatedMinutes = Math.ceil(getOverrideGeneratedCharCount(difficulty.type, displayCount) / 100);
-        resumeType = 'gibberish';
-    } else {
-        displayCount = normalizeOverrideCount(charCount, difficulty.type);
-        estimatedMinutes = Math.ceil(getOverrideGeneratedCharCount(difficulty.type, displayCount) / 150);
-        resumeType = 'random-words';
-    }
-
-    const overrideText = formatConfirmModalOverrideTypingLine({
+    setStartConfirmOverrideDescription({
         type: resumeType,
         count: displayCount,
         estimatedMinutes,
         resumeShortGibberish: resumeType === 'gibberish'
     });
-    document.getElementById('start-confirm-override-text').textContent = overrideText;
 
     setStartConfirmPrimaryLabel('proceed-start-confirm-btn', tSettings('resumeBlock'));
 
@@ -14856,6 +15433,7 @@ function openPauseModal(blockId) {
     // Set modal title
     document.getElementById('pause-modal-title').textContent = `Pause ${blocklist.name}`;
 
+    document.getElementById('pause-confirm-emoji').textContent = blocklist.emoji || '🎯';
     document.getElementById('pause-summary').textContent = formatBlocklistModalSummary(blocklist);
 
     // Calculate remaining time and max pause duration
@@ -14926,7 +15504,7 @@ function openPauseModal(blockId) {
     document.getElementById('pause-challenge-text').textContent = pauseChallengeText;
     document.getElementById('pause-challenge-input').value = '';
     document.getElementById('pause-challenge-word-input').value = '';
-    pauseWordChallengeState = isIOSWordByWordChallenge(difficulty) ? buildWordChallengeState(pauseChallengeText) : null;
+    pauseWordChallengeState = isMobileWordByWordChallenge(difficulty) ? buildWordChallengeState(pauseChallengeText) : null;
     setPauseWordChallengeMode(!!pauseWordChallengeState);
     document.getElementById('confirm-pause-btn').disabled = true;
 
@@ -15351,10 +15929,10 @@ function generateOverrideChallengeText(type, count, customText = '') {
     if (type === 'custom' && customText) return customText;
     const normalizedCount = normalizeOverrideCount(count, type);
     if (type === 'gibberish') {
-        const raw = generateGibberish(usesIOSWordCountForOverrideType(type) ? normalizedCount * 6 : normalizedCount);
-        return isIOS ? formatIOSGibberishChallenge(raw) : raw;
+        const raw = generateGibberish(usesMobileWordCountForOverrideType(type) ? normalizedCount * 6 : normalizedCount);
+        return isMobileOverrideChallengePlatform() ? formatIOSGibberishChallenge(raw) : raw;
     }
-    if (usesIOSWordCountForOverrideType(type)) {
+    if (usesMobileWordCountForOverrideType(type)) {
         return generateRandomWordsByCount(normalizedCount);
     }
     return generateRandomWords(normalizedCount);
@@ -15390,7 +15968,7 @@ function getTypingCharsPerMinuteForType(type) {
 }
 
 function getMaxOverrideCharsForType(type) {
-    if (usesIOSWordCountForOverrideType(type)) return MAX_IOS_OVERRIDE_WORD_COUNT;
+    if (usesMobileWordCountForOverrideType(type)) return MAX_IOS_OVERRIDE_WORD_COUNT;
     if (type === 'gibberish') return 5000;
     return 7500; // random-words and custom: fixed max; estimated time uses CPM
 }
@@ -15398,7 +15976,7 @@ function getMaxOverrideCharsForType(type) {
 function getOverrideGeneratedCharCount(type, count) {
     const parsed = Number.parseInt(count, 10);
     const normalizedCount = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
-    if (!usesIOSWordCountForOverrideType(type)) return normalizedCount;
+    if (!usesMobileWordCountForOverrideType(type)) return normalizedCount;
 
     if (type === 'random-words') {
         return getIOSRandomWordsCharCount(normalizedCount);
@@ -15440,8 +16018,8 @@ function getOverridePreviewText(type, count, customText) {
             let frozen = overridePreviewFrozenByType[type];
             if (frozen != null) return frozen;
             const generated = type === 'gibberish'
-                ? (isIOS ? formatIOSGibberishChallenge(generateGibberish(countNum * 6)) : generateGibberish(OVERRIDE_PREVIEW_TRUNCATE_AT))
-                : (usesIOSWordCountForOverrideType(type)
+                ? (isMobileOverrideChallengePlatform() ? formatIOSGibberishChallenge(generateGibberish(countNum * 6)) : generateGibberish(OVERRIDE_PREVIEW_TRUNCATE_AT))
+                : (usesMobileWordCountForOverrideType(type)
                     ? generateRandomWordsByCount(countNum)
                     : generateRandomWords(countNum));
             frozen = generated.slice(0, OVERRIDE_PREVIEW_TRUNCATE_AT);
@@ -15451,10 +16029,10 @@ function getOverridePreviewText(type, count, customText) {
     }
 
     if (type === 'gibberish') {
-        const generated = generateGibberish(usesIOSWordCountForOverrideType(type) ? countNum * 6 : countNum);
-        return isIOS ? formatIOSGibberishChallenge(generated) : generated;
+        const generated = generateGibberish(usesMobileWordCountForOverrideType(type) ? countNum * 6 : countNum);
+        return isMobileOverrideChallengePlatform() ? formatIOSGibberishChallenge(generated) : generated;
     }
-    if (usesIOSWordCountForOverrideType(type)) {
+    if (usesMobileWordCountForOverrideType(type)) {
         return generateRandomWordsByCount(countNum);
     }
     return generateRandomWords(countNum);
@@ -15462,22 +16040,44 @@ function getOverridePreviewText(type, count, customText) {
 
 /** Estimated minutes to type the override challenge (based on character count and type). */
 function getOverrideEstimatedMinutes(type, count, customText) {
-    const charCount = type === 'custom'
-        ? (typeof customText === 'string' ? customText : '').length
-        : getOverrideGeneratedCharCount(type, count);
-    if (charCount <= 0) return 0;
+    if (type === 'custom') {
+        const charCount = typeof customText === 'string' ? customText.length : 0;
+        if (charCount <= 0) return 0;
+        return Math.ceil(charCount / getTypingCharsPerMinuteForType('custom'));
+    }
+
+    const parsed = Number.parseInt(count, 10);
+    const normalizedCount = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    if (normalizedCount <= 0) return 0;
+
+    if (usesMobileWordCountForOverrideType(type)) {
+        return Math.ceil(normalizedCount / IOS_OVERRIDE_WORDS_PER_MINUTE);
+    }
+
+    const charCount = getOverrideGeneratedCharCount(type, count);
     const cpm = getTypingCharsPerMinuteForType(type);
     return Math.ceil(charCount / cpm);
+}
+
+function formatOverrideMaxDifficultyHint(type) {
+    const count = getMaxOverrideCharsForType(type);
+    const usesWords = usesMobileWordCountForOverrideType(type);
+    const locale = getSettingsLanguage() === 'da' ? 'da-DK' : 'en-US';
+    const countStr = count.toLocaleString(locale);
+    return tSettingsFmt(
+        usesWords ? 'overrideMaxDifficultyHintWords' : 'overrideMaxDifficultyHintChars',
+        { count: countStr }
+    );
 }
 
 function updateOverridePreview() {
     const typeSelect = document.getElementById('override-type');
     const countInput = document.getElementById('override-count');
     const customTextArea = document.getElementById('custom-override-text');
-    const timeLineEl = document.getElementById('override-preview-time-line');
+    const timeEstimateEl = document.getElementById('override-count-time-estimate');
     const previewEl = document.getElementById('override-preview-text');
     const blockEl = document.getElementById('override-preview-block');
-    if (!timeLineEl || !previewEl || !blockEl) return;
+    if (!previewEl || !blockEl) return;
 
     const type = typeSelect?.value || 'random-words';
     const count = countInput?.value ?? '50';
@@ -15490,19 +16090,31 @@ function updateOverridePreview() {
     const timeVars = lang === 'da'
         ? { minutes: estimatedMins, unit: estimatedMins === 1 ? 'minut' : 'minutter' }
         : { minutes: estimatedMins, minuteSuffix: estimatedMins === 1 ? '' : 's' };
-    timeLineEl.textContent = tSettingsFmt('overridePreviewTimeLine', timeVars);
+    if (timeEstimateEl && type !== 'custom') {
+        timeEstimateEl.textContent = lang === 'da'
+            ? tSettingsFmt('overrideCountTimeEstimateDa', timeVars)
+            : tSettingsFmt('overrideCountTimeEstimate', { minutes: estimatedMins });
+    }
 
     previewEl.textContent = previewText;
     previewEl.title = previewText;
 }
 
 function syncOverrideCountUi(type) {
-    const suffixEl = document.getElementById('override-total-characters-label');
+    const countLabelEl = document.getElementById('override-count-label');
+    const maxHintEl = document.getElementById('override-max-difficulty-hint');
     const countInput = document.getElementById('override-count');
-    if (!suffixEl || !countInput) return;
-    const usesWords = usesIOSWordCountForOverrideType(type);
-    suffixEl.textContent = usesWords ? tSettings('totalWords') : tSettings('totalCharacters');
-    countInput.max = String(getMaxOverrideCharsForType(type));
+    if (countLabelEl) {
+        countLabelEl.textContent = usesMobileWordCountForOverrideType(type)
+            ? tSettings('overrideWordsToType')
+            : tSettings('overrideCharsToType');
+    }
+    if (maxHintEl) {
+        maxHintEl.textContent = formatOverrideMaxDifficultyHint(type);
+    }
+    if (countInput) {
+        countInput.max = String(getMaxOverrideCharsForType(type));
+    }
 }
 
 function applyOverrideTypeUi(type) {
@@ -15539,11 +16151,16 @@ function applyOverrideTypeUi(type) {
 function setOverrideCountMaxMode(enabled) {
     const overrideCountWrapper = document.getElementById('override-count-wrapper');
     const overrideCountInput = document.getElementById('override-count');
-    overrideCountWrapper.classList.toggle('override-count-max-mode', enabled);
-    overrideCountInput.classList.toggle('form-input-disabled', enabled);
-    overrideCountWrapper.querySelector('.input-suffix')?.classList.toggle('input-suffix-disabled', enabled);
-    if (enabled) overrideCountInput.setAttribute('tabindex', '-1');
-    else overrideCountInput.removeAttribute('tabindex');
+    const overrideCountStepper = document.getElementById('override-count-stepper');
+    const minusBtn = document.getElementById('override-count-minus');
+    const plusBtn = document.getElementById('override-count-plus');
+    overrideCountWrapper?.classList.toggle('override-count-max-mode', enabled);
+    overrideCountStepper?.classList.toggle('override-count-max-mode', enabled);
+    overrideCountInput?.classList.toggle('form-input-disabled', enabled);
+    minusBtn?.toggleAttribute('disabled', enabled);
+    plusBtn?.toggleAttribute('disabled', enabled);
+    if (enabled) overrideCountInput?.setAttribute('tabindex', '-1');
+    else overrideCountInput?.removeAttribute('tabindex');
 }
 
 function cloneOverrideDifficulty(raw, fallbackCount = 50) {
@@ -15936,7 +16553,7 @@ function blocklistFromImportedEntry(entry) {
 async function exportBlocklistsToFile() {
     const blocklists = appData.blocklists || [];
     if (blocklists.length === 0) {
-        await message(tSettings('exportBlocklistsEmpty'), { title: tSettings('settingsExportBlocklistsBtn'), kind: 'info' });
+        await message(tSettings('exportBlocklistsEmpty'), { title: tSettings('exportBlocklistsFailedTitle'), kind: 'info' });
         return;
     }
 
@@ -15952,11 +16569,11 @@ async function exportBlocklistsToFile() {
         await writeTextFile(selectedPath, `${JSON.stringify(payload, null, 2)}\n`);
         await message(
             tSettingsFmt('exportBlocklistsSuccessFmt', { n: blocklists.length, path: selectedPath }),
-            { title: tSettings('settingsExportBlocklistsBtn'), kind: 'info' }
+            { title: tSettings('exportBlocklistsSuccessTitle'), kind: 'info' }
         );
     } catch (err) {
         console.warn('[export] blocklists:', err);
-        await message(tSettings('exportBlocklistsFailed'), { title: tSettings('settingsExportBlocklistsBtn'), kind: 'error' });
+        await message(tSettings('exportBlocklistsFailed'), { title: tSettings('exportBlocklistsFailedTitle'), kind: 'error' });
     }
 }
 
@@ -15977,18 +16594,18 @@ async function importBlocklistsFromFile() {
             importedEntries = parseBlocklistsImportPayload(await readTextFile(selectedPath));
         } catch (err) {
             console.warn('[import] parse blocklists:', err);
-            await message(tSettings('importBlocklistsParseFailed'), { title: tSettings('settingsImportBlocklistsBtn'), kind: 'error' });
+            await message(tSettings('importBlocklistsParseFailed'), { title: tSettings('importBlocklistsFailedTitle'), kind: 'error' });
             return;
         }
 
         if (importedEntries.length === 0) {
-            await message(tSettings('importBlocklistsInvalidFile'), { title: tSettings('settingsImportBlocklistsBtn'), kind: 'warning' });
+            await message(tSettings('importBlocklistsInvalidFile'), { title: tSettings('importBlocklistsFailedTitle'), kind: 'warning' });
             return;
         }
 
         const confirmed = await ask(
             tSettingsFmt('importBlocklistsConfirmFmt', { n: importedEntries.length }),
-            { title: tSettings('settingsImportBlocklistsBtn'), kind: 'warning' }
+            { title: tSettings('importBlocklistsDialogTitle'), kind: 'warning' }
         );
         if (!confirmed) return;
 
@@ -16005,11 +16622,11 @@ async function importBlocklistsFromFile() {
 
         await message(
             tSettingsFmt('importBlocklistsSuccessFmt', { n: importedEntries.length }),
-            { title: tSettings('settingsImportBlocklistsBtn'), kind: 'info' }
+            { title: tSettings('importBlocklistsSuccessTitle'), kind: 'info' }
         );
     } catch (err) {
         console.warn('[import] blocklists:', err);
-        await message(tSettings('importBlocklistsFailed'), { title: tSettings('settingsImportBlocklistsBtn'), kind: 'error' });
+        await message(tSettings('importBlocklistsFailed'), { title: tSettings('importBlocklistsFailedTitle'), kind: 'error' });
     }
 }
 
@@ -16176,6 +16793,8 @@ function render() {
 
     syncSchedulerChromeVisibility();
 
+    scheduleSelectionPromptLayout();
+
     // Adjust window height to fit content
     updateWindowHeight();
 }
@@ -16202,7 +16821,6 @@ function syncSelectedControlState() {
     const now = Date.now();
     const activeBlock = appData.activeBlocks.find(b => b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now);
     const btnLabel = startBlockBtn.querySelector('.btn-label');
-    const btnIcon = startBlockBtn.querySelector('svg');
     const pauseBtn = document.getElementById('pause-block-btn');
     const alwaysOnMsg = document.getElementById('always-on-message');
     delete startBlockBtn.dataset.activeBlockId;
@@ -16212,7 +16830,7 @@ function syncSelectedControlState() {
         setBtnActionLabel(btnLabel, tSettings('stopBlock'));
         setStartBtnBlocklistInfo(startBlockBtn, blocklist);
         startBlockBtn.dataset.activeBlockId = activeBlock.id;
-        if (btnIcon) btnIcon.innerHTML = `<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path>`;
+        setStartBlockBtnLeadingIcon(startBlockBtn, 'stop');
         if (pauseBtn) {
             pauseBtn.classList.remove('hidden');
             updatePauseButtonAppearance(!!activeBlock.isPaused);
@@ -16220,9 +16838,9 @@ function syncSelectedControlState() {
         disableTimeControls(true);
         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
     } else {
-        setBtnActionLabel(btnLabel, tSettings('startBlockButton'));
-        setStartBtnBlocklistInfo(startBlockBtn, blocklist);
-        if (btnIcon) btnIcon.innerHTML = LUCIDE_PLAY_SVG_INNER;
+                setBtnActionLabel(btnLabel, tSettings('startBlockButton'), { simple: true });
+                setStartBtnBlocklistInfo(startBlockBtn, blocklist);
+        setStartBlockBtnLeadingIcon(startBlockBtn, 'enter');
         if (pauseBtn) pauseBtn.classList.add('hidden');
         disableTimeControls(false);
         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isAlwaysOnMode);
@@ -16585,12 +17203,10 @@ function openNowBlockingChipMenu(triggerBtn, entry) {
     menu.className = 'now-blocking-chip-menu';
     menu.setAttribute('role', 'menu');
 
-    // Match the icons used elsewhere in the app: pencil = blocklist-card edit button,
-    // open-padlock = "Stop Block" button (the bottom shackle ends "open" so it reads as
-    // unlocking/stopping the block).
+    // door-open = Exit Room button (matches the Lucide icon on the main action button).
     const editIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>';
     const pauseIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
-    const stopIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>';
+    const stopIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20H2"/><path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"/><path d="M11 4H8a2 2 0 0 0-2 2v14"/><path d="M14 12h.01"/><path d="M22 20h-3"/></svg>';
 
     const items = [
         { label: tSettings('nowBlockingMenuEdit'), icon: editIcon, action: () => handleNowBlockingEdit(entry) },
@@ -17169,17 +17785,7 @@ function renderBlocklists() {
         let metaParts = [];
 
         if (websiteCount > 0) {
-            if (showDetails) {
-                const displaySites = bl.websites.map(cleanUrlForDisplay);
-                const maxDisplay = appCount === 0 ? 3 : 2;
-                if (websiteCount <= maxDisplay) {
-                    metaParts.push(`${websiteCount} ${websiteWord(websiteCount)} (${displaySites.join(', ')})`);
-                } else {
-                    metaParts.push(`${websiteCount} ${websiteWord(websiteCount)} (${displaySites.slice(0, maxDisplay).join(', ')}, ...)`);
-                }
-            } else {
-                metaParts.push(`${websiteCount} ${websiteWord(websiteCount)}`);
-            }
+            metaParts.push(formatBlocklistCardSitesSummary(websiteCount, bl.websites, showDetails));
         }
 
         if (appCount > 0) {
@@ -17372,13 +17978,14 @@ function renderBlocklists() {
         const selectedStyle = isSelected
             ? `style="border-top-color: ${accent}; border-right-color: ${accent}; border-bottom-color: ${accent}; border-left-width: 0; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);"`
             : '';
-
-        // Dim if something is selected but this one isn't
-        const isDimmed = selectedBlocklistId && !isSelected;
-        const dimmedClass = isDimmed ? ' dimmed' : '';
+        const enteringChipColor = getEnteringChipColor(accent);
+        const enteringChip = isSelected
+            ? `<span class="blocklist-entering-chip" style="background-color: ${enteringChipColor}">${tSettings('blocklistEnteringChip')}</span>`
+            : '';
 
         return `
-      <div class="blocklist-card${activeClass}${selectedClass}${dimmedClass}" data-id="${bl.id}" data-active="${isActive}" ${selectedStyle}>
+      <div class="blocklist-card${activeClass}${selectedClass}" data-id="${bl.id}" data-active="${isActive}" ${selectedStyle}>
+        ${enteringChip}
         <div class="blocklist-stripe" style="background: ${borderColor}"></div>
         <div class="blocklist-info">
           <div class="blocklist-name">
@@ -17921,8 +18528,8 @@ function formatIOSGibberishChallenge(text) {
     return compact.replace(/(.{6})(?=.)/g, '$1 ');
 }
 
-function isIOSWordByWordChallenge(difficulty) {
-    return !!(isIOS && (difficulty?.type === 'random-words' || difficulty?.type === 'gibberish'));
+function isMobileWordByWordChallenge(difficulty) {
+    return !!(isMobileOverrideChallengePlatform() && (difficulty?.type === 'random-words' || difficulty?.type === 'gibberish'));
 }
 
 function getCurrentChallengeWord(state) {
@@ -18018,45 +18625,134 @@ function cleanUrlForDisplay(url) {
         .replace(/\/$/, '');           // Remove trailing slash
 }
 
+// Parse #rgb / #rrggbb into { r, g, b } or null.
+function parseRgbFromColorString(color) {
+    if (!color || typeof color !== 'string') return null;
+
+    if (color.startsWith('#')) {
+        const hex = color.slice(1);
+        if (hex.length === 3) {
+            return {
+                r: parseInt(hex[0] + hex[0], 16),
+                g: parseInt(hex[1] + hex[1], 16),
+                b: parseInt(hex[2] + hex[2], 16),
+            };
+        }
+        if (hex.length >= 6) {
+            return {
+                r: parseInt(hex.slice(0, 2), 16),
+                g: parseInt(hex.slice(2, 4), 16),
+                b: parseInt(hex.slice(4, 6), 16),
+            };
+        }
+        return null;
+    }
+
+    if (color.startsWith('rgb')) {
+        const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        if (!match) return null;
+        return {
+            r: parseInt(match[1], 10),
+            g: parseInt(match[2], 10),
+            b: parseInt(match[3], 10),
+        };
+    }
+
+    return null;
+}
+
+function rgbToHex(r, g, b) {
+    const clamp = (value) => Math.max(0, Math.min(255, Math.round(value)));
+    return `#${[clamp(r), clamp(g), clamp(b)].map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
+}
+
+function rgbToHsl(r, g, b) {
+    const rn = r / 255;
+    const gn = g / 255;
+    const bn = b / 255;
+    const max = Math.max(rn, gn, bn);
+    const min = Math.min(rn, gn, bn);
+    const lightness = (max + min) / 2;
+    let hue = 0;
+    let saturation = 0;
+
+    if (max !== min) {
+        const delta = max - min;
+        saturation = lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+        switch (max) {
+            case rn:
+                hue = ((gn - bn) / delta + (gn < bn ? 6 : 0)) / 6;
+                break;
+            case gn:
+                hue = ((bn - rn) / delta + 2) / 6;
+                break;
+            default:
+                hue = ((rn - gn) / delta + 4) / 6;
+        }
+    }
+
+    return { h: hue * 360, s: saturation * 100, l: lightness * 100 };
+}
+
+function hslToRgb(h, s, l) {
+    const hue = ((h % 360) + 360) % 360 / 360;
+    const saturation = Math.max(0, Math.min(100, s)) / 100;
+    const lightness = Math.max(0, Math.min(100, l)) / 100;
+
+    if (saturation === 0) {
+        const gray = lightness * 255;
+        return [gray, gray, gray];
+    }
+
+    const q = lightness < 0.5
+        ? lightness * (1 + saturation)
+        : lightness + saturation - lightness * saturation;
+    const p = 2 * lightness - q;
+    const hueToRgb = (t) => {
+        let value = t;
+        if (value < 0) value += 1;
+        if (value > 1) value -= 1;
+        if (value < 1 / 6) return p + (q - p) * 6 * value;
+        if (value < 1 / 2) return q;
+        if (value < 2 / 3) return p + (q - p) * (2 / 3 - value) * 6;
+        return p;
+    };
+
+    return [
+        hueToRgb(hue + 1 / 3) * 255,
+        hueToRgb(hue) * 255,
+        hueToRgb(hue - 1 / 3) * 255,
+    ];
+}
+
+function getRelativeLuminance(r, g, b) {
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+}
+
+/** Room accent on the ENTERING chip — darkens faded pastels while keeping the hue. */
+function getEnteringChipColor(accentColor) {
+    const rgb = parseRgbFromColorString(accentColor);
+    if (!rgb) return accentColor || '#667eea';
+
+    const luminance = getRelativeLuminance(rgb.r, rgb.g, rgb.b);
+    if (luminance <= 0.42) return accentColor;
+
+    const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b);
+    const fadeAmount = Math.min(1, (luminance - 0.42) / 0.45);
+    const targetLightness = Math.max(36, l - fadeAmount * Math.max(0, l - 40));
+    const targetSaturation = Math.min(100, s + fadeAmount * 18);
+    const [r, g, b] = hslToRgb(h, targetSaturation, targetLightness);
+    return rgbToHex(r, g, b);
+}
+
 // Get contrasting text color (black or white) based on background color
 function getContrastTextColor(backgroundColor) {
     if (!backgroundColor) return '#ffffff';
 
-    // Parse color - handle hex, rgb, rgba, and named colors
-    let r, g, b;
+    const rgb = parseRgbFromColorString(backgroundColor);
+    if (!rgb) return '#ffffff';
 
-    if (backgroundColor.startsWith('#')) {
-        // Hex color
-        const hex = backgroundColor.slice(1);
-        if (hex.length === 3) {
-            r = parseInt(hex[0] + hex[0], 16);
-            g = parseInt(hex[1] + hex[1], 16);
-            b = parseInt(hex[2] + hex[2], 16);
-        } else if (hex.length >= 6) {
-            r = parseInt(hex.slice(0, 2), 16);
-            g = parseInt(hex.slice(2, 4), 16);
-            b = parseInt(hex.slice(4, 6), 16);
-        }
-    } else if (backgroundColor.startsWith('rgb')) {
-        // RGB or RGBA
-        const match = backgroundColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-        if (match) {
-            r = parseInt(match[1]);
-            g = parseInt(match[2]);
-            b = parseInt(match[3]);
-        }
-    }
-
-    // If we couldn't parse, default to white text
-    if (r === undefined || g === undefined || b === undefined) {
-        return '#ffffff';
-    }
-
-    // Calculate relative luminance using WCAG formula
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-
-    // Return black for light backgrounds, white for dark backgrounds
-    return luminance > 0.5 ? '#000000' : '#ffffff';
+    return getRelativeLuminance(rgb.r, rgb.g, rgb.b) > 0.5 ? '#000000' : '#ffffff';
 }
 
 const SETTINGS_TRANSLATIONS = {
@@ -18066,16 +18762,18 @@ const SETTINGS_TRANSLATIONS = {
         updateBannerSuffix: 'is available',
         updateBannerCta: 'Reinstall from reddfocus.org',
         updateBannerWhatsNew: "What's new?",
-        mainStartBlockTitle: 'Start a Block',
+        mainStartBlockTitle: 'Enter',
         modeNow: 'Now',
+        modeTimer: 'Timer',
         modeSchedule: 'Schedule',
-        selectionPrompt: 'Select a blocklist',
-        selectionPromptOption: 'Select a blocklist...',
-        yourBlocklists: 'My Blocklists',
+        selectionPrompt: 'Select a room',
+        selectionPromptOption: 'Select a room...',
+        yourBlocklists: 'My Rooms',
         blocklistCardMenuTitle: 'Blocklist options',
         blocklistCardDuplicate: 'Duplicate',
         blocklistCardDelete: 'Delete',
         blocklistCardEditTooltip: 'Edit',
+        blocklistEnteringChip: 'Entering',
         blocklistScheduleStartsInMinutesFmt: 'starts in {n}m',
         blocklistScheduleStartsInHoursFmt: 'starts in {n}h',
         blocklistScheduleStartsInDaysFmt: 'starts in {n}d',
@@ -18084,9 +18782,9 @@ const SETTINGS_TRANSLATIONS = {
         blocklistScheduleCompactDaysFmt: 'in {n}d',
         blocklistScheduleFallback: 'scheduled',
         deleteBlocklistDeniedActiveBlockFmt:
-            'Cannot delete "{name}" while a block is running. Stop the block first.',
+            'Cannot delete "{name}" while the block is active. Stop the block first.',
         deleteBlocklistDeniedActiveScheduleFmt:
-            'Cannot delete "{name}" while a schedule is active. Stop the schedule first.',
+            'Cannot delete "{name}" while the schedule is active. Stop the schedule first.',
         scheduleTitle: 'Week Schedule',
         today: 'Today',
         noActiveBlocks: 'No active blocks',
@@ -18105,7 +18803,7 @@ const SETTINGS_TRANSLATIONS = {
         nowBlockingMenuStop: 'Stop',
         scheduleFooterHint: 'Click any block to edit',
         setupBrowsersBannerHeadline: 'Enable ReDD Focus in your browsers',
-        setupBrowsersBannerHeadlineMac: 'Allow Fristed in your browsers',
+        setupBrowsersBannerHeadlineMac: 'Allow Rum in your browsers',
         setupBrowsersBannerCta: 'Set up browsers',
         setupBrowsersBannerDismissTitle: 'Dismiss for this session',
         bannerTurnOnBrowserProtection: 'Turn on browser protection',
@@ -18124,31 +18822,32 @@ const SETTINGS_TRANSLATIONS = {
         eulaContinueBtn: 'Continue',
         eulaContinueBusy: 'Continuing…',
         eulaBackBtn: 'Back',
-        eulaAcceptSaveFailedAlert: 'Could not save your agreement. Please try again.',
-        eulaWelcomeIconAlt: 'Fristed app icon',
+        eulaAcceptSaveFailedAlert: 'We could not save your agreement. Please try again to continue.',
+        eulaWelcomeIconAlt: 'Rum app icon',
         eulaProjectBlurb:
-            'Fristed is developed by the Reduce Digital Distraction Project, in collaboration with researchers at the University of Oxford and University of Maastricht. The ReDD Project is a not-for-profit creating insights & open-source digital focus tools for everyone to thrive in the digital world.',
+            'Developed by the Reduce Digital Distraction Project, with researchers at the University of Oxford and University of Maastricht. ReDD is a not-for-profit creating open-source digital focus tools.',
         rebrandOnboardingTitleHtml:
-            'ReDD Block is now <span class="rebrand-onboarding-title-brand">Fristed</span>',
+            'ReDD Block is now <span class="rebrand-onboarding-title-brand">Rum</span>',
         rebrandOnboardingSubtitle:
-            'All functionality is unchanged \u2014 it\u2019s just a new name that reflects what the app is for.',
-        rebrandOnboardingWord: 'fri·sted',
-        rebrandOnboardingIpa: '/ˈfriːstæð/',
-        rebrandOnboardingLanguage: 'Danish',
-        rebrandOnboardingPartOfSpeech: 'noun',
+            'All functionality is unchanged. It\u2019s just a new name that reflects what the app is for.',
+        rebrandOnboardingWord: 'rum',
+        rebrandOnboardingPronunciationHtml: '/rɔmˀ/ · say “rom”',
+        rebrandOnboardingMetaHtml: 'Danish · noun',
         rebrandOnboardingDefinitionHtml:
-            '<em class="rebrand-definition-quote">\u201ca free place; a haven.\u201d</em> A clear and undistracted space, kept free of the apps and sites that pull you away.',
+            '<em class="rebrand-definition-quote">“a space; a room.”</em> A clear space, kept free of the distractions that pull you away.',
+        rebrandOnboardingFootnoteHtml:
+            'The same word as English <span class="rebrand-definition-highlight">“room”</span> — not the drink.',
         rebrandOnboardingContinueBtn: 'Continue',
         // Welcome onboarding (before EULA)
-        welcomeOnboardingTitle: 'Welcome to Fristed',
-        fristedDefinitionHtml:
-            '<strong class="fristed-definition-word">fristed</strong><span class="fristed-definition-pronunciation">(free-sted)</span><span class="fristed-definition-sep" aria-hidden="true"> · </span>Danish for ‘a free space, a haven’',
+        welcomeOnboardingTitle: 'Welcome to Rum',
+        rumDefinitionHtml:
+            '<strong class="rum-definition-word">rum</strong><span class="rum-definition-pronunciation">(room)</span><span class="rum-definition-sep" aria-hidden="true"> · </span>Danish for ‘a space, a room’',
         welcomeOnboardingSubtitle:
-            'Block the websites and apps that pull you away, and keep a clear space to focus.',
+            'Create a distraction-free room for focus',
         welcomeHowHeading: 'STEPS TO GET STARTED (we\'ll guide you through it 😊)',
         welcomeStep1TitleAutomationHtml: 'Allow {APPLE}Automation',
         welcomeStep1BodyAutomationHtml:
-            'In Safari, Chrome, Brave, and Edge, <em>Fristed</em> uses Automation to block websites. We\'ll prompt you to allow access.',
+            'In Safari, Chrome, Brave, and Edge, <em>Rum</em> uses Automation to block websites. We\'ll prompt you to allow access.',
         welcomeStep2TitleFirefoxHtml: 'Set up {LOGO}ReDD Focus in Firefox',
         welcomeStep2BodyFirefoxHtml:
             'Firefox blocking uses our extension <em>ReDD Focus</em>. We\'ll guide you through installing it from the Firefox Add-ons store.',
@@ -18157,7 +18856,7 @@ const SETTINGS_TRANSLATIONS = {
             'Our {LOGO}<strong>ReDD Focus</strong> extension is what actually blocks websites. We\'ll auto-install it in your browsers where we can, and show you what to do.',
         welcomeStep3TitleHtml: 'Start blocking! 🥳',
         welcomeStep3BodyHtml:
-            'Pick the websites and apps that pull you off task, and set the times you want them out of reach. <em>Fristed</em> takes care of the rest.',
+            'Pick the websites and apps that pull you off task, and set the times you want them out of reach. <em>Rum</em> takes care of the rest.',
         welcomeDemoToggleLabel: 'See it in action — 30s',
         welcomeDemoVideoCaption: 'Quick demo — creating blocklists & how blocks feel',
         welcomeDemoPlayAriaLabel: 'Play demo video',
@@ -18172,38 +18871,38 @@ const SETTINGS_TRANSLATIONS = {
             '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">View the source code on GitHub</a>.',
         welcomeOnboardingContinueBtn: 'Get started',
         // Migration / extension onboarding overlay
-        migrationPreWelcomeTitle: 'Welcome to Fristed 2.0',
+        migrationPreWelcomeTitle: 'Welcome to Rum 2.0',
         migrationPreSubtitle: 'A one-time cleanup is needed to finish your upgrade.',
-        migrationPreExplainerHtml: 'Fristed now blocks websites through a browser extension instead of a system-level helper.<br>We need to:',
+        migrationPreExplainerHtml: 'Rum now blocks websites through a browser extension instead of a system-level helper.<br>We need to:',
         migrationPreBulletHelper: 'Stop and remove the old privileged helper',
         migrationPreBulletHostsHtml: 'Restore your <code>/etc/hosts</code> file (a backup is kept)',
         migrationPreBulletBlocklists: 'Keep all your existing blocklists intact',
-        migrationPreWarnHtml: 'You\'ll see <strong>one</strong> admin password prompt. Blocking will pause briefly during the changeover. After cleanup, Fristed sets up the <strong>ReDD Focus</strong> browser extension in your browsers automatically — you just need to allow it in private/incognito tabs.',
+        migrationPreWarnHtml: 'You\'ll see <strong>one</strong> admin password prompt. Blocking will pause briefly during the changeover. After cleanup, Rum sets up the <strong>ReDD Focus</strong> browser extension in your browsers automatically — you just need to allow it in private/incognito tabs.',
         migrationContinue: 'Continue',
         migrationPostTitleCleanup: 'Cleanup complete',
         migrationPostSubtitleCleanup: 'Almost done — finish setting up ReDD Focus in each browser you use.',
         migrationChecklistCleanedOld: 'Old version cleaned up',
         migrationChecklistBlocklistsPreserved: 'Your blocklists are preserved',
         migrationChecklistExtLinesHtml: 'Enable {LOGO}ReDD Focus in your browsers<br><span style="font-weight:400;opacity:0.7">and allow it in private/incognito tabs</span>',
-        migrationExtTitleMac: 'Allow Fristed in your browsers',
+        migrationExtTitleMac: 'Allow Rum in your browsers',
         migrationExtSubMac: 'Website blocking uses <strong>macOS automation</strong> for Safari, Chrome & Edge.',
         migrationExtSubMacFirefox: 'Website blocking uses <strong>macOS automation</strong> for Safari, Chrome & Edge, and the <strong>ReDD Focus extension</strong> for Firefox.',
-        migrationExtStep1Mac: 'Click <strong>Grant access</strong> on each browser below and approve the macOS permission prompt. If you see <strong>Open Automation settings</strong>, click it and switch Fristed back on.',
+        migrationExtStep1Mac: 'Click <strong>Grant access</strong> on each browser below and approve the macOS permission prompt. If you see <strong>Open Automation settings</strong>, click it and switch Rum back on.',
         migrationExtStep2MacFirefox: 'For Firefox, click <strong>Install</strong> below to add {FOCUS}<strong>ReDD Focus</strong> from the Add-ons store, then allow it in private windows.',
         migrationHowtoHeading: 'Setting up',
-        migrationHowtoLi1Html: 'Fristed has tried to install ReDD Focus in your browsers. If it shows as not installed below, click the <strong>Install</strong> buttons to add it manually.',
+        migrationHowtoLi1Html: 'Rum has tried to install ReDD Focus in your browsers. If it shows as not installed below, click the <strong>Install</strong> buttons to add it manually.',
         migrationHowtoLi3Html: 'Once enabled, <strong>allow it in private/incognito tabs</strong> so blocking works in private windows too.',
         migrationBadgeAutomationOn: 'Allowed',
         migrationBadgeAutomationOff: 'Permission needed',
         migrationBadgeAutomationUnknown: 'Status unknown',
         migrationAutomationAwaitingOpenHint: 'Please open {browser} so we can check whether Automation has been granted. macOS only reports this permission while the browser is running.',
-        migrationAutomationGrantHint: 'Allow Fristed to control {browser} so it can close distracting tabs while a block is running.',
-        migrationAutomationDeniedHint: 'Permission for {browser} is turned off. Switch Fristed back on under Automation so blocking works again.',
+        migrationAutomationGrantHint: 'Allow Rum to control {browser} so it can close distracting tabs while a block is running.',
+        migrationAutomationDeniedHint: 'Permission for {browser} is turned off. Switch Rum back on under Automation so blocking works again.',
         migrationGrantAutomation: 'Grant access to {browser}',
         migrationGrantAutomationOpened: 'Opened Automation settings',
         migrationOpenAutomationSettings: 'Open Automation settings',
-        webAutomationBannerHeadline: 'Allow Fristed to control your browser',
-        webAutomationBannerBody: 'Fristed needs permission to control {browsers} to block websites. Enable it under Privacy & Security → Automation, then the block will take effect.',
+        webAutomationBannerHeadline: 'Allow Rum to control your browser',
+        webAutomationBannerBody: 'Rum needs permission to control {browsers} to block websites. Enable it under Privacy & Security → Automation, then the block will take effect.',
         migrationDone: 'I\'m all set up',
         migrationSkip: 'Skip for now',
         migrationSetupAllReadyOne: '<strong>Your browser is ready.</strong> You can finish setup.',
@@ -18232,22 +18931,22 @@ const SETTINGS_TRANSLATIONS = {
         migrationBadgeNoWebsiteAccess: 'No website access',
         migrationBadgeDuplicateSafari: '⚠ Two copies installed',
         migrationStatusDuplicateSafari: 'Disable the extra copy',
-        migrationSafariDuplicateIntroHtml: 'You have <strong>ReDD Focus: Hide Distractions</strong> from the App Store <em>and</em> the copy that ships inside Fristed. They conflict — keep only one.',
+        migrationSafariDuplicateIntroHtml: 'You have <strong>ReDD Focus: Hide Distractions</strong> from the App Store <em>and</em> the copy that ships inside Rum. They conflict — keep only one.',
         migrationSafariDuplicateInstructionsHeading: 'In Safari → Settings → Extensions',
-        migrationSafariDuplicateStep1Html: 'Find <strong>ReDD Focus: Hide Distractions</strong> — the App Store copy (not “via Fristed”) — and uncheck <span class="safari-duplicate-checkbox" role="img" aria-label="Unchecked"></span> it.',
-        migrationSafariDuplicateStep2Html: 'Make sure <span class="safari-duplicate-checkbox safari-duplicate-checkbox-checked" role="img" aria-label="Checked"></span> is checked for <strong>ReDD Focus (via Fristed)</strong>. That\'s the one this app controls.',
+        migrationSafariDuplicateStep1Html: 'Find <strong>ReDD Focus: Hide Distractions</strong> — the App Store copy (not “via Rum”) — and uncheck <span class="safari-duplicate-checkbox" role="img" aria-label="Unchecked"></span> it.',
+        migrationSafariDuplicateStep2Html: 'Make sure <span class="safari-duplicate-checkbox safari-duplicate-checkbox-checked" role="img" aria-label="Checked"></span> is checked for <strong>ReDD Focus (via Rum)</strong>. That\'s the one this app controls.',
         migrationSafariDuplicateOpenBtn: 'Open Safari Extensions…',
         migrationSafariDuplicateHelpLink: 'How did this happen?',
-        migrationSafariDuplicateHelpText: 'If you previously installed ReDD Focus from the App Store and later installed Fristed, Safari keeps both extensions registered. Fristed only works with the bundled copy.',
+        migrationSafariDuplicateHelpText: 'If you previously installed ReDD Focus from the App Store and later installed Rum, Safari keeps both extensions registered. Rum only works with the bundled copy.',
         migrationStatusAllowAllWebsites: 'Allow on all websites',
         migrationStatusAllowPrivate: 'Allow in private browsing',
         migrationStatusEnableExtension: 'Enable extension',
         migrationStatusInstall: 'Install',
         migrationStatusGrantFda: 'Grant Full Disk Access',
-        migrationStatusNativeHost: 'Connect Fristed',
+        migrationStatusNativeHost: 'Connect Rum',
         bannerActionGrantFdaIn: 'Grant Full Disk Access in',
         safariFdaOnboardingTitle: 'Grant Full Disk Access for Safari',
-        safariFdaOnboardingWhyHtml: 'Blocking on Safari through the ReDD Focus browser extension requires Full Disk Access to ensure the extension is installed, enabled, and allowed in private browsing. Open System Settings below, then toggle <strong>Fristed</strong> on (use + if it is not listed).',
+        safariFdaOnboardingWhyHtml: 'Blocking on Safari through the ReDD Focus browser extension requires Full Disk Access to ensure the extension is installed, enabled, and allowed in private browsing. Open System Settings below, then toggle <strong>Rum</strong> on (use + if it is not listed).',
         safariFdaOnboardingGrantBtn: 'Open Full Disk Access settings',
         safariFdaOnboardingAlreadyGrantedBtn: '✓ Proceed',
         safariFdaOnboardingAlreadyGrantedWhy: 'Full Disk Access is already granted. Click below to continue Safari setup.',
@@ -18255,12 +18954,12 @@ const SETTINGS_TRANSLATIONS = {
         safariFdaOnboardingWaiting: 'Waiting for Full Disk Access… leave this window open while you grant it.',
         safariFdaOnboardingOpeningSettings: 'Opening settings…',
         safariFdaOnboardingHowto: 'System Settings → Privacy & Security → Full Disk Access',
-        safariFdaSetupHintHtml: 'Fristed must read Safari\'s protected extension settings. Grant <strong>Full Disk Access</strong> for Fristed, then return here.',
+        safariFdaSetupHintHtml: 'Rum must read Safari\'s protected extension settings. Grant <strong>Full Disk Access</strong> for Rum, then return here.',
         safariFdaSettingsGranted: 'Full Disk Access: granted (Safari extension settings readable).',
         safariFdaSettingsNotGranted: 'Full Disk Access: not granted — required to verify ReDD Focus in Safari.',
         safariFdaSettingsGrantBtn: 'Grant access',
-        migrationBadgeNativeHost: 'Connect Fristed',
-        migrationFirefoxNativeHostHtml: 'ReDD Focus is installed. Fristed still needs to register its connection with Firefox (one small setup step).',
+        migrationBadgeNativeHost: 'Connect Rum',
+        migrationFirefoxNativeHostHtml: 'ReDD Focus is installed. Rum still needs to register its connection with Firefox (one small setup step).',
         migrationFirefoxNativeHostButton: 'Connect to Firefox',
         migrationInstallButton: 'Install',
         migrationInstallOpened: 'Opened extension store',
@@ -18279,11 +18978,11 @@ const SETTINGS_TRANSLATIONS = {
         migrationSafariChecklistLine: 'Step {n} — {label}',
         migrationOpenExtensionSettings: 'Open Extension Settings',
         migrationShowMeHow: 'Show me how',
-        migrationPostInstallFirefoxHtml: 'Fristed already set up auto-install for ReDD Focus in Firefox — <strong>restart Firefox</strong> to pick it up. (Or click <strong>Install</strong> below to add it manually — check <strong>Allow extension to run in private windows</strong> during install.)',
+        migrationPostInstallFirefoxHtml: 'Rum already set up auto-install for ReDD Focus in Firefox — <strong>restart Firefox</strong> to pick it up. (Or click <strong>Install</strong> below to add it manually — check <strong>Allow extension to run in private windows</strong> during install.)',
         migrationPostInstallFirefoxMacHtml: 'Install ReDD Focus from the Firefox Add-ons store — click <strong>Install</strong> below and check <strong>Allow extension to run in private windows</strong> during install.',
         migrationPostInstallSafariHtml: 'Install ReDD Focus from the Mac App Store — click <strong>Install</strong> below. After it\u2019s installed, return here and we\u2019ll walk you through enabling it in Safari.',
         migrationPostInstallChromiumMacHtml: 'Install ReDD Focus from the {BROWSER} store — click <strong>Install</strong> below. After it\u2019s installed, return here and we\u2019ll walk you through enabling it and allowing it in {PRIV} tabs.',
-        migrationPostInstallChromiumHtml: 'Fristed already set up auto-install for ReDD Focus in {BROWSER} — <strong>restart {BROWSER}</strong> to pick it up. (Or click <strong>Install</strong> below to add it manually now.)',
+        migrationPostInstallChromiumHtml: 'Rum already set up auto-install for ReDD Focus in {BROWSER} — <strong>restart {BROWSER}</strong> to pick it up. (Or click <strong>Install</strong> below to add it manually now.)',
         migrationInstructionEnableHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → find <strong>ReDD Focus</strong> → enable the extension.',
         migrationInstructionWebsiteAccessHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → click <strong>Details</strong> on ReDD Focus → allow on <strong>all websites</strong>.',
         migrationInstructionFirefoxPrivateHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → click <strong>ReDD Focus</strong> → turn on <strong>Run in {PRIV}</strong>.',
@@ -18321,7 +19020,7 @@ const SETTINGS_TRANSLATIONS = {
         enforcerCountdownDelayNote: '(changes can take up to 20 seconds to detect).',
         enforcerCountdownInstrPrivate: 'Blocking is not enabled in private windows. Enable Allow in incognito for ReDD Focus to stop the countdown.',
         enforcerCountdownInstrWebsiteAccess: 'ReDD Focus is not allowed on all websites. Allow all websites to stop the countdown.',
-        enforcerCountdownInstrAccess: 'Fristed can’t verify ReDD Focus. Grant access to stop the countdown.',
+        enforcerCountdownInstrAccess: 'Rum can’t verify ReDD Focus. Grant access to stop the countdown.',
         enforcerCountdownInstrDefault: 'ReDD Focus is not ready. Finish setup to stop the countdown.',
         enforcerCountdownInstrMultiple: 'Fix ReDD Focus in each browser below to stop the countdown.',
         enforcerCountdownDefault: '{browser} will be auto-closed if ReDD Focus is not ready, to support your blocking.',
@@ -18336,9 +19035,9 @@ const SETTINGS_TRANSLATIONS = {
         enforcerHeadlinePrivate: 'Private windows in {browser} aren’t covered by ReDD Focus yet.',
         enforcerHeadlineWebsiteAccess: '{browser} hasn’t given ReDD Focus access on every website yet.',
         enforcerInstrWebsiteAccessPlain: 'In {browser} extension settings, allow ReDD Focus on all websites.',
-        enforcerHeadlineAccess: 'Fristed can’t verify ReDD Focus in {browser}.',
+        enforcerHeadlineAccess: 'Rum can’t verify ReDD Focus in {browser}.',
         enforcerInstrAccessSafari: 'Open Safari extension settings and finish ReDD Focus setup.',
-        enforcerInstrAccessBrowser: 'Grant access so Fristed can help verify {browser}.',
+        enforcerInstrAccessBrowser: 'Grant access so Rum can help verify {browser}.',
         enforcerHeadlineDefault: 'ReDD Focus isn’t ready in {browser} yet.',
         enforcerInstrDefault: 'Finish ReDD Focus setup in {browser} extensions.',
         enforcerActionInstall: 'Install ReDD Focus',
@@ -18348,13 +19047,13 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedDisabled: '{browser} was closed to support your block—ReDD Focus was turned off.',
         enforcerClosedPrivate: '{browser} was closed to support your block—private windows were still a loophole.',
         enforcerClosedWebsiteAccess: '{browser} was closed to support your block—ReDD Focus couldn’t cover every site yet.',
-        enforcerClosedAccess: '{browser} was closed so your protection could stay clear—Fristed couldn’t verify ReDD Focus.',
+        enforcerClosedAccess: '{browser} was closed so your protection could stay clear—Rum couldn’t verify ReDD Focus.',
         enforcerClosedDefault: '{browser} was closed to support your block—ReDD Focus wasn’t fully ready.',
         enforcerClosedCombinedMissing: '{browser} were closed to support your block—ReDD Focus wasn’t installed yet.',
         enforcerClosedCombinedDisabled: '{browser} were closed to support your block—ReDD Focus was turned off.',
         enforcerClosedCombinedPrivate: '{browser} were closed to support your block—private windows were still a loophole.',
         enforcerClosedCombinedWebsiteAccess: '{browser} were closed to support your block—ReDD Focus couldn’t cover every site yet.',
-        enforcerClosedCombinedAccess: '{browser} were closed so your protection could stay clear—Fristed couldn’t verify ReDD Focus.',
+        enforcerClosedCombinedAccess: '{browser} were closed so your protection could stay clear—Rum couldn’t verify ReDD Focus.',
         enforcerClosedCombinedDefault: '{browser} were closed to support your block—ReDD Focus wasn’t fully ready.',
         enforcerClosedInstrPrivateChrome: 'In Chrome: ReDD Focus → Details → Allow in Incognito.',
         enforcerClosedInstrPrivateFirefox: 'In Firefox: ReDD Focus → Run in Private Windows → Allow.',
@@ -18365,15 +19064,15 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedInstrWebsiteAccess: 'In {browser} extension settings, allow ReDD Focus on all websites.',
         enforcerClosedInstrAccessSafari: 'Open Safari → Settings → Extensions and finish ReDD Focus setup.',
         enforcerClosedInstrDefault: 'Finish ReDD Focus setup in {browser} extensions.',
-        // macOS Automation issue: Fristed lost the per-browser
+        // macOS Automation issue: Rum lost the per-browser
         // Automation grant, so it can't redirect blocked tabs.
-        enforcerHeadlineAutomation: 'Fristed can’t control {browser} right now.',
+        enforcerHeadlineAutomation: 'Rum can’t control {browser} right now.',
         enforcerCountdownInstrAutomation: 'Switch Automation back on to keep your block.',
-        enforcerInstrAutomation: 'Switch Fristed back on for {browser} under System Settings → Privacy & Security → Automation, then your block will work again.',
-        enforcerClosedAutomation: '{browser} was closed because Fristed couldn’t control it.',
-        enforcerClosedInstrAutomation: 'Switch Fristed back on for {browser} under Privacy & Security → Automation.',
-        enforcerClosedCombinedAutomation: '{browser} were closed because Fristed couldn’t control them.',
-        enforcerClosedInstrAutomationGeneric: 'Switch Fristed back on for {browser} under Privacy & Security → Automation.',
+        enforcerInstrAutomation: 'Switch Rum back on for {browser} under System Settings → Privacy & Security → Automation, then your block will work again.',
+        enforcerClosedAutomation: '{browser} was closed because Rum couldn’t control it.',
+        enforcerClosedInstrAutomation: 'Switch Rum back on for {browser} under Privacy & Security → Automation.',
+        enforcerClosedCombinedAutomation: '{browser} were closed because Rum couldn’t control them.',
+        enforcerClosedInstrAutomationGeneric: 'Switch Rum back on for {browser} under Privacy & Security → Automation.',
         enforcerBrowserFallback: 'your browser',
         gracePeriodLabel: 'Grace period',
         gracePeriodHint: 'Seconds to re-enable before the browser closes.',
@@ -18392,6 +19091,8 @@ const SETTINGS_TRANSLATIONS = {
         settingsEnforcementRowHintExtension: 'If ReDD Focus is disabled mid-block.',
         settingsEnforcementLockedTooltip: 'To change this setting, first stop all active blocks.',
         settingsDiagnosticsLabel: 'Something not working?',
+        onboardingOpenSourceFootnote:
+            'Developed by the Reduce Digital Distraction Project, with researchers at the University of Oxford and University of Maastricht. ReDD is a not-for-profit creating open-source digital focus tools.',
         settingsSetupBtn: 'Setup',
         settingsDiagnosticsBtn: 'Diagnostics',
         diagnosticsLoadingBtn: 'Loading…',
@@ -18414,7 +19115,7 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsBrowsersSectionHintMacExtension: 'Browsers listed here use the ReDD Focus extension (install, enable, and allow private browsing).',
         diagnosticsBrowsersSectionHint: 'Status of the ReDD Focus extension in browsers on this computer.',
         diagnosticsAutomationSection: 'Automation (macOS)',
-        diagnosticsAutomationSectionHint: 'Fristed needs Automation permission to redirect blocked tabs in each browser. Grant in System Settings → Privacy & Security → Automation.',
+        diagnosticsAutomationSectionHint: 'Rum needs Automation permission to redirect blocked tabs in each browser. Grant in System Settings → Privacy & Security → Automation.',
         diagnosticsThAutomation: 'Automation',
         diagnosticsAutomationGranted: 'Allowed',
         diagnosticsAutomationDenied: 'Denied',
@@ -18462,17 +19163,22 @@ const SETTINGS_TRANSLATIONS = {
         settingsBlocklistsIoHint: 'Save a backup or restore from a file.',
         settingsExportBlocklistsBtn: 'Export',
         settingsImportBlocklistsBtn: 'Import',
-        exportBlocklistsSaveTitle: 'Export blocklists & schedules',
-        exportBlocklistsEmpty: 'You have no blocklists to export.',
+        exportBlocklistsSaveTitle: 'Export blocklists',
+        exportBlocklistsFailedTitle: 'Failed to export blocklists',
+        exportBlocklistsSuccessTitle: 'Successfully exported blocklists',
+        exportBlocklistsEmpty: 'There are no blocklists to export.',
         exportBlocklistsSuccessFmt: 'Exported {n} blocklist(s) and their schedules to:\n{path}',
-        exportBlocklistsFailed: 'Could not export blocklists.',
-        importBlocklistsOpenTitle: 'Import blocklists & schedules',
-        importBlocklistsInvalidFile: 'That file does not contain any valid blocklists.',
-        importBlocklistsParseFailed: 'Could not read that file. Make sure it is valid JSON.',
+        exportBlocklistsFailed: 'There was an error exporting your blocklists. Please try again.',
+        importBlocklistsOpenTitle: 'Import blocklists',
+        importBlocklistsDialogTitle: 'Import blocklists',
+        importBlocklistsFailedTitle: 'Failed to import blocklists',
+        importBlocklistsSuccessTitle: 'Successfully imported blocklists',
+        importBlocklistsInvalidFile: 'The selected file does not contain any valid blocklists.',
+        importBlocklistsParseFailed: 'There was an error reading the selected file. Please make sure it is valid JSON.',
         importBlocklistsConfirmFmt:
             'Import {n} blocklist(s) from this file?\n\nThey will be added to your existing blocklists. Any schedules will be restored as drafts — start them manually when you are ready.',
-        importBlocklistsSuccessFmt: 'Imported {n} blocklist(s). Schedules were saved as drafts and are not running yet.',
-        importBlocklistsFailed: 'Could not import blocklists.',
+        importBlocklistsSuccessFmt: 'Imported {n} blocklist(s) and their schedules. Schedules were restored as drafts — start them manually when you are ready.',
+        importBlocklistsFailed: 'There was an error importing your blocklists. Please try again.',
         importBlocklistDefaultName: 'Imported blocklist',
         gracePeriodLockedHint: 'Locked while a block is active—only shorter times allowed.',
         appBlockingLetsGo: 'Let’s go!',
@@ -18506,24 +19212,36 @@ const SETTINGS_TRANSLATIONS = {
         placeholderAppExample: 'e.g., Safari',
         invalidDomainMsg: 'Please enter a valid domain (e.g. reddit.com)',
         cannotBlockDomainPlaceholder: '⚠️ Can\'t block this domain!',
-        cannotBlockSelfAppPlaceholder: '⚠️ Can\'t block Fristed itself!',
+        cannotBlockSelfAppPlaceholder: '⚠️ Can\'t block Rum itself!',
         // Start/schedule controls
-        durationQuickAlways: 'Always',
-        alwaysOnMessage: 'This block will stay on until you pause it or turn it off',
+        durationQuick15m: '15m',
+        durationQuick30m: '30m',
+        durationQuick45m: '45m',
+        durationQuick1Hour: '1 hour',
+        durationQuick2Hours: '2 hours',
+        durationQuickAlways: 'Until I stop',
+        alwaysOnMessage: 'You will stay in this room until you pause or exit it',
         duration: 'Duration',
         durationUnitMin: 'min',
         end: 'End',
         nextDay: 'day',
-        quickSelect: 'Quick Select',
+        quickSelect: 'For how long?',
         start: 'Start',
         days: 'Days',
         add: 'Add times',
+        scheduleWhenHeading: 'When this room opens',
+        segmentDaysWeekdays: 'Weekdays',
+        segmentDaysWeekends: 'Weekends',
+        segmentDaysEveryDay: 'Every day',
+        segmentDaysNone: 'No days',
+        segmentDone: 'Done',
+        segmentDelete: 'Delete',
         repeat: 'Repeat:',
         repeatNo: 'No',
         repeatForever: 'Forever',
         repeatUntilDate: 'Until date',
         pause: 'Pause',
-        startBlockButton: 'Start Block',
+        startBlockButton: 'Enter Room',
         startScheduleButton: 'Start Schedule',
         stopScheduleButton: 'Stop Schedule',
         /** Shown inside .btn-blocklist-meta before emoji+name when Stop is shown; hidden with meta on narrow layouts. */
@@ -18537,29 +19255,36 @@ const SETTINGS_TRANSLATIONS = {
         saveChangesTitleFmt: 'Save changes to {name}?',
         addingTheseSegments: 'Adding these time segments:',
         // Blocklist modal
-        createBlocklist: 'Create Blocklist',
-        editBlocklist: 'Edit Blocklist',
+        createBlocklist: 'Create Room',
+        editBlocklist: 'Edit Room',
         activeBlocklistWarning: 'This blocklist is active. Some settings are locked.',
         name: 'Name',
-        websites: 'Websites',
+        websites: 'Websites to block',
         websitesTooltip: 'Blocking applies to entire domains. For example, typing "facebook.com" blocks all of Facebook, not just specific pages.',
-        apps: 'Apps',
+        apps: 'Apps to block',
         appsTooltip: 'Enter the exact name of the application (e.g. \'Safari\'). You can also use the folder button to find the app.',
-        overrideDifficulty: 'Override Difficulty',
+        overrideDifficulty: 'Exit Difficulty',
+        overrideMethod: 'Method',
+        overrideWordsToType: 'Words to type',
+        overrideCharsToType: 'Characters to type',
         overrideRandomWords: 'Random Words',
         overrideGibberish: 'Random Gibberish',
         overrideCustomText: 'Custom Text',
         overrideMaxDifficulty: 'Max difficulty',
+        overrideMaxDifficultyHintWords: '{count} words',
+        overrideMaxDifficultyHintChars: '{count} characters',
+        overridePreviewLooksLike: 'Looks like',
+        overrideCountTimeEstimate: '~{minutes} min',
+        overrideCountTimeEstimateDa: '~{minutes} {unit}',
         totalCharacters: 'total characters',
         totalWords: 'total words',
-        overridePreviewTimeLine: 'Takes ~{minutes} min{minuteSuffix} to type and will look something like:',
         color: 'Color',
         emoji: 'Emoji',
         advancedOptions: 'Advanced options',
         listBlockedOnCard: 'Show names of blocked websites & apps in the overview',
         importWebsitesTitle: 'Import websites',
         browseApplicationsTitle: 'Browse Applications',
-        modalPremadeListsCaption: 'Pre-made lists',
+        modalPremadeListsCaption: 'Lists',
         modalBrowseAppsCaption: 'Select Apps',
         modalBrowseAppsTitleIos: 'Select Apps (Screen Time)',
         importWebsitesPickFileTitle: 'Select a file with one domain per line',
@@ -18577,54 +19302,54 @@ const SETTINGS_TRANSLATIONS = {
         // Override / pause / confirmation modals
         overrideBlockTitle: 'Override Block?',
         overrideInstruction: 'To stop this block early, type the following:',
-        stopBlock: 'Stop Block',
+        stopBlock: 'Exit Room',
         stopSchedule: 'Stop Schedule',
         pauseBlockTitle: 'Pause Block',
         pauseFor: 'PAUSE FOR',
         restartsAt: 'RESTARTS AT',
         pauseInstruction: 'To pause this block, type the following:',
         helperSetupTitle: 'Setup Required',
-        helperSetupText: 'To block websites when the app is closed, Fristed needs to install a small background service. Your computer will prompt you for your password once — after that, blocks will start instantly without asking again.',
+        helperSetupText: 'To block websites when the app is closed, Rum needs to install a small background service. Your computer will prompt you for your password once — after that, blocks will start instantly without asking again.',
         helperRepairTitle: 'Helper Repair Required',
-        helperRepairText: 'A helper service is already installed, but it is not running right now. Fristed needs to reinstall or repair it before this block can start. Your computer may prompt you for your password to complete the repair.',
+        helperRepairText: 'A helper service is already installed, but it is not running right now. Rum needs to reinstall or repair it before this block can start. Your computer may prompt you for your password to complete the repair.',
         helperUpdateTitle: 'Helper Update Required',
         helperUpdateText: 'A helper service is already installed, but it needs an update before this block can start. Your computer will prompt you for your password to apply the update.',
-        helperOpenSourceLink: 'open source code for Fristed here',
+        helperOpenSourceLink: 'open source code for Rum here',
         proceed: 'Proceed',
         reinstallHelper: 'Reinstall Helper',
         helperInstalling: 'Installing...',
         helperUpdating: 'Updating...',
         helperReinstalling: 'Reinstalling...',
-        startThisBlock: 'Start this block?',
-        startBlockTitleFmt: 'Start the block “{name}”?',
+        startThisBlock: 'Enter the room?',
+        startBlockTitleFmt: 'Enter the room “{name}”?',
         resumeBlockTitleFmt: 'Resume the block “{name}”?',
-        startBlockSubtitleFmt: 'Distractions go quiet for the next <strong>{duration}</strong>.',
-        startBlockSubtitleAlways: 'Distractions stay quiet until you turn this block off.',
+        startBlockSubtitleFmt: 'Your blocked websites and apps go quiet for the next <strong>{duration}</strong>.',
+        startBlockSubtitleAlways: 'Your blocked websites and apps go quiet until you exit the room.',
         resumeBlockSubtitle: 'Pick up where you left off with this block.',
         startConfirmBlockingLabel: 'Blocking',
         startConfirmDurationLabel: 'Duration',
         startConfirmTimesLabel: 'Times',
         startConfirmRepeatsLabel: 'Repeats',
         startConfirmDurationLineFmt: '{duration} · <span class="start-confirm-duration-meta">ends ~{ends}</span>',
-        startConfirmRepeatForever: '<strong>Every week</strong> · no end date',
-        startConfirmRepeatUntilFmt: '<strong>Every week</strong> · until {date}',
-        startConfirmRepeatNone: '<strong>One week only</strong> · no repeat',
-        startBlockHoldHeader: 'To stop this blocking, you\'ll need to:',
-        startScheduleHoldHeader: 'To stop this blocking, you\'ll need to:',
-        saveChangesHoldHeader: 'To stop this blocking, you\'ll need to:',
+        startConfirmRepeatForever: 'Every week · no end date',
+        startConfirmRepeatUntilFmt: 'Every week · until {date}',
+        startConfirmRepeatNone: 'One week only · no repeat',
+        startBlockHoldHeader: 'Leaving early takes a moment — on purpose.',
+        startScheduleHoldHeader: 'Leaving early takes a moment — on purpose.',
+        saveChangesHoldHeader: 'Leaving early takes a moment — on purpose.',
         blockedWebsites: 'Blocked websites:',
         blockedApps: 'Blocked apps:',
         showAll: 'show all',
         confirmDuration: 'Duration:',
         confirmOverrideNeed: 'To stop this block early, you\'ll need to:',
-        startBlock: 'Start Block',
+        startBlock: 'Enter Room',
         resumeBlock: 'Resume Block',
         resumeThisBlock: 'Resume this block?',
-        alwaysUntilOff: 'Always (until turned off)',
+        alwaysUntilOff: 'Always (until you pause or exit)',
         scheduleResumingSegment: 'Schedule (resuming current segment)',
         startThisSchedule: 'Start this schedule?',
         startScheduleTitleFmt: 'Start the schedule “{name}”?',
-        startScheduleSubtitle: 'Blocks run automatically at the times shown below.',
+        startScheduleSubtitle: 'Your blocked websites and apps go quiet at the times shown below.',
         scheduleConfirmOverlayLabel: 'Start alert',
         scheduleActiveOverlayLabel: 'Start alert:',
         scheduleConfirmOverlayDefaultTitle: 'Default',
@@ -18699,17 +19424,18 @@ const SETTINGS_TRANSLATIONS = {
         saveChangesOverrideNeed: 'To stop this schedule, you\'ll need to:',
         /** Start/resume confirmation: friction description — placeholders {count},{charUnit},{minutes} */
         confirmOverrideRandomWordsFmt:
-            'Type {count} {charUnit} (displayed as random words) exactly as shown (~{minutes} min).',
+            'Type <strong>{count} {charUnit} exactly as shown</strong> (~{minutes} min) to exit.',
         confirmOverrideRandomWordsIosFmt:
-            'Type {count} random {wordUnit} exactly as shown (~{minutes} min).',
+            'Type <strong>{count} random {wordUnit} exactly as shown</strong> (~{minutes} min) to exit.',
         confirmOverrideGibberishLettersFmt:
-            'Type {count} random {charUnit} (letters and numbers) exactly as shown (~{minutes} min).',
+            'Type <strong>{count} random {charUnit} exactly as shown</strong> (~{minutes} min) to exit.',
         confirmOverrideGibberishWordsFmt:
-            'Type {count} random {wordUnit} (6 characters each) exactly as shown (~{minutes} min).',
+            'Type <strong>{count} random {wordUnit} exactly as shown</strong> (~{minutes} min) to exit.',
         confirmOverrideGibberishShortFmt:
-            'Type {count} random characters exactly as shown (~{minutes} min).',
+            'Type <strong>{count} random characters exactly as shown</strong> (~{minutes} min) to exit.',
         confirmOverrideCustomPhraseFmt:
-            'Type a specific {count}-character phrase exactly as shown (~{minutes} min).',
+            'Type a <strong>{count}-character phrase exactly as shown</strong> (~{minutes} min) to exit.',
+        confirmOverrideIntentionSuffix: 'That helps you stick with your intention.',
         startSchedule: 'Start Schedule',
         noDaysSelected: 'No days selected',
         runningSuffix: ' (Running)',
@@ -18730,7 +19456,8 @@ const SETTINGS_TRANSLATIONS = {
         settingsUninstallHint: 'Your blocklists are kept on disk.',
         yourVersionPrefix: 'Version',
         latestVersionPrefix: 'Latest version:',
-        lightDarkMode: 'Appearance',
+        lightDarkMode: 'Theme',
+        zoomLevel: 'Zoom level',
         language: 'Language',
         themeAuto: 'Auto',
         themeLight: 'Light',
@@ -18744,14 +19471,14 @@ const SETTINGS_TRANSLATIONS = {
         settingsOverrideAllLabel: 'Stop all blocks & schedules',
         settingsOverrideAllBtn: 'Stop all',
         // In-app uninstall (macOS only)
-        uninstallApp: 'Uninstall Fristed',
+        uninstallApp: 'Uninstall Rum',
         uninstallAppBtn: 'Uninstall…',
         uninstallDisabledHint: 'Stop running blocks first before you can uninstall.',
-        uninstallConfirmTitle: 'Uninstall Fristed?',
-        uninstallConfirmLeadHtml: 'Fristed will be moved to the Trash. Your blocklists and schedules are <strong>kept on disk</strong>, so they\u2019ll be restored if you reinstall later.',
-        uninstallConfirmLeadDeleteHtml: 'Fristed will be moved to the Trash. Your blocklists, schedules, and settings will be <strong>permanently deleted</strong> from this Mac.',
+        uninstallConfirmTitle: 'Uninstall Rum?',
+        uninstallConfirmLeadHtml: 'Rum will be moved to the Trash. Your blocklists and schedules are <strong>kept on disk</strong>, so they\u2019ll be restored if you reinstall later.',
+        uninstallConfirmLeadDeleteHtml: 'Rum will be moved to the Trash. Your blocklists, schedules, and settings will be <strong>permanently deleted</strong> from this Mac.',
         uninstallDeleteDataLabel: 'Also delete my blocklists, schedules, and settings',
-        uninstallFinderWarningHtml: 'If macOS asks you to allow Fristed to control <strong>Finder</strong>, click <strong>Allow</strong> \u2014 that\u2019s how the app moves itself to the Trash.',
+        uninstallFinderWarningHtml: 'If macOS asks you to allow Rum to control <strong>Finder</strong>, click <strong>Allow</strong> \u2014 that\u2019s how the app moves itself to the Trash.',
         uninstallFirefoxCalloutTitle: 'ReDD Focus extension in Firefox',
         uninstallExtFirefoxBadge: 'Stays installed',
         uninstallFirefoxCalloutDetailHtml: 'You can continue to use ReDD Focus to hide distracting parts of websites. To remove it, open Firefox add-ons settings \u2014 copy {URL_CHIP} and paste it into the address bar.',
@@ -18759,10 +19486,10 @@ const SETTINGS_TRANSLATIONS = {
         uninstallFailedTitle: 'Uninstall failed',
         uninstallFailed: 'Could not complete uninstall.',
         // Windows Settings uninstall guidance
-        windowsUninstallHint: 'Settings \u2192 Installed apps \u2192 Fristed',
+        windowsUninstallHint: 'Settings \u2192 Installed apps \u2192 Rum',
         windowsUninstallOpenSettingsBtn: 'Open settings',
         windowsUninstallOpenFailedTitle: 'Could not open Settings',
-        windowsUninstallOpenFailed: 'Windows Settings could not be opened. Open Settings manually, go to Apps \u2192 Installed apps, and search for Fristed.',
+        windowsUninstallOpenFailed: 'Windows Settings could not be opened. Open Settings manually, go to Apps \u2192 Installed apps, and search for Rum.',
         macAutomationIntroBadge: 'What\u2019s new',
         macAutomationIntroTitle: 'Website blocking on macOS works a little differently now',
         macAutomationIntroLeadHtml: 'To make blocking easier to set up, most browsers now use <strong>macOS Automation</strong> instead of the ReDD Focus extension. Here\u2019s the new setup.',
@@ -18789,7 +19516,7 @@ const SETTINGS_TRANSLATIONS = {
         helperRemovedFallback: 'Helper service removed using fallback cleanup because the installed helper was not responding normally.',
         helperRemoveStaleHint: 'Installed, but not currently running. You can remove the stale helper before reinstalling it.',
         cleanHostsFile: 'Clean hosts file',
-        helperHint: 'Remove all Fristed entries from your system\'s hosts file. Use this if websites remain blocked after all blocks have been stopped.',
+        helperHint: 'Remove all Rum entries from your system\'s hosts file. Use this if websites remain blocked after all blocks have been stopped.',
         close: 'Close',
         // Time/date words
         dayAbbrev: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
@@ -18806,16 +19533,18 @@ const SETTINGS_TRANSLATIONS = {
         updateBannerSuffix: 'er tilgængelig',
         updateBannerCta: 'Geninstaller fra reddfocus.org',
         updateBannerWhatsNew: 'Hvad er nyt?',
-        mainStartBlockTitle: 'Start blokering',
+        mainStartBlockTitle: 'Ind',
         modeNow: 'Nu',
+        modeTimer: 'Timer',
         modeSchedule: 'Skema',
-        selectionPrompt: 'Vælg en blokeringsliste',
-        selectionPromptOption: 'Vælg en blokeringsliste...',
-        yourBlocklists: 'Mine blokeringlister',
+        selectionPrompt: 'Vælg et rum',
+        selectionPromptOption: 'Vælg et rum...',
+        yourBlocklists: 'Mine rum',
         blocklistCardMenuTitle: 'Valgmuligheder for blokliste',
         blocklistCardDuplicate: 'Duplikér',
         blocklistCardDelete: 'Slet',
         blocklistCardEditTooltip: 'Rediger',
+        blocklistEnteringChip: 'Går ind',
         blocklistScheduleStartsInMinutesFmt: 'starter om {n}m',
         blocklistScheduleStartsInHoursFmt: 'starter om {n}t',
         blocklistScheduleStartsInDaysFmt: 'starter om {n}d',
@@ -18824,9 +19553,9 @@ const SETTINGS_TRANSLATIONS = {
         blocklistScheduleCompactDaysFmt: 'om {n}d',
         blocklistScheduleFallback: 'planlagt',
         deleteBlocklistDeniedActiveBlockFmt:
-            'Kan ikke slette "{name}", mens en blokering kører. Stop blokeringen først.',
+            'Kan ikke slette "{name}", mens blokeringen er aktiv. Stop blokeringen først.',
         deleteBlocklistDeniedActiveScheduleFmt:
-            'Kan ikke slette "{name}", mens et skema er aktivt. Stop skemaet først.',
+            'Kan ikke slette "{name}", mens skemaet er aktivt. Stop skemaet først.',
         scheduleTitle: 'Ugeskema',
         today: 'I dag',
         noActiveBlocks: 'Ingen aktive blokeringer',
@@ -18845,7 +19574,7 @@ const SETTINGS_TRANSLATIONS = {
         nowBlockingMenuStop: 'Stop',
         scheduleFooterHint: 'Klik på en blok for at redigere',
         setupBrowsersBannerHeadline: 'Aktivér ReDD Focus i dine browsere',
-        setupBrowsersBannerHeadlineMac: 'Tillad Fristed i dine browsere',
+        setupBrowsersBannerHeadlineMac: 'Tillad Rum i dine browsere',
         setupBrowsersBannerCta: 'Opsæt browsere',
         setupBrowsersBannerDismissTitle: 'Skjul for denne session',
         bannerTurnOnBrowserProtection: 'Slå browser-beskyttelse til',
@@ -18864,29 +19593,30 @@ const SETTINGS_TRANSLATIONS = {
         eulaContinueBtn: 'Fortsæt',
         eulaContinueBusy: 'Arbejder…',
         eulaBackBtn: 'Tilbage',
-        eulaAcceptSaveFailedAlert: 'Vi kunne ikke gemme din godkendelse. Prøv igen.',
-        eulaWelcomeIconAlt: 'Fristed-appikon',
+        eulaAcceptSaveFailedAlert: 'Vi kunne ikke gemme din godkendelse. Prøv igen for at fortsætte.',
+        eulaWelcomeIconAlt: 'Rum-appikon',
         eulaProjectBlurb:
-            'Fristed er udviklet af Reduce Digital Distraction Project i samarbejde med forskere ved University of Oxford og Maastricht University. ReDD-projektet er en non-profit, der skaber indsigt og open source digitale fokusværktøjer, så alle kan trives i den digitale verden.',
+            'Udviklet af Reduce Digital Distraction Project sammen med forskere ved University of Oxford og Maastricht University. ReDD er en non-profit, der skaber open source digitale fokusværktøjer.',
         rebrandOnboardingTitleHtml:
-            'ReDD Block hedder nu <span class="rebrand-onboarding-title-brand">Fristed</span>',
+            'ReDD Block hedder nu <span class="rebrand-onboarding-title-brand">Rum</span>',
         rebrandOnboardingSubtitle:
             'Al funktionalitet er u\u00e6ndret \u2014 det er bare et nyt navn, der afspejler, hvad appen er til.',
-        rebrandOnboardingWord: 'fri·sted',
-        rebrandOnboardingIpa: '/ˈfriːstæð/',
-        rebrandOnboardingLanguage: 'Dansk',
-        rebrandOnboardingPartOfSpeech: 'substantiv',
+        rebrandOnboardingWord: 'rum',
+        rebrandOnboardingPronunciationHtml: '/rumˀ/ · sig “rum”',
+        rebrandOnboardingMetaHtml: 'Dansk · substantiv',
         rebrandOnboardingDefinitionHtml:
-            '<em class="rebrand-definition-quote">\u201cet frit sted; et frirum.\u201d</em> Et klart og uforstyrret rum, fri for de apps og websites, der tr\u00e6kker dig v\u00e6k.',
+            '<em class="rebrand-definition-quote">“et rum; et frirum.”</em> Et klart og uforstyrret rum, fri for de apps og websites, der trækker dig væk.',
+        rebrandOnboardingFootnoteHtml:
+            'Samme ord som engelsk <span class="rebrand-definition-highlight">“room”</span> — ikke drinken.',
         rebrandOnboardingContinueBtn: 'Fortsæt',
         // Welcome onboarding (before EULA)
-        welcomeOnboardingTitle: 'Velkommen til Fristed',
+        welcomeOnboardingTitle: 'Velkommen til Rum',
         welcomeOnboardingSubtitle:
-            'Bloker de websites og apps, der distraherer dig, og skab plads og ro til fokus.',
+            'Skab et distraktionsfrit rum til fokus',
         welcomeHowHeading: 'TRIN FOR AT KOMME I GANG (vi guider dig igennem det 😊)',
         welcomeStep1TitleAutomationHtml: 'Tillad {APPLE}Automatisering',
         welcomeStep1BodyAutomationHtml:
-            'I Safari, Chrome, Brave og Edge bruger <em>Fristed</em> Automatisering til at blokere websites. Vi beder dig om at tillade adgang.',
+            'I Safari, Chrome, Brave og Edge bruger <em>Rum</em> Automatisering til at blokere websites. Vi beder dig om at tillade adgang.',
         welcomeStep2TitleFirefoxHtml: 'Opsæt {LOGO}ReDD Focus i Firefox',
         welcomeStep2BodyFirefoxHtml:
             'Blokering i Firefox bruger vores <strong>ReDD Focus</strong>-udvidelse. Vi guider dig gennem installation fra Firefoxs tilføjelsesbutik.',
@@ -18895,7 +19625,7 @@ const SETTINGS_TRANSLATIONS = {
             'Vores {LOGO}<strong>ReDD Focus</strong>-udvidelse er det, der faktisk blokerer websites. Vi installerer den automatisk i dine browsere, hvor vi kan, og viser dig, hvad du skal gøre.',
         welcomeStep3TitleHtml: 'Vælg, hvad der skal blokeres',
         welcomeStep3BodyHtml:
-            'Vælg de websites og apps, der distraherer dig, og bestem hvornår de skal være utilgængelige. <em>Fristed</em> klarer resten.',
+            'Vælg de websites og apps, der distraherer dig, og bestem hvornår de skal være utilgængelige. <em>Rum</em> klarer resten.',
         welcomeDemoToggleLabel: 'Se det i aktion — 30 sek.',
         welcomeDemoVideoCaption: 'Demo — blokeringslister og hvordan blokering føles',
         welcomeDemoPlayAriaLabel: 'Afspil demovideo',
@@ -18910,38 +19640,38 @@ const SETTINGS_TRANSLATIONS = {
             '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Se kildekoden på GitHub</a>.',
         welcomeOnboardingContinueBtn: 'Kom i gang',
         // Migration / extension onboarding overlay
-        migrationPreWelcomeTitle: 'Velkommen til Fristed 2.0',
+        migrationPreWelcomeTitle: 'Velkommen til Rum 2.0',
         migrationPreSubtitle: 'Et engangskridt er nødvendigt for at afslutte opgraderingen.',
-        migrationPreExplainerHtml: 'Fristed blokerer nu websites via en browserudvidelse i stedet for et systemværktøj.<br>Vi skal:',
+        migrationPreExplainerHtml: 'Rum blokerer nu websites via en browserudvidelse i stedet for et systemværktøj.<br>Vi skal:',
         migrationPreBulletHelper: 'Stoppe og fjerne det gamle privilegerede hjælpeprogram',
         migrationPreBulletHostsHtml: 'Gendanne din <code>/etc/hosts</code>-fil (en backup beholdes)',
         migrationPreBulletBlocklists: 'Beholde alle dine eksisterende bloklister',
-        migrationPreWarnHtml: 'Du vil få <strong>én</strong> prompt om administratoradgang. Under skiftet sættes blokering kortvarigt på pause. Efter oprydningen sætter Fristed <strong>ReDD Focus</strong> op i dine browsere automatisk — du skal bare tillade den i private/inkognitofaner.',
+        migrationPreWarnHtml: 'Du vil få <strong>én</strong> prompt om administratoradgang. Under skiftet sættes blokering kortvarigt på pause. Efter oprydningen sætter Rum <strong>ReDD Focus</strong> op i dine browsere automatisk — du skal bare tillade den i private/inkognitofaner.',
         migrationContinue: 'Fortsæt',
         migrationPostTitleCleanup: 'Oprydning fuldført',
         migrationPostSubtitleCleanup: 'Næsten færdig — afslut opsætningen af ReDD Focus i hver browser, du bruger.',
         migrationChecklistCleanedOld: 'Gammel version fjernet',
         migrationChecklistBlocklistsPreserved: 'Dine bloklister er bevaret',
         migrationChecklistExtLinesHtml: 'Aktivér {LOGO}ReDD Focus i dine browsere<br><span style="font-weight:400;opacity:0.7">og tillad den i privat- eller inkognitofaner</span>',
-        migrationExtTitleMac: 'Tillad Fristed i dine browsere',
+        migrationExtTitleMac: 'Tillad Rum i dine browsere',
         migrationExtSubMac: 'Websiteblokering bruger <strong>macOS-automatisering</strong> i Safari, Chrome og Edge.',
         migrationExtSubMacFirefox: 'Websiteblokering bruger <strong>macOS-automatisering</strong> i Safari, Chrome og Edge og <strong>ReDD Focus-udvidelsen</strong> i Firefox.',
-        migrationExtStep1Mac: 'Klik på <strong>Giv adgang</strong> for hver browser nedenfor, og godkend macOS-prompten. Hvis du ser <strong>Åbn Automatisering</strong>, klik på den og slå Fristed til igen.',
+        migrationExtStep1Mac: 'Klik på <strong>Giv adgang</strong> for hver browser nedenfor, og godkend macOS-prompten. Hvis du ser <strong>Åbn Automatisering</strong>, klik på den og slå Rum til igen.',
         migrationExtStep2MacFirefox: 'Til Firefox: klik på <strong>Installer</strong> nedenfor for at tilføje {FOCUS}<strong>ReDD Focus</strong> fra tilføjelsesbutikken, og tillad den derefter i private vinduer.',
         migrationHowtoHeading: 'Opsætning',
-        migrationHowtoLi1Html: 'Fristed har forsøgt at installere ReDD Focus i dine browsere. Hvis den vises som ikke installeret nedenfor, klik på <strong>Installer</strong>-knapperne for at tilføje den manuelt.',
+        migrationHowtoLi1Html: 'Rum har forsøgt at installere ReDD Focus i dine browsere. Hvis den vises som ikke installeret nedenfor, klik på <strong>Installer</strong>-knapperne for at tilføje den manuelt.',
         migrationHowtoLi3Html: 'Når den er aktiveret, <strong>tillad den i privat/inkognito-faner</strong>, så blokering også virker i private vinduer.',
         migrationBadgeAutomationOn: 'Tilladt',
         migrationBadgeAutomationOff: 'Tilladelse mangler',
         migrationBadgeAutomationUnknown: 'Status ukendt',
         migrationAutomationAwaitingOpenHint: 'Åbn {browser}, så vi kan tjekke, om Automatisering er tilladt. macOS viser kun denne tilladelse, mens browseren kører.',
-        migrationAutomationGrantHint: 'Tillad Fristed at styre {browser}, så den kan lukke distraherende faner, mens en blokering kører.',
-        migrationAutomationDeniedHint: 'Tilladelse til {browser} er slået fra. Slå Fristed til igen under Automatisering, så blokering virker igen.',
+        migrationAutomationGrantHint: 'Tillad Rum at styre {browser}, så den kan lukke distraherende faner, mens en blokering kører.',
+        migrationAutomationDeniedHint: 'Tilladelse til {browser} er slået fra. Slå Rum til igen under Automatisering, så blokering virker igen.',
         migrationGrantAutomation: 'Giv adgang til {browser}',
         migrationGrantAutomationOpened: 'Åbnede Automatisering',
         migrationOpenAutomationSettings: 'Åbn Automatisering',
-        webAutomationBannerHeadline: 'Tillad Fristed at styre din browser',
-        webAutomationBannerBody: 'Fristed skal have tilladelse til at styre {browsers} for at blokere websteder. Slå det til under Anonymitet & sikkerhed → Automatisering, så træder blokeringen i kraft.',
+        webAutomationBannerHeadline: 'Tillad Rum at styre din browser',
+        webAutomationBannerBody: 'Rum skal have tilladelse til at styre {browsers} for at blokere websteder. Slå det til under Anonymitet & sikkerhed → Automatisering, så træder blokeringen i kraft.',
         migrationDone: 'Jeg er klar',
         migrationSkip: 'Spring over for nu',
         migrationSetupAllReadyOne: '<strong>Din browser er klar.</strong> Du kan afslutte opsætningen.',
@@ -18970,20 +19700,20 @@ const SETTINGS_TRANSLATIONS = {
         migrationBadgeNoWebsiteAccess: 'Ingen webadgang',
         migrationBadgeDuplicateSafari: '⚠ To kopier installeret',
         migrationStatusDuplicateSafari: 'Deaktivér den ekstra kopi',
-        migrationSafariDuplicateIntroHtml: 'Du har <strong>ReDD Focus: Hide Distractions</strong> fra App Store <em>og</em> kopien, der følger med Fristed. De kan ikke begge være aktive — behold kun én.',
+        migrationSafariDuplicateIntroHtml: 'Du har <strong>ReDD Focus: Hide Distractions</strong> fra App Store <em>og</em> kopien, der følger med Rum. De kan ikke begge være aktive — behold kun én.',
         migrationSafariDuplicateInstructionsHeading: 'I Safari → Indstillinger → Udvidelser',
-        migrationSafariDuplicateStep1Html: 'Find <strong>ReDD Focus: Hide Distractions</strong> — App Store-kopien (ikke “via Fristed”) — og fjern markeringen <span class="safari-duplicate-checkbox" role="img" aria-label="Ikke markeret"></span>.',
-        migrationSafariDuplicateStep2Html: 'Sørg for, at afkrydsningsfeltet <span class="safari-duplicate-checkbox safari-duplicate-checkbox-checked" role="img" aria-label="Markeret"></span> er markeret for <strong>ReDD Focus (via Fristed)</strong>. Det er den, denne app styrer.',
+        migrationSafariDuplicateStep1Html: 'Find <strong>ReDD Focus: Hide Distractions</strong> — App Store-kopien (ikke “via Rum”) — og fjern markeringen <span class="safari-duplicate-checkbox" role="img" aria-label="Ikke markeret"></span>.',
+        migrationSafariDuplicateStep2Html: 'Sørg for, at afkrydsningsfeltet <span class="safari-duplicate-checkbox safari-duplicate-checkbox-checked" role="img" aria-label="Markeret"></span> er markeret for <strong>ReDD Focus (via Rum)</strong>. Det er den, denne app styrer.',
         migrationSafariDuplicateOpenBtn: 'Åbn Safari-udvidelser…',
         migrationSafariDuplicateHelpLink: 'Hvordan skete det?',
-        migrationSafariDuplicateHelpText: 'Hvis du tidligere installerede ReDD Focus fra App Store og senere installerede Fristed, beholder Safari begge udvidelser. Fristed virker kun med den bundtede kopi.',
+        migrationSafariDuplicateHelpText: 'Hvis du tidligere installerede ReDD Focus fra App Store og senere installerede Rum, beholder Safari begge udvidelser. Rum virker kun med den bundtede kopi.',
         migrationStatusAllowAllWebsites: 'Tillad på alle websites',
         migrationStatusAllowPrivate: 'Tillad privat browsing',
         migrationStatusEnableExtension: 'Aktivér udvidelse',
         migrationStatusInstall: 'Installer',
-        migrationStatusNativeHost: 'Forbind Fristed',
-        migrationBadgeNativeHost: 'Forbind Fristed',
-        migrationFirefoxNativeHostHtml: 'ReDD Focus er installeret. Fristed skal stadig registrere forbindelsen til Firefox (ét lille trin).',
+        migrationStatusNativeHost: 'Forbind Rum',
+        migrationBadgeNativeHost: 'Forbind Rum',
+        migrationFirefoxNativeHostHtml: 'ReDD Focus er installeret. Rum skal stadig registrere forbindelsen til Firefox (ét lille trin).',
         migrationFirefoxNativeHostButton: 'Forbind til Firefox',
         migrationInstallButton: 'Installer',
         migrationInstallOpened: 'Åbnede udvidelsesbutik',
@@ -19002,11 +19732,11 @@ const SETTINGS_TRANSLATIONS = {
         migrationSafariChecklistLine: 'Trin {n} — {label}',
         migrationOpenExtensionSettings: 'Åbn udvidelsesindstillinger',
         migrationShowMeHow: 'Vis mig hvordan',
-        migrationPostInstallFirefoxHtml: 'Fristed har allerede sat auto-installation op for ReDD Focus i Firefox — <strong>genstart Firefox</strong> for at hente den ind. (Eller klik på <strong>Installer</strong> nedenfor for at tilføje den manuelt — markér <strong>Allow extension to run in private windows</strong> under installationen.)',
+        migrationPostInstallFirefoxHtml: 'Rum har allerede sat auto-installation op for ReDD Focus i Firefox — <strong>genstart Firefox</strong> for at hente den ind. (Eller klik på <strong>Installer</strong> nedenfor for at tilføje den manuelt — markér <strong>Allow extension to run in private windows</strong> under installationen.)',
         migrationPostInstallFirefoxMacHtml: 'Installer ReDD Focus fra Firefoxs tilføjelsesbutik — klik på <strong>Installer</strong> nedenfor, og markér <strong>Allow extension to run in private windows</strong> under installationen.',
         migrationPostInstallSafariHtml: 'Installer ReDD Focus fra Mac App Store — klik på <strong>Installer</strong> nedenfor. Når den er installeret, vend tilbage hertil, så guider vi dig gennem aktivering i Safari.',
         migrationPostInstallChromiumMacHtml: 'Installer ReDD Focus fra {BROWSER}-butikken — klik på <strong>Installer</strong> nedenfor. Når den er installeret, vend tilbage hertil, så guider vi dig gennem aktivering og tilladelse i {PRIV}-faner.',
-        migrationPostInstallChromiumHtml: 'Fristed har allerede sat auto-installation op for ReDD Focus i {BROWSER} — <strong>genstart {BROWSER}</strong> for at hente den ind. (Eller klik på <strong>Installer</strong> nedenfor for at tilføje den manuelt nu.)',
+        migrationPostInstallChromiumHtml: 'Rum har allerede sat auto-installation op for ReDD Focus i {BROWSER} — <strong>genstart {BROWSER}</strong> for at hente den ind. (Eller klik på <strong>Installer</strong> nedenfor for at tilføje den manuelt nu.)',
         migrationInstructionEnableHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → find <strong>ReDD Focus</strong> → aktivér udvidelsen.',
         migrationInstructionWebsiteAccessHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → klik på <strong>Details</strong> ved ReDD Focus → tillad på <strong>alle websites</strong>.',
         migrationInstructionFirefoxPrivateHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → klik på <strong>ReDD Focus</strong> → slå <strong>Run in {PRIV}</strong> til.',
@@ -19044,7 +19774,7 @@ const SETTINGS_TRANSLATIONS = {
         enforcerCountdownDelayNote: '(ændringer kan tage op til 20 sekunder at registrere).',
         enforcerCountdownInstrPrivate: 'Blokering er ikke aktiveret i private vinduer. Aktivér Tillad i privat browsing for ReDD Focus for at stoppe nedtællingen.',
         enforcerCountdownInstrWebsiteAccess: 'ReDD Focus er ikke tilladt på alle websites. Tillad alle websites for at stoppe nedtællingen.',
-        enforcerCountdownInstrAccess: 'Fristed kan ikke bekræfte ReDD Focus. Giv adgang for at stoppe nedtællingen.',
+        enforcerCountdownInstrAccess: 'Rum kan ikke bekræfte ReDD Focus. Giv adgang for at stoppe nedtællingen.',
         enforcerCountdownInstrDefault: 'ReDD Focus er ikke klar. Færdiggør opsætningen for at stoppe nedtællingen.',
         enforcerCountdownInstrMultiple: 'Ret ReDD Focus i hver browser nedenfor for at stoppe nedtællingen.',
         enforcerCountdownDefault: '{browser} lukkes automatisk hvis ReDD Focus ikke er klar, for at understøtte din blokering.',
@@ -19059,9 +19789,9 @@ const SETTINGS_TRANSLATIONS = {
         enforcerHeadlinePrivate: 'Privat browsing i {browser} er ikke dækket af ReDD Focus endnu.',
         enforcerHeadlineWebsiteAccess: '{browser} har ikke givet ReDD Focus adgang på alle websites endnu.',
         enforcerInstrWebsiteAccessPlain: 'I {browser}s udvidelsesindstillinger: tillad ReDD Focus på alle websites.',
-        enforcerHeadlineAccess: 'Fristed kan ikke bekræfte ReDD Focus i {browser}.',
+        enforcerHeadlineAccess: 'Rum kan ikke bekræfte ReDD Focus i {browser}.',
         enforcerInstrAccessSafari: 'Åbn Safaris udvidelsesindstillinger, og færdiggør opsætningen af ReDD Focus.',
-        enforcerInstrAccessBrowser: 'Giv adgang, så Fristed kan hjælpe med at tjekke {browser}.',
+        enforcerInstrAccessBrowser: 'Giv adgang, så Rum kan hjælpe med at tjekke {browser}.',
         enforcerHeadlineDefault: 'ReDD Focus er ikke helt klar i {browser} endnu.',
         enforcerInstrDefault: 'Færdiggør ReDD Focus i {browser}s udvidelsesindstillinger.',
         enforcerActionInstall: 'Installer ReDD Focus',
@@ -19071,13 +19801,13 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedDisabled: '{browser} blev lukket for at bakke din blok op—ReDD Focus var slået fra.',
         enforcerClosedPrivate: '{browser} blev lukket for at bakke din blok op—private faner var stadig en åbning.',
         enforcerClosedWebsiteAccess: '{browser} blev lukket for at bakke din blok op—ReDD Focus kunne ikke dække alle websites endnu.',
-        enforcerClosedAccess: '{browser} blev lukket, så din beskyttelse kunne være tydelig—Fristed kunne ikke bekræfte ReDD Focus.',
+        enforcerClosedAccess: '{browser} blev lukket, så din beskyttelse kunne være tydelig—Rum kunne ikke bekræfte ReDD Focus.',
         enforcerClosedDefault: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke helt klar.',
         enforcerClosedCombinedMissing: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke installeret endnu.',
         enforcerClosedCombinedDisabled: '{browser} blev lukket for at bakke din blok op—ReDD Focus var slået fra.',
         enforcerClosedCombinedPrivate: '{browser} blev lukket for at bakke din blok op—private faner var stadig en åbning.',
         enforcerClosedCombinedWebsiteAccess: '{browser} blev lukket for at bakke din blok op—ReDD Focus kunne ikke dække alle websites endnu.',
-        enforcerClosedCombinedAccess: '{browser} blev lukket, så din beskyttelse kunne være tydelig—Fristed kunne ikke bekræfte ReDD Focus.',
+        enforcerClosedCombinedAccess: '{browser} blev lukket, så din beskyttelse kunne være tydelig—Rum kunne ikke bekræfte ReDD Focus.',
         enforcerClosedCombinedDefault: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke helt klar.',
         enforcerClosedInstrPrivateChrome: 'I Chrome: ReDD Focus → Details → Allow in Incognito.',
         enforcerClosedInstrPrivateFirefox: 'I Firefox: ReDD Focus → Run in Private Windows → Allow.',
@@ -19088,13 +19818,13 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedInstrWebsiteAccess: 'I {browser}s udvidelsesindstillinger: tillad ReDD Focus på alle websites.',
         enforcerClosedInstrAccessSafari: 'Åbn Safari → Indstillinger → Udvidelser, og færdiggør opsætningen af ReDD Focus.',
         enforcerClosedInstrDefault: 'Færdiggør ReDD Focus i {browser}s udvidelsesindstillinger.',
-        enforcerHeadlineAutomation: 'Fristed kan ikke styre {browser} lige nu.',
+        enforcerHeadlineAutomation: 'Rum kan ikke styre {browser} lige nu.',
         enforcerCountdownInstrAutomation: 'Slå Automatisering til igen for at bevare din blokering.',
-        enforcerInstrAutomation: 'Slå Fristed til igen for {browser} under Systemindstillinger → Anonymitet & sikkerhed → Automatisering, så virker din blokering igen.',
-        enforcerClosedAutomation: '{browser} blev lukket, fordi Fristed ikke kunne styre den.',
-        enforcerClosedInstrAutomation: 'Slå Fristed til igen for {browser} under Anonymitet & sikkerhed → Automatisering.',
-        enforcerClosedCombinedAutomation: '{browser} blev lukket, fordi Fristed ikke kunne styre dem.',
-        enforcerClosedInstrAutomationGeneric: 'Slå Fristed til igen for {browser} under Anonymitet & sikkerhed → Automatisering.',
+        enforcerInstrAutomation: 'Slå Rum til igen for {browser} under Systemindstillinger → Anonymitet & sikkerhed → Automatisering, så virker din blokering igen.',
+        enforcerClosedAutomation: '{browser} blev lukket, fordi Rum ikke kunne styre den.',
+        enforcerClosedInstrAutomation: 'Slå Rum til igen for {browser} under Anonymitet & sikkerhed → Automatisering.',
+        enforcerClosedCombinedAutomation: '{browser} blev lukket, fordi Rum ikke kunne styre dem.',
+        enforcerClosedInstrAutomationGeneric: 'Slå Rum til igen for {browser} under Anonymitet & sikkerhed → Automatisering.',
         enforcerBrowserFallback: 'din browser',
         gracePeriodLabel: 'Henstandsperiode',
         gracePeriodHint: 'Sekunder til at slå til igen, før browseren lukkes.',
@@ -19113,6 +19843,8 @@ const SETTINGS_TRANSLATIONS = {
         settingsEnforcementRowHintExtension: 'Hvis ReDD Focus deaktiveres midt i en blokering.',
         settingsEnforcementLockedTooltip: 'For at ændre denne indstilling skal du først stoppe alle aktive blokeringer.',
         settingsDiagnosticsLabel: 'Virker noget ikke?',
+        onboardingOpenSourceFootnote:
+            'Udviklet af Reduce Digital Distraction Project sammen med forskere ved University of Oxford og Maastricht University. ReDD er en non-profit, der skaber open source digitale fokusværktøjer.',
         settingsSetupBtn: 'Opsætning',
         settingsDiagnosticsBtn: 'Diagnostik',
         diagnosticsLoadingBtn: 'Indlæser…',
@@ -19135,7 +19867,7 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsBrowsersSectionHintMacExtension: 'Browsere her bruger ReDD Focus-udvidelsen (installer, aktiver og tillad privat browsing).',
         diagnosticsBrowsersSectionHint: 'Status for ReDD Focus-udvidelsen i browsere på denne computer.',
         diagnosticsAutomationSection: 'Automatisering (macOS)',
-        diagnosticsAutomationSectionHint: 'Fristed skal have Automatisering-tilladelse for at omdirigere blokerede faner i hver browser. Giv tilladelse i Systemindstillinger → Privatliv og sikkerhed → Automatisering.',
+        diagnosticsAutomationSectionHint: 'Rum skal have Automatisering-tilladelse for at omdirigere blokerede faner i hver browser. Giv tilladelse i Systemindstillinger → Privatliv og sikkerhed → Automatisering.',
         diagnosticsThAutomation: 'Automatisering',
         diagnosticsAutomationGranted: 'Tilladt',
         diagnosticsAutomationDenied: 'Afvist',
@@ -19183,17 +19915,22 @@ const SETTINGS_TRANSLATIONS = {
         settingsBlocklistsIoHint: 'Gem en sikkerhedskopi, eller gendan fra en fil.',
         settingsExportBlocklistsBtn: 'Eksportér',
         settingsImportBlocklistsBtn: 'Importér',
-        exportBlocklistsSaveTitle: 'Eksportér bloklister og tidsplaner',
-        exportBlocklistsEmpty: 'Du har ingen bloklister at eksportere.',
+        exportBlocklistsSaveTitle: 'Eksportér bloklister',
+        exportBlocklistsFailedTitle: 'Kunne ikke eksportere bloklister',
+        exportBlocklistsSuccessTitle: 'Bloklister eksporteret',
+        exportBlocklistsEmpty: 'Der er ingen bloklister at eksportere.',
         exportBlocklistsSuccessFmt: 'Eksporterede {n} blokliste(r) og deres tidsplaner til:\n{path}',
-        exportBlocklistsFailed: 'Kunne ikke eksportere bloklister.',
-        importBlocklistsOpenTitle: 'Importér bloklister og tidsplaner',
-        importBlocklistsInvalidFile: 'Filen indeholder ingen gyldige bloklister.',
-        importBlocklistsParseFailed: 'Kunne ikke læse filen. Tjek at den er gyldig JSON.',
+        exportBlocklistsFailed: 'Der opstod en fejl under eksport af dine bloklister. Prøv igen.',
+        importBlocklistsOpenTitle: 'Importér bloklister',
+        importBlocklistsDialogTitle: 'Importér bloklister',
+        importBlocklistsFailedTitle: 'Kunne ikke importere bloklister',
+        importBlocklistsSuccessTitle: 'Bloklister importeret',
+        importBlocklistsInvalidFile: 'Den valgte fil indeholder ingen gyldige bloklister.',
+        importBlocklistsParseFailed: 'Der opstod en fejl under læsning af den valgte fil. Tjek at den er gyldig JSON.',
         importBlocklistsConfirmFmt:
             'Importér {n} blokliste(r) fra denne fil?\n\nDe tilføjes til dine eksisterende bloklister. Eventuelle tidsplaner gendannes som kladder — start dem manuelt, når du er klar.',
-        importBlocklistsSuccessFmt: 'Importerede {n} blokliste(r). Tidsplaner er gemt som kladder og kører ikke endnu.',
-        importBlocklistsFailed: 'Kunne ikke importere bloklister.',
+        importBlocklistsSuccessFmt: 'Importerede {n} blokliste(r) og deres tidsplaner. Tidsplaner er gendannet som kladder — start dem manuelt, når du er klar.',
+        importBlocklistsFailed: 'Der opstod en fejl under import af dine bloklister. Prøv igen.',
         importBlocklistDefaultName: 'Importeret blokliste',
         gracePeriodLockedHint: 'Låst mens en blokering er aktiv—kun kortere tider tilladt.',
         appBlockingLetsGo: 'Fortsæt',
@@ -19227,24 +19964,36 @@ const SETTINGS_TRANSLATIONS = {
         placeholderAppExample: 'f.eks. Safari',
         invalidDomainMsg: 'Indtast et gyldigt domæne (f.eks. reddit.com)',
         cannotBlockDomainPlaceholder: '⚠️ Dette domæne kan ikke blokeres!',
-        cannotBlockSelfAppPlaceholder: '⚠️ Fristed kan ikke blokere sig selv!',
+        cannotBlockSelfAppPlaceholder: '⚠️ Rum kan ikke blokere sig selv!',
         // Start/schedule controls
-        durationQuickAlways: 'Altid',
-        alwaysOnMessage: 'Denne blokering forbliver aktiv, indtil du pauser den eller slår den fra',
+        durationQuick15m: '15m',
+        durationQuick30m: '30m',
+        durationQuick45m: '45m',
+        durationQuick1Hour: '1 time',
+        durationQuick2Hours: '2 timer',
+        durationQuickAlways: 'Indtil jeg stopper',
+        alwaysOnMessage: 'Du bliver i dette rum, indtil du pauser eller forlader det',
         duration: 'Varighed',
         durationUnitMin: 'min',
         end: 'Slut',
         nextDay: 'dag',
-        quickSelect: 'Hurtigvalg',
+        quickSelect: 'Hvor længe?',
         start: 'Start',
         days: 'Dage',
         add: 'Tilføj tider',
+        scheduleWhenHeading: 'Når dette rum åbner',
+        segmentDaysWeekdays: 'Hverdage',
+        segmentDaysWeekends: 'Weekender',
+        segmentDaysEveryDay: 'Hver dag',
+        segmentDaysNone: 'Ingen dage',
+        segmentDone: 'Færdig',
+        segmentDelete: 'Slet',
         repeat: 'Gentag ugeskema:',
         repeatNo: 'Nej',
         repeatForever: 'For evigt',
         repeatUntilDate: 'Indtil dato',
         pause: 'Pause',
-        startBlockButton: 'Start blokering',
+        startBlockButton: 'Gå ind i rum',
         startScheduleButton: 'Start skema',
         stopScheduleButton: 'Stop skema',
         stopBlockMetaColon: ':',
@@ -19257,29 +20006,36 @@ const SETTINGS_TRANSLATIONS = {
         saveChangesTitleFmt: 'Gem ændringer til {name}?',
         addingTheseSegments: 'Tilføjer disse tidssegmenter:',
         // Blocklist modal
-        createBlocklist: 'Opret blokliste',
-        editBlocklist: 'Rediger blokliste',
+        createBlocklist: 'Opret rum',
+        editBlocklist: 'Rediger rum',
         activeBlocklistWarning: 'Denne blokliste er aktiv. Nogle indstillinger er låst.',
         name: 'Navn',
-        websites: 'hjemmesider',
+        websites: 'Hjemmesider at blokere',
         websitesTooltip: 'Blokering gælder hele domæner. Hvis du fx skriver "facebook.com", blokeres hele Facebook, ikke kun specifikke sider.',
-        apps: 'Apps',
+        apps: 'Apps at blokere',
         appsTooltip: 'Indtast det præcise navn på appen (fx "Safari"). Du kan også bruge mappeknappen til at finde appen.',
-        overrideDifficulty: 'Sværhedsgrad',
+        overrideDifficulty: 'Sværhedsgrad ved exit',
+        overrideMethod: 'Metode',
+        overrideWordsToType: 'Ord at taste',
+        overrideCharsToType: 'Tegn at taste',
         overrideRandomWords: 'Tilfældige ord',
         overrideGibberish: 'Tilfældig volapyk',
         overrideCustomText: 'Egen tekst',
         overrideMaxDifficulty: 'Max sværhed',
+        overrideMaxDifficultyHintWords: '{count} ord',
+        overrideMaxDifficultyHintChars: '{count} tegn',
+        overridePreviewLooksLike: 'Ser sådan ud',
+        overrideCountTimeEstimate: '~{minutes} min',
+        overrideCountTimeEstimateDa: '~{minutes} {unit}',
         totalCharacters: 'tegn i alt',
         totalWords: 'ord i alt',
-        overridePreviewTimeLine: 'Tager cirka {minutes} {unit} at taste og ser nogenlunde sådan her ud:',
         color: 'Farve',
         emoji: 'Emoji',
         advancedOptions: 'Avancerede indstillinger',
         listBlockedOnCard: 'Vis navnet på blokerede websites og apps i oversigten',
         importWebsitesTitle: 'Importér websites',
         browseApplicationsTitle: 'Gennemse programmer',
-        modalPremadeListsCaption: 'Færdiglavede lister',
+        modalPremadeListsCaption: 'Lister',
         modalBrowseAppsCaption: 'Vælg apps',
         modalBrowseAppsTitleIos: 'Vælg apps (Screen Time)',
         importWebsitesPickFileTitle: 'Vælg en fil med ét domæne pr. linje',
@@ -19297,54 +20053,54 @@ const SETTINGS_TRANSLATIONS = {
         // Override / pause / confirmation modals
         overrideBlockTitle: 'Overstyr blokering?',
         overrideInstruction: 'For at stoppe denne blokering tidligt, skriv følgende:',
-        stopBlock: 'Stop blokering',
+        stopBlock: 'Forlad rum',
         stopSchedule: 'Stop skema',
         pauseBlockTitle: 'Sæt blokering på pause',
         pauseFor: 'PAUSE I',
         restartsAt: 'STARTER IGEN KL.',
         pauseInstruction: 'For at pause denne blokering, skriv følgende:',
         helperSetupTitle: 'Opsætning påkrævet',
-        helperSetupText: 'For at blokere websites, når appen er lukket, skal Fristed installere en lille baggrundstjeneste. Din computer beder om adgangskode én gang — derefter starter blokeringer med det samme uden ny prompt.',
+        helperSetupText: 'For at blokere websites, når appen er lukket, skal Rum installere en lille baggrundstjeneste. Din computer beder om adgangskode én gang — derefter starter blokeringer med det samme uden ny prompt.',
         helperRepairTitle: 'Reparation af helper påkrævet',
-        helperRepairText: 'Der er allerede installeret en helper-tjeneste, men den kører ikke lige nu. Fristed skal geninstallere eller reparere den, før denne blokering kan starte. Din computer kan bede om adgangskode for at fuldføre reparationen.',
+        helperRepairText: 'Der er allerede installeret en helper-tjeneste, men den kører ikke lige nu. Rum skal geninstallere eller reparere den, før denne blokering kan starte. Din computer kan bede om adgangskode for at fuldføre reparationen.',
         helperUpdateTitle: 'Helper-opdatering påkrævet',
         helperUpdateText: 'Der er allerede installeret en helper-tjeneste, men den skal opdateres, før denne blokering kan starte. Din computer beder om adgangskode for at gennemføre opdateringen.',
-        helperOpenSourceLink: 'open source-koden til Fristed her',
+        helperOpenSourceLink: 'open source-koden til Rum her',
         proceed: 'Fortsæt',
         reinstallHelper: 'Geninstaller helper',
         helperInstalling: 'Installerer...',
         helperUpdating: 'Opdaterer...',
         helperReinstalling: 'Geninstallerer...',
-        startThisBlock: 'Start denne blokering?',
-        startBlockTitleFmt: 'Start blokeringen “{name}”?',
+        startThisBlock: 'Gå ind i rummet?',
+        startBlockTitleFmt: 'Gå ind i rummet “{name}”?',
         resumeBlockTitleFmt: 'Genoptag blokeringen “{name}”?',
-        startBlockSubtitleFmt: 'Distraherende apps og sider er stille de næste <strong>{duration}</strong>.',
-        startBlockSubtitleAlways: 'Distraherende apps og sider forbliver stille, indtil du slår blokeringen fra.',
+        startBlockSubtitleFmt: 'Dine blokerede hjemmesider og apps er stille de næste <strong>{duration}</strong>.',
+        startBlockSubtitleAlways: 'Dine blokerede hjemmesider og apps er stille, indtil du forlader rummet.',
         resumeBlockSubtitle: 'Fortsæt hvor du slap med denne blokering.',
         startConfirmBlockingLabel: 'Blokering',
         startConfirmDurationLabel: 'Varighed',
         startConfirmTimesLabel: 'Tider',
         startConfirmRepeatsLabel: 'Gentages',
         startConfirmDurationLineFmt: '{duration} · <span class="start-confirm-duration-meta">slutter ~{ends}</span>',
-        startConfirmRepeatForever: '<strong>Hver uge</strong> · ingen slutdato',
-        startConfirmRepeatUntilFmt: '<strong>Hver uge</strong> · indtil {date}',
-        startConfirmRepeatNone: '<strong>Kun én uge</strong> · gentages ikke',
-        startBlockHoldHeader: 'For at stoppe denne blokering skal du:',
-        startScheduleHoldHeader: 'For at stoppe denne blokering skal du:',
-        saveChangesHoldHeader: 'For at stoppe denne blokering skal du:',
+        startConfirmRepeatForever: 'Hver uge · ingen slutdato',
+        startConfirmRepeatUntilFmt: 'Hver uge · indtil {date}',
+        startConfirmRepeatNone: 'Kun én uge · gentages ikke',
+        startBlockHoldHeader: 'At forlade rummet tidligt tager et øjeblik — med vilje.',
+        startScheduleHoldHeader: 'At forlade rummet tidligt tager et øjeblik — med vilje.',
+        saveChangesHoldHeader: 'At forlade rummet tidligt tager et øjeblik — med vilje.',
         blockedWebsites: 'Blokerede hjemmesider:',
         blockedApps: 'Blokerede apps:',
         showAll: 'vis alle',
         confirmDuration: 'Varighed:',
         confirmOverrideNeed: 'For at stoppe denne blokering tidligt skal du:',
-        startBlock: 'Start blokering',
+        startBlock: 'Gå ind i rum',
         resumeBlock: 'Genoptag blokering',
         resumeThisBlock: 'Genoptag blokering?',
-        alwaysUntilOff: 'Altid (indtil den slås fra)',
+        alwaysUntilOff: 'Altid (indtil du pauser eller forlader)',
         scheduleResumingSegment: 'Skema (genoptager nuværende segment)',
         startThisSchedule: 'Start dette skema?',
         startScheduleTitleFmt: 'Start skemaet “{name}”?',
-        startScheduleSubtitle: 'Blokeringer kører automatisk på tidspunkterne vist nedenfor.',
+        startScheduleSubtitle: 'Dine blokerede hjemmesider og apps er stille på tidspunkterne vist nedenfor.',
         scheduleConfirmOverlayLabel: 'Startbesked',
         scheduleActiveOverlayLabel: 'Startbesked:',
         scheduleConfirmOverlayDefaultTitle: 'Standard',
@@ -19418,17 +20174,18 @@ const SETTINGS_TRANSLATIONS = {
         confirmScheduleOverrideNeed: 'For at stoppe dette blokeringsskema skal du:',
         saveChangesOverrideNeed: 'For at stoppe dette skema skal du:',
         confirmOverrideRandomWordsFmt:
-            'Skrive {count} {charUnit}, vist som tilfældige ord, præcis som der står (~{minutes} min).',
+            'Skriv <strong>{count} {charUnit} præcis som vist</strong> (~{minutes} min) for at forlade.',
         confirmOverrideRandomWordsIosFmt:
-            'Skrive {count} tilfældige {wordUnit} præcis som der står (~{minutes} min).',
+            'Skriv <strong>{count} tilfældige {wordUnit} præcis som vist</strong> (~{minutes} min) for at forlade.',
         confirmOverrideGibberishLettersFmt:
-            'Skrive {count} tilfældige tegn (bogstaver og tal), præcis som der står (~{minutes} min).',
+            'Skriv <strong>{count} tilfældige {charUnit} præcis som vist</strong> (~{minutes} min) for at forlade.',
         confirmOverrideGibberishWordsFmt:
-            'Skrive {count} tilfældige {wordUnit} (6 tegn hver) præcis som der står (~{minutes} min).',
+            'Skriv <strong>{count} tilfældige {wordUnit} præcis som vist</strong> (~{minutes} min) for at forlade.',
         confirmOverrideGibberishShortFmt:
-            'Skrive {count} tilfældige tegn præcis som der står (~{minutes} min).',
+            'Skriv <strong>{count} tilfældige tegn præcis som vist</strong> (~{minutes} min) for at forlade.',
         confirmOverrideCustomPhraseFmt:
-            'Skrive et bestemt udtryk på {count} tegn præcis som der står (~{minutes} min).',
+            'Skriv en <strong>bestemt sætning på {count} tegn præcis som vist</strong> (~{minutes} min) for at forlade.',
+        confirmOverrideIntentionSuffix: 'Det hjælper dig med at holde fast i din intention.',
         startSchedule: 'Start skema',
         noDaysSelected: 'Ingen dage valgt',
         runningSuffix: ' (Kører)',
@@ -19449,7 +20206,8 @@ const SETTINGS_TRANSLATIONS = {
         settingsUninstallHint: 'Dine bloklister gemmes på disken.',
         yourVersionPrefix: 'Version',
         latestVersionPrefix: 'Nyeste version:',
-        lightDarkMode: 'Udseende',
+        lightDarkMode: 'Tema',
+        zoomLevel: 'Zoomniveau',
         language: 'Sprog',
         themeAuto: 'Auto',
         themeLight: 'Lys',
@@ -19462,24 +20220,24 @@ const SETTINGS_TRANSLATIONS = {
         settingsOverrideAllLabel: 'Stop alle blokeringer og tidsplaner',
         settingsOverrideAllBtn: 'Stop alle',
         // In-app uninstall (macOS only)
-        uninstallApp: 'Afinstaller Fristed',
+        uninstallApp: 'Afinstaller Rum',
         uninstallAppBtn: 'Afinstaller…',
         uninstallDisabledHint: 'Stop kørende blokeringer først, før du kan afinstallere.',
-        uninstallConfirmTitle: 'Afinstaller Fristed?',
-        uninstallConfirmLeadHtml: 'Fristed flyttes til papirkurven. Dine blokeringslister og skemaer <strong>bevares p\u00e5 harddisken</strong>, s\u00e5 de kan gendannes, hvis du geninstallerer senere.',
-        uninstallConfirmLeadDeleteHtml: 'Fristed flyttes til papirkurven. Dine blokeringslister, skemaer og indstillinger bliver <strong>permanent slettet</strong> fra denne Mac.',
+        uninstallConfirmTitle: 'Afinstaller Rum?',
+        uninstallConfirmLeadHtml: 'Rum flyttes til papirkurven. Dine blokeringslister og skemaer <strong>bevares p\u00e5 harddisken</strong>, s\u00e5 de kan gendannes, hvis du geninstallerer senere.',
+        uninstallConfirmLeadDeleteHtml: 'Rum flyttes til papirkurven. Dine blokeringslister, skemaer og indstillinger bliver <strong>permanent slettet</strong> fra denne Mac.',
         uninstallDeleteDataLabel: 'Slet ogs\u00e5 mine blokeringslister, skemaer og indstillinger',
-        uninstallFinderWarningHtml: 'Hvis macOS spørger, om Fristed må styre <strong>Finder</strong>, skal du klikke <strong>Tillad</strong> \u2014 det er sådan, appen flytter sig selv til papirkurven.',
+        uninstallFinderWarningHtml: 'Hvis macOS spørger, om Rum må styre <strong>Finder</strong>, skal du klikke <strong>Tillad</strong> \u2014 det er sådan, appen flytter sig selv til papirkurven.',
         uninstallFirefoxCalloutTitle: 'ReDD Focus-udvidelse i Firefox',
         uninstallExtFirefoxBadge: 'Forbliver installeret',
         uninstallFirefoxCalloutDetailHtml: 'Du kan forts\u00e6tte med at bruge ReDD Focus til at skjule distraherende dele af websites. For at fjerne den, \u00e5bn Firefox\u2019 udvidelsesindstillinger \u2014 kopier {URL_CHIP} og inds\u00e6t den i adresselinjen.',
         uninstallConfirmOk: 'Afinstaller',
         uninstallFailedTitle: 'Afinstallation mislykkedes',
         uninstallFailed: 'Kunne ikke gennemføre afinstallation.',
-        windowsUninstallHint: 'Indstillinger \u2192 Installerede apps \u2192 Fristed',
+        windowsUninstallHint: 'Indstillinger \u2192 Installerede apps \u2192 Rum',
         windowsUninstallOpenSettingsBtn: 'Åbn indstillinger',
         windowsUninstallOpenFailedTitle: 'Kunne ikke åbne Indstillinger',
-        windowsUninstallOpenFailed: 'Windows Indstillinger kunne ikke åbnes. Åbn Indstillinger manuelt, gå til Apps \u2192 Installerede apps, og søg efter Fristed.',
+        windowsUninstallOpenFailed: 'Windows Indstillinger kunne ikke åbnes. Åbn Indstillinger manuelt, gå til Apps \u2192 Installerede apps, og søg efter Rum.',
         macAutomationIntroBadge: 'Nyhed',
         macAutomationIntroTitle: 'Websiteblokering på macOS fungerer lidt anderledes nu',
         macAutomationIntroLeadHtml: 'For at gøre blokering nemmere at opsætte bruger de fleste browsere nu <strong>macOS Automatisering</strong> i stedet for ReDD Focus-udvidelsen. Sådan ser opsætningen ud nu.',
@@ -19506,7 +20264,7 @@ const SETTINGS_TRANSLATIONS = {
         helperRemovedFallback: 'Hjælperen blev fjernet via reserveoprydning, fordi den installerede hjælper ikke svarede normalt.',
         helperRemoveStaleHint: 'Installeret, men kører ikke lige nu. Du kan fjerne den gamle hjælper her, før du geninstallerer den.',
         cleanHostsFile: 'Ryd hosts-fil',
-        helperHint: 'Fjern alle Fristed-indsætninger fra systemets hosts-fil. Brug kun dette, hvis websites stadig er utilgængelige efter du har stoppet alle blokeringer.',
+        helperHint: 'Fjern alle Rum-indsætninger fra systemets hosts-fil. Brug kun dette, hvis websites stadig er utilgængelige efter du har stoppet alle blokeringer.',
         close: 'Luk',
         // Time/date words
         dayAbbrev: ['Søn', 'Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør'],
@@ -19562,6 +20320,11 @@ function syncIosScheduleDayLabelsViewportMode() {
     const schedulePanel = document.getElementById('schedule-block-panel');
     if (isScheduleMode && schedulePanel && !schedulePanel.classList.contains('hidden')) {
         rebuildScheduleSegments();
+    }
+
+    const scheduleConfirmModal = document.getElementById('start-schedule-confirm-modal');
+    if (scheduleConfirmModal && !scheduleConfirmModal.classList.contains('hidden')) {
+        renderScheduleConfirmSegments(document.getElementById('schedule-confirm-segments'), scheduleSegments);
     }
 }
 
@@ -19754,7 +20517,7 @@ function formatConfirmModalOverrideTypingLine({ type, count, estimatedMinutes, r
         return tSettingsFmt('confirmOverrideCustomPhraseFmt', { count, minutes });
     }
     if (type === 'gibberish') {
-        if (usesIOSWordCountForOverrideType(type)) {
+        if (usesMobileWordCountForOverrideType(type)) {
             return tSettingsFmt('confirmOverrideGibberishWordsFmt', { count, wordUnit, minutes });
         }
         if (resumeShortGibberish) {
@@ -19762,7 +20525,7 @@ function formatConfirmModalOverrideTypingLine({ type, count, estimatedMinutes, r
         }
         return tSettingsFmt('confirmOverrideGibberishLettersFmt', { count, charUnit, minutes });
     }
-    return usesIOSWordCountForOverrideType(type)
+    return usesMobileWordCountForOverrideType(type)
         ? tSettingsFmt('confirmOverrideRandomWordsIosFmt', { count, wordUnit, minutes })
         : tSettingsFmt('confirmOverrideRandomWordsFmt', { count, charUnit, minutes });
 }
@@ -19815,12 +20578,38 @@ function applyMigrationOverlayStaticCopy() {
     setText('migration-post-subtitle', tSettings('migrationPostSubtitleCleanup'));
 }
 
-function applyFristedDefinitionPills() {
+function applyRumDefinitionPills() {
     const show = getSettingsLanguage() !== 'da';
-    document.querySelectorAll('.fristed-definition-pill').forEach(el => {
+    document.querySelectorAll('.rum-definition-pill').forEach(el => {
         el.classList.toggle('hidden', !show);
-        if (show) el.innerHTML = tSettings('fristedDefinitionHtml');
+        if (show) el.innerHTML = tSettings('rumDefinitionHtml');
     });
+}
+
+function applyRumDefinitionCardContent(ids, { hiddenForDanish = false } = {}) {
+    if (hiddenForDanish) {
+        const show = getSettingsLanguage() !== 'da';
+        if (ids.card) {
+            const card = document.getElementById(ids.card);
+            if (card) card.classList.toggle('hidden', !show);
+        }
+        if (!show) return;
+    }
+
+    const word = document.getElementById(ids.word);
+    if (word) word.textContent = tSettings('rebrandOnboardingWord');
+
+    const pronunciation = document.getElementById(ids.pronunciation);
+    if (pronunciation) pronunciation.textContent = tSettings('rebrandOnboardingPronunciationHtml');
+
+    const meta = document.getElementById(ids.meta);
+    if (meta) meta.textContent = tSettings('rebrandOnboardingMetaHtml');
+
+    const definition = document.getElementById(ids.definition);
+    if (definition) definition.innerHTML = tSettings('rebrandOnboardingDefinitionHtml');
+
+    const footnote = document.getElementById(ids.footnote);
+    if (footnote) footnote.innerHTML = tSettings('rebrandOnboardingFootnoteHtml');
 }
 
 function applyRebrandOnboardingLanguage() {
@@ -19830,20 +20619,13 @@ function applyRebrandOnboardingLanguage() {
     const subtitle = document.getElementById('rebrand-onboarding-subtitle');
     if (subtitle) subtitle.textContent = tSettings('rebrandOnboardingSubtitle');
 
-    const word = document.getElementById('rebrand-onboarding-word');
-    if (word) word.textContent = tSettings('rebrandOnboardingWord');
-
-    const ipa = document.getElementById('rebrand-onboarding-ipa');
-    if (ipa) ipa.textContent = tSettings('rebrandOnboardingIpa');
-
-    const language = document.getElementById('rebrand-onboarding-language');
-    if (language) language.textContent = tSettings('rebrandOnboardingLanguage');
-
-    const partOfSpeech = document.getElementById('rebrand-onboarding-part-of-speech');
-    if (partOfSpeech) partOfSpeech.textContent = tSettings('rebrandOnboardingPartOfSpeech');
-
-    const definition = document.getElementById('rebrand-onboarding-definition');
-    if (definition) definition.innerHTML = tSettings('rebrandOnboardingDefinitionHtml');
+    applyRumDefinitionCardContent({
+        word: 'rebrand-onboarding-word',
+        pronunciation: 'rebrand-onboarding-pronunciation',
+        meta: 'rebrand-onboarding-meta',
+        definition: 'rebrand-onboarding-definition',
+        footnote: 'rebrand-onboarding-footnote',
+    });
 
     const continueBtn = document.getElementById('rebrand-onboarding-continue-btn');
     if (continueBtn) continueBtn.textContent = tSettings('rebrandOnboardingContinueBtn');
@@ -19856,9 +20638,9 @@ function applyRebrandOnboardingLanguage() {
 function applyEulaOnboardingLanguage() {
     const title = tSettings('welcomeOnboardingTitle');
 
-    const shieldLogo = document.getElementById('eula-onboarding-fristed-logo');
+    const shieldLogo = document.getElementById('eula-onboarding-rum-logo');
     if (shieldLogo) {
-        shieldLogo.src = fristedIconUrl;
+        shieldLogo.src = rumIconUrl;
         shieldLogo.alt = '';
     }
 
@@ -19871,6 +20653,9 @@ function applyEulaOnboardingLanguage() {
     const subtitle = document.getElementById('eula-onboarding-subtitle');
     if (subtitle) subtitle.textContent = tSettings('welcomeOnboardingSubtitle');
 
+    const subtitleIos = document.getElementById('eula-onboarding-subtitle-ios');
+    if (subtitleIos) subtitleIos.textContent = tSettings('welcomeOnboardingSubtitle');
+
     const appIcon = document.getElementById('eula-onboarding-app-icon');
     if (appIcon) appIcon.setAttribute('alt', tSettings('eulaWelcomeIconAlt'));
 
@@ -19881,7 +20666,7 @@ function applyEulaOnboardingLanguage() {
     if (note) note.innerHTML = tSettings('eulaNoteHtml');
 
     const blurb = document.getElementById('eula-project-blurb');
-    if (blurb) blurb.textContent = tSettings('eulaProjectBlurb');
+    if (blurb) blurb.innerHTML = tSettings('eulaProjectBlurb');
 
     const footer1 = document.getElementById('eula-onboarding-footer-1');
     if (footer1) footer1.innerHTML = tSettings('welcomeFooter1Html');
@@ -19900,13 +20685,22 @@ function applyEulaOnboardingLanguage() {
         backBtn.textContent = tSettings('eulaBackBtn');
         backBtn.classList.toggle('hidden', isIOS);
     }
+
+    applyRumDefinitionCardContent({
+        card: 'eula-onboarding-definition-card',
+        word: 'eula-onboarding-word',
+        pronunciation: 'eula-onboarding-pronunciation',
+        meta: 'eula-onboarding-meta',
+        definition: 'eula-onboarding-definition',
+        footnote: 'eula-onboarding-footnote',
+    }, { hiddenForDanish: true });
 }
 
 /** Safari FDA onboarding — same layout/copy pattern as the EULA screen. */
 function applySafariFdaOnboardingLanguage() {
-    const shield = document.getElementById('fda-onboarding-fristed-logo');
+    const shield = document.getElementById('fda-onboarding-rum-logo');
     if (shield) {
-        shield.src = fristedIconUrl;
+        shield.src = rumIconUrl;
         shield.alt = '';
     }
     const screenshot = document.getElementById('fda-onboarding-screenshot');
@@ -19926,9 +20720,9 @@ function applySafariFdaOnboardingLanguage() {
 
 /** Welcome onboarding screen — localized in the same way as the EULA screen. */
 function applyWelcomeOnboardingLanguage() {
-    const shieldLogo = document.getElementById('welcome-onboarding-fristed-logo');
+    const shieldLogo = document.getElementById('welcome-onboarding-rum-logo');
     if (shieldLogo) {
-        shieldLogo.src = fristedIconUrl;
+        shieldLogo.src = rumIconUrl;
         shieldLogo.alt = '';
     }
 
@@ -20187,6 +20981,30 @@ function websiteWord(count) {
     return count === 1 ? 'website' : 'websites';
 }
 
+function siteWord(count) {
+    if (getSettingsLanguage() === 'da') {
+        return count === 1 ? 'websted' : 'websteder';
+    }
+    return count === 1 ? 'site' : 'sites';
+}
+
+/** Short label from a blocked domain, e.g. instagram.com → instagram. */
+function siteNameForDisplay(url) {
+    const host = cleanUrlForDisplay(url).split('/')[0].split(':')[0];
+    const parts = host.split('.').filter(Boolean);
+    if (parts.length === 0) return host;
+    if (parts.length === 1) return parts[0];
+    return parts[parts.length - 2];
+}
+
+/** Room card line, e.g. "3 sites · instagram, youtube, reddit". */
+function formatBlocklistCardSitesSummary(websiteCount, websites, showDetails) {
+    const countLabel = `${websiteCount} ${siteWord(websiteCount)}`;
+    if (!showDetails || websiteCount === 0) return countLabel;
+    const names = (websites || []).map(siteNameForDisplay);
+    return names.length > 0 ? `${countLabel} · ${names.join(', ')}` : countLabel;
+}
+
 function formatCurrentVersionText(version) {
     return `${tSettings('yourVersionPrefix')} ${version || 'Unknown'}`;
 }
@@ -20195,13 +21013,11 @@ function formatLatestVersionText(version) {
     return `${tSettings('latestVersionPrefix')} ${version || 'Unknown'}`;
 }
 
-/** Blocklist modal: show example placeholder only when there are no website tags yet. */
+/** Blocklist modal: always show the example placeholder in the websites input row. */
 function syncModalWebsitePlaceholder() {
     const el = document.getElementById('modal-website-input');
-    if (!el) return;
-    const list = window.modalWebsites;
-    el.placeholder =
-        Array.isArray(list) && list.length > 0 ? '' : tSettings('placeholderWebsiteExample');
+    if (!el || el.classList.contains('input-error')) return;
+    el.placeholder = tSettings('placeholderWebsiteExample');
 }
 
 function applySettingsLanguage() {
@@ -20233,7 +21049,7 @@ function applySettingsLanguage() {
         behaviourDismissBtn.title = tSettings('setupBrowsersBannerDismissTitle');
     }
     setText('main-start-block-title', tSettings('mainStartBlockTitle'));
-    setText('instant-mode-tab-label', tSettings('modeNow'));
+    setText('instant-mode-tab-label', tSettings('modeTimer'));
     setText('schedule-mode-tab-label', tSettings('modeSchedule'));
     setText('selection-prompt-label', tSettings('selectionPrompt'));
     const blocklistSelect = document.getElementById('blocklist-select');
@@ -20250,6 +21066,11 @@ function applySettingsLanguage() {
     );
     setText('now-blocking-label-text', tSettings('nowBlockingLabel'));
     setText('schedule-footer-hint', tSettings('scheduleFooterHint'));
+    setText('duration-quick-btn-15', tSettings('durationQuick15m'));
+    setText('duration-quick-btn-30', tSettings('durationQuick30m'));
+    setText('duration-quick-btn-45', tSettings('durationQuick45m'));
+    setText('duration-quick-btn-60', tSettings('durationQuick1Hour'));
+    setText('duration-quick-btn-120', tSettings('durationQuick2Hours'));
     setText('duration-quick-btn-always-label', tSettings('durationQuickAlways'));
     setText('always-on-message-text', tSettings('alwaysOnMessage'));
     setText('duration-label', tSettings('duration'));
@@ -20260,6 +21081,7 @@ function applySettingsLanguage() {
     setText('schedule-end-label', tSettings('end'));
     setText('schedule-days-label', tSettings('days'));
     setText('add-segment-label', tSettings('add'));
+    setText('schedule-segments-heading', tSettings('scheduleWhenHeading'));
     setText('repeat-label', tSettings('repeat'));
     setText('schedule-panel-overlay-label', tSettings('scheduleActiveOverlayLabel'));
     const repeatNo = document.querySelector('.repeat-option[data-value="no"]');
@@ -20275,8 +21097,22 @@ function applySettingsLanguage() {
         else repeatDropdownText.textContent = tSettings('repeatNo');
     }
     setText('pause-btn-label', tSettings('pause'));
-    setBtnActionLabel(document.getElementById('start-block-btn-label'), tSettings('startBlockButton'));
+    setBtnActionLabel(document.getElementById('start-block-btn-label'), tSettings('startBlockButton'), { simple: true });
+    const startBlockBtn = document.getElementById('start-block-btn');
+    if (startBlockBtn) {
+        setStartBlockBtnLeadingIcon(
+            startBlockBtn,
+            startBlockBtn.classList.contains('stop-block') ? 'stop' : 'enter',
+        );
+    }
     setBtnActionLabel(document.getElementById('start-schedule-btn-label'), tSettings('startScheduleButton'));
+    const startScheduleBtn = document.getElementById('start-schedule-btn');
+    if (startScheduleBtn) {
+        setStartBlockBtnLeadingIcon(
+            startScheduleBtn,
+            startScheduleBtn.classList.contains('stop-schedule') ? 'stop' : 'enter',
+        );
+    }
     setText('footer-made-with', tSettings('madeWith'));
     setText('footer-by', tSettings('by'));
     const setPlaceholder = (id, text) => {
@@ -20301,13 +21137,19 @@ function applySettingsLanguage() {
     setText('blocklist-websites-label', tSettings('websites'));
     setText('blocklist-websites-tooltip', tSettings('websitesTooltip'));
     setText('blocklist-apps-label', tSettings('apps'));
-    setText('blocklist-apps-tooltip', tSettings('appsTooltip'));
+    setText('blocklist-apps-tooltip', tSettings(
+        'appsTooltip'
+    ));
     setText('override-difficulty-label', tSettings('overrideDifficulty'));
+    setText('override-method-label', tSettings('overrideMethod'));
     setText('override-option-random-words', tSettings('overrideRandomWords'));
     setText('override-option-gibberish', tSettings('overrideGibberish'));
     setText('override-option-custom', tSettings('overrideCustomText'));
     setText('override-max-difficulty-label', tSettings('overrideMaxDifficulty'));
-    setText('override-total-characters-label', tSettings('totalCharacters'));
+    setText('override-preview-label', tSettings('overridePreviewLooksLike'));
+    const overrideType = document.getElementById('override-type')?.value || 'random-words';
+    syncOverrideCountUi(overrideType);
+    updateOverridePreview();
     setText('blocklist-emoji-label', tSettings('emoji'));
     setText('blocklist-color-label', tSettings('color'));
     setText('blocklist-advanced-options-label', tSettings('advancedOptions'));
@@ -20330,8 +21172,9 @@ function applySettingsLanguage() {
     setText('modal-browse-apps-caption', tSettings('modalBrowseAppsCaption'));
     const modalBrowseAppsBtn = document.getElementById('modal-browse-apps-btn');
     if (modalBrowseAppsBtn) {
-        const ios = document.body.classList.contains('ios');
-        const browseTitle = ios ? tSettings('modalBrowseAppsTitleIos') : tSettings('browseApplicationsTitle');
+        const browseTitle = document.body.classList.contains('ios')
+            ? tSettings('modalBrowseAppsTitleIos')
+            : tSettings('browseApplicationsTitle');
         modalBrowseAppsBtn.title = browseTitle;
         modalBrowseAppsBtn.setAttribute('aria-label', browseTitle);
     }
@@ -20444,6 +21287,7 @@ function applySettingsLanguage() {
     setText('settings-general-heading', tSettings('settingsGeneralHeading'));
     setText('settings-manage-heading', tSettings('settingsManageHeading'));
     setText('settings-theme-label', tSettings('lightDarkMode'));
+    setText('settings-zoom-label', tSettings('zoomLevel'));
     setText('settings-language-label', tSettings('language'));
     syncLanguagePickerUI();
     setText('theme-option-system', tSettings('themeAuto'));
@@ -20562,8 +21406,9 @@ function applySettingsLanguage() {
     applyEulaOnboardingLanguage();
     applyWelcomeOnboardingLanguage();
     applySafariFdaOnboardingLanguage();
-    applyFristedDefinitionPills();
+    applyRumDefinitionPills();
     setText('ios-screentime-onboarding-title', tSettings('welcomeOnboardingTitle'));
+    setText('ios-screentime-onboarding-note', tSettings('eulaProjectBlurb'));
 
     if (migrationOnboardingActive && lastMigrationBrowserState) {
         renderBrowserInstallButtons(lastMigrationBrowserState, { force: true });
@@ -20602,6 +21447,7 @@ function setupTheme() {
         settingsTriggers.forEach((settingsBtn) => {
             settingsBtn.addEventListener('click', () => {
             settingsModal.classList.remove('hidden');
+            syncFooterZoomControl(getActiveUiZoomScale());
             resetSettingsEnforcementSection();
             void applyEnforcementDescCopy(lastMigrationBrowserState);
             // Re-evaluate the in-app Uninstall button (Mac only): a
@@ -20743,7 +21589,7 @@ function clampUiZoom(scale) {
 }
 
 function getDefaultUiZoom() {
-    return isIOS ? DEFAULT_UI_ZOOM_IOS : DEFAULT_UI_ZOOM;
+    return DEFAULT_UI_ZOOM;
 }
 
 function getSavedUiZoom() {
@@ -20752,9 +21598,23 @@ function getSavedUiZoom() {
     return clampUiZoom(parsed);
 }
 
+function isIosTablet() {
+    return isIOS && !document.body.classList.contains('ios-phone');
+}
+
+/** Desktop only — iPad uses transform scaling; phones use CSS zoom. */
+function usesNativeWebviewZoom() {
+    if (!isIOS && (document.body.classList.contains('windows') || document.body.classList.contains('mac'))) {
+        return nativeWebviewZoomSupported !== false;
+    }
+    return false;
+}
+
 function getActiveUiZoomScale() {
     const inline = parseFloat(document.documentElement.style.zoom);
     if (Number.isFinite(inline) && inline > 0) return inline;
+    const cssVar = parseFloat(document.documentElement.style.getPropertyValue('--ui-zoom'));
+    if (Number.isFinite(cssVar) && cssVar > 0) return cssVar;
     return getSavedUiZoom();
 }
 
@@ -20774,7 +21634,8 @@ function syncUiZoomResponsiveLayout() {
 
     if (isIOS) {
         const effVp = getEffectiveViewportWidth();
-        const ipadPortraitStack = usesStackSettingsPlacement()
+        const ipadPortraitStack = isIOS
+            && usesStackSettingsPlacement()
             && !document.body.classList.contains('ios-phone');
         const cramped = effVp > UI_ZOOM_LAYOUT_STACK_MAX
             && effVp <= UI_ZOOM_LAYOUT_CRAMPED_MAX
@@ -20783,7 +21644,9 @@ function syncUiZoomResponsiveLayout() {
         document.body.classList.toggle('ui-zoom-tier-stack', effVp > 0 && effVp <= UI_ZOOM_LAYOUT_STACK_MAX);
         document.body.classList.toggle('ui-zoom-tier-cramped', cramped);
         document.body.classList.toggle('ui-zoom-tier-narrow', effVp > 0 && effVp <= UI_ZOOM_LAYOUT_NARROW_MAX);
+        document.body.classList.toggle('settings-placement-stack', usesStackSettingsPlacement());
     } else {
+        document.body.classList.remove('settings-placement-stack');
         document.body.classList.remove(
             'ui-zoom-tier-stack',
             'ui-zoom-tier-cramped',
@@ -20792,9 +21655,9 @@ function syncUiZoomResponsiveLayout() {
     }
 
     syncSchedulerModeTabLabelMode();
-    syncZoomControlPlacement();
     syncIosScheduleDayLabelsViewportMode();
     syncAllStopBtnLabelFits();
+    scheduleSelectionPromptLayout();
     const pauseModal = document.getElementById('pause-modal');
     if (pauseModal && !pauseModal.classList.contains('hidden')) {
         syncPauseDurationRowLayout();
@@ -20808,72 +21671,185 @@ function usesStackSettingsPlacement() {
         && window.matchMedia('(min-width: 769px) and (max-width: 1024px) and (orientation: portrait)').matches;
 }
 
-/** Keep desktop/iOS scheduler header chrome from overlapping as space tightens. */
-function syncSchedulerModeTabLabelMode() {
-    const header = document.querySelector('.scheduler-section > .section-header');
-    const modeTabs = header?.querySelector('.scheduler-mode-tabs');
-    const body = document.body;
-    body.classList.remove('ui-zoom-sched-hide-title', 'ui-zoom-sched-tabs-icons');
-    if (!header || !modeTabs || modeTabs.classList.contains('hidden')) {
-        return;
-    }
-
-    void header.offsetWidth;
-
-    const mainTitle = header.querySelector('#main-start-block-title');
-    const toolbar = header.querySelector('#settings-toolbar-scheduler');
+/** True when labelled Now/Schedule tabs do not fit in the scheduler header row. */
+function schedulerModeTabsNeedIconOnly(header, modeTabs, toolbar) {
     const toolbarVisible = toolbar && getComputedStyle(toolbar).display !== 'none';
-    const hasCollision = () => {
-        let collision = false;
-        if (toolbarVisible) {
-            const tabsRect = modeTabs.getBoundingClientRect();
-            const toolbarRect = toolbar.getBoundingClientRect();
-            if (tabsRect.right > toolbarRect.left - 6) {
-                collision = true;
-            }
-        }
-        if (header.scrollWidth > header.clientWidth + 1) {
-            collision = true;
-        }
-        return collision;
-    };
-
-    if (!isIOS && mainTitle && !mainTitle.classList.contains('hidden') && hasCollision()) {
-        body.classList.add('ui-zoom-sched-hide-title');
-        void header.offsetWidth;
-    }
-
-    const iconOnly = hasCollision();
     if (toolbarVisible) {
         const tabsRect = modeTabs.getBoundingClientRect();
         const toolbarRect = toolbar.getBoundingClientRect();
         if (tabsRect.right > toolbarRect.left - 6) {
-            body.classList.add('ui-zoom-sched-tabs-icons');
+            return true;
+        }
+    }
+    if (header.scrollWidth > header.clientWidth + 1) {
+        return true;
+    }
+    if (modeTabs.scrollWidth > modeTabs.clientWidth + 1) {
+        return true;
+    }
+    for (const tab of modeTabs.querySelectorAll('.mode-tab')) {
+        if (tab.scrollWidth > tab.clientWidth + 1) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/** Keep desktop/iOS scheduler header chrome from overlapping as space tightens. */
+function syncSchedulerModeTabLabelMode() {
+    const enterHeader = document.getElementById('scheduler-enter-header');
+    const timePicker = document.getElementById('time-picker-container');
+    const modeTabs = enterHeader?.querySelector('.scheduler-mode-tabs');
+    const body = document.body;
+    if (!enterHeader || !modeTabs || !timePicker || timePicker.classList.contains('hidden')) {
+        body.classList.remove('ui-zoom-sched-hide-title', 'ui-zoom-sched-tabs-icons');
+        schedTabsIconOnlyEnteredAtWidth = 0;
+        return;
+    }
+
+    const hadIconOnly = body.classList.contains('ui-zoom-sched-tabs-icons');
+    const headerWidth = enterHeader.clientWidth;
+
+    // If icon-only was the last stable state, only retry full labels after the
+    // row actually gets wider. Otherwise the ResizeObserver can bounce forever
+    // between the two near-identical layouts right at the threshold.
+    if (hadIconOnly) {
+        if (!schedTabsIconOnlyEnteredAtWidth) {
+            schedTabsIconOnlyEnteredAtWidth = headerWidth;
+            return;
+        }
+        if (headerWidth <= schedTabsIconOnlyEnteredAtWidth + SCHED_TABS_ICON_ONLY_EXIT_WIDTH_DELTA) {
             return;
         }
     }
 
+    body.classList.remove('ui-zoom-sched-hide-title', 'ui-zoom-sched-tabs-icons');
+    void enterHeader.offsetWidth;
+
+    const mainTitle = document.getElementById('main-start-block-title');
+    const toolbar = document.querySelector('#settings-toolbar-scheduler');
+    const iconOnly = schedulerModeTabsNeedIconOnly(enterHeader, modeTabs, toolbar);
+
+    if (!isIOS && mainTitle && iconOnly) {
+        body.classList.add('ui-zoom-sched-hide-title');
+        void enterHeader.offsetWidth;
+    }
+
     body.classList.toggle('ui-zoom-sched-tabs-icons', iconOnly);
+    schedTabsIconOnlyEnteredAtWidth = iconOnly ? enterHeader.clientWidth : 0;
 }
 
-/** iOS only: keep the header zoom control beside whichever settings button is visible. */
-function syncZoomControlPlacement() {
-    if (!isIOS) return;
+function scheduleSelectionPromptLayout() {
+    cancelAnimationFrame(selectionPromptLayoutRaf);
+    selectionPromptLayoutRaf = requestAnimationFrame(() => {
+        selectionPromptLayoutRaf = 0;
+        syncSelectionPromptLayout();
+    });
+}
 
-    const zoom = document.getElementById('header-zoom-control');
-    const stackToolbar = document.getElementById('settings-toolbar-stack');
-    const schedToolbar = document.getElementById('settings-toolbar-scheduler');
-    const stackBtn = document.getElementById('settings-btn-stack');
-    const schedBtn = document.getElementById('settings-btn');
-    if (!zoom || !stackToolbar || !schedToolbar || !stackBtn || !schedBtn) return;
+function isGridTopRowStacked() {
+    const blocklists = document.getElementById('blocklists-section');
+    const scheduler = document.getElementById('scheduler-section');
+    if (!blocklists || !scheduler) return true;
+    const blocklistsRect = blocklists.getBoundingClientRect();
+    const schedulerRect = scheduler.getBoundingClientRect();
+    return schedulerRect.top > blocklistsRect.top + 16;
+}
 
-    const hostToolbar = usesStackSettingsPlacement() ? stackToolbar : schedToolbar;
-    const hostBtn = usesStackSettingsPlacement() ? stackBtn : schedBtn;
-    if (zoom.parentElement !== hostToolbar) {
-        hostToolbar.insertBefore(zoom, hostBtn);
-    } else if (zoom.nextElementSibling !== hostBtn) {
-        hostToolbar.insertBefore(zoom, hostBtn);
+function clearSelectionPromptLayout() {
+    const prompt = document.getElementById('selection-prompt');
+    const gridTopRow = document.querySelector('.grid-top-row');
+    const schedulerSection = document.getElementById('scheduler-section');
+    if (prompt) {
+        prompt.style.top = '';
+        prompt.style.left = '';
+        prompt.style.right = '';
     }
+    if (schedulerSection) {
+        schedulerSection.style.removeProperty('--time-picker-placeholder-height');
+    }
+    if (gridTopRow) gridTopRow.classList.remove('grid-top-row--selection-prompt-active');
+    document.body.classList.remove('selection-prompt-layout-two-col', 'selection-prompt-layout-stack');
+}
+
+function measureTimePickerPlaceholderHeight(section) {
+    const mainContent = document.getElementById('main-content');
+    const timePicker = section?.querySelector('#time-picker-container');
+    if (!section || !mainContent || !timePicker || section.clientWidth <= 0) return 0;
+
+    let measurer = document.getElementById('scheduler-placeholder-measurer');
+    if (!measurer) {
+        measurer = document.createElement('div');
+        measurer.id = 'scheduler-placeholder-measurer';
+        measurer.setAttribute('aria-hidden', 'true');
+        measurer.style.cssText = 'position:absolute;left:-10000px;top:0;visibility:hidden;pointer-events:none;box-sizing:border-box;';
+        mainContent.appendChild(measurer);
+    }
+
+    measurer.className = 'scheduler-content';
+    measurer.style.width = `${section.clientWidth}px`;
+    measurer.innerHTML = timePicker.outerHTML;
+
+    const measuredPicker = measurer.querySelector('#time-picker-container');
+    measuredPicker?.classList.remove('hidden');
+    measuredPicker?.querySelector('#instant-block-panel')?.classList.remove('hidden');
+    measuredPicker?.querySelector('#schedule-block-panel')?.classList.add('hidden');
+    measuredPicker?.querySelector('.always-on-message')?.classList.add('hidden');
+    measuredPicker?.querySelector('#timed-controls')?.classList.add('hidden');
+    measuredPicker?.querySelector('#block-action-buttons')?.classList.add('hidden');
+
+    return measuredPicker?.offsetHeight || 0;
+}
+
+/** Pin the empty-state hint to the first blocklist card (two-column) or reserve time-picker space (stack). */
+function syncSelectionPromptLayout() {
+    const prompt = document.getElementById('selection-prompt');
+    const gridTopRow = document.querySelector('.grid-top-row');
+    const schedulerSection = document.getElementById('scheduler-section');
+    const firstCard = document.querySelector('#blocklists-container .blocklist-card');
+    if (!prompt || !gridTopRow) return;
+
+    const active = !prompt.classList.contains('hidden')
+        && !gridTopRow.classList.contains('grid-top-row--blocklist-selected')
+        && !!firstCard;
+
+    if (!active) {
+        clearSelectionPromptLayout();
+        return;
+    }
+
+    const gap = 48;
+    const stacked = isGridTopRowStacked();
+    const anchorRect = gridTopRow.getBoundingClientRect();
+    const cardRect = firstCard.getBoundingClientRect();
+    const promptHeight = prompt.offsetHeight || 24;
+
+    gridTopRow.classList.add('grid-top-row--selection-prompt-active');
+    document.body.classList.toggle('selection-prompt-layout-two-col', !stacked);
+    document.body.classList.toggle('selection-prompt-layout-stack', stacked);
+
+    if (stacked) {
+        prompt.style.top = '';
+        prompt.style.left = '';
+        prompt.style.right = '';
+        if (schedulerSection) {
+            const placeholderHeight = measureTimePickerPlaceholderHeight(schedulerSection);
+            if (placeholderHeight > 0) {
+                schedulerSection.style.setProperty('--time-picker-placeholder-height', `${placeholderHeight}px`);
+            }
+        }
+        return;
+    }
+
+    if (schedulerSection) {
+        schedulerSection.style.removeProperty('--time-picker-placeholder-height');
+    }
+
+    const top = cardRect.top - anchorRect.top + (cardRect.height - promptHeight) / 2;
+    const left = cardRect.right - anchorRect.left + gap;
+    prompt.style.top = `${Math.round(top)}px`;
+    prompt.style.left = `${Math.round(left)}px`;
+    prompt.style.right = '';
 }
 
 function scheduleUiZoomResponsiveLayout() {
@@ -20889,17 +21865,48 @@ function bindUiZoomLayoutObserver() {
     const targets = [
         document.getElementById('main-content'),
         document.querySelector('.grid-top-row'),
-        document.querySelector('.scheduler-section > .section-header'),
+        document.getElementById('scheduler-enter-header'),
+        document.getElementById('scheduler-section'),
+        document.getElementById('blocklists-container'),
+        document.getElementById('selection-prompt'),
+        document.querySelector('.week-calendar-section'),
+        document.getElementById('day-rows'),
+        document.querySelector('.footer'),
     ].filter(Boolean);
     if (!targets.length) return;
     uiZoomLayoutObserverBound = true;
-    const ro = new ResizeObserver(() => scheduleUiZoomResponsiveLayout());
+    const ro = new ResizeObserver(() => {
+        scheduleUiZoomResponsiveLayout();
+        scheduleSelectionPromptLayout();
+    });
     targets.forEach((el) => ro.observe(el));
 }
 
 function applyUiZoom(scale) {
     const clamped = clampUiZoom(scale);
     syncFooterZoomControl(clamped);
+    document.documentElement.style.setProperty('--ui-zoom', String(clamped));
+
+    if (usesNativeWebviewZoom()) {
+        getCurrentWebview().setZoom(clamped).then(() => {
+            nativeWebviewZoomSupported = true;
+            document.documentElement.style.zoom = '';
+            scheduleUiZoomResponsiveLayout();
+        }).catch(() => {
+            nativeWebviewZoomSupported = false;
+            document.documentElement.style.zoom = String(clamped);
+            scheduleUiZoomResponsiveLayout();
+        });
+        return;
+    }
+
+    // iPad WKWebView uses desktop content mode: neither CSS zoom nor pageZoom scales text.
+    // `.app-container { transform: scale(var(--ui-zoom)) }` in styles.css handles iPad instead.
+    if (isIosTablet()) {
+        document.documentElement.style.zoom = '';
+        scheduleUiZoomResponsiveLayout();
+        return;
+    }
 
     if (isIOS) {
         document.documentElement.style.zoom = String(clamped);
@@ -20907,32 +21914,12 @@ function applyUiZoom(scale) {
         return;
     }
 
-    // On desktop (Windows and macOS), use native webview zoom so content scales correctly
-    // and behavior matches across platforms. Fall back to CSS zoom if unavailable (e.g. permission).
-    if (!isIOS && (document.body.classList.contains('windows') || document.body.classList.contains('mac'))) {
-        if (nativeWebviewZoomSupported !== false) {
-            getCurrentWebview().setZoom(clamped).then(() => {
-                nativeWebviewZoomSupported = true;
-                document.documentElement.style.zoom = '';
-                scheduleUiZoomResponsiveLayout();
-            }).catch(() => {
-                nativeWebviewZoomSupported = false;
-                document.documentElement.style.zoom = String(clamped);
-                scheduleUiZoomResponsiveLayout();
-            });
-            return;
-        }
-    }
-
-    // Fallback path (iOS or if native zoom isn't available).
+    // Fallback when native webview zoom is unavailable (e.g. permission).
     document.documentElement.style.zoom = String(clamped);
     scheduleUiZoomResponsiveLayout();
 }
 
-// Mirror the current zoom level into the footer percentage label and
-// +/- button enabled state. Called from applyUiZoom so every entry
-// point (footer buttons, cmd-+/-/0 shortcuts, native menu items) keeps
-// the UI in sync.
+/** Mirror the current zoom level into the settings control and +/- button state. */
 function syncFooterZoomControl(scale) {
     const pct = `${Math.round(scale * 100)}%`;
     const max = getUiZoomMax();
@@ -20948,12 +21935,11 @@ function syncFooterZoomControl(scale) {
 }
 
 function setupFooterZoomControl() {
-    document.querySelectorAll('.header-zoom-control, .footer-zoom-control').forEach((control) => {
-        if (control.dataset.bound === '1') return;
-        control.dataset.bound = '1';
-        control.querySelector('.zoom-out-btn')?.addEventListener('click', () => zoomUiOut());
-        control.querySelector('.zoom-in-btn')?.addEventListener('click', () => zoomUiIn());
-    });
+    const control = document.getElementById('settings-zoom-control');
+    if (!control || control.dataset.bound === '1') return;
+    control.dataset.bound = '1';
+    control.querySelector('.zoom-out-btn')?.addEventListener('click', () => zoomUiOut());
+    control.querySelector('.zoom-in-btn')?.addEventListener('click', () => zoomUiIn());
 }
 
 function showUiZoomToast(scale) {
@@ -21004,7 +21990,6 @@ function resetUiZoom(options = {}) {
 function setupUiZoomShortcuts() {
     setupFooterZoomControl();
     applyUiZoom(getSavedUiZoom());
-    syncZoomControlPlacement();
     bindUiZoomLayoutObserver();
     window.addEventListener('resize', scheduleUiZoomResponsiveLayout, { passive: true });
     window.visualViewport?.addEventListener('resize', scheduleUiZoomResponsiveLayout, { passive: true });
@@ -21055,6 +22040,7 @@ function setupHelpMenuLinks() {
 
 // Setup Helper Settings in the settings modal
 function setupHelperSettings() {
+    if (isIOS) return;
     const statusIndicator = document.getElementById('helper-status-indicator');
     const cleanHostsBtn = document.getElementById('clean-hosts-btn');
 
@@ -21077,7 +22063,7 @@ function setupHelperSettings() {
             if (cleanHostsBtn.disabled) return;
 
             const confirmed = await ask(
-                'This will remove all Fristed entries from your system\'s hosts file. ' +
+                'This will remove all Rum entries from your system\'s hosts file. ' +
                 'Only use this if websites remain blocked after all blocks have been stopped.\n\n' +
                 'Your computer may ask for your password or show a security prompt.',
                 { title: 'Clean hosts file?', kind: 'warning' }
@@ -21179,7 +22165,7 @@ async function confirmHelperRemoved() {
         return {
             removed: false,
             status,
-            error: 'Fristed could not confirm that the helper was fully removed. It still appears to be installed.'
+            error: 'Rum could not confirm that the helper was fully removed. It still appears to be installed.'
         };
     }
 
@@ -22075,8 +23061,10 @@ async function openInstalledAppsPicker() {
         closePickerModal();
     };
 
-    // Browse manually — fall back to the OS file picker
-    browseBtn.onclick = async () => {
+    // Browse manually — fall back to the OS file picker (desktop only)
+    if (browseBtn) {
+        browseBtn.classList.remove('hidden');
+        browseBtn.onclick = async () => {
         closePickerModal();
         const appNames = await tauriAPI.openAppPicker();
         if (appNames && appNames.length > 0) {
@@ -22099,6 +23087,9 @@ async function openInstalledAppsPicker() {
             window.renderModalTags();
         }
     };
+    } else if (browseBtn) {
+        browseBtn.classList.add('hidden');
+    }
 
     // Focus search input
     requestAnimationFrame(() => searchInput.focus());
@@ -22235,7 +23226,7 @@ function setupOverrideAll() {
             renderOverrideAllChallengeText();
             overrideAllChallengeInput.value = '';
             overrideAllChallengeWordInput.value = '';
-            overrideAllWordChallengeState = isIOSWordByWordChallenge(hardestDifficulty)
+            overrideAllWordChallengeState = isMobileWordByWordChallenge(hardestDifficulty)
                 ? buildWordChallengeState(overrideAllChallengeText)
                 : null;
             setOverrideAllWordChallengeMode(!!overrideAllWordChallengeState);
@@ -22602,6 +23593,7 @@ function refreshUninstallButtonState() {
 }
 
 function setupWindowsUninstallGuidance() {
+    if (isIOS) return;
     const btn = document.getElementById('windows-uninstall-open-settings-btn');
     if (!btn) return;
 

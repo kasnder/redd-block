@@ -13,7 +13,7 @@ const ICONS_DIR = path.join(ASSETS_DIR, 'icons');
 const SRC_SVG_PATH = path.join(__dirname, '../src/fristed-icon.svg');
 const BLOCKED_SVG_PATH = path.join(__dirname, '../src-tauri/blocked/fristed-icon.svg');
 
-function syncFristedIconCopies() {
+function syncRumIconCopies() {
     if (!fs.existsSync(SVG_PATH)) {
         console.error('SVG not found at:', SVG_PATH);
         process.exit(1);
@@ -181,7 +181,7 @@ async function main() {
     console.log('Starting icon generation from:', SVG_PATH);
     console.log('');
 
-    syncFristedIconCopies();
+    syncRumIconCopies();
     console.log('');
 
     await generatePngIcons();

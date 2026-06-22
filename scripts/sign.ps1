@@ -79,7 +79,7 @@ $signArgs = @(
     '-e', 'https://neu.codesigning.azure.net',
     '-a', 'redd-block-signing',
     '-c', 'redd-block-signing',
-    '-d', 'Fristed',
+    '-d', 'Rum',
     $BinaryPath
 )
 

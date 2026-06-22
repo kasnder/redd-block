@@ -2,6 +2,50 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
+## v3.3.3
+
+- **iPhone: full-screen modals.** Add/edit blocklist, settings, override, pause,
+  start-block confirm, start-schedule confirm, and override-all now open as
+  full-screen sheets on iPhone with a sticky header, back button, and scrollable
+  body. iPad and desktop keep popup-style modals.
+- **iPhone: week calendar hidden.** The week schedule view is hidden on iPhone
+  in all orientations so the main screen stays focused on blocklists and the
+  scheduler; iPad keeps the calendar.
+- **iPad: portrait stacked layout.** On iPad in portrait, blocklists, scheduler,
+  and week calendar stack vertically with roomier spacing and scaled controls,
+  similar to the iPhone layout at a tablet size.
+- **iPad: UI zoom scaling.** iPad uses transform-based shell scaling so zoom
+  changes typography and icons reliably in WKWebView (alongside the shared
+  zoom control in Settings).
+- **iOS: settings zoom.** Zoom level moves into Settings (default **100%**);
+  header and footer zoom controls are removed on mobile.
+- **iOS: redesigned confirmation modals.** Start block, start schedule, override,
+  and pause dialogs use a clearer header with emoji badge, subtitle, and summary
+  layout; schedule-start weekday pills stack under times on narrow screens so
+  days and times no longer collide.
+- **iOS: scheduler tab layout.** Now/Schedule tabs switch to icon-only when the
+  header row runs out of space, with hysteresis so the layout does not flicker.
+- **iOS: time and schedule polish.** Duration/end arrows and schedule segment
+  separators use scalable SVG icons; segment rows lay out more cleanly at higher
+  zoom; external links open in the system browser.
+- **iOS: Screen Time onboarding.** The permission footnote uses improved
+  onboarding typography; schedule start overlays can record voice messages
+  (microphone permission).
+- **Desktop: default zoom 100%.** The default UI zoom is **100%** (was 120%) on
+  macOS and Windows.
+- **Desktop: zoom in Settings.** Zoom controls move from the title bar and
+  footer into Settings → General (**Zoom level**).
+- **Desktop: settings and layout polish.** The settings gear stays visible in the
+  top-right without depending on blocklist selection; compact scheduler header
+  collapses when no blocklist is selected; **Appearance** is labelled **Theme**.
+- **Desktop: confirmation dialogs.** Start block, start schedule, override, and
+  pause modals share the updated header and summary styling; selection-prompt
+  placement is consistent across layout widths; confirmation copy is clearer
+  in English and Danish.
+- **Windows: uninstall guidance in Settings.** The **Open settings** shortcut
+  under Manage aligns with other action buttons in the settings panel.
+- **Version:** 3.3.3 (macOS, Windows, and iOS).
+
 ## v3.3.2
 
 - **Meet Fristed: Block Apps & Sites!** ReDD Block has a new name — same
