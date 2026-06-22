@@ -19768,7 +19768,7 @@ const SETTINGS_TRANSLATIONS = {
         gracePeriodHint: 'Sekunder til at slå til igen, før browseren lukkes.',
         settingsEnforcementHeading: 'Håndhævelse',
         settingsBlockingMethodHeading: 'Blokeringsmekanisme',
-        settingsBlockingMethodHint: 'Automatisering er standard. Udvidelsestilstand bruger ReDD Focus til øjeblikkelige omdirigeringer — installer udvidelsen i hver browser, du skifter. Safari bruger en delt App Group i stedet for native messaging.',
+        settingsBlockingMethodHint: 'Om websiteblokering skal bruge Automatisering eller ReDD Focus-browserudvidelsen (prøv sidstnævnte, hvis blokeringen hænger).',
         settingsBlockingMethodAutomation: 'Automatisering',
         settingsBlockingMethodExtension: 'Udvidelse',
         settingsBlockingMethodChrome: 'Chrome',
@@ -20895,6 +20895,29 @@ function formatLatestVersionText(version) {
     return `${tSettings('latestVersionPrefix')} ${version || 'Unknown'}`;
 }
 
+function applyFormattedCurrentVersion(el, version) {
+    if (!el) return;
+    el.dataset.appVersion = version || 'Unknown';
+    el.textContent = formatCurrentVersionText(el.dataset.appVersion);
+}
+
+function applyFormattedLatestVersion(el, version) {
+    if (!el) return;
+    el.dataset.appVersion = version;
+    el.textContent = formatLatestVersionText(version);
+}
+
+function refreshSettingsVersionLabels() {
+    const currentVersionEl = document.getElementById('current-app-version');
+    if (currentVersionEl?.dataset.appVersion) {
+        currentVersionEl.textContent = formatCurrentVersionText(currentVersionEl.dataset.appVersion);
+    }
+    const latestVersionEl = document.getElementById('latest-app-version');
+    if (latestVersionEl?.dataset.appVersion) {
+        latestVersionEl.textContent = formatLatestVersionText(latestVersionEl.dataset.appVersion);
+    }
+}
+
 /** Blocklist modal: always show the example placeholder in the websites input row. */
 function syncModalWebsitePlaceholder() {
     const el = document.getElementById('modal-website-input');
@@ -21249,19 +21272,7 @@ function applySettingsLanguage() {
     setText('app-blocking-snooze-btn-label', tSettings('appBlockingSnoozeBtn'));
     setHtml('settings-feedback-footer-text', tSettings('settingsFeedbackFooterHtml'));
     updateGraceSettingLock();
-    const currentVersionEl = document.getElementById('current-app-version');
-    if (currentVersionEl) {
-        const raw = currentVersionEl.textContent || '';
-        const version = raw.split(':').slice(1).join(':').trim() || '...';
-        currentVersionEl.textContent = formatCurrentVersionText(version);
-    }
-
-    const latestVersionEl = document.getElementById('latest-app-version');
-    if (latestVersionEl) {
-        const raw = latestVersionEl.textContent || '';
-        const version = raw.split(':').slice(1).join(':').trim() || '...';
-        latestVersionEl.textContent = formatLatestVersionText(version);
-    }
+    refreshSettingsVersionLabels();
 
     const helperStatusText = document.getElementById('settings-helper-status-text');
     if (helperStatusText) {
@@ -21359,10 +21370,10 @@ function setupTheme() {
                 if (currentVersionEl) {
                     try {
                         currentVersion = await tauriAPI.getAppVersion();
-                        currentVersionEl.textContent = formatCurrentVersionText(currentVersion || 'Unknown');
+                        applyFormattedCurrentVersion(currentVersionEl, currentVersion || 'Unknown');
                     } catch (e) {
                         console.error('[Version] Error fetching current version:', e);
-                        currentVersionEl.textContent = formatCurrentVersionText('Unknown');
+                        applyFormattedCurrentVersion(currentVersionEl, 'Unknown');
                     }
                 }
 
@@ -21377,7 +21388,7 @@ function setupTheme() {
                             const latestVersion = versions[getLatestVersionPlatformKey()];
 
                             if (latestVersion && currentVersion && isVersionHigher(latestVersion, currentVersion)) {
-                                latestVersionEl.textContent = formatLatestVersionText(latestVersion);
+                                applyFormattedLatestVersion(latestVersionEl, latestVersion);
                                 latestVersionEl.style.display = 'block';
                                 if (latestVersionWrap) latestVersionWrap.style.display = 'block';
                             }
