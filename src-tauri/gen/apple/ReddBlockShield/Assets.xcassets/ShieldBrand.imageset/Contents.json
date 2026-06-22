@@ -1,17 +1,17 @@
 {
   "images" : [
     {
-      "filename" : "fristed-icon.png",
+      "filename" : "redd-block-shield-icon.png",
       "idiom" : "universal",
       "scale" : "1x"
     },
     {
-      "filename" : "fristed-icon-2x.png",
+      "filename" : "redd-block-shield-icon-2x.png",
       "idiom" : "universal",
       "scale" : "2x"
     },
     {
-      "filename" : "fristed-icon-3x.png",
+      "filename" : "redd-block-shield-icon-3x.png",
       "idiom" : "universal",
       "scale" : "3x"
     }
