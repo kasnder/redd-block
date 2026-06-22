@@ -2380,6 +2380,10 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
         margin-bottom: calc(6px * var(--ipad-s));
     }
 
+    body.ios:not(.ios-phone) .modal-overlay #blocklist-modal .form-group > label{
+        padding-top: calc(4px * var(--ipad-s));
+    }
+
     body.ios:not(.ios-phone) .modal-overlay .form-input{
         padding: calc(10px * var(--ipad-s)) calc(12px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
@@ -10668,6 +10672,10 @@ body:not(.handset-device) #blocklist-modal .modal-content{
     margin-top: 0;
 }
 
+#blocklist-modal .form-group > label{
+    padding-top: 4px;
+}
+
 #blocklist-modal .mobile-modal-scroll-body{
     flex: 1;
     min-height: 0;
@@ -13011,7 +13019,7 @@ body.dark-mode #settings-modal .settings-feedback-footer{
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 0 4px;
+    padding: 12px 0 12px;
     cursor: pointer;
     font-size: 15px;
     color: var(--text-muted);

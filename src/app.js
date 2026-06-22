@@ -8253,8 +8253,15 @@ function setupModalListeners() {
     const blocklistAdvancedContent = document.getElementById('blocklist-advanced-content');
     if (blocklistAdvancedToggle && blocklistAdvancedContent) {
         blocklistAdvancedToggle.addEventListener('click', () => {
+            const willExpand = blocklistAdvancedContent.classList.contains('hidden');
             blocklistAdvancedToggle.classList.toggle('expanded');
             blocklistAdvancedContent.classList.toggle('hidden');
+            if (willExpand) {
+                requestAnimationFrame(() => {
+                    const scrollBody = blocklistAdvancedContent.closest('.mobile-modal-scroll-body');
+                    scrollElementWithinContainer(scrollBody, blocklistAdvancedContent);
+                });
+            }
         });
     }
 
@@ -9246,6 +9253,18 @@ function scrollPopoverOptionIntoView(scrollContainer, option) {
     const optionHeight = option.offsetHeight;
     const containerHeight = scrollContainer.clientHeight;
     scrollContainer.scrollTop = Math.max(0, optionTop - (containerHeight - optionHeight) / 2);
+}
+
+/** Scroll an element into view inside a scroll container only — avoids panning the page. */
+function scrollElementWithinContainer(scrollContainer, element, padding = 12) {
+    if (!scrollContainer || !element) return;
+    const containerRect = scrollContainer.getBoundingClientRect();
+    const elementRect = element.getBoundingClientRect();
+    if (elementRect.bottom > containerRect.bottom - padding) {
+        scrollContainer.scrollTop += elementRect.bottom - containerRect.bottom + padding;
+    } else if (elementRect.top < containerRect.top + padding) {
+        scrollContainer.scrollTop -= containerRect.top + padding - elementRect.top;
+    }
 }
 
 
@@ -19186,7 +19205,7 @@ const SETTINGS_TRANSLATIONS = {
         websitesTooltip: 'Blocking applies to entire domains. For example, typing "facebook.com" blocks all of Facebook, not just specific pages.',
         apps: 'Apps to block',
         appsTooltip: 'Enter the exact name of the application (e.g. \'Safari\'). You can also use the folder button to find the app.',
-        overrideDifficulty: 'Exit Difficulty',
+        overrideDifficulty: 'Stop Difficulty',
         overrideMethod: 'Method',
         overrideWordsToType: 'Words to type',
         overrideCharsToType: 'Characters to type',
@@ -19933,7 +19952,7 @@ const SETTINGS_TRANSLATIONS = {
         websitesTooltip: 'Blokering gælder hele domæner. Hvis du fx skriver "facebook.com", blokeres hele Facebook, ikke kun specifikke sider.',
         apps: 'Apps at blokere',
         appsTooltip: 'Indtast det præcise navn på appen (fx "Safari"). Du kan også bruge mappeknappen til at finde appen.',
-        overrideDifficulty: 'Sværhedsgrad ved exit',
+        overrideDifficulty: 'Stop-sværhedsgrad',
         overrideMethod: 'Metode',
         overrideWordsToType: 'Ord at taste',
         overrideCharsToType: 'Tegn at taste',
