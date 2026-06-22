@@ -189,15 +189,15 @@ fn get_shared_helper_state_path() -> PathBuf {
 fn get_windows_primary_shared_dir() -> PathBuf {
     let program_data = std::env::var("PROGRAMDATA")
         .unwrap_or_else(|_| "C:\\ProgramData".to_string());
-    PathBuf::from(program_data).join("Fristed")
+    PathBuf::from(program_data).join("ReDD Blocker")
 }
 
 #[cfg(target_os = "windows")]
-fn get_windows_legacy_shared_dirs() -> [PathBuf; 1] {
+fn get_windows_legacy_shared_dirs() -> [PathBuf; 2] {
     let program_data = std::env::var("PROGRAMDATA")
         .unwrap_or_else(|_| "C:\\ProgramData".to_string());
     let root = PathBuf::from(program_data);
-    [root.join("ReDD Block")]
+    [root.join("Fristed"), root.join("ReDD Block")]
 }
 
 #[cfg(target_os = "windows")]

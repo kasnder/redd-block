@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build the macOS desktop app bundle (.app). Output is
-# `for-distribution/Fristed.app`. For a shippable installer, run
+# `for-distribution/ReDD Blocker.app`. For a shippable installer, run
 # `scripts/build-mac-pkg.sh --release` next (or `npm run build:mac-all`
 # for both in one go).
 
@@ -42,7 +42,7 @@ fi
 
 TARGET_DIR="${PROJECT_ROOT}/src-tauri/target/${BUILD_TARGET}/release/bundle"
 
-echo "Building Fristed for macOS (${BUILD_TARGET})..."
+echo "Building ReDD Blocker for macOS (${BUILD_TARGET})..."
 # `--bundles app` tells Tauri to produce only the .app, skipping its
 # own .dmg target. We distribute via scripts/build-mac-pkg.sh, which
 # wraps the .app in a signed .pkg with migration pre/post-install scripts.
@@ -50,18 +50,18 @@ CARGO_TARGET_DIR="${PROJECT_ROOT}/src-tauri/target" \
 CI="${TAURI_CI:-false}" \
 npm run tauri -- build --bundles app --target "${BUILD_TARGET}" ${CONFIG_ARGS[@]+"${CONFIG_ARGS[@]}"}
 
-APP_SOURCE="${TARGET_DIR}/macos/Fristed.app"
+APP_SOURCE="${TARGET_DIR}/macos/ReDD Blocker.app"
 
 mkdir -p for-distribution
 
 if [ -d "$APP_SOURCE" ]; then
-  rm -rf "for-distribution/Fristed.app"
-  cp -R "$APP_SOURCE" "for-distribution/Fristed.app"
+  rm -rf "for-distribution/ReDD Blocker.app"
+  cp -R "$APP_SOURCE" "for-distribution/ReDD Blocker.app"
 fi
 
 echo ""
 echo "Build complete."
-if [ -d "for-distribution/Fristed.app" ]; then
-  echo "  App: for-distribution/Fristed.app"
+if [ -d "for-distribution/ReDD Blocker.app" ]; then
+  echo "  App: for-distribution/ReDD Blocker.app"
 fi
 echo "  (Run scripts/build-mac-pkg.sh --release for a shippable .pkg.)"

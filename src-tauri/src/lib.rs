@@ -62,7 +62,7 @@ pub mod commands;
 #[cfg(target_os = "macos")]
 pub mod cross_app_consent;
 
-/// Custom NSPanel class for the main Fristed window. Most of the time
+/// Custom NSPanel class for the main ReDD Blocker window. Most of the time
 /// this behaves indistinguishably from a regular NSWindow — but having
 /// the underlying class be an NSPanel lets us toggle
 /// `NSWindowStyleMaskNonactivatingPanel` (and the matching collection
@@ -269,7 +269,7 @@ pub fn run() {
             // reported issue.
             //
             // Targets:
-            //   - LogDir → ~/Library/Logs/com.reddblock/Fristed.log
+            //   - LogDir → ~/Library/Logs/com.reddblock/ReDD Blocker.log
             //     (macOS), %LOCALAPPDATA%\com.reddblock\logs\... (Win).
             //     `tail -F ~/Library/Logs/com.reddblock/ReDD\ Block.log`
             //     to follow live.
@@ -289,7 +289,7 @@ pub fn run() {
                     .build(),
             )?;
             log::info!(
-                "tcc-probe: ===== Fristed launch (v{}, profile={}) =====",
+                "tcc-probe: ===== ReDD Blocker launch (v{}, profile={}) =====",
                 env!("CARGO_PKG_VERSION"),
                 if cfg!(debug_assertions) { "debug" } else { "release" }
             );
@@ -566,7 +566,7 @@ pub fn run() {
             #[cfg(target_os = "windows")]
             {
                 let win_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
-                    .title("Fristed")
+                    .title("ReDD Blocker")
                     .inner_size(840.0, 750.0)
                     .min_inner_size(600.0, 500.0)
                     .resizable(true)
@@ -595,7 +595,7 @@ pub fn run() {
                 let _tray = TrayIconBuilder::new()
                     .icon(tauri::include_image!("icons/tray-template.png"))
                     .icon_as_template(true)
-                    .tooltip("Fristed")
+                    .tooltip("ReDD Blocker")
                     .on_tray_icon_event(|tray, event| {
                         if let TrayIconEvent::Click {
                             button: MouseButton::Left,

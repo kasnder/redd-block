@@ -26,7 +26,7 @@ pub const EDGE_ADDONS_EXT_ID: &str = "gmjfgjdhnhcegfelcddbdljdffiaepam";
 /// user has both the App Store ReDD Focus and an old embedded copy.
 pub const SAFARI_EXT_ID: &str = "com.reddblock.SafariExtension";
 
-/// Every Chromium-family extension ID Fristed treats as ReDD Focus.
+/// Every Chromium-family extension ID ReDD Blocker treats as ReDD Focus.
 /// Includes both the Chrome Web Store ID (auto-install hint) and the
 /// Edge Add-ons ID (manual install from Microsoft's store).
 pub fn chromium_extension_ids() -> Vec<String> {
@@ -71,7 +71,7 @@ impl BrowserTarget {
             // lives wherever we want and is referenced by registry key.
             let _ = self;
             let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from)?;
-            Some(local.join("Fristed").join("native-host"))
+            Some(local.join("ReDD Blocker").join("native-host"))
         }
         #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
         {
@@ -98,7 +98,7 @@ impl BrowserTarget {
 fn manifest_body(browser: BrowserTarget, binary_path: &str) -> serde_json::Value {
     let mut obj = json!({
         "name": HOST_NAME,
-        "description": "Fristed native messaging host",
+        "description": "ReDD Blocker native messaging host",
         "path": binary_path,
         "type": "stdio",
     });
@@ -214,7 +214,7 @@ fn native_host_stage_dir() -> Option<PathBuf> {
     let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from)?;
     Some(
         local
-            .join("Fristed")
+            .join("ReDD Blocker")
             .join("native-host"),
     )
 }
@@ -363,7 +363,7 @@ pub fn native_host_is_current(_browser: BrowserTarget) -> bool {
 /// manifests for the current binary path, skip the cross-app writes
 /// entirely. Each call to `install_one` does
 /// `create_dir_all` + `write` inside another app's data dir, which on
-/// macOS Sonoma+ fires the "Fristed would like to access data from
+/// macOS Sonoma+ fires the "ReDD Blocker would like to access data from
 /// other apps" TCC prompt — even when the write would be a no-op.
 /// Doing this on every launch was the dominant source of repeated
 /// prompts during build → install iteration.
@@ -684,7 +684,7 @@ fn uninstall_one(browser: BrowserTarget) -> std::io::Result<()> {
 
 #[cfg(target_os = "windows")]
 fn install_one(browser: BrowserTarget, binary: &str) -> std::io::Result<()> {
-    // 1. Write the manifest to %LOCALAPPDATA%\Fristed\native-host\.
+    // 1. Write the manifest to %LOCALAPPDATA%\ReDD Blocker\native-host\.
     let dir = browser.manifest_dir().ok_or_else(|| {
         std::io::Error::new(std::io::ErrorKind::Other, "cannot resolve manifest dir")
     })?;

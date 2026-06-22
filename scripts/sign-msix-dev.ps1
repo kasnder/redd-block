@@ -111,7 +111,7 @@ if (-not $cert) {
         -KeyAlgorithm RSA `
         -KeyLength 2048 `
         -HashAlgorithm SHA256 `
-        -FriendlyName "Fristed MSIX local dev" `
+        -FriendlyName "ReDD Blocker MSIX local dev" `
         -CertStoreLocation "Cert:\CurrentUser\My" `
         -TextExtension @(
             "2.5.29.37={text}1.3.6.1.5.5.7.3.3",
@@ -143,7 +143,7 @@ if ($Install) {
 
     Write-Host "  Installing..." -ForegroundColor Gray
     Add-AppxPackage -Path $MsixPath -ForceUpdateFromAnyVersion
-    Write-Host "  Installed. Launch Fristed from the Start menu." -ForegroundColor Green
+    Write-Host "  Installed. Launch ReDD Blocker from the Start menu." -ForegroundColor Green
     Write-Host "  (Also enable Settings > System > For developers > Developer Mode if install still fails.)" -ForegroundColor Gray
 } else {
     Write-Host ""

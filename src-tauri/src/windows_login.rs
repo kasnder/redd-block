@@ -3,8 +3,8 @@
 
 use crate::windows_process::hidden_command;
 
-/// Default Run value name from `app.package_info().name` ("Fristed").
-const AUTOSTART_RUN_VALUE: &str = "Fristed";
+/// Default Run value name from `app.package_info().name` ("ReDD Blocker").
+const AUTOSTART_RUN_VALUE: &str = "ReDD Blocker";
 
 /// Best-effort: delete the launch-at-login registry value.
 pub fn disable_autostart() {

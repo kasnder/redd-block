@@ -15,7 +15,7 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "1A8486F1E15C1FC8BB2597C6"
-               BuildableName = "Fristed.app"
+               BuildableName = "ReDD Blocker.app"
                BlueprintName = "redd-block_iOS"
                ReferencedContainer = "container:redd-block.xcodeproj">
             </BuildableReference>
@@ -31,7 +31,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "1A8486F1E15C1FC8BB2597C6"
-            BuildableName = "Fristed.app"
+            BuildableName = "ReDD Blocker.app"
             BlueprintName = "redd-block_iOS"
             ReferencedContainer = "container:redd-block.xcodeproj">
          </BuildableReference>
@@ -66,7 +66,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "1A8486F1E15C1FC8BB2597C6"
-            BuildableName = "Fristed.app"
+            BuildableName = "ReDD Blocker.app"
             BlueprintName = "redd-block_iOS"
             ReferencedContainer = "container:redd-block.xcodeproj">
          </BuildableReference>
@@ -95,7 +95,7 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "1A8486F1E15C1FC8BB2597C6"
-            BuildableName = "Fristed.app"
+            BuildableName = "ReDD Blocker.app"
             BlueprintName = "redd-block_iOS"
             ReferencedContainer = "container:redd-block.xcodeproj">
          </BuildableReference>

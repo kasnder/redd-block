@@ -4,7 +4,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "=== Building MSIX Package (Fristed) ===" -ForegroundColor Cyan
+Write-Host "=== Building MSIX Package (ReDD Blocker) ===" -ForegroundColor Cyan
 Write-Host ""
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
@@ -34,7 +34,7 @@ $PublisherDisplayName = $env:WINDOWS_PUBLISHER_DISPLAY_NAME
 
 if (-not $IdentityName -or -not $Publisher) {
     Write-Host "ERROR: WINDOWS_IDENTITY_NAME and WINDOWS_PUBLISHER must be set in .env" -ForegroundColor Red
-    Write-Host "  Find these under Partner Center -> Apps and games -> Fristed -> Product identity" -ForegroundColor Yellow
+    Write-Host "  Find these under Partner Center -> Apps and games -> ReDD Blocker -> Product identity" -ForegroundColor Yellow
     exit 1
 }
 
@@ -42,7 +42,7 @@ if (-not $PublisherDisplayName) {
     $PublisherDisplayName = "Reduce Digital Distraction Ltd"
 }
 
-Write-Host "  App: Fristed v$AppVersion" -ForegroundColor White
+Write-Host "  App: ReDD Blocker v$AppVersion" -ForegroundColor White
 Write-Host "  Architecture: $Architecture" -ForegroundColor White
 Write-Host "  Identity: $IdentityName" -ForegroundColor White
 Write-Host ""
@@ -169,7 +169,7 @@ $manifest = @"
     ProcessorArchitecture="$msixArch" />
   
   <Properties>
-    <DisplayName>Fristed</DisplayName>
+    <DisplayName>ReDD Blocker</DisplayName>
     <PublisherDisplayName>$PublisherDisplayName</PublisherDisplayName>
     <Logo>Assets\StoreLogo.scale-100.png</Logo>
     <virtualization:RegistryWriteVirtualization>
@@ -193,7 +193,7 @@ $manifest = @"
   <Applications>
     <Application Id="App" Executable="redd-block.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements 
-        DisplayName="Fristed" 
+        DisplayName="ReDD Blocker" 
         Description="$description"
         BackgroundColor="transparent" 
         Square150x150Logo="Assets\Square150x150Logo.scale-100.png"

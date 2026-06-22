@@ -41,7 +41,7 @@ function Invoke-TauriWinBuild {
     Pop-Location
 }
 
-Write-Host "=== Fristed Windows Build ===" -ForegroundColor Cyan
+Write-Host "=== ReDD Blocker Windows Build ===" -ForegroundColor Cyan
 Write-Host ""
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
