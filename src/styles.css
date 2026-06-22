@@ -10453,6 +10453,7 @@ body.ios #blocklist-modal .tags-input-container .browse-btn-caption {
 body.ios .modal-overlay {
     align-items: flex-start;
     padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 10px);
+    overflow-x: hidden;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
 }
@@ -10498,12 +10499,13 @@ body.handset-device .mobile-fullscreen-modal{
     right: 0;
     bottom: 0;
     width: 100%;
-    max-width: none;
+    max-width: 100%;
     background: var(--app-bg);
     padding: 0;
     align-items: stretch;
     justify-content: stretch;
     overflow: hidden;
+    touch-action: pan-y;
 }
 
 body.handset-device .mobile-fullscreen-modal .modal-content,
@@ -10517,9 +10519,10 @@ body.handset-device #start-schedule-confirm-modal.mobile-fullscreen-modal .modal
     display: flex;
     flex-direction: column;
     width: 100%;
-    max-width: none;
+    max-width: 100%;
     max-height: none;
     height: 100%;
+    min-width: 0;
     border-radius: 0;
     padding: 0;
     box-shadow: none;
@@ -10529,9 +10532,12 @@ body.handset-device #start-schedule-confirm-modal.mobile-fullscreen-modal .modal
 body.handset-device .mobile-fullscreen-modal .mobile-modal-scroll-body{
     flex: 1;
     min-height: 0;
+    min-width: 0;
+    overflow-x: hidden;
     overflow-y: auto;
-    overscroll-behavior-y: contain;
+    overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
     padding:
         18px
         max(18px, env(safe-area-inset-right, 0px))
@@ -10635,9 +10641,12 @@ body:not(.handset-device) #blocklist-modal .modal-content{
 #blocklist-modal .mobile-modal-scroll-body{
     flex: 1;
     min-height: 0;
+    min-width: 0;
+    overflow-x: hidden;
     overflow-y: auto;
-    overscroll-behavior-y: contain;
+    overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
 }
 
 body.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-content{
@@ -10664,9 +10673,12 @@ body.ios #blocklist-modal .override-count-input {
 #settings-modal .mobile-modal-scroll-body{
     flex: 1;
     min-height: 0;
+    min-width: 0;
+    overflow-x: hidden;
     overflow-y: auto;
-    overscroll-behavior-y: contain;
+    overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
 }
 
 body:not(.handset-device) #settings-modal .modal-content{
@@ -12744,11 +12756,18 @@ body.dark-mode .language-picker-dropdown{
     text-align: right;
 }
 
+body.handset-device #settings-modal.mobile-fullscreen-modal .mobile-modal-header::after{
+    display: none;
+}
+
 body.handset-device #settings-modal.mobile-fullscreen-modal .mobile-modal-header .settings-header-version{
     grid-column: 3;
+    grid-row: 1;
     justify-self: end;
     align-self: center;
+    margin-right: max(18px, env(safe-area-inset-right, 0px));
     font-size: 13px;
+    line-height: 1.2;
     color: var(--text-muted);
     white-space: nowrap;
 }
