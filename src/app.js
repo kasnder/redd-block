@@ -6943,7 +6943,22 @@ function updateWindowHeight() {
     });
 }
 
-// Update maximize button icon based on window state
+// Update maximize button icon based on window state (Windows custom title bar only).
+let lastMaximizedButtonState = null;
+let maximizeButtonSyncInFlight = false;
+let maximizeButtonResizeSyncTimer = null;
+let maximizeButtonSyncInitialized = false;
+/** @type {(() => void) | null} */
+let unlistenMaximizeButtonResized = null;
+/** @type {(() => void) | null} */
+let unlistenMaximizeButtonFocus = null;
+
+function isWindowsDesktopWithCustomTitleBar() {
+    return document.body.classList.contains('windows')
+        && !!document.getElementById('titlebar-maximize')
+        && !document.getElementById('window-controls')?.classList.contains('hidden');
+}
+
 async function updateMaximizeButton() {
     const maximizeBtn = document.getElementById('titlebar-maximize');
     const maximizeIcon = document.getElementById('maximize-icon');
@@ -6952,7 +6967,16 @@ async function updateMaximizeButton() {
     if (!maximizeBtn || !maximizeIcon || !restoreIcon) return;
 
     const win = getCurrentWindow();
-    const isMaximized = await win.isMaximized();
+    let isMaximized;
+    try {
+        isMaximized = await win.isMaximized();
+    } catch (err) {
+        console.warn('Failed to read window maximize state:', err);
+        return;
+    }
+
+    if (isMaximized === lastMaximizedButtonState) return;
+    lastMaximizedButtonState = isMaximized;
 
     if (isMaximized) {
         maximizeIcon.style.display = 'none';
@@ -6965,6 +6989,61 @@ async function updateMaximizeButton() {
     }
 }
 
+async function syncMaximizeButtonFromWindow({ force = false } = {}) {
+    if (!isWindowsDesktopWithCustomTitleBar()) return;
+    if (maximizeButtonSyncInFlight) return;
+    maximizeButtonSyncInFlight = true;
+    try {
+        if (force) lastMaximizedButtonState = null;
+        await updateMaximizeButton();
+    } finally {
+        maximizeButtonSyncInFlight = false;
+    }
+}
+
+function scheduleMaximizeButtonSyncFromResize() {
+    if (maximizeButtonResizeSyncTimer) {
+        clearTimeout(maximizeButtonResizeSyncTimer);
+    }
+    // Coalesce rapid resize events (e.g. drag-resize) without delaying click/focus syncs.
+    maximizeButtonResizeSyncTimer = setTimeout(() => {
+        maximizeButtonResizeSyncTimer = null;
+        void syncMaximizeButtonFromWindow();
+    }, 50);
+}
+
+async function setupMaximizeButtonSync() {
+    if (maximizeButtonSyncInitialized || !isWindowsDesktopWithCustomTitleBar()) return;
+    maximizeButtonSyncInitialized = true;
+
+    await syncMaximizeButtonFromWindow({ force: true });
+
+    const win = getCurrentWindow();
+
+    if (unlistenMaximizeButtonResized) {
+        unlistenMaximizeButtonResized();
+        unlistenMaximizeButtonResized = null;
+    }
+    if (unlistenMaximizeButtonFocus) {
+        unlistenMaximizeButtonFocus();
+        unlistenMaximizeButtonFocus = null;
+    }
+
+    unlistenMaximizeButtonResized = await win.onResized(() => {
+        scheduleMaximizeButtonSyncFromResize();
+    });
+
+    unlistenMaximizeButtonFocus = await win.onFocusChanged(({ payload: focused }) => {
+        if (focused) void syncMaximizeButtonFromWindow();
+    });
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            void syncMaximizeButtonFromWindow();
+        }
+    });
+}
+
 // Setup event listeners
 function setupEventListeners() {
     // Window controls (using Tauri docs naming)
@@ -6974,8 +7053,11 @@ function setupEventListeners() {
 
     document.getElementById('titlebar-maximize')?.addEventListener('click', async () => {
         await tauriAPI.maximizeWindow();
-        // Update icon after state changes
-        setTimeout(updateMaximizeButton, 100);
+        // State may settle asynchronously on Windows — refresh immediately and once more.
+        await syncMaximizeButtonFromWindow({ force: true });
+        setTimeout(() => {
+            void syncMaximizeButtonFromWindow({ force: true });
+        }, 100);
     });
 
     document.getElementById('titlebar-close')?.addEventListener('click', () => {
@@ -7068,12 +7150,8 @@ function setupEventListeners() {
         btn.textContent = originalText;
     });
 
-    // Initial check for maximize state
-    updateMaximizeButton();
-
-    // Check periodically to catch state changes (double-click title bar, etc.)
-    // This ensures the icon updates even if window is maximized/restored via other means
-    setInterval(updateMaximizeButton, 300);
+    // Windows custom title bar: sync maximize/restore icon from window events (no polling).
+    void setupMaximizeButtonSync();
 
     // Time pickers — instant end uses compact `input.time-part time-popover-anchor` (click opens list + caret);
     // schedule uses its own overlays; pause modal uses button anchors.
