@@ -17252,6 +17252,31 @@ function handleNowBlockingStop(entry) {
     }
 }
 
+function buildNowBlockingIdleMessage(nowMs = Date.now()) {
+    const upcoming = pickEarliestUpcomingScheduledBlock(nowMs);
+    if (!upcoming) {
+        return tSettings('titleBarNoActiveBlocks');
+    }
+    const whenPhrase = formatTitleBarScheduleStartWhen(new Date(upcoming.startMs), nowMs);
+    const emojiRaw = upcoming.blocklist.emoji != null ? String(upcoming.blocklist.emoji).trim() : '';
+    const emoji = emojiRaw || '🚫';
+    return tSettings('titleBarNextScheduleStarts')
+        .replace('{emoji}', emoji)
+        .replace('{name}', upcoming.blocklist.name || '')
+        .replace('{when}', whenPhrase);
+}
+
+/** True when the idle title-bar row already shows `idleMessage` with the expected DOM shape. */
+function isNowBlockingIdleDisplayCurrent(row, chipsEl, idleMessage) {
+    if (!row?.classList.contains('idle')) return false;
+    const existingIdle = document.getElementById('now-blocking-idle-msg');
+    if (!existingIdle || existingIdle.parentElement !== chipsEl) return false;
+    if (chipsEl.childElementCount !== 1) return false;
+    if (existingIdle.textContent !== idleMessage) return false;
+    if (row.getAttribute('aria-labelledby') !== 'now-blocking-idle-msg') return false;
+    return true;
+}
+
 // Render the title-bar status row: active chips — or idle copy showing the next scheduled start when applicable.
 function renderNowBlockingRow(nowMs = Date.now()) {
     const row = document.getElementById('now-blocking-row');
@@ -17263,6 +17288,13 @@ function renderNowBlockingRow(nowMs = Date.now()) {
     const entries = collectNowBlockingEntries(nowMs);
 
     if (entries.length === 0) {
+        const idleMessage = buildNowBlockingIdleMessage(nowMs);
+        // Idle copy is day-granular ("today", "tomorrow", or a date) — not a per-second
+        // countdown — so skip clearing/rebuilding the row when nothing changed.
+        if (isNowBlockingIdleDisplayCurrent(row, chipsEl, idleMessage)) {
+            return;
+        }
+
         closeNowBlockingChipMenus();
         row.classList.add('idle');
         row.classList.remove('many-active-chips');
@@ -17273,19 +17305,7 @@ function renderNowBlockingRow(nowMs = Date.now()) {
         idleSpan.id = 'now-blocking-idle-msg';
         idleSpan.className = 'now-blocking-idle-msg';
         idleSpan.setAttribute('data-tauri-drag-region', '');
-
-        const upcoming = pickEarliestUpcomingScheduledBlock(nowMs);
-        if (!upcoming) {
-            idleSpan.textContent = tSettings('titleBarNoActiveBlocks');
-        } else {
-            const whenPhrase = formatTitleBarScheduleStartWhen(new Date(upcoming.startMs), nowMs);
-            const emojiRaw = upcoming.blocklist.emoji != null ? String(upcoming.blocklist.emoji).trim() : '';
-            const emoji = emojiRaw || '🚫';
-            idleSpan.textContent = tSettings('titleBarNextScheduleStarts')
-                .replace('{emoji}', emoji)
-                .replace('{name}', upcoming.blocklist.name || '')
-                .replace('{when}', whenPhrase);
-        }
+        idleSpan.textContent = idleMessage;
 
         chipsEl.appendChild(idleSpan);
         requestAnimationFrame(() => syncNowBlockingChipsScrollability());
