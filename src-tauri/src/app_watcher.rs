@@ -304,6 +304,11 @@ pub(crate) fn force_dismiss_warning_overlay(app: Option<&AppHandle>) {
     }
 }
 
+/// True while the native watcher considers a blocking warning shell active.
+pub fn blocking_warning_shell_active() -> bool {
+    BLOCKING_WARNING_LAYERS.load(Ordering::SeqCst) > 0
+}
+
 fn emit_warning_show(app: Option<&AppHandle>, pid: u32, name: &str, _total_secs: u64) {
     blocking_warning_begin(app);
     if let Some(a) = app {

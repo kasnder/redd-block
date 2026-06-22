@@ -419,15 +419,6 @@ pub fn enter_blocking_warning_compact_window(app: &AppHandle) {
         }
     }
 
-    const MODE_ON: &str = r#"(function(){
-  try {
-    document.documentElement.classList.add('app-blocking-warning-window-mode');
-    document.body.classList.add('app-blocking-warning-window-mode');
-  } catch (_) {}
-})();"#;
-
-    let _ = w.eval(MODE_ON);
-
     let monitor = w
         .current_monitor()
         .ok()
@@ -632,14 +623,6 @@ pub fn leave_blocking_warning_compact_window(app: &AppHandle) {
     };
     close_aux_blocking_warning_windows(app);
 
-    const MODE_OFF: &str = r#"(function(){
-  try {
-    document.documentElement.classList.remove('app-blocking-warning-window-mode');
-    document.body.classList.remove('app-blocking-warning-window-mode');
-  } catch (_) {}
-})();"#;
-
-    let _ = w.eval(MODE_OFF);
     let _ = w.set_max_size(None::<LogicalSize<f64>>);
 
     let saved = BLOCKING_WARNING_SAVED_GEOM

@@ -148,6 +148,7 @@ const tauriAPI = {
     snoozeBlockingWarning: () => invoke('snooze_blocking_warning'),
     /// Restore compact-window warning chrome after a snooze expires.
     reshowBlockingWarning: (pids) => invoke('reshow_blocking_warning', { pids }),
+    reconcileBlockingWarningShell: () => invoke('reconcile_blocking_warning_shell'),
 
     saveOverlayImageAsset: (blocklistId, assetId, sourcePath) =>
         invoke('save_overlay_image_asset', { blocklistId, assetId, sourcePath }),
@@ -1227,6 +1228,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupMobileExternalLinkOpens();
     setupNowBlockingChipScroll();
     setupEventListeners();
+    setupAppBlockingWarningOverlay();
     initWelcomeDemoControls();
     setupTheme();
     setupUiZoomShortcuts();
@@ -1422,7 +1424,6 @@ async function runPostAcceptanceStartup() {
             // a no-op on subsequent launches past the current version.
             setupEnforcerUiAlerts();
             setupWebAutomationUiAlerts();
-            setupAppBlockingWarningOverlay();
             await ensureInstalledAppsCache();
             await runDesktopOnboarding();
             await checkHelperStatus();
@@ -3943,6 +3944,7 @@ function onAppForeground() {
     }
     if (!hasAcceptedEula() || !startupInitializationComplete) return;
     refreshBehaviourBannerIfStale({ force: true });
+    void reconcileBlockingWarningShell();
 }
 
 function setupAppForegroundRefresh() {
@@ -6079,6 +6081,8 @@ function setupAppBlockingWarningOverlay() {
             .letsGoAcknowledge()
             .catch((e) => console.warn('[app-blocking-ui] lets-go ack:', e));
     });
+
+    void reconcileBlockingWarningShell();
 }
 
 /** Find a blocklist that currently enforces blocking for `appName`
@@ -6244,6 +6248,20 @@ function applyWarningOverlayPresence() {
     const inWarningMode = hasUnackedRows && !isSnoozed;
     document.documentElement.classList.toggle('app-blocking-warning-window-mode', inWarningMode);
     document.body.classList.toggle('app-blocking-warning-window-mode', inWarningMode);
+
+    if (!inWarningMode) {
+        void restoreBlockingWarningShellIfIdle();
+    }
+}
+
+function restoreBlockingWarningShellIfIdle() {
+    if (isIOS) return Promise.resolve();
+    return tauriAPI.reconcileBlockingWarningShell().catch(() => {});
+}
+
+async function reconcileBlockingWarningShell() {
+    if (isIOS) return;
+    applyWarningOverlayPresence();
 }
 
 /// Render the in-app close-down countdown banner. Idempotent — call

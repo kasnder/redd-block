@@ -101,6 +101,22 @@ pub fn reshow_blocking_warning(app: AppHandle, pids: Vec<u32>) {
     }
 }
 
+/// Restore normal window geometry when the frontend has no warning overlay
+/// to show but the native shell is still expanded (e.g. page reload or a
+/// race before JS listeners attach).
+#[tauri::command]
+#[cfg(not(target_os = "ios"))]
+pub fn reconcile_blocking_warning_shell(app: AppHandle) {
+    if crate::app_watcher::blocking_warning_shell_active() {
+        return;
+    }
+    crate::commands::leave_blocking_warning_compact_window(&app);
+}
+
+#[tauri::command]
+#[cfg(target_os = "ios")]
+pub fn reconcile_blocking_warning_shell(_app: AppHandle) {}
+
 /// Re-read `redd-block-data.json` and push the effective blocked-app
 /// set into the watcher. Mirrors `native_host::derive_blocked_apps`
 /// so app-only schedule segments enforce even when the frontend never
