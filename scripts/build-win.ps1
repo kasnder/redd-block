@@ -137,6 +137,7 @@ Write-Host "=== Build Summary ===" -ForegroundColor Cyan
 $TauriConfig = Get-Content (Join-Path $ProjectRoot "src-tauri\tauri.conf.json") | ConvertFrom-Json
 $AppVersion = $TauriConfig.version
 $ProductName = $TauriConfig.productName
+$ReleaseSlug = "redd-blocker"
 
 # Copy installers to for-distribution with clean lowercase filenames
 $distDir = Join-Path $ProjectRoot "for-distribution"
@@ -150,12 +151,12 @@ if ($buildX64) {
     $nsisSource = Join-Path $x64Bundle "nsis\${ProductName}_${AppVersion}_x64-setup.exe"
     $msiSource = Join-Path $x64Bundle "msi\${ProductName}_${AppVersion}_x64_en-US.msi"
     if (Test-Path $nsisSource) {
-        Copy-Item $nsisSource (Join-Path $distDir "fristed_${AppVersion}_x64-setup.exe")
-        Write-Host "    fristed_${AppVersion}_x64-setup.exe" -ForegroundColor Gray
+        Copy-Item $nsisSource (Join-Path $distDir "${ReleaseSlug}_${AppVersion}_x64-setup.exe")
+        Write-Host "    ${ReleaseSlug}_${AppVersion}_x64-setup.exe" -ForegroundColor Gray
     }
     if (Test-Path $msiSource) {
-        Copy-Item $msiSource (Join-Path $distDir "fristed_${AppVersion}_x64.msi")
-        Write-Host "    fristed_${AppVersion}_x64.msi" -ForegroundColor Gray
+        Copy-Item $msiSource (Join-Path $distDir "${ReleaseSlug}_${AppVersion}_x64.msi")
+        Write-Host "    ${ReleaseSlug}_${AppVersion}_x64.msi" -ForegroundColor Gray
     }
 }
 if ($buildArm64) {
@@ -163,12 +164,12 @@ if ($buildArm64) {
     $nsisSource = Join-Path $arm64Bundle "nsis\${ProductName}_${AppVersion}_arm64-setup.exe"
     $msiSource = Join-Path $arm64Bundle "msi\${ProductName}_${AppVersion}_arm64_en-US.msi"
     if (Test-Path $nsisSource) {
-        Copy-Item $nsisSource (Join-Path $distDir "fristed_${AppVersion}_arm64-setup.exe")
-        Write-Host "    fristed_${AppVersion}_arm64-setup.exe" -ForegroundColor Gray
+        Copy-Item $nsisSource (Join-Path $distDir "${ReleaseSlug}_${AppVersion}_arm64-setup.exe")
+        Write-Host "    ${ReleaseSlug}_${AppVersion}_arm64-setup.exe" -ForegroundColor Gray
     }
     if (Test-Path $msiSource) {
-        Copy-Item $msiSource (Join-Path $distDir "fristed_${AppVersion}_arm64.msi")
-        Write-Host "    fristed_${AppVersion}_arm64.msi" -ForegroundColor Gray
+        Copy-Item $msiSource (Join-Path $distDir "${ReleaseSlug}_${AppVersion}_arm64.msi")
+        Write-Host "    ${ReleaseSlug}_${AppVersion}_arm64.msi" -ForegroundColor Gray
     }
 }
 

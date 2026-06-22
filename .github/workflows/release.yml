@@ -4,9 +4,9 @@
 # S3 and/or attaches them to a GitHub Release (optional checkboxes on manual runs).
 #
 # S3 layout matches redd-next download links (ReDDBlockClient.tsx):
-#   s3://redd-website-assets/reddblock/fristed-{version}.pkg
-#   s3://redd-website-assets/reddblock/fristed_{version}_x64-setup.exe
-#   s3://redd-website-assets/reddblock/fristed_{version}_arm64-setup.exe
+#   s3://redd-website-assets/reddblock/redd-blocker-{version}.pkg
+#   s3://redd-website-assets/reddblock/redd-blocker_{version}_x64-setup.exe
+#   s3://redd-website-assets/reddblock/redd-blocker_{version}_arm64-setup.exe
 #
 # Trigger: Actions → "Release build" → Run workflow, or push tag v* (e.g. v3.1.10).
 # Manual inputs:
@@ -132,7 +132,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-installer
-          path: for-distribution/fristed-*.pkg
+          path: for-distribution/redd-blocker-*.pkg
           if-no-files-found: error
           retention-days: 30
 
@@ -197,8 +197,8 @@ jobs:
         with:
           name: windows-installers
           path: |
-            for-distribution/fristed_*-setup.exe
-            for-distribution/fristed_*.msi
+            for-distribution/redd-blocker_*-setup.exe
+            for-distribution/redd-blocker_*.msi
           if-no-files-found: error
           retention-days: 30
 
@@ -289,9 +289,9 @@ jobs:
       - name: Stage installers for publish
         run: |
           mkdir -p for-distribution
-          find artifacts -type f -name 'fristed-*.pkg' -exec cp {} for-distribution/ \;
-          find artifacts -type f -name 'fristed_*-setup.exe' -exec cp {} for-distribution/ \;
-          find artifacts -type f -name 'fristed_*.msix' -exec cp {} for-distribution/ \;
+          find artifacts -type f -name 'redd-blocker-*.pkg' -exec cp {} for-distribution/ \;
+          find artifacts -type f -name 'redd-blocker_*-setup.exe' -exec cp {} for-distribution/ \;
+          find artifacts -type f -name 'redd-blocker_*.msix' -exec cp {} for-distribution/ \;
           echo "Staged installers:"
           ls -la for-distribution/
 
@@ -351,9 +351,9 @@ jobs:
           name: ReDD Blocker ${{ steps.meta.outputs.version }}
           body_path: release-notes.md
           files: |
-            for-distribution/fristed-*.pkg
-            for-distribution/fristed_*-setup.exe
-            for-distribution/fristed_*.msix
+            for-distribution/redd-blocker-*.pkg
+            for-distribution/redd-blocker_*-setup.exe
+            for-distribution/redd-blocker_*.msix
           draft: false
           prerelease: false
           make_latest: true

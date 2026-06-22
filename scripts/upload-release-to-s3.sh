@@ -2,9 +2,9 @@
 # Upload ReDD Blocker release installers to S3.
 #
 # Uses the same bucket, region, and key layout as redd-next download links:
-#   https://redd-website-assets.s3.eu-north-1.amazonaws.com/reddblock/fristed-{version}.pkg
-#   https://redd-website-assets.s3.eu-north-1.amazonaws.com/reddblock/fristed_{version}_x64-setup.exe
-#   https://redd-website-assets.s3.eu-north-1.amazonaws.com/reddblock/fristed_{version}_arm64-setup.exe
+#   https://redd-website-assets.s3.eu-north-1.amazonaws.com/reddblock/redd-blocker-{version}.pkg
+#   https://redd-website-assets.s3.eu-north-1.amazonaws.com/reddblock/redd-blocker_{version}_x64-setup.exe
+#   https://redd-website-assets.s3.eu-north-1.amazonaws.com/reddblock/redd-blocker_{version}_arm64-setup.exe
 #
 # Env (matches redd-api/.env.example):
 #   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
@@ -24,6 +24,7 @@ cd "$(dirname "$0")/.."
 
 BUCKET="${S3_ASSETS_BUCKET:-redd-website-assets}"
 PREFIX="${S3_RELEASE_PREFIX:-reddblock/}"
+RELEASE_SLUG="redd-blocker"
 VERSION="$(node -p "require('./package.json').version")"
 
 upload_file() {
@@ -37,7 +38,7 @@ upload_file() {
 }
 
 upload_mac() {
-  local pkg="for-distribution/fristed-${VERSION}.pkg"
+  local pkg="for-distribution/${RELEASE_SLUG}-${VERSION}.pkg"
   if [[ ! -f "$pkg" ]]; then
     echo "Missing macOS installer: $pkg" >&2
     exit 1
@@ -47,7 +48,7 @@ upload_mac() {
 
 upload_windows() {
   shopt -s nullglob
-  local files=(for-distribution/fristed_${VERSION}_*-setup.exe)
+  local files=(for-distribution/${RELEASE_SLUG}_${VERSION}_*-setup.exe)
   if [[ ${#files[@]} -eq 0 ]]; then
     echo "No Windows installers found for version ${VERSION}" >&2
     exit 1

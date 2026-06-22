@@ -40,7 +40,7 @@ if [[ "${1:-}" == "--release" ]]; then
 fi
 
 APP_NAME="ReDD Blocker"
-PKG_SLUG="fristed"
+PKG_SLUG="redd-blocker"
 BUNDLE_ID="com.reddblock"
 SCRIPTS_DIR="scripts/macos-pkg/scripts"
 
