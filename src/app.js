@@ -7,7 +7,6 @@ import { ask, message, open as openDialog, save as saveDialog } from '@tauri-app
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import logoReddFocusUrl from './images/logo-reddfocus.svg';
 import rumIconUrl from './fristed-icon.svg';
-import rumMarkUrl from './rum-mark.svg';
 import appleLogoUrl from './images/apple-logo.svg';
 import iconChromeUrl from './images/icon-chrome.svg';
 import iconBraveUrl from './images/icon-brave.svg';
@@ -12159,12 +12158,7 @@ async function openScheduleOverlayCustomiseModal(blocklist) {
         initialPresetId = null;
     }
 
-    const emojiEl = document.getElementById('schedule-overlay-customise-emoji');
     const subtitleEl = document.getElementById('schedule-overlay-customise-subtitle');
-    const defaultIconEl = document.getElementById('schedule-overlay-image-default-icon');
-    const blocklistEmoji = blocklist.emoji || '📚';
-    if (emojiEl) emojiEl.textContent = blocklistEmoji;
-    if (defaultIconEl) defaultIconEl.textContent = blocklistEmoji;
     if (subtitleEl) {
         subtitleEl.textContent = tSettings('scheduleOverlayCustomiseSubtitle');
     }
@@ -12659,6 +12653,7 @@ function setupScheduleOverlayCustomiseModal() {
 
 const START_CONFIRM_ICON_GLOBE = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;
 const START_CONFIRM_ICON_APP = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M10 4v4"></path><path d="M2 8h20"></path><path d="M6 4v4"></path></svg>`;
+const RUM_HOUSE_MARK_ICON = `<svg class="start-block-btn-app-icon start-block-btn-leading rum-house-mark" viewBox="122 48 780 780" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M612 764H812V392L512 112L212 392V764H412" stroke="currentColor" stroke-width="88" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const EXIT_ROOM_DOOR_OPEN_ICON = `<svg class="start-block-btn-unlock-icon start-block-btn-leading hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 20H2"></path><path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"></path><path d="M11 4H8a2 2 0 0 0-2 2v14"></path><path d="M14 12h.01"></path><path d="M22 20h-3"></path></svg>`;
 
 function setStartBlockBtnLeadingIcon(btn, mode) {
@@ -12666,10 +12661,7 @@ function setStartBlockBtnLeadingIcon(btn, mode) {
     const appIcon = btn.querySelector('.start-block-btn-app-icon');
     const unlockIcon = btn.querySelector('.start-block-btn-unlock-icon');
     const isStop = mode === 'stop';
-    if (appIcon) {
-        appIcon.src = rumMarkUrl;
-        appIcon.classList.toggle('hidden', isStop);
-    }
+    if (appIcon) appIcon.classList.toggle('hidden', isStop);
     if (unlockIcon) unlockIcon.classList.toggle('hidden', !isStop);
 }
 
@@ -12677,10 +12669,6 @@ function setStartConfirmPrimaryLabel(buttonId, text) {
     const btn = document.getElementById(buttonId);
     const label = btn?.querySelector('.start-confirm-primary-label');
     if (label) label.textContent = text;
-    if (buttonId === 'proceed-start-confirm-btn' || buttonId === 'proceed-schedule-confirm-btn') {
-        const icon = btn?.querySelector('.start-confirm-primary-icon');
-        if (icon && icon.tagName === 'IMG') icon.src = rumMarkUrl;
-    }
 }
 
 function buildStartConfirmBlockingLineHtml(type, labels) {
@@ -12838,6 +12826,7 @@ function setStartConfirmRoomChip(blocklist, {
     if (nameEl) nameEl.textContent = blocklist?.name || '';
 
     chip.style.background = '';
+    chip.style.backgroundColor = '';
     chip.style.color = '';
     chip.style.borderColor = '';
 }
@@ -12856,6 +12845,12 @@ const SCHEDULER_ROOM_CHIP_IDS = {
 
 function applyRoomChipTint(chip, accentColor) {
     if (!chip || !accentColor) return;
+    if (chip.classList.contains('scheduler-room-chip')) {
+        chip.style.backgroundColor = getEnteringChipColor(accentColor);
+        chip.style.borderColor = 'transparent';
+        chip.style.color = '#ffffff';
+        return;
+    }
     chip.style.background = `color-mix(in srgb, ${accentColor} 16%, var(--redd-card))`;
     chip.style.borderColor = `color-mix(in srgb, ${accentColor} 32%, var(--redd-border))`;
     chip.style.color = getEnteringChipColor(accentColor);
@@ -14541,7 +14536,7 @@ async function proceedWithBlock() {
 // Helper function for start block button HTML (includes .btn-label and .btn-blocklist-meta wrapper)
 function getStartBlockButtonHTML() {
     return `
-        <img class="start-block-btn-app-icon start-block-btn-leading" src="${rumMarkUrl}" alt="" aria-hidden="true">
+        ${RUM_HOUSE_MARK_ICON}
         ${EXIT_ROOM_DOOR_OPEN_ICON}
         <span class="btn-label">${escapeHtml(tSettings('startBlockButton'))}</span>
         <span class="btn-blocklist-meta">

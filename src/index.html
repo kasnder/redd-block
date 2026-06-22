@@ -676,13 +676,13 @@
 
                         <!-- Time Pickers (hidden until blocklist selected) -->
                         <div class="time-picker-container hidden" id="time-picker-container">
+                            <div class="start-confirm-room-chip scheduler-room-chip" id="scheduler-room-chip">
+                                <span class="start-confirm-room-chip-emoji" id="scheduler-room-chip-emoji" aria-hidden="true"></span>
+                                <span class="start-confirm-room-chip-name" id="scheduler-room-chip-name"></span>
+                            </div>
                             <div class="scheduler-enter-header" id="scheduler-enter-header">
                                 <div class="scheduler-enter-header-row">
                                     <h2 id="main-start-block-title">Enter</h2>
-                                    <div class="start-confirm-room-chip scheduler-room-chip" id="scheduler-room-chip">
-                                        <span class="start-confirm-room-chip-emoji" id="scheduler-room-chip-emoji" aria-hidden="true"></span>
-                                        <span class="start-confirm-room-chip-name" id="scheduler-room-chip-name"></span>
-                                    </div>
                                 </div>
                                 <div class="scheduler-mode-tabs">
                                     <button class="mode-tab active" id="instant-mode-tab" data-mode="instant" title="One-off">
@@ -963,8 +963,7 @@
 
                                 <!-- Start/Stop Block Button (for instant mode) -->
                                 <button id="start-block-btn" class="start-block-btn hidden" disabled>
-                                    <img class="start-block-btn-app-icon start-block-btn-leading" src="/rum-mark.svg"
-                                        alt="" aria-hidden="true">
+                                    <svg class="start-block-btn-app-icon start-block-btn-leading rum-house-mark" viewBox="122 48 780 780" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M612 764H812V392L512 112L212 392V764H412" stroke="currentColor" stroke-width="88" stroke-linecap="round" stroke-linejoin="round"/></svg>
                                     <svg class="start-block-btn-unlock-icon start-block-btn-leading hidden" width="18"
                                         height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -985,8 +984,7 @@
                                 <!-- Start Schedule Button (for schedule mode) -->
                                 <button id="start-schedule-btn" class="start-block-btn start-schedule-btn hidden"
                                     disabled>
-                                    <img class="start-block-btn-app-icon start-block-btn-leading" src="/rum-mark.svg"
-                                        alt="" aria-hidden="true">
+                                    <svg class="start-block-btn-app-icon start-block-btn-leading rum-house-mark" viewBox="122 48 780 780" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M612 764H812V392L512 112L212 392V764H412" stroke="currentColor" stroke-width="88" stroke-linecap="round" stroke-linejoin="round"/></svg>
                                     <svg class="start-block-btn-unlock-icon start-block-btn-leading hidden" width="18"
                                         height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1572,7 +1570,7 @@
                 <div class="modal-buttons start-confirm-actions">
                     <button id="cancel-start-confirm-btn" class="modal-btn cancel-btn">Cancel</button>
                     <button id="proceed-start-confirm-btn" class="modal-btn black-btn start-confirm-primary-btn">
-                        <img class="start-confirm-primary-icon" src="/rum-mark.svg" alt="" aria-hidden="true">
+                        <svg class="start-confirm-primary-icon rum-house-mark" viewBox="122 48 780 780" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M612 764H812V392L512 112L212 392V764H412" stroke="currentColor" stroke-width="88" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         <span class="start-confirm-primary-label">Enter Room</span>
                     </button>
                 </div>
@@ -1695,7 +1693,7 @@
                 <div class="modal-buttons start-confirm-actions">
                     <button id="cancel-schedule-confirm-btn" class="modal-btn cancel-btn">Cancel</button>
                     <button id="proceed-schedule-confirm-btn" class="modal-btn black-btn start-confirm-primary-btn">
-                        <img class="start-confirm-primary-icon" src="/rum-mark.svg" alt="" aria-hidden="true">
+                        <svg class="start-confirm-primary-icon rum-house-mark" viewBox="122 48 780 780" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M612 764H812V392L512 112L212 392V764H412" stroke="currentColor" stroke-width="88" stroke-linecap="round" stroke-linejoin="round"/></svg>
                         <span class="start-confirm-primary-label">Start Schedule</span>
                     </button>
                 </div>
@@ -1709,8 +1707,6 @@
                     class="schedule-overlay-customise-close-btn" aria-label="Close">&times;</button>
                 <div class="schedule-overlay-customise-header">
                     <div class="schedule-overlay-customise-title-row">
-                        <span class="schedule-overlay-customise-emoji" id="schedule-overlay-customise-emoji"
-                            aria-hidden="true">📚</span>
                         <div class="schedule-overlay-customise-header-text">
                             <h3 id="schedule-overlay-customise-title">Customise the alert</h3>
                             <p class="schedule-overlay-customise-subtitle" id="schedule-overlay-customise-subtitle"></p>

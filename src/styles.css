@@ -164,7 +164,7 @@ body.dark-mode{
 
     --primary-btn-bg: var(--redd-teal);
     --primary-btn-bg-hover: var(--redd-teal-hover);
-    --primary-btn-text: #0c1620;
+    --primary-btn-text: #ffffff;
 
     --app-bg: var(--redd-cream);
     --container-bg: var(--redd-cream);
@@ -172,13 +172,13 @@ body.dark-mode{
     --text-primary: var(--redd-navy);
     --text-secondary: var(--redd-body);
     --text-muted: var(--redd-muted);
-    --text-subtle: rgba(245, 240, 232, 0.45);
+    --text-subtle: rgba(245, 240, 232, 0.65);
     --border-color: var(--redd-border);
     --element-bg: rgba(255, 255, 255, 0.04);
     --element-hover-bg: rgba(255, 255, 255, 0.08);
     --accent-color: var(--redd-teal);
     --accent-hover: var(--redd-teal-hover);
-    --header-text: var(--redd-muted);
+    --header-text: #b8c0cc;
     --timeline-track: rgba(255, 255, 255, 0.05);
     --timeline-axis-text: var(--redd-muted);
     --timeline-now-text: var(--redd-teal);
@@ -1818,7 +1818,7 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack svg{
         gap: 18px;
         margin-bottom: 12px;
         border-radius: 14px;
-        padding: 20px;
+        padding: 16px 20px 20px;
     }
 
     body.ios:not(.ios-phone) .main-content .quick-select-row{
@@ -1977,7 +1977,8 @@ body.ios:not(.ios-phone) .main-content .start-schedule-btn > svg{
         max-height: 20px;
     }
 
-    body.ios:not(.ios-phone) .main-content .start-block-btn > .start-block-btn-app-icon{
+    body.ios:not(.ios-phone) .main-content .start-block-btn > .start-block-btn-app-icon,
+    body.ios:not(.ios-phone) .main-content .start-block-btn > svg.start-block-btn-app-icon{
         flex: 0 0 30px;
         width: 30px;
         height: 30px;
@@ -4386,17 +4387,19 @@ body.dark-mode .day-row.weekend{
     gap: 16px;
     margin-bottom: 8px;
     min-width: 0;
+    position: relative;
+    overflow: visible;
     background: var(--panel-bg);
     border-radius: 12px;
-    padding: 16px;
+    padding: 12px 16px 16px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .scheduler-enter-header{
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    margin-bottom: 4px;
+    gap: 8px;
+    margin-bottom: 2px;
     container-type: inline-size;
     container-name: sched-enter-header;
 }
@@ -4416,15 +4419,46 @@ body.dark-mode .day-row.weekend{
     font-family: var(--font-section-label);
     font-size: 16px;
     font-weight: 700;
+    line-height: 1.2;
     color: var(--text-subtle);
     text-transform: uppercase;
     letter-spacing: 0.06em;
 }
 
-.scheduler-enter-header .scheduler-room-chip{
-    flex: 0 1 auto;
+.time-picker-container .scheduler-room-chip{
+    position: absolute;
+    top: -1px;
+    left: 16px;
+    transform: translateY(-50%);
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: calc(100% - 32px);
+    padding: 3px 9px 3px 7px;
+    border-radius: 999px;
+    border: none;
+    font-family: var(--font-section-label);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1.2;
+    color: #fff;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.time-picker-container .scheduler-room-chip .start-confirm-room-chip-emoji{
+    font-size: 11px;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.time-picker-container .scheduler-room-chip .start-confirm-room-chip-name{
     min-width: 0;
-    max-width: min(100%, 220px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .scheduler-enter-header .scheduler-mode-tabs{
@@ -4447,6 +4481,48 @@ body.dark-mode .day-row.weekend{
     padding: 0;
     overflow: visible;
     border: none;
+}
+
+/* Desktop two-column: MY ROOMS header on row 1 left; room cards and the detail
+   card share row 2 so their tops align. Keep row-gap at 0 so header-to-content
+   spacing matches the unselected stacked layout (grid gap is column-only). */
+@media (min-width: 769px) {
+    body:not(.ios) .grid-top-row.grid-top-row--blocklist-selected{
+        grid-template-rows: auto auto;
+        row-gap: 0;
+    }
+
+    body:not(.ios) .grid-top-row.grid-top-row--blocklist-selected .blocklists-section,
+    body:not(.ios) .grid-top-row.grid-top-row--blocklist-selected .scheduler-section{
+        display: contents;
+    }
+
+    body:not(.ios) .grid-top-row.grid-top-row--blocklist-selected .blocklists-section > .section-header{
+        grid-column: 1;
+        grid-row: 1;
+    }
+
+    body:not(.ios) .grid-top-row.grid-top-row--blocklist-selected .blocklists-container{
+        grid-column: 1;
+        grid-row: 2;
+    }
+
+    body:not(.ios) .grid-top-row.grid-top-row--blocklist-selected .scheduler-section > .section-header{
+        grid-column: 2;
+        grid-row: 1;
+        min-height: 0;
+        height: 0;
+        margin-bottom: 0;
+        padding: 0;
+        overflow: visible;
+    }
+
+    body:not(.ios) .grid-top-row.grid-top-row--blocklist-selected .scheduler-content{
+        grid-column: 2;
+        grid-row: 2;
+        padding-top: 8px;
+        min-width: 0;
+    }
 }
 
 /* Duration Picker */
@@ -4646,7 +4722,7 @@ body.dark-mode .day-row.weekend{
 .time-label{
     font-size: 13px;
     font-weight: 500;
-    color: hsl(215, 20%, 50%);
+    color: var(--header-text);
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
@@ -5084,7 +5160,8 @@ body.dark-mode .tag.locked{
     align-self: center;
 }
 
-.start-block-btn > .start-block-btn-app-icon{
+.start-block-btn > .start-block-btn-app-icon,
+.start-block-btn > svg.start-block-btn-app-icon{
     flex: 0 0 26px;
     width: 26px;
     height: 26px;
@@ -5095,7 +5172,7 @@ body.dark-mode .tag.locked{
     object-fit: contain;
 }
 
-.start-block-btn > svg.start-block-btn-leading,
+.start-block-btn > svg.start-block-btn-leading:not(.start-block-btn-app-icon),
 .start-block-btn > svg{
     flex: 0 0 18px;
     width: 18px;
@@ -5105,6 +5182,11 @@ body.dark-mode .tag.locked{
     max-width: 18px;
     max-height: 18px;
     align-self: center;
+}
+
+.start-block-btn .rum-house-mark path,
+svg.start-confirm-primary-icon.rum-house-mark path{
+    stroke-width: 68;
 }
 
 /* Stop Block / Stop Schedule — ghost. Pause carries the visual weight in
@@ -5427,6 +5509,15 @@ body:not(.ios) .scheduler-enter-header .mode-tab.active{
 
 body.dark-mode .mode-tab.active{
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    color: #ffffff;
+}
+
+body.dark-mode .mode-tab.active:hover{
+    color: #ffffff;
+}
+
+body.dark-mode .mode-tab.active .mode-tab-icon{
+    color: #ffffff;
 }
 
 /* Schedule Block Panel */
@@ -5992,17 +6083,17 @@ body.ios .segment-days.compact-day-labels .segment-day-toggle {
 }
 
 body.dark-mode .schedule-panel-overlay-group .repeat-label.repeat-label-disabled{
-    color: var(--text-muted);
+    color: var(--header-text);
     opacity: 0.85;
 }
 
 .repeat-label{
     font-size: 15px;
-    color: var(--text-muted);
+    color: var(--header-text);
 }
 
 .repeat-label.repeat-label-disabled{
-    color: hsl(215, 20%, 50%);
+    color: var(--header-text);
     opacity: 0.7;
 }
 
@@ -11182,14 +11273,16 @@ body.handset-device #start-schedule-confirm-modal .start-confirm-header-room h3{
     gap: 8px;
 }
 
-.start-confirm-primary-icon{
+.start-confirm-primary-icon,
+svg.start-confirm-primary-icon{
     width: 22px;
     height: 22px;
     flex-shrink: 0;
     object-fit: contain;
 }
 
-img.start-confirm-primary-icon{
+img.start-confirm-primary-icon,
+svg.start-confirm-primary-icon{
     display: block;
 }
 
@@ -11264,13 +11357,6 @@ body.dark-mode .start-confirm-blocking-text{
 .schedule-overlay-customise-title-row{
     display: flex;
     align-items: flex-start;
-    gap: 14px;
-}
-
-.schedule-overlay-customise-emoji{
-    flex-shrink: 0;
-    font-size: 28px;
-    line-height: 1;
 }
 
 .schedule-overlay-customise-header-text{
