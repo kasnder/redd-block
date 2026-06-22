@@ -6948,15 +6948,14 @@ function setupHandsetModalScreens() {
         }
         if (modalId === 'settings-modal') {
             const versionEl = content.querySelector('#current-app-version');
-            const generalHeading = content.querySelector('#settings-general-heading');
             const settingsHeader = content.querySelector('.settings-modal-header');
-            if (versionEl && generalHeading && !generalHeading.parentElement?.classList.contains('settings-section-heading-row')) {
-                const row = document.createElement('div');
-                row.className = 'settings-section-heading-row';
-                generalHeading.parentNode.insertBefore(row, generalHeading);
-                row.append(generalHeading, versionEl);
+            if (document.body.classList.contains('handset-device')) {
+                if (versionEl) {
+                    versionEl.classList.add('settings-header-version');
+                    header.appendChild(versionEl);
+                }
+                settingsHeader?.classList.add('hidden');
             }
-            settingsHeader?.classList.add('hidden');
         }
         content.prepend(header);
 
@@ -6971,7 +6970,8 @@ function setupHandsetModalScreens() {
 
         const scrollBody = document.createElement('div');
         scrollBody.className = 'mobile-modal-scroll-body';
-        const keepFooterOutsideScroll = modalId === 'blocklist-modal';
+        const keepFooterOutsideScroll =
+            modalId === 'blocklist-modal' || modalId === 'settings-modal';
         while (header.nextSibling) {
             const node = header.nextSibling;
             if (

@@ -10644,11 +10644,62 @@ body.ios #blocklist-modal .override-count-input {
 }
 
 #settings-modal .modal-content{
+    display: flex;
+    flex-direction: column;
+    max-height: 95vh;
+    overflow: hidden;
+    overscroll-behavior-y: none;
+    padding: 16px 24px 0;
     --settings-control-width: 140px;
+}
+
+#settings-modal .mobile-modal-scroll-body{
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
 }
 
 body:not(.handset-device) #settings-modal .modal-content{
     max-width: 520px;
+}
+
+#settings-modal .modal-buttons{
+    flex-shrink: 0;
+    margin: 0 -24px 0;
+    padding: 12px 24px 24px;
+    border-top: 1px solid var(--border-color-medium);
+    background: #ffffff;
+    z-index: 2;
+}
+
+body.handset-device #settings-modal.mobile-fullscreen-modal .modal-content{
+    padding: 0;
+}
+
+body.handset-device #settings-modal.mobile-fullscreen-modal .mobile-modal-scroll-body{
+    padding-top: 12px;
+    padding-bottom: 16px;
+}
+
+body.handset-device #settings-modal.mobile-fullscreen-modal .modal-buttons{
+    margin: 0;
+    padding:
+        12px
+        max(18px, env(safe-area-inset-right, 0px))
+        calc(env(safe-area-inset-bottom, 0px) + 12px)
+        max(18px, env(safe-area-inset-left, 0px));
+    background: #ffffff;
+    border-top: 1px solid var(--border-color-medium);
+}
+
+body.dark-mode #settings-modal .modal-buttons{
+    background: var(--redd-card);
+}
+
+body.dark-mode.handset-device #settings-modal.mobile-fullscreen-modal .modal-buttons{
+    border-top-color: var(--border-color-medium);
 }
 
 /* Popup-style blocklist modal on iPad only — handset full-screen modals handle safe area in .mobile-modal-header. */
@@ -12679,6 +12730,21 @@ body.dark-mode .language-picker-dropdown{
     gap: 12px;
 }
 
+.settings-modal-header .settings-current-version{
+    flex-shrink: 0;
+    margin-left: auto;
+    text-align: right;
+}
+
+body.handset-device #settings-modal.mobile-fullscreen-modal .mobile-modal-header .settings-header-version{
+    grid-column: 3;
+    justify-self: end;
+    align-self: center;
+    font-size: 13px;
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+
 #settings-modal-title{
     font-weight: 400;
 }
@@ -12804,23 +12870,6 @@ body.dark-mode #settings-modal .settings-feedback-footer{
     font-size: 13px;
     color: var(--text-muted);
     white-space: nowrap;
-}
-
-body.handset-device #settings-modal.mobile-fullscreen-modal .settings-section-heading-row{
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-}
-
-body.handset-device #settings-modal.mobile-fullscreen-modal .settings-section-heading-row .settings-section-heading{
-    margin: 0;
-    padding: 0 2px;
-}
-
-body.handset-device #settings-modal.mobile-fullscreen-modal .settings-section-heading-row .settings-current-version{
-    flex-shrink: 0;
-    text-align: right;
 }
 
 /* Advanced Options Toggle */
