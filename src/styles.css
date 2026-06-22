@@ -8318,7 +8318,7 @@ body.dark-mode .migration-browser-icons-stack .migration-browser-icon{
     background: var(--input-bg);
     color: var(--text-primary);
     font-size: 14px;
-    text-align: right;
+    text-align: center;
     font-family: inherit;
 }
 
@@ -10112,6 +10112,10 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     white-space: nowrap;
 }
 
+body:not(.ios) #blocklist-modal .tags-input-stacked .browse-btn{
+    gap: 8px;
+}
+
 #blocklist-modal .tags-input-stacked .browse-btn:hover{
     background: var(--button-bg);
     color: white;
@@ -10681,6 +10685,23 @@ body.ios #blocklist-modal .override-count-input {
     touch-action: pan-y;
 }
 
+/* Desktop popup modals: scroll on .mobile-modal-scroll-body with the scrollbar
+   on the modal's right edge (not inset by content padding). */
+body:not(.ios) .modal-overlay .modal-content:has(.mobile-modal-scroll-body){
+    display: flex;
+    flex-direction: column;
+    max-height: 95vh;
+    overflow: hidden;
+}
+
+body:not(.ios) .modal-overlay .mobile-modal-scroll-body{
+    flex: 1;
+    min-height: 0;
+    margin-right: -24px;
+    padding-right: 24px;
+    box-sizing: border-box;
+}
+
 body:not(.handset-device) #settings-modal .modal-content{
     max-width: 520px;
 }
@@ -10688,7 +10709,7 @@ body:not(.handset-device) #settings-modal .modal-content{
 #settings-modal .modal-buttons{
     flex-shrink: 0;
     margin: 0 -24px 0;
-    padding: 12px 24px 24px;
+    padding: 12px 24px;
     border-top: 1px solid var(--border-color-medium);
     background: #ffffff;
     z-index: 2;
@@ -12773,7 +12794,15 @@ body.handset-device #settings-modal.mobile-fullscreen-modal .mobile-modal-header
 }
 
 #settings-modal-title{
-    font-weight: 400;
+    font-family: var(--font-heading);
+    font-size: 1.45rem;
+    font-weight: 700;
+    line-height: 1.25;
+    color: var(--redd-navy);
+}
+
+body.dark-mode #settings-modal-title{
+    color: var(--text-primary);
 }
 
 .settings-section-heading{
@@ -12851,6 +12880,10 @@ body.handset-device #settings-modal.mobile-fullscreen-modal .mobile-modal-header
     border: 1px solid #ccd8d2;
     border-radius: 10px;
     color: #2d5a4c;
+}
+
+body:not(.ios) #settings-modal .settings-feedback-footer{
+    margin-bottom: 12px;
 }
 
 .settings-feedback-footer{
@@ -12969,7 +13002,7 @@ body.dark-mode #settings-modal .settings-feedback-footer{
 #blocklist-modal .modal-buttons{
     flex-shrink: 0;
     margin: 0 -24px 0;
-    padding: 12px 24px 24px;
+    padding: 12px 24px;
     border-top: 1px solid var(--border-color-medium);
     background: #ffffff;
     z-index: 2;
