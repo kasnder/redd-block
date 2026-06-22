@@ -1615,7 +1615,8 @@ body.dark-mode .app-blocking-closedown-banner{
 
 /* Stack on small screens (md breakpoint) */
 @media (max-width: 768px) {
-    .grid-top-row{
+    .grid-top-row,
+    .grid-top-row.grid-top-row--blocklist-selected{
         grid-template-columns: 1fr;
         gap: 12px;
     }
