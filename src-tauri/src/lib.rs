@@ -571,6 +571,7 @@ pub fn run() {
                     .min_inner_size(600.0, 500.0)
                     .resizable(true)
                     .decorations(false) // Hide native title bar, use custom controls
+                    .icon(tauri::include_image!("icons/128x128.png"))?
                     .center();
 
                 win_builder.build()?;
