@@ -6,7 +6,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ask, message, open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import logoReddFocusUrl from './images/logo-reddfocus.svg';
-import rumIconUrl from './fristed-icon.svg';
+import fristedIconUrl from './fristed-icon.svg';
 import appleLogoUrl from './images/apple-logo.svg';
 import iconChromeUrl from './images/icon-chrome.svg';
 import iconBraveUrl from './images/icon-brave.svg';
@@ -164,7 +164,7 @@ const tauriAPI = {
 
     // macOS-only in-app uninstall. Disables launch-at-login, scrubs
     // browser native-messaging manifests, and schedules a delayed
-    // self-delete of /Applications/Rum.app. Caller is responsible
+    // self-delete of /Applications/Fristed.app. Caller is responsible
     // for confirming with the user and refusing to invoke while blocks
     // are running. See src-tauri/src/commands/uninstall.rs.
     uninstallSelfMacos: (deleteUserData = false) =>
@@ -344,8 +344,8 @@ let expandedScheduleSegmentIndex = 0; // Which segment shows the full editor whe
 // Far-future timestamp used for "always on" blocks (year 9999)
 const ALWAYS_ON_END_TIME = new Date(9999, 11, 31, 23, 59, 59, 999).getTime();
 
-// Protected app names — Rum must never block itself
-const PROTECTED_APP_NAMES = ['redd block', 'redd-block', 'redd-block-helper'];
+// Protected app names — Fristed must never block itself
+const PROTECTED_APP_NAMES = ['redd block', 'redd-block', 'redd-block-helper', 'fristed', 'rum'];
 
 // Protected domains — blocking these would break networking or the app itself
 const PROTECTED_DOMAINS = [
@@ -1587,16 +1587,10 @@ async function persistWelcomeOnboardingShown() {
 }
 
 async function runInitialOnboardingSequence() {
-    if (await shouldShowRebrandOnboarding()) {
-        await presentRebrandOnboarding();
-        await persistLaunchIdentity();
-        return;
-    }
     if (!isIOS && !hasWelcomeOnboardingBeenShown()) {
         await presentWelcomeOnboarding();
         await persistWelcomeOnboardingShown();
     }
-    await persistLaunchIdentity();
     updateOnboardingVisibility();
 }
 
@@ -1625,134 +1619,6 @@ function presentWelcomeOnboarding(onContinue) {
             btn.addEventListener('click', onClick);
         });
     })();
-}
-
-const CURRENT_PRODUCT_NAME = 'Rum';
-const PREVIOUS_PRODUCT_NAMES = ['ReDD Block', 'Fristed: Block Apps & Sites', 'Fristed'];
-// First release that ships the Rum rename onboarding.
-const RUM_REBRAND_RELEASE_VERSION = '3.3.3';
-
-let startupAppVersionPromise = null;
-
-function getStartupAppVersion() {
-    if (!startupAppVersionPromise) {
-        startupAppVersionPromise = tauriAPI.getAppVersion().catch(() => '');
-    }
-    return startupAppVersionPromise;
-}
-
-function getKnownProductName() {
-    return appData?.settings?.extra?.knownProductName ?? null;
-}
-
-function getLastLaunchedVersion() {
-    return appData?.settings?.extra?.lastLaunchedVersion ?? null;
-}
-
-function isPreviousProductName(name) {
-    return PREVIOUS_PRODUCT_NAMES.includes(name);
-}
-
-function hasPreRumAppUsage() {
-    return (appData?.blocklists?.length || 0) > 0
-        || (appData?.activeBlocks?.length || 0) > 0
-        || (appData?.schedules?.length || 0) > 0
-        || appData?.settings?.onboardingComplete === true
-        || appData?.settings?.welcomeOnboardingShown === true
-        || !!localStorage.getItem(EXT_ONBOARDING_DISMISSED_KEY);
-}
-
-function isVersionAtLeast(version, minimum) {
-    if (!version || !minimum) return false;
-    return isVersionHigher(version, minimum) || version === minimum;
-}
-
-function crossedIntoRumRebrandRelease(previousVersion, currentVersion) {
-    if (!isVersionAtLeast(currentVersion, RUM_REBRAND_RELEASE_VERSION)) return false;
-    if (!previousVersion) return false;
-    if (previousVersion === currentVersion) return false;
-    return !isVersionAtLeast(previousVersion, RUM_REBRAND_RELEASE_VERSION);
-}
-
-function hasSeenRumRebrandOnboarding() {
-    return appData?.settings?.extra?.rumRebrandOnboardingShown === true;
-}
-
-function sawPreviousRebrandOnboarding() {
-    return appData?.settings?.extra?.rebrandOnboardingShown === true;
-}
-
-async function shouldShowRebrandOnboarding() {
-    if (hasSeenRumRebrandOnboarding()) return false;
-
-    const known = getKnownProductName();
-    if (known === CURRENT_PRODUCT_NAME) return false;
-    if (!hasPreRumAppUsage()) return false;
-
-    // Last session was still under a previous product name.
-    if (known && isPreviousProductName(known)) return true;
-
-    const previousVersion = getLastLaunchedVersion();
-    const currentVersion = await getStartupAppVersion();
-
-    // Crossed into the Rum rename release on update.
-    if (crossedIntoRumRebrandRelease(previousVersion, currentVersion)) return true;
-
-    // Saw the earlier Fristed rename screen but not the Rum one yet.
-    if (sawPreviousRebrandOnboarding()) {
-        return isVersionAtLeast(currentVersion, RUM_REBRAND_RELEASE_VERSION);
-    }
-
-    // First Rum launch for an existing user before we tracked product identity.
-    if (!known && !previousVersion && isVersionAtLeast(currentVersion, RUM_REBRAND_RELEASE_VERSION)) {
-        return true;
-    }
-
-    return false;
-}
-
-async function persistLaunchIdentity() {
-    if (!appData.settings) appData.settings = {};
-    if (!appData.settings.extra) appData.settings.extra = {};
-    const currentVersion = await getStartupAppVersion();
-    if (currentVersion) {
-        appData.settings.extra.lastLaunchedVersion = currentVersion;
-    }
-    appData.settings.extra.knownProductName = CURRENT_PRODUCT_NAME;
-    try {
-        await saveData();
-    } catch (e) {
-        console.warn('[launch-identity] persist failed:', e);
-    }
-}
-
-async function persistRebrandOnboardingShown() {
-    if (!appData.settings) appData.settings = {};
-    if (!appData.settings.extra) appData.settings.extra = {};
-    appData.settings.extra.rumRebrandOnboardingShown = true;
-    await saveData();
-}
-
-async function presentRebrandOnboarding() {
-    const overlay = document.getElementById('rebrand-onboarding');
-    const btn = document.getElementById('rebrand-onboarding-continue-btn');
-    if (!overlay || !btn) return;
-
-    showExclusiveOnboardingScreen('rebrand-onboarding');
-    document.getElementById('main-content')?.classList.add('hidden');
-    document.getElementById('now-blocking-row')?.classList.add('hidden');
-    applyRebrandOnboardingLanguage();
-
-    await new Promise((resolve) => {
-        const onClick = async () => {
-            btn.removeEventListener('click', onClick);
-            await persistRebrandOnboardingShown();
-            overlay.classList.add('hidden');
-            updateOnboardingVisibility();
-            resolve();
-        };
-        btn.addEventListener('click', onClick);
-    });
 }
 
 function syncSetupBannerHeadline() {
@@ -1900,7 +1766,7 @@ let firstRunExtensionSetupPending = false;
 // While the migration post-phase is on screen, the user is bouncing
 // between this window and Safari (or Chrome/Firefox/etc.) toggling
 // extension settings. The window-`focus` listener below already
-// re-polls on tab-back, but a user who has Safari and Rum
+// re-polls on tab-back, but a user who has Safari and Fristed
 // side-by-side never triggers focus events as they click toggles.
 // Run a low-frequency poll so the checklist ticks itself off within
 // the "up to 20 seconds" window the UI already promises. Cleared
@@ -3169,7 +3035,7 @@ function privateModeNoun(key) {
 // launching Safari when needed, then falls back to AppleScript for
 // dev builds (`cargo tauri dev`) and other cases where SafariServices
 // can't find the host extension. AppleScript needs Accessibility
-// permission for Rum (or your terminal, when running dev).
+// permission for Fristed (or your terminal, when running dev).
 async function openExtensionSettings(key) {
     if (key === 'safari') {
         try {
@@ -3401,12 +3267,12 @@ function syncMigrationPostHeader(state) {
     header.classList.remove('hidden');
     const copy = migrationExtHeaderCopy(state);
     if (copy) {
-        const shieldLogo = document.getElementById('migration-post-header-rum-logo');
+        const shieldLogo = document.getElementById('migration-post-header-fristed-logo');
         const titleEl = document.getElementById('migration-post-header-title');
         const subEl = document.getElementById('migration-post-header-subtitle');
         const copyKey = migrationMacCopyKey(state);
         if (copyKey !== lastMigrationHeaderCopyKey) {
-            if (shieldLogo) shieldLogo.src = rumIconUrl;
+            if (shieldLogo) shieldLogo.src = fristedIconUrl;
             if (titleEl) titleEl.textContent = copy.titleHtml;
             if (subEl) subEl.innerHTML = copy.subtitleHtml;
             lastMigrationHeaderCopyKey = copyKey;
@@ -3879,7 +3745,7 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
             const isSafari = key === 'safari';
 
             // "✓ Extension installed" line. Always show for Safari —
-            // we bundle the .appex inside Rum.app, so install
+            // we bundle the .appex inside Fristed.app, so install
             // is structurally guaranteed at this point. For Chromium /
             // Firefox we only show it once we've moved past the
             // install step (status !== 'needs-enable') because there
@@ -4092,7 +3958,7 @@ function setupAppForegroundRefresh() {
     });
     // Keep the setup banner in sync when extension state changes
     // without a window focus (e.g. user toggles an extension while
-    // Rum stays visible). Matches enforcer tick (~5 s).
+    // Fristed stays visible). Matches enforcer tick (~5 s).
     setInterval(() => {
         if (!startupInitializationComplete || migrationOnboardingActive) return;
         if (!hasAcceptedEula()) return;
@@ -4462,7 +4328,7 @@ function setupEnforcerUiAlerts() {
 //
 // The Automation watcher (src-tauri/src/web_automation.rs) drives
 // Safari + Chromium blocking via Apple Events. The first event to each
-// browser surfaces the system "Rum wants to control <App>"
+// browser surfaces the system "Fristed wants to control <App>"
 // prompt; if the user denies it, the watcher emits
 // `web-automation://permission-needed` (and `...resolved` once granted).
 // Without the grant, website blocking silently does nothing, so we show
@@ -4758,7 +4624,7 @@ function enforcerCopy(payload) {
         };
     }
     if (issue === 'automation') {
-        // macOS: Rum lost the Automation grant for this browser,
+        // macOS: Fristed lost the Automation grant for this browser,
         // so it can't redirect blocked tabs. No extension URL applies —
         // the only fix is re-enabling the grant in System Settings.
         return {
@@ -6604,7 +6470,6 @@ function updateOnboardingVisibility() {
 
 function activeExclusiveOnboardingScreenId() {
     const screenIds = [
-        'rebrand-onboarding',
         'welcome-onboarding',
         'fda-onboarding',
         'migration-onboarding',
@@ -6614,7 +6479,6 @@ function activeExclusiveOnboardingScreenId() {
 
 function showExclusiveOnboardingScreen(activeId) {
     const screenIds = [
-        'rebrand-onboarding',
         'welcome-onboarding',
         'eula-onboarding',
         'fda-onboarding',
@@ -7086,27 +6950,6 @@ async function updateMaximizeButton() {
     }
 }
 
-async function updateRebrandMaximizeButton() {
-    const maximizeBtn = document.getElementById('rebrand-titlebar-maximize');
-    const maximizeIcon = document.getElementById('rebrand-maximize-icon');
-    const restoreIcon = document.getElementById('rebrand-restore-icon');
-
-    if (!maximizeBtn || !maximizeIcon || !restoreIcon) return;
-
-    const win = getCurrentWindow();
-    const isMaximized = await win.isMaximized();
-
-    if (isMaximized) {
-        maximizeIcon.style.display = 'none';
-        restoreIcon.style.display = 'block';
-        maximizeBtn.title = 'Restore';
-    } else {
-        maximizeIcon.style.display = 'block';
-        restoreIcon.style.display = 'none';
-        maximizeBtn.title = 'Maximize';
-    }
-}
-
 // Setup event listeners
 function setupEventListeners() {
     // Window controls (using Tauri docs naming)
@@ -7121,19 +6964,6 @@ function setupEventListeners() {
     });
 
     document.getElementById('titlebar-close')?.addEventListener('click', () => {
-        tauriAPI.closeWindow();
-    });
-
-    document.getElementById('rebrand-titlebar-minimize')?.addEventListener('click', () => {
-        tauriAPI.minimizeWindow();
-    });
-
-    document.getElementById('rebrand-titlebar-maximize')?.addEventListener('click', async () => {
-        await tauriAPI.maximizeWindow();
-        setTimeout(updateRebrandMaximizeButton, 100);
-    });
-
-    document.getElementById('rebrand-titlebar-close')?.addEventListener('click', () => {
         tauriAPI.closeWindow();
     });
 
@@ -7212,7 +7042,7 @@ function setupEventListeners() {
             }
         } else if (note) {
             if (result.status === 'denied') {
-                note.textContent = 'Screen Time access was denied. Please tap the button again, or enable Rum in Settings > Screen Time > Apps With Screen Time Access.';
+                note.textContent = 'Screen Time access was denied. Please tap the button again, or enable Fristed in Settings > Screen Time > Apps With Screen Time Access.';
             } else if (result.error) {
                 note.textContent = `Screen Time access failed: ${result.error}`;
             }
@@ -8070,7 +7900,7 @@ function setupModalListeners() {
             e.preventDefault();
             const app = modalAppInput.value.trim();
             if (isProtectedApp(app)) {
-                // Show brief warning — Rum cannot block itself
+                // Show brief warning — Fristed cannot block itself
                 modalAppInput.value = '';
                 modalAppInput.placeholder = tSettings('cannotBlockSelfAppPlaceholder');
                 modalAppInput.classList.add('input-error');
@@ -14429,7 +14259,7 @@ async function proceedWithBlock() {
                 startBtn.disabled = false;
                 startBtn.innerHTML = getStartBlockButtonHTML();
                 if (authResult.status === 'denied') {
-                    alert('Screen Time authorization was denied. Please go to Settings > Screen Time > Rum and enable access.');
+                    alert('Screen Time authorization was denied. Please go to Settings > Screen Time > Fristed and enable access.');
                 } else if (authResult.error) {
                     alert('Screen Time authorization failed: ' + authResult.error);
                 } else {
@@ -18796,7 +18626,7 @@ const SETTINGS_TRANSLATIONS = {
         modeSchedule: 'Schedule',
         selectionPrompt: 'Select a room',
         selectionPromptOption: 'Select a room...',
-        yourBlocklists: 'My Rooms',
+        yourBlocklists: 'My Focus Rooms',
         blocklistCardMenuTitle: 'Blocklist options',
         blocklistCardDuplicate: 'Duplicate',
         blocklistCardDelete: 'Delete',
@@ -18831,7 +18661,7 @@ const SETTINGS_TRANSLATIONS = {
         nowBlockingMenuStop: 'Stop',
         scheduleFooterHint: 'Click any block to edit',
         setupBrowsersBannerHeadline: 'Enable ReDD Focus in your browsers',
-        setupBrowsersBannerHeadlineMac: 'Allow Rum in your browsers',
+        setupBrowsersBannerHeadlineMac: 'Allow Fristed in your browsers',
         setupBrowsersBannerCta: 'Set up browsers',
         setupBrowsersBannerDismissTitle: 'Dismiss for this session',
         bannerTurnOnBrowserProtection: 'Turn on browser protection',
@@ -18851,31 +18681,19 @@ const SETTINGS_TRANSLATIONS = {
         eulaContinueBusy: 'Continuing…',
         eulaBackBtn: 'Back',
         eulaAcceptSaveFailedAlert: 'We could not save your agreement. Please try again to continue.',
-        eulaWelcomeIconAlt: 'Rum app icon',
+        eulaWelcomeIconAlt: 'Fristed app icon',
         eulaProjectBlurb:
             'Developed by the Reduce Digital Distraction Project, with researchers at the University of Oxford and University of Maastricht. ReDD is a not-for-profit creating open-source digital focus tools.',
-        rebrandOnboardingTitleHtml:
-            'ReDD Block is now <span class="rebrand-onboarding-title-brand">Rum</span>',
-        rebrandOnboardingSubtitle:
-            'All functionality is unchanged. It\u2019s just a new name that reflects what the app is for.',
-        rebrandOnboardingWord: 'rum',
-        rebrandOnboardingPronunciationHtml: '/rɔmˀ/ · say “rom”',
-        rebrandOnboardingMetaHtml: 'Danish · noun',
-        rebrandOnboardingDefinitionHtml:
-            '<em class="rebrand-definition-quote">“a space; a room.”</em> A clear space, kept free of the distractions that pull you away.',
-        rebrandOnboardingFootnoteHtml:
-            'The same word as English <span class="rebrand-definition-highlight">“room”</span> — not the drink.',
-        rebrandOnboardingContinueBtn: 'Continue',
         // Welcome onboarding (before EULA)
-        welcomeOnboardingTitle: 'Welcome to Rum',
-        rumDefinitionHtml:
-            '<strong class="rum-definition-word">rum</strong><span class="rum-definition-pronunciation">(room)</span><span class="rum-definition-sep" aria-hidden="true"> · </span>Danish for ‘a space, a room’',
+        welcomeOnboardingTitle: 'Welcome to Fristed',
+        fristedDefinitionHtml:
+            '<strong class="fristed-definition-word">fristed</strong><span class="fristed-definition-pronunciation">(free-sted)</span><span class="fristed-definition-sep" aria-hidden="true"> · </span>Danish for ‘a free space, a haven’',
         welcomeOnboardingSubtitle:
-            'Create a distraction-free room for focus',
+            'Create distraction-free rooms for focus, by blocking the websites and apps that pull you away.',
         welcomeHowHeading: 'STEPS TO GET STARTED (we\'ll guide you through it 😊)',
         welcomeStep1TitleAutomationHtml: 'Allow {APPLE}Automation',
         welcomeStep1BodyAutomationHtml:
-            'In Safari, Chrome, Brave, and Edge, <em>Rum</em> uses Automation to block websites. We\'ll prompt you to allow access.',
+            'In Safari, Chrome, Brave, and Edge, <em>Fristed</em> uses Automation to block websites. We\'ll prompt you to allow access.',
         welcomeStep2TitleFirefoxHtml: 'Set up {LOGO}ReDD Focus in Firefox',
         welcomeStep2BodyFirefoxHtml:
             'Firefox blocking uses our extension <em>ReDD Focus</em>. We\'ll guide you through installing it from the Firefox Add-ons store.',
@@ -18884,7 +18702,7 @@ const SETTINGS_TRANSLATIONS = {
             'Our {LOGO}<strong>ReDD Focus</strong> extension is what actually blocks websites. We\'ll auto-install it in your browsers where we can, and show you what to do.',
         welcomeStep3TitleHtml: 'Start blocking! 🥳',
         welcomeStep3BodyHtml:
-            'Pick the websites and apps that pull you off task, and set the times you want them out of reach. <em>Rum</em> takes care of the rest.',
+            'Pick the websites and apps that pull you off task, and set the times you want them out of reach. <em>Fristed</em> takes care of the rest.',
         welcomeDemoToggleLabel: 'See it in action — 30s',
         welcomeDemoVideoCaption: 'Quick demo — creating blocklists & how blocks feel',
         welcomeDemoPlayAriaLabel: 'Play demo video',
@@ -18899,38 +18717,38 @@ const SETTINGS_TRANSLATIONS = {
             '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">View the source code on GitHub</a>.',
         welcomeOnboardingContinueBtn: 'Get started',
         // Migration / extension onboarding overlay
-        migrationPreWelcomeTitle: 'Welcome to Rum 2.0',
+        migrationPreWelcomeTitle: 'Welcome to Fristed 2.0',
         migrationPreSubtitle: 'A one-time cleanup is needed to finish your upgrade.',
-        migrationPreExplainerHtml: 'Rum now blocks websites through a browser extension instead of a system-level helper.<br>We need to:',
+        migrationPreExplainerHtml: 'Fristed now blocks websites through a browser extension instead of a system-level helper.<br>We need to:',
         migrationPreBulletHelper: 'Stop and remove the old privileged helper',
         migrationPreBulletHostsHtml: 'Restore your <code>/etc/hosts</code> file (a backup is kept)',
         migrationPreBulletBlocklists: 'Keep all your existing blocklists intact',
-        migrationPreWarnHtml: 'You\'ll see <strong>one</strong> admin password prompt. Blocking will pause briefly during the changeover. After cleanup, Rum sets up the <strong>ReDD Focus</strong> browser extension in your browsers automatically — you just need to allow it in private/incognito tabs.',
+        migrationPreWarnHtml: 'You\'ll see <strong>one</strong> admin password prompt. Blocking will pause briefly during the changeover. After cleanup, Fristed sets up the <strong>ReDD Focus</strong> browser extension in your browsers automatically — you just need to allow it in private/incognito tabs.',
         migrationContinue: 'Continue',
         migrationPostTitleCleanup: 'Cleanup complete',
         migrationPostSubtitleCleanup: 'Almost done — finish setting up ReDD Focus in each browser you use.',
         migrationChecklistCleanedOld: 'Old version cleaned up',
         migrationChecklistBlocklistsPreserved: 'Your blocklists are preserved',
         migrationChecklistExtLinesHtml: 'Enable {LOGO}ReDD Focus in your browsers<br><span style="font-weight:400;opacity:0.7">and allow it in private/incognito tabs</span>',
-        migrationExtTitleMac: 'Allow Rum in your browsers',
+        migrationExtTitleMac: 'Allow Fristed in your browsers',
         migrationExtSubMac: 'Website blocking uses <strong>macOS automation</strong> for Safari, Chrome & Edge.',
         migrationExtSubMacFirefox: 'Website blocking uses <strong>macOS automation</strong> for Safari, Chrome & Edge, and the <strong>ReDD Focus extension</strong> for Firefox.',
-        migrationExtStep1Mac: 'Click <strong>Grant access</strong> on each browser below and approve the macOS permission prompt. If you see <strong>Open Automation settings</strong>, click it and switch Rum back on.',
+        migrationExtStep1Mac: 'Click <strong>Grant access</strong> on each browser below and approve the macOS permission prompt. If you see <strong>Open Automation settings</strong>, click it and switch Fristed back on.',
         migrationExtStep2MacFirefox: 'For Firefox, click <strong>Install</strong> below to add {FOCUS}<strong>ReDD Focus</strong> from the Add-ons store, then allow it in private windows.',
         migrationHowtoHeading: 'Setting up',
-        migrationHowtoLi1Html: 'Rum has tried to install ReDD Focus in your browsers. If it shows as not installed below, click the <strong>Install</strong> buttons to add it manually.',
+        migrationHowtoLi1Html: 'Fristed has tried to install ReDD Focus in your browsers. If it shows as not installed below, click the <strong>Install</strong> buttons to add it manually.',
         migrationHowtoLi3Html: 'Once enabled, <strong>allow it in private/incognito tabs</strong> so blocking works in private windows too.',
         migrationBadgeAutomationOn: 'Allowed',
         migrationBadgeAutomationOff: 'Permission needed',
         migrationBadgeAutomationUnknown: 'Status unknown',
         migrationAutomationAwaitingOpenHint: 'Please open {browser} so we can check whether Automation has been granted. macOS only reports this permission while the browser is running.',
-        migrationAutomationGrantHint: 'Allow Rum to control {browser} so it can close distracting tabs while a block is running.',
-        migrationAutomationDeniedHint: 'Permission for {browser} is turned off. Switch Rum back on under Automation so blocking works again.',
+        migrationAutomationGrantHint: 'Allow Fristed to control {browser} so it can close distracting tabs while a block is running.',
+        migrationAutomationDeniedHint: 'Permission for {browser} is turned off. Switch Fristed back on under Automation so blocking works again.',
         migrationGrantAutomation: 'Grant access to {browser}',
         migrationGrantAutomationOpened: 'Opened Automation settings',
         migrationOpenAutomationSettings: 'Open Automation settings',
-        webAutomationBannerHeadline: 'Allow Rum to control your browser',
-        webAutomationBannerBody: 'Rum needs permission to control {browsers} to block websites. Enable it under Privacy & Security → Automation, then the block will take effect.',
+        webAutomationBannerHeadline: 'Allow Fristed to control your browser',
+        webAutomationBannerBody: 'Fristed needs permission to control {browsers} to block websites. Enable it under Privacy & Security → Automation, then the block will take effect.',
         migrationDone: 'I\'m all set up',
         migrationSkip: 'Skip for now',
         migrationSetupAllReadyOne: '<strong>Your browser is ready.</strong> You can finish setup.',
@@ -18959,22 +18777,22 @@ const SETTINGS_TRANSLATIONS = {
         migrationBadgeNoWebsiteAccess: 'No website access',
         migrationBadgeDuplicateSafari: '⚠ Two copies installed',
         migrationStatusDuplicateSafari: 'Disable the extra copy',
-        migrationSafariDuplicateIntroHtml: 'You have <strong>ReDD Focus: Hide Distractions</strong> from the App Store <em>and</em> the copy that ships inside Rum. They conflict — keep only one.',
+        migrationSafariDuplicateIntroHtml: 'You have <strong>ReDD Focus: Hide Distractions</strong> from the App Store <em>and</em> the copy that ships inside Fristed. They conflict — keep only one.',
         migrationSafariDuplicateInstructionsHeading: 'In Safari → Settings → Extensions',
-        migrationSafariDuplicateStep1Html: 'Find <strong>ReDD Focus: Hide Distractions</strong> — the App Store copy (not “via Rum”) — and uncheck <span class="safari-duplicate-checkbox" role="img" aria-label="Unchecked"></span> it.',
-        migrationSafariDuplicateStep2Html: 'Make sure <span class="safari-duplicate-checkbox safari-duplicate-checkbox-checked" role="img" aria-label="Checked"></span> is checked for <strong>ReDD Focus (via Rum)</strong>. That\'s the one this app controls.',
+        migrationSafariDuplicateStep1Html: 'Find <strong>ReDD Focus: Hide Distractions</strong> — the App Store copy (not “via Fristed”) — and uncheck <span class="safari-duplicate-checkbox" role="img" aria-label="Unchecked"></span> it.',
+        migrationSafariDuplicateStep2Html: 'Make sure <span class="safari-duplicate-checkbox safari-duplicate-checkbox-checked" role="img" aria-label="Checked"></span> is checked for <strong>ReDD Focus (via Fristed)</strong>. That\'s the one this app controls.',
         migrationSafariDuplicateOpenBtn: 'Open Safari Extensions…',
         migrationSafariDuplicateHelpLink: 'How did this happen?',
-        migrationSafariDuplicateHelpText: 'If you previously installed ReDD Focus from the App Store and later installed Rum, Safari keeps both extensions registered. Rum only works with the bundled copy.',
+        migrationSafariDuplicateHelpText: 'If you previously installed ReDD Focus from the App Store and later installed Fristed, Safari keeps both extensions registered. Fristed only works with the bundled copy.',
         migrationStatusAllowAllWebsites: 'Allow on all websites',
         migrationStatusAllowPrivate: 'Allow in private browsing',
         migrationStatusEnableExtension: 'Enable extension',
         migrationStatusInstall: 'Install',
         migrationStatusGrantFda: 'Grant Full Disk Access',
-        migrationStatusNativeHost: 'Connect Rum',
+        migrationStatusNativeHost: 'Connect Fristed',
         bannerActionGrantFdaIn: 'Grant Full Disk Access in',
         safariFdaOnboardingTitle: 'Grant Full Disk Access for Safari',
-        safariFdaOnboardingWhyHtml: 'Blocking on Safari through the ReDD Focus browser extension requires Full Disk Access to ensure the extension is installed, enabled, and allowed in private browsing. Open System Settings below, then toggle <strong>Rum</strong> on (use + if it is not listed).',
+        safariFdaOnboardingWhyHtml: 'Blocking on Safari through the ReDD Focus browser extension requires Full Disk Access to ensure the extension is installed, enabled, and allowed in private browsing. Open System Settings below, then toggle <strong>Fristed</strong> on (use + if it is not listed).',
         safariFdaOnboardingGrantBtn: 'Open Full Disk Access settings',
         safariFdaOnboardingAlreadyGrantedBtn: '✓ Proceed',
         safariFdaOnboardingAlreadyGrantedWhy: 'Full Disk Access is already granted. Click below to continue Safari setup.',
@@ -18982,12 +18800,12 @@ const SETTINGS_TRANSLATIONS = {
         safariFdaOnboardingWaiting: 'Waiting for Full Disk Access… leave this window open while you grant it.',
         safariFdaOnboardingOpeningSettings: 'Opening settings…',
         safariFdaOnboardingHowto: 'System Settings → Privacy & Security → Full Disk Access',
-        safariFdaSetupHintHtml: 'Rum must read Safari\'s protected extension settings. Grant <strong>Full Disk Access</strong> for Rum, then return here.',
+        safariFdaSetupHintHtml: 'Fristed must read Safari\'s protected extension settings. Grant <strong>Full Disk Access</strong> for Fristed, then return here.',
         safariFdaSettingsGranted: 'Full Disk Access: granted (Safari extension settings readable).',
         safariFdaSettingsNotGranted: 'Full Disk Access: not granted — required to verify ReDD Focus in Safari.',
         safariFdaSettingsGrantBtn: 'Grant access',
-        migrationBadgeNativeHost: 'Connect Rum',
-        migrationFirefoxNativeHostHtml: 'ReDD Focus is installed. Rum still needs to register its connection with Firefox (one small setup step).',
+        migrationBadgeNativeHost: 'Connect Fristed',
+        migrationFirefoxNativeHostHtml: 'ReDD Focus is installed. Fristed still needs to register its connection with Firefox (one small setup step).',
         migrationFirefoxNativeHostButton: 'Connect to Firefox',
         migrationInstallButton: 'Install',
         migrationInstallOpened: 'Opened extension store',
@@ -19006,11 +18824,11 @@ const SETTINGS_TRANSLATIONS = {
         migrationSafariChecklistLine: 'Step {n} — {label}',
         migrationOpenExtensionSettings: 'Open Extension Settings',
         migrationShowMeHow: 'Show me how',
-        migrationPostInstallFirefoxHtml: 'Rum already set up auto-install for ReDD Focus in Firefox — <strong>restart Firefox</strong> to pick it up. (Or click <strong>Install</strong> below to add it manually — check <strong>Allow extension to run in private windows</strong> during install.)',
+        migrationPostInstallFirefoxHtml: 'Fristed already set up auto-install for ReDD Focus in Firefox — <strong>restart Firefox</strong> to pick it up. (Or click <strong>Install</strong> below to add it manually — check <strong>Allow extension to run in private windows</strong> during install.)',
         migrationPostInstallFirefoxMacHtml: 'Install ReDD Focus from the Firefox Add-ons store — click <strong>Install</strong> below and check <strong>Allow extension to run in private windows</strong> during install.',
         migrationPostInstallSafariHtml: 'Install ReDD Focus from the Mac App Store — click <strong>Install</strong> below. After it\u2019s installed, return here and we\u2019ll walk you through enabling it in Safari.',
         migrationPostInstallChromiumMacHtml: 'Install ReDD Focus from the {BROWSER} store — click <strong>Install</strong> below. After it\u2019s installed, return here and we\u2019ll walk you through enabling it and allowing it in {PRIV} tabs.',
-        migrationPostInstallChromiumHtml: 'Rum already set up auto-install for ReDD Focus in {BROWSER} — <strong>restart {BROWSER}</strong> to pick it up. (Or click <strong>Install</strong> below to add it manually now.)',
+        migrationPostInstallChromiumHtml: 'Fristed already set up auto-install for ReDD Focus in {BROWSER} — <strong>restart {BROWSER}</strong> to pick it up. (Or click <strong>Install</strong> below to add it manually now.)',
         migrationInstructionEnableHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → find <strong>ReDD Focus</strong> → enable the extension.',
         migrationInstructionWebsiteAccessHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → click <strong>Details</strong> on ReDD Focus → allow on <strong>all websites</strong>.',
         migrationInstructionFirefoxPrivateHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → click <strong>ReDD Focus</strong> → turn on <strong>Run in {PRIV}</strong>.',
@@ -19048,7 +18866,7 @@ const SETTINGS_TRANSLATIONS = {
         enforcerCountdownDelayNote: '(changes can take up to 20 seconds to detect).',
         enforcerCountdownInstrPrivate: 'Blocking is not enabled in private windows. Enable Allow in incognito for ReDD Focus to stop the countdown.',
         enforcerCountdownInstrWebsiteAccess: 'ReDD Focus is not allowed on all websites. Allow all websites to stop the countdown.',
-        enforcerCountdownInstrAccess: 'Rum can’t verify ReDD Focus. Grant access to stop the countdown.',
+        enforcerCountdownInstrAccess: 'Fristed can’t verify ReDD Focus. Grant access to stop the countdown.',
         enforcerCountdownInstrDefault: 'ReDD Focus is not ready. Finish setup to stop the countdown.',
         enforcerCountdownInstrMultiple: 'Fix ReDD Focus in each browser below to stop the countdown.',
         enforcerCountdownDefault: '{browser} will be auto-closed if ReDD Focus is not ready, to support your blocking.',
@@ -19063,9 +18881,9 @@ const SETTINGS_TRANSLATIONS = {
         enforcerHeadlinePrivate: 'Private windows in {browser} aren’t covered by ReDD Focus yet.',
         enforcerHeadlineWebsiteAccess: '{browser} hasn’t given ReDD Focus access on every website yet.',
         enforcerInstrWebsiteAccessPlain: 'In {browser} extension settings, allow ReDD Focus on all websites.',
-        enforcerHeadlineAccess: 'Rum can’t verify ReDD Focus in {browser}.',
+        enforcerHeadlineAccess: 'Fristed can’t verify ReDD Focus in {browser}.',
         enforcerInstrAccessSafari: 'Open Safari extension settings and finish ReDD Focus setup.',
-        enforcerInstrAccessBrowser: 'Grant access so Rum can help verify {browser}.',
+        enforcerInstrAccessBrowser: 'Grant access so Fristed can help verify {browser}.',
         enforcerHeadlineDefault: 'ReDD Focus isn’t ready in {browser} yet.',
         enforcerInstrDefault: 'Finish ReDD Focus setup in {browser} extensions.',
         enforcerActionInstall: 'Install ReDD Focus',
@@ -19075,13 +18893,13 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedDisabled: '{browser} was closed to support your block—ReDD Focus was turned off.',
         enforcerClosedPrivate: '{browser} was closed to support your block—private windows were still a loophole.',
         enforcerClosedWebsiteAccess: '{browser} was closed to support your block—ReDD Focus couldn’t cover every site yet.',
-        enforcerClosedAccess: '{browser} was closed so your protection could stay clear—Rum couldn’t verify ReDD Focus.',
+        enforcerClosedAccess: '{browser} was closed so your protection could stay clear—Fristed couldn’t verify ReDD Focus.',
         enforcerClosedDefault: '{browser} was closed to support your block—ReDD Focus wasn’t fully ready.',
         enforcerClosedCombinedMissing: '{browser} were closed to support your block—ReDD Focus wasn’t installed yet.',
         enforcerClosedCombinedDisabled: '{browser} were closed to support your block—ReDD Focus was turned off.',
         enforcerClosedCombinedPrivate: '{browser} were closed to support your block—private windows were still a loophole.',
         enforcerClosedCombinedWebsiteAccess: '{browser} were closed to support your block—ReDD Focus couldn’t cover every site yet.',
-        enforcerClosedCombinedAccess: '{browser} were closed so your protection could stay clear—Rum couldn’t verify ReDD Focus.',
+        enforcerClosedCombinedAccess: '{browser} were closed so your protection could stay clear—Fristed couldn’t verify ReDD Focus.',
         enforcerClosedCombinedDefault: '{browser} were closed to support your block—ReDD Focus wasn’t fully ready.',
         enforcerClosedInstrPrivateChrome: 'In Chrome: ReDD Focus → Details → Allow in Incognito.',
         enforcerClosedInstrPrivateFirefox: 'In Firefox: ReDD Focus → Run in Private Windows → Allow.',
@@ -19092,15 +18910,15 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedInstrWebsiteAccess: 'In {browser} extension settings, allow ReDD Focus on all websites.',
         enforcerClosedInstrAccessSafari: 'Open Safari → Settings → Extensions and finish ReDD Focus setup.',
         enforcerClosedInstrDefault: 'Finish ReDD Focus setup in {browser} extensions.',
-        // macOS Automation issue: Rum lost the per-browser
+        // macOS Automation issue: Fristed lost the per-browser
         // Automation grant, so it can't redirect blocked tabs.
-        enforcerHeadlineAutomation: 'Rum can’t control {browser} right now.',
+        enforcerHeadlineAutomation: 'Fristed can’t control {browser} right now.',
         enforcerCountdownInstrAutomation: 'Switch Automation back on to keep your block.',
-        enforcerInstrAutomation: 'Switch Rum back on for {browser} under System Settings → Privacy & Security → Automation, then your block will work again.',
-        enforcerClosedAutomation: '{browser} was closed because Rum couldn’t control it.',
-        enforcerClosedInstrAutomation: 'Switch Rum back on for {browser} under Privacy & Security → Automation.',
-        enforcerClosedCombinedAutomation: '{browser} were closed because Rum couldn’t control them.',
-        enforcerClosedInstrAutomationGeneric: 'Switch Rum back on for {browser} under Privacy & Security → Automation.',
+        enforcerInstrAutomation: 'Switch Fristed back on for {browser} under System Settings → Privacy & Security → Automation, then your block will work again.',
+        enforcerClosedAutomation: '{browser} was closed because Fristed couldn’t control it.',
+        enforcerClosedInstrAutomation: 'Switch Fristed back on for {browser} under Privacy & Security → Automation.',
+        enforcerClosedCombinedAutomation: '{browser} were closed because Fristed couldn’t control them.',
+        enforcerClosedInstrAutomationGeneric: 'Switch Fristed back on for {browser} under Privacy & Security → Automation.',
         enforcerBrowserFallback: 'your browser',
         gracePeriodLabel: 'Grace period',
         gracePeriodHint: 'Seconds to re-enable before the browser closes.',
@@ -19143,7 +18961,7 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsBrowsersSectionHintMacExtension: 'Browsers listed here use the ReDD Focus extension (install, enable, and allow private browsing).',
         diagnosticsBrowsersSectionHint: 'Status of the ReDD Focus extension in browsers on this computer.',
         diagnosticsAutomationSection: 'Automation (macOS)',
-        diagnosticsAutomationSectionHint: 'Rum needs Automation permission to redirect blocked tabs in each browser. Grant in System Settings → Privacy & Security → Automation.',
+        diagnosticsAutomationSectionHint: 'Fristed needs Automation permission to redirect blocked tabs in each browser. Grant in System Settings → Privacy & Security → Automation.',
         diagnosticsThAutomation: 'Automation',
         diagnosticsAutomationGranted: 'Allowed',
         diagnosticsAutomationDenied: 'Denied',
@@ -19240,7 +19058,7 @@ const SETTINGS_TRANSLATIONS = {
         placeholderAppExample: 'e.g., Safari',
         invalidDomainMsg: 'Please enter a valid domain (e.g. reddit.com)',
         cannotBlockDomainPlaceholder: '⚠️ Can\'t block this domain!',
-        cannotBlockSelfAppPlaceholder: '⚠️ Can\'t block Rum itself!',
+        cannotBlockSelfAppPlaceholder: '⚠️ Can\'t block Fristed itself!',
         // Start/schedule controls
         durationQuick15m: '15m',
         durationQuick30m: '30m',
@@ -19337,12 +19155,12 @@ const SETTINGS_TRANSLATIONS = {
         restartsAt: 'RESTARTS AT',
         pauseInstruction: 'To pause this block, type the following:',
         helperSetupTitle: 'Setup Required',
-        helperSetupText: 'To block websites when the app is closed, Rum needs to install a small background service. Your computer will prompt you for your password once — after that, blocks will start instantly without asking again.',
+        helperSetupText: 'To block websites when the app is closed, Fristed needs to install a small background service. Your computer will prompt you for your password once — after that, blocks will start instantly without asking again.',
         helperRepairTitle: 'Helper Repair Required',
-        helperRepairText: 'A helper service is already installed, but it is not running right now. Rum needs to reinstall or repair it before this block can start. Your computer may prompt you for your password to complete the repair.',
+        helperRepairText: 'A helper service is already installed, but it is not running right now. Fristed needs to reinstall or repair it before this block can start. Your computer may prompt you for your password to complete the repair.',
         helperUpdateTitle: 'Helper Update Required',
         helperUpdateText: 'A helper service is already installed, but it needs an update before this block can start. Your computer will prompt you for your password to apply the update.',
-        helperOpenSourceLink: 'open source code for Rum here',
+        helperOpenSourceLink: 'open source code for Fristed here',
         proceed: 'Proceed',
         reinstallHelper: 'Reinstall Helper',
         helperInstalling: 'Installing...',
@@ -19499,14 +19317,14 @@ const SETTINGS_TRANSLATIONS = {
         settingsOverrideAllLabel: 'Stop all blocks & schedules',
         settingsOverrideAllBtn: 'Stop all',
         // In-app uninstall (macOS only)
-        uninstallApp: 'Uninstall Rum',
+        uninstallApp: 'Uninstall Fristed',
         uninstallAppBtn: 'Uninstall…',
         uninstallDisabledHint: 'Stop running blocks first before you can uninstall.',
-        uninstallConfirmTitle: 'Uninstall Rum?',
-        uninstallConfirmLeadHtml: 'Rum will be moved to the Trash. Your blocklists and schedules are <strong>kept on disk</strong>, so they\u2019ll be restored if you reinstall later.',
-        uninstallConfirmLeadDeleteHtml: 'Rum will be moved to the Trash. Your blocklists, schedules, and settings will be <strong>permanently deleted</strong> from this Mac.',
+        uninstallConfirmTitle: 'Uninstall Fristed?',
+        uninstallConfirmLeadHtml: 'Fristed will be moved to the Trash. Your blocklists and schedules are <strong>kept on disk</strong>, so they\u2019ll be restored if you reinstall later.',
+        uninstallConfirmLeadDeleteHtml: 'Fristed will be moved to the Trash. Your blocklists, schedules, and settings will be <strong>permanently deleted</strong> from this Mac.',
         uninstallDeleteDataLabel: 'Also delete my blocklists, schedules, and settings',
-        uninstallFinderWarningHtml: 'If macOS asks you to allow Rum to control <strong>Finder</strong>, click <strong>Allow</strong> \u2014 that\u2019s how the app moves itself to the Trash.',
+        uninstallFinderWarningHtml: 'If macOS asks you to allow Fristed to control <strong>Finder</strong>, click <strong>Allow</strong> \u2014 that\u2019s how the app moves itself to the Trash.',
         uninstallFirefoxCalloutTitle: 'ReDD Focus extension in Firefox',
         uninstallExtFirefoxBadge: 'Stays installed',
         uninstallFirefoxCalloutDetailHtml: 'You can continue to use ReDD Focus to hide distracting parts of websites. To remove it, open Firefox add-ons settings \u2014 copy {URL_CHIP} and paste it into the address bar.',
@@ -19514,10 +19332,10 @@ const SETTINGS_TRANSLATIONS = {
         uninstallFailedTitle: 'Uninstall failed',
         uninstallFailed: 'Could not complete uninstall.',
         // Windows Settings uninstall guidance
-        windowsUninstallHint: 'Settings \u2192 Installed apps \u2192 Rum',
+        windowsUninstallHint: 'Settings \u2192 Installed apps \u2192 Fristed',
         windowsUninstallOpenSettingsBtn: 'Open settings',
         windowsUninstallOpenFailedTitle: 'Could not open Settings',
-        windowsUninstallOpenFailed: 'Windows Settings could not be opened. Open Settings manually, go to Apps \u2192 Installed apps, and search for Rum.',
+        windowsUninstallOpenFailed: 'Windows Settings could not be opened. Open Settings manually, go to Apps \u2192 Installed apps, and search for Fristed.',
         macAutomationIntroBadge: 'What\u2019s new',
         macAutomationIntroTitle: 'Website blocking on macOS works a little differently now',
         macAutomationIntroLeadHtml: 'To make blocking easier to set up, most browsers now use <strong>macOS Automation</strong> instead of the ReDD Focus extension. Here\u2019s the new setup.',
@@ -19544,7 +19362,7 @@ const SETTINGS_TRANSLATIONS = {
         helperRemovedFallback: 'Helper service removed using fallback cleanup because the installed helper was not responding normally.',
         helperRemoveStaleHint: 'Installed, but not currently running. You can remove the stale helper before reinstalling it.',
         cleanHostsFile: 'Clean hosts file',
-        helperHint: 'Remove all Rum entries from your system\'s hosts file. Use this if websites remain blocked after all blocks have been stopped.',
+        helperHint: 'Remove all Fristed entries from your system\'s hosts file. Use this if websites remain blocked after all blocks have been stopped.',
         close: 'Close',
         // Time/date words
         dayAbbrev: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
@@ -19567,7 +19385,7 @@ const SETTINGS_TRANSLATIONS = {
         modeSchedule: 'Skema',
         selectionPrompt: 'Vælg et rum',
         selectionPromptOption: 'Vælg et rum...',
-        yourBlocklists: 'Mine rum',
+        yourBlocklists: 'Mine fokusrum',
         blocklistCardMenuTitle: 'Valgmuligheder for blokliste',
         blocklistCardDuplicate: 'Duplikér',
         blocklistCardDelete: 'Slet',
@@ -19602,7 +19420,7 @@ const SETTINGS_TRANSLATIONS = {
         nowBlockingMenuStop: 'Stop',
         scheduleFooterHint: 'Klik på en blok for at redigere',
         setupBrowsersBannerHeadline: 'Aktivér ReDD Focus i dine browsere',
-        setupBrowsersBannerHeadlineMac: 'Tillad Rum i dine browsere',
+        setupBrowsersBannerHeadlineMac: 'Tillad Fristed i dine browsere',
         setupBrowsersBannerCta: 'Opsæt browsere',
         setupBrowsersBannerDismissTitle: 'Skjul for denne session',
         bannerTurnOnBrowserProtection: 'Slå browser-beskyttelse til',
@@ -19622,29 +19440,17 @@ const SETTINGS_TRANSLATIONS = {
         eulaContinueBusy: 'Arbejder…',
         eulaBackBtn: 'Tilbage',
         eulaAcceptSaveFailedAlert: 'Vi kunne ikke gemme din godkendelse. Prøv igen for at fortsætte.',
-        eulaWelcomeIconAlt: 'Rum-appikon',
+        eulaWelcomeIconAlt: 'Fristed-appikon',
         eulaProjectBlurb:
             'Udviklet af Reduce Digital Distraction Project sammen med forskere ved University of Oxford og Maastricht University. ReDD er en non-profit, der skaber open source digitale fokusværktøjer.',
-        rebrandOnboardingTitleHtml:
-            'ReDD Block hedder nu <span class="rebrand-onboarding-title-brand">Rum</span>',
-        rebrandOnboardingSubtitle:
-            'Al funktionalitet er u\u00e6ndret \u2014 det er bare et nyt navn, der afspejler, hvad appen er til.',
-        rebrandOnboardingWord: 'rum',
-        rebrandOnboardingPronunciationHtml: '/rumˀ/ · sig “rum”',
-        rebrandOnboardingMetaHtml: 'Dansk · substantiv',
-        rebrandOnboardingDefinitionHtml:
-            '<em class="rebrand-definition-quote">“et rum; et frirum.”</em> Et klart og uforstyrret rum, fri for de apps og websites, der trækker dig væk.',
-        rebrandOnboardingFootnoteHtml:
-            'Samme ord som engelsk <span class="rebrand-definition-highlight">“room”</span> — ikke drinken.',
-        rebrandOnboardingContinueBtn: 'Fortsæt',
         // Welcome onboarding (before EULA)
-        welcomeOnboardingTitle: 'Velkommen til Rum',
+        welcomeOnboardingTitle: 'Velkommen til Fristed',
         welcomeOnboardingSubtitle:
-            'Skab et distraktionsfrit rum til fokus',
+            'Bloker de websites og apps, der distraherer dig, og skab plads og ro til fokus.',
         welcomeHowHeading: 'TRIN FOR AT KOMME I GANG (vi guider dig igennem det 😊)',
         welcomeStep1TitleAutomationHtml: 'Tillad {APPLE}Automatisering',
         welcomeStep1BodyAutomationHtml:
-            'I Safari, Chrome, Brave og Edge bruger <em>Rum</em> Automatisering til at blokere websites. Vi beder dig om at tillade adgang.',
+            'I Safari, Chrome, Brave og Edge bruger <em>Fristed</em> Automatisering til at blokere websites. Vi beder dig om at tillade adgang.',
         welcomeStep2TitleFirefoxHtml: 'Opsæt {LOGO}ReDD Focus i Firefox',
         welcomeStep2BodyFirefoxHtml:
             'Blokering i Firefox bruger vores <strong>ReDD Focus</strong>-udvidelse. Vi guider dig gennem installation fra Firefoxs tilføjelsesbutik.',
@@ -19653,7 +19459,7 @@ const SETTINGS_TRANSLATIONS = {
             'Vores {LOGO}<strong>ReDD Focus</strong>-udvidelse er det, der faktisk blokerer websites. Vi installerer den automatisk i dine browsere, hvor vi kan, og viser dig, hvad du skal gøre.',
         welcomeStep3TitleHtml: 'Vælg, hvad der skal blokeres',
         welcomeStep3BodyHtml:
-            'Vælg de websites og apps, der distraherer dig, og bestem hvornår de skal være utilgængelige. <em>Rum</em> klarer resten.',
+            'Vælg de websites og apps, der distraherer dig, og bestem hvornår de skal være utilgængelige. <em>Fristed</em> klarer resten.',
         welcomeDemoToggleLabel: 'Se det i aktion — 30 sek.',
         welcomeDemoVideoCaption: 'Demo — blokeringslister og hvordan blokering føles',
         welcomeDemoPlayAriaLabel: 'Afspil demovideo',
@@ -19668,38 +19474,38 @@ const SETTINGS_TRANSLATIONS = {
             '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Se kildekoden på GitHub</a>.',
         welcomeOnboardingContinueBtn: 'Kom i gang',
         // Migration / extension onboarding overlay
-        migrationPreWelcomeTitle: 'Velkommen til Rum 2.0',
+        migrationPreWelcomeTitle: 'Velkommen til Fristed 2.0',
         migrationPreSubtitle: 'Et engangskridt er nødvendigt for at afslutte opgraderingen.',
-        migrationPreExplainerHtml: 'Rum blokerer nu websites via en browserudvidelse i stedet for et systemværktøj.<br>Vi skal:',
+        migrationPreExplainerHtml: 'Fristed blokerer nu websites via en browserudvidelse i stedet for et systemværktøj.<br>Vi skal:',
         migrationPreBulletHelper: 'Stoppe og fjerne det gamle privilegerede hjælpeprogram',
         migrationPreBulletHostsHtml: 'Gendanne din <code>/etc/hosts</code>-fil (en backup beholdes)',
         migrationPreBulletBlocklists: 'Beholde alle dine eksisterende bloklister',
-        migrationPreWarnHtml: 'Du vil få <strong>én</strong> prompt om administratoradgang. Under skiftet sættes blokering kortvarigt på pause. Efter oprydningen sætter Rum <strong>ReDD Focus</strong> op i dine browsere automatisk — du skal bare tillade den i private/inkognitofaner.',
+        migrationPreWarnHtml: 'Du vil få <strong>én</strong> prompt om administratoradgang. Under skiftet sættes blokering kortvarigt på pause. Efter oprydningen sætter Fristed <strong>ReDD Focus</strong> op i dine browsere automatisk — du skal bare tillade den i private/inkognitofaner.',
         migrationContinue: 'Fortsæt',
         migrationPostTitleCleanup: 'Oprydning fuldført',
         migrationPostSubtitleCleanup: 'Næsten færdig — afslut opsætningen af ReDD Focus i hver browser, du bruger.',
         migrationChecklistCleanedOld: 'Gammel version fjernet',
         migrationChecklistBlocklistsPreserved: 'Dine bloklister er bevaret',
         migrationChecklistExtLinesHtml: 'Aktivér {LOGO}ReDD Focus i dine browsere<br><span style="font-weight:400;opacity:0.7">og tillad den i privat- eller inkognitofaner</span>',
-        migrationExtTitleMac: 'Tillad Rum i dine browsere',
+        migrationExtTitleMac: 'Tillad Fristed i dine browsere',
         migrationExtSubMac: 'Websiteblokering bruger <strong>macOS-automatisering</strong> i Safari, Chrome og Edge.',
         migrationExtSubMacFirefox: 'Websiteblokering bruger <strong>macOS-automatisering</strong> i Safari, Chrome og Edge og <strong>ReDD Focus-udvidelsen</strong> i Firefox.',
-        migrationExtStep1Mac: 'Klik på <strong>Giv adgang</strong> for hver browser nedenfor, og godkend macOS-prompten. Hvis du ser <strong>Åbn Automatisering</strong>, klik på den og slå Rum til igen.',
+        migrationExtStep1Mac: 'Klik på <strong>Giv adgang</strong> for hver browser nedenfor, og godkend macOS-prompten. Hvis du ser <strong>Åbn Automatisering</strong>, klik på den og slå Fristed til igen.',
         migrationExtStep2MacFirefox: 'Til Firefox: klik på <strong>Installer</strong> nedenfor for at tilføje {FOCUS}<strong>ReDD Focus</strong> fra tilføjelsesbutikken, og tillad den derefter i private vinduer.',
         migrationHowtoHeading: 'Opsætning',
-        migrationHowtoLi1Html: 'Rum har forsøgt at installere ReDD Focus i dine browsere. Hvis den vises som ikke installeret nedenfor, klik på <strong>Installer</strong>-knapperne for at tilføje den manuelt.',
+        migrationHowtoLi1Html: 'Fristed har forsøgt at installere ReDD Focus i dine browsere. Hvis den vises som ikke installeret nedenfor, klik på <strong>Installer</strong>-knapperne for at tilføje den manuelt.',
         migrationHowtoLi3Html: 'Når den er aktiveret, <strong>tillad den i privat/inkognito-faner</strong>, så blokering også virker i private vinduer.',
         migrationBadgeAutomationOn: 'Tilladt',
         migrationBadgeAutomationOff: 'Tilladelse mangler',
         migrationBadgeAutomationUnknown: 'Status ukendt',
         migrationAutomationAwaitingOpenHint: 'Åbn {browser}, så vi kan tjekke, om Automatisering er tilladt. macOS viser kun denne tilladelse, mens browseren kører.',
-        migrationAutomationGrantHint: 'Tillad Rum at styre {browser}, så den kan lukke distraherende faner, mens en blokering kører.',
-        migrationAutomationDeniedHint: 'Tilladelse til {browser} er slået fra. Slå Rum til igen under Automatisering, så blokering virker igen.',
+        migrationAutomationGrantHint: 'Tillad Fristed at styre {browser}, så den kan lukke distraherende faner, mens en blokering kører.',
+        migrationAutomationDeniedHint: 'Tilladelse til {browser} er slået fra. Slå Fristed til igen under Automatisering, så blokering virker igen.',
         migrationGrantAutomation: 'Giv adgang til {browser}',
         migrationGrantAutomationOpened: 'Åbnede Automatisering',
         migrationOpenAutomationSettings: 'Åbn Automatisering',
-        webAutomationBannerHeadline: 'Tillad Rum at styre din browser',
-        webAutomationBannerBody: 'Rum skal have tilladelse til at styre {browsers} for at blokere websteder. Slå det til under Anonymitet & sikkerhed → Automatisering, så træder blokeringen i kraft.',
+        webAutomationBannerHeadline: 'Tillad Fristed at styre din browser',
+        webAutomationBannerBody: 'Fristed skal have tilladelse til at styre {browsers} for at blokere websteder. Slå det til under Anonymitet & sikkerhed → Automatisering, så træder blokeringen i kraft.',
         migrationDone: 'Jeg er klar',
         migrationSkip: 'Spring over for nu',
         migrationSetupAllReadyOne: '<strong>Din browser er klar.</strong> Du kan afslutte opsætningen.',
@@ -19728,20 +19534,20 @@ const SETTINGS_TRANSLATIONS = {
         migrationBadgeNoWebsiteAccess: 'Ingen webadgang',
         migrationBadgeDuplicateSafari: '⚠ To kopier installeret',
         migrationStatusDuplicateSafari: 'Deaktivér den ekstra kopi',
-        migrationSafariDuplicateIntroHtml: 'Du har <strong>ReDD Focus: Hide Distractions</strong> fra App Store <em>og</em> kopien, der følger med Rum. De kan ikke begge være aktive — behold kun én.',
+        migrationSafariDuplicateIntroHtml: 'Du har <strong>ReDD Focus: Hide Distractions</strong> fra App Store <em>og</em> kopien, der følger med Fristed. De kan ikke begge være aktive — behold kun én.',
         migrationSafariDuplicateInstructionsHeading: 'I Safari → Indstillinger → Udvidelser',
-        migrationSafariDuplicateStep1Html: 'Find <strong>ReDD Focus: Hide Distractions</strong> — App Store-kopien (ikke “via Rum”) — og fjern markeringen <span class="safari-duplicate-checkbox" role="img" aria-label="Ikke markeret"></span>.',
-        migrationSafariDuplicateStep2Html: 'Sørg for, at afkrydsningsfeltet <span class="safari-duplicate-checkbox safari-duplicate-checkbox-checked" role="img" aria-label="Markeret"></span> er markeret for <strong>ReDD Focus (via Rum)</strong>. Det er den, denne app styrer.',
+        migrationSafariDuplicateStep1Html: 'Find <strong>ReDD Focus: Hide Distractions</strong> — App Store-kopien (ikke “via Fristed”) — og fjern markeringen <span class="safari-duplicate-checkbox" role="img" aria-label="Ikke markeret"></span>.',
+        migrationSafariDuplicateStep2Html: 'Sørg for, at afkrydsningsfeltet <span class="safari-duplicate-checkbox safari-duplicate-checkbox-checked" role="img" aria-label="Markeret"></span> er markeret for <strong>ReDD Focus (via Fristed)</strong>. Det er den, denne app styrer.',
         migrationSafariDuplicateOpenBtn: 'Åbn Safari-udvidelser…',
         migrationSafariDuplicateHelpLink: 'Hvordan skete det?',
-        migrationSafariDuplicateHelpText: 'Hvis du tidligere installerede ReDD Focus fra App Store og senere installerede Rum, beholder Safari begge udvidelser. Rum virker kun med den bundtede kopi.',
+        migrationSafariDuplicateHelpText: 'Hvis du tidligere installerede ReDD Focus fra App Store og senere installerede Fristed, beholder Safari begge udvidelser. Fristed virker kun med den bundtede kopi.',
         migrationStatusAllowAllWebsites: 'Tillad på alle websites',
         migrationStatusAllowPrivate: 'Tillad privat browsing',
         migrationStatusEnableExtension: 'Aktivér udvidelse',
         migrationStatusInstall: 'Installer',
-        migrationStatusNativeHost: 'Forbind Rum',
-        migrationBadgeNativeHost: 'Forbind Rum',
-        migrationFirefoxNativeHostHtml: 'ReDD Focus er installeret. Rum skal stadig registrere forbindelsen til Firefox (ét lille trin).',
+        migrationStatusNativeHost: 'Forbind Fristed',
+        migrationBadgeNativeHost: 'Forbind Fristed',
+        migrationFirefoxNativeHostHtml: 'ReDD Focus er installeret. Fristed skal stadig registrere forbindelsen til Firefox (ét lille trin).',
         migrationFirefoxNativeHostButton: 'Forbind til Firefox',
         migrationInstallButton: 'Installer',
         migrationInstallOpened: 'Åbnede udvidelsesbutik',
@@ -19760,11 +19566,11 @@ const SETTINGS_TRANSLATIONS = {
         migrationSafariChecklistLine: 'Trin {n} — {label}',
         migrationOpenExtensionSettings: 'Åbn udvidelsesindstillinger',
         migrationShowMeHow: 'Vis mig hvordan',
-        migrationPostInstallFirefoxHtml: 'Rum har allerede sat auto-installation op for ReDD Focus i Firefox — <strong>genstart Firefox</strong> for at hente den ind. (Eller klik på <strong>Installer</strong> nedenfor for at tilføje den manuelt — markér <strong>Allow extension to run in private windows</strong> under installationen.)',
+        migrationPostInstallFirefoxHtml: 'Fristed har allerede sat auto-installation op for ReDD Focus i Firefox — <strong>genstart Firefox</strong> for at hente den ind. (Eller klik på <strong>Installer</strong> nedenfor for at tilføje den manuelt — markér <strong>Allow extension to run in private windows</strong> under installationen.)',
         migrationPostInstallFirefoxMacHtml: 'Installer ReDD Focus fra Firefoxs tilføjelsesbutik — klik på <strong>Installer</strong> nedenfor, og markér <strong>Allow extension to run in private windows</strong> under installationen.',
         migrationPostInstallSafariHtml: 'Installer ReDD Focus fra Mac App Store — klik på <strong>Installer</strong> nedenfor. Når den er installeret, vend tilbage hertil, så guider vi dig gennem aktivering i Safari.',
         migrationPostInstallChromiumMacHtml: 'Installer ReDD Focus fra {BROWSER}-butikken — klik på <strong>Installer</strong> nedenfor. Når den er installeret, vend tilbage hertil, så guider vi dig gennem aktivering og tilladelse i {PRIV}-faner.',
-        migrationPostInstallChromiumHtml: 'Rum har allerede sat auto-installation op for ReDD Focus i {BROWSER} — <strong>genstart {BROWSER}</strong> for at hente den ind. (Eller klik på <strong>Installer</strong> nedenfor for at tilføje den manuelt nu.)',
+        migrationPostInstallChromiumHtml: 'Fristed har allerede sat auto-installation op for ReDD Focus i {BROWSER} — <strong>genstart {BROWSER}</strong> for at hente den ind. (Eller klik på <strong>Installer</strong> nedenfor for at tilføje den manuelt nu.)',
         migrationInstructionEnableHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → find <strong>ReDD Focus</strong> → aktivér udvidelsen.',
         migrationInstructionWebsiteAccessHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → klik på <strong>Details</strong> ved ReDD Focus → tillad på <strong>alle websites</strong>.',
         migrationInstructionFirefoxPrivateHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → klik på <strong>ReDD Focus</strong> → slå <strong>Run in {PRIV}</strong> til.',
@@ -19802,7 +19608,7 @@ const SETTINGS_TRANSLATIONS = {
         enforcerCountdownDelayNote: '(ændringer kan tage op til 20 sekunder at registrere).',
         enforcerCountdownInstrPrivate: 'Blokering er ikke aktiveret i private vinduer. Aktivér Tillad i privat browsing for ReDD Focus for at stoppe nedtællingen.',
         enforcerCountdownInstrWebsiteAccess: 'ReDD Focus er ikke tilladt på alle websites. Tillad alle websites for at stoppe nedtællingen.',
-        enforcerCountdownInstrAccess: 'Rum kan ikke bekræfte ReDD Focus. Giv adgang for at stoppe nedtællingen.',
+        enforcerCountdownInstrAccess: 'Fristed kan ikke bekræfte ReDD Focus. Giv adgang for at stoppe nedtællingen.',
         enforcerCountdownInstrDefault: 'ReDD Focus er ikke klar. Færdiggør opsætningen for at stoppe nedtællingen.',
         enforcerCountdownInstrMultiple: 'Ret ReDD Focus i hver browser nedenfor for at stoppe nedtællingen.',
         enforcerCountdownDefault: '{browser} lukkes automatisk hvis ReDD Focus ikke er klar, for at understøtte din blokering.',
@@ -19817,9 +19623,9 @@ const SETTINGS_TRANSLATIONS = {
         enforcerHeadlinePrivate: 'Privat browsing i {browser} er ikke dækket af ReDD Focus endnu.',
         enforcerHeadlineWebsiteAccess: '{browser} har ikke givet ReDD Focus adgang på alle websites endnu.',
         enforcerInstrWebsiteAccessPlain: 'I {browser}s udvidelsesindstillinger: tillad ReDD Focus på alle websites.',
-        enforcerHeadlineAccess: 'Rum kan ikke bekræfte ReDD Focus i {browser}.',
+        enforcerHeadlineAccess: 'Fristed kan ikke bekræfte ReDD Focus i {browser}.',
         enforcerInstrAccessSafari: 'Åbn Safaris udvidelsesindstillinger, og færdiggør opsætningen af ReDD Focus.',
-        enforcerInstrAccessBrowser: 'Giv adgang, så Rum kan hjælpe med at tjekke {browser}.',
+        enforcerInstrAccessBrowser: 'Giv adgang, så Fristed kan hjælpe med at tjekke {browser}.',
         enforcerHeadlineDefault: 'ReDD Focus er ikke helt klar i {browser} endnu.',
         enforcerInstrDefault: 'Færdiggør ReDD Focus i {browser}s udvidelsesindstillinger.',
         enforcerActionInstall: 'Installer ReDD Focus',
@@ -19829,13 +19635,13 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedDisabled: '{browser} blev lukket for at bakke din blok op—ReDD Focus var slået fra.',
         enforcerClosedPrivate: '{browser} blev lukket for at bakke din blok op—private faner var stadig en åbning.',
         enforcerClosedWebsiteAccess: '{browser} blev lukket for at bakke din blok op—ReDD Focus kunne ikke dække alle websites endnu.',
-        enforcerClosedAccess: '{browser} blev lukket, så din beskyttelse kunne være tydelig—Rum kunne ikke bekræfte ReDD Focus.',
+        enforcerClosedAccess: '{browser} blev lukket, så din beskyttelse kunne være tydelig—Fristed kunne ikke bekræfte ReDD Focus.',
         enforcerClosedDefault: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke helt klar.',
         enforcerClosedCombinedMissing: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke installeret endnu.',
         enforcerClosedCombinedDisabled: '{browser} blev lukket for at bakke din blok op—ReDD Focus var slået fra.',
         enforcerClosedCombinedPrivate: '{browser} blev lukket for at bakke din blok op—private faner var stadig en åbning.',
         enforcerClosedCombinedWebsiteAccess: '{browser} blev lukket for at bakke din blok op—ReDD Focus kunne ikke dække alle websites endnu.',
-        enforcerClosedCombinedAccess: '{browser} blev lukket, så din beskyttelse kunne være tydelig—Rum kunne ikke bekræfte ReDD Focus.',
+        enforcerClosedCombinedAccess: '{browser} blev lukket, så din beskyttelse kunne være tydelig—Fristed kunne ikke bekræfte ReDD Focus.',
         enforcerClosedCombinedDefault: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke helt klar.',
         enforcerClosedInstrPrivateChrome: 'I Chrome: ReDD Focus → Details → Allow in Incognito.',
         enforcerClosedInstrPrivateFirefox: 'I Firefox: ReDD Focus → Run in Private Windows → Allow.',
@@ -19846,13 +19652,13 @@ const SETTINGS_TRANSLATIONS = {
         enforcerClosedInstrWebsiteAccess: 'I {browser}s udvidelsesindstillinger: tillad ReDD Focus på alle websites.',
         enforcerClosedInstrAccessSafari: 'Åbn Safari → Indstillinger → Udvidelser, og færdiggør opsætningen af ReDD Focus.',
         enforcerClosedInstrDefault: 'Færdiggør ReDD Focus i {browser}s udvidelsesindstillinger.',
-        enforcerHeadlineAutomation: 'Rum kan ikke styre {browser} lige nu.',
+        enforcerHeadlineAutomation: 'Fristed kan ikke styre {browser} lige nu.',
         enforcerCountdownInstrAutomation: 'Slå Automatisering til igen for at bevare din blokering.',
-        enforcerInstrAutomation: 'Slå Rum til igen for {browser} under Systemindstillinger → Anonymitet & sikkerhed → Automatisering, så virker din blokering igen.',
-        enforcerClosedAutomation: '{browser} blev lukket, fordi Rum ikke kunne styre den.',
-        enforcerClosedInstrAutomation: 'Slå Rum til igen for {browser} under Anonymitet & sikkerhed → Automatisering.',
-        enforcerClosedCombinedAutomation: '{browser} blev lukket, fordi Rum ikke kunne styre dem.',
-        enforcerClosedInstrAutomationGeneric: 'Slå Rum til igen for {browser} under Anonymitet & sikkerhed → Automatisering.',
+        enforcerInstrAutomation: 'Slå Fristed til igen for {browser} under Systemindstillinger → Anonymitet & sikkerhed → Automatisering, så virker din blokering igen.',
+        enforcerClosedAutomation: '{browser} blev lukket, fordi Fristed ikke kunne styre den.',
+        enforcerClosedInstrAutomation: 'Slå Fristed til igen for {browser} under Anonymitet & sikkerhed → Automatisering.',
+        enforcerClosedCombinedAutomation: '{browser} blev lukket, fordi Fristed ikke kunne styre dem.',
+        enforcerClosedInstrAutomationGeneric: 'Slå Fristed til igen for {browser} under Anonymitet & sikkerhed → Automatisering.',
         enforcerBrowserFallback: 'din browser',
         gracePeriodLabel: 'Henstandsperiode',
         gracePeriodHint: 'Sekunder til at slå til igen, før browseren lukkes.',
@@ -19895,7 +19701,7 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsBrowsersSectionHintMacExtension: 'Browsere her bruger ReDD Focus-udvidelsen (installer, aktiver og tillad privat browsing).',
         diagnosticsBrowsersSectionHint: 'Status for ReDD Focus-udvidelsen i browsere på denne computer.',
         diagnosticsAutomationSection: 'Automatisering (macOS)',
-        diagnosticsAutomationSectionHint: 'Rum skal have Automatisering-tilladelse for at omdirigere blokerede faner i hver browser. Giv tilladelse i Systemindstillinger → Privatliv og sikkerhed → Automatisering.',
+        diagnosticsAutomationSectionHint: 'Fristed skal have Automatisering-tilladelse for at omdirigere blokerede faner i hver browser. Giv tilladelse i Systemindstillinger → Privatliv og sikkerhed → Automatisering.',
         diagnosticsThAutomation: 'Automatisering',
         diagnosticsAutomationGranted: 'Tilladt',
         diagnosticsAutomationDenied: 'Afvist',
@@ -19992,7 +19798,7 @@ const SETTINGS_TRANSLATIONS = {
         placeholderAppExample: 'f.eks. Safari',
         invalidDomainMsg: 'Indtast et gyldigt domæne (f.eks. reddit.com)',
         cannotBlockDomainPlaceholder: '⚠️ Dette domæne kan ikke blokeres!',
-        cannotBlockSelfAppPlaceholder: '⚠️ Rum kan ikke blokere sig selv!',
+        cannotBlockSelfAppPlaceholder: '⚠️ Fristed kan ikke blokere sig selv!',
         // Start/schedule controls
         durationQuick15m: '15m',
         durationQuick30m: '30m',
@@ -20088,12 +19894,12 @@ const SETTINGS_TRANSLATIONS = {
         restartsAt: 'STARTER IGEN KL.',
         pauseInstruction: 'For at pause denne blokering, skriv følgende:',
         helperSetupTitle: 'Opsætning påkrævet',
-        helperSetupText: 'For at blokere websites, når appen er lukket, skal Rum installere en lille baggrundstjeneste. Din computer beder om adgangskode én gang — derefter starter blokeringer med det samme uden ny prompt.',
+        helperSetupText: 'For at blokere websites, når appen er lukket, skal Fristed installere en lille baggrundstjeneste. Din computer beder om adgangskode én gang — derefter starter blokeringer med det samme uden ny prompt.',
         helperRepairTitle: 'Reparation af helper påkrævet',
-        helperRepairText: 'Der er allerede installeret en helper-tjeneste, men den kører ikke lige nu. Rum skal geninstallere eller reparere den, før denne blokering kan starte. Din computer kan bede om adgangskode for at fuldføre reparationen.',
+        helperRepairText: 'Der er allerede installeret en helper-tjeneste, men den kører ikke lige nu. Fristed skal geninstallere eller reparere den, før denne blokering kan starte. Din computer kan bede om adgangskode for at fuldføre reparationen.',
         helperUpdateTitle: 'Helper-opdatering påkrævet',
         helperUpdateText: 'Der er allerede installeret en helper-tjeneste, men den skal opdateres, før denne blokering kan starte. Din computer beder om adgangskode for at gennemføre opdateringen.',
-        helperOpenSourceLink: 'open source-koden til Rum her',
+        helperOpenSourceLink: 'open source-koden til Fristed her',
         proceed: 'Fortsæt',
         reinstallHelper: 'Geninstaller helper',
         helperInstalling: 'Installerer...',
@@ -20248,24 +20054,24 @@ const SETTINGS_TRANSLATIONS = {
         settingsOverrideAllLabel: 'Stop alle blokeringer og tidsplaner',
         settingsOverrideAllBtn: 'Stop alle',
         // In-app uninstall (macOS only)
-        uninstallApp: 'Afinstaller Rum',
+        uninstallApp: 'Afinstaller Fristed',
         uninstallAppBtn: 'Afinstaller…',
         uninstallDisabledHint: 'Stop kørende blokeringer først, før du kan afinstallere.',
-        uninstallConfirmTitle: 'Afinstaller Rum?',
-        uninstallConfirmLeadHtml: 'Rum flyttes til papirkurven. Dine blokeringslister og skemaer <strong>bevares p\u00e5 harddisken</strong>, s\u00e5 de kan gendannes, hvis du geninstallerer senere.',
-        uninstallConfirmLeadDeleteHtml: 'Rum flyttes til papirkurven. Dine blokeringslister, skemaer og indstillinger bliver <strong>permanent slettet</strong> fra denne Mac.',
+        uninstallConfirmTitle: 'Afinstaller Fristed?',
+        uninstallConfirmLeadHtml: 'Fristed flyttes til papirkurven. Dine blokeringslister og skemaer <strong>bevares p\u00e5 harddisken</strong>, s\u00e5 de kan gendannes, hvis du geninstallerer senere.',
+        uninstallConfirmLeadDeleteHtml: 'Fristed flyttes til papirkurven. Dine blokeringslister, skemaer og indstillinger bliver <strong>permanent slettet</strong> fra denne Mac.',
         uninstallDeleteDataLabel: 'Slet ogs\u00e5 mine blokeringslister, skemaer og indstillinger',
-        uninstallFinderWarningHtml: 'Hvis macOS spørger, om Rum må styre <strong>Finder</strong>, skal du klikke <strong>Tillad</strong> \u2014 det er sådan, appen flytter sig selv til papirkurven.',
+        uninstallFinderWarningHtml: 'Hvis macOS spørger, om Fristed må styre <strong>Finder</strong>, skal du klikke <strong>Tillad</strong> \u2014 det er sådan, appen flytter sig selv til papirkurven.',
         uninstallFirefoxCalloutTitle: 'ReDD Focus-udvidelse i Firefox',
         uninstallExtFirefoxBadge: 'Forbliver installeret',
         uninstallFirefoxCalloutDetailHtml: 'Du kan forts\u00e6tte med at bruge ReDD Focus til at skjule distraherende dele af websites. For at fjerne den, \u00e5bn Firefox\u2019 udvidelsesindstillinger \u2014 kopier {URL_CHIP} og inds\u00e6t den i adresselinjen.',
         uninstallConfirmOk: 'Afinstaller',
         uninstallFailedTitle: 'Afinstallation mislykkedes',
         uninstallFailed: 'Kunne ikke gennemføre afinstallation.',
-        windowsUninstallHint: 'Indstillinger \u2192 Installerede apps \u2192 Rum',
+        windowsUninstallHint: 'Indstillinger \u2192 Installerede apps \u2192 Fristed',
         windowsUninstallOpenSettingsBtn: 'Åbn indstillinger',
         windowsUninstallOpenFailedTitle: 'Kunne ikke åbne Indstillinger',
-        windowsUninstallOpenFailed: 'Windows Indstillinger kunne ikke åbnes. Åbn Indstillinger manuelt, gå til Apps \u2192 Installerede apps, og søg efter Rum.',
+        windowsUninstallOpenFailed: 'Windows Indstillinger kunne ikke åbnes. Åbn Indstillinger manuelt, gå til Apps \u2192 Installerede apps, og søg efter Fristed.',
         macAutomationIntroBadge: 'Nyhed',
         macAutomationIntroTitle: 'Websiteblokering på macOS fungerer lidt anderledes nu',
         macAutomationIntroLeadHtml: 'For at gøre blokering nemmere at opsætte bruger de fleste browsere nu <strong>macOS Automatisering</strong> i stedet for ReDD Focus-udvidelsen. Sådan ser opsætningen ud nu.',
@@ -20292,7 +20098,7 @@ const SETTINGS_TRANSLATIONS = {
         helperRemovedFallback: 'Hjælperen blev fjernet via reserveoprydning, fordi den installerede hjælper ikke svarede normalt.',
         helperRemoveStaleHint: 'Installeret, men kører ikke lige nu. Du kan fjerne den gamle hjælper her, før du geninstallerer den.',
         cleanHostsFile: 'Ryd hosts-fil',
-        helperHint: 'Fjern alle Rum-indsætninger fra systemets hosts-fil. Brug kun dette, hvis websites stadig er utilgængelige efter du har stoppet alle blokeringer.',
+        helperHint: 'Fjern alle Fristed-indsætninger fra systemets hosts-fil. Brug kun dette, hvis websites stadig er utilgængelige efter du har stoppet alle blokeringer.',
         close: 'Luk',
         // Time/date words
         dayAbbrev: ['Søn', 'Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør'],
@@ -20606,69 +20412,21 @@ function applyMigrationOverlayStaticCopy() {
     setText('migration-post-subtitle', tSettings('migrationPostSubtitleCleanup'));
 }
 
-function applyRumDefinitionPills() {
+function applyFristedDefinitionPills() {
     const show = getSettingsLanguage() !== 'da';
-    document.querySelectorAll('.rum-definition-pill').forEach(el => {
+    document.querySelectorAll('.fristed-definition-pill').forEach(el => {
         el.classList.toggle('hidden', !show);
-        if (show) el.innerHTML = tSettings('rumDefinitionHtml');
+        if (show) el.innerHTML = tSettings('fristedDefinitionHtml');
     });
-}
-
-function applyRumDefinitionCardContent(ids, { hiddenForDanish = false } = {}) {
-    if (hiddenForDanish) {
-        const show = getSettingsLanguage() !== 'da';
-        if (ids.card) {
-            const card = document.getElementById(ids.card);
-            if (card) card.classList.toggle('hidden', !show);
-        }
-        if (!show) return;
-    }
-
-    const word = document.getElementById(ids.word);
-    if (word) word.textContent = tSettings('rebrandOnboardingWord');
-
-    const pronunciation = document.getElementById(ids.pronunciation);
-    if (pronunciation) pronunciation.textContent = tSettings('rebrandOnboardingPronunciationHtml');
-
-    const meta = document.getElementById(ids.meta);
-    if (meta) meta.textContent = tSettings('rebrandOnboardingMetaHtml');
-
-    const definition = document.getElementById(ids.definition);
-    if (definition) definition.innerHTML = tSettings('rebrandOnboardingDefinitionHtml');
-
-    const footnote = document.getElementById(ids.footnote);
-    if (footnote) footnote.innerHTML = tSettings('rebrandOnboardingFootnoteHtml');
-}
-
-function applyRebrandOnboardingLanguage() {
-    const title = document.getElementById('rebrand-onboarding-title');
-    if (title) title.innerHTML = tSettings('rebrandOnboardingTitleHtml');
-
-    const subtitle = document.getElementById('rebrand-onboarding-subtitle');
-    if (subtitle) subtitle.textContent = tSettings('rebrandOnboardingSubtitle');
-
-    applyRumDefinitionCardContent({
-        word: 'rebrand-onboarding-word',
-        pronunciation: 'rebrand-onboarding-pronunciation',
-        meta: 'rebrand-onboarding-meta',
-        definition: 'rebrand-onboarding-definition',
-        footnote: 'rebrand-onboarding-footnote',
-    });
-
-    const continueBtn = document.getElementById('rebrand-onboarding-continue-btn');
-    if (continueBtn) continueBtn.textContent = tSettings('rebrandOnboardingContinueBtn');
-
-    const appIcon = document.getElementById('rebrand-onboarding-app-icon');
-    if (appIcon) appIcon.setAttribute('alt', tSettings('eulaWelcomeIconAlt'));
 }
 
 /** First-run EULA screen — localized from current UI language / saved preference / browser locale (da). */
 function applyEulaOnboardingLanguage() {
     const title = tSettings('welcomeOnboardingTitle');
 
-    const shieldLogo = document.getElementById('eula-onboarding-rum-logo');
+    const shieldLogo = document.getElementById('eula-onboarding-fristed-logo');
     if (shieldLogo) {
-        shieldLogo.src = rumIconUrl;
+        shieldLogo.src = fristedIconUrl;
         shieldLogo.alt = '';
     }
 
@@ -20713,22 +20471,13 @@ function applyEulaOnboardingLanguage() {
         backBtn.textContent = tSettings('eulaBackBtn');
         backBtn.classList.toggle('hidden', isIOS);
     }
-
-    applyRumDefinitionCardContent({
-        card: 'eula-onboarding-definition-card',
-        word: 'eula-onboarding-word',
-        pronunciation: 'eula-onboarding-pronunciation',
-        meta: 'eula-onboarding-meta',
-        definition: 'eula-onboarding-definition',
-        footnote: 'eula-onboarding-footnote',
-    }, { hiddenForDanish: true });
 }
 
 /** Safari FDA onboarding — same layout/copy pattern as the EULA screen. */
 function applySafariFdaOnboardingLanguage() {
-    const shield = document.getElementById('fda-onboarding-rum-logo');
+    const shield = document.getElementById('fda-onboarding-fristed-logo');
     if (shield) {
-        shield.src = rumIconUrl;
+        shield.src = fristedIconUrl;
         shield.alt = '';
     }
     const screenshot = document.getElementById('fda-onboarding-screenshot');
@@ -20748,9 +20497,9 @@ function applySafariFdaOnboardingLanguage() {
 
 /** Welcome onboarding screen — localized in the same way as the EULA screen. */
 function applyWelcomeOnboardingLanguage() {
-    const shieldLogo = document.getElementById('welcome-onboarding-rum-logo');
+    const shieldLogo = document.getElementById('welcome-onboarding-fristed-logo');
     if (shieldLogo) {
-        shieldLogo.src = rumIconUrl;
+        shieldLogo.src = fristedIconUrl;
         shieldLogo.alt = '';
     }
 
@@ -21430,11 +21179,10 @@ function applySettingsLanguage() {
     }
 
     applyMigrationOverlayStaticCopy();
-    applyRebrandOnboardingLanguage();
     applyEulaOnboardingLanguage();
     applyWelcomeOnboardingLanguage();
     applySafariFdaOnboardingLanguage();
-    applyRumDefinitionPills();
+    applyFristedDefinitionPills();
     setText('ios-screentime-onboarding-title', tSettings('welcomeOnboardingTitle'));
     setText('ios-screentime-onboarding-note', tSettings('eulaProjectBlurb'));
 
@@ -22091,7 +21839,7 @@ function setupHelperSettings() {
             if (cleanHostsBtn.disabled) return;
 
             const confirmed = await ask(
-                'This will remove all Rum entries from your system\'s hosts file. ' +
+                'This will remove all Fristed entries from your system\'s hosts file. ' +
                 'Only use this if websites remain blocked after all blocks have been stopped.\n\n' +
                 'Your computer may ask for your password or show a security prompt.',
                 { title: 'Clean hosts file?', kind: 'warning' }
@@ -22193,7 +21941,7 @@ async function confirmHelperRemoved() {
         return {
             removed: false,
             status,
-            error: 'Rum could not confirm that the helper was fully removed. It still appears to be installed.'
+            error: 'Fristed could not confirm that the helper was fully removed. It still appears to be installed.'
         };
     }
 

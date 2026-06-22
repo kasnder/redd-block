@@ -4483,7 +4483,7 @@ body.dark-mode .day-row.weekend{
     border: none;
 }
 
-/* Desktop two-column: MY ROOMS header on row 1 left; room cards and the detail
+/* Desktop two-column: MY FOCUS ROOMS header on row 1 left; room cards and the detail
    card share row 2 so their tops align. Keep row-gap at 0 so header-to-content
    spacing matches the unselected stacked layout (grid gap is column-only). */
 @media (min-width: 769px) {
@@ -7500,7 +7500,7 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
     margin-bottom: 8px;
 }
 
-.welcome-rum-logo {
+.welcome-fristed-logo {
     display: block;
     width: 52px;
     height: auto;
@@ -7522,7 +7522,7 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
     text-align: left;
 }
 
-.rum-definition-pill {
+.fristed-definition-pill {
     display: inline-flex;
     align-items: center;
     flex-wrap: wrap;
@@ -7537,24 +7537,32 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
     text-wrap: balance;
 }
 
-.rum-definition-word {
+.fristed-definition-word {
     font-weight: 600;
 }
 
-.rum-definition-pronunciation {
+.fristed-definition-pronunciation {
     margin-left: 0.25em;
     font-weight: 400;
     font-style: italic;
     opacity: 0.8;
 }
 
-.rum-definition-sep {
+.fristed-definition-sep {
     margin: 0 0.35em;
     opacity: 0.55;
 }
 
-body.dark-mode .rum-definition-pill {
+body.dark-mode .fristed-definition-pill {
     background: rgba(255, 255, 255, 0.08);
+}
+
+body.ios .eula-definition-pill-ios {
+    margin-bottom: 14px;
+}
+
+body:not(.ios) .eula-definition-pill-ios {
+    display: none;
 }
 
 .welcome-onboarding-subtitle {
@@ -7992,7 +8000,7 @@ body.dark-mode .welcome-demo-toggle:hover{
         gap: 10px;
     }
 
-    .welcome-rum-logo {
+    .welcome-fristed-logo {
         width: 44px;
     }
 

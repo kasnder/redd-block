@@ -70,7 +70,7 @@ pub fn user_acknowledge_warning() {
 }
 
 const PROTECTED: &[&str] = &[
-    "Rum", "Rum", "ReDD Block", "redd-block", "ReddBlock",
+    "Fristed", "Rum", "ReDD Block", "redd-block", "ReddBlock",
     "System Events", "Finder", "loginwindow", "WindowServer",
     "explorer.exe", "dwm.exe", "winlogon.exe", "svchost.exe",
 ];

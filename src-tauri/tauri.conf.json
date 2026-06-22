@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Rum",
+  "productName": "Fristed",
   "version": "3.4.0",
   "identifier": "com.reddblock",
   "build": {
@@ -44,7 +44,7 @@
     "category": "Productivity",
     "copyright": "Copyright © 2026 Reduce Digital Distraction Ltd",
     "shortDescription": "Block distracting websites and apps to stay focused",
-    "longDescription": "Rum helps you stay focused by blocking distracting websites and apps. Create blocklists, schedule blocks, and use override challenges to stay committed.",
+    "longDescription": "Fristed helps you stay focused by blocking distracting websites and apps. Create blocklists, schedule blocks, and use override challenges to stay committed.",
     "macOS": {
       "entitlements": "entitlements.macos.plist",
       "signingIdentity": "Developer ID Application: Reduce Digital Distraction Ltd (JD647S9RT6)",

@@ -4,65 +4,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
-    <title>Rum</title>
+    <title>Fristed</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
-    <div id="rebrand-onboarding" class="onboarding-screen hidden">
-        <div class="eula-title-bar" data-tauri-drag-region aria-hidden="true">
-            <div id="rebrand-window-controls" class="window-controls hidden">
-                <button id="rebrand-titlebar-minimize" class="win-btn" title="Minimize">
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <rect x="0" y="5" width="12" height="1" fill="currentColor" />
-                    </svg>
-                </button>
-                <button id="rebrand-titlebar-maximize" class="win-btn" title="Maximize">
-                    <svg id="rebrand-maximize-icon" width="12" height="12" viewBox="0 0 12 12" fill="none"
-                        xmlns="http://www.w3.org/2000/svg">
-                        <rect x="1" y="1" width="10" height="10" stroke="currentColor" stroke-width="1.2" fill="none" />
-                    </svg>
-                    <svg id="rebrand-restore-icon" width="12" height="12" viewBox="0 0 12 12" fill="none"
-                        xmlns="http://www.w3.org/2000/svg" style="display: none;">
-                        <rect x="2" y="2" width="8" height="8" stroke="currentColor" stroke-width="1.2" fill="none" />
-                        <rect x="0" y="0" width="8" height="8" stroke="currentColor" stroke-width="1.2" fill="none" />
-                    </svg>
-                </button>
-                <button id="rebrand-titlebar-close" class="win-btn close-btn" title="Close">
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M1 1L11 11M11 1L1 11" stroke="currentColor" stroke-width="1.5"
-                            stroke-linecap="round" />
-                    </svg>
-                </button>
-            </div>
-        </div>
-        <div class="eula-onboarding-scroll">
-            <div class="onboarding-content legal-onboarding-content rebrand-onboarding-content">
-                <div class="onboarding-icon rebrand-onboarding-icon">
-                    <img id="rebrand-onboarding-app-icon" src="/fristed-icon.svg" alt="Rum app icon"
-                        class="onboarding-app-icon">
-                </div>
-                <h1 id="rebrand-onboarding-title">ReDD Block is now <span class="rebrand-onboarding-title-brand">Rum</span></h1>
-                <p id="rebrand-onboarding-subtitle" class="rebrand-onboarding-subtitle">All functionality is unchanged. It's just a new name that reflects what the app is for.</p>
-                <div class="rebrand-definition-card">
-                    <div class="rebrand-definition-header">
-                        <span id="rebrand-onboarding-word" class="rebrand-definition-word">rum</span>
-                        <span id="rebrand-onboarding-pronunciation" class="rebrand-definition-pronunciation-pill">/rɔmˀ/ · say “rom”</span>
-                        <span id="rebrand-onboarding-meta" class="rebrand-definition-meta">Danish · noun</span>
-                    </div>
-                    <p id="rebrand-onboarding-definition" class="rebrand-definition-body">
-                        <em class="rebrand-definition-quote">“a space; a room.”</em> A clear space, kept free of the distractions that pull you away.
-                    </p>
-                    <hr class="rebrand-definition-divider" aria-hidden="true">
-                    <p id="rebrand-onboarding-footnote" class="rebrand-definition-footnote">
-                        The same word as English <span class="rebrand-definition-highlight">“room”</span> — not the drink.
-                    </p>
-                </div>
-                <button id="rebrand-onboarding-continue-btn" type="button"
-                    class="modal-btn primary-btn onboarding-primary-btn rebrand-onboarding-continue-btn">Continue</button>
-            </div>
-        </div>
-    </div>
     <div class="app-container">
         <!-- Title Bar -->
         <div class="title-bar" data-tauri-drag-region>
@@ -196,39 +142,26 @@
             <div class="eula-onboarding-inner">
                 <header class="eula-onboarding-desktop-header welcome-onboarding-header">
                     <div class="welcome-onboarding-title-row">
-                        <img id="eula-onboarding-rum-logo"
-                             class="welcome-rum-logo"
+                        <img id="eula-onboarding-fristed-logo"
+                             class="welcome-fristed-logo"
                              src=""
                              alt=""
                              aria-hidden="true">
-                        <h1 id="eula-welcome-title">Welcome to Rum</h1>
+                        <h1 id="eula-welcome-title">Welcome to Fristed</h1>
                     </div>
+                    <p class="fristed-definition-pill" role="note"></p>
                     <p id="eula-onboarding-subtitle" class="welcome-onboarding-subtitle">
-                        Create a distraction-free room for focus
+                        Create distraction-free rooms for focus, by blocking the websites and apps that pull you away.
                     </p>
                 </header>
 
                 <div class="eula-onboarding-ios-hero onboarding-icon">
-                    <img id="eula-onboarding-app-icon" src="/fristed-icon.svg" alt="Rum app icon"
+                    <img id="eula-onboarding-app-icon" src="/fristed-icon.svg" alt="Fristed app icon"
                         class="onboarding-app-icon">
                 </div>
-                <h1 id="eula-welcome-title-ios" class="eula-welcome-title-ios">Welcome to Rum</h1>
-                <p id="eula-onboarding-subtitle-ios" class="welcome-onboarding-subtitle eula-mobile-subtitle">Create a distraction-free room for focus</p>
-
-                <div id="eula-onboarding-definition-card" class="rebrand-definition-card">
-                    <div class="rebrand-definition-header">
-                        <span id="eula-onboarding-word" class="rebrand-definition-word">rum</span>
-                        <span id="eula-onboarding-pronunciation" class="rebrand-definition-pronunciation-pill">/rɔmˀ/ · say “rom”</span>
-                        <span id="eula-onboarding-meta" class="rebrand-definition-meta">Danish · noun</span>
-                    </div>
-                    <p id="eula-onboarding-definition" class="rebrand-definition-body">
-                        <em class="rebrand-definition-quote">“a space; a room.”</em> A clear space, kept free of the distractions that pull you away.
-                    </p>
-                    <hr class="rebrand-definition-divider" aria-hidden="true">
-                    <p id="eula-onboarding-footnote" class="rebrand-definition-footnote">
-                        The same word as English <span class="rebrand-definition-highlight">“room”</span> — not the drink.
-                    </p>
-                </div>
+                <h1 id="eula-welcome-title-ios" class="eula-welcome-title-ios">Welcome to Fristed</h1>
+                <p class="fristed-definition-pill eula-definition-pill-ios" role="note"></p>
+                <p id="eula-onboarding-subtitle-ios" class="welcome-onboarding-subtitle eula-mobile-subtitle">Create distraction-free rooms for focus, by blocking the websites and apps that pull you away.</p>
 
                 <div class="eula-onboarding-card-wrap">
                     <div class="onboarding-focus-card legal-onboarding-card welcome-onboarding-card">
@@ -310,16 +243,16 @@
 
                 <header class="welcome-onboarding-header">
                     <div class="welcome-onboarding-title-row">
-                        <img id="welcome-onboarding-rum-logo"
-                             class="welcome-rum-logo"
+                        <img id="welcome-onboarding-fristed-logo"
+                             class="welcome-fristed-logo"
                              src=""
                              alt=""
                              aria-hidden="true">
-                        <h1 id="welcome-onboarding-title">Welcome to Rum</h1>
+                        <h1 id="welcome-onboarding-title">Welcome to Fristed</h1>
                     </div>
-                    <p class="rum-definition-pill" role="note"></p>
+                    <p class="fristed-definition-pill" role="note"></p>
                     <p id="welcome-onboarding-subtitle" class="welcome-onboarding-subtitle">
-                        Create a distraction-free room for focus
+                        Create distraction-free rooms for focus, by blocking the websites and apps that pull you away.
                     </p>
                 </header>
 
@@ -432,8 +365,8 @@
             <div class="welcome-onboarding-layout">
                 <header class="welcome-onboarding-header">
                     <div class="welcome-onboarding-title-row">
-                        <img id="fda-onboarding-rum-logo"
-                             class="welcome-rum-logo"
+                        <img id="fda-onboarding-fristed-logo"
+                             class="welcome-fristed-logo"
                              src=""
                              alt=""
                              aria-hidden="true">
@@ -462,7 +395,7 @@
                     <img id="fda-onboarding-screenshot"
                          class="fda-onboarding-screenshot"
                          src=""
-                         alt="Full Disk Access settings with Rum toggled on">
+                         alt="Full Disk Access settings with Fristed toggled on">
                 </div>
             </div>
         </div>
@@ -474,16 +407,16 @@
         <div id="migration-onboarding" class="onboarding-screen hidden">
             <div class="onboarding-content migration-onboarding-content">
                 <div class="onboarding-icon">
-                    <img src="/fristed-icon.svg" alt="Rum app icon" class="onboarding-app-icon">
+                    <img src="/fristed-icon.svg" alt="Fristed app icon" class="onboarding-app-icon">
                 </div>
 
                 <!-- Phase: pre-cleanup. Shown when migration_pending=true. -->
                 <div id="migration-phase-pre" class="migration-phase">
-                    <h1 id="migration-pre-title">Welcome to Rum 2.0</h1>
+                    <h1 id="migration-pre-title">Welcome to Fristed 2.0</h1>
                     <p id="migration-pre-subtitle" class="legal-onboarding-subtitle">A one-time cleanup is needed to finish your upgrade.</p>
                     <div class="onboarding-focus-card migration-card">
                         <p id="migration-pre-explainer" class="migration-explainer">
-                            Rum now blocks websites through a browser extension instead of a system-level helper.
+                            Fristed now blocks websites through a browser extension instead of a system-level helper.
                             We need to:
                         </p>
                         <ul class="migration-bullets">
@@ -493,7 +426,7 @@
                         </ul>
                         <p id="migration-pre-warn" class="migration-explainer migration-explainer-warn">
                             You'll see <strong>one</strong> admin password prompt. Blocking will pause briefly during
-                            the changeover. After cleanup, Rum sets up the <strong>ReDD Focus</strong>
+                            the changeover. After cleanup, Fristed sets up the <strong>ReDD Focus</strong>
                             browser extension in your browsers automatically — you just need to allow it in
                             private/incognito tabs.
                         </p>
@@ -514,8 +447,8 @@
                         ReDD Focus in each browser you use.</p>
                     <header id="migration-post-header" class="migration-post-header welcome-onboarding-header hidden">
                         <div class="welcome-onboarding-title-row">
-                            <img id="migration-post-header-rum-logo"
-                                 class="welcome-rum-logo"
+                            <img id="migration-post-header-fristed-logo"
+                                 class="welcome-fristed-logo"
                                  src=""
                                  alt=""
                                  aria-hidden="true">
@@ -543,7 +476,7 @@
                         <div id="migration-howto" class="migration-howto hidden">
                             <h3 id="migration-howto-title">Setting up ReDD Focus</h3>
                             <ol>
-                                <li id="migration-howto-li1">Rum tried to add ReDD Focus to your installed browsers
+                                <li id="migration-howto-li1">Fristed tried to add ReDD Focus to your installed browsers
                                     automatically — <strong>restart each browser</strong> to pick it up.</li>
                                 <li id="migration-howto-li2" class="hidden"></li>
                                 <li id="migration-howto-li3">Once enabled, <strong>allow it in private/incognito tabs</strong>
@@ -622,10 +555,10 @@
         <div id="ios-screentime-onboarding" class="onboarding-screen hidden">
             <div class="onboarding-content ios-screentime-onboarding-content">
                 <div class="onboarding-icon">
-                    <img src="/fristed-icon.svg" alt="Rum app icon" class="onboarding-app-icon">
+                    <img src="/fristed-icon.svg" alt="Fristed app icon" class="onboarding-app-icon">
                 </div>
-                <h1 id="ios-screentime-onboarding-title">Welcome to Rum</h1>
-                <p class="rum-definition-pill" role="note"></p>
+                <h1 id="ios-screentime-onboarding-title">Welcome to Fristed</h1>
+                <p class="fristed-definition-pill" role="note"></p>
                 <div class="onboarding-focus-card">
                     <p class="onboarding-primary-copy">This app uses Apple's Screen Time functionality to block
                         distracting websites and apps.</p>
@@ -1011,7 +944,7 @@
                 <!-- Blocklists Section (Right Column) -->
                 <div id="blocklists-section" class="blocklists-section">
                     <div class="section-header blocklists-section-header">
-                        <h2 id="main-blocklists-title">My Rooms</h2>
+                        <h2 id="main-blocklists-title">My Focus Rooms</h2>
                         <button id="add-blocklist-btn" class="icon-btn" title="Add blocklist">
                             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -2260,7 +2193,7 @@
 
                             <div id="uninstall-app-row" class="settings-row settings-uninstall-contents macos-only">
                                 <div class="settings-row-copy">
-                                    <span id="settings-uninstall-label" class="settings-row-label">Uninstall Rum</span>
+                                    <span id="settings-uninstall-label" class="settings-row-label">Uninstall Fristed</span>
                                     <span id="settings-uninstall-hint" class="settings-row-hint">Your blocklists are kept on disk.</span>
                                 </div>
                                 <div class="settings-row-control settings-uninstall-btn-wrap">
@@ -2279,7 +2212,7 @@
 
                             <div id="windows-uninstall-app-row" class="settings-row settings-uninstall-contents settings-uninstall-windows-row windows-only">
                                 <div class="settings-row-copy">
-                                    <span id="settings-windows-uninstall-label" class="settings-row-label">Uninstall Rum</span>
+                                    <span id="settings-windows-uninstall-label" class="settings-row-label">Uninstall Fristed</span>
                                     <span id="settings-windows-uninstall-hint" class="settings-row-hint"></span>
                                 </div>
                                 <div class="settings-row-control settings-uninstall-btn-wrap">
@@ -2352,7 +2285,7 @@
         <!-- Uninstall Confirmation Modal (macOS in-app uninstall) -->
         <div id="uninstall-confirm-modal" class="modal-overlay hidden">
             <div class="modal-content uninstall-confirm-modal">
-                <h3 id="uninstall-confirm-title">Uninstall Rum?</h3>
+                <h3 id="uninstall-confirm-title">Uninstall Fristed?</h3>
                 <p id="uninstall-confirm-lead" class="uninstall-confirm-lead"></p>
 
                 <div class="uninstall-finder-info settings-panel">

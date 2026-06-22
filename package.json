@@ -1,7 +1,7 @@
 {
   "name": "redd-block",
   "version": "3.4.0",
-  "description": "Rum: Block Apps & Sites",
+  "description": "Fristed: Block Apps & Sites",
   "scripts": {
     "dev": "tauri dev",
     "dev:ios": "bash ./scripts/ios-dev.sh",

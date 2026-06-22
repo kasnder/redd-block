@@ -1333,9 +1333,9 @@
 
         const { isProtectedApp } = window.__REDDBLOCK_INTERNALS__;
 
-        // T43: "Rum" is protected
+        // T43: "Fristed" is protected
         (function T43() {
-            assert(isProtectedApp('Rum'), 'T43: "Rum" is protected');
+            assert(isProtectedApp('Fristed'), 'T43: "Fristed" is protected');
         })();
 
         // T44: "redd-block" is protected
@@ -1350,9 +1350,10 @@
 
         // T46: Case variations are protected
         (function T46() {
-            assert(isProtectedApp('Rum'), 'T46: "Rum" (uppercase) is protected');
-            assert(isProtectedApp('Rum'), 'T46: "Rum" (title case) is protected');
-            assert(isProtectedApp('  Rum  '), 'T46: Leading/trailing spaces handled');
+            assert(isProtectedApp('FRISTED'), 'T46: "FRISTED" (uppercase) is protected');
+            assert(isProtectedApp('Fristed'), 'T46: "Fristed" (title case) is protected');
+            assert(isProtectedApp('  Fristed  '), 'T46: Leading/trailing spaces handled');
+            assert(isProtectedApp('Rum'), 'T46: legacy "Rum" name is protected');
         })();
 
         // T47: Normal apps are NOT protected
