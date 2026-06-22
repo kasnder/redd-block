@@ -6962,7 +6962,9 @@ function setupHandsetModalScreens() {
 
         if (isRoomStyleConfirmModal) {
             const roomHeader = content.querySelector('.start-confirm-header-room');
-            if (roomHeader) {
+            // Handset only: title lives in the sticky mobile header. On desktop/iPad the
+            // header wrapper is display:none — keep the room header in the scroll body.
+            if (roomHeader && document.body.classList.contains('handset-device')) {
                 header.appendChild(roomHeader);
             }
         }
@@ -7392,6 +7394,11 @@ function setupEventListeners() {
     // Start block confirmation modal buttons
     document.getElementById('cancel-start-confirm-btn')?.addEventListener('click', closeStartBlockConfirmModal);
     document.getElementById('proceed-start-confirm-btn')?.addEventListener('click', proceedWithBlock);
+    document.getElementById('start-block-confirm-modal')?.addEventListener('click', (e) => {
+        if (e.target.classList.contains('modal-overlay')) {
+            closeStartBlockConfirmModal();
+        }
+    });
 
     // Schedule confirmation modal buttons.
     // The proceed button routes between the start-flow and edit-flow handlers via
@@ -7405,6 +7412,11 @@ function setupEventListeners() {
             proceedWithScheduleEdit();
         } else {
             proceedWithSchedule();
+        }
+    });
+    document.getElementById('start-schedule-confirm-modal')?.addEventListener('click', (e) => {
+        if (e.target.classList.contains('modal-overlay')) {
+            closeScheduleConfirmModal();
         }
     });
 
