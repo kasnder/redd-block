@@ -5,7 +5,7 @@ const path = require('path');
 const width = 600;
 const height = 400;
 
-// Rum Theme Gradient: #667eea to #764ba2
+// Fristed theme gradient: #667eea to #764ba2
 const svgImage = `
 <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -23,7 +23,7 @@ const svgImage = `
   
   <!-- Title -->
   <text x="50%" y="60" text-anchor="middle" font-family="sans-serif" font-weight="bold" font-size="32" fill="white" filter="url(#shadow)">
-    Install Rum
+    Install Fristed
   </text>
   
   <!-- Arrow -->
@@ -37,7 +37,7 @@ const svgImage = `
   
   <!-- Instruction Text -->
   <text x="50%" y="340" text-anchor="middle" font-family="sans-serif" font-size="16" fill="white" opacity="0.9" filter="url(#shadow)">
-    Drag Rum to the Applications folder
+    Drag Fristed to the Applications folder
   </text>
 </svg>
 `;

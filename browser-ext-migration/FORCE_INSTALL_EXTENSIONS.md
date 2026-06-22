@@ -1,4 +1,4 @@
-# Force-installing the ReDD Focus extension at Rum install time
+# Force-installing the ReDD Focus extension at Fristed install time
 
 > **Historical — partial v3 relevance.** Windows Chromium auto-install hints
 > still apply. macOS Chromium/Safari use **Automation** in v3 (no extension).
@@ -94,7 +94,7 @@ a per-browser walk-through. Users often:
   user to take an extra action),
 - forget which browsers they've done.
 
-We want Rum's installer (or first-launch) to silently put the
+We want Fristed's installer (or first-launch) to silently put the
 extension in place across every detected non-Safari browser, so the
 extension is **already there** when the user's first onboarding scan
 runs.
@@ -109,7 +109,7 @@ mechanisms split along two axes:
 - **User-defeatable** — can the user uninstall the extension afterwards
   via the browser's UI, and does our install survive that?
 
-Rum runs as the user (no helper daemon, per `MIGRATION_PLAN.md`
+Fristed runs as the user (no helper daemon, per `MIGRATION_PLAN.md`
 § "What we're not doing"), so the **user-level** options are the only
 ones we can rely on without an installer-time UAC / sudo prompt.
 
@@ -138,7 +138,7 @@ User-level paths:
   `HKCU\Software\Policies\<vendor>\<browser>\ExtensionSettings\<ext-id>`
   with `installation_mode` + `update_url` REG_SZ values.
 
-Auto-uninstall: when Rum uninstalls, our uninstall hook
+Auto-uninstall: when Fristed uninstalls, our uninstall hook
 strips the `ExtensionSettings.<ext-id>` entry — Chromium then
 auto-uninstalls the extension on next launch. Same lifecycle
 ownership as Firefox.
@@ -154,7 +154,7 @@ that hasn't shipped. So onboarding still has to nag once for
 
 #### 2. External Extensions hint (user-level, lighter touch) — superseded
 
-Earlier Rum versions used this. Browser checks a per-profile
+Earlier Fristed versions used this. Browser checks a per-profile
 JSON manifest at startup; if it points at a Web Store extension it
 auto-fetches and installs it. JSON lives inside the user data dir;
 no admin needed; no policy lock-in.
@@ -169,11 +169,11 @@ Contents:
 
 UX is lighter — extension shows up in `chrome://extensions` like a
 normal store install, user can disable or remove it from the UI.
-Trade-off: no auto-uninstall when Rum goes away (extension
+Trade-off: no auto-uninstall when Fristed goes away (extension
 stays unless user removes it). We replaced this with the policy
 approach for symmetry with Firefox, locked install, and clean
 uninstall hygiene. The current install path also cleans up any
-stale External Extensions hints from earlier Rum versions.
+stale External Extensions hints from earlier Fristed versions.
 
 #### 3. Sideload an unpacked / packed CRX (user-level, fragile)
 
@@ -219,7 +219,7 @@ the extension on its next launch — clean install + uninstall hygiene.
 
 **On macOS this is feasible without `sudo`** because consumer Macs
 typically grant the logged-in user admin group write access to
-`/Applications`. Rum runs as the user; if it has write access
+`/Applications`. Fristed runs as the user; if it has write access
 to `/Applications/Firefox.app/Contents/Resources/`, it can drop the
 file directly. On managed / non-admin Macs the write fails and we
 fall back to the existing onboarding "Install in Firefox" link.
@@ -230,17 +230,17 @@ Trade-offs:
   at quarantine / first-launch, not every launch. Mozilla
   [officially supports](https://mozilla.github.io/policy-templates/)
   this deployment pattern. Firefox auto-updates replace the bundle
-  and wipe our policy file, but we re-apply on every Rum
+  and wipe our policy file, but we re-apply on every Fristed
   launch (idempotent install) so it stays in sync.
 - "Managed by your administrator" UX. Some users will find it
-  aggressive — implies more authority than Rum actually has.
+  aggressive — implies more authority than Fristed actually has.
   Acceptable trade for the auto-uninstall behavior; consistent with
   the project's "annoying enough that you have to mean it" stance.
 
 **On Windows** writing into `Program Files` requires UAC elevation,
 which conflicts with our "no admin / no helper" stance. Windows
 Firefox stays on the existing onboarding link path until / unless
-Rum ever ships a privileged installer.
+Fristed ever ships a privileged installer.
 
 #### 3. Sideload via Extensions directory — REMOVED in Firefox 74
 
@@ -297,7 +297,7 @@ Public surface:
 pub enum BrowserTarget { Chrome, Edge, Brave, /* Vivaldi, Opera, ... */, Firefox }
 
 /// Place the install hint for one browser. Idempotent — overwrites
-/// any existing entry (e.g. previous version of Rum) so
+/// any existing entry (e.g. previous version of Fristed) so
 /// updates stay clean.
 pub fn install_one(browser: BrowserTarget) -> std::io::Result<()>;
 
@@ -327,7 +327,7 @@ Two reasonable trigger points:
 
 1. **First-launch install (preferred for v1)** — call `install_all()`
    from the existing onboarding flow, just before the compliance
-   scan. The user opens Rum for the first time, we drop the
+   scan. The user opens Fristed for the first time, we drop the
    hints, and the next time they open Chrome / Firefox the extension
    appears. Onboarding then runs the scanner and most browsers come
    back as "installed" without the user having to do anything.
@@ -341,10 +341,10 @@ Two reasonable trigger points:
 
 Two options:
 
-- **Bundle it with Rum** at build time — pulled from AMO's
+- **Bundle it with Fristed** at build time — pulled from AMO's
   "latest" URL during the Tauri build. Adds ~200 KB to the bundle.
   Pinned at build time so it can drift behind the latest AMO release;
-  acceptable since we can re-bundle on each Rum release.
+  acceptable since we can re-bundle on each Fristed release.
 
 - **Download on first run** — fetch from
   `https://addons.mozilla.org/firefox/downloads/latest/reddfocus/latest.xpi`
@@ -372,7 +372,7 @@ Bundling is simpler and more robust offline; lean toward that.
    Extensions hint is a no-op in that case — Chrome dedupes by ID.
    Verify Firefox sideload behavior is the same (probably: re-prompt
    if version differs).
-5. **Uninstall hygiene** — Rum's existing uninstall path
+5. **Uninstall hygiene** — Fristed's existing uninstall path
    (`commands/uninstall.rs`) needs to also remove these hints so a
    clean uninstall doesn't leave hooks pointing at a non-existent app.
 

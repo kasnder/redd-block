@@ -1353,7 +1353,6 @@
             assert(isProtectedApp('FRISTED'), 'T46: "FRISTED" (uppercase) is protected');
             assert(isProtectedApp('Fristed'), 'T46: "Fristed" (title case) is protected');
             assert(isProtectedApp('  Fristed  '), 'T46: Leading/trailing spaces handled');
-            assert(isProtectedApp('Rum'), 'T46: legacy "Rum" name is protected');
         })();
 
         // T47: Normal apps are NOT protected

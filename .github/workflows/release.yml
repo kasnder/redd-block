@@ -348,7 +348,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
-          name: Rum ${{ steps.meta.outputs.version }}
+          name: Fristed ${{ steps.meta.outputs.version }}
           body_path: release-notes.md
           files: |
             for-distribution/fristed-*.pkg

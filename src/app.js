@@ -345,7 +345,7 @@ let expandedScheduleSegmentIndex = 0; // Which segment shows the full editor whe
 const ALWAYS_ON_END_TIME = new Date(9999, 11, 31, 23, 59, 59, 999).getTime();
 
 // Protected app names — Fristed must never block itself
-const PROTECTED_APP_NAMES = ['redd block', 'redd-block', 'redd-block-helper', 'fristed', 'rum'];
+const PROTECTED_APP_NAMES = ['redd block', 'redd-block', 'redd-block-helper', 'fristed'];
 
 // Protected domains — blocking these would break networking or the app itself
 const PROTECTED_DOMAINS = [
@@ -12495,7 +12495,7 @@ function setupScheduleOverlayCustomiseModal() {
 
 const START_CONFIRM_ICON_GLOBE = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;
 const START_CONFIRM_ICON_APP = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M10 4v4"></path><path d="M2 8h20"></path><path d="M6 4v4"></path></svg>`;
-const RUM_HOUSE_MARK_ICON = `<svg class="start-block-btn-app-icon start-block-btn-leading rum-house-mark" viewBox="122 48 780 780" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M612 764H812V392L512 112L212 392V764H412" stroke="currentColor" stroke-width="88" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const FRISTED_HOUSE_MARK_ICON = `<svg class="start-block-btn-app-icon start-block-btn-leading fristed-house-mark" viewBox="122 48 780 780" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M612 764H812V392L512 112L212 392V764H412" stroke="currentColor" stroke-width="88" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 const EXIT_ROOM_DOOR_OPEN_ICON = `<svg class="start-block-btn-unlock-icon start-block-btn-leading hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 20H2"></path><path d="M11 4.562v16.157a1 1 0 0 0 1.242.97L19 20V5.562a2 2 0 0 0-1.515-1.94l-4-1A2 2 0 0 0 11 4.561z"></path><path d="M11 4H8a2 2 0 0 0-2 2v14"></path><path d="M14 12h.01"></path><path d="M22 20h-3"></path></svg>`;
 
 function setStartBlockBtnLeadingIcon(btn, mode) {
@@ -14378,7 +14378,7 @@ async function proceedWithBlock() {
 // Helper function for start block button HTML (includes .btn-label and .btn-blocklist-meta wrapper)
 function getStartBlockButtonHTML() {
     return `
-        ${RUM_HOUSE_MARK_ICON}
+        ${FRISTED_HOUSE_MARK_ICON}
         ${EXIT_ROOM_DOOR_OPEN_ICON}
         <span class="btn-label">${escapeHtml(tSettings('startBlockButton'))}</span>
         <span class="btn-blocklist-meta">

@@ -9,7 +9,7 @@
 #   scripts/dev-reset-fda-onboarding.sh --nuke    # delete everything (incl. blocklists)
 #
 # Always:
-#   - Quits any running Rum process.
+#   - Quits any running Fristed process.
 #   - Resets every TCC consent for `com.reddblock` (FDA + per-prompt
 #     data-isolation consents, etc.) so macOS treats the next launch
 #     as a brand-new (app, target-container) pair.
@@ -48,11 +48,11 @@ done
 
 APP_DATA_DIR="$HOME/Library/Application Support/com.reddblock"
 SHARED_DATA_DIR="/var/lib/redd-block"
-LOG_FILE="$HOME/Library/Logs/com.reddblock/Rum.log"
+LOG_DIR="$HOME/Library/Logs/com.reddblock"
 
-echo "==> Quitting any running Rum process"
-pkill -9 -f "Rum.app/Contents/MacOS/redd-block" 2>/dev/null || true
-pkill -9 -x "Rum" 2>/dev/null || true
+echo "==> Quitting any running Fristed process"
+pkill -9 -f "Fristed.app/Contents/MacOS/redd-block" 2>/dev/null || true
+pkill -9 -x "Fristed" 2>/dev/null || true
 sleep 0.5
 
 echo "==> Resetting all TCC consents for com.reddblock"
@@ -145,23 +145,25 @@ do
     fi
 done
 
-echo "==> Wiping log file"
-if [[ -f "$LOG_FILE" ]]; then
-    : > "$LOG_FILE"
-    echo "  truncated $LOG_FILE"
-fi
+echo "==> Wiping log file(s)"
+for log in "$LOG_DIR"/Fristed.log "$LOG_DIR"/"ReDD Block.log"; do
+    if [[ -f "$log" ]]; then
+        : > "$log"
+        echo "  truncated $log"
+    fi
+done
 
 cat <<EOF
 
 ==> Done. To test the first-time flow:
 
   1. (In one terminal) follow the log:
-       tail -F "$LOG_FILE" | grep tcc-probe
+       tail -F "$LOG_DIR/Fristed.log" | grep tcc-probe
 
   2. (Then) rebuild and launch (required — source fixes are not in
      /Applications until you rebuild):
        npm run tauri build
-       open "/Applications/Rum.app"
+       open "/Applications/Fristed.app"
 
   Or for dev:
        npm run tauri dev

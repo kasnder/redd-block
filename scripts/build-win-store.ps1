@@ -1,4 +1,4 @@
-# Full Microsoft Store build for Rum (matches redd-do).
+# Full Microsoft Store build for Fristed (matches redd-do).
 #
 # 1. Compile Tauri (unsigned — Partner Center re-signs the MSIX on upload)
 # 2. Bundle NSIS/MSI with webviewInstallMode "skip" (Store uses MSIX, not the installer)
@@ -22,7 +22,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "=== Rum Windows Build (Microsoft Store) ===" -ForegroundColor Cyan
+Write-Host "=== Fristed Windows Build (Microsoft Store) ===" -ForegroundColor Cyan
 Write-Host ""
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot

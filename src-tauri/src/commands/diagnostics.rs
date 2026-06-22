@@ -452,7 +452,7 @@ fn current_residue_items() -> Vec<String> {
     #[cfg(target_os = "windows")]
     {
         for p in [
-            r"C:\ProgramData\Rum\helper-state.json",
+            r"C:\ProgramData\Fristed\helper-state.json",
             r"C:\ProgramData\ReDD Block\helper-state.json",
         ] {
             if std::path::Path::new(p).exists() {

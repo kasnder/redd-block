@@ -189,25 +189,25 @@ fn get_shared_helper_state_path() -> PathBuf {
 fn get_windows_primary_shared_dir() -> PathBuf {
     let program_data = std::env::var("PROGRAMDATA")
         .unwrap_or_else(|_| "C:\\ProgramData".to_string());
-    PathBuf::from(program_data).join("Rum")
+    PathBuf::from(program_data).join("Fristed")
 }
 
 #[cfg(target_os = "windows")]
-fn get_windows_legacy_shared_dirs() -> [PathBuf; 2] {
+fn get_windows_legacy_shared_dirs() -> [PathBuf; 1] {
     let program_data = std::env::var("PROGRAMDATA")
         .unwrap_or_else(|_| "C:\\ProgramData".to_string());
     let root = PathBuf::from(program_data);
-    [root.join("Rum"), root.join("ReDD Block")]
+    [root.join("ReDD Block")]
 }
 
 #[cfg(target_os = "windows")]
 fn get_windows_legacy_shared_data_path() -> PathBuf {
-    get_windows_legacy_shared_dirs()[1].join("redd-block-data.json")
+    get_windows_legacy_shared_dirs()[0].join("redd-block-data.json")
 }
 
 #[cfg(target_os = "windows")]
 fn get_windows_legacy_helper_state_path() -> PathBuf {
-    get_windows_legacy_shared_dirs()[1].join("helper-state.json")
+    get_windows_legacy_shared_dirs()[0].join("helper-state.json")
 }
 
 #[cfg(target_os = "windows")]

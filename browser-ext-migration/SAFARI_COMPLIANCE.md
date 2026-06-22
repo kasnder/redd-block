@@ -5,7 +5,7 @@
 > [../architecture.md](../architecture.md) §7. Still relevant for **Windows**
 > extension compliance and **macOS Firefox**.
 
-How Rum tells whether the Safari Web Extension is **installed**,
+How Fristed tells whether the Safari Web Extension is **installed**,
 **enabled**, and **allowed in private browsing** — and what gets
 enforced when it isn't.
 
@@ -165,7 +165,7 @@ is frontmost.
 
 ## What the user can still do (and why we accept it)
 
-Rum is a focus app, not a security product. The model is
+Fristed is a focus app, not a security product. The model is
 honor-system + significant friction, not perfect prevention.
 
 - **Disable the extension while Safari is foreground** → ≤ 45 s

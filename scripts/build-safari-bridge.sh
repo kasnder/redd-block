@@ -22,7 +22,7 @@
 #
 # Output (stdout, last line): the absolute path of the staged
 # universal `libsafari_bridge.dylib`. The dylib is unsigned at this
-# stage; it inherits Rum's Developer ID signature when the
+# stage; it inherits Fristed's Developer ID signature when the
 # parent .app gets re-signed.
 #
 # Skips silently on non-macOS hosts so the same script can be wired

@@ -41,7 +41,7 @@ function Invoke-TauriWinBuild {
     Pop-Location
 }
 
-Write-Host "=== Rum Windows Build ===" -ForegroundColor Cyan
+Write-Host "=== Fristed Windows Build ===" -ForegroundColor Cyan
 Write-Host ""
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
@@ -134,9 +134,9 @@ if ($buildArm64) {
 
 Write-Host "=== Build Summary ===" -ForegroundColor Cyan
 
-# Read version from tauri.conf.json for display
 $TauriConfig = Get-Content (Join-Path $ProjectRoot "src-tauri\tauri.conf.json") | ConvertFrom-Json
 $AppVersion = $TauriConfig.version
+$ProductName = $TauriConfig.productName
 
 # Copy installers to for-distribution with clean lowercase filenames
 $distDir = Join-Path $ProjectRoot "for-distribution"
@@ -147,8 +147,8 @@ Write-Host "  Copying installers to for-distribution/..." -ForegroundColor White
 
 if ($buildX64) {
     $x64Bundle = Join-Path $ProjectRoot "src-tauri\target\x86_64-pc-windows-msvc\release\bundle"
-    $nsisSource = Join-Path $x64Bundle "nsis\Rum_${AppVersion}_x64-setup.exe"
-    $msiSource = Join-Path $x64Bundle "msi\Rum_${AppVersion}_x64_en-US.msi"
+    $nsisSource = Join-Path $x64Bundle "nsis\${ProductName}_${AppVersion}_x64-setup.exe"
+    $msiSource = Join-Path $x64Bundle "msi\${ProductName}_${AppVersion}_x64_en-US.msi"
     if (Test-Path $nsisSource) {
         Copy-Item $nsisSource (Join-Path $distDir "fristed_${AppVersion}_x64-setup.exe")
         Write-Host "    fristed_${AppVersion}_x64-setup.exe" -ForegroundColor Gray
@@ -160,8 +160,8 @@ if ($buildX64) {
 }
 if ($buildArm64) {
     $arm64Bundle = Join-Path $ProjectRoot "src-tauri\target\aarch64-pc-windows-msvc\release\bundle"
-    $nsisSource = Join-Path $arm64Bundle "nsis\Rum_${AppVersion}_arm64-setup.exe"
-    $msiSource = Join-Path $arm64Bundle "msi\Rum_${AppVersion}_arm64_en-US.msi"
+    $nsisSource = Join-Path $arm64Bundle "nsis\${ProductName}_${AppVersion}_arm64-setup.exe"
+    $msiSource = Join-Path $arm64Bundle "msi\${ProductName}_${AppVersion}_arm64_en-US.msi"
     if (Test-Path $nsisSource) {
         Copy-Item $nsisSource (Join-Path $distDir "fristed_${AppVersion}_arm64-setup.exe")
         Write-Host "    fristed_${AppVersion}_arm64-setup.exe" -ForegroundColor Gray

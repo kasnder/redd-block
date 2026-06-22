@@ -39,7 +39,7 @@ if [[ "${1:-}" == "--release" ]]; then
     PROFILE="release"
 fi
 
-APP_NAME="Rum"
+APP_NAME="Fristed"
 PKG_SLUG="fristed"
 BUNDLE_ID="com.reddblock"
 SCRIPTS_DIR="scripts/macos-pkg/scripts"
@@ -124,7 +124,7 @@ ls -l "$PKG_SCRIPTS_DIR"
 # for-distribution/, a copy in Downloads, etc.) instead of installing to
 # /Applications. The Installer UI still says "Installation successful" and
 # the receipt still claims /Applications, but the bytes go to the stale
-# copy — leaving /Applications/Rum.app missing and the user's new
+# copy — leaving /Applications/Fristed.app missing and the user's new
 # launch-at-login plist pointing at a binary that doesn't exist.
 # Disabling relocation is the standard fix for non-App-Store .pkg
 # installers; pkgbuild --analyze + PlistBuddy is Apple's recommended

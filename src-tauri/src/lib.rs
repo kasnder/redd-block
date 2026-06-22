@@ -62,7 +62,7 @@ pub mod commands;
 #[cfg(target_os = "macos")]
 pub mod cross_app_consent;
 
-/// Custom NSPanel class for the main Rum window. Most of the time
+/// Custom NSPanel class for the main Fristed window. Most of the time
 /// this behaves indistinguishably from a regular NSWindow — but having
 /// the underlying class be an NSPanel lets us toggle
 /// `NSWindowStyleMaskNonactivatingPanel` (and the matching collection
@@ -269,7 +269,7 @@ pub fn run() {
             // reported issue.
             //
             // Targets:
-            //   - LogDir → ~/Library/Logs/com.reddblock/Rum.log
+            //   - LogDir → ~/Library/Logs/com.reddblock/Fristed.log
             //     (macOS), %LOCALAPPDATA%\com.reddblock\logs\... (Win).
             //     `tail -F ~/Library/Logs/com.reddblock/ReDD\ Block.log`
             //     to follow live.
@@ -289,7 +289,7 @@ pub fn run() {
                     .build(),
             )?;
             log::info!(
-                "tcc-probe: ===== Rum launch (v{}, profile={}) =====",
+                "tcc-probe: ===== Fristed launch (v{}, profile={}) =====",
                 env!("CARGO_PKG_VERSION"),
                 if cfg!(debug_assertions) { "debug" } else { "release" }
             );
