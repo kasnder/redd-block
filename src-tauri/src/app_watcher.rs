@@ -381,8 +381,12 @@ fn run(
     stop: Arc<AtomicBool>,
 ) {
     let mut entries: HashMap<sysinfo::Pid, PidEntry> = HashMap::new();
+    // One `System` kept alive across sweeps so sysinfo does incremental
+    // diffs — and caches each process's exe path — instead of building a
+    // fresh table and re-reading the whole process list cold every tick.
+    let mut sys = sysinfo::System::new();
     while !stop.load(Ordering::SeqCst) {
-        sweep(app.as_ref(), &apps, &pending_warning_apps, &mut entries);
+        sweep(app.as_ref(), &apps, &pending_warning_apps, &mut entries, &mut sys);
         std::thread::sleep(POLL_INTERVAL);
     }
     // On stop: clear any in-flight warnings so the UI doesn't keep
@@ -413,8 +417,9 @@ fn sweep(
     apps: &BlockedApps,
     pending_warning_apps: &PendingWarningApps,
     entries: &mut HashMap<sysinfo::Pid, PidEntry>,
+    sys: &mut sysinfo::System,
 ) {
-    use sysinfo::{ProcessesToUpdate, System};
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, UpdateKind};
 
     let blocked: Vec<String> = match apps.read() {
         Ok(g) => g.iter().cloned().collect(),
@@ -449,8 +454,17 @@ fn sweep(
         return;
     }
 
-    let mut sys = System::new();
-    sys.refresh_processes(ProcessesToUpdate::All, true);
+    // Refresh only what we match on: the process name (always present)
+    // plus the executable path. `OnlyIfNotSet` fetches the exe once per
+    // PID and caches it on the persistent `System`, so steady-state
+    // sweeps skip the per-process exe syscall entirely. We deliberately
+    // skip CPU/memory/disk/user/cmd/env refresh — the default
+    // `refresh_processes` pulls all of that for every process each tick.
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet),
+    );
 
     let now = Instant::now();
     let mut still_alive: HashSet<sysinfo::Pid> = HashSet::new();
