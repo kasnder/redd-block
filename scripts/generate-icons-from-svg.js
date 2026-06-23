@@ -14,6 +14,13 @@ const SRC_SVG_PATH = path.join(__dirname, '../src/reddblock-icon.svg');
 const BLOCKED_SVG_PATH = path.join(__dirname, '../src-tauri/blocked/reddblock-icon.svg');
 
 const TAURI_ICONS_DIR = path.join(__dirname, '../src-tauri/icons');
+const IOS_APPICON_DIR = path.join(
+    __dirname,
+    '../src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset',
+);
+// Must match the rounded-rect fill in assets/reddblock-icon.svg. iOS App Store
+// rejects icons with an alpha channel, so we flatten onto this background.
+const IOS_ICON_BG = { r: 247, g: 245, b: 240 };
 
 function syncReddBlockIconCopies() {
     if (!fs.existsSync(SVG_PATH)) {
@@ -143,6 +150,48 @@ async function generateIco() {
     }
 }
 
+async function renderIosAppIconPng(svgBuffer, pixelSize) {
+    return sharp(svgBuffer)
+        .resize(pixelSize, pixelSize, { fit: 'contain', background: IOS_ICON_BG })
+        .flatten({ background: IOS_ICON_BG })
+        .png()
+        .toBuffer();
+}
+
+async function generateIosAppIcons() {
+    console.log('\n=== Generating iOS AppIcon.appiconset ===');
+
+    const contentsPath = path.join(IOS_APPICON_DIR, 'Contents.json');
+    if (!fs.existsSync(contentsPath)) {
+        console.warn('iOS AppIcon catalog not found, skipping:', contentsPath);
+        return;
+    }
+
+    const contents = JSON.parse(fs.readFileSync(contentsPath, 'utf8'));
+    const svgBuffer = fs.readFileSync(SVG_PATH);
+
+    for (const image of contents.images) {
+        if (!image.filename) {
+            continue;
+        }
+
+        const baseSize = parseFloat(image.size);
+        const scale = parseInt(image.scale, 10) || 1;
+        const pixelSize = Math.round(baseSize * scale);
+        const outputPath = path.join(IOS_APPICON_DIR, image.filename);
+
+        try {
+            const pngBuffer = await renderIosAppIconPng(svgBuffer, pixelSize);
+            fs.writeFileSync(outputPath, pngBuffer);
+            console.log(`✓ Generated iOS ${image.filename} (${pixelSize}x${pixelSize})`);
+        } catch (err) {
+            console.error(`✗ Error generating iOS ${image.filename}:`, err);
+        }
+    }
+
+    console.log('✓ Synced src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/');
+}
+
 async function generateIcns() {
     console.log('\n=== Generating ICNS file (macOS) ===');
 
@@ -210,6 +259,7 @@ async function main() {
     await generatePngIcons();
     await generateIco();
     await generateIcns();
+    await generateIosAppIcons();
     syncTauriBundleIcons();
 
     console.log('\n=== Icon generation complete ===');
