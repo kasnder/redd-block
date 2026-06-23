@@ -2,6 +2,34 @@
 
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
+## v3.4.2
+
+- **Meet ReDD Blocker!** **Fristed: Block Apps & Sites** has a new name — same
+  powerful blocking you love, now called **ReDD Blocker**. Your Focus Rooms,
+  schedules, and blocklists carry over — nothing else changes.
+- **macOS: cleaner upgrades from Fristed.** The installer removes a leftover
+  **Fristed.app** and stale launch-at-login entries that could point at old app
+  paths after you upgrade.
+- **Windows: data stays put when you upgrade.** Blocklist data in legacy
+  **Fristed** or **ReDD Block** storage folders is copied into the canonical
+  **ReDD Blocker** path automatically.
+- **Focus Rooms header.** The Focus Rooms list header stays pinned while you
+  scroll; **Settings** sits in the header row.
+- **Focus Room cards.** Selecting a room no longer shifts neighbouring cards.
+- **Schedule segments.** Multi-segment schedules keep each segment expandable
+  when you have many; delete buttons show a clear hover state on desktop; **Start
+  schedule** uses the play icon.
+- **Desktop: performance.** The app skips unnecessary UI updates while hidden,
+  patches the title-bar countdown in place, and polls less aggressively when no
+  blocked apps are running.
+- **Desktop: window controls.** The maximize button uses window events instead
+  of constant polling.
+- **Desktop: Automation onboarding.** Updated System Settings screenshot and
+  sharper setup-banner detection when browser Automation permissions change.
+- **Danish copy.** Onboarding and Settings strings updated for the ReDD Blocker
+  name and blocking hints.
+- **Version:** 3.4.2 (macOS, Windows, and iOS).
+
 ## v3.4.1
 
 - **Focus Rooms.** Blocklists are now named **Focus Rooms** throughout the app 
