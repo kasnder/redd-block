@@ -17352,6 +17352,126 @@ function isNowBlockingIdleDisplayCurrent(row, chipsEl, idleMessage) {
     return true;
 }
 
+function buildNowBlockingUntilText(entry, nowMs = Date.now()) {
+    if (entry.isAlwaysOn) {
+        return tSettings('nowBlockingAlways');
+    }
+    if (!entry.until) return '';
+    const remainMs = entry.until - nowMs;
+    if (remainMs <= 0) return '';
+    const totalMins = Math.ceil(remainMs / 60000);
+    return formatBlockTimeRemainingShort(totalMins);
+}
+
+/** True when active chips already match `entries` in order, shape, and static labels. */
+function isNowBlockingActiveChipsCurrent(row, chipsEl, entries) {
+    if (row.classList.contains('idle')) return false;
+    if (row.getAttribute('aria-labelledby') !== 'now-blocking-label-text') return false;
+    const manyActive = entries.length > 2;
+    if (row.classList.contains('many-active-chips') !== manyActive) return false;
+    const chips = chipsEl.querySelectorAll('.now-blocking-chip');
+    if (chips.length !== entries.length) return false;
+
+    for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        const chip = chips[i];
+        if (chip.dataset.kind !== entry.kind || chip.dataset.id !== String(entry.id)) {
+            return false;
+        }
+        const emojiEl = chip.querySelector('.now-blocking-chip-emoji');
+        const nameEl = chip.querySelector('.now-blocking-chip-name');
+        const menuBtn = chip.querySelector('.now-blocking-chip-menu-btn');
+        if (!emojiEl || !nameEl || !menuBtn) return false;
+        const emoji = entry.blocklist.emoji || '🚫';
+        const name = entry.blocklist.name || '';
+        if (emojiEl.textContent !== emoji || nameEl.textContent !== name) return false;
+    }
+    return true;
+}
+
+/** Patch countdown copy on existing chips — skips DOM rebuild and menu listener churn. */
+function updateNowBlockingActiveChipTexts(chipsEl, entries, nowMs = Date.now()) {
+    const chips = chipsEl.querySelectorAll('.now-blocking-chip');
+    const manyActive = entries.length > 2;
+    chips.forEach((chip, i) => {
+        const entry = entries[i];
+        const untilText = buildNowBlockingUntilText(entry, nowMs);
+        let untilEl = chip.querySelector('.now-blocking-chip-until');
+        if (untilText) {
+            if (!untilEl) {
+                untilEl = document.createElement('span');
+                untilEl.className = 'now-blocking-chip-until';
+                const menuBtn = chip.querySelector('.now-blocking-chip-menu-btn');
+                chip.insertBefore(untilEl, menuBtn);
+            }
+            if (untilEl.textContent !== untilText) {
+                untilEl.textContent = untilText;
+            }
+        } else if (untilEl) {
+            untilEl.remove();
+        }
+
+        if (manyActive) {
+            const name = entry.blocklist.name || '';
+            const emoji = entry.blocklist.emoji || '🚫';
+            const namePart = String(name || '').trim() || emoji;
+            const labelBits = untilText ? [namePart, untilText] : [namePart];
+            const nextLabel = labelBits.join('. ');
+            if (chip.getAttribute('aria-label') !== nextLabel) {
+                chip.setAttribute('aria-label', nextLabel);
+            }
+        } else {
+            chip.removeAttribute('aria-label');
+        }
+    });
+}
+
+const NOW_BLOCKING_CHIP_MENU_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
+
+function appendNowBlockingChip(chipsEl, entry, entries, nowMs) {
+    const chip = document.createElement('div');
+    chip.className = 'now-blocking-chip';
+    chip.dataset.kind = entry.kind;
+    chip.dataset.id = String(entry.id);
+
+    const emoji = entry.blocklist.emoji || '🚫';
+    const name = entry.blocklist.name || '';
+    const untilText = buildNowBlockingUntilText(entry, nowMs);
+
+    chip.innerHTML = `
+        <span class="now-blocking-chip-emoji">${escapeHtml(emoji)}</span>
+        <span class="now-blocking-chip-name">${escapeHtml(name)}</span>
+        ${untilText ? `<span class="now-blocking-chip-until">${escapeHtml(untilText)}</span>` : ''}
+    `;
+
+    if (entries.length > 2) {
+        const namePart = String(name || '').trim() || emoji;
+        const labelBits = untilText ? [namePart, untilText] : [namePart];
+        chip.setAttribute('aria-label', labelBits.join('. '));
+    }
+
+    const menuBtn = document.createElement('button');
+    menuBtn.type = 'button';
+    menuBtn.className = 'now-blocking-chip-menu-btn';
+    menuBtn.setAttribute('aria-haspopup', 'menu');
+    menuBtn.setAttribute('aria-expanded', 'false');
+    menuBtn.setAttribute('aria-label', tSettings('nowBlockingMenuAria'));
+    menuBtn.title = tSettings('nowBlockingMenuAria');
+    menuBtn.innerHTML = NOW_BLOCKING_CHIP_MENU_ICON;
+    menuBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = menuBtn.getAttribute('aria-expanded') === 'true';
+        if (isOpen) {
+            closeNowBlockingChipMenus();
+        } else {
+            openNowBlockingChipMenu(menuBtn, entry);
+        }
+    });
+    chip.appendChild(menuBtn);
+
+    chipsEl.appendChild(chip);
+}
+
 // Render the title-bar status row: active chips — or idle copy showing the next scheduled start when applicable.
 function renderNowBlockingRow(nowMs = Date.now()) {
     const row = document.getElementById('now-blocking-row');
@@ -17391,65 +17511,15 @@ function renderNowBlockingRow(nowMs = Date.now()) {
     row.classList.toggle('many-active-chips', entries.length > 2);
     row.setAttribute('aria-labelledby', 'now-blocking-label-text');
 
+    // Countdown text is minute-granular — patch existing chips when structure is unchanged.
+    if (isNowBlockingActiveChipsCurrent(row, chipsEl, entries)) {
+        updateNowBlockingActiveChipTexts(chipsEl, entries, nowMs);
+        return;
+    }
+
+    closeNowBlockingChipMenus();
     chipsEl.innerHTML = '';
-    const dotsIcon = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
-
-    entries.forEach(entry => {
-        const chip = document.createElement('div');
-        chip.className = 'now-blocking-chip';
-        chip.dataset.kind = entry.kind;
-        chip.dataset.id = entry.id;
-
-        const emoji = entry.blocklist.emoji || '🚫';
-        const name = entry.blocklist.name || '';
-        let untilText;
-        if (entry.isAlwaysOn) {
-            untilText = tSettings('nowBlockingAlways');
-        } else if (entry.until) {
-            const remainMs = entry.until - nowMs;
-            if (remainMs > 0) {
-                const totalMins = Math.ceil(remainMs / 60000);
-                untilText = formatBlockTimeRemainingShort(totalMins);
-            } else {
-                untilText = '';
-            }
-        } else {
-            untilText = '';
-        }
-
-        chip.innerHTML = `
-            <span class="now-blocking-chip-emoji">${escapeHtml(emoji)}</span>
-            <span class="now-blocking-chip-name">${escapeHtml(name)}</span>
-            ${untilText ? `<span class="now-blocking-chip-until">${escapeHtml(untilText)}</span>` : ''}
-        `;
-
-        if (entries.length > 2) {
-            const namePart = String(name || '').trim() || emoji;
-            const labelBits = untilText ? [namePart, untilText] : [namePart];
-            chip.setAttribute('aria-label', labelBits.join('. '));
-        }
-
-        const menuBtn = document.createElement('button');
-        menuBtn.type = 'button';
-        menuBtn.className = 'now-blocking-chip-menu-btn';
-        menuBtn.setAttribute('aria-haspopup', 'menu');
-        menuBtn.setAttribute('aria-expanded', 'false');
-        menuBtn.setAttribute('aria-label', tSettings('nowBlockingMenuAria'));
-        menuBtn.title = tSettings('nowBlockingMenuAria');
-        menuBtn.innerHTML = dotsIcon;
-        menuBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const isOpen = menuBtn.getAttribute('aria-expanded') === 'true';
-            if (isOpen) {
-                closeNowBlockingChipMenus();
-            } else {
-                openNowBlockingChipMenu(menuBtn, entry);
-            }
-        });
-        chip.appendChild(menuBtn);
-
-        chipsEl.appendChild(chip);
-    });
+    entries.forEach((entry) => appendNowBlockingChip(chipsEl, entry, entries, nowMs));
     requestAnimationFrame(() => syncNowBlockingChipsScrollability());
 }
 
