@@ -43,7 +43,7 @@ Same v1.x data model (`redd-block-data.json`) ships forward unchanged
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│ Fristed app (Tauri/Rust)                              │
+│ ReDD Blocker app (Tauri/Rust)                              │
 │  ├─ UI (src/app.js)                                      │
 │  ├─ commands/                                            │
 │  ├─ profile_scan.rs   ─ scans installed browsers         │
@@ -217,7 +217,7 @@ wrote — and can't be suppressed without breaking Safari support.
 The realistic fix is **UX, not code**: surface a one-line
 explanation in the Safari onboarding step before the first
 `app_group::path()` call fires, e.g. *"macOS will ask permission
-for Fristed to read data from the ReDD Focus Safari extension —
+for ReDD Blocker to read data from the ReDD Focus Safari extension —
 that's how we know whether your block is active."* Defer the first
 read until after that screen has been shown.
 
@@ -236,7 +236,7 @@ regression on a clean Windows VM still owed:
 - [ ] Native-messaging manifests written to all four registry keys
       (`HKCU\Software\Google\Chrome\NativeMessagingHosts\com.ulriklyngs.mindshield`
       and equivalents for Brave / Edge / Mozilla).
-- [ ] Watchdog scheduled task (`Fristed Watchdog`) registers on
+- [ ] Watchdog scheduled task (`ReDD Blocker Watchdog`) registers on
       first launch; survives app crash + relaunch within 1 minute.
 - [ ] Enforcer kill path: disable extension in Chrome → toast → 60 s
       grace → `taskkill /IM chrome.exe /T` → 10 s grace → `taskkill
@@ -254,7 +254,7 @@ The v1.x → v1.0 native-messaging path had intermittent failures (some
 browsers wouldn't connect; some installations dropped manifests). The
 v2 path uses `tauri-plugin-single-instance` and a per-OS user-scope
 manifest written by `native_host_install.rs`. Worth a fresh run on a
-machine that has never had Fristed on it:
+machine that has never had ReDD Blocker installed:
 
 - [ ] Each of Chrome / Brave / Edge / Firefox: install the extension
       from its store, confirm `connectNative("com.ulriklyngs.mindshield")`

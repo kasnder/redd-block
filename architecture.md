@@ -1,6 +1,6 @@
-# Fristed Architecture Reference (macOS, Windows, iOS)
+# ReDD Blocker Architecture Reference (macOS, Windows, iOS)
 
-Technical source-of-truth for how Fristed works today and how earlier
+Technical source-of-truth for how ReDD Blocker works today and how earlier
 versions worked. Implementation-aligned, with file references to actual
 code paths.
 
@@ -142,7 +142,7 @@ in-process watcher, driven by frontend commands.
 Canonical shared paths (preferred once activated):
 
 - macOS: `/var/lib/redd-block/redd-block-data.json`
-- Windows: `%PROGRAMDATA%\Fristed\redd-block-data.json` (legacy fallback: `%PROGRAMDATA%\ReDD Block\redd-block-data.json`)
+- Windows: `%PROGRAMDATA%\ReDD Blocker\redd-block-data.json` (legacy: `%PROGRAMDATA%\Fristed\...`, `%PROGRAMDATA%\ReDD Block\...`)
 
 Legacy per-user paths (used on fresh install until shared dir is writable /
 exists):
@@ -155,7 +155,7 @@ stable across reinstall so data does not silently flip locations.
 
 Legacy v1 helper state may still exist at
 `/var/lib/redd-block/helper-state.json` (macOS) or
-`%PROGRAMDATA%\Fristed\helper-state.json` (Windows, plus legacy `%PROGRAMDATA%\ReDD Block\helper-state.json`) until migration removes
+`%PROGRAMDATA%\Fristed\helper-state.json` (Windows legacy; plus `%PROGRAMDATA%\ReDD Block\helper-state.json`) until migration removes
 it — it is **not** read by v3 enforcement.
 
 ### 3.3 iOS enforcement state
@@ -346,7 +346,7 @@ Per blocked-app PID state machine:
    `taskkill` without `/F`)
 4. **SIGKILL** — 10 s after polite quit if PID still alive
 
-Protected apps (Fristed itself, Finder, shell processes) are never targeted.
+Protected apps (ReDD Blocker itself, Finder, shell processes) are never targeted.
 Schedule and manual app lists merge in the frontend; `set_blocked_apps_via_helper`
 (shim) forwards to `app_blocking::set_blocked_apps`.
 
@@ -491,7 +491,7 @@ flowchart TD
 
 | Artifact | macOS | Windows | iOS |
 |---|---|---|---|
-| App data (canonical) | `/var/lib/redd-block/redd-block-data.json` | `%PROGRAMDATA%\Fristed\redd-block-data.json` (legacy fallback: `%PROGRAMDATA%\ReDD Block\redd-block-data.json`) | App sandbox |
+| App data (canonical) | `/var/lib/redd-block/redd-block-data.json` | `%PROGRAMDATA%\ReDD Blocker\redd-block-data.json` (legacy: `%PROGRAMDATA%\Fristed\...`, `%PROGRAMDATA%\ReDD Block\...`) | App sandbox |
 | App data (legacy) | `~/Library/Application Support/com.redd.block/...` | `%APPDATA%\com.redd.block\...` | — |
 | Bundled block page | Inside `.app` Resources | Inside install dir | — |
 | Native host manifests | `~/Library/Application Support/<vendor>/NativeMessagingHosts/` | `HKCU\Software\<vendor>\...\NativeMessagingHosts\` | — |
@@ -569,7 +569,7 @@ prompt at install (except one-time v1 cleanup).
 ## v2 module map (removed or narrowed in v3)
 
 ```
-Fristed app (Tauri)
+ReDD Blocker app (Tauri)
  ├─ native_host.rs          ─ stdio host (Chromium/Firefox; Windows all)
  ├─ app_group.rs             ─ Safari App Group bridge [REMOVED in v3]
  ├─ redd-focus-web/         ─ vendored Safari extension bundle [REMOVED in v3]

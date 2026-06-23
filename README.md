@@ -1,4 +1,4 @@
-# Fristed: Block Apps & Sites
+# ReDD Blocker
 
 Block distracting websites and apps with scheduled or one-off blocks and customisable difficulty to override. Stay focused on what matters.
 
@@ -7,7 +7,7 @@ Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and th
 ## Features
 
 - **Cross-Platform** — Works on macOS 11+, Windows 10+, iOS (iPad/iPhone), and Android (source code for the Android version is here: https://github.com/kasnder/redd-block-android)
-- **Website Blocking** — Fristed decides what to block. On **macOS**, Safari/Chrome/Brave/Edge use **Automation** (no extension); **Firefox** uses the ReDD Focus extension. On **Windows**, Chrome/Brave/Edge/Firefox use the extension. On **iOS**, blocking uses Screen Time.
+- **Website Blocking** — ReDD Blocker decides what to block. On **macOS**, Safari/Chrome/Brave/Edge use **Automation** (no extension); **Firefox** uses the ReDD Focus extension. On **Windows**, Chrome/Brave/Edge/Firefox use the extension. On **iOS**, blocking uses Screen Time.
 - **App Blocking** — Closes distracting apps on desktop (warning overlay → save window → polite quit → force-close if needed; Screen Time shield overlay on iOS)
 - **Flexible Blocklists** — Create multiple lists with custom names, colors, and emojis
 - **One-Off Blocks** — Quick blocks for immediate focus sessions
@@ -19,49 +19,49 @@ Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and th
 
 ## How it works
 
-> **v3 (current).** Fristed is a single unprivileged app — no helper daemon, no `hosts` file writes. On **macOS**, Safari/Chrome/Brave/Edge website blocking uses **Automation** (Apple Events); **Firefox** still uses the ReDD Focus extension. On **Windows**, all supported browsers use the extension. macOS may ask for your password **once** when cleaning up leftover v1.x components.
+> **v3 (current).** ReDD Blocker is a single unprivileged app — no helper daemon, no `hosts` file writes. On **macOS**, Safari/Chrome/Brave/Edge website blocking uses **Automation** (Apple Events); **Firefox** still uses the ReDD Focus extension. On **Windows**, all supported browsers use the extension. macOS may ask for your password **once** when cleaning up leftover v1.x components.
 
-Fristed is **one app**. When you start a block, it does two things:
+ReDD Blocker is **one app**. When you start a block, it does two things:
 
 | | What gets blocked | Who does the blocking (desktop) |
 |---|-------------------|----------------------------------|
 | **Websites** | URLs in your blocklists | **macOS:** Automation for Safari/Chrome/Brave/Edge; ReDD Focus extension for Firefox. **Windows:** ReDD Focus extension |
-| **Apps** | Programs in your blocklists | **Fristed** — closes them for you |
+| **Apps** | Programs in your blocklists | **ReDD Blocker** — closes them for you |
 
 ```mermaid
 flowchart LR
-  RB[Fristed]
+  RB[ReDD Blocker]
   RB --> WEB[Websites<br/>Automation or extension]
-  RB --> APP[Apps<br/>closed by Fristed]
+  RB --> APP[Apps<br/>closed by ReDD Blocker]
 ```
 
 ### Website blocking (desktop)
 
-**Fristed** stores your blocklists and enforces them. macOS and Windows use different plumbing — see the tables below.
+**ReDD Blocker** stores your blocklists and enforces them. macOS and Windows use different plumbing — see the tables below.
 
 **macOS**
 
 | Browser | How blocking works | Extension setup |
 |---------|-------------------|-----------------|
-| Safari, Chrome, Brave, Edge | **Automation** (Apple Events) — Fristed redirects blocked tabs | Fristed prompts for Automation in System Settings → Privacy & Security → Automation |
-| Firefox | ReDD Focus extension | Install manually from the [Firefox Add-ons store](https://addons.mozilla.org/) — Fristed does **not** auto-install on macOS |
+| Safari, Chrome, Brave, Edge | **Automation** (Apple Events) — ReDD Blocker redirects blocked tabs | ReDD Blocker prompts for Automation in System Settings → Privacy & Security → Automation |
+| Firefox | ReDD Focus extension | Install manually from the [Firefox Add-ons store](https://addons.mozilla.org/) — ReDD Blocker does **not** auto-install on macOS |
 
 **Windows**
 
 | Browser | How blocking works | Extension setup |
 |---------|-------------------|-----------------|
-| Chrome, Brave, Edge, Firefox | Native messaging (stdio) — the extension wakes Fristed in the background to fetch the blocklist | Fristed can auto-install extension hints where supported |
+| Chrome, Brave, Edge, Firefox | Native messaging (stdio) — the extension wakes ReDD Blocker in the background to fetch the blocklist | ReDD Blocker can auto-install extension hints where supported |
 
 **How native messaging works (Windows)**
 
 1. The extension needs the current blocklist.
-2. The browser **cannot read Fristed's window**, so it wakes up Fristed **in the background** — same app you installed, **no new window appears**.
-3. Fristed sends the list to the extension and exits.
+2. The browser **cannot read ReDD Blocker's window**, so it wakes up ReDD Blocker **in the background** — same app you installed, **no new window appears**.
+3. ReDD Blocker sends the list to the extension and exits.
 4. The extension blocks matching sites.
 
 You never open anything extra or run a second program. It's just how Chrome/Firefox talk to local apps.
 
-While a block is active, Fristed can warn you or quit browsers if website blocking stops working (e.g. Automation denied on Safari/Chrome, or the Firefox extension disabled).
+While a block is active, ReDD Blocker can warn you or quit browsers if website blocking stops working (e.g. Automation denied on Safari/Chrome, or the Firefox extension disabled).
 
 ### App blocking (desktop)
 
@@ -69,27 +69,27 @@ While a block is active, Fristed can warn you or quit browsers if website blocki
 |------|----------------|
 | 1 | **"Let's go!"** warning — you click when ready |
 | 2 | **30 seconds** to save work and quit on your own |
-| 3 | Fristed asks the app to close politely |
+| 3 | ReDD Blocker asks the app to close politely |
 | 4 | Still open after **10 seconds**? Force-closed |
 
-If you **open** a blocked app mid-block, Fristed skips the warning and closes it on the fast path.
+If you **open** a blocked app mid-block, ReDD Blocker skips the warning and closes it on the fast path.
 
-Fristed runs from the menu bar / system tray and can start at login so blocking continues across sessions.
+ReDD Blocker runs from the menu bar / system tray and can start at login so blocking continues across sessions.
 
 ### iOS
 
-No browser extension — Fristed uses **Screen Time** to shield websites and apps. Scheduled blocks work via a background monitor extension even when the app is closed. Details: [architecture.md](architecture.md).
+No browser extension — ReDD Blocker uses **Screen Time** to shield websites and apps. Scheduled blocks work via a background monitor extension even when the app is closed. Details: [architecture.md](architecture.md).
 
 ### Permissions (desktop)
 
 - **Extensions:** install ReDD Focus in Firefox (macOS) or in each browser you use on Windows.
-- **macOS — Automation:** Safari, Chrome, Brave, and Edge need **Automation** permission so Fristed can redirect blocked tabs. Fristed walks you through this during setup; no Full Disk Access is required.
+- **macOS — Automation:** Safari, Chrome, Brave, and Edge need **Automation** permission so ReDD Blocker can redirect blocked tabs. ReDD Blocker walks you through this during setup; no Full Disk Access is required.
 - **macOS — Firefox:** install ReDD Focus manually from the Add-ons store and allow it in private windows.
 - **No** admin or UAC prompt at install time (macOS may ask once when cleaning up leftover v1.x components).
 
 ### Upgrading from v1.x
 
-If you previously ran Fristed / ReDD Block 1.x (helper daemon + hosts file), the first launch after upgrade:
+If you previously ran ReDD Blocker, **Fristed**, or ReDD Block 1.x (helper daemon + hosts file), the first launch after upgrade:
 
 1. Cleans up the old hosts-file entries and helper daemon (macOS may ask for your password once).
 2. Registers launch-at-login and (on Windows) native-messaging manifests for the extension.
@@ -250,7 +250,7 @@ Use `./scripts/bump-version.sh <version>` to update the app version in all files
 | Platform | Canonical location (once activated) | Per-user fallback |
 |----------|-------------------------------------|-------------------|
 | macOS | `/var/lib/redd-block/redd-block-data.json` | `~/Library/Application Support/com.reddblock/redd-block-data.json` |
-| Windows | `%PROGRAMDATA%\Fristed\redd-block-data.json` (falls back to legacy `%PROGRAMDATA%\ReDD Block\redd-block-data.json`) | `%AppData%\com.reddblock\redd-block-data.json` |
+| Windows | `%PROGRAMDATA%\ReDD Blocker\redd-block-data.json` (legacy: `%PROGRAMDATA%\Fristed\...`, `%PROGRAMDATA%\ReDD Block\...`) | `%AppData%\com.reddblock\redd-block-data.json` |
 | iOS | App sandbox (managed by Tauri) | — |
 
 Legacy v1 paths under `com.redd.block` are still read as a fallback during migration.

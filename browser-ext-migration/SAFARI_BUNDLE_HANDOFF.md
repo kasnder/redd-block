@@ -12,7 +12,7 @@ context from chat scrollback.
 ## TL;DR
 
 ReDD Focus's Safari Web Extension is now built into and shipped
-inside `Fristed.app/Contents/PlugIns/`. Installing Fristed on
+inside `ReDD Blocker.app/Contents/PlugIns/`. Installing ReDD Blocker on
 macOS lights up ReDD Focus in Safari → Settings → Extensions
 automatically — no separate App Store install, no Full Disk Access
 prompt to "verify the extension is installed". That part works
@@ -125,7 +125,7 @@ the FDA prompt from the Safari onboarding flow entirely.
 The sidecar approach (run `safari-tool` as a child process from Rust
 via `std::process::Command`) does NOT work. SFSafariExtensionManager
 returns `SFErrorDomain error 1` (extensionNotFound) even when the
-binary lives inside `Fristed.app/Contents/MacOS/` and
+binary lives inside `ReDD Blocker.app/Contents/MacOS/` and
 `Bundle.main.bundleIdentifier` correctly resolves to `com.reddblock`.
 The framework appears to require the call to come from the
 *registered main executable* of the host bundle, which is `redd-block`
@@ -201,14 +201,15 @@ in practice.
 
 ## Local-environment caveats
 
-- **`/Applications/Fristed.app` was hand-modified during the
+- **Legacy `/Applications/Fristed.app` was hand-modified during the
   bring-up debugging.** Specifically: re-embedded with sandboxed
   entitlements and re-notarized in place via `embed-safari-extension.sh
   /Applications/Fristed.app`. Owned by root from the .pkg install,
   so further hand-modifications need sudo. **Recommendation:**
   blow it away and reinstall from a fresh `.pkg` once the branch
   is in shape — `sudo rm -rf "/Applications/Fristed.app"` then
-  install from `for-distribution/ReDD-Block-X.Y.Z.pkg`.
+  install from `for-distribution/ReDD-Block-X.Y.Z.pkg` (current
+  releases ship `ReDD Blocker.app`).
 - The Chromium tombstone scrub fix (commit on
   `explore-force-install-extensions`) cleared
   `extensions.external_uninstalls` from your Chrome Default profile.
