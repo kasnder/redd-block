@@ -136,6 +136,7 @@ pub async fn web_automation_permission_status(
                     browser: b,
                     label: b.label(),
                     state: st,
+                    running: running.contains(&b),
                 }
             })
             .collect::<Vec<_>>()

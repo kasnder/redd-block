@@ -259,6 +259,11 @@ pub struct PermissionInfo {
     pub browser: SupportedBrowser,
     pub label: &'static str,
     pub state: PermState,
+    /// Whether the browser's main process is running right now — the
+    /// same signal the permission probe uses (suffix match on bundle
+    /// executable). Surfaces to the setup banner so it doesn't rely on
+    /// a separate profile-scan `present` flag that can disagree.
+    pub running: bool,
 }
 
 #[derive(Debug)]
@@ -300,6 +305,8 @@ impl WebAutomationHandle {
     /// onboarding UI. Browsers never probed this session report Unknown.
     pub fn permission_status(&self) -> Vec<PermissionInfo> {
         let guard = self.shared.lock().ok();
+        let running: std::collections::HashSet<_> =
+            running_supported_browsers().into_iter().collect();
         SupportedBrowser::all()
             .into_iter()
             .map(|b| {
@@ -312,6 +319,7 @@ impl WebAutomationHandle {
                     browser: b,
                     label: b.label(),
                     state,
+                    running: running.contains(&b),
                 }
             })
             .collect()
@@ -543,6 +551,7 @@ fn set_perm_inner(
                     browser,
                     label: browser.label(),
                     state: PermState::Denied,
+                    running: true,
                 },
             );
         }
@@ -554,6 +563,7 @@ fn set_perm_inner(
                     browser,
                     label: browser.label(),
                     state: PermState::Granted,
+                    running: true,
                 },
             );
         }

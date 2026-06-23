@@ -2823,6 +2823,7 @@ function browserUsesAutomation(key) {
 // `web_automation_permission_status` (a no-prompt native query). Empty
 // until the first refresh; treated as 'unknown' per key.
 let lastAutomationPermissionByKey = {};
+let lastAutomationRunningByKey = {};
 let lastAutomationPermissionFetchAt = 0;
 // False until the first successful macOS Automation status fetch; while
 // false, automation browsers are treated as compliant so the setup banner
@@ -2860,11 +2861,16 @@ async function refreshAutomationPermissionStatus({
         });
         lastAutomationPermissionFetchAt = now;
         const map = {};
+        const runningMap = {};
         for (const info of (list || [])) {
             const key = browserKeyFromLabel(info.label || info.browser);
-            if (key) map[key] = info.state; // 'granted' | 'denied' | 'unknown'
+            if (key) {
+                map[key] = info.state; // 'granted' | 'denied' | 'unknown'
+                runningMap[key] = !!info.running;
+            }
         }
         lastAutomationPermissionByKey = map;
+        lastAutomationRunningByKey = runningMap;
         if (isMacOSDesktop) automationPermissionStatusReady = true;
     } catch (e) {
         console.warn('[automation] permission status fetch failed:', e);
@@ -2878,10 +2884,24 @@ async function refreshAutomationPermissionStatus({
 // and we know access is missing — closed browsers with unknown status
 // stay compliant so the setup banner doesn't nag prematurely. Falls
 // back to the extension compliance for Firefox / non-macOS.
+function automationBrowserIsRunning(key, browserScan) {
+    if (automationPermissionStatusReady && Object.prototype.hasOwnProperty.call(lastAutomationRunningByKey, key)) {
+        return !!lastAutomationRunningByKey[key];
+    }
+    return !!browserScan?.present;
+}
+
 function effectiveBrowserComplianceStatus(key, browsers) {
     if (browserUsesAutomation(key)) {
-        if (!automationPermissionStatusReady) return 'compliant';
-        const mode = automationBrowserRowMode(key, (browsers || {})[key]);
+        const browserScan = (browsers || {})[key];
+        if (!automationPermissionStatusReady) {
+            // Before the first permission fetch, still surface a running
+            // browser the onboarding scan sees — avoids hiding the setup
+            // banner when Chrome is open but the Automation cache is cold.
+            if (browserScan?.present) return 'needs-automation';
+            return 'compliant';
+        }
+        const mode = automationBrowserRowMode(key, browserScan);
         if (mode === 'granted' || mode === 'awaiting-open') return 'compliant';
         return 'needs-automation';
     }
@@ -3332,7 +3352,7 @@ function scheduleAutomationVerificationPoll(browserKeyOrLabels = null) {
 //   denied            -> browser open, revoked: deep-link to System Settings
 function automationBrowserRowMode(key, browserScan) {
     const perm = lastAutomationPermissionByKey[key] || 'unknown';
-    const running = !!browserScan?.present;
+    const running = automationBrowserIsRunning(key, browserScan);
     if (perm === 'granted') return 'granted';
     if (!running) return 'awaiting-open';
     if (perm === 'denied') return 'denied';
