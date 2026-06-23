@@ -5,7 +5,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SVG="$ROOT/assets/fristed-icon.svg"
+SVG="$ROOT/assets/reddblock-icon.svg"
 ICNS="$ROOT/src-tauri/icons/icon.icns"
 BIN="$ROOT/src-tauri/target/debug/redd-block"
 

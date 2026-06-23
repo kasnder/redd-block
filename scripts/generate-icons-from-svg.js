@@ -1,7 +1,5 @@
 /**
- * Generate all app icons from assets/fristed-icon.svg (canonical ReDD
- * Blocker house icon). Copies are synced to reddblock-icon.svg paths
- * used by the web UI and the bundled block page.
+ * Generate all app icons from assets/reddblock-icon.svg
  * Run with: node scripts/generate-icons-from-svg.js
  */
 const sharp = require('sharp');
@@ -9,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
-const SVG_PATH = path.join(__dirname, '../assets/fristed-icon.svg');
+const SVG_PATH = path.join(__dirname, '../assets/reddblock-icon.svg');
 const ASSETS_DIR = path.join(__dirname, '../assets');
 const ICONS_DIR = path.join(ASSETS_DIR, 'icons');
 const SRC_SVG_PATH = path.join(__dirname, '../src/reddblock-icon.svg');
