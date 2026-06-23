@@ -5663,17 +5663,26 @@ body.dark-mode .mode-tab.active .mode-tab-icon{
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    padding: 0;
+    padding: 6px 10px;
+    margin: -6px -10px;
     border: none;
+    border-radius: 8px;
     background: transparent;
     color: hsl(0, 65%, 48%);
     font-size: 15px;
     font-weight: 600;
     cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
 }
 
-.segment-delete-btn:hover:not(:disabled){
-    color: hsl(0, 70%, 42%);
+body:not(.ios) .segment-delete-btn:hover:not(:disabled){
+    background: rgba(239, 68, 68, 0.1);
+    color: #dc2626;
+}
+
+body:not(.ios) .segment-delete-btn:focus-visible{
+    outline: 2px solid color-mix(in srgb, #ef4444 35%, transparent);
+    outline-offset: 2px;
 }
 
 .segment-done-btn{
