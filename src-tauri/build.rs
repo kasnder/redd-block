@@ -18,7 +18,7 @@ fn main() {
 
 fn watch_icon_assets() {
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let svg = manifest_dir.join("../assets/fristed-icon.svg");
+    let mut svg = manifest_dir.join("../assets/fristed-icon.svg");
     if !svg.exists() {
         svg = manifest_dir.join("../assets/reddblock-icon.svg");
     }
