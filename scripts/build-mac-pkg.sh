@@ -102,6 +102,14 @@ DIST_FILE="$DIST_DIR/distribution.xml"
 PKG_ROOT_DIR=$(mktemp -d /tmp/redd-block-pkgroot.XXXXXX)
 ditto "$APP_PATH" "$PKG_ROOT_DIR/$(basename "$APP_PATH")"
 
+# Block page assets must be world-readable: Safari loads blocked.html as
+# the logged-in user via file://, so mode-600 SVGs show as broken images.
+STAGED_APP="$PKG_ROOT_DIR/$(basename "$APP_PATH")"
+BLOCKED_RES="$STAGED_APP/Contents/Resources/blocked"
+if [[ -d "$BLOCKED_RES" ]]; then
+    chmod 644 "$BLOCKED_RES"/* 2>/dev/null || true
+fi
+
 # Build a *temporary* scripts dir so we can copy in the shared
 # cleanup.sh template alongside preinstall/postinstall — the
 # preinstall reads cleanup.sh at runtime via `dirname "$0"/cleanup.sh`.

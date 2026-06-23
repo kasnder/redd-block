@@ -8,7 +8,9 @@ if (process.platform !== 'darwin') {
 }
 
 const root = path.join(__dirname, '..');
-const svg = path.join(root, 'assets', 'reddblock-icon.svg');
+const svg = fs.existsSync(path.join(root, 'assets', 'fristed-icon.svg'))
+  ? path.join(root, 'assets', 'fristed-icon.svg')
+  : path.join(root, 'assets', 'reddblock-icon.svg');
 const icns = path.join(root, 'src-tauri', 'icons', 'icon.icns');
 const bin = path.join(root, 'src-tauri', 'target', 'debug', 'redd-block');
 
