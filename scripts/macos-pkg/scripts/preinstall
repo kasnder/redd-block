@@ -2,14 +2,14 @@
 # preinstall — runs as root before the .pkg payload is laid down.
 #
 # Two jobs:
-#   1. Stop any running ReDD Blocker process (v1.x *or* v2) so the
-#      Installer.app can replace `/Applications/ReDD Blocker.app`
-#      without an in-memory conflict. v2 adds an
-#      `applicationShouldTerminate:` interceptor that turns ⌘-Q and
-#      `tell app "X" to quit` into a hide-window, so the polite path
-#      is unreliable — we go straight to SIGTERM/SIGKILL on the
-#      binary, plus any `--native-host` subprocesses browsers may
-#      have spawned.
+#   1. Stop any running app process (v1.x ReDD Block, v3 Fristed rebrand,
+#      or current ReDD Blocker build) so Installer.app can lay down
+#      `/Applications/ReDD Blocker.app` without an in-memory conflict.
+#      v2+ adds an `applicationShouldTerminate:` interceptor that turns
+#      ⌘-Q and `tell app "X" to quit` into a hide-window, so the polite
+#      path is unreliable — we go straight to SIGTERM/SIGKILL on the
+#      binary, plus any `--native-host` subprocesses browsers may have
+#      spawned.
 #   2. If v1.x daemon residue is on disk, run the SAME bundled
 #      cleanup script the app would otherwise run at first launch.
 #      The script body lives at src-tauri/src/commands/migration/cleanup.sh
@@ -37,6 +37,7 @@ echo "=== preinstall $(date '+%F %T') ==="
 #      bundle and would block the payload swap).
 APP_PATH='/Applications/ReDD Blocker.app'
 LEGACY_REDD_BLOCK_APP_PATH='/Applications/ReDD Block.app'
+FRISTED_APP_PATH='/Applications/Fristed.app'
 
 if [ -d "$APP_PATH" ]; then
     osascript -e 'tell application id "com.reddblock" to quit' 2>/dev/null || true
@@ -45,25 +46,31 @@ fi
 if [ -d "$LEGACY_REDD_BLOCK_APP_PATH" ]; then
     osascript -e 'tell application "ReDD Block" to quit' 2>/dev/null || true
 fi
+if [ -d "$FRISTED_APP_PATH" ]; then
+    osascript -e 'tell application id "com.reddblock" to quit' 2>/dev/null || true
+    osascript -e 'tell application "Fristed" to quit' 2>/dev/null || true
+fi
 
 # `redd-block` is the Tauri binary stem inside the .app; that's the
 # name `ps` shows, not always the bundle display name. Match all known
 # install locations as a belt-and-braces.
-for app_path in "$APP_PATH" "$LEGACY_REDD_BLOCK_APP_PATH"; do
+for app_path in "$APP_PATH" "$LEGACY_REDD_BLOCK_APP_PATH" "$FRISTED_APP_PATH"; do
     pgrep -f "${app_path}/Contents/MacOS/redd-block" | xargs -r kill -TERM 2>/dev/null
 done
 pkill -x 'redd-block' 2>/dev/null
 pkill -x 'ReDD Blocker' 2>/dev/null
 pkill -x 'ReDD Block' 2>/dev/null
+pkill -x 'Fristed' 2>/dev/null
 sleep 2
 
 # Anything still running gets SIGKILL'd.
-for app_path in "$APP_PATH" "$LEGACY_REDD_BLOCK_APP_PATH"; do
+for app_path in "$APP_PATH" "$LEGACY_REDD_BLOCK_APP_PATH" "$FRISTED_APP_PATH"; do
     pgrep -f "${app_path}/Contents/MacOS/redd-block" | xargs -r kill -KILL 2>/dev/null
 done
 pkill -KILL -x 'redd-block' 2>/dev/null
 pkill -KILL -x 'ReDD Blocker' 2>/dev/null
 pkill -KILL -x 'ReDD Block' 2>/dev/null
+pkill -KILL -x 'Fristed' 2>/dev/null
 sleep 1
 
 # 1b. Clean up stale Tauri DMG temp files that earlier builds of this

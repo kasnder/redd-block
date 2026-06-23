@@ -3,9 +3,10 @@
 #
 # Auto-launches the new app for the user who triggered the install,
 # mirroring the Windows NSIS finish-page "Run ReDD Blocker" checkbox.
-# Without this, macOS users who installed via .pkg would be left
-# staring at the Installer.app "Install Successful" screen with no
-# clear next step.
+# Without this, macOS users who installed via .pkg would be left staring
+# at the Installer.app "Install Successful" screen with no clear next step.
+# Also removes legacy `/Applications/ReDD Block.app` and `/Applications/Fristed.app`
+# bundles so upgrades don't leave duplicate app icons in Applications.
 
 set +e
 
@@ -14,8 +15,13 @@ exec > >(tee -a "$LOG") 2>&1
 echo "=== postinstall $(date '+%F %T') ==="
 
 LEGACY_REDD_BLOCK_APP_PATH='/Applications/ReDD Block.app'
+FRISTED_APP_PATH='/Applications/Fristed.app'
+
 if [ -d "$LEGACY_REDD_BLOCK_APP_PATH" ]; then
     rm -rf "$LEGACY_REDD_BLOCK_APP_PATH" && echo "removed legacy app: $LEGACY_REDD_BLOCK_APP_PATH"
+fi
+if [ -d "$FRISTED_APP_PATH" ]; then
+    rm -rf "$FRISTED_APP_PATH" && echo "removed legacy app: $FRISTED_APP_PATH"
 fi
 
 # The Installer.app stashes the invoking user in $USER (their actual
