@@ -18510,11 +18510,14 @@ function startTickInterval() {
         // changed. Without this, after the WebView is idle for a while
         // (e.g. system sleep) those displays remain frozen at the last
         // render's timestamp until something else triggers render().
-        if (!startTickInterval._uiRefreshTickCount) startTickInterval._uiRefreshTickCount = 0;
-        startTickInterval._uiRefreshTickCount++;
-        if (startTickInterval._uiRefreshTickCount >= 60) {
-            startTickInterval._uiRefreshTickCount = 0;
-            render();
+        // Skip while hidden (tray / background) — kickClockNow() renders on focus.
+        if (document.visibilityState === 'visible') {
+            if (!startTickInterval._uiRefreshTickCount) startTickInterval._uiRefreshTickCount = 0;
+            startTickInterval._uiRefreshTickCount++;
+            if (startTickInterval._uiRefreshTickCount >= 60) {
+                startTickInterval._uiRefreshTickCount = 0;
+                render();
+            }
         }
 
         if (collectNowBlockingEntries(now).length === 0) {
