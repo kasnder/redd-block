@@ -54,7 +54,9 @@ scrub_stale_autostart_plists_for_user() {
         local base lower remove=0
         base=$(basename "$plist")
         lower=$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')
-        if [[ "$lower" == *reddblock* ]] || [[ "$lower" == *redd-block* ]] || [[ "$lower" == *fristed* ]]; then
+        if [[ "$lower" == *reddblock* ]] || [[ "$lower" == *redd-block* ]]; then
+            remove=1
+        elif [[ "$lower" == "fristed.plist" ]]; then
             remove=1
         elif grep -q '/Applications/Fristed.app' "$plist" 2>/dev/null; then
             remove=1

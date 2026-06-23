@@ -51,7 +51,15 @@ use tauri::{AppHandle, Emitter};
 
 pub type BlockedApps = Arc<RwLock<HashSet<String>>>;
 
-const POLL_INTERVAL: Duration = Duration::from_millis(1000);
+/// Steady-state poll cadence while a schedule is active but no blocked
+/// app is currently being tracked — the common idle case. We only need
+/// to notice a newly-launched blocked app within a couple of seconds,
+/// so polling slower here roughly halves background CPU/battery cost
+/// versus the old fixed 1s sweep.
+const POLL_INTERVAL: Duration = Duration::from_millis(2000);
+/// Faster cadence while at least one PID is mid-countdown (PreQuit /
+/// PostQuit) so the warning overlay and grace timers stay responsive.
+const POLL_INTERVAL_ACTIVE: Duration = Duration::from_millis(1000);
 /// After the user clicks "Let's go!", how long they get to save +
 /// manually quit before the watcher sends the polite Cmd-Q.
 const PREQUIT_DURATION: Duration = Duration::from_secs(30);
@@ -387,7 +395,14 @@ fn run(
     let mut sys = sysinfo::System::new();
     while !stop.load(Ordering::SeqCst) {
         sweep(app.as_ref(), &apps, &pending_warning_apps, &mut entries, &mut sys);
-        std::thread::sleep(POLL_INTERVAL);
+        // Poll fast only while a countdown is in flight; otherwise idle
+        // at the slower cadence to keep background CPU / battery low.
+        let interval = if entries.is_empty() {
+            POLL_INTERVAL
+        } else {
+            POLL_INTERVAL_ACTIVE
+        };
+        std::thread::sleep(interval);
     }
     // On stop: clear any in-flight warnings so the UI doesn't keep
     // showing a stale modal after the watcher's gone. Mid-block PIDs

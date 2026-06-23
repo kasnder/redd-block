@@ -328,10 +328,13 @@ pub(crate) fn scrub_stale_autostart_plists() {
 #[cfg(target_os = "macos")]
 fn should_scrub_autostart_plist(filename: &str, content: &str) -> bool {
     let lower = filename.to_ascii_lowercase();
-    if lower.contains("reddblock")
-        || lower.contains("redd-block")
-        || lower.contains("fristed")
-    {
+    if lower.contains("reddblock") || lower.contains("redd-block") {
+        return true;
+    }
+    // Fristed-era autostart used the product name verbatim as the
+    // LaunchAgent filename/label — avoid a broad *fristed* substring
+    // match that could catch unrelated plists.
+    if lower == "fristed.plist" {
         return true;
     }
     content.contains("/Applications/Fristed.app")
