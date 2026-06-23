@@ -2113,7 +2113,7 @@ body.ios:not(.ios-phone) .main-content .schedule-pending-save{
     body.ios:not(.ios-phone) .main-content .blocklists-container{
         gap: 12px;
         --blocklists-scroll-max-height: 440px;
-        padding-top: 6px;
+        padding-top: 8px;
         padding-bottom: 6px;
     }
 
@@ -6644,7 +6644,8 @@ body.dark-mode .schedule-pending-discard:hover{
     max-height: var(--blocklists-scroll-max-height);
     /* ~4.5 cards */
     overflow-y: auto;
-    padding: 8px 4px 4px;
+    /* Slight top inset for the ENTERING chip; keep constant so cards don't shift on select. */
+    padding: 10px 4px 4px;
 }
 
 /* iOS/touch: reliable swipe scroll and momentum */
