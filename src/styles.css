@@ -1999,10 +1999,6 @@ body.ios:not(.ios-phone) .main-content .start-schedule-btn > svg{
         --schedule-segments-gap: 12px;
     }
 
-    body.ios:not(.ios-phone) .main-content .schedule-segments:has(.schedule-segment:nth-child(4)){
-        --schedule-segment-scroll-height: 80px;
-    }
-
     body.ios:not(.ios-phone) .main-content .schedule-segment-expanded{
         padding: 16px;
         border-radius: 12px;
@@ -5530,13 +5526,9 @@ body.dark-mode .mode-tab.active .mode-tab-icon{
     gap: var(--schedule-segments-gap, 10px);
 }
 
-/* Four or more segments: cap the list at ~3.5 rows and scroll the rest. */
+/* Four or more segments: scroll inside a viewport cap; rows keep natural height. */
 .schedule-segments:has(.schedule-segment:nth-child(4)){
-    --schedule-segment-scroll-height: 72px;
-    max-height: calc(
-        3.5 * var(--schedule-segment-scroll-height) +
-        2.5 * var(--schedule-segments-gap, 10px)
-    );
+    max-height: min(52vh, 420px);
     overflow-y: auto;
     overscroll-behavior: contain;
     padding: 0;
@@ -5547,6 +5539,7 @@ body.dark-mode .mode-tab.active .mode-tab-icon{
     display: block;
     width: 100%;
     box-sizing: border-box;
+    flex-shrink: 0;
     padding: 0;
     border-radius: 0;
     background: transparent;

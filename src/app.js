@@ -10258,13 +10258,12 @@ function normalizeExpandedScheduleSegmentIndex() {
         return;
     }
 
+    // -1 = accordion fully collapsed; any other in-range index is an explicit user choice
+    // (e.g. summary tap or a newly added segment) — do not reset it on every rebuild.
     if (scheduleHasPendingSegments()) {
-        if (expandedScheduleSegmentIndex < activeScheduleSegmentCount) {
+        if (expandedScheduleSegmentIndex >= 0 && expandedScheduleSegmentIndex < activeScheduleSegmentCount) {
             expandedScheduleSegmentIndex = activeScheduleSegmentCount;
         }
-    } else if (scheduleSegments.length > 1) {
-        expandedScheduleSegmentIndex = -1;
-        return;
     }
 
     if (expandedScheduleSegmentIndex >= scheduleSegments.length) {
