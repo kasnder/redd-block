@@ -6,7 +6,9 @@
 # Without this, macOS users who installed via .pkg would be left staring
 # at the Installer.app "Install Successful" screen with no clear next step.
 # Also removes legacy `/Applications/ReDD Block.app` and `/Applications/Fristed.app`
-# bundles so upgrades don't leave duplicate app icons in Applications.
+# bundles so upgrades don't leave duplicate app icons in Applications, and scrubs
+# stale user LaunchAgents (e.g. `Fristed.plist`) so login items don't point at
+# deleted app paths before the new build re-registers autostart.
 
 set +e
 
@@ -33,6 +35,39 @@ if [ -z "$TARGET_UID" ]; then
     echo "could not resolve uid for $TARGET_USER; skipping auto-launch"
     exit 0
 fi
+
+# Remove stale launch-at-login plists before opening the new app.
+# Release builds self-heal autostart on every launch, but a leftover
+# `Fristed.plist` (or a redd-block plist pointing at a deleted .app)
+# would still fire at login and error until the user opens ReDD Blocker.
+scrub_stale_autostart_plists_for_user() {
+    local user="$1"
+    local uid="$2"
+    local home
+    home=$(dscl . -read "/Users/$user" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+    [ -z "$home" ] && home="/Users/$user"
+    local dir="$home/Library/LaunchAgents"
+    [ -d "$dir" ] || return 0
+
+    for plist in "$dir"/*.plist; do
+        [ -f "$plist" ] || continue
+        local base lower remove=0
+        base=$(basename "$plist")
+        lower=$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')
+        if [[ "$lower" == *reddblock* ]] || [[ "$lower" == *redd-block* ]] || [[ "$lower" == *fristed* ]]; then
+            remove=1
+        elif grep -q '/Applications/Fristed.app' "$plist" 2>/dev/null; then
+            remove=1
+        elif grep -q '/Applications/ReDD Block.app' "$plist" 2>/dev/null; then
+            remove=1
+        fi
+        if [ "$remove" = "1" ]; then
+            launchctl bootout "gui/$uid" "$plist" 2>/dev/null || true
+            rm -f "$plist" && echo "removed stale LaunchAgent: $plist"
+        fi
+    done
+}
+scrub_stale_autostart_plists_for_user "$TARGET_USER" "$TARGET_UID"
 
 # launchctl asuser runs the command in the target user's bootstrap
 # domain so the GUI shows up on their session.

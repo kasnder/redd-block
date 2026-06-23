@@ -95,7 +95,7 @@ pub fn uninstall_self_macos(
     if let Err(e) = app.autolaunch().disable() {
         log::warn!("uninstall_self_macos: autostart.disable failed: {e}");
     }
-    scrub_launch_agents();
+    scrub_stale_autostart_plists();
 
     // 2. Remove per-browser native-messaging manifests + their
     //    enclosing NativeMessagingHosts directories if empty. Same
@@ -277,26 +277,65 @@ fn app_bundle_path() -> Option<String> {
     None
 }
 
-/// Remove `~/Library/LaunchAgents/*reddblock*.plist` and
-/// `*redd-block*.plist`. Idempotent — silently ignores missing files
+/// Remove stale user LaunchAgents from Fristed / ReDD Block / older
+/// ReDD Blocker builds. Idempotent — silently ignores missing files
 /// or dirs. We don't trust any one filename pattern because
 /// `tauri-plugin-autostart`'s plist naming has shifted between
-/// versions and some users may carry over plists from older builds.
+/// versions (e.g. `Fristed.plist` vs `redd-block.plist`).
 #[cfg(target_os = "macos")]
-fn scrub_launch_agents() {
-    let Some(home) = dirs::home_dir() else { return };
+pub(crate) fn scrub_stale_autostart_plists() {
+    use std::fs;
+    use std::io::Read;
+
+    let Some(home) = dirs::home_dir() else {
+        return;
+    };
     let dir = home.join("Library/LaunchAgents");
-    let Ok(rd) = std::fs::read_dir(&dir) else { return };
+    let Ok(rd) = fs::read_dir(&dir) else {
+        return;
+    };
+    let uid = unsafe { libc::getuid() };
+    let domain = format!("gui/{uid}");
+
     for entry in rd.flatten() {
-        let name = entry.file_name();
-        let Some(s) = name.to_str() else { continue };
-        let lower = s.to_ascii_lowercase();
-        if lower.contains("reddblock") || lower.contains("redd-block") {
-            let path = entry.path();
-            log::info!("uninstall_self_macos: removing {}", path.display());
-            let _ = std::fs::remove_file(&path);
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("plist") {
+            continue;
         }
+        let Some(filename) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        let mut content = String::new();
+        if let Ok(mut f) = fs::File::open(&path) {
+            let _ = f.read_to_string(&mut content);
+        }
+        if !should_scrub_autostart_plist(filename, &content) {
+            continue;
+        }
+        log::info!(
+            "scrub_stale_autostart_plists: bootout + remove {}",
+            path.display()
+        );
+        let _ = Command::new("launchctl")
+            .args(["bootout", &domain, &path.to_string_lossy()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+        let _ = fs::remove_file(&path);
     }
+}
+
+#[cfg(target_os = "macos")]
+fn should_scrub_autostart_plist(filename: &str, content: &str) -> bool {
+    let lower = filename.to_ascii_lowercase();
+    if lower.contains("reddblock")
+        || lower.contains("redd-block")
+        || lower.contains("fristed")
+    {
+        return true;
+    }
+    content.contains("/Applications/Fristed.app")
+        || content.contains("/Applications/ReDD Block.app")
 }
 
 /// Spawn a detached `bash` that waits a couple of seconds for our
