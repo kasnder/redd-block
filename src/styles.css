@@ -8114,8 +8114,16 @@ body.ios .ios-screentime-onboarding-content h1 {
     margin: 0 0 16px;
 }
 
+#migration-post-header .welcome-onboarding-title-row{
+    width: 100%;
+    max-width: 100%;
+    align-items: flex-start;
+}
+
 #migration-post-header .welcome-onboarding-title-text{
     max-width: none;
+    flex: 1;
+    min-width: 0;
 }
 
 #migration-post-header-subtitle .welcome-reddfocus-inline-logo{
@@ -8127,14 +8135,15 @@ body.ios .ios-screentime-onboarding-content h1 {
 
 .migration-post-header-subtitle{
     margin: 6px 0 0;
-    max-width: none;
+    max-width: 100%;
     font-size: 14px;
     line-height: 1.45;
     font-weight: 400;
     font-style: normal;
     color: var(--text-muted);
     white-space: pre-line;
-    text-wrap: balance;
+    overflow-wrap: anywhere;
+    text-wrap: pretty;
     text-align: left;
 }
 
