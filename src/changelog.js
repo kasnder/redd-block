@@ -76,7 +76,7 @@ function inferLegacyBuckets(items) {
         else if (/^windows\b/.test(lower)) winItems.push(item);
         else if (/^ios\b/.test(lower)) iosItems.push(item);
         else if (lower.startsWith('desktop')) desktopShared.push(item);
-        else if (lower.includes('focus room') || lower.includes('schedule')
+        else if (lower.includes('focus room') || lower.includes('focus space') || lower.includes('schedule')
             || lower.includes('danish') || lower.includes('localization')
             || /meet |rebrand|introducing/.test(lower)) {
             crossPlatform.push(item);

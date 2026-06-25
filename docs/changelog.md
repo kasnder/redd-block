@@ -3,7 +3,7 @@
 User-facing changes for each release. Every app upgrade adds a new entry here.
 
 Release sections can use a leading `> …` blockquote for the headline summary.
-List cross-platform changes first under `###` headings (e.g. FOCUS ROOMS &
+List cross-platform changes first under `###` headings (e.g. FOCUS SPACES &
 SCHEDULES), then platform-specific notes under nested headings:
 
 `### BY PLATFORM` → `#### DESKTOP` → `##### macOS` / `##### Windows` /
@@ -13,17 +13,28 @@ lists still work.
 ## v3.4.2
 
 > **Meet ReDD Blocker!** **Fristed: Block Apps & Sites** has a new name — same
-> powerful blocking you love, now called **ReDD Blocker**. Your Focus Rooms,
+> powerful blocking you love, now called **ReDD Blocker**. Your Focus Spaces,
 > schedules, and blocklists carry over — nothing else changes.
 
-### FOCUS ROOMS & SCHEDULES
+### FOCUS SPACES & SCHEDULES
 
-- **Pinned header.** The Focus Rooms list header stays pinned while you scroll;
+- **Focus Spaces.** **Focus Rooms** are now **Focus Spaces** — **My Focus
+  Spaces**, **Select a space**, **Start focus space?**, and matching stop/pause
+  copy.
+- **Stop and pause flows.** Stop and pause confirmations use clearer focus-space
+  labels, subtitles, and summary layout.
+- **Pinned header.** The Focus Spaces list header stays pinned while you scroll;
   **Settings** sits in the header row.
-- **Steady cards.** Selecting a room no longer shifts neighbouring cards.
+- **Steady cards.** Selecting a space no longer shifts neighbouring cards.
 - **Multi-segment schedules.** Schedules keep each segment expandable when you
   have many; delete buttons show a clear hover state on desktop; **Start
   schedule** uses the play icon.
+
+### BRANDING
+
+- **ReDD Blocker icons.** Updated app, menu-bar tray, iOS shield, and
+  blocked-site page icons to ReDD Blocker branding (replacing leftover Fristed
+  artwork).
 
 ### LOCALIZATION
 
@@ -39,6 +50,8 @@ lists still work.
   apps are running.
 - **Window controls.** The maximize button uses window events instead of constant
   polling.
+- **Startup.** Fixed a blank screen when the blocking warning opened before the
+  app UI was ready.
 
 ##### macOS
 
@@ -53,6 +66,10 @@ lists still work.
 - **Data stays put.** Blocklist data in legacy **Fristed** or **ReDD Block**
   storage folders is copied into the canonical **ReDD Blocker** path
   automatically.
+
+##### iOS
+
+- **Home-screen icons.** App Store icons updated to the ReDD Blocker logo.
 
 - **Version:** 3.4.2 (macOS, Windows, and iOS).
 
