@@ -26,6 +26,8 @@ pub mod safari_bridge;
 pub mod uninstall;
 #[cfg(not(target_os = "ios"))]
 mod overlay_assets;
+#[cfg(not(target_os = "ios"))]
+mod app_update;
 #[cfg(target_os = "macos")]
 pub mod web_automation;
 
@@ -57,5 +59,7 @@ pub use safari_bridge::*;
 pub use uninstall::*;
 #[cfg(not(target_os = "ios"))]
 pub use overlay_assets::*;
+#[cfg(not(target_os = "ios"))]
+pub use app_update::*;
 #[cfg(target_os = "macos")]
 pub use web_automation::*;

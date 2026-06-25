@@ -48,6 +48,7 @@ const tauriAPI = {
     saveData: (data) => invoke('save_data', { data }),
     getAppVersion: () => invoke('get_app_version'),
     isMicrosoftStorePackage: () => invoke('is_microsoft_store_package'),
+    downloadAndRunUpdate: (version) => invoke('download_and_run_update', { version }),
 
     // Window operations
     setWindowSize: (width, height) => invoke('set_window_size', { width, height }),
@@ -141,6 +142,7 @@ const tauriAPI = {
     // App blocking: force-quit warning overlay (desktop)
     onAppBlockingWarningShow: (callback) => listen('app-blocking://warning-show', callback),
     onAppBlockingWarningHide: (callback) => listen('app-blocking://warning-hide', callback),
+    onUpdateDownloadProgress: (callback) => listen('update-download-progress', callback),
     appBlockingBringForwardThenQuitAgain: (pids) =>
         invoke('app_blocking_bring_forward_then_quit_again', { pids }),
     /// User clicked "Let's go!" on the app-blocking warning — the
@@ -1511,46 +1513,128 @@ function applyUpdateBannerReleaseNotes(notes, whatsNewBtn, notesPanel, notesCont
     notesContent.innerHTML = renderReleaseNotesHtml(notes);
 }
 
-const GITHUB_RELEASES_DOWNLOAD_BASE = 'https://github.com/ulyngs/redd-block/releases/download';
-
 function normalizeReleaseVersion(version) {
     return String(version).replace(/^v/i, '').trim();
 }
 
-function getWindowsInstallerArchSuffix() {
-    const ua = navigator.userAgent || '';
-    if (/aarch64|arm64|ARM64/i.test(ua)) return 'arm64';
-    return 'x64';
+let updateDownloadProgressUnlisten = null;
+let updateDownloadInProgress = false;
+
+function formatInstallerDownloadSize(bytes) {
+    const size = Number(bytes);
+    if (!Number.isFinite(size) || size <= 0) return null;
+    const mb = size / (1024 * 1024);
+    if (mb >= 10) return `${Math.round(mb)}MB`;
+    if (mb >= 1) return `${mb.toFixed(1).replace(/\.0$/, '')}MB`;
+    const kb = size / 1024;
+    if (kb >= 10) return `${Math.round(kb)}KB`;
+    return `${Math.max(1, Math.round(kb))}KB`;
 }
 
-function getGithubReleaseDownloadUrl(version) {
-    const releaseVersion = normalizeReleaseVersion(version);
-    const tag = `v${releaseVersion}`;
-    if (isMacOSDesktop || document.body.classList.contains('mac')) {
-        return `${GITHUB_RELEASES_DOWNLOAD_BASE}/${tag}/redd-blocker-${releaseVersion}.pkg`;
+function getUpdateDownloadCtaLabel(pkgBytes = null) {
+    const size = formatInstallerDownloadSize(pkgBytes);
+    if (size) {
+        return tSettingsFmt('updateBannerCtaFmt', { size });
     }
-    const arch = getWindowsInstallerArchSuffix();
-    return `${GITHUB_RELEASES_DOWNLOAD_BASE}/${tag}/redd-blocker_${releaseVersion}_${arch}-setup.exe`;
+    return tSettings('updateBannerCta');
 }
 
-function wireUpdateBannerDownloadLink(latestVersion) {
-    const link = document.getElementById('update-banner-link');
-    if (!link) return;
+function getUpdateDownloadButtonLabel(state, percent = null) {
+    if (state === 'opening') return tSettings('updateBannerOpeningInstaller');
+    if (state === 'downloading') {
+        if (typeof percent === 'number') {
+            return tSettingsFmt('updateBannerDownloadingFmt', { percent });
+        }
+        return tSettings('updateBannerDownloading');
+    }
+    const btn = document.getElementById('update-banner-link');
+    const pkgBytes = btn?.dataset?.pkgBytes ? Number(btn.dataset.pkgBytes) : null;
+    return getUpdateDownloadCtaLabel(pkgBytes);
+}
 
-    const url = getGithubReleaseDownloadUrl(latestVersion);
-    link.href = url;
-    link.dataset.externalUrl = url;
+function setUpdateDownloadButtonState(state, percent = null) {
+    const btn = document.getElementById('update-banner-link');
+    if (!btn) return;
+    btn.textContent = getUpdateDownloadButtonLabel(state, percent);
+    btn.disabled = state === 'downloading' || state === 'opening';
+    btn.setAttribute('aria-busy', state === 'downloading' || state === 'opening' ? 'true' : 'false');
+}
 
-    if (!link.dataset.wired) {
-        link.dataset.wired = '1';
-        link.addEventListener('click', (event) => {
+function resetUpdateDownloadButtonState() {
+    updateDownloadInProgress = false;
+    setUpdateDownloadButtonState('idle');
+}
+
+async function ensureUpdateDownloadProgressListener() {
+    if (updateDownloadProgressUnlisten) return;
+    updateDownloadProgressUnlisten = await tauriAPI.onUpdateDownloadProgress((event) => {
+        const percent = event?.payload?.percent;
+        if (updateDownloadInProgress) {
+            setUpdateDownloadButtonState('downloading', typeof percent === 'number' ? percent : null);
+        }
+    });
+}
+
+async function startUpdateDownload(latestVersion) {
+    const btn = document.getElementById('update-banner-link');
+    if (!btn || btn.disabled || updateDownloadInProgress) return;
+
+    const version = normalizeReleaseVersion(latestVersion);
+    updateDownloadInProgress = true;
+    setUpdateDownloadButtonState('downloading', 0);
+
+    try {
+        await ensureUpdateDownloadProgressListener();
+        await tauriAPI.downloadAndRunUpdate(version);
+        setUpdateDownloadButtonState('opening');
+        resetUpdateDownloadButtonState();
+        if (isMacOSDesktop) {
+            try {
+                await message(tSettings('updateBannerInstallerOpened'), {
+                    title: tSettings('updateBannerInstallerOpenedTitle'),
+                    kind: 'info',
+                });
+            } catch {
+                /* dialog unavailable */
+            }
+        }
+    } catch (err) {
+        console.error('[Update] In-app download failed:', err);
+        resetUpdateDownloadButtonState();
+        try {
+            await message(
+                `${tSettings('updateBannerDownloadFailed')}\n\n${String(err?.message || err || '')}`.trim(),
+                { title: tSettings('updateBannerDownloadFailedTitle'), kind: 'error' },
+            );
+        } catch {
+            /* dialog unavailable */
+        }
+    }
+}
+
+function wireUpdateBannerDownloadLink(latestVersion, pkgBytes = null) {
+    const btn = document.getElementById('update-banner-link');
+    if (!btn) return;
+
+    btn.dataset.latestVersion = latestVersion;
+    if (pkgBytes) {
+        btn.dataset.pkgBytes = String(pkgBytes);
+    } else {
+        delete btn.dataset.pkgBytes;
+    }
+    resetUpdateDownloadButtonState();
+
+    if (!btn.dataset.wired) {
+        btn.dataset.wired = '1';
+        btn.addEventListener('click', (event) => {
             event.preventDefault();
-            void openExternal(link.dataset.externalUrl || link.href);
+            const version = btn.dataset.latestVersion || latestVersion;
+            void startUpdateDownload(version);
         });
     }
 }
 
-async function showUpdateBanner(latestVersion, currentVersion = '') {
+async function showUpdateBanner(latestVersion, currentVersion = '', { pkgBytes = null } = {}) {
     const banner = document.getElementById('update-banner');
     const versionEl = document.getElementById('update-banner-version');
     const currentEl = document.getElementById('update-banner-current');
@@ -1562,7 +1646,7 @@ async function showUpdateBanner(latestVersion, currentVersion = '') {
     if (!banner || !versionEl) return;
 
     versionEl.textContent = latestVersion;
-    wireUpdateBannerDownloadLink(latestVersion);
+    wireUpdateBannerDownloadLink(latestVersion, pkgBytes);
     if (currentEl) {
         if (currentVersion) {
             currentEl.textContent = tSettingsFmt('updateBannerCurrentFmt', { version: currentVersion });
@@ -1606,11 +1690,13 @@ async function checkForAppUpdate() {
         if (!currentVersion) return;
 
         const response = await fetch(`https://ulyngs.github.io/redd-block/latest-versions.json?t=${Date.now()}`);
-        const versions = await response.json();
-        const latestVersion = versions[getLatestVersionPlatformKey()];
+        const manifest = await response.json();
+        const platformKey = getLatestVersionPlatformKey();
+        const latestVersion = manifest[platformKey];
+        const pkgBytes = platformKey === 'macos' ? manifest.sizeBytes?.macosPkg : null;
 
         if (latestVersion && isVersionHigher(latestVersion, currentVersion)) {
-            await showUpdateBanner(latestVersion, currentVersion);
+            await showUpdateBanner(latestVersion, currentVersion, { pkgBytes });
         }
     } catch (e) {
         // Silently fail if offline
@@ -18980,7 +19066,15 @@ const SETTINGS_TRANSLATIONS = {
         updateBannerPrefix: 'Version',
         updateBannerSuffix: 'is available',
         updateBannerCurrentFmt: "You're on {version}",
-        updateBannerCta: 'Download update',
+        updateBannerCta: 'Download from GitHub',
+        updateBannerCtaFmt: 'Download from GitHub ({size})',
+        updateBannerDownloading: 'Downloading…',
+        updateBannerDownloadingFmt: 'Downloading… {percent}%',
+        updateBannerOpeningInstaller: 'Opening installer…',
+        updateBannerDownloadFailedTitle: 'Update download failed',
+        updateBannerDownloadFailed: 'Could not download the update. Check your connection and try again.',
+        updateBannerInstallerOpenedTitle: 'Installer opened',
+        updateBannerInstallerOpened: 'Follow the installer prompts. ReDD Blocker will reopen automatically when the update finishes.',
         updateBannerWhatsNew: "What's new?",
         mainStartBlockTitle: 'Enter',
         modeNow: 'Now',
@@ -19746,7 +19840,15 @@ const SETTINGS_TRANSLATIONS = {
         updateBannerPrefix: 'Version',
         updateBannerSuffix: 'er tilgængelig',
         updateBannerCurrentFmt: 'Du bruger {version}',
-        updateBannerCta: 'Download opdatering',
+        updateBannerCta: 'Download fra GitHub',
+        updateBannerCtaFmt: 'Download fra GitHub ({size})',
+        updateBannerDownloading: 'Downloader…',
+        updateBannerDownloadingFmt: 'Downloader… {percent}%',
+        updateBannerOpeningInstaller: 'Åbner installationsprogram…',
+        updateBannerDownloadFailedTitle: 'Opdatering mislykkedes',
+        updateBannerDownloadFailed: 'Kunne ikke hente opdateringen. Tjek din forbindelse og prøv igen.',
+        updateBannerInstallerOpenedTitle: 'Installationsprogram åbnet',
+        updateBannerInstallerOpened: 'Følg vejledningen i installationsprogrammet. ReDD Blocker genåbner automatisk, når opdateringen er færdig.',
         updateBannerWhatsNew: 'Hvad er nyt?',
         mainStartBlockTitle: 'Ind',
         modeNow: 'Nu',
@@ -21203,7 +21305,13 @@ function applySettingsLanguage() {
     // Main shell / scheduler
     setText('update-banner-prefix', tSettings('updateBannerPrefix'));
     setText('update-banner-suffix', tSettings('updateBannerSuffix'));
-    setText('update-banner-link', tSettings('updateBannerCta'));
+    if (!updateDownloadInProgress) {
+        const updateBtn = document.getElementById('update-banner-link');
+        if (updateBtn) {
+            const pkgBytes = updateBtn.dataset.pkgBytes ? Number(updateBtn.dataset.pkgBytes) : null;
+            updateBtn.textContent = getUpdateDownloadCtaLabel(pkgBytes);
+        }
+    }
     const updateWhatsNewBtn = document.getElementById('update-banner-whats-new');
     if (updateWhatsNewBtn && !updateWhatsNewBtn.classList.contains('hidden')) {
         updateWhatsNewBtn.innerHTML = updateBannerWhatsNewButtonHtml();

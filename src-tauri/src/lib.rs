@@ -888,6 +888,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::read_overlay_source_bytes,
         commands::delete_overlay_asset,
         commands::uninstall_self_macos,
+        commands::download_and_run_update,
     ]
 }
 
@@ -955,6 +956,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         commands::resolve_overlay_asset_path,
         commands::read_overlay_source_bytes,
         commands::delete_overlay_asset,
+        commands::download_and_run_update,
     ]
 }
 

@@ -77,6 +77,10 @@ sysinfo = "0.33"
 tauri-plugin-notification = "2"
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+futures-util = "0.3"
+tokio = { version = "1", features = ["fs", "io-util"] }
+sha2 = "0.10"
 # Single-instance enforcement so the NSIS post-install hook (which always
 # launches redd-block.exe) and the optional finish-page "Run" checkbox
 # can't produce two running instances. Also benefits day-to-day usage —

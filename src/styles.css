@@ -521,9 +521,15 @@ body.dark-mode .title-bar{
     border-radius: 6px;
     font-size: 13px;
     font-weight: 600;
+    font-family: inherit;
     text-decoration: none;
     cursor: pointer;
     transition: background 0.2s;
+}
+
+.update-banner-btn:disabled{
+    opacity: 0.7;
+    cursor: wait;
 }
 
 .update-banner-btn:hover{

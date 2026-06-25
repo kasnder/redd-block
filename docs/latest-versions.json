@@ -1,5 +1,11 @@
 {
     "macos": "3.4.2",
     "windows": "3.4.2",
-    "ios": "3.4.2"
+    "ios": "3.4.2",
+    "sha256": {
+        "macosPkg": "57474101843ceb315f828ca2ce8023a9b236427dc25db8a411f5d9f18a5043f7"
+    },
+    "sizeBytes": {
+        "macosPkg": 17885452
+    }
 }
