@@ -2709,12 +2709,25 @@ async function onBlockingMethodChange(key, select) {
             syncSafariFdaSettingsRow();
         }
         if (desired === 'extension') {
-            document.getElementById('settings-modal')?.classList.add('hidden');
-            setLanguagePickerOpen(false);
             if (key === 'safari') {
                 await ensureSafariExtensionFdaBeforeSetup();
             }
-            await openExtensionSetupOverlay();
+            let fresh = null;
+            try {
+                fresh = await invoke('onboarding_state');
+            } catch (e) {
+                console.warn('[blocking-method] onboarding_state failed:', e);
+            }
+            const needsSetup = fresh
+                && effectiveBrowserComplianceStatus(key, fresh.browsers || {}) !== 'compliant';
+            if (needsSetup) {
+                document.getElementById('settings-modal')?.classList.add('hidden');
+                setLanguagePickerOpen(false);
+                await openExtensionSetupOverlay();
+            } else if (fresh) {
+                await updateBehaviourChangeBanner(fresh);
+            }
+            if (key === 'safari') syncSafariFdaSettingsRow();
         } else if (key === 'safari') {
             syncSafariFdaSettingsRow();
         }
