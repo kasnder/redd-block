@@ -1520,22 +1520,7 @@ function normalizeReleaseVersion(version) {
 let updateDownloadProgressUnlisten = null;
 let updateDownloadInProgress = false;
 
-function formatInstallerDownloadSize(bytes) {
-    const size = Number(bytes);
-    if (!Number.isFinite(size) || size <= 0) return null;
-    const mb = size / (1024 * 1024);
-    if (mb >= 10) return `${Math.round(mb)}MB`;
-    if (mb >= 1) return `${mb.toFixed(1).replace(/\.0$/, '')}MB`;
-    const kb = size / 1024;
-    if (kb >= 10) return `${Math.round(kb)}KB`;
-    return `${Math.max(1, Math.round(kb))}KB`;
-}
-
-function getUpdateDownloadCtaLabel(pkgBytes = null) {
-    const size = formatInstallerDownloadSize(pkgBytes);
-    if (size) {
-        return tSettingsFmt('updateBannerCtaFmt', { size });
-    }
+function getUpdateDownloadCtaLabel() {
     return tSettings('updateBannerCta');
 }
 
@@ -1547,9 +1532,7 @@ function getUpdateDownloadButtonLabel(state, percent = null) {
         }
         return tSettings('updateBannerDownloading');
     }
-    const btn = document.getElementById('update-banner-link');
-    const pkgBytes = btn?.dataset?.pkgBytes ? Number(btn.dataset.pkgBytes) : null;
-    return getUpdateDownloadCtaLabel(pkgBytes);
+    return getUpdateDownloadCtaLabel();
 }
 
 function setUpdateDownloadButtonState(state, percent = null) {
@@ -1634,6 +1617,47 @@ function wireUpdateBannerDownloadLink(latestVersion, pkgBytes = null) {
     }
 }
 
+function alignUpdateBannerLayout() {
+    const banner = document.getElementById('update-banner');
+    if (!banner || banner.classList.contains('hidden')) return;
+
+    const title = document.getElementById('main-blocklists-title');
+    const settingsBtn = document.getElementById('settings-btn')
+        || document.getElementById('settings-btn-stack');
+    const headerRow = banner.querySelector('.update-banner-header-row');
+    if (!headerRow) return;
+
+    banner.style.removeProperty('--update-banner-info-inset');
+    banner.style.removeProperty('--update-banner-dismiss-inset');
+
+    if (!title || !settingsBtn) return;
+
+    const rowRect = headerRow.getBoundingClientRect();
+    const titleRect = title.getBoundingClientRect();
+    const settingsRect = settingsBtn.getBoundingClientRect();
+
+    const infoInset = Math.max(0, Math.round(titleRect.left - rowRect.left));
+    const dismissInset = Math.max(0, Math.round(rowRect.right - settingsRect.right));
+
+    banner.style.setProperty('--update-banner-info-inset', `${infoInset}px`);
+    banner.style.setProperty('--update-banner-dismiss-inset', `${dismissInset}px`);
+}
+
+function scheduleUpdateBannerLayout() {
+    requestAnimationFrame(() => {
+        requestAnimationFrame(alignUpdateBannerLayout);
+    });
+}
+
+let updateBannerLayoutListenerBound = false;
+
+function ensureUpdateBannerLayoutListeners() {
+    if (updateBannerLayoutListenerBound) return;
+    updateBannerLayoutListenerBound = true;
+    window.addEventListener('resize', scheduleUpdateBannerLayout, { passive: true });
+    window.visualViewport?.addEventListener('resize', scheduleUpdateBannerLayout, { passive: true });
+}
+
 async function showUpdateBanner(latestVersion, currentVersion = '', { pkgBytes = null } = {}) {
     const banner = document.getElementById('update-banner');
     const versionEl = document.getElementById('update-banner-version');
@@ -1678,6 +1702,9 @@ async function showUpdateBanner(latestVersion, currentVersion = '', { pkgBytes =
             whatsNewBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
         });
     }
+
+    ensureUpdateBannerLayoutListeners();
+    scheduleUpdateBannerLayout();
 }
 
 // Check if a newer app version is available and show update banner
@@ -19066,8 +19093,7 @@ const SETTINGS_TRANSLATIONS = {
         updateBannerPrefix: 'Version',
         updateBannerSuffix: 'is available',
         updateBannerCurrentFmt: "You're on {version}",
-        updateBannerCta: 'Download from GitHub',
-        updateBannerCtaFmt: 'Download from GitHub ({size})',
+        updateBannerCta: 'Reinstall',
         updateBannerDownloading: 'Downloading…',
         updateBannerDownloadingFmt: 'Downloading… {percent}%',
         updateBannerOpeningInstaller: 'Opening installer…',
@@ -19840,8 +19866,7 @@ const SETTINGS_TRANSLATIONS = {
         updateBannerPrefix: 'Version',
         updateBannerSuffix: 'er tilgængelig',
         updateBannerCurrentFmt: 'Du bruger {version}',
-        updateBannerCta: 'Download fra GitHub',
-        updateBannerCtaFmt: 'Download fra GitHub ({size})',
+        updateBannerCta: 'Geninstaller',
         updateBannerDownloading: 'Downloader…',
         updateBannerDownloadingFmt: 'Downloader… {percent}%',
         updateBannerOpeningInstaller: 'Åbner installationsprogram…',
@@ -21306,11 +21331,7 @@ function applySettingsLanguage() {
     setText('update-banner-prefix', tSettings('updateBannerPrefix'));
     setText('update-banner-suffix', tSettings('updateBannerSuffix'));
     if (!updateDownloadInProgress) {
-        const updateBtn = document.getElementById('update-banner-link');
-        if (updateBtn) {
-            const pkgBytes = updateBtn.dataset.pkgBytes ? Number(updateBtn.dataset.pkgBytes) : null;
-            updateBtn.textContent = getUpdateDownloadCtaLabel(pkgBytes);
-        }
+        setText('update-banner-link', tSettings('updateBannerCta'));
     }
     const updateWhatsNewBtn = document.getElementById('update-banner-whats-new');
     if (updateWhatsNewBtn && !updateWhatsNewBtn.classList.contains('hidden')) {
