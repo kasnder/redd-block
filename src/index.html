@@ -64,10 +64,13 @@
                             <polyline points="7 10 12 15 17 10" />
                             <line x1="12" y1="15" x2="12" y2="3" />
                         </svg>
-                        <span><span id="update-banner-prefix">Version</span> <strong id="update-banner-version"></strong> <span
-                                id="update-banner-suffix">is available</span></span>
-                        <a id="update-banner-link" href="https://reddfocus.org/tools/reddblock" target="_blank"
-                            class="update-banner-btn">Reinstall from reddfocus.org</a>
+                        <span class="update-banner-version-copy">
+                            <span><span id="update-banner-prefix">Version</span> <strong id="update-banner-version"></strong> <span
+                                    id="update-banner-suffix">is available</span></span>
+                            <span id="update-banner-current" class="update-banner-current hidden"></span>
+                        </span>
+                        <a id="update-banner-link" href="https://github.com/ulyngs/redd-block/releases/latest" target="_blank"
+                            rel="noopener noreferrer" class="update-banner-btn">Download update</a>
                         <button id="update-banner-whats-new" class="update-banner-whats-new-btn hidden" type="button"
                             aria-expanded="false"></button>
                     </div>
@@ -80,7 +83,7 @@
                     </button>
                 </div>
                 <div id="update-banner-notes" class="update-banner-notes hidden" aria-live="polite">
-                    <ul id="update-banner-notes-list" class="update-banner-notes-list"></ul>
+                    <div id="update-banner-notes-content" class="update-banner-notes-content"></div>
                 </div>
             </div>
         </div>

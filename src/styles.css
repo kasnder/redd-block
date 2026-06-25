@@ -483,6 +483,27 @@ body.dark-mode .title-bar{
     display: flex;
     align-items: center;
     gap: 8px;
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.update-banner-version-copy{
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+}
+
+.update-banner-current{
+    font-size: 12px;
+    font-weight: 500;
+    opacity: 0.88;
+    line-height: 1.2;
+}
+
+.update-banner-current.hidden{
+    display: none;
 }
 
 .update-banner-content svg{
@@ -546,14 +567,17 @@ body.dark-mode .title-bar{
 }
 
 .update-banner-notes{
-    margin-top: 10px;
-    padding: 10px 12px 10px 28px;
-    background: rgba(0, 0, 0, 0.14);
-    border-radius: 8px;
+    margin: 10px -8px 0;
+    padding: 14px 16px 16px;
+    background: var(--container-bg, #fff);
+    color: var(--text-primary, #1e2d3e);
+    border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
     overflow: hidden;
-    max-height: 480px;
+    max-height: 520px;
+    overflow-y: auto;
     opacity: 1;
-    transition: max-height 0.35s ease, opacity 0.25s ease 0.05s, margin-top 0.35s ease;
+    transition: max-height 0.35s ease, opacity 0.25s ease 0.05s, margin-top 0.35s ease, padding 0.35s ease;
 }
 
 .update-banner-notes.hidden{
@@ -562,7 +586,131 @@ body.dark-mode .title-bar{
     margin-top: 0;
     padding-top: 0;
     padding-bottom: 0;
-    transition: max-height 0.3s ease, opacity 0.15s ease, margin-top 0.3s ease;
+    border: none;
+    box-shadow: none;
+    transition: max-height 0.3s ease, opacity 0.15s ease, margin-top 0.3s ease, padding 0.3s ease;
+}
+
+.update-banner-notes-content{
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.update-banner-notes-summary{
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.update-banner-notes-summary-title{
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.35;
+    color: var(--text-primary, #1e2d3e);
+}
+
+.update-banner-notes-summary-emoji{
+    margin-right: 4px;
+}
+
+.update-banner-notes-summary-body{
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-muted, #5c6773);
+}
+
+.update-banner-notes-group{
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.update-banner-notes-group-label{
+    margin: 0;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-color, rgba(30, 45, 62, 0.12));
+    font-family: var(--font-section-label, inherit);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-subtle, #7a8490);
+}
+
+.update-banner-notes-subgroup{
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.update-banner-notes-subgroup-label{
+    margin: 0;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-secondary, #3d4d5c);
+}
+
+.update-banner-notes-subsubgroup{
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-left: 10px;
+    padding-left: 10px;
+    border-left: 2px solid var(--border-color, rgba(30, 45, 62, 0.1));
+}
+
+.update-banner-notes-subsubgroup-label{
+    margin: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted, #5c6773);
+}
+
+.update-banner-notes-items{
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.update-banner-notes-item{
+    position: relative;
+    padding-left: 14px;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text-primary, #1e2d3e);
+}
+
+.update-banner-notes-item::before{
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0.55em;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-color, #2a9d8f);
+    transform: translateY(-50%);
+}
+
+.update-banner-notes-item-title{
+    font-weight: 700;
+}
+
+.update-banner-notes-item-body{
+    color: var(--text-muted, #5c6773);
+}
+
+.update-banner-notes-item-title + .update-banner-notes-item-body::before{
+    content: ' ';
 }
 
 .update-banner-notes-list{

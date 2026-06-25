@@ -1,23 +1,166 @@
 import changelogMarkdown from '../changelog.md?raw';
 
 /**
- * Extract user-facing bullet lines from changelog.md for a release version.
- * Expects a heading like `## v3.1.10`. Returns `[]` when the section is missing
- * or has no eligible bullets.
- *
- * @param {string} markdown Full changelog.md text
- * @param {string} version Semver without leading `v` (e.g. `3.1.10`)
- * @returns {string[]} One string per bullet (continuation lines joined)
+ * @typedef {{ title: string, body: string }} ReleaseNoteItem
+ * @typedef {{ label: string, items: ReleaseNoteItem[], children: ReleaseNoteGroup[] }} ReleaseNoteGroup
+ * @typedef {{ summary: ReleaseNoteItem | null, groups: ReleaseNoteGroup[] }} ParsedReleaseNotes
  */
-export function parseChangelogBullets(markdown, version) {
+
+const REMOTE_CHANGELOG_URLS = [
+    'https://ulyngs.github.io/redd-block/changelog.md',
+    'https://raw.githubusercontent.com/ulyngs/redd-block/main/changelog.md',
+];
+
+function escapeRegExp(value) {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function escapeHtml(text) {
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+/** Inline `**bold**` in already-escaped text. */
+export function formatChangelogInlineHtml(text) {
+    const escaped = escapeHtml(text);
+    return escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+}
+
+function parseBulletItem(text) {
+    const trimmed = String(text || '').trim();
+    if (!trimmed || /^\*\*Version:\*\*/i.test(trimmed)) return null;
+
+    const match = trimmed.match(/^\*\*([^*]+)\*\*(.*)$/s);
+    if (!match) {
+        return { title: trimmed, body: '' };
+    }
+    return {
+        title: match[1].trim(),
+        body: match[2].trim(),
+    };
+}
+
+function parseBlockquoteSummary(lines) {
+    const text = lines.map((line) => line.trim()).filter(Boolean).join(' ');
+    if (!text) return null;
+    return parseBulletItem(text) || { title: text, body: '' };
+}
+
+/** @param {ReleaseNoteGroup} group */
+function groupHasContent(group) {
+    return group.items.length > 0 || group.children.some(groupHasContent);
+}
+
+/** @returns {ReleaseNoteGroup} */
+function createGroup(label) {
+    return { label, items: [], children: [] };
+}
+
+function inferLegacyBuckets(items) {
+    /** @type {ReleaseNoteItem[]} */
+    const crossPlatform = [];
+    /** @type {ReleaseNoteItem[]} */
+    const desktopShared = [];
+    /** @type {ReleaseNoteItem[]} */
+    const macItems = [];
+    /** @type {ReleaseNoteItem[]} */
+    const winItems = [];
+    /** @type {ReleaseNoteItem[]} */
+    const iosItems = [];
+
+    for (const item of items) {
+        const lower = item.title.toLowerCase();
+        if (/^macos\b/.test(lower)) macItems.push(item);
+        else if (/^windows\b/.test(lower)) winItems.push(item);
+        else if (/^ios\b/.test(lower)) iosItems.push(item);
+        else if (lower.startsWith('desktop')) desktopShared.push(item);
+        else if (lower.includes('focus room') || lower.includes('schedule')
+            || lower.includes('danish') || lower.includes('localization')
+            || /meet |rebrand|introducing/.test(lower)) {
+            crossPlatform.push(item);
+        } else {
+            desktopShared.push(item);
+        }
+    }
+
+    /** @type {ReleaseNoteGroup[]} */
+    const groups = [];
+    if (crossPlatform.length) {
+        groups.push({ label: 'IMPROVEMENTS', items: crossPlatform, children: [] });
+    }
+
+    const desktopChildren = [];
+    if (desktopShared.length) {
+        desktopChildren.push({ label: 'All desktop', items: desktopShared, children: [] });
+    }
+    if (macItems.length) {
+        desktopChildren.push({ label: 'macOS', items: macItems, children: [] });
+    }
+    if (winItems.length) {
+        desktopChildren.push({ label: 'Windows', items: winItems, children: [] });
+    }
+    if (iosItems.length) {
+        desktopChildren.push({ label: 'iOS', items: iosItems, children: [] });
+    }
+    if (desktopChildren.length) {
+        groups.push({
+            label: 'BY PLATFORM',
+            items: [],
+            children: [{ label: 'DESKTOP', items: [], children: desktopChildren }],
+        });
+    }
+
+    return groups;
+}
+
+/**
+ * Parse a version section into a summary plus grouped release notes.
+ * Supports `> …` summary, `###` / `####` / `#####` headings, and bullets.
+ * Put cross-platform sections first, then `### BY PLATFORM` → `#### DESKTOP`
+ * → `##### macOS` / `##### Windows` / `##### iOS`.
+ *
+ * @param {string} markdown
+ * @param {string} version
+ * @returns {ParsedReleaseNotes}
+ */
+export function parseReleaseNotes(markdown, version) {
     const normalized = String(version || '').replace(/^v/i, '').trim();
-    if (!normalized || !markdown) return [];
+    const empty = { summary: null, groups: [] };
+    if (!normalized || !markdown) return empty;
 
     const sectionRe = new RegExp(`^## v${escapeRegExp(normalized)}(?:\\s|$)`);
     const lines = markdown.split('\n');
     let inSection = false;
-    const bullets = [];
-    let current = null;
+
+    /** @type {string[]} */
+    let blockquoteLines = [];
+    /** @type {ReleaseNoteItem | null} */
+    let summary = null;
+    /** @type {ReleaseNoteGroup[]} */
+    const groups = [];
+    /** @type {ReleaseNoteGroup[]} */
+    let groupStack = [];
+    /** @type {ReleaseNoteItem[]} */
+    let looseItems = [];
+    let currentBullet = null;
+
+    const flushBullet = () => {
+        if (!currentBullet) return;
+        const item = parseBulletItem(currentBullet);
+        currentBullet = null;
+        if (!item) return;
+        const target = groupStack[groupStack.length - 1];
+        if (target) target.items.push(item);
+        else looseItems.push(item);
+    };
+
+    const flushBlockquote = () => {
+        if (!blockquoteLines.length) return;
+        summary = parseBlockquoteSummary(blockquoteLines);
+        blockquoteLines = [];
+    };
 
     for (const line of lines) {
         if (/^## v[0-9]/.test(line)) {
@@ -27,32 +170,185 @@ export function parseChangelogBullets(markdown, version) {
         }
         if (!inSection) continue;
 
-        if (line.startsWith('- ')) {
-            if (current) bullets.push(current);
-            const text = line.slice(2).trim();
-            if (/^\*\*Version:\*\*/i.test(text)) {
-                current = null;
-                continue;
+        if (line.startsWith('> ')) {
+            flushBullet();
+            blockquoteLines.push(line.slice(2));
+            continue;
+        }
+
+        const headingMatch = line.match(/^(#{3,5})\s+(.+)$/);
+        if (headingMatch) {
+            flushBullet();
+            flushBlockquote();
+            const depth = headingMatch[1].length - 3;
+            const group = createGroup(headingMatch[2].trim());
+
+            if (depth === 0) {
+                groups.push(group);
+                groupStack = [group];
+            } else if (depth === 1) {
+                const parent = groupStack[0];
+                if (parent) {
+                    parent.children.push(group);
+                    groupStack = [parent, group];
+                } else {
+                    groups.push(group);
+                    groupStack = [group];
+                }
+            } else if (depth >= 2) {
+                const parent = groupStack[1] || groupStack[0];
+                if (parent) {
+                    parent.children.push(group);
+                    groupStack = groupStack.slice(0, 2).concat(group);
+                } else {
+                    groups.push(group);
+                    groupStack = [group];
+                }
             }
-            current = text;
-        } else if (current && line.trim() && !line.startsWith('#')) {
-            current += ` ${line.trim()}`;
+            continue;
+        }
+
+        if (line.startsWith('- ')) {
+            flushBullet();
+            currentBullet = line.slice(2).trim();
+            continue;
+        }
+
+        if (currentBullet && line.trim() && !line.startsWith('#')) {
+            currentBullet += ` ${line.trim()}`;
         }
     }
-    if (current) bullets.push(current);
 
-    return bullets;
+    flushBullet();
+    flushBlockquote();
+
+    if (groups.length === 0 && looseItems.length) {
+        return { summary, groups: inferLegacyBuckets(looseItems) };
+    }
+
+    return { summary, groups };
 }
 
 /**
- * Release notes for a version from the bundled changelog.md.
- * @param {string} version
- * @returns {string[]}
+ * @param {ParsedReleaseNotes} notes
+ * @returns {boolean}
  */
-export function getReleaseNotesForVersion(version) {
-    return parseChangelogBullets(changelogMarkdown, version);
+export function releaseNotesHasContent(notes) {
+    return !!(notes?.summary || notes?.groups?.some(groupHasContent));
 }
 
-function escapeRegExp(value) {
-    return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** @param {ReleaseNoteItem[]} items */
+function renderItemsListHtml(items) {
+    return items.map((item) => {
+        const bodyHtml = item.body
+            ? `<span class="update-banner-notes-item-body">${formatChangelogInlineHtml(item.body)}</span>`
+            : '';
+        return `<li class="update-banner-notes-item">
+            <span class="update-banner-notes-item-title"><strong>${escapeHtml(item.title)}</strong></span>
+            ${bodyHtml}
+        </li>`;
+    }).join('');
+}
+
+/**
+ * @param {ReleaseNoteGroup} group
+ * @param {number} depth
+ * @returns {string}
+ */
+function renderGroupHtml(group, depth = 0) {
+    if (!groupHasContent(group)) return '';
+
+    const sectionClass = depth === 0
+        ? 'update-banner-notes-group'
+        : depth === 1
+            ? 'update-banner-notes-subgroup'
+            : 'update-banner-notes-subsubgroup';
+    const labelClass = depth === 0
+        ? 'update-banner-notes-group-label'
+        : depth === 1
+            ? 'update-banner-notes-subgroup-label'
+            : 'update-banner-notes-subsubgroup-label';
+    const labelTag = depth === 0 ? 'h4' : depth === 1 ? 'h5' : 'h6';
+
+    const itemsHtml = group.items.length
+        ? `<ul class="update-banner-notes-items">${renderItemsListHtml(group.items)}</ul>`
+        : '';
+    const childrenHtml = group.children.map((child) => renderGroupHtml(child, depth + 1)).join('');
+
+    return `<section class="${sectionClass}">
+        <${labelTag} class="${labelClass}">${escapeHtml(group.label)}</${labelTag}>
+        ${itemsHtml}
+        ${childrenHtml}
+    </section>`;
+}
+
+/**
+ * @param {ParsedReleaseNotes} notes
+ * @returns {string}
+ */
+export function renderReleaseNotesHtml(notes) {
+    if (!releaseNotesHasContent(notes)) return '';
+
+    const parts = [];
+
+    if (notes.summary) {
+        parts.push(`<div class="update-banner-notes-summary">
+            <p class="update-banner-notes-summary-title"><span class="update-banner-notes-summary-emoji" aria-hidden="true">🎉</span> ${formatChangelogInlineHtml(notes.summary.title)}</p>
+            ${notes.summary.body ? `<p class="update-banner-notes-summary-body">${formatChangelogInlineHtml(notes.summary.body)}</p>` : ''}
+        </div>`);
+    }
+
+    for (const group of notes.groups) {
+        const html = renderGroupHtml(group, 0);
+        if (html) parts.push(html);
+    }
+
+    return parts.join('');
+}
+
+/** @param {ReleaseNoteGroup[]} groups */
+function flattenGroups(groups) {
+    /** @type {string[]} */
+    const bullets = [];
+    for (const group of groups) {
+        for (const item of group.items) {
+            bullets.push(item.body ? `**${item.title}** ${item.body}` : `**${item.title}**`);
+        }
+        bullets.push(...flattenGroups(group.children));
+    }
+    return bullets;
+}
+
+/** @deprecated Use parseReleaseNotes — kept for scripts that expect flat bullets. */
+export function parseChangelogBullets(markdown, version) {
+    const { summary, groups } = parseReleaseNotes(markdown, version);
+    const bullets = [];
+    if (summary) bullets.push(summary.body ? `**${summary.title}** ${summary.body}` : `**${summary.title}**`);
+    bullets.push(...flattenGroups(groups));
+    return bullets;
+}
+
+export function getReleaseNotesForVersion(version) {
+    return parseReleaseNotes(changelogMarkdown, version);
+}
+
+/**
+ * @param {string} version
+ * @returns {Promise<ParsedReleaseNotes>}
+ */
+export async function resolveReleaseNotesForVersion(version) {
+    const local = getReleaseNotesForVersion(version);
+    if (releaseNotesHasContent(local)) return local;
+
+    for (const baseUrl of REMOTE_CHANGELOG_URLS) {
+        try {
+            const res = await fetch(`${baseUrl}?t=${Date.now()}`);
+            if (!res.ok) continue;
+            const remote = parseReleaseNotes(await res.text(), version);
+            if (releaseNotesHasContent(remote)) return remote;
+        } catch {
+            /* try next source */
+        }
+    }
+    return { summary: null, groups: [] };
 }

@@ -36,7 +36,11 @@ import {
     normalizeStoredOverlayMessage,
     isOverlayMessageEmpty,
 } from './schedule-overlay-message-editor.js';
-import { getReleaseNotesForVersion } from './changelog.js';
+import {
+    resolveReleaseNotesForVersion,
+    renderReleaseNotesHtml,
+    releaseNotesHasContent,
+} from './changelog.js';
 // Compatibility layer wrapping Tauri APIs
 const tauriAPI = {
     // Core data operations
@@ -237,7 +241,7 @@ let isIOS = false; // Track if running on iOS
 // runtime). Set in `detectPlatform`. Used to gate macOS-only Tauri
 // commands and onboarding copy.
 let isMacOSDesktop = false;
-/** MSIX / Microsoft Store install — updates come from the Store, not reddfocus.org. */
+/** MSIX / Microsoft Store install — updates come from the Store, not GitHub. */
 let isMicrosoftStorePackage = null;
 let screentimeAuthorized = false; // Track if Screen Time is authorized (iOS)
 let startupInitializationPromise = null; // Prevent duplicate post-onboarding startup runs
@@ -1489,41 +1493,91 @@ function updateBannerWhatsNewButtonHtml() {
     return `<span>${tSettings('updateBannerWhatsNew')}</span><svg class="update-banner-whats-new-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>`;
 }
 
-function formatChangelogBulletHtml(text) {
-    const escaped = String(text)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-    return escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+function resetUpdateBannerWhatsNewPanel(whatsNewBtn, notesPanel, notesContent) {
+    whatsNewBtn?.classList.remove('open');
+    whatsNewBtn?.setAttribute('aria-expanded', 'false');
+    notesPanel?.classList.add('hidden');
+    if (notesContent) notesContent.innerHTML = '';
 }
 
-function showUpdateBanner(latestVersion) {
+function applyUpdateBannerReleaseNotes(notes, whatsNewBtn, notesPanel, notesContent) {
+    if (!releaseNotesHasContent(notes) || !whatsNewBtn || !notesPanel || !notesContent) {
+        whatsNewBtn?.classList.add('hidden');
+        resetUpdateBannerWhatsNewPanel(whatsNewBtn, notesPanel, notesContent);
+        return;
+    }
+    whatsNewBtn.innerHTML = updateBannerWhatsNewButtonHtml();
+    whatsNewBtn.classList.remove('hidden');
+    notesContent.innerHTML = renderReleaseNotesHtml(notes);
+}
+
+const GITHUB_RELEASES_DOWNLOAD_BASE = 'https://github.com/ulyngs/redd-block/releases/download';
+
+function normalizeReleaseVersion(version) {
+    return String(version).replace(/^v/i, '').trim();
+}
+
+function getWindowsInstallerArchSuffix() {
+    const ua = navigator.userAgent || '';
+    if (/aarch64|arm64|ARM64/i.test(ua)) return 'arm64';
+    return 'x64';
+}
+
+function getGithubReleaseDownloadUrl(version) {
+    const releaseVersion = normalizeReleaseVersion(version);
+    const tag = `v${releaseVersion}`;
+    if (isMacOSDesktop || document.body.classList.contains('mac')) {
+        return `${GITHUB_RELEASES_DOWNLOAD_BASE}/${tag}/redd-blocker-${releaseVersion}.pkg`;
+    }
+    const arch = getWindowsInstallerArchSuffix();
+    return `${GITHUB_RELEASES_DOWNLOAD_BASE}/${tag}/redd-blocker_${releaseVersion}_${arch}-setup.exe`;
+}
+
+function wireUpdateBannerDownloadLink(latestVersion) {
+    const link = document.getElementById('update-banner-link');
+    if (!link) return;
+
+    const url = getGithubReleaseDownloadUrl(latestVersion);
+    link.href = url;
+    link.dataset.externalUrl = url;
+
+    if (!link.dataset.wired) {
+        link.dataset.wired = '1';
+        link.addEventListener('click', (event) => {
+            event.preventDefault();
+            void openExternal(link.dataset.externalUrl || link.href);
+        });
+    }
+}
+
+async function showUpdateBanner(latestVersion, currentVersion = '') {
     const banner = document.getElementById('update-banner');
     const versionEl = document.getElementById('update-banner-version');
+    const currentEl = document.getElementById('update-banner-current');
     const dismissBtn = document.getElementById('update-banner-dismiss');
     const whatsNewBtn = document.getElementById('update-banner-whats-new');
     const notesPanel = document.getElementById('update-banner-notes');
-    const notesList = document.getElementById('update-banner-notes-list');
+    const notesContent = document.getElementById('update-banner-notes-content');
 
     if (!banner || !versionEl) return;
 
     versionEl.textContent = latestVersion;
-    banner.classList.remove('hidden');
-
-    const bullets = getReleaseNotesForVersion(latestVersion);
-    if (bullets.length && whatsNewBtn && notesPanel && notesList) {
-        whatsNewBtn.innerHTML = updateBannerWhatsNewButtonHtml();
-        whatsNewBtn.classList.remove('hidden');
-        notesList.innerHTML = bullets
-            .map((bullet) => `<li>${formatChangelogBulletHtml(bullet)}</li>`)
-            .join('');
-    } else {
-        whatsNewBtn?.classList.add('hidden');
-        notesPanel?.classList.add('hidden');
-        whatsNewBtn?.classList.remove('open');
-        whatsNewBtn?.setAttribute('aria-expanded', 'false');
-        if (notesList) notesList.innerHTML = '';
+    wireUpdateBannerDownloadLink(latestVersion);
+    if (currentEl) {
+        if (currentVersion) {
+            currentEl.textContent = tSettingsFmt('updateBannerCurrentFmt', { version: currentVersion });
+            currentEl.classList.remove('hidden');
+        } else {
+            currentEl.textContent = '';
+            currentEl.classList.add('hidden');
+        }
     }
+    banner.classList.remove('hidden');
+    whatsNewBtn?.classList.add('hidden');
+    resetUpdateBannerWhatsNewPanel(whatsNewBtn, notesPanel, notesContent);
+
+    const notes = await resolveReleaseNotesForVersion(latestVersion);
+    applyUpdateBannerReleaseNotes(notes, whatsNewBtn, notesPanel, notesContent);
 
     if (dismissBtn && !dismissBtn.dataset.wired) {
         dismissBtn.dataset.wired = '1';
@@ -1556,12 +1610,21 @@ async function checkForAppUpdate() {
         const latestVersion = versions[getLatestVersionPlatformKey()];
 
         if (latestVersion && isVersionHigher(latestVersion, currentVersion)) {
-            showUpdateBanner(latestVersion);
+            await showUpdateBanner(latestVersion, currentVersion);
         }
     } catch (e) {
         // Silently fail if offline
         console.log('[Update] Could not check for updates:', e.message);
     }
+}
+
+if (import.meta.env.DEV) {
+    /** Dev only: `previewUpdateBanner('3.4.2')` in the webview console. */
+    window.previewUpdateBanner = async (version = '99.0.0', currentVersion = '3.3.0') => {
+        const normalized = String(version).replace(/^v/i, '').trim();
+        await showUpdateBanner(normalized, String(currentVersion).replace(/^v/i, '').trim());
+        console.log(`[dev] Update banner preview for v${normalized}`);
+    };
 }
 
 // ---- Welcome screen --------------------------------------------------------
@@ -18916,7 +18979,8 @@ const SETTINGS_TRANSLATIONS = {
         // Main shell
         updateBannerPrefix: 'Version',
         updateBannerSuffix: 'is available',
-        updateBannerCta: 'Reinstall from reddfocus.org',
+        updateBannerCurrentFmt: "You're on {version}",
+        updateBannerCta: 'Download update',
         updateBannerWhatsNew: "What's new?",
         mainStartBlockTitle: 'Enter',
         modeNow: 'Now',
@@ -19681,7 +19745,8 @@ const SETTINGS_TRANSLATIONS = {
         // Main shell
         updateBannerPrefix: 'Version',
         updateBannerSuffix: 'er tilgængelig',
-        updateBannerCta: 'Geninstaller fra reddfocus.org',
+        updateBannerCurrentFmt: 'Du bruger {version}',
+        updateBannerCta: 'Download opdatering',
         updateBannerWhatsNew: 'Hvad er nyt?',
         mainStartBlockTitle: 'Ind',
         modeNow: 'Nu',
