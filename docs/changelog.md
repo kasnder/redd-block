@@ -10,6 +10,34 @@ SCHEDULES), then platform-specific notes under nested headings:
 `##### iOS`. Bullets use `- **Short title.** Longer description.` Legacy flat
 lists still work.
 
+## v3.5.0
+
+> **Easier upgrades.** When a new version is available, the update banner shows
+> what's new and lets you reinstall directly from the app.
+
+### UPDATES
+
+- **What's new?** The update banner loads structured release notes from the
+  changelog with an expandable **What's new?** section.
+- **In-app reinstall.** **Reinstall** downloads the latest installer from GitHub
+  with a progress indicator and opens it when ready.
+- **Verified downloads (macOS).** The macOS `.pkg` is checked against the
+  published checksum before it opens.
+- **Installer guidance (macOS).** After download, a prompt reminds you to follow
+  the installer steps; the app reopens when the update finishes.
+- **Banner layout.** Version text, **What's new?**, and **Reinstall** align with
+  **My Focus Spaces** and **Settings** in the main header.
+
+### BY PLATFORM
+
+#### DESKTOP
+
+- **Browser setup.** Subtitles wrap on narrow widths instead of overflowing.
+- **Extension mode.** Switching to extension blocking skips the setup overlay when
+  permissions are already satisfied.
+
+- **Version:** 3.5.0 (macOS, Windows, and iOS).
+
 ## v3.4.2
 
 > **Meet ReDD Blocker!** **Fristed: Block Apps & Sites** has a new name — same
