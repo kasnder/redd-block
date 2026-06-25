@@ -241,12 +241,24 @@ pub struct BlockInfo {
     pub emoji: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
+    /// `"blocklist"` (default) or `"allowlist"`. In allowlist mode `domains`
+    /// lists sites the user *may* visit; everything else is blocked.
+    #[serde(default = "default_blocklist_mode")]
+    pub mode: String,
     pub domains: Vec<String>,
     pub source: &'static str, // "schedule" | "activeBlock"
     #[serde(rename = "endsAt", skip_serializing_if = "Option::is_none")]
     pub ends_at: Option<u64>,
     #[serde(rename = "startedAt", skip_serializing_if = "Option::is_none")]
     pub started_at: Option<u64>,
+}
+
+fn default_blocklist_mode() -> String {
+    "blocklist".to_string()
+}
+
+pub fn blocklist_mode_is_allowlist(mode: &str) -> bool {
+    mode.eq_ignore_ascii_case("allowlist")
 }
 
 /// Read redd-block-data.json and compute (a) the deduped flat domain list,
@@ -274,20 +286,26 @@ pub fn derive_payload(data_path: &std::path::Path) -> (Vec<String>, Vec<BlockInf
     let schedules =
         data.get("schedules").and_then(|v| v.as_array()).cloned().unwrap_or_default();
 
-    // (name, emoji, color, websites_lowercased) for the matching blocklist.
-    let blocklist_meta = |id: &str| -> Option<(Option<String>, Option<String>, Option<String>, Vec<String>)> {
-        blocklists.iter().find(|b| b.get("id").and_then(|v| v.as_str()) == Some(id)).map(|b| {
-            let name = b.get("name").and_then(|v| v.as_str()).map(String::from);
-            let emoji = b.get("emoji").and_then(|v| v.as_str()).map(String::from);
-            let color = b.get("color").and_then(|v| v.as_str()).map(String::from);
-            let websites: Vec<String> = b
-                .get("websites")
-                .and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_lowercase())).collect())
-                .unwrap_or_default();
-            (name, emoji, color, websites)
-        })
-    };
+    // (name, emoji, color, mode, websites_lowercased) for the matching blocklist.
+    let blocklist_meta =
+        |id: &str| -> Option<(Option<String>, Option<String>, Option<String>, String, Vec<String>)> {
+            blocklists.iter().find(|b| b.get("id").and_then(|v| v.as_str()) == Some(id)).map(|b| {
+                let name = b.get("name").and_then(|v| v.as_str()).map(String::from);
+                let emoji = b.get("emoji").and_then(|v| v.as_str()).map(String::from);
+                let color = b.get("color").and_then(|v| v.as_str()).map(String::from);
+                let mode = b
+                    .get("mode")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("blocklist")
+                    .to_string();
+                let websites: Vec<String> = b
+                    .get("websites")
+                    .and_then(|v| v.as_array())
+                    .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_lowercase())).collect())
+                    .unwrap_or_default();
+                (name, emoji, color, mode, websites)
+            })
+        };
 
     let mut domains: std::collections::BTreeSet<String> = Default::default();
     let mut blocks: Vec<BlockInfo> = Vec::new();
@@ -303,15 +321,21 @@ pub fn derive_payload(data_path: &std::path::Path) -> (Vec<String>, Vec<BlockInf
             Some(s) => s,
             None => continue,
         };
-        if let Some((name, emoji, color, websites)) = blocklist_meta(id) {
-            for w in &websites {
-                domains.insert(w.clone());
+        if let Some((name, emoji, color, mode, websites)) = blocklist_meta(id) {
+            // Flat `blocklist` is legacy extension blacklist semantics — only
+            // blocklist-mode domains belong here. Allowlist enforcement reads
+            // `blocks[].mode` + `blocks[].domains` instead.
+            if !blocklist_mode_is_allowlist(&mode) {
+                for w in &websites {
+                    domains.insert(w.clone());
+                }
             }
             blocks.push(BlockInfo {
                 blocklist_id: id.to_string(),
                 name,
                 emoji,
                 color,
+                mode,
                 domains: websites,
                 source: "activeBlock",
                 ends_at: Some(end),
@@ -329,15 +353,18 @@ pub fn derive_payload(data_path: &std::path::Path) -> (Vec<String>, Vec<BlockInf
             Some(s) => s,
             None => continue,
         };
-        if let Some((name, emoji, color, websites)) = blocklist_meta(id) {
-            for w in &websites {
-                domains.insert(w.clone());
+        if let Some((name, emoji, color, mode, websites)) = blocklist_meta(id) {
+            if !blocklist_mode_is_allowlist(&mode) {
+                for w in &websites {
+                    domains.insert(w.clone());
+                }
             }
             blocks.push(BlockInfo {
                 blocklist_id: id.to_string(),
                 name,
                 emoji,
                 color,
+                mode,
                 domains: websites,
                 source: "schedule",
                 ends_at: m.ends_at,
@@ -380,17 +407,24 @@ pub fn derive_blocked_apps(data_path: &std::path::Path) -> Vec<String> {
     let schedules =
         data.get("schedules").and_then(|v| v.as_array()).cloned().unwrap_or_default();
 
-    let blocklist_apps = |id: &str| -> Vec<String> {
-        blocklists
-            .iter()
-            .find(|b| b.get("id").and_then(|v| v.as_str()) == Some(id))
-            .and_then(|b| b.get("apps").and_then(|v| v.as_array()))
-            .map(|a| {
-                a.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            })
-            .unwrap_or_default()
+    let blocklist_apps = |id: &str| -> Option<(String, Vec<String>)> {
+        blocklists.iter().find(|b| b.get("id").and_then(|v| v.as_str()) == Some(id)).map(|b| {
+            let mode = b
+                .get("mode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("blocklist")
+                .to_string();
+            let apps: Vec<String> = b
+                .get("apps")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+            (mode, apps)
+        })
     };
 
     let mut apps: std::collections::BTreeSet<String> = Default::default();
@@ -405,7 +439,13 @@ pub fn derive_blocked_apps(data_path: &std::path::Path) -> Vec<String> {
         let Some(id) = ab.get("blocklistId").and_then(|v| v.as_str()) else {
             continue;
         };
-        for app in blocklist_apps(id) {
+        let Some((mode, block_apps)) = blocklist_apps(id) else {
+            continue;
+        };
+        if blocklist_mode_is_allowlist(&mode) {
+            continue;
+        }
+        for app in block_apps {
             if !crate::app_watcher::is_protected_app_name(&app) {
                 apps.insert(app);
             }
@@ -419,7 +459,105 @@ pub fn derive_blocked_apps(data_path: &std::path::Path) -> Vec<String> {
         let Some(id) = sch.get("blocklistId").and_then(|v| v.as_str()) else {
             continue;
         };
-        for app in blocklist_apps(id) {
+        let Some((mode, block_apps)) = blocklist_apps(id) else {
+            continue;
+        };
+        if blocklist_mode_is_allowlist(&mode) {
+            continue;
+        }
+        for app in block_apps {
+            if !crate::app_watcher::is_protected_app_name(&app) {
+                apps.insert(app);
+            }
+        }
+    }
+
+    apps.into_iter().collect()
+}
+
+/// Effective allowed-app set for allowlist-mode blocks at `now()`.
+/// Mirrors the frontend's `collectManualAllowedApps` /
+/// `collectScheduleAllowedApps` merge.
+pub fn derive_allowed_apps(data_path: &std::path::Path) -> Vec<String> {
+    let raw = match std::fs::read_to_string(data_path) {
+        Ok(s) => s,
+        Err(_) => return vec![],
+    };
+    let data: Value = match serde_json::from_str(&raw) {
+        Ok(v) => v,
+        Err(_) => return vec![],
+    };
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
+    let blocklists =
+        data.get("blocklists").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let active =
+        data.get("activeBlocks").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let schedules =
+        data.get("schedules").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+
+    let blocklist_apps = |id: &str| -> Option<(String, Vec<String>)> {
+        blocklists.iter().find(|b| b.get("id").and_then(|v| v.as_str()) == Some(id)).map(|b| {
+            let mode = b
+                .get("mode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("blocklist")
+                .to_string();
+            let apps: Vec<String> = b
+                .get("apps")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+            (mode, apps)
+        })
+    };
+
+    let mut apps: std::collections::BTreeSet<String> = Default::default();
+
+    for ab in &active {
+        let start = ab.get("startTime").and_then(|v| v.as_u64()).unwrap_or(0);
+        let end = ab.get("endTime").and_then(|v| v.as_u64()).unwrap_or(0);
+        let paused = ab.get("isPaused").and_then(|v| v.as_bool()).unwrap_or(false);
+        if paused || now_ms < start || now_ms >= end {
+            continue;
+        }
+        let Some(id) = ab.get("blocklistId").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some((mode, block_apps)) = blocklist_apps(id) else {
+            continue;
+        };
+        if !blocklist_mode_is_allowlist(&mode) {
+            continue;
+        }
+        for app in block_apps {
+            if !crate::app_watcher::is_protected_app_name(&app) {
+                apps.insert(app);
+            }
+        }
+    }
+
+    for sch in &schedules {
+        if match_schedule_now(sch, now_ms).is_none() {
+            continue;
+        }
+        let Some(id) = sch.get("blocklistId").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some((mode, block_apps)) = blocklist_apps(id) else {
+            continue;
+        };
+        if !blocklist_mode_is_allowlist(&mode) {
+            continue;
+        }
+        for app in block_apps {
             if !crate::app_watcher::is_protected_app_name(&app) {
                 apps.insert(app);
             }

@@ -36,6 +36,9 @@ pub fn set_blocked_apps(
     app: AppHandle,
     apps: Vec<String>,
     newly_added: Vec<String>,
+    allowed_apps: Vec<String>,
+    allowlist_active: bool,
+    allowlist_newly_started: bool,
     state: State<AppWatcherState>,
 ) {
     let mut slot = state.0.lock().expect("app-watcher lock");
@@ -43,7 +46,13 @@ pub fn set_blocked_apps(
         *slot = Some(app_watcher::start(Some(app)));
     }
     if let Some(h) = slot.as_ref() {
-        h.set_apps(apps, newly_added);
+        h.set_policy(
+            apps,
+            newly_added,
+            allowed_apps,
+            allowlist_active,
+            allowlist_newly_started,
+        );
     }
 }
 
@@ -117,13 +126,14 @@ pub fn reconcile_blocking_warning_shell(app: AppHandle) {
 #[cfg(target_os = "ios")]
 pub fn reconcile_blocking_warning_shell(_app: AppHandle) {}
 
-/// Re-read `redd-block-data.json` and push the effective blocked-app
-/// set into the watcher. Mirrors `native_host::derive_blocked_apps`
-/// so app-only schedule segments enforce even when the frontend never
-/// calls `updateBlockedApps` (or only syncs domains).
+/// Re-read `redd-block-data.json` and push the effective blocked/allowed
+/// app sets into the watcher. Mirrors the frontend's `updateBlockedApps`
+/// merge so allowlist enforcement survives periodic syncs and `save_data`.
 pub fn sync_blocked_apps_from_disk(app: &AppHandle) {
     let path = super::canonical_data_path_static();
-    let desired = crate::native_host::derive_blocked_apps(&path);
+    let desired_blocked = crate::native_host::derive_blocked_apps(&path);
+    let desired_allowed = crate::native_host::derive_allowed_apps(&path);
+    let allowlist_active = !desired_allowed.is_empty();
     let state = app.state::<AppWatcherState>();
     let mut slot = match state.0.lock() {
         Ok(s) => s,
@@ -135,13 +145,21 @@ pub fn sync_blocked_apps_from_disk(app: &AppHandle) {
     let Some(handle) = slot.as_ref() else {
         return;
     };
-    let previous: HashSet<String> = handle.current_apps().into_iter().collect();
-    let newly_added: Vec<String> = desired
+    let previous_blocked: HashSet<String> = handle.current_apps().into_iter().collect();
+    let newly_added_blocked: Vec<String> = desired_blocked
         .iter()
-        .filter(|a| !previous.contains(*a))
+        .filter(|a| !previous_blocked.contains(*a))
         .cloned()
         .collect();
-    handle.set_apps(desired, newly_added);
+    // Never raise allowlist block-start warnings from disk sync — the
+    // frontend decides that transition via `allowlistNewlyStarted`.
+    handle.set_policy(
+        desired_blocked,
+        newly_added_blocked,
+        desired_allowed,
+        allowlist_active,
+        false,
+    );
 }
 
 pub fn register(app: &tauri::App) {
