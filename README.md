@@ -1,4 +1,4 @@
-# ReDD Blocker
+# ReDD Blocker: Space for Focus
 
 Block distracting websites and apps with scheduled or one-off blocks and customisable difficulty to override. Stay focused on what matters.
 
