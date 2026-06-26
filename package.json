@@ -1,7 +1,7 @@
 {
   "name": "redd-block",
   "version": "3.5.0",
-  "description": "ReDD Blocker: Block Apps & Sites",
+  "description": "ReDD Blocker: Space for Focus",
   "scripts": {
     "dev": "node ./scripts/ensure-dev-icons.js && tauri dev",
     "icons:generate": "node ./scripts/generate-icons-from-svg.js",
