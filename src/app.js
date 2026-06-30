@@ -3455,9 +3455,7 @@ function syncMigrationPostHeader(state) {
     if (readyBanner) {
         readyBanner.classList.toggle('hidden', !showReadyBanner);
         if (showReadyBanner && readyText) {
-            const count = migrationBrowserKeys(state).length;
-            const key = count === 1 ? 'migrationSetupAllReadyOne' : 'migrationSetupAllReadyMany';
-            readyText.innerHTML = tSettings(key);
+            readyText.innerHTML = tSettings('migrationSetupAllReady');
         }
     }
 
@@ -19231,8 +19229,7 @@ const SETTINGS_TRANSLATIONS = {
         webAutomationBannerBody: 'ReDD Blocker needs permission to control {browsers} to block websites. Enable it under Privacy & Security → Automation, then the block will take effect.',
         migrationDone: 'I\'m all set up',
         migrationSkip: 'Skip for now',
-        migrationSetupAllReadyOne: '<strong>Your browser is ready.</strong> You can finish setup.',
-        migrationSetupAllReadyMany: '<strong>All your browsers are ready.</strong> You can finish setup.',
+        migrationSetupAllReady: '<strong>All detected browsers are configured.</strong> You can finish setup.',
         migrationEnforcementHeadline: 'Browser enforcement',
         migrationEnforcementDescMacAutomation: 'To hold yourself accountable, your <strong>browser is automatically closed</strong> if you turn off Automation during blocking.',
         migrationEnforcementDescMacFirefox: 'To hold yourself accountable, your <strong>browser is automatically closed</strong> if you turn off Automation or disable ReDD Focus during blocking.',
@@ -20004,8 +20001,7 @@ const SETTINGS_TRANSLATIONS = {
         webAutomationBannerBody: 'ReDD Blocker skal have tilladelse til at styre {browsers} for at blokere websteder. Slå det til under Anonymitet & sikkerhed → Automatisering, så træder blokeringen i kraft.',
         migrationDone: 'Jeg er klar',
         migrationSkip: 'Spring over for nu',
-        migrationSetupAllReadyOne: '<strong>Din browser er klar.</strong> Du kan afslutte opsætningen.',
-        migrationSetupAllReadyMany: '<strong>Alle dine browsere er klar.</strong> Du kan afslutte opsætningen.',
+        migrationSetupAllReady: '<strong>Alle fundne browsere er konfigureret.</strong> Du kan afslutte opsætningen.',
         migrationEnforcementHeadline: 'Browser-beskyttelse',
         migrationEnforcementDescMacAutomation: 'For at holde dig ansvarlig bliver din <strong>browser automatisk lukket</strong>, hvis du slår Automatisering fra under blokering.',
         migrationEnforcementDescMacFirefox: 'For at holde dig selv fokuseret bliver din <strong>browser automatisk lukket</strong>, hvis du slår Automatisering fra eller deaktiverer ReDD Focus under blokering.',
