@@ -737,23 +737,9 @@ impl ChromiumBrowser {
     }
 }
 
-fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
-    let running = b.app_present();
-    let installed = b.app_installed();
-    let root = b.root()?;
-    if !installed || !root.exists() {
-        return Some(BrowserStatus {
-            present: running,
-            installed,
-            profiles: vec![],
-            error: None,
-            duplicate_extensions: None,
-            needs_fda_access: false,
-            native_host_ready: false,
-        });
-    }
-
-    // Discover profiles via "Local State" first, dir scan as fallback.
+/// Read Chromium `Local State` (plus a directory scan fallback) to
+/// discover profile folder names and which one was last used.
+fn read_chromium_profile_state(root: &std::path::Path) -> (Vec<String>, Option<String>) {
     let mut profile_names: Vec<String> = vec![];
     let mut last_used: Option<String> = None;
     if let Ok(raw) = std::fs::read_to_string(root.join("Local State")) {
@@ -773,7 +759,7 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
         }
     }
     if profile_names.is_empty() {
-        if let Ok(rd) = std::fs::read_dir(&root) {
+        if let Ok(rd) = std::fs::read_dir(root) {
             for entry in rd.flatten() {
                 if entry.path().is_dir() && entry.path().join("Preferences").exists() {
                     profile_names.push(entry.file_name().to_string_lossy().to_string());
@@ -781,6 +767,57 @@ fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
             }
         }
     }
+    (profile_names, last_used)
+}
+
+/// Default Chromium profile directory name (`Default`, `Profile 1`, …).
+/// Mirrors the `is_default` logic used by the compliance scanner.
+fn chromium_default_profile_directory(root: &std::path::Path) -> Option<String> {
+    let (profile_names, last_used) = read_chromium_profile_state(root);
+    if let Some(ref dir) = last_used {
+        if profile_names.is_empty() || profile_names.iter().any(|n| n == dir) {
+            return Some(dir.clone());
+        }
+    }
+    if profile_names.iter().any(|n| n == "Default") {
+        return Some("Default".into());
+    }
+    profile_names.into_iter().next()
+}
+
+/// `--profile-directory=…` for Chromium browsers so external launches
+/// skip the multi-profile picker. Used by setup/enforcer deep-links.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub fn browser_profile_launch_args(browser: &str) -> Vec<String> {
+    let normalized = browser.trim().to_ascii_lowercase();
+    let root = match normalized.as_str() {
+        "chrome" => ChromiumBrowser::Chrome.root(),
+        "brave" => ChromiumBrowser::Brave.root(),
+        "edge" => ChromiumBrowser::Edge.root(),
+        _ => None,
+    };
+    root.and_then(|root| chromium_default_profile_directory(&root))
+        .map(|dir| vec![format!("--profile-directory={dir}")])
+        .unwrap_or_default()
+}
+
+fn scan_chromium(b: ChromiumBrowser) -> Option<BrowserStatus> {
+    let running = b.app_present();
+    let installed = b.app_installed();
+    let root = b.root()?;
+    if !installed || !root.exists() {
+        return Some(BrowserStatus {
+            present: running,
+            installed,
+            profiles: vec![],
+            error: None,
+            duplicate_extensions: None,
+            needs_fda_access: false,
+            native_host_ready: false,
+        });
+    }
+
+    let (profile_names, last_used) = read_chromium_profile_state(&root);
 
     let mut profiles = vec![];
     for name in profile_names {
@@ -1858,5 +1895,45 @@ mod tests {
         assert_eq!(status.enabled, Some(true));
         assert_eq!(status.private_browsing, Some(true));
         assert_eq!(status.website_access_all, Some(false));
+    }
+
+    #[test]
+    fn chromium_default_profile_prefers_last_used() {
+        let root = std::env::temp_dir().join(format!(
+            "redd_block_chromium_profile_test_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("mkdir");
+        std::fs::write(
+            root.join("Local State"),
+            r#"{"profile":{"last_used":"Profile 2","info_cache":{"Default":{},"Profile 2":{}}}}"#,
+        )
+        .expect("write Local State");
+        assert_eq!(
+            chromium_default_profile_directory(&root).as_deref(),
+            Some("Profile 2")
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn chromium_default_profile_falls_back_to_default_dir() {
+        let root = std::env::temp_dir().join(format!(
+            "redd_block_chromium_profile_test_default_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("mkdir");
+        std::fs::write(
+            root.join("Local State"),
+            r#"{"profile":{"info_cache":{"Default":{},"Profile 1":{}}}}"#,
+        )
+        .expect("write Local State");
+        assert_eq!(
+            chromium_default_profile_directory(&root).as_deref(),
+            Some("Default")
+        );
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
