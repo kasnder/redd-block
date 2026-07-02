@@ -21,6 +21,64 @@ const IOS_APPICON_DIR = path.join(
 // Must match the rounded-rect fill in assets/reddblock-icon.svg. iOS App Store
 // rejects icons with an alpha channel, so we flatten onto this background.
 const IOS_ICON_BG = { r: 247, g: 245, b: 240 };
+// rx on the 1024 SVG background rect (150/1024).
+const ICON_CORNER_RADIUS_RATIO = 150 / 1024;
+
+// Icon sizes needed for various platforms
+const ICON_SIZES = [16, 24, 32, 48, 64, 128, 256, 512, 1024];
+const ICO_SIZES = ICON_SIZES.filter((size) => size <= 256);
+
+function isOutsideRoundedRect(x, y, size, radius) {
+    const cx = x + 0.5;
+    const cy = y + 0.5;
+    const corners = [
+        [radius, radius],
+        [size - radius, radius],
+        [radius, size - radius],
+        [size - radius, size - radius],
+    ];
+
+    for (const [qx, qy] of corners) {
+        const inX = qx === radius ? cx < radius : cx >= size - radius;
+        const inY = qy === radius ? cy < radius : cy >= size - radius;
+        if (!inX || !inY) {
+            continue;
+        }
+        const dx = cx - qx;
+        const dy = cy - qy;
+        if (dx * dx + dy * dy > radius * radius) {
+            return true;
+        }
+    }
+    return false;
+}
+
+async function renderWindowsIcoPng(svgBuffer, size) {
+    const radius = ICON_CORNER_RADIUS_RATIO * size;
+    const { data } = await sharp(svgBuffer)
+        .resize(size, size, { fit: 'contain' })
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+
+    for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+            const i = (y * size + x) * 4;
+            if (isOutsideRoundedRect(x, y, size, radius)) {
+                data[i] = data[i + 1] = data[i + 2] = data[i + 3] = 0;
+                continue;
+            }
+            const alpha = data[i + 3] / 255;
+            data[i] = Math.round(data[i] * alpha);
+            data[i + 1] = Math.round(data[i + 1] * alpha);
+            data[i + 2] = Math.round(data[i + 2] * alpha);
+        }
+    }
+
+    return sharp(data, { raw: { width: size, height: size, channels: 4 } })
+        .png()
+        .toBuffer();
+}
 
 function syncReddBlockIconCopies() {
     if (!fs.existsSync(SVG_PATH)) {
@@ -56,9 +114,6 @@ function syncTauriBundleIcons() {
     fs.copyFileSync(path.join(ICONS_DIR, '128x128.png'), path.join(TAURI_ICONS_DIR, '128x128@2x.png'));
     console.log('✓ Synced src-tauri/icons/');
 }
-
-// Icon sizes needed for various platforms
-const ICON_SIZES = [16, 24, 32, 48, 64, 128, 256, 512, 1024];
 
 async function generatePngIcons() {
     console.log('=== Generating PNG icons from SVG ===');
@@ -121,10 +176,8 @@ async function generatePngIcons() {
 async function generateIco() {
     console.log('\n=== Generating ICO file ===');
 
-    const sourceIcon = path.join(ICONS_DIR, '256x256.png');
-
-    if (!fs.existsSync(sourceIcon)) {
-        console.error('256x256.png not found, cannot generate ICO');
+    if (!fs.existsSync(SVG_PATH)) {
+        console.error('SVG not found, cannot generate ICO');
         return;
     }
 
@@ -132,13 +185,15 @@ async function generateIco() {
         // Use dynamic import for ES module
         const pngToIcoModule = await import('png-to-ico');
         const pngToIco = pngToIcoModule.default;
+        const svgBuffer = fs.readFileSync(SVG_PATH);
 
-        // Use multiple sizes for better quality ICO
-        const iconSizes = [16, 24, 32, 48, 64, 128, 256].map(size =>
-            path.join(ICONS_DIR, `${size}x${size}.png`)
-        ).filter(p => fs.existsSync(p));
+        // Small taskbar sizes lose corner transparency when downscaled; png-to-ico
+        // then renders those pixels as dark wedges on the Windows taskbar.
+        const icoPngBuffers = await Promise.all(
+            ICO_SIZES.map((size) => renderWindowsIcoPng(svgBuffer, size)),
+        );
 
-        const icoBuffer = await pngToIco(iconSizes);
+        const icoBuffer = await pngToIco(icoPngBuffers);
 
         // Write to both locations
         fs.writeFileSync(path.join(ICONS_DIR, 'icon.ico'), icoBuffer);

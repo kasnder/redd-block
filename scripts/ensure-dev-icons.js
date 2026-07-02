@@ -3,14 +3,26 @@ const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
-if (process.platform !== 'darwin') {
-  process.exit(0);
-}
-
 const root = path.join(__dirname, '..');
 const svg = path.join(root, 'assets', 'reddblock-icon.svg');
-const icns = path.join(root, 'src-tauri', 'icons', 'icon.icns');
-const bin = path.join(root, 'src-tauri', 'target', 'debug', 'redd-block');
+const tauriDir = path.join(root, 'src-tauri');
+
+const DEV_ICON = {
+  darwin: {
+    icon: path.join(tauriDir, 'icons', 'icon.icns'),
+    bin: path.join(tauriDir, 'target', 'debug', 'redd-block'),
+    label: 'icon.icns',
+  },
+  win32: {
+    icon: path.join(tauriDir, 'icons', 'icon.ico'),
+    bin: path.join(tauriDir, 'target', 'debug', 'redd-block.exe'),
+    label: 'icon.ico',
+  },
+}[process.platform];
+
+if (!DEV_ICON) {
+  process.exit(0);
+}
 
 if (!fs.existsSync(svg)) {
   console.error(`ensure-dev-icons: missing ${svg}`);
@@ -26,10 +38,8 @@ function getMtime(filePath) {
 }
 
 const svgMtime = getMtime(svg);
-const icnsMtime = getMtime(icns);
-const binMtime = getMtime(bin);
 
-if (!fs.existsSync(icns) || svgMtime > icnsMtime) {
+if (!fs.existsSync(DEV_ICON.icon) || svgMtime > getMtime(DEV_ICON.icon)) {
   console.log('ensure-dev-icons: regenerating icons from SVG…');
   const res = spawnSync('node', [path.join(root, 'scripts', 'generate-icons-from-svg.js')], {
     stdio: 'inherit',
@@ -40,13 +50,11 @@ if (!fs.existsSync(icns) || svgMtime > icnsMtime) {
   }
 }
 
-// Need to update local mtimes in case icns was updated
-const updatedIcnsMtime = getMtime(icns);
-
-if (!fs.existsSync(bin) || updatedIcnsMtime > binMtime) {
-  console.log('ensure-dev-icons: rebuilding debug binary for updated icon.icns…');
+const iconMtime = getMtime(DEV_ICON.icon);
+if (!fs.existsSync(DEV_ICON.bin) || iconMtime > getMtime(DEV_ICON.bin)) {
+  console.log(`ensure-dev-icons: rebuilding debug binary for updated ${DEV_ICON.label}…`);
   const res = spawnSync('cargo', ['build', '-q'], {
-    cwd: path.join(root, 'src-tauri'),
+    cwd: tauriDir,
     stdio: 'inherit',
     shell: true,
   });
