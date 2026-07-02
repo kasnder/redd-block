@@ -732,68 +732,6 @@ pub(crate) fn open_safari_extensions_settings_applescript() -> Result<(), String
     Err("Safari is macOS-only".into())
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-fn browser_app_display_name(browser: &str) -> &'static str {
-    match browser.trim().to_ascii_lowercase().as_str() {
-        "brave" => "Brave Browser",
-        "edge" => "Microsoft Edge",
-        "firefox" => "Firefox",
-        _ => "Google Chrome",
-    }
-}
-
-/// Launch a URL in a specific browser, targeting the default Chromium
-/// profile when we can resolve one from on-disk browser data.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-fn launch_browser_with_url(browser: &str, url: &str) -> Result<(), String> {
-    let normalized = browser.trim().to_ascii_lowercase();
-    let profile_args = profile_scan::browser_profile_launch_args(&normalized);
-
-    #[cfg(target_os = "macos")]
-    {
-        let app_name = browser_app_display_name(&normalized);
-        let is_chromium = matches!(normalized.as_str(), "chrome" | "brave" | "edge");
-        let mut cmd = std::process::Command::new("/usr/bin/open");
-        if is_chromium && !profile_args.is_empty() {
-            // `-na` ensures `--profile-directory` reaches Chrome when
-            // another profile already has a window open.
-            cmd.arg("-na").arg(app_name).arg("--args");
-            for arg in &profile_args {
-                cmd.arg(arg);
-            }
-            cmd.arg(url);
-        } else {
-            cmd.args(["-a", app_name, url]);
-        }
-        let out = cmd
-            .output()
-            .map_err(|e| format!("spawn /usr/bin/open: {e}"))?;
-        if !out.status.success() {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            return Err(format!(
-                "`open` exited with {}: {}",
-                out.status,
-                stderr.trim()
-            ));
-        }
-        Ok(())
-    }
-
-    #[cfg(target_os = "windows")]
-    {
-        let exe = profile_scan::find_browser_exe(&normalized)
-            .ok_or_else(|| format!("Could not find {browser} executable"))?;
-        let mut cmd = std::process::Command::new(&exe);
-        for arg in &profile_args {
-            cmd.arg(arg);
-        }
-        cmd.arg(url);
-        cmd.spawn()
-            .map_err(|e| format!("launch {}: {e}", exe.display()))?;
-        Ok(())
-    }
-}
-
 /// Open the browser's extension-management UI so the user can enable
 /// ReDD Focus or allow it in private/incognito windows.
 #[tauri::command]
@@ -816,9 +754,8 @@ pub fn open_browser_extension_settings(browser: String) -> Result<(), String> {
         ),
     };
 
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     {
-        #[cfg(target_os = "macos")]
         if normalized == "safari" {
             match open_safari_extensions_settings_applescript() {
                 Ok(()) => return Ok(()),
@@ -834,7 +771,40 @@ pub fn open_browser_extension_settings(browser: String) -> Result<(), String> {
             return Ok(());
         }
 
-        launch_browser_with_url(&normalized, &url)
+        let app_name = match normalized.as_str() {
+            "brave" => "Brave Browser",
+            "edge" => "Microsoft Edge",
+            "firefox" => "Firefox",
+            _ => "Google Chrome",
+        };
+        let out = std::process::Command::new("/usr/bin/open")
+            .args(["-a", app_name, &url])
+            .output()
+            .map_err(|e| format!("spawn /usr/bin/open: {e}"))?;
+        if !out.status.success() {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            return Err(format!(
+                "`open -a {app_name}` exited with {}: {}",
+                out.status,
+                stderr.trim()
+            ));
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Reuse the same exe-path lookup that profile_scan uses for
+        // install detection.  Launching the browser directly (instead
+        // of `cmd /c start`) avoids slow PATH searches and ensures
+        // chrome:// URLs aren't mangled by cmd's argument parser.
+        let exe = profile_scan::find_browser_exe(&normalized)
+            .ok_or_else(|| format!("Could not find {browser} executable"))?;
+        std::process::Command::new(&exe)
+            .arg(&url)
+            .spawn()
+            .map_err(|e| format!("launch {}: {e}", exe.display()))?;
+        Ok(())
     }
 
     #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
@@ -870,12 +840,29 @@ pub fn open_url_in_browser(browser: String, url: String) -> Result<(), String> {
             return Ok(());
         }
 
-        launch_browser_with_url(&normalized, &url)
+        let app_name = match normalized.as_str() {
+            "brave" => "Brave Browser",
+            "edge" => "Microsoft Edge",
+            "firefox" => "Firefox",
+            "safari" => "Safari",
+            _ => "Google Chrome",
+        };
+        std::process::Command::new("/usr/bin/open")
+            .args(["-a", app_name, &url])
+            .output()
+            .map_err(|e| format!("open -a {app_name}: {e}"))?;
+        Ok(())
     }
 
     #[cfg(target_os = "windows")]
     {
-        launch_browser_with_url(&normalized, &url)
+        let exe = profile_scan::find_browser_exe(&normalized)
+            .ok_or_else(|| format!("Could not find {browser} executable"))?;
+        std::process::Command::new(&exe)
+            .arg(&url)
+            .spawn()
+            .map_err(|e| format!("launch {}: {e}", exe.display()))?;
+        Ok(())
     }
 
     #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
