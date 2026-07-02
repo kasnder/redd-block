@@ -12,21 +12,24 @@ lists still work.
 
 ## v3.5.0
 
-> **Easier upgrades.** When a new version is available, the update banner shows
-> what's new and lets you reinstall directly from the app.
-
 ### UPDATES
 
-- **What's new?** The update banner loads structured release notes from the
-  changelog with an expandable **What's new?** section.
+- **What's new?** The update banner has an expandable **What's new?** section with
+  grouped release notes for each version.
 - **In-app reinstall.** **Reinstall** downloads the latest installer from GitHub
   with a progress indicator and opens it when ready.
-- **Verified downloads (macOS).** The macOS `.pkg` is checked against the
-  published checksum before it opens.
-- **Installer guidance (macOS).** After download, a prompt reminds you to follow
-  the installer steps; the app reopens when the update finishes.
-- **Banner layout.** Version text, **What's new?**, and **Reinstall** align with
-  **My Focus Spaces** and **Settings** in the main header.
+- **Update banner layout.** Version, **What's new?**, **Reinstall**, and dismiss
+  align with **My Focus Spaces** and **Settings** in the main header.
+
+### ONBOARDING
+
+- **Welcome screen.** Centred icon and copy on the first-run welcome screen.
+- **Ready banner.** Clearer wording and layout when browser setup is complete.
+
+### BRANDING
+
+- **App subtitle.** Installer and store copy now use **ReDD Blocker: Space for
+  Focus**.
 
 ### BY PLATFORM
 
@@ -35,6 +38,21 @@ lists still work.
 - **Browser setup.** Subtitles wrap on narrow widths instead of overflowing.
 - **Extension mode.** Switching to extension blocking skips the setup overlay when
   permissions are already satisfied.
+
+##### macOS
+
+- **Verified downloads.** The macOS `.pkg` is checked against the published
+  checksum before it opens.
+- **Installer guidance.** After download, a prompt reminds you to follow the
+  installer steps; the app reopens when the update finishes.
+
+##### Windows
+
+- **Taskbar icon.** The app icon on the taskbar shows smooth rounded corners on
+  the cream logo, without dark wedges in the corners.
+- **Microsoft Store extension blocking.** Browser extension setup works correctly
+  in the Store build — native-messaging files are written where Chrome and Edge
+  can find them.
 
 - **Version:** 3.5.0 (macOS, Windows, and iOS).
 
