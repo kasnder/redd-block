@@ -40,6 +40,7 @@ import {
     resolveReleaseNotesForVersion,
     renderReleaseNotesHtml,
     releaseNotesHasContent,
+    filterReleaseNotesForPlatform,
 } from './changelog.js';
 // Compatibility layer wrapping Tauri APIs
 const tauriAPI = {
@@ -1503,14 +1504,15 @@ function resetUpdateBannerWhatsNewPanel(whatsNewBtn, notesPanel, notesContent) {
 }
 
 function applyUpdateBannerReleaseNotes(notes, whatsNewBtn, notesPanel, notesContent) {
-    if (!releaseNotesHasContent(notes) || !whatsNewBtn || !notesPanel || !notesContent) {
+    const filtered = filterReleaseNotesForPlatform(notes, getLatestVersionPlatformKey());
+    if (!releaseNotesHasContent(filtered) || !whatsNewBtn || !notesPanel || !notesContent) {
         whatsNewBtn?.classList.add('hidden');
         resetUpdateBannerWhatsNewPanel(whatsNewBtn, notesPanel, notesContent);
         return;
     }
     whatsNewBtn.innerHTML = updateBannerWhatsNewButtonHtml();
     whatsNewBtn.classList.remove('hidden');
-    notesContent.innerHTML = renderReleaseNotesHtml(notes);
+    notesContent.innerHTML = renderReleaseNotesHtml(filtered);
 }
 
 function normalizeReleaseVersion(version) {
