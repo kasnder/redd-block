@@ -12,19 +12,20 @@ lists still work.
 
 ## v3.5.0
 
-### UPDATES
+### UPDATE BANNER
 
-- **What's new?** The update banner has an expandable **What's new?** section with
-  grouped release notes for each version.
-- **In-app reinstall.** **Reinstall** downloads the latest installer from GitHub
-  with a progress indicator and opens it when ready.
-- **Update banner layout.** Version, **What's new?**, **Reinstall**, and dismiss
-  align with **My Focus Spaces** and **Settings** in the main header.
+- **What's new?** The update banner has an expandable section with
+  grouped release notes for the newest version. Only changes relevant to
+  your device are shown.
+- **In-app reinstall.** The 'Reinstall' button downloads the latest installer 
+  from GitHub with a progress indicator and opens it when ready (if compatible
+  with device).
+- **Update banner layout.** Updated layout of all elements in the update banner
+  to align with main content.
 
 ### ONBOARDING
 
-- **Welcome screen.** Centred icon and copy on the first-run welcome screen.
-- **Ready banner.** Clearer wording and layout when browser setup is complete.
+- **Layout improvements.** App icon and onboarding title text is now centered.
 
 ### BRANDING
 
@@ -36,11 +37,11 @@ lists still work.
 #### DESKTOP
 
 - **Browser setup.** Subtitles wrap on narrow widths instead of overflowing.
-- **Extension mode.** Switching to extension blocking skips the setup overlay when
-  permissions are already satisfied.
 
 ##### macOS
 
+- **Extension mode.** Switching a browser to extension blocking in Settings skips
+  the setup overlay when permissions are already satisfied.
 - **Verified downloads.** The macOS `.pkg` is checked against the published
   checksum before it opens.
 - **Installer guidance.** After download, a prompt reminds you to follow the
