@@ -4364,6 +4364,9 @@ function joinBrowserNames(list) {
     if (list.length === 1) return list[0];
     const and = tSettings('andWord');
     if (list.length === 2) return `${list[0]} ${and} ${list[1]}`;
+    if (getSettingsLanguage() === 'zh-CN') {
+        return `${list.slice(0, -1).join('、')} ${and} ${list[list.length - 1]}`;
+    }
     if (getSettingsLanguage() === 'da') {
         return `${list.slice(0, -1).join(', ')} ${and} ${list[list.length - 1]}`;
     }
@@ -16299,7 +16302,7 @@ function getOverrideEstimatedMinutes(type, count, customText) {
 function formatOverrideMaxDifficultyHint(type) {
     const count = getMaxOverrideCharsForType(type);
     const usesWords = usesMobileWordCountForOverrideType(type);
-    const locale = getSettingsLanguage() === 'da' ? 'da-DK' : 'en-US';
+    const locale = tSettings('locale');
     const countStr = count.toLocaleString(locale);
     return tSettingsFmt(
         usesWords ? 'overrideMaxDifficultyHintWords' : 'overrideMaxDifficultyHintChars',
@@ -16324,12 +16327,10 @@ function updateOverridePreview() {
     const previewText = getOverridePreviewText(type, count, customText);
 
     const lang = getSettingsLanguage();
-    const timeVars = lang === 'da'
-        ? { minutes: estimatedMins, unit: estimatedMins === 1 ? 'minut' : 'minutter' }
-        : { minutes: estimatedMins, minuteSuffix: estimatedMins === 1 ? '' : 's' };
     if (timeEstimateEl && type !== 'custom') {
+        const unit = lang === 'da' ? (estimatedMins === 1 ? 'minut' : 'minutter') : '分钟';
         timeEstimateEl.textContent = lang === 'da'
-            ? tSettingsFmt('overrideCountTimeEstimateDa', timeVars)
+            ? tSettingsFmt('overrideCountTimeEstimateDa', { minutes: estimatedMins, unit })
             : tSettingsFmt('overrideCountTimeEstimate', { minutes: estimatedMins });
     }
 
@@ -18828,6 +18829,11 @@ function formatBlockTimeRemainingShort(totalMins) {
     const n = Math.max(0, Math.floor(totalMins));
     const hrs = Math.floor(n / 60);
     const mins = n % 60;
+    if (getSettingsLanguage() === 'zh-CN') {
+        if (hrs > 0 && mins > 0) return `剩余 ${hrs}小时${mins}分钟`;
+        if (hrs > 0) return `剩余 ${hrs}小时`;
+        return `剩余 ${mins}分钟`;
+    }
     if (getSettingsLanguage() === 'da') {
         if (hrs > 0 && mins > 0) return `${hrs}t ${mins}m endnu`;
         if (hrs > 0) return `${hrs}t endnu`;
@@ -20610,11 +20616,762 @@ const SETTINGS_TRANSLATIONS = {
     },
 };
 
+SETTINGS_TRANSLATIONS['zh-CN'] = {
+    // Main shell
+    updateBannerPrefix: '版本',
+    updateBannerSuffix: '可用',
+    updateBannerCurrentFmt: '当前版本：{version}',
+    updateBannerCta: '重新安装',
+    updateBannerDownloading: '正在下载...',
+    updateBannerDownloadingFmt: '正在下载... {percent}%',
+    updateBannerOpeningInstaller: '正在打开安装程序...',
+    updateBannerDownloadFailedTitle: '更新下载失败',
+    updateBannerDownloadFailed: '无法下载更新。请检查网络连接后重试。',
+    updateBannerInstallerOpenedTitle: '安装程序已打开',
+    updateBannerInstallerOpened: '请按安装程序提示操作。更新完成后 ReDD Blocker 会自动重新打开。',
+    updateBannerWhatsNew: '更新内容',
+    mainStartBlockTitle: '进入',
+    modeNow: '立即',
+    modeTimer: '计时',
+    modeSchedule: '日程',
+    selectionPrompt: '选择专注空间',
+    selectionPromptOption: '选择专注空间...',
+    yourBlocklists: '我的专注空间',
+    blocklistCardMenuTitle: '阻止列表选项',
+    blocklistCardDuplicate: '复制',
+    blocklistCardDelete: '删除',
+    blocklistCardEditTooltip: '编辑',
+    blocklistEnteringChip: '正在进入',
+    blocklistScheduleStartsInMinutesFmt: '{n}分钟后开始',
+    blocklistScheduleStartsInHoursFmt: '{n}小时后开始',
+    blocklistScheduleStartsInDaysFmt: '{n}天后开始',
+    blocklistScheduleCompactMinutesFmt: '{n}分钟后',
+    blocklistScheduleCompactHoursFmt: '{n}小时后',
+    blocklistScheduleCompactDaysFmt: '{n}天后',
+    blocklistScheduleFallback: '已计划',
+    deleteBlocklistDeniedActiveBlockFmt: '“{name}”正在阻止中，无法删除。请先停止阻止。',
+    deleteBlocklistDeniedActiveScheduleFmt: '“{name}”的日程正在运行，无法删除。请先停止日程。',
+    scheduleTitle: '每周日程',
+    today: '今天',
+    noActiveBlocks: '没有正在运行的阻止',
+    alwaysOnRowLead: '始终开启',
+    alwaysOnRowTimelineHint: '不在时间线显示',
+    nowBlockingLabel: '正在阻止',
+    nowBlockingUntil: '直到',
+    nowBlockingAlways: '始终',
+    nowBlockingMenuAria: '阻止操作',
+    titleBarNoActiveBlocks: '当前没有正在运行的阻止',
+    titleBarNextScheduleStarts: '{emoji} {name} 将在 {when} 开始',
+    scheduleStartsToday: '今天',
+    scheduleStartsTomorrow: '明天',
+    nowBlockingMenuEdit: '编辑',
+    nowBlockingMenuPause: '暂停',
+    nowBlockingMenuStop: '停止',
+    scheduleFooterHint: '点击任意区块进行编辑',
+    setupBrowsersBannerHeadline: '在浏览器中启用 ReDD Focus',
+    setupBrowsersBannerHeadlineMac: '允许 ReDD Blocker 控制你的浏览器',
+    setupBrowsersBannerCta: '设置浏览器',
+    setupBrowsersBannerDismissTitle: '本次会话中隐藏',
+    bannerTurnOnBrowserProtection: '开启浏览器保护',
+    bannerActionInstallIn: '安装到',
+    bannerActionAutomationIn: '允许自动化控制',
+    bannerActionEnableIn: '启用',
+    bannerActionPrivateBrowsingIn: '允许隐私浏览',
+    bannerActionAllWebsitesIn: '允许访问所有网站',
+    bannerActionSetUpIn: '设置',
+    bannerActionGrantFdaIn: '授予完全磁盘访问权限',
+    andWord: '和',
+
+    // First-run onboarding
+    eulaAgreeAria: '我同意最终用户许可协议和隐私政策',
+    eulaAgreeLineHtml:
+        '我同意 ReDD Project 的 <a href="https://reddfocus.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/eula">最终用户许可协议</a>',
+    eulaNoteHtml:
+        '注意：根据我们的 <a href="https://reddfocus.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/privacy-policy">隐私政策</a>，我们不会收集任何用户数据。',
+    eulaContinueBtn: '继续',
+    eulaContinueBusy: '正在继续...',
+    eulaBackBtn: '返回',
+    eulaAcceptSaveFailedAlert: '无法保存你的同意状态。请重试后继续。',
+    eulaWelcomeIconAlt: 'ReDD Blocker 应用图标',
+    eulaProjectBlurb:
+        '由 Reduce Digital Distraction Project 开发，并与牛津大学和马斯特里赫特大学的研究人员合作。ReDD 是一个非营利项目，致力于创建开源数字专注工具。',
+    welcomeOnboardingTitle: '欢迎使用 ReDD Blocker',
+    welcomeOnboardingSubtitle: '阻止让你分心的应用和网站，\n为平静专注留出空间。',
+    welcomeHowHeading: '开始步骤（我们会一步步引导你）',
+    welcomeStep1TitleAutomationHtml: '允许 {APPLE}自动化',
+    welcomeStep1BodyAutomationHtml:
+        '在 Safari、Chrome、Brave 和 Edge 中，<em>ReDD Blocker</em> 使用自动化来阻止网站。我们会提示你允许访问。',
+    welcomeStep2TitleFirefoxHtml: '在 Firefox 中设置 {LOGO}ReDD Focus',
+    welcomeStep2BodyFirefoxHtml:
+        'Firefox 阻止功能使用我们的 <strong>ReDD Focus</strong> 扩展。我们会引导你从 Firefox 附加组件商店安装。',
+    welcomeStep2TitleHtml: '在浏览器中启用阻止，并允许在隐私/无痕窗口中运行',
+    welcomeStep2BodyHtml:
+        '{LOGO}<strong>ReDD Focus</strong> 扩展负责真正阻止网站。能自动安装的浏览器我们会自动处理，并告诉你需要手动完成的步骤。',
+    welcomeStep3TitleHtml: '开始阻止',
+    welcomeStep3BodyHtml:
+        '选择让你分心的网站和应用，并设置你希望它们不可访问的时间。剩下的交给 <em>ReDD Blocker</em>。',
+    welcomeDemoToggleLabel: '查看 30 秒演示',
+    welcomeDemoVideoCaption: '快速演示：创建阻止列表以及阻止时的体验',
+    welcomeDemoPlayAriaLabel: '播放演示视频',
+    welcomeDemoResumeAriaLabel: '继续播放演示视频',
+    welcomeDemoPauseAriaLabel: '暂停演示视频',
+    welcomeDemoFullscreenEnterAriaLabel: '进入全屏',
+    welcomeDemoFullscreenExitAriaLabel: '退出全屏',
+    welcomeDemoCloseLabel: '关闭',
+    welcomeFooter1Html:
+        '由 <a href="https://reddfocus.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Reduce Digital Distraction Project</a> 开发，这是一个创建开源数字专注工具和培训的非营利项目。与牛津大学和马斯特里赫特大学研究人员合作。',
+    welcomeFooter2Html:
+        '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">在 GitHub 查看源代码</a>。',
+    welcomeOnboardingContinueBtn: '开始使用',
+
+    // Browser setup / migration
+    migrationPreWelcomeTitle: '欢迎使用 ReDD Blocker 2.0',
+    migrationPreSubtitle: '需要完成一次清理才能结束升级。',
+    migrationPreExplainerHtml: 'ReDD Blocker 现在通过浏览器扩展阻止网站，不再使用系统级助手。<br>我们需要：',
+    migrationPreBulletHelper: '停止并移除旧的特权助手',
+    migrationPreBulletHostsHtml: '恢复你的 <code>/etc/hosts</code> 文件（会保留备份）',
+    migrationPreBulletBlocklists: '保留所有现有阻止列表',
+    migrationPreWarnHtml:
+        '你会看到<strong>一次</strong>管理员密码提示。切换期间阻止会短暂停止。清理完成后，ReDD Blocker 会自动为你的浏览器设置 <strong>ReDD Focus</strong> 扩展，你只需允许它在隐私/无痕窗口中运行。',
+    migrationContinue: '继续',
+    migrationPostTitleCleanup: '清理完成',
+    migrationPostSubtitleCleanup: '快完成了，请为你使用的每个浏览器完成 ReDD Focus 设置。',
+    migrationChecklistCleanedOld: '旧版本已清理',
+    migrationChecklistBlocklistsPreserved: '你的阻止列表已保留',
+    migrationChecklistExtLinesHtml: '在浏览器中启用 {LOGO}ReDD Focus<br><span style="font-weight:400;opacity:0.7">并允许它在隐私/无痕窗口中运行</span>',
+    migrationExtTitleMac: '允许 ReDD Blocker 控制你的浏览器',
+    migrationExtSubMac: 'Safari、Chrome 和 Edge 的网站阻止使用 <strong>macOS 自动化</strong>。',
+    migrationExtSubMacFirefox: 'Safari、Chrome 和 Edge 使用 <strong>macOS 自动化</strong>，Firefox 使用 <strong>ReDD Focus 扩展</strong>。',
+    migrationExtStep1Mac:
+        '点击下方每个浏览器的<strong>授予访问权限</strong>，并批准 macOS 权限提示。如果看到<strong>打开自动化设置</strong>，请点击并重新开启 ReDD Blocker。',
+    migrationExtStep2MacFirefox:
+        'Firefox：点击下方<strong>安装</strong>，从附加组件商店添加 {FOCUS}<strong>ReDD Focus</strong>，然后允许它在隐私窗口中运行。',
+    migrationHowtoHeading: '设置',
+    migrationHowtoLi1Html: 'ReDD Blocker 已尝试在你的浏览器中安装 ReDD Focus。如果下方显示未安装，请点击<strong>安装</strong>按钮手动添加。',
+    migrationHowtoLi3Html: '启用后，请<strong>允许它在隐私/无痕标签页中运行</strong>，这样隐私窗口里也能阻止。',
+    migrationBadgeAutomationOn: '已允许',
+    migrationBadgeAutomationOff: '需要权限',
+    migrationBadgeAutomationUnknown: '状态未知',
+    migrationAutomationAwaitingOpenHint: '请打开 {browser}，这样我们才能检查自动化权限。macOS 只有在浏览器运行时才会报告此权限。',
+    migrationAutomationGrantHint: '允许 ReDD Blocker 控制 {browser}，这样阻止运行时它才能关闭分心标签页。',
+    migrationAutomationDeniedHint: '{browser} 权限已关闭。请在“自动化”中重新开启 ReDD Blocker，阻止才能继续工作。',
+    migrationGrantAutomation: '授予 {browser} 访问权限',
+    migrationGrantAutomationOpened: '已打开自动化设置',
+    migrationOpenAutomationSettings: '打开自动化设置',
+    webAutomationBannerHeadline: '允许 ReDD Blocker 控制你的浏览器',
+    webAutomationBannerBody: 'ReDD Blocker 需要控制 {browsers} 才能阻止网站。请在“隐私与安全性 → 自动化”中启用，然后阻止会生效。',
+    migrationDone: '我已设置好',
+    migrationSkip: '暂时跳过',
+    migrationSetupAllReady: '<strong>检测到的浏览器都已配置完成。</strong> 你可以结束设置。',
+    migrationEnforcementHeadline: '浏览器强制保护',
+    migrationEnforcementDescMacAutomation: '为了帮助你守住承诺，如果你在阻止期间关闭自动化，<strong>浏览器会被自动关闭</strong>。',
+    migrationEnforcementDescMacFirefox: '为了帮助你守住承诺，如果你在阻止期间关闭自动化或禁用 ReDD Focus，<strong>浏览器会被自动关闭</strong>。',
+    migrationEnforcementDescExtension: '为了帮助你守住承诺，如果你在阻止期间禁用 ReDD Focus，<strong>浏览器会被自动关闭</strong>。',
+    migrationEnforcementDisableNote: '开启后，只有在没有阻止运行时才能关闭此功能。',
+    migrationApproveAdminPrompt: '请批准管理员提示以继续...',
+    migrationTryAgain: '重试',
+    migrationCleanupNeedAdmin: '需要管理员权限才能完成，阻止列表不会丢失。',
+    migrationCleanupRetryGeneric: '出了点问题。点击重试。',
+    migrationCopied: '已复制',
+    migrationSafariSettingsPath: 'Safari → 设置 → 扩展',
+    migrationPrivateIncognito: '隐私/无痕',
+    migrationPrivateIncognitoChrome: '无痕',
+    migrationPrivateIncognitoEdge: 'InPrivate',
+    migrationPrivateIncognitoBrave: '无痕',
+    migrationPrivateIncognitoFirefox: '隐私窗口',
+    migrationPrivateIncognitoSafari: '隐私浏览',
+    migrationComplianceOk: '已安装并允许在隐私标签页中运行',
+    migrationBadgeNotInstalled: '未安装',
+    migrationBadgeDisabled: '已禁用',
+    migrationBadgeNotPrivate: '未允许隐私标签页',
+    migrationBadgeNoWebsiteAccess: '没有网站访问权限',
+    migrationBadgeDuplicateSafari: '安装了两个副本',
+    migrationStatusDuplicateSafari: '禁用额外副本',
+    migrationSafariDuplicateIntroHtml: '你同时安装了来自 App Store 的 <strong>ReDD Focus: Hide Distractions</strong> 和 ReDD Blocker 内置副本。两者会冲突，请只保留一个。',
+    migrationSafariDuplicateInstructionsHeading: '在 Safari → 设置 → 扩展中',
+    migrationSafariDuplicateStep1Html: '找到 <strong>ReDD Focus: Hide Distractions</strong> 这个 App Store 副本（不是“via ReDD Blocker”），取消勾选 <span class="safari-duplicate-checkbox" role="img" aria-label="未勾选"></span>。',
+    migrationSafariDuplicateStep2Html: '确保 <span class="safari-duplicate-checkbox safari-duplicate-checkbox-checked" role="img" aria-label="已勾选"></span> 已为 <strong>ReDD Focus (via ReDD Blocker)</strong> 勾选。这是本应用控制的版本。',
+    migrationSafariDuplicateOpenBtn: '打开 Safari 扩展...',
+    migrationSafariDuplicateHelpLink: '这是怎么发生的？',
+    migrationSafariDuplicateHelpText: '如果你以前从 App Store 安装过 ReDD Focus，之后又安装 ReDD Blocker，Safari 会保留两个扩展。ReDD Blocker 只能使用内置副本。',
+    migrationStatusAllowAllWebsites: '允许所有网站',
+    migrationStatusAllowPrivate: '允许隐私浏览',
+    migrationStatusEnableExtension: '启用扩展',
+    migrationStatusInstall: '安装',
+    migrationStatusGrantFda: '授予完全磁盘访问权限',
+    migrationStatusNativeHost: '连接 ReDD Blocker',
+    migrationBadgeNativeHost: '连接 ReDD Blocker',
+    migrationFirefoxNativeHostHtml: 'ReDD Focus 已安装。ReDD Blocker 还需要注册与 Firefox 的连接（一个小设置步骤）。',
+    migrationFirefoxNativeHostButton: '连接到 Firefox',
+    migrationInstallButton: '安装',
+    migrationInstallOpened: '已打开扩展商店',
+    migrationInstallStoreTitle: '打开 {browser} 扩展商店页面',
+    migrationUrlCopied: 'URL 已复制',
+    migrationFailed: '失败',
+    migrationOpenSettings: '打开设置',
+    migrationOpened: '已打开',
+    migrationCheckAgain: '重新检查',
+    migrationRefreshSafariTitle: '刷新 Safari 访问状态',
+    migrationDelayDetectionNote: '更改最多可能需要 20 秒才会被检测到。',
+    migrationExtensionInstalledMark: '扩展已安装',
+    migrationSafariStepEnable: '启用扩展',
+    migrationSafariStepPrivate: '允许隐私浏览',
+    migrationSafariStepEveryWebsite: '允许所有网站',
+    migrationSafariChecklistLine: '步骤 {n}：{label}',
+    migrationOpenExtensionSettings: '打开扩展设置',
+    migrationShowMeHow: '显示操作方法',
+    migrationPostInstallFirefoxHtml: 'ReDD Blocker 已为 Firefox 设置自动安装 ReDD Focus。请<strong>重启 Firefox</strong> 以生效。（也可以点击下方<strong>安装</strong>手动添加，并在安装时勾选允许扩展在隐私窗口中运行。）',
+    migrationPostInstallFirefoxMacHtml: '从 Firefox 附加组件商店安装 ReDD Focus。点击下方<strong>安装</strong>，并在安装时勾选允许扩展在隐私窗口中运行。',
+    migrationPostInstallSafariHtml: '从 Mac App Store 安装 ReDD Focus。点击下方<strong>安装</strong>。安装后回到这里，我们会引导你在 Safari 中启用它。',
+    migrationPostInstallChromiumMacHtml: '从 {BROWSER} 商店安装 ReDD Focus。点击下方<strong>安装</strong>。安装后回到这里，我们会引导你启用它，并允许它在 {PRIV} 标签页中运行。',
+    migrationPostInstallChromiumHtml: 'ReDD Blocker 已为 {BROWSER} 设置自动安装 ReDD Focus。请<strong>重启 {BROWSER}</strong> 以生效。（也可以点击下方<strong>安装</strong>手动添加。）',
+    migrationInstructionEnableHtml: '打开扩展设置（复制 {URL_CHIP} 并粘贴到 {BROWSER} 地址栏）→ 找到 <strong>ReDD Focus</strong> → 启用扩展。',
+    migrationInstructionWebsiteAccessHtml: '打开扩展设置（复制 {URL_CHIP} 并粘贴到 {BROWSER} 地址栏）→ 点击 ReDD Focus 的 <strong>Details</strong> → 允许访问<strong>所有网站</strong>。',
+    migrationInstructionFirefoxPrivateHtml: '打开扩展设置（复制 {URL_CHIP} 并粘贴到 {BROWSER} 地址栏）→ 点击 <strong>ReDD Focus</strong> → 开启 <strong>Run in {PRIV}</strong>。',
+    migrationInstructionChromiumPrivateHtml: '打开扩展设置（复制 {URL_CHIP} 并粘贴到 {BROWSER} 地址栏）→ 点击 ReDD Focus 的 <strong>Details</strong> → 开启 <strong>Allow in {PRIV}</strong>。',
+    migrationHintEnableSafariMulti: '在每个 Safari 配置文件的扩展设置中启用 ReDD Focus。{SUFFIX}',
+    migrationHintEnableSafariOne: '在 Safari 扩展设置中启用 ReDD Focus。',
+    migrationHintEnableBrowser: '在 {BROWSER} 扩展设置中启用 ReDD Focus。',
+    migrationHintPrivateSafariMulti: '为每个 Safari 配置文件允许 ReDD Focus 在隐私浏览中运行。{SUFFIX}',
+    migrationHintPrivateSafariOne: '在 Safari 扩展设置中允许 ReDD Focus 在隐私浏览中运行。',
+    migrationHintPrivateBrowser: '在 {BROWSER} 扩展设置中允许 ReDD Focus 在隐私/无痕浏览中运行。',
+    migrationHintWebsitesSafariMulti: '为每个 Safari 配置文件允许 ReDD Focus 访问所有网站。{SUFFIX}',
+    migrationHintWebsitesSafariOne: '在 Safari 扩展设置中允许 ReDD Focus 访问所有网站。',
+    migrationSafariCheckEveryProfile: '请检查所有 Safari 配置文件。',
+    migrationSafariProfilesAffected: '受影响的 Safari 配置文件：',
+    migrationSafariProfilesMore: '，另有 {n} 个',
+    migrationSafariProfileDefaultName: '（默认 Safari 配置文件）',
+    migrationScreenshotCaptionStep: '步骤 {n}：{label}',
+    migrationScreenshotStepOnly: '步骤 {n}',
+    migrationShotChromeStep1: '在 Chrome 扩展设置中打开 ReDD Focus 的详情',
+    migrationShotChromeStep2: '启用 ReDD Focus，并允许它在无痕窗口中运行',
+    migrationShotEdgeStep1: '打开 Edge 扩展设置',
+    migrationShotEdgeStep2: '打开 ReDD Focus 详情，并允许它在 InPrivate 窗口中运行',
+    migrationShotFirefoxStep1: '找到 ReDD Focus',
+    migrationShotFirefoxStep2: '允许在隐私窗口中运行',
+    migrationShotSafariCap1: '先打开 Safari 扩展设置...',
+    migrationShotSafariCap2: '然后：启用 ReDD Focus、允许隐私浏览、允许所有网站',
+    migrationShotAutomationStep1: '系统设置 → 自动化',
+
+    // Enforcement
+    enforcerClosingHeadline: '浏览器保护即将关闭 {browser}',
+    enforcerClosingNowHeadline: '正在关闭 {browser}...',
+    enforcerCountdownRemaining: '剩余',
+    enforcerClosedStatus: '已关闭',
+    enforcerCountdownInstrMissing: 'ReDD Focus 未安装。安装后倒计时会停止。',
+    enforcerCountdownInstrDisabled: 'ReDD Focus 已关闭。启用后倒计时会停止。',
+    enforcerCountdownDelayNote: '（更改最多可能需要 20 秒才会被检测到）',
+    enforcerCountdownInstrPrivate: '隐私窗口中尚未启用阻止。开启隐私/无痕权限后倒计时会停止。',
+    enforcerCountdownInstrWebsiteAccess: 'ReDD Focus 还不能访问所有网站。允许后倒计时会停止。',
+    enforcerCountdownInstrAccess: '需要恢复浏览器权限后才能继续阻止。',
+    enforcerCountdownInstrAutomation: '自动化权限已关闭。重新开启后倒计时会停止。',
+    enforcerCountdownDefault: '{seconds} 秒后关闭 {browser}',
+    enforcerHeadlineMissing: '{browser} 中未安装 ReDD Focus。',
+    enforcerHeadlineDisabled: '{browser} 中的 ReDD Focus 已关闭。',
+    enforcerHeadlinePrivate: '{browser} 的隐私窗口尚未受 ReDD Focus 保护。',
+    enforcerHeadlineWebsiteAccess: '{browser} 中的 ReDD Focus 需要访问所有网站。',
+    enforcerHeadlineAccess: '{browser} 需要额外权限才能继续阻止。',
+    enforcerHeadlineAutomation: '{browser} 的自动化权限已关闭。',
+    enforcerHeadlineDefault: '{browser} 需要设置后才能继续阻止。',
+    enforcerInstrMissing: '请在 {browser} 中安装 ReDD Focus。',
+    enforcerInstrDisabled: '请在 {browser} 扩展设置中启用 ReDD Focus。',
+    enforcerInstrWebsiteAccessPlain: '请允许 ReDD Focus 访问 {browser} 中的所有网站。',
+    enforcerInstrAccessSafari: '请打开 Safari 扩展设置并恢复 ReDD Focus 权限。',
+    enforcerInstrAccessBrowser: '请恢复 {browser} 的扩展权限。',
+    enforcerInstrAutomation: '请在 macOS 自动化设置中重新允许 ReDD Blocker 控制 {browser}。',
+    enforcerInstrDefault: '请完成 {browser} 的 ReDD Focus 设置。',
+    enforcerActionInstall: '安装',
+    enforcerActionOpenExtensions: '打开 {browser} 扩展设置',
+    enforcerActionOpenBrowserSettings: '打开 {browser} 设置',
+    enforcerBrowserFallback: '浏览器',
+    enforcerClosedPrivate: '{browser} 已关闭，因为隐私窗口未受保护。',
+    enforcerClosedDisabled: '{browser} 已关闭，因为 ReDD Focus 被禁用。',
+    enforcerClosedMissing: '{browser} 已关闭，因为未安装 ReDD Focus。',
+    enforcerClosedWebsiteAccess: '{browser} 已关闭，因为 ReDD Focus 没有网站访问权限。',
+    enforcerClosedAccess: '{browser} 已关闭，因为权限被撤销。',
+    enforcerClosedAutomation: '{browser} 已关闭，因为自动化权限被关闭。',
+    enforcerClosedDefault: '{browser} 已关闭，因为阻止设置不完整。',
+    enforcerClosedInstrPrivateChrome: '请在扩展设置中允许 ReDD Focus 在无痕窗口中运行。',
+    enforcerClosedInstrPrivateFirefox: '请在附加组件设置中允许 ReDD Focus 在隐私窗口中运行。',
+    enforcerClosedInstrDisabled: '请在 {browser} 中重新启用 ReDD Focus。',
+    enforcerClosedInstrMissing: '请在 {browser} 中安装 ReDD Focus。',
+    enforcerClosedInstrWebsiteAccess: '请允许 ReDD Focus 访问 {browser} 中的所有网站。',
+    enforcerClosedInstrAccessSafari: '请在 Safari 扩展设置中恢复 ReDD Focus 权限。',
+    enforcerClosedInstrAutomation: '请在 macOS 自动化设置中重新允许 ReDD Blocker。',
+    enforcerClosedInstrMultiple: '请完成下方浏览器设置后再继续。',
+
+    // Scheduler and blocklists
+    scheduleWhenHeading: '此空间打开时',
+    segmentDaysWeekdays: '工作日',
+    segmentDaysWeekends: '周末',
+    segmentDaysEveryDay: '每天',
+    segmentDaysNone: '未选择日期',
+    segmentDone: '完成',
+    segmentDelete: '删除',
+    repeat: '重复每周日程：',
+    repeatNo: '否',
+    repeatForever: '永久',
+    repeatUntilDate: '直到日期',
+    pause: '暂停',
+    startBlockButton: '开始专注空间',
+    startScheduleButton: '开始日程',
+    stopScheduleButton: '停止日程',
+    stopBlockMetaColon: '：',
+    stopScheduleMetaColon: '：',
+    editScheduleButton: '编辑日程：',
+    pendingChangesLabel: '未保存的更改',
+    pendingChangesSave: '保存更改',
+    pendingChangesDiscard: '放弃',
+    saveChangesTitle: '保存更改？',
+    saveChangesTitleFmt: '保存对 {name} 的更改？',
+    addingTheseSegments: '将添加这些时间段：',
+    createBlocklist: '创建专注空间',
+    editBlocklist: '编辑专注空间',
+    activeBlocklistWarning: '此阻止列表正在运行，部分设置已锁定。',
+    name: '名称',
+    websites: '要阻止的网站',
+    websitesTooltip: '阻止会应用于整个域名。例如输入 “facebook.com” 会阻止整个 Facebook，而不是某个页面。',
+    apps: '要阻止的应用',
+    appsTooltip: '请输入应用的准确名称（例如“Safari”）。也可以使用文件夹按钮查找应用。',
+    overrideDifficulty: '停止难度',
+    overrideMethod: '方式',
+    overrideWordsToType: '需要输入的词数',
+    overrideCharsToType: '需要输入的字符数',
+    overrideRandomWords: '随机单词',
+    overrideGibberish: '随机乱码',
+    overrideCustomText: '自定义文本',
+    overrideMaxDifficulty: '最高难度',
+    overrideMaxDifficultyHintWords: '{count} 个词',
+    overrideMaxDifficultyHintChars: '{count} 个字符',
+    overridePreviewLooksLike: '预览',
+    overrideCountTimeEstimate: '约 {minutes} 分钟',
+    overrideCountTimeEstimateDa: '约 {minutes} {unit}',
+    totalCharacters: '总字符数',
+    totalWords: '总词数',
+    color: '颜色',
+    emoji: 'Emoji',
+    advancedOptions: '高级选项',
+    listBlockedOnCard: '在概览中显示被阻止的网站和应用名称',
+    importWebsitesTitle: '导入网站',
+    browseApplicationsTitle: '浏览应用',
+    modalPremadeListsCaption: '列表',
+    modalBrowseAppsCaption: '选择应用',
+    modalBrowseAppsTitleIos: '选择应用（屏幕使用时间）',
+    importWebsitesPickFileTitle: '选择一个每行一个域名的文件',
+    importWebsitesFromFile: '从文本文件...',
+    importWebsitesPreMadeList: '预设列表',
+    importPresetEmail: '邮件',
+    importPresetGambling: '博彩',
+    importPresetNews: '新闻',
+    importPresetPorn: '成人内容',
+    importPresetSearchEngines: '搜索引擎',
+    importPresetShopping: '购物',
+    importPresetSocialMedia: '社交媒体',
+    cancel: '取消',
+    save: '保存',
+
+    // Confirm / pause / override
+    stopFocusSpaceTitle: '停止专注空间？',
+    overrideInstruction: '要提前停止此专注空间，请输入以下内容：',
+    stopBlockSubtitleFmt: '此专注空间仍在运行，还剩 <strong>{remaining}</strong>。',
+    stopBlockSubtitleAlways: '此专注空间会一直运行，直到你停止它。',
+    stopScheduleSubtitle: '此计划专注空间当前正在运行。',
+    stopBlock: '停止专注空间',
+    stopSchedule: '停止日程',
+    pauseFocusSpaceTitle: '暂停专注空间？',
+    pauseBlockSubtitleFmt: '休息一下。此专注空间还剩 <strong>{remaining}</strong>。',
+    pauseBlockSubtitleAlways: '休息一下。请在下方选择暂停多久。',
+    pauseScheduleSubtitle: '阻止会按你选择的时长暂停。',
+    pauseScheduleInactiveSubtitle: '当前没有正在运行的计划阻止。之后的计划阻止会暂停到暂停结束。',
+    pauseInstruction: '要暂停此专注空间，请输入以下内容：',
+    pauseBlock: '暂停专注空间',
+    pauseFor: '暂停时长',
+    restartsAt: '重新开始时间',
+    helperSetupTitle: '需要设置',
+    helperSetupText: '为了在应用关闭时仍能阻止网站，ReDD Blocker 需要安装一个小型后台服务。电脑会要求你输入一次密码，之后阻止会立即开始，不再重复询问。',
+    helperRepairTitle: '需要修复助手',
+    helperRepairText: '助手服务已安装，但当前未运行。ReDD Blocker 需要重新安装或修复它，此阻止才能开始。电脑可能会要求你输入密码。',
+    helperUpdateTitle: '需要更新助手',
+    helperUpdateText: '助手服务已安装，但需要更新后才能开始此阻止。电脑会要求你输入密码来应用更新。',
+    helperOpenSourceLink: 'ReDD Blocker 的开源代码',
+    proceed: '继续',
+    reinstallHelper: '重新安装助手',
+    helperInstalling: '正在安装...',
+    helperUpdating: '正在更新...',
+    helperReinstalling: '正在重新安装...',
+    startThisBlock: '开始专注空间？',
+    startBlockTitleFmt: '开始专注空间“{name}”？',
+    resumeBlockTitleFmt: '继续阻止“{name}”？',
+    startBlockSubtitleFmt: '接下来 <strong>{duration}</strong>，被阻止的网站和应用会保持安静。',
+    startBlockSubtitleAlways: '被阻止的网站和应用会保持安静，直到你离开这个空间。',
+    resumeBlockSubtitle: '从上次暂停处继续此阻止。',
+    startConfirmBlockingLabel: '阻止内容',
+    startConfirmDurationLabel: '时长',
+    startConfirmTimesLabel: '时间',
+    startConfirmRepeatsLabel: '重复',
+    startConfirmDurationLineFmt: '{duration} · <span class="start-confirm-duration-meta">约 {ends} 结束</span>',
+    startConfirmRepeatForever: '每周重复 · 无结束日期',
+    startConfirmRepeatUntilFmt: '每周重复 · 直到 {date}',
+    startConfirmRepeatNone: '仅本周 · 不重复',
+    startBlockHoldHeader: '提前离开需要一点时间，这是刻意设计的。',
+    startScheduleHoldHeader: '提前离开需要一点时间，这是刻意设计的。',
+    saveChangesHoldHeader: '提前离开需要一点时间，这是刻意设计的。',
+    blockedWebsites: '被阻止的网站：',
+    blockedApps: '被阻止的应用：',
+    showAll: '显示全部',
+    confirmDuration: '时长：',
+    confirmOverrideNeed: '要提前停止此阻止，你需要：',
+    startBlock: '开始专注空间',
+    resumeBlock: '继续阻止',
+    resumeThisBlock: '继续此阻止？',
+    alwaysUntilOff: '始终（直到你暂停或退出）',
+    scheduleResumingSegment: '日程（继续当前时间段）',
+    startThisSchedule: '开始此日程？',
+    startScheduleTitleFmt: '开始日程“{name}”？',
+    startScheduleSubtitle: '被阻止的网站和应用会在下方时间段保持安静。',
+    scheduleConfirmOverlayLabel: '开始提醒',
+    scheduleActiveOverlayLabel: '开始提醒：',
+    scheduleConfirmOverlayDefaultTitle: '默认',
+    scheduleConfirmOverlayCustomTitle: '自定义提醒',
+    scheduleConfirmOverlayDefaultDesc: '如果阻止开始时被阻止的应用已打开，则显示此提醒，并列出应用和“开始吧”按钮。',
+    scheduleConfirmOverlayCustomDesc: '你的自定义标题、消息、图片、语音和按钮文案。',
+    scheduleConfirmOverlayDefault: '默认（显示应用和“开始吧”按钮）',
+    scheduleConfirmOverlayCustom: '自定义',
+    scheduleOverlayCustomiseTitleFmt: '自定义“{name}”提醒',
+    scheduleOverlayCustomiseTitleDefault: '自定义提醒',
+    scheduleOverlayCustomiseDefaultTitle: '默认提醒',
+    scheduleOverlaySelectLabel: '选择提醒',
+    scheduleOverlayUnsavedBadge: '未保存',
+    scheduleOverlaySelectNew: '新提醒',
+    scheduleOverlayDiscardConfirmTitle: '放弃未保存更改？',
+    scheduleOverlayDiscardConfirmStrong: '此提醒有未保存的更改。',
+    scheduleOverlayDiscardConfirmBody: '如果现在离开，你的编辑会丢失。',
+    scheduleOverlayDiscardConfirmBtn: '放弃更改',
+    scheduleOverlayKeepEditingBtn: '继续编辑',
+    scheduleOverlayDefaultNotice: '默认开始提醒不可编辑。添加新提醒后可自定义标题、消息、图片或语音。',
+    scheduleOverlayAddNewBtn: '添加新提醒',
+    scheduleOverlayDeleteBtn: '删除提醒',
+    scheduleOverlayDeleteConfirmTitle: '删除提醒？',
+    scheduleOverlayDeleteConfirmStrongFmt: '确定要删除“{name}”吗？',
+    scheduleOverlayDeleteConfirmBody: '使用此开始提醒的日程将改用默认提醒。',
+    scheduleOverlayNameLabel: '名称',
+    scheduleOverlayNamePlaceholder: '例如：早晨提醒',
+    scheduleOverlayNameRequired: '保存前请为此提醒命名。',
+    scheduleOverlayLegacyPresetName: '自定义提醒',
+    scheduleOverlayCustomiseSubtitle: '如果计划阻止即将开始时被阻止的应用已打开，会全屏显示此提醒。',
+    scheduleOverlayHeadingLabel: '标题',
+    scheduleOverlayHeadingPlaceholdersHint: '占位符：{name} 表示阻止列表名称。',
+    scheduleOverlayHeadingPlaceholder: '{name} 即将开始',
+    scheduleOverlayMessageLabel: '消息',
+    scheduleOverlayMessagePlaceholdersHint: '占位符：{apps} 表示被阻止应用；{letsGo} 表示按钮文案。',
+    scheduleOverlayNoBlockedAppsHint: '此阻止列表没有被阻止的应用。只有列出的应用已在日程开始时运行，提醒才会出现。',
+    scheduleOverlayMessagePlaceholderFmt: '{apps}，该收尾了。点击 {letsGo} 后，你有 30 秒保存工作，然后我们会关闭它们。',
+    scheduleOverlayMessagePlaceholderNoApps: '留空可使用关于被阻止应用的默认消息。',
+    scheduleOverlayLetsGoFieldLabel: '“开始吧”按钮',
+    scheduleOverlayImageLabel: '图片',
+    scheduleOverlayImageDefaultStatus: '正在使用阻止列表 Emoji',
+    scheduleOverlayImageCustomStatus: '正在使用你上传的图片',
+    scheduleOverlayImageDropHint: '选择电脑上的图片（PNG、JPG、GIF 或 WebP）。',
+    scheduleOverlayUnsupportedImage: '不支持的图片类型。请使用 PNG、JPG、GIF 或 WebP。',
+    scheduleOverlayVoiceLabel: '语音消息',
+    scheduleOverlayVoiceHelp: '点击“开始吧”按钮后播放一次。',
+    scheduleOverlayChooseImage: '上传',
+    scheduleOverlayRecordVoice: '录音',
+    scheduleOverlayStartingRecording: '正在启动麦克风...',
+    scheduleOverlayStopRecording: '停止录音',
+    scheduleOverlayChooseAudio: '选择文件...',
+    scheduleOverlayPreviewLabel: '预览',
+    scheduleOverlaySaveBtn: '保存提醒',
+    scheduleOverlayCharCountFmt: '{count} / {max}',
+    scheduleOverlaySectionReset: '重置',
+    scheduleOverlayMicUnavailable: '麦克风不可用。请尝试选择音频文件。',
+    scheduleOverlayEmptyRecording: '没有录到音频。请尝试录久一点。',
+    scheduleOverlayCustomiseBtn: '自定义',
+    errorTitle: '错误',
+    repeatLabel: '重复每周日程：',
+    confirmScheduleOverrideNeed: '要停止此阻止日程，你需要：',
+    saveChangesOverrideNeed: '要停止此日程，你需要：',
+    confirmOverrideRandomWordsFmt: '完全按显示内容输入 <strong>{count} {charUnit}</strong>（约 {minutes} 分钟）才能退出。',
+    confirmOverrideRandomWordsIosFmt: '完全按显示内容输入 <strong>{count} 个随机{wordUnit}</strong>（约 {minutes} 分钟）才能退出。',
+    confirmOverrideGibberishLettersFmt: '完全按显示内容输入 <strong>{count} 个随机{charUnit}</strong>（约 {minutes} 分钟）才能退出。',
+    confirmOverrideGibberishWordsFmt: '完全按显示内容输入 <strong>{count} 个随机{wordUnit}</strong>（约 {minutes} 分钟）才能退出。',
+    confirmOverrideGibberishShortFmt: '完全按显示内容输入 <strong>{count} 个随机字符</strong>（约 {minutes} 分钟）才能退出。',
+    confirmOverrideCustomPhraseFmt: '完全按显示内容输入一个 <strong>{count} 字符的短语</strong>（约 {minutes} 分钟）才能退出。',
+    confirmOverrideIntentionSuffix: '这会帮助你坚持自己的意图。',
+    startSchedule: '开始日程',
+    noDaysSelected: '未选择日期',
+    runningSuffix: '（运行中）',
+    overrideAllTitle: '停止所有阻止？',
+    overrideAllWarningStrong: '确定要停止所有正在运行的阻止吗？',
+    overrideAllWarningBody: '这会停止当前所有网站和应用阻止，也会停止未来的计划阻止。',
+    overrideAllInstruction: '要执行此操作，请输入以下内容：',
+    overrideAll: '全部停止',
+    deleteUndoToastFmt: '已删除“{name}”',
+    undo: '撤销',
+
+    // Settings
+    settingsTitle: '设置',
+    settingsDone: '完成',
+    settingsGeneralHeading: '通用',
+    settingsManageHeading: '管理',
+    settingsOverrideAllHint: '立即结束所有正在运行的阻止。',
+    settingsUninstallHint: '你的阻止列表会保留在磁盘上。',
+    yourVersionPrefix: '版本',
+    latestVersionPrefix: '最新版本：',
+    lightDarkMode: '主题',
+    zoomLevel: '缩放级别',
+    language: '语言',
+    themeAuto: '自动',
+    themeLight: '浅色',
+    themeDark: '深色',
+    languageEnglish: '英语',
+    languageDanish: '丹麦语',
+    languageSimplifiedChinese: '简体中文',
+    languagePickerCurrent: '当前语言',
+    languagePickerSwitch: '切换到',
+    overrideAllBlocks: '停止所有阻止（需要挑战）',
+    settingsOverrideAllLabel: '停止所有阻止和日程',
+    settingsOverrideAllBtn: '全部停止',
+    uninstallApp: '卸载 ReDD Blocker',
+    uninstallAppBtn: '卸载...',
+    uninstallDisabledHint: '请先停止正在运行的阻止，然后才能卸载。',
+    uninstallConfirmTitle: '卸载 ReDD Blocker？',
+    uninstallConfirmLeadHtml: 'ReDD Blocker 会被移到废纸篓。你的阻止列表和日程会<strong>保留在磁盘上</strong>，以后重新安装时可以恢复。',
+    uninstallConfirmLeadDeleteHtml: 'ReDD Blocker 会被移到废纸篓。你的阻止列表、日程和设置会从这台 Mac 上<strong>永久删除</strong>。',
+    uninstallDeleteDataLabel: '同时删除我的阻止列表、日程和设置',
+    uninstallFinderWarningHtml: '如果 macOS 询问是否允许 ReDD Blocker 控制 <strong>Finder</strong>，请点击<strong>允许</strong>。应用需要这样把自己移到废纸篓。',
+    uninstallFirefoxCalloutTitle: 'Firefox 中的 ReDD Focus 扩展',
+    uninstallExtFirefoxBadge: '会保留安装',
+    uninstallFirefoxCalloutDetailHtml: '你可以继续用 ReDD Focus 隐藏网站上的分心内容。若要移除，请打开 Firefox 附加组件设置，复制 {URL_CHIP} 并粘贴到地址栏。',
+    uninstallConfirmOk: '卸载',
+    uninstallFailedTitle: '卸载失败',
+    uninstallFailed: '无法完成卸载。',
+    windowsUninstallHint: '设置 → 已安装的应用 → ReDD Blocker',
+    windowsUninstallOpenSettingsBtn: '打开设置',
+    windowsUninstallOpenFailedTitle: '无法打开设置',
+    windowsUninstallOpenFailed: '无法打开 Windows 设置。请手动打开“设置”，进入“应用 → 已安装的应用”，并搜索 ReDD Blocker。',
+    macAutomationIntroBadge: '新变化',
+    macAutomationIntroTitle: 'macOS 上的网站阻止方式有些变化',
+    macAutomationIntroLeadHtml: '为了让阻止更容易设置，大多数浏览器现在使用 <strong>macOS 自动化</strong>，而不是 ReDD Focus 扩展。下面是新的设置方式。',
+    macAutomationIntroAutomationBrowsers: 'Safari、Chrome、Edge 和 Brave',
+    macAutomationIntroAutomationMethod: 'macOS 自动化',
+    macAutomationIntroFirefoxLabel: 'Firefox',
+    macAutomationIntroExtensionMethod: 'ReDD Focus 扩展',
+    macAutomationIntroUnchangedHtml: '<span class="mac-automation-intro-unchanged-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="11" fill="currentColor"></circle><path d="M7 12.5l3 3 7-7" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg></span><span class="mac-automation-intro-unchanged-text">你的<strong>阻止列表和日程不会变化</strong>，无需重新设置。</span>',
+    macAutomationIntroReviewBtn: '检查浏览器设置',
+    macAutomationIntroDismissBtn: '知道了',
+    helperService: '助手服务',
+    helperStatusChecking: '正在检查...',
+    helperStatusActive: '运行中',
+    helperStatusIdle: '空闲',
+    helperStatusInstalledNotReachable: '已安装，但无法访问',
+    helperStatusUpdateAvailable: '有可用更新',
+    helperStatusNotInstalled: '未安装',
+    helperStatusUnknown: '未知',
+    updateHelper: '更新助手',
+    uninstallHelper: '卸载助手',
+    helperRemoving: '正在移除...',
+    helperRemoved: '助手已移除',
+    helperRemovedSuccess: '助手服务已成功移除。',
+    helperRemovedFallback: '由于已安装的助手没有正常响应，已使用备用清理方式移除。',
+    helperRemoveStaleHint: '已安装，但当前未运行。重新安装前可以先移除这个旧助手。',
+    cleanHostsFile: '清理 hosts 文件',
+    helperHint: '移除系统 hosts 文件中的所有 ReDD Blocker 条目。如果所有阻止都已停止但网站仍被阻止，请使用此功能。',
+    close: '关闭',
+    gracePeriodLabel: '宽限时间',
+    gracePeriodHint: '浏览器关闭前重新启用的秒数。',
+    settingsBlockingMethodHeading: '阻止机制',
+    settingsBlockingMethodHint: '选择每个浏览器使用自动化还是扩展。',
+    settingsBlockingMethodChrome: 'Chrome',
+    settingsBlockingMethodBrave: 'Brave',
+    settingsBlockingMethodEdge: 'Edge',
+    settingsBlockingMethodSafari: 'Safari',
+    settingsBlockingMethodAutomation: '自动化',
+    settingsBlockingMethodExtension: '扩展',
+    settingsEnforcementHeading: '浏览器保护',
+    settingsEnforcementRowLabel: '强制关闭浏览器',
+    settingsEnforcementRowHintAutomation: '如果阻止期间自动化被关闭。',
+    settingsEnforcementRowHintFirefox: '如果阻止期间自动化或 ReDD Focus 被关闭。',
+    settingsEnforcementRowHintExtension: '如果阻止期间 ReDD Focus 被关闭。',
+    settingsEnforcementLockedTooltip: '有阻止正在运行时无法关闭。',
+    settingsSetupBtn: '浏览器设置',
+    settingsDiagnosticsLabel: '哪里不工作？',
+    settingsDiagnosticsBtn: '运行诊断',
+    settingsOnboardingBtn: '重新显示入门指引',
+    settingsBlocklistsIoLabel: '阻止列表数据',
+    settingsBlocklistsIoHint: '备份或恢复你的阻止列表。',
+    settingsExportBlocklistsBtn: '导出',
+    settingsImportBlocklistsBtn: '导入',
+    diagnosticsModalTitle: '诊断',
+    diagnosticsRefresh: '刷新',
+    diagnosticsCopyReport: '复制报告',
+    diagnosticsCopied: '已复制',
+    diagnosticsCopyFailed: '复制失败',
+    diagnosticsLoadingBtn: '正在检查...',
+    settingsFeedbackFooterHtml:
+        '有反馈或需要帮助？请联系 <a href="mailto:team@reddfocus.org">team@reddfocus.org</a>。',
+    madeWith: 'Made with',
+    by: 'by',
+    appBlockingLetsGo: '开始吧',
+    appBlockingSnoozeBtn: '稍后提醒',
+    typeHere: '在此输入...',
+    placeholderNameExample: '例如：深度工作',
+    placeholderWebsiteExample: '例如：facebook.com',
+    placeholderAppExample: '例如：Safari',
+    invalidDomainMsg: '请输入有效域名（例如 reddit.com）',
+    nextDay: '天',
+    dayAbbrev: ['周日', '周一', '周二', '周三', '周四', '周五', '周六'],
+    dayAbbrevMon0: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
+    dayLetterMon0: ['一', '二', '三', '四', '五', '六', '日'],
+    locale: 'zh-CN',
+    blocklistDuplicateSuffix: '副本',
+    safariFdaOnboardingTitle: '为 Safari 授予完全磁盘访问权限',
+    safariFdaOnboardingWhyHtml: '通过 ReDD Focus 浏览器扩展在 Safari 中阻止网站时，需要完全磁盘访问权限，才能确认扩展已安装、启用并允许隐私浏览。请打开下方系统设置，然后开启 <strong>ReDD Blocker</strong>（如果列表中没有，请使用 + 添加）。',
+    safariFdaOnboardingGrantBtn: '打开完全磁盘访问权限设置',
+    safariFdaOnboardingAlreadyGrantedBtn: '继续',
+    safariFdaOnboardingAlreadyGrantedWhy: '完全磁盘访问权限已授予。点击下方继续 Safari 设置。',
+    safariFdaOnboardingGrantedStatus: '完全磁盘访问权限已授予。',
+    safariFdaOnboardingWaiting: '正在等待完全磁盘访问权限...授权时请保持此窗口打开。',
+    safariFdaOnboardingOpeningSettings: '正在打开设置...',
+    safariFdaOnboardingHowto: '系统设置 → 隐私与安全性 → 完全磁盘访问权限',
+    safariFdaSetupHintHtml: 'ReDD Blocker 必须读取 Safari 受保护的扩展设置。请为 ReDD Blocker 授予<strong>完全磁盘访问权限</strong>，然后回到这里。',
+    safariFdaSettingsGranted: '完全磁盘访问权限：已授予（可读取 Safari 扩展设置）。',
+    safariFdaSettingsNotGranted: '完全磁盘访问权限：未授予，需要它来验证 Safari 中的 ReDD Focus。',
+    safariFdaSettingsGrantBtn: '授予访问权限',
+    enforcerCountdownInstrDefault: '完成浏览器设置后倒计时会停止。',
+    enforcerCountdownInstrMultiple: '完成下方浏览器设置后倒计时会停止。',
+    enforcerCountdownMissing: '未安装',
+    enforcerCountdownDisabled: '已禁用',
+    enforcerCountdownPrivate: '隐私浏览未启用',
+    enforcerCountdownWebsiteAccess: '没有网站访问权限',
+    enforcerCountdownAccess: '权限缺失',
+    enforcerClosedCombinedMissing: '浏览器已关闭，因为缺少 ReDD Focus。',
+    enforcerClosedCombinedDisabled: '浏览器已关闭，因为 ReDD Focus 被禁用。',
+    enforcerClosedCombinedPrivate: '浏览器已关闭，因为隐私窗口未受保护。',
+    enforcerClosedCombinedWebsiteAccess: '浏览器已关闭，因为 ReDD Focus 无法访问所有网站。',
+    enforcerClosedCombinedAccess: '浏览器已关闭，因为权限被撤销。',
+    enforcerClosedCombinedDefault: '浏览器已关闭，因为阻止设置不完整。',
+    enforcerClosedInstrPrivateGeneric: '请允许 ReDD Focus 在隐私/无痕窗口中运行。',
+    enforcerClosedInstrDefault: '请完成浏览器设置后继续。',
+    enforcerClosedCombinedAutomation: '浏览器已关闭，因为自动化权限被关闭。',
+    enforcerClosedInstrAutomationGeneric: '请在 macOS 自动化设置中重新允许 ReDD Blocker。',
+    settingsEnforcementRowHintMacAutomation: '如果阻止期间自动化被关闭。',
+    settingsEnforcementRowHintMacFirefox: '如果阻止期间自动化或 ReDD Focus 被关闭。',
+    onboardingOpenSourceFootnote: 'ReDD Blocker 是开源项目。',
+    diagnosticsGenerated: '生成时间',
+    diagnosticsGeneratedLocal: '本地时间',
+    diagnosticsAppSection: '应用',
+    diagnosticsOsArch: '系统 / 架构',
+    diagnosticsLeftoverFiles: '残留文件',
+    diagnosticsFullyMigrated: '已完成迁移',
+    diagnosticsWasV1x: '来自 v1.x',
+    diagnosticsStampedVersion: '记录版本',
+    diagnosticsStampedAt: '记录时间',
+    diagnosticsBrowsersSection: '浏览器',
+    diagnosticsBrowsersSectionHintMac: 'macOS 浏览器自动化和扩展状态。',
+    diagnosticsBrowsersSectionHintMacExtension: '浏览器扩展状态。',
+    diagnosticsBrowsersSectionHint: '浏览器扩展状态。',
+    diagnosticsAutomationSection: '自动化',
+    diagnosticsAutomationSectionHint: 'macOS 只会在浏览器运行时报告自动化权限。',
+    diagnosticsThAutomation: '自动化',
+    diagnosticsAutomationGranted: '已授予',
+    diagnosticsAutomationDenied: '已拒绝',
+    diagnosticsAutomationUnknown: '未知',
+    diagnosticsEnforcementSection: '强制保护',
+    diagnosticsMigrationSection: '迁移',
+    diagnosticsGracePeriod: '宽限时间',
+    diagnosticsAutostart: '开机启动',
+    diagnosticsForceClose: '强制关闭',
+    diagnosticsForceCloseEnabled: '已启用',
+    diagnosticsForceCloseDisabled: '已禁用',
+    diagnosticsFullDiskAccess: '完全磁盘访问权限',
+    diagnosticsFdaLiveGranted: '当前已授予',
+    diagnosticsSafariPlistReadable: 'Safari 设置可读',
+    diagnosticsOnboardingMarker: '引导状态',
+    diagnosticsSafariFdaRequired: 'Safari 需要完全磁盘访问权限',
+    diagnosticsFdaGranted: '已授予',
+    diagnosticsFdaNotGranted: '未授予',
+    diagnosticsFdaRevoked: '已撤销',
+    diagnosticsActiveBlocks: '运行中的阻止',
+    diagnosticsRecentLogSection: '最近日志（{n} 条）',
+    diagnosticsCurrentlyBlocking: '当前正在阻止',
+    diagnosticsActiveSources: '活动来源',
+    diagnosticsActiveSourcesNone: '无',
+    diagnosticsDomainsCount: '{n} 个域名',
+    diagnosticsAppsCount: '{n} 个应用',
+    diagnosticsAppDataSection: '应用数据',
+    diagnosticsPath: '路径',
+    diagnosticsWatchdog: '看门狗',
+    diagnosticsMarkerNotSet: '未设置',
+    diagnosticsBrowserReady: '就绪',
+    diagnosticsBrowserNotRunning: '未运行',
+    diagnosticsBrowserNotInstalled: '未安装',
+    diagnosticsAdvancedLog: '高级日志',
+    diagnosticsAdvancedBlocking: '高级阻止',
+    diagnosticsAdvancedAppData: '高级应用数据',
+    diagnosticsThBrowser: '浏览器',
+    diagnosticsThExtInstalled: '扩展已安装',
+    diagnosticsThExtEnabled: '扩展已启用',
+    diagnosticsThExtPrivate: '隐私窗口',
+    diagnosticsYes: '是',
+    diagnosticsNo: '否',
+    exportBlocklistsSaveTitle: '导出阻止列表',
+    exportBlocklistsFailedTitle: '导出失败',
+    exportBlocklistsSuccessTitle: '导出完成',
+    exportBlocklistsEmpty: '没有可导出的阻止列表。',
+    exportBlocklistsSuccessFmt: '已导出 {count} 个阻止列表。',
+    exportBlocklistsFailed: '无法导出阻止列表。',
+    importBlocklistsOpenTitle: '导入阻止列表',
+    importBlocklistsDialogTitle: '导入阻止列表？',
+    importBlocklistsFailedTitle: '导入失败',
+    importBlocklistsSuccessTitle: '导入完成',
+    importBlocklistsInvalidFile: '请选择有效的 ReDD Blocker 阻止列表文件。',
+    importBlocklistsParseFailed: '无法读取此阻止列表文件。',
+    importBlocklistsConfirmFmt: '将导入 {count} 个阻止列表。现有同名列表会保留。',
+    importBlocklistsSuccessFmt: '已导入 {count} 个阻止列表。',
+    importBlocklistsFailed: '无法导入阻止列表。',
+    importBlocklistDefaultName: '导入的阻止列表',
+    gracePeriodLockedHint: '有阻止正在运行时无法更改宽限时间。',
+    appBlockingFallbackBlocklistName: '专注空间',
+    appBlockingUnknownApp: '未知应用',
+    appBlockingBannerAppFallback: '应用',
+    appBlockingWarningHeadingHtml: '保存你的工作',
+    appBlockingWarningSummarySingleHtml: '<strong>{app}</strong> 即将被关闭。',
+    appBlockingWarningSummaryMultiHtml: '<strong>{count}</strong> 个应用即将被关闭。',
+    appBlockingClosedownCountdownHtml: '{apps} 将在 <strong>{seconds}</strong> 秒后关闭。',
+    appBlockingClosedownFinalSingleHtml: '正在关闭 {apps}...',
+    appBlockingClosedownFinalMultiHtml: '正在关闭 {apps}...',
+    appBlockingListMoreFmt: '另有 {count} 个',
+    nothingWord: '无',
+    noItems: '没有项目',
+    noBlocklistsYet: '还没有专注空间',
+    clickHereCreateBlocklist: '点击这里创建一个',
+    cannotBlockDomainPlaceholder: '无法阻止此域名',
+    cannotBlockSelfAppPlaceholder: '不能阻止 ReDD Blocker 自身',
+    durationQuick15m: '15 分钟',
+    durationQuick30m: '30 分钟',
+    durationQuick45m: '45 分钟',
+    durationQuick1Hour: '1 小时',
+    durationQuick2Hours: '2 小时',
+    durationQuickAlways: '始终',
+    alwaysOnMessage: '你会留在这个空间，直到暂停或退出',
+    duration: '时长',
+    durationUnitMin: '分钟',
+    end: '结束',
+    quickSelect: '快速选择',
+    start: '开始',
+    days: '天',
+    add: '添加',
+};
+
 function getSettingsLanguage() {
     const saved = appData.settings?.language;
-    if (saved === 'da' || saved === 'en') return saved;
+    if (SETTINGS_TRANSLATIONS[saved]) return saved;
     try {
-        return navigator.language.toLowerCase().startsWith('da') ? 'da' : 'en';
+        const browserLanguage = navigator.language.toLowerCase();
+        if (browserLanguage.startsWith('zh')) return 'zh-CN';
+        if (browserLanguage.startsWith('da')) return 'da';
+        return 'en';
     } catch (_) {
         return 'en';
     }
@@ -20665,7 +21422,7 @@ function syncIosScheduleDayLabelsViewportMode() {
 
 function tSettings(key) {
     const lang = getSettingsLanguage();
-    return SETTINGS_TRANSLATIONS[lang][key] || SETTINGS_TRANSLATIONS.en[key] || key;
+    return SETTINGS_TRANSLATIONS[lang]?.[key] || SETTINGS_TRANSLATIONS.en[key] || key;
 }
 
 /** Replace `{placeholder}` segments in a translated template string. */
@@ -20680,12 +21437,16 @@ function tSettingsFmt(key, vars = {}) {
 const LANGUAGE_FLAG_SVG = {
     en: '<svg class="language-flag-svg" viewBox="0 0 60 40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="#012169" d="M0 0h60v40H0z"/><path stroke="#FFF" stroke-width="8" d="M0 0l60 40M60 0L0 40"/><path stroke="#C8102E" stroke-width="5" d="M0 0l60 40M60 0L0 40"/><path stroke="#FFF" stroke-width="12" d="M30 0v40M0 20h60"/><path stroke="#C8102E" stroke-width="7" d="M30 0v40M0 20h60"/></svg>',
     da: '<svg class="language-flag-svg" viewBox="0 0 37 28" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect width="37" height="28" fill="#C8102E" rx="2"/><rect x="13" y="0" width="4" height="28" fill="#fff"/><rect x="0" y="12" width="37" height="4" fill="#fff"/></svg>',
+    'zh-CN': '<svg class="language-flag-svg" viewBox="0 0 60 40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect width="60" height="40" fill="#DE2910"/><polygon points="10,5 11.76,10.43 17.47,10.43 12.85,13.78 14.61,19.2 10,15.85 5.39,19.2 7.15,13.78 2.53,10.43 8.24,10.43" fill="#FFDE00"/><polygon points="22,4 23.06,6.2 25.49,6.53 23.73,8.23 24.16,10.64 22,9.5 19.84,10.64 20.27,8.23 18.51,6.53 20.94,6.2" fill="#FFDE00"/><polygon points="28,10 29.06,12.2 31.49,12.53 29.73,14.23 30.16,16.64 28,15.5 25.84,16.64 26.27,14.23 24.51,12.53 26.94,12.2" fill="#FFDE00"/><polygon points="28,19 29.06,21.2 31.49,21.53 29.73,23.23 30.16,25.64 28,24.5 25.84,25.64 26.27,23.23 24.51,21.53 26.94,21.2" fill="#FFDE00"/><polygon points="22,26 23.06,28.2 25.49,28.53 23.73,30.23 24.16,32.64 22,31.5 19.84,32.64 20.27,30.23 18.51,28.53 20.94,28.2" fill="#FFDE00"/></svg>',
 };
 
 const LANGUAGE_NATIVE_LABELS = {
     en: 'English',
     da: 'Dansk',
+    'zh-CN': '简体中文',
 };
+
+const SUPPORTED_LANGUAGE_CODES = ['en', 'da', 'zh-CN'];
 
 function languageNativeLabel(code) {
     return LANGUAGE_NATIVE_LABELS[code] || LANGUAGE_NATIVE_LABELS.en;
@@ -20702,11 +21463,9 @@ function languagePickerElements(rootId) {
         triggerCode: document.getElementById(`${rootId}-trigger-code`),
         currentName: document.getElementById(`${rootId}-current-name`),
         currentFlag: document.getElementById(`${rootId}-current-flag`),
-        switchName: document.getElementById(`${rootId}-switch-name`),
-        switchFlag: document.getElementById(`${rootId}-switch-flag`),
+        options: document.getElementById(`${rootId}-options`),
         curLabel: document.getElementById(`${rootId}-current-label`),
         swLabel: document.getElementById(`${rootId}-switch-label`),
-        switchBtn: document.getElementById(`${rootId}-switch-btn`),
     };
 }
 
@@ -20749,7 +21508,6 @@ function setLanguagePickerOpen(open, rootId) {
 
 function syncLanguagePickerUIForRoot(rootId) {
     const lang = getSettingsLanguage();
-    const other = lang === 'da' ? 'en' : 'da';
     const {
         picker,
         trigger,
@@ -20757,8 +21515,7 @@ function syncLanguagePickerUIForRoot(rootId) {
         triggerCode,
         currentName,
         currentFlag,
-        switchName,
-        switchFlag,
+        options,
         curLabel,
         swLabel,
     } = languagePickerElements(rootId);
@@ -20769,15 +21526,28 @@ function syncLanguagePickerUIForRoot(rootId) {
     }
     if (triggerFlag) triggerFlag.innerHTML = LANGUAGE_FLAG_SVG[lang] || '';
     if (currentFlag) currentFlag.innerHTML = LANGUAGE_FLAG_SVG[lang] || '';
-    if (switchFlag) switchFlag.innerHTML = LANGUAGE_FLAG_SVG[other] || '';
 
     const curLabelText = languageNativeLabel(lang);
-    const othLabelText = languageNativeLabel(other);
     if (currentName) currentName.textContent = curLabelText;
-    if (switchName) switchName.textContent = othLabelText;
     if (curLabel) curLabel.textContent = tSettings('languagePickerCurrent');
     if (swLabel) swLabel.textContent = tSettings('languagePickerSwitch');
     if (trigger) trigger.setAttribute('aria-label', tSettings('language'));
+    if (options) {
+        options.innerHTML = '';
+        for (const code of SUPPORTED_LANGUAGE_CODES) {
+            if (code === lang) continue;
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'language-picker-option language-picker-option--switch';
+            button.setAttribute('role', 'option');
+            button.dataset.languageCode = code;
+            button.innerHTML = `
+                <span class="language-picker-flag-wrap" aria-hidden="true">${LANGUAGE_FLAG_SVG[code] || ''}</span>
+                <span class="language-picker-name">${languageNativeLabel(code)}</span>
+            `;
+            options.appendChild(button);
+        }
+    }
 }
 
 function syncLanguagePickerUI() {
@@ -20786,9 +21556,8 @@ function syncLanguagePickerUI() {
     }
 }
 
-function switchLanguageSetting() {
-    const cur = getSettingsLanguage();
-    const next = cur === 'da' ? 'en' : 'da';
+function switchLanguageSetting(next) {
+    if (!SUPPORTED_LANGUAGE_CODES.includes(next)) return;
     if (!appData.settings) appData.settings = {};
     appData.settings.language = next;
     applySettingsLanguage();
@@ -20800,8 +21569,8 @@ function switchLanguageSetting() {
 let languagePickerDocClickBound = false;
 
 function setupLanguagePickerForRoot(rootId) {
-    const { picker, trigger, dropdown, switchBtn } = languagePickerElements(rootId);
-    if (!picker || !trigger || !dropdown || !switchBtn) return;
+    const { picker, trigger, dropdown, options } = languagePickerElements(rootId);
+    if (!picker || !trigger || !dropdown || !options) return;
     if (picker.dataset.bound === '1') return;
     picker.dataset.bound = '1';
 
@@ -20814,10 +21583,12 @@ function setupLanguagePickerForRoot(rootId) {
 
     dropdown.addEventListener('click', (e) => e.stopPropagation());
 
-    switchBtn.addEventListener('click', (e) => {
+    options.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-language-code]');
+        if (!btn) return;
         e.preventDefault();
         e.stopPropagation();
-        switchLanguageSetting();
+        switchLanguageSetting(btn.dataset.languageCode);
     });
 }
 
@@ -20841,12 +21612,15 @@ function setupLanguagePicker() {
 /** Confirmation modals — describe typing challenge count + time estimate */
 function formatConfirmModalOverrideTypingLine({ type, count, estimatedMinutes, resumeShortGibberish = false }) {
     const minutes = estimatedMinutes;
+    const lang = getSettingsLanguage();
     const charUnitDa = 'tegn';
     const charUnitEn = count === 1 ? 'character' : 'characters';
-    const charUnit = getSettingsLanguage() === 'da' ? charUnitDa : charUnitEn;
+    const charUnitZh = '字符';
+    const charUnit = lang === 'zh-CN' ? charUnitZh : (lang === 'da' ? charUnitDa : charUnitEn);
     const wordUnitDa = count === 1 ? 'ord' : 'ord';
     const wordUnitEn = count === 1 ? 'word' : 'words';
-    const wordUnit = getSettingsLanguage() === 'da' ? wordUnitDa : wordUnitEn;
+    const wordUnitZh = '词';
+    const wordUnit = lang === 'zh-CN' ? wordUnitZh : (lang === 'da' ? wordUnitDa : wordUnitEn);
 
     if (type === 'custom') {
         return tSettingsFmt('confirmOverrideCustomPhraseFmt', { count, minutes });
@@ -21245,6 +22019,9 @@ function initWelcomeDemoControls() {
 }
 
 function websiteWord(count) {
+    if (getSettingsLanguage() === 'zh-CN') {
+        return '网站';
+    }
     if (getSettingsLanguage() === 'da') {
         return count === 1 ? 'hjemmeside' : 'hjemmesider';
     }
@@ -21252,6 +22029,9 @@ function websiteWord(count) {
 }
 
 function siteWord(count) {
+    if (getSettingsLanguage() === 'zh-CN') {
+        return '网站';
+    }
     if (getSettingsLanguage() === 'da') {
         return count === 1 ? 'websted' : 'websteder';
     }
