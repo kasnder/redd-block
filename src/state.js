@@ -33,4 +33,5 @@ export const state = {
     /** When character count >= OVERRIDE_PREVIEW_TRUNCATE_AT, preview text is frozen (no more regeneration) for random words and gibberish. */
     overridePreviewFrozenByType: { 'random-words': null, 'gibberish': null },
     lastOverridePreviewType: null,
+    installedAppsCache: null, // Cache the installed-apps list so we don't re-scan every open
 };

@@ -4,6 +4,7 @@ import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { resolveMicrosoftStorePackage, isVersionHigher, getLatestVersionPlatformKey } from './update-banner.js';
+import { updateOverrideAllButtonVisibility, refreshUninstallButtonState } from './settings.js';
 import {
     saveData,
     stopHelperUiRefreshLoop,
@@ -12,13 +13,11 @@ import {
     applyFormattedCurrentVersion,
     wireEnforcementToggle,
     wireBlockingMethodSettings,
-    updateOverrideAllButtonVisibility,
     syncPauseDurationRowLayout,
     syncMobileScheduleDayLabelsViewportMode,
     syncAllStopBtnLabelFits,
     setupLanguagePicker,
     resetSettingsEnforcementSection,
-    refreshUninstallButtonState,
     applyEnforcementDescCopy,
     applyFormattedLatestVersion,
     lastMigrationBrowserState,
