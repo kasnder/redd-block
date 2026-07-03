@@ -12005,18 +12005,11 @@ async function removeScheduleOverlayAsset(relativePath) {
 }
 
 async function acquireScheduleOverlayMicStream() {
-    // A voice memo has no simultaneous playback to cancel, so skip the
-    // voice-processing chain. On macOS the echo-cancellation unit also hooks
-    // the *output* device, and its teardown after recording can audibly cut
-    // out the first playback; without it the output path is left untouched.
-    // (Bare constraint values are "ideal" — unsupported ones are ignored.)
-    return navigator.mediaDevices.getUserMedia({
-        audio: {
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false,
-        },
-    });
+    // Default constraints on purpose: disabling autoGainControl leaves the
+    // raw hardware input gain, which records far too quietly on many Macs.
+    // The voice-processing teardown that could glitch the first playback is
+    // mitigated by releasing the mic immediately in the recorder's onstop.
+    return navigator.mediaDevices.getUserMedia({ audio: true });
 }
 
 function setScheduleOverlayRecordingUi(state) {
