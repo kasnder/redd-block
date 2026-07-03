@@ -30,4 +30,7 @@ export const state = {
     isMicrosoftStorePackage: null,
     screentimeAuthorized: false, // Track if Screen Time is authorized (iOS)
     androidPermissionsGranted: false, // Track if Accessibility is granted (Android)
+    /** When character count >= OVERRIDE_PREVIEW_TRUNCATE_AT, preview text is frozen (no more regeneration) for random words and gibberish. */
+    overridePreviewFrozenByType: { 'random-words': null, 'gibberish': null },
+    lastOverridePreviewType: null,
 };

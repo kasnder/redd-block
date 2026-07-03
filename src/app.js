@@ -67,6 +67,10 @@ import {
     normalizeBlocklist,
     collectActiveIOSManualBlockPayload,
 } from './blocklist-utils.js';
+import { setupTheme, setupUiZoomShortcuts, scheduleUiZoomResponsiveLayout, scheduleSelectionPromptLayout, getEffectiveViewportWidth, bindUiZoomLayoutObserver } from './theme.js';
+import { checkForAppUpdate, getLatestVersionPlatformKey, isVersionHigher, resolveMicrosoftStorePackage, updateBannerWhatsNewButtonHtml } from './update-banner.js';
+import { updateDownloadInProgress } from './update-banner.js';
+import { getWordList5, getIOSRandomWordsCharCount, generateRandomWordsByCount, generateRandomWords, generateOverrideChallengeText, generateGibberish, normalizeOverrideCount, normalizeCustomOverrideText, getTypingCharsPerMinuteForType, getMaxOverrideCharsForType, getOverrideGeneratedCharCount, getDifficultyTypingCharCount, getOverridePreviewText, getOverrideEstimatedMinutes, formatOverrideMaxDifficultyHint, usesMobileWordCountForOverrideType, isMobileOverrideChallengePlatform, formatIOSGibberishChallenge, MIN_OVERRIDE_CHARS, DEFAULT_OVERRIDE_COUNT, TARGET_MAX_OVERRIDE_MINUTES, MAX_IOS_OVERRIDE_WORD_COUNT, IOS_OVERRIDE_WORDS_PER_MINUTE, OVERRIDE_PREVIEW_TRUNCATE_AT } from './override-challenge.js';
 import { escapeHtml, cleanUrlForDisplay, parseRgbFromColorString, rgbToHex, rgbToHsl, hslToRgb, getRelativeLuminance, getEnteringChipColor, getContrastTextColor } from './utils.js';
 import { SETTINGS_TRANSLATIONS, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List, tSettings, tSettingsFmt, LANGUAGE_FLAG_SVG, LANGUAGE_NATIVE_LABELS, languageNativeLabel } from './i18n.js';
 /** Windows Settings → Apps → Installed apps (Apps & features). */
@@ -115,43 +119,15 @@ let pauseMaxMinutes = null; // Maximum pause duration in minutes (null = unlimit
 let pauseScheduleData = null; // Track schedule-specific pause data { blocklistId, segmentEndTime }
 let overrideWordChallengeState = null;
 let pauseWordChallengeState = null;
-const MIN_OVERRIDE_CHARS = 5;
-const DEFAULT_OVERRIDE_COUNT = 10;
-const TARGET_MAX_OVERRIDE_MINUTES = 30;
-/** iOS random-words / gibberish: max word count (random-words: 2500 letters at max; gibberish: 3000). */
-const MAX_IOS_OVERRIDE_WORD_COUNT = 500;
-/** iOS word-count override UI: ~30 min at max (500 words). */
-const IOS_OVERRIDE_WORDS_PER_MINUTE = MAX_IOS_OVERRIDE_WORD_COUNT / TARGET_MAX_OVERRIDE_MINUTES;
-/** When character count >= this, preview text is frozen (no more regeneration) for random words and gibberish. */
-const OVERRIDE_PREVIEW_TRUNCATE_AT = 50;
 /** Max length for blocklist display name (add/edit modal + persisted saves). */
 const BLOCKLIST_NAME_MAX_LENGTH = 60;
 /** Past this length the card title row usually ellipsizes; use "in 11h" instead of "starts in 11h". */
 const BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS = 26;
 /** Collapse stop-button emoji+name this many px before measured overflow (iOS flex overlap). */
 const IOS_STOP_BTN_META_COLLAPSE_SLACK_PX = 24;
-let overridePreviewFrozenByType = { 'random-words': null, 'gibberish': null };
-let lastOverridePreviewType = null;
-const UI_ZOOM_MIN = 0.8;
-const UI_ZOOM_MAX = 1.8;
-const UI_ZOOM_MAX_DESKTOP = 1.5;  // cap on macOS/Windows (native webview zoom)
-const UI_ZOOM_MAX_IOS = 1.4;  // cap on iOS (CSS zoom on phone; transform scale on iPad)
-/** Layout breakpoints — CSS `zoom` does not affect @media / @container; tiers use effective width. */
-const UI_ZOOM_LAYOUT_STACK_MAX = 768;
-const UI_ZOOM_LAYOUT_CRAMPED_MAX = 1024;
-const UI_ZOOM_LAYOUT_NARROW_MAX = 800;
-const SCHED_TABS_ICON_ONLY_EXIT_WIDTH_DELTA = 8;
-let uiZoomLayoutRaf = 0;
-let selectionPromptLayoutRaf = 0;
-let uiZoomLayoutObserverBound = false;
-let schedTabsIconOnlyEnteredAtWidth = 0;
-const UI_ZOOM_STEP = 0.1;
-const DEFAULT_UI_ZOOM = 1.0;
 const TIME_SEPARATOR_ARROW_HTML = '<span class="time-separator" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg></span>';
 const SEGMENT_SUMMARY_CLOCK_ICON = '<svg class="segment-summary-clock" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>';
 const SEGMENT_SUMMARY_CHEVRON_ICON = '<svg class="segment-summary-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>';
-let zoomToastHideTimeout = null;
-let nativeWebviewZoomSupported = null;
 
 // Pre-made website lists offered by the Edit Blocklist "Import" menu. Each
 // list is intentionally small/curated — a starting point users can prune or
@@ -921,7 +897,7 @@ function closeEscapeDialog() {
     return true;
 }
 
-function stopHelperUiRefreshLoop() {
+export function stopHelperUiRefreshLoop() {
     if (helperUiRefreshTimer != null) {
         clearInterval(helperUiRefreshTimer);
         helperUiRefreshTimer = null;
@@ -961,17 +937,6 @@ let activeScheduleSegmentCount = 0; // Number of segments locked in the active s
 let hasShownIOSScheduleSyncError = false;
 const CURRENT_EULA_REVISION = 1;
 let forceShowEulaThisSession = false;
-// Word list for random word challenges
-const wordList = [
-    // 1-2 chars
-    'a', 'ad', 'am', 'an', 'as', 'at', 'be', 'by', 'do', 'go', 'he', 'hi', 'if', 'in', 'is', 'it', 'me', 'my', 'no', 'of', 'on', 'or', 'so', 'to', 'up', 'us', 'we',
-    // 3 chars
-    'act', 'add', 'age', 'aim', 'air', 'all', 'and', 'any', 'art', 'ask', 'bad', 'bag', 'bar', 'bat', 'bed', 'bee', 'big', 'bit', 'box', 'boy', 'bus', 'but', 'buy', 'can', 'car', 'cat', 'day', 'die', 'dog', 'dry', 'due', 'eat', 'egg', 'end', 'eye', 'far', 'few', 'fit', 'fly', 'for', 'fun', 'get', 'god', 'got', 'guy', 'hot', 'how', 'ice', 'ill', 'ink', 'job', 'joy', 'key', 'kid', 'law', 'lay', 'leg', 'let', 'lie', 'log', 'lot', 'low', 'man', 'map', 'may', 'men', 'mix', 'net', 'new', 'nod', 'nor', 'not', 'now', 'num', 'off', 'oil', 'old', 'one', 'out', 'own', 'pay', 'pen', 'per', 'pet', 'pie', 'pig', 'pin', 'pot', 'put', 'ran', 'raw', 'red', 'row', 'run', 'sad', 'say', 'sea', 'see', 'set', 'she', 'sin', 'sit', 'six', 'sky', 'son', 'sun', 'tap', 'tax', 'tea', 'ten', 'the', 'tie', 'tip', 'toe', 'too', 'top', 'toy', 'try', 'two', 'use', 'van', 'war', 'way', 'who', 'why', 'win', 'yes', 'yet', 'you',
-    // 4 chars
-    'also', 'able', 'acid', 'aged', 'away', 'baby', 'back', 'ball', 'bank', 'base', 'bath', 'bear', 'beat', 'beer', 'bell', 'belt', 'best', 'bill', 'bird', 'blow', 'blue', 'boat', 'body', 'bomb', 'bond', 'bone', 'book', 'boom', 'born', 'boss', 'both', 'bowl', 'burn', 'busy', 'call', 'calm', 'came', 'camp', 'card', 'care', 'case', 'cash', 'cast', 'cell', 'chat', 'chip', 'city', 'club', 'coal', 'coat', 'code', 'cold', 'come', 'cook', 'cool', 'cope', 'core', 'cost', 'crew', 'crop', 'dark', 'date', 'dead', 'deal', 'dean', 'dear', 'debt', 'deep', 'deny', 'desk', 'dial', 'diet', 'disc', 'disk', 'does', 'done', 'door', 'dose', 'down', 'draw', 'drew', 'drop', 'drug', 'dual', 'duke', 'dust', 'duty', 'each', 'earn', 'ease', 'east', 'easy', 'edge', 'edit', 'else', 'even', 'ever', 'evil', 'exit', 'face', 'fact', 'fail', 'fair', 'fall', 'farm', 'fast', 'fate', 'fear', 'feed', 'feel', 'feet', 'fell', 'felt', 'file', 'fill', 'film', 'find', 'fine', 'fire', 'firm', 'fish', 'five', 'flat', 'fled', 'flew', 'flow', 'food', 'foot', 'ford', 'form', 'fort', 'four', 'free', 'from', 'fuel', 'full', 'fund', 'gain', 'game', 'gate', 'gave', 'gear', 'gene', 'gift', 'girl', 'give', 'glad', 'goal', 'goes', 'gold', 'golf', 'gone', 'good', 'gray', 'grew', 'grey', 'grow', 'hair', 'half', 'hall', 'hand', 'hang', 'hard', 'harm', 'hate', 'have', 'head', 'hear', 'heat', 'held', 'hell', 'help', 'here', 'hero', 'high', 'hill', 'hire', 'hold', 'hole', 'holy', 'home', 'hope', 'host', 'hour', 'huge', 'hung', 'hunt', 'hurt', 'idea', 'inch', 'into', 'iron', 'item', 'join', 'joke', 'jump', 'jury', 'just', 'keep', 'kept', 'kick', 'kill', 'kind', 'king', 'knee', 'knew', 'know', 'lack', 'lady', 'laid', 'lake', 'land', 'lane', 'last', 'late', 'lead', 'left', 'less', 'life', 'lift', 'like', 'line', 'link', 'list', 'live', 'load', 'loan', 'lock', 'logo', 'long', 'look', 'lord', 'lose', 'loss', 'lost', 'love', 'luck', 'made', 'mail', 'main', 'make', 'male', 'many', 'mark', 'mass', 'mate', 'math', 'meal', 'mean', 'meat', 'meet', 'menu', 'mere', 'mile', 'milk', 'mill', 'mind', 'mine', 'miss', 'mode', 'mood', 'moon', 'more', 'most', 'move', 'much', 'must', 'name', 'navy', 'near', 'neck', 'need', 'news', 'next', 'nice', 'nick', 'nine', 'none', 'nose', 'note', 'okay', 'once', 'only', 'onto', 'open', 'oral', 'over', 'pace', 'pack', 'page', 'paid', 'pain', 'pair', 'palm', 'park', 'part', 'pass', 'past', 'path', 'peak', 'pick', 'pile', 'pink', 'pipe', 'plan', 'play', 'plot', 'plug', 'plus', 'poll', 'pool', 'poor', 'port', 'post', 'pull', 'pure', 'push', 'race', 'rail', 'rain', 'rank', 'rare', 'rate', 'read', 'real', 'rear', 'rely', 'rent', 'rest', 'rice', 'rich', 'ride', 'ring', 'rise', 'risk', 'road', 'rock', 'role', 'roll', 'roof', 'room', 'root', 'rose', 'rule', 'rush', 'safe', 'said', 'sake', 'sale', 'salt', 'same', 'sand', 'save', 'seat', 'seed', 'seek', 'seem', 'seen', 'self', 'sell', 'send', 'sent', 'ship', 'shop', 'shot', 'show', 'shut', 'sick', 'side', 'sign', 'silk', 'site', 'size', 'skin', 'slip', 'slow', 'snow', 'soft', 'soil', 'sold', 'sole', 'some', 'song', 'soon', 'sort', 'soul', 'spot', 'star', 'stay', 'step', 'stop', 'such', 'suit', 'sure', 'take', 'tale', 'talk', 'tall', 'tank', 'tape', 'task', 'team', 'tech', 'tell', 'tend', 'term', 'test', 'text', 'than', 'that', 'them', 'then', 'they', 'thin', 'this', 'thus', 'till', 'time', 'tiny', 'told', 'toll', 'tone', 'took', 'tool', 'tour', 'town', 'tree', 'trip', 'true', 'tune', 'turn', 'twin', 'type', 'unit', 'upon', 'used', 'user', 'vary', 'vast', 'very', 'vice', 'view', 'vote', 'wage', 'wait', 'wake', 'walk', 'wall', 'want', 'ward', 'warm', 'wash', 'wave', 'ways', 'weak', 'wear', 'week', 'well', 'went', 'were', 'west', 'what', 'when', 'whom', 'wide', 'wife', 'wild', 'will', 'wind', 'wine', 'wing', 'wire', 'wise', 'wish', 'with', 'wood', 'word', 'work', 'yard', 'yeah', 'year', 'your', 'zero', 'zone',
-    // 5+ chars (selection)
-    'about', 'above', 'abuse', 'actor', 'acute', 'admit', 'adopt', 'adult', 'after', 'again', 'agent', 'agree', 'ahead', 'alarm', 'album', 'alert', 'alike', 'alive', 'allow', 'alone', 'along', 'alter', 'among', 'anger', 'angle', 'angry', 'apart', 'apple', 'apply', 'arena', 'argue', 'arise', 'array', 'aside', 'asset', 'audio', 'audit', 'avoid', 'award', 'aware', 'badly', 'baker', 'bases', 'basic', 'basis', 'beach', 'began', 'begin', 'begun', 'being', 'below', 'bench', 'birth', 'black', 'blame', 'blind', 'block', 'blood', 'board', 'boost', 'booth', 'bound', 'brain', 'brand', 'bread', 'break', 'breed', 'brief', 'bring', 'broad', 'brown', 'brush', 'build', 'built', 'buyer', 'cable', 'carry', 'catch', 'cause', 'chain', 'chair', 'chart', 'chase', 'cheap', 'check', 'chest', 'chief', 'child', 'china', 'chose', 'civil', 'claim', 'class', 'clean', 'clear', 'click', 'clock', 'close', 'coach', 'coast', 'could', 'count', 'court', 'cover', 'craft', 'crash', 'cream', 'crime', 'cross', 'crowd', 'crown', 'curve', 'cycle', 'daily', 'dance', 'dated', 'dealt', 'death', 'debut', 'delay', 'depth', 'doing', 'doubt', 'dozen', 'draft', 'drama', 'drawn', 'dream', 'dress', 'drill', 'drink', 'drive', 'drove', 'dying', 'eager', 'early', 'earth', 'eight', 'elite', 'empty', 'enemy', 'enjoy', 'enter', 'entry', 'equal', 'error', 'event', 'every', 'exact', 'exist', 'extra', 'faith', 'false', 'fault', 'fiber', 'field', 'fifth', 'fifty', 'fight', 'final', 'first', 'fixed', 'flash', 'fleet', 'floor', 'fluid', 'focus', 'force', 'forth', 'forty', 'forum', 'found', 'frame', 'frank', 'fraud', 'fresh', 'front', 'fruit', 'fully', 'funny', 'giant', 'given', 'glass', 'globe', 'going', 'grace', 'grade', 'grand', 'grant', 'grass', 'great', 'green', 'gross', 'group', 'grown', 'guard', 'guess', 'guest', 'guide', 'happy', 'heart', 'heavy', 'hence', 'horse', 'hotel', 'house', 'human', 'ideal', 'image', 'index', 'inner', 'input', 'issue', 'japan', 'joint', 'judge', 'known', 'label', 'large', 'laser', 'later', 'laugh', 'layer', 'learn', 'lease', 'least', 'leave', 'legal', 'level', 'light', 'limit', 'links', 'lives', 'local', 'logic', 'loose', 'lower', 'lucky', 'lunch', 'lying', 'magic', 'major', 'maker', 'march', 'match', 'maybe', 'mayor', 'limit', 'admit', 'adult', 'advice', 'affect', 'afford', 'afraid', 'agency', 'agenda', 'almost', 'always', 'amount', 'animal', 'annual', 'answer', 'anyway', 'appeal', 'appear', 'aspect', 'assist', 'assume', 'attack', 'attend', 'august', 'author', 'avenue', 'backed', 'barely', 'battle', 'beauty', 'became', 'become', 'before', 'behalf', 'behind', 'belief', 'belong', 'berlin', 'better', 'beyond', 'bishop', 'border', 'bottle', 'bottom', 'bought', 'branch', 'breath', 'bridge', 'bright', 'broken', 'budget', 'burden', 'bureau', 'button', 'camera', 'cancer', 'cannot', 'carbon', 'career', 'castle', 'casual', 'caught', 'center', 'centre', 'chance', 'change', 'charge', 'choice', 'choose', 'chosen', 'church', 'circle', 'client', 'closed', 'closer', 'coffee', 'column', 'combat', 'coming', 'common', 'comply', 'copper', 'corner', 'costly', 'county', 'couple', 'course', 'covers', 'create', 'credit'
-];
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
@@ -1240,273 +1205,6 @@ async function runPostAcceptanceStartup() {
     }
 }
 
-async function resolveMicrosoftStorePackage() {
-    if (state.isMicrosoftStorePackage !== null) {
-        return state.isMicrosoftStorePackage;
-    }
-    if (!document.body.classList.contains('windows')) {
-        state.isMicrosoftStorePackage = false;
-        return false;
-    }
-    try {
-        state.isMicrosoftStorePackage = !!(await tauriAPI.isMicrosoftStorePackage());
-    } catch (e) {
-        console.warn('[Update] is_microsoft_store_package failed:', e);
-        state.isMicrosoftStorePackage = false;
-    }
-    return state.isMicrosoftStorePackage;
-}
-
-function updateBannerWhatsNewButtonHtml() {
-    return `<span>${tSettings('updateBannerWhatsNew')}</span><svg class="update-banner-whats-new-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>`;
-}
-
-function resetUpdateBannerWhatsNewPanel(whatsNewBtn, notesPanel, notesContent) {
-    whatsNewBtn?.classList.remove('open');
-    whatsNewBtn?.setAttribute('aria-expanded', 'false');
-    notesPanel?.classList.add('hidden');
-    if (notesContent) notesContent.innerHTML = '';
-}
-
-function applyUpdateBannerReleaseNotes(notes, whatsNewBtn, notesPanel, notesContent) {
-    const filtered = filterReleaseNotesForPlatform(notes, getLatestVersionPlatformKey());
-    if (!releaseNotesHasContent(filtered) || !whatsNewBtn || !notesPanel || !notesContent) {
-        whatsNewBtn?.classList.add('hidden');
-        resetUpdateBannerWhatsNewPanel(whatsNewBtn, notesPanel, notesContent);
-        return;
-    }
-    whatsNewBtn.innerHTML = updateBannerWhatsNewButtonHtml();
-    whatsNewBtn.classList.remove('hidden');
-    notesContent.innerHTML = renderReleaseNotesHtml(filtered);
-}
-
-function normalizeReleaseVersion(version) {
-    return String(version).replace(/^v/i, '').trim();
-}
-
-let updateDownloadProgressUnlisten = null;
-let updateDownloadInProgress = false;
-
-function getUpdateDownloadCtaLabel() {
-    return tSettings('updateBannerCta');
-}
-
-function getUpdateDownloadButtonLabel(state, percent = null) {
-    if (state === 'opening') return tSettings('updateBannerOpeningInstaller');
-    if (state === 'downloading') {
-        if (typeof percent === 'number') {
-            return tSettingsFmt('updateBannerDownloadingFmt', { percent });
-        }
-        return tSettings('updateBannerDownloading');
-    }
-    return getUpdateDownloadCtaLabel();
-}
-
-function setUpdateDownloadButtonState(state, percent = null) {
-    const btn = document.getElementById('update-banner-link');
-    if (!btn) return;
-    btn.textContent = getUpdateDownloadButtonLabel(state, percent);
-    btn.disabled = state === 'downloading' || state === 'opening';
-    btn.setAttribute('aria-busy', state === 'downloading' || state === 'opening' ? 'true' : 'false');
-}
-
-function resetUpdateDownloadButtonState() {
-    updateDownloadInProgress = false;
-    setUpdateDownloadButtonState('idle');
-}
-
-async function ensureUpdateDownloadProgressListener() {
-    if (updateDownloadProgressUnlisten) return;
-    updateDownloadProgressUnlisten = await tauriAPI.onUpdateDownloadProgress((event) => {
-        const percent = event?.payload?.percent;
-        if (updateDownloadInProgress) {
-            setUpdateDownloadButtonState('downloading', typeof percent === 'number' ? percent : null);
-        }
-    });
-}
-
-async function startUpdateDownload(latestVersion) {
-    const btn = document.getElementById('update-banner-link');
-    if (!btn || btn.disabled || updateDownloadInProgress) return;
-
-    const version = normalizeReleaseVersion(latestVersion);
-    updateDownloadInProgress = true;
-    setUpdateDownloadButtonState('downloading', 0);
-
-    try {
-        await ensureUpdateDownloadProgressListener();
-        await tauriAPI.downloadAndRunUpdate(version);
-        setUpdateDownloadButtonState('opening');
-        resetUpdateDownloadButtonState();
-        if (state.isMacOSDesktop) {
-            try {
-                await message(tSettings('updateBannerInstallerOpened'), {
-                    title: tSettings('updateBannerInstallerOpenedTitle'),
-                    kind: 'info',
-                });
-            } catch {
-                /* dialog unavailable */
-            }
-        }
-    } catch (err) {
-        console.error('[Update] In-app download failed:', err);
-        resetUpdateDownloadButtonState();
-        try {
-            await message(
-                `${tSettings('updateBannerDownloadFailed')}\n\n${String(err?.message || err || '')}`.trim(),
-                { title: tSettings('updateBannerDownloadFailedTitle'), kind: 'error' },
-            );
-        } catch {
-            /* dialog unavailable */
-        }
-    }
-}
-
-function wireUpdateBannerDownloadLink(latestVersion, pkgBytes = null) {
-    const btn = document.getElementById('update-banner-link');
-    if (!btn) return;
-
-    btn.dataset.latestVersion = latestVersion;
-    if (pkgBytes) {
-        btn.dataset.pkgBytes = String(pkgBytes);
-    } else {
-        delete btn.dataset.pkgBytes;
-    }
-    resetUpdateDownloadButtonState();
-
-    if (!btn.dataset.wired) {
-        btn.dataset.wired = '1';
-        btn.addEventListener('click', (event) => {
-            event.preventDefault();
-            const version = btn.dataset.latestVersion || latestVersion;
-            void startUpdateDownload(version);
-        });
-    }
-}
-
-function alignUpdateBannerLayout() {
-    const banner = document.getElementById('update-banner');
-    if (!banner || banner.classList.contains('hidden')) return;
-
-    const title = document.getElementById('main-blocklists-title');
-    const settingsBtn = document.getElementById('settings-btn')
-        || document.getElementById('settings-btn-stack');
-    const headerRow = banner.querySelector('.update-banner-header-row');
-    if (!headerRow) return;
-
-    banner.style.removeProperty('--update-banner-info-inset');
-    banner.style.removeProperty('--update-banner-dismiss-inset');
-
-    if (!title || !settingsBtn) return;
-
-    const rowRect = headerRow.getBoundingClientRect();
-    const titleRect = title.getBoundingClientRect();
-    const settingsRect = settingsBtn.getBoundingClientRect();
-
-    const infoInset = Math.max(0, Math.round(titleRect.left - rowRect.left));
-    const dismissInset = Math.max(0, Math.round(rowRect.right - settingsRect.right));
-
-    banner.style.setProperty('--update-banner-info-inset', `${infoInset}px`);
-    banner.style.setProperty('--update-banner-dismiss-inset', `${dismissInset}px`);
-}
-
-function scheduleUpdateBannerLayout() {
-    requestAnimationFrame(() => {
-        requestAnimationFrame(alignUpdateBannerLayout);
-    });
-}
-
-let updateBannerLayoutListenerBound = false;
-
-function ensureUpdateBannerLayoutListeners() {
-    if (updateBannerLayoutListenerBound) return;
-    updateBannerLayoutListenerBound = true;
-    window.addEventListener('resize', scheduleUpdateBannerLayout, { passive: true });
-    window.visualViewport?.addEventListener('resize', scheduleUpdateBannerLayout, { passive: true });
-}
-
-async function showUpdateBanner(latestVersion, currentVersion = '', { pkgBytes = null } = {}) {
-    const banner = document.getElementById('update-banner');
-    const versionEl = document.getElementById('update-banner-version');
-    const currentEl = document.getElementById('update-banner-current');
-    const dismissBtn = document.getElementById('update-banner-dismiss');
-    const whatsNewBtn = document.getElementById('update-banner-whats-new');
-    const notesPanel = document.getElementById('update-banner-notes');
-    const notesContent = document.getElementById('update-banner-notes-content');
-
-    if (!banner || !versionEl) return;
-
-    versionEl.textContent = latestVersion;
-    wireUpdateBannerDownloadLink(latestVersion, pkgBytes);
-    if (currentEl) {
-        if (currentVersion) {
-            currentEl.textContent = tSettingsFmt('updateBannerCurrentFmt', { version: currentVersion });
-            currentEl.classList.remove('hidden');
-        } else {
-            currentEl.textContent = '';
-            currentEl.classList.add('hidden');
-        }
-    }
-    banner.classList.remove('hidden');
-    whatsNewBtn?.classList.add('hidden');
-    resetUpdateBannerWhatsNewPanel(whatsNewBtn, notesPanel, notesContent);
-
-    const notes = await resolveReleaseNotesForVersion(latestVersion);
-    applyUpdateBannerReleaseNotes(notes, whatsNewBtn, notesPanel, notesContent);
-
-    if (dismissBtn && !dismissBtn.dataset.wired) {
-        dismissBtn.dataset.wired = '1';
-        dismissBtn.addEventListener('click', () => {
-            banner.classList.add('hidden');
-        });
-    }
-
-    if (whatsNewBtn && !whatsNewBtn.dataset.wired) {
-        whatsNewBtn.dataset.wired = '1';
-        whatsNewBtn.addEventListener('click', () => {
-            const isOpen = whatsNewBtn.classList.toggle('open');
-            notesPanel?.classList.toggle('hidden', !isOpen);
-            whatsNewBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-        });
-    }
-
-    ensureUpdateBannerLayoutListeners();
-    scheduleUpdateBannerLayout();
-}
-
-// Check if a newer app version is available and show update banner
-async function checkForAppUpdate() {
-    if (await resolveMicrosoftStorePackage()) {
-        return;
-    }
-    try {
-        const currentVersion = await tauriAPI.getAppVersion();
-        if (!currentVersion) return;
-
-        const response = await fetch(`https://ulyngs.github.io/redd-block/latest-versions.json?t=${Date.now()}`);
-        const manifest = await response.json();
-        const platformKey = getLatestVersionPlatformKey();
-        const latestVersion = manifest[platformKey];
-        const pkgBytes = platformKey === 'macos' ? manifest.sizeBytes?.macosPkg : null;
-
-        if (latestVersion && isVersionHigher(latestVersion, currentVersion)) {
-            await showUpdateBanner(latestVersion, currentVersion, { pkgBytes });
-        }
-    } catch (e) {
-        // Silently fail if offline
-        console.log('[Update] Could not check for updates:', e.message);
-    }
-}
-
-if (import.meta.env.DEV) {
-    /** Dev only: `previewUpdateBanner('3.5.0')` in the webview console. */
-    window.previewUpdateBanner = async (version = '99.0.0', currentVersion = '3.3.0') => {
-        const normalized = String(version).replace(/^v/i, '').trim();
-        await showUpdateBanner(normalized, String(currentVersion).replace(/^v/i, '').trim());
-        console.log(`[dev] Update banner preview for v${normalized}`);
-    };
-}
-
 // ---- Welcome screen --------------------------------------------------------
 //
 // Friendly one-screen intro shown once per machine, before the EULA.
@@ -1661,7 +1359,7 @@ function settingsEnforcementHintHtml(firefoxInstalled = enforcementCopyFirefoxIn
         : 'settingsEnforcementRowHintMacAutomation');
 }
 
-async function applyEnforcementDescCopy(state) {
+export async function applyEnforcementDescCopy(state) {
     await resolveEnforcementCopyFirefoxInstalled(state);
     setHtmlById('enforcement-toggle-desc-text', migrationEnforcementDescHtml());
     setHtmlById('settings-enforcement-toggle-desc-text', settingsEnforcementHintHtml());
@@ -1721,7 +1419,7 @@ const migrationShowMeHowExpandedKeys = new Set();
 /** Preserves Safari duplicate "How did this happen?" across poll refreshes. */
 let migrationSafariDuplicateHelpExpanded = false;
 /** Snapshot for re-rendering localized browser rows when language changes mid-overlay. */
-let lastMigrationBrowserState = null;
+export let lastMigrationBrowserState = null;
 /** Skips full DOM rebuild on poll when compliance state is unchanged (prevents icon flash). */
 let lastMigrationBrowserRenderSignature = '';
 /** Skips header/how-to HTML rewrites on poll when copy inputs are unchanged (prevents logo flash). */
@@ -2212,7 +1910,7 @@ function setSettingsBlockingMethodExpanded(expanded) {
     content.classList.toggle('hidden', !expanded);
 }
 
-function resetSettingsEnforcementSection() {
+export function resetSettingsEnforcementSection() {
     setSettingsBlockingMethodExpanded(false);
 }
 
@@ -2303,7 +2001,7 @@ async function onEnforcementToggleChange(changedToggle) {
     }
 }
 
-async function wireEnforcementToggle() {
+export async function wireEnforcementToggle() {
     if (state.isIOS) return;
     const toggles = getEnforcementToggleInputs();
     if (!toggles.length) return;
@@ -2359,7 +2057,7 @@ function syncBlockingMethodSelects(methods = getBlockingMethodsMap()) {
     }
 }
 
-async function wireBlockingMethodSettings() {
+export async function wireBlockingMethodSettings() {
     if (!state.isMacOSDesktop) return;
 
     let browsers = lastOnboardingState?.browsers || lastMigrationBrowserState?.browsers || {};
@@ -6927,7 +6625,7 @@ async function loadData() {
 }
 
 // Save data to main process
-async function saveData() {
+export async function saveData() {
     await tauriAPI.saveData(state.appData);
 }
 
@@ -6989,35 +6687,6 @@ async function runExpiryOnce() {
     await updateBlockedApps();
 }
 
-// Compare semver versions - returns true if versionA > versionB
-function isVersionHigher(versionA, versionB) {
-    const partsA = versionA.split('.').map(Number);
-    const partsB = versionB.split('.').map(Number);
-
-    for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
-        const a = partsA[i] || 0;
-        const b = partsB[i] || 0;
-        if (a > b) return true;
-        if (a < b) return false;
-    }
-    return false; // Equal versions
-}
-
-function usesMobileWordCountForOverrideType(type) {
-    return !!((state.isIOS || state.isAndroid) && (type === 'random-words' || type === 'gibberish'));
-}
-
-function isMobileOverrideChallengePlatform() {
-    return state.isIOS || state.isAndroid;
-}
-
-/** Key in latest-versions.json — iOS uses its own release line, not desktop macos. */
-function getLatestVersionPlatformKey() {
-    if (state.isIOS) return 'ios';
-    if (state.isAndroid) return 'android';
-    const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-    return isMac ? 'macos' : 'windows';
-}
 
 
 
@@ -15040,7 +14709,7 @@ function syncStopBtnLabelFit(btn) {
     }
 }
 
-function syncAllStopBtnLabelFits() {
+export function syncAllStopBtnLabelFits() {
     ['start-block-btn', 'start-schedule-btn'].forEach((id) => {
         const btn = document.getElementById(id);
         if (btn) syncStopBtnLabelFit(btn);
@@ -15570,8 +15239,8 @@ function closeBlocklistModal() {
     lastOverrideTypeValue = '';
     lastOverrideCountValueBeforeMaxDifficulty = 50;
     lastOverrideTypeValueBeforeMaxDifficulty = 'random-words';
-    overridePreviewFrozenByType = { 'random-words': null, 'gibberish': null };
-    lastOverridePreviewType = null;
+    state.overridePreviewFrozenByType = { 'random-words': null, 'gibberish': null };
+    state.lastOverridePreviewType = null;
     setOverrideCountMaxMode(false);
 
     // Revert temporary live-preview edits if dialog closes without save.
@@ -15946,7 +15615,7 @@ function openPauseModal(blockId) {
 }
 
 /** Pause modal: use horizontal row only if it fits; otherwise stack (hide arrow). */
-function syncPauseDurationRowLayout() {
+export function syncPauseDurationRowLayout() {
     const modal = document.getElementById('pause-modal');
     if (!modal || modal.classList.contains('hidden')) return;
     const row = modal.querySelector('.pause-duration-row');
@@ -16257,233 +15926,6 @@ async function proceedWithPause() {
 
     closePauseModal();
 }
-
-/** Five-letter words only — used for iOS word-count random-words (predictable length per word). */
-let wordList5Cache = null;
-function getWordList5() {
-    if (!wordList5Cache) {
-        wordList5Cache = wordList.filter(w => w.length === 5);
-    }
-    return wordList5Cache;
-}
-
-/** Typed letters only for N five-letter words (spaces in display are not counted). */
-function getIOSRandomWordsCharCount(wordCount) {
-    const n = Math.max(0, Math.floor(wordCount));
-    return n * 5;
-}
-
-/** iOS: generate exactly `wordCount` random five-letter words. */
-function generateRandomWordsByCount(wordCount) {
-    const n = Math.max(0, Math.floor(wordCount));
-    if (n === 0) return '';
-    const pool = getWordList5();
-    if (pool.length === 0) return '';
-    const words = [];
-    for (let i = 0; i < n; i++) {
-        words.push(pool[Math.floor(Math.random() * pool.length)]);
-    }
-    return words.join(' ');
-}
-
-// Generate random words to reach target character count exactly (desktop / character-count mode)
-function generateRandomWords(targetChars) {
-    const words = [];
-    let currentLength = 0;
-
-    // Safety break to prevent infinite loops
-    let attempts = 0;
-    const maxAttempts = 1000;
-
-    while (currentLength < targetChars && attempts < maxAttempts) {
-        attempts++;
-
-        const isFirstWord = words.length === 0;
-        const spaceNeeded = isFirstWord ? 0 : 1;
-        const remaining = targetChars - currentLength;
-        const maxWordLen = remaining - spaceNeeded;
-
-        if (maxWordLen <= 0) break;
-
-        // Try to find exact fit first
-        const exactMatches = wordList.filter(w => w.length === maxWordLen);
-
-        if (exactMatches.length > 0) {
-            // Found exact match! Finish here.
-            const word = exactMatches[Math.floor(Math.random() * exactMatches.length)];
-            words.push(word);
-            currentLength += spaceNeeded + word.length;
-            break;
-        } else {
-            // No exact match, pick a random word that fits and leaves room for at least 1 more char 
-            // (technically min word size is 1, so space+1=2 chars required for next step)
-
-            const validWords = wordList.filter(w => {
-                const newRemaining = remaining - (spaceNeeded + w.length);
-                return newRemaining >= 2;
-            });
-
-            if (validWords.length > 0) {
-                const word = validWords[Math.floor(Math.random() * validWords.length)];
-                words.push(word);
-                currentLength += spaceNeeded + word.length;
-            } else {
-                // If we're stuck (cannot find a word that fits exactly AND cannot find one leaving >=2 chars),
-                // it means we have e.g. 1 char left (after space) but no 1-char words? 
-                // With our list containing 'a', this shouldn't happen unless we need a 0-length word.
-                break;
-            }
-        }
-    }
-
-    return words.join(' ');
-}
-
-function generateOverrideChallengeText(type, count, customText = '') {
-    if (type === 'custom' && customText) return customText;
-    const normalizedCount = normalizeOverrideCount(count, type);
-    if (type === 'gibberish') {
-        const raw = generateGibberish(usesMobileWordCountForOverrideType(type) ? normalizedCount * 6 : normalizedCount);
-        return isMobileOverrideChallengePlatform() ? formatIOSGibberishChallenge(raw) : raw;
-    }
-    if (usesMobileWordCountForOverrideType(type)) {
-        return generateRandomWordsByCount(normalizedCount);
-    }
-    return generateRandomWords(normalizedCount);
-}
-
-// Generate gibberish
-function generateGibberish(count) {
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-    let result = '';
-    for (let i = 0; i < count; i++) {
-        result += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return result;
-}
-
-function normalizeOverrideCount(value, type = 'random-words') {
-    const parsed = parseInt(value, 10);
-    if (!Number.isFinite(parsed)) return DEFAULT_OVERRIDE_COUNT;
-    const maxCount = getMaxOverrideCharsForType(type);
-    return Math.min(maxCount, Math.max(MIN_OVERRIDE_CHARS, parsed));
-}
-
-function normalizeCustomOverrideText(value) {
-    const text = typeof value === 'string' ? value : '';
-    const maxChars = getMaxOverrideCharsForType('custom');
-    return text.slice(0, maxChars);
-}
-
-function getTypingCharsPerMinuteForType(type) {
-    if (type === 'gibberish') return 150;
-    if (type === 'custom') return 250; // Same assumption as random-words
-    return 200; // random-words: used only for estimated time
-}
-
-function getMaxOverrideCharsForType(type) {
-    if (usesMobileWordCountForOverrideType(type)) return MAX_IOS_OVERRIDE_WORD_COUNT;
-    if (type === 'gibberish') return 5000;
-    return 7500; // random-words and custom: fixed max; estimated time uses CPM
-}
-
-function getOverrideGeneratedCharCount(type, count) {
-    const parsed = Number.parseInt(count, 10);
-    const normalizedCount = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
-    if (!usesMobileWordCountForOverrideType(type)) return normalizedCount;
-
-    if (type === 'random-words') {
-        return getIOSRandomWordsCharCount(normalizedCount);
-    }
-    return normalizedCount * 6;
-}
-
-/** Letters-only workload for comparing override difficulties (e.g. override-all hardest). */
-function getDifficultyTypingCharCount(difficulty) {
-    if (!difficulty) return 0;
-    if (difficulty.type === 'custom') {
-        return typeof difficulty.customText === 'string' ? difficulty.customText.length : 0;
-    }
-    const parsed = Number(difficulty.count);
-    const count = difficulty.maxDifficulty === true
-        ? getMaxOverrideCharsForType(difficulty.type)
-        : (Number.isFinite(parsed) && parsed > 0 ? parsed : 50);
-    return getOverrideGeneratedCharCount(difficulty.type, count);
-}
-
-/** Preview text for override difficulty (random words, gibberish, or custom). Used in blocklist modal. */
-function getOverridePreviewText(type, count, customText) {
-    if (type === 'custom') {
-        const t = typeof customText === 'string' ? customText : '';
-        const normalized = t.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
-        return normalized || 'Your custom text will appear here';
-    }
-    const num = parseInt(count, 10);
-    const countNum = Number.isFinite(num) && num >= 0 ? num : 10;
-    const generatedCharCount = getOverrideGeneratedCharCount(type, countNum);
-
-    if (type !== lastOverridePreviewType) {
-        lastOverridePreviewType = type;
-        overridePreviewFrozenByType[type] = null;
-    }
-
-    if (type === 'random-words' || type === 'gibberish') {
-        if (generatedCharCount >= OVERRIDE_PREVIEW_TRUNCATE_AT) {
-            let frozen = overridePreviewFrozenByType[type];
-            if (frozen != null) return frozen;
-            const generated = type === 'gibberish'
-                ? (isMobileOverrideChallengePlatform() ? formatIOSGibberishChallenge(generateGibberish(countNum * 6)) : generateGibberish(OVERRIDE_PREVIEW_TRUNCATE_AT))
-                : (usesMobileWordCountForOverrideType(type)
-                    ? generateRandomWordsByCount(countNum)
-                    : generateRandomWords(countNum));
-            frozen = generated.slice(0, OVERRIDE_PREVIEW_TRUNCATE_AT);
-            overridePreviewFrozenByType[type] = frozen;
-            return frozen;
-        }
-    }
-
-    if (type === 'gibberish') {
-        const generated = generateGibberish(usesMobileWordCountForOverrideType(type) ? countNum * 6 : countNum);
-        return isMobileOverrideChallengePlatform() ? formatIOSGibberishChallenge(generated) : generated;
-    }
-    if (usesMobileWordCountForOverrideType(type)) {
-        return generateRandomWordsByCount(countNum);
-    }
-    return generateRandomWords(countNum);
-}
-
-/** Estimated minutes to type the override challenge (based on character count and type). */
-function getOverrideEstimatedMinutes(type, count, customText) {
-    if (type === 'custom') {
-        const charCount = typeof customText === 'string' ? customText.length : 0;
-        if (charCount <= 0) return 0;
-        return Math.ceil(charCount / getTypingCharsPerMinuteForType('custom'));
-    }
-
-    const parsed = Number.parseInt(count, 10);
-    const normalizedCount = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
-    if (normalizedCount <= 0) return 0;
-
-    if (usesMobileWordCountForOverrideType(type)) {
-        return Math.ceil(normalizedCount / IOS_OVERRIDE_WORDS_PER_MINUTE);
-    }
-
-    const charCount = getOverrideGeneratedCharCount(type, count);
-    const cpm = getTypingCharsPerMinuteForType(type);
-    return Math.ceil(charCount / cpm);
-}
-
-function formatOverrideMaxDifficultyHint(type) {
-    const count = getMaxOverrideCharsForType(type);
-    const usesWords = usesMobileWordCountForOverrideType(type);
-    const locale = getSettingsLanguage() === 'da' ? 'da-DK' : 'en-US';
-    const countStr = count.toLocaleString(locale);
-    return tSettingsFmt(
-        usesWords ? 'overrideMaxDifficultyHintWords' : 'overrideMaxDifficultyHintChars',
-        { count: countStr }
-    );
-}
-
 function updateOverridePreview() {
     const typeSelect = document.getElementById('override-type');
     const countInput = document.getElementById('override-count');
@@ -19029,10 +18471,6 @@ function buildWordChallengeState(text) {
     };
 }
 
-function formatIOSGibberishChallenge(text) {
-    const compact = String(text || '').replace(/\s+/g, '');
-    return compact.replace(/(.{6})(?=.)/g, '$1 ');
-}
 
 function isMobileWordByWordChallenge(difficulty) {
     return !!(isMobileOverrideChallengePlatform() && (difficulty?.type === 'random-words' || difficulty?.type === 'gibberish'));
@@ -19135,7 +18573,7 @@ function shouldUseCompactMobileScheduleDayLabels() {
     return effVp > 0 && effVp <= MOBILE_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH;
 }
 
-function syncMobileScheduleDayLabelsViewportMode() {
+export function syncMobileScheduleDayLabelsViewportMode() {
     if (!state.isIOS && !state.isAndroid) return;
     const nextCompact = shouldUseCompactMobileScheduleDayLabels();
     if (nextCompact === mobileCompactScheduleDayLabelsActive) return;
@@ -19188,7 +18626,7 @@ function closeAllLanguagePickers() {
     }
 }
 
-function setLanguagePickerOpen(open, rootId) {
+export function setLanguagePickerOpen(open, rootId) {
     if (open) {
         for (const id of LANGUAGE_PICKER_ROOT_IDS) {
             const { dropdown, trigger } = languagePickerElements(id);
@@ -19283,7 +18721,7 @@ function setupLanguagePickerForRoot(rootId) {
     });
 }
 
-function setupLanguagePicker() {
+export function setupLanguagePicker() {
     for (const rootId of LANGUAGE_PICKER_ROOT_IDS) {
         setupLanguagePickerForRoot(rootId);
     }
@@ -19767,13 +19205,13 @@ function formatLatestVersionText(version) {
     return `${tSettings('latestVersionPrefix')} ${version || 'Unknown'}`;
 }
 
-function applyFormattedCurrentVersion(el, version) {
+export function applyFormattedCurrentVersion(el, version) {
     if (!el) return;
     el.dataset.appVersion = version || 'Unknown';
     el.textContent = formatCurrentVersionText(el.dataset.appVersion);
 }
 
-function applyFormattedLatestVersion(el, version) {
+export function applyFormattedLatestVersion(el, version) {
     if (!el) return;
     el.dataset.appVersion = version;
     el.textContent = formatLatestVersionText(version);
@@ -19797,7 +19235,7 @@ function syncModalWebsitePlaceholder() {
     el.placeholder = tSettings('placeholderWebsiteExample');
 }
 
-function applySettingsLanguage() {
+export function applySettingsLanguage() {
     const setText = (id, text) => {
         const el = document.getElementById(id);
         if (el) el.textContent = text;
@@ -20197,617 +19635,6 @@ function applySettingsLanguage() {
 }
 
 // Theme Handling
-function setupTheme() {
-    // Apply initial theme from saved settings
-    applyTheme();
-
-    // Setup settings modal
-    const settingsTriggers = ['settings-btn', 'settings-btn-stack']
-        .map((id) => document.getElementById(id))
-        .filter(Boolean);
-    const settingsModal = document.getElementById('settings-modal');
-    const closeSettingsBtn = document.getElementById('close-settings-btn');
-    const themeSelect = document.getElementById('theme-select');
-
-    // Apply language immediately on startup.
-    applySettingsLanguage();
-    setupLanguagePicker();
-
-    if (settingsTriggers.length && settingsModal) {
-        settingsTriggers.forEach((settingsBtn) => {
-            settingsBtn.addEventListener('click', () => {
-            const latestVersionEl = document.getElementById('latest-app-version');
-            const latestVersionWrap = document.getElementById('settings-latest-version-wrap');
-            if (latestVersionEl) latestVersionEl.style.display = 'none';
-            if (latestVersionWrap) latestVersionWrap.style.display = 'none';
-            settingsModal.classList.remove('hidden');
-            syncFooterZoomControl(getActiveUiZoomScale());
-            resetSettingsEnforcementSection();
-            void applyEnforcementDescCopy(lastMigrationBrowserState);
-            // Re-evaluate the in-app Uninstall button (Mac only): a
-            // schedule could have fired since the modal was last open,
-            // flipping the disabled state. Cheap; idempotent.
-            refreshUninstallButtonState();
-            updateOverrideAllButtonVisibility();
-            void wireEnforcementToggle();
-            void wireBlockingMethodSettings();
-            // Set current theme selection
-            if (themeSelect) {
-                const currentTheme = state.appData.settings?.themeMode || 'system';
-                themeSelect.value = currentTheme;
-            }
-            void (async () => {
-                applySettingsLanguage();
-
-                // Fetch and display version info
-                const currentVersionEl = document.getElementById('current-app-version');
-                let currentVersion = null;
-
-                if (currentVersionEl) {
-                    try {
-                        currentVersion = await tauriAPI.getAppVersion();
-                        applyFormattedCurrentVersion(currentVersionEl, currentVersion || 'Unknown');
-                    } catch (e) {
-                        console.error('[Version] Error fetching current version:', e);
-                        applyFormattedCurrentVersion(currentVersionEl, 'Unknown');
-                    }
-                }
-
-                if (latestVersionEl) {
-                    latestVersionEl.style.display = 'none';
-                    if (latestVersionWrap) latestVersionWrap.style.display = 'none';
-
-                    if (!(await resolveMicrosoftStorePackage())) {
-                        try {
-                            const response = await fetch(`https://ulyngs.github.io/redd-block/latest-versions.json?t=${Date.now()}`);
-                            const versions = await response.json();
-                            const latestVersion = versions[getLatestVersionPlatformKey()];
-
-                            if (latestVersion && currentVersion && isVersionHigher(latestVersion, currentVersion)) {
-                                applyFormattedLatestVersion(latestVersionEl, latestVersion);
-                                latestVersionEl.style.display = 'block';
-                                if (latestVersionWrap) latestVersionWrap.style.display = 'block';
-                            }
-                        } catch (e) {
-                            console.log('[Version] Could not check for updates (offline or error):', e.message);
-                        }
-                    }
-                }
-            })();
-            });
-        });
-    }
-
-    if (closeSettingsBtn && settingsModal) {
-        closeSettingsBtn.addEventListener('click', () => {
-            setLanguagePickerOpen(false);
-            settingsModal.classList.add('hidden');
-            stopHelperUiRefreshLoop();
-        });
-    }
-
-    // Close modal when clicking outside
-    if (settingsModal) {
-        settingsModal.addEventListener('click', (e) => {
-            if (e.target === settingsModal) {
-                setLanguagePickerOpen(false);
-                settingsModal.classList.add('hidden');
-                stopHelperUiRefreshLoop();
-            }
-        });
-    }
-
-    // Theme selection change
-    if (themeSelect) {
-        themeSelect.addEventListener('change', (e) => {
-            if (!state.appData.settings) state.appData.settings = {};
-            state.appData.settings.themeMode = e.target.value;
-
-            // Update legacy darkMode for backwards compatibility
-            if (e.target.value === 'dark') {
-                state.appData.settings.darkMode = true;
-            } else if (e.target.value === 'light') {
-                state.appData.settings.darkMode = false;
-            } else {
-                // Auto/system mode - use system preference
-                delete state.appData.settings.darkMode;
-            }
-
-            applyTheme();
-            saveData();
-        });
-    }
-
-    // Listen for system theme changes when in auto mode
-    if (window.matchMedia) {
-        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-            if (state.appData.settings?.themeMode === 'system' || !state.appData.settings?.themeMode) {
-                applyTheme();
-            }
-        });
-    }
-}
-
-function applyTheme() {
-    const body = document.body;
-    const themeMode = state.appData.settings?.themeMode || 'system';
-
-    let isDark;
-    if (themeMode === 'dark') {
-        isDark = true;
-    } else if (themeMode === 'light') {
-        isDark = false;
-    } else {
-        // Auto/system mode - detect system preference
-        isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    }
-
-    if (isDark) {
-        body.classList.add('dark-mode');
-    } else {
-        body.classList.remove('dark-mode');
-    }
-}
-
-function getUiZoomMax() {
-    if (state.isIOS) return UI_ZOOM_MAX_IOS;
-    const isDesktop = document.body.classList.contains('windows') || document.body.classList.contains('mac');
-    return isDesktop ? UI_ZOOM_MAX_DESKTOP : UI_ZOOM_MAX;
-}
-
-function clampUiZoom(scale) {
-    return Math.min(getUiZoomMax(), Math.max(UI_ZOOM_MIN, scale));
-}
-
-function getDefaultUiZoom() {
-    return DEFAULT_UI_ZOOM;
-}
-
-function getSavedUiZoom() {
-    const parsed = Number(state.appData.settings?.uiZoom);
-    if (!Number.isFinite(parsed)) return getDefaultUiZoom();
-    return clampUiZoom(parsed);
-}
-
-function isIosTablet() {
-    return state.isIOS && !document.body.classList.contains('ios-phone');
-}
-
-/** Desktop only — iPad uses transform scaling; phones use CSS zoom. */
-function usesNativeWebviewZoom() {
-    if (!state.isIOS && (document.body.classList.contains('windows') || document.body.classList.contains('mac'))) {
-        return nativeWebviewZoomSupported !== false;
-    }
-    return false;
-}
-
-function getActiveUiZoomScale() {
-    const inline = parseFloat(document.documentElement.style.zoom);
-    if (Number.isFinite(inline) && inline > 0) return inline;
-    const cssVar = parseFloat(document.documentElement.style.getPropertyValue('--ui-zoom'));
-    if (Number.isFinite(cssVar) && cssVar > 0) return cssVar;
-    return getSavedUiZoom();
-}
-
-function getEffectiveViewportWidth() {
-    const zoom = getActiveUiZoomScale();
-    const viewportWidth = window.visualViewport?.width
-        || window.innerWidth
-        || document.documentElement?.clientWidth
-        || 0;
-    return viewportWidth > 0 ? viewportWidth / zoom : viewportWidth;
-}
-
-/** Mirror responsive layout tiers when UI zoom is above 100% (zoom ignores @media queries). iOS only. */
-function syncUiZoomResponsiveLayout() {
-    const zoom = getActiveUiZoomScale();
-    document.documentElement.style.setProperty('--ui-zoom', String(zoom));
-
-    if (state.isIOS) {
-        const effVp = getEffectiveViewportWidth();
-        const ipadPortraitStack = state.isIOS
-            && usesStackSettingsPlacement()
-            && !document.body.classList.contains('ios-phone');
-        const cramped = effVp > UI_ZOOM_LAYOUT_STACK_MAX
-            && effVp <= UI_ZOOM_LAYOUT_CRAMPED_MAX
-            && !ipadPortraitStack;
-
-        document.body.classList.toggle('ui-zoom-tier-stack', effVp > 0 && effVp <= UI_ZOOM_LAYOUT_STACK_MAX);
-        document.body.classList.toggle('ui-zoom-tier-cramped', cramped);
-        document.body.classList.toggle('ui-zoom-tier-narrow', effVp > 0 && effVp <= UI_ZOOM_LAYOUT_NARROW_MAX);
-        document.body.classList.toggle('settings-placement-stack', usesStackSettingsPlacement());
-    } else {
-        document.body.classList.remove('settings-placement-stack');
-        document.body.classList.remove(
-            'ui-zoom-tier-stack',
-            'ui-zoom-tier-cramped',
-            'ui-zoom-tier-narrow',
-        );
-    }
-
-    syncSchedulerModeTabLabelMode();
-    syncMobileScheduleDayLabelsViewportMode();
-    syncAllStopBtnLabelFits();
-    scheduleSelectionPromptLayout();
-    const pauseModal = document.getElementById('pause-modal');
-    if (pauseModal && !pauseModal.classList.contains('hidden')) {
-        syncPauseDurationRowLayout();
-    }
-}
-
-function usesStackSettingsPlacement() {
-    if (window.matchMedia('(max-width: 768px)').matches) return true;
-    return document.body.classList.contains('ios')
-        && !document.body.classList.contains('ios-phone')
-        && window.matchMedia('(min-width: 769px) and (max-width: 1024px) and (orientation: portrait)').matches;
-}
-
-/** True when labelled Now/Schedule tabs do not fit in the scheduler header row. */
-function schedulerModeTabsNeedIconOnly(header, modeTabs, toolbar) {
-    const toolbarVisible = toolbar && getComputedStyle(toolbar).display !== 'none';
-    if (toolbarVisible) {
-        const tabsRect = modeTabs.getBoundingClientRect();
-        const toolbarRect = toolbar.getBoundingClientRect();
-        if (tabsRect.right > toolbarRect.left - 6) {
-            return true;
-        }
-    }
-    if (header.scrollWidth > header.clientWidth + 1) {
-        return true;
-    }
-    if (modeTabs.scrollWidth > modeTabs.clientWidth + 1) {
-        return true;
-    }
-    for (const tab of modeTabs.querySelectorAll('.mode-tab')) {
-        if (tab.scrollWidth > tab.clientWidth + 1) {
-            return true;
-        }
-    }
-    return false;
-}
-
-/** Keep desktop/iOS scheduler header chrome from overlapping as space tightens. */
-function syncSchedulerModeTabLabelMode() {
-    const enterHeader = document.getElementById('scheduler-enter-header');
-    const timePicker = document.getElementById('time-picker-container');
-    const modeTabs = enterHeader?.querySelector('.scheduler-mode-tabs');
-    const body = document.body;
-    if (!enterHeader || !modeTabs || !timePicker || timePicker.classList.contains('hidden')) {
-        body.classList.remove('ui-zoom-sched-hide-title', 'ui-zoom-sched-tabs-icons');
-        schedTabsIconOnlyEnteredAtWidth = 0;
-        return;
-    }
-
-    const hadIconOnly = body.classList.contains('ui-zoom-sched-tabs-icons');
-    const headerWidth = enterHeader.clientWidth;
-
-    // If icon-only was the last stable state, only retry full labels after the
-    // row actually gets wider. Otherwise the ResizeObserver can bounce forever
-    // between the two near-identical layouts right at the threshold.
-    if (hadIconOnly) {
-        if (!schedTabsIconOnlyEnteredAtWidth) {
-            schedTabsIconOnlyEnteredAtWidth = headerWidth;
-            return;
-        }
-        if (headerWidth <= schedTabsIconOnlyEnteredAtWidth + SCHED_TABS_ICON_ONLY_EXIT_WIDTH_DELTA) {
-            return;
-        }
-    }
-
-    body.classList.remove('ui-zoom-sched-hide-title', 'ui-zoom-sched-tabs-icons');
-    void enterHeader.offsetWidth;
-
-    const mainTitle = document.getElementById('main-start-block-title');
-    const toolbar = document.querySelector('#settings-toolbar-scheduler');
-    const iconOnly = schedulerModeTabsNeedIconOnly(enterHeader, modeTabs, toolbar);
-
-    if (!state.isIOS && mainTitle && iconOnly) {
-        body.classList.add('ui-zoom-sched-hide-title');
-        void enterHeader.offsetWidth;
-    }
-
-    body.classList.toggle('ui-zoom-sched-tabs-icons', iconOnly && state.isIOS);
-    schedTabsIconOnlyEnteredAtWidth = iconOnly && state.isIOS ? enterHeader.clientWidth : 0;
-}
-
-function scheduleSelectionPromptLayout() {
-    cancelAnimationFrame(selectionPromptLayoutRaf);
-    selectionPromptLayoutRaf = requestAnimationFrame(() => {
-        selectionPromptLayoutRaf = 0;
-        syncSelectionPromptLayout();
-    });
-}
-
-function isGridTopRowStacked() {
-    const blocklists = document.getElementById('blocklists-section');
-    const scheduler = document.getElementById('scheduler-section');
-    if (!blocklists || !scheduler) return true;
-    const blocklistsRect = blocklists.getBoundingClientRect();
-    const schedulerRect = scheduler.getBoundingClientRect();
-    return schedulerRect.top > blocklistsRect.top + 16;
-}
-
-function clearSelectionPromptLayout() {
-    const prompt = document.getElementById('selection-prompt');
-    const gridTopRow = document.querySelector('.grid-top-row');
-    const schedulerSection = document.getElementById('scheduler-section');
-    if (prompt) {
-        prompt.style.top = '';
-        prompt.style.left = '';
-        prompt.style.right = '';
-    }
-    if (schedulerSection) {
-        schedulerSection.style.removeProperty('--time-picker-placeholder-height');
-    }
-    if (gridTopRow) gridTopRow.classList.remove('grid-top-row--selection-prompt-active');
-    document.body.classList.remove('selection-prompt-layout-two-col', 'selection-prompt-layout-stack');
-}
-
-function measureTimePickerPlaceholderHeight(section) {
-    const mainContent = document.getElementById('main-content');
-    const timePicker = section?.querySelector('#time-picker-container');
-    if (!section || !mainContent || !timePicker || section.clientWidth <= 0) return 0;
-
-    let measurer = document.getElementById('scheduler-placeholder-measurer');
-    if (!measurer) {
-        measurer = document.createElement('div');
-        measurer.id = 'scheduler-placeholder-measurer';
-        measurer.setAttribute('aria-hidden', 'true');
-        measurer.style.cssText = 'position:absolute;left:-10000px;top:0;visibility:hidden;pointer-events:none;box-sizing:border-box;';
-        mainContent.appendChild(measurer);
-    }
-
-    measurer.className = 'scheduler-content';
-    measurer.style.width = `${section.clientWidth}px`;
-    measurer.innerHTML = timePicker.outerHTML;
-
-    const measuredPicker = measurer.querySelector('#time-picker-container');
-    measuredPicker?.classList.remove('hidden');
-    measuredPicker?.querySelector('#instant-block-panel')?.classList.remove('hidden');
-    measuredPicker?.querySelector('#schedule-block-panel')?.classList.add('hidden');
-    measuredPicker?.querySelector('.always-on-message')?.classList.add('hidden');
-    measuredPicker?.querySelector('#timed-controls')?.classList.add('hidden');
-    measuredPicker?.querySelector('#block-action-buttons')?.classList.add('hidden');
-
-    return measuredPicker?.offsetHeight || 0;
-}
-
-/** Pin the empty-state hint to the first blocklist card (two-column) or reserve time-picker space (stack). */
-function syncSelectionPromptLayout() {
-    const prompt = document.getElementById('selection-prompt');
-    const gridTopRow = document.querySelector('.grid-top-row');
-    const schedulerSection = document.getElementById('scheduler-section');
-    const firstCard = document.querySelector('#blocklists-container .blocklist-card');
-    if (!prompt || !gridTopRow) return;
-
-    const active = !prompt.classList.contains('hidden')
-        && !gridTopRow.classList.contains('grid-top-row--blocklist-selected')
-        && !!firstCard;
-
-    if (!active) {
-        clearSelectionPromptLayout();
-        return;
-    }
-
-    const gap = 48;
-    const stacked = isGridTopRowStacked();
-    const anchorRect = gridTopRow.getBoundingClientRect();
-    const cardRect = firstCard.getBoundingClientRect();
-    const promptHeight = prompt.offsetHeight || 24;
-
-    gridTopRow.classList.add('grid-top-row--selection-prompt-active');
-    document.body.classList.toggle('selection-prompt-layout-two-col', !stacked);
-    document.body.classList.toggle('selection-prompt-layout-stack', stacked);
-
-    if (stacked) {
-        prompt.style.top = '';
-        prompt.style.left = '';
-        prompt.style.right = '';
-        if (schedulerSection) {
-            const placeholderHeight = measureTimePickerPlaceholderHeight(schedulerSection);
-            if (placeholderHeight > 0) {
-                schedulerSection.style.setProperty('--time-picker-placeholder-height', `${placeholderHeight}px`);
-            }
-        }
-        return;
-    }
-
-    if (schedulerSection) {
-        schedulerSection.style.removeProperty('--time-picker-placeholder-height');
-    }
-
-    const top = cardRect.top - anchorRect.top + (cardRect.height - promptHeight) / 2;
-    const left = cardRect.right - anchorRect.left + gap;
-    prompt.style.top = `${Math.round(top)}px`;
-    prompt.style.left = `${Math.round(left)}px`;
-    prompt.style.right = '';
-}
-
-function scheduleUiZoomResponsiveLayout() {
-    cancelAnimationFrame(uiZoomLayoutRaf);
-    uiZoomLayoutRaf = requestAnimationFrame(() => {
-        uiZoomLayoutRaf = 0;
-        syncUiZoomResponsiveLayout();
-    });
-}
-
-function bindUiZoomLayoutObserver() {
-    if (uiZoomLayoutObserverBound || typeof ResizeObserver === 'undefined') return;
-    const targets = [
-        document.getElementById('main-content'),
-        document.querySelector('.grid-top-row'),
-        document.getElementById('scheduler-enter-header'),
-        document.getElementById('scheduler-section'),
-        document.getElementById('blocklists-container'),
-        document.getElementById('selection-prompt'),
-        document.querySelector('.week-calendar-section'),
-        document.getElementById('day-rows'),
-        document.querySelector('.footer'),
-    ].filter(Boolean);
-    if (!targets.length) return;
-    uiZoomLayoutObserverBound = true;
-    const ro = new ResizeObserver(() => {
-        scheduleUiZoomResponsiveLayout();
-        scheduleSelectionPromptLayout();
-    });
-    targets.forEach((el) => ro.observe(el));
-}
-
-function applyUiZoom(scale) {
-    const clamped = clampUiZoom(scale);
-    syncFooterZoomControl(clamped);
-    document.documentElement.style.setProperty('--ui-zoom', String(clamped));
-
-    if (usesNativeWebviewZoom()) {
-        getCurrentWebview().setZoom(clamped).then(() => {
-            nativeWebviewZoomSupported = true;
-            document.documentElement.style.zoom = '';
-            scheduleUiZoomResponsiveLayout();
-        }).catch(() => {
-            nativeWebviewZoomSupported = false;
-            document.documentElement.style.zoom = String(clamped);
-            scheduleUiZoomResponsiveLayout();
-        });
-        return;
-    }
-
-    // iPad WKWebView uses desktop content mode: neither CSS zoom nor pageZoom scales text.
-    // `.app-container { transform: scale(var(--ui-zoom)) }` in styles.css handles iPad instead.
-    if (isIosTablet()) {
-        document.documentElement.style.zoom = '';
-        scheduleUiZoomResponsiveLayout();
-        return;
-    }
-
-    if (state.isIOS) {
-        document.documentElement.style.zoom = String(clamped);
-        scheduleUiZoomResponsiveLayout();
-        return;
-    }
-
-    // Fallback when native webview zoom is unavailable (e.g. permission).
-    document.documentElement.style.zoom = String(clamped);
-    scheduleUiZoomResponsiveLayout();
-}
-
-/** Mirror the current zoom level into the settings control and +/- button state. */
-function syncFooterZoomControl(scale) {
-    const pct = `${Math.round(scale * 100)}%`;
-    const max = getUiZoomMax();
-    document.querySelectorAll('.zoom-value').forEach((el) => {
-        el.textContent = pct;
-    });
-    document.querySelectorAll('.zoom-out-btn').forEach((btn) => {
-        btn.disabled = scale <= UI_ZOOM_MIN + 1e-6;
-    });
-    document.querySelectorAll('.zoom-in-btn').forEach((btn) => {
-        btn.disabled = scale >= max - 1e-6;
-    });
-}
-
-function setupFooterZoomControl() {
-    const control = document.getElementById('settings-zoom-control');
-    if (!control || control.dataset.bound === '1') return;
-    control.dataset.bound = '1';
-    control.querySelector('.zoom-out-btn')?.addEventListener('click', () => zoomUiOut());
-    control.querySelector('.zoom-in-btn')?.addEventListener('click', () => zoomUiIn());
-}
-
-function showUiZoomToast(scale) {
-    const toast = document.getElementById('zoom-toast');
-    const message = document.getElementById('zoom-toast-message');
-    if (!toast || !message) return;
-
-    message.textContent = `Zoom ${Math.round(scale * 100)}%`;
-    toast.classList.remove('hidden');
-
-    if (zoomToastHideTimeout) {
-        clearTimeout(zoomToastHideTimeout);
-    }
-    zoomToastHideTimeout = setTimeout(() => {
-        toast.classList.add('hidden');
-        zoomToastHideTimeout = null;
-    }, 1400);
-}
-
-function setUiZoom(scale, options = {}) {
-    const clamped = clampUiZoom(scale);
-    applyUiZoom(clamped);
-    if (options.showToast) {
-        showUiZoomToast(clamped);
-    }
-
-    if (!state.appData.settings) state.appData.settings = {};
-    if (state.appData.settings.uiZoom === clamped) return;
-
-    state.appData.settings.uiZoom = clamped;
-    saveData();
-}
-
-function zoomUiIn(options = {}) {
-    const current = getSavedUiZoom();
-    setUiZoom(Math.round((current + UI_ZOOM_STEP) * 100) / 100, options);
-}
-
-function zoomUiOut(options = {}) {
-    const current = getSavedUiZoom();
-    setUiZoom(Math.round((current - UI_ZOOM_STEP) * 100) / 100, options);
-}
-
-function resetUiZoom(options = {}) {
-    setUiZoom(getDefaultUiZoom(), options);
-}
-
-function setupUiZoomShortcuts() {
-    setupFooterZoomControl();
-
-    // One-time zoom reset on Android. Early Android builds inherited the
-    // desktop default zoom (1.2) and PERSISTED it into settings.uiZoom, so
-    // just changing the default doesn't heal existing installs. CSS zoom
-    // above 1.0 on Android WebView shrinks the effective viewport (~327px
-    // on a 393dp phone → horizontal overflow) and triggers paint bugs
-    // (duplicated/offset text). Reset once; the user can still zoom
-    // manually afterwards and that choice sticks.
-    if (state.isAndroid && state.appData.settings?.uiZoom !== undefined && !state.appData.settings.androidZoomReset) {
-        state.appData.settings.uiZoom = DEFAULT_UI_ZOOM;
-        state.appData.settings.androidZoomReset = true;
-        saveData();
-    }
-
-    applyUiZoom(getSavedUiZoom());
-    bindUiZoomLayoutObserver();
-    window.addEventListener('resize', scheduleUiZoomResponsiveLayout, { passive: true });
-    window.visualViewport?.addEventListener('resize', scheduleUiZoomResponsiveLayout, { passive: true });
-
-    if (state.isIOS) return;
-
-    tauriAPI.onMenuZoomIn(() => zoomUiIn({ showToast: true })).catch(() => { });
-    tauriAPI.onMenuZoomOut(() => zoomUiOut({ showToast: true })).catch(() => { });
-    tauriAPI.onMenuZoomReset(() => resetUiZoom({ showToast: true })).catch(() => { });
-
-    document.addEventListener('keydown', (e) => {
-        const hasAccel = e.metaKey || e.ctrlKey;
-        if (!hasAccel || e.altKey) return;
-
-        const key = e.key;
-        const isZoomIn = key === '+' || key === '=' || key === 'Add';
-        const isZoomOut = key === '-' || key === '_' || key === 'Subtract';
-        const isZoomReset = key === '0' || key === ')';
-        if (!isZoomIn && !isZoomOut && !isZoomReset) return;
-
-        e.preventDefault();
-
-        if (isZoomIn) {
-            zoomUiIn({ showToast: true });
-            return;
-        }
-        if (isZoomOut) {
-            zoomUiOut({ showToast: true });
-            return;
-        }
-        resetUiZoom({ showToast: true });
-    });
-}
 
 function setupHelpMenuLinks() {
     tauriAPI.onMenuHelpReportIssue(() => {
@@ -21686,7 +20513,7 @@ function updateManageSectionVisibility() {
 }
 
 // Show Stop All while there are active blocks or schedules to clear.
-function updateOverrideAllButtonVisibility() {
+export function updateOverrideAllButtonVisibility() {
     const row = document.getElementById('settings-override-all-row');
     const showOverride = hasAnyBlockingStateToClear();
 
@@ -22352,7 +21179,7 @@ function setupInAppUninstall() {
 }
 
 // Refresh Uninstall / Open Settings buttons when blocks are active (same gate as macOS).
-function refreshUninstallButtonState() {
+export function refreshUninstallButtonState() {
     const blocking = hasAnyBlockingStateToClear();
     const disabledHint = tSettings('uninstallDisabledHint');
 
