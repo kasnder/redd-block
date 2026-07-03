@@ -99,6 +99,13 @@ pub struct CurrentBlocking {
     /// its next poll tick. Empty when no blocked apps are active or
     /// the watcher has not been started.
     pub apps: Vec<String>,
+    /// Effective allowlist-mode allowed-app union (watcher snapshot or
+    /// on-disk derivation when the watcher is not seeded yet).
+    pub allowed_apps: Vec<String>,
+    /// True when allowlist-mode app enforcement is active.
+    pub allowlist_active: bool,
+    /// Sorted union of allowed websites from active allowlist blocks.
+    pub allowed_domains: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -265,6 +272,9 @@ fn assemble_system_diagnostics_minimal() -> SystemDiagnostics {
             domains: vec![],
             blocks: vec![],
             apps: vec![],
+            allowed_apps: vec![],
+            allowlist_active: false,
+            allowed_domains: vec![],
         },
         app_data: AppDataInfo {
             path: None,
@@ -284,7 +294,56 @@ fn collect_current_blocking(app: &tauri::AppHandle) -> CurrentBlocking {
         None => (Vec::new(), Vec::new()),
     };
     let apps = collect_current_blocked_apps(app);
-    CurrentBlocking { domains, blocks, apps }
+    let allowed_apps = collect_current_allowed_apps(app);
+    let allowlist_active = collect_allowlist_active(app, &allowed_apps);
+    let allowed_domains = allowed_domains_from_blocks(&blocks);
+    CurrentBlocking {
+        domains,
+        blocks,
+        apps,
+        allowed_apps,
+        allowlist_active,
+        allowed_domains,
+    }
+}
+
+/// Sorted union of `domains` from active allowlist-mode blocks.
+fn allowed_domains_from_blocks(blocks: &[native_host::BlockInfo]) -> Vec<String> {
+    let mut set = std::collections::BTreeSet::new();
+    for b in blocks {
+        if native_host::blocklist_mode_is_allowlist(&b.mode) {
+            for d in &b.domains {
+                set.insert(d.clone());
+            }
+        }
+    }
+    set.into_iter().collect()
+}
+
+fn collect_current_allowed_apps(app: &tauri::AppHandle) -> Vec<String> {
+    use tauri::Manager;
+    let state = app.state::<super::app_blocking::AppWatcherState>();
+    let from_watcher = match state.0.lock() {
+        Ok(s) => s.as_ref().map(|h| h.current_allowed_apps()).unwrap_or_default(),
+        Err(_) => Vec::new(),
+    };
+    if !from_watcher.is_empty() {
+        return from_watcher;
+    }
+    super::canonical_data_path(app)
+        .map(|p| native_host::derive_allowed_apps(&p))
+        .unwrap_or_default()
+}
+
+fn collect_allowlist_active(app: &tauri::AppHandle, disk_allowed_apps: &[String]) -> bool {
+    use tauri::Manager;
+    let state = app.state::<super::app_blocking::AppWatcherState>();
+    if let Ok(s) = state.0.lock() {
+        if let Some(h) = s.as_ref() {
+            return h.is_allowlist_active();
+        }
+    }
+    !disk_allowed_apps.is_empty()
 }
 
 /// Read the watcher's currently effective blocked-app set. Returns
@@ -409,8 +468,58 @@ fn collect_fda_info_for_diagnostics(browsers: &profile_scan::ScanResult) -> FdaI
 
 #[cfg(test)]
 mod tests {
-    use super::strip_diagnostics_only_execution_fields;
+    use super::{allowed_domains_from_blocks, strip_diagnostics_only_execution_fields};
+    use crate::native_host::BlockInfo;
     use serde_json::json;
+
+    #[test]
+    fn allowed_domains_from_blocks_unions_allowlist_only() {
+        let blocks = vec![
+            BlockInfo {
+                blocklist_id: "bl".to_string(),
+                name: None,
+                emoji: None,
+                color: None,
+                mode: "blocklist".to_string(),
+                domains: vec!["blocked.com".to_string()],
+                apps: vec![],
+                source: "activeBlock",
+                ends_at: Some(100),
+                started_at: Some(0),
+            },
+            BlockInfo {
+                blocklist_id: "al".to_string(),
+                name: None,
+                emoji: None,
+                color: None,
+                mode: "allowlist".to_string(),
+                domains: vec!["docs.example.com".to_string(), "mail.example.com".to_string()],
+                apps: vec![],
+                source: "schedule",
+                ends_at: Some(200),
+                started_at: Some(0),
+            },
+            BlockInfo {
+                blocklist_id: "al2".to_string(),
+                name: None,
+                emoji: None,
+                color: None,
+                mode: "allowlist".to_string(),
+                domains: vec!["mail.example.com".to_string()],
+                apps: vec![],
+                source: "activeBlock",
+                ends_at: Some(300),
+                started_at: Some(0),
+            },
+        ];
+        assert_eq!(
+            allowed_domains_from_blocks(&blocks),
+            vec![
+                "docs.example.com".to_string(),
+                "mail.example.com".to_string(),
+            ]
+        );
+    }
 
     #[test]
     fn diagnostics_app_data_strips_resolved_segments_recursively() {

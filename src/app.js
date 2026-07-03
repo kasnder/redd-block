@@ -19721,10 +19721,19 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsActiveBlocks: 'Active blocks',
         diagnosticsRecentLogSection: 'Recent log (last {n} lines)',
         diagnosticsCurrentlyBlocking: 'Currently being blocked',
+        diagnosticsCurrentEnforcement: 'Current enforcement',
+        diagnosticsModeBlocklist: 'Blocklist',
+        diagnosticsModeAllowlist: 'Allowlist',
         diagnosticsActiveSources: 'Active blocklists',
         diagnosticsActiveSourcesNone: 'None',
-        diagnosticsDomainsCount: 'Domains ({n})',
-        diagnosticsAppsCount: 'Apps ({n})',
+        diagnosticsDomainsCount: 'Blocked domains ({n})',
+        diagnosticsAllowedDomainsCount: 'Allowed domains ({n})',
+        diagnosticsAppsCount: 'Blocked apps ({n})',
+        diagnosticsAllowedAppsCount: 'Allowed apps ({n})',
+        diagnosticsAllowlistEnforcement: 'App allowlist enforcement',
+        diagnosticsBlockDomainsBlockedFmt: '{n} blocked domain(s)',
+        diagnosticsBlockDomainsAllowedFmt: '{n} allowed domain(s)',
+        diagnosticsBlockAppsFmt: '{n} app(s)',
         diagnosticsAppDataSection: 'App data (redd-block-data.json)',
         diagnosticsPath: 'Path',
         diagnosticsWatchdog: 'Watchdog Scheduled Task',
@@ -20491,10 +20500,19 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsActiveBlocks: 'Aktive blokeringer',
         diagnosticsRecentLogSection: 'Seneste log (sidste {n} linjer)',
         diagnosticsCurrentlyBlocking: 'Blokeres lige nu',
+        diagnosticsCurrentEnforcement: 'Aktuel håndhævelse',
+        diagnosticsModeBlocklist: 'Blokeringsliste',
+        diagnosticsModeAllowlist: 'Tilladelsesliste',
         diagnosticsActiveSources: 'Aktive blokeringslister',
         diagnosticsActiveSourcesNone: 'Ingen',
-        diagnosticsDomainsCount: 'Domæner ({n})',
-        diagnosticsAppsCount: 'Apps ({n})',
+        diagnosticsDomainsCount: 'Blokerede domæner ({n})',
+        diagnosticsAllowedDomainsCount: 'Tilladte domæner ({n})',
+        diagnosticsAppsCount: 'Blokerede apps ({n})',
+        diagnosticsAllowedAppsCount: 'Tilladte apps ({n})',
+        diagnosticsAllowlistEnforcement: 'App-tilladelsesliste',
+        diagnosticsBlockDomainsBlockedFmt: '{n} blokeret domæne',
+        diagnosticsBlockDomainsAllowedFmt: '{n} tilladt domæne',
+        diagnosticsBlockAppsFmt: '{n} app',
         diagnosticsAppDataSection: 'Appdata (redd-block-data.json)',
         diagnosticsPath: 'Sti',
         diagnosticsWatchdog: 'Watchdog-planlagt opgave',
@@ -23134,20 +23152,41 @@ function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) {
     html += diagnosticsKvRow(e(tSettings('diagnosticsOsArch')), `${e(d.app.os)} / ${e(d.app.arch)}`);
     html += '</div></div>';
 
-    // Currently being blocked
+    // Currently being blocked / current enforcement
     if (d.current_blocking) {
         const cb = d.current_blocking;
+        const hasAllowlist = (cb.blocks || []).some((b) => b.mode === 'allowlist')
+            || (cb.allowed_domains?.length ?? 0) > 0
+            || cb.allowlist_active;
+        const sectionTitleKey = hasAllowlist
+            ? 'diagnosticsCurrentEnforcement'
+            : 'diagnosticsCurrentlyBlocking';
         html += '<div class="diagnostics-section">';
-        html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsCurrentlyBlocking'))}</div>`;
+        html += `<div class="diagnostics-section-title">${e(tSettings(sectionTitleKey))}</div>`;
         html += '<div class="diagnostics-card">';
         if (cb.blocks && cb.blocks.length > 0) {
             html += '<ul class="diagnostics-list">';
             for (const b of cb.blocks) {
                 const label = `${b.emoji ? b.emoji + ' ' : ''}${b.name || b.blocklistId}`;
+                const isAllow = b.mode === 'allowlist';
+                const modeLabel = isAllow
+                    ? tSettings('diagnosticsModeAllowlist')
+                    : tSettings('diagnosticsModeBlocklist');
                 const srcLabel = b.source === 'schedule' ? 'schedule' : 'one-off';
                 const endsTxt = b.endsAt ? ` until ${new Date(b.endsAt).toLocaleString()}` : '';
                 const domainsCount = (b.domains || []).length;
-                html += `<li class="diagnostics-kv-row"><span class="diagnostics-kv-label">${e(label)}</span><span class="diagnostics-kv-value diag-muted">${e(srcLabel)}${e(endsTxt)} · ${domainsCount} domain${domainsCount === 1 ? '' : 's'}</span></li>`;
+                const domainFmtKey = isAllow
+                    ? 'diagnosticsBlockDomainsAllowedFmt'
+                    : 'diagnosticsBlockDomainsBlockedFmt';
+                let detail = `${modeLabel} · ${srcLabel}${endsTxt}`;
+                if (domainsCount > 0) {
+                    detail += ` · ${tSettingsFmt(domainFmtKey, { n: domainsCount })}`;
+                }
+                const appsCount = (b.apps || []).length;
+                if (appsCount > 0) {
+                    detail += ` · ${tSettingsFmt('diagnosticsBlockAppsFmt', { n: appsCount })}`;
+                }
+                html += `<li class="diagnostics-kv-row"><span class="diagnostics-kv-label">${e(label)}</span><span class="diagnostics-kv-value diag-muted">${e(detail)}</span></li>`;
             }
             html += '</ul>';
         } else {
@@ -23161,11 +23200,31 @@ function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) {
             cb.domains || [],
             e,
         );
+        const allowedDomains = cb.allowed_domains || [];
+        if (allowedDomains.length > 0 || (cb.blocks || []).some((b) => b.mode === 'allowlist')) {
+            html += diagnosticsKvPreRow(
+                e(tSettings('diagnosticsAllowedDomainsCount').replace('{n}', String(allowedDomains.length))),
+                allowedDomains,
+                e,
+            );
+        }
         html += diagnosticsKvPreRow(
             e(tSettings('diagnosticsAppsCount').replace('{n}', String(cb.apps?.length ?? 0))),
             cb.apps || [],
             e,
         );
+        const allowedApps = cb.allowed_apps || [];
+        if (allowedApps.length > 0 || cb.allowlist_active) {
+            html += diagnosticsKvPreRow(
+                e(tSettings('diagnosticsAllowedAppsCount').replace('{n}', String(allowedApps.length))),
+                allowedApps,
+                e,
+            );
+            html += diagnosticsKvRow(
+                e(tSettings('diagnosticsAllowlistEnforcement')),
+                diagnosticsYesNoValue(!!cb.allowlist_active),
+            );
+        }
         html += '</div></div>';
     }
 

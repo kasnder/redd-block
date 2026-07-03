@@ -225,6 +225,24 @@ impl Handle {
             Err(_) => Vec::new(),
         }
     }
+
+    /// Snapshot of the currently effective allowlist-mode allowed-app set,
+    /// sorted alphabetically. Used by diagnostics.
+    pub fn current_allowed_apps(&self) -> Vec<String> {
+        match self.allowed_apps.read() {
+            Ok(h) => {
+                let mut v: Vec<String> = h.iter().cloned().collect();
+                v.sort();
+                v
+            }
+            Err(_) => Vec::new(),
+        }
+    }
+
+    /// Whether allowlist-mode app enforcement is active (non-empty allowed set).
+    pub fn is_allowlist_active(&self) -> bool {
+        self.allowlist_active.load(Ordering::SeqCst)
+    }
 }
 
 /// Start the watcher. One polling thread per Handle.
