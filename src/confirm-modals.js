@@ -14,6 +14,7 @@ import { getCommittedScheduleSegmentCount, getInitialExpandedScheduleSegmentInde
 import { getEffectiveScheduleStartOverlayId, rememberLastScheduleStartOverlayId, syncScheduleConfirmOverlaySummary } from './schedule-overlay.js';
 import { closeAllPopovers, disableScheduleControls, disableTimeControls, getEndTimeAsDate, getStartTimeAsDate, initializeTimeInputs, pad, updateDurationQuickBtns, updateTimeDisplay } from './time-inputs.js';
 import { updateBlockedApps, updateOnboardingVisibility, updateWindowHeight, requestScreentimeAuth, isHelperConnectionError } from './blocking-platform.js';
+import { resetWebsitesImportMenuPosition } from './website-input.js';
 import { bindUiZoomLayoutObserver, scheduleSelectionPromptLayout, scheduleUiZoomResponsiveLayout } from './theme.js';
 import {
     IOS_STOP_BTN_META_COLLAPSE_SLACK_PX, MINUTES_PER_DAY, MAX_SAME_DAY_END_MINUTES,
@@ -21,7 +22,7 @@ import {
     formatMinutesAsHHMM, formatTime, generateId, getBlocklistDisplayApps,
     getCompletedChallengeText, getCurrentChallengeWord,
     isMobileWordByWordChallenge, renderOverrideWordChallengeState,
-    renderPauseWordChallengeState, resetWebsitesImportMenuPosition,
+    renderPauseWordChallengeState,
     setOverrideWordChallengeMode, setPauseWordChallengeMode,
     shouldUseCompactMobileScheduleDayLabels, snapMinutesToInterval, websiteWord,
 } from './app.js';
