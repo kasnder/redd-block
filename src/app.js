@@ -19731,8 +19731,7 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsAppsCount: 'Blocked apps ({n})',
         diagnosticsAllowedAppsCount: 'Allowed apps ({n})',
         diagnosticsAllowlistEnforcement: 'App allowlist enforcement',
-        diagnosticsBlockDomainsBlockedFmt: '{n} blocked domain(s)',
-        diagnosticsBlockDomainsAllowedFmt: '{n} allowed domain(s)',
+        diagnosticsBlockDomainsFmt: '{n} domain(s)',
         diagnosticsBlockAppsFmt: '{n} app(s)',
         diagnosticsAppDataSection: 'App data (redd-block-data.json)',
         diagnosticsPath: 'Path',
@@ -20510,8 +20509,7 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsAppsCount: 'Blokerede apps ({n})',
         diagnosticsAllowedAppsCount: 'Tilladte apps ({n})',
         diagnosticsAllowlistEnforcement: 'App-tilladelsesliste',
-        diagnosticsBlockDomainsBlockedFmt: '{n} blokeret domæne',
-        diagnosticsBlockDomainsAllowedFmt: '{n} tilladt domæne',
+        diagnosticsBlockDomainsFmt: '{n} domæne',
         diagnosticsBlockAppsFmt: '{n} app',
         diagnosticsAppDataSection: 'Appdata (redd-block-data.json)',
         diagnosticsPath: 'Sti',
@@ -23163,7 +23161,7 @@ function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) {
             : 'diagnosticsCurrentlyBlocking';
         html += '<div class="diagnostics-section">';
         html += `<div class="diagnostics-section-title">${e(tSettings(sectionTitleKey))}</div>`;
-        html += '<div class="diagnostics-card">';
+        html += '<div class="diagnostics-card diagnostics-card-enforcement">';
         if (cb.blocks && cb.blocks.length > 0) {
             html += '<ul class="diagnostics-list">';
             for (const b of cb.blocks) {
@@ -23175,18 +23173,15 @@ function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) {
                 const srcLabel = b.source === 'schedule' ? 'schedule' : 'one-off';
                 const endsTxt = b.endsAt ? ` until ${new Date(b.endsAt).toLocaleString()}` : '';
                 const domainsCount = (b.domains || []).length;
-                const domainFmtKey = isAllow
-                    ? 'diagnosticsBlockDomainsAllowedFmt'
-                    : 'diagnosticsBlockDomainsBlockedFmt';
                 let detail = `${modeLabel} · ${srcLabel}${endsTxt}`;
                 if (domainsCount > 0) {
-                    detail += ` · ${tSettingsFmt(domainFmtKey, { n: domainsCount })}`;
+                    detail += ` · ${tSettingsFmt('diagnosticsBlockDomainsFmt', { n: domainsCount })}`;
                 }
                 const appsCount = (b.apps || []).length;
                 if (appsCount > 0) {
                     detail += ` · ${tSettingsFmt('diagnosticsBlockAppsFmt', { n: appsCount })}`;
                 }
-                html += `<li class="diagnostics-kv-row"><span class="diagnostics-kv-label">${e(label)}</span><span class="diagnostics-kv-value diag-muted">${e(detail)}</span></li>`;
+                html += `<li class="diagnostics-kv-row diagnostics-kv-row-multiline"><span class="diagnostics-kv-label">${e(label)}</span><span class="diagnostics-kv-value diag-muted">${e(detail)}</span></li>`;
             }
             html += '</ul>';
         } else {
