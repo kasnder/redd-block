@@ -4,7 +4,8 @@ import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
 import { normalizeBlocklist, isProtectedDomain, collectActiveIOSManualBlockPayload } from './blocklist-utils.js';
 import { isSchedulePausedNow, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
-import { generateId, normalizeLoadedEulaState, updateBlockedApps } from './app.js';
+import { generateId, updateBlockedApps } from './app.js';
+import { normalizeLoadedEulaState } from './onboarding.js';
 import { migrateBlocklistStartOverlaysToGlobal, migrateLegacyScheduleStartOverlays } from './schedule-overlay.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
 

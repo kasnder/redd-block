@@ -28,11 +28,14 @@ import { isModalVisible } from './modal-manager.js';
 import { kickClockNow } from './render.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
 import {
-    EXT_ONBOARDING_DISMISSED_KEY, MIGRATION_POLL_MS, applyEnforcementDescCopy,
-    applySafariFdaOnboardingLanguage, hasAcceptedEula, presentWelcomeOnboarding,
+    applySafariFdaOnboardingLanguage,
     reconcileBlockingWarningShell, setLanguagePickerOpen, showExclusiveOnboardingScreen,
-    showMigrationOnboarding, updateOnboardingVisibility,
+    updateOnboardingVisibility,
 } from './app.js';
+import {
+    EXT_ONBOARDING_DISMISSED_KEY, MIGRATION_POLL_MS, applyEnforcementDescCopy,
+    hasAcceptedEula, showMigrationOnboarding, presentWelcomeOnboarding,
+} from './onboarding.js';
 
 // ---- Enforcement opt-in toggle -------------------------------------------
 // Reads the current enforcement-enabled setting from the backend and

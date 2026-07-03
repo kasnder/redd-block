@@ -9,9 +9,9 @@ import { stopHelperUiRefreshLoop } from './modal-manager.js';
 import { saveData } from './persistence.js';
 import { syncAllStopBtnLabelFits, syncPauseDurationRowLayout } from './confirm-modals.js';
 import { wireEnforcementToggle, wireBlockingMethodSettings, resetSettingsEnforcementSection } from './enforcement.js';
+import { applyEnforcementDescCopy } from './onboarding.js';
 import {
     setLanguagePickerOpen,
-    applyEnforcementDescCopy,
     applySettingsLanguage,
     applyFormattedCurrentVersion,
     syncMobileScheduleDayLabelsViewportMode,
