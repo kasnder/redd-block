@@ -5,8 +5,10 @@
   "scripts": {
     "dev": "node ./scripts/ensure-dev-icons.js && tauri dev",
     "icons:generate": "node ./scripts/generate-icons-from-svg.js",
+    "dev:android": "tauri android dev",
     "dev:ios": "bash ./scripts/ios-dev.sh",
     "build": "tauri build",
+    "build:android": "tauri android build",
     "build:mac": "bash ./scripts/build-mac.sh",
     "build:mac-pkg": "./scripts/build-mac-pkg.sh --release",
     "build:mac-pkg:debug": "./scripts/build-mac-pkg.sh",

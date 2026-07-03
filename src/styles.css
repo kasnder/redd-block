@@ -244,7 +244,8 @@ body.ios {
     text-size-adjust: 100%;
 }
 
-body.ios {
+body.ios,
+body.android {
     padding-top: env(safe-area-inset-top, 20px);
     --app-footer-pad-top: 10px;
     --app-footer-pad-bottom: 10px;
@@ -257,7 +258,8 @@ body.ios {
     );
 }
 
-body.ios .main-content {
+body.ios .main-content,
+body.android .main-content {
     margin-top: 0;
     overflow-y: auto;
     overflow-x: hidden;
@@ -269,8 +271,9 @@ body.ios .main-content {
     padding-bottom: var(--app-footer-height);
 }
 
-/* iPhone */
-body.ios .app-container {
+/* iPhone / Android phone */
+body.ios .app-container,
+body.android .app-container {
     /* 100vw can exceed the visible width (scrollbars / WebKit); % tracks the body box. */
     width: 100%;
     max-width: 100%;
@@ -278,6 +281,15 @@ body.ios .app-container {
     padding-bottom: var(--app-footer-height);
     overflow: hidden;
     box-sizing: border-box;
+}
+
+body.android {
+    padding-top: 0;
+}
+
+body.android .app-container {
+    height: 100vh;
+    padding-bottom: 30px;
 }
 
 /* iPad: WKWebView "desktop" content mode ignores CSS zoom and pageZoom for text/emoji sizing.
@@ -298,7 +310,9 @@ body.ios .grid-top-row {
 }
 
 body.ios .scheduler-section,
-body.ios .blocklists-section {
+body.ios .blocklists-section,
+body.android .scheduler-section,
+body.android .blocklists-section {
     min-width: 0;
     max-width: 100%;
 }
@@ -326,6 +340,16 @@ body.handset-device #settings-modal .language-picker-trigger .language-picker-co
         --app-footer-pad-bottom: 12px;
         --app-footer-text-line: 16.25px;
     }
+}
+
+/* Any row of buttons/inputs that doesn't wrap can force the whole page
+   into horizontal scroll on a narrow phone (e.g. the 5-button instant-
+   block duration row). Wrapping these is a broader safety net beyond
+   any single component fix — new unwrapped rows are easy to add by
+   accident in a codebase this size. */
+body.android .duration-quick-btns,
+body.android .time-pickers-row {
+    flex-wrap: wrap;
 }
 
 /* App Container */
@@ -3315,35 +3339,35 @@ body.ios.ui-zoom-tier-stack .main-content{
     --app-settings-right: 18px;
 }
 
-/* iPhone landscape: keep two columns, but let the scheduler claim the width it
+/* Handset landscape: keep two columns, but let the scheduler claim the width it
    needs before blocklists, and keep the whole app inset from the screen edges. */
 @media (orientation: landscape) {
-    body.ios.ios-phone .app-container{
+    body.handset-device .app-container{
         width: auto;
         margin-left: 12px;
         margin-right: 12px;
     }
 
-    body.ios.ios-phone .main-content{
+    body.handset-device .main-content{
         padding-left: 18px;
         padding-right: 18px;
         --app-settings-right: 18px;
     }
 
-    body.ios.ios-phone .grid-top-row{
+    body.handset-device .grid-top-row{
         display: flex;
         gap: 12px;
         align-items: flex-start;
         min-width: 0;
     }
 
-    body.ios.ios-phone .blocklists-section{
+    body.handset-device .blocklists-section{
         flex: 45 1 0;
         max-width: 45%;
         min-width: 0;
     }
 
-    body.ios.ios-phone .scheduler-section{
+    body.handset-device .scheduler-section{
         flex: 55 1 0;
         min-width: 0;
         max-width: 55%;
@@ -6110,23 +6134,23 @@ body:not(.ios) .segment-row > .time-pickers-row{
 }
 
 @media (orientation: landscape) {
-    body.ios.ios-phone .scheduler-content,
-body.ios.ios-phone .time-picker-container,
-body.ios.ios-phone .schedule-block-panel,
-body.ios.ios-phone .schedule-segments,
-body.ios.ios-phone .schedule-segment,
-body.ios.ios-phone .segment-row,
-body.ios.ios-phone .time-pickers-row,
-body.ios.ios-phone .segment-days-group{
+    body.handset-device .scheduler-content,
+body.handset-device .time-picker-container,
+body.handset-device .schedule-block-panel,
+body.handset-device .schedule-segments,
+body.handset-device .schedule-segment,
+body.handset-device .segment-row,
+body.handset-device .time-pickers-row,
+body.handset-device .segment-days-group{
         min-width: 0;
     }
 
-    body.ios.ios-phone .schedule-segment{
+    body.handset-device .schedule-segment{
         display: block;
         width: 100%;
     }
 
-    body.ios.ios-phone .segment-row{
+    body.handset-device .segment-row{
         display: flex;
         flex-wrap: wrap;
         column-gap: 0;
@@ -6134,7 +6158,7 @@ body.ios.ios-phone .segment-days-group{
         align-items: flex-start;
     }
 
-    body.ios.ios-phone .segment-row>.time-pickers-row{
+    body.handset-device .segment-row>.time-pickers-row{
         min-width: 0;
         width: 100%;
     }
@@ -6186,7 +6210,8 @@ body.ios.ios-phone .segment-days-group{
     transition: all 0.15s ease;
 }
 
-body.ios .segment-day-toggle {
+body.ios .segment-day-toggle,
+body.android .segment-day-toggle {
     min-width: 48px;
     height: 32px;
     padding: 0 10px;
@@ -6194,7 +6219,8 @@ body.ios .segment-day-toggle {
 }
 
 /* Only the compact single-letter fallback gets tighter horizontal sizing. */
-body.ios .segment-days.compact-day-labels .segment-day-toggle {
+body.ios .segment-days.compact-day-labels .segment-day-toggle,
+body.android .segment-days.compact-day-labels .segment-day-toggle {
     min-width: 32px;
     padding: 0 4px;
 }
@@ -6499,7 +6525,8 @@ body.dark-mode .schedule-panel-overlay-group .repeat-label.repeat-label-disabled
     transition: all 0.15s ease;
 }
 
-body.ios .day-toggle {
+body.ios .day-toggle,
+body.android .day-toggle {
     width: 44px;
     height: 44px;
     padding: 0;
@@ -6860,7 +6887,8 @@ body.dark-mode .schedule-pending-discard:hover{
 }
 
 /* iOS/touch: reliable swipe scroll and momentum */
-body.ios .blocklists-container {
+body.ios .blocklists-container,
+body.android .blocklists-container {
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
 }
@@ -6990,7 +7018,8 @@ body.selection-prompt-layout-stack .selection-prompt svg{
     opacity: 0.55;
 }
 
-body.ios .selection-prompt {
+body.ios .selection-prompt,
+body.android .selection-prompt {
     font-size: 17px;
 }
 
@@ -7153,7 +7182,8 @@ body.ios .selection-prompt {
     align-self: center;
 }
 
-body.ios .blocklist-actions {
+body.ios .blocklist-actions,
+body.android .blocklist-actions {
     gap: 0px;
 }
 
@@ -7171,7 +7201,8 @@ body.ios .blocklist-actions {
     transition: all 0.2s ease;
 }
 
-body.ios .blocklist-action-btn {
+body.ios .blocklist-action-btn,
+body.android .blocklist-action-btn {
     width: 44px;
     height: 44px;
 }
@@ -7181,7 +7212,8 @@ body.ios .blocklist-action-btn {
     height: 18px;
 }
 
-body.ios .blocklist-action-btn svg {
+body.ios .blocklist-action-btn svg,
+body.android .blocklist-action-btn svg {
     width: 22px;
     height: 22px;
 }
@@ -10555,13 +10587,15 @@ body.ios #blocklist-modal .tags-input-container {
     align-items: stretch;
 }
 
-body.ios #blocklist-modal .tags-input-container > .tags-container {
+body.ios #blocklist-modal .tags-input-container > .tags-container,
+body.android #blocklist-modal .tags-input-container > .tags-container {
     flex: 1 1 100%;
     width: 100%;
 }
 
 /* Empty chip wells still participate in flex gap — removes the extra space above the apps/websites row until tags exist. */
-body.ios #blocklist-modal .tags-input-container > .tags-container:empty {
+body.ios #blocklist-modal .tags-input-container > .tags-container:empty,
+body.android #blocklist-modal .tags-input-container > .tags-container:empty {
     display: none;
 }
 
@@ -10745,7 +10779,7 @@ body.ios .modal-overlay {
     padding-top: calc(env(safe-area-inset-top, 20px) + 10px);
 }
 
-body.handset-device.ios .modal-overlay.mobile-fullscreen-modal{
+body.handset-device .modal-overlay.mobile-fullscreen-modal{
     align-items: stretch;
     padding: 0;
     overflow: hidden;
@@ -10970,14 +11004,14 @@ body.ios #blocklist-modal .override-count-input {
 
 /* Desktop popup modals: scroll on .mobile-modal-scroll-body with the scrollbar
    on the modal's right edge (not inset by content padding). */
-body:not(.ios) .modal-overlay .modal-content:has(.mobile-modal-scroll-body){
+body:not(.ios):not(.handset-device) .modal-overlay .modal-content:has(.mobile-modal-scroll-body){
     display: flex;
     flex-direction: column;
     max-height: 95vh;
     overflow: hidden;
 }
 
-body:not(.ios) .modal-overlay .mobile-modal-scroll-body{
+body:not(.ios):not(.handset-device) .modal-overlay .mobile-modal-scroll-body{
     flex: 1;
     min-height: 0;
     margin-right: -24px;
@@ -12592,8 +12626,8 @@ body.dark-mode .modal-btn.black-btn:hover{
     padding-bottom: 2px;
 }
 
-body.ios.ios-phone .footer,
-body.ios.ios-phone .footer-text{
+body.handset-device .footer,
+body.handset-device .footer-text{
     font-size: 13px;
     line-height: 1.25;
 }
@@ -12642,8 +12676,11 @@ body.dark-mode .settings-top-btn{
 /* Hide desktop-only settings sections on iOS (#settings-modal .settings-section
    sets display:flex and would otherwise win over .desktop-only). */
 body.ios #settings-enforcement-panel,
+body.android #settings-enforcement-panel,
 body.ios #settings-modal .settings-section.desktop-only,
-body.ios #settings-modal .settings-help-section {
+body.android #settings-modal .settings-section.desktop-only,
+body.ios #settings-modal .settings-help-section,
+body.android #settings-modal .settings-help-section {
     display: none;
 }
 
@@ -13235,6 +13272,13 @@ body.dark-mode #settings-modal .settings-feedback-footer{
     font-size: 13px;
     color: var(--text-muted);
     white-space: nowrap;
+}
+
+body.ios #current-app-version,
+body.android #current-app-version,
+body.ios #settings-latest-version-wrap,
+body.android #settings-latest-version-wrap {
+    display: none;
 }
 
 /* Advanced Options Toggle */
@@ -14408,55 +14452,55 @@ body.dark-mode #schedule-overlay-delete-modal .modal-btn.cancel-btn:hover{
     background: var(--scrollbar-thumb-hover);
 }
 
-/* iPhone: hide scrollbars; touch scrolling still works */
-body.ios.ios-phone{
+/* Handset: hide scrollbars; touch scrolling still works */
+body.handset-device{
     scrollbar-width: none;
 }
 
-body.ios.ios-phone *::-webkit-scrollbar{
+body.handset-device *::-webkit-scrollbar{
     display: none;
     width: 0;
     height: 0;
 }
 
 /* Phone exceptions: thin scrollbars on long blocklist / schedule-segment lists */
-body.ios.ios-phone .blocklists-container,
-body.ios.ios-phone .schedule-segments:has(.schedule-segment:nth-child(4)){
+body.handset-device .blocklists-container,
+body.handset-device .schedule-segments:has(.schedule-segment:nth-child(4)){
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
-body.ios.ios-phone .blocklists-container::-webkit-scrollbar,
-body.ios.ios-phone .schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar{
+body.handset-device .blocklists-container::-webkit-scrollbar,
+body.handset-device .schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar{
     display: block;
     width: 6px;
     height: 6px;
 }
 
-body.ios.ios-phone .blocklists-container::-webkit-scrollbar-track,
-body.ios.ios-phone .schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar-track{
+body.handset-device .blocklists-container::-webkit-scrollbar-track,
+body.handset-device .schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar-track{
     background: transparent;
 }
 
-body.ios.ios-phone .blocklists-container::-webkit-scrollbar-thumb,
-body.ios.ios-phone .schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar-thumb{
+body.handset-device .blocklists-container::-webkit-scrollbar-thumb,
+body.handset-device .schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar-thumb{
     background: var(--scrollbar-thumb);
     border-radius: 3px;
 }
 
-body.ios.ios-phone .blocklists-container::-webkit-scrollbar-thumb:hover,
-body.ios.ios-phone .schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar-thumb:hover{
+body.handset-device .blocklists-container::-webkit-scrollbar-thumb:hover,
+body.handset-device .schedule-segments:has(.schedule-segment:nth-child(4))::-webkit-scrollbar-thumb:hover{
     background: var(--scrollbar-thumb-hover);
 }
 
-/* iPhone: larger schedule/time controls for touch (iPad upsizes via :not(.ios-phone) rules). */
-body.ios.ios-phone .main-content .segment-row > .segment-days-group{
+/* Handset: larger schedule/time controls for touch (iPad upsizes via :not(.ios-phone) rules). */
+body.handset-device .main-content .segment-row > .segment-days-group{
     flex: 1 1 100%;
     width: 100%;
     min-width: 100%;
 }
 
-body.ios.ios-phone .main-content .segment-day-toggle{
+body.handset-device .main-content .segment-day-toggle{
     height: 34px;
     min-height: 34px;
     max-height: 34px;
@@ -14466,17 +14510,17 @@ body.ios.ios-phone .main-content .segment-day-toggle{
     flex: 0 0 auto;
 }
 
-body.ios.ios-phone .main-content .segment-days{
+body.handset-device .main-content .segment-days{
     gap: 4px;
     align-items: center;
 }
 
-body.ios.ios-phone .main-content .segment-days.compact-day-labels{
+body.handset-device .main-content .segment-days.compact-day-labels{
     flex-wrap: nowrap;
     width: 100%;
 }
 
-body.ios.ios-phone .main-content .segment-days.compact-day-labels .segment-day-toggle{
+body.handset-device .main-content .segment-days.compact-day-labels .segment-day-toggle{
     flex: 1 1 0;
     min-width: 0;
     width: auto;
@@ -14486,11 +14530,11 @@ body.ios.ios-phone .main-content .segment-days.compact-day-labels .segment-day-t
     padding: 0 2px;
 }
 
-body.ios.ios-phone .main-content .schedule-block-panel .segment-days{
+body.handset-device .main-content .schedule-block-panel .segment-days{
     min-height: 34px;
 }
 
-body.ios.ios-phone .main-content .add-segment-btn{
+body.handset-device .main-content .add-segment-btn{
     gap: 8px;
     padding: 14px 18px;
     font-size: 16px;
@@ -14500,22 +14544,22 @@ body.ios.ios-phone .main-content .add-segment-btn{
     box-sizing: border-box;
 }
 
-body.ios.ios-phone .main-content .add-segment-btn svg{
+body.handset-device .main-content .add-segment-btn svg{
     width: 16px;
     height: 16px;
     flex-shrink: 0;
 }
 
-body.ios.ios-phone .main-content .schedule-repeat-section,
-body.ios.ios-phone .main-content .schedule-panel-overlay-group{
+body.handset-device .main-content .schedule-repeat-section,
+body.handset-device .main-content .schedule-panel-overlay-group{
     gap: 10px;
 }
 
-body.ios.ios-phone .main-content .repeat-label{
+body.handset-device .main-content .repeat-label{
     font-size: 16px;
 }
 
-body.ios.ios-phone .main-content .repeat-dropdown-btn{
+body.handset-device .main-content .repeat-dropdown-btn{
     gap: 6px;
     padding: 10px 14px;
     font-size: 16px;
@@ -14524,24 +14568,24 @@ body.ios.ios-phone .main-content .repeat-dropdown-btn{
     box-sizing: border-box;
 }
 
-body.ios.ios-phone .main-content .repeat-dropdown-btn svg{
+body.handset-device .main-content .repeat-dropdown-btn svg{
     width: 14px;
     height: 14px;
     flex-shrink: 0;
 }
 
-body.ios.ios-phone .main-content .repeat-date-input{
+body.handset-device .main-content .repeat-date-input{
     padding: 10px 14px;
     font-size: 16px;
     min-height: 44px;
     box-sizing: border-box;
 }
 
-body.ios.ios-phone .main-content .repeat-date-overlay{
+body.handset-device .main-content .repeat-date-overlay{
     font-size: 16px;
 }
 
-body.ios.ios-phone .main-content .time-part{
+body.handset-device .main-content .time-part{
     padding: 8px 6px;
     font-size: 18px;
     min-width: 44px;
@@ -14550,14 +14594,14 @@ body.ios.ios-phone .main-content .time-part{
     box-sizing: border-box;
 }
 
-body.ios.ios-phone .main-content #end-time-display input.time-part.time-popover-anchor,
-body.ios.ios-phone .main-content .schedule-block-panel .schedule-start-display input.time-part,
-body.ios.ios-phone .main-content .schedule-block-panel .schedule-end-display input.time-part{
+body.handset-device .main-content #end-time-display input.time-part.time-popover-anchor,
+body.handset-device .main-content .schedule-block-panel .schedule-start-display input.time-part,
+body.handset-device .main-content .schedule-block-panel .schedule-end-display input.time-part{
     min-width: 44px;
     max-width: 56px;
 }
 
-body.ios.ios-phone .main-content .now-btn{
+body.handset-device .main-content .now-btn{
     padding: 10px 18px;
     font-size: 16px;
     min-height: 44px;
@@ -14565,14 +14609,14 @@ body.ios.ios-phone .main-content .now-btn{
     box-sizing: border-box;
 }
 
-body.ios.ios-phone .main-content #timed-controls .duration-input-wrapper,
-body.ios.ios-phone .main-content #timed-controls .time-picker-row,
-body.ios.ios-phone .main-content .schedule-block-panel .time-picker-row{
+body.handset-device .main-content #timed-controls .duration-input-wrapper,
+body.handset-device .main-content #timed-controls .time-picker-row,
+body.handset-device .main-content .schedule-block-panel .time-picker-row{
     min-height: 44px;
 }
 
-body.ios.ios-phone .main-content #timed-controls .time-separator,
-body.ios.ios-phone .main-content .schedule-block-panel .time-separator{
+body.handset-device .main-content #timed-controls .time-separator,
+body.handset-device .main-content .schedule-block-panel .time-separator{
     align-self: flex-end;
     display: inline-flex;
     align-items: center;
@@ -14582,30 +14626,30 @@ body.ios.ios-phone .main-content .schedule-block-panel .time-separator{
     line-height: 0;
 }
 
-body.ios.ios-phone .main-content #timed-controls .time-separator svg,
-body.ios.ios-phone .main-content .schedule-block-panel .time-separator svg{
+body.handset-device .main-content #timed-controls .time-separator svg,
+body.handset-device .main-content .schedule-block-panel .time-separator svg{
     width: 20px;
     height: 20px;
 }
 
-body.ios.ios-phone .main-content .time-colon{
+body.handset-device .main-content .time-colon{
     font-size: 18px;
 }
 
-body.ios.ios-phone .main-content .popover-option{
+body.handset-device .main-content .popover-option{
     padding: 10px 14px;
     font-size: 16px;
     min-width: 52px;
     min-height: 44px;
 }
 
-body.ios.ios-phone .main-content .blocklist-menu{
+body.handset-device .main-content .blocklist-menu{
     min-width: 148px;
     padding: 6px;
     border-radius: 10px;
 }
 
-body.ios.ios-phone .main-content .blocklist-menu-item{
+body.handset-device .main-content .blocklist-menu-item{
     padding: 12px 14px;
     font-size: 16px;
     border-radius: 8px;
@@ -14613,24 +14657,24 @@ body.ios.ios-phone .main-content .blocklist-menu-item{
     gap: 10px;
 }
 
-body.ios.ios-phone .main-content .blocklist-menu-item svg{
+body.handset-device .main-content .blocklist-menu-item svg{
     width: 18px;
     height: 18px;
 }
 
-body.ios.ios-phone .main-content .repeat-option{
+body.handset-device .main-content .repeat-option{
     padding: 12px 14px;
     font-size: 16px;
     min-height: 44px;
 }
 
-body.ios.ios-phone .now-blocking-chip-menu{
+body.handset-device .now-blocking-chip-menu{
     min-width: 160px;
     padding: 6px;
     border-radius: 10px;
 }
 
-body.ios.ios-phone .now-blocking-chip-menu-item{
+body.handset-device .now-blocking-chip-menu-item{
     padding: 12px 14px;
     font-size: 16px;
     min-height: 44px;
@@ -14638,18 +14682,18 @@ body.ios.ios-phone .now-blocking-chip-menu-item{
     border-radius: 8px;
 }
 
-body.ios.ios-phone .now-blocking-chip-menu-item svg{
+body.handset-device .now-blocking-chip-menu-item svg{
     width: 18px;
     height: 18px;
 }
 
-body.ios.ios-phone .modal-overlay .websites-import-menu{
+body.handset-device .modal-overlay .websites-import-menu{
     min-width: 220px;
     padding: 6px;
     border-radius: 10px;
 }
 
-body.ios.ios-phone .modal-overlay .websites-import-menu-item{
+body.handset-device .modal-overlay .websites-import-menu-item{
     padding: 12px 14px;
     font-size: 16px;
     min-height: 44px;
@@ -14657,7 +14701,7 @@ body.ios.ios-phone .modal-overlay .websites-import-menu-item{
     border-radius: 8px;
 }
 
-body.ios.ios-phone .modal-overlay .websites-import-menu-item svg{
+body.handset-device .modal-overlay .websites-import-menu-item svg{
     width: 18px;
     height: 18px;
 }
@@ -14883,7 +14927,8 @@ body.handset-device #blocklist-modal .custom-swatch .custom-icon{
     animation: slideUp 0.3s ease;
 }
 
-body.ios .undo-toast {
+body.ios .undo-toast,
+body.android .undo-toast {
     bottom: calc(20px + env(safe-area-inset-bottom, 20px));
 }
 
@@ -14950,7 +14995,8 @@ body.dark-mode .undo-btn:hover{
     animation: zoomToastIn 0.18s ease;
 }
 
-body.ios .zoom-toast {
+body.ios .zoom-toast,
+body.android .zoom-toast {
     top: calc(20px + env(safe-area-inset-top, 20px));
 }
 
@@ -16022,4 +16068,3 @@ body.dark-mode .app-blocking-warning-card{
 .app-picker-actions .confirm-btn:hover{
     filter: brightness(1.1);
 }
-

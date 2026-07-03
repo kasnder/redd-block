@@ -6,9 +6,9 @@ Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and th
 
 ## Features
 
-- **Cross-Platform** — Works on macOS 11+, Windows 10+, iOS (iPad/iPhone), and Android (source code for the Android version is here: https://github.com/kasnder/redd-block-android)
-- **Website Blocking** — ReDD Blocker decides what to block. On **macOS**, Safari/Chrome/Brave/Edge use **Automation** (no extension); **Firefox** uses the ReDD Focus extension. On **Windows**, Chrome/Brave/Edge/Firefox use the extension. On **iOS**, blocking uses Screen Time.
-- **App Blocking** — Closes distracting apps on desktop (warning overlay → save window → polite quit → force-close if needed; Screen Time shield overlay on iOS)
+- **Cross-Platform** — Works on macOS 11+, Windows 10+, iOS (iPad/iPhone), and Android from the same Tauri UI codebase.
+- **Website Blocking** — ReDD Blocker decides what to block. On **macOS**, Safari/Chrome/Brave/Edge use **Automation** (no extension); **Firefox** uses the ReDD Focus extension. On **Windows**, Chrome/Brave/Edge/Firefox use the extension. On **iOS**, blocking uses Screen Time. On **Android**, blocking is enforced by the native AccessibilityService plugin.
+- **App Blocking** — Closes distracting apps on desktop (warning overlay → save window → polite quit → force-close if needed), uses Screen Time shield overlays on iOS, and uses the Android AccessibilityService/friction gate on Android.
 - **Flexible Blocklists** — Create multiple lists with custom names, colors, and emojis
 - **One-Off Blocks** — Quick blocks for immediate focus sessions
 - **Scheduled Blocks** — Set recurring blocks on specific days/times (e.g., block social media Mon-Fri 9am-5pm)
@@ -80,6 +80,12 @@ ReDD Blocker runs from the menu bar / system tray and can start at login so bloc
 
 No browser extension — ReDD Blocker uses **Screen Time** to shield websites and apps. Scheduled blocks work via a background monitor extension even when the app is closed. Details: [architecture.md](architecture.md).
 
+### Android
+
+Android uses the shared Tauri webview UI plus a local Android plugin. The plugin keeps the enforcement work in Kotlin/Java Android components: an AccessibilityService applies the block/friction gate, WorkManager handles schedule transitions, and Rust only exposes the Tauri command bridge used by the UI.
+
+You can open `src-tauri/gen/android/` in Android Studio to inspect, run, and build the generated project. Android Studio is still building the Tauri Android app: the Gradle project invokes the Tauri/Rust build steps and packages the shared frontend assets together with the native Android plugin.
+
 ### Permissions (desktop)
 
 - **Extensions:** install ReDD Focus in Firefox (macOS) or in each browser you use on Windows.
@@ -115,6 +121,11 @@ Implementation details and module map: [architecture.md](architecture.md) (v3 cu
 - An Apple Developer account
 - A physical iOS device (Screen Time APIs don't work in the simulator)
 
+**Android additional requirements:**
+- Android Studio with Android SDK, platform-tools, and NDK installed
+- A configured emulator or physical Android device (`adb devices` should show it)
+- Tauri Android prerequisites installed for the Rust targets used by your device/emulator
+
 ### Getting Started
 
 ```bash
@@ -130,9 +141,15 @@ npm run dev
 
 # Run on iOS device (opens Xcode, then press ⌘R to build)
 npm run dev:ios
+
+# Run on Android emulator/device
+npm run dev:android
 ```
 
 The app will open automatically. Hot-reloading is enabled for both frontend (Vite) and backend (Tauri).
+
+On Android, enable ReDD Block in Android Settings -> Accessibility after the
+first install.
 
 ### Building
 
@@ -155,6 +172,9 @@ npm run build:win-store
 
 # iOS: Build IPA for App Store upload (via Transporter)
 npm run build:ios
+
+# Android: Build through Tauri/Gradle
+npm run build:android
 ```
 
 For Store builds, set `WINDOWS_IDENTITY_NAME` and `WINDOWS_PUBLISHER` in `.env` (Partner Center → Product identity) and upload the `.msix` from `for-distribution/x86_64-pc-windows-msvc/`. Run `node scripts/generate-icons-from-svg.js` first if `assets/icons/1024x1024.png` is missing.
@@ -218,12 +238,18 @@ redd-block/
 │   ├── blocked/                  # Block page bundled for macOS Automation redirects
 │   ├── entitlements.macos.plist  # macOS Automation (Apple Events) entitlement
 │   ├── gen/apple/                # Generated Xcode project
+│   ├── gen/android/              # Generated Android project (committed)
 │   ├── tauri.conf.json           # Shared Tauri config
+│   ├── tauri.android.conf.json   # Android-specific config
 │   ├── tauri.ios.conf.json       # iOS-specific config
 │   ├── tauri.macos.conf.json     # macOS-specific config
 │   └── tauri.windows.conf.json   # Windows-specific config
 ├── tauri-plugin-screentime/      # iOS Screen Time plugin
 │   ├── ios/Sources/              # Swift plugin (FamilyActivityPicker, ManagedSettings)
+│   ├── src/                      # Rust bindings
+│   └── permissions/              # Plugin permissions
+├── tauri-plugin-android-blocker/ # Android AccessibilityService blocking plugin
+│   ├── android/                  # Kotlin plugin + BlockerService + schedules
 │   ├── src/                      # Rust bindings
 │   └── permissions/              # Plugin permissions
 ├── browser-ext-migration/
@@ -238,8 +264,8 @@ redd-block/
 
 | Component | Version Location |
 |-----------|------------------|
-| **App** | `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` |
-| **Published versions** | `docs/latest-versions.json` (macOS, Windows, iOS, plus `sha256.macosPkg` and `sizeBytes.macosPkg` for in-app macOS updates) |
+| **App** | `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/tauri.android.conf.json`, `src-tauri/Cargo.toml` |
+| **Published versions** | `docs/latest-versions.json` (macOS, Windows, iOS, Android, plus `sha256.macosPkg` and `sizeBytes.macosPkg` for in-app macOS updates) |
 
 Use `./scripts/bump-version.sh <version>` to update the app version in all files at once.
 
@@ -252,6 +278,7 @@ Use `./scripts/bump-version.sh <version>` to update the app version in all files
 | macOS | `/var/lib/redd-block/redd-block-data.json` | `~/Library/Application Support/com.reddblock/redd-block-data.json` |
 | Windows | `%PROGRAMDATA%\ReDD Blocker\redd-block-data.json` (legacy: `%PROGRAMDATA%\Fristed\...`, `%PROGRAMDATA%\ReDD Block\...`) | `%AppData%\com.reddblock\redd-block-data.json` |
 | iOS | App sandbox (managed by Tauri) | — |
+| Android | App sandbox (managed by Tauri; native schedule mirrors managed by the Android plugin) | — |
 
 Legacy v1 paths under `com.redd.block` are still read as a fallback during migration.
 
@@ -273,7 +300,7 @@ Active blocks stop firing once the app is gone because the app itself is now the
 - **macOS**: 11.0+ (Big Sur or later) — Automation-based website blocking for Safari and Chromium browsers
 - **Windows**: 10+ (version 1809 or later)
 - **iOS**: 16.0+ (iPhone and iPad)
-- **Android**: see https://github.com/kasnder/redd-block-android
+- **Android**: 8.0+ / API 26+
 - **Linux**: Coming soon
 
 ## Tech Debt
