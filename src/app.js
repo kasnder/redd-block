@@ -70,6 +70,24 @@ import {
 import { openInstalledAppsPicker } from './apps-picker.js';
 import { closeAllPopovers, disableScheduleControls, disableTimeControls, getEndTimeAsDate, getStartTimeAsDate, handleDurationInputChange, handleDurationQuickBtn, handlePopoverOutsideClick, handleTimePartClick, initializeTimeInputs, pad, parseEndTimeBoundedInt, scrollElementWithinContainer, scrollPopoverOptionIntoView, setupEndTimeDirectInputs, updateDurationQuickBtns, updateTimeDisplay } from './time-inputs.js';
 import { loadData, saveData, updateHostsFile } from './persistence.js';
+import {
+    addScheduleSegment, discardSchedulePendingChanges, getCommittedScheduleSegmentCount,
+    getDefaultScheduleSegments, getInitialExpandedScheduleSegmentIndex, handleRepeatDateChange,
+    handleRepeatOptionClick, handleSegmentDayToggle, rebuildScheduleSegments,
+    saveSchedulePendingChanges, setAlwaysOnMode, setScheduleMode, startSchedule,
+    toggleRepeatDropdown, updateScheduleButtonState, isScheduleSegmentActiveNow,
+    formatDateForDisplay,
+} from './schedule-editor.js';
+import {
+    SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE, applyScheduleStartOverlayPresentation,
+    getEffectiveScheduleStartOverlayId, getScheduleStartOverlayForWarningApps,
+    handleSchedulePanelOverlayOptionClick, isScheduleOverlayCustomiseModalOpen,
+    playAppBlockingLetsGoVoice, populateScheduleOverlayCustomiseSelector,
+    rememberLastScheduleStartOverlayId, setupScheduleOverlayCustomiseModal,
+    syncScheduleConfirmOverlaySummary, syncScheduleOverlayCustomiseDirtyState,
+    syncScheduleOverlayCustomiseEditorState, syncScheduleOverlayCustomiseTitle,
+    toggleSchedulePanelOverlayDropdown,
+} from './schedule-overlay.js';
 import { render, kickClockNow, startTickInterval, updateWeekCalendar, syncSelectedControlState, renderNowBlockingRow, renderScheduleAlwaysOnRow, renderScheduleVisibilityChips, renderWeekBlocks, renderBlocklistSelector, getCalendarSegmentLayout, layoutOverlappingBlocks } from './render.js';
 import { formatTitleBarScheduleStartWhen, hasAnyEnforcedBlocks, isNonRepeatingSchedule, isOneOffBlockEnforced, isSchedulePausedNow, pickEarliestUpcomingScheduledBlock, refreshDesktopHelperStatus, resolveOneShotOccurrences, scheduleHasFutureSingleOccurrence, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { dismissTopmostEscapeLayer, isModalVisible, refreshOpenHelperUi, startHelperUiRefreshLoop, stopHelperUiRefreshLoop } from './modal-manager.js';
@@ -132,9 +150,6 @@ const BLOCKLIST_NAME_MAX_LENGTH = 60;
 const BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS = 26;
 /** Collapse stop-button emoji+name this many px before measured overflow (iOS flex overlap). */
 const IOS_STOP_BTN_META_COLLAPSE_SLACK_PX = 24;
-const TIME_SEPARATOR_ARROW_HTML = '<span class="time-separator" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg></span>';
-const SEGMENT_SUMMARY_CLOCK_ICON = '<svg class="segment-summary-clock" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>';
-const SEGMENT_SUMMARY_CHEVRON_ICON = '<svg class="segment-summary-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>';
 
 // Pre-made website lists offered by the Edit Blocklist "Import" menu. Each
 // list is intentionally small/curated — a starting point users can prune or
@@ -187,10 +202,9 @@ const WEBSITES_PRESET_LISTS = {
 };
 
 // Schedule mode state
-let scheduleSegments = getDefaultScheduleSegments(); // Array of time segments with per-segment days
-let expandedScheduleSegmentIndex = 0; // Which segment shows the full editor when multiple exist (-1 = all collapsed)
+state.scheduleSegments = getDefaultScheduleSegments(); // Array of time segments with per-segment days
 
-function getBlocklistDisplayApps(blocklist) {
+export function getBlocklistDisplayApps(blocklist) {
     const apps = getBlocklistRegularApps(blocklist).map(displayNameForBlockedApp);
     const screenTimeLabel = formatIOSScreenTimeSelectionLabel(getBlocklistIOSScreenTimeSelection(blocklist));
     if (screenTimeLabel) {
@@ -200,7 +214,6 @@ function getBlocklistDisplayApps(blocklist) {
 }
 
 
-let scheduleRepeatDate = null; // Date object when repeatType is 'date'
 const CURRENT_EULA_REVISION = 1;
 let forceShowEulaThisSession = false;
 
@@ -4718,31 +4731,6 @@ let appBlockingSnoozedBlocklistId = null;
 let appBlockingSnoozeCardTickInterval = null;
 let appBlockingPreviousManualAppsSet = null;
 let appBlockingPreviousScheduleAppsSet = null;
-/** Custom start-overlay config for the active schedule warning session. */
-let appBlockingActiveStartOverlay = null;
-let appBlockingLetsGoVoiceAudio = null;
-/** Selected start-overlay preset id for the pending schedule (null = default). */
-let pendingScheduleStartOverlayId = null;
-let scheduleOverlayCustomiseDraft = null;
-let scheduleOverlayCustomiseBlocklist = null;
-/** Preset id being edited in the customise modal (null = new). */
-let scheduleOverlayCustomisePresetId = null;
-let scheduleOverlayCustomiseSelection = null;
-/** Saved form state when the customise modal loaded the current selection. */
-let scheduleOverlayCustomiseBaseline = null;
-const SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE = '__default__';
-const SCHEDULE_OVERLAY_NEW_PRESET_VALUE = '__new__';
-let scheduleOverlayMediaRecorder = null;
-let scheduleOverlayRecordChunks = [];
-let scheduleOverlayRecordStream = null;
-let scheduleOverlayRecordedMimeType = 'audio/webm';
-let scheduleOverlayRecordAudioContext = null;
-let scheduleOverlayRecordAnalyser = null;
-let scheduleOverlayRecordLevelRaf = null;
-let scheduleOverlayRecordStartCancelled = false;
-const SCHEDULE_OVERLAY_RECORD_LEVEL_BAR_COUNT = 12;
-/** Blob URLs created for overlay asset previews — revoked when the modal closes. */
-const overlayAssetBlobUrls = new Set();
 /** Per-app attribution for the block that just started blocking it. */
 /** @type {Map<string, { blocklistId: string, source: 'schedule'|'manual' }>} */
 const appBlockingNewlyAddedMeta = new Map();
@@ -5051,7 +5039,7 @@ function findActiveBlocklistForBlockedAppName(appName) {
 }
 
 /** Pick the blocklist to show in the warning overlay for the given apps. */
-function findResponsibleBlocklistForWarningApps(appNames) {
+export function findResponsibleBlocklistForWarningApps(appNames) {
     for (const appName of appNames) {
         const meta = appBlockingNewlyAddedMeta.get(appName);
         if (meta?.blocklistId) {
@@ -5091,7 +5079,7 @@ function renderAppBlockingWarningOverlay() {
     if (!overlay) return;
 
     if (appBlockingWarningRows.size === 0) {
-        appBlockingActiveStartOverlay = null;
+        state.appBlockingActiveStartOverlay = null;
         applyWarningOverlayPresence();
         return;
     }
@@ -5105,7 +5093,7 @@ function renderAppBlockingWarningOverlay() {
     }
     const names = uniqueBlockedAppDisplayNames(rawNames);
     if (names.length === 0) {
-        appBlockingActiveStartOverlay = null;
+        state.appBlockingActiveStartOverlay = null;
         applyWarningOverlayPresence();
         return;
     }
@@ -5150,7 +5138,7 @@ function renderAppBlockingWarningOverlay() {
         letsGoLabelEl,
         letsGoVoiceIconEl,
     }).then((activeOverlay) => {
-        appBlockingActiveStartOverlay = activeOverlay;
+        state.appBlockingActiveStartOverlay = activeOverlay;
         applyWarningOverlayPresence();
     }).catch((err) => {
         console.warn('[schedule-overlay] warning presentation failed:', err);
@@ -5307,7 +5295,7 @@ function uniqueBlockedAppDisplayNames(names) {
 }
 
 /** Pretty list join: "A", "A and B", "A, B and C", "A, B and 4 more". */
-function joinAppListWithLimit(names, max = 3, { bold = true } = {}) {
+export function joinAppListWithLimit(names, max = 3, { bold = true } = {}) {
     const arr = names.filter(Boolean);
     const wrap = bold
         ? (n) => `<strong>${escapeHtml(n)}</strong>`
@@ -8084,13 +8072,13 @@ function setupOverrideModalListeners() {
                 );
 
                 if (scheduleToStop) {
-                    scheduleSegments = scheduleToStop.segments.map(seg => ({ ...seg }));
+                    state.scheduleSegments = scheduleToStop.segments.map(seg => ({ ...seg }));
                     state.activeScheduleSegmentCount = 0; // No segments are locked anymore
 
                     // Save these segments as pending so they persist when clicking off/on
                     if (!state.appData.settings) state.appData.settings = {};
                     if (!state.appData.settings.pendingScheduleSegments) state.appData.settings.pendingScheduleSegments = {};
-                    state.appData.settings.pendingScheduleSegments[scheduleToStop.blocklistId] = scheduleSegments.map(seg => ({ ...seg }));
+                    state.appData.settings.pendingScheduleSegments[scheduleToStop.blocklistId] = state.scheduleSegments.map(seg => ({ ...seg }));
 
                     state.appData.schedules = state.appData.schedules.filter(s =>
                         s.id !== scheduleId && s.blocklistId !== scheduleId
@@ -8197,3074 +8185,8 @@ function renderTags(container, items, onRemove, lockedItems = [], options = {}) 
 // Track current selected end time only (start is always 'now')
 
 // Pad number with leading zero
-// ========================================
-// SCHEDULE MODE FUNCTIONS
-// ========================================
-
-// Get default schedule segments based on current time
-// Start at the current hour (floor), end 2 hours later, selected on every day of the week.
-function getDefaultScheduleSegments() {
-    const now = new Date();
-    const startHour = now.getHours();
-    const endHour = (startHour + 2) % 24;
-    return [
-        { startHour, startMinute: 0, endHour, endMinute: 0, days: [0, 1, 2, 3, 4, 5, 6] }
-    ];
-}
-
-// Switch between timed and always-on modes for instant blocks
-export function setAlwaysOnMode(alwaysOn) {
-    state.isAlwaysOnMode = alwaysOn;
-
-    // Show/hide timed controls vs always-on message
-    const timedControls = document.getElementById('timed-controls');
-    const alwaysOnMessage = document.getElementById('always-on-message');
-    if (timedControls) timedControls.classList.toggle('hidden', alwaysOn);
-    if (alwaysOnMessage) alwaysOnMessage.classList.toggle('hidden', !alwaysOn);
-
-    // Reflect the mode change in the quick-select row (highlight "Always" or the matching duration).
-    updateDurationQuickBtns(state.targetDurationMinutes);
-
-    // Save preference per blocklist
-    if (state.selectedBlocklistId) {
-        if (!state.appData.settings) state.appData.settings = {};
-        if (!state.appData.settings.alwaysOnMode) state.appData.settings.alwaysOnMode = {};
-        if (state.appData.settings.alwaysOnMode[state.selectedBlocklistId] !== alwaysOn) {
-            state.appData.settings.alwaysOnMode[state.selectedBlocklistId] = alwaysOn;
-            saveData();
-        }
-    }
-
-    // Update calendar preview and button state
-    handleTimeChange();
-
-    // Update window height after layout change
-    setTimeout(() => updateWindowHeight(), 50);
-}
-
-// Switch between instant and schedule modes
-function setScheduleMode(isSchedule) {
-    state.isScheduleMode = isSchedule;
-
-    // Persist this tab choice per blocklist so it restores when switching back
-    if (state.selectedBlocklistId && state.appData.settings) {
-        if (!state.appData.settings.preferredStartMode) state.appData.settings.preferredStartMode = {};
-        if (state.appData.settings.preferredStartMode[state.selectedBlocklistId] !== isSchedule) {
-            state.appData.settings.preferredStartMode[state.selectedBlocklistId] = isSchedule;
-            saveData();
-        }
-    }
-
-    // Update tab active states
-    document.getElementById('instant-mode-tab').classList.toggle('active', !isSchedule);
-    document.getElementById('schedule-mode-tab').classList.toggle('active', isSchedule);
-
-    // Update section heading
-    const heading = document.getElementById('main-start-block-title');
-    if (heading) {
-        heading.textContent = tSettings('mainStartBlockTitle');
-    }
-
-    // Toggle panels
-    const instantPanel = document.getElementById('instant-block-panel');
-    const schedulePanel = document.getElementById('schedule-block-panel');
-    const startBlockBtn = document.getElementById('start-block-btn');
-    const startScheduleBtn = document.getElementById('start-schedule-btn');
-
-    if (isSchedule) {
-        // Check if selected blocklist has an existing schedule
-        const existingSchedule = state.selectedBlocklistId && state.appData.schedules
-            ? state.appData.schedules.find(s => s.blocklistId === state.selectedBlocklistId)
-            : null;
-
-        if (existingSchedule && existingSchedule.segments) {
-            // Load existing schedule segments (locked)
-            scheduleSegments = existingSchedule.segments.map(seg => ({ ...seg }));
-            state.activeScheduleSegmentCount = getCommittedScheduleSegmentCount(existingSchedule);
-            state.scheduleRepeatType = existingSchedule.repeatType || 'no';
-            scheduleRepeatDate = existingSchedule.repeatDate;
-
-            // Also load any pending (new) segments that were added but not yet committed
-            const pendingSegments = state.appData.settings?.pendingScheduleSegments?.[state.selectedBlocklistId];
-            if (pendingSegments && pendingSegments.length > 0) {
-                const cleanedPendingSegments = pendingSegments.filter(seg =>
-                    !existingSchedule.segments.some(existingSeg => areSegmentsEqual(existingSeg, seg))
-                );
-                if (cleanedPendingSegments.length > 0) {
-                    // Append pending segments to the existing locked segments
-                    scheduleSegments.push(...cleanedPendingSegments.map(seg => ({ ...seg })));
-                    const currentPending = JSON.stringify(state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] || []);
-                    const nextPending = JSON.stringify(cleanedPendingSegments);
-                    if (currentPending !== nextPending) {
-                        state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] = cleanedPendingSegments.map(seg => ({ ...seg }));
-                        saveData();
-                    }
-                } else {
-                    if (state.appData.settings.pendingScheduleSegments?.[state.selectedBlocklistId]) {
-                        clearPendingScheduleDraft(state.selectedBlocklistId);
-                        saveData();
-                    }
-                }
-            }
-        } else {
-            // Check for pending (unsaved) segments for this blocklist
-            const pendingSegments = state.appData.settings?.pendingScheduleSegments?.[state.selectedBlocklistId];
-            if (pendingSegments && pendingSegments.length > 0) {
-                scheduleSegments = pendingSegments.map(seg => ({ ...seg }));
-                const repeatOpts = state.appData.settings?.pendingScheduleRepeatOptions?.[state.selectedBlocklistId];
-                if (repeatOpts && typeof repeatOpts.repeatType === 'string') {
-                    state.scheduleRepeatType = repeatOpts.repeatType;
-                    scheduleRepeatDate =
-                        repeatOpts.repeatType === 'date' && repeatOpts.repeatDate != null
-                            ? new Date(repeatOpts.repeatDate)
-                            : null;
-                } else {
-                    state.scheduleRepeatType = 'forever';
-                    scheduleRepeatDate = null;
-                }
-            } else {
-                // Reset schedule segments to fresh default times
-                scheduleSegments = getDefaultScheduleSegments();
-                state.scheduleRepeatType = 'forever';
-                scheduleRepeatDate = null;
-            }
-            state.activeScheduleSegmentCount = 0;
-        }
-        expandedScheduleSegmentIndex = getInitialExpandedScheduleSegmentIndex();
-        rebuildScheduleSegments();
-
-        instantPanel.classList.add('hidden');
-        schedulePanel.classList.remove('hidden');
-        startBlockBtn.classList.add('hidden');
-        if (state.selectedBlocklistId) {
-            startScheduleBtn.classList.remove('hidden');
-            updateScheduleButtonState();
-        }
-    } else {
-        instantPanel.classList.remove('hidden');
-        schedulePanel.classList.add('hidden');
-        startScheduleBtn.classList.add('hidden');
-        if (state.selectedBlocklistId) {
-            startBlockBtn.classList.remove('hidden');
-            const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
-
-            // Re-evaluate pause button visibility for Now mode
-            const pauseBtn = document.getElementById('pause-block-btn');
-            const now = Date.now();
-            const activeBlock = state.appData.activeBlocks.find(b =>
-                b.blocklistId === state.selectedBlocklistId &&
-                b.startTime <= now &&
-                b.endTime > now
-            );
-            if (activeBlock) {
-                if (pauseBtn) {
-                    pauseBtn.classList.remove('hidden');
-                    updatePauseButtonAppearance(!!activeBlock.isPaused);
-                }
-
-                // Also update button to show Stop state
-                const btnLabel = startBlockBtn.querySelector('.btn-label');
-                startBlockBtn.classList.add('stop-block');
-                setBtnActionLabel(btnLabel, tSettings('stopBlock'));
-                setStartBtnBlocklistInfo(startBlockBtn, blocklist);
-                startBlockBtn.disabled = false;
-                startBlockBtn.dataset.activeBlockId = activeBlock.id;
-                setStartBlockBtnLeadingIcon(startBlockBtn, 'stop');
-                disableTimeControls(true);
-
-                // Keep the info message visible for active always-on blocks.
-                const alwaysOnMsg = document.getElementById('always-on-message');
-                if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
-            } else {
-                if (pauseBtn) pauseBtn.classList.add('hidden');
-                startBlockBtn.classList.remove('stop-block');
-                delete startBlockBtn.dataset.activeBlockId;
-                setBtnActionLabel(startBlockBtn.querySelector('.btn-label'), tSettings('startBlockButton'), { simple: true });
-                setStartBtnBlocklistInfo(startBlockBtn, blocklist);
-                setStartBlockBtnLeadingIcon(startBlockBtn, 'enter');
-            }
-        }
-    }
-
-    // Toggle schedule-mode class on day-tracks for click-to-create
-    document.querySelectorAll('.day-track').forEach(track => {
-        track.classList.toggle('schedule-mode', isSchedule);
-    });
-
-    // Update calendar preview
-    handleTimeChange();
-}
-
-// Toggle Repeat dropdown visibility
-function closeSchedulePanelDropdownMenus(exceptMenuId = null) {
-    for (const menuId of ['repeat-dropdown-menu', 'schedule-panel-overlay-dropdown-menu']) {
-        if (menuId !== exceptMenuId) {
-            document.getElementById(menuId)?.classList.add('hidden');
-        }
-    }
-}
-
-function toggleRepeatDropdown(e) {
-    e.stopPropagation();
-
-    // Don't allow opening dropdown when schedule is active
-    if (state.activeScheduleSegmentCount > 0) return;
-
-    // Also check if button is disabled
-    const repeatDropdownBtn = document.getElementById('repeat-dropdown-btn');
-    if (repeatDropdownBtn && repeatDropdownBtn.disabled) {
-        return;
-    }
-
-    const menu = document.getElementById('repeat-dropdown-menu');
-    if (!menu) return;
-
-    const isHidden = menu.classList.contains('hidden');
-    if (isHidden) closeSchedulePanelDropdownMenus('repeat-dropdown-menu');
-    menu.classList.toggle('hidden');
-
-    if (isHidden) {
-        // Close on outside click
-        setTimeout(() => {
-            document.addEventListener('click', function closeMenu(evt) {
-                if (!menu.contains(evt.target)) {
-                    menu.classList.add('hidden');
-                    document.removeEventListener('click', closeMenu);
-                }
-            });
-        }, 10);
-    }
-}
-
-// Handle Repeat option selection
-function handleRepeatOptionClick(e) {
-    e.stopPropagation();
-
-    // Don't allow changing repeat options when schedule is active
-    if (state.activeScheduleSegmentCount > 0) {
-        // Close dropdown silently
-        const menu = document.getElementById('repeat-dropdown-menu');
-        if (menu) menu.classList.add('hidden');
-        return;
-    }
-
-    const value = e.target.dataset.value;
-    const menu = document.getElementById('repeat-dropdown-menu');
-    const btnText = document.getElementById('repeat-dropdown-text');
-    const dateInput = document.getElementById('repeat-date-input');
-
-    state.scheduleRepeatType = value;
-
-    // Update dropdown text
-    if (btnText) {
-        if (value === 'no') {
-            btnText.textContent = tSettings('repeatNo');
-        } else if (value === 'forever') {
-            btnText.textContent = tSettings('repeatForever');
-        } else {
-            btnText.textContent = tSettings('repeatUntilDate');
-        }
-    }
-
-    // Update active state
-    document.querySelectorAll('.repeat-option').forEach(opt => {
-        opt.classList.toggle('active', opt.dataset.value === value);
-    });
-
-    // Show/hide date input wrapper
-    const dateWrapper = document.getElementById('repeat-date-wrapper');
-    const dateOverlay = document.getElementById('repeat-date-overlay');
-    if (dateInput && dateWrapper) {
-        if (value === 'date') {
-            dateWrapper.classList.remove('hidden');
-            // Set default date to 6 days from now (completing a full week including today)
-            if (!scheduleRepeatDate) {
-                const defaultDate = new Date();
-                defaultDate.setDate(defaultDate.getDate() + 6);
-                scheduleRepeatDate = defaultDate;
-                dateInput.value = formatDateForInput(defaultDate);
-            }
-            // Update overlay with formatted date
-            if (dateOverlay) {
-                dateOverlay.textContent = formatDateForDisplay(scheduleRepeatDate);
-            }
-        } else {
-            dateWrapper.classList.add('hidden');
-            scheduleRepeatDate = null;
-        }
-    }
-
-    // Close menu
-    if (menu) menu.classList.add('hidden');
-
-    // Update preview
-    handleTimeChange();
-}
-
-// Handle Repeat date change
-function handleRepeatDateChange(e) {
-    const dateStr = e.target.value;
-    if (dateStr) {
-        scheduleRepeatDate = new Date(dateStr + 'T23:59:59');
-        // Update the overlay with formatted date
-        const dateOverlay = document.getElementById('repeat-date-overlay');
-        if (dateOverlay) {
-            dateOverlay.textContent = formatDateForDisplay(scheduleRepeatDate);
-        }
-        // Update preview
-        handleTimeChange();
-    }
-}
-
-// Format date for input element (YYYY-MM-DD)
-function formatDateForInput(date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-}
-
-function localDateKey(date) {
-    return formatDateForInput(date);
-}
-
-function parseLocalDateKey(dateKey) {
-    if (!dateKey) return null;
-    const [year, month, day] = dateKey.split('-').map(Number);
-    if (![year, month, day].every(Number.isFinite)) return null;
-    return new Date(year, month - 1, day);
-}
-
-// Format date for display (e.g., "3 Feb 2026")
-export function formatDateForDisplay(date) {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const day = date.getDate();
-    const month = months[date.getMonth()];
-    const year = date.getFullYear();
-    return `${day} ${month} ${year}`;
-}
-
-export function isScheduleSegmentActiveNow(schedule, nowDate = new Date()) {
-    if (!schedule || !schedule.segments || schedule.segments.length === 0) return false;
-    const nowMs = nowDate.getTime();
-    if (isSchedulePausedNow(schedule, nowMs)) return false;
-    if (isNonRepeatingSchedule(schedule)) {
-        return resolveOneShotOccurrences(schedule).some(occurrence => {
-            const startMs = occurrence.start.getTime();
-            const endMs = occurrence.end.getTime();
-            return nowMs >= startMs && nowMs < endMs;
-        });
-    }
-    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
-    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
-    return schedule.segments.some(seg => {
-        const startMins = seg.startHour * 60 + seg.startMinute;
-        const endMins = seg.endHour * 60 + seg.endMinute;
-        if (startMins === endMins) return seg.days.includes(currentDay);
-        if (endMins > startMins) return seg.days.includes(currentDay) && currentMins >= startMins && currentMins < endMins;
-        const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
-        return (seg.days.includes(currentDay) && currentMins >= startMins) || (seg.days.includes(yesterdayDay) && currentMins < endMins);
-    });
-}
-
-function getCommittedScheduleSegmentCount(schedule) {
-    return schedule && schedule.segments ? schedule.segments.length : 0;
-}
-
-function areSegmentsEqual(a, b) {
-    if (!a || !b) return false;
-    const aDays = Array.isArray(a.days) ? [...a.days].sort((x, y) => x - y) : [];
-    const bDays = Array.isArray(b.days) ? [...b.days].sort((x, y) => x - y) : [];
-    return a.startHour === b.startHour &&
-        a.startMinute === b.startMinute &&
-        a.endHour === b.endHour &&
-        a.endMinute === b.endMinute &&
-        JSON.stringify(aDays) === JSON.stringify(bDays);
-}
-
-// Update schedule button enabled state
-export function updateScheduleButtonState() {
-    const startScheduleBtn = document.getElementById('start-schedule-btn');
-    if (!startScheduleBtn) return;
-
-    // Check if selected blocklist has an active schedule
-    const activeSchedule = state.selectedBlocklistId && state.appData.schedules
-        ? state.appData.schedules.find(s => s.blocklistId === state.selectedBlocklistId)
-        : null;
-    const now = Date.now();
-    const scheduleIsPaused = isSchedulePausedNow(activeSchedule, now);
-    const scheduleIsActiveNow = !!(activeSchedule && isScheduleSegmentActiveNow(activeSchedule));
-    const scheduleIsFunctionallyActive = scheduleIsPaused || scheduleIsActiveNow;
-
-    const blocklist = state.selectedBlocklistId
-        ? state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId)
-        : null;
-
-    const btnLabel = startScheduleBtn.querySelector('.btn-label');
-
-    // Check if there are new segments (beyond the locked count)
-    const committedSegmentCount = getCommittedScheduleSegmentCount(activeSchedule);
-    const hasNewSegments = activeSchedule && scheduleSegments.length > committedSegmentCount;
-
-    // Show/hide pause button for started schedules (pause is allowed even when no segment is active)
-    const pauseBtn = document.getElementById('pause-block-btn');
-    if (pauseBtn) {
-        if (activeSchedule && activeSchedule.segments) {
-            const isPaused = isSchedulePausedNow(activeSchedule, now);
-
-            if (isPaused) {
-                // Schedule is paused — show Resume button
-                pauseBtn.classList.remove('hidden');
-                updatePauseButtonAppearance(true);
-            } else {
-                pauseBtn.classList.remove('hidden');
-                updatePauseButtonAppearance(false);
-            }
-        } else {
-            pauseBtn.classList.add('hidden');
-        }
-    }
-
-    if (activeSchedule) {
-        // Active schedule - keep Stop button visible regardless of pending changes.
-        // Pending segments are committed/discarded via the pending-changes bar.
-        startScheduleBtn.classList.add('stop-schedule');
-        setBtnActionLabel(btnLabel, tSettings('stopScheduleButton'));
-        setStartBtnBlocklistInfo(startScheduleBtn, blocklist);
-        startScheduleBtn.classList.remove('edit-schedule');
-        startScheduleBtn.disabled = false;
-        startScheduleBtn.dataset.activeScheduleId = activeSchedule.id || activeSchedule.blocklistId;
-
-        setStartBlockBtnLeadingIcon(startScheduleBtn, 'stop');
-
-        // Disable controls for existing (committed) segments; new ones stay editable
-        disableScheduleControls(true);
-    } else {
-        // No active schedule - show Start button (normal)
-        startScheduleBtn.classList.remove('stop-schedule');
-        setBtnActionLabel(btnLabel, tSettings('startScheduleButton'));
-        setStartBtnBlocklistInfo(startScheduleBtn, blocklist);
-        startScheduleBtn.classList.remove('edit-schedule');
-        delete startScheduleBtn.dataset.activeScheduleId;
-
-        setStartBlockBtnLeadingIcon(startScheduleBtn, 'enter');
-
-        // Enable all controls
-        disableScheduleControls(false);
-    }
-
-    // Enable button if blocklist is selected
-    const isValid = state.selectedBlocklistId;
-    startScheduleBtn.disabled = !isValid;
-
-    // Show pending-changes bar only when an active schedule has unsaved new segments
-    updateSchedulePendingBar(!!(activeSchedule && hasNewSegments), activeSchedule);
-    syncSchedulePanelOverlayControls();
-    syncStopBtnLabelFit(startScheduleBtn);
-}
-
-// Show or hide the pending-changes bar at the bottom of the schedule panel.
-function updateSchedulePendingBar(visible, activeSchedule) {
-    const bar = document.getElementById('schedule-pending-bar');
-    if (!bar) return;
-
-    if (!visible) {
-        bar.classList.add('hidden');
-        return;
-    }
-
-    const label = document.getElementById('schedule-pending-label');
-    if (label) label.textContent = tSettings('pendingChangesLabel');
-
-    const saveBtn = document.getElementById('schedule-pending-save');
-    if (saveBtn) saveBtn.textContent = tSettings('pendingChangesSave');
-    const discardBtn = document.getElementById('schedule-pending-discard');
-    if (discardBtn) discardBtn.textContent = tSettings('pendingChangesDiscard');
-
-    bar.classList.remove('hidden');
-}
-
-// Commit any unsaved new segments to the active schedule (Save changes from pending bar).
-async function saveSchedulePendingChanges() {
-    if (!state.selectedBlocklistId) return;
-    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
-    const activeSchedule = state.appData.schedules
-        ? state.appData.schedules.find(s => s.blocklistId === state.selectedBlocklistId)
-        : null;
-    if (!blocklist || !activeSchedule) return;
-
-    const committedCount = getCommittedScheduleSegmentCount(activeSchedule);
-    const newSegments = scheduleSegments.slice(committedCount);
-    if (newSegments.length === 0) return;
-
-    // Require at least one day per new segment, matching startSchedule's validation.
-    const allHaveDays = newSegments.every(seg => Array.isArray(seg.days) && seg.days.length > 0);
-    if (!allHaveDays) return;
-
-    showScheduleEditConfirmModal(blocklist, activeSchedule, newSegments);
-}
-
-// Discard any unsaved new segments and revert the panel to the committed schedule.
-function discardSchedulePendingChanges() {
-    if (!state.selectedBlocklistId) return;
-    const activeSchedule = state.appData.schedules
-        ? state.appData.schedules.find(s => s.blocklistId === state.selectedBlocklistId)
-        : null;
-    if (!activeSchedule) return;
-
-    const committedCount = getCommittedScheduleSegmentCount(activeSchedule);
-    if (scheduleSegments.length <= committedCount) return;
-
-    // Truncate to committed segments only
-    scheduleSegments = scheduleSegments.slice(0, committedCount).map(seg => ({ ...seg }));
-
-    // Clear persisted pending draft so a reload doesn't resurrect them
-    clearPendingScheduleDraft(state.selectedBlocklistId);
-    saveData();
-
-    rebuildScheduleSegments();
-    disableScheduleControls(true);
-    handleTimeChange();
-    updateScheduleButtonState();
-}
-
-// Add a new time segment
-function addScheduleSegment() {
-    // Get the previous segment's end time, round up to next full hour for new start
-    const prevSegment = scheduleSegments[scheduleSegments.length - 1];
-    let newStartHour;
-    if (prevSegment) {
-        // Start 1 hour after previous end, round up if minutes present
-        newStartHour = prevSegment.endMinute > 0
-            ? (prevSegment.endHour + 2) % 24
-            : (prevSegment.endHour + 1) % 24;
-    } else {
-        newStartHour = 14;
-    }
-    const newStartMinute = 0; // Always start on the hour
-    // Default to 2 hours after start
-    const newEndHour = (newStartHour + 2) % 24;
-    const newEndMinute = 0;
-
-    const defaultDays =
-        prevSegment && Array.isArray(prevSegment.days) && prevSegment.days.length > 0
-            ? [...prevSegment.days]
-            : [0, 1, 2, 3, 4, 5, 6];
-
-    scheduleSegments.push({
-        startHour: newStartHour,
-        startMinute: newStartMinute,
-        endHour: newEndHour,
-        endMinute: newEndMinute,
-        days: defaultDays
-    });
-
-    expandedScheduleSegmentIndex = scheduleSegments.length - 1;
-
-    // Rebuild all segments to ensure consistent rendering
-    rebuildScheduleSegments();
-
-    // Re-apply disabled state to locked segments (if schedule is active)
-    if (state.activeScheduleSegmentCount > 0) {
-        disableScheduleControls(true);
-    }
-
-    // Update calendar preview and button state
-    handleTimeChange();
-    updateScheduleButtonState();
-}
-
-// Handle clicking a day toggle within a segment
-function handleSegmentDayToggle(segmentIndex, dayIndex, btn) {
-    // Don't allow toggling days on locked segments (part of active schedule)
-    if (segmentIndex < state.activeScheduleSegmentCount) return;
-
-    const segment = scheduleSegments[segmentIndex];
-    if (!segment) return;
-
-    // Toggle the day in the segment's days array
-    const dayIdx = segment.days.indexOf(dayIndex);
-    if (dayIdx === -1) {
-        segment.days.push(dayIndex);
-        segment.days.sort((a, b) => a - b);
-        btn.classList.add('active');
-    } else {
-        // Allow removing the day (segment with no days just won't apply)
-        segment.days.splice(dayIdx, 1);
-        btn.classList.remove('active');
-    }
-
-    // Update preview and button state
-    syncSegmentDayPresetButtons(segmentIndex);
-    handleTimeChange();
-    updateScheduleButtonState();
-}
-
-function syncSegmentDayPresetButtons(segmentIndex) {
-    const segment = document.querySelector(`.schedule-segment[data-segment-index="${segmentIndex}"]`);
-    const segmentDays = scheduleSegments[segmentIndex]?.days;
-    if (!segment || !segmentDays) return;
-
-    const presetMap = {
-        weekdays: [0, 1, 2, 3, 4],
-        weekends: [5, 6],
-        everyday: [0, 1, 2, 3, 4, 5, 6],
-    };
-
-    segment.querySelectorAll('.segment-day-preset').forEach(btn => {
-        const presetDays = presetMap[btn.dataset.preset];
-        btn.classList.toggle('active', presetDays ? arraysEqual(
-            [...segmentDays].sort((a, b) => a - b),
-            presetDays,
-        ) : false);
-    });
-}
-
-// Remove a time segment
-function removeScheduleSegment(index) {
-    // Don't allow removing locked segments (part of active schedule)
-    if (index < state.activeScheduleSegmentCount) return;
-
-    if (scheduleSegments.length <= 1) return; // Always keep at least one
-
-    // Remove from state
-    scheduleSegments.splice(index, 1);
-
-    if (expandedScheduleSegmentIndex === index) {
-        expandedScheduleSegmentIndex = usesScheduleSegmentCollapse() ? -1 : 0;
-    } else if (expandedScheduleSegmentIndex > index) {
-        expandedScheduleSegmentIndex -= 1;
-    }
-
-    // Rebuild DOM (simpler than updating indices)
-    rebuildScheduleSegments();
-
-    // Re-apply disabled state to locked segments if a schedule is active
-    if (state.activeScheduleSegmentCount > 0) {
-        disableScheduleControls(true);
-    }
-
-    // Update calendar preview and pending-bar visibility
-    handleTimeChange();
-    updateScheduleButtonState();
-}
-
-// Sort schedule segments chronologically by start time.
-// When a schedule is running, the committed/pending split is tracked by array index
-// (segments before `state.activeScheduleSegmentCount` are committed, the rest are unsaved).
-// Sort within each partition independently so that invariant survives the sort —
-// otherwise a pending segment with an early time could swap places with a committed
-// one and corrupt subsequent saves.
-function sortScheduleSegments() {
-    const cmp = (a, b) => (a.startHour * 60 + a.startMinute) - (b.startHour * 60 + b.startMinute);
-    if (state.activeScheduleSegmentCount > 0 && scheduleSegments.length > state.activeScheduleSegmentCount) {
-        const committed = scheduleSegments.slice(0, state.activeScheduleSegmentCount).sort(cmp);
-        const pending = scheduleSegments.slice(state.activeScheduleSegmentCount).sort(cmp);
-        scheduleSegments = [...committed, ...pending];
-    } else {
-        scheduleSegments.sort(cmp);
-    }
-}
-
-function usesScheduleSegmentCollapse() {
-    return scheduleSegments.length > 1 || state.activeScheduleSegmentCount > 0;
-}
-
-function scheduleHasPendingSegments() {
-    return state.activeScheduleSegmentCount > 0 && scheduleSegments.length > state.activeScheduleSegmentCount;
-}
-
-function getInitialExpandedScheduleSegmentIndex() {
-    if (!usesScheduleSegmentCollapse()) return 0;
-    if (scheduleHasPendingSegments()) return state.activeScheduleSegmentCount;
-    if (scheduleSegments.length > 1) return -1;
-    if (state.activeScheduleSegmentCount > 0) return -1;
-    return 0;
-}
-
-function normalizeExpandedScheduleSegmentIndex() {
-    if (!usesScheduleSegmentCollapse()) {
-        expandedScheduleSegmentIndex = 0;
-        return;
-    }
-
-    const allCommitted = state.activeScheduleSegmentCount >= scheduleSegments.length && state.activeScheduleSegmentCount > 0;
-    if (allCommitted) {
-        expandedScheduleSegmentIndex = -1;
-        return;
-    }
-
-    // -1 = accordion fully collapsed; any other in-range index is an explicit user choice
-    // (e.g. summary tap or a newly added segment) — do not reset it on every rebuild.
-    if (scheduleHasPendingSegments()) {
-        if (expandedScheduleSegmentIndex >= 0 && expandedScheduleSegmentIndex < state.activeScheduleSegmentCount) {
-            expandedScheduleSegmentIndex = state.activeScheduleSegmentCount;
-        }
-    }
-
-    if (expandedScheduleSegmentIndex >= scheduleSegments.length) {
-        expandedScheduleSegmentIndex = scheduleSegments.length - 1;
-    }
-}
-
-function formatScheduleSegmentTimeRange(seg) {
-    const start = `${String(seg.startHour).padStart(2, '0')}:${String(seg.startMinute).padStart(2, '0')}`;
-    const end = `${String(seg.endHour).padStart(2, '0')}:${String(seg.endMinute).padStart(2, '0')}`;
-    return `${start} – ${end}`;
-}
-
-function formatScheduleSegmentDaysSummary(days) {
-    const selected = Array.isArray(days) ? [...days].sort((a, b) => a - b) : [];
-    if (selected.length === 0) return tSettings('segmentDaysNone');
-    const labels = weekdayAbbrevMon0List();
-    return selected.map((dayIndex) => labels[dayIndex]).join(', ');
-}
-
-function arraysEqual(a, b) {
-    return Array.isArray(a) && Array.isArray(b)
-        && a.length === b.length
-        && a.every((value, index) => value === b[index]);
-}
-
-function getSegmentDayPresetActiveClass(segmentDays, presetDays) {
-    const selected = Array.isArray(segmentDays) ? [...segmentDays].sort((a, b) => a - b) : [];
-    return arraysEqual(selected, presetDays) ? ' active' : '';
-}
-
-function expandScheduleSegment(index) {
-    if (index < state.activeScheduleSegmentCount) return;
-    if (scheduleSegments.length <= 1) return;
-    expandedScheduleSegmentIndex = index;
-    rebuildScheduleSegments();
-}
-
-function collapseExpandedScheduleSegment() {
-    if (scheduleSegments.length <= 1) return;
-    expandedScheduleSegmentIndex = -1;
-    rebuildScheduleSegments();
-}
-
-function applySegmentDayPreset(segmentIndex, preset) {
-    if (segmentIndex < state.activeScheduleSegmentCount) return;
-    const segment = scheduleSegments[segmentIndex];
-    if (!segment) return;
-
-    const presetDays = {
-        weekdays: [0, 1, 2, 3, 4],
-        weekends: [5, 6],
-        everyday: [0, 1, 2, 3, 4, 5, 6],
-    }[preset];
-
-    if (!presetDays) return;
-    segment.days = [...presetDays];
-
-    const segmentEl = document.querySelector(`.schedule-segment[data-segment-index="${segmentIndex}"]`);
-    if (segmentEl) {
-        segmentEl.querySelectorAll('.segment-day-toggle').forEach(btn => {
-            const dayIndex = parseInt(btn.dataset.day, 10);
-            btn.classList.toggle('active', segment.days.includes(dayIndex));
-        });
-        syncSegmentDayPresetButtons(segmentIndex);
-    }
-
-    handleTimeChange();
-    updateScheduleButtonState();
-}
-
-function buildScheduleSegmentEditorHtml(seg, index, {
-    showLabels,
-    showMultiSegmentChrome,
-    dayLabels,
-    fullDayLabels,
-    useCompactDayLabels,
-    labelStart,
-    labelEnd,
-    labelDays,
-}) {
-    const segmentDays = seg.days || [];
-    const dayTogglesHtml = dayLabels.map((label, i) =>
-        `<button type="button" class="segment-day-toggle${segmentDays.includes(i) ? ' active' : ''}" data-day="${i}" aria-label="${fullDayLabels[i]}">${label}</button>`
-    ).join('');
-
-    const dayPresetsHtml = showMultiSegmentChrome ? `
-        <div class="segment-day-presets">
-            <button type="button" class="segment-day-preset${getSegmentDayPresetActiveClass(segmentDays, [0, 1, 2, 3, 4])}" data-preset="weekdays">${tSettings('segmentDaysWeekdays')}</button>
-            <button type="button" class="segment-day-preset${getSegmentDayPresetActiveClass(segmentDays, [5, 6])}" data-preset="weekends">${tSettings('segmentDaysWeekends')}</button>
-            <button type="button" class="segment-day-preset${getSegmentDayPresetActiveClass(segmentDays, [0, 1, 2, 3, 4, 5, 6])}" data-preset="everyday">${tSettings('segmentDaysEveryDay')}</button>
-        </div>
-    ` : '';
-
-    const footerHtml = showMultiSegmentChrome ? `
-        <div class="segment-editor-footer">
-            <button type="button" class="segment-delete-btn" data-segment-index="${index}">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M3 6h18"></path>
-                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                </svg>
-                ${tSettings('segmentDelete')}
-            </button>
-            <button type="button" class="segment-done-btn" data-segment-index="${index}">${tSettings('segmentDone')}</button>
-        </div>
-    ` : '';
-
-    return `
-        <div class="segment-editor">
-            <div class="segment-row">
-                <div class="time-pickers-row">
-                    <div class="time-picker-group">
-                        ${showLabels ? `<label class="time-label">${labelStart}</label>` : ''}
-                        <div class="time-picker-row">
-                            <div class="time-display schedule-start-display">
-                                <div class="time-part-wrapper">
-                                    <input type="text" class="time-part schedule-hour-btn"
-                                        data-type="hour" data-target="schedule-start-${index}"
-                                        inputmode="numeric" maxlength="2" autocomplete="off"
-                                        value="${String(seg.startHour).padStart(2, '0')}"
-                                        aria-label="Schedule start hour" />
-                                </div>
-                                <span class="time-colon">:</span>
-                                <div class="time-part-wrapper">
-                                    <input type="text" class="time-part schedule-minute-btn"
-                                        data-type="minute" data-target="schedule-start-${index}"
-                                        inputmode="numeric" maxlength="2" autocomplete="off"
-                                        value="${String(seg.startMinute).padStart(2, '0')}"
-                                        aria-label="Schedule start minute" />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    ${TIME_SEPARATOR_ARROW_HTML}
-                    <div class="time-picker-group">
-                        ${showLabels ? `<label class="time-label">${labelEnd}</label>` : ''}
-                        <div class="time-picker-row">
-                            <div class="time-display schedule-end-display">
-                                <div class="time-part-wrapper">
-                                    <input type="text" class="time-part schedule-hour-btn"
-                                        data-type="hour" data-target="schedule-end-${index}"
-                                        inputmode="numeric" maxlength="2" autocomplete="off"
-                                        value="${String(seg.endHour).padStart(2, '0')}"
-                                        aria-label="Schedule end hour" />
-                                </div>
-                                <span class="time-colon">:</span>
-                                <div class="time-part-wrapper">
-                                    <input type="text" class="time-part schedule-minute-btn"
-                                        data-type="minute" data-target="schedule-end-${index}"
-                                        inputmode="numeric" maxlength="2" autocomplete="off"
-                                        value="${String(seg.endMinute).padStart(2, '0')}"
-                                        aria-label="Schedule end minute" />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                <div class="segment-days-group">
-                    ${showLabels ? `<label class="time-label">${labelDays}</label>` : ''}
-                    <div class="segment-days${useCompactDayLabels ? ' compact-day-labels' : ''}" data-segment-index="${index}">
-                        ${dayTogglesHtml}
-                    </div>
-                </div>
-            </div>
-            ${dayPresetsHtml}
-            ${footerHtml}
-        </div>
-    `;
-}
-
-function buildScheduleSegmentSummaryHtml(seg, index) {
-    return `
-        <button type="button" class="segment-summary-btn" data-segment-index="${index}" aria-expanded="false">
-            ${SEGMENT_SUMMARY_CLOCK_ICON}
-            <span class="segment-summary-time">${formatScheduleSegmentTimeRange(seg)}</span>
-            <span class="segment-summary-days">${formatScheduleSegmentDaysSummary(seg.days)}</span>
-            ${SEGMENT_SUMMARY_CHEVRON_ICON}
-        </button>
-    `;
-}
-
-function wireScheduleSegmentElement(segment, index) {
-    attachScheduleSegmentTimeInteractions(segment);
-
-    segment.querySelectorAll('.segment-day-toggle').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const dayIndex = parseInt(btn.dataset.day, 10);
-            handleSegmentDayToggle(index, dayIndex, btn);
-        });
-    });
-
-    segment.querySelectorAll('.segment-day-preset').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            applySegmentDayPreset(index, btn.dataset.preset);
-        });
-    });
-
-    const deleteBtn = segment.querySelector('.segment-delete-btn');
-    if (deleteBtn) {
-        deleteBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            removeScheduleSegment(index);
-        });
-    }
-
-    const doneBtn = segment.querySelector('.segment-done-btn');
-    if (doneBtn) {
-        doneBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            collapseExpandedScheduleSegment();
-        });
-    }
-
-    const summaryBtn = segment.querySelector('.segment-summary-btn');
-    if (summaryBtn) {
-        summaryBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            expandScheduleSegment(index);
-        });
-    }
-
-    const removeBtn = segment.querySelector('.remove-segment-btn');
-    if (removeBtn) {
-        removeBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            removeScheduleSegment(index);
-        });
-    }
-}
-
-// Rebuild schedule segments DOM from state
-function rebuildScheduleSegments() {
-    // Sort chronologically before rebuilding
-    sortScheduleSegments();
-    normalizeExpandedScheduleSegmentIndex();
-
-    const container = document.getElementById('schedule-segments');
-    container.innerHTML = '';
-
-    const fullDayLabels = weekdayAbbrevMon0List();
-    const useCompactDayLabels = shouldUseCompactMobileScheduleDayLabels();
-    const dayLabels = useCompactDayLabels ? weekdayLetterMon0List() : fullDayLabels;
-    const labelStart = tSettings('start');
-    const labelEnd = tSettings('end');
-    const labelDays = tSettings('days');
-    const multiSegment = scheduleSegments.length > 1;
-    const useCollapse = usesScheduleSegmentCollapse();
-
-    mobileCompactScheduleDayLabelsActive = useCompactDayLabels;
-
-    scheduleSegments.forEach((seg, index) => {
-        const segment = document.createElement('div');
-        const isExpanded = !useCollapse || index === expandedScheduleSegmentIndex;
-        segment.className = `schedule-segment${
-            isExpanded ? ' schedule-segment-expanded' : ' schedule-segment-collapsed'
-        }`;
-        segment.dataset.segmentIndex = index;
-
-        if (isExpanded) {
-            const showLabels = !multiSegment || index === 0 || expandedScheduleSegmentIndex === index;
-            segment.innerHTML = buildScheduleSegmentEditorHtml(seg, index, {
-                showLabels: multiSegment ? true : showLabels,
-                showMultiSegmentChrome: multiSegment,
-                dayLabels,
-                fullDayLabels,
-                useCompactDayLabels,
-                labelStart,
-                labelEnd,
-                labelDays,
-            });
-        } else {
-            segment.innerHTML = buildScheduleSegmentSummaryHtml(seg, index);
-        }
-
-        container.appendChild(segment);
-        wireScheduleSegmentElement(segment, index);
-    });
-}
-
-/** Parse `schedule-start-0` → { isStart, segmentIndex }. */
-function parseScheduleTimeTarget(target) {
-    const parts = String(target || '').split('-');
-    return {
-        isStart: parts[1] === 'start',
-        segmentIndex: parseInt(parts[2], 10)
-    };
-}
-
-/** Editable schedule HH:MM — same UX as instant end: click opens list; type to edit. */
-function bindScheduleTimePartInput(el) {
-    el.addEventListener('input', () => {
-        document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
-        const next = el.value.replace(/\D/g, '').slice(0, 2);
-        if (next !== el.value) el.value = next;
-    });
-    el.addEventListener('blur', () => commitScheduleTimePart(el));
-    el.addEventListener('keydown', (e) => {
-        if (e.key !== 'Enter') return;
-        e.preventDefault();
-        const type = el.dataset.type;
-        const target = el.dataset.target;
-        const segmentEl = el.closest('.schedule-segment');
-        if (type === 'hour') {
-            const minIn = segmentEl
-                ? segmentEl.querySelector(`[data-target="${target}"][data-type="minute"]`)
-                : null;
-            el.blur();
-            if (minIn) {
-                minIn.focus({ preventScroll: true });
-                if (typeof minIn.select === 'function') minIn.select();
-            }
-        } else {
-            el.blur();
-        }
-    });
-}
-
-function commitScheduleTimePart(input) {
-    const type = input.dataset.type;
-    const target = input.dataset.target;
-    if (!type || !target || (type !== 'hour' && type !== 'minute')) return;
-    const { isStart, segmentIndex } = parseScheduleTimeTarget(target);
-    const seg = scheduleSegments[segmentIndex];
-    if (!seg) return;
-
-    const max = type === 'hour' ? 23 : 59;
-    const v = parseEndTimeBoundedInt(input.value, 0, max);
-    let current;
-    if (type === 'hour') {
-        current = isStart ? seg.startHour : seg.endHour;
-    } else {
-        current = isStart ? seg.startMinute : seg.endMinute;
-    }
-    if (v === null) {
-        input.value = pad(current);
-        return;
-    }
-    if (type === 'hour') {
-        if (isStart) seg.startHour = v;
-        else seg.endHour = v;
-    } else {
-        if (isStart) seg.startMinute = v;
-        else seg.endMinute = v;
-    }
-    input.value = pad(v);
-    handleTimeChange();
-}
-
-function attachScheduleSegmentTimeInteractions(segment) {
-    segment
-        .querySelectorAll('.schedule-start-display input.time-part, .schedule-end-display input.time-part')
-        .forEach(el => {
-            if (el.dataset.scheduleUiBound === '1') return;
-            el.dataset.scheduleUiBound = '1';
-            el.addEventListener('click', handleScheduleTimeClick);
-            bindScheduleTimePartInput(el);
-        });
-}
-
-export function wireAllScheduleSegmentTimeControls() {
-    document.querySelectorAll('#schedule-segments .schedule-segment').forEach(attachScheduleSegmentTimeInteractions);
-}
-
-// Handle schedule time control click (show popover)
-function handleScheduleTimeClick(e) {
-    e.stopPropagation();
-    const el = e.currentTarget;
-    const type = el.dataset.type; // 'hour' or 'minute'
-    const target = el.dataset.target; // e.g., 'schedule-start-0' or 'schedule-end-1'
-
-    // Parse target
-    const parts = target.split('-');
-    const isStart = parts[1] === 'start';
-    const segmentIndex = parseInt(parts[2]);
-
-    document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
-
-    // Create and show popover for time selection
-    showScheduleTimePopover(el, type, isStart, segmentIndex);
-}
-
-// Show time popover for schedule time selection (anchored to editable time pill)
-function showScheduleTimePopover(field, type, isStart, segmentIndex) {
-    // Remove any existing schedule popovers
-    document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
-
-    const popover = document.createElement('div');
-    popover.className = 'time-popover schedule-time-popover';
-
-    const scroll = document.createElement('div');
-    scroll.className = 'popover-scroll';
-
-    const segment = scheduleSegments[segmentIndex];
-    const currentValue = type === 'hour'
-        ? (isStart ? segment.startHour : segment.endHour)
-        : (isStart ? segment.startMinute : segment.endMinute);
-
-    /** Nearest slot in the 5-minute list for scroll/highlight when value was typed freely. */
-    let listHighlightValue = currentValue;
-    if (type === 'minute' && currentValue % 5 !== 0) {
-        const rounded = Math.round(currentValue / 5) * 5;
-        listHighlightValue = rounded >= 60 ? 55 : rounded;
-    }
-
-    const max = type === 'hour' ? 24 : 60;
-    const step = type === 'hour' ? 1 : 5;
-    let suppressOptionClickUntil = 0;
-    let touchStartY = null;
-    let touchStartScrollTop = 0;
-    let isTouchDragging = false;
-    let lastTouchY = null;
-    let lastTouchTime = 0;
-    let touchVelocity = 0;
-    let momentumFrame = null;
-
-    function stopMomentum() {
-        if (momentumFrame != null) {
-            cancelAnimationFrame(momentumFrame);
-            momentumFrame = null;
-        }
-    }
-
-    function startMomentum(initialVelocity) {
-        stopMomentum();
-        let velocity = initialVelocity;
-        let lastFrameTime = performance.now();
-
-        const tick = (now) => {
-            const dt = Math.min(32, now - lastFrameTime);
-            lastFrameTime = now;
-
-            scroll.scrollTop -= velocity * dt;
-            velocity *= 0.95;
-
-            if (Math.abs(velocity) < 0.02) {
-                momentumFrame = null;
-                return;
-            }
-
-            const atTop = scroll.scrollTop <= 0;
-            const atBottom = scroll.scrollTop >= scroll.scrollHeight - scroll.clientHeight;
-            if ((atTop && velocity > 0) || (atBottom && velocity < 0)) {
-                momentumFrame = null;
-                return;
-            }
-
-            momentumFrame = requestAnimationFrame(tick);
-        };
-
-        momentumFrame = requestAnimationFrame(tick);
-    }
-
-    // On iPad/iPhone, dragging inside a scrollable list of buttons can be
-    // interpreted as taps unless we explicitly suppress selection right after
-    // a scroll gesture.
-    scroll.addEventListener('touchstart', (e) => {
-        stopMomentum();
-        touchStartY = e.touches[0]?.clientY ?? null;
-        touchStartScrollTop = scroll.scrollTop;
-        isTouchDragging = false;
-        lastTouchY = touchStartY;
-        lastTouchTime = performance.now();
-        touchVelocity = 0;
-    }, { passive: true });
-
-    scroll.addEventListener('touchmove', (e) => {
-        const currentY = e.touches[0]?.clientY;
-        if (touchStartY != null && currentY != null) {
-            const deltaY = currentY - touchStartY;
-            const now = performance.now();
-            const elapsed = Math.max(1, now - lastTouchTime);
-            if (lastTouchY != null) {
-                touchVelocity = (currentY - lastTouchY) / elapsed;
-            }
-            lastTouchY = currentY;
-            lastTouchTime = now;
-            if (Math.abs(deltaY) > 6) {
-                isTouchDragging = true;
-                suppressOptionClickUntil = Date.now() + 250;
-                // Drive the scrolling ourselves so slow finger drags work
-                // reliably in iPad WKWebView even though the children are buttons.
-                scroll.scrollTop = touchStartScrollTop - deltaY;
-                e.preventDefault();
-            }
-        }
-    }, { passive: false });
-
-    scroll.addEventListener('touchend', () => {
-        if (isTouchDragging) {
-            suppressOptionClickUntil = Date.now() + 250;
-            if (Math.abs(touchVelocity) > 0.08) {
-                startMomentum(touchVelocity);
-            }
-        }
-        touchStartY = null;
-        isTouchDragging = false;
-        lastTouchY = null;
-    }, { passive: true });
-
-    scroll.addEventListener('touchcancel', () => {
-        touchStartY = null;
-        isTouchDragging = false;
-        lastTouchY = null;
-    }, { passive: true });
-
-    for (let i = 0; i < max; i += step) {
-        const option = document.createElement('button');
-        option.className = 'popover-option' + (i === listHighlightValue ? ' selected' : '');
-        option.textContent = String(i).padStart(2, '0');
-        option.addEventListener('click', (e) => {
-            e.stopPropagation(); // Prevent blocklist deselection
-            if (Date.now() < suppressOptionClickUntil) {
-                return;
-            }
-
-            // Update state
-            if (type === 'hour') {
-                if (isStart) segment.startHour = i;
-                else segment.endHour = i;
-            } else {
-                if (isStart) segment.startMinute = i;
-                else segment.endMinute = i;
-            }
-
-            // Update field display
-            field.value = String(i).padStart(2, '0');
-
-            // Close popover
-            popover.remove();
-
-            // Update calendar preview
-            handleTimeChange();
-        });
-        scroll.appendChild(option);
-    }
-
-    popover.appendChild(scroll);
-    field.parentElement.appendChild(popover);
-
-    // Scroll to current value inside the popover only
-    const activeOption = scroll.querySelector('.selected');
-    scrollPopoverOptionIntoView(scroll, activeOption);
-
-    // Close on outside click
-    setTimeout(() => {
-        document.addEventListener('click', function closePopover(e) {
-            if (!popover.contains(e.target) && e.target !== field) {
-                popover.remove();
-                document.removeEventListener('click', closePopover);
-            }
-        });
-    }, 10);
-}
-
-// Start a schedule - show confirmation modal first.
-// When a schedule is already active this acts as Stop; the persistent Stop button
-// behaves identically whether or not pending edits exist (those are committed/discarded
-// via the pending-changes bar, never via this button).
-async function startSchedule() {
-    if (!state.selectedBlocklistId) return;
-
-    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
-    if (!blocklist) return;
-
-    const activeSchedule = state.appData.schedules
-        ? state.appData.schedules.find(s => s.blocklistId === state.selectedBlocklistId)
-        : null;
-
-    if (activeSchedule) {
-        // Stop mode - open override dialog for the schedule
-        openScheduleOverrideModal(activeSchedule);
-        return;
-    }
-
-    if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this schedule')) return;
-
-    // Normal start mode - check that at least one segment has days
-    const hasAnyDays = scheduleSegments.some(seg => seg.days && seg.days.length > 0);
-    if (!hasAnyDays) return;
-
-    // Show confirmation modal for new schedule
-    showScheduleConfirmModal(blocklist);
-}
 
 // Show schedule confirmation modal
-// ---- Schedule start-overlay customisation --------------------------------
-
-const GLOBAL_OVERLAY_ASSET_NAMESPACE = 'global';
-
-function ensureGlobalStartOverlays() {
-    if (!Array.isArray(state.appData.startOverlays)) {
-        state.appData.startOverlays = [];
-    }
-    return state.appData.startOverlays;
-}
-
-export function getGlobalStartOverlays() {
-    return ensureGlobalStartOverlays();
-}
-
-function getNamedStartOverlayById(overlayId) {
-    if (!overlayId) return null;
-    return getGlobalStartOverlays().find((preset) => preset.id === overlayId) || null;
-}
-
-function getUniqueNewScheduleStartOverlayName() {
-    const base = tSettings('scheduleOverlaySelectNew');
-    const existingNames = new Set(
-        getGlobalStartOverlays().map((preset) => preset.name.trim().toLowerCase()),
-    );
-    if (!existingNames.has(base.toLowerCase())) return base;
-
-    let n = 2;
-    while (existingNames.has(`${base} ${n}`.toLowerCase())) n += 1;
-    return `${base} ${n}`;
-}
-
-function syncScheduleOverlayCustomiseSelectorDisplayName() {
-    const select = document.getElementById('schedule-overlay-select');
-    if (!select) return;
-
-    const selection = scheduleOverlayCustomiseSelection;
-    const name = document.getElementById('schedule-overlay-name-input')?.value?.trim() || '';
-
-    if (selection === SCHEDULE_OVERLAY_NEW_PRESET_VALUE) {
-        const newOption = select.querySelector(`option[value="${SCHEDULE_OVERLAY_NEW_PRESET_VALUE}"]`);
-        if (newOption) {
-            newOption.textContent = name || tSettings('scheduleOverlaySelectNew');
-        }
-        return;
-    }
-
-    if (selection && selection !== SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE) {
-        const option = select.querySelector(`option[value="${CSS.escape(selection)}"]`);
-        if (option && name) option.textContent = name;
-    }
-}
-
-function upsertGlobalStartOverlay(preset) {
-    const overlays = ensureGlobalStartOverlays();
-    const index = overlays.findIndex((item) => item.id === preset.id);
-    if (index >= 0) overlays[index] = preset;
-    else overlays.push(preset);
-}
-
-async function deleteGlobalStartOverlay(presetId) {
-    const preset = getNamedStartOverlayById(presetId);
-    if (!preset) return false;
-
-    if (preset.imageAsset) await removeScheduleOverlayAsset(preset.imageAsset);
-    if (preset.voiceAsset) await removeScheduleOverlayAsset(preset.voiceAsset);
-
-    state.appData.startOverlays = getGlobalStartOverlays().filter((item) => item.id !== presetId);
-
-    for (const schedule of state.appData.schedules || []) {
-        if (schedule.startOverlayId === presetId) {
-            schedule.startOverlayId = null;
-        }
-    }
-
-    if (state.appData.settings?.lastScheduleStartOverlayId === presetId) {
-        delete state.appData.settings.lastScheduleStartOverlayId;
-    }
-
-    if (pendingScheduleStartOverlayId === presetId) {
-        pendingScheduleStartOverlayId = null;
-    }
-
-    await saveData();
-    return true;
-}
-
-function getLastScheduleStartOverlayId() {
-    const stored = state.appData.settings?.lastScheduleStartOverlayId;
-    if (!stored) return null;
-    return getNamedStartOverlayById(stored) ? stored : null;
-}
-
-function rememberLastScheduleStartOverlayId(overlayId) {
-    if (!state.appData.settings) state.appData.settings = {};
-    const normalized = overlayId || null;
-    if (normalized && !getNamedStartOverlayById(normalized)) return;
-    if (normalized) state.appData.settings.lastScheduleStartOverlayId = normalized;
-    else delete state.appData.settings.lastScheduleStartOverlayId;
-}
-
-export function migrateBlocklistStartOverlaysToGlobal() {
-    let changed = false;
-    ensureGlobalStartOverlays();
-    const knownIds = new Set(state.appData.startOverlays.map((preset) => preset.id));
-
-    for (const blocklist of state.appData.blocklists || []) {
-        const legacyPresets = blocklist.startOverlays;
-        if (!Array.isArray(legacyPresets) || legacyPresets.length === 0) {
-            if (legacyPresets != null) {
-                delete blocklist.startOverlays;
-                changed = true;
-            }
-            continue;
-        }
-
-        for (const preset of legacyPresets) {
-            if (!preset?.id || knownIds.has(preset.id)) continue;
-            state.appData.startOverlays.push({ ...preset });
-            knownIds.add(preset.id);
-            changed = true;
-        }
-        delete blocklist.startOverlays;
-        changed = true;
-    }
-
-    return changed;
-}
-
-function namedPresetToDraft(preset) {
-    if (!preset) return getDefaultScheduleStartOverlay();
-    return {
-        custom: true,
-        heading: preset.heading?.trim() ? preset.heading.trim() : null,
-        message: preset.message?.trim() ? preset.message.trim() : null,
-        letsGoLabel: preset.letsGoLabel?.trim() ? preset.letsGoLabel.trim() : null,
-        imageAsset: preset.imageAsset || null,
-        voiceAsset: preset.voiceAsset || null,
-    };
-}
-
-function namedPresetToRuntime(preset) {
-    return normalizeScheduleStartOverlay(namedPresetToDraft(preset));
-}
-
-function buildNamedStartOverlayPreset({ id, name, draft }) {
-    const normalized = normalizeScheduleStartOverlay(draft);
-    return {
-        id,
-        name: name.trim(),
-        heading: normalized.heading,
-        message: normalized.message,
-        letsGoLabel: normalized.letsGoLabel,
-        imageAsset: normalized.imageAsset,
-        voiceAsset: normalized.voiceAsset,
-    };
-}
-
-function resolveScheduleStartOverlay(schedule) {
-    if (!schedule) return null;
-    if (schedule.startOverlayId) {
-        const preset = getNamedStartOverlayById(schedule.startOverlayId);
-        if (preset) return namedPresetToRuntime(preset);
-    }
-    if (schedule.startOverlay?.custom) {
-        return normalizeScheduleStartOverlay(schedule.startOverlay);
-    }
-    return null;
-}
-
-export function migrateLegacyScheduleStartOverlays() {
-    let changed = false;
-    for (const schedule of state.appData.schedules || []) {
-        if (schedule.startOverlayId || !schedule.startOverlay?.custom) continue;
-        const presetId = crypto.randomUUID();
-        upsertGlobalStartOverlay({
-            id: presetId,
-            name: tSettings('scheduleOverlayLegacyPresetName'),
-            heading: schedule.startOverlay.heading || null,
-            message: schedule.startOverlay.message || null,
-            letsGoLabel: schedule.startOverlay.letsGoLabel || null,
-            imageAsset: schedule.startOverlay.imageAsset || null,
-            voiceAsset: schedule.startOverlay.voiceAsset || null,
-        });
-        schedule.startOverlayId = presetId;
-        delete schedule.startOverlay;
-        changed = true;
-    }
-    return changed;
-}
-
-function getDefaultScheduleStartOverlay() {
-    return {
-        custom: false,
-        heading: null,
-        message: null,
-        letsGoLabel: null,
-        imageAsset: null,
-        voiceAsset: null,
-    };
-}
-
-function cloneScheduleStartOverlay(overlay) {
-    if (!overlay) return getDefaultScheduleStartOverlay();
-    return {
-        custom: !!overlay.custom,
-        heading: overlay.heading?.trim() ? overlay.heading.trim() : null,
-        message: overlay.message?.trim() ? overlay.message.trim() : null,
-        letsGoLabel: overlay.letsGoLabel?.trim() ? overlay.letsGoLabel.trim() : null,
-        imageAsset: overlay.imageAsset || null,
-        voiceAsset: overlay.voiceAsset || null,
-    };
-}
-
-function scheduleStartOverlayHasCustomContent(overlay) {
-    if (!overlay) return false;
-    return !!(overlay.heading || overlay.message || overlay.letsGoLabel || overlay.imageAsset || overlay.voiceAsset);
-}
-
-function normalizeScheduleStartOverlay(overlay) {
-    const clone = cloneScheduleStartOverlay(overlay);
-    clone.custom = scheduleStartOverlayHasCustomContent(clone);
-    if (!clone.custom) {
-        clone.heading = null;
-        clone.message = null;
-        clone.letsGoLabel = null;
-        clone.imageAsset = null;
-        clone.voiceAsset = null;
-    }
-    return clone;
-}
-
-function getScheduleStartOverlayForBlocklistId(blocklistId) {
-    const schedule = state.appData.schedules?.find((s) => s.blocklistId === blocklistId);
-    if (!schedule) return null;
-    return resolveScheduleStartOverlay(schedule);
-}
-
-function getScheduleStartOverlayForWarningApps(appNames) {
-    const blocklist = findResponsibleBlocklistForWarningApps(appNames);
-    if (!blocklist) return null;
-    return getScheduleStartOverlayForBlocklistId(blocklist.id);
-}
-
-function pickOverlayRecordingMimeType() {
-    const candidates = [
-        'audio/mp4',
-        'audio/webm;codecs=opus',
-        'audio/webm',
-        'audio/ogg;codecs=opus',
-    ];
-    for (const candidate of candidates) {
-        if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(candidate)) {
-            return candidate;
-        }
-    }
-    return '';
-}
-
-function overlayMimeTypeToExtension(mimeType) {
-    const mime = (mimeType || '').toLowerCase();
-    if (mime.includes('mp4') || mime.includes('mpeg4')) return 'mp4';
-    if (mime.includes('ogg')) return 'ogg';
-    if (mime.includes('wav')) return 'wav';
-    if (mime.includes('webm')) return 'webm';
-    return 'webm';
-}
-
-function overlayExtensionToMimeType(ext) {
-    const extension = (ext || '').toLowerCase();
-    const mimeTypes = {
-        webm: 'audio/webm',
-        ogg: 'audio/ogg',
-        wav: 'audio/wav',
-        mp4: 'audio/mp4',
-        m4a: 'audio/mp4',
-    };
-    return mimeTypes[extension] || 'audio/webm';
-}
-
-function trackOverlayAssetBlobUrl(url) {
-    if (url?.startsWith('blob:')) overlayAssetBlobUrls.add(url);
-    return url;
-}
-
-function revokeOverlayAssetBlobUrls() {
-    overlayAssetBlobUrls.forEach((url) => URL.revokeObjectURL(url));
-    overlayAssetBlobUrls.clear();
-}
-
-async function resolveOverlayImageAssetUrl(relativePath) {
-    if (!relativePath || state.isIOS || state.isAndroid) return null;
-    try {
-        const fullPath = await tauriAPI.resolveOverlayAssetPath(relativePath);
-        const ext = relativePath.split('.').pop()?.toLowerCase() || 'png';
-        const mimeTypes = {
-            png: 'image/png',
-            jpg: 'image/jpeg',
-            jpeg: 'image/jpeg',
-            gif: 'image/gif',
-            webp: 'image/webp',
-        };
-        const bytes = await tauriAPI.readOverlaySourceBytes(fullPath);
-        return trackOverlayAssetBlobUrl(URL.createObjectURL(new Blob(
-            [new Uint8Array(bytes)],
-            { type: mimeTypes[ext] || 'image/png' },
-        )));
-    } catch (err) {
-        console.warn('[schedule-overlay] image asset resolve failed:', err);
-        return null;
-    }
-}
-
-async function resolveOverlayAudioAssetUrl(relativePath) {
-    if (!relativePath || state.isIOS || state.isAndroid) return null;
-    try {
-        const fullPath = await tauriAPI.resolveOverlayAssetPath(relativePath);
-        const ext = relativePath.split('.').pop()?.toLowerCase() || 'webm';
-        const bytes = await tauriAPI.readOverlaySourceBytes(fullPath);
-        return trackOverlayAssetBlobUrl(URL.createObjectURL(new Blob(
-            [new Uint8Array(bytes)],
-            { type: overlayExtensionToMimeType(ext) },
-        )));
-    } catch (err) {
-        console.warn('[schedule-overlay] audio asset resolve failed:', err);
-        return null;
-    }
-}
-
-async function resolveOverlayAssetUrl(relativePath) {
-    if (!relativePath || state.isIOS || state.isAndroid) return null;
-    if (/\.(png|jpe?g|gif|webp)$/i.test(relativePath)) {
-        return resolveOverlayImageAssetUrl(relativePath);
-    }
-    if (/\.(webm|ogg|wav|mp4|m4a)$/i.test(relativePath)) {
-        return resolveOverlayAudioAssetUrl(relativePath);
-    }
-    try {
-        const fullPath = await tauriAPI.resolveOverlayAssetPath(relativePath);
-        return convertFileSrc(fullPath);
-    } catch (err) {
-        console.warn('[schedule-overlay] asset resolve failed:', err);
-        return null;
-    }
-}
-
-async function applyOverlayMediaToElements({
-    overlay,
-    blocklistEmoji,
-    emojiWrapEl,
-    emojiEl,
-    imageEl,
-}) {
-    if (!emojiWrapEl || !emojiEl || !imageEl) return;
-
-    const useImage = !!(overlay?.custom && overlay.imageAsset);
-    if (useImage) {
-        const url = await resolveOverlayAssetUrl(overlay.imageAsset);
-        if (url) {
-            imageEl.src = url;
-            imageEl.classList.remove('hidden');
-            emojiWrapEl.classList.add('hidden');
-            return;
-        }
-    }
-
-    imageEl.removeAttribute('src');
-    imageEl.classList.add('hidden');
-    emojiWrapEl.classList.remove('hidden');
-    if (emojiEl) emojiEl.textContent = blocklistEmoji || '🎯';
-}
-
-function buildDefaultWarningSummaryHtml(names, blocklistName, letsGoLabel) {
-    const apps = joinAppListWithLimit(names, 3);
-    const bl = escapeHtml(blocklistName);
-    const letsGo = escapeHtml(letsGoLabel || tSettings('appBlockingLetsGo'));
-    const summaryKey = names.length === 1
-        ? 'appBlockingWarningSummarySingleHtml'
-        : 'appBlockingWarningSummaryMultiHtml';
-    return tSettingsFmt(summaryKey, { blocklist: bl, letsGo, apps });
-}
-
-function getScheduleOverlayAppsPreviewList(blocklist) {
-    const apps = getBlocklistDisplayApps(blocklist);
-    return joinAppListWithLimit(apps, 3, { bold: false });
-}
-
-function syncScheduleOverlayMessageFieldHints(blocklist) {
-    const noteEl = document.getElementById('schedule-overlay-no-apps-note');
-    const apps = getBlocklistDisplayApps(blocklist);
-    const appsPreview = getScheduleOverlayAppsPreviewList(blocklist);
-    const placeholder = apps.length === 0
-        ? tSettings('scheduleOverlayMessagePlaceholderNoApps')
-        : tSettingsFmt('scheduleOverlayMessagePlaceholderFmt', { apps: appsPreview });
-
-    if (noteEl) {
-        noteEl.textContent = apps.length === 0
-            ? tSettings('scheduleOverlayNoBlockedAppsHint')
-            : '';
-        noteEl.classList.toggle('hidden', apps.length > 0);
-    }
-
-    setScheduleOverlayMessageEditorPlaceholder(placeholder);
-}
-
-function syncScheduleOverlayLetsGoCounter() {
-    const input = document.getElementById('schedule-overlay-lets-go-input');
-    const counter = document.getElementById('schedule-overlay-lets-go-count');
-    if (!input || !counter) return;
-    const max = Number(input.maxLength) || 24;
-    const length = input.value.length;
-    counter.textContent = tSettingsFmt('scheduleOverlayCharCountFmt', { count: length, max });
-}
-
-function normalizeScheduleOverlayMessageForCompare(message) {
-    const normalized = normalizeStoredOverlayMessage(message);
-    return isOverlayMessageEmpty(normalized) ? null : normalized;
-}
-
-function normalizeScheduleOverlayLetsGoForCompare(letsGoLabel) {
-    const defaultLabel = tSettings('appBlockingLetsGo');
-    const value = letsGoLabel?.trim() || '';
-    if (!value || value === defaultLabel) return null;
-    return value;
-}
-
-function scheduleOverlayDraftFieldForCompare(draft, field) {
-    if (!draft) return null;
-    switch (field) {
-        case 'heading':
-            return draft.heading?.trim() || null;
-        case 'message':
-            return normalizeScheduleOverlayMessageForCompare(draft.message);
-        case 'letsGoLabel':
-            return normalizeScheduleOverlayLetsGoForCompare(draft.letsGoLabel);
-        case 'imageAsset':
-            return draft.imageAsset || null;
-        case 'voiceAsset':
-            return draft.voiceAsset || null;
-        default:
-            return null;
-    }
-}
-
-function isScheduleOverlayDraftFieldUnsaved(field, currentDraft, baselineDraft) {
-    return scheduleOverlayDraftFieldForCompare(currentDraft, field)
-        !== scheduleOverlayDraftFieldForCompare(baselineDraft, field);
-}
-
-function readScheduleOverlayCustomiseFormState() {
-    return {
-        name: document.getElementById('schedule-overlay-name-input')?.value?.trim() || '',
-        draft: readScheduleOverlayCustomiseDraftFromForm(),
-    };
-}
-
-function captureScheduleOverlayCustomiseBaseline() {
-    scheduleOverlayCustomiseBaseline = {
-        selectionValue: scheduleOverlayCustomiseSelection,
-        ...readScheduleOverlayCustomiseFormState(),
-    };
-}
-
-function hasUnsavedScheduleOverlayCustomiseChanges() {
-    if (scheduleOverlayCustomiseSelection === SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE) return false;
-    if (!scheduleOverlayCustomiseBaseline) return false;
-
-    const current = readScheduleOverlayCustomiseFormState();
-    if (current.name !== scheduleOverlayCustomiseBaseline.name) return true;
-
-    const fields = ['heading', 'message', 'letsGoLabel', 'imageAsset', 'voiceAsset'];
-    return fields.some((field) => isScheduleOverlayDraftFieldUnsaved(
-        field,
-        current.draft,
-        scheduleOverlayCustomiseBaseline.draft,
-    ));
-}
-
-function setScheduleOverlaySectionUnsavedBadge(badgeEl, isUnsaved) {
-    if (!badgeEl) return;
-    badgeEl.textContent = tSettings('scheduleOverlayUnsavedBadge');
-    badgeEl.classList.toggle('hidden', !isUnsaved);
-}
-
-function syncScheduleOverlaySectionBadges() {
-    if (scheduleOverlayCustomiseSelection === SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE) {
-        [
-            'schedule-overlay-heading-badge',
-            'schedule-overlay-message-badge',
-            'schedule-overlay-button-badge',
-            'schedule-overlay-image-badge',
-            'schedule-overlay-voice-badge',
-        ].forEach((id) => document.getElementById(id)?.classList.add('hidden'));
-        return;
-    }
-
-    const current = readScheduleOverlayCustomiseFormState();
-    const baselineDraft = scheduleOverlayCustomiseBaseline?.draft || getDefaultScheduleStartOverlay();
-    const defaultLetsGo = tSettings('appBlockingLetsGo');
-    const letsGoValue = document.getElementById('schedule-overlay-lets-go-input')?.value?.trim() || '';
-    const headingValue = document.getElementById('schedule-overlay-heading-input')?.value?.trim() || '';
-    const messageCustom = !isOverlayMessageEmpty(getScheduleOverlayMessageEditorHtml());
-    const headingCustom = !!headingValue;
-    const buttonCustom = !!(letsGoValue && letsGoValue !== defaultLetsGo);
-    const imageCustom = !!current.draft.imageAsset;
-    const voiceCustom = !!current.draft.voiceAsset;
-
-    setScheduleOverlaySectionUnsavedBadge(
-        document.getElementById('schedule-overlay-heading-badge'),
-        isScheduleOverlayDraftFieldUnsaved('heading', current.draft, baselineDraft),
-    );
-    document.getElementById('schedule-overlay-reset-heading-btn')
-        ?.classList.toggle('hidden', !headingCustom);
-
-    setScheduleOverlaySectionUnsavedBadge(
-        document.getElementById('schedule-overlay-message-badge'),
-        isScheduleOverlayDraftFieldUnsaved('message', current.draft, baselineDraft),
-    );
-    document.getElementById('schedule-overlay-reset-message-btn')
-        ?.classList.toggle('hidden', !messageCustom);
-
-    setScheduleOverlaySectionUnsavedBadge(
-        document.getElementById('schedule-overlay-button-badge'),
-        isScheduleOverlayDraftFieldUnsaved('letsGoLabel', current.draft, baselineDraft),
-    );
-    document.getElementById('schedule-overlay-reset-button-btn')
-        ?.classList.toggle('hidden', !buttonCustom);
-
-    setScheduleOverlaySectionUnsavedBadge(
-        document.getElementById('schedule-overlay-image-badge'),
-        isScheduleOverlayDraftFieldUnsaved('imageAsset', current.draft, baselineDraft),
-    );
-    document.getElementById('schedule-overlay-reset-image-btn')
-        ?.classList.toggle('hidden', !imageCustom);
-
-    setScheduleOverlaySectionUnsavedBadge(
-        document.getElementById('schedule-overlay-voice-badge'),
-        isScheduleOverlayDraftFieldUnsaved('voiceAsset', current.draft, baselineDraft),
-    );
-    document.getElementById('schedule-overlay-reset-voice-btn')
-        ?.classList.toggle('hidden', !voiceCustom);
-}
-
-function syncScheduleOverlayCustomiseDirtyState() {
-    const unsavedBadge = document.getElementById('schedule-overlay-select-unsaved-badge');
-    if (unsavedBadge) {
-        unsavedBadge.textContent = tSettings('scheduleOverlayUnsavedBadge');
-        unsavedBadge.classList.toggle('hidden', !hasUnsavedScheduleOverlayCustomiseChanges());
-    }
-    syncScheduleOverlaySectionBadges();
-}
-
-function syncScheduleOverlayImageDropzone(normalized, blocklistEmoji) {
-    const statusEl = document.getElementById('schedule-overlay-image-status');
-    const defaultIconEl = document.getElementById('schedule-overlay-image-default-icon');
-    const imagePreview = document.getElementById('schedule-overlay-image-preview');
-    if (defaultIconEl) defaultIconEl.textContent = blocklistEmoji || '📚';
-    if (!statusEl || !imagePreview) return;
-
-    if (normalized.imageAsset && !imagePreview.classList.contains('hidden') && imagePreview.src) {
-        statusEl.textContent = tSettings('scheduleOverlayImageCustomStatus');
-        defaultIconEl?.classList.add('hidden');
-    } else {
-        statusEl.textContent = tSettings('scheduleOverlayImageDefaultStatus');
-        imagePreview.classList.add('hidden');
-        imagePreview.removeAttribute('src');
-        defaultIconEl?.classList.remove('hidden');
-    }
-}
-
-function formatScheduleOverlayCustomMessageHtml(message, appNames, letsGoLabel) {
-    const appsPreview = escapeHtmlForOverlay(joinAppListWithLimit(appNames, 3, { bold: false }));
-    const letsGo = escapeHtmlForOverlay(letsGoLabel || tSettings('appBlockingLetsGo'));
-    const normalized = normalizeStoredOverlayMessage(message) || '';
-    const html = normalized
-        .replace(/\{apps\}/gi, appsPreview)
-        .replace(/\{letsGo\}/gi, letsGo);
-    return sanitizeOverlayMessageHtml(html);
-}
-
-function formatScheduleOverlayHeadingHtml(heading, blocklistName) {
-    const nameHtml = `<strong>${escapeHtmlForOverlay(blocklistName)}</strong>`;
-    const normalized = (heading || '').trim();
-    if (!normalized) {
-        return tSettingsFmt('appBlockingWarningHeadingHtml', {
-            name: escapeHtmlForOverlay(blocklistName),
-        });
-    }
-    const html = normalized.replace(/\{name\}/gi, nameHtml);
-    return sanitizeOverlayMessageHtml(html);
-}
-
-async function applyScheduleStartOverlayPresentation({
-    overlay,
-    blocklistName,
-    blocklistEmoji,
-    appNames,
-    headingEl,
-    summaryEl,
-    emojiWrapEl,
-    emojiEl,
-    imageEl,
-    letsGoLabelEl,
-    letsGoVoiceIconEl,
-}) {
-    const defaultLetsGo = tSettings('appBlockingLetsGo');
-    const useCustom = !!(overlay?.custom && scheduleStartOverlayHasCustomContent(overlay));
-    const letsGoText = useCustom && overlay.letsGoLabel ? overlay.letsGoLabel : defaultLetsGo;
-
-    if (headingEl) {
-        if (useCustom && overlay.heading) {
-            headingEl.innerHTML = formatScheduleOverlayHeadingHtml(overlay.heading, blocklistName);
-        } else {
-            headingEl.innerHTML = tSettingsFmt('appBlockingWarningHeadingHtml', {
-                name: escapeHtml(blocklistName),
-            });
-        }
-    }
-
-    if (summaryEl) {
-        if (useCustom && overlay.message) {
-            summaryEl.innerHTML = formatScheduleOverlayCustomMessageHtml(
-                overlay.message,
-                appNames,
-                letsGoText,
-            );
-        } else {
-            summaryEl.innerHTML = buildDefaultWarningSummaryHtml(appNames, blocklistName, letsGoText);
-        }
-    }
-
-    await applyOverlayMediaToElements({
-        overlay: useCustom ? overlay : null,
-        blocklistEmoji,
-        emojiWrapEl,
-        emojiEl,
-        imageEl,
-    });
-
-    if (letsGoLabelEl) letsGoLabelEl.textContent = letsGoText;
-    if (letsGoVoiceIconEl) {
-        letsGoVoiceIconEl.classList.toggle('hidden', !(useCustom && overlay.voiceAsset));
-    }
-
-    return useCustom ? overlay : null;
-}
-
-async function playAppBlockingLetsGoVoice() {
-    if (!appBlockingActiveStartOverlay?.voiceAsset || state.isIOS || state.isAndroid) return;
-    try {
-        const url = await resolveOverlayAssetUrl(appBlockingActiveStartOverlay.voiceAsset);
-        if (!url) return;
-        if (!appBlockingLetsGoVoiceAudio) {
-            appBlockingLetsGoVoiceAudio = new Audio();
-        }
-        appBlockingLetsGoVoiceAudio.pause();
-        appBlockingLetsGoVoiceAudio.src = url;
-        await appBlockingLetsGoVoiceAudio.play();
-    } catch (err) {
-        console.warn('[schedule-overlay] voice playback failed:', err);
-    }
-}
-
-function getActiveScheduleForSelectedBlocklist() {
-    if (!state.selectedBlocklistId || !state.appData.schedules) return null;
-    return state.appData.schedules.find((s) => s.blocklistId === state.selectedBlocklistId) || null;
-}
-
-function getEffectiveScheduleStartOverlayId() {
-    const activeSchedule = getActiveScheduleForSelectedBlocklist();
-    if (activeSchedule) return activeSchedule.startOverlayId || null;
-    return getLastScheduleStartOverlayId();
-}
-
-function setEffectiveScheduleStartOverlayId(overlayId) {
-    const normalized = overlayId || null;
-    const activeSchedule = getActiveScheduleForSelectedBlocklist();
-    if (activeSchedule) {
-        activeSchedule.startOverlayId = normalized;
-    } else {
-        rememberLastScheduleStartOverlayId(normalized);
-    }
-    pendingScheduleStartOverlayId = normalized;
-    void saveData();
-    syncAllStartOverlaySelectors();
-}
-
-function getSchedulePanelOverlayLabel(selectedId) {
-    if (!selectedId) return tSettings('scheduleConfirmOverlayDefaultTitle');
-    const preset = getNamedStartOverlayById(selectedId);
-    return preset?.name || tSettings('scheduleConfirmOverlayDefaultTitle');
-}
-
-function renderSchedulePanelOverlayDropdown(selectedId) {
-    const btnText = document.getElementById('schedule-panel-overlay-dropdown-text');
-    const menu = document.getElementById('schedule-panel-overlay-dropdown-menu');
-    const btn = document.getElementById('schedule-panel-overlay-dropdown-btn');
-    if (!btnText || !menu || !btn) return;
-
-    const presets = getGlobalStartOverlays();
-    const hasPresets = presets.length > 0;
-
-    btnText.textContent = getSchedulePanelOverlayLabel(selectedId);
-    menu.innerHTML = '';
-    menu.classList.add('hidden');
-
-    if (!hasPresets) {
-        btn.disabled = true;
-        btn.classList.add('repeat-dropdown-disabled');
-        return;
-    }
-
-    btn.disabled = false;
-    btn.classList.remove('repeat-dropdown-disabled');
-    btn.style.pointerEvents = 'auto';
-    btn.style.cursor = 'pointer';
-
-    const defaultOption = document.createElement('button');
-    defaultOption.type = 'button';
-    defaultOption.className = `repeat-option${selectedId ? '' : ' active'}`;
-    defaultOption.dataset.value = '';
-    defaultOption.textContent = tSettings('scheduleConfirmOverlayDefaultTitle');
-    menu.appendChild(defaultOption);
-
-    presets.forEach((preset) => {
-        const option = document.createElement('button');
-        option.type = 'button';
-        option.className = `repeat-option${preset.id === selectedId ? ' active' : ''}`;
-        option.dataset.value = preset.id;
-        option.textContent = preset.name;
-        menu.appendChild(option);
-    });
-}
-
-function toggleSchedulePanelOverlayDropdown(e) {
-    e.stopPropagation();
-
-    const btn = document.getElementById('schedule-panel-overlay-dropdown-btn');
-    if (!btn || btn.disabled || btn.classList.contains('repeat-dropdown-disabled')) return;
-
-    const menu = document.getElementById('schedule-panel-overlay-dropdown-menu');
-    if (!menu) return;
-
-    const isHidden = menu.classList.contains('hidden');
-    if (isHidden) closeSchedulePanelDropdownMenus('schedule-panel-overlay-dropdown-menu');
-    menu.classList.toggle('hidden');
-
-    if (isHidden) {
-        setTimeout(() => {
-            document.addEventListener('click', function closeMenu(evt) {
-                if (!menu.contains(evt.target) && evt.target !== btn) {
-                    menu.classList.add('hidden');
-                    document.removeEventListener('click', closeMenu);
-                }
-            });
-        }, 10);
-    }
-}
-
-function handleSchedulePanelOverlayOptionClick(e) {
-    const option = e.target.closest('.repeat-option');
-    if (!option || !option.dataset) return;
-
-    e.stopPropagation();
-
-    const btn = document.getElementById('schedule-panel-overlay-dropdown-btn');
-    if (btn?.disabled || btn?.classList.contains('repeat-dropdown-disabled')) {
-        document.getElementById('schedule-panel-overlay-dropdown-menu')?.classList.add('hidden');
-        return;
-    }
-
-    const value = option.dataset.value || null;
-    document.getElementById('schedule-panel-overlay-dropdown-menu')?.classList.add('hidden');
-
-    // Rebuild the menu after this click finishes — clearing it synchronously
-    // detaches the target and breaks `.closest('.scheduler-section')` guards.
-    requestAnimationFrame(() => {
-        setEffectiveScheduleStartOverlayId(value);
-        syncScheduleConfirmOverlaySummary();
-    });
-}
-
-function populateStartOverlaySelectOptions(select, selectedId) {
-    if (!select) return;
-    select.innerHTML = '';
-    const defaultOption = document.createElement('option');
-    defaultOption.value = '';
-    defaultOption.textContent = tSettings('scheduleConfirmOverlayDefaultTitle');
-    select.appendChild(defaultOption);
-
-    getGlobalStartOverlays().forEach((preset) => {
-        const option = document.createElement('option');
-        option.value = preset.id;
-        option.textContent = preset.name;
-        select.appendChild(option);
-    });
-
-    select.value = selectedId || '';
-}
-
-function syncAllStartOverlaySelectors() {
-    const selectedId = getEffectiveScheduleStartOverlayId();
-    const hasPresets = getGlobalStartOverlays().length > 0;
-    const defaultTitle = tSettings('scheduleConfirmOverlayDefaultTitle');
-
-    const confirmTitle = document.getElementById('schedule-confirm-overlay-value');
-    const confirmSelect = document.getElementById('schedule-confirm-overlay-select');
-
-    renderSchedulePanelOverlayDropdown(selectedId);
-    confirmTitle?.classList.toggle('hidden', hasPresets);
-    confirmSelect?.classList.toggle('hidden', !hasPresets);
-
-    if (hasPresets) {
-        populateStartOverlaySelectOptions(confirmSelect, selectedId);
-    } else if (confirmTitle) {
-        confirmTitle.textContent = defaultTitle;
-    }
-
-    pendingScheduleStartOverlayId = selectedId;
-
-    const activeSchedule = getActiveScheduleForSelectedBlocklist();
-    disableScheduleControls(!!activeSchedule);
-}
-
-function syncSchedulePanelOverlayControls() {
-    const section = document.getElementById('schedule-panel-overlay-section');
-    if (!section) return;
-
-    if (isMobileOverrideChallengePlatform()) {
-        section.classList.add('hidden');
-        return;
-    }
-
-    section.classList.remove('hidden');
-    syncAllStartOverlaySelectors();
-}
-
-function syncScheduleConfirmOverlaySummary() {
-    const descEl = document.getElementById('schedule-confirm-overlay-desc');
-    syncAllStartOverlaySelectors();
-
-    const isCustom = !!getEffectiveScheduleStartOverlayId();
-    if (descEl) {
-        descEl.textContent = isCustom
-            ? tSettings('scheduleConfirmOverlayCustomDesc')
-            : tSettings('scheduleConfirmOverlayDefaultDesc');
-    }
-}
-
-async function renderScheduleOverlayCustomisePreview(blocklist, draft) {
-    const names = getBlocklistDisplayApps(blocklist);
-    const previewNames = names.length > 0 ? names : [tSettings('appBlockingUnknownApp')];
-    const normalized = normalizeScheduleStartOverlay(draft);
-
-    await applyScheduleStartOverlayPresentation({
-        overlay: normalized,
-        blocklistName: blocklist.name,
-        blocklistEmoji: blocklist.emoji || '🎯',
-        appNames: previewNames,
-        headingEl: document.getElementById('schedule-overlay-preview-heading'),
-        summaryEl: document.getElementById('schedule-overlay-preview-summary'),
-        emojiWrapEl: document.getElementById('schedule-overlay-preview-emoji-wrap'),
-        emojiEl: document.getElementById('schedule-overlay-preview-emoji'),
-        imageEl: document.getElementById('schedule-overlay-preview-image'),
-        letsGoLabelEl: document.getElementById('schedule-overlay-preview-lets-go-label'),
-        letsGoVoiceIconEl: document.getElementById('schedule-overlay-preview-voice-icon'),
-    });
-
-    const imagePreview = document.getElementById('schedule-overlay-image-preview');
-    if (imagePreview) {
-        if (normalized.imageAsset) {
-            const url = await resolveOverlayAssetUrl(normalized.imageAsset);
-            if (url) {
-                imagePreview.src = url;
-                imagePreview.classList.remove('hidden');
-            } else {
-                imagePreview.classList.add('hidden');
-                imagePreview.removeAttribute('src');
-            }
-        } else {
-            imagePreview.removeAttribute('src');
-            imagePreview.classList.add('hidden');
-        }
-    }
-    syncScheduleOverlayImageDropzone(normalized, blocklist.emoji || '📚');
-
-    const voicePreview = document.getElementById('schedule-overlay-voice-preview');
-    if (voicePreview) {
-        if (normalized.voiceAsset) {
-            const url = await resolveOverlayAssetUrl(normalized.voiceAsset);
-            if (url) {
-                voicePreview.src = url;
-                voicePreview.load();
-                voicePreview.classList.remove('hidden');
-            } else {
-                voicePreview.classList.add('hidden');
-                voicePreview.removeAttribute('src');
-            }
-        } else {
-            voicePreview.removeAttribute('src');
-            voicePreview.classList.add('hidden');
-        }
-    }
-
-    syncScheduleOverlayCustomiseDirtyState();
-    syncScheduleOverlayLetsGoCounter();
-}
-
-function readScheduleOverlayCustomiseDraftFromForm() {
-    const heading = document.getElementById('schedule-overlay-heading-input')?.value?.trim() || null;
-    const message = getScheduleOverlayMessageEditorHtml();
-    const letsGoLabel = document.getElementById('schedule-overlay-lets-go-input')?.value?.trim() || null;
-    const draft = cloneScheduleStartOverlay(scheduleOverlayCustomiseDraft);
-    draft.heading = heading;
-    draft.message = message;
-    draft.letsGoLabel = letsGoLabel;
-    return normalizeScheduleStartOverlay(draft);
-}
-
-async function refreshScheduleOverlayCustomisePreview() {
-    if (!scheduleOverlayCustomiseBlocklist) return;
-    scheduleOverlayCustomiseDraft = readScheduleOverlayCustomiseDraftFromForm();
-    await renderScheduleOverlayCustomisePreview(
-        scheduleOverlayCustomiseBlocklist,
-        scheduleOverlayCustomiseDraft,
-    );
-}
-
-async function removeScheduleOverlayAsset(relativePath) {
-    if (!relativePath || state.isIOS || state.isAndroid) return;
-    try {
-        await tauriAPI.deleteOverlayAsset(relativePath);
-    } catch (err) {
-        console.warn('[schedule-overlay] delete asset failed:', err);
-    }
-}
-
-async function acquireScheduleOverlayMicStream() {
-    return navigator.mediaDevices.getUserMedia({ audio: true });
-}
-
-function setScheduleOverlayRecordingUi(state) {
-    const isStarting = state === 'starting';
-    const isRecording = state === 'recording';
-    const isActive = isStarting || isRecording;
-
-    document.getElementById('schedule-overlay-record-voice-btn')?.classList.toggle('hidden', isActive);
-    document.getElementById('schedule-overlay-stop-record-voice-btn')?.classList.toggle('hidden', !isActive);
-    document.getElementById('schedule-overlay-choose-voice-btn')?.toggleAttribute('disabled', isActive);
-    document.getElementById('schedule-overlay-voice-card')?.classList.toggle('is-starting', isStarting);
-    document.getElementById('schedule-overlay-voice-card')?.classList.toggle('is-recording', isRecording);
-
-    const stopLabel = document.getElementById('schedule-overlay-stop-record-voice-btn-label');
-    if (stopLabel) {
-        stopLabel.textContent = isStarting
-            ? tSettings('scheduleOverlayStartingRecording')
-            : tSettings('scheduleOverlayStopRecording');
-    }
-
-    const meter = document.getElementById('schedule-overlay-record-level');
-    if (isActive) {
-        meter?.classList.remove('hidden');
-    } else {
-        meter?.classList.add('hidden');
-        meter?.setAttribute('aria-valuenow', '0');
-        meter?.querySelectorAll('.schedule-overlay-record-level-bar').forEach((bar) => {
-            bar.classList.remove('is-active');
-        });
-    }
-}
-
-function teardownScheduleOverlayRecordLevelAnalyser() {
-    if (scheduleOverlayRecordLevelRaf != null) {
-        cancelAnimationFrame(scheduleOverlayRecordLevelRaf);
-        scheduleOverlayRecordLevelRaf = null;
-    }
-    if (scheduleOverlayRecordAudioContext) {
-        const ctx = scheduleOverlayRecordAudioContext;
-        scheduleOverlayRecordAudioContext = null;
-        scheduleOverlayRecordAnalyser = null;
-        void ctx.close().catch(() => {});
-    }
-}
-
-function stopScheduleOverlayRecordLevelMeter() {
-    teardownScheduleOverlayRecordLevelAnalyser();
-    setScheduleOverlayRecordingUi('idle');
-}
-
-async function startScheduleOverlayRecordLevelMeter(stream) {
-    teardownScheduleOverlayRecordLevelAnalyser();
-    const meter = document.getElementById('schedule-overlay-record-level');
-    if (!meter || !stream) return;
-
-    const AudioCtx = window.AudioContext || window.webkitAudioContext;
-    if (!AudioCtx) return;
-
-    try {
-        scheduleOverlayRecordAudioContext = new AudioCtx();
-        if (scheduleOverlayRecordAudioContext.state === 'suspended') {
-            await scheduleOverlayRecordAudioContext.resume();
-        }
-        const source = scheduleOverlayRecordAudioContext.createMediaStreamSource(stream);
-        scheduleOverlayRecordAnalyser = scheduleOverlayRecordAudioContext.createAnalyser();
-        scheduleOverlayRecordAnalyser.fftSize = 256;
-        scheduleOverlayRecordAnalyser.smoothingTimeConstant = 0.8;
-        source.connect(scheduleOverlayRecordAnalyser);
-
-        const bars = meter.querySelectorAll('.schedule-overlay-record-level-bar');
-        const samples = new Uint8Array(scheduleOverlayRecordAnalyser.fftSize);
-
-        const tick = () => {
-            if (!scheduleOverlayRecordAnalyser) return;
-            scheduleOverlayRecordAnalyser.getByteTimeDomainData(samples);
-            let sumSquares = 0;
-            let peak = 0;
-            for (let i = 0; i < samples.length; i += 1) {
-                const sample = (samples[i] - 128) / 128;
-                sumSquares += sample * sample;
-                peak = Math.max(peak, Math.abs(sample));
-            }
-            const rms = Math.sqrt(sumSquares / samples.length);
-            const level = Math.min(1, Math.max(0, (rms * 3.2 + peak * 0.55) - 0.03));
-            const activeCount = Math.round(level * bars.length);
-            bars.forEach((bar, index) => {
-                bar.classList.toggle('is-active', index < activeCount);
-            });
-            meter.setAttribute('aria-valuenow', String(Math.round(level * 100)));
-            scheduleOverlayRecordLevelRaf = requestAnimationFrame(tick);
-        };
-        scheduleOverlayRecordLevelRaf = requestAnimationFrame(tick);
-    } catch (err) {
-        console.warn('[schedule-overlay] level meter failed:', err);
-        teardownScheduleOverlayRecordLevelAnalyser();
-    }
-}
-
-function stopScheduleOverlayRecording() {
-    stopScheduleOverlayRecordLevelMeter();
-    if (scheduleOverlayMediaRecorder && scheduleOverlayMediaRecorder.state !== 'inactive') {
-        scheduleOverlayMediaRecorder.stop();
-    }
-    if (scheduleOverlayRecordStream) {
-        scheduleOverlayRecordStream.getTracks().forEach((track) => track.stop());
-        scheduleOverlayRecordStream = null;
-    }
-    scheduleOverlayMediaRecorder = null;
-}
-
-function syncScheduleOverlayCustomiseTitle(selectionValue = scheduleOverlayCustomiseSelection) {
-    const titleEl = document.getElementById('schedule-overlay-customise-title');
-    if (!titleEl) return;
-
-    if (selectionValue === SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE) {
-        titleEl.textContent = tSettings('scheduleOverlayCustomiseDefaultTitle');
-        return;
-    }
-
-    const name = document.getElementById('schedule-overlay-name-input')?.value?.trim() || '';
-    titleEl.textContent = name
-        ? tSettingsFmt('scheduleOverlayCustomiseTitleFmt', { name })
-        : tSettings('scheduleOverlayCustomiseTitleDefault');
-}
-
-function syncScheduleOverlayCustomiseEditorState(selectionValue) {
-    const isDefault = selectionValue === SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE;
-    const settings = document.querySelector('.schedule-overlay-customise-settings');
-    settings?.classList.toggle('schedule-overlay-customise-settings--readonly', isDefault);
-
-    const noticeEl = document.getElementById('schedule-overlay-default-notice');
-    if (noticeEl) {
-        noticeEl.textContent = tSettings('scheduleOverlayDefaultNotice');
-        noticeEl.classList.toggle('hidden', !isDefault);
-    }
-
-    const saveBtn = document.getElementById('schedule-overlay-customise-save-btn');
-    if (saveBtn) saveBtn.classList.toggle('hidden', isDefault);
-
-    const canDelete = !!scheduleOverlayCustomisePresetId
-        && selectionValue !== SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE
-        && selectionValue !== SCHEDULE_OVERLAY_NEW_PRESET_VALUE;
-    document.getElementById('schedule-overlay-delete-btn')?.classList.toggle('hidden', !canDelete);
-
-    setScheduleOverlayMessageEditorEnabled(!isDefault);
-
-    const editableFields = document.getElementById('schedule-overlay-editable-fields');
-    editableFields?.querySelectorAll('input, button, select, textarea').forEach((el) => {
-        el.disabled = isDefault;
-    });
-}
-
-function populateScheduleOverlayCustomiseSelector(selectionValue) {
-    const select = document.getElementById('schedule-overlay-select');
-    if (!select) return;
-
-    select.innerHTML = '';
-
-    const defaultOption = document.createElement('option');
-    defaultOption.value = SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE;
-    defaultOption.textContent = tSettings('scheduleConfirmOverlayDefaultTitle');
-    select.appendChild(defaultOption);
-
-    getGlobalStartOverlays().forEach((preset) => {
-        const option = document.createElement('option');
-        option.value = preset.id;
-        option.textContent = preset.name;
-        select.appendChild(option);
-    });
-
-    if (selectionValue === SCHEDULE_OVERLAY_NEW_PRESET_VALUE) {
-        const newOption = document.createElement('option');
-        newOption.value = SCHEDULE_OVERLAY_NEW_PRESET_VALUE;
-        const name = document.getElementById('schedule-overlay-name-input')?.value?.trim();
-        newOption.textContent = name || tSettings('scheduleOverlaySelectNew');
-        select.appendChild(newOption);
-    }
-
-    if (selectionValue === SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE) {
-        select.value = SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE;
-    } else if (selectionValue === SCHEDULE_OVERLAY_NEW_PRESET_VALUE) {
-        select.value = SCHEDULE_OVERLAY_NEW_PRESET_VALUE;
-    } else if (getNamedStartOverlayById(selectionValue)) {
-        select.value = selectionValue;
-    } else {
-        select.value = SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE;
-    }
-}
-
-async function loadScheduleOverlayCustomiseSelection(selectionValue) {
-    const blocklist = scheduleOverlayCustomiseBlocklist;
-    if (!blocklist) return;
-
-    scheduleOverlayCustomiseSelection = selectionValue;
-    const isDefault = selectionValue === SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE;
-    const isNew = selectionValue === SCHEDULE_OVERLAY_NEW_PRESET_VALUE;
-    const existingPreset = (!isDefault && !isNew) ? getNamedStartOverlayById(selectionValue) : null;
-
-    scheduleOverlayCustomisePresetId = existingPreset ? selectionValue : null;
-    scheduleOverlayCustomiseDraft = cloneScheduleStartOverlay(
-        existingPreset ? namedPresetToDraft(existingPreset) : getDefaultScheduleStartOverlay(),
-    );
-
-    syncScheduleOverlayCustomiseEditorState(selectionValue);
-
-    const nameInput = document.getElementById('schedule-overlay-name-input');
-    const headingInput = document.getElementById('schedule-overlay-heading-input');
-    const letsGoInput = document.getElementById('schedule-overlay-lets-go-input');
-
-    if (isDefault) {
-        if (nameInput) nameInput.value = tSettings('scheduleConfirmOverlayDefaultTitle');
-        if (headingInput) headingInput.value = '';
-        setScheduleOverlayMessageEditorHtml('', { silent: true });
-        if (letsGoInput) letsGoInput.value = tSettings('appBlockingLetsGo');
-    } else if (isNew) {
-        if (nameInput) nameInput.value = getUniqueNewScheduleStartOverlayName();
-        if (headingInput) headingInput.value = '';
-        setScheduleOverlayMessageEditorHtml('', { silent: true });
-        if (letsGoInput) letsGoInput.value = tSettings('appBlockingLetsGo');
-    } else {
-        if (nameInput) nameInput.value = existingPreset?.name || '';
-        if (headingInput) {
-            headingInput.value = scheduleOverlayCustomiseDraft.heading || '';
-        }
-        setScheduleOverlayMessageEditorHtml(scheduleOverlayCustomiseDraft.message || '', { silent: true });
-        if (letsGoInput) {
-            letsGoInput.value = scheduleOverlayCustomiseDraft.letsGoLabel || tSettings('appBlockingLetsGo');
-        }
-    }
-
-    populateScheduleOverlayCustomiseSelector(selectionValue);
-
-    syncScheduleOverlayCustomiseTitle(selectionValue);
-    syncScheduleOverlayMessageFieldHints(blocklist);
-    captureScheduleOverlayCustomiseBaseline();
-    syncScheduleOverlayLetsGoCounter();
-    await renderScheduleOverlayCustomisePreview(blocklist, scheduleOverlayCustomiseDraft);
-}
-
-async function handleDeleteScheduleOverlayCustomise() {
-    const presetId = scheduleOverlayCustomisePresetId;
-    if (!presetId
-        || scheduleOverlayCustomiseSelection === SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE
-        || scheduleOverlayCustomiseSelection === SCHEDULE_OVERLAY_NEW_PRESET_VALUE) {
-        return;
-    }
-
-    const preset = getNamedStartOverlayById(presetId);
-    if (!preset) return;
-
-    const confirmed = await showScheduleOverlayDeleteConfirmModal(preset.name);
-    if (!confirmed) return;
-
-    await deleteGlobalStartOverlay(presetId);
-    syncAllStartOverlaySelectors();
-    syncScheduleConfirmOverlaySummary();
-    closeScheduleOverlayCustomiseModal();
-}
-
-let scheduleOverlayDeleteConfirmResolver = null;
-let scheduleOverlayDiscardConfirmResolver = null;
-
-function showScheduleOverlayDiscardConfirmModal() {
-    const modal = document.getElementById('schedule-overlay-discard-modal');
-    if (!modal) return Promise.resolve(false);
-
-    const strongEl = document.getElementById('schedule-overlay-discard-warning-strong');
-    const bodyEl = document.getElementById('schedule-overlay-discard-warning-body');
-    if (strongEl) {
-        strongEl.textContent = tSettings('scheduleOverlayDiscardConfirmStrong');
-    }
-    if (bodyEl) {
-        bodyEl.textContent = tSettings('scheduleOverlayDiscardConfirmBody');
-    }
-
-    return new Promise((resolve) => {
-        scheduleOverlayDiscardConfirmResolver = resolve;
-        modal.classList.remove('hidden');
-    });
-}
-
-function closeScheduleOverlayDiscardConfirmModal(confirmed) {
-    document.getElementById('schedule-overlay-discard-modal')?.classList.add('hidden');
-    if (scheduleOverlayDiscardConfirmResolver) {
-        scheduleOverlayDiscardConfirmResolver(!!confirmed);
-        scheduleOverlayDiscardConfirmResolver = null;
-    }
-}
-
-async function requestCloseScheduleOverlayCustomiseModal() {
-    if (!hasUnsavedScheduleOverlayCustomiseChanges()) {
-        closeScheduleOverlayCustomiseModal();
-        return;
-    }
-    const confirmed = await showScheduleOverlayDiscardConfirmModal();
-    if (confirmed) closeScheduleOverlayCustomiseModal();
-}
-
-async function requestLoadScheduleOverlayCustomiseSelection(selectionValue) {
-    if (selectionValue === scheduleOverlayCustomiseSelection) return;
-    if (hasUnsavedScheduleOverlayCustomiseChanges()) {
-        const confirmed = await showScheduleOverlayDiscardConfirmModal();
-        if (!confirmed) {
-            populateScheduleOverlayCustomiseSelector(scheduleOverlayCustomiseSelection);
-            return;
-        }
-    }
-    await loadScheduleOverlayCustomiseSelection(selectionValue);
-}
-
-function showScheduleOverlayDeleteConfirmModal(presetName) {
-    const modal = document.getElementById('schedule-overlay-delete-modal');
-    if (!modal) return Promise.resolve(false);
-
-    const strongEl = document.getElementById('schedule-overlay-delete-warning-strong');
-    const bodyEl = document.getElementById('schedule-overlay-delete-warning-body');
-    if (strongEl) {
-        strongEl.textContent = tSettingsFmt('scheduleOverlayDeleteConfirmStrongFmt', { name: presetName });
-    }
-    if (bodyEl) {
-        bodyEl.textContent = tSettings('scheduleOverlayDeleteConfirmBody');
-    }
-
-    return new Promise((resolve) => {
-        scheduleOverlayDeleteConfirmResolver = resolve;
-        modal.classList.remove('hidden');
-    });
-}
-
-function closeScheduleOverlayDeleteConfirmModal(confirmed) {
-    document.getElementById('schedule-overlay-delete-modal')?.classList.add('hidden');
-    if (scheduleOverlayDeleteConfirmResolver) {
-        scheduleOverlayDeleteConfirmResolver(!!confirmed);
-        scheduleOverlayDeleteConfirmResolver = null;
-    }
-}
-
-async function openScheduleOverlayCustomiseModal(blocklist) {
-    if (!blocklist || state.isIOS || state.isAndroid) return;
-    scheduleOverlayCustomiseBlocklist = blocklist;
-
-    let initialPresetId = getEffectiveScheduleStartOverlayId();
-    if (initialPresetId && !getNamedStartOverlayById(initialPresetId)) {
-        initialPresetId = null;
-    }
-
-    const subtitleEl = document.getElementById('schedule-overlay-customise-subtitle');
-    if (subtitleEl) {
-        subtitleEl.textContent = tSettings('scheduleOverlayCustomiseSubtitle');
-    }
-
-    await loadScheduleOverlayCustomiseSelection(
-        initialPresetId || SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE,
-    );
-    document.getElementById('schedule-overlay-customise-modal')?.classList.remove('hidden');
-}
-
-async function resetScheduleOverlayImageAsset() {
-    const prev = scheduleOverlayCustomiseDraft?.imageAsset;
-    if (prev) await removeScheduleOverlayAsset(prev);
-    scheduleOverlayCustomiseDraft = readScheduleOverlayCustomiseDraftFromForm();
-    scheduleOverlayCustomiseDraft.imageAsset = null;
-    scheduleOverlayCustomiseDraft = normalizeScheduleStartOverlay(scheduleOverlayCustomiseDraft);
-    if (scheduleOverlayCustomiseBlocklist) {
-        await renderScheduleOverlayCustomisePreview(
-            scheduleOverlayCustomiseBlocklist,
-            scheduleOverlayCustomiseDraft,
-        );
-    }
-}
-
-async function resetScheduleOverlayVoiceAsset() {
-    const prev = scheduleOverlayCustomiseDraft?.voiceAsset;
-    if (prev) await removeScheduleOverlayAsset(prev);
-    scheduleOverlayCustomiseDraft = readScheduleOverlayCustomiseDraftFromForm();
-    scheduleOverlayCustomiseDraft.voiceAsset = null;
-    scheduleOverlayCustomiseDraft = normalizeScheduleStartOverlay(scheduleOverlayCustomiseDraft);
-    if (scheduleOverlayCustomiseBlocklist) {
-        await renderScheduleOverlayCustomisePreview(
-            scheduleOverlayCustomiseBlocklist,
-            scheduleOverlayCustomiseDraft,
-        );
-    }
-}
-
-function closeScheduleOverlayCustomiseModal() {
-    stopScheduleOverlayRecording();
-    revokeOverlayAssetBlobUrls();
-    document.getElementById('schedule-overlay-customise-modal')?.classList.add('hidden');
-    document.getElementById('schedule-overlay-image-dropzone')?.classList.remove('is-dragover');
-    scheduleOverlayCustomiseBlocklist = null;
-    scheduleOverlayCustomiseDraft = null;
-    scheduleOverlayCustomiseBaseline = null;
-    scheduleOverlayCustomisePresetId = null;
-    scheduleOverlayCustomiseSelection = null;
-}
-
-const OVERLAY_IMAGE_FILE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
-
-function isScheduleOverlayCustomiseModalOpen() {
-    const modal = document.getElementById('schedule-overlay-customise-modal');
-    return modal != null && !modal.classList.contains('hidden');
-}
-
-function isOverlayImagePath(path) {
-    const ext = path.split('.').pop()?.toLowerCase();
-    return ext != null && OVERLAY_IMAGE_FILE_EXTENSIONS.has(ext);
-}
-
-/** Map Tauri drag-drop physical coords to a DOM hit-test (OS drops bypass HTML5 DnD). */
-function isPhysicalPointOverElement(physicalX, physicalY, element) {
-    if (!element) return false;
-    const scale = window.devicePixelRatio || 1;
-    const target = document.elementFromPoint(physicalX / scale, physicalY / scale);
-    return target != null && element.contains(target);
-}
-
-function setupScheduleOverlayCustomiseModal() {
-    if (isMobileOverrideChallengePlatform()) {
-        document.getElementById('schedule-confirm-overlay-row')?.classList.add('hidden');
-        document.getElementById('schedule-panel-overlay-section')?.classList.add('hidden');
-        return;
-    }
-
-    document.getElementById('schedule-confirm-overlay-customise-btn')
-        ?.addEventListener('click', () => {
-            const blocklist = state.appData.blocklists.find((bl) => bl.id === state.selectedBlocklistId);
-            if (blocklist) void openScheduleOverlayCustomiseModal(blocklist);
-        });
-
-    document.getElementById('schedule-panel-overlay-customise-btn')
-        ?.addEventListener('click', () => {
-            const blocklist = state.appData.blocklists.find((bl) => bl.id === state.selectedBlocklistId);
-            if (blocklist) void openScheduleOverlayCustomiseModal(blocklist);
-        });
-
-    document.getElementById('schedule-confirm-overlay-select')
-        ?.addEventListener('change', (event) => {
-            setEffectiveScheduleStartOverlayId(event.target.value || null);
-            syncScheduleConfirmOverlaySummary();
-        });
-
-    document.getElementById('schedule-overlay-customise-close-btn')
-        ?.addEventListener('click', () => { void requestCloseScheduleOverlayCustomiseModal(); });
-    document.getElementById('schedule-overlay-customise-cancel-btn')
-        ?.addEventListener('click', () => { void requestCloseScheduleOverlayCustomiseModal(); });
-    document.getElementById('schedule-overlay-customise-modal')?.addEventListener('click', (e) => {
-        if (e.target === e.currentTarget) void requestCloseScheduleOverlayCustomiseModal();
-    });
-    document.getElementById('schedule-overlay-select')?.addEventListener('change', (event) => {
-        void requestLoadScheduleOverlayCustomiseSelection(event.target.value);
-    });
-    document.getElementById('schedule-overlay-add-new-btn')?.addEventListener('click', () => {
-        void requestLoadScheduleOverlayCustomiseSelection(SCHEDULE_OVERLAY_NEW_PRESET_VALUE);
-    });
-    document.getElementById('schedule-overlay-delete-btn')
-        ?.addEventListener('click', () => { void handleDeleteScheduleOverlayCustomise(); });
-    document.getElementById('cancel-schedule-overlay-delete-btn')
-        ?.addEventListener('click', () => closeScheduleOverlayDeleteConfirmModal(false));
-    document.getElementById('confirm-schedule-overlay-delete-btn')
-        ?.addEventListener('click', () => closeScheduleOverlayDeleteConfirmModal(true));
-    document.getElementById('schedule-overlay-delete-modal')?.addEventListener('click', (e) => {
-        if (e.target === e.currentTarget) closeScheduleOverlayDeleteConfirmModal(false);
-    });
-    document.getElementById('cancel-schedule-overlay-discard-btn')
-        ?.addEventListener('click', () => closeScheduleOverlayDiscardConfirmModal(false));
-    document.getElementById('confirm-schedule-overlay-discard-btn')
-        ?.addEventListener('click', () => closeScheduleOverlayDiscardConfirmModal(true));
-    document.getElementById('schedule-overlay-discard-modal')?.addEventListener('click', (e) => {
-        if (e.target === e.currentTarget) closeScheduleOverlayDiscardConfirmModal(false);
-    });
-    document.getElementById('schedule-overlay-customise-save-btn')?.addEventListener('click', async () => {
-        const blocklist = scheduleOverlayCustomiseBlocklist;
-        if (!blocklist || scheduleOverlayCustomiseSelection === SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE) return;
-
-        scheduleOverlayCustomiseDraft = readScheduleOverlayCustomiseDraftFromForm();
-        const normalized = normalizeScheduleStartOverlay(scheduleOverlayCustomiseDraft);
-        const name = document.getElementById('schedule-overlay-name-input')?.value?.trim() || '';
-
-        if (scheduleStartOverlayHasCustomContent(normalized)) {
-            if (!name) {
-                await message(tSettings('scheduleOverlayNameRequired'), {
-                    title: tSettings('errorTitle'),
-                    kind: 'error',
-                });
-                return;
-            }
-            const presetId = scheduleOverlayCustomisePresetId || crypto.randomUUID();
-            upsertGlobalStartOverlay(
-                buildNamedStartOverlayPreset({ id: presetId, name, draft: normalized }),
-            );
-            setEffectiveScheduleStartOverlayId(presetId);
-            scheduleOverlayCustomisePresetId = presetId;
-            await saveData();
-        } else {
-            setEffectiveScheduleStartOverlayId(null);
-            await saveData();
-        }
-
-        syncScheduleConfirmOverlaySummary();
-        closeScheduleOverlayCustomiseModal();
-    });
-
-    document.getElementById('schedule-overlay-reset-message-btn')?.addEventListener('click', () => {
-        setScheduleOverlayMessageEditorHtml('', { silent: true });
-        void refreshScheduleOverlayCustomisePreview();
-    });
-    document.getElementById('schedule-overlay-reset-heading-btn')?.addEventListener('click', () => {
-        const headingInput = document.getElementById('schedule-overlay-heading-input');
-        if (headingInput) headingInput.value = '';
-        void refreshScheduleOverlayCustomisePreview();
-    });
-    document.getElementById('schedule-overlay-reset-button-btn')?.addEventListener('click', () => {
-        const letsGoInput = document.getElementById('schedule-overlay-lets-go-input');
-        if (letsGoInput) letsGoInput.value = tSettings('appBlockingLetsGo');
-        void refreshScheduleOverlayCustomisePreview();
-    });
-    document.getElementById('schedule-overlay-reset-image-btn')
-        ?.addEventListener('click', () => { void resetScheduleOverlayImageAsset(); });
-    document.getElementById('schedule-overlay-reset-voice-btn')
-        ?.addEventListener('click', () => { void resetScheduleOverlayVoiceAsset(); });
-
-    const messageEditorEl = document.getElementById('schedule-overlay-message-editor');
-    if (messageEditorEl) {
-        initScheduleOverlayMessageEditor(messageEditorEl, {
-            onChange: () => {
-                void refreshScheduleOverlayCustomisePreview();
-            },
-        });
-    }
-
-    document.getElementById('schedule-overlay-lets-go-input')?.addEventListener('input', () => {
-        syncScheduleOverlayLetsGoCounter();
-        syncScheduleOverlayCustomiseDirtyState();
-        void refreshScheduleOverlayCustomisePreview();
-    });
-
-    document.getElementById('schedule-overlay-heading-input')?.addEventListener('input', () => {
-        syncScheduleOverlayCustomiseDirtyState();
-        void refreshScheduleOverlayCustomisePreview();
-    });
-
-    document.getElementById('schedule-overlay-name-input')?.addEventListener('input', () => {
-        syncScheduleOverlayCustomiseTitle(scheduleOverlayCustomiseSelection);
-        syncScheduleOverlayCustomiseSelectorDisplayName();
-        syncScheduleOverlayCustomiseDirtyState();
-    });
-
-    const saveOverlayImageFromPath = async (path) => {
-        if (!scheduleOverlayCustomiseBlocklist || !path) return;
-        try {
-            const ext = path.split('.').pop()?.toLowerCase() || 'png';
-            const bytes = new Uint8Array(await tauriAPI.readOverlaySourceBytes(path));
-            if (!bytes.length) return;
-            const assetId = crypto.randomUUID();
-            const relative = await tauriAPI.saveOverlayImageAssetBytes(
-                GLOBAL_OVERLAY_ASSET_NAMESPACE,
-                assetId,
-                ext,
-                bytes,
-            );
-            const prev = scheduleOverlayCustomiseDraft?.imageAsset;
-            if (prev && prev !== relative) await removeScheduleOverlayAsset(prev);
-            scheduleOverlayCustomiseDraft = readScheduleOverlayCustomiseDraftFromForm();
-            scheduleOverlayCustomiseDraft.imageAsset = relative;
-            scheduleOverlayCustomiseDraft.custom = true;
-            await renderScheduleOverlayCustomisePreview(
-                scheduleOverlayCustomiseBlocklist,
-                scheduleOverlayCustomiseDraft,
-            );
-        } catch (err) {
-            console.error('[schedule-overlay] image save failed:', err);
-            await message(String(err), { title: tSettings('errorTitle'), kind: 'error' });
-        }
-    };
-
-    const getOverlayImageExtension = (file) => {
-        const fromName = file.name?.split('.').pop()?.toLowerCase();
-        if (fromName && ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(fromName)) return fromName;
-        const mime = file.type?.split('/')?.[1]?.toLowerCase();
-        if (mime === 'jpeg') return 'jpg';
-        if (mime && ['png', 'jpg', 'gif', 'webp'].includes(mime)) return mime;
-        return null;
-    };
-
-    const saveOverlayImageFromFile = async (file) => {
-        if (!scheduleOverlayCustomiseBlocklist || !file) return;
-        const ext = getOverlayImageExtension(file);
-        if (!ext) {
-            await message(tSettings('scheduleOverlayUnsupportedImage'), {
-                title: tSettings('errorTitle'),
-                kind: 'error',
-            });
-            return;
-        }
-        const assetId = crypto.randomUUID();
-        try {
-            const bytes = new Uint8Array(await file.arrayBuffer());
-            if (!bytes.length) return;
-            const relative = await tauriAPI.saveOverlayImageAssetBytes(
-                GLOBAL_OVERLAY_ASSET_NAMESPACE,
-                assetId,
-                ext,
-                bytes,
-            );
-            const prev = scheduleOverlayCustomiseDraft?.imageAsset;
-            if (prev && prev !== relative) await removeScheduleOverlayAsset(prev);
-            scheduleOverlayCustomiseDraft = readScheduleOverlayCustomiseDraftFromForm();
-            scheduleOverlayCustomiseDraft.imageAsset = relative;
-            scheduleOverlayCustomiseDraft.custom = true;
-            await renderScheduleOverlayCustomisePreview(
-                scheduleOverlayCustomiseBlocklist,
-                scheduleOverlayCustomiseDraft,
-            );
-        } catch (err) {
-            console.error('[schedule-overlay] image save failed:', err);
-            await message(String(err), { title: tSettings('errorTitle'), kind: 'error' });
-        }
-    };
-
-    document.getElementById('schedule-overlay-choose-image-btn')?.addEventListener('click', async () => {
-        if (!scheduleOverlayCustomiseBlocklist) return;
-        const selected = await openDialog({
-            multiple: false,
-            filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] }],
-        });
-        const path = Array.isArray(selected) ? selected[0] : selected;
-        if (path) await saveOverlayImageFromPath(path);
-    });
-
-    const imageDropzone = document.getElementById('schedule-overlay-image-dropzone');
-    if (imageDropzone) {
-        imageDropzone.addEventListener('dragenter', (event) => {
-            event.preventDefault();
-            imageDropzone.classList.add('is-dragover');
-        });
-        imageDropzone.addEventListener('dragover', (event) => {
-            event.preventDefault();
-            if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
-            imageDropzone.classList.add('is-dragover');
-        });
-        imageDropzone.addEventListener('dragleave', (event) => {
-            if (!imageDropzone.contains(event.relatedTarget)) {
-                imageDropzone.classList.remove('is-dragover');
-            }
-        });
-        imageDropzone.addEventListener('drop', async (event) => {
-            event.preventDefault();
-            imageDropzone.classList.remove('is-dragover');
-            // OS file drops in Tauri are handled by onDragDropEvent below.
-            const file = event.dataTransfer?.files?.[0];
-            if (!file || !file.type.startsWith('image/')) return;
-            await saveOverlayImageFromFile(file);
-        });
-
-        // Tauri intercepts Finder/Explorer file drops before the webview sees HTML5 drop.
-        void getCurrentWebview().onDragDropEvent((event) => {
-            if (!isScheduleOverlayCustomiseModalOpen()) {
-                imageDropzone.classList.remove('is-dragover');
-                return;
-            }
-
-            const { payload } = event;
-            if (payload.type === 'leave') {
-                imageDropzone.classList.remove('is-dragover');
-                return;
-            }
-
-            if (payload.type === 'enter' || payload.type === 'over') {
-                const { x, y } = payload.position;
-                imageDropzone.classList.toggle(
-                    'is-dragover',
-                    isPhysicalPointOverElement(x, y, imageDropzone),
-                );
-                return;
-            }
-
-            if (payload.type === 'drop') {
-                imageDropzone.classList.remove('is-dragover');
-                const { x, y } = payload.position;
-                if (!isPhysicalPointOverElement(x, y, imageDropzone)) return;
-                const imagePath = payload.paths?.find(isOverlayImagePath);
-                if (!imagePath && payload.paths?.length) {
-                    void message(tSettings('scheduleOverlayUnsupportedImage'), {
-                        title: tSettings('errorTitle'),
-                        kind: 'error',
-                    });
-                    return;
-                }
-                if (imagePath) void saveOverlayImageFromPath(imagePath);
-            }
-        });
-    }
-
-    document.getElementById('schedule-overlay-choose-voice-btn')?.addEventListener('click', async () => {
-        if (!scheduleOverlayCustomiseBlocklist) return;
-        const selected = await openDialog({
-            multiple: false,
-            filters: [{ name: 'Audio', extensions: ['webm', 'ogg', 'wav', 'mp4', 'm4a'] }],
-        });
-        const path = Array.isArray(selected) ? selected[0] : selected;
-        if (!path) return;
-
-        try {
-            const ext = path.split('.').pop()?.toLowerCase() || 'webm';
-            const bytes = await tauriAPI.readOverlaySourceBytes(path);
-            const assetId = crypto.randomUUID();
-            const relative = await tauriAPI.saveOverlayVoiceAsset(
-                GLOBAL_OVERLAY_ASSET_NAMESPACE,
-                assetId,
-                ext,
-                new Uint8Array(bytes),
-            );
-            const prev = scheduleOverlayCustomiseDraft?.voiceAsset;
-            if (prev && prev !== relative) await removeScheduleOverlayAsset(prev);
-            scheduleOverlayCustomiseDraft = readScheduleOverlayCustomiseDraftFromForm();
-            scheduleOverlayCustomiseDraft.voiceAsset = relative;
-            scheduleOverlayCustomiseDraft.custom = true;
-            await renderScheduleOverlayCustomisePreview(
-                scheduleOverlayCustomiseBlocklist,
-                scheduleOverlayCustomiseDraft,
-            );
-        } catch (err) {
-            console.error('[schedule-overlay] voice import failed:', err);
-            await message(String(err), { title: tSettings('errorTitle'), kind: 'error' });
-        }
-    });
-
-    const recordLevelMeter = document.getElementById('schedule-overlay-record-level');
-    if (recordLevelMeter && recordLevelMeter.childElementCount === 0) {
-        for (let i = 0; i < SCHEDULE_OVERLAY_RECORD_LEVEL_BAR_COUNT; i += 1) {
-            const bar = document.createElement('span');
-            bar.className = 'schedule-overlay-record-level-bar';
-            recordLevelMeter.appendChild(bar);
-        }
-    }
-
-    document.getElementById('schedule-overlay-record-voice-btn')?.addEventListener('click', async () => {
-        if (!scheduleOverlayCustomiseBlocklist || !navigator.mediaDevices?.getUserMedia) {
-            await message(tSettings('scheduleOverlayMicUnavailable'), {
-                title: tSettings('errorTitle'),
-                kind: 'error',
-            });
-            return;
-        }
-        try {
-            stopScheduleOverlayRecording();
-            scheduleOverlayRecordStartCancelled = false;
-            setScheduleOverlayRecordingUi('starting');
-            scheduleOverlayRecordChunks = [];
-            scheduleOverlayRecordStream = await acquireScheduleOverlayMicStream();
-            if (scheduleOverlayRecordStartCancelled) {
-                scheduleOverlayRecordStream.getTracks().forEach((track) => track.stop());
-                scheduleOverlayRecordStream = null;
-                setScheduleOverlayRecordingUi('idle');
-                return;
-            }
-            const recordingMimeType = pickOverlayRecordingMimeType();
-            scheduleOverlayRecordedMimeType = recordingMimeType || 'audio/webm';
-            scheduleOverlayMediaRecorder = recordingMimeType
-                ? new MediaRecorder(scheduleOverlayRecordStream, { mimeType: recordingMimeType })
-                : new MediaRecorder(scheduleOverlayRecordStream);
-            scheduleOverlayMediaRecorder.ondataavailable = (event) => {
-                if (event.data?.size > 0) scheduleOverlayRecordChunks.push(event.data);
-            };
-            scheduleOverlayMediaRecorder.onstop = async () => {
-                stopScheduleOverlayRecordLevelMeter();
-                const mimeType = scheduleOverlayMediaRecorder?.mimeType
-                    || scheduleOverlayRecordedMimeType
-                    || 'audio/webm';
-                const blob = new Blob(scheduleOverlayRecordChunks, { type: mimeType });
-                scheduleOverlayRecordChunks = [];
-                if (!blob.size) {
-                    await message(tSettings('scheduleOverlayEmptyRecording'), {
-                        title: tSettings('errorTitle'),
-                        kind: 'error',
-                    });
-                    stopScheduleOverlayRecording();
-                    return;
-                }
-                const buffer = await blob.arrayBuffer();
-                try {
-                    const assetId = crypto.randomUUID();
-                    const ext = overlayMimeTypeToExtension(mimeType);
-                    const relative = await tauriAPI.saveOverlayVoiceAsset(
-                        GLOBAL_OVERLAY_ASSET_NAMESPACE,
-                        assetId,
-                        ext,
-                        new Uint8Array(buffer),
-                    );
-                    const prev = scheduleOverlayCustomiseDraft?.voiceAsset;
-                    if (prev && prev !== relative) await removeScheduleOverlayAsset(prev);
-                    scheduleOverlayCustomiseDraft = readScheduleOverlayCustomiseDraftFromForm();
-                    scheduleOverlayCustomiseDraft.voiceAsset = relative;
-                    scheduleOverlayCustomiseDraft.custom = true;
-                    await renderScheduleOverlayCustomisePreview(
-                        scheduleOverlayCustomiseBlocklist,
-                        scheduleOverlayCustomiseDraft,
-                    );
-                } catch (err) {
-                    console.error('[schedule-overlay] voice save failed:', err);
-                    await message(String(err), { title: tSettings('errorTitle'), kind: 'error' });
-                } finally {
-                    stopScheduleOverlayRecording();
-                }
-            };
-            scheduleOverlayMediaRecorder.start(250);
-            setScheduleOverlayRecordingUi('recording');
-            void startScheduleOverlayRecordLevelMeter(scheduleOverlayRecordStream);
-        } catch (err) {
-            console.error('[schedule-overlay] mic access failed:', err);
-            stopScheduleOverlayRecording();
-            await message(tSettings('scheduleOverlayMicUnavailable'), {
-                title: tSettings('errorTitle'),
-                kind: 'error',
-            });
-        }
-    });
-
-    document.getElementById('schedule-overlay-stop-record-voice-btn')
-        ?.addEventListener('click', () => {
-            const voiceCard = document.getElementById('schedule-overlay-voice-card');
-            if (voiceCard?.classList.contains('is-starting')) {
-                scheduleOverlayRecordStartCancelled = true;
-                stopScheduleOverlayRecording();
-                setScheduleOverlayRecordingUi('idle');
-                return;
-            }
-            if (scheduleOverlayMediaRecorder && scheduleOverlayMediaRecorder.state === 'recording') {
-                if (typeof scheduleOverlayMediaRecorder.requestData === 'function') {
-                    scheduleOverlayMediaRecorder.requestData();
-                }
-                scheduleOverlayMediaRecorder.stop();
-            } else {
-                stopScheduleOverlayRecording();
-            }
-        });
-}
 
 const START_CONFIRM_ICON_GLOBE = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;
 const START_CONFIRM_ICON_APP = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M10 4v4"></path><path d="M2 8h20"></path><path d="M6 4v4"></path></svg>`;
@@ -11387,9 +8309,9 @@ function formatScheduleConfirmRepeatText() {
     if (state.scheduleRepeatType === 'forever') {
         return tSettings('startConfirmRepeatForever');
     }
-    if (state.scheduleRepeatType === 'date' && scheduleRepeatDate) {
+    if (state.scheduleRepeatType === 'date' && state.scheduleRepeatDate) {
         return tSettingsFmt('startConfirmRepeatUntilFmt', {
-            date: scheduleRepeatDate.toLocaleDateString(tSettings('locale')),
+            date: state.scheduleRepeatDate.toLocaleDateString(tSettings('locale')),
         });
     }
     return tSettings('startConfirmRepeatNone');
@@ -11590,7 +8512,7 @@ function getResumeBlockConfirmTitle(blocklist) {
     return tSettingsFmt('resumeBlockTitleFmt', { name: blocklist.name });
 }
 
-function showScheduleConfirmModal(blocklist) {
+export function showScheduleConfirmModal(blocklist) {
     resetScheduleConfirmModalToStartLayout();
 
     const titleEl = document.getElementById('start-schedule-confirm-title');
@@ -11601,7 +8523,7 @@ function showScheduleConfirmModal(blocklist) {
     const subtitleEl = document.getElementById('schedule-confirm-subtitle');
     if (subtitleEl) subtitleEl.innerHTML = tSettings('startScheduleSubtitle');
 
-    pendingScheduleStartOverlayId = getEffectiveScheduleStartOverlayId();
+    state.pendingScheduleStartOverlayId = getEffectiveScheduleStartOverlayId();
     syncScheduleConfirmOverlaySummary();
     document.getElementById('schedule-confirm-overlay-row')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
     document.getElementById('schedule-confirm-repeat-divider')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
@@ -11613,7 +8535,7 @@ function showScheduleConfirmModal(blocklist) {
         document.getElementById('schedule-confirm-blocking-row'),
     );
 
-    renderScheduleConfirmSegments(document.getElementById('schedule-confirm-segments'), scheduleSegments);
+    renderScheduleConfirmSegments(document.getElementById('schedule-confirm-segments'), state.scheduleSegments);
 
     const repeatEl = document.getElementById('schedule-confirm-repeat');
     if (repeatEl) repeatEl.innerHTML = formatScheduleConfirmRepeatText();
@@ -11662,7 +8584,7 @@ function resetScheduleConfirmModalToStartLayout() {
 function closeScheduleConfirmModal() {
     document.getElementById('start-schedule-confirm-modal').classList.add('hidden');
     resetScheduleConfirmModalToStartLayout();
-    pendingScheduleStartOverlayId = null;
+    state.pendingScheduleStartOverlayId = null;
     delete window.editScheduleData;
 }
 
@@ -11703,7 +8625,7 @@ export function openScheduledBlockEdit(schedule) {
 
 
 // Show confirmation modal for editing (adding segments to) an existing schedule
-function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) {
+export function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) {
     // Store references for the proceed function
     window.editScheduleData = {
         scheduleId: existingSchedule.id || existingSchedule.blocklistId,
@@ -11787,7 +8709,7 @@ async function proceedWithScheduleEdit() {
 
     // Update state.activeScheduleSegmentCount to include the new segments
     state.activeScheduleSegmentCount = schedule.segments.length;
-    scheduleSegments = schedule.segments.map(seg => ({ ...seg }));
+    state.scheduleSegments = schedule.segments.map(seg => ({ ...seg }));
 
     clearPendingScheduleDraft(state.selectedBlocklistId);
 
@@ -11798,10 +8720,10 @@ async function proceedWithScheduleEdit() {
 
     resetScheduleConfirmModalToStartLayout();
 
-    // Rebuild the DOM so it matches the new scheduleSegments order and locks the
+    // Rebuild the DOM so it matches the new state.scheduleSegments order and locks the
     // formerly-pending segments. Without this, time-edit handlers attached to the
-    // pre-save DOM nodes could write to the wrong scheduleSegments index.
-    expandedScheduleSegmentIndex = getInitialExpandedScheduleSegmentIndex();
+    // pre-save DOM nodes could write to the wrong state.scheduleSegments index.
+    state.expandedScheduleSegmentIndex = getInitialExpandedScheduleSegmentIndex();
     rebuildScheduleSegments();
     disableScheduleControls(true);
 
@@ -11840,7 +8762,7 @@ async function proceedWithSchedule() {
     const schedule = {
         id: crypto.randomUUID(),
         blocklistId: state.selectedBlocklistId,
-        segments: scheduleSegments.map(seg => ({
+        segments: state.scheduleSegments.map(seg => ({
             startHour: seg.startHour,
             startMinute: seg.startMinute,
             endHour: seg.endHour,
@@ -11848,7 +8770,7 @@ async function proceedWithSchedule() {
             days: [...seg.days]
         })),
         repeatType: state.scheduleRepeatType,
-        repeatDate: state.scheduleRepeatType === 'date' ? scheduleRepeatDate : null,
+        repeatDate: state.scheduleRepeatType === 'date' ? state.scheduleRepeatDate : null,
         createdAt: Date.now(),
         startOverlayId,
     };
@@ -11865,11 +8787,11 @@ async function proceedWithSchedule() {
     // Update blocked apps if schedule is currently active
     await updateBlockedApps();
     // Update the active segment count to lock the created segments
-    state.activeScheduleSegmentCount = scheduleSegments.length;
+    state.activeScheduleSegmentCount = state.scheduleSegments.length;
 
     // Reset schedule repeat options for next use
     state.scheduleRepeatType = 'forever';
-    scheduleRepeatDate = null;
+    state.scheduleRepeatDate = null;
 
     // Rebuild segments UI to show them as locked
     rebuildScheduleSegments();
@@ -11918,18 +8840,18 @@ export function handleTimeChange() {
             if (!existingSchedule) {
                 // No active schedule - save draft segments + repeat together
                 const currentPending = JSON.stringify(state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] || []);
-                const newPending = JSON.stringify(scheduleSegments);
+                const newPending = JSON.stringify(state.scheduleSegments);
                 const nextRepeat = {
                     repeatType: state.scheduleRepeatType,
                     repeatDate:
-                        state.scheduleRepeatType === 'date' && scheduleRepeatDate
-                            ? scheduleRepeatDate.getTime()
+                        state.scheduleRepeatType === 'date' && state.scheduleRepeatDate
+                            ? state.scheduleRepeatDate.getTime()
                             : null
                 };
                 const prevRepeat = JSON.stringify(state.appData.settings.pendingScheduleRepeatOptions?.[state.selectedBlocklistId] ?? null);
                 const nextRepeatJson = JSON.stringify(nextRepeat);
                 if (currentPending !== newPending) {
-                    state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] = scheduleSegments.map(seg => ({ ...seg }));
+                    state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] = state.scheduleSegments.map(seg => ({ ...seg }));
                 }
                 if (!state.appData.settings.pendingScheduleRepeatOptions) state.appData.settings.pendingScheduleRepeatOptions = {};
                 if (prevRepeat !== nextRepeatJson) {
@@ -11941,8 +8863,8 @@ export function handleTimeChange() {
             } else {
                 // Active schedule exists - save only NEW segments (those beyond state.activeScheduleSegmentCount)
                 const committedSegmentCount = getCommittedScheduleSegmentCount(existingSchedule);
-                if (scheduleSegments.length > committedSegmentCount) {
-                    const newSegments = scheduleSegments.slice(committedSegmentCount);
+                if (state.scheduleSegments.length > committedSegmentCount) {
+                    const newSegments = state.scheduleSegments.slice(committedSegmentCount);
                     const currentPending = JSON.stringify(state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] || []);
                     const newPending = JSON.stringify(newSegments);
                     if (currentPending !== newPending) {
@@ -12324,18 +9246,18 @@ function renderSchedulePreview() {
         const draftOccurrences = resolveOneShotOccurrences({
             repeatType: 'no',
             createdAt: draftCreatedAt,
-            segments: scheduleSegments
+            segments: state.scheduleSegments
         }).filter(occurrence => occurrence.segmentIndex >= state.activeScheduleSegmentCount);
 
         draftOccurrences.forEach(occurrence => {
-            renderPreviewSegmentOnWeekday(blocklist, scheduleSegments[occurrence.segmentIndex], occurrence.segmentIndex, occurrence.dayIndex);
+            renderPreviewSegmentOnWeekday(blocklist, state.scheduleSegments[occurrence.segmentIndex], occurrence.segmentIndex, occurrence.dayIndex);
         });
 
         layoutOverlappingBlocks();
         return;
     }
 
-    scheduleSegments.forEach((segment, segmentIndex) => {
+    state.scheduleSegments.forEach((segment, segmentIndex) => {
         const isLockedSegment = segmentIndex < state.activeScheduleSegmentCount;
         if (isLockedSegment) return;
 
@@ -12484,13 +9406,13 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
         const startTime = minutesToTime(newStartMinutes);
         const endTime = minutesToTime(newEndMinutes);
 
-        scheduleSegments[segmentIndex].startHour = startTime.hours;
-        scheduleSegments[segmentIndex].startMinute = startTime.minutes;
-        scheduleSegments[segmentIndex].endHour = endTime.hours;
-        scheduleSegments[segmentIndex].endMinute = endTime.minutes;
+        state.scheduleSegments[segmentIndex].startHour = startTime.hours;
+        state.scheduleSegments[segmentIndex].startMinute = startTime.minutes;
+        state.scheduleSegments[segmentIndex].endHour = endTime.hours;
+        state.scheduleSegments[segmentIndex].endMinute = endTime.minutes;
 
         if (dayShift !== 0) {
-            const segment = scheduleSegments[segmentIndex];
+            const segment = state.scheduleSegments[segmentIndex];
             const oldDays = segment.days || [];
             const newDays = oldDays.map(d => {
                 let newDay = d + dayShift;
@@ -12509,7 +9431,7 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
     }
 
     function updateTimePickerUI(index) {
-        const segment = scheduleSegments[index];
+        const segment = state.scheduleSegments[index];
         const startHourEl = document.querySelector(`[data-target="schedule-start-${index}"][data-type="hour"]`);
         const startMinEl = document.querySelector(`[data-target="schedule-start-${index}"][data-type="minute"]`);
         const endHourEl = document.querySelector(`[data-target="schedule-end-${index}"][data-type="hour"]`);
@@ -12530,7 +9452,7 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
     }
 
     function updateDayToggleUI(index) {
-        const segment = scheduleSegments[index];
+        const segment = state.scheduleSegments[index];
         const days = segment.days || [];
         const segmentContainer = document.querySelector(`.schedule-segment[data-segment-index="${index}"]`);
         if (!segmentContainer) return;
@@ -12733,15 +9655,15 @@ export function handleBlocklistSelect(e) {
 
             if (!existingSchedule) {
                 // No active schedule - save all segments
-                if (scheduleSegments.length > 0) {
-                    state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] = scheduleSegments.map(seg => ({ ...seg }));
+                if (state.scheduleSegments.length > 0) {
+                    state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] = state.scheduleSegments.map(seg => ({ ...seg }));
                     saveData();
                 }
             } else {
                 // Active schedule exists - save only NEW segments (those beyond state.activeScheduleSegmentCount)
                 const committedSegmentCount = getCommittedScheduleSegmentCount(existingSchedule);
-                if (scheduleSegments.length > committedSegmentCount) {
-                    const newSegments = scheduleSegments.slice(committedSegmentCount);
+                if (state.scheduleSegments.length > committedSegmentCount) {
+                    const newSegments = state.scheduleSegments.slice(committedSegmentCount);
                     state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] = newSegments.map(seg => ({ ...seg }));
                     saveData();
                 } else {
@@ -12916,14 +9838,14 @@ function deselectBlocklist() {
         if (!state.appData.settings.pendingScheduleSegments) state.appData.settings.pendingScheduleSegments = {};
 
         if (!existingSchedule) {
-            if (scheduleSegments.length > 0) {
-                state.appData.settings.pendingScheduleSegments[currentBlocklistId] = scheduleSegments.map(seg => ({ ...seg }));
+            if (state.scheduleSegments.length > 0) {
+                state.appData.settings.pendingScheduleSegments[currentBlocklistId] = state.scheduleSegments.map(seg => ({ ...seg }));
                 saveData();
             }
         } else {
             const committedSegmentCount = getCommittedScheduleSegmentCount(existingSchedule);
-            if (scheduleSegments.length > committedSegmentCount) {
-                const newSegments = scheduleSegments.slice(committedSegmentCount);
+            if (state.scheduleSegments.length > committedSegmentCount) {
+                const newSegments = state.scheduleSegments.slice(committedSegmentCount);
                 state.appData.settings.pendingScheduleSegments[currentBlocklistId] = newSegments.map(seg => ({ ...seg }));
                 saveData();
                 } else {
@@ -14623,7 +11545,7 @@ function isBlocklistCurrentlyActive(blocklistId) {
     return isScheduleSegmentActiveNow(schedule, new Date(now));
 }
 
-function clearPendingScheduleDraft(blocklistId) {
+export function clearPendingScheduleDraft(blocklistId) {
     if (!blocklistId || !state.appData.settings) return;
     if (state.appData.settings.pendingScheduleSegments?.[blocklistId]) {
         delete state.appData.settings.pendingScheduleSegments[blocklistId];
@@ -15700,10 +12622,9 @@ export function renderOverrideAllWordChallengeState() {
 // Clean up URL for display (remove protocol, www, trailing slash)
 
 const MOBILE_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH = 1024;
-let mobileCompactScheduleDayLabelsActive = null;
 
 /** Smaller mobile viewports, including iPad portrait, use single-letter day pills from first render. */
-function shouldUseCompactMobileScheduleDayLabels() {
+export function shouldUseCompactMobileScheduleDayLabels() {
     if (!state.isIOS && !state.isAndroid) return false;
     const effVp = Math.round(getEffectiveViewportWidth());
     return effVp > 0 && effVp <= MOBILE_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH;
@@ -15712,8 +12633,8 @@ function shouldUseCompactMobileScheduleDayLabels() {
 export function syncMobileScheduleDayLabelsViewportMode() {
     if (!state.isIOS && !state.isAndroid) return;
     const nextCompact = shouldUseCompactMobileScheduleDayLabels();
-    if (nextCompact === mobileCompactScheduleDayLabelsActive) return;
-    mobileCompactScheduleDayLabelsActive = nextCompact;
+    if (nextCompact === state.mobileCompactScheduleDayLabelsActive) return;
+    state.mobileCompactScheduleDayLabelsActive = nextCompact;
 
     const schedulePanel = document.getElementById('schedule-block-panel');
     if (state.isScheduleMode && schedulePanel && !schedulePanel.classList.contains('hidden')) {
@@ -15722,7 +12643,7 @@ export function syncMobileScheduleDayLabelsViewportMode() {
 
     const scheduleConfirmModal = document.getElementById('start-schedule-confirm-modal');
     if (scheduleConfirmModal && !scheduleConfirmModal.classList.contains('hidden')) {
-        renderScheduleConfirmSegments(document.getElementById('schedule-confirm-segments'), scheduleSegments);
+        renderScheduleConfirmSegments(document.getElementById('schedule-confirm-segments'), state.scheduleSegments);
     }
 }
 
@@ -16587,13 +13508,13 @@ export function applySettingsLanguage() {
     setText('schedule-overlay-discard-title', tSettings('scheduleOverlayDiscardConfirmTitle'));
     setText('cancel-schedule-overlay-discard-btn', tSettings('scheduleOverlayKeepEditingBtn'));
     setText('confirm-schedule-overlay-discard-btn', tSettings('scheduleOverlayDiscardConfirmBtn'));
-    if (isScheduleOverlayCustomiseModalOpen() && scheduleOverlayCustomiseSelection) {
-        populateScheduleOverlayCustomiseSelector(scheduleOverlayCustomiseSelection);
-        syncScheduleOverlayCustomiseEditorState(scheduleOverlayCustomiseSelection);
-        syncScheduleOverlayCustomiseTitle(scheduleOverlayCustomiseSelection);
+    if (isScheduleOverlayCustomiseModalOpen() && state.scheduleOverlayCustomiseSelection) {
+        populateScheduleOverlayCustomiseSelector(state.scheduleOverlayCustomiseSelection);
+        syncScheduleOverlayCustomiseEditorState(state.scheduleOverlayCustomiseSelection);
+        syncScheduleOverlayCustomiseTitle(state.scheduleOverlayCustomiseSelection);
         syncScheduleOverlayCustomiseDirtyState();
         const noticeEl = document.getElementById('schedule-overlay-default-notice');
-        if (noticeEl && scheduleOverlayCustomiseSelection === SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE) {
+        if (noticeEl && state.scheduleOverlayCustomiseSelection === SCHEDULE_OVERLAY_DEFAULT_PRESET_VALUE) {
             noticeEl.textContent = tSettings('scheduleOverlayDefaultNotice');
         }
     }

@@ -5,7 +5,8 @@ import { tauriAPI } from './tauri-api.js';
 import { message } from '@tauri-apps/plugin-dialog';
 import { tSettings } from './i18n.js';
 import { getBlocklistIOSPayload } from './blocklist-utils.js';
-import { formatDateForDisplay, formatTime, isScheduleSegmentActiveNow } from './app.js';
+import { formatDateForDisplay, isScheduleSegmentActiveNow } from './schedule-editor.js';
+import { formatTime } from './app.js';
 
 let hasShownIOSScheduleSyncError = false;
 

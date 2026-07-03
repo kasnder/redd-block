@@ -7,6 +7,7 @@ import { isBlockAlwaysOn } from './blocklist-utils.js';
 import { isNonRepeatingSchedule, isSchedulePausedNow, pickEarliestUpcomingScheduledBlock, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper, formatTitleBarScheduleStartWhen } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { disableTimeControls, updateTimeDisplay } from './time-inputs.js';
+import { isScheduleSegmentActiveNow, updateScheduleButtonState } from './schedule-editor.js';
 import { scheduleSelectionPromptLayout } from './theme.js';
 import { updateCleanHostsBtnState, updateOverrideAllButtonVisibility } from './settings.js';
 import {
@@ -16,7 +17,7 @@ import {
     renderBlocklists, setBtnActionLabel, setStartBlockBtnLeadingIcon, setStartBtnBlocklistInfo,
     syncNowBlockingChipsScrollability, syncSchedulerChromeVisibility, syncStopBtnLabelFit,
     updateBlockedApps, updateOnboardingVisibility, updatePauseButtonAppearance,
-    updateScheduleButtonState, updateWindowHeight, isScheduleSegmentActiveNow,
+    updateWindowHeight,
 } from './app.js';
 
 export function render() {

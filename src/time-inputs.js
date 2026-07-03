@@ -2,7 +2,9 @@
 // Extracted verbatim from app.js.
 import { state } from './state.js';
 import { tSettings } from './i18n.js';
-import { getGlobalStartOverlays, handleTimeChange, setAlwaysOnMode, wireAllScheduleSegmentTimeControls } from './app.js';
+import { handleTimeChange } from './app.js';
+import { setAlwaysOnMode, wireAllScheduleSegmentTimeControls } from './schedule-editor.js';
+import { getGlobalStartOverlays } from './schedule-overlay.js';
 
 export function pad(num) {
     return num.toString().padStart(2, '0');
