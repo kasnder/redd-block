@@ -12005,7 +12005,18 @@ async function removeScheduleOverlayAsset(relativePath) {
 }
 
 async function acquireScheduleOverlayMicStream() {
-    return navigator.mediaDevices.getUserMedia({ audio: true });
+    // A voice memo has no simultaneous playback to cancel, so skip the
+    // voice-processing chain. On macOS the echo-cancellation unit also hooks
+    // the *output* device, and its teardown after recording can audibly cut
+    // out the first playback; without it the output path is left untouched.
+    // (Bare constraint values are "ideal" — unsupported ones are ignored.)
+    return navigator.mediaDevices.getUserMedia({
+        audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+        },
+    });
 }
 
 function setScheduleOverlayRecordingUi(state) {
@@ -12780,6 +12791,14 @@ function setupScheduleOverlayCustomiseModal() {
             };
             scheduleOverlayMediaRecorder.onstop = async () => {
                 stopScheduleOverlayRecordLevelMeter();
+                // Release the mic now rather than after save+render: macOS
+                // reconfigures the audio output path when capture ends, and if
+                // that lands mid-playback the preview audibly drops out. The
+                // final dataavailable has already fired, so the data is safe.
+                if (scheduleOverlayRecordStream) {
+                    scheduleOverlayRecordStream.getTracks().forEach((track) => track.stop());
+                    scheduleOverlayRecordStream = null;
+                }
                 const mimeType = scheduleOverlayMediaRecorder?.mimeType
                     || scheduleOverlayRecordedMimeType
                     || 'audio/webm';

@@ -323,6 +323,12 @@ pub fn run() {
                     .min_inner_size(600.0, 500.0)
                     .resizable(true)
                     .center()
+                    // The blocking-warning overlay runs in NonactivatingPanel
+                    // mode, so dismissing it (snooze / Let's go) leaves ReDD
+                    // Blocker inactive. Without first-mouse the next click on
+                    // the main window only activates the app and gets
+                    // swallowed — users had to click twice.
+                    .accept_first_mouse(true)
                     .title_bar_style(TitleBarStyle::Overlay);
 
                 let window = win_builder.build()?;
@@ -511,6 +517,9 @@ pub fn run() {
                                             .min_inner_size(600.0, 500.0)
                                             .resizable(true)
                                             .center()
+                                            // Keep in sync with the initial build above
+                                            // (single-click response after panel-mode dismissal).
+                                            .accept_first_mouse(true)
                                             .title_bar_style(TitleBarStyle::Overlay);
 
                                         if let Ok(new_window) = win_builder.build() {
