@@ -65,21 +65,6 @@ impl<R: Runtime> AndroidBlocker<R> {
             .map_err(Into::into)
     }
 
-    pub fn temporary_unlock(
-        &self,
-        payload: TemporaryUnlockRequest,
-    ) -> crate::Result<SuccessResponse> {
-        self.0
-            .run_mobile_plugin("temporaryUnlock", payload)
-            .map_err(Into::into)
-    }
-
-    pub fn get_blocking_state(&self) -> crate::Result<BlockingStateResponse> {
-        self.0
-            .run_mobile_plugin("getBlockingState", ())
-            .map_err(Into::into)
-    }
-
     pub fn read_native_schedules(&self) -> crate::Result<NativeSchedulesResponse> {
         self.0
             .run_mobile_plugin("readNativeSchedules", ())

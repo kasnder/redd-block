@@ -27,6 +27,11 @@ object Schedules {
     private const val SCHEDULES_KEY = "routines" // keep legacy key for data compat
     private const val ACTIVE_SESSIONS_KEY = "active_routine_sessions" // keep legacy key
 
+    private var schedulesCacheJson: String? = null
+    private var schedulesCache: List<Schedule> = emptyList()
+    private var activeSessionsCacheJson: String? = null
+    private var activeSessionsCache: List<ActiveSession> = emptyList()
+
     data class ActiveSession(
         val scheduleId: String,
         val startTime: Long,
@@ -36,11 +41,18 @@ object Schedules {
 
     fun getAll(): List<Schedule> {
         val json = prefs.getString(SCHEDULES_KEY, "[]") ?: "[]"
+        if (json == schedulesCacheJson) return schedulesCache
+
         return try {
             JSONArray(json).let { arr ->
                 (0 until arr.length()).mapNotNull { parseSchedule(arr.getJSONObject(it)) }
+            }.also {
+                schedulesCacheJson = json
+                schedulesCache = it
             }
         } catch (_: Exception) {
+            schedulesCacheJson = json
+            schedulesCache = emptyList()
             emptyList()
         }
     }
@@ -107,109 +119,14 @@ object Schedules {
         saveAll(schedules)
     }
 
-    /**
-     * Toggle a schedule on or off permanently. When turning OFF, clears any
-     * pending auto re-enable — the schedule stays disabled until the user
-     * explicitly turns it back on. Temporary unlocks from the block friction
-     * gate use [temporaryUnlock] instead.
-     */
-    fun toggle(id: String, context: Context) {
-        Log.d(TAG, "Toggle called for schedule ID: $id")
-
-        val schedule = get(id) ?: run {
-            Log.e(TAG, "Schedule not found: $id")
-            return
-        }
-
-        if (schedule.isEnabled) {
-            // Turning OFF permanently
-            val updated = schedule.copy(isEnabled = false, disabledUntil = null)
-
-            val schedules = getAll().toMutableList()
-            val index = schedules.indexOfFirst { it.id == id }
-            if (index >= 0) schedules[index] = updated
-            saveAll(schedules)
-
-            // Stop manual session if one exists and cancel any pending re-enable
-            stopSession(context, id)
-            ScheduleManager.cancelSchedule(context, id)
-        } else {
-            // Turning ON (re-enabling)
-            val updated = schedule.copy(isEnabled = true, disabledUntil = null)
-
-            val schedules = getAll().toMutableList()
-            val index = schedules.indexOfFirst { it.id == id }
-            if (index >= 0) schedules[index] = updated
-            saveAll(schedules)
-
-            // Cancel any pending auto re-enable — we've enabled it now
-            ScheduleManager.cancelSchedule(context, id)
-
-            // Only manual schedules need an explicit session
-            if (updated.timing.type == ScheduleTiming.ScheduleType.MANUAL) {
-                startSession(context, updated)
-            }
-        }
-    }
-
-    /**
-     * Temporarily unlock a schedule after the user passes the friction gate on
-     * the block screen. Disables blocking for the schedule's configured
-     * [Schedule.autoReenableMinutes] and schedules an automatic re-enable.
-     * If `autoReenableMinutes` is 0, the schedule stays disabled until the
-     * user turns it back on.
-     */
-    fun temporaryUnlock(context: Context, id: String) {
-        Log.d(TAG, "Temporary unlock for schedule ID: $id")
-
-        val schedule = get(id) ?: run {
-            Log.e(TAG, "Schedule not found: $id")
-            return
-        }
-        if (!schedule.isEnabled) return
-
-        val updated = if (schedule.autoReenableMinutes > 0) {
-            val disabledUntil = System.currentTimeMillis() + schedule.autoReenableMinutes * 60_000L
-            schedule.copy(isEnabled = false, disabledUntil = disabledUntil)
-        } else {
-            schedule.copy(isEnabled = false, disabledUntil = null)
-        }
-
-        val schedules = getAll().toMutableList()
-        val index = schedules.indexOfFirst { it.id == id }
-        if (index >= 0) schedules[index] = updated
-        saveAll(schedules)
-
-        stopSession(context, id)
-        ScheduleManager.cancelSchedule(context, id)
-
-        if (schedule.autoReenableMinutes > 0) {
-            ScheduleManager.scheduleReEnable(context, id, schedule.autoReenableMinutes * 60_000L)
-        }
-    }
-
-    fun reEnableSchedule(context: Context, scheduleId: String) {
-        Log.d(TAG, "Auto-re-enabling schedule: $scheduleId")
-        val schedule = get(scheduleId) ?: return
-        if (schedule.isEnabled) return // already enabled
-
-        val updated = schedule.copy(isEnabled = true, disabledUntil = null)
-        val schedules = getAll().toMutableList()
-        val index = schedules.indexOfFirst { it.id == scheduleId }
-        if (index >= 0) schedules[index] = updated
-        saveAll(schedules)
-
-        // Only manual schedules need an explicit session
-        if (updated.timing.type == ScheduleTiming.ScheduleType.MANUAL) {
-            startSession(context, updated)
-        }
-    }
 
     private fun saveAll(schedules: List<Schedule>) {
         val json = JSONArray().apply {
             schedules.forEach { put(scheduleToJson(it)) }
-        }
-        prefs.edit { putString(SCHEDULES_KEY, json.toString()) }
+        }.toString()
+        prefs.edit { putString(SCHEDULES_KEY, json) }
+        schedulesCacheJson = json
+        schedulesCache = schedules
     }
 
     fun startSession(context: Context, schedule: Schedule) {
@@ -241,8 +158,34 @@ object Schedules {
         }
     }
 
+    /** Ends a pause: re-enables the schedule when [ReEnableWorker] fires. */
+    fun reEnableSchedule(context: Context, scheduleId: String) {
+        Log.d(TAG, "Auto-re-enabling schedule: $scheduleId")
+        val schedule = get(scheduleId) ?: return
+        if (schedule.isEnabled) return // already enabled
+
+        // Pausing keeps a MANUAL block's session; StopSessionWorker removes
+        // it if the block's own duration elapses mid-pause. No session left
+        // means the block already ended — don't resurrect it (the next JS
+        // sync deletes the stale schedule entity).
+        if (schedule.timing.type == ScheduleTiming.ScheduleType.MANUAL &&
+            getActiveSessions().none { it.scheduleId == scheduleId }
+        ) {
+            Log.d(TAG, "Skipping re-enable; manual block $scheduleId expired during pause")
+            return
+        }
+
+        val updated = schedule.copy(isEnabled = true, disabledUntil = null)
+        val schedules = getAll().toMutableList()
+        val index = schedules.indexOfFirst { it.id == scheduleId }
+        if (index >= 0) schedules[index] = updated
+        saveAll(schedules)
+    }
+
     fun getActiveSessions(): List<ActiveSession> {
         val json = prefs.getString(ACTIVE_SESSIONS_KEY, "[]") ?: "[]"
+        if (json == activeSessionsCacheJson) return activeSessionsCache
+
         return try {
             JSONArray(json).let { arr ->
                 (0 until arr.length()).mapNotNull {
@@ -273,8 +216,13 @@ object Schedules {
                         null
                     }
                 }
+            }.also {
+                activeSessionsCacheJson = json
+                activeSessionsCache = it
             }
         } catch (_: Exception) {
+            activeSessionsCacheJson = json
+            activeSessionsCache = emptyList()
             emptyList()
         }
     }
@@ -290,8 +238,31 @@ object Schedules {
                     put("blockedWebsites", JSONArray(session.blockedWebsites.toList()))
                 })
             }
+        }.toString()
+        prefs.edit { putString(ACTIVE_SESSIONS_KEY, json) }
+        activeSessionsCacheJson = json
+        activeSessionsCache = sessions
+    }
+
+    fun hasAppBlockingCandidates(): Boolean =
+        hasBlockingCandidates { it.blockedApps.isNotEmpty() }
+
+    fun hasWebsiteBlockingCandidates(): Boolean =
+        hasBlockingCandidates { it.blockedWebsites.isNotEmpty() }
+
+    private fun hasBlockingCandidates(targetFilter: (Schedule) -> Boolean): Boolean {
+        val schedules = getAll().filter { it.isEnabled && targetFilter(it) }
+        if (schedules.isEmpty()) return false
+        val sessions = getActiveSessions()
+        return schedules.any { schedule ->
+            when (schedule.timing.type) {
+                ScheduleTiming.ScheduleType.MANUAL ->
+                    sessions.any { it.scheduleId == schedule.id }
+                ScheduleTiming.ScheduleType.DAILY,
+                ScheduleTiming.ScheduleType.WEEKLY ->
+                    ScheduleManager.isScheduleActiveNow(schedule)
+            }
         }
-        prefs.edit { putString(ACTIVE_SESSIONS_KEY, json.toString()) }
     }
 
     /**
@@ -344,8 +315,13 @@ object Schedules {
         val sessions = getActiveSessions()
 
         for (schedule in allSchedules) {
+            // Visited [domain] arrives lowercased with "www." stripped
+            // (see BlockerService.extractDomain); normalize the stored
+            // entries the same way so "www.reddit.com" in a blocklist
+            // still matches.
             val matchesDomain = schedule.blockedWebsites.any { blocked ->
-                domain == blocked || domain.endsWith(".$blocked")
+                val target = blocked.lowercase().removePrefix("www.")
+                domain == target || domain.endsWith(".$target")
             }
             if (!matchesDomain) continue
 
@@ -360,22 +336,6 @@ object Schedules {
             }
         }
         return null
-    }
-
-    /**
-     * Check if a specific schedule is currently active.
-     */
-    fun isScheduleActive(scheduleId: String): Boolean {
-        val schedule = get(scheduleId) ?: return false
-        if (!schedule.isEnabled) return false
-
-        return when (schedule.timing.type) {
-            ScheduleTiming.ScheduleType.MANUAL ->
-                getActiveSessions().any { it.scheduleId == scheduleId }
-            ScheduleTiming.ScheduleType.DAILY,
-            ScheduleTiming.ScheduleType.WEEKLY ->
-                ScheduleManager.isScheduleActiveNow(schedule)
-        }
     }
 
     /** Well-known social media app package names. */
@@ -432,8 +392,7 @@ object Schedules {
             timing = ScheduleTiming(type = ScheduleTiming.ScheduleType.MANUAL),
             blockedApps = installedApps,
             blockedWebsites = SOCIAL_MEDIA_DOMAINS,
-            frictionWordCount = 5,
-            autoReenableMinutes = 10
+            frictionWordCount = 5
         )
         saveAll(listOf(schedule))
     }
@@ -470,8 +429,9 @@ object Schedules {
             blockedApps = blockedApps,
             blockedWebsites = blockedWebsites,
             frictionWordCount = json.optInt("frictionWordCount", 15),
-            autoReenableMinutes = json.optInt("autoReenableMinutes", 1440),
-            disabledUntil = if (json.has("disabledUntil")) json.optLong("disabledUntil") else null
+            disabledUntil = if (json.has("disabledUntil")) json.optLong("disabledUntil") else null,
+            activeFromMs = if (json.has("activeFromMs")) json.optLong("activeFromMs") else null,
+            activeUntilMs = if (json.has("activeUntilMs")) json.optLong("activeUntilMs") else null
         )
     } catch (_: Exception) {
         null
@@ -498,7 +458,8 @@ object Schedules {
         put("blockedApps", JSONArray(schedule.blockedApps))
         put("blockedWebsites", JSONArray(schedule.blockedWebsites))
         put("frictionWordCount", schedule.frictionWordCount)
-        put("autoReenableMinutes", schedule.autoReenableMinutes)
         schedule.disabledUntil?.let { put("disabledUntil", it) }
+        schedule.activeFromMs?.let { put("activeFromMs", it) }
+        schedule.activeUntilMs?.let { put("activeUntilMs", it) }
     }
 }

@@ -21,6 +21,8 @@ class BlockerService : AccessibilityService() {
     private var lastBlockedPkg: String? = null
     private var lastBlockedTime: Long = 0
     private val APP_BLOCK_THROTTLE_MS = 2000L
+    private val skippablePackageCache = mutableMapOf<String, Boolean>()
+    private val appLabelCache = mutableMapOf<String, String>()
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -35,13 +37,18 @@ class BlockerService : AccessibilityService() {
         val keyguardManager = getSystemService(KEYGUARD_SERVICE) as android.app.KeyguardManager
         if (keyguardManager.isKeyguardLocked) return
 
-        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
+        val isContentChanged = event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
+        val isWindowChanged = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+            event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED
+        if (!isContentChanged && !isWindowChanged) return
 
         val pkg = event.packageName?.toString() ?: return
         if (pkg == packageName) return
 
-        // Check for website blocking in supported browsers
-        if (isSupportedBrowser(pkg)) {
+        // Website URL extraction is the expensive path because it may inspect
+        // the browser accessibility tree. Only do it for content changes in
+        // supported browsers while at least one website block can be active.
+        if (isContentChanged && isSupportedBrowser(pkg) && Schedules.hasWebsiteBlockingCandidates()) {
             val currentTime = System.currentTimeMillis()
             if (currentTime - lastUrlCheckTime >= URL_CHECK_THROTTLE_MS) {
                 val url = extractUrlFromEvent(event)
@@ -65,6 +72,7 @@ class BlockerService : AccessibilityService() {
         }
 
         // Check app blocking
+        if (!Schedules.hasAppBlockingCandidates()) return
         if (shouldSkipPackage(pkg)) return
 
         val blockingSchedule = Schedules.findBlockingScheduleForApp(pkg)
@@ -99,17 +107,21 @@ class BlockerService : AccessibilityService() {
     }
 
     private fun getAppLabel(packageName: String): String {
-        return try {
+        appLabelCache[packageName]?.let { return it }
+        val label = try {
             this.packageManager.getApplicationLabel(
                 this.packageManager.getApplicationInfo(packageName, 0)
             ).toString()
         } catch (_: Exception) {
             packageName
         }
+        appLabelCache[packageName] = label
+        return label
     }
 
     private fun shouldSkipPackage(packageName: String): Boolean {
-        return try {
+        skippablePackageCache[packageName]?.let { return it }
+        val shouldSkip = try {
             val info = this.packageManager.getApplicationInfo(packageName, 0)
             val isSystem = (info.flags and android.content.pm.ApplicationInfo.FLAG_SYSTEM) != 0
             if (isSystem) {
@@ -120,6 +132,8 @@ class BlockerService : AccessibilityService() {
         } catch (_: Exception) {
             false
         }
+        skippablePackageCache[packageName] = shouldSkip
+        return shouldSkip
     }
 
     /** Maps browser package names to their URL bar view IDs */

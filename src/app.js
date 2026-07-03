@@ -119,8 +119,6 @@ const tauriAPI = {
     androidStartManualBlock: (id, endTimestampMs) =>
         invoke('plugin:android-blocker|start_manual_block', { id, endTimestampMs }),
     androidStopManualBlock: (id) => invoke('plugin:android-blocker|stop_manual_block', { id }),
-    androidTemporaryUnlock: (id) => invoke('plugin:android-blocker|temporary_unlock', { id }),
-    androidGetBlockingState: () => invoke('plugin:android-blocker|get_blocking_state'),
     androidReadNativeSchedules: () => invoke('plugin:android-blocker|read_native_schedules'),
     androidGetInstalledApps: () => invoke('plugin:android-blocker|get_installed_apps'),
     androidSetEventHandler: (handler) => invoke('plugin:android-blocker|set_event_handler', { handler }),
@@ -304,7 +302,6 @@ let uiZoomLayoutObserverBound = false;
 let schedTabsIconOnlyEnteredAtWidth = 0;
 const UI_ZOOM_STEP = 0.1;
 const DEFAULT_UI_ZOOM = 1.0;
-const DEFAULT_UI_ZOOM_MOBILE = 1.0;
 const TIME_SEPARATOR_ARROW_HTML = '<span class="time-separator" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg></span>';
 const SEGMENT_SUMMARY_CLOCK_ICON = '<svg class="segment-summary-clock" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>';
 const SEGMENT_SUMMARY_CHEVRON_ICON = '<svg class="segment-summary-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>';
@@ -818,25 +815,52 @@ async function syncSchedulesToHelper() {
     if (isAndroid) {
         try {
             const flatEntries = [];
+            const now = Date.now();
             for (const schedule of appData.schedules || []) {
-                if (schedule.isPaused) continue; // paused: don't enforce, but keep in appData
                 if (!schedule.segments || schedule.segments.length === 0) continue;
-                // One-shot (non-repeating) instant blocks have no equivalent
-                // in the Kotlin Schedule model (which only stores time-of-day
-                // + optional days-of-week, not absolute calendar timestamps —
-                // see ScheduleTiming.kt). Skipping them here is a deliberate,
-                // scoped gap: wiring "block now for N minutes" should go
-                // through androidStartManualBlock/stopManualBlock instead of
-                // set_schedules, but that needs its own UI-flow work.
-                if (isNonRepeatingSchedule(schedule)) {
-                    console.warn('[syncSchedulesToHelper] Android: skipping non-repeating schedule', schedule.id, '(not yet supported)');
-                    continue;
-                }
                 const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
                 const blockedApps = blocklist?.apps || [];
                 const blockedWebsites = blocklist?.websites || [];
                 const difficulty = blocklist?.overrideDifficulty;
                 const frictionWordCount = (difficulty && difficulty.type !== 'custom' && difficulty.count) ? difficulty.count : 15;
+                // Paused entries stay in the payload: Kotlin stores them
+                // disabled and arms a WorkManager re-enable at the expiry,
+                // so blocking resumes on time even if this app process is
+                // dead by then (mirrors iOS's one-off DeviceActivity).
+                // No pauseEndTime (legacy-disabled schedules imported by
+                // migrateAndroidNativeSchedules) = paused indefinitely.
+                const isPaused = !!(schedule.isPaused && (!schedule.pauseEndTime || schedule.pauseEndTime > now));
+
+                // One-shot (non-repeating) schedules become entries with an
+                // absolute [activeFrom, activeUntil) window, same as iOS.
+                // Kotlin checks the window instead of time-of-day + days;
+                // runExpiryOnce removes them from appData once past, and the
+                // next sync deletes the Kotlin entity.
+                if (isNonRepeatingSchedule(schedule)) {
+                    const occurrences = resolveOneShotOccurrences(schedule);
+                    occurrences.forEach((occurrence, occurrenceIdx) => {
+                        if (occurrence.end.getTime() <= now) return;
+                        flatEntries.push({
+                            id: `${schedule.id}-${occurrence.segmentIndex}-${occurrenceIdx}`,
+                            name: blocklist?.name || 'Schedule',
+                            enabled: true,
+                            type: 'DAILY',
+                            startHour: occurrence.start.getHours(),
+                            startMinute: occurrence.start.getMinutes(),
+                            endHour: occurrence.end.getHours(),
+                            endMinute: occurrence.end.getMinutes(),
+                            days: [],
+                            blockedApps,
+                            blockedWebsites,
+                            frictionWordCount,
+                            isPaused,
+                            pauseEndTimestampMs: (isPaused && schedule.pauseEndTime) ? schedule.pauseEndTime : null,
+                            activeFromTimestampMs: occurrence.start.getTime(),
+                            activeUntilTimestampMs: occurrence.end.getTime(),
+                        });
+                    });
+                    continue;
+                }
 
                 for (let segIdx = 0; segIdx < schedule.segments.length; segIdx++) {
                     const seg = schedule.segments[segIdx];
@@ -853,10 +877,8 @@ async function syncSchedulesToHelper() {
                         blockedApps,
                         blockedWebsites,
                         frictionWordCount,
-                        // 0 = stays disabled until the user re-enables it,
-                        // matching desktop's override behavior (deletes the
-                        // schedule outright rather than auto-restarting it).
-                        autoReenableMinutes: 0,
+                        isPaused,
+                        pauseEndTimestampMs: (isPaused && schedule.pauseEndTime) ? schedule.pauseEndTime : null,
                     });
                 }
             }
@@ -866,14 +888,13 @@ async function syncSchedulesToHelper() {
             // entity; proceedWithBlock() separately calls
             // androidStartManualBlock to actually start the session (and
             // arm the auto-stop timer for non-always-on blocks).
-            const now = Date.now();
             for (const block of appData.activeBlocks || []) {
-                if (block.isPaused) continue;
                 if (block.endTime <= now) continue;
                 const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
                 if (!blocklist) continue;
                 const difficulty = blocklist.overrideDifficulty;
                 const frictionWordCount = (difficulty && difficulty.type !== 'custom' && difficulty.count) ? difficulty.count : 15;
+                const isPaused = !!(block.isPaused && (!block.pauseEndTime || block.pauseEndTime > now));
                 flatEntries.push({
                     id: block.id,
                     name: blocklist.name || 'Block',
@@ -883,7 +904,8 @@ async function syncSchedulesToHelper() {
                     blockedApps: blocklist.apps || [],
                     blockedWebsites: blocklist.websites || [],
                     frictionWordCount,
-                    autoReenableMinutes: 0,
+                    isPaused,
+                    pauseEndTimestampMs: (isPaused && block.pauseEndTime) ? block.pauseEndTime : null,
                 });
             }
 
@@ -989,8 +1011,10 @@ function isOneOffBlockStillActive(block, now = Date.now()) {
     return !!(block && block.endTime > now);
 }
 
+// No pauseEndTime = paused indefinitely (legacy-disabled schedules imported
+// by migrateAndroidNativeSchedules); stays paused until the user resumes it.
 function isSchedulePausedNow(schedule, now = Date.now()) {
-    return !!(schedule && schedule.isPaused && schedule.pauseEndTime > now);
+    return !!(schedule && schedule.isPaused && (!schedule.pauseEndTime || schedule.pauseEndTime > now));
 }
 
 function hasAnyEnforcedBlocks(now = Date.now(), nowDate = new Date(now)) {
@@ -1135,6 +1159,8 @@ function pickEarliestUpcomingScheduledBlock(nowMs = Date.now()) {
     for (const schedule of appData.schedules || []) {
         if (!schedule.segments || schedule.segments.length === 0) continue;
         if (!scheduleCanStillBecomeActive(schedule, new Date(nowMs))) continue;
+        // Indefinitely paused (no pauseEndTime): no upcoming start to show.
+        if (schedule.isPaused && !schedule.pauseEndTime) continue;
 
         const floorMs = getTitleBarScheduleSearchFloorMs(schedule, nowMs);
         let nextMs = null;
@@ -1172,27 +1198,6 @@ function hasAnyBlockingStateToClear(now = Date.now(), nowDate = new Date(now)) {
     const hasOneOffState = appData.activeBlocks.some(block => isOneOffBlockStillActive(block, now));
     if (hasOneOffState) return true;
     return !!appData.schedules?.some(schedule => scheduleCanStillBecomeActive(schedule, nowDate));
-}
-
-function getActiveOneOffBlocklistIds(now = Date.now()) {
-    return [...new Set((appData.activeBlocks || [])
-        .filter(block => block.startTime <= now && block.endTime > now)
-        .map(block => block.blocklistId)
-        .filter(Boolean))];
-}
-
-function autoSelectLoneActiveBlocklist() {
-    if (selectedBlocklistId) return false;
-    const activeIds = getActiveOneOffBlocklistIds();
-    if (activeIds.length !== 1) return false;
-    if (!appData.blocklists.some(bl => bl.id === activeIds[0])) return false;
-
-    userExplicitlyDeselected = false;
-    const dropdown = document.getElementById('blocklist-select');
-    if (!dropdown) return false;
-    dropdown.value = activeIds[0];
-    handleBlocklistSelect({ target: dropdown });
-    return true;
 }
 
 async function refreshDesktopHelperStatus() {
@@ -1565,9 +1570,14 @@ async function runPostAcceptanceStartup() {
             }
         } else if (isAndroid) {
             await checkAndroidPermissions();
-            if (androidPermissionsGranted) {
-                await initializeAndroidBlockingState();
-            }
+            // Not gated on the accessibility grant: migration must run
+            // before ANY set_schedules call, because Kotlin stores the
+            // synced schedules under the same legacy prefs key
+            // ("routines") that the migration reads — a pre-migration
+            // sync would overwrite the legacy data and then re-import
+            // our own schedules as duplicates. Neither command needs
+            // accessibility; enforcement simply stays off until granted.
+            await initializeAndroidBlockingState();
         } else {
             // Run first-launch migration off the legacy helper + check
             // Automation TCC (macOS) + extension compliance. Idempotent;
@@ -6842,13 +6852,6 @@ async function migrateAndroidNativeSchedules() {
         if (Array.isArray(legacySchedules) && legacySchedules.length > 0) {
             for (const legacy of legacySchedules) {
                 const timing = legacy.schedule || {};
-                if (timing.type === 'MANUAL') {
-                    // Session-based one-off blocks — no equivalent in this
-                    // app's blocklist+schedule model yet (same gap noted in
-                    // syncSchedulesToHelper for non-repeating schedules).
-                    console.warn('[migrateAndroidNativeSchedules] Skipping MANUAL legacy schedule', legacy.id);
-                    continue;
-                }
 
                 const blocklistId = generateId();
                 appData.blocklists.push({
@@ -6859,14 +6862,43 @@ async function migrateAndroidNativeSchedules() {
                     overrideDifficulty: { type: 'random-words', count: legacy.frictionWordCount || 15 },
                 });
 
+                if (timing.type === 'MANUAL') {
+                    // Legacy manual (toggle-on) blocks are deliberately not
+                    // carried over as active blocks: the old model toggled
+                    // indefinitely, the new one is "block for N minutes".
+                    // The curated list survives as the blocklist above; any
+                    // still-running legacy session ends when the first
+                    // set_schedules sync replaces the Kotlin schedule set.
+                    console.info('[migrateAndroidNativeSchedules] Imported MANUAL legacy schedule as blocklist only:', legacy.id);
+                    continue;
+                }
+
                 const days = timing.type === 'WEEKLY'
                     ? (timing.daysOfWeek || []).map(d => ANDROID_DAY_TO_MON0[d]).filter(d => d !== undefined)
                     : [0, 1, 2, 3, 4, 5, 6]; // DAILY: every day
 
+                // Map legacy disabled state onto the pause model:
+                //  - disabledUntil in the future = mid temporary-unlock →
+                //    timed pause, auto-resumes at the same moment.
+                //  - disabledUntil passed = the legacy re-enable was due →
+                //    import as enabled.
+                //  - no disabledUntil = user turned it off → indefinite pause.
+                const nowMs = Date.now();
+                const disabledUntil = typeof legacy.disabledUntil === 'number' ? legacy.disabledUntil : null;
+                const isPaused = !legacy.isEnabled && (!disabledUntil || disabledUntil > nowMs);
+                const pauseEndTime = (isPaused && disabledUntil) ? disabledUntil : undefined;
+
                 appData.schedules.push({
                     id: generateId(),
                     blocklistId,
-                    isPaused: !legacy.isEnabled,
+                    isPaused,
+                    ...(pauseEndTime ? { pauseEndTime } : {}),
+                    // Legacy DAILY/WEEKLY schedules recur indefinitely.
+                    // Without repeatType, isNonRepeatingSchedule() would
+                    // misclassify these as one-shot occurrences.
+                    repeatType: 'forever',
+                    repeatDate: null,
+                    createdAt: Date.now(),
                     segments: [{
                         startHour: timing.timeHour ?? 0,
                         startMinute: timing.timeMinute ?? 0,
@@ -6996,22 +7028,58 @@ function setupAndroidBackButtonHandling() {
     });
 }
 
-// Shows the shared override-challenge UI for a block that fired on
-// Android. Unlike the desktop/iOS `window.overrideScheduleId` flow
-// (which deletes the schedule outright), a passed Android challenge
-// calls `androidTemporaryUnlock` — Kotlin disables the schedule for its
-// configured `autoReenableMinutes` and re-enables it automatically
-// (see `Schedules.temporaryUnlock` / `ReEnableWorker`), matching the
-// original redd-block-android behavior. `window.overrideAndroidScheduleId`
-// is a distinct flag so this doesn't fall into the desktop delete branch.
+function findAndroidBlockingTarget(nativeScheduleId) {
+    const activeBlock = appData.activeBlocks?.find(block => block.id === nativeScheduleId);
+    if (activeBlock) {
+        return { type: 'block', block: activeBlock };
+    }
+
+    for (const schedule of appData.schedules || []) {
+        // Kotlin ids are the schedule id plus a flattened suffix:
+        // `<id>-<segIdx>` for repeating segments, `<id>-<segIdx>-<occIdx>`
+        // for one-shot occurrences. Schedule ids are UUIDs, so prefix
+        // matching can't collide with another schedule.
+        if (nativeScheduleId === schedule.id || nativeScheduleId.startsWith(`${schedule.id}-`)) {
+            return { type: 'schedule', schedule };
+        }
+    }
+
+    return null;
+}
+
+// Shows the shared override-challenge UI for a block that fired on Android.
+// Kotlin sends either the manual block id or the flattened schedule-segment id
+// (`<scheduleId>-<segmentIndex>`). Route both back into the same JS-owned stop
+// flows used elsewhere so the visible app state and native blocking state stay
+// in lockstep.
 function openAndroidFrictionGateModal(event) {
     delete window.overrideScheduleId;
-    window.overrideAndroidScheduleId = event.scheduleId;
     overrideBlockId = null;
     overrideBlocklistIdForHelper = null;
 
-    const schedule = appData.schedules?.find(s => s.id === event.scheduleId);
-    const blocklist = schedule ? appData.blocklists.find(bl => bl.id === schedule.blocklistId) : null;
+    const target = findAndroidBlockingTarget(event.scheduleId);
+    if (!target) {
+        // Every Kotlin schedule is created from appData via set_schedules
+        // (or imported by migrateAndroidNativeSchedules), so an unknown id
+        // means the two stores are out of sync. Don't show a challenge we
+        // can't act on; the next syncSchedulesToHelper reconciles Kotlin.
+        console.error('[friction-gate] No matching block/schedule for id:', event.scheduleId);
+        return;
+    }
+
+    let blocklist = null;
+    let actionLabel = tSettings('stopSchedule');
+
+    if (target.type === 'block') {
+        overrideBlockId = target.block.id;
+        blocklist = appData.blocklists.find(bl => bl.id === target.block.blocklistId);
+        actionLabel = tSettings('stopBlock');
+    } else {
+        window.overrideScheduleId = target.schedule.id || target.schedule.blocklistId;
+        blocklist = appData.blocklists.find(bl => bl.id === target.schedule.blocklistId);
+        actionLabel = tSettings('stopSchedule');
+    }
+
     const blocklistName = blocklist?.name || event.scheduleName || 'ReDD Block';
 
     const difficulty = blocklist?.overrideDifficulty || { type: 'random-words', count: 15 };
@@ -7021,10 +7089,10 @@ function openAndroidFrictionGateModal(event) {
     challengeText = isRandom ? generateGibberish(charCount) : generateRandomWords(charCount);
 
     const confirmBtn = document.getElementById('confirm-override-btn');
-    if (confirmBtn) confirmBtn.textContent = tSettings('stopSchedule');
+    if (confirmBtn) confirmBtn.textContent = actionLabel;
 
     const titleEl = document.getElementById('override-modal-title');
-    if (titleEl) titleEl.textContent = `${tSettings('stopSchedule')} ${blocklistName}`;
+    if (titleEl) titleEl.textContent = `${actionLabel} ${blocklistName}`;
 
     const challengeTextEl = document.getElementById('challenge-text');
     if (challengeTextEl) challengeTextEl.textContent = challengeText;
@@ -9366,7 +9434,7 @@ function setupOverrideModalListeners() {
         // Try schedule — find the currently active segment
         const schedule = appData.schedules?.find(s => s.blocklistId === selectedBlocklistId);
         if (schedule) {
-            if (schedule.isPaused && schedule.pauseEndTime > now) {
+            if (isSchedulePausedNow(schedule, now)) {
                 // Resume — show confirmation dialog
                 openResumeConfirmation(selectedBlocklistId, 'schedule', null);
                 return;
@@ -9497,7 +9565,7 @@ function setupOverrideModalListeners() {
             }
         }
 
-        if (typed === target && (overrideBlockId || window.overrideScheduleId || window.overrideAndroidScheduleId)) {
+        if (typed === target && (overrideBlockId || window.overrideScheduleId)) {
             // Check for helper removal special case
             if (overrideBlockId === 'helper-removal' && window.helperRemovalConfirmCallback) {
                 window.helperRemovalConfirmCallback();
@@ -9582,19 +9650,6 @@ function setupOverrideModalListeners() {
                 await updateBlockedApps();
 
                 delete window.overrideScheduleId;
-            } else if (window.overrideAndroidScheduleId) {
-                // Android: temporary unlock, not deletion. Kotlin owns
-                // disabling the schedule for autoReenableMinutes and
-                // re-enabling it automatically (ReEnableWorker) — the
-                // schedule stays in appData.schedules untouched so the
-                // next set_schedules sync doesn't recreate it from scratch.
-                const scheduleId = window.overrideAndroidScheduleId;
-                try {
-                    await tauriAPI.androidTemporaryUnlock(scheduleId);
-                } catch (err) {
-                    console.error('androidTemporaryUnlock failed:', err);
-                }
-                delete window.overrideAndroidScheduleId;
             }
 
             render();
@@ -10631,7 +10686,7 @@ function updateScheduleButtonState() {
     const pauseBtn = document.getElementById('pause-block-btn');
     if (pauseBtn) {
         if (activeSchedule && activeSchedule.segments) {
-            const isPaused = activeSchedule.isPaused && activeSchedule.pauseEndTime > now;
+            const isPaused = isSchedulePausedNow(activeSchedule, now);
 
             if (isPaused) {
                 // Schedule is paused — show Resume button
@@ -13690,7 +13745,6 @@ function closeScheduleConfirmModal() {
 // Open override modal for stopping a schedule. Schedules now stop wholesale, identically
 // to one-off blocks (no per-instance skip).
 function openScheduleOverrideModal(schedule) {
-    delete window.overrideAndroidScheduleId;
     window.overrideScheduleId = schedule.id || schedule.blocklistId;
 
     const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
@@ -15423,7 +15477,7 @@ async function updateHostsFile(silent = false) {
             if (!schedule.segments) return;
 
             // Skip paused schedules
-            if (schedule.isPaused && schedule.pauseEndTime > Date.now()) return;
+            if (isSchedulePausedNow(schedule)) return;
 
             if (isScheduleSegmentActiveNow(schedule, nowDate)) {
                 const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
@@ -15452,7 +15506,7 @@ async function updateHostsFile(silent = false) {
             );
             const hasActiveScheduleSegments = (appData.schedules || []).some(schedule => {
                 if (!schedule || !schedule.segments || schedule.segments.length === 0) return false;
-                if (schedule.isPaused && schedule.pauseEndTime > now) return false;
+                if (isSchedulePausedNow(schedule, now)) return false;
                 if (schedule.repeatType === 'date' && schedule.repeatDate) {
                     const endDate = new Date(schedule.repeatDate);
                     endDate.setHours(23, 59, 59, 999);
@@ -17513,13 +17567,10 @@ function render() {
     //   - Exactly one blocklist exists → default-select it.
     //   - Otherwise, if nothing is selected, fall back to selecting
     //     the lone non-active blocklist if there's exactly one.
-    if (autoSelectLoneActiveBlocklist()) {
-        // Active one-off blocks should keep their Pause/Stop controls reachable,
-        // even if a previous click-outside/ESC set the manual deselect flag.
-    } else if (appData.blocklists.length === 1) {
+    if (appData.blocklists.length === 1) {
         autoSelectSoleBlocklist();
     } else if (!selectedBlocklistId && !userExplicitlyDeselected) {
-        const activeIds = getActiveOneOffBlocklistIds();
+        const activeIds = appData.activeBlocks.map(b => b.blocklistId);
         const availableBlocklists = appData.blocklists.filter(bl => !activeIds.includes(bl.id));
         if (availableBlocklists.length === 1) {
             const dropdown = document.getElementById('blocklist-select');
@@ -18701,9 +18752,13 @@ function renderBlocklists() {
             const schedule = appData.schedules.find(s => s.blocklistId === bl.id);
             let scheduleTimeText = '';
             if (schedule && schedule.segments) {
-                if (schedule.isPaused && schedule.pauseEndTime > now) {
-                    const pauseMins = Math.max(1, Math.ceil((schedule.pauseEndTime - now) / 60000));
-                    scheduleTimeText = pauseMins >= 60 ? `Paused ${Math.floor(pauseMins / 60)}h ${pauseMins % 60}m` : `Paused ${pauseMins}m`;
+                if (isSchedulePausedNow(schedule, now)) {
+                    if (schedule.pauseEndTime) {
+                        const pauseMins = Math.max(1, Math.ceil((schedule.pauseEndTime - now) / 60000));
+                        scheduleTimeText = pauseMins >= 60 ? `Paused ${Math.floor(pauseMins / 60)}h ${pauseMins % 60}m` : `Paused ${pauseMins}m`;
+                    } else {
+                        scheduleTimeText = 'Paused';
+                    }
                 } else {
                     // Check if any segment is currently active
                     const nowDate = new Date();
@@ -19291,7 +19346,7 @@ function kickClockNow() {
 function getScheduleStateSignature(now = Date.now()) {
     const nowDate = new Date(now);
     if (!appData.schedules || appData.schedules.length === 0) return '';
-    return appData.schedules.map(s => `${s.id || s.blocklistId}:${s.isPaused && s.pauseEndTime > now ? 1 : 0}:${isScheduleSegmentActiveNow(s, nowDate) ? 1 : 0}`).sort().join('|');
+    return appData.schedules.map(s => `${s.id || s.blocklistId}:${isSchedulePausedNow(s, now) ? 1 : 0}:${isScheduleSegmentActiveNow(s, nowDate) ? 1 : 0}`).sort().join('|');
 }
 
 // Utility functions
@@ -22253,7 +22308,6 @@ function applySettingsLanguage() {
     renderBlocklists();
     if (document.getElementById('blocklist-select')) renderBlocklistSelector();
     if (typeof updateScheduleButtonState === 'function') updateScheduleButtonState();
-    if (typeof autoSelectLoneActiveBlocklist === 'function') autoSelectLoneActiveBlocklist();
     if (typeof syncSelectedControlState === 'function') syncSelectedControlState();
     if (typeof updateWeekCalendar === 'function') updateWeekCalendar();
     if (typeof rebuildScheduleSegments === 'function') rebuildScheduleSegments();
@@ -22834,7 +22888,7 @@ function setupUiZoomShortcuts() {
     // (duplicated/offset text). Reset once; the user can still zoom
     // manually afterwards and that choice sticks.
     if (isAndroid && appData.settings?.uiZoom !== undefined && !appData.settings.androidZoomReset) {
-        appData.settings.uiZoom = DEFAULT_UI_ZOOM_MOBILE;
+        appData.settings.uiZoom = DEFAULT_UI_ZOOM;
         appData.settings.androidZoomReset = true;
         saveData();
     }

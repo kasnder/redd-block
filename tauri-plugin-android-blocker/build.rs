@@ -4,8 +4,6 @@ const COMMANDS: &[&str] = &[
     "set_schedules",
     "start_manual_block",
     "stop_manual_block",
-    "temporary_unlock",
-    "get_blocking_state",
     "read_native_schedules",
     "get_installed_apps",
     "set_event_handler",

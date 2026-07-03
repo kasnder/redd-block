@@ -9,8 +9,6 @@ Default permissions for the android-blocker plugin
 - `allow-set-schedules`
 - `allow-start-manual-block`
 - `allow-stop-manual-block`
-- `allow-temporary-unlock`
-- `allow-get-blocking-state`
 - `allow-read-native-schedules`
 - `allow-get-installed-apps`
 - `allow-set-event-handler`
@@ -46,32 +44,6 @@ Enables the check_blocker_permissions command without any pre-configured scope.
 <td>
 
 Denies the check_blocker_permissions command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`android-blocker:allow-get-blocking-state`
-
-</td>
-<td>
-
-Enables the get_blocking_state command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`android-blocker:deny-get-blocking-state`
-
-</td>
-<td>
-
-Denies the get_blocking_state command without any pre-configured scope.
 
 </td>
 </tr>
@@ -254,32 +226,6 @@ Enables the stop_manual_block command without any pre-configured scope.
 <td>
 
 Denies the stop_manual_block command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`android-blocker:allow-temporary-unlock`
-
-</td>
-<td>
-
-Enables the temporary_unlock command without any pre-configured scope.
-
-</td>
-</tr>
-
-<tr>
-<td>
-
-`android-blocker:deny-temporary-unlock`
-
-</td>
-<td>
-
-Denies the temporary_unlock command without any pre-configured scope.
 
 </td>
 </tr>

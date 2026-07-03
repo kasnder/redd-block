@@ -36,7 +36,18 @@ pub struct ScheduleEntry {
     #[serde(default)]
     pub blocked_websites: Vec<String>,
     pub friction_word_count: u32,
-    pub auto_reenable_minutes: u32,
+    /// JS-owned pause state; a paused schedule is stored disabled on the
+    /// Kotlin side with a WorkManager re-enable at the pause expiry.
+    #[serde(default)]
+    pub is_paused: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pause_end_timestamp_ms: Option<f64>,
+    /// One-shot occurrence window (epoch ms). When set, Kotlin checks
+    /// "now within [from, until)" instead of time-of-day + days.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_from_timestamp_ms: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_until_timestamp_ms: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,30 +72,9 @@ pub struct StopManualBlockRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TemporaryUnlockRequest {
-    pub id: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct PermissionsResponse {
     pub accessibility_enabled: bool,
     pub notifications_granted: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BlockingStateEntry {
-    pub id: String,
-    pub is_active_now: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub disabled_until: Option<i64>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BlockingStateResponse {
-    pub schedules: Vec<BlockingStateEntry>,
 }
 
 /// Raw prefs JSON, exposed once for the one-time upward migration into

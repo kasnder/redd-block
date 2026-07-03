@@ -7,7 +7,10 @@ import net.kollnig.reddblockandroid.util.isPrefsInitialized
 import net.kollnig.reddblockandroid.util.prefs
 
 /**
- * Worker that re-enables a schedule after the user temporarily disabled it.
+ * Worker that re-enables a schedule when its pause expires. Enqueued by
+ * `BlockerPlugin.setSchedules` when JS syncs a paused schedule, so the
+ * pause ends on time even if the app process is dead — WorkManager
+ * persists the job (including across reboots) without any polling.
  */
 class ReEnableWorker(
     private val context: Context,

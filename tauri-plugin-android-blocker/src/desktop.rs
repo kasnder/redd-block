@@ -54,17 +54,6 @@ impl<R: Runtime> AndroidBlocker<R> {
         Ok(unsupported())
     }
 
-    pub fn temporary_unlock(
-        &self,
-        _payload: TemporaryUnlockRequest,
-    ) -> crate::Result<SuccessResponse> {
-        Ok(unsupported())
-    }
-
-    pub fn get_blocking_state(&self) -> crate::Result<BlockingStateResponse> {
-        Ok(BlockingStateResponse { schedules: vec![] })
-    }
-
     pub fn read_native_schedules(&self) -> crate::Result<NativeSchedulesResponse> {
         Ok(NativeSchedulesResponse {
             routines_json: "[]".to_string(),

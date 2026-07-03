@@ -44,8 +44,6 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::set_schedules,
             commands::start_manual_block,
             commands::stop_manual_block,
-            commands::temporary_unlock,
-            commands::get_blocking_state,
             commands::read_native_schedules,
             commands::get_installed_apps,
             commands::set_event_handler,

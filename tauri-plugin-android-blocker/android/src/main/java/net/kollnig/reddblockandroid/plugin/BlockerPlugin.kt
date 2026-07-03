@@ -42,7 +42,10 @@ class ScheduleEntryArg {
     var blockedApps: List<String> = listOf()
     var blockedWebsites: List<String> = listOf()
     var frictionWordCount: Int = 15
-    var autoReenableMinutes: Int = 1440
+    var isPaused: Boolean = false
+    var pauseEndTimestampMs: Double? = null
+    var activeFromTimestampMs: Double? = null
+    var activeUntilTimestampMs: Double? = null
 }
 
 @InvokeArg
@@ -176,11 +179,14 @@ class BlockerPlugin(private val activity: Activity) : Plugin(activity) {
     // --- Schedule sync ---
 
     /**
-     * Replaces the full schedule set with what the webview sends. Kotlin
-     * stays authoritative for runtime state (`isEnabled` / `disabledUntil`)
-     * on any schedule whose id + blocking content is unchanged, so a
-     * re-sync from JS can't clobber an in-progress temporary unlock.
+     * Replaces the full schedule set with what the webview sends.
      * Schedules whose id is no longer present in the payload are deleted.
+     *
+     * JS owns pause state: a paused entry is stored disabled (with
+     * `disabledUntil`) and a [ReEnableWorker] is enqueued so blocking
+     * resumes at the pause expiry even if the app process is dead —
+     * mirroring iOS's one-off DeviceActivity and the desktop helper's
+     * autonomous expiry.
      */
     @Command
     fun setSchedules(invoke: Invoke) {
@@ -200,37 +206,62 @@ class BlockerPlugin(private val activity: Activity) : Plugin(activity) {
                 }.toSet()
             )
 
+            // Null pauseEndMs = paused indefinitely (until JS syncs it
+            // unpaused); a timestamp arms a WorkManager re-enable below.
+            val pauseEndMs = entry.pauseEndTimestampMs?.toLong()
+            val pausedNow = entry.isPaused &&
+                (pauseEndMs == null || pauseEndMs > System.currentTimeMillis())
+
+            val activeFromMs = entry.activeFromTimestampMs?.toLong()
+            val activeUntilMs = entry.activeUntilTimestampMs?.toLong()
+
             val existing = existingById[entry.id]
             val contentUnchanged = existing != null &&
                 existing.timing == timing &&
                 existing.blockedApps == entry.blockedApps &&
                 existing.blockedWebsites == entry.blockedWebsites &&
                 existing.frictionWordCount == entry.frictionWordCount &&
-                existing.autoReenableMinutes == entry.autoReenableMinutes
+                existing.activeFromMs == activeFromMs &&
+                existing.activeUntilMs == activeUntilMs
 
             val schedule = if (contentUnchanged && existing != null) {
-                // Keep Kotlin's runtime isEnabled/disabledUntil; only
-                // update the fields JS actually owns (name).
-                existing.copy(name = entry.name)
+                // Avoid rewriting unchanged schedules (Schedules.save also
+                // touches active sessions); still apply name + pause state,
+                // which JS owns.
+                existing.copy(
+                    name = entry.name,
+                    isEnabled = entry.enabled && !pausedNow,
+                    disabledUntil = if (pausedNow) pauseEndMs else null
+                )
             } else {
                 Schedule(
                     id = entry.id,
                     name = entry.name,
-                    isEnabled = entry.enabled,
+                    isEnabled = entry.enabled && !pausedNow,
                     timing = timing,
                     blockedApps = entry.blockedApps,
                     blockedWebsites = entry.blockedWebsites,
                     frictionWordCount = entry.frictionWordCount,
-                    autoReenableMinutes = entry.autoReenableMinutes,
-                    disabledUntil = null
+                    disabledUntil = if (pausedNow) pauseEndMs else null,
+                    activeFromMs = activeFromMs,
+                    activeUntilMs = activeUntilMs
                 )
             }
             Schedules.save(schedule, activity)
+
+            if (pausedNow && pauseEndMs != null) {
+                ScheduleManager.scheduleReEnable(
+                    activity, entry.id, pauseEndMs - System.currentTimeMillis()
+                )
+            } else {
+                ScheduleManager.cancelReEnable(activity, entry.id)
+            }
         }
 
         for ((id, _) in existingById) {
             if (id !in incomingIds) {
                 Schedules.delete(id, activity)
+                ScheduleManager.cancelReEnable(activity, id)
             }
         }
 
@@ -268,28 +299,6 @@ class BlockerPlugin(private val activity: Activity) : Plugin(activity) {
         ScheduleManager.cancelStopSession(activity, args.id)
         Schedules.stopSession(activity, args.id)
         invoke.resolve(successObject())
-    }
-
-    @Command
-    fun temporaryUnlock(invoke: Invoke) {
-        val args = invoke.parseArgs(ScheduleIdArg::class.java)
-        Schedules.temporaryUnlock(activity, args.id)
-        invoke.resolve(successObject())
-    }
-
-    @Command
-    fun getBlockingState(invoke: Invoke) {
-        val ret = JSObject()
-        val arr = JSArray()
-        for (schedule in Schedules.getAll()) {
-            val entry = JSObject()
-            entry.put("id", schedule.id)
-            entry.put("isActiveNow", Schedules.isScheduleActive(schedule.id))
-            schedule.disabledUntil?.let { entry.put("disabledUntil", it) }
-            arr.put(entry)
-        }
-        ret.put("schedules", arr)
-        invoke.resolve(ret)
     }
 
     // --- Migration ---

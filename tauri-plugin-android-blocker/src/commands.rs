@@ -48,22 +48,6 @@ pub(crate) async fn stop_manual_block<R: Runtime>(
 }
 
 #[command]
-pub(crate) async fn temporary_unlock<R: Runtime>(
-    app: AppHandle<R>,
-    id: String,
-) -> Result<SuccessResponse> {
-    app.android_blocker()
-        .temporary_unlock(TemporaryUnlockRequest { id })
-}
-
-#[command]
-pub(crate) async fn get_blocking_state<R: Runtime>(
-    app: AppHandle<R>,
-) -> Result<BlockingStateResponse> {
-    app.android_blocker().get_blocking_state()
-}
-
-#[command]
 pub(crate) async fn read_native_schedules<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<NativeSchedulesResponse> {

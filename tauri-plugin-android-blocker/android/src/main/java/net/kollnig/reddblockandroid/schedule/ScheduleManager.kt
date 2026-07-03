@@ -15,22 +15,16 @@ import java.util.concurrent.TimeUnit
 /**
  * Schedule utilities.
  *
- * Blocking for DAILY/WEEKLY schedules is now evaluated in real-time by
- * [Schedules.isScheduleActive] / [isScheduleActiveNow], so there is no
- * need for WorkManager activation/deactivation workers or a periodic watcher.
+ * Blocking for DAILY/WEEKLY schedules is evaluated in real-time by
+ * [isScheduleActiveNow], so there is no need for WorkManager
+ * activation/deactivation workers or a periodic watcher.
  *
- * The only WorkManager usage that remains is [scheduleReEnable], which
- * re-enables a schedule after the user temporarily disables it.
+ * WorkManager is used only for one-off deferred transitions:
+ * [scheduleStopSession] ends a manual block when its duration elapses,
+ * and [scheduleReEnable] ends a pause at its configured expiry.
  */
 object ScheduleManager {
     private const val TAG = "ScheduleManager"
-
-    fun cancelSchedule(context: Context, scheduleId: String) {
-        val workManager = WorkManager.getInstance(context)
-        workManager.cancelUniqueWork(getReEnableWorkName(scheduleId))
-        workManager.cancelUniqueWork(getStopSessionWorkName(scheduleId))
-        Log.d(TAG, "Cancelled work for schedule: $scheduleId")
-    }
 
     /** Enqueues [StopSessionWorker] to end a one-off manual block at [delayMs] from now. */
     fun scheduleStopSession(context: Context, scheduleId: String, delayMs: Long) {
@@ -58,6 +52,7 @@ object ScheduleManager {
 
     private fun getStopSessionWorkName(scheduleId: String) = "schedule_stopsession_$scheduleId"
 
+    /** Enqueues [ReEnableWorker] to end a pause [delayMs] from now. */
     fun scheduleReEnable(context: Context, scheduleId: String, delayMs: Long) {
         val inputData = Data.Builder()
             .putString(ReEnableWorker.KEY_SCHEDULE_ID, scheduleId)
@@ -77,9 +72,18 @@ object ScheduleManager {
         Log.d(TAG, "Scheduled re-enable for schedule $scheduleId in ${delayMs / 60000} minutes")
     }
 
+    fun cancelReEnable(context: Context, scheduleId: String) {
+        WorkManager.getInstance(context).cancelUniqueWork(getReEnableWorkName(scheduleId))
+    }
+
     private fun getReEnableWorkName(scheduleId: String) = "schedule_reenable_$scheduleId"
 
     fun isScheduleActiveNow(schedule: Schedule): Boolean {
+        // One-shot occurrence: active iff now is inside the absolute window.
+        schedule.activeUntilMs?.let { until ->
+            val now = System.currentTimeMillis()
+            return now >= (schedule.activeFromMs ?: 0L) && now < until
+        }
         return getScheduleStartTime(schedule) != null
     }
 

@@ -307,18 +307,6 @@
           "markdownDescription": "Denies the check_blocker_permissions command without any pre-configured scope."
         },
         {
-          "description": "Enables the get_blocking_state command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-get-blocking-state",
-          "markdownDescription": "Enables the get_blocking_state command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the get_blocking_state command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-get-blocking-state",
-          "markdownDescription": "Denies the get_blocking_state command without any pre-configured scope."
-        },
-        {
           "description": "Enables the get_installed_apps command without any pre-configured scope.",
           "type": "string",
           "const": "allow-get-installed-apps",
@@ -403,22 +391,10 @@
           "markdownDescription": "Denies the stop_manual_block command without any pre-configured scope."
         },
         {
-          "description": "Enables the temporary_unlock command without any pre-configured scope.",
-          "type": "string",
-          "const": "allow-temporary-unlock",
-          "markdownDescription": "Enables the temporary_unlock command without any pre-configured scope."
-        },
-        {
-          "description": "Denies the temporary_unlock command without any pre-configured scope.",
-          "type": "string",
-          "const": "deny-temporary-unlock",
-          "markdownDescription": "Denies the temporary_unlock command without any pre-configured scope."
-        },
-        {
-          "description": "Default permissions for the android-blocker plugin\n#### This default permission set includes:\n\n- `allow-check-blocker-permissions`\n- `allow-open-accessibility-settings`\n- `allow-set-schedules`\n- `allow-start-manual-block`\n- `allow-stop-manual-block`\n- `allow-temporary-unlock`\n- `allow-get-blocking-state`\n- `allow-read-native-schedules`\n- `allow-get-installed-apps`\n- `allow-set-event-handler`",
+          "description": "Default permissions for the android-blocker plugin\n#### This default permission set includes:\n\n- `allow-check-blocker-permissions`\n- `allow-open-accessibility-settings`\n- `allow-set-schedules`\n- `allow-start-manual-block`\n- `allow-stop-manual-block`\n- `allow-read-native-schedules`\n- `allow-get-installed-apps`\n- `allow-set-event-handler`",
           "type": "string",
           "const": "default",
-          "markdownDescription": "Default permissions for the android-blocker plugin\n#### This default permission set includes:\n\n- `allow-check-blocker-permissions`\n- `allow-open-accessibility-settings`\n- `allow-set-schedules`\n- `allow-start-manual-block`\n- `allow-stop-manual-block`\n- `allow-temporary-unlock`\n- `allow-get-blocking-state`\n- `allow-read-native-schedules`\n- `allow-get-installed-apps`\n- `allow-set-event-handler`"
+          "markdownDescription": "Default permissions for the android-blocker plugin\n#### This default permission set includes:\n\n- `allow-check-blocker-permissions`\n- `allow-open-accessibility-settings`\n- `allow-set-schedules`\n- `allow-start-manual-block`\n- `allow-stop-manual-block`\n- `allow-read-native-schedules`\n- `allow-get-installed-apps`\n- `allow-set-event-handler`"
         }
       ]
     }
