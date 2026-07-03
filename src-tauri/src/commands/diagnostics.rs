@@ -335,6 +335,10 @@ fn collect_app_data_info(app: &tauri::AppHandle) -> AppDataInfo {
 
     let pretty = serde_json::from_str::<serde_json::Value>(&raw)
         .ok()
+        .map(|mut v| {
+            strip_diagnostics_only_execution_fields(&mut v);
+            v
+        })
         .and_then(|v| serde_json::to_string_pretty(&v).ok())
         .unwrap_or(raw);
 
@@ -342,6 +346,25 @@ fn collect_app_data_info(app: &tauri::AppHandle) -> AppDataInfo {
         path: path_str,
         pretty_json: Some(pretty),
         error: None,
+    }
+}
+
+/// Keep diagnostics focused on persisted user intent. Runtime execution caches
+/// used by backend enforcement stay in `current_blocking`, not the app-data view.
+fn strip_diagnostics_only_execution_fields(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            map.remove("resolvedSegments");
+            for child in map.values_mut() {
+                strip_diagnostics_only_execution_fields(child);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                strip_diagnostics_only_execution_fields(item);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -381,6 +404,38 @@ fn collect_fda_info_for_diagnostics(browsers: &profile_scan::ScanResult) -> FdaI
         safari_plist_readable: None,
         onboarding_choice: String::new(),
         safari_needs_fda_access: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_diagnostics_only_execution_fields;
+    use serde_json::json;
+
+    #[test]
+    fn diagnostics_app_data_strips_resolved_segments_recursively() {
+        let mut value = json!({
+            "schedules": [{
+                "id": "sch-1",
+                "segments": [{ "days": [1] }],
+                "resolvedSegments": [{
+                    "activeFromTimestampMs": 100,
+                    "activeUntilTimestampMs": 200
+                }]
+            }],
+            "nested": {
+                "resolvedSegments": [{
+                    "activeFromTimestampMs": 300,
+                    "activeUntilTimestampMs": 400
+                }]
+            }
+        });
+
+        strip_diagnostics_only_execution_fields(&mut value);
+
+        assert!(value["schedules"][0].get("resolvedSegments").is_none());
+        assert!(value["nested"].get("resolvedSegments").is_none());
+        assert_eq!(value["schedules"][0]["segments"][0]["days"][0], 1);
     }
 }
 

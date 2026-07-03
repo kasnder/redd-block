@@ -131,7 +131,7 @@ export function parseReleaseNotes(markdown, version) {
     if (!normalized || !markdown) return empty;
 
     const sectionRe = new RegExp(`^## v${escapeRegExp(normalized)}(?:\\s|$)`);
-    const lines = markdown.split('\n');
+    const lines = markdown.split(/\r?\n/);
     let inSection = false;
 
     /** @type {string[]} */
@@ -162,7 +162,8 @@ export function parseReleaseNotes(markdown, version) {
         blockquoteLines = [];
     };
 
-    for (const line of lines) {
+    for (const rawLine of lines) {
+        const line = rawLine.trimEnd();
         if (/^## v[0-9]/.test(line)) {
             if (inSection) break;
             if (sectionRe.test(line)) inSection = true;
@@ -227,6 +228,81 @@ export function parseReleaseNotes(markdown, version) {
     }
 
     return { summary, groups };
+}
+
+/** @param {string} label */
+function normalizeGroupLabel(label) {
+    return String(label || '').trim().toLowerCase();
+}
+
+/** @param {string} platformKey @returns {'windows' | 'macos' | 'ios' | null} */
+function normalizePlatformKey(platformKey) {
+    const key = String(platformKey || '').trim().toLowerCase();
+    if (key === 'windows' || key === 'macos' || key === 'ios') {
+        return key;
+    }
+    return null;
+}
+
+/** @param {string} label @param {string} platformKey */
+function labelMatchesPlatform(label, platformKey) {
+    return normalizeGroupLabel(label) === platformKey;
+}
+
+/**
+ * Flatten `### BY PLATFORM` → `#### DESKTOP` for the current device.
+ * Cross-platform `###` sections are kept as-is.
+ *
+ * @param {ParsedReleaseNotes} notes
+ * @param {string | null | undefined} platformKey `windows` | `macos` | `ios`
+ * @returns {ParsedReleaseNotes}
+ */
+export function filterReleaseNotesForPlatform(notes, platformKey) {
+    const platform = normalizePlatformKey(platformKey);
+    if (!platform || !notes) {
+        return notes;
+    }
+
+  /** @type {ReleaseNoteGroup[]} */
+    const groups = [];
+
+    for (const group of notes.groups || []) {
+        if (normalizeGroupLabel(group.label) !== 'by platform') {
+            groups.push(group);
+            continue;
+        }
+
+        for (const child of group.children || []) {
+            if (normalizeGroupLabel(child.label) !== 'desktop') {
+                continue;
+            }
+
+            if (platform !== 'ios') {
+                /** @type {ReleaseNoteItem[]} */
+                const desktopItems = [...child.items];
+                for (const nested of child.children || []) {
+                    if (normalizeGroupLabel(nested.label) === 'all desktop') {
+                        desktopItems.push(...nested.items);
+                    }
+                }
+                if (desktopItems.length) {
+                    groups.push({ label: 'Desktop', items: desktopItems, children: [] });
+                }
+            }
+
+            for (const nested of child.children || []) {
+                if (labelMatchesPlatform(nested.label, platform)) {
+                    groups.push({
+                        label: nested.label,
+                        items: [...nested.items],
+                        children: [],
+                    });
+                }
+            }
+        }
+    }
+
+    return { summary: notes.summary, groups };
 }
 
 /**

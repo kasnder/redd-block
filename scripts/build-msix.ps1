@@ -181,6 +181,14 @@ $manifest = @"
         <virtualization:ExcludedKey>HKEY_CURRENT_USER\Software\Mozilla\NativeMessagingHosts</virtualization:ExcludedKey>
       </virtualization:ExcludedKeys>
     </virtualization:RegistryWriteVirtualization>
+    <!-- v3.1.7 excluded registry only; Chrome still could not spawn the native
+         host because manifests + staged exe were written under the MSIX virtual
+         copy of %LOCALAPPDATA%. Browsers read the real path from registry. -->
+    <virtualization:FileSystemWriteVirtualization>
+      <virtualization:ExcludedDirectories>
+        <virtualization:ExcludedDirectory>`$(KnownFolder:LocalAppData)\ReDD Blocker</virtualization:ExcludedDirectory>
+      </virtualization:ExcludedDirectories>
+    </virtualization:FileSystemWriteVirtualization>
   </Properties>
   
   <Dependencies>

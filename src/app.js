@@ -40,6 +40,7 @@ import {
     resolveReleaseNotesForVersion,
     renderReleaseNotesHtml,
     releaseNotesHasContent,
+    filterReleaseNotesForPlatform,
 } from './changelog.js';
 // Compatibility layer wrapping Tauri APIs
 const tauriAPI = {
@@ -709,6 +710,45 @@ function resolveOneShotOccurrences(schedule) {
     return occurrences;
 }
 
+function buildResolvedOneShotSegment(occurrence) {
+    return {
+        startHour: occurrence.start.getHours(),
+        startMinute: occurrence.start.getMinutes(),
+        endHour: occurrence.end.getHours(),
+        endMinute: occurrence.end.getMinutes(),
+        days: [],
+        activeFromTimestampMs: occurrence.start.getTime(),
+        activeUntilTimestampMs: occurrence.end.getTime()
+    };
+}
+
+function buildResolvedOneShotSegments(schedule) {
+    return resolveOneShotOccurrences(schedule).map(buildResolvedOneShotSegment);
+}
+
+function buildPersistedSchedule(schedule) {
+    if (!schedule || !Array.isArray(schedule.segments)) return schedule;
+
+    const { resolvedSegments: _oldResolvedSegments, ...baseSchedule } = schedule;
+    if (!isNonRepeatingSchedule(schedule)) {
+        return baseSchedule;
+    }
+
+    return {
+        ...baseSchedule,
+        resolvedSegments: buildResolvedOneShotSegments(schedule)
+    };
+}
+
+function buildPersistedAppData() {
+    return {
+        ...appData,
+        schedules: Array.isArray(appData.schedules)
+            ? appData.schedules.map(buildPersistedSchedule)
+            : []
+    };
+}
+
 function getIOSScheduleEntryWindow(schedule, seg) {
     const createdAt = new Date(schedule.createdAt || Date.now());
 
@@ -768,17 +808,11 @@ async function syncSchedulesToHelper() {
                     occurrences.forEach((occurrence, occurrenceIdx) => {
                         flatEntries.push({
                             id: `${schedule.id}-${occurrence.segmentIndex}-${occurrenceIdx}`,
-                            startHour: occurrence.start.getHours(),
-                            startMinute: occurrence.start.getMinutes(),
-                            endHour: occurrence.end.getHours(),
-                            endMinute: occurrence.end.getMinutes(),
-                            days: [],
+                            ...buildResolvedOneShotSegment(occurrence),
                             domains,
                             appTokenData: iosPayload.appTokenData,
                             categoryTokenData: iosPayload.categoryTokenData,
                             repeats: false,
-                            activeFromTimestampMs: occurrence.start.getTime(),
-                            activeUntilTimestampMs: occurrence.end.getTime(),
                             isPaused: !!schedule.isPaused,
                             pauseEndTimestampMs: schedule.pauseEndTime || null,
                             blocklistEmoji,
@@ -848,15 +882,7 @@ async function syncSchedulesToHelper() {
         const helperSchedules = (appData.schedules || []).map(schedule => {
             const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
             const helperSegments = isNonRepeatingSchedule(schedule)
-                ? resolveOneShotOccurrences(schedule).map(occurrence => ({
-                    startHour: occurrence.start.getHours(),
-                    startMinute: occurrence.start.getMinutes(),
-                    endHour: occurrence.end.getHours(),
-                    endMinute: occurrence.end.getMinutes(),
-                    days: [],
-                    activeFromTimestampMs: occurrence.start.getTime(),
-                    activeUntilTimestampMs: occurrence.end.getTime()
-                }))
+                ? buildResolvedOneShotSegments(schedule)
                 : (schedule.segments || []).map(seg => ({
                     startHour: seg.startHour,
                     startMinute: seg.startMinute,
@@ -1553,14 +1579,15 @@ function resetUpdateBannerWhatsNewPanel(whatsNewBtn, notesPanel, notesContent) {
 }
 
 function applyUpdateBannerReleaseNotes(notes, whatsNewBtn, notesPanel, notesContent) {
-    if (!releaseNotesHasContent(notes) || !whatsNewBtn || !notesPanel || !notesContent) {
+    const filtered = filterReleaseNotesForPlatform(notes, getLatestVersionPlatformKey());
+    if (!releaseNotesHasContent(filtered) || !whatsNewBtn || !notesPanel || !notesContent) {
         whatsNewBtn?.classList.add('hidden');
         resetUpdateBannerWhatsNewPanel(whatsNewBtn, notesPanel, notesContent);
         return;
     }
     whatsNewBtn.innerHTML = updateBannerWhatsNewButtonHtml();
     whatsNewBtn.classList.remove('hidden');
-    notesContent.innerHTML = renderReleaseNotesHtml(notes);
+    notesContent.innerHTML = renderReleaseNotesHtml(filtered);
 }
 
 function normalizeReleaseVersion(version) {
@@ -3505,9 +3532,7 @@ function syncMigrationPostHeader(state) {
     if (readyBanner) {
         readyBanner.classList.toggle('hidden', !showReadyBanner);
         if (showReadyBanner && readyText) {
-            const count = migrationBrowserKeys(state).length;
-            const key = count === 1 ? 'migrationSetupAllReadyOne' : 'migrationSetupAllReadyMany';
-            readyText.innerHTML = tSettings(key);
+            readyText.innerHTML = tSettings('migrationSetupAllReady');
         }
     }
 
@@ -6951,7 +6976,7 @@ async function loadData() {
 
 // Save data to main process
 async function saveData() {
-    await tauriAPI.saveData(appData);
+    await tauriAPI.saveData(buildPersistedAppData());
 }
 
 /// Run expiry once (e.g. on app load) so in-memory state matches Screen Time / helper.
@@ -19464,8 +19489,7 @@ const SETTINGS_TRANSLATIONS = {
         webAutomationBannerBody: 'ReDD Blocker needs permission to control {browsers} to block websites. Enable it under Privacy & Security → Automation, then the block will take effect.',
         migrationDone: 'I\'m all set up',
         migrationSkip: 'Skip for now',
-        migrationSetupAllReadyOne: '<strong>Your browser is ready.</strong> You can finish setup.',
-        migrationSetupAllReadyMany: '<strong>All your browsers are ready.</strong> You can finish setup.',
+        migrationSetupAllReady: '<strong>All detected browsers are configured.</strong> You can finish setup.',
         migrationEnforcementHeadline: 'Browser enforcement',
         migrationEnforcementDescMacAutomation: 'To hold yourself accountable, your <strong>browser is automatically closed</strong> if you turn off Automation during blocking.',
         migrationEnforcementDescMacFirefox: 'To hold yourself accountable, your <strong>browser is automatically closed</strong> if you turn off Automation or disable ReDD Focus during blocking.',
@@ -20252,8 +20276,7 @@ const SETTINGS_TRANSLATIONS = {
         webAutomationBannerBody: 'ReDD Blocker skal have tilladelse til at styre {browsers} for at blokere websteder. Slå det til under Anonymitet & sikkerhed → Automatisering, så træder blokeringen i kraft.',
         migrationDone: 'Jeg er klar',
         migrationSkip: 'Spring over for nu',
-        migrationSetupAllReadyOne: '<strong>Din browser er klar.</strong> Du kan afslutte opsætningen.',
-        migrationSetupAllReadyMany: '<strong>Alle dine browsere er klar.</strong> Du kan afslutte opsætningen.',
+        migrationSetupAllReady: '<strong>Alle fundne browsere er konfigureret.</strong> Du kan afslutte opsætningen.',
         migrationEnforcementHeadline: 'Browser-beskyttelse',
         migrationEnforcementDescMacAutomation: 'For at holde dig ansvarlig bliver din <strong>browser automatisk lukket</strong>, hvis du slår Automatisering fra under blokering.',
         migrationEnforcementDescMacFirefox: 'For at holde dig selv fokuseret bliver din <strong>browser automatisk lukket</strong>, hvis du slår Automatisering fra eller deaktiverer ReDD Focus under blokering.',

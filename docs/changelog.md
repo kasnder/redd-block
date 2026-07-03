@@ -12,29 +12,48 @@ lists still work.
 
 ## v3.5.0
 
-> **Easier upgrades.** When a new version is available, the update banner shows
-> what's new and lets you reinstall directly from the app.
+### UPDATE BANNER
 
-### UPDATES
+- **What's new?** The update banner has an expandable section with
+  grouped release notes for the newest version. Only changes relevant to
+  your device are shown.
+- **In-app reinstall.** The 'Reinstall' button downloads the latest installer 
+  from GitHub with a progress indicator and opens it when ready (if compatible
+  with device).
+- **Update banner layout.** Updated layout of all elements in the update banner
+  to align with main content.
 
-- **What's new?** The update banner loads structured release notes from the
-  changelog with an expandable **What's new?** section.
-- **In-app reinstall.** **Reinstall** downloads the latest installer from GitHub
-  with a progress indicator and opens it when ready.
-- **Verified downloads (macOS).** The macOS `.pkg` is checked against the
-  published checksum before it opens.
-- **Installer guidance (macOS).** After download, a prompt reminds you to follow
-  the installer steps; the app reopens when the update finishes.
-- **Banner layout.** Version text, **What's new?**, and **Reinstall** align with
-  **My Focus Spaces** and **Settings** in the main header.
+### ONBOARDING
+
+- **Layout improvements.** App icon and onboarding title text is now centered.
+
+### BRANDING
+
+- **App subtitle.** Installer and store copy now use **ReDD Blocker: Space for
+  Focus**.
 
 ### BY PLATFORM
 
 #### DESKTOP
 
 - **Browser setup.** Subtitles wrap on narrow widths instead of overflowing.
-- **Extension mode.** Switching to extension blocking skips the setup overlay when
-  permissions are already satisfied.
+
+##### macOS
+
+- **Extension mode.** Switching a browser to extension blocking in Settings skips
+  the setup overlay when permissions are already satisfied.
+- **Verified downloads.** The macOS `.pkg` is checked against the published
+  checksum before it opens.
+- **Installer guidance.** After download, a prompt reminds you to follow the
+  installer steps; the app reopens when the update finishes.
+
+##### Windows
+
+- **Taskbar icon.** The app icon on the taskbar shows smooth rounded corners on
+  the cream logo, without dark wedges in the corners.
+- **Microsoft Store extension blocking.** Browser extension setup works correctly
+  in the Store build — native-messaging files are written where Chrome and Edge
+  can find them.
 
 - **Version:** 3.5.0 (macOS, Windows, and iOS).
 
