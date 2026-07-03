@@ -6,6 +6,10 @@ import { escapeHtml } from './utils.js';
 import { pushModalUndo } from './app.js';
 import { ensureInstalledAppsCache, displayNameForBlockedApp } from './blocking-platform.js';
 
+// The blocklist modal's selected-apps array lives inside setupModalListeners
+// (app.js) and is shared with this picker via `window.modalApps` — the same
+// bridge already used for `window.lockedApps`. The array is mutated in place
+// (push/splice), never reassigned, so both sides always see the same instance.
 export async function openInstalledAppsPicker() {
     const modal = document.getElementById('app-picker-modal');
     const listEl = document.getElementById('app-picker-list');
@@ -56,7 +60,7 @@ export async function openInstalledAppsPicker() {
         }
 
         listEl.innerHTML = filtered.map(app => {
-            const alreadyAdded = modalApps.some(a => a.toLowerCase() === app.process_name.toLowerCase());
+            const alreadyAdded = window.modalApps.some(a => a.toLowerCase() === app.process_name.toLowerCase());
             const isChecked = selectedProcessNames.has(app.process_name) || alreadyAdded;
             const checkedClass = isChecked ? ' checked' : '';
             const checkedAttr = isChecked ? ' checked' : '';
@@ -93,7 +97,7 @@ export async function openInstalledAppsPicker() {
 
     function updateAddButton() {
         const newCount = [...selectedProcessNames].filter(
-            p => !modalApps.some(a => a.toLowerCase() === p.toLowerCase())
+            p => !window.modalApps.some(a => a.toLowerCase() === p.toLowerCase())
         ).length;
         addBtn.textContent = newCount > 0 ? `Add Selected (${newCount})` : 'Add Selected';
         addBtn.disabled = newCount === 0;
@@ -125,19 +129,19 @@ export async function openInstalledAppsPicker() {
     // Add Selected
     addBtn.onclick = () => {
         const toAdd = [...selectedProcessNames].filter(
-            p => !modalApps.some(a => a.toLowerCase() === p.toLowerCase())
+            p => !window.modalApps.some(a => a.toLowerCase() === p.toLowerCase())
         );
         if (toAdd.length > 0) {
             const toAddCopy = [...toAdd];
             pushModalUndo('app', () => {
                 toAddCopy.forEach(a => {
-                    const i = modalApps.indexOf(a);
-                    if (i !== -1) modalApps.splice(i, 1);
+                    const i = window.modalApps.indexOf(a);
+                    if (i !== -1) window.modalApps.splice(i, 1);
                 });
                 window.renderModalTags();
             });
             for (const appName of toAdd) {
-                modalApps.push(appName);
+                window.modalApps.push(appName);
             }
             window.renderModalTags();
         }
@@ -151,20 +155,20 @@ export async function openInstalledAppsPicker() {
         closePickerModal();
         const appNames = await tauriAPI.openAppPicker();
         if (appNames && appNames.length > 0) {
-            const toAdd = appNames.filter(n => !modalApps.includes(n));
+            const toAdd = appNames.filter(n => !window.modalApps.includes(n));
             if (toAdd.length > 0) {
                 const toAddCopy = [...toAdd];
                 pushModalUndo('app', () => {
                     toAddCopy.forEach(a => {
-                        const i = modalApps.indexOf(a);
-                        if (i !== -1) modalApps.splice(i, 1);
+                        const i = window.modalApps.indexOf(a);
+                        if (i !== -1) window.modalApps.splice(i, 1);
                     });
                     window.renderModalTags();
                 });
             }
             for (const appName of appNames) {
-                if (!modalApps.includes(appName)) {
-                    modalApps.push(appName);
+                if (!window.modalApps.includes(appName)) {
+                    window.modalApps.push(appName);
                 }
             }
             window.renderModalTags();
