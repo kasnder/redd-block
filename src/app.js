@@ -660,6 +660,45 @@ function resolveOneShotOccurrences(schedule) {
     return occurrences;
 }
 
+function buildResolvedOneShotSegment(occurrence) {
+    return {
+        startHour: occurrence.start.getHours(),
+        startMinute: occurrence.start.getMinutes(),
+        endHour: occurrence.end.getHours(),
+        endMinute: occurrence.end.getMinutes(),
+        days: [],
+        activeFromTimestampMs: occurrence.start.getTime(),
+        activeUntilTimestampMs: occurrence.end.getTime()
+    };
+}
+
+function buildResolvedOneShotSegments(schedule) {
+    return resolveOneShotOccurrences(schedule).map(buildResolvedOneShotSegment);
+}
+
+function buildPersistedSchedule(schedule) {
+    if (!schedule || !Array.isArray(schedule.segments)) return schedule;
+
+    const { resolvedSegments: _oldResolvedSegments, ...baseSchedule } = schedule;
+    if (!isNonRepeatingSchedule(schedule)) {
+        return baseSchedule;
+    }
+
+    return {
+        ...baseSchedule,
+        resolvedSegments: buildResolvedOneShotSegments(schedule)
+    };
+}
+
+function buildPersistedAppData() {
+    return {
+        ...appData,
+        schedules: Array.isArray(appData.schedules)
+            ? appData.schedules.map(buildPersistedSchedule)
+            : []
+    };
+}
+
 function getIOSScheduleEntryWindow(schedule, seg) {
     const createdAt = new Date(schedule.createdAt || Date.now());
 
@@ -719,17 +758,11 @@ async function syncSchedulesToHelper() {
                     occurrences.forEach((occurrence, occurrenceIdx) => {
                         flatEntries.push({
                             id: `${schedule.id}-${occurrence.segmentIndex}-${occurrenceIdx}`,
-                            startHour: occurrence.start.getHours(),
-                            startMinute: occurrence.start.getMinutes(),
-                            endHour: occurrence.end.getHours(),
-                            endMinute: occurrence.end.getMinutes(),
-                            days: [],
+                            ...buildResolvedOneShotSegment(occurrence),
                             domains,
                             appTokenData: iosPayload.appTokenData,
                             categoryTokenData: iosPayload.categoryTokenData,
                             repeats: false,
-                            activeFromTimestampMs: occurrence.start.getTime(),
-                            activeUntilTimestampMs: occurrence.end.getTime(),
                             isPaused: !!schedule.isPaused,
                             pauseEndTimestampMs: schedule.pauseEndTime || null,
                             blocklistEmoji,
@@ -799,15 +832,7 @@ async function syncSchedulesToHelper() {
         const helperSchedules = (appData.schedules || []).map(schedule => {
             const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
             const helperSegments = isNonRepeatingSchedule(schedule)
-                ? resolveOneShotOccurrences(schedule).map(occurrence => ({
-                    startHour: occurrence.start.getHours(),
-                    startMinute: occurrence.start.getMinutes(),
-                    endHour: occurrence.end.getHours(),
-                    endMinute: occurrence.end.getMinutes(),
-                    days: [],
-                    activeFromTimestampMs: occurrence.start.getTime(),
-                    activeUntilTimestampMs: occurrence.end.getTime()
-                }))
+                ? buildResolvedOneShotSegments(schedule)
                 : (schedule.segments || []).map(seg => ({
                     startHour: seg.startHour,
                     startMinute: seg.startMinute,
@@ -6848,7 +6873,7 @@ async function loadData() {
 
 // Save data to main process
 async function saveData() {
-    await tauriAPI.saveData(appData);
+    await tauriAPI.saveData(buildPersistedAppData());
 }
 
 /// Run expiry once (e.g. on app load) so in-memory state matches Screen Time / helper.
