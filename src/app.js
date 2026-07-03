@@ -12007,8 +12007,8 @@ async function removeScheduleOverlayAsset(relativePath) {
 async function acquireScheduleOverlayMicStream() {
     // Default constraints on purpose: disabling autoGainControl leaves the
     // raw hardware input gain, which records far too quietly on many Macs.
-    // The voice-processing teardown that could glitch the first playback is
-    // mitigated by releasing the mic immediately in the recorder's onstop.
+    // The output-muting capture teardown is handled by holding the stream
+    // until the modal closes — see finishScheduleOverlayRecorderKeepMic().
     return navigator.mediaDevices.getUserMedia({ audio: true });
 }
 
@@ -12113,6 +12113,20 @@ async function startScheduleOverlayRecordLevelMeter(stream) {
         console.warn('[schedule-overlay] level meter failed:', err);
         teardownScheduleOverlayRecordLevelAnalyser();
     }
+}
+
+/// Retire the recorder but deliberately KEEP the mic stream open. WebKit
+/// tears down its shared capture unit on a delayed schedule after the last
+/// track stops, and on macOS that teardown reconfigures the *output* device —
+/// audibly muting the first preview playback for a couple of seconds. Holding
+/// the stream until the customise modal closes moves that teardown to a
+/// moment when nothing is playing.
+function finishScheduleOverlayRecorderKeepMic() {
+    stopScheduleOverlayRecordLevelMeter();
+    if (scheduleOverlayMediaRecorder && scheduleOverlayMediaRecorder.state !== 'inactive') {
+        scheduleOverlayMediaRecorder.stop();
+    }
+    scheduleOverlayMediaRecorder = null;
 }
 
 function stopScheduleOverlayRecording() {
@@ -12784,14 +12798,6 @@ function setupScheduleOverlayCustomiseModal() {
             };
             scheduleOverlayMediaRecorder.onstop = async () => {
                 stopScheduleOverlayRecordLevelMeter();
-                // Release the mic now rather than after save+render: macOS
-                // reconfigures the audio output path when capture ends, and if
-                // that lands mid-playback the preview audibly drops out. The
-                // final dataavailable has already fired, so the data is safe.
-                if (scheduleOverlayRecordStream) {
-                    scheduleOverlayRecordStream.getTracks().forEach((track) => track.stop());
-                    scheduleOverlayRecordStream = null;
-                }
                 const mimeType = scheduleOverlayMediaRecorder?.mimeType
                     || scheduleOverlayRecordedMimeType
                     || 'audio/webm';
@@ -12802,7 +12808,7 @@ function setupScheduleOverlayCustomiseModal() {
                         title: tSettings('errorTitle'),
                         kind: 'error',
                     });
-                    stopScheduleOverlayRecording();
+                    finishScheduleOverlayRecorderKeepMic();
                     return;
                 }
                 const buffer = await blob.arrayBuffer();
@@ -12828,7 +12834,7 @@ function setupScheduleOverlayCustomiseModal() {
                     console.error('[schedule-overlay] voice save failed:', err);
                     await message(String(err), { title: tSettings('errorTitle'), kind: 'error' });
                 } finally {
-                    stopScheduleOverlayRecording();
+                    finishScheduleOverlayRecorderKeepMic();
                 }
             };
             // No timeslice: WKWebView records audio/mp4, and its timeslice chunks
