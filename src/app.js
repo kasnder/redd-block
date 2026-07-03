@@ -6034,6 +6034,7 @@ let scheduleOverlayRecordStream = null;
 let scheduleOverlayRecordedMimeType = 'audio/webm';
 let scheduleOverlayRecordAudioContext = null;
 let scheduleOverlayRecordAnalyser = null;
+let scheduleOverlayRecordMeterStream = null;
 let scheduleOverlayRecordLevelRaf = null;
 let scheduleOverlayRecordStartCancelled = false;
 const SCHEDULE_OVERLAY_RECORD_LEVEL_BAR_COUNT = 12;
@@ -12048,6 +12049,10 @@ function teardownScheduleOverlayRecordLevelAnalyser() {
         scheduleOverlayRecordAnalyser = null;
         void ctx.close().catch(() => {});
     }
+    if (scheduleOverlayRecordMeterStream) {
+        scheduleOverlayRecordMeterStream.getTracks().forEach((track) => track.stop());
+        scheduleOverlayRecordMeterStream = null;
+    }
 }
 
 function stopScheduleOverlayRecordLevelMeter() {
@@ -12068,7 +12073,10 @@ async function startScheduleOverlayRecordLevelMeter(stream) {
         if (scheduleOverlayRecordAudioContext.state === 'suspended') {
             await scheduleOverlayRecordAudioContext.resume();
         }
-        const source = scheduleOverlayRecordAudioContext.createMediaStreamSource(stream);
+        // Analyse a clone so the WebAudio tap can't glitch the MediaRecorder's
+        // capture path (WKWebView misbehaves when both consume the same stream).
+        scheduleOverlayRecordMeterStream = stream.clone();
+        const source = scheduleOverlayRecordAudioContext.createMediaStreamSource(scheduleOverlayRecordMeterStream);
         scheduleOverlayRecordAnalyser = scheduleOverlayRecordAudioContext.createAnalyser();
         scheduleOverlayRecordAnalyser.fftSize = 256;
         scheduleOverlayRecordAnalyser.smoothingTimeConstant = 0.8;
@@ -12811,7 +12819,10 @@ function setupScheduleOverlayCustomiseModal() {
                     stopScheduleOverlayRecording();
                 }
             };
-            scheduleOverlayMediaRecorder.start(250);
+            // No timeslice: WKWebView records audio/mp4, and its timeslice chunks
+            // don't concatenate cleanly (audible gaps at chunk boundaries). A single
+            // final dataavailable on stop() yields one properly finalized file.
+            scheduleOverlayMediaRecorder.start();
             setScheduleOverlayRecordingUi('recording');
             void startScheduleOverlayRecordLevelMeter(scheduleOverlayRecordStream);
         } catch (err) {
@@ -12834,9 +12845,8 @@ function setupScheduleOverlayCustomiseModal() {
                 return;
             }
             if (scheduleOverlayMediaRecorder && scheduleOverlayMediaRecorder.state === 'recording') {
-                if (typeof scheduleOverlayMediaRecorder.requestData === 'function') {
-                    scheduleOverlayMediaRecorder.requestData();
-                }
+                // stop() flushes remaining data itself; requestData() beforehand would
+                // force an extra fragment, which glitches WKWebView's mp4 output.
                 scheduleOverlayMediaRecorder.stop();
             } else {
                 stopScheduleOverlayRecording();
