@@ -53,7 +53,21 @@ This section explains the **current** runtime:
 
 | Area | Files |
 |---|---|
-| Frontend orchestration | `src/app.js`, `src/index.html`, `src/styles.css` |
+| Frontend orchestration | `src/app.js` (entry: init sequence + event wiring), `src/index.html`, `src/styles.css` |
+| Frontend shared state | `src/state.js` (mutable cross-module state object), `src/tauri-api.js` (Tauri command compat layer) |
+| Frontend hubs | `src/persistence.js` (load/save/hosts sync), `src/render.js` (render cycle + tick loop), `src/schedule-engine.js` (occurrence math + helper sync) |
+| Frontend features | `src/blocklists.js`, `src/confirm-modals.js`, `src/schedule-editor.js`, `src/schedule-overlay.js`, `src/enforcement.js`, `src/onboarding.js`, `src/blocking-platform.js`, `src/settings.js`, `src/update-banner.js`, `src/theme.js`, `src/override-challenge.js`, `src/time-inputs.js`, `src/website-input.js`, `src/apps-picker.js`, `src/modal-manager.js` |
+| Frontend leaf utilities | `src/utils.js`, `src/i18n.js`, `src/blocklist-utils.js`, `src/dev-internals.js` (test surface: `window.__REDDBLOCK_INTERNALS__`) |
+
+Frontend module conventions: mutable state shared across modules lives on the
+`state` object in `src/state.js` (ES import bindings are read-only, so plain
+`let`s cannot be reassigned across modules); module top level contains
+declarations only — never calls into other app modules — which makes the
+import cycles between hubs and features safe (all cross-module calls are
+hoisted function declarations invoked at runtime). The order-sensitive
+startup sequence lives in the `DOMContentLoaded` handler in `src/app.js`.
+The `window.__REDDBLOCK_INTERNALS__` keys in `src/dev-internals.js` are a
+contract with the in-app test scripts — never rename them.
 | App data persistence | `src-tauri/src/commands/data.rs` |
 | Legacy command names (shim) | `src-tauri/src/commands/helper_shim.rs` |
 | macOS Automation blocking | `src-tauri/src/web_automation.rs`, `src-tauri/src/commands/web_automation.rs` |

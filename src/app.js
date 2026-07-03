@@ -45,6 +45,7 @@ import {
 // Compatibility layer wrapping Tauri APIs — extracted to tauri-api.js
 import { tauriAPI, openUrl } from './tauri-api.js';
 import { state, appState } from './state.js';
+import './dev-internals.js';
 import {
     ALWAYS_ON_END_TIME,
     PROTECTED_APP_NAMES,
@@ -114,11 +115,6 @@ import { SETTINGS_TRANSLATIONS, getSettingsLanguage, weekdayAbbrevMon0List, week
 export const WINDOWS_APPS_SETTINGS_URI = 'ms-settings:appsfeatures';
 
 
-// Expose for integration tests (dev mode only)
-window.__REDDBLOCK_INTERNALS__ = {
-    get appData() { return state.appData; },
-    set appData(val) { state.appData = val; }
-};
 
 /** Blocklist modal undo: session-scoped stack and "last" values for recording previous state. */
 
@@ -3400,45 +3396,3 @@ export function applySettingsLanguage() {
     renderNowBlockingRow();
     if (typeof updateOverridePreview === 'function') updateOverridePreview();
 }
-
-// ========================================
-// DEV MODE: Test Runner Keyboard Shortcut
-// ========================================
-// Press Cmd+Shift+T (Mac) or Ctrl+Shift+T (Windows) to run tests
-document.addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 't') {
-        e.preventDefault();
-        console.log('🧪 Test shortcut detected!');
-        if (window.ReddBlockTests && typeof window.ReddBlockTests.runAllTests === 'function') {
-            window.ReddBlockTests.runAllTests();
-        } else {
-            console.log('⚠️ Tests not loaded. Make sure test-utils.js and blocking-tests.js are included.');
-        }
-    }
-});
-
-// Also expose a global function for running tests directly from console
-window.runBlockingTests = function () {
-    if (window.ReddBlockTests && typeof window.ReddBlockTests.runAllTests === 'function') {
-        window.ReddBlockTests.runAllTests();
-    } else {
-        console.log('⚠️ Tests not loaded. Try: window.ReddBlockTestUtils and window.ReddBlockTests');
-    }
-};
-
-// Expose additional internals for integration tests
-Object.assign(window.__REDDBLOCK_INTERNALS__, {
-    saveData,
-    updateHostsFile,
-    tauriAPI,
-    render,
-    isProtectedApp,
-    PROTECTED_APP_NAMES,
-    isProtectedDomain,
-    PROTECTED_DOMAINS,
-    duplicateBlocklist,
-    getNextCopyName,
-    getMaxOverrideCharsForType
-});
-
-console.log('💡 To run blocking tests, type: runBlockingTests() in the console');
