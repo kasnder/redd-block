@@ -52,4 +52,26 @@ export const state = {
     appBlockingActiveStartOverlay: null, // Custom start-overlay config for the active schedule warning session
     pendingScheduleStartOverlayId: null,
     scheduleOverlayCustomiseSelection: null,
+    editingBlocklistId: null,
+    blocklistModalPreviewSnapshot: null,
+    blocklistModalUndoStack: [],
+    blocklistModalApplyingUndo: false,
+    lastBlocklistNameValue: '',
+    lastOverrideCountValue: '',
+    lastCustomOverrideTextValue: '',
+    lastOverrideTypeValue: '',
+    lastOverrideCountValueBeforeMaxDifficulty: 50,
+    lastOverrideTypeValueBeforeMaxDifficulty: 'random-words',
+    overrideBlockId: null,
+    overrideBlocklistIdForHelper: null,
+    challengeText: '',
+    pauseBlockId: null, // Track which block is being paused
+    pauseChallengeText: '', // Challenge text for pause modal
+    pauseMaxMinutes: null, // Maximum pause duration in minutes (null = unlimited)
+    overrideWordChallengeState: null,
+    pauseWordChallengeState: null,
 };
+
+// Alias for use inside functions whose local parameter is also named `state`
+// (onboarding/migration browser-state objects).
+export const appState = state;

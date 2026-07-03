@@ -44,7 +44,7 @@ import {
 } from './changelog.js';
 // Compatibility layer wrapping Tauri APIs — extracted to tauri-api.js
 import { tauriAPI, openUrl } from './tauri-api.js';
-import { state } from './state.js';
+import { state, appState } from './state.js';
 import {
     ALWAYS_ON_END_TIME,
     PROTECTED_APP_NAMES,
@@ -88,6 +88,8 @@ import {
     syncScheduleOverlayCustomiseEditorState, syncScheduleOverlayCustomiseTitle,
     toggleSchedulePanelOverlayDropdown,
 } from './schedule-overlay.js';
+import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closePauseModal, closeScheduleConfirmModal, closeStartBlockConfirmModal, deselectBlocklist, handleBlocklistSelect, openBlocklistModal, openPauseModal, openResumeConfirmation, proceedWithBlock, proceedWithPause, proceedWithSchedule, proceedWithScheduleEdit, renderScheduleConfirmSegments, setBtnActionLabel, setOverrideCountMaxMode, setStartBlockBtnLeadingIcon, setStartConfirmPrimaryLabel, startBlock, syncAllStopBtnLabelFits, syncOverrideCountUi, syncPauseDurationRowLayout, updateOverridePreview, updatePauseRestartTime, openOverrideModal, updatePauseButtonAppearance, openScheduleOverrideModal, showScheduleConfirmModal, showScheduleEditConfirmModal, syncStopBtnLabelFit, setStartBtnBlocklistInfo } from './confirm-modals.js';
+import { renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, undoDelete, deleteBlocklist, clearPendingScheduleDraft, pendingDelete, saveBlocklistOrderFromDOM, getBlocklistScheduleDraft, saveBlocklistScheduleDraft, isBlocklistCurrentlyActive } from './blocklists.js';
 import { render, kickClockNow, startTickInterval, updateWeekCalendar, syncSelectedControlState, renderNowBlockingRow, renderScheduleAlwaysOnRow, renderScheduleVisibilityChips, renderWeekBlocks, renderBlocklistSelector, getCalendarSegmentLayout, layoutOverlappingBlocks } from './render.js';
 import { formatTitleBarScheduleStartWhen, hasAnyEnforcedBlocks, isNonRepeatingSchedule, isOneOffBlockEnforced, isSchedulePausedNow, pickEarliestUpcomingScheduledBlock, refreshDesktopHelperStatus, resolveOneShotOccurrences, scheduleHasFutureSingleOccurrence, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { dismissTopmostEscapeLayer, isModalVisible, refreshOpenHelperUi, startHelperUiRefreshLoop, stopHelperUiRefreshLoop } from './modal-manager.js';
@@ -114,42 +116,24 @@ window.__REDDBLOCK_INTERNALS__ = {
     set appData(val) { state.appData = val; }
 };
 
-let editingBlocklistId = null;
-let blocklistModalPreviewSnapshot = null;
 /** Blocklist modal undo: session-scoped stack and "last" values for recording previous state. */
-let blocklistModalUndoStack = [];
-let blocklistModalApplyingUndo = false;
 
 export function pushModalUndo(type, undoFn) {
-    if (blocklistModalApplyingUndo) return;
-    blocklistModalUndoStack.push({ type, undo: undoFn });
+    if (state.blocklistModalApplyingUndo) return;
+    state.blocklistModalUndoStack.push({ type, undo: undoFn });
 }
 
-let lastBlocklistNameValue = '';
-let lastOverrideCountValue = '';
-let lastCustomOverrideTextValue = '';
-let lastOverrideTypeValue = '';
-let lastOverrideCountValueBeforeMaxDifficulty = 50;
-let lastOverrideTypeValueBeforeMaxDifficulty = 'random-words';
 /** Reference to the removed Custom Text option so it can be re-added (getElementById returns null after remove()). */
-let overrideBlockId = null;
 /** Blocklist id to pass to helper when confirming single-block override (set when opening modal). */
-let overrideBlocklistIdForHelper = null;
-let challengeText = '';
 let draggedBlocklistId = null; // Track which blocklist is being dragged
 let startupInitializationPromise = null; // Prevent duplicate post-onboarding startup runs
 let startupInitializationComplete = false; // Track whether post-onboarding startup already ran
-let pauseBlockId = null; // Track which block is being paused
-let pauseChallengeText = ''; // Challenge text for pause modal
-let pauseMaxMinutes = null; // Maximum pause duration in minutes (null = unlimited)
-let overrideWordChallengeState = null;
-let pauseWordChallengeState = null;
 /** Max length for blocklist display name (add/edit modal + persisted saves). */
-const BLOCKLIST_NAME_MAX_LENGTH = 60;
+export const BLOCKLIST_NAME_MAX_LENGTH = 60;
 /** Past this length the card title row usually ellipsizes; use "in 11h" instead of "starts in 11h". */
-const BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS = 26;
+export const BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS = 26;
 /** Collapse stop-button emoji+name this many px before measured overflow (iOS flex overlap). */
-const IOS_STOP_BTN_META_COLLAPSE_SLACK_PX = 24;
+export const IOS_STOP_BTN_META_COLLAPSE_SLACK_PX = 24;
 
 // Pre-made website lists offered by the Edit Blocklist "Import" menu. Each
 // list is intentionally small/curated — a starting point users can prune or
@@ -610,7 +594,7 @@ function firefoxInstalledFromState(state) {
 }
 
 async function resolveEnforcementCopyFirefoxInstalled(state) {
-    if (!state.isMacOSDesktop) return false;
+    if (!appState.isMacOSDesktop) return false;
     const fromState = firefoxInstalledFromState(state);
     if (fromState !== null) {
         enforcementCopyFirefoxInstalled = fromState;
@@ -842,11 +826,11 @@ function hadLegacyAutomationBrowserExtension(state) {
 }
 
 async function shouldShowMacAutomationIntro(state) {
-    if (!state.isMacOSDesktop || !hasAcceptedEula() || !hasWelcomeOnboardingBeenShown()) return false;
+    if (!appState.isMacOSDesktop || !hasAcceptedEula() || !hasWelcomeOnboardingBeenShown()) return false;
     if (hasMacAutomationIntroBeenShown() || migrationOnboardingActive) return false;
 
     const extDismissed = !!localStorage.getItem(EXT_ONBOARDING_DISMISSED_KEY);
-    const returningUser = state.appData?.settings?.onboardingComplete === true || extDismissed;
+    const returningUser = appState.appData?.settings?.onboardingComplete === true || extDismissed;
     if (!returningUser) return false;
 
     // Fresh first-run path after EULA — browser-setup overlay covers it.
@@ -873,7 +857,7 @@ async function shouldShowMacAutomationIntro(state) {
     // Prefer the legacy-extension signal for ambiguous cases; anyone who
     // already finished onboarding is treated as an upgrader.
     if (!hadLegacyAutomationBrowserExtension(state)
-        && state.appData?.settings?.onboardingComplete !== true) {
+        && appState.appData?.settings?.onboardingComplete !== true) {
         return false;
     }
 
@@ -1125,7 +1109,7 @@ function wireMigrationPostPhase(state) {
     // macOS: the first paint shows Automation rows as 'unknown' because
     // the native status query is async. Fetch it, then re-render so the
     // rows settle to their real Allowed / needs-permission state.
-    if (state.isMacOSDesktop) {
+    if (appState.isMacOSDesktop) {
         refreshAutomationPermissionStatus().then(() => {
             if (migrationOnboardingActive) renderBrowserInstallButtons(state, { force: true });
         });
@@ -2125,7 +2109,7 @@ function migrationBrowserKeys(state) {
 // subtitle is built from live state. Other platforms keep the
 // extension-everywhere copy.
 function migrationExtHeaderCopy(state) {
-    if (!state.isMacOSDesktop) return null;
+    if (!appState.isMacOSDesktop) return null;
     const focusLogoHtml =
         `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
     const browsers = state?.browsers || lastMigrationBrowserState?.browsers || {};
@@ -2150,7 +2134,7 @@ function invalidateMigrationMacCopyCache() {
 }
 
 function syncMigrationMacHowto(state) {
-    if (!state.isMacOSDesktop) return;
+    if (!appState.isMacOSDesktop) return;
     const focusLogoHtml =
         `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
     const browsers = state?.browsers || lastMigrationBrowserState?.browsers || {};
@@ -2232,7 +2216,7 @@ function syncMigrationPostHeader(state) {
 function migrationExtLinesHtml(state) {
     const focusLogoHtml =
         `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
-    if (state.isMacOSDesktop) {
+    if (appState.isMacOSDesktop) {
         if (isMacFreshMigrationPost()) {
             return '';
         }
@@ -2505,7 +2489,7 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
     // Keep the header subtitle in sync with the live scan (the macOS
     // copy depends on whether Firefox is installed).
     syncMigrationPostHeader(state);
-    if (state.isMacOSDesktop) syncMigrationMacHowto(state);
+    if (appState.isMacOSDesktop) syncMigrationMacHowto(state);
     const extLines = document.getElementById('migration-checklist-ext-lines');
     if (extLines) extLines.innerHTML = migrationExtLinesHtml(state);
     const sig = migrationBrowserRenderSignature(state);
@@ -2608,12 +2592,12 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
             afterHint.className = 'migration-browser-hint migration-browser-after-hint';
             const privNoun = privateModeNoun(key);
             if (key === 'firefox') {
-                afterHint.innerHTML = state.isMacOSDesktop
+                afterHint.innerHTML = appState.isMacOSDesktop
                     ? tSettings('migrationPostInstallFirefoxMacHtml')
                     : tSettings('migrationPostInstallFirefoxHtml');
             } else if (key === 'safari') {
                 afterHint.innerHTML = tSettings('migrationPostInstallSafariHtml');
-            } else if (state.isMacOSDesktop) {
+            } else if (appState.isMacOSDesktop) {
                 const tpl = tSettings('migrationPostInstallChromiumMacHtml');
                 afterHint.innerHTML = tpl
                     .replace('{URL_CHIP}', extensionsUrlChipHtml(key))
@@ -2962,7 +2946,7 @@ async function updateBehaviourChangeBanner(state) {
 
     lastOnboardingState = state;
 
-    if (state.isMacOSDesktop) await refreshAutomationPermissionStatus({ force: true, launchProbe: false });
+    if (appState.isMacOSDesktop) await refreshAutomationPermissionStatus({ force: true, launchProbe: false });
 
     let enforcementEnabled = false;
     try {
@@ -3224,7 +3208,7 @@ async function syncEnforcerClosedBannersWithCompliance(state) {
             return;
         }
     }
-    if (state.isMacOSDesktop) await refreshAutomationPermissionStatus({ force: true, launchProbe: false });
+    if (appState.isMacOSDesktop) await refreshAutomationPermissionStatus({ force: true, launchProbe: false });
     const browsers = state.browsers || {};
     let changed = false;
     for (const key of [...enforcerClosedBannerStates.keys()]) {
@@ -4721,11 +4705,11 @@ function buildAppBlockingSnoozeIconImg(size) {
     return `<img src="${snoozeIconUrl}" alt="" class="app-blocking-snooze-icon" width="${size}" height="${size}" aria-hidden="true">`;
 }
 
-const APP_BLOCKING_SNOOZE_ICON_IMG_12 = buildAppBlockingSnoozeIconImg(12);
+export const APP_BLOCKING_SNOOZE_ICON_IMG_12 = buildAppBlockingSnoozeIconImg(12);
 
 /** `'schedule'` | `'manual'` | null — set when apps newly enter the blocked set. */
 let appBlockingWarningSnoozeUsed = false;
-let appBlockingWarningSnoozedUntilMs = 0;
+export let appBlockingWarningSnoozedUntilMs = 0;
 let appBlockingWarningSnoozeTimer = null;
 let appBlockingSnoozedBlocklistId = null;
 let appBlockingSnoozeCardTickInterval = null;
@@ -4760,7 +4744,7 @@ function ensureAppBlockingSnoozeCardTick() {
     }, 1000);
 }
 
-function getActiveAppBlockingSnoozeBlocklistId(now = Date.now()) {
+export function getActiveAppBlockingSnoozeBlocklistId(now = Date.now()) {
     if (appBlockingWarningSnoozedUntilMs <= now) return null;
     return appBlockingSnoozedBlocklistId;
 }
@@ -4778,7 +4762,7 @@ function resolveSnoozedBlocklistIdFromWarning() {
     return findResponsibleBlocklistForWarningApps(names)?.id ?? null;
 }
 
-function formatAppBlockingSnoozeStartsIn(remainingMs) {
+export function formatAppBlockingSnoozeStartsIn(remainingMs) {
     const mins = Math.max(1, Math.ceil(remainingMs / 60000));
     if (mins < 60) {
         return tSettingsFmt('blocklistScheduleStartsInMinutesFmt', { n: String(mins) });
@@ -5249,7 +5233,7 @@ function normalizeBlockedAppKey(name) {
     return String(name || '').trim().replace(/\.exe$/i, '').toLowerCase();
 }
 
-function displayNameForBlockedApp(processName) {
+export function displayNameForBlockedApp(processName) {
     const key = normalizeBlockedAppKey(processName);
     if (!key) return processName;
     const match = (state.installedAppsCache || []).find(
@@ -5337,7 +5321,7 @@ export function isHelperInstallCancelled(errorMsg) {
 }
 
 /** True if the error indicates the helper daemon is not reachable (e.g. connection refused on Windows). */
-function isHelperConnectionError(errorMsg) {
+export function isHelperConnectionError(errorMsg) {
     if (!errorMsg || typeof errorMsg !== 'string') return false;
     return errorMsg.includes('Failed to connect to helper') || errorMsg.includes('refused') || errorMsg.includes('10061');
 }
@@ -5360,7 +5344,7 @@ async function checkScreentimeAuth() {
 }
 
 // Request Screen Time authorization (iOS only)
-async function requestScreentimeAuth() {
+export async function requestScreentimeAuth() {
     try {
         const result = await tauriAPI.screentimeRequestAuth();
         state.screentimeAuthorized = result.granted;
@@ -5525,7 +5509,7 @@ async function onAndroidResumed() {
 }
 
 // Dedicated close functions for modals where blindly re-adding .hidden
-// would skip cleanup (resetting editingBlocklistId, challengeText, etc.).
+// would skip cleanup (resetting state.editingBlocklistId, state.challengeText, etc.).
 // Modals not listed here (app-picker-modal's close is a local closure,
 // settings-modal has no dedicated close fn) fall back to a plain hide —
 // an acceptable degradation (stale state clears on next legitimate
@@ -5618,8 +5602,8 @@ function findAndroidBlockingTarget(nativeScheduleId) {
 // in lockstep.
 function openAndroidFrictionGateModal(event) {
     delete window.overrideScheduleId;
-    overrideBlockId = null;
-    overrideBlocklistIdForHelper = null;
+    state.overrideBlockId = null;
+    state.overrideBlocklistIdForHelper = null;
 
     const target = findAndroidBlockingTarget(event.scheduleId);
     if (!target) {
@@ -5635,7 +5619,7 @@ function openAndroidFrictionGateModal(event) {
     let actionLabel = tSettings('stopSchedule');
 
     if (target.type === 'block') {
-        overrideBlockId = target.block.id;
+        state.overrideBlockId = target.block.id;
         blocklist = state.appData.blocklists.find(bl => bl.id === target.block.blocklistId);
         actionLabel = tSettings('stopBlock');
     } else {
@@ -5650,7 +5634,7 @@ function openAndroidFrictionGateModal(event) {
     const charCount = difficulty.count || 15;
     const isRandom = difficulty.type === 'gibberish';
 
-    challengeText = isRandom ? generateGibberish(charCount) : generateRandomWords(charCount);
+    state.challengeText = isRandom ? generateGibberish(charCount) : generateRandomWords(charCount);
 
     const confirmBtn = document.getElementById('confirm-override-btn');
     if (confirmBtn) confirmBtn.textContent = actionLabel;
@@ -5659,7 +5643,7 @@ function openAndroidFrictionGateModal(event) {
     if (titleEl) titleEl.textContent = `${actionLabel} ${blocklistName}`;
 
     const challengeTextEl = document.getElementById('challenge-text');
-    if (challengeTextEl) challengeTextEl.textContent = challengeText;
+    if (challengeTextEl) challengeTextEl.textContent = state.challengeText;
     const challengeInput = document.getElementById('challenge-input');
     if (challengeInput) challengeInput.value = '';
     const progressBar = document.getElementById('challenge-progress-bar');
@@ -6434,13 +6418,13 @@ function setupEventListeners() {
         }
 
         // 3) Both fields empty of pending text — pop stack
-        if (blocklistModalUndoStack.length > 0) {
-            blocklistModalApplyingUndo = true;
-            const entry = blocklistModalUndoStack.pop();
+        if (state.blocklistModalUndoStack.length > 0) {
+            state.blocklistModalApplyingUndo = true;
+            const entry = state.blocklistModalUndoStack.pop();
             try {
                 entry.undo();
             } finally {
-                blocklistModalApplyingUndo = false;
+                state.blocklistModalApplyingUndo = false;
             }
             e.preventDefault();
         }
@@ -7039,13 +7023,13 @@ function setupModalListeners() {
     document.getElementById('blocklist-name').addEventListener('input', () => {
         const nameInput = document.getElementById('blocklist-name');
         nameInput.classList.remove('input-error');
-        const previous = lastBlocklistNameValue;
+        const previous = state.lastBlocklistNameValue;
         pushModalUndo('name', () => {
             nameInput.value = previous;
-            lastBlocklistNameValue = previous;
+            state.lastBlocklistNameValue = previous;
             nameInput.classList.remove('input-error');
         });
-        lastBlocklistNameValue = nameInput.value;
+        state.lastBlocklistNameValue = nameInput.value;
     });
 
     modalWebsiteInput.addEventListener('keydown', (e) => {
@@ -7243,10 +7227,10 @@ function setupModalListeners() {
     // Override type
     document.getElementById('override-type').addEventListener('change', (e) => {
         const overrideTypeSelect = e.target;
-        const previousType = lastOverrideTypeValue;
+        const previousType = state.lastOverrideTypeValue;
         pushModalUndo('override-type', () => {
             overrideTypeSelect.value = previousType;
-            lastOverrideTypeValue = previousType;
+            state.lastOverrideTypeValue = previousType;
             overrideTypeSelect.dispatchEvent(new Event('change'));
         });
 
@@ -7256,14 +7240,14 @@ function setupModalListeners() {
 
         // Clamp to the new type-specific max when switching types.
         overrideCountInput.value = normalizeOverrideCount(overrideCountInput.value, type);
-        lastOverrideTypeValue = overrideTypeSelect.value;
+        state.lastOverrideTypeValue = overrideTypeSelect.value;
 
         const maxDifficultyCb = document.getElementById('override-max-difficulty-checkbox');
         if (maxDifficultyCb && maxDifficultyCb.checked && type !== 'custom') {
             const maxCount = getMaxOverrideCharsForType(type);
             overrideCountInput.value = String(maxCount);
             overrideCountInput.max = String(maxCount);
-            lastOverrideCountValue = overrideCountInput.value;
+            state.lastOverrideCountValue = overrideCountInput.value;
             setOverrideCountMaxMode(true);
         }
     });
@@ -7272,35 +7256,35 @@ function setupModalListeners() {
         const overrideTypeSelect = document.getElementById('override-type');
         const overrideCountInput = document.getElementById('override-count');
         if (checked) {
-            lastOverrideTypeValueBeforeMaxDifficulty = overrideTypeSelect.value;
-            lastOverrideCountValueBeforeMaxDifficulty = overrideCountInput.value.trim() || lastOverrideCountValueBeforeMaxDifficulty;
+            state.lastOverrideTypeValueBeforeMaxDifficulty = overrideTypeSelect.value;
+            state.lastOverrideCountValueBeforeMaxDifficulty = overrideCountInput.value.trim() || state.lastOverrideCountValueBeforeMaxDifficulty;
             const type = overrideTypeSelect.value;
             applyOverrideTypeUi(type);
             const maxCount = getMaxOverrideCharsForType(type);
             overrideCountInput.value = String(maxCount);
             overrideCountInput.max = String(maxCount);
-            lastOverrideCountValue = overrideCountInput.value;
+            state.lastOverrideCountValue = overrideCountInput.value;
             setOverrideCountMaxMode(true);
             updateOverridePreview(); // preview must reflect max count (set just above)
         } else {
-            const typeToRestore = lastOverrideTypeValueBeforeMaxDifficulty;
+            const typeToRestore = state.lastOverrideTypeValueBeforeMaxDifficulty;
             overrideTypeSelect.value = typeToRestore;
             applyOverrideTypeUi(typeToRestore);
             const maxChars = getMaxOverrideCharsForType(typeToRestore);
             overrideCountInput.max = String(maxChars);
-            overrideCountInput.value = normalizeOverrideCount(String(lastOverrideCountValueBeforeMaxDifficulty), typeToRestore);
-            lastOverrideCountValue = overrideCountInput.value;
-            lastOverrideCountValueBeforeMaxDifficulty = overrideCountInput.value;
+            overrideCountInput.value = normalizeOverrideCount(String(state.lastOverrideCountValueBeforeMaxDifficulty), typeToRestore);
+            state.lastOverrideCountValue = overrideCountInput.value;
+            state.lastOverrideCountValueBeforeMaxDifficulty = overrideCountInput.value;
             setOverrideCountMaxMode(false);
             updateOverridePreview(); // preview must reflect restored count (set just above)
         }
     });
     document.getElementById('custom-override-text').addEventListener('input', (e) => {
         const customTextArea = e.target;
-        const previous = lastCustomOverrideTextValue;
+        const previous = state.lastCustomOverrideTextValue;
         pushModalUndo('custom-override-text', () => {
             customTextArea.value = previous;
-            lastCustomOverrideTextValue = previous;
+            state.lastCustomOverrideTextValue = previous;
             const warningEl = document.getElementById('override-count-warning');
             const maxChars = getMaxOverrideCharsForType('custom');
             if (previous.length >= maxChars) {
@@ -7331,7 +7315,7 @@ function setupModalListeners() {
             warningEl.classList.add('hidden');
             warningEl.textContent = '';
         }
-        lastCustomOverrideTextValue = e.target.value;
+        state.lastCustomOverrideTextValue = e.target.value;
         updateOverridePreview();
     });
 
@@ -7343,12 +7327,12 @@ function setupModalListeners() {
     });
     document.getElementById('override-count').addEventListener('input', (e) => {
         const overrideCountInput = e.target;
-        const previous = lastOverrideCountValue;
+        const previous = state.lastOverrideCountValue;
         const current = overrideCountInput.value;
         if (previous !== current) {
             pushModalUndo('override-count', () => {
                 overrideCountInput.value = previous;
-                lastOverrideCountValue = previous;
+                state.lastOverrideCountValue = previous;
             });
         }
 
@@ -7361,7 +7345,7 @@ function setupModalListeners() {
         if (rawValue === '') {
             warningEl.classList.add('hidden');
             warningEl.textContent = '';
-            lastOverrideCountValue = e.target.value;
+            state.lastOverrideCountValue = e.target.value;
             updateOverridePreview();
             return;
         }
@@ -7376,7 +7360,7 @@ function setupModalListeners() {
             warningEl.classList.add('hidden');
             warningEl.textContent = '';
         }
-        lastOverrideCountValue = e.target.value;
+        state.lastOverrideCountValue = e.target.value;
         updateOverridePreview();
     });
     document.getElementById('override-count').addEventListener('blur', (e) => {
@@ -7586,8 +7570,8 @@ function setupModalListeners() {
         const showItemDetails = document.getElementById('show-item-details-checkbox').checked;
         // Preserve the blocklist's existing schedule visibility (toggled via the chips above the
         // schedule); default to true for new blocklists.
-        const existingBlocklistForSave = editingBlocklistId
-            ? state.appData.blocklists.find(bl => bl.id === editingBlocklistId)
+        const existingBlocklistForSave = state.editingBlocklistId
+            ? state.appData.blocklists.find(bl => bl.id === state.editingBlocklistId)
             : null;
         const alwaysShowInSchedule = existingBlocklistForSave?.alwaysShowInSchedule !== false;
 
@@ -7599,15 +7583,15 @@ function setupModalListeners() {
         };
         if (maxDifficultyChecked) {
             overrideDifficultyPayload.countBeforeMax = normalizeOverrideCount(
-                String(lastOverrideCountValueBeforeMaxDifficulty),
-                lastOverrideTypeValueBeforeMaxDifficulty
+                String(state.lastOverrideCountValueBeforeMaxDifficulty),
+                state.lastOverrideTypeValueBeforeMaxDifficulty
             );
-            overrideDifficultyPayload.typeBeforeMax = lastOverrideTypeValueBeforeMaxDifficulty;
+            overrideDifficultyPayload.typeBeforeMax = state.lastOverrideTypeValueBeforeMaxDifficulty;
         }
 
         // IMPORTANT: Create copies of the arrays, not references!
         const blocklist = {
-            id: editingBlocklistId || generateId(),
+            id: state.editingBlocklistId || generateId(),
             name,
             mode,
             color,
@@ -7620,8 +7604,8 @@ function setupModalListeners() {
             overrideDifficulty: overrideDifficultyPayload
         };
 
-        if (editingBlocklistId) {
-            const idx = state.appData.blocklists.findIndex(bl => bl.id === editingBlocklistId);
+        if (state.editingBlocklistId) {
+            const idx = state.appData.blocklists.findIndex(bl => bl.id === state.editingBlocklistId);
             if (idx !== -1) {
                 state.appData.blocklists[idx] = blocklist;
             }
@@ -7652,7 +7636,7 @@ function setupModalListeners() {
         }
 
         // Keep live preview while editing, but don't revert after a confirmed save.
-        blocklistModalPreviewSnapshot = null;
+        state.blocklistModalPreviewSnapshot = null;
         closeBlocklistModal();
 
         // Only update blocklist display without resetting schedule segments
@@ -7666,7 +7650,7 @@ function setupModalListeners() {
         // auto-select it so the user doesn't have to click it. `force`
         // clears the deselect flag — creating a new blocklist is a
         // strong "I want to use this" signal.
-        if (!editingBlocklistId) autoSelectSoleBlocklist({ force: true });
+        if (!state.editingBlocklistId) autoSelectSoleBlocklist({ force: true });
 
         // Re-trigger blocklist selection to update button text (name may have changed)
         if (state.selectedBlocklistId) {
@@ -7791,18 +7775,18 @@ function setupOverrideModalListeners() {
     const challengeCurrentWordEl = document.getElementById('challenge-current-word');
 
     function getOverrideTypedValue() {
-        return overrideWordChallengeState?.typedText ?? challengeInput.value;
+        return state.overrideWordChallengeState?.typedText ?? challengeInput.value;
     }
 
     // Helper to render challenge text with optional error highlight
     function renderChallengeText(errorIndex = -1) {
-        if (errorIndex < 0 || errorIndex >= challengeText.length) {
-            challengeTextEl.textContent = challengeText;
+        if (errorIndex < 0 || errorIndex >= state.challengeText.length) {
+            challengeTextEl.textContent = state.challengeText;
         } else {
             // Highlight the error character
-            const before = escapeHtml(challengeText.slice(0, errorIndex));
-            const errorChar = escapeHtml(challengeText[errorIndex]);
-            const after = escapeHtml(challengeText.slice(errorIndex + 1));
+            const before = escapeHtml(state.challengeText.slice(0, errorIndex));
+            const errorChar = escapeHtml(state.challengeText[errorIndex]);
+            const after = escapeHtml(state.challengeText.slice(errorIndex + 1));
             challengeTextEl.innerHTML = `${before}<span class="error-char">${errorChar}</span>${after}`;
         }
     }
@@ -7817,7 +7801,7 @@ function setupOverrideModalListeners() {
 
     challengeInput.addEventListener('input', () => {
         const typed = challengeInput.value;
-        const target = challengeText;
+        const target = state.challengeText;
 
         // Calculate progress and find first error
         let correctChars = 0;
@@ -7839,8 +7823,8 @@ function setupOverrideModalListeners() {
     });
 
     challengeWordInput.addEventListener('input', () => {
-        if (!overrideWordChallengeState) return;
-        challengeCurrentWordEl.textContent = getCurrentChallengeWord(overrideWordChallengeState);
+        if (!state.overrideWordChallengeState) return;
+        challengeCurrentWordEl.textContent = getCurrentChallengeWord(state.overrideWordChallengeState);
     });
 
     // Enter key submits the override
@@ -7859,7 +7843,7 @@ function setupOverrideModalListeners() {
 
     document.getElementById('cancel-override-btn').addEventListener('click', () => {
         // Check for helper removal special case
-        if (overrideBlockId === 'helper-removal' && window.helperRemovalCancelCallback) {
+        if (state.overrideBlockId === 'helper-removal' && window.helperRemovalCancelCallback) {
             window.helperRemovalCancelCallback();
             return;
         }
@@ -7934,7 +7918,7 @@ function setupOverrideModalListeners() {
     const pauseCurrentWordEl = document.getElementById('pause-current-word');
     pauseChallengeInput.addEventListener('input', () => {
         const typed = pauseChallengeInput.value;
-        const target = pauseChallengeText;
+        const target = state.pauseChallengeText;
         const progress = target.length > 0 ? Math.min(100, (typed.length / target.length) * 100) : 0;
         document.getElementById('pause-challenge-progress-bar').style.width = `${progress}%`;
 
@@ -7945,8 +7929,8 @@ function setupOverrideModalListeners() {
         e.preventDefault();
     });
     pauseChallengeWordInput.addEventListener('input', () => {
-        if (!pauseWordChallengeState) return;
-        pauseCurrentWordEl.textContent = getCurrentChallengeWord(pauseWordChallengeState);
+        if (!state.pauseWordChallengeState) return;
+        pauseCurrentWordEl.textContent = getCurrentChallengeWord(state.pauseWordChallengeState);
     });
 
     pauseChallengeInput.addEventListener('keydown', (e) => {
@@ -7979,16 +7963,16 @@ function setupOverrideModalListeners() {
     window.visualViewport?.addEventListener('resize', syncMobileScheduleDayLabelsViewportMode);
 
     document.getElementById('confirm-override-btn').addEventListener('click', async () => {
-        if (overrideWordChallengeState) {
-            const expectedWord = getCurrentChallengeWord(overrideWordChallengeState);
+        if (state.overrideWordChallengeState) {
+            const expectedWord = getCurrentChallengeWord(state.overrideWordChallengeState);
             const typedWord = challengeWordInput.value.trim();
             if (typedWord === expectedWord) {
-                overrideWordChallengeState.currentIndex++;
-                const completedText = getCompletedChallengeText(overrideWordChallengeState);
-                overrideWordChallengeState.typedText = overrideWordChallengeState.currentIndex >= overrideWordChallengeState.words.length
-                    ? challengeText
+                state.overrideWordChallengeState.currentIndex++;
+                const completedText = getCompletedChallengeText(state.overrideWordChallengeState);
+                state.overrideWordChallengeState.typedText = state.overrideWordChallengeState.currentIndex >= state.overrideWordChallengeState.words.length
+                    ? state.challengeText
                     : completedText;
-                if (overrideWordChallengeState.currentIndex < overrideWordChallengeState.words.length) {
+                if (state.overrideWordChallengeState.currentIndex < state.overrideWordChallengeState.words.length) {
                     renderOverrideWordChallengeState();
                     challengeWordInput.focus();
                     return;
@@ -7998,13 +7982,13 @@ function setupOverrideModalListeners() {
                 modalContent.classList.remove('wiggle');
                 void modalContent.offsetWidth;
                 modalContent.classList.add('wiggle');
-                challengeCurrentWordEl.textContent = getCurrentChallengeWord(overrideWordChallengeState);
+                challengeCurrentWordEl.textContent = getCurrentChallengeWord(state.overrideWordChallengeState);
                 return;
             }
         }
 
         const typed = getOverrideTypedValue();
-        const target = challengeText;
+        const target = state.challengeText;
 
         // Find first mismatch
         let firstErrorIndex = -1;
@@ -8021,17 +8005,17 @@ function setupOverrideModalListeners() {
             }
         }
 
-        if (typed === target && (overrideBlockId || window.overrideScheduleId)) {
+        if (typed === target && (state.overrideBlockId || window.overrideScheduleId)) {
             // Check for helper removal special case
-            if (overrideBlockId === 'helper-removal' && window.helperRemovalConfirmCallback) {
+            if (state.overrideBlockId === 'helper-removal' && window.helperRemovalConfirmCallback) {
                 window.helperRemovalConfirmCallback();
                 return;
             }
 
-            if (overrideBlockId && overrideBlockId !== 'helper-removal') {
-                const overriddenBlock = state.appData.activeBlocks.find(b => b.id === overrideBlockId);
-                const blocklistIdToClear = overrideBlocklistIdForHelper ?? (overriddenBlock ? overriddenBlock.blocklistId : null);
-                state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== overrideBlockId);
+            if (state.overrideBlockId && state.overrideBlockId !== 'helper-removal') {
+                const overriddenBlock = state.appData.activeBlocks.find(b => b.id === state.overrideBlockId);
+                const blocklistIdToClear = state.overrideBlocklistIdForHelper ?? (overriddenBlock ? overriddenBlock.blocklistId : null);
+                state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== state.overrideBlockId);
                 await saveData();
 
                 if (state.isIOS) {
@@ -8041,7 +8025,7 @@ function setupOverrideModalListeners() {
                     await syncSchedulesToHelper();
                 } else if (state.isAndroid) {
                     try {
-                        await tauriAPI.androidStopManualBlock(overrideBlockId);
+                        await tauriAPI.androidStopManualBlock(state.overrideBlockId);
                     } catch (err) {
                         console.error('androidStopManualBlock failed:', err);
                     }
@@ -8059,7 +8043,7 @@ function setupOverrideModalListeners() {
                     }
                 }
 
-                overrideBlocklistIdForHelper = null;
+                state.overrideBlocklistIdForHelper = null;
                 // Update blocked apps (will stop watcher if no apps to block, including schedules)
                 await updateBlockedApps();
             } else if (window.overrideScheduleId) {
@@ -8124,8 +8108,8 @@ function setupOverrideModalListeners() {
             modalContent.classList.add('wiggle');
 
             // Highlight first wrong character
-            if (overrideWordChallengeState) {
-                challengeCurrentWordEl.textContent = getCurrentChallengeWord(overrideWordChallengeState);
+            if (state.overrideWordChallengeState) {
+                challengeCurrentWordEl.textContent = getCurrentChallengeWord(state.overrideWordChallengeState);
             } else {
                 renderChallengeText(firstErrorIndex);
             }
@@ -8187,2120 +8171,6 @@ function renderTags(container, items, onRemove, lockedItems = [], options = {}) 
 // Pad number with leading zero
 
 // Show schedule confirmation modal
-
-const START_CONFIRM_ICON_GLOBE = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;
-const START_CONFIRM_ICON_APP = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M10 4v4"></path><path d="M2 8h20"></path><path d="M6 4v4"></path></svg>`;
-const START_FOCUS_SPACE_PLAY_ICON = `<svg class="start-block-btn-play-icon start-block-btn-leading" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`;
-const STOP_ACTION_SQUARE_ICON = `<svg class="start-block-btn-stop-icon start-block-btn-leading hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect></svg>`;
-
-export function setStartBlockBtnLeadingIcon(btn, mode) {
-    if (!btn || (btn.id !== 'start-block-btn' && btn.id !== 'start-schedule-btn')) return;
-    const playIcon = btn.querySelector('.start-block-btn-play-icon');
-    const appIcon = btn.querySelector('.start-block-btn-app-icon');
-    const stopIcon = btn.querySelector('.start-block-btn-stop-icon');
-    const isStop = mode === 'stop';
-    const startIcon = playIcon || appIcon;
-    if (startIcon) startIcon.classList.toggle('hidden', isStop);
-    if (stopIcon) stopIcon.classList.toggle('hidden', !isStop);
-}
-
-function setStartConfirmPrimaryLabel(buttonId, text) {
-    const btn = document.getElementById(buttonId);
-    const label = btn?.querySelector('.start-confirm-primary-label');
-    if (label) label.textContent = text;
-}
-
-function buildStartConfirmBlockingLineHtml(type, labels) {
-    const icon = type === 'website' ? START_CONFIRM_ICON_GLOBE : START_CONFIRM_ICON_APP;
-    const text = labels.map((label) => escapeHtml(label)).join(', ');
-    return `<div class="start-confirm-blocking-line">${icon}<span class="start-confirm-blocking-text">${text}</span></div>`;
-}
-
-function formatStartConfirmBlockingListLabels(items, type, maxShow) {
-    const labels = type === 'website'
-        ? items.map((item) => cleanUrlForDisplay(item))
-        : items.slice();
-    if (labels.length <= maxShow) return labels;
-    return [...labels.slice(0, maxShow), '...'];
-}
-
-function renderStartConfirmBlockingListHtml(blocklist, maxShow) {
-    const websites = blocklist?.websites || [];
-    const apps = getBlocklistDisplayApps(blocklist);
-    const lines = [];
-
-    if (websites.length > 0) {
-        lines.push(buildStartConfirmBlockingLineHtml(
-            'website',
-            formatStartConfirmBlockingListLabels(websites, 'website', maxShow),
-        ));
-    }
-    if (apps.length > 0) {
-        lines.push(buildStartConfirmBlockingLineHtml(
-            'app',
-            formatStartConfirmBlockingListLabels(apps, 'app', maxShow),
-        ));
-    }
-
-    return lines.join('');
-}
-
-function renderStartConfirmBlockingDetails(blocklist, listEl, showAllBtn, rowEl) {
-    if (!listEl || !rowEl) return;
-
-    const websites = blocklist?.websites || [];
-    const apps = getBlocklistDisplayApps(blocklist);
-    const maxShow = 3;
-    const hasOverflow = websites.length > maxShow || apps.length > maxShow;
-
-    if (websites.length === 0 && apps.length === 0) {
-        rowEl.classList.add('hidden');
-        listEl.innerHTML = '';
-        showAllBtn?.classList.add('hidden');
-        return;
-    }
-
-    rowEl.classList.remove('hidden');
-    listEl.innerHTML = renderStartConfirmBlockingListHtml(blocklist, maxShow);
-
-    if (!hasOverflow) {
-        showAllBtn?.classList.add('hidden');
-        return;
-    }
-
-    showAllBtn?.classList.remove('hidden');
-    if (showAllBtn) {
-        showAllBtn.onclick = () => {
-            listEl.innerHTML = renderStartConfirmBlockingListHtml(blocklist, Number.MAX_SAFE_INTEGER);
-            showAllBtn.classList.add('hidden');
-        };
-    }
-}
-
-function buildScheduleConfirmSegmentHtml(seg) {
-    const fullDayLabels = weekdayAbbrevMon0List();
-    const useCompactDayLabels = shouldUseCompactMobileScheduleDayLabels();
-    const dayLabels = useCompactDayLabels ? weekdayLetterMon0List() : fullDayLabels;
-    const startTime = `${String(seg.startHour).padStart(2, '0')}:${String(seg.startMinute).padStart(2, '0')}`;
-    const endTime = `${String(seg.endHour).padStart(2, '0')}:${String(seg.endMinute).padStart(2, '0')}`;
-    const segmentDays = Array.isArray(seg.days) ? seg.days : [];
-    const dayToggles = dayLabels.map((label, dayIndex) =>
-        `<span class="segment-day-toggle${segmentDays.includes(dayIndex) ? ' active' : ''}" aria-label="${fullDayLabels[dayIndex]}"${useCompactDayLabels ? ' aria-hidden="true"' : ''}>${label}</span>`,
-    ).join('');
-
-    return `
-        <div class="start-confirm-time-slot">
-            <div class="start-confirm-time-slot-row">
-                <span class="start-confirm-time-range">${startTime} → ${endTime}</span>
-                <div class="start-confirm-segment-days segment-days${useCompactDayLabels ? ' compact-day-labels' : ''}">${dayToggles}</div>
-            </div>
-        </div>
-    `;
-}
-
-function renderScheduleConfirmSegments(segmentsEl, segments) {
-    if (!segmentsEl) return;
-    segmentsEl.innerHTML = segments.map((seg) =>
-        buildScheduleConfirmSegmentHtml(seg),
-    ).join('');
-}
-
-function formatScheduleConfirmRepeatText() {
-    if (state.scheduleRepeatType === 'forever') {
-        return tSettings('startConfirmRepeatForever');
-    }
-    if (state.scheduleRepeatType === 'date' && state.scheduleRepeatDate) {
-        return tSettingsFmt('startConfirmRepeatUntilFmt', {
-            date: state.scheduleRepeatDate.toLocaleDateString(tSettings('locale')),
-        });
-    }
-    return tSettings('startConfirmRepeatNone');
-}
-
-function formatStartBlockDurationCopy(isAlwaysOn, blockStart, blockEnd) {
-    if (isAlwaysOn) {
-        return `<strong>${escapeHtml(tSettings('alwaysUntilOff'))}</strong>`;
-    }
-
-    const durationMs = blockEnd.getTime() - blockStart.getTime();
-    const durationMinutes = Math.max(1, Math.round(durationMs / 60000));
-    const hours = Math.floor(durationMinutes / 60);
-    const mins = durationMinutes % 60;
-    let durationLabel;
-    if (hours > 0 && mins > 0) durationLabel = `${hours}h ${mins}m`;
-    else if (hours > 0) durationLabel = `${hours} hour${hours > 1 ? 's' : ''}`;
-    else durationLabel = `${mins} minute${mins > 1 ? 's' : ''}`;
-
-    const ends = blockEnd.toLocaleTimeString(tSettings('locale'), { hour: 'numeric', minute: '2-digit' });
-    return tSettingsFmt('startConfirmDurationLineFmt', {
-        duration: `<strong>${escapeHtml(durationLabel)}</strong>`,
-        ends: escapeHtml(ends),
-    });
-}
-
-function formatStartBlockSubtitle(isAlwaysOn, blockStart, blockEnd) {
-    if (isAlwaysOn) return tSettings('startBlockSubtitleAlways');
-    const durationMs = blockEnd.getTime() - blockStart.getTime();
-    const durationMinutes = Math.max(1, Math.round(durationMs / 60000));
-    const hours = Math.floor(durationMinutes / 60);
-    const mins = durationMinutes % 60;
-    let durationLabel;
-    if (hours > 0 && mins > 0) durationLabel = `${hours}h ${mins}m`;
-    else if (hours > 0) durationLabel = `${hours} hour${hours > 1 ? 's' : ''}`;
-    else durationLabel = `${mins} minute${mins > 1 ? 's' : ''}`;
-    return tSettingsFmt('startBlockSubtitleFmt', { duration: durationLabel });
-}
-
-function setStartConfirmRoomChip(blocklist, {
-    chipId = 'start-confirm-room-chip',
-    emojiId = 'start-confirm-room-chip-emoji',
-    nameId = 'start-confirm-room-chip-name',
-} = {}) {
-    const chip = document.getElementById(chipId);
-    const emojiEl = document.getElementById(emojiId);
-    const nameEl = document.getElementById(nameId);
-    if (!chip) return;
-
-    if (emojiEl) emojiEl.textContent = blocklist?.emoji || '🎯';
-    if (nameEl) nameEl.textContent = blocklist?.name || '';
-
-    chip.style.background = '';
-    chip.style.backgroundColor = '';
-    chip.style.color = '';
-    chip.style.borderColor = '';
-}
-
-const SCHEDULE_CONFIRM_ROOM_CHIP_IDS = {
-    chipId: 'schedule-confirm-room-chip',
-    emojiId: 'schedule-confirm-room-chip-emoji',
-    nameId: 'schedule-confirm-room-chip-name',
-};
-
-const SCHEDULER_ROOM_CHIP_IDS = {
-    chipId: 'scheduler-room-chip',
-    emojiId: 'scheduler-room-chip-emoji',
-    nameId: 'scheduler-room-chip-name',
-};
-
-const OVERRIDE_CONFIRM_ROOM_CHIP_IDS = {
-    chipId: 'override-confirm-room-chip',
-    emojiId: 'override-confirm-room-chip-emoji',
-    nameId: 'override-confirm-room-chip-name',
-};
-
-const PAUSE_CONFIRM_ROOM_CHIP_IDS = {
-    chipId: 'pause-confirm-room-chip',
-    emojiId: 'pause-confirm-room-chip-emoji',
-    nameId: 'pause-confirm-room-chip-name',
-};
-
-function formatRemainingDurationLabel(remainingMs) {
-    const remainingMins = Math.max(1, Math.floor(remainingMs / 60000));
-    const hours = Math.floor(remainingMins / 60);
-    const mins = remainingMins % 60;
-    if (hours > 0 && mins > 0) return `${hours}h ${mins}m`;
-    if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''}`;
-    return `${mins} minute${mins > 1 ? 's' : ''}`;
-}
-
-function formatStopBlockSubtitle(block) {
-    if (!block || isBlockAlwaysOn(block)) return tSettings('stopBlockSubtitleAlways');
-    const remaining = formatRemainingDurationLabel(block.endTime - Date.now());
-    return tSettingsFmt('stopBlockSubtitleFmt', { remaining });
-}
-
-function populateOverrideConfirmModalContent(blocklist, { block = null, isSchedule = false } = {}) {
-    if (!blocklist) return;
-
-    setStartConfirmRoomChip(blocklist, OVERRIDE_CONFIRM_ROOM_CHIP_IDS);
-
-    const titleEl = document.getElementById('override-modal-title');
-    if (titleEl) titleEl.textContent = tSettings('stopFocusSpaceTitle');
-
-    const subtitleEl = document.getElementById('override-confirm-subtitle');
-    if (subtitleEl) {
-        subtitleEl.innerHTML = isSchedule
-            ? tSettings('stopScheduleSubtitle')
-            : formatStopBlockSubtitle(block);
-    }
-
-    renderStartConfirmBlockingDetails(
-        blocklist,
-        document.getElementById('override-confirm-blocking-list'),
-        document.getElementById('override-confirm-show-all-blocking'),
-        document.getElementById('override-confirm-blocking-row'),
-    );
-
-    setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
-}
-
-function formatPauseBlockSubtitle(block, { isSchedule = false, isScheduleInactive = false } = {}) {
-    if (isScheduleInactive) return tSettings('pauseScheduleInactiveSubtitle');
-    if (isSchedule) return tSettings('pauseScheduleSubtitle');
-    if (!block || isBlockAlwaysOn(block)) return tSettings('pauseBlockSubtitleAlways');
-    const remaining = formatRemainingDurationLabel(block.endTime - Date.now());
-    return tSettingsFmt('pauseBlockSubtitleFmt', { remaining });
-}
-
-function populatePauseConfirmModalContent(blocklist, {
-    block = null,
-    isSchedule = false,
-    isScheduleInactive = false,
-} = {}) {
-    if (!blocklist) return;
-
-    setStartConfirmRoomChip(blocklist, PAUSE_CONFIRM_ROOM_CHIP_IDS);
-
-    const titleEl = document.getElementById('pause-modal-title');
-    if (titleEl) titleEl.textContent = tSettings('pauseFocusSpaceTitle');
-
-    const subtitleEl = document.getElementById('pause-confirm-subtitle');
-    if (subtitleEl) {
-        subtitleEl.innerHTML = formatPauseBlockSubtitle(block, { isSchedule, isScheduleInactive });
-    }
-
-    renderStartConfirmBlockingDetails(
-        blocklist,
-        document.getElementById('pause-confirm-blocking-list'),
-        document.getElementById('pause-confirm-show-all-blocking'),
-        document.getElementById('pause-confirm-blocking-row'),
-    );
-
-    setStartConfirmPrimaryLabel('confirm-pause-btn', tSettings('pauseBlock'));
-}
-
-function applyRoomChipTint(chip, accentColor) {
-    if (!chip || !accentColor) return;
-    if (chip.classList.contains('scheduler-room-chip')) {
-        chip.style.backgroundColor = getEnteringChipColor(accentColor);
-        chip.style.borderColor = 'transparent';
-        chip.style.color = '#ffffff';
-        return;
-    }
-    chip.style.background = `color-mix(in srgb, ${accentColor} 16%, var(--redd-card))`;
-    chip.style.borderColor = `color-mix(in srgb, ${accentColor} 32%, var(--redd-border))`;
-    chip.style.color = getEnteringChipColor(accentColor);
-}
-
-function setSchedulerRoomChip(blocklist) {
-    setStartConfirmRoomChip(blocklist, SCHEDULER_ROOM_CHIP_IDS);
-    if (blocklist?.color) {
-        applyRoomChipTint(document.getElementById('scheduler-room-chip'), blocklist.color);
-    }
-}
-
-function setStartConfirmOverrideDescription(options, textElId = 'start-confirm-override-text') {
-    const overrideTextEl = document.getElementById(textElId);
-    if (!overrideTextEl) return;
-
-    const line = formatConfirmModalOverrideTypingLine(options);
-    overrideTextEl.innerHTML = `${line} ${escapeHtml(tSettings('confirmOverrideIntentionSuffix'))}`;
-}
-
-function getStartScheduleConfirmTitle(blocklist) {
-    if (!blocklist) return tSettings('startThisSchedule');
-    return tSettingsFmt('startScheduleTitleFmt', { name: blocklist.name });
-}
-
-function getStartBlockConfirmTitle(blocklist) {
-    if (!blocklist) return tSettings('startThisBlock');
-    return tSettingsFmt('startBlockTitleFmt', { name: blocklist.name });
-}
-
-function getResumeBlockConfirmTitle(blocklist) {
-    if (!blocklist) return tSettings('resumeThisBlock');
-    return tSettingsFmt('resumeBlockTitleFmt', { name: blocklist.name });
-}
-
-export function showScheduleConfirmModal(blocklist) {
-    resetScheduleConfirmModalToStartLayout();
-
-    const titleEl = document.getElementById('start-schedule-confirm-title');
-    if (titleEl) titleEl.textContent = tSettings('startThisSchedule');
-
-    setStartConfirmRoomChip(blocklist, SCHEDULE_CONFIRM_ROOM_CHIP_IDS);
-
-    const subtitleEl = document.getElementById('schedule-confirm-subtitle');
-    if (subtitleEl) subtitleEl.innerHTML = tSettings('startScheduleSubtitle');
-
-    state.pendingScheduleStartOverlayId = getEffectiveScheduleStartOverlayId();
-    syncScheduleConfirmOverlaySummary();
-    document.getElementById('schedule-confirm-overlay-row')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
-    document.getElementById('schedule-confirm-repeat-divider')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
-
-    renderStartConfirmBlockingDetails(
-        blocklist,
-        document.getElementById('schedule-confirm-blocking-list'),
-        document.getElementById('schedule-confirm-show-all-blocking'),
-        document.getElementById('schedule-confirm-blocking-row'),
-    );
-
-    renderScheduleConfirmSegments(document.getElementById('schedule-confirm-segments'), state.scheduleSegments);
-
-    const repeatEl = document.getElementById('schedule-confirm-repeat');
-    if (repeatEl) repeatEl.innerHTML = formatScheduleConfirmRepeatText();
-
-    // Override info
-    const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-    const displayCount = difficulty.type === 'custom'
-        ? (difficulty.customText?.length || 0)
-        : normalizeOverrideCount(difficulty.count || 50, difficulty.type);
-    const estimatedMinutes = getOverrideEstimatedMinutes(
-        difficulty.type,
-        displayCount,
-        difficulty.customText || ''
-    );
-
-    const schedType =
-        difficulty.type === 'custom' && difficulty.customText
-            ? 'custom'
-            : difficulty.type === 'gibberish'
-              ? 'gibberish'
-              : 'random-words';
-    setStartConfirmOverrideDescription({
-        type: schedType,
-        count: displayCount,
-        estimatedMinutes
-    }, 'schedule-confirm-override-text');
-
-    // Show modal
-    document.getElementById('start-schedule-confirm-modal').classList.remove('hidden');
-}
-
-// Close schedule confirmation modal
-function resetScheduleConfirmModalToStartLayout() {
-    document.querySelector('#start-schedule-confirm-modal .start-confirm-modal')
-        ?.classList.remove('schedule-confirm-edit-layout');
-
-    setStartConfirmPrimaryLabel('proceed-schedule-confirm-btn', tSettings('startSchedule'));
-    const titleEl = document.getElementById('start-schedule-confirm-title');
-    if (titleEl) titleEl.textContent = tSettings('startThisSchedule');
-    const overrideHeader = document.getElementById('schedule-confirm-override-header');
-    if (overrideHeader) overrideHeader.textContent = tSettings('startScheduleHoldHeader');
-    document.getElementById('schedule-confirm-overlay-row')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
-    document.getElementById('schedule-confirm-repeat-divider')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
-}
-
-function closeScheduleConfirmModal() {
-    document.getElementById('start-schedule-confirm-modal').classList.add('hidden');
-    resetScheduleConfirmModalToStartLayout();
-    state.pendingScheduleStartOverlayId = null;
-    delete window.editScheduleData;
-}
-
-// Open override modal for stopping a schedule. Schedules now stop wholesale, identically
-// to one-off blocks (no per-instance skip).
-export function openScheduleOverrideModal(schedule) {
-    window.overrideScheduleId = schedule.id || schedule.blocklistId;
-
-    const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-    if (!blocklist) return;
-
-    const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-    overrideBlockId = null;
-    overrideBlocklistIdForHelper = null;
-
-    populateOverrideConfirmModalContent(blocklist, { isSchedule: true });
-    initializeOverrideModalChallenge(difficulty, blocklist.color);
-}
-
-// Click handler for a scheduled block in the timeline: select the corresponding blocklist
-// (so the schedule editor on the left switches to it) and open the blocklist edit dialog.
-// The override flow is still reachable from the running-block actions; clicking a calendar
-// block now goes straight to editing.
-export function openScheduledBlockEdit(schedule) {
-    const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-    if (!blocklist) return;
-
-    const dropdown = document.getElementById('blocklist-select');
-    if (dropdown) {
-        dropdown.value = blocklist.id;
-        handleBlocklistSelect({ target: dropdown });
-    } else {
-        state.selectedBlocklistId = blocklist.id;
-    }
-
-    openBlocklistModal(blocklist);
-}
-
-
-// Show confirmation modal for editing (adding segments to) an existing schedule
-export function showScheduleEditConfirmModal(blocklist, existingSchedule, newSegments) {
-    // Store references for the proceed function
-    window.editScheduleData = {
-        scheduleId: existingSchedule.id || existingSchedule.blocklistId,
-        newSegments: newSegments
-    };
-
-    const modalContent = document.querySelector('#start-schedule-confirm-modal .start-confirm-modal');
-    modalContent?.classList.add('schedule-confirm-edit-layout');
-
-    const titleEl = document.getElementById('start-schedule-confirm-title');
-    if (titleEl) {
-        titleEl.textContent = tSettingsFmt('saveChangesTitleFmt', { name: blocklist.name });
-    }
-
-    setStartConfirmRoomChip(blocklist, SCHEDULE_CONFIRM_ROOM_CHIP_IDS);
-
-    const overrideHeader = document.getElementById('schedule-confirm-override-header');
-    if (overrideHeader) overrideHeader.textContent = tSettings('saveChangesHoldHeader');
-
-    const segmentsEl = document.getElementById('schedule-confirm-segments');
-    if (segmentsEl) {
-        segmentsEl.innerHTML = `<div class="edit-schedule-notice">${tSettings('addingTheseSegments')}</div>`;
-        newSegments.forEach((seg) => {
-            segmentsEl.insertAdjacentHTML('beforeend', buildScheduleConfirmSegmentHtml(seg));
-        });
-    }
-
-    // Populate override info — same computation as showScheduleConfirmModal so users see
-    // the actual barrier, not just the header.
-    const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-    const displayCount = difficulty.type === 'custom'
-        ? (difficulty.customText?.length || 0)
-        : normalizeOverrideCount(difficulty.count || 50, difficulty.type);
-    const estimatedMinutes = getOverrideEstimatedMinutes(
-        difficulty.type,
-        displayCount,
-        difficulty.customText || ''
-    );
-    const schedType =
-        difficulty.type === 'custom' && difficulty.customText
-            ? 'custom'
-            : difficulty.type === 'gibberish'
-              ? 'gibberish'
-              : 'random-words';
-    setStartConfirmOverrideDescription({
-        type: schedType,
-        count: displayCount,
-        estimatedMinutes
-    }, 'schedule-confirm-override-text');
-
-    setStartConfirmPrimaryLabel('proceed-schedule-confirm-btn', tSettings('pendingChangesSave'));
-
-    // Show modal
-    document.getElementById('start-schedule-confirm-modal').classList.remove('hidden');
-}
-
-// Add new segments to existing schedule
-async function proceedWithScheduleEdit() {
-    // Grab editData BEFORE closing the modal — closeScheduleConfirmModal clears it.
-    const editData = window.editScheduleData;
-    closeScheduleConfirmModal();
-
-    if (!editData) return;
-
-    // Find the existing schedule
-    const schedule = state.appData.schedules.find(s =>
-        s.id === editData.scheduleId || s.blocklistId === editData.scheduleId
-    );
-    if (!schedule) return;
-
-    // Add the new segments
-    editData.newSegments.forEach(seg => {
-        schedule.segments.push({
-            startHour: seg.startHour,
-            startMinute: seg.startMinute,
-            endHour: seg.endHour,
-            endMinute: seg.endMinute,
-            days: [...seg.days]
-        });
-    });
-
-    // Update state.activeScheduleSegmentCount to include the new segments
-    state.activeScheduleSegmentCount = schedule.segments.length;
-    state.scheduleSegments = schedule.segments.map(seg => ({ ...seg }));
-
-    clearPendingScheduleDraft(state.selectedBlocklistId);
-
-    // Save
-    await saveData();
-
-    console.log('Schedule updated with new segments:', schedule);
-
-    resetScheduleConfirmModalToStartLayout();
-
-    // Rebuild the DOM so it matches the new state.scheduleSegments order and locks the
-    // formerly-pending segments. Without this, time-edit handlers attached to the
-    // pre-save DOM nodes could write to the wrong state.scheduleSegments index.
-    state.expandedScheduleSegmentIndex = getInitialExpandedScheduleSegmentIndex();
-    rebuildScheduleSegments();
-    disableScheduleControls(true);
-
-    // Update UI
-    updateScheduleButtonState();
-    renderBlocklists();
-    updateWeekCalendar();
-
-    // If a newly committed segment covers the current moment, kick blocking on now
-    // rather than waiting for the next periodic tick.
-    await updateBlockedApps();
-    await updateHostsFile();
-    // Sync updated schedule to helper daemon so it picks up the new segments for
-    // future autonomous transitions.
-    await syncSchedulesToHelper();
-
-    // Clean up
-    delete window.editScheduleData;
-}
-
-// Actually create the schedule (called after confirmation)
-async function proceedWithSchedule() {
-    const startOverlayId = getEffectiveScheduleStartOverlayId();
-    rememberLastScheduleStartOverlayId(startOverlayId);
-    closeScheduleConfirmModal();
-
-    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
-    if (!blocklist) return;
-    if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this schedule')) return;
-
-    // v2: no helper to install. The app itself is the engine; if it
-    // launched, blocking works. The legacy helper-install-modal
-    // branch was here.
-
-    // Create schedule object
-    const schedule = {
-        id: crypto.randomUUID(),
-        blocklistId: state.selectedBlocklistId,
-        segments: state.scheduleSegments.map(seg => ({
-            startHour: seg.startHour,
-            startMinute: seg.startMinute,
-            endHour: seg.endHour,
-            endMinute: seg.endMinute,
-            days: [...seg.days]
-        })),
-        repeatType: state.scheduleRepeatType,
-        repeatDate: state.scheduleRepeatType === 'date' ? state.scheduleRepeatDate : null,
-        createdAt: Date.now(),
-        startOverlayId,
-    };
-
-    // Save to state.appData
-    state.appData.schedules.push(schedule);
-
-    clearPendingScheduleDraft(state.selectedBlocklistId);
-
-    await saveData();
-
-    console.log('Schedule created:', schedule);
-
-    // Update blocked apps if schedule is currently active
-    await updateBlockedApps();
-    // Update the active segment count to lock the created segments
-    state.activeScheduleSegmentCount = state.scheduleSegments.length;
-
-    // Reset schedule repeat options for next use
-    state.scheduleRepeatType = 'forever';
-    state.scheduleRepeatDate = null;
-
-    // Rebuild segments UI to show them as locked
-    rebuildScheduleSegments();
-    disableScheduleControls(true);
-    updateScheduleButtonState();
-
-    // Re-render blocklists to show schedule badge
-    renderBlocklists();
-
-    // Update calendar to show scheduled blocks
-    updateWeekCalendar();
-
-    // Clear preview blocks
-    document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
-
-    // Trigger hosts file update to start blocking if schedule is currently active
-    await updateHostsFile();
-
-    // Sync all schedules to helper daemon for autonomous transitions
-    await syncSchedulesToHelper();
-}
-// Handle time picker change
-export function handleTimeChange() {
-    const noBlocksMsg = document.getElementById('no-blocks-message');
-    const startBtn = document.getElementById('start-block-btn');
-    const nextDayIndicator = document.getElementById('next-day-indicator');
-
-    // Remove any existing preview blocks and active-schedule blocks (for schedule mode)
-    document.querySelectorAll('.calendar-block.preview, .calendar-block.active-schedule').forEach(el => el.remove());
-
-    // Refresh the "Always on" row so any preview chip stays in sync with the current mode
-    // (it shows up only when state.isAlwaysOnMode is on and a blocklist is selected).
-    renderScheduleAlwaysOnRow();
-
-    // Handle schedule mode separately
-    if (state.isScheduleMode) {
-        renderSchedulePreview();
-
-        // Save pending schedule segments for this blocklist
-        if (state.selectedBlocklistId) {
-            if (!state.appData.settings) state.appData.settings = {};
-            if (!state.appData.settings.pendingScheduleSegments) state.appData.settings.pendingScheduleSegments = {};
-
-            const existingSchedule = state.appData.schedules?.find(s => s.blocklistId === state.selectedBlocklistId);
-
-            if (!existingSchedule) {
-                // No active schedule - save draft segments + repeat together
-                const currentPending = JSON.stringify(state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] || []);
-                const newPending = JSON.stringify(state.scheduleSegments);
-                const nextRepeat = {
-                    repeatType: state.scheduleRepeatType,
-                    repeatDate:
-                        state.scheduleRepeatType === 'date' && state.scheduleRepeatDate
-                            ? state.scheduleRepeatDate.getTime()
-                            : null
-                };
-                const prevRepeat = JSON.stringify(state.appData.settings.pendingScheduleRepeatOptions?.[state.selectedBlocklistId] ?? null);
-                const nextRepeatJson = JSON.stringify(nextRepeat);
-                if (currentPending !== newPending) {
-                    state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] = state.scheduleSegments.map(seg => ({ ...seg }));
-                }
-                if (!state.appData.settings.pendingScheduleRepeatOptions) state.appData.settings.pendingScheduleRepeatOptions = {};
-                if (prevRepeat !== nextRepeatJson) {
-                    state.appData.settings.pendingScheduleRepeatOptions[state.selectedBlocklistId] = nextRepeat;
-                }
-                if (currentPending !== newPending || prevRepeat !== nextRepeatJson) {
-                    saveData();
-                }
-            } else {
-                // Active schedule exists - save only NEW segments (those beyond state.activeScheduleSegmentCount)
-                const committedSegmentCount = getCommittedScheduleSegmentCount(existingSchedule);
-                if (state.scheduleSegments.length > committedSegmentCount) {
-                    const newSegments = state.scheduleSegments.slice(committedSegmentCount);
-                    const currentPending = JSON.stringify(state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] || []);
-                    const newPending = JSON.stringify(newSegments);
-                    if (currentPending !== newPending) {
-                        state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] = newSegments.map(seg => ({ ...seg }));
-                        saveData();
-                    }
-                } else {
-                    // No new segments - clear any pending segments
-                    if (state.appData.settings.pendingScheduleSegments?.[state.selectedBlocklistId]) {
-                        clearPendingScheduleDraft(state.selectedBlocklistId);
-                        saveData();
-                    }
-                }
-            }
-        }
-        return;
-    }
-
-    // --- Always-on mode: preview shows up only as a chip in the "Always on" row above the
-    // calendar, not as a bar inside the timeline. The chip is added by the call to
-    // renderScheduleAlwaysOnRow() at the top of this function.
-    if (state.isAlwaysOnMode) {
-        startBtn.disabled = !state.selectedBlocklistId;
-
-        if (nextDayIndicator) nextDayIndicator.classList.add('hidden');
-
-        if (noBlocksMsg) noBlocksMsg.classList.add('hidden');
-
-        updateWindowHeight();
-        return;
-    }
-
-    // --- Instant mode logic ---
-    // Get times (start is always now)
-    let blockStart = getStartTimeAsDate();
-    let blockEnd = getEndTimeAsDate();
-
-    // Determine block end time
-    if (!state.userEditedEndTime && state.targetDurationMinutes > 0) {
-        // If driving by duration, exact calculation
-        blockEnd = new Date(blockStart.getTime() + state.targetDurationMinutes * 60 * 1000);
-    } else {
-        // If driving by end time picker, assume nearest future time (handle overnight)
-        if (blockEnd <= blockStart) {
-            blockEnd.setDate(blockEnd.getDate() + 1);
-        }
-    }
-
-    // Calculate how many days in the future the end time is
-    const startDay = new Date(blockStart);
-    startDay.setHours(0, 0, 0, 0);
-    const endDay = new Date(blockEnd);
-    endDay.setHours(0, 0, 0, 0);
-    const daysDiff = Math.round((endDay - startDay) / (24 * 60 * 60 * 1000));
-
-    // Show/hide day indicator with correct count
-    if (nextDayIndicator) {
-        if (daysDiff > 0) {
-            if (daysDiff === 1) {
-                nextDayIndicator.textContent = 'tomorrow';
-            } else {
-                // For >1 days, show date like "8 Jan"
-                const dateStr = blockEnd.getDate() + ' ' + blockEnd.toLocaleString('default', { month: 'short' });
-                nextDayIndicator.textContent = dateStr;
-            }
-            nextDayIndicator.classList.remove('hidden');
-        } else {
-            nextDayIndicator.classList.add('hidden');
-        }
-    }
-
-    // Calculate duration
-    const durationMs = blockEnd.getTime() - blockStart.getTime();
-    const durationMinutes = Math.round(durationMs / 60000);
-
-    if (durationMinutes <= 0) {
-        startBtn.disabled = true;
-        return;
-    }
-
-    // Sync duration input and quick buttons with calculated duration
-    const durationInput = document.getElementById('duration-minutes-input');
-    const endH = document.getElementById('end-hour-input');
-    const endM = document.getElementById('end-minute-input');
-    const ae = document.activeElement;
-    if (
-        durationInput &&
-        ae !== durationInput &&
-        ae !== endH &&
-        ae !== endM
-    ) {
-        durationInput.value = durationMinutes;
-    }
-    updateDurationQuickBtns(durationMinutes);
-
-    // Save duration to settings per-blocklist so it persists across blocklist selections
-    if (state.selectedBlocklistId) {
-        if (!state.appData.settings) state.appData.settings = {};
-        if (!state.appData.settings.instantBlockDuration) state.appData.settings.instantBlockDuration = {};
-        if (state.appData.settings.instantBlockDuration[state.selectedBlocklistId] !== durationMinutes) {
-            state.appData.settings.instantBlockDuration[state.selectedBlocklistId] = durationMinutes;
-            saveData();
-        }
-    }
-
-    startBtn.disabled = !state.selectedBlocklistId;
-    if (noBlocksMsg) {
-        noBlocksMsg.classList.add('hidden');
-    }
-
-    // Create preview block in week calendar (only if no active block for this blocklist)
-    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
-    const now = Date.now();
-    const hasActiveBlock = blocklist && state.appData.activeBlocks.some(b => b.blocklistId === state.selectedBlocklistId && b.startTime <= now && b.endTime > now);
-
-    if (blocklist && !hasActiveBlock) {
-        renderInstantPreviewBlock(blockStart, blockEnd, blocklist);
-    }
-
-    updateWindowHeight();
-}
-
-// Re-draw in-flight Now/Schedule preview bars after renderWeekBlocks() clears day tracks
-// (e.g. window focus, blocklist colour change, or updateWeekCalendar rebuild).
-export function refreshCalendarPreviews() {
-    if (!state.selectedBlocklistId) return;
-
-    if (state.isScheduleMode) {
-        renderSchedulePreview();
-        return;
-    }
-
-    if (state.isAlwaysOnMode) return;
-
-    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
-    if (!blocklist) return;
-
-    const now = Date.now();
-    const hasActiveBlock = state.appData.activeBlocks.some(
-        b => b.blocklistId === state.selectedBlocklistId && b.startTime <= now && b.endTime > now
-    );
-    if (hasActiveBlock) return;
-
-    let blockStart = getStartTimeAsDate();
-    let blockEnd = getEndTimeAsDate();
-    if (!state.userEditedEndTime && state.targetDurationMinutes > 0) {
-        blockEnd = new Date(blockStart.getTime() + state.targetDurationMinutes * 60 * 1000);
-    } else if (blockEnd <= blockStart) {
-        blockEnd.setDate(blockEnd.getDate() + 1);
-    }
-
-    const durationMinutes = Math.round((blockEnd.getTime() - blockStart.getTime()) / 60000);
-    if (durationMinutes <= 0) return;
-
-    renderInstantPreviewBlock(blockStart, blockEnd, blocklist);
-}
-
-// Render an instant-mode preview block onto the weekly calendar by projecting from
-// now → blockEnd onto today's row (and onto tomorrow's row if the duration crosses
-// midnight). The "head" slice on today's row gets a right-edge resize handle so the
-// user can drag to adjust the block's duration. Continuation tails on later days stay
-// non-interactive and are redrawn when the head is released.
-function renderInstantPreviewBlock(blockStart, blockEnd, blocklist) {
-    document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
-
-    const startMs = blockStart.getTime();
-    const endMs = blockEnd.getTime();
-
-    let cursor = new Date(startMs);
-    cursor.setHours(0, 0, 0, 0);
-
-    let isFirstSlice = true;
-    let headEl = null;
-    let headTrack = null;
-
-    while (cursor.getTime() <= endMs) {
-        const dayStartMs = cursor.getTime();
-        const dayEndMs = dayStartMs + 24 * 60 * 60 * 1000 - 1;
-        const sliceStartMs = Math.max(startMs, dayStartMs);
-        const sliceEndMs = Math.min(endMs, dayEndMs);
-
-        if (sliceEndMs > sliceStartMs) {
-            const sliceDate = new Date(sliceStartMs);
-            const jsDay = sliceDate.getDay();
-            const dayIndex = jsDay === 0 ? 6 : jsDay - 1;
-            const track = document.querySelector(`.day-track[data-day-index="${dayIndex}"]`);
-            if (track) {
-                const layout = getCalendarSegmentLayout(sliceStartMs, sliceEndMs, dayStartMs, dayEndMs);
-                const previewEl = document.createElement('div');
-                const isHead = isFirstSlice;
-                previewEl.className = 'calendar-block preview' + (isHead ? ' interactive instant-preview' : ' overnight-continuation');
-                previewEl.style.left = `${layout.leftPercent}%`;
-                previewEl.style.width = `${layout.widthPercent}%`;
-                previewEl.dataset.previewGroupId = 'preview-instant';
-                if (!isHead) previewEl.dataset.continuation = '1';
-
-                if (blocklist.color) {
-                    previewEl.style.background = blocklist.color;
-                    previewEl.style.color = getContrastTextColor(blocklist.color);
-                }
-
-                // Only the head slice gets a right-edge handle. The start is "now" so
-                // there's no left-edge handle (you can't reschedule the start of an
-                // instant block).
-                const resizeHandle = isHead
-                    ? '<div class="resize-handle resize-handle-end" data-handle="end" title="Drag to change end time"></div>'
-                    : '';
-
-                previewEl.innerHTML = `
-                    ${resizeHandle}
-                    <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
-                    <span class="block-label">${escapeHtml(blocklist.name)}</span>
-                    <span class="block-time">${formatTime(layout.segmentStartDate)} - ${formatTime(layout.segmentEndDate)}</span>
-                `;
-
-                track.appendChild(previewEl);
-
-                if (isHead) {
-                    headEl = previewEl;
-                    headTrack = track;
-                }
-            }
-        }
-
-        cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
-        isFirstSlice = false;
-    }
-
-    if (headEl && headTrack) {
-        attachInstantPreviewResizeHandler(headEl, headTrack);
-    }
-
-    layoutOverlappingBlocks();
-}
-
-// Pointer-based drag session for calendar preview blocks (mouse + touch on iPad).
-function bindPointerDragSession(element, { onStart, onMove, onEnd }) {
-    element.addEventListener('pointerdown', (e) => {
-        if (!e.isPrimary || e.button !== 0) return;
-        if (onStart(e) === false) return;
-
-        const captureEl = e.currentTarget;
-        try {
-            captureEl.setPointerCapture?.(e.pointerId);
-        } catch (_) { /* ignore */ }
-
-        e.preventDefault();
-
-        const onPointerMove = (moveEvent) => {
-            if (moveEvent.pointerId !== e.pointerId) return;
-            moveEvent.preventDefault();
-            onMove(moveEvent);
-        };
-
-        const endSession = (endEvent) => {
-            if (endEvent.pointerId !== e.pointerId) return;
-            document.removeEventListener('pointermove', onPointerMove);
-            document.removeEventListener('pointerup', endSession);
-            document.removeEventListener('pointercancel', endSession);
-            try {
-                if (captureEl.hasPointerCapture?.(e.pointerId)) {
-                    captureEl.releasePointerCapture(e.pointerId);
-                }
-            } catch (_) { /* ignore */ }
-            onEnd(endEvent);
-        };
-
-        document.addEventListener('pointermove', onPointerMove);
-        document.addEventListener('pointerup', endSession);
-        document.addEventListener('pointercancel', endSession);
-    });
-}
-
-// Attach a right-edge resize handler to the instant-mode preview's head element. Dragging
-// the handle live-updates the head's width and on release commits the new total duration:
-// duration = head's new width (in minutes). Tails on later days are not adjusted in
-// real time; they're killed/redrawn cleanly on release via handleTimeChange().
-function attachInstantPreviewResizeHandler(headEl, headTrack) {
-    const handle = headEl.querySelector('.resize-handle-end');
-    if (!handle) return;
-
-    const snapMinutes = 15;
-    const minDurationMinutes = 5;
-    let isResizing = false;
-    let startX = 0;
-    let startWidthPct = 0;
-
-    handle.addEventListener('pointerenter', () => headEl.classList.add('resize-hover'));
-    handle.addEventListener('pointerleave', () => headEl.classList.remove('resize-hover'));
-
-    bindPointerDragSession(headEl, {
-        onStart(e) {
-            if (!e.target.closest('.resize-handle-end')) return false;
-            isResizing = true;
-            startX = e.clientX;
-            startWidthPct = parseFloat(headEl.style.width) || 0;
-            headEl.classList.add('resizing');
-            document.body.style.cursor = 'ew-resize';
-        },
-        onMove: onPointerMove,
-        onEnd: onPointerUp
-    });
-
-    function onPointerMove(e) {
-        if (!isResizing) return;
-        const trackRect = headTrack.getBoundingClientRect();
-        if (trackRect.width <= 0) return;
-
-        const deltaX = e.clientX - startX;
-        const deltaPct = (deltaX / trackRect.width) * 100;
-        const headLeftPct = parseFloat(headEl.style.left) || 0;
-        // Clamp the head so it can't shrink to nothing or extend past end-of-day.
-        // Extending past midnight would require drawing/moving tail elements, which we
-        // intentionally skip to keep the live preview simple — the user can still type
-        // a longer duration into the Duration input for multi-day blocks.
-        const minWidthPct = (minDurationMinutes / 1440) * 100;
-        const maxWidthPct = 100 - headLeftPct;
-        const newWidthPct = Math.max(minWidthPct, Math.min(maxWidthPct, startWidthPct + deltaPct));
-        headEl.style.width = `${newWidthPct}%`;
-
-        // Live-update the "HH:MM - HH:MM" label so it tracks the cursor instead of
-        // staying frozen at the pre-drag value until release.
-        const startMins = (headLeftPct / 100) * 1440;
-        const endMins = ((headLeftPct + newWidthPct) / 100) * 1440;
-        const timeEl = headEl.querySelector('.block-time');
-        if (timeEl) {
-            timeEl.textContent = `${formatMinutesAsHHMM(startMins)} - ${formatMinutesAsHHMM(endMins)}`;
-        }
-    }
-
-    function onPointerUp() {
-        if (!isResizing) return;
-        isResizing = false;
-        headEl.classList.remove('resizing');
-        headEl.classList.remove('resize-hover');
-        document.body.style.cursor = '';
-
-        const headWidthPct = parseFloat(headEl.style.width) || 0;
-        // The head starts at "now" within today's row, so its width in minutes = its
-        // width-as-percent-of-day × 1440. That's also the new total duration for the
-        // block (any continuation tails are dropped — drag-to-resize sets the end here).
-        let newDurationMinutes = Math.round((headWidthPct / 100) * 1440);
-        newDurationMinutes = Math.max(minDurationMinutes, Math.round(newDurationMinutes / snapMinutes) * snapMinutes);
-
-        const startTime = getStartTimeAsDate();
-        const newEndTime = new Date(startTime.getTime() + newDurationMinutes * 60 * 1000);
-
-        state.targetDurationMinutes = newDurationMinutes;
-        state.userEditedEndTime = false;
-        state.selectedEndHour = newEndTime.getHours();
-        state.selectedEndMinute = newEndTime.getMinutes();
-
-        const durationInput = document.getElementById('duration-minutes-input');
-        if (durationInput) durationInput.value = newDurationMinutes;
-
-        // If the user was on always-on mode, dragging the preview's right edge implicitly
-        // switches them into timed mode (now there's a concrete end time again).
-        if (state.isAlwaysOnMode) setAlwaysOnMode(false);
-
-        updateTimeDisplay();
-        handleTimeChange();
-    }
-}
-
-// Render schedule preview blocks on the calendar
-// Render preview blocks for the schedule the user is currently building. Previews are drawn
-// for every weekday selected in the segment's `days`. For non-repeating drafts, only days
-// that have a one-shot occurrence still ahead of "now" are rendered.
-function renderSchedulePreview() {
-    if (!state.selectedBlocklistId) return;
-
-    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
-    if (!blocklist) return;
-
-    const draftCreatedAt = Date.now();
-    const shouldRepeat = state.scheduleRepeatType === 'forever' || state.scheduleRepeatType === 'date';
-
-    if (!shouldRepeat) {
-        const draftOccurrences = resolveOneShotOccurrences({
-            repeatType: 'no',
-            createdAt: draftCreatedAt,
-            segments: state.scheduleSegments
-        }).filter(occurrence => occurrence.segmentIndex >= state.activeScheduleSegmentCount);
-
-        draftOccurrences.forEach(occurrence => {
-            renderPreviewSegmentOnWeekday(blocklist, state.scheduleSegments[occurrence.segmentIndex], occurrence.segmentIndex, occurrence.dayIndex);
-        });
-
-        layoutOverlappingBlocks();
-        return;
-    }
-
-    state.scheduleSegments.forEach((segment, segmentIndex) => {
-        const isLockedSegment = segmentIndex < state.activeScheduleSegmentCount;
-        if (isLockedSegment) return;
-
-        const segmentDays = segment.days || [];
-        segmentDays.forEach(dayIndex => {
-            renderPreviewSegmentOnWeekday(blocklist, segment, segmentIndex, dayIndex);
-        });
-    });
-
-    layoutOverlappingBlocks();
-}
-
-// Build a preview block element for a schedule segment on a specific weekday.
-// Overnight segments split: head from start..24:00 on this weekday, tail from 00:00..end
-// on the next weekday (wrapping Sun → Mon).
-function renderPreviewSegmentOnWeekday(blocklist, segment, segmentIndex, dayIndex) {
-    const track = document.querySelector(`.day-track[data-day-index="${dayIndex}"]`);
-    if (!track) return;
-
-    const startMinutes = segment.startHour * 60 + segment.startMinute;
-    const endMinutes = segment.endHour * 60 + segment.endMinute;
-    const isOvernight = endMinutes <= startMinutes;
-
-    const startTimeStr = `${String(segment.startHour).padStart(2, '0')}:${String(segment.startMinute).padStart(2, '0')}`;
-    const endTimeStr = `${String(segment.endHour).padStart(2, '0')}:${String(segment.endMinute).padStart(2, '0')}`;
-
-    if (isOvernight) {
-        const left1 = (startMinutes / 1440) * 100;
-        const width1 = Math.max(0.5, ((1440 - startMinutes) / 1440) * 100);
-        track.appendChild(buildPreviewBlockElement({
-            blocklist, segmentIndex, dayIndex,
-            leftPct: left1, widthPct: width1,
-            startTimeStr, endTimeStr,
-            isContinuation: false
-        }));
-
-        const nextDayIndex = (dayIndex + 1) % 7;
-        const nextTrack = document.querySelector(`.day-track[data-day-index="${nextDayIndex}"]`);
-        if (nextTrack) {
-            const width2 = Math.max(0.5, (endMinutes / 1440) * 100);
-            nextTrack.appendChild(buildPreviewBlockElement({
-                blocklist, segmentIndex, dayIndex: nextDayIndex,
-                leftPct: 0, widthPct: width2,
-                startTimeStr, endTimeStr,
-                isContinuation: true
-            }));
-        }
-    } else {
-        const left = (startMinutes / 1440) * 100;
-        const width = Math.max(0.5, ((endMinutes - startMinutes) / 1440) * 100);
-        track.appendChild(buildPreviewBlockElement({
-            blocklist, segmentIndex, dayIndex,
-            leftPct: left, widthPct: width,
-            startTimeStr, endTimeStr,
-            isContinuation: false
-        }));
-    }
-}
-
-// Construct a single preview block element for one weekday slot. Drag/resize handlers are
-// only attached to the head element (not the overnight tail) so that a drag operates on
-// the original anchor weekday.
-function buildPreviewBlockElement({ blocklist, segmentIndex, dayIndex, leftPct, widthPct, startTimeStr, endTimeStr, isContinuation }) {
-    const previewEl = document.createElement('div');
-    previewEl.className = `calendar-block preview interactive${isContinuation ? ' overnight-continuation' : ''}`;
-    previewEl.style.left = `${leftPct}%`;
-    previewEl.style.width = `${widthPct}%`;
-    previewEl.dataset.previewGroupId = `preview-segment-${segmentIndex}`;
-    previewEl.dataset.segmentIndex = segmentIndex;
-    previewEl.dataset.dayIndex = dayIndex;
-    if (isContinuation) previewEl.dataset.continuation = '1';
-
-    if (blocklist.color) {
-        previewEl.style.background = blocklist.color;
-        previewEl.style.color = getContrastTextColor(blocklist.color);
-    }
-
-    // Resize handles run vertically along the start/end edges. Continuation (tail) blocks
-    // don't get handles — the user adjusts the segment by dragging the head block.
-    const resizeHandles = !isContinuation ? `
-        <div class="resize-handle resize-handle-start" data-handle="start" title="Drag to change start time"></div>
-        <div class="resize-handle resize-handle-end" data-handle="end" title="Drag to change end time"></div>
-    ` : '';
-
-    previewEl.innerHTML = `
-        ${resizeHandles}
-        <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
-        <span class="block-label">${escapeHtml(blocklist.name)}</span>
-        <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
-    `;
-
-    if (!isContinuation && state.isScheduleMode) {
-        const track = document.querySelector(`.day-track[data-day-index="${dayIndex}"]`);
-        if (track) attachPreviewBlockDragHandlers(previewEl, segmentIndex, track);
-    }
-
-    return previewEl;
-}
-
-// Attach drag and resize handlers to a preview block.
-//
-// In the row-based layout time flows horizontally and days stack vertically:
-//   - dragging the body of the block: horizontal motion changes start/end time, vertical
-//     motion (cursor over a different row) changes the day(s) of the segment.
-//   - dragging the .resize-handle-start: adjusts start time (left edge).
-//   - dragging the .resize-handle-end: adjusts end time (right edge).
-function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
-    let isDragging = false;
-    let isResizing = false;
-    let resizeHandle = null;
-    let startX = 0;
-    let startY = 0;
-    let startLeftPct = 0;
-    let startWidthPct = 0;
-    let startDayIndex = null;
-    let currentHoverTrack = track;
-    let clickOffsetY = 0; // Offset from row center where user clicked (helps day-boundary detection)
-    const snapMinutes = 15;
-    const minDurationMinutes = 15;
-
-    function getDayIndexFromTrack(trackEl) {
-        if (!trackEl) return null;
-        const raw = trackEl.dataset.dayIndex;
-        if (raw === undefined || raw === null || raw === '') return null;
-        const idx = parseInt(raw, 10);
-        return Number.isInteger(idx) && idx >= 0 && idx <= 6 ? idx : null;
-    }
-
-    startDayIndex = getDayIndexFromTrack(track);
-
-    function snapToInterval(minutes) {
-        return snapMinutesToInterval(minutes, snapMinutes);
-    }
-
-    function minutesToTime(totalMinutes) {
-        const clamped = clampSameDayMinutes(totalMinutes);
-        return {
-            hours: Math.floor(clamped / 60),
-            minutes: clamped % 60,
-        };
-    }
-
-    function updateSegmentTimesAndDays(newStartMinutes, newEndMinutes, dayShift = 0) {
-        if (newEndMinutes - newStartMinutes < minDurationMinutes) return;
-
-        const startTime = minutesToTime(newStartMinutes);
-        const endTime = minutesToTime(newEndMinutes);
-
-        state.scheduleSegments[segmentIndex].startHour = startTime.hours;
-        state.scheduleSegments[segmentIndex].startMinute = startTime.minutes;
-        state.scheduleSegments[segmentIndex].endHour = endTime.hours;
-        state.scheduleSegments[segmentIndex].endMinute = endTime.minutes;
-
-        if (dayShift !== 0) {
-            const segment = state.scheduleSegments[segmentIndex];
-            const oldDays = segment.days || [];
-            const newDays = oldDays.map(d => {
-                let newDay = d + dayShift;
-                if (newDay < 0) newDay += 7;
-                if (newDay > 6) newDay -= 7;
-                return newDay;
-            });
-            segment.days = newDays;
-            updateDayToggleUI(segmentIndex);
-        }
-
-        updateTimePickerUI(segmentIndex);
-
-        document.querySelectorAll('.calendar-block.preview').forEach(el => el.remove());
-        renderSchedulePreview();
-    }
-
-    function updateTimePickerUI(index) {
-        const segment = state.scheduleSegments[index];
-        const startHourEl = document.querySelector(`[data-target="schedule-start-${index}"][data-type="hour"]`);
-        const startMinEl = document.querySelector(`[data-target="schedule-start-${index}"][data-type="minute"]`);
-        const endHourEl = document.querySelector(`[data-target="schedule-end-${index}"][data-type="hour"]`);
-        const endMinEl = document.querySelector(`[data-target="schedule-end-${index}"][data-type="minute"]`);
-
-        if (startHourEl && document.activeElement !== startHourEl) {
-            startHourEl.value = pad(segment.startHour);
-        }
-        if (startMinEl && document.activeElement !== startMinEl) {
-            startMinEl.value = pad(segment.startMinute);
-        }
-        if (endHourEl && document.activeElement !== endHourEl) {
-            endHourEl.value = pad(segment.endHour);
-        }
-        if (endMinEl && document.activeElement !== endMinEl) {
-            endMinEl.value = pad(segment.endMinute);
-        }
-    }
-
-    function updateDayToggleUI(index) {
-        const segment = state.scheduleSegments[index];
-        const days = segment.days || [];
-        const segmentContainer = document.querySelector(`.schedule-segment[data-segment-index="${index}"]`);
-        if (!segmentContainer) return;
-
-        const dayButtons = segmentContainer.querySelectorAll('.segment-day-toggle');
-        dayButtons.forEach(btn => {
-            const dayIndex = parseInt(btn.dataset.day);
-            btn.classList.toggle('active', days.includes(dayIndex));
-        });
-    }
-
-    // Cursor hover hint on resize handles (pointer events work for mouse; touch skips hover)
-    previewEl.querySelectorAll('.resize-handle').forEach(handle => {
-        handle.addEventListener('pointerenter', () => previewEl.classList.add('resize-hover'));
-        handle.addEventListener('pointerleave', () => previewEl.classList.remove('resize-hover'));
-    });
-
-    // Recompute "HH:MM - HH:MM" from the head's current left%/width% and write it onto
-    // every preview block belonging to this segment (head + overnight tails). Matches the
-    // formula used on mouseup so what the user sees mid-drag is what gets committed.
-    function updateLiveTimeText() {
-        const headBlocks = getHeadPreviewBlocks();
-        if (headBlocks.length === 0) return;
-        const head = headBlocks[0];
-        const leftPct = parseFloat(head.style.left) || 0;
-        const widthPct = parseFloat(head.style.width) || 0;
-        const startMins = (leftPct / 100) * 1440;
-        const endMins = ((leftPct + widthPct) / 100) * 1440;
-        const text = `${formatMinutesAsHHMM(startMins)} - ${formatMinutesAsHHMM(endMins)}`;
-        document.querySelectorAll(
-            `.calendar-block.preview[data-segment-index="${segmentIndex}"] .block-time`
-        ).forEach(el => { el.textContent = text; });
-    }
-
-    bindPointerDragSession(previewEl, {
-        onStart(e) {
-            const handle = e.target.closest('.resize-handle');
-            if (handle) {
-                isResizing = true;
-                resizeHandle = handle.dataset.handle;
-                previewEl.classList.add('resizing');
-                document.body.style.cursor = 'ew-resize';
-            } else {
-                isDragging = true;
-                previewEl.classList.add('dragging');
-                document.body.style.cursor = 'grabbing';
-            }
-
-            startX = e.clientX;
-            startY = e.clientY;
-            startLeftPct = parseFloat(previewEl.style.left) || 0;
-            startWidthPct = parseFloat(previewEl.style.width) || 0;
-            currentHoverTrack = track;
-
-            const trackRect = track.getBoundingClientRect();
-            const trackCenterY = trackRect.top + trackRect.height / 2;
-            clickOffsetY = e.clientY - trackCenterY;
-        },
-        onMove: handlePointerMove,
-        onEnd: handlePointerUp
-    });
-
-    // Only "head" preview blocks (not overnight tails) are manipulated during a drag —
-    // tails are redrawn from the segment's new times on mouseup via renderSchedulePreview.
-    function getHeadPreviewBlocks() {
-        return document.querySelectorAll(
-            `.calendar-block.preview[data-segment-index="${segmentIndex}"]:not([data-continuation])`
-        );
-    }
-
-    function handlePointerMove(e) {
-        const trackRect = track.getBoundingClientRect();
-        if (trackRect.width <= 0) return;
-
-        const deltaX = e.clientX - startX;
-        const deltaPct = (deltaX / trackRect.width) * 100;
-        const headBlocks = getHeadPreviewBlocks();
-
-        if (isDragging) {
-            // Move horizontally — clamp so the block stays within [0, 100]%
-            const maxLeftPct = 100 - startWidthPct;
-            const newLeftPct = Math.max(0, Math.min(maxLeftPct, startLeftPct + deltaPct));
-
-            headBlocks.forEach(block => {
-                block.style.left = `${newLeftPct}%`;
-                block.classList.add('dragging');
-            });
-
-            // Move vertically (across day rows)
-            const allTracks = Array.from(document.querySelectorAll('.day-track'));
-            const effectiveY = e.clientY - clickOffsetY;
-            let targetTrackIndex = -1;
-            for (let i = 0; i < allTracks.length; i++) {
-                const rect = allTracks[i].getBoundingClientRect();
-                if (effectiveY >= rect.top && effectiveY <= rect.bottom) {
-                    targetTrackIndex = i;
-                    currentHoverTrack = allTracks[i];
-                    break;
-                }
-            }
-
-            if (targetTrackIndex >= 0) {
-                const originalTrackIndex = allTracks.indexOf(track);
-                const dayShiftDuringDrag = targetTrackIndex - originalTrackIndex;
-
-                headBlocks.forEach(block => {
-                    if (!block.dataset.originalTrackIndex) {
-                        block.dataset.originalTrackIndex = allTracks.indexOf(block.parentElement);
-                    }
-                    const blockOriginalIndex = parseInt(block.dataset.originalTrackIndex);
-                    const newTrackIndex = blockOriginalIndex + dayShiftDuringDrag;
-                    if (newTrackIndex >= 0 && newTrackIndex < allTracks.length) {
-                        if (allTracks[newTrackIndex] !== block.parentElement) {
-                            allTracks[newTrackIndex].appendChild(block);
-                        }
-                    }
-                });
-            }
-        } else if (isResizing) {
-            if (resizeHandle === 'start') {
-                const newLeftPct = Math.max(0, startLeftPct + deltaPct);
-                const newWidthPct = startWidthPct - (newLeftPct - startLeftPct);
-                if (newWidthPct >= 0.5) {
-                    headBlocks.forEach(block => {
-                        block.style.left = `${newLeftPct}%`;
-                        block.style.width = `${newWidthPct}%`;
-                    });
-                }
-            } else if (resizeHandle === 'end') {
-                const maxEndPct = (MAX_SAME_DAY_END_MINUTES / MINUTES_PER_DAY) * 100;
-                const maxWidthPct = Math.max(0.5, maxEndPct - startLeftPct);
-                const newWidthPct = Math.max(0.5, Math.min(maxWidthPct, startWidthPct + deltaPct));
-                headBlocks.forEach(block => {
-                    block.style.width = `${newWidthPct}%`;
-                });
-            }
-        }
-
-        updateLiveTimeText();
-    }
-
-    function handlePointerUp() {
-        getHeadPreviewBlocks().forEach(block => {
-            block.classList.remove('dragging');
-            block.classList.remove('resizing');
-            delete block.dataset.originalTrackIndex;
-        });
-        document.body.style.cursor = '';
-
-        if (isDragging || isResizing) {
-            const finalLeftPct = parseFloat(previewEl.style.left) || 0;
-            const finalWidthPct = parseFloat(previewEl.style.width) || 0;
-
-            const newStartMinutes = snapToInterval((finalLeftPct / 100) * 1440);
-            const newEndMinutes = snapToInterval(((finalLeftPct + finalWidthPct) / 100) * 1440);
-
-            let dayShift = 0;
-            if (isDragging && currentHoverTrack !== track) {
-                const newDayIndex = getDayIndexFromTrack(currentHoverTrack);
-                if (newDayIndex !== null && startDayIndex !== null) {
-                    dayShift = newDayIndex - startDayIndex;
-                }
-            }
-
-            updateSegmentTimesAndDays(newStartMinutes, newEndMinutes, dayShift);
-        }
-
-        isDragging = false;
-        isResizing = false;
-        resizeHandle = null;
-    }
-}
-
-/** Start-a-block heading + Now/Schedule tabs — only meaningful once a blocklist is chosen. */
-export function syncSchedulerChromeVisibility() {
-    const gridTopRow = document.querySelector('.grid-top-row');
-    const hasLists = (state.appData.blocklists?.length || 0) > 0;
-    const show = hasLists && !!state.selectedBlocklistId;
-    if (gridTopRow) gridTopRow.classList.toggle('grid-top-row--blocklist-selected', show);
-    if (show) {
-        const blocklist = state.appData.blocklists.find((bl) => bl.id === state.selectedBlocklistId);
-        setSchedulerRoomChip(blocklist);
-    }
-    bindUiZoomLayoutObserver();
-    scheduleUiZoomResponsiveLayout();
-    scheduleSelectionPromptLayout();
-}
-
-// Handle blocklist selection
-export function handleBlocklistSelect(e) {
-    const newBlocklistId = e.target.value || null;
-
-    // Before switching, save pending changes for the current blocklist
-    if (state.selectedBlocklistId) {
-        // Save pending schedule segments if in schedule mode
-        if (state.isScheduleMode) {
-            const existingSchedule = state.appData.schedules?.find(s => s.blocklistId === state.selectedBlocklistId);
-            if (!state.appData.settings) state.appData.settings = {};
-            if (!state.appData.settings.pendingScheduleSegments) state.appData.settings.pendingScheduleSegments = {};
-
-            if (!existingSchedule) {
-                // No active schedule - save all segments
-                if (state.scheduleSegments.length > 0) {
-                    state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] = state.scheduleSegments.map(seg => ({ ...seg }));
-                    saveData();
-                }
-            } else {
-                // Active schedule exists - save only NEW segments (those beyond state.activeScheduleSegmentCount)
-                const committedSegmentCount = getCommittedScheduleSegmentCount(existingSchedule);
-                if (state.scheduleSegments.length > committedSegmentCount) {
-                    const newSegments = state.scheduleSegments.slice(committedSegmentCount);
-                    state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] = newSegments.map(seg => ({ ...seg }));
-                    saveData();
-                } else {
-                    // No new segments - clear any pending segments
-                    if (state.appData.settings.pendingScheduleSegments?.[state.selectedBlocklistId]) {
-                        clearPendingScheduleDraft(state.selectedBlocklistId);
-                        saveData();
-                    }
-                }
-            }
-        } else {
-            // Save pending instant block duration if in instant mode
-            if (!state.appData.settings) state.appData.settings = {};
-            if (!state.appData.settings.instantBlockDuration) state.appData.settings.instantBlockDuration = {};
-            if (state.targetDurationMinutes !== 60) { // Only save if different from default
-                state.appData.settings.instantBlockDuration[state.selectedBlocklistId] = state.targetDurationMinutes;
-                saveData();
-            }
-        }
-    }
-
-    state.selectedBlocklistId = newBlocklistId;
-    if (newBlocklistId) state.userExplicitlyDeselected = false;
-
-    const timePicker = document.getElementById('time-picker-container');
-    const passwordHint = document.getElementById('password-hint');
-    const selectionPrompt = document.getElementById('selection-prompt');
-    const startBlockBtn = document.getElementById('start-block-btn');
-    const startScheduleBtn = document.getElementById('start-schedule-btn');
-
-    if (state.selectedBlocklistId) {
-        // Determine which mode to show based on active blocks/schedules
-        const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
-        const now = Date.now();
-
-        // Check if there's an active block (one-off)
-        const hasActiveBlock = blocklist && state.appData.activeBlocks.some(b =>
-            b.blocklistId === state.selectedBlocklistId && b.startTime <= now && b.endTime > now
-        );
-
-        // Check if there's an active schedule
-        const existingSchedule = state.appData.schedules
-            ? state.appData.schedules.find(s => s.blocklistId === state.selectedBlocklistId)
-            : null;
-        const hasActiveSchedule = existingSchedule && existingSchedule.segments && existingSchedule.segments.length > 0;
-
-        // Determine default mode:
-        if (hasActiveBlock && !hasActiveSchedule) {
-            setScheduleMode(false);
-        } else if (hasActiveSchedule && !hasActiveBlock) {
-            setScheduleMode(true);
-        } else if (hasActiveBlock && hasActiveSchedule) {
-            setScheduleMode(false);
-        } else {
-            // No active block or schedule: restore this blocklist's last-viewed tab (instant vs schedule)
-            const preferredSchedule = state.appData.settings?.preferredStartMode?.[state.selectedBlocklistId];
-            setScheduleMode(preferredSchedule === true);
-        }
-
-        // Hide selection prompt, show time picker, hint, and appropriate button
-        if (selectionPrompt) selectionPrompt.classList.add('hidden');
-        timePicker.classList.remove('hidden');
-        if (passwordHint) passwordHint.classList.remove('hidden');
-
-        // Show the appropriate button based on mode
-        if (state.isScheduleMode) {
-            if (startBlockBtn) startBlockBtn.classList.add('hidden');
-            if (startScheduleBtn) {
-                startScheduleBtn.classList.remove('hidden');
-                updateScheduleButtonState();
-            }
-        } else {
-            if (startScheduleBtn) startScheduleBtn.classList.add('hidden');
-            if (startBlockBtn) {
-                startBlockBtn.classList.remove('hidden');
-
-                const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
-                const now = Date.now();
-                // IMPORTANT: Only find active block for THIS specific blocklist
-                const activeBlock = state.appData.activeBlocks.find(b =>
-                    b.blocklistId === state.selectedBlocklistId &&
-                    b.startTime <= now &&
-                    b.endTime > now
-                );
-
-                if (blocklist) {
-                    const btnLabel = startBlockBtn.querySelector('.btn-label');
-
-                    // Always clear the activeBlockId first to prevent cross-blocklist issues
-                    delete startBlockBtn.dataset.activeBlockId;
-                    startBlockBtn.classList.remove('stop-block');
-
-                    const pauseBtn = document.getElementById('pause-block-btn');
-
-                    if (activeBlock) {
-                        // Active block - show Stop focus space button (ghost) with square icon
-                        startBlockBtn.classList.add('stop-block');
-                        setBtnActionLabel(btnLabel, tSettings('stopBlock'));
-                        setStartBtnBlocklistInfo(startBlockBtn, blocklist);
-                        startBlockBtn.disabled = false;
-                        startBlockBtn.dataset.activeBlockId = activeBlock.id;
-
-                        // Show pause button with correct appearance
-                        if (pauseBtn) {
-                            pauseBtn.classList.remove('hidden');
-                            updatePauseButtonAppearance(!!activeBlock.isPaused);
-                        }
-
-                        setStartBlockBtnLeadingIcon(startBlockBtn, 'stop');
-
-                        // Disable time controls
-                        disableTimeControls(true);
-
-                        // Keep the info message visible for active always-on blocks.
-                        const alwaysOnMsg = document.getElementById('always-on-message');
-                        if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
-                    } else {
-                        // No active block - show Start focus space button with play icon
-                        // Ensure we've already cleared the activeBlockId above
-                setBtnActionLabel(btnLabel, tSettings('startBlockButton'), { simple: true });
-                setStartBtnBlocklistInfo(startBlockBtn, blocklist);
-
-                        setStartBlockBtnLeadingIcon(startBlockBtn, 'enter');
-
-                        // Enable time controls
-                        disableTimeControls(false);
-
-                        // Re-show always-on message based on current mode
-                        const alwaysOnMsg = document.getElementById('always-on-message');
-                        if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !state.isAlwaysOnMode);
-
-                        // Hide pause button
-                        if (pauseBtn) pauseBtn.classList.add('hidden');
-                    }
-                }
-            }
-        }
-        initializeTimeInputs();
-    } else {
-        // Show selection prompt, hide time picker, hint, and both buttons
-        if (selectionPrompt) selectionPrompt.classList.remove('hidden');
-        timePicker.classList.add('hidden');
-        if (passwordHint) passwordHint.classList.add('hidden');
-        if (startBlockBtn) startBlockBtn.classList.add('hidden');
-        if (startScheduleBtn) startScheduleBtn.classList.add('hidden');
-        const pauseBtn = document.getElementById('pause-block-btn');
-        if (pauseBtn) pauseBtn.classList.add('hidden');
-    }
-
-    syncSchedulerChromeVisibility();
-
-    // Update visual selection state on blocklist cards
-    renderBlocklists();
-
-    handleTimeChange(); // Update button state and preview
-
-    // Wait for DOM reflow to capture the correct height after showing/hiding elements
-    setTimeout(() => {
-        updateWindowHeight();
-    }, 50);
-}
-
-// Deselect current blocklist (same behavior as clicking on background).
-// Used by click-outside handler and ESC key.
-function deselectBlocklist() {
-    if (!state.selectedBlocklistId) return;
-    state.userExplicitlyDeselected = true;
-    const currentBlocklistId = state.selectedBlocklistId;
-    if (state.isScheduleMode) {
-        const existingSchedule = state.appData.schedules?.find(s => s.blocklistId === currentBlocklistId);
-        if (!state.appData.settings) state.appData.settings = {};
-        if (!state.appData.settings.pendingScheduleSegments) state.appData.settings.pendingScheduleSegments = {};
-
-        if (!existingSchedule) {
-            if (state.scheduleSegments.length > 0) {
-                state.appData.settings.pendingScheduleSegments[currentBlocklistId] = state.scheduleSegments.map(seg => ({ ...seg }));
-                saveData();
-            }
-        } else {
-            const committedSegmentCount = getCommittedScheduleSegmentCount(existingSchedule);
-            if (state.scheduleSegments.length > committedSegmentCount) {
-                const newSegments = state.scheduleSegments.slice(committedSegmentCount);
-                state.appData.settings.pendingScheduleSegments[currentBlocklistId] = newSegments.map(seg => ({ ...seg }));
-                saveData();
-                } else {
-                    // No new segments - clear any pending segments
-                    if (state.appData.settings.pendingScheduleSegments?.[currentBlocklistId]) {
-                        clearPendingScheduleDraft(currentBlocklistId);
-                        saveData();
-                    }
-                }
-        }
-    } else {
-        if (!state.appData.settings) state.appData.settings = {};
-        if (!state.appData.settings.instantBlockDuration) state.appData.settings.instantBlockDuration = {};
-        if (state.targetDurationMinutes !== 60) {
-            state.appData.settings.instantBlockDuration[currentBlocklistId] = state.targetDurationMinutes;
-            saveData();
-        }
-    }
-    state.selectedBlocklistId = null;
-    const blocklistSelect = document.getElementById('blocklist-select');
-    blocklistSelect.value = '';
-    handleBlocklistSelect({ target: blocklistSelect });
-}
-
-// Show start block confirmation modal
-function startBlock() {
-    if (!state.selectedBlocklistId) return;
-
-    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
-    if (!blocklist) return;
-
-    // Check if this is a "Stop Block" action (button is in stop mode)
-    const startBlockBtn = document.getElementById('start-block-btn');
-    if (startBlockBtn && startBlockBtn.dataset.activeBlockId) {
-        // Verify the activeBlockId belongs to the currently selected blocklist
-        const activeBlock = state.appData.activeBlocks.find(b =>
-            b.id === startBlockBtn.dataset.activeBlockId &&
-            b.blocklistId === state.selectedBlocklistId
-        );
-
-        if (activeBlock) {
-            // Open override dialog instead of starting a new block
-            openOverrideModal(startBlockBtn.dataset.activeBlockId);
-            return;
-        } else {
-            // ActiveBlockId doesn't match selected blocklist - clear it and continue
-            delete startBlockBtn.dataset.activeBlockId;
-            startBlockBtn.classList.remove('stop-block');
-        }
-    }
-
-    // Calculate duration for display
-    let blockStart = getStartTimeAsDate();
-    let blockEnd = getEndTimeAsDate();
-    if (!state.isAlwaysOnMode && blockEnd <= blockStart) {
-        blockEnd = new Date(blockEnd);
-        blockEnd.setDate(blockEnd.getDate() + 1);
-    }
-
-    setStartConfirmRoomChip(blocklist);
-
-    const titleEl = document.getElementById('start-block-confirm-title');
-    if (titleEl) titleEl.textContent = tSettings('startThisBlock');
-
-    const subtitleEl = document.getElementById('start-confirm-subtitle');
-    if (subtitleEl) {
-        subtitleEl.innerHTML = formatStartBlockSubtitle(state.isAlwaysOnMode, blockStart, blockEnd);
-    }
-
-    const durationEl = document.getElementById('start-confirm-duration');
-    if (durationEl) {
-        durationEl.innerHTML = formatStartBlockDurationCopy(state.isAlwaysOnMode, blockStart, blockEnd);
-    }
-
-    renderStartConfirmBlockingDetails(
-        blocklist,
-        document.getElementById('start-confirm-blocking-list'),
-        document.getElementById('start-confirm-show-all-blocking'),
-        document.getElementById('start-confirm-blocking-row'),
-    );
-
-    // Build override difficulty text with time estimate
-    const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-    const displayCount = difficulty.type === 'custom'
-        ? (difficulty.customText?.length || 0)
-        : normalizeOverrideCount(difficulty.count, difficulty.type);
-    const estimatedMinutes = getOverrideEstimatedMinutes(
-        difficulty.type,
-        displayCount,
-        difficulty.customText || ''
-    );
-    const startType =
-        difficulty.type === 'custom' && difficulty.customText
-            ? 'custom'
-            : difficulty.type === 'gibberish'
-              ? 'gibberish'
-              : 'random-words';
-
-    setStartConfirmOverrideDescription({
-        type: startType,
-        count: displayCount,
-        estimatedMinutes
-    });
-
-    // Show modal
-    document.getElementById('start-block-confirm-modal').classList.remove('hidden');
-}
-
-// Close start block confirmation modal
-function closeStartBlockConfirmModal() {
-    document.getElementById('start-block-confirm-modal').classList.add('hidden');
-    // Reset resume state and restore default text
-    if (resumeData) {
-        resumeData = null;
-        document.getElementById('start-block-confirm-title').textContent = tSettings('startThisBlock');
-        setStartConfirmPrimaryLabel('proceed-start-confirm-btn', tSettings('startBlock'));
-    }
-}
-
-// Actually start a block (called after confirmation)
-async function proceedWithBlock() {
-    // If this is a resume action, delegate to proceedWithResume
-    if (resumeData) {
-        await proceedWithResume();
-        return;
-    }
-
-    // Close confirmation modal
-    closeStartBlockConfirmModal();
-
-    const startBtn = document.getElementById('start-block-btn');
-
-    if (!state.selectedBlocklistId) return;
-
-    // Get times from the custom time picker
-    let blockStart = getStartTimeAsDate();
-    let blockEnd;
-
-    if (state.isAlwaysOnMode) {
-        // Always-on: use far-future end time
-        blockEnd = new Date(ALWAYS_ON_END_TIME);
-    } else {
-        blockEnd = getEndTimeAsDate();
-        // If end is before or equal to start, assume end is next day
-        if (blockEnd <= blockStart) {
-            blockEnd.setDate(blockEnd.getDate() + 1);
-        }
-    }
-
-    // Disable button while processing
-    startBtn.disabled = true;
-    startBtn.textContent = 'Starting...';
-
-    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
-    if (!blocklist) {
-        startBtn.disabled = false;
-        startBtn.innerHTML = getStartBlockButtonHTML();
-        return;
-    }
-    if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this block')) {
-        startBtn.disabled = false;
-        startBtn.innerHTML = getStartBlockButtonHTML();
-        return;
-    }
-
-    const block = {
-        id: generateId(),
-        blocklistId: state.selectedBlocklistId,
-        startTime: blockStart.getTime(),
-        endTime: blockEnd.getTime()
-    };
-
-    // Mark always-on blocks with a flag for display purposes
-    if (state.isAlwaysOnMode) {
-        block.isAlwaysOn = true;
-    }
-
-    let result;
-
-    if (state.isIOS) {
-        // iOS: Use Screen Time API via plugin
-        if (!state.screentimeAuthorized) {
-            const authResult = await requestScreentimeAuth();
-            if (!authResult.granted) {
-                startBtn.disabled = false;
-                startBtn.innerHTML = getStartBlockButtonHTML();
-                if (authResult.status === 'denied') {
-                    alert('Screen Time authorization was denied. Please go to Settings > Screen Time > ReDD Blocker and enable access.');
-                } else if (authResult.error) {
-                    alert('Screen Time authorization failed: ' + authResult.error);
-                } else {
-                    alert('Screen Time authorization is required to block websites. Please try again.');
-                }
-                updateOnboardingVisibility();
-                return;
-            }
-            updateOnboardingVisibility();
-        }
-
-        try {
-            // Apply union of all active blocks + active schedule segments (not just this blocklist).
-            state.appData.activeBlocks.push(block);
-            state.activatedBlockIds.add(block.id);
-            const updateResult = await updateHostsFile();
-            if (!updateResult.success) {
-                state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
-                state.activatedBlockIds.delete(block.id);
-                result = { success: false, error: updateResult.error || 'Failed to update blocking' };
-            } else {
-                result = { success: true };
-                // Register one-off DeviceActivity so block ends at endTime when app is closed
-                // Register one-off DeviceActivity so block ends at endTime when app is closed (Option B: store this block's payload to remove)
-                if (!block.isAlwaysOn && block.endTime < ALWAYS_ON_END_TIME) {
-                    try {
-                        const iosPayload = getBlocklistIOSPayload(blocklist);
-                        await tauriAPI.screentimeSetBlockEndState({
-                            blockId: block.id,
-                            domains: Array.from(blocklist?.websites || []),
-                            appTokenData: iosPayload.appTokenData,
-                            categoryTokenData: iosPayload.categoryTokenData
-                        });
-                        const res = await tauriAPI.screentimeRegisterOneOffActivity('redd-block-end-' + block.id, block.endTime);
-                        if (res && res.success === false) {
-                            console.error('[iOS] One-off DeviceActivity registration failed:', res.error || 'Unknown error');
-                        }
-                    } catch (e) {
-                        console.warn('[iOS] One-off block-end registration failed:', e);
-                    }
-                }
-            }
-        } catch (err) {
-            state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
-            state.activatedBlockIds.delete(block.id);
-            result = { success: false, error: err.toString() };
-        }
-    } else if (state.isAndroid) {
-        // Android: push locally, sync (creates the MANUAL Schedule entity
-        // in Kotlin), then explicitly start the session — set_schedules
-        // alone doesn't activate a MANUAL schedule, see syncSchedulesToHelper.
-        try {
-            state.appData.activeBlocks.push(block);
-            await saveData();
-            await syncSchedulesToHelper();
-            const endTimestampMs = (block.isAlwaysOn || block.endTime >= ALWAYS_ON_END_TIME) ? null : block.endTime;
-            const startResult = await tauriAPI.androidStartManualBlock(block.id, endTimestampMs);
-            if (!startResult.success) {
-                state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
-                await saveData();
-                result = { success: false, error: startResult.error || 'Failed to start block' };
-            } else {
-                result = { success: true };
-            }
-        } catch (err) {
-            state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
-            await saveData();
-            result = { success: false, error: err.toString() };
-        }
-    } else {
-        // Desktop: persist the block locally first so save_data and the
-        // native-messaging host see it immediately (state.helperAvailable only
-        // gates legacy helper-daemon wiring, not v2 extension blocking).
-        state.appData.activeBlocks.push(block);
-        state.activatedBlockIds.add(block.id);
-
-        if (state.helperAvailable) {
-            const status = await tauriAPI.checkHelperStatus();
-            if (!status.running || !status.version_ok) {
-                state.helperAvailable = false;
-            }
-        }
-        // v2: the app process IS the helper. startBlockViaHelper is a
-        // no-op shim; extension blocking follows from save_data below.
-        result = await tauriAPI.startBlockViaHelper({
-            domains: blocklist.websites || [],
-            endTime: blockEnd.getTime(),
-            blocklistId: state.selectedBlocklistId
-        });
-    }
-
-    if (!result.success) {
-        if (!state.isIOS) {
-            state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
-            state.activatedBlockIds.delete(block.id);
-        }
-        // Re-enable button
-        startBtn.disabled = false;
-        startBtn.innerHTML = getStartBlockButtonHTML();
-
-        // Only show error if user didn't cancel
-        if (!result.cancelled) {
-            if (isHelperConnectionError(result.error)) {
-                state.helperAvailable = false;
-                alert('The block service isn\'t running. Please open Settings, remove the helper, then try starting a block again to reinstall it.');
-            } else {
-                alert('Could not start block: ' + (result.error || 'Unknown error'));
-            }
-        }
-        return;
-    }
-
-    // Clear pending duration for this blocklist (it's now committed)
-    if (state.appData.settings?.instantBlockDuration?.[state.selectedBlocklistId]) {
-        delete state.appData.settings.instantBlockDuration[state.selectedBlocklistId];
-    }
-
-    // Save data and reset UI
-    await saveData();
-
-    // Update blocked apps (handles both active blocks and schedules)
-    await updateBlockedApps();
-
-    // Render UI to update blocklist cards (show ACTIVE badge)
-    render();
-
-    // Restore button HTML structure first (textContent = 'Starting...' wiped it)
-    const startBtn2 = document.getElementById('start-block-btn');
-    startBtn2.innerHTML = getStartBlockButtonHTML();
-    startBtn2.disabled = false;
-
-    // Ensure the blocklist stays selected in dropdown and update UI to show Stop Block button
-    const blocklistSelect = document.getElementById('blocklist-select');
-    blocklistSelect.value = state.selectedBlocklistId; // Make sure it's still set
-    handleBlocklistSelect({ target: blocklistSelect });
-}
-
-// Helper function for start block button HTML (includes .btn-label and .btn-blocklist-meta wrapper)
-function getStartBlockButtonHTML() {
-    return `
-        ${START_FOCUS_SPACE_PLAY_ICON}
-        ${STOP_ACTION_SQUARE_ICON}
-        <span class="btn-label">${escapeHtml(tSettings('startBlockButton'))}</span>
-        <span class="btn-blocklist-meta">
-            <span class="btn-blocklist-lead" aria-hidden="true"></span>
-            <span class="btn-emoji" aria-hidden="true"></span>
-            <span class="btn-name"></span>
-        </span>
-    `;
-}
-
-// Render an action label like "Stop Schedule:" / "Start blokering:" as two
-// inner spans so narrow viewports can hide the trailing context (and the
-// .btn-emoji + .btn-name beside it) and just show "Stop" / "Start". Splits
-// at the first space so it works for any locale that follows verb-then-noun.
-function getActionLabelHTML(fullText) {
-    const safe = (s) => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-    let text = String(fullText ?? '').trimEnd();
-    // Colon before blocklist meta is added in CSS when meta is visible (see .btn-label-context::after).
-    if (text.endsWith(':')) text = text.slice(0, -1);
-    const spaceIdx = text.indexOf(' ');
-    if (spaceIdx <= 0) return safe(text);
-    const action = text.slice(0, spaceIdx);
-    const context = text.slice(spaceIdx);
-    return `<span class="btn-label-action">${safe(action)}</span><span class="btn-label-context">${safe(context)}</span>`;
-}
-
-export function setBtnActionLabel(el, fullText, { simple = false } = {}) {
-    if (!el) return;
-    if (simple) {
-        el.textContent = String(fullText ?? '').trimEnd();
-        return;
-    }
-    el.innerHTML = getActionLabelHTML(fullText);
-}
-
-// The visible colon is added in CSS on .btn-label-context for stop-block only.
-function syncStartBtnBlocklistMetaLead(btn) {
-    if (!btn) return;
-    const lead = btn.querySelector('.btn-blocklist-lead');
-    if (!lead) return;
-    lead.textContent = '';
-}
-
-function measureStopBtnExpandedWidth(btn) {
-    if (!btn) return 0;
-    const clone = btn.cloneNode(true);
-    clone.classList.remove('hidden', 'stop-meta-collapsed');
-    clone.style.position = 'absolute';
-    clone.style.visibility = 'hidden';
-    clone.style.pointerEvents = 'none';
-    clone.style.width = 'auto';
-    clone.style.maxWidth = 'none';
-    clone.style.minWidth = '0';
-    clone.style.left = '-99999px';
-    clone.style.top = '0';
-    document.body.appendChild(clone);
-    const width = clone.getBoundingClientRect().width;
-    clone.remove();
-    return width;
-}
-
-export function syncStopBtnLabelFit(btn) {
-    if (!btn) return;
-    btn.classList.remove('stop-meta-collapsed');
-    syncStartBtnBlocklistMetaLead(btn);
-
-    const isActionBtn = btn.id === 'start-block-btn' || btn.id === 'start-schedule-btn';
-    if (!isActionBtn || btn.classList.contains('hidden') || btn.clientWidth <= 0) return;
-
-    const isStop = btn.classList.contains('stop-block') || btn.classList.contains('stop-schedule');
-    if (!isStop) return;
-
-    if (state.isIOS || state.isAndroid) {
-        btn.classList.add('stop-meta-collapsed');
-        return;
-    }
-
-    const buttonRow = btn.parentElement;
-    const rowStyle = buttonRow ? window.getComputedStyle(buttonRow) : null;
-    const rowGap = rowStyle ? (parseFloat(rowStyle.columnGap || rowStyle.gap) || 0) : 0;
-    const visibleButtons = buttonRow
-        ? Array.from(buttonRow.children).filter(el => el instanceof HTMLElement && !el.classList.contains('hidden') && el.getClientRects().length > 0)
-        : [btn];
-    const otherButtonsWidth = visibleButtons
-        .filter(el => el !== btn)
-        .reduce((total, el) => total + el.getBoundingClientRect().width, 0);
-    const availableBtnWidth = buttonRow
-        ? buttonRow.clientWidth - otherButtonsWidth - (Math.max(0, visibleButtons.length - 1) * rowGap)
-        : btn.clientWidth;
-    const expandedBtnWidth = measureStopBtnExpandedWidth(btn);
-    const fitSlackPx = state.isIOS ? IOS_STOP_BTN_META_COLLAPSE_SLACK_PX : 1;
-    const shouldCollapseForWidth = expandedBtnWidth > 0
-        && expandedBtnWidth > availableBtnWidth - fitSlackPx;
-
-    if (shouldCollapseForWidth || btn.scrollWidth > btn.clientWidth + 1) {
-        btn.classList.add('stop-meta-collapsed');
-    }
-}
-
-export function syncAllStopBtnLabelFits() {
-    ['start-block-btn', 'start-schedule-btn'].forEach((id) => {
-        const btn = document.getElementById(id);
-        if (btn) syncStopBtnLabelFit(btn);
-    });
-}
-
-// Update emoji and name on stop buttons only — enter/start labels stand alone.
-export function setStartBtnBlocklistInfo(btn, blocklist) {
-    if (!btn) return;
-    const btnEmoji = btn.querySelector('.btn-emoji');
-    const btnName = btn.querySelector('.btn-name');
-    const isStop = btn.classList.contains('stop-block') || btn.classList.contains('stop-schedule');
-    if (!isStop) {
-        if (btnEmoji) btnEmoji.textContent = '';
-        if (btnName) btnName.textContent = '';
-        btn.classList.remove('stop-meta-collapsed');
-        return;
-    }
-    if (btnEmoji) btnEmoji.textContent = blocklist ? (blocklist.emoji || '🚫') : '';
-    if (btnName) btnName.textContent = blocklist ? blocklist.name : '';
-    syncStopBtnLabelFit(btn);
-}
-
-
-// Update hosts file based on active blocks
-// silent = true means don't prompt for password (used for cleanup)
 
 // Update blocked apps sent to the in-process app watcher (desktop only).
 // Computes the effective union of apps from active one-off blocks AND active schedule
@@ -10382,2082 +8252,7 @@ export async function updateBlockedApps() {
     }
 }
 
-// Blocklist modal: --blocklist-tint colours the website/app tag chips;
-// --blocklist-tag-text is black or white for readable labels (from the
-// picker / swatch handlers). The input well stays the normal input bg.
-// Pass null on close to clear the custom properties.
-function applyModalBlocklistTint(hexColor) {
-    const modal = document.getElementById('blocklist-modal');
-    if (!modal) return;
-    if (typeof hexColor === 'string' && hexColor.startsWith('#')) {
-        modal.style.setProperty('--blocklist-tint', hexColor);
-        modal.style.setProperty('--blocklist-tag-text', getContrastTextColor(hexColor));
-    } else {
-        modal.style.removeProperty('--blocklist-tint');
-        modal.style.removeProperty('--blocklist-tag-text');
-    }
-}
 
-// Open blocklist modal
-export function openBlocklistModal(blocklist = null) {
-    editingBlocklistId = blocklist?.id || null;
-    blocklistModalPreviewSnapshot = null;
-
-    if (editingBlocklistId) {
-        const original = state.appData.blocklists.find(b => b.id === editingBlocklistId);
-        if (original) {
-            blocklistModalPreviewSnapshot = {
-                showItemDetails: original.showItemDetails
-            };
-        }
-    }
-
-    document.getElementById('modal-title').textContent = blocklist ? tSettings('editBlocklist') : tSettings('createBlocklist');
-
-    const modalName = truncateBlocklistName(blocklist?.name || '');
-    document.getElementById('blocklist-name').value = modalName;
-    document.getElementById('blocklist-name').classList.remove('input-error');
-    lastBlocklistNameValue = modalName;
-
-    const normalizedDifficulty = cloneOverrideDifficulty(blocklist?.overrideDifficulty, 10);
-    document.getElementById('override-type').value = normalizedDifficulty.type;
-    document.getElementById('override-count').value = normalizedDifficulty.count;
-    document.getElementById('custom-override-text').value = normalizedDifficulty.customText || '';
-    const maxDifficultyCb = document.getElementById('override-max-difficulty-checkbox');
-    const maxDifficulty = normalizedDifficulty.maxDifficulty === true;
-    if (maxDifficultyCb) maxDifficultyCb.checked = maxDifficulty;
-
-    const type = normalizedDifficulty.type;
-    const overrideCountField = document.getElementById('override-count');
-    const customTextArea = document.getElementById('custom-override-text');
-    applyOverrideTypeUi(type);
-    overrideCountField.value = normalizeOverrideCount(overrideCountField.value, type);
-    customTextArea.maxLength = getMaxOverrideCharsForType('custom');
-    customTextArea.value = normalizeCustomOverrideText(customTextArea.value);
-    lastOverrideCountValue = String(overrideCountField.value);
-    lastCustomOverrideTextValue = customTextArea.value;
-    lastOverrideTypeValue = document.getElementById('override-type').value;
-
-    if (maxDifficulty) {
-        lastOverrideCountValueBeforeMaxDifficulty = normalizedDifficulty.countBeforeMax ?? 50;
-        lastOverrideTypeValueBeforeMaxDifficulty = normalizedDifficulty.typeBeforeMax ?? 'random-words';
-        const maxCount = getMaxOverrideCharsForType(type);
-        overrideCountField.value = String(maxCount);
-        overrideCountField.max = String(maxCount);
-        setOverrideCountMaxMode(true);
-    } else {
-        setOverrideCountMaxMode(false);
-    }
-    lastOverrideCountValue = String(overrideCountField.value);
-
-    // Restore color swatch selection
-    document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
-
-    let colorToSelect = blocklist?.color;
-
-    // If creating a new blocklist (or no color set), find the first unused color
-    if (!colorToSelect) {
-        const usedColors = new Set(state.appData.blocklists.map(bl => bl.color));
-        const swatches = Array.from(document.querySelectorAll('.color-swatch:not(.custom-swatch)'));
-
-        // Find first color from the palette that isn't used
-        const firstUnused = swatches.find(s => !usedColors.has(s.dataset.color));
-
-        if (firstUnused) {
-            colorToSelect = firstUnused.dataset.color;
-        } else if (swatches.length > 0) {
-            // If all are used, wrap around to the first one
-            colorToSelect = swatches[0].dataset.color;
-        } else {
-            // Fallback default — first colour in the palette.
-            colorToSelect = '#B8D1DE';
-        }
-    }
-
-    const matchingSwatch = document.querySelector(`.color-swatch[data-color="${colorToSelect}"]:not(.custom-swatch)`);
-    if (matchingSwatch) {
-        matchingSwatch.classList.add('selected');
-    } else {
-        // Must be a custom color
-        const customSwatch = document.getElementById('custom-color-swatch');
-        if (customSwatch) {
-            customSwatch.style.background = colorToSelect;
-            customSwatch.dataset.color = colorToSelect;
-            customSwatch.classList.add('selected');
-        }
-    }
-
-    applyModalBlocklistTint(colorToSelect);
-
-    // Restore emoji swatch selection
-    document.querySelectorAll('.emoji-swatch').forEach(s => s.classList.remove('selected'));
-
-    let emojiToSelect = blocklist?.emoji;
-
-    // If creating a new blocklist (or no emoji set), find the first unused emoji
-    if (!emojiToSelect) {
-        const usedEmojis = new Set(state.appData.blocklists.map(bl => bl.emoji));
-        const emojiSwatches = Array.from(document.querySelectorAll('.emoji-swatch:not(.custom-emoji-swatch)'));
-
-        // Find first emoji from the palette that isn't used
-        const firstUnused = emojiSwatches.find(s => !usedEmojis.has(s.dataset.emoji));
-
-        if (firstUnused) {
-            emojiToSelect = firstUnused.dataset.emoji;
-        } else if (emojiSwatches.length > 0) {
-            // If all are used, wrap around to the first one
-            emojiToSelect = emojiSwatches[0].dataset.emoji;
-        } else {
-            // Fallback default
-            emojiToSelect = '📱';
-        }
-    }
-
-    const matchingEmoji = document.querySelector(`.emoji-swatch[data-emoji="${emojiToSelect}"]:not(.custom-emoji-swatch)`);
-    if (matchingEmoji) {
-        matchingEmoji.classList.add('selected');
-    } else {
-        // Must be a custom emoji
-        const customEmojiSwatch = document.getElementById('custom-emoji-swatch');
-        if (customEmojiSwatch) {
-            customEmojiSwatch.innerHTML = emojiToSelect;
-            customEmojiSwatch.dataset.emoji = emojiToSelect;
-            customEmojiSwatch.classList.add('selected');
-        }
-    }
-
-    // Check if active (block or schedule)
-    const now = Date.now();
-    const hasActiveBlock = blocklist?.id && state.appData.activeBlocks.some(
-        b => b.blocklistId === blocklist.id && b.startTime <= now && b.endTime > now
-    );
-    const hasActiveSchedule = blocklist?.id && state.appData.schedules?.some(
-        s => s.blocklistId === blocklist.id && s.segments && s.segments.length > 0
-    );
-    const isActive = hasActiveBlock || hasActiveSchedule;
-
-    const warningEl = document.getElementById('active-blocklist-warning');
-    const modeInputs = document.getElementById('blocklist-modal').querySelectorAll('.radio-option');
-    const overrideInputs = [
-        document.getElementById('override-type'),
-        document.getElementById('override-count'),
-        document.getElementById('custom-override-text'),
-        document.getElementById('override-max-difficulty-checkbox')
-    ];
-    const maxDifficultyWrap = document.getElementById('override-max-difficulty-wrap');
-
-    // Get override elements for styling
-    const overrideTypeSelect = document.getElementById('override-type');
-    const overrideCountInput = document.getElementById('override-count');
-    const overrideCountWrapperEl = document.getElementById('override-count-wrapper');
-    const overrideMethodRowEl = document.getElementById('override-method-row');
-    const overridePreviewBlockEl = document.getElementById('override-preview-block');
-    const overrideTimeEstimateEl = document.getElementById('override-count-time-estimate');
-
-    if (isActive) {
-        warningEl.classList.remove('hidden');
-        modeInputs.forEach(el => el.classList.add('disabled'));
-        overrideInputs.forEach(el => el.disabled = true);
-
-        // Style override type dropdown (like repeat dropdown)
-        if (overrideTypeSelect) {
-            overrideTypeSelect.classList.add('form-select-disabled');
-        }
-
-        // Style override count input (like repeat dropdown)
-        if (overrideCountInput) {
-            overrideCountInput.classList.add('form-input-disabled');
-        }
-
-        if (overrideTimeEstimateEl) {
-            overrideTimeEstimateEl.classList.add('time-estimate-disabled');
-        }
-        if (overrideMethodRowEl) overrideMethodRowEl.classList.add('blocklist-active-locked');
-        if (overrideCountWrapperEl) overrideCountWrapperEl.classList.add('blocklist-active-locked');
-        if (maxDifficultyWrap) maxDifficultyWrap.classList.add('max-difficulty-disabled', 'blocklist-active-locked');
-        if (overridePreviewBlockEl) overridePreviewBlockEl.classList.add('blocklist-active-locked');
-        document.getElementById('override-count-minus')?.setAttribute('disabled', '');
-        document.getElementById('override-count-plus')?.setAttribute('disabled', '');
-
-        // Pass existing items as locked
-        window.setModalData(
-            blocklist.websites || [],
-            getBlocklistRegularApps(blocklist),
-            getBlocklistIOSScreenTimeSelection(blocklist),
-            blocklist.websites || [],
-            getBlocklistModalLockedApps(blocklist)
-        );
-    } else {
-        warningEl.classList.add('hidden');
-        modeInputs.forEach(el => el.classList.remove('disabled'));
-        overrideInputs.forEach(el => el.disabled = false);
-
-        // Remove disabled styling
-        if (overrideTypeSelect) {
-            overrideTypeSelect.classList.remove('form-select-disabled');
-        }
-        if (overrideCountInput) {
-            overrideCountInput.classList.remove('form-input-disabled');
-        }
-        if (overrideTimeEstimateEl) {
-            overrideTimeEstimateEl.classList.remove('time-estimate-disabled');
-        }
-        if (overrideMethodRowEl) overrideMethodRowEl.classList.remove('blocklist-active-locked');
-        if (overrideCountWrapperEl) overrideCountWrapperEl.classList.remove('blocklist-active-locked');
-        if (maxDifficultyWrap) maxDifficultyWrap.classList.remove('max-difficulty-disabled', 'blocklist-active-locked');
-        if (overridePreviewBlockEl) overridePreviewBlockEl.classList.remove('blocklist-active-locked');
-        const maxDifficultyOn = document.getElementById('override-max-difficulty-checkbox')?.checked;
-        document.getElementById('override-count-minus')?.toggleAttribute('disabled', !!maxDifficultyOn);
-        document.getElementById('override-count-plus')?.toggleAttribute('disabled', !!maxDifficultyOn);
-
-        window.setModalData(
-            blocklist?.websites || [],
-            getBlocklistRegularApps(blocklist),
-            getBlocklistIOSScreenTimeSelection(blocklist),
-            [],
-            []
-        );
-    }
-
-    // Re-apply max-difficulty grey-out for count when blocklist is not active (above else branch removes it)
-    if (!isActive && document.getElementById('override-max-difficulty-checkbox')?.checked) {
-        setOverrideCountMaxMode(true);
-    }
-
-    // Set advanced options - default to checked (true) if not set
-    const showItemDetailsCheckbox = document.getElementById('show-item-details-checkbox');
-    if (showItemDetailsCheckbox) {
-        showItemDetailsCheckbox.checked = blocklist?.showItemDetails !== false;
-        showItemDetailsCheckbox.onchange = () => {
-            if (!editingBlocklistId) return;
-            const bl = state.appData.blocklists.find(b => b.id === editingBlocklistId);
-            if (!bl) return;
-            bl.showItemDetails = showItemDetailsCheckbox.checked;
-            renderBlocklists();
-        };
-    }
-
-    // Reset advanced options to collapsed state
-    const blocklistAdvancedToggle = document.getElementById('blocklist-advanced-toggle');
-    const blocklistAdvancedContent = document.getElementById('blocklist-advanced-content');
-    if (blocklistAdvancedToggle && blocklistAdvancedContent) {
-        blocklistAdvancedToggle.classList.remove('expanded');
-        blocklistAdvancedContent.classList.add('hidden');
-    }
-
-    document.getElementById('blocklist-modal').classList.remove('hidden');
-}
-
-// Close blocklist modal
-function closeBlocklistModal() {
-    blocklistModalUndoStack.length = 0;
-    blocklistModalApplyingUndo = false;
-    lastBlocklistNameValue = '';
-    lastOverrideCountValue = '';
-    lastCustomOverrideTextValue = '';
-    lastOverrideTypeValue = '';
-    lastOverrideCountValueBeforeMaxDifficulty = 50;
-    lastOverrideTypeValueBeforeMaxDifficulty = 'random-words';
-    state.overridePreviewFrozenByType = { 'random-words': null, 'gibberish': null };
-    state.lastOverridePreviewType = null;
-    setOverrideCountMaxMode(false);
-
-    // Revert temporary live-preview edits if dialog closes without save.
-    if (editingBlocklistId && blocklistModalPreviewSnapshot) {
-        const bl = state.appData.blocklists.find(b => b.id === editingBlocklistId);
-        if (bl) {
-            bl.showItemDetails = blocklistModalPreviewSnapshot.showItemDetails;
-            renderWeekBlocks();
-            renderBlocklists();
-        }
-    }
-
-    const showItemDetailsCheckbox = document.getElementById('show-item-details-checkbox');
-    if (showItemDetailsCheckbox) showItemDetailsCheckbox.onchange = null;
-
-    // Reset the websites Import popover so it starts closed next open.
-    const importMenu = document.getElementById('websites-import-menu');
-    const importBtn = document.getElementById('modal-import-websites-btn');
-    if (importMenu) {
-        importMenu.classList.add('hidden');
-        resetWebsitesImportMenuPosition();
-    }
-    if (importBtn) importBtn.setAttribute('aria-expanded', 'false');
-
-    blocklistModalPreviewSnapshot = null;
-    document.getElementById('blocklist-modal').classList.add('hidden');
-    applyModalBlocklistTint(null);
-    editingBlocklistId = null;
-    document.getElementById('blocklist-name').value = '';
-    window.setModalData([], [], null);
-}
-
-/** Override / pause modal summary, e.g. "Blocks 3 websites (a.com, b.com, c.com)". */
-function formatBlocklistModalSummary(blocklist) {
-    const websiteCount = blocklist.websites?.length || 0;
-    const displayApps = getBlocklistDisplayApps(blocklist);
-    const appCount = displayApps.length;
-    const mode = blocklist.mode === 'allowlist' ? 'Allows' : 'Blocks';
-    const metaParts = [];
-
-    if (websiteCount > 0) {
-        const displaySites = blocklist.websites.map(cleanUrlForDisplay);
-        if (websiteCount <= 3) {
-            metaParts.push(`${websiteCount} ${websiteWord(websiteCount)} (${displaySites.join(', ')})`);
-        } else {
-            metaParts.push(`${websiteCount} ${websiteWord(websiteCount)} (${displaySites.slice(0, 3).join(', ')}, ...)`);
-        }
-    }
-
-    if (appCount > 0) {
-        if (appCount <= 3) {
-            metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'} (${displayApps.join(', ')})`);
-        } else {
-            metaParts.push(`${appCount} apps (${displayApps.slice(0, 3).join(', ')}, ...)`);
-        }
-    }
-
-    const itemsText = metaParts.length > 0 ? metaParts.join(` ${tSettings('andWord')} `) : tSettings('nothingWord');
-    return `${mode} ${itemsText}`;
-}
-
-// Open override modal
-export function openOverrideModal(blockId) {
-    delete window.overrideScheduleId;
-    overrideBlockId = blockId;
-    const block = state.appData.activeBlocks.find(b => b.id === blockId);
-    overrideBlocklistIdForHelper = block ? block.blocklistId : null;
-
-    const blocklist = state.appData.blocklists.find(bl => bl.id === block?.blocklistId);
-
-    if (!blocklist) return;
-
-    populateOverrideConfirmModalContent(blocklist, { block });
-    const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-    initializeOverrideModalChallenge(difficulty, blocklist?.color);
-}
-
-// Close override modal
-function closeOverrideModal() {
-    document.getElementById('override-modal').classList.add('hidden');
-    overrideBlockId = null;
-    overrideBlocklistIdForHelper = null;
-    challengeText = '';
-    overrideWordChallengeState = null;
-    setOverrideWordChallengeMode(false);
-    delete window.overrideScheduleId;
-    setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
-    const confirmBtn = document.getElementById('confirm-override-btn');
-    if (confirmBtn) confirmBtn.disabled = false;
-}
-
-function initializeOverrideModalChallenge(difficulty, progressColor = null) {
-    challengeText = generateOverrideChallengeText(difficulty.type, difficulty.count, difficulty.customText);
-
-    // Sanitize: remove linebreaks and collapse multiple spaces
-    challengeText = challengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
-
-    document.getElementById('challenge-text').textContent = challengeText;
-    document.getElementById('challenge-input').value = '';
-    document.getElementById('challenge-word-input').value = '';
-    overrideWordChallengeState = isMobileWordByWordChallenge(difficulty) ? buildWordChallengeState(challengeText) : null;
-    setOverrideWordChallengeMode(!!overrideWordChallengeState);
-
-    const progressBar = document.getElementById('challenge-progress-bar');
-    progressBar.style.width = '0%';
-    if (progressColor) {
-        progressBar.style.background = progressColor;
-    } else {
-        progressBar.style.background = 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)';
-    }
-
-    // Reset wiggle state
-    document.querySelector('#override-modal .modal-content').classList.remove('wiggle');
-
-    document.getElementById('override-modal').classList.remove('hidden');
-    if (overrideWordChallengeState) {
-        renderOverrideWordChallengeState();
-        requestAnimationFrame(() => document.getElementById('challenge-word-input')?.focus());
-    } else {
-        document.getElementById('confirm-override-btn').disabled = false;
-        requestAnimationFrame(() => document.getElementById('challenge-input')?.focus());
-    }
-}
-
-// ── Pause/Resume Block ──
-
-// Update the pause button's icon and text based on whether the block/schedule is paused
-export function updatePauseButtonAppearance(isPaused) {
-    const pauseBtn = document.getElementById('pause-block-btn');
-    if (!pauseBtn) return;
-
-    const svg = pauseBtn.querySelector('svg');
-    const span = pauseBtn.querySelector('span');
-
-    if (isPaused) {
-        // Show play icon and "Resume" text
-        if (svg) {
-            svg.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
-        }
-        if (span) span.textContent = 'Resume';
-        pauseBtn.classList.add('resume-mode');
-    } else {
-        // Show pause icon and "Pause" text
-        if (svg) {
-            svg.innerHTML = '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>';
-        }
-        if (span) span.textContent = 'Pause';
-        pauseBtn.classList.remove('resume-mode');
-    }
-}
-
-// Open the resume confirmation dialog (reuses start-block-confirm modal)
-let resumeData = null; // { blocklistId, type: 'block'|'schedule', blockId }
-
-function openResumeConfirmation(blocklistId, type, blockId) {
-    const blocklist = state.appData.blocklists.find(bl => bl.id === blocklistId);
-    if (!blocklist) return;
-
-    resumeData = { blocklistId, type, blockId };
-
-    setStartConfirmRoomChip(blocklist);
-
-    document.getElementById('start-block-confirm-title').textContent = getResumeBlockConfirmTitle(blocklist);
-
-    const subtitleEl = document.getElementById('start-confirm-subtitle');
-    if (subtitleEl) subtitleEl.innerHTML = tSettings('resumeBlockSubtitle');
-
-    const durationEl = document.getElementById('start-confirm-duration');
-    if (type === 'block') {
-        const block = state.appData.activeBlocks.find(b => b.id === blockId);
-        if (block && durationEl) {
-            const remainingMs = block.endTime - Date.now();
-            if (isBlockAlwaysOn(block)) {
-                durationEl.innerHTML = `<strong>${escapeHtml(tSettings('alwaysUntilOff'))}</strong>`;
-            } else {
-                const remainingMins = Math.max(1, Math.floor(remainingMs / 60000));
-                const hours = Math.floor(remainingMins / 60);
-                const mins = remainingMins % 60;
-                let dText = '';
-                if (hours > 0 && mins > 0) dText = `${hours}h ${mins}m remaining`;
-                else if (hours > 0) dText = `${hours} hour${hours > 1 ? 's' : ''} remaining`;
-                else dText = `${mins} minute${mins > 1 ? 's' : ''} remaining`;
-                durationEl.innerHTML = `<strong>${escapeHtml(dText)}</strong>`;
-            }
-        }
-    } else if (durationEl) {
-        durationEl.innerHTML = `<strong>${escapeHtml(tSettings('scheduleResumingSegment'))}</strong>`;
-    }
-
-    renderStartConfirmBlockingDetails(
-        blocklist,
-        document.getElementById('start-confirm-blocking-list'),
-        document.getElementById('start-confirm-show-all-blocking'),
-        document.getElementById('start-confirm-blocking-row'),
-    );
-
-    // Override info
-    const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-    const displayCount = difficulty.type === 'custom'
-        ? (difficulty.customText?.length || 0)
-        : normalizeOverrideCount(difficulty.count, difficulty.type);
-    const estimatedMinutes = getOverrideEstimatedMinutes(
-        difficulty.type,
-        displayCount,
-        difficulty.customText || ''
-    );
-    const resumeType =
-        difficulty.type === 'custom' && difficulty.customText
-            ? 'custom'
-            : difficulty.type === 'gibberish'
-              ? 'gibberish'
-              : 'random-words';
-
-    setStartConfirmOverrideDescription({
-        type: resumeType,
-        count: displayCount,
-        estimatedMinutes,
-        resumeShortGibberish: resumeType === 'gibberish'
-    });
-
-    setStartConfirmPrimaryLabel('proceed-start-confirm-btn', tSettings('resumeBlock'));
-
-    // Show modal
-    document.getElementById('start-block-confirm-modal').classList.remove('hidden');
-}
-
-// Actually resume a paused block/schedule
-async function proceedWithResume() {
-    if (!resumeData) return;
-
-    // Save locally before closeStartBlockConfirmModal clears resumeData
-    const { type, blockId, blocklistId } = resumeData;
-
-    closeStartBlockConfirmModal();
-
-    if (type === 'block') {
-        const block = state.appData.activeBlocks.find(b => b.id === blockId);
-        if (block) {
-            delete block.isPaused;
-            delete block.pauseEndTime;
-        }
-    } else if (type === 'schedule') {
-        const schedule = state.appData.schedules?.find(s => s.blocklistId === blocklistId);
-        if (schedule) {
-            delete schedule.isPaused;
-            delete schedule.pauseEndTime;
-        }
-    }
-
-    resumeData = null;
-
-    await saveData();
-    console.log('[pause-resume] Proceeding with resume sync', { type, blockId, blocklistId });
-    await syncActiveBlocksToHelper();
-    await syncSchedulesToHelper();
-    await updateHostsFile();
-    await updateBlockedApps();
-    render();
-
-    // Update pause button back to Pause appearance
-    updatePauseButtonAppearance(false);
-}
-
-// ── Pause Block Modal ──
-
-export function openPauseModal(blockId) {
-    pauseBlockId = blockId;
-
-    let block, blocklist;
-
-    if (blockId) {
-        // One-off block pause
-        block = state.appData.activeBlocks.find(b => b.id === blockId);
-        blocklist = state.appData.blocklists.find(bl => bl.id === block?.blocklistId);
-    } else if (state.pauseScheduleData) {
-        // Schedule pause — create a synthetic block object
-        blocklist = state.appData.blocklists.find(bl => bl.id === state.pauseScheduleData.blocklistId);
-        block = {
-            id: null,
-            blocklistId: state.pauseScheduleData.blocklistId,
-            startTime: Date.now(),
-            endTime: ALWAYS_ON_END_TIME,
-            isScheduleBlock: true
-        };
-    }
-
-    if (!blocklist) return;
-
-    const isSchedule = !blockId && !!state.pauseScheduleData;
-    const isScheduleInactive = isSchedule && !state.pauseScheduleData.isActiveNow;
-
-    populatePauseConfirmModalContent(blocklist, {
-        block,
-        isSchedule,
-        isScheduleInactive,
-    });
-
-    // Calculate remaining time and max pause duration
-    const remainingInfo = document.getElementById('pause-remaining-info');
-    const daysGroup = document.getElementById('pause-days').closest('.pause-time-input-group');
-    const hoursGroup = document.getElementById('pause-hours').closest('.pause-time-input-group');
-
-    if (!isBlockAlwaysOn(block)) {
-        const remainingMs = block.endTime - Date.now();
-        const remainingMins = Math.floor(remainingMs / 60000);
-        pauseMaxMinutes = Math.max(1, remainingMins - 2); // 2 min buffer
-
-        remainingInfo.classList.add('hidden');
-
-        // Show/hide fields based on max pause
-        if (pauseMaxMinutes < 60) {
-            // Less than 1 hour max: hide days and hours
-            daysGroup.style.display = 'none';
-            hoursGroup.style.display = 'none';
-        } else if (pauseMaxMinutes < 24 * 60) {
-            // Less than 1 day max: hide days
-            daysGroup.style.display = 'none';
-            hoursGroup.style.display = '';
-        } else {
-            daysGroup.style.display = '';
-            hoursGroup.style.display = '';
-        }
-    } else {
-        pauseMaxMinutes = null; // No cap for always-on blocks
-        remainingInfo.classList.add('hidden');
-        daysGroup.style.display = '';
-        hoursGroup.style.display = '';
-    }
-
-    // Reset duration inputs
-    const defaultMins = pauseMaxMinutes !== null ? Math.min(15, pauseMaxMinutes) : 15;
-    document.getElementById('pause-days').value = 0;
-    document.getElementById('pause-hours').value = 0;
-    document.getElementById('pause-minutes').value = defaultMins;
-    initPauseRestartPopovers();
-    updatePauseRestartTime();
-
-    // Generate challenge text
-    const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-    pauseChallengeText = generateOverrideChallengeText(difficulty.type, difficulty.count, difficulty.customText);
-
-    pauseChallengeText = pauseChallengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
-
-    document.getElementById('pause-challenge-text').textContent = pauseChallengeText;
-    document.getElementById('pause-challenge-input').value = '';
-    document.getElementById('pause-challenge-word-input').value = '';
-    pauseWordChallengeState = isMobileWordByWordChallenge(difficulty) ? buildWordChallengeState(pauseChallengeText) : null;
-    setPauseWordChallengeMode(!!pauseWordChallengeState);
-    document.getElementById('confirm-pause-btn').disabled = true;
-
-    const progressBar = document.getElementById('pause-challenge-progress-bar');
-    progressBar.style.width = '0%';
-    if (blocklist.color) {
-        progressBar.style.background = blocklist.color;
-    } else {
-        progressBar.style.background = 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)';
-    }
-
-    // Reset wiggle
-    document.querySelector('#pause-modal .modal-content').classList.remove('wiggle');
-
-    document.getElementById('pause-modal').classList.remove('hidden');
-    requestAnimationFrame(() => {
-        syncPauseDurationRowLayout();
-        if (pauseWordChallengeState) {
-            renderPauseWordChallengeState();
-            document.getElementById('pause-challenge-word-input')?.focus();
-        } else {
-            document.getElementById('pause-challenge-input')?.focus();
-        }
-    });
-}
-
-/** Pause modal: use horizontal row only if it fits; otherwise stack (hide arrow). */
-export function syncPauseDurationRowLayout() {
-    const modal = document.getElementById('pause-modal');
-    if (!modal || modal.classList.contains('hidden')) return;
-    const row = modal.querySelector('.pause-duration-row');
-    if (!row) return;
-    row.classList.remove('pause-duration-row--stacked');
-    void row.offsetWidth;
-    if (row.scrollWidth > row.clientWidth + 1) {
-        row.classList.add('pause-duration-row--stacked');
-    }
-}
-
-function closePauseModal() {
-    document.getElementById('pause-modal').classList.add('hidden');
-    pauseBlockId = null;
-    state.pauseScheduleData = null;
-    pauseChallengeText = '';
-    pauseWordChallengeState = null;
-    setPauseWordChallengeMode(false);
-    document.getElementById('confirm-pause-btn').disabled = true;
-}
-
-function updatePauseRestartTime() {
-    let days = parseInt(document.getElementById('pause-days').value) || 0;
-    let hours = parseInt(document.getElementById('pause-hours').value) || 0;
-    let minutes = parseInt(document.getElementById('pause-minutes').value) || 0;
-
-    let totalMinutes = days * 24 * 60 + hours * 60 + minutes;
-
-    // Clamp to max if set
-    if (pauseMaxMinutes !== null && totalMinutes > pauseMaxMinutes) {
-        totalMinutes = pauseMaxMinutes;
-        days = Math.floor(totalMinutes / (24 * 60));
-        const rem = totalMinutes % (24 * 60);
-        hours = Math.floor(rem / 60);
-        minutes = rem % 60;
-        document.getElementById('pause-days').value = days;
-        document.getElementById('pause-hours').value = hours;
-        document.getElementById('pause-minutes').value = minutes;
-    }
-
-    const restartTime = new Date(Date.now() + totalMinutes * 60 * 1000);
-
-    // Update time-part buttons
-    const hourBtn = document.getElementById('pause-restart-hour-btn');
-    const minuteBtn = document.getElementById('pause-restart-minute-btn');
-    if (hourBtn) hourBtn.textContent = pad(restartTime.getHours());
-    if (minuteBtn) minuteBtn.textContent = pad(restartTime.getMinutes());
-
-    // Show +N days badge if restart is not today
-    const today = new Date();
-    const nextDayBadge = document.getElementById('pause-next-day-indicator');
-    if (nextDayBadge) {
-        // Calculate day difference
-        const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-        const restartStart = new Date(restartTime.getFullYear(), restartTime.getMonth(), restartTime.getDate());
-        const dayDiff = Math.round((restartStart - todayStart) / (24 * 60 * 60 * 1000));
-        if (dayDiff > 0) {
-            nextDayBadge.textContent = `+${dayDiff} ${dayDiff === 1 ? 'day' : 'days'}`;
-            nextDayBadge.classList.remove('hidden');
-        } else {
-            nextDayBadge.classList.add('hidden');
-        }
-    }
-
-    // Update selected state in popovers
-    updatePauseRestartPopoverSelection(restartTime.getHours(), restartTime.getMinutes());
-    syncPauseDurationRowLayout();
-}
-
-function updatePauseRestartPopoverSelection(hour, minute) {
-    document.querySelectorAll('#pause-restart-hour-options .popover-option').forEach(btn => {
-        btn.classList.toggle('selected', parseInt(btn.dataset.value) === hour);
-    });
-    document.querySelectorAll('#pause-restart-minute-options .popover-option').forEach(btn => {
-        btn.classList.toggle('selected', parseInt(btn.dataset.value) === minute);
-    });
-}
-
-// Initialize pause restart time popovers with hour/minute options
-function initPauseRestartPopovers() {
-    const hourContainer = document.getElementById('pause-restart-hour-options');
-    if (hourContainer) {
-        hourContainer.innerHTML = '';
-        for (let h = 0; h < 24; h++) {
-            const btn = document.createElement('button');
-            btn.className = 'popover-option';
-            btn.textContent = pad(h);
-            btn.dataset.value = h;
-            btn.dataset.type = 'hour';
-            btn.dataset.target = 'pause-restart';
-            btn.addEventListener('click', selectPauseRestartTimeOption);
-            hourContainer.appendChild(btn);
-        }
-    }
-
-    const minuteContainer = document.getElementById('pause-restart-minute-options');
-    if (minuteContainer) {
-        minuteContainer.innerHTML = '';
-        for (let m = 0; m < 60; m++) {
-            const btn = document.createElement('button');
-            btn.className = 'popover-option';
-            btn.textContent = pad(m);
-            btn.dataset.value = m;
-            btn.dataset.type = 'minute';
-            btn.dataset.target = 'pause-restart';
-            btn.addEventListener('click', selectPauseRestartTimeOption);
-            minuteContainer.appendChild(btn);
-        }
-    }
-
-    // Popover triggers use `.time-popover-anchor` — wired once at DOMContentLoaded.
-}
-
-// When user selects a restart time, reverse-calculate the duration
-function selectPauseRestartTimeOption(e) {
-    e.stopPropagation();
-    const btn = e.currentTarget;
-    const value = parseInt(btn.dataset.value);
-    const type = btn.dataset.type;
-
-    // Get current restart time from the buttons
-    const hourBtn = document.getElementById('pause-restart-hour-btn');
-    const minuteBtn = document.getElementById('pause-restart-minute-btn');
-    let restartHour = parseInt(hourBtn.textContent);
-    let restartMinute = parseInt(minuteBtn.textContent);
-
-    if (type === 'hour') restartHour = value;
-    else restartMinute = value;
-
-    // Update button display
-    hourBtn.textContent = pad(restartHour);
-    minuteBtn.textContent = pad(restartMinute);
-
-    closeAllPopovers();
-
-    // Calculate duration from now to selected restart time
-    const now = new Date();
-    const restartTime = new Date(now);
-    restartTime.setHours(restartHour, restartMinute, 0, 0);
-
-    // If restart time is in the past or within 1 minute, assume next day
-    if (restartTime.getTime() <= now.getTime() + 60000) {
-        restartTime.setDate(restartTime.getDate() + 1);
-    }
-
-    const diffMs = restartTime.getTime() - now.getTime();
-    let diffMins = Math.round(diffMs / 60000);
-
-    // Clamp to max if set
-    if (pauseMaxMinutes !== null && diffMins > pauseMaxMinutes) {
-        diffMins = pauseMaxMinutes;
-        // Recalculate restart time from clamped duration
-        const clampedRestart = new Date(now.getTime() + diffMins * 60000);
-        restartHour = clampedRestart.getHours();
-        restartMinute = clampedRestart.getMinutes();
-        hourBtn.textContent = pad(restartHour);
-        minuteBtn.textContent = pad(restartMinute);
-    }
-
-    const durationDays = Math.floor(diffMins / (24 * 60));
-    const remainingMins = diffMins % (24 * 60);
-    const durationHours = Math.floor(remainingMins / 60);
-    const durationMins = remainingMins % 60;
-
-    // Update PAUSE FOR inputs
-    document.getElementById('pause-days').value = durationDays;
-    document.getElementById('pause-hours').value = durationHours;
-    document.getElementById('pause-minutes').value = durationMins;
-
-    // Update +N days badge
-    const nextDayBadge = document.getElementById('pause-next-day-indicator');
-    if (nextDayBadge) {
-        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const restartStart = new Date(restartTime.getFullYear(), restartTime.getMonth(), restartTime.getDate());
-        const dayDiff = Math.round((restartStart - todayStart) / (24 * 60 * 60 * 1000));
-        if (dayDiff > 0) {
-            nextDayBadge.textContent = `+${dayDiff} ${dayDiff === 1 ? 'day' : 'days'}`;
-            nextDayBadge.classList.remove('hidden');
-        } else {
-            nextDayBadge.classList.add('hidden');
-        }
-    }
-
-    updatePauseRestartPopoverSelection(restartHour, restartMinute);
-    syncPauseDurationRowLayout();
-}
-
-async function proceedWithPause() {
-    if (!pauseBlockId && !state.pauseScheduleData) return;
-
-    if (pauseWordChallengeState) {
-        const typedWord = document.getElementById('pause-challenge-word-input').value.trim();
-        const expectedWord = getCurrentChallengeWord(pauseWordChallengeState);
-        if (typedWord === expectedWord) {
-            pauseWordChallengeState.currentIndex++;
-            const completedText = getCompletedChallengeText(pauseWordChallengeState);
-            if (pauseWordChallengeState.currentIndex < pauseWordChallengeState.words.length) {
-                renderPauseWordChallengeState();
-                document.getElementById('pause-challenge-word-input')?.focus();
-                return;
-            }
-            pauseWordChallengeState.typedText = pauseChallengeText;
-        } else {
-            const modal = document.querySelector('#pause-modal .modal-content');
-            modal.classList.add('wiggle');
-            setTimeout(() => modal.classList.remove('wiggle'), 400);
-            document.getElementById('pause-current-word').textContent = expectedWord;
-            return;
-        }
-    }
-
-    const typed = pauseWordChallengeState
-        ? (pauseWordChallengeState.typedText || '')
-        : document.getElementById('pause-challenge-input').value;
-    if (typed !== pauseChallengeText) {
-        // Wiggle on mismatch
-        const modal = document.querySelector('#pause-modal .modal-content');
-        modal.classList.add('wiggle');
-        setTimeout(() => modal.classList.remove('wiggle'), 400);
-        return;
-    }
-
-    const days = parseInt(document.getElementById('pause-days').value) || 0;
-    const hours = parseInt(document.getElementById('pause-hours').value) || 0;
-    const minutes = parseInt(document.getElementById('pause-minutes').value) || 0;
-    const pauseDurationMs = (days * 24 * 60 + hours * 60 + minutes) * 60 * 1000;
-
-    if (pauseDurationMs <= 0) {
-        closePauseModal();
-        return;
-    }
-
-    if (state.pauseScheduleData) {
-        // Schedule pause — set pause state on the schedule itself
-        const schedule = state.appData.schedules?.find(s => s.blocklistId === state.pauseScheduleData.blocklistId);
-        if (schedule) {
-            schedule.isPaused = true;
-            schedule.pauseEndTime = Date.now() + pauseDurationMs;
-        }
-    } else {
-        // One-off block pause
-        const block = state.appData.activeBlocks.find(b => b.id === pauseBlockId);
-        if (!block) {
-            closePauseModal();
-            return;
-        }
-        block.isPaused = true;
-        block.pauseEndTime = Date.now() + pauseDurationMs;
-    }
-
-    await saveData();
-    console.log('[pause-resume] Proceeding with pause sync', {
-        pauseBlockId,
-        scheduleBlocklistId: state.pauseScheduleData?.blocklistId || null
-    });
-    await syncActiveBlocksToHelper();
-    await syncSchedulesToHelper();
-
-    // Update blocking rules — updateHostsFile skips paused blocks' domains
-    await updateHostsFile();
-    await updateBlockedApps();
-
-    // iOS: register one-off DeviceActivity so pause expiry re-evaluates background enforcement.
-    if (state.isIOS) {
-        if (state.pauseScheduleData) {
-            const schedule = state.appData.schedules?.find(s => s.blocklistId === state.pauseScheduleData.blocklistId);
-            if (schedule?.pauseEndTime) {
-                try {
-                    const res = await tauriAPI.screentimeRegisterOneOffActivity(
-                        'redd-schedule-resume-' + schedule.id,
-                        schedule.pauseEndTime
-                    );
-                    if (res && res.success === false) {
-                        console.error('[iOS] Schedule pause-resume registration failed:', res.error || 'Unknown error');
-                    }
-                } catch (e) {
-                    console.warn('[iOS] Schedule pause-resume registration threw:', e);
-                }
-            }
-        } else if (pauseBlockId) {
-            const block = state.appData.activeBlocks.find(b => b.id === pauseBlockId);
-            if (block && block.pauseEndTime) {
-                try {
-                    const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
-                    const iosPayload = getBlocklistIOSPayload(blocklist);
-                    await tauriAPI.screentimeSetResumePayload({
-                        blockId: pauseBlockId,
-                        domains: blocklist?.websites || [],
-                        appTokenData: iosPayload.appTokenData,
-                        categoryTokenData: iosPayload.categoryTokenData
-                    });
-                    const res = await tauriAPI.screentimeRegisterOneOffActivity('redd-block-resume-' + pauseBlockId, block.pauseEndTime);
-                    if (res && res.success === false) {
-                        console.error('[iOS] One-off DeviceActivity registration failed:', res.error || 'Unknown error');
-                    }
-                } catch (e) {
-                    console.warn('[iOS] One-off pause-resume registration failed:', e);
-                }
-            }
-        }
-    }
-
-    // Re-render UI
-    render();
-
-    // Update pause button to show Resume
-    updatePauseButtonAppearance(true);
-
-    closePauseModal();
-}
-function updateOverridePreview() {
-    const typeSelect = document.getElementById('override-type');
-    const countInput = document.getElementById('override-count');
-    const customTextArea = document.getElementById('custom-override-text');
-    const timeEstimateEl = document.getElementById('override-count-time-estimate');
-    const previewEl = document.getElementById('override-preview-text');
-    const blockEl = document.getElementById('override-preview-block');
-    if (!previewEl || !blockEl) return;
-
-    const type = typeSelect?.value || 'random-words';
-    const count = countInput?.value ?? '50';
-    const customText = customTextArea?.value ?? '';
-
-    const estimatedMins = getOverrideEstimatedMinutes(type, count, customText);
-    const previewText = getOverridePreviewText(type, count, customText);
-
-    const lang = getSettingsLanguage();
-    const timeVars = lang === 'da'
-        ? { minutes: estimatedMins, unit: estimatedMins === 1 ? 'minut' : 'minutter' }
-        : { minutes: estimatedMins, minuteSuffix: estimatedMins === 1 ? '' : 's' };
-    if (timeEstimateEl && type !== 'custom') {
-        timeEstimateEl.textContent = lang === 'da'
-            ? tSettingsFmt('overrideCountTimeEstimateDa', timeVars)
-            : tSettingsFmt('overrideCountTimeEstimate', { minutes: estimatedMins });
-    }
-
-    previewEl.textContent = previewText;
-    previewEl.title = previewText;
-}
-
-function syncOverrideCountUi(type) {
-    const countLabelEl = document.getElementById('override-count-label');
-    const maxHintEl = document.getElementById('override-max-difficulty-hint');
-    const countInput = document.getElementById('override-count');
-    if (countLabelEl) {
-        countLabelEl.textContent = usesMobileWordCountForOverrideType(type)
-            ? tSettings('overrideWordsToType')
-            : tSettings('overrideCharsToType');
-    }
-    if (maxHintEl) {
-        maxHintEl.textContent = formatOverrideMaxDifficultyHint(type);
-    }
-    if (countInput) {
-        countInput.max = String(getMaxOverrideCharsForType(type));
-    }
-}
-
-function applyOverrideTypeUi(type) {
-    const customTextArea = document.getElementById('custom-override-text');
-    const overrideCountInput = document.getElementById('override-count');
-    const overrideCountWrapper = document.getElementById('override-count-wrapper');
-    const warningEl = document.getElementById('override-count-warning');
-    const previewBlockEl = document.getElementById('override-preview-block');
-    const maxDifficultyWrapEl = document.getElementById('override-max-difficulty-wrap');
-    const maxChars = getMaxOverrideCharsForType(type);
-    syncOverrideCountUi(type);
-    overrideCountInput.max = String(maxChars);
-
-    if (type === 'custom') {
-        customTextArea.maxLength = getMaxOverrideCharsForType('custom');
-        customTextArea.classList.remove('hidden');
-        overrideCountWrapper.classList.add('hidden');
-        warningEl.classList.add('hidden');
-        warningEl.textContent = '';
-        if (previewBlockEl) previewBlockEl.classList.add('hidden');
-        if (maxDifficultyWrapEl) maxDifficultyWrapEl.classList.add('hidden');
-        return;
-    }
-
-    customTextArea.classList.add('hidden');
-    overrideCountWrapper.classList.remove('hidden');
-    warningEl.classList.add('hidden');
-    warningEl.textContent = '';
-    if (previewBlockEl) previewBlockEl.classList.remove('hidden');
-    if (maxDifficultyWrapEl) maxDifficultyWrapEl.classList.remove('hidden');
-    updateOverridePreview();
-}
-
-function setOverrideCountMaxMode(enabled) {
-    const overrideCountWrapper = document.getElementById('override-count-wrapper');
-    const overrideCountInput = document.getElementById('override-count');
-    const overrideCountStepper = document.getElementById('override-count-stepper');
-    const minusBtn = document.getElementById('override-count-minus');
-    const plusBtn = document.getElementById('override-count-plus');
-    overrideCountWrapper?.classList.toggle('override-count-max-mode', enabled);
-    overrideCountStepper?.classList.toggle('override-count-max-mode', enabled);
-    overrideCountInput?.classList.toggle('form-input-disabled', enabled);
-    minusBtn?.toggleAttribute('disabled', enabled);
-    plusBtn?.toggleAttribute('disabled', enabled);
-    if (enabled) overrideCountInput?.setAttribute('tabindex', '-1');
-    else overrideCountInput?.removeAttribute('tabindex');
-}
-
-function cloneOverrideDifficulty(raw, fallbackCount = 50) {
-    if (!raw) return { type: 'random-words', count: fallbackCount, maxDifficulty: false };
-    const type = raw.type || 'random-words';
-    const maxDifficulty = raw.maxDifficulty === true;
-    const safeType = maxDifficulty && type === 'custom' ? 'random-words' : type;
-    const cloned = {
-        type: safeType,
-        count: maxDifficulty ? getMaxOverrideCharsForType(safeType) : normalizeOverrideCount(raw.count ?? fallbackCount, safeType),
-        maxDifficulty,
-        customText: normalizeCustomOverrideText(raw.customText)
-    };
-    if (maxDifficulty) {
-        const typeBeforeMax = raw.typeBeforeMax || type;
-        cloned.typeBeforeMax = typeBeforeMax;
-        cloned.countBeforeMax = normalizeOverrideCount(raw.countBeforeMax ?? 50, typeBeforeMax);
-    }
-    return cloned;
-}
-
-function truncateBlocklistName(raw) {
-    const s = String(raw ?? '');
-    return s.length <= BLOCKLIST_NAME_MAX_LENGTH ? s : s.slice(0, BLOCKLIST_NAME_MAX_LENGTH);
-}
-
-// Duplicate naming (localized suffix): EN "copy", DA "kopi"; parses both so chains gap-fill correctly.
-
-/** Returns chain root if name ends with localized or legacy "copy" / "kopi" (+ optional number), else null. */
-function parseCopyRoot(name) {
-    let m = /^(.+?) copy(?: (\d+))?$/.exec(name);
-    if (m) return m[1];
-    m = /^(.+?) kopi(?: (\d+))?$/i.exec(name);
-    return m ? m[1] : null;
-}
-
-function getBlocklistDuplicateSuffix() {
-    return tSettings('blocklistDuplicateSuffix');
-}
-
-/** Slot numbers already used for base (counts both "copy" and "kopi" names — one chain per base). */
-function collectUsedDuplicateSuffixSlots(base) {
-    const used = new Set();
-    const esc = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp(`^${esc} (copy|kopi)(?: (\\d+))?$`, 'i');
-    for (const bl of state.appData.blocklists) {
-        const m = re.exec(bl.name);
-        if (!m) continue;
-        used.add(m[2] ? parseInt(m[2], 10) : 1);
-    }
-    return used;
-}
-
-/** Comparable string for content (websites, apps only). Only these + name affect duplicate copy-number chain. */
-function contentKey(blocklistId) {
-    const bl = state.appData.blocklists.find(b => b.id === blocklistId);
-    if (!bl) return '';
-    const w = [...(bl.websites || [])].sort();
-    const a = [...getBlocklistRegularApps(bl)].sort();
-    const iosSelection = getBlocklistIOSScreenTimeSelection(bl);
-    return JSON.stringify({
-        w,
-        a,
-        iosAppTokens: [...(iosSelection?.applicationTokens || [])].sort(),
-        iosCategoryTokens: [...(iosSelection?.categoryTokens || [])].sort(),
-        iosSummary: iosSelection?.summaryLabel || ''
-    });
-}
-
-function sameBlocklistContent(idA, idB) { return contentKey(idA) === contentKey(idB); }
-
-/** True if name is root, "root copy|kopi", or "root copy|kopi N". */
-function nameInChain(name, root) {
-    if (name === root) return true;
-    const esc = root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp(`^${esc} (copy|kopi)(?: (\\d+))?$`, 'i');
-    return re.test(name);
-}
-
-/** Next duplicate name using current locale suffix; gap-fill; same chain if unedited, else new chain from current name. */
-function getNextCopyName(blocklist) {
-    const suffix = getBlocklistDuplicateSuffix();
-    const name = blocklist.name;
-    const root = parseCopyRoot(name);
-    let base = name;
-    if (root !== null) {
-        const otherInChainSameContent = state.appData.blocklists.some(bl =>
-            bl.id !== blocklist.id && nameInChain(bl.name, root) && sameBlocklistContent(bl.id, blocklist.id)
-        );
-        if (otherInChainSameContent) base = root;
-    }
-    const used = collectUsedDuplicateSuffixSlots(base);
-    let n = 1;
-    while (used.has(n)) n++;
-    return truncateBlocklistName(n === 1 ? `${base} ${suffix}` : `${base} ${suffix} ${n}`);
-}
-
-/** True if the blocklist has an active one-off block or a schedule currently in an active segment (and not paused). */
-function isBlocklistCurrentlyActive(blocklistId) {
-    const now = Date.now();
-    const hasActiveBlock = state.appData.activeBlocks.some(
-        b => b.blocklistId === blocklistId && isOneOffBlockEnforced(b, now)
-    );
-    if (hasActiveBlock) return true;
-    const schedule = state.appData.schedules?.find(s => s.blocklistId === blocklistId);
-    if (!schedule?.segments?.length) return false;
-    return isScheduleSegmentActiveNow(schedule, new Date(now));
-}
-
-export function clearPendingScheduleDraft(blocklistId) {
-    if (!blocklistId || !state.appData.settings) return;
-    if (state.appData.settings.pendingScheduleSegments?.[blocklistId]) {
-        delete state.appData.settings.pendingScheduleSegments[blocklistId];
-    }
-    if (state.appData.settings.pendingScheduleRepeatOptions?.[blocklistId]) {
-        delete state.appData.settings.pendingScheduleRepeatOptions[blocklistId];
-    }
-}
-
-function cloneScheduleSegment(seg) {
-    return {
-        startHour: seg.startHour,
-        startMinute: seg.startMinute,
-        endHour: seg.endHour,
-        endMinute: seg.endMinute,
-        days: [...(seg.days || [])]
-    };
-}
-
-function normalizeScheduleRepeatFromSchedule(schedule) {
-    const repeatType = schedule?.repeatType || 'no';
-    let repeatDate = null;
-    if (repeatType === 'date' && schedule?.repeatDate) {
-        const rd = schedule.repeatDate;
-        repeatDate = typeof rd === 'number' ? rd : new Date(rd.getTime ? rd.getTime() : rd).getTime();
-    }
-    return { repeatType, repeatDate };
-}
-
-/** Committed or draft schedule config for a blocklist (segments + repeat, no active state). */
-function getBlocklistScheduleDraft(blocklistId) {
-    const existingSchedule = state.appData.schedules?.find((s) => s.blocklistId === blocklistId);
-    const pendingSegs = state.appData.settings?.pendingScheduleSegments?.[blocklistId];
-    const pendingRepeat = state.appData.settings?.pendingScheduleRepeatOptions?.[blocklistId];
-
-    if (existingSchedule?.segments?.length) {
-        return {
-            segments: existingSchedule.segments.map(cloneScheduleSegment),
-            repeat: normalizeScheduleRepeatFromSchedule(existingSchedule)
-        };
-    }
-
-    if (pendingSegs?.length) {
-        return {
-            segments: pendingSegs.map((seg) => ({ ...seg })),
-            repeat:
-                pendingRepeat && typeof pendingRepeat.repeatType === 'string'
-                    ? {
-                          repeatType: pendingRepeat.repeatType,
-                          repeatDate:
-                              pendingRepeat.repeatType === 'date' && pendingRepeat.repeatDate != null
-                                  ? pendingRepeat.repeatDate
-                                  : null
-                      }
-                    : { repeatType: 'forever', repeatDate: null }
-        };
-    }
-
-    return null;
-}
-
-function saveBlocklistScheduleDraft(blocklistId, draft) {
-    if (!blocklistId || !draft?.segments?.length) return;
-    if (!state.appData.settings) state.appData.settings = {};
-    if (!state.appData.settings.pendingScheduleSegments) state.appData.settings.pendingScheduleSegments = {};
-    if (!state.appData.settings.pendingScheduleRepeatOptions) state.appData.settings.pendingScheduleRepeatOptions = {};
-    state.appData.settings.pendingScheduleSegments[blocklistId] = draft.segments.map(cloneScheduleSegment);
-    state.appData.settings.pendingScheduleRepeatOptions[blocklistId] = draft.repeat || {
-        repeatType: 'forever',
-        repeatDate: null
-    };
-}
-
-function duplicateBlocklist(id) {
-    const blocklist = state.appData.blocklists.find(bl => bl.id === id);
-    if (!blocklist) return;
-
-    const newId = generateId();
-    const newName = getNextCopyName(blocklist);
-
-    const duplicate = {
-        id: newId,
-        name: newName,
-        mode: blocklist.mode || 'blocklist',
-        color: blocklist.color ?? null,
-        emoji: blocklist.emoji ?? '🚫',
-        websites: [...(blocklist.websites || [])],
-        apps: [...getBlocklistRegularApps(blocklist)],
-        iosScreenTimeSelection: cloneIOSScreenTimeSelection(getBlocklistIOSScreenTimeSelection(blocklist)),
-        showItemDetails: blocklist.showItemDetails !== false,
-        alwaysShowInSchedule: blocklist.alwaysShowInSchedule !== false,
-        overrideDifficulty: cloneOverrideDifficulty(blocklist.overrideDifficulty)
-    };
-
-    state.appData.blocklists.push(duplicate);
-
-    const scheduleDraft = getBlocklistScheduleDraft(id);
-    if (scheduleDraft) {
-        saveBlocklistScheduleDraft(newId, scheduleDraft);
-    }
-
-    saveData();
-    render();
-
-    // Only keep selection on the original blocklist if it was already selected (user had focused it).
-    // If they duplicated from the card menu without having clicked the card first, don't switch focus to it.
-    if (state.selectedBlocklistId === id) {
-        const dropdown = document.getElementById('blocklist-select');
-        if (dropdown) {
-            dropdown.value = id;
-            handleBlocklistSelect({ target: dropdown });
-        }
-    }
-}
-
-const BLOCKLIST_EXPORT_FORMAT = 'redd-block-rules';
-const BLOCKLIST_EXPORT_FORMAT_VERSION = 2;
-
-function serializeBlocklistForExport(blocklist) {
-    const payload = {
-        name: blocklist.name,
-        mode: blocklist.mode || 'blocklist',
-        color: blocklist.color ?? null,
-        emoji: blocklist.emoji ?? '🚫',
-        websites: [...(blocklist.websites || [])],
-        apps: [...getBlocklistRegularApps(blocklist)],
-        iosScreenTimeSelection: cloneIOSScreenTimeSelection(getBlocklistIOSScreenTimeSelection(blocklist)),
-        showItemDetails: blocklist.showItemDetails !== false,
-        alwaysShowInSchedule: blocklist.alwaysShowInSchedule !== false,
-        overrideDifficulty: cloneOverrideDifficulty(blocklist.overrideDifficulty)
-    };
-
-    const scheduleDraft = getBlocklistScheduleDraft(blocklist.id);
-    if (scheduleDraft) {
-        payload.schedule = {
-            segments: scheduleDraft.segments.map(cloneScheduleSegment),
-            repeatType: scheduleDraft.repeat.repeatType,
-            repeatDate: scheduleDraft.repeat.repeatDate
-        };
-    }
-
-    return payload;
-}
-
-function buildBlocklistsExportPayload() {
-    return {
-        format: BLOCKLIST_EXPORT_FORMAT,
-        formatVersion: BLOCKLIST_EXPORT_FORMAT_VERSION,
-        exportedAt: new Date().toISOString(),
-        blocklists: (state.appData.blocklists || []).map(serializeBlocklistForExport)
-    };
-}
-
-function normalizeImportedScheduleSegment(raw) {
-    if (!raw || typeof raw !== 'object') return null;
-    const startHour = Number(raw.startHour);
-    const startMinute = Number(raw.startMinute);
-    const endHour = Number(raw.endHour);
-    const endMinute = Number(raw.endMinute);
-    const days = Array.isArray(raw.days)
-        ? raw.days.filter((day) => Number.isInteger(day) && day >= 0 && day <= 6)
-        : [];
-    if (
-        !Number.isFinite(startHour)
-        || !Number.isFinite(startMinute)
-        || !Number.isFinite(endHour)
-        || !Number.isFinite(endMinute)
-        || days.length === 0
-    ) {
-        return null;
-    }
-    return { startHour, startMinute, endHour, endMinute, days: [...days] };
-}
-
-function normalizeImportedSchedule(raw) {
-    if (!raw || typeof raw !== 'object') return null;
-    const segments = (Array.isArray(raw.segments) ? raw.segments : [])
-        .map(normalizeImportedScheduleSegment)
-        .filter(Boolean);
-    if (segments.length === 0) return null;
-
-    const repeatType = typeof raw.repeatType === 'string' ? raw.repeatType : 'forever';
-    let repeatDate = null;
-    if (repeatType === 'date' && raw.repeatDate != null) {
-        repeatDate = typeof raw.repeatDate === 'number'
-            ? raw.repeatDate
-            : new Date(raw.repeatDate).getTime();
-        if (!Number.isFinite(repeatDate)) repeatDate = null;
-    }
-
-    return {
-        segments,
-        repeat: { repeatType, repeatDate }
-    };
-}
-
-function normalizeImportedBlocklist(raw) {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
-
-    const websites = Array.isArray(raw.websites)
-        ? raw.websites.filter((entry) => typeof entry === 'string' && entry.trim())
-        : [];
-    const apps = Array.isArray(raw.apps)
-        ? raw.apps.filter((entry) => typeof entry === 'string' && entry.trim() && !isScreenTimeSummaryEntry(entry))
-        : [];
-    const schedule = normalizeImportedSchedule(raw.schedule);
-
-    if (
-        typeof raw.name !== 'string'
-        && websites.length === 0
-        && apps.length === 0
-        && !raw.iosScreenTimeSelection
-        && !schedule
-    ) {
-        return null;
-    }
-
-    const imported = {
-        name: typeof raw.name === 'string' ? raw.name : tSettings('importBlocklistDefaultName'),
-        mode: typeof raw.mode === 'string' && raw.mode.trim() ? raw.mode : 'blocklist',
-        color: typeof raw.color === 'string' && raw.color.trim() ? raw.color : null,
-        emoji: typeof raw.emoji === 'string' && raw.emoji.trim() ? raw.emoji : '🚫',
-        websites,
-        apps,
-        iosScreenTimeSelection: cloneIOSScreenTimeSelection(
-            getBlocklistIOSScreenTimeSelection({
-                apps: raw.apps,
-                iosScreenTimeSelection: raw.iosScreenTimeSelection
-            })
-        ),
-        showItemDetails: raw.showItemDetails !== false,
-        alwaysShowInSchedule: raw.alwaysShowInSchedule !== false,
-        overrideDifficulty: cloneOverrideDifficulty(raw.overrideDifficulty),
-        schedule
-    };
-
-    return normalizeBlocklist(imported);
-}
-
-function parseBlocklistsImportPayload(text) {
-    const parsed = JSON.parse(text);
-    const rawList = Array.isArray(parsed)
-        ? parsed
-        : Array.isArray(parsed?.blocklists)
-            ? parsed.blocklists
-            : null;
-    if (!rawList) {
-        throw new Error('missing blocklists array');
-    }
-    return rawList.map(normalizeImportedBlocklist).filter(Boolean);
-}
-
-function uniqueImportedBlocklistName(desiredName) {
-    let name = truncateBlocklistName(String(desiredName || '').trim() || tSettings('importBlocklistDefaultName'));
-    if (!state.appData.blocklists.some((bl) => bl.name === name)) return name;
-    return getNextCopyName({
-        id: generateId(),
-        name,
-        websites: [],
-        apps: []
-    });
-}
-
-function blocklistFromImportedEntry(entry) {
-    return {
-        id: generateId(),
-        name: uniqueImportedBlocklistName(entry.name),
-        mode: entry.mode || 'blocklist',
-        color: entry.color ?? null,
-        emoji: entry.emoji ?? '🚫',
-        websites: [...(entry.websites || [])],
-        apps: [...getBlocklistRegularApps(entry)],
-        iosScreenTimeSelection: cloneIOSScreenTimeSelection(getBlocklistIOSScreenTimeSelection(entry)),
-        showItemDetails: entry.showItemDetails !== false,
-        alwaysShowInSchedule: entry.alwaysShowInSchedule !== false,
-        overrideDifficulty: cloneOverrideDifficulty(entry.overrideDifficulty)
-    };
-}
-
-async function exportBlocklistsToFile() {
-    const blocklists = state.appData.blocklists || [];
-    if (blocklists.length === 0) {
-        await message(tSettings('exportBlocklistsEmpty'), { title: tSettings('exportBlocklistsFailedTitle'), kind: 'info' });
-        return;
-    }
-
-    try {
-        const selectedPath = await saveDialog({
-            title: tSettings('exportBlocklistsSaveTitle'),
-            defaultPath: 'redd-block-rules.json',
-            filters: [{ name: 'JSON', extensions: ['json'] }]
-        });
-        if (!selectedPath || typeof selectedPath !== 'string') return;
-
-        const payload = buildBlocklistsExportPayload();
-        await writeTextFile(selectedPath, `${JSON.stringify(payload, null, 2)}\n`);
-        await message(
-            tSettingsFmt('exportBlocklistsSuccessFmt', { n: blocklists.length, path: selectedPath }),
-            { title: tSettings('exportBlocklistsSuccessTitle'), kind: 'info' }
-        );
-    } catch (err) {
-        console.warn('[export] blocklists:', err);
-        await message(tSettings('exportBlocklistsFailed'), { title: tSettings('exportBlocklistsFailedTitle'), kind: 'error' });
-    }
-}
-
-async function importBlocklistsFromFile() {
-    try {
-        const selectedPath = await openDialog({
-            multiple: false,
-            title: tSettings('importBlocklistsOpenTitle'),
-            filters: [
-                { name: 'JSON', extensions: ['json'] },
-                { name: 'All files', extensions: ['*'] }
-            ]
-        });
-        if (!selectedPath || typeof selectedPath !== 'string') return;
-
-        let importedEntries;
-        try {
-            importedEntries = parseBlocklistsImportPayload(await readTextFile(selectedPath));
-        } catch (err) {
-            console.warn('[import] parse blocklists:', err);
-            await message(tSettings('importBlocklistsParseFailed'), { title: tSettings('importBlocklistsFailedTitle'), kind: 'error' });
-            return;
-        }
-
-        if (importedEntries.length === 0) {
-            await message(tSettings('importBlocklistsInvalidFile'), { title: tSettings('importBlocklistsFailedTitle'), kind: 'warning' });
-            return;
-        }
-
-        const confirmed = await ask(
-            tSettingsFmt('importBlocklistsConfirmFmt', { n: importedEntries.length }),
-            { title: tSettings('importBlocklistsDialogTitle'), kind: 'warning' }
-        );
-        if (!confirmed) return;
-
-        for (const entry of importedEntries) {
-            const blocklist = blocklistFromImportedEntry(entry);
-            state.appData.blocklists.push(blocklist);
-            if (entry.schedule) {
-                saveBlocklistScheduleDraft(blocklist.id, entry.schedule);
-            }
-        }
-
-        await saveData();
-        render();
-
-        await message(
-            tSettingsFmt('importBlocklistsSuccessFmt', { n: importedEntries.length }),
-            { title: tSettings('importBlocklistsSuccessTitle'), kind: 'info' }
-        );
-    } catch (err) {
-        console.warn('[import] blocklists:', err);
-        await message(tSettings('importBlocklistsFailed'), { title: tSettings('importBlocklistsFailedTitle'), kind: 'error' });
-    }
-}
-
-function setupBlocklistsImportExportButtons() {
-    const exportBtn = document.getElementById('settings-export-blocklists-btn');
-    const importBtn = document.getElementById('settings-import-blocklists-btn');
-    if (exportBtn && !exportBtn._listenerAdded) {
-        exportBtn._listenerAdded = true;
-        exportBtn.addEventListener('click', () => {
-            void exportBlocklistsToFile();
-        });
-    }
-    if (importBtn && !importBtn._listenerAdded) {
-        importBtn._listenerAdded = true;
-        importBtn.addEventListener('click', () => {
-            void importBlocklistsFromFile();
-        });
-    }
-}
-
-// Delete blocklist with undo support
-let pendingDelete = null; // { blocklist, activeBlocks, timeoutId }
-
-async function deleteBlocklist(id) {
-    const blocklist = state.appData.blocklists.find(bl => bl.id === id);
-    if (!blocklist) return;
-
-    // Check if this blocklist has an active block or schedule running
-    const now = Date.now();
-    const hasActiveBlock = state.appData.activeBlocks.some(
-        block => block.blocklistId === id && block.startTime <= now && block.endTime > now
-    );
-    const hasActiveSchedule = state.appData.schedules?.some(
-        s => s.blocklistId === id && s.segments && s.segments.length > 0
-    );
-
-    if (hasActiveBlock) {
-        alert(tSettingsFmt('deleteBlocklistDeniedActiveBlockFmt', { name: blocklist.name }));
-        return;
-    }
-
-    if (hasActiveSchedule) {
-        alert(tSettingsFmt('deleteBlocklistDeniedActiveScheduleFmt', { name: blocklist.name }));
-        return;
-    }
-
-    // If there's already a pending delete, commit it first
-    if (pendingDelete) {
-        commitDelete();
-    }
-
-    // Store the blocklist and any active blocks for potential undo
-    const activeBlocksToRemove = state.appData.activeBlocks.filter(b => b.blocklistId === id);
-
-    // Remove from data (soft delete)
-    state.appData.blocklists = state.appData.blocklists.filter(bl => bl.id !== id);
-    state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.blocklistId !== id);
-
-    // If the deleted blocklist was the selected one, reset the scheduler UI
-    if (state.selectedBlocklistId === id) {
-        state.selectedBlocklistId = null;
-        const blocklistSelect = document.getElementById('blocklist-select');
-        blocklistSelect.value = '';
-        handleBlocklistSelect({ target: blocklistSelect });
-    }
-
-    // Re-render immediately
-    render();
-
-    // Show undo toast
-    const toast = document.getElementById('undo-toast');
-    const message = document.getElementById('undo-toast-message');
-    message.textContent = tSettingsFmt('deleteUndoToastFmt', { name: blocklist.name });
-    toast.classList.remove('hidden');
-
-    // Set up auto-commit after 5 seconds
-    const timeoutId = setTimeout(() => {
-        commitDelete();
-    }, 5000);
-
-    pendingDelete = {
-        blocklist,
-        activeBlocks: activeBlocksToRemove,
-        timeoutId
-    };
-}
-
-function commitDelete() {
-    if (!pendingDelete) return;
-
-    clearTimeout(pendingDelete.timeoutId);
-
-    // Save data permanently
-    saveData();
-
-    // Update hosts if needed
-    if (pendingDelete.activeBlocks.length > 0) {
-        updateHostsFile();
-    }
-
-    // Hide toast
-    document.getElementById('undo-toast').classList.add('hidden');
-    pendingDelete = null;
-}
-
-function undoDelete() {
-    if (!pendingDelete) return;
-
-    clearTimeout(pendingDelete.timeoutId);
-
-    // Restore the blocklist and active blocks
-    state.appData.blocklists.push(pendingDelete.blocklist);
-    pendingDelete.activeBlocks.forEach(block => {
-        state.appData.activeBlocks.push(block);
-    });
-
-    // Hide toast
-    document.getElementById('undo-toast').classList.add('hidden');
-    pendingDelete = null;
-
-    // Re-render
-    render();
-}
-
-// Main render function
-
-// Render blocklists
-export function renderBlocklists() {
-    const container = document.getElementById('blocklists-container');
-
-    if (state.appData.blocklists.length === 0) {
-        container.innerHTML = `
-      <div class="no-active-blocks clickable" id="empty-blocklists-cta" style="cursor: pointer;">
-        <p>${tSettings('noBlocklistsYet')}</p>
-        <p class="subtle">${tSettings('clickHereCreateBlocklist')}</p>
-      </div>
-    `;
-        document.getElementById('empty-blocklists-cta').addEventListener('click', () => {
-            openBlocklistModal();
-        });
-        return;
-    }
-
-    container.innerHTML = state.appData.blocklists.map(bl => {
-        // Build detailed meta text
-        const websiteCount = bl.websites?.length || 0;
-        const regularApps = getBlocklistRegularApps(bl);
-        const screenTimeSelection = getBlocklistIOSScreenTimeSelection(bl);
-        const screenTimeLabel = formatIOSScreenTimeSelectionLabel(screenTimeSelection);
-        const appCount = regularApps.length + (screenTimeLabel ? 1 : 0);
-        const showDetails = bl.showItemDetails !== false; // Default to true
-        let metaParts = [];
-
-        if (websiteCount > 0) {
-            metaParts.push(formatBlocklistCardSitesSummary(websiteCount, bl.websites, showDetails));
-        }
-
-        if (appCount > 0) {
-            if (screenTimeLabel) {
-                const stText = `${screenTimeLabel.replace(' selected (Screen Time)', '')} via Screen Time`;
-                if (regularApps.length > 0) {
-                    metaParts.push(`${regularApps.length} ${regularApps.length === 1 ? 'app' : 'apps'} + ${stText}`);
-                } else {
-                    metaParts.push(stText);
-                }
-            } else if (showDetails) {
-                const regularAppLabels = regularApps.map(displayNameForBlockedApp);
-                if (appCount <= 2) {
-                    metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'} (${regularAppLabels.join(', ')})`);
-                } else {
-                    metaParts.push(`${appCount} apps (${regularAppLabels.slice(0, 2).join(', ')}, ...)`);
-                }
-            } else {
-                metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'}`);
-            }
-        }
-
-        const metaText = metaParts.length > 0 ? metaParts.join(` ${tSettings('andWord')} `) : tSettings('noItems');
-
-        // Get color for left border
-        // Get color for left border
-        const borderColor = bl.color || 'linear-gradient(135deg, #4a00e0 0%, #8e2de2 100%)';
-
-        // Check if this blocklist has an active block
-        const now = Date.now();
-        const activeBlock = state.appData.activeBlocks.find(b => b.blocklistId === bl.id && b.startTime <= now && b.endTime > now);
-        const isActive = !!activeBlock;
-
-        // Check if this blocklist has a schedule
-        const hasSchedule = state.appData.schedules && state.appData.schedules.some(s => s.blocklistId === bl.id);
-
-        const activeClass = isActive ? ' blocklist-card-active' : (hasSchedule ? ' blocklist-card-scheduled' : '');
-
-        // Calculate badges - show BOTH if applicable
-        let oneOffBadge = '';
-        let scheduleBadge = '';
-
-        // Green "live" dot prefixed onto badges for blocks that are
-        // currently running (one-off active or active schedule segment).
-        // Same colour treatment as the BLOCKING NOW row dot.
-        const runningDot = '<span class="badge-running-dot" aria-hidden="true"></span>';
-
-        // One-off block badge (green with hourglass, or power icon for always-on)
-        if (isActive && activeBlock) {
-            if (activeBlock.isPaused) {
-                // Paused badge — show pause icon and resume countdown
-                const pauseRemaining = activeBlock.pauseEndTime - now;
-                const pauseMins = Math.max(1, Math.ceil(pauseRemaining / 60000));
-                const pauseTimeText = pauseMins >= 60 ? `${Math.floor(pauseMins / 60)}h ${pauseMins % 60}m` : `${pauseMins}m`;
-                oneOffBadge = `<span class="active-badge paused-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg> Paused ${pauseTimeText}</span>`;
-            } else if (isBlockAlwaysOn(activeBlock)) {
-                // Power icon for always-on blocks
-                oneOffBadge = `<span class="active-badge">${runningDot}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg> Always</span>`;
-            } else {
-                const remaining = activeBlock.endTime - now;
-                const mins = Math.ceil(remaining / 60000);
-                // Hourglass icon
-                oneOffBadge = `<span class="active-badge">${runningDot}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg> ${formatBlockTimeRemainingShort(mins)}</span>`;
-            }
-        }
-
-        // Schedule badge (blue with calendar-sync)
-        let scheduleSegmentRunning = false;
-        if (hasSchedule) {
-            const compactScheduleUpcomingLabel =
-                (bl.name || '').trim().length > BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS;
-            const schedule = state.appData.schedules.find(s => s.blocklistId === bl.id);
-            let scheduleTimeText = '';
-            if (schedule && schedule.segments) {
-                if (isSchedulePausedNow(schedule, now)) {
-                    if (schedule.pauseEndTime) {
-                        const pauseMins = Math.max(1, Math.ceil((schedule.pauseEndTime - now) / 60000));
-                        scheduleTimeText = pauseMins >= 60 ? `Paused ${Math.floor(pauseMins / 60)}h ${pauseMins % 60}m` : `Paused ${pauseMins}m`;
-                    } else {
-                        scheduleTimeText = 'Paused';
-                    }
-                } else {
-                    // Check if any segment is currently active
-                    const nowDate = new Date();
-                    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1; // Mon=0
-                    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
-
-                    // Find active segment (handling cross-midnight segments)
-                    const activeSegment = schedule.segments.find(seg => {
-                        const startMins = seg.startHour * 60 + seg.startMinute;
-                        const endMins = seg.endHour * 60 + seg.endMinute;
-
-                        if (endMins > startMins) {
-                            // Same-day segment (e.g., 09:00 - 17:00)
-                            return seg.days.includes(currentDay) &&
-                                currentMins >= startMins &&
-                                currentMins < endMins;
-                        } else {
-                            // Cross-midnight segment (e.g., 22:00 - 04:00)
-                            const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
-                            const inEveningPortion = seg.days.includes(currentDay) && currentMins >= startMins;
-                            const inMorningPortion = seg.days.includes(yesterdayDay) && currentMins < endMins;
-                            return inEveningPortion || inMorningPortion;
-                        }
-                    });
-
-                    if (activeSegment) {
-                        // Currently blocking - show time left (or snooze countdown)
-                        scheduleSegmentRunning = true;
-                        const snoozedBlocklistId = getActiveAppBlockingSnoozeBlocklistId(now);
-                        if (snoozedBlocklistId === bl.id) {
-                            scheduleTimeText = formatAppBlockingSnoozeStartsIn(
-                                appBlockingWarningSnoozedUntilMs - now,
-                            );
-                        } else {
-                            const startMins = activeSegment.startHour * 60 + activeSegment.startMinute;
-                            const endMins = activeSegment.endHour * 60 + activeSegment.endMinute;
-                            let minsLeft;
-
-                            if (endMins > startMins) {
-                                // Same-day segment
-                                minsLeft = endMins - currentMins;
-                            } else {
-                                // Cross-midnight segment
-                                if (currentMins >= startMins) {
-                                    // In evening portion: time until midnight + morning end
-                                    minsLeft = (24 * 60 - currentMins) + endMins;
-                                } else {
-                                    // In morning portion: time until end
-                                    minsLeft = endMins - currentMins;
-                                }
-                            }
-                            scheduleTimeText = formatBlockTimeRemainingShort(minsLeft);
-                        }
-                    } else {
-                        // Find next upcoming segment
-                        let nextStart = null;
-                        for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
-                            const checkDay = (currentDay + dayOffset) % 7;
-                            const segsForDay = schedule.segments.filter(seg => seg.days.includes(checkDay))
-                                .sort((a, b) => (a.startHour * 60 + a.startMinute) - (b.startHour * 60 + b.startMinute));
-
-                            for (const seg of segsForDay) {
-                                const segStartMins = seg.startHour * 60 + seg.startMinute;
-                                if (dayOffset === 0 && segStartMins <= currentMins) continue; // Already passed today
-
-                                // Found next segment. minsUntil = (full days) + (start-of-segment minutes) - (current minutes).
-                                // Same formula works whether dayOffset is 0 (today) or further out.
-                                const minsUntil = (dayOffset * 24 * 60) + segStartMins - currentMins;
-
-                                const nMinutes = String(minsUntil);
-                                const nHours = String(Math.floor(minsUntil / 60));
-                                const nDays = String(Math.floor(minsUntil / (24 * 60)));
-                                if (minsUntil < 60) {
-                                    scheduleTimeText = compactScheduleUpcomingLabel
-                                        ? tSettingsFmt('blocklistScheduleCompactMinutesFmt', { n: nMinutes })
-                                        : tSettingsFmt('blocklistScheduleStartsInMinutesFmt', { n: nMinutes });
-                                } else if (minsUntil < 24 * 60) {
-                                    scheduleTimeText = compactScheduleUpcomingLabel
-                                        ? tSettingsFmt('blocklistScheduleCompactHoursFmt', { n: nHours })
-                                        : tSettingsFmt('blocklistScheduleStartsInHoursFmt', { n: nHours });
-                                } else {
-                                    scheduleTimeText = compactScheduleUpcomingLabel
-                                        ? tSettingsFmt('blocklistScheduleCompactDaysFmt', { n: nDays })
-                                        : tSettingsFmt('blocklistScheduleStartsInDaysFmt', { n: nDays });
-                                }
-                                nextStart = true;
-                                break;
-                            }
-                            if (nextStart) break;
-                        }
-                        if (!scheduleTimeText) scheduleTimeText = tSettings('blocklistScheduleFallback');
-                    }
-                }
-            }
-            // Calendar icon for scheduled blocklists (calendar, then live dot when segment is running)
-            const calendarIcon =
-                '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>';
-            const isSnoozedCard = getActiveAppBlockingSnoozeBlocklistId(now) === bl.id;
-            if (isSnoozedCard) {
-                scheduleBadge = `<span class="schedule-badge schedule-badge-snoozed">${APP_BLOCKING_SNOOZE_ICON_IMG_12} ${scheduleTimeText}</span>`;
-            } else {
-                const scheduleDot = scheduleSegmentRunning ? runningDot : '';
-                scheduleBadge = `<span class="schedule-badge">${calendarIcon}${scheduleDot} ${scheduleTimeText}</span>`;
-            }
-        }
-
-        const activeBadge = oneOffBadge + scheduleBadge;
-
-        // Check if this blocklist is selected
-        const isSelected = bl.id === state.selectedBlocklistId;
-        const selectedClass = isSelected ? ' selected' : '';
-        const accent = bl.color || '#667eea';
-        const selectedStyle = isSelected
-            ? `style="border-top-color: ${accent}; border-right-color: ${accent}; border-bottom-color: ${accent}; border-left-width: 0; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);"`
-            : '';
-        const enteringChipColor = getEnteringChipColor(accent);
-        const enteringChip = isSelected
-            ? `<span class="blocklist-entering-chip" style="background-color: ${enteringChipColor}">${tSettings('blocklistEnteringChip')}</span>`
-            : '';
-
-        return `
-      <div class="blocklist-card${activeClass}${selectedClass}" data-id="${bl.id}" data-active="${isActive}" ${selectedStyle}>
-        ${enteringChip}
-        <div class="blocklist-stripe" style="background: ${borderColor}"></div>
-        <div class="blocklist-info">
-          <div class="blocklist-name">
-            <span class="blocklist-emoji">${bl.emoji || '🚫'}</span>
-            <span class="blocklist-title-text">${escapeHtml(bl.name)}</span>
-            <span class="blocklist-name-badges">${activeBadge}</span>
-          </div>
-          <div class="blocklist-meta">${escapeHtml(metaText)}</div>
-        </div>
-        <div class="blocklist-actions">
-          <div class="blocklist-menu-wrapper">
-            <button class="blocklist-action-btn blocklist-menu-btn" title="${tSettings('blocklistCardMenuTitle')}" aria-label="${tSettings('blocklistCardMenuTitle')}">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="1"></circle>
-                <circle cx="5" cy="12" r="1"></circle>
-                <circle cx="19" cy="12" r="1"></circle>
-              </svg>
-            </button>
-            <div class="blocklist-menu hidden">
-              <button class="blocklist-menu-item duplicate-blocklist-item" title="${tSettings('blocklistCardDuplicate')}" aria-label="${tSettings('blocklistCardDuplicate')}">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="15" x2="15" y1="12" y2="18"/>
-                  <line x1="12" x2="18" y1="15" y2="15"/>
-                  <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
-                  <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
-                </svg>
-                ${tSettings('blocklistCardDuplicate')}
-              </button>
-              <button class="blocklist-menu-item delete-blocklist-item" title="${tSettings('blocklistCardDelete')}" aria-label="${tSettings('blocklistCardDelete')}">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M3 6h18"></path>
-                  <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path>
-                  <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path>
-                </svg>
-                ${tSettings('blocklistCardDelete')}
-              </button>
-            </div>
-          </div>
-          <button class="blocklist-action-btn edit-btn" title="${tSettings('blocklistCardEditTooltip')}" aria-label="${tSettings('blocklistCardEditTooltip')}">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
-              <path d="m15 5 4 4"/>
-            </svg>
-          </button>
-        </div>
-      </div>
-    `;
-    }).join('');
-
-    // Add event listeners
-    container.querySelectorAll('.blocklist-card').forEach(card => {
-        const id = card.dataset.id;
-        const isActive = card.dataset.active === 'true';
-
-        // Click card to select it in the dropdown
-        card.addEventListener('click', () => {
-            const dropdown = document.getElementById('blocklist-select');
-            dropdown.value = id;
-            handleBlocklistSelect({ target: dropdown });
-        });
-
-        card.querySelector('.edit-btn').addEventListener('click', (e) => {
-            e.stopPropagation();
-            closeAllBlocklistMenus();
-            const blocklist = state.appData.blocklists.find(bl => bl.id === id);
-            openBlocklistModal(blocklist);
-        });
-
-        card.querySelector('.blocklist-menu-btn').addEventListener('click', (e) => {
-            e.stopPropagation();
-            const menu = card.querySelector('.blocklist-menu');
-            if (!menu) return;
-            const wasHidden = menu.classList.contains('hidden');
-            closeAllBlocklistMenus();
-            if (wasHidden) menu.classList.remove('hidden');
-        });
-
-        card.querySelector('.duplicate-blocklist-item').addEventListener('click', (e) => {
-            e.stopPropagation();
-            closeAllBlocklistMenus();
-            duplicateBlocklist(id);
-        });
-
-        card.querySelector('.delete-blocklist-item').addEventListener('click', (e) => {
-            e.stopPropagation();
-            closeAllBlocklistMenus();
-            deleteBlocklist(id);
-        });
-
-        // Drag and drop using mouse events on document
-        card.addEventListener('mousedown', (e) => {
-            // Don't start drag if clicking on buttons
-            if (e.target.closest('.edit-btn') || e.target.closest('.blocklist-menu-btn') || e.target.closest('.blocklist-menu')) return;
-            if (e.target.closest('.blocklist-actions')) return;
-            if (e.button !== 0) return; // Only left click
-
-            e.preventDefault(); // Prevent text selection
-
-            const startY = e.clientY;
-            let isDragging = false;
-            const container = document.getElementById('blocklists-container');
-
-
-            const onMouseMove = (moveEvent) => {
-                // Only start dragging after moving 5px
-                if (!isDragging && Math.abs(moveEvent.clientY - startY) > 5) {
-                    isDragging = true;
-                    card.classList.add('dragging');
-                }
-
-                if (!isDragging) return;
-
-                const siblings = [...container.querySelectorAll('.blocklist-card:not(.dragging)')];
-                const nextSibling = siblings.find(sibling => {
-                    const rect = sibling.getBoundingClientRect();
-                    return moveEvent.clientY < rect.top + rect.height / 2;
-                });
-
-
-                if (nextSibling) {
-                    container.insertBefore(card, nextSibling);
-                } else {
-                    container.appendChild(card);
-                }
-            };
-
-            const onMouseUp = () => {
-                document.removeEventListener('mousemove', onMouseMove);
-                document.removeEventListener('mouseup', onMouseUp);
-                card.classList.remove('dragging');
-
-                if (isDragging) {
-                    saveBlocklistOrderFromDOM();
-                }
-            };
-
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
-        });
-    });
-}
-
-/// Pre-select the sole blocklist as the default state. Skipped if the
-/// user has explicitly deselected this session (so click-outside / ESC
-/// stay sticky). Pass `force: true` to clear that flag — used when the
-/// user just *created* a new blocklist, which is a strong "I want to
-/// use this" signal.
-export function autoSelectSoleBlocklist({ force = false } = {}) {
-    if (state.appData.blocklists.length !== 1) return;
-    if (state.selectedBlocklistId) return;
-    if (force) state.userExplicitlyDeselected = false;
-    if (state.userExplicitlyDeselected) return;
-    const dropdown = document.getElementById('blocklist-select');
-    if (!dropdown) return;
-    dropdown.value = state.appData.blocklists[0].id;
-    handleBlocklistSelect({ target: dropdown });
-}
-
-export function closeAllBlocklistMenus() {
-    document.querySelectorAll('.blocklist-menu:not(.hidden)').forEach(menu => {
-        menu.classList.add('hidden');
-    });
-}
-
-// Save blocklist order based on DOM position
-function saveBlocklistOrderFromDOM() {
-    const container = document.getElementById('blocklists-container');
-    if (!container) return;
-
-    const cardElements = Array.from(container.querySelectorAll('.blocklist-card'));
-    const newOrder = cardElements.map(card => card.dataset.id);
-
-    // Reorder state.appData.blocklists to match
-    const reorderedBlocklists = [];
-    newOrder.forEach(id => {
-        const blocklist = state.appData.blocklists.find(bl => bl.id === id);
-        if (blocklist) {
-            reorderedBlocklists.push(blocklist);
-        }
-    });
-
-    // Add any blocklists that weren't in the DOM
-    state.appData.blocklists.forEach(bl => {
-        if (!reorderedBlocklists.find(r => r.id === bl.id)) {
-            reorderedBlocklists.push(bl);
-        }
-    });
-
-    state.appData.blocklists = reorderedBlocklists;
-    saveData();
-
-    // Re-render the bits of UI that mirror blocklist order. Don't call full render() —
-    // the cards are already in the right order in the DOM (the user just dropped them
-    // there), and a full re-render would briefly flicker.
-    renderNowBlockingRow();
-    renderScheduleVisibilityChips();
-}
 
 // Start interval to update remaining time
 
@@ -12472,20 +8267,20 @@ export function formatTime(date) {
 
 // Last minute of the civil day (23:59). Drag/snap math uses 1440 as exclusive
 // end-of-day; converting 1440 through hour/minute fields wrongly yielded 23:00.
-const MINUTES_PER_DAY = 1440;
-const MAX_SAME_DAY_END_MINUTES = MINUTES_PER_DAY - 1;
+export const MINUTES_PER_DAY = 1440;
+export const MAX_SAME_DAY_END_MINUTES = MINUTES_PER_DAY - 1;
 
-function clampSameDayMinutes(totalMinutes) {
+export function clampSameDayMinutes(totalMinutes) {
     return Math.max(0, Math.min(MAX_SAME_DAY_END_MINUTES, Math.round(totalMinutes)));
 }
 
-function snapMinutesToInterval(minutes, intervalMinutes = 15) {
+export function snapMinutesToInterval(minutes, intervalMinutes = 15) {
     return clampSameDayMinutes(Math.round(minutes / intervalMinutes) * intervalMinutes);
 }
 
 // Format a minutes-since-midnight value as zero-padded "HH:MM". Used by drag-resize
 // handlers to live-update the time label inside a preview block.
-function formatMinutesAsHHMM(totalMinutes) {
+export function formatMinutesAsHHMM(totalMinutes) {
     const clamped = clampSameDayMinutes(totalMinutes);
     const h = Math.floor(clamped / 60);
     const m = clamped % 60;
@@ -12544,52 +8339,52 @@ export function getCompletedChallengeText(state) {
     return state.words.slice(0, state.currentIndex).join(' ');
 }
 
-function setOverrideWordChallengeMode(enabled) {
+export function setOverrideWordChallengeMode(enabled) {
     document.getElementById('challenge-word-progress')?.classList.toggle('hidden', !enabled);
     document.getElementById('challenge-current-word')?.classList.toggle('hidden', !enabled);
     document.getElementById('challenge-word-input')?.classList.toggle('hidden', !enabled);
     document.getElementById('challenge-input')?.classList.toggle('hidden', enabled);
 }
 
-function renderOverrideWordChallengeState() {
+export function renderOverrideWordChallengeState() {
     const progressLabelEl = document.getElementById('challenge-word-progress');
     const currentWordEl = document.getElementById('challenge-current-word');
     const wordInput = document.getElementById('challenge-word-input');
     const progressBar = document.getElementById('challenge-progress-bar');
-    if (!overrideWordChallengeState || !progressLabelEl || !currentWordEl || !wordInput || !progressBar) return;
-    const currentWord = getCurrentChallengeWord(overrideWordChallengeState);
-    const completedText = getCompletedChallengeText(overrideWordChallengeState);
+    if (!state.overrideWordChallengeState || !progressLabelEl || !currentWordEl || !wordInput || !progressBar) return;
+    const currentWord = getCurrentChallengeWord(state.overrideWordChallengeState);
+    const completedText = getCompletedChallengeText(state.overrideWordChallengeState);
     const targetText = completedText ? `${completedText} ${currentWord}` : currentWord;
-    progressLabelEl.textContent = `Word ${overrideWordChallengeState.currentIndex + 1} of ${overrideWordChallengeState.words.length}`;
+    progressLabelEl.textContent = `Word ${state.overrideWordChallengeState.currentIndex + 1} of ${state.overrideWordChallengeState.words.length}`;
     currentWordEl.textContent = currentWord;
     wordInput.value = '';
-    progressBar.style.width = challengeText.length > 0
-        ? `${Math.min(100, (targetText.length / challengeText.length) * 100)}%`
+    progressBar.style.width = state.challengeText.length > 0
+        ? `${Math.min(100, (targetText.length / state.challengeText.length) * 100)}%`
         : '0%';
     document.getElementById('confirm-override-btn').disabled = !currentWord;
 }
 
-function setPauseWordChallengeMode(enabled) {
+export function setPauseWordChallengeMode(enabled) {
     document.getElementById('pause-word-progress')?.classList.toggle('hidden', !enabled);
     document.getElementById('pause-current-word')?.classList.toggle('hidden', !enabled);
     document.getElementById('pause-challenge-word-input')?.classList.toggle('hidden', !enabled);
     document.getElementById('pause-challenge-input')?.classList.toggle('hidden', enabled);
 }
 
-function renderPauseWordChallengeState() {
+export function renderPauseWordChallengeState() {
     const progressLabelEl = document.getElementById('pause-word-progress');
     const currentWordEl = document.getElementById('pause-current-word');
     const wordInput = document.getElementById('pause-challenge-word-input');
     const progressBar = document.getElementById('pause-challenge-progress-bar');
-    if (!pauseWordChallengeState || !progressLabelEl || !currentWordEl || !wordInput || !progressBar) return;
-    const currentWord = getCurrentChallengeWord(pauseWordChallengeState);
-    const completedText = getCompletedChallengeText(pauseWordChallengeState);
+    if (!state.pauseWordChallengeState || !progressLabelEl || !currentWordEl || !wordInput || !progressBar) return;
+    const currentWord = getCurrentChallengeWord(state.pauseWordChallengeState);
+    const completedText = getCompletedChallengeText(state.pauseWordChallengeState);
     const targetText = completedText ? `${completedText} ${currentWord}` : currentWord;
-    progressLabelEl.textContent = `Word ${pauseWordChallengeState.currentIndex + 1} of ${pauseWordChallengeState.words.length}`;
+    progressLabelEl.textContent = `Word ${state.pauseWordChallengeState.currentIndex + 1} of ${state.pauseWordChallengeState.words.length}`;
     currentWordEl.textContent = currentWord;
     wordInput.value = '';
-    progressBar.style.width = pauseChallengeText.length > 0
-        ? `${Math.min(100, (targetText.length / pauseChallengeText.length) * 100)}%`
+    progressBar.style.width = state.pauseChallengeText.length > 0
+        ? `${Math.min(100, (targetText.length / state.pauseChallengeText.length) * 100)}%`
         : '0%';
     document.getElementById('confirm-pause-btn').disabled = !currentWord;
 }
@@ -12796,7 +8591,7 @@ export function setupLanguagePicker() {
 }
 
 /** Confirmation modals — describe typing challenge count + time estimate */
-function formatConfirmModalOverrideTypingLine({ type, count, estimatedMinutes, resumeShortGibberish = false }) {
+export function formatConfirmModalOverrideTypingLine({ type, count, estimatedMinutes, resumeShortGibberish = false }) {
     const minutes = estimatedMinutes;
     const charUnitDa = 'tegn';
     const charUnitEn = count === 1 ? 'character' : 'characters';
@@ -13223,7 +9018,7 @@ function initWelcomeDemoControls() {
     });
 }
 
-function websiteWord(count) {
+export function websiteWord(count) {
     if (getSettingsLanguage() === 'da') {
         return count === 1 ? 'hjemmeside' : 'hjemmesider';
     }
@@ -13247,7 +9042,7 @@ function siteNameForDisplay(url) {
 }
 
 /** Room card line, e.g. "3 sites · instagram, youtube, reddit". */
-function formatBlocklistCardSitesSummary(websiteCount, websites, showDetails) {
+export function formatBlocklistCardSitesSummary(websiteCount, websites, showDetails) {
     const countLabel = `${websiteCount} ${siteWord(websiteCount)}`;
     if (!showDetails || websiteCount === 0) return countLabel;
     const names = (websites || []).map(siteNameForDisplay);
@@ -13404,7 +9199,7 @@ export function applySettingsLanguage() {
     // Blocklist modal
     const modalTitle = document.getElementById('modal-title');
     if (modalTitle) {
-        modalTitle.textContent = editingBlocklistId ? tSettings('editBlocklist') : tSettings('createBlocklist');
+        modalTitle.textContent = state.editingBlocklistId ? tSettings('editBlocklist') : tSettings('createBlocklist');
     }
     setText('active-blocklist-warning-text', tSettings('activeBlocklistWarning'));
     setText('blocklist-name-label', tSettings('name'));

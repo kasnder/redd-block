@@ -2,7 +2,7 @@
 // Extracted verbatim from app.js.
 import { state } from './state.js';
 import { tSettings } from './i18n.js';
-import { handleTimeChange } from './app.js';
+import { handleTimeChange } from './confirm-modals.js';
 import { setAlwaysOnMode, wireAllScheduleSegmentTimeControls } from './schedule-editor.js';
 import { getGlobalStartOverlays } from './schedule-overlay.js';
 

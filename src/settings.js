@@ -4,6 +4,7 @@ import { state } from './state.js';
 import { startHelperUiRefreshLoop, stopHelperUiRefreshLoop, isModalVisible } from './modal-manager.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { render } from './render.js';
+import { handleBlocklistSelect } from './confirm-modals.js';
 import { hasAnyBlockingStateToClear, hasAnyEnforcedBlocks, isOneOffBlockStillActive, refreshDesktopHelperStatus, scheduleCanStillBecomeActive } from './schedule-engine.js';
 import { tauriAPI, openUrl } from './tauri-api.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage } from './i18n.js';
@@ -14,7 +15,7 @@ import { escapeHtml } from './utils.js';
 import { generateOverrideChallengeText, getDifficultyTypingCharCount, getMaxOverrideCharsForType } from './override-challenge.js';
 import {
     attachCopyChipHandlers, browserBlockingMethod, browserIconUrl, browserUsesAutomation,
-    buildWordChallengeState, checkHelperStatus, extensionsUrlChipHtml, handleBlocklistSelect,
+    buildWordChallengeState, checkHelperStatus, extensionsUrlChipHtml,
     isHelperInstallCancelled,
     isMobileWordByWordChallenge, openExtensionSetupOverlay,
     openExternal, renderOverrideAllWordChallengeState,

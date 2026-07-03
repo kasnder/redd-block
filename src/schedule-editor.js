@@ -5,15 +5,15 @@ import { tSettings, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.
 import { isBlockAlwaysOn, ensureIOSBlocklistSelectionReady } from './blocklist-utils.js';
 import { isNonRepeatingSchedule, isSchedulePausedNow, resolveOneShotOccurrences } from './schedule-engine.js';
 import { saveData } from './persistence.js';
+import { clearPendingScheduleDraft } from './blocklists.js';
+import { handleTimeChange } from './confirm-modals.js';
 import { disableScheduleControls, disableTimeControls, pad, parseEndTimeBoundedInt, scrollPopoverOptionIntoView, updateDurationQuickBtns } from './time-inputs.js';
 import { syncSchedulePanelOverlayControls } from './schedule-overlay.js';
 import {
-    clearPendingScheduleDraft, handleTimeChange, openScheduleOverrideModal,
-    setBtnActionLabel, setStartBlockBtnLeadingIcon, setStartBtnBlocklistInfo,
-    shouldUseCompactMobileScheduleDayLabels, showScheduleConfirmModal,
-    showScheduleEditConfirmModal, syncStopBtnLabelFit, updatePauseButtonAppearance,
+    shouldUseCompactMobileScheduleDayLabels,
     updateWindowHeight,
 } from './app.js';
+import { openScheduleOverrideModal, setBtnActionLabel, setStartBlockBtnLeadingIcon, setStartBtnBlocklistInfo, showScheduleConfirmModal, showScheduleEditConfirmModal, syncStopBtnLabelFit, updatePauseButtonAppearance } from './confirm-modals.js';
 
 export const TIME_SEPARATOR_ARROW_HTML = '<span class="time-separator" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg></span>';
 export const SEGMENT_SUMMARY_CLOCK_ICON = '<svg class="segment-summary-clock" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>';

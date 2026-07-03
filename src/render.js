@@ -8,15 +8,14 @@ import { isNonRepeatingSchedule, isSchedulePausedNow, pickEarliestUpcomingSchedu
 import { saveData, updateHostsFile } from './persistence.js';
 import { disableTimeControls, updateTimeDisplay } from './time-inputs.js';
 import { isScheduleSegmentActiveNow, updateScheduleButtonState } from './schedule-editor.js';
+import { autoSelectSoleBlocklist, renderBlocklists } from './blocklists.js';
+import { handleBlocklistSelect, openBlocklistModal, openOverrideModal, openPauseModal, openScheduleOverrideModal, setBtnActionLabel, setStartBlockBtnLeadingIcon, setStartBtnBlocklistInfo, updatePauseButtonAppearance, syncSchedulerChromeVisibility, syncStopBtnLabelFit, openScheduledBlockEdit, refreshCalendarPreviews, handleTimeChange } from './confirm-modals.js';
 import { scheduleSelectionPromptLayout } from './theme.js';
 import { updateCleanHostsBtnState, updateOverrideAllButtonVisibility } from './settings.js';
 import {
-    autoSelectSoleBlocklist, formatBlockTimeRemainingShort, formatDuration, formatTime,
-    handleBlocklistSelect, handleTimeChange, openBlocklistModal, openOverrideModal,
-    openPauseModal, openScheduleOverrideModal, openScheduledBlockEdit, refreshCalendarPreviews,
-    renderBlocklists, setBtnActionLabel, setStartBlockBtnLeadingIcon, setStartBtnBlocklistInfo,
-    syncNowBlockingChipsScrollability, syncSchedulerChromeVisibility, syncStopBtnLabelFit,
-    updateBlockedApps, updateOnboardingVisibility, updatePauseButtonAppearance,
+    formatBlockTimeRemainingShort, formatDuration, formatTime,
+    syncNowBlockingChipsScrollability,
+    updateBlockedApps, updateOnboardingVisibility,
     updateWindowHeight,
 } from './app.js';
 

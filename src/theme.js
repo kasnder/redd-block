@@ -7,15 +7,14 @@ import { resolveMicrosoftStorePackage, isVersionHigher, getLatestVersionPlatform
 import { updateOverrideAllButtonVisibility, refreshUninstallButtonState } from './settings.js';
 import { stopHelperUiRefreshLoop } from './modal-manager.js';
 import { saveData } from './persistence.js';
+import { syncAllStopBtnLabelFits, syncPauseDurationRowLayout } from './confirm-modals.js';
 import {
     setLanguagePickerOpen,
     applySettingsLanguage,
     applyFormattedCurrentVersion,
     wireEnforcementToggle,
     wireBlockingMethodSettings,
-    syncPauseDurationRowLayout,
     syncMobileScheduleDayLabelsViewportMode,
-    syncAllStopBtnLabelFits,
     setupLanguagePicker,
     resetSettingsEnforcementSection,
     applyEnforcementDescCopy,
