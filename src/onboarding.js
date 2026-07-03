@@ -14,8 +14,9 @@ import {
 } from './enforcement.js';
 import {
     applyEulaOnboardingLanguage, applyMigrationOverlayStaticCopy, applyWelcomeOnboardingLanguage,
-    resetWelcomeDemoPanel, showExclusiveOnboardingScreen, updateOnboardingVisibility,
+    resetWelcomeDemoPanel,
 } from './app.js';
+import { showExclusiveOnboardingScreen, updateOnboardingVisibility } from './blocking-platform.js';
 
 export const CURRENT_EULA_REVISION = 1;
 

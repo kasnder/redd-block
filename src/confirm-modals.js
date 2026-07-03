@@ -13,17 +13,17 @@ import { clearPendingScheduleDraft, renderBlocklists, truncateBlocklistName } fr
 import { getCommittedScheduleSegmentCount, getInitialExpandedScheduleSegmentIndex, rebuildScheduleSegments, setAlwaysOnMode, setScheduleMode, updateScheduleButtonState } from './schedule-editor.js';
 import { getEffectiveScheduleStartOverlayId, rememberLastScheduleStartOverlayId, syncScheduleConfirmOverlaySummary } from './schedule-overlay.js';
 import { closeAllPopovers, disableScheduleControls, disableTimeControls, getEndTimeAsDate, getStartTimeAsDate, initializeTimeInputs, pad, updateDurationQuickBtns, updateTimeDisplay } from './time-inputs.js';
+import { updateBlockedApps, updateOnboardingVisibility, updateWindowHeight, requestScreentimeAuth, isHelperConnectionError } from './blocking-platform.js';
 import { bindUiZoomLayoutObserver, scheduleSelectionPromptLayout, scheduleUiZoomResponsiveLayout } from './theme.js';
 import {
     IOS_STOP_BTN_META_COLLAPSE_SLACK_PX, MINUTES_PER_DAY, MAX_SAME_DAY_END_MINUTES,
     buildWordChallengeState, clampSameDayMinutes, formatConfirmModalOverrideTypingLine,
     formatMinutesAsHHMM, formatTime, generateId, getBlocklistDisplayApps,
-    getCompletedChallengeText, getCurrentChallengeWord, isHelperConnectionError,
+    getCompletedChallengeText, getCurrentChallengeWord,
     isMobileWordByWordChallenge, renderOverrideWordChallengeState,
-    renderPauseWordChallengeState, requestScreentimeAuth, resetWebsitesImportMenuPosition,
+    renderPauseWordChallengeState, resetWebsitesImportMenuPosition,
     setOverrideWordChallengeMode, setPauseWordChallengeMode,
-    shouldUseCompactMobileScheduleDayLabels, snapMinutesToInterval, updateBlockedApps,
-    updateOnboardingVisibility, updateWindowHeight, websiteWord,
+    shouldUseCompactMobileScheduleDayLabels, snapMinutesToInterval, websiteWord,
 } from './app.js';
 
 export const START_CONFIRM_ICON_GLOBE = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;

@@ -12,7 +12,7 @@ import { isMobileOverrideChallengePlatform } from './override-challenge.js';
 import { saveData } from './persistence.js';
 import { disableScheduleControls } from './time-inputs.js';
 import { closeSchedulePanelDropdownMenus } from './schedule-editor.js';
-import { findResponsibleBlocklistForWarningApps, joinAppListWithLimit } from './app.js';
+import { findResponsibleBlocklistForWarningApps, joinAppListWithLimit } from './blocking-platform.js';
 import {
     initScheduleOverlayMessageEditor,
     getScheduleOverlayMessageEditorHtml,

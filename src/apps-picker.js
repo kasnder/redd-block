@@ -3,7 +3,8 @@
 import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
 import { escapeHtml } from './utils.js';
-import { ensureInstalledAppsCache, pushModalUndo } from './app.js';
+import { pushModalUndo } from './app.js';
+import { ensureInstalledAppsCache, displayNameForBlockedApp } from './blocking-platform.js';
 
 export async function openInstalledAppsPicker() {
     const modal = document.getElementById('app-picker-modal');

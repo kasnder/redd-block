@@ -9,14 +9,13 @@ import { saveData, updateHostsFile } from './persistence.js';
 import { disableTimeControls, updateTimeDisplay } from './time-inputs.js';
 import { isScheduleSegmentActiveNow, updateScheduleButtonState } from './schedule-editor.js';
 import { autoSelectSoleBlocklist, renderBlocklists } from './blocklists.js';
+import { updateBlockedApps, updateOnboardingVisibility, updateWindowHeight } from './blocking-platform.js';
 import { handleBlocklistSelect, openBlocklistModal, openOverrideModal, openPauseModal, openScheduleOverrideModal, setBtnActionLabel, setStartBlockBtnLeadingIcon, setStartBtnBlocklistInfo, updatePauseButtonAppearance, syncSchedulerChromeVisibility, syncStopBtnLabelFit, openScheduledBlockEdit, refreshCalendarPreviews, handleTimeChange } from './confirm-modals.js';
 import { scheduleSelectionPromptLayout } from './theme.js';
 import { updateCleanHostsBtnState, updateOverrideAllButtonVisibility } from './settings.js';
 import {
     formatBlockTimeRemainingShort, formatDuration, formatTime,
     syncNowBlockingChipsScrollability,
-    updateBlockedApps, updateOnboardingVisibility,
-    updateWindowHeight,
 } from './app.js';
 
 export function render() {

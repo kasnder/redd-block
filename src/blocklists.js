@@ -11,12 +11,13 @@ import { saveData, updateHostsFile } from './persistence.js';
 import { render, renderNowBlockingRow, renderScheduleVisibilityChips } from './render.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
 import {
-    APP_BLOCKING_SNOOZE_ICON_IMG_12, BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS,
-    BLOCKLIST_NAME_MAX_LENGTH, appBlockingWarningSnoozedUntilMs,
-    displayNameForBlockedApp, formatAppBlockingSnoozeStartsIn, formatBlockTimeRemainingShort,
-    formatBlocklistCardSitesSummary, generateId, getActiveAppBlockingSnoozeBlocklistId,
+    BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS,
+    BLOCKLIST_NAME_MAX_LENGTH,
+    formatBlockTimeRemainingShort,
+    formatBlocklistCardSitesSummary, generateId,
 } from './app.js';
 import { cloneOverrideDifficulty, handleBlocklistSelect, openBlocklistModal } from './confirm-modals.js';
+import { APP_BLOCKING_SNOOZE_ICON_IMG_12, appBlockingWarningSnoozedUntilMs, displayNameForBlockedApp, formatAppBlockingSnoozeStartsIn, getActiveAppBlockingSnoozeBlocklistId } from './blocking-platform.js';
 
 export function truncateBlocklistName(raw) {
     const s = String(raw ?? '');
