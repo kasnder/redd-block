@@ -34,4 +34,11 @@ export const state = {
     overridePreviewFrozenByType: { 'random-words': null, 'gibberish': null },
     lastOverridePreviewType: null,
     installedAppsCache: null, // Cache the installed-apps list so we don't re-scan every open
+    isAlwaysOnMode: false, // false = timed block, true = always-on (permanent) block
+    scheduleRepeatType: 'forever', // 'forever', 'date', or 'no'
+    activeScheduleSegmentCount: 0, // Number of segments locked in the active schedule (new segments can be added)
+    selectedEndHour: 20,
+    selectedEndMinute: 30,
+    targetDurationMinutes: 60, // Default 60-minute block
+    userEditedEndTime: false, // Track if user manually changed end time
 };

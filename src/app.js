@@ -68,6 +68,8 @@ import {
     collectActiveIOSManualBlockPayload,
 } from './blocklist-utils.js';
 import { openInstalledAppsPicker } from './apps-picker.js';
+import { closeAllPopovers, disableScheduleControls, disableTimeControls, getEndTimeAsDate, getStartTimeAsDate, handleDurationInputChange, handleDurationQuickBtn, handlePopoverOutsideClick, handleTimePartClick, initializeTimeInputs, pad, parseEndTimeBoundedInt, scrollElementWithinContainer, scrollPopoverOptionIntoView, setupEndTimeDirectInputs, updateDurationQuickBtns, updateTimeDisplay } from './time-inputs.js';
+import { dismissTopmostEscapeLayer, isModalVisible, refreshOpenHelperUi, startHelperUiRefreshLoop, stopHelperUiRefreshLoop } from './modal-manager.js';
 import {
     overrideAllChallengeText, overrideAllWordChallengeState, refreshUninstallButtonState,
     setupGraceSetting, setupHelpMenuLinks, setupHelperSettings, setupInAppUninstall,
@@ -189,7 +191,6 @@ const WEBSITES_PRESET_LISTS = {
 
 // Schedule mode state
 let isScheduleMode = false; // false = instant mode, true = schedule mode
-let isAlwaysOnMode = false; // false = timed block, true = always-on (permanent) block
 let scheduleSegments = getDefaultScheduleSegments(); // Array of time segments with per-segment days
 let expandedScheduleSegmentIndex = 0; // Which segment shows the full editor when multiple exist (-1 = all collapsed)
 
@@ -830,118 +831,8 @@ function getCachedDesktopHelperStatus(maxAgeMs = HELPER_STATUS_CACHE_TTL_MS) {
     return lastDesktopHelperStatus;
 }
 
-const HELPER_UI_REFRESH_MS = 3000;
-let helperUiRefreshTimer = null;
-let helperUiRefreshInFlight = false;
 
-function isModalVisible(id) {
-    const modal = document.getElementById(id);
-    return !!(modal && !modal.classList.contains('hidden'));
-}
-
-/** ESC: title-bar chip menu → other sub-overlays → topmost modal → (elsewhere) deselect blocklist. */
-function dismissTopmostEscapeLayer() {
-    if (document.querySelector('.now-blocking-chip-menu')) {
-        closeNowBlockingChipMenus();
-        return true;
-    }
-    if (closeEscapeSubLayer()) return true;
-    return closeEscapeDialog();
-}
-
-function closeEscapeSubLayer() {
-    const focused = document.activeElement;
-    if (focused?.matches('#custom-color-input, input[type="color"]')) {
-        focused.blur();
-        return true;
-    }
-    const emoji = document.getElementById('emoji-picker-popover');
-    if (emoji && !emoji.classList.contains('hidden')) {
-        emoji.classList.add('hidden');
-        return true;
-    }
-    if (document.querySelector('.schedule-time-popover')) {
-        document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
-        return true;
-    }
-    if (document.querySelector('.time-popover:not(.hidden)')) {
-        closeAllPopovers();
-        return true;
-    }
-    const repeatMenu = document.getElementById('repeat-dropdown-menu');
-    if (repeatMenu && !repeatMenu.classList.contains('hidden')) {
-        repeatMenu.classList.add('hidden');
-        return true;
-    }
-    const importMenu = document.getElementById('websites-import-menu');
-    if (importMenu && !importMenu.classList.contains('hidden')) {
-        importMenu.classList.add('hidden');
-        document.getElementById('modal-import-websites-btn')?.setAttribute('aria-expanded', 'false');
-        resetWebsitesImportMenuPosition();
-        return true;
-    }
-    if (document.querySelector('.blocklist-menu:not(.hidden)')) {
-        closeAllBlocklistMenus();
-        return true;
-    }
-    if (isAnyLanguagePickerOpen()) {
-        closeAllLanguagePickers();
-        return true;
-    }
-    return false;
-}
-
-function closeEscapeDialog() {
-    const modals = [...document.querySelectorAll('.modal-overlay:not(.hidden)')];
-    if (!modals.length) return false;
-    const modal = modals.reduce((top, el) => {
-        const z = parseInt(getComputedStyle(el).zIndex, 10) || 0;
-        const topZ = parseInt(getComputedStyle(top).zIndex, 10) || 0;
-        return z >= topZ ? el : top;
-    });
-    const cancel = modal.querySelector('.modal-buttons .cancel-btn, [id^="cancel-"], [id^="close-"]');
-    if (cancel) cancel.click();
-    else modal.classList.add('hidden');
-    return true;
-}
-
-export function stopHelperUiRefreshLoop() {
-    if (helperUiRefreshTimer != null) {
-        clearInterval(helperUiRefreshTimer);
-        helperUiRefreshTimer = null;
-    }
-}
-
-async function refreshOpenHelperUi() {
-    if (helperUiRefreshInFlight || state.isIOS || state.isAndroid) return;
-
-    const settingsVisible = isModalVisible('settings-modal');
-    if (!settingsVisible) {
-        stopHelperUiRefreshLoop();
-        return;
-    }
-
-    helperUiRefreshInFlight = true;
-    try {
-        if (settingsVisible) {
-            await updateHelperStatusIndicator();
-            updateCleanHostsBtnState();
-        }
-    } finally {
-        helperUiRefreshInFlight = false;
-    }
-}
-
-export function startHelperUiRefreshLoop() {
-    if (state.isIOS || state.isAndroid || helperUiRefreshTimer != null) return;
-    helperUiRefreshTimer = setInterval(() => {
-        void refreshOpenHelperUi();
-    }, HELPER_UI_REFRESH_MS);
-}
-
-let scheduleRepeatType = 'forever'; // 'forever', 'date', or 'no'
 let scheduleRepeatDate = null; // Date object when repeatType is 'date'
-let activeScheduleSegmentCount = 0; // Number of segments locked in the active schedule (new segments can be added)
 let hasShownIOSScheduleSyncError = false;
 const CURRENT_EULA_REVISION = 1;
 let forceShowEulaThisSession = false;
@@ -7450,7 +7341,7 @@ function parseTextFileDomains(content) {
     return out;
 }
 
-function resetWebsitesImportMenuPosition() {
+export function resetWebsitesImportMenuPosition() {
     const menu = document.getElementById('websites-import-menu');
     if (!menu) return;
     menu.classList.remove('websites-import-menu-fixed');
@@ -8906,7 +8797,7 @@ function setupOverrideModalListeners() {
 
                 if (scheduleToStop) {
                     scheduleSegments = scheduleToStop.segments.map(seg => ({ ...seg }));
-                    activeScheduleSegmentCount = 0; // No segments are locked anymore
+                    state.activeScheduleSegmentCount = 0; // No segments are locked anymore
 
                     // Save these segments as pending so they persist when clicking off/on
                     if (!state.appData.settings) state.appData.settings = {};
@@ -8923,7 +8814,7 @@ function setupOverrideModalListeners() {
                         disableScheduleControls(false);
                     }
                 } else {
-                    activeScheduleSegmentCount = 0;
+                    state.activeScheduleSegmentCount = 0;
                 }
 
                 // On iOS, clear both Screen Time stores so the overridden schedule's blocks are removed
@@ -9016,552 +8907,8 @@ function renderTags(container, items, onRemove, lockedItems = [], options = {}) 
     }
 }
 // Track current selected end time only (start is always 'now')
-let selectedEndHour = 20;
-let selectedEndMinute = 30;
-let targetDurationMinutes = 60; // Default 60-minute block
-let userEditedEndTime = false; // Track if user manually changed end time
 
 // Pad number with leading zero
-function pad(num) {
-    return num.toString().padStart(2, '0');
-}
-
-// Disable or enable time controls (when a block is active, controls should be disabled)
-function disableTimeControls(disabled) {
-    const durationInput = document.getElementById('duration-minutes-input');
-    const endHourInput = document.getElementById('end-hour-input');
-    const endMinuteInput = document.getElementById('end-minute-input');
-    const endTimeDisplay = document.getElementById('end-time-display');
-    const quickSelectBtns = document.querySelectorAll('.duration-quick-btn');
-    const timePickerContainer = document.getElementById('time-picker-container');
-
-    if (durationInput) {
-        durationInput.disabled = disabled;
-        durationInput.style.opacity = disabled ? '0.5' : '1';
-        durationInput.style.pointerEvents = disabled ? 'none' : 'auto';
-    }
-
-    if (endHourInput) {
-        endHourInput.disabled = disabled;
-        endHourInput.style.opacity = disabled ? '0.5' : '1';
-        endHourInput.style.pointerEvents = disabled ? 'none' : 'auto';
-    }
-
-    if (endMinuteInput) {
-        endMinuteInput.disabled = disabled;
-        endMinuteInput.style.opacity = disabled ? '0.5' : '1';
-        endMinuteInput.style.pointerEvents = disabled ? 'none' : 'auto';
-    }
-
-    if (endTimeDisplay) {
-        endTimeDisplay.style.pointerEvents = disabled ? 'none' : 'auto';
-    }
-
-    quickSelectBtns.forEach(function (btn) {
-        btn.disabled = disabled;
-        btn.style.opacity = disabled ? '0.5' : '1';
-        btn.style.pointerEvents = disabled ? 'none' : 'auto';
-    });
-
-    // Add a visual indicator to the whole container
-    if (timePickerContainer) {
-        timePickerContainer.classList.toggle('controls-disabled', disabled);
-    }
-}
-
-// Disable or enable schedule controls (when a schedule is active)
-function disableScheduleControls(disabled) {
-    const repeatDropdown = document.getElementById('schedule-repeat-select');
-    const addSegmentBtn = document.getElementById('add-segment-btn');
-    const repeatDropdownBtn = document.getElementById('repeat-dropdown-btn');
-    const repeatLabel = document.getElementById('repeat-label');
-    const overlayLabel = document.getElementById('schedule-panel-overlay-label');
-    const overlayDropdownBtn = document.getElementById('schedule-panel-overlay-dropdown-btn');
-
-    // Disable repeat dropdown button and label
-    if (repeatDropdownBtn) {
-        repeatDropdownBtn.disabled = disabled;
-        repeatDropdownBtn.style.pointerEvents = disabled ? 'none' : 'auto';
-        repeatDropdownBtn.style.cursor = disabled ? 'default' : 'pointer';
-        if (disabled) {
-            repeatDropdownBtn.classList.add('repeat-dropdown-disabled');
-        } else {
-            repeatDropdownBtn.classList.remove('repeat-dropdown-disabled');
-        }
-    }
-
-    // Style repeat label
-    if (repeatLabel) {
-        if (disabled) {
-            repeatLabel.classList.add('repeat-label-disabled');
-        } else {
-            repeatLabel.classList.remove('repeat-label-disabled');
-        }
-    }
-
-    if (overlayLabel) {
-        overlayLabel.classList.toggle('repeat-label-disabled', getGlobalStartOverlays().length === 0);
-    }
-
-    if (overlayDropdownBtn) {
-        const noPresets = getGlobalStartOverlays().length === 0;
-        overlayDropdownBtn.disabled = noPresets;
-        overlayDropdownBtn.style.pointerEvents = noPresets ? 'none' : 'auto';
-        overlayDropdownBtn.style.cursor = noPresets ? 'default' : 'pointer';
-        overlayDropdownBtn.classList.toggle('repeat-dropdown-disabled', noPresets);
-    }
-
-    // When schedule is active and repeat is "until date", grey out the date selector.
-    // Use the persisted active schedule first so this updates immediately after starting.
-    const dateWrapper = document.getElementById('repeat-date-wrapper');
-    const dateInput = document.getElementById('repeat-date-input');
-    if (dateWrapper && dateInput) {
-        const activeSchedule = state.selectedBlocklistId && state.appData.schedules
-            ? state.appData.schedules.find(s => s.blocklistId === state.selectedBlocklistId)
-            : null;
-        const isDateRepeatActive = !!(activeSchedule && activeSchedule.repeatType === 'date');
-        const shouldDisableDateSelector = disabled && (isDateRepeatActive || scheduleRepeatType === 'date');
-
-        if (shouldDisableDateSelector) {
-            dateWrapper.classList.add('repeat-date-disabled');
-            dateInput.disabled = true;
-            dateInput.style.pointerEvents = 'none';
-        } else {
-            dateWrapper.classList.remove('repeat-date-disabled');
-            dateInput.disabled = false;
-            dateInput.style.pointerEvents = 'auto';
-        }
-    }
-
-    // Add button stays enabled even when schedule is active — new segments append
-    // as unsaved drafts and are committed via the pending-changes bar.
-    if (addSegmentBtn) {
-        addSegmentBtn.disabled = false;
-        addSegmentBtn.style.opacity = '1';
-        addSegmentBtn.style.pointerEvents = 'auto';
-        addSegmentBtn.style.cursor = 'pointer';
-    }
-
-    // Disable controls on EXISTING segments (those within activeScheduleSegmentCount)
-    document.querySelectorAll('.schedule-segment').forEach((segment, index) => {
-        const isExistingSegment = index < activeScheduleSegmentCount;
-
-        if (disabled && isExistingSegment) {
-            // Disable this segment's controls
-            segment.querySelectorAll(
-                '.time-part, .segment-day-toggle, .remove-segment-btn, .segment-delete-btn, .segment-done-btn, .segment-day-preset, .segment-summary-btn'
-            ).forEach(el => {
-                el.disabled = true;
-                el.style.opacity = '0.5';
-                el.style.pointerEvents = 'none';
-            });
-            segment.classList.add('segment-locked');
-        } else {
-            // Enable this segment's controls
-            segment.querySelectorAll(
-                '.time-part, .segment-day-toggle, .remove-segment-btn, .segment-delete-btn, .segment-done-btn, .segment-day-preset, .segment-summary-btn'
-            ).forEach(el => {
-                el.disabled = false;
-                el.style.opacity = '1';
-                el.style.pointerEvents = 'auto';
-            });
-            segment.classList.remove('segment-locked');
-        }
-    });
-}
-
-// Initialize time picker with popover options (end time only)
-function initializeTimeInputs() {
-    const now = new Date();
-
-    // Reset editing flag and load saved duration for this blocklist (or default to 60)
-    userEditedEndTime = false;
-
-    // Restore always-on mode preference for this blocklist
-    const savedAlwaysOn = state.selectedBlocklistId && state.appData.settings?.alwaysOnMode?.[state.selectedBlocklistId];
-    setAlwaysOnMode(savedAlwaysOn !== undefined ? !!savedAlwaysOn : false);
-
-    if (state.selectedBlocklistId && state.appData.settings?.instantBlockDuration?.[state.selectedBlocklistId] !== undefined) {
-        targetDurationMinutes = state.appData.settings.instantBlockDuration[state.selectedBlocklistId];
-    } else {
-        targetDurationMinutes = 60;
-    }
-
-    // End time = now + target duration
-    const endTime = new Date(now.getTime() + targetDurationMinutes * 60 * 1000);
-    selectedEndHour = endTime.getHours();
-    selectedEndMinute = endTime.getMinutes();
-
-    // Populate hour options (0-23) for end time only
-    const hourContainer = document.getElementById('end-hour-options');
-    if (hourContainer) {
-        hourContainer.innerHTML = '';
-        for (let h = 0; h < 24; h++) {
-            const btn = document.createElement('button');
-            btn.className = 'popover-option';
-            btn.textContent = pad(h);
-            btn.dataset.value = h;
-            btn.dataset.type = 'hour';
-            btn.dataset.target = 'end';
-            btn.addEventListener('click', selectTimeOption);
-            hourContainer.appendChild(btn);
-        }
-    }
-
-    // Populate minute options (0, 5, … 55) — typing still allows any 0–59
-    const minuteContainer = document.getElementById('end-minute-options');
-    if (minuteContainer) {
-        minuteContainer.innerHTML = '';
-        for (let m = 0; m < 60; m += 5) {
-            const btn = document.createElement('button');
-            btn.className = 'popover-option';
-            btn.textContent = pad(m);
-            btn.dataset.value = m;
-            btn.dataset.type = 'minute';
-            btn.dataset.target = 'end';
-            btn.addEventListener('click', selectTimeOption);
-            minuteContainer.appendChild(btn);
-        }
-    }
-
-    // Update displays
-    updateTimeDisplay();
-    handleTimeChange();
-
-    // Initialize click handlers + typing for schedule segment time fields
-    wireAllScheduleSegmentTimeControls();
-}
-
-// Update the end-time display (compact inputs; skip while focused).
-function updateTimeDisplay() {
-    const endHourInput = document.getElementById('end-hour-input');
-    const endMinuteInput = document.getElementById('end-minute-input');
-    if (endHourInput && document.activeElement !== endHourInput) {
-        endHourInput.value = pad(selectedEndHour);
-    }
-    if (endMinuteInput && document.activeElement !== endMinuteInput) {
-        endMinuteInput.value = pad(selectedEndMinute);
-    }
-
-    // Update selected state in popovers
-    updatePopoverSelection();
-}
-
-// Update selected state in popover options (end time only)
-function updatePopoverSelection() {
-    // Clear all selections
-    document.querySelectorAll('.popover-option').forEach(btn => btn.classList.remove('selected'));
-
-    // Mark current end time selections
-    document.querySelectorAll('#end-hour-options .popover-option').forEach(btn => {
-        if (parseInt(btn.dataset.value) === selectedEndHour) btn.classList.add('selected');
-    });
-    let minuteListMatch = selectedEndMinute;
-    if (selectedEndMinute % 5 !== 0) {
-        const rounded = Math.round(selectedEndMinute / 5) * 5;
-        minuteListMatch = rounded >= 60 ? 55 : rounded;
-    }
-    document.querySelectorAll('#end-minute-options .popover-option').forEach(btn => {
-        if (parseInt(btn.dataset.value) === minuteListMatch) btn.classList.add('selected');
-    });
-}
-
-/** Parse HH / MM from end-time numeric fields (0–23 / 0–59). Empty or invalid → null. */
-function parseEndTimeBoundedInt(raw, min, max) {
-    const digits = String(raw ?? '').replace(/\D/g, '');
-    if (digits === '') return null;
-    const n = parseInt(digits, 10);
-    if (Number.isNaN(n)) return null;
-    return Math.min(max, Math.max(min, n));
-}
-
-function commitEndHourInput() {
-    const input = document.getElementById('end-hour-input');
-    if (!input) return;
-    const v = parseEndTimeBoundedInt(input.value, 0, 23);
-    if (v === null) {
-        input.value = pad(selectedEndHour);
-        return;
-    }
-    selectedEndHour = v;
-    input.value = pad(v);
-    userEditedEndTime = true;
-    updatePopoverSelection();
-    handleTimeChange();
-}
-
-function commitEndMinuteInput() {
-    const input = document.getElementById('end-minute-input');
-    if (!input) return;
-    const v = parseEndTimeBoundedInt(input.value, 0, 59);
-    if (v === null) {
-        input.value = pad(selectedEndMinute);
-        return;
-    }
-    selectedEndMinute = v;
-    input.value = pad(v);
-    userEditedEndTime = true;
-    updatePopoverSelection();
-    handleTimeChange();
-}
-
-/** Wire blur/input once for editable instant end HH:MM fields. */
-function setupEndTimeDirectInputs() {
-    const hourEl = document.getElementById('end-hour-input');
-    const minuteEl = document.getElementById('end-minute-input');
-    if (!hourEl || !minuteEl) return;
-    if (hourEl.dataset.directInputBound === '1') return;
-    hourEl.dataset.directInputBound = '1';
-
-    const digitsOnly = (el) => {
-        const next = el.value.replace(/\D/g, '').slice(0, 2);
-        if (next !== el.value) el.value = next;
-    };
-
-    hourEl.addEventListener('input', () => {
-        closeAllPopovers();
-        digitsOnly(hourEl);
-    });
-    hourEl.addEventListener('blur', () => commitEndHourInput());
-    hourEl.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            hourEl.blur();
-            minuteEl.focus({ preventScroll: true });
-            if (typeof minuteEl.select === 'function') minuteEl.select();
-        }
-    });
-
-    minuteEl.addEventListener('input', () => {
-        closeAllPopovers();
-        digitsOnly(minuteEl);
-    });
-    minuteEl.addEventListener('blur', () => commitEndMinuteInput());
-    minuteEl.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            minuteEl.blur();
-        }
-    });
-}
-
-/** Scroll inside a popover list only — never the page (scrollIntoView would pan main-content). */
-function scrollPopoverOptionIntoView(scrollContainer, option) {
-    if (!scrollContainer || !option) return;
-    const optionTop = option.offsetTop;
-    const optionHeight = option.offsetHeight;
-    const containerHeight = scrollContainer.clientHeight;
-    scrollContainer.scrollTop = Math.max(0, optionTop - (containerHeight - optionHeight) / 2);
-}
-
-/** Scroll an element into view inside a scroll container only — avoids panning the page. */
-function scrollElementWithinContainer(scrollContainer, element, padding = 12) {
-    if (!scrollContainer || !element) return;
-    const containerRect = scrollContainer.getBoundingClientRect();
-    const elementRect = element.getBoundingClientRect();
-    if (elementRect.bottom > containerRect.bottom - padding) {
-        scrollContainer.scrollTop += elementRect.bottom - containerRect.bottom + padding;
-    } else if (elementRect.top < containerRect.top + padding) {
-        scrollContainer.scrollTop -= containerRect.top + padding - elementRect.top;
-    }
-}
-
-
-
-
-
-
-function readRootCssPx(varName) {
-    const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
-    if (!raw) return 0;
-    const probe = document.createElement('div');
-    probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none;height:' + raw;
-    document.body.appendChild(probe);
-    const px = parseFloat(getComputedStyle(probe).height) || 0;
-    probe.remove();
-    return px;
-}
-
-// Handle click on time part (button or instant-end input): open list and mark active.
-function handleTimePartClick(e) {
-    e.stopPropagation();
-    const btn = e.currentTarget;
-    const type = btn.dataset.type;
-    const target = btn.dataset.target;
-
-    // Close all popovers first (keep row scroll position when switching fields)
-    closeAllPopovers();
-
-    // Open the relevant popover
-    const popover = document.getElementById(`${target}-${type}-popover`);
-    if (!popover) return;
-    popover.classList.remove('hidden');
-    btn.classList.add('active');
-
-    // Scroll to selected option inside the popover only
-    const scroll = popover.querySelector('.popover-scroll');
-    const selectedOption = popover.querySelector('.popover-option.selected');
-    scrollPopoverOptionIntoView(scroll, selectedOption);
-}
-
-
-
-// Select a time option from popover (end time only)
-function selectTimeOption(e) {
-    e.stopPropagation();
-    const btn = e.currentTarget;
-    const value = parseInt(btn.dataset.value);
-    const type = btn.dataset.type;
-
-    // User manually edited end time
-    userEditedEndTime = true;
-
-    // Update end time values
-    if (type === 'hour') selectedEndHour = value;
-    else selectedEndMinute = value;
-
-    // Update display and close popover
-    updateTimeDisplay();
-    closeAllPopovers();
-    handleTimeChange();
-}
-
-
-// Close all popovers
-function closeAllPopovers() {
-    document.querySelectorAll('.time-popover:not(.schedule-time-popover)').forEach(p => p.classList.add('hidden'));
-    document.querySelectorAll('.schedule-time-popover').forEach(p => p.remove());
-    document.querySelectorAll('.time-part.active, .time-popover-anchor.active').forEach(el =>
-        el.classList.remove('active'));
-}
-
-// Handle clicks outside popovers
-function handlePopoverOutsideClick(e) {
-    if (
-        e.target.closest('.time-popover') ||
-        e.target.closest('.time-popover-anchor') ||
-        e.target.closest('.schedule-start-display input.time-part') ||
-        e.target.closest('.schedule-end-display input.time-part') ||
-        e.target.closest('input.time-part.time-popover-anchor') ||
-        e.target.closest('button.time-part')
-    ) {
-        return;
-    }
-    closeAllPopovers();
-}
-
-// Get start time as Date (always now, with seconds zeroed for consistent duration calculation)
-function getStartTimeAsDate() {
-    const now = new Date();
-    now.setSeconds(0, 0); // Zero out seconds and milliseconds to match end time format
-    return now;
-}
-
-// Get end time as Date
-function getEndTimeAsDate() {
-    const date = new Date();
-    date.setHours(selectedEndHour, selectedEndMinute, 0, 0);
-    return date;
-}
-
-// Get smart label for start time relative to now
-function getStartTimeLabel(startTime) {
-    const now = new Date();
-    const diffMs = startTime.getTime() - now.getTime();
-    const diffMins = Math.round(diffMs / 60000);
-
-    if (diffMins <= 1) {
-        return tSettings('modeNow');
-    } else if (diffMins < 60) {
-        return `in ${diffMins} min`;
-    } else {
-        const hours = Math.floor(diffMins / 60);
-        const mins = diffMins % 60;
-        if (mins === 0) {
-            return `in ${hours}h`;
-        } else {
-            return `in ${hours}h ${mins}m`;
-        }
-    }
-}
-
-// Handle duration input change - update end time accordingly
-function handleDurationInputChange() {
-    const input = document.getElementById('duration-minutes-input');
-    const val = input.value;
-
-    // Don't clamp while typing - allow it to be empty
-    if (val === '') return;
-
-    let mins = parseInt(val);
-    if (isNaN(mins) || mins <= 0) return;
-
-    // Track the target duration and reset end time editing flag
-    targetDurationMinutes = Math.min(mins, 99999);
-    userEditedEndTime = false;
-
-    // Only update end time if it's a valid positive number
-    const startTime = getStartTimeAsDate();
-    const newEndTime = new Date(startTime.getTime() + targetDurationMinutes * 60 * 1000);
-
-    selectedEndHour = newEndTime.getHours();
-    selectedEndMinute = newEndTime.getMinutes();
-
-    updateTimeDisplay();
-    updateDurationQuickBtns(targetDurationMinutes);
-    handleTimeChange();
-}
-
-// Handle duration quick toggle button click
-// Handle a click on any of the quick-select buttons. The "Always" button switches into
-// always-on mode; the numeric duration buttons switch into timed mode and apply the new
-// duration.
-function handleDurationQuickBtn(e) {
-    const btn = e.currentTarget || e.target.closest('.duration-quick-btn');
-    if (!btn) return;
-
-    if (btn.dataset.mode === 'always') {
-        if (!isAlwaysOnMode) setAlwaysOnMode(true);
-        // setAlwaysOnMode already refreshes the active button state via updateDurationQuickBtns.
-        return;
-    }
-
-    // Timed selection: leave always-on mode if needed, then apply the new duration.
-    if (isAlwaysOnMode) setAlwaysOnMode(false);
-
-    const mins = parseInt(btn.dataset.mins);
-    const input = document.getElementById('duration-minutes-input');
-    if (input) input.value = mins;
-
-    // Track the target duration and reset end time editing flag
-    targetDurationMinutes = mins;
-    userEditedEndTime = false;
-
-    // Calculate new end time based on start + duration
-    const startTime = getStartTimeAsDate();
-    const newEndTime = new Date(startTime.getTime() + mins * 60 * 1000);
-
-    selectedEndHour = newEndTime.getHours();
-    selectedEndMinute = newEndTime.getMinutes();
-
-    updateTimeDisplay();
-    updateDurationQuickBtns(mins);
-    handleTimeChange();
-}
-
-// Update quick-select button active states. In always-on mode the "Always" button is the
-// only active one; in timed mode the button matching durationMinutes (if any) is active.
-function updateDurationQuickBtns(durationMinutes) {
-    document.querySelectorAll('.duration-quick-btn').forEach(btn => {
-        if (btn.dataset.mode === 'always') {
-            btn.classList.toggle('active', isAlwaysOnMode);
-        } else {
-            const btnMins = parseInt(btn.dataset.mins);
-            btn.classList.toggle('active', !isAlwaysOnMode && btnMins === durationMinutes);
-        }
-    });
-}
-
 // ========================================
 // SCHEDULE MODE FUNCTIONS
 // ========================================
@@ -9578,8 +8925,8 @@ function getDefaultScheduleSegments() {
 }
 
 // Switch between timed and always-on modes for instant blocks
-function setAlwaysOnMode(alwaysOn) {
-    isAlwaysOnMode = alwaysOn;
+export function setAlwaysOnMode(alwaysOn) {
+    state.isAlwaysOnMode = alwaysOn;
 
     // Show/hide timed controls vs always-on message
     const timedControls = document.getElementById('timed-controls');
@@ -9588,7 +8935,7 @@ function setAlwaysOnMode(alwaysOn) {
     if (alwaysOnMessage) alwaysOnMessage.classList.toggle('hidden', !alwaysOn);
 
     // Reflect the mode change in the quick-select row (highlight "Always" or the matching duration).
-    updateDurationQuickBtns(targetDurationMinutes);
+    updateDurationQuickBtns(state.targetDurationMinutes);
 
     // Save preference per blocklist
     if (state.selectedBlocklistId) {
@@ -9645,8 +8992,8 @@ function setScheduleMode(isSchedule) {
         if (existingSchedule && existingSchedule.segments) {
             // Load existing schedule segments (locked)
             scheduleSegments = existingSchedule.segments.map(seg => ({ ...seg }));
-            activeScheduleSegmentCount = getCommittedScheduleSegmentCount(existingSchedule);
-            scheduleRepeatType = existingSchedule.repeatType || 'no';
+            state.activeScheduleSegmentCount = getCommittedScheduleSegmentCount(existingSchedule);
+            state.scheduleRepeatType = existingSchedule.repeatType || 'no';
             scheduleRepeatDate = existingSchedule.repeatDate;
 
             // Also load any pending (new) segments that were added but not yet committed
@@ -9678,22 +9025,22 @@ function setScheduleMode(isSchedule) {
                 scheduleSegments = pendingSegments.map(seg => ({ ...seg }));
                 const repeatOpts = state.appData.settings?.pendingScheduleRepeatOptions?.[state.selectedBlocklistId];
                 if (repeatOpts && typeof repeatOpts.repeatType === 'string') {
-                    scheduleRepeatType = repeatOpts.repeatType;
+                    state.scheduleRepeatType = repeatOpts.repeatType;
                     scheduleRepeatDate =
                         repeatOpts.repeatType === 'date' && repeatOpts.repeatDate != null
                             ? new Date(repeatOpts.repeatDate)
                             : null;
                 } else {
-                    scheduleRepeatType = 'forever';
+                    state.scheduleRepeatType = 'forever';
                     scheduleRepeatDate = null;
                 }
             } else {
                 // Reset schedule segments to fresh default times
                 scheduleSegments = getDefaultScheduleSegments();
-                scheduleRepeatType = 'forever';
+                state.scheduleRepeatType = 'forever';
                 scheduleRepeatDate = null;
             }
-            activeScheduleSegmentCount = 0;
+            state.activeScheduleSegmentCount = 0;
         }
         expandedScheduleSegmentIndex = getInitialExpandedScheduleSegmentIndex();
         rebuildScheduleSegments();
@@ -9773,7 +9120,7 @@ function toggleRepeatDropdown(e) {
     e.stopPropagation();
 
     // Don't allow opening dropdown when schedule is active
-    if (activeScheduleSegmentCount > 0) return;
+    if (state.activeScheduleSegmentCount > 0) return;
 
     // Also check if button is disabled
     const repeatDropdownBtn = document.getElementById('repeat-dropdown-btn');
@@ -9806,7 +9153,7 @@ function handleRepeatOptionClick(e) {
     e.stopPropagation();
 
     // Don't allow changing repeat options when schedule is active
-    if (activeScheduleSegmentCount > 0) {
+    if (state.activeScheduleSegmentCount > 0) {
         // Close dropdown silently
         const menu = document.getElementById('repeat-dropdown-menu');
         if (menu) menu.classList.add('hidden');
@@ -9818,7 +9165,7 @@ function handleRepeatOptionClick(e) {
     const btnText = document.getElementById('repeat-dropdown-text');
     const dateInput = document.getElementById('repeat-date-input');
 
-    scheduleRepeatType = value;
+    state.scheduleRepeatType = value;
 
     // Update dropdown text
     if (btnText) {
@@ -10130,7 +9477,7 @@ function addScheduleSegment() {
     rebuildScheduleSegments();
 
     // Re-apply disabled state to locked segments (if schedule is active)
-    if (activeScheduleSegmentCount > 0) {
+    if (state.activeScheduleSegmentCount > 0) {
         disableScheduleControls(true);
     }
 
@@ -10142,7 +9489,7 @@ function addScheduleSegment() {
 // Handle clicking a day toggle within a segment
 function handleSegmentDayToggle(segmentIndex, dayIndex, btn) {
     // Don't allow toggling days on locked segments (part of active schedule)
-    if (segmentIndex < activeScheduleSegmentCount) return;
+    if (segmentIndex < state.activeScheduleSegmentCount) return;
 
     const segment = scheduleSegments[segmentIndex];
     if (!segment) return;
@@ -10188,7 +9535,7 @@ function syncSegmentDayPresetButtons(segmentIndex) {
 // Remove a time segment
 function removeScheduleSegment(index) {
     // Don't allow removing locked segments (part of active schedule)
-    if (index < activeScheduleSegmentCount) return;
+    if (index < state.activeScheduleSegmentCount) return;
 
     if (scheduleSegments.length <= 1) return; // Always keep at least one
 
@@ -10205,7 +9552,7 @@ function removeScheduleSegment(index) {
     rebuildScheduleSegments();
 
     // Re-apply disabled state to locked segments if a schedule is active
-    if (activeScheduleSegmentCount > 0) {
+    if (state.activeScheduleSegmentCount > 0) {
         disableScheduleControls(true);
     }
 
@@ -10216,15 +9563,15 @@ function removeScheduleSegment(index) {
 
 // Sort schedule segments chronologically by start time.
 // When a schedule is running, the committed/pending split is tracked by array index
-// (segments before `activeScheduleSegmentCount` are committed, the rest are unsaved).
+// (segments before `state.activeScheduleSegmentCount` are committed, the rest are unsaved).
 // Sort within each partition independently so that invariant survives the sort —
 // otherwise a pending segment with an early time could swap places with a committed
 // one and corrupt subsequent saves.
 function sortScheduleSegments() {
     const cmp = (a, b) => (a.startHour * 60 + a.startMinute) - (b.startHour * 60 + b.startMinute);
-    if (activeScheduleSegmentCount > 0 && scheduleSegments.length > activeScheduleSegmentCount) {
-        const committed = scheduleSegments.slice(0, activeScheduleSegmentCount).sort(cmp);
-        const pending = scheduleSegments.slice(activeScheduleSegmentCount).sort(cmp);
+    if (state.activeScheduleSegmentCount > 0 && scheduleSegments.length > state.activeScheduleSegmentCount) {
+        const committed = scheduleSegments.slice(0, state.activeScheduleSegmentCount).sort(cmp);
+        const pending = scheduleSegments.slice(state.activeScheduleSegmentCount).sort(cmp);
         scheduleSegments = [...committed, ...pending];
     } else {
         scheduleSegments.sort(cmp);
@@ -10232,18 +9579,18 @@ function sortScheduleSegments() {
 }
 
 function usesScheduleSegmentCollapse() {
-    return scheduleSegments.length > 1 || activeScheduleSegmentCount > 0;
+    return scheduleSegments.length > 1 || state.activeScheduleSegmentCount > 0;
 }
 
 function scheduleHasPendingSegments() {
-    return activeScheduleSegmentCount > 0 && scheduleSegments.length > activeScheduleSegmentCount;
+    return state.activeScheduleSegmentCount > 0 && scheduleSegments.length > state.activeScheduleSegmentCount;
 }
 
 function getInitialExpandedScheduleSegmentIndex() {
     if (!usesScheduleSegmentCollapse()) return 0;
-    if (scheduleHasPendingSegments()) return activeScheduleSegmentCount;
+    if (scheduleHasPendingSegments()) return state.activeScheduleSegmentCount;
     if (scheduleSegments.length > 1) return -1;
-    if (activeScheduleSegmentCount > 0) return -1;
+    if (state.activeScheduleSegmentCount > 0) return -1;
     return 0;
 }
 
@@ -10253,7 +9600,7 @@ function normalizeExpandedScheduleSegmentIndex() {
         return;
     }
 
-    const allCommitted = activeScheduleSegmentCount >= scheduleSegments.length && activeScheduleSegmentCount > 0;
+    const allCommitted = state.activeScheduleSegmentCount >= scheduleSegments.length && state.activeScheduleSegmentCount > 0;
     if (allCommitted) {
         expandedScheduleSegmentIndex = -1;
         return;
@@ -10262,8 +9609,8 @@ function normalizeExpandedScheduleSegmentIndex() {
     // -1 = accordion fully collapsed; any other in-range index is an explicit user choice
     // (e.g. summary tap or a newly added segment) — do not reset it on every rebuild.
     if (scheduleHasPendingSegments()) {
-        if (expandedScheduleSegmentIndex >= 0 && expandedScheduleSegmentIndex < activeScheduleSegmentCount) {
-            expandedScheduleSegmentIndex = activeScheduleSegmentCount;
+        if (expandedScheduleSegmentIndex >= 0 && expandedScheduleSegmentIndex < state.activeScheduleSegmentCount) {
+            expandedScheduleSegmentIndex = state.activeScheduleSegmentCount;
         }
     }
 
@@ -10297,7 +9644,7 @@ function getSegmentDayPresetActiveClass(segmentDays, presetDays) {
 }
 
 function expandScheduleSegment(index) {
-    if (index < activeScheduleSegmentCount) return;
+    if (index < state.activeScheduleSegmentCount) return;
     if (scheduleSegments.length <= 1) return;
     expandedScheduleSegmentIndex = index;
     rebuildScheduleSegments();
@@ -10310,7 +9657,7 @@ function collapseExpandedScheduleSegment() {
 }
 
 function applySegmentDayPreset(segmentIndex, preset) {
-    if (segmentIndex < activeScheduleSegmentCount) return;
+    if (segmentIndex < state.activeScheduleSegmentCount) return;
     const segment = scheduleSegments[segmentIndex];
     if (!segment) return;
 
@@ -10627,7 +9974,7 @@ function attachScheduleSegmentTimeInteractions(segment) {
         });
 }
 
-function wireAllScheduleSegmentTimeControls() {
+export function wireAllScheduleSegmentTimeControls() {
     document.querySelectorAll('#schedule-segments .schedule-segment').forEach(attachScheduleSegmentTimeInteractions);
 }
 
@@ -10864,7 +10211,7 @@ function ensureGlobalStartOverlays() {
     return state.appData.startOverlays;
 }
 
-function getGlobalStartOverlays() {
+export function getGlobalStartOverlays() {
     return ensureGlobalStartOverlays();
 }
 
@@ -12749,10 +12096,10 @@ function renderScheduleConfirmSegments(segmentsEl, segments) {
 }
 
 function formatScheduleConfirmRepeatText() {
-    if (scheduleRepeatType === 'forever') {
+    if (state.scheduleRepeatType === 'forever') {
         return tSettings('startConfirmRepeatForever');
     }
-    if (scheduleRepeatType === 'date' && scheduleRepeatDate) {
+    if (state.scheduleRepeatType === 'date' && scheduleRepeatDate) {
         return tSettingsFmt('startConfirmRepeatUntilFmt', {
             date: scheduleRepeatDate.toLocaleDateString(tSettings('locale')),
         });
@@ -13150,8 +12497,8 @@ async function proceedWithScheduleEdit() {
         });
     });
 
-    // Update activeScheduleSegmentCount to include the new segments
-    activeScheduleSegmentCount = schedule.segments.length;
+    // Update state.activeScheduleSegmentCount to include the new segments
+    state.activeScheduleSegmentCount = schedule.segments.length;
     scheduleSegments = schedule.segments.map(seg => ({ ...seg }));
 
     clearPendingScheduleDraft(state.selectedBlocklistId);
@@ -13212,8 +12559,8 @@ async function proceedWithSchedule() {
             endMinute: seg.endMinute,
             days: [...seg.days]
         })),
-        repeatType: scheduleRepeatType,
-        repeatDate: scheduleRepeatType === 'date' ? scheduleRepeatDate : null,
+        repeatType: state.scheduleRepeatType,
+        repeatDate: state.scheduleRepeatType === 'date' ? scheduleRepeatDate : null,
         createdAt: Date.now(),
         startOverlayId,
     };
@@ -13230,10 +12577,10 @@ async function proceedWithSchedule() {
     // Update blocked apps if schedule is currently active
     await updateBlockedApps();
     // Update the active segment count to lock the created segments
-    activeScheduleSegmentCount = scheduleSegments.length;
+    state.activeScheduleSegmentCount = scheduleSegments.length;
 
     // Reset schedule repeat options for next use
-    scheduleRepeatType = 'forever';
+    state.scheduleRepeatType = 'forever';
     scheduleRepeatDate = null;
 
     // Rebuild segments UI to show them as locked
@@ -13257,7 +12604,7 @@ async function proceedWithSchedule() {
     await syncSchedulesToHelper();
 }
 // Handle time picker change
-function handleTimeChange() {
+export function handleTimeChange() {
     const noBlocksMsg = document.getElementById('no-blocks-message');
     const startBtn = document.getElementById('start-block-btn');
     const nextDayIndicator = document.getElementById('next-day-indicator');
@@ -13266,7 +12613,7 @@ function handleTimeChange() {
     document.querySelectorAll('.calendar-block.preview, .calendar-block.active-schedule').forEach(el => el.remove());
 
     // Refresh the "Always on" row so any preview chip stays in sync with the current mode
-    // (it shows up only when isAlwaysOnMode is on and a blocklist is selected).
+    // (it shows up only when state.isAlwaysOnMode is on and a blocklist is selected).
     renderScheduleAlwaysOnRow();
 
     // Handle schedule mode separately
@@ -13285,9 +12632,9 @@ function handleTimeChange() {
                 const currentPending = JSON.stringify(state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] || []);
                 const newPending = JSON.stringify(scheduleSegments);
                 const nextRepeat = {
-                    repeatType: scheduleRepeatType,
+                    repeatType: state.scheduleRepeatType,
                     repeatDate:
-                        scheduleRepeatType === 'date' && scheduleRepeatDate
+                        state.scheduleRepeatType === 'date' && scheduleRepeatDate
                             ? scheduleRepeatDate.getTime()
                             : null
                 };
@@ -13304,7 +12651,7 @@ function handleTimeChange() {
                     saveData();
                 }
             } else {
-                // Active schedule exists - save only NEW segments (those beyond activeScheduleSegmentCount)
+                // Active schedule exists - save only NEW segments (those beyond state.activeScheduleSegmentCount)
                 const committedSegmentCount = getCommittedScheduleSegmentCount(existingSchedule);
                 if (scheduleSegments.length > committedSegmentCount) {
                     const newSegments = scheduleSegments.slice(committedSegmentCount);
@@ -13329,7 +12676,7 @@ function handleTimeChange() {
     // --- Always-on mode: preview shows up only as a chip in the "Always on" row above the
     // calendar, not as a bar inside the timeline. The chip is added by the call to
     // renderScheduleAlwaysOnRow() at the top of this function.
-    if (isAlwaysOnMode) {
+    if (state.isAlwaysOnMode) {
         startBtn.disabled = !state.selectedBlocklistId;
 
         if (nextDayIndicator) nextDayIndicator.classList.add('hidden');
@@ -13346,9 +12693,9 @@ function handleTimeChange() {
     let blockEnd = getEndTimeAsDate();
 
     // Determine block end time
-    if (!userEditedEndTime && targetDurationMinutes > 0) {
+    if (!state.userEditedEndTime && state.targetDurationMinutes > 0) {
         // If driving by duration, exact calculation
-        blockEnd = new Date(blockStart.getTime() + targetDurationMinutes * 60 * 1000);
+        blockEnd = new Date(blockStart.getTime() + state.targetDurationMinutes * 60 * 1000);
     } else {
         // If driving by end time picker, assume nearest future time (handle overnight)
         if (blockEnd <= blockStart) {
@@ -13440,7 +12787,7 @@ function refreshCalendarPreviews() {
         return;
     }
 
-    if (isAlwaysOnMode) return;
+    if (state.isAlwaysOnMode) return;
 
     const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
     if (!blocklist) return;
@@ -13453,8 +12800,8 @@ function refreshCalendarPreviews() {
 
     let blockStart = getStartTimeAsDate();
     let blockEnd = getEndTimeAsDate();
-    if (!userEditedEndTime && targetDurationMinutes > 0) {
-        blockEnd = new Date(blockStart.getTime() + targetDurationMinutes * 60 * 1000);
+    if (!state.userEditedEndTime && state.targetDurationMinutes > 0) {
+        blockEnd = new Date(blockStart.getTime() + state.targetDurationMinutes * 60 * 1000);
     } else if (blockEnd <= blockStart) {
         blockEnd.setDate(blockEnd.getDate() + 1);
     }
@@ -13655,17 +13002,17 @@ function attachInstantPreviewResizeHandler(headEl, headTrack) {
         const startTime = getStartTimeAsDate();
         const newEndTime = new Date(startTime.getTime() + newDurationMinutes * 60 * 1000);
 
-        targetDurationMinutes = newDurationMinutes;
-        userEditedEndTime = false;
-        selectedEndHour = newEndTime.getHours();
-        selectedEndMinute = newEndTime.getMinutes();
+        state.targetDurationMinutes = newDurationMinutes;
+        state.userEditedEndTime = false;
+        state.selectedEndHour = newEndTime.getHours();
+        state.selectedEndMinute = newEndTime.getMinutes();
 
         const durationInput = document.getElementById('duration-minutes-input');
         if (durationInput) durationInput.value = newDurationMinutes;
 
         // If the user was on always-on mode, dragging the preview's right edge implicitly
         // switches them into timed mode (now there's a concrete end time again).
-        if (isAlwaysOnMode) setAlwaysOnMode(false);
+        if (state.isAlwaysOnMode) setAlwaysOnMode(false);
 
         updateTimeDisplay();
         handleTimeChange();
@@ -13683,14 +13030,14 @@ function renderSchedulePreview() {
     if (!blocklist) return;
 
     const draftCreatedAt = Date.now();
-    const shouldRepeat = scheduleRepeatType === 'forever' || scheduleRepeatType === 'date';
+    const shouldRepeat = state.scheduleRepeatType === 'forever' || state.scheduleRepeatType === 'date';
 
     if (!shouldRepeat) {
         const draftOccurrences = resolveOneShotOccurrences({
             repeatType: 'no',
             createdAt: draftCreatedAt,
             segments: scheduleSegments
-        }).filter(occurrence => occurrence.segmentIndex >= activeScheduleSegmentCount);
+        }).filter(occurrence => occurrence.segmentIndex >= state.activeScheduleSegmentCount);
 
         draftOccurrences.forEach(occurrence => {
             renderPreviewSegmentOnWeekday(blocklist, scheduleSegments[occurrence.segmentIndex], occurrence.segmentIndex, occurrence.dayIndex);
@@ -13701,7 +13048,7 @@ function renderSchedulePreview() {
     }
 
     scheduleSegments.forEach((segment, segmentIndex) => {
-        const isLockedSegment = segmentIndex < activeScheduleSegmentCount;
+        const isLockedSegment = segmentIndex < state.activeScheduleSegmentCount;
         if (isLockedSegment) return;
 
         const segmentDays = segment.days || [];
@@ -14103,7 +13450,7 @@ export function handleBlocklistSelect(e) {
                     saveData();
                 }
             } else {
-                // Active schedule exists - save only NEW segments (those beyond activeScheduleSegmentCount)
+                // Active schedule exists - save only NEW segments (those beyond state.activeScheduleSegmentCount)
                 const committedSegmentCount = getCommittedScheduleSegmentCount(existingSchedule);
                 if (scheduleSegments.length > committedSegmentCount) {
                     const newSegments = scheduleSegments.slice(committedSegmentCount);
@@ -14121,8 +13468,8 @@ export function handleBlocklistSelect(e) {
             // Save pending instant block duration if in instant mode
             if (!state.appData.settings) state.appData.settings = {};
             if (!state.appData.settings.instantBlockDuration) state.appData.settings.instantBlockDuration = {};
-            if (targetDurationMinutes !== 60) { // Only save if different from default
-                state.appData.settings.instantBlockDuration[state.selectedBlocklistId] = targetDurationMinutes;
+            if (state.targetDurationMinutes !== 60) { // Only save if different from default
+                state.appData.settings.instantBlockDuration[state.selectedBlocklistId] = state.targetDurationMinutes;
                 saveData();
             }
         }
@@ -14236,7 +13583,7 @@ export function handleBlocklistSelect(e) {
 
                         // Re-show always-on message based on current mode
                         const alwaysOnMsg = document.getElementById('always-on-message');
-                        if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isAlwaysOnMode);
+                        if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !state.isAlwaysOnMode);
 
                         // Hide pause button
                         if (pauseBtn) pauseBtn.classList.add('hidden');
@@ -14302,8 +13649,8 @@ function deselectBlocklist() {
     } else {
         if (!state.appData.settings) state.appData.settings = {};
         if (!state.appData.settings.instantBlockDuration) state.appData.settings.instantBlockDuration = {};
-        if (targetDurationMinutes !== 60) {
-            state.appData.settings.instantBlockDuration[currentBlocklistId] = targetDurationMinutes;
+        if (state.targetDurationMinutes !== 60) {
+            state.appData.settings.instantBlockDuration[currentBlocklistId] = state.targetDurationMinutes;
             saveData();
         }
     }
@@ -14343,7 +13690,7 @@ function startBlock() {
     // Calculate duration for display
     let blockStart = getStartTimeAsDate();
     let blockEnd = getEndTimeAsDate();
-    if (!isAlwaysOnMode && blockEnd <= blockStart) {
+    if (!state.isAlwaysOnMode && blockEnd <= blockStart) {
         blockEnd = new Date(blockEnd);
         blockEnd.setDate(blockEnd.getDate() + 1);
     }
@@ -14355,12 +13702,12 @@ function startBlock() {
 
     const subtitleEl = document.getElementById('start-confirm-subtitle');
     if (subtitleEl) {
-        subtitleEl.innerHTML = formatStartBlockSubtitle(isAlwaysOnMode, blockStart, blockEnd);
+        subtitleEl.innerHTML = formatStartBlockSubtitle(state.isAlwaysOnMode, blockStart, blockEnd);
     }
 
     const durationEl = document.getElementById('start-confirm-duration');
     if (durationEl) {
-        durationEl.innerHTML = formatStartBlockDurationCopy(isAlwaysOnMode, blockStart, blockEnd);
+        durationEl.innerHTML = formatStartBlockDurationCopy(state.isAlwaysOnMode, blockStart, blockEnd);
     }
 
     renderStartConfirmBlockingDetails(
@@ -14427,7 +13774,7 @@ async function proceedWithBlock() {
     let blockStart = getStartTimeAsDate();
     let blockEnd;
 
-    if (isAlwaysOnMode) {
+    if (state.isAlwaysOnMode) {
         // Always-on: use far-future end time
         blockEnd = new Date(ALWAYS_ON_END_TIME);
     } else {
@@ -14462,7 +13809,7 @@ async function proceedWithBlock() {
     };
 
     // Mark always-on blocks with a flag for display purposes
-    if (isAlwaysOnMode) {
+    if (state.isAlwaysOnMode) {
         block.isAlwaysOn = true;
     }
 
@@ -16707,7 +16054,7 @@ function syncSelectedControlState() {
         setStartBlockBtnLeadingIcon(startBlockBtn, 'enter');
         if (pauseBtn) pauseBtn.classList.add('hidden');
         disableTimeControls(false);
-        if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isAlwaysOnMode);
+        if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !state.isAlwaysOnMode);
     }
     startBlockBtn.disabled = !state.selectedBlocklistId;
     syncStopBtnLabelFit(startBlockBtn);
@@ -17052,7 +16399,7 @@ function collectNowBlockingEntries(now = Date.now()) {
 
 // Close any currently-open chip menu popover. Called from outside-click handlers and
 // before opening a new menu (so only one is ever visible).
-function closeNowBlockingChipMenus() {
+export function closeNowBlockingChipMenus() {
     document.querySelectorAll('.now-blocking-chip-menu').forEach(el => el.remove());
     document.querySelectorAll('.now-blocking-chip-menu-btn[aria-expanded="true"]').forEach(btn => {
         btn.setAttribute('aria-expanded', 'false');
@@ -17371,7 +16718,7 @@ function renderScheduleAlwaysOnRow() {
     // running, show a faded preview chip alongside the real ones. This replaces the timeline
     // preview bar that always-on mode used to draw across every day.
     let previewBlocklist = null;
-    if (isAlwaysOnMode && !isScheduleMode && state.selectedBlocklistId) {
+    if (state.isAlwaysOnMode && !isScheduleMode && state.selectedBlocklistId) {
         const candidate = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
         const now = Date.now();
         const alreadyActive = (state.appData.activeBlocks || []).some(b =>
@@ -18102,7 +17449,7 @@ function autoSelectSoleBlocklist({ force = false } = {}) {
     handleBlocklistSelect({ target: dropdown });
 }
 
-function closeAllBlocklistMenus() {
+export function closeAllBlocklistMenus() {
     document.querySelectorAll('.blocklist-menu:not(.hidden)').forEach(menu => {
         menu.classList.add('hidden');
     });
@@ -18288,7 +17635,7 @@ function startTickInterval() {
 
                 if (state.appData.schedules.length < previousScheduleCount) {
                     console.log('Auto-stopped expired schedule(s):', expiredScheduleIds);
-                    activeScheduleSegmentCount = 0;
+                    state.activeScheduleSegmentCount = 0;
                     await saveData();
                     // Sync updated schedules to helper daemon
                     await syncSchedulesToHelper();
@@ -18378,10 +17725,10 @@ function startTickInterval() {
         });
 
         // Auto-update end time if user hasn't manually edited it (skip in always-on mode)
-        if (state.selectedBlocklistId && !userEditedEndTime && !isAlwaysOnMode) {
-            const newEndTime = new Date(now + targetDurationMinutes * 60 * 1000);
-            selectedEndHour = newEndTime.getHours();
-            selectedEndMinute = newEndTime.getMinutes();
+        if (state.selectedBlocklistId && !state.userEditedEndTime && !state.isAlwaysOnMode) {
+            const newEndTime = new Date(now + state.targetDurationMinutes * 60 * 1000);
+            state.selectedEndHour = newEndTime.getHours();
+            state.selectedEndMinute = newEndTime.getMinutes();
             updateTimeDisplay();
             // Don't call handleTimeChange here to avoid circular updates
         }
@@ -18618,14 +17965,14 @@ function languagePickerElements(rootId) {
     };
 }
 
-function isAnyLanguagePickerOpen() {
+export function isAnyLanguagePickerOpen() {
     return LANGUAGE_PICKER_ROOT_IDS.some((rootId) => {
         const { dropdown } = languagePickerElements(rootId);
         return dropdown && !dropdown.classList.contains('hidden');
     });
 }
 
-function closeAllLanguagePickers() {
+export function closeAllLanguagePickers() {
     for (const rootId of LANGUAGE_PICKER_ROOT_IDS) {
         const { dropdown, trigger } = languagePickerElements(rootId);
         if (!dropdown || !trigger) continue;
@@ -19317,8 +18664,8 @@ export function applySettingsLanguage() {
     if (repeatDate) repeatDate.textContent = tSettings('repeatUntilDate');
     const repeatDropdownText = document.getElementById('repeat-dropdown-text');
     if (repeatDropdownText) {
-        if (scheduleRepeatType === 'forever') repeatDropdownText.textContent = tSettings('repeatForever');
-        else if (scheduleRepeatType === 'date') repeatDropdownText.textContent = tSettings('repeatUntilDate');
+        if (state.scheduleRepeatType === 'forever') repeatDropdownText.textContent = tSettings('repeatForever');
+        else if (state.scheduleRepeatType === 'date') repeatDropdownText.textContent = tSettings('repeatUntilDate');
         else repeatDropdownText.textContent = tSettings('repeatNo');
     }
     setText('pause-btn-label', tSettings('pause'));

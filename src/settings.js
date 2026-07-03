@@ -1,6 +1,7 @@
 // Settings surface: help links, helper status, diagnostics modal, grace
 // period, override-all, and in-app uninstall flows. Extracted verbatim from app.js.
 import { state } from './state.js';
+import { startHelperUiRefreshLoop, stopHelperUiRefreshLoop, isModalVisible } from './modal-manager.js';
 import { tauriAPI, openUrl } from './tauri-api.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage } from './i18n.js';
 import { invoke } from '@tauri-apps/api/core';
@@ -15,7 +16,7 @@ import {
     isMobileWordByWordChallenge, isOneOffBlockStillActive, openExtensionSetupOverlay,
     openExternal, refreshDesktopHelperStatus, render, renderOverrideAllWordChallengeState,
     restartOnboardingFromSettings, scheduleCanStillBecomeActive, setOverrideAllWordChallengeMode,
-    startHelperUiRefreshLoop, stopHelperUiRefreshLoop, updateBlockedApps, updateGraceSettingLock,
+    updateBlockedApps, updateGraceSettingLock,
     saveData, setLanguagePickerOpen, getCompletedChallengeText, getCurrentChallengeWord,
     BROWSER_STORE_LINKS, MAC_BLOCKING_METHOD_KEYS, WINDOWS_APPS_SETTINGS_URI, lastOnboardingState,
 } from './app.js';
