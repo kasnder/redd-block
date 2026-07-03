@@ -8,18 +8,15 @@ import { updateOverrideAllButtonVisibility, refreshUninstallButtonState } from '
 import { stopHelperUiRefreshLoop } from './modal-manager.js';
 import { saveData } from './persistence.js';
 import { syncAllStopBtnLabelFits, syncPauseDurationRowLayout } from './confirm-modals.js';
+import { wireEnforcementToggle, wireBlockingMethodSettings, resetSettingsEnforcementSection } from './enforcement.js';
 import {
     setLanguagePickerOpen,
+    applyEnforcementDescCopy,
     applySettingsLanguage,
     applyFormattedCurrentVersion,
-    wireEnforcementToggle,
-    wireBlockingMethodSettings,
     syncMobileScheduleDayLabelsViewportMode,
     setupLanguagePicker,
-    resetSettingsEnforcementSection,
-    applyEnforcementDescCopy,
     applyFormattedLatestVersion,
-    lastMigrationBrowserState,
 } from './app.js';
 
 export const UI_ZOOM_MIN = 0.8;
@@ -66,7 +63,7 @@ export function setupTheme() {
             settingsModal.classList.remove('hidden');
             syncFooterZoomControl(getActiveUiZoomScale());
             resetSettingsEnforcementSection();
-            void applyEnforcementDescCopy(lastMigrationBrowserState);
+            void applyEnforcementDescCopy(state.lastMigrationBrowserState);
             // Re-evaluate the in-app Uninstall button (Mac only): a
             // schedule could have fired since the modal was last open,
             // flipping the disabled state. Cheap; idempotent.

@@ -70,6 +70,18 @@ export const state = {
     pauseMaxMinutes: null, // Maximum pause duration in minutes (null = unlimited)
     overrideWordChallengeState: null,
     pauseWordChallengeState: null,
+    startupInitializationComplete: false, // Track whether post-onboarding startup already ran
+    migrationOnboardingActive: false,
+    migrationOnboardingDismissed: false,
+    firstRunExtensionSetupPending: false,
+    migrationPollIntervalId: null,
+    migrationShowMeHowExpandedKeys: new Set(),
+    migrationSafariDuplicateHelpExpanded: false,
+    lastMigrationBrowserState: null,
+    lastMigrationBrowserRenderSignature: '',
+    lastMigrationHeaderCopyKey: '',
+    lastMigrationHowtoCopyKey: '',
+    extensionSetupPausedForBackNavigation: false,
 };
 
 // Alias for use inside functions whose local parameter is also named `state`

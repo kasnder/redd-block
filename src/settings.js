@@ -5,6 +5,7 @@ import { startHelperUiRefreshLoop, stopHelperUiRefreshLoop, isModalVisible } fro
 import { saveData, updateHostsFile } from './persistence.js';
 import { render } from './render.js';
 import { handleBlocklistSelect } from './confirm-modals.js';
+import { attachCopyChipHandlers, extensionsUrlChipHtml, restartOnboardingFromSettings, BROWSER_STORE_LINKS, MAC_BLOCKING_METHOD_KEYS, browserBlockingMethod, browserIconUrl, browserUsesAutomation, lastOnboardingState, openExtensionSetupOverlay, updateGraceSettingLock } from './enforcement.js';
 import { hasAnyBlockingStateToClear, hasAnyEnforcedBlocks, isOneOffBlockStillActive, refreshDesktopHelperStatus, scheduleCanStillBecomeActive } from './schedule-engine.js';
 import { tauriAPI, openUrl } from './tauri-api.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage } from './i18n.js';
@@ -14,15 +15,14 @@ import logoReddFocusUrl from './images/logo-reddfocus.svg';
 import { escapeHtml } from './utils.js';
 import { generateOverrideChallengeText, getDifficultyTypingCharCount, getMaxOverrideCharsForType } from './override-challenge.js';
 import {
-    attachCopyChipHandlers, browserBlockingMethod, browserIconUrl, browserUsesAutomation,
-    buildWordChallengeState, checkHelperStatus, extensionsUrlChipHtml,
+    buildWordChallengeState, checkHelperStatus,
     isHelperInstallCancelled,
-    isMobileWordByWordChallenge, openExtensionSetupOverlay,
+    isMobileWordByWordChallenge,
     openExternal, renderOverrideAllWordChallengeState,
-    restartOnboardingFromSettings, setOverrideAllWordChallengeMode,
-    updateBlockedApps, updateGraceSettingLock,
+    setOverrideAllWordChallengeMode,
+    updateBlockedApps,
     setLanguagePickerOpen, getCompletedChallengeText, getCurrentChallengeWord,
-    BROWSER_STORE_LINKS, MAC_BLOCKING_METHOD_KEYS, WINDOWS_APPS_SETTINGS_URI, lastOnboardingState,
+    WINDOWS_APPS_SETTINGS_URI,
 } from './app.js';
 
 export function setupHelpMenuLinks() {
