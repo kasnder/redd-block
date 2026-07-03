@@ -9324,6 +9324,53 @@ function pad(num) {
     return num.toString().padStart(2, '0');
 }
 
+function getSelectedBlocklistActiveBlock(now = Date.now()) {
+    if (!selectedBlocklistId) return null;
+    return appData.activeBlocks.find(
+        b => b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now
+    ) || null;
+}
+
+// While a one-off block is running, keep the greyed-out end-time row on the committed
+// end time instead of rolling forward with the clock.
+function applyFrozenInstantEndTimeFromBlock(activeBlock) {
+    const blockEnd = new Date(activeBlock.endTime);
+    const blockStart = new Date(activeBlock.startTime);
+    selectedEndHour = blockEnd.getHours();
+    selectedEndMinute = blockEnd.getMinutes();
+
+    const totalMinutes = Math.max(1, Math.round((activeBlock.endTime - activeBlock.startTime) / 60000));
+    targetDurationMinutes = totalMinutes;
+
+    const durationInput = document.getElementById('duration-minutes-input');
+    if (durationInput && document.activeElement !== durationInput) {
+        durationInput.value = totalMinutes;
+    }
+    updateDurationQuickBtns(totalMinutes);
+
+    const nextDayIndicator = document.getElementById('next-day-indicator');
+    if (nextDayIndicator) {
+        const startDay = new Date(blockStart);
+        startDay.setHours(0, 0, 0, 0);
+        const endDay = new Date(blockEnd);
+        endDay.setHours(0, 0, 0, 0);
+        const daysDiff = Math.round((endDay - startDay) / (24 * 60 * 60 * 1000));
+        if (daysDiff > 0) {
+            if (daysDiff === 1) {
+                nextDayIndicator.textContent = 'tomorrow';
+            } else {
+                const dateStr = blockEnd.getDate() + ' ' + blockEnd.toLocaleString('default', { month: 'short' });
+                nextDayIndicator.textContent = dateStr;
+            }
+            nextDayIndicator.classList.remove('hidden');
+        } else {
+            nextDayIndicator.classList.add('hidden');
+        }
+    }
+
+    updateTimeDisplay();
+}
+
 // Disable or enable time controls (when a block is active, controls should be disabled)
 function disableTimeControls(disabled) {
     const durationInput = document.getElementById('duration-minutes-input');
@@ -9485,10 +9532,15 @@ function initializeTimeInputs() {
         targetDurationMinutes = 60;
     }
 
-    // End time = now + target duration
-    const endTime = new Date(now.getTime() + targetDurationMinutes * 60 * 1000);
-    selectedEndHour = endTime.getHours();
-    selectedEndMinute = endTime.getMinutes();
+    const activeBlock = getSelectedBlocklistActiveBlock(now.getTime());
+    if (activeBlock && !isBlockAlwaysOn(activeBlock)) {
+        applyFrozenInstantEndTimeFromBlock(activeBlock);
+    } else {
+        // End time = now + target duration
+        const endTime = new Date(now.getTime() + targetDurationMinutes * 60 * 1000);
+        selectedEndHour = endTime.getHours();
+        selectedEndMinute = endTime.getMinutes();
+    }
 
     // Populate hour options (0-23) for end time only
     const hourContainer = document.getElementById('end-hour-options');
@@ -13650,6 +13702,15 @@ function handleTimeChange() {
     }
 
     // --- Instant mode logic ---
+    const activeBlock = getSelectedBlocklistActiveBlock();
+    if (activeBlock && !isBlockAlwaysOn(activeBlock)) {
+        applyFrozenInstantEndTimeFromBlock(activeBlock);
+        startBtn.disabled = false;
+        if (noBlocksMsg) noBlocksMsg.classList.add('hidden');
+        updateWindowHeight();
+        return;
+    }
+
     // Get times (start is always now)
     let blockStart = getStartTimeAsDate();
     let blockEnd = getEndTimeAsDate();
@@ -17237,6 +17298,9 @@ function syncSelectedControlState() {
             updatePauseButtonAppearance(!!activeBlock.isPaused);
         }
         disableTimeControls(true);
+        if (!isBlockAlwaysOn(activeBlock)) {
+            applyFrozenInstantEndTimeFromBlock(activeBlock);
+        }
         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
     } else {
                 setBtnActionLabel(btnLabel, tSettings('startBlockButton'), { simple: true });
@@ -18910,8 +18974,15 @@ function startTickInterval() {
             }
         });
 
-        // Auto-update end time if user hasn't manually edited it (skip in always-on mode)
-        if (selectedBlocklistId && !userEditedEndTime && !isAlwaysOnMode) {
+        // Auto-update end time if user hasn't manually edited it (skip in always-on mode
+        // and while a one-off block is running — controls are locked to the committed end).
+        const activeBlockForSelection = getSelectedBlocklistActiveBlock(now);
+        if (
+            selectedBlocklistId &&
+            !userEditedEndTime &&
+            !isAlwaysOnMode &&
+            !(activeBlockForSelection && !isBlockAlwaysOn(activeBlockForSelection))
+        ) {
             const newEndTime = new Date(now + targetDurationMinutes * 60 * 1000);
             selectedEndHour = newEndTime.getHours();
             selectedEndMinute = newEndTime.getMinutes();
