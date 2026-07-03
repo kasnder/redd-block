@@ -2,6 +2,9 @@
 // period, override-all, and in-app uninstall flows. Extracted verbatim from app.js.
 import { state } from './state.js';
 import { startHelperUiRefreshLoop, stopHelperUiRefreshLoop, isModalVisible } from './modal-manager.js';
+import { saveData, updateHostsFile } from './persistence.js';
+import { render } from './render.js';
+import { hasAnyBlockingStateToClear, hasAnyEnforcedBlocks, isOneOffBlockStillActive, refreshDesktopHelperStatus, scheduleCanStillBecomeActive } from './schedule-engine.js';
 import { tauriAPI, openUrl } from './tauri-api.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage } from './i18n.js';
 import { invoke } from '@tauri-apps/api/core';
@@ -12,12 +15,12 @@ import { generateOverrideChallengeText, getDifficultyTypingCharCount, getMaxOver
 import {
     attachCopyChipHandlers, browserBlockingMethod, browserIconUrl, browserUsesAutomation,
     buildWordChallengeState, checkHelperStatus, extensionsUrlChipHtml, handleBlocklistSelect,
-    hasAnyBlockingStateToClear, hasAnyEnforcedBlocks, isHelperInstallCancelled,
-    isMobileWordByWordChallenge, isOneOffBlockStillActive, openExtensionSetupOverlay,
-    openExternal, refreshDesktopHelperStatus, render, renderOverrideAllWordChallengeState,
-    restartOnboardingFromSettings, scheduleCanStillBecomeActive, setOverrideAllWordChallengeMode,
+    isHelperInstallCancelled,
+    isMobileWordByWordChallenge, openExtensionSetupOverlay,
+    openExternal, renderOverrideAllWordChallengeState,
+    restartOnboardingFromSettings, setOverrideAllWordChallengeMode,
     updateBlockedApps, updateGraceSettingLock,
-    saveData, setLanguagePickerOpen, getCompletedChallengeText, getCurrentChallengeWord,
+    setLanguagePickerOpen, getCompletedChallengeText, getCurrentChallengeWord,
     BROWSER_STORE_LINKS, MAC_BLOCKING_METHOD_KEYS, WINDOWS_APPS_SETTINGS_URI, lastOnboardingState,
 } from './app.js';
 

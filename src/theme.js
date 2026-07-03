@@ -6,8 +6,8 @@ import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { resolveMicrosoftStorePackage, isVersionHigher, getLatestVersionPlatformKey } from './update-banner.js';
 import { updateOverrideAllButtonVisibility, refreshUninstallButtonState } from './settings.js';
 import { stopHelperUiRefreshLoop } from './modal-manager.js';
+import { saveData } from './persistence.js';
 import {
-    saveData,
     setLanguagePickerOpen,
     applySettingsLanguage,
     applyFormattedCurrentVersion,

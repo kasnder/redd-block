@@ -69,6 +69,9 @@ import {
 } from './blocklist-utils.js';
 import { openInstalledAppsPicker } from './apps-picker.js';
 import { closeAllPopovers, disableScheduleControls, disableTimeControls, getEndTimeAsDate, getStartTimeAsDate, handleDurationInputChange, handleDurationQuickBtn, handlePopoverOutsideClick, handleTimePartClick, initializeTimeInputs, pad, parseEndTimeBoundedInt, scrollElementWithinContainer, scrollPopoverOptionIntoView, setupEndTimeDirectInputs, updateDurationQuickBtns, updateTimeDisplay } from './time-inputs.js';
+import { loadData, saveData, updateHostsFile } from './persistence.js';
+import { render, kickClockNow, startTickInterval, updateWeekCalendar, syncSelectedControlState, renderNowBlockingRow, renderScheduleAlwaysOnRow, renderScheduleVisibilityChips, renderWeekBlocks, renderBlocklistSelector, getCalendarSegmentLayout, layoutOverlappingBlocks } from './render.js';
+import { formatTitleBarScheduleStartWhen, hasAnyEnforcedBlocks, isNonRepeatingSchedule, isOneOffBlockEnforced, isSchedulePausedNow, pickEarliestUpcomingScheduledBlock, refreshDesktopHelperStatus, resolveOneShotOccurrences, scheduleHasFutureSingleOccurrence, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { dismissTopmostEscapeLayer, isModalVisible, refreshOpenHelperUi, startHelperUiRefreshLoop, stopHelperUiRefreshLoop } from './modal-manager.js';
 import {
     overrideAllChallengeText, overrideAllWordChallengeState, refreshUninstallButtonState,
@@ -115,18 +118,12 @@ let overrideBlockId = null;
 /** Blocklist id to pass to helper when confirming single-block override (set when opening modal). */
 let overrideBlocklistIdForHelper = null;
 let challengeText = '';
-let lastBlockedDomains = new Set(); // Track what's currently blocked to avoid re-prompting
-let activatedBlockIds = new Set(); // Track blocks that have already triggered host updates
-const HELPER_STATUS_CACHE_TTL_MS = 3000;
-let lastDesktopHelperStatus = null;
-let lastDesktopHelperStatusAt = 0;
 let draggedBlocklistId = null; // Track which blocklist is being dragged
 let startupInitializationPromise = null; // Prevent duplicate post-onboarding startup runs
 let startupInitializationComplete = false; // Track whether post-onboarding startup already ran
 let pauseBlockId = null; // Track which block is being paused
 let pauseChallengeText = ''; // Challenge text for pause modal
 let pauseMaxMinutes = null; // Maximum pause duration in minutes (null = unlimited)
-let pauseScheduleData = null; // Track schedule-specific pause data { blocklistId, segmentEndTime }
 let overrideWordChallengeState = null;
 let pauseWordChallengeState = null;
 /** Max length for blocklist display name (add/edit modal + persisted saves). */
@@ -190,7 +187,6 @@ const WEBSITES_PRESET_LISTS = {
 };
 
 // Schedule mode state
-let isScheduleMode = false; // false = instant mode, true = schedule mode
 let scheduleSegments = getDefaultScheduleSegments(); // Array of time segments with per-segment days
 let expandedScheduleSegmentIndex = 0; // Which segment shows the full editor when multiple exist (-1 = all collapsed)
 
@@ -202,638 +198,9 @@ function getBlocklistDisplayApps(blocklist) {
     }
     return apps;
 }
-function isNonRepeatingSchedule(schedule) {
-    return !!schedule && schedule.repeatType !== 'forever' && !(schedule.repeatType === 'date' && schedule.repeatDate);
-}
-
-const ANDROID_DAY_NAMES_MON0 = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
-
-function androidDayNamesFromMon0(days) {
-    if (!Array.isArray(days)) return [];
-    return days
-        .filter(day => Number.isInteger(day) && day >= 0 && day <= 6)
-        .map(day => ANDROID_DAY_NAMES_MON0[day]);
-}
-
-// Resolve concrete one-shot occurrences for non-repeating schedules.
-function resolveOneShotSegmentOccurrences(schedule, segment, segmentIndex = 0) {
-    if (!isNonRepeatingSchedule(schedule) || !segment) return [];
-
-    const createdAt = new Date(schedule.createdAt || Date.now());
-    if (Number.isNaN(createdAt.getTime())) return [];
-
-    const createdDay = createdAt.getDay() === 0 ? 6 : createdAt.getDay() - 1; // Mon=0
-    const segmentDays = Array.isArray(segment.days)
-        ? segment.days.filter(day => Number.isInteger(day) && day >= 0 && day <= 6)
-        : [];
-
-    if (segmentDays.length === 0) return [];
-
-    const occurrences = segmentDays.map(dayIndex => {
-        let daysUntil = dayIndex - createdDay;
-        if (daysUntil < 0) daysUntil += 7;
-
-        const start = new Date(createdAt);
-        start.setDate(start.getDate() + daysUntil);
-        start.setHours(segment.startHour, segment.startMinute, 0, 0);
-
-        const end = new Date(start);
-        end.setHours(segment.endHour, segment.endMinute, 0, 0);
-        if (end <= start) {
-            end.setDate(end.getDate() + 1);
-        }
-
-        return {
-            segmentIndex,
-            dayIndex,
-            start,
-            end
-        };
-    });
-
-    occurrences.sort((a, b) => {
-        const startDiff = a.start.getTime() - b.start.getTime();
-        if (startDiff !== 0) return startDiff;
-        const endDiff = a.end.getTime() - b.end.getTime();
-        if (endDiff !== 0) return endDiff;
-        return a.dayIndex - b.dayIndex;
-    });
-
-    return occurrences;
-}
-
-function resolveOneShotOccurrences(schedule) {
-    if (!isNonRepeatingSchedule(schedule) || !Array.isArray(schedule.segments)) return [];
-
-    const occurrences = [];
-    schedule.segments.forEach((segment, segmentIndex) => {
-        occurrences.push(...resolveOneShotSegmentOccurrences(schedule, segment, segmentIndex));
-    });
-
-    occurrences.sort((a, b) => {
-        const startDiff = a.start.getTime() - b.start.getTime();
-        if (startDiff !== 0) return startDiff;
-        const segmentDiff = a.segmentIndex - b.segmentIndex;
-        if (segmentDiff !== 0) return segmentDiff;
-        return a.dayIndex - b.dayIndex;
-    });
-
-    return occurrences;
-}
-
-function getIOSScheduleEntryWindow(schedule, seg) {
-    const createdAt = new Date(schedule.createdAt || Date.now());
-
-    if (schedule.repeatType === 'forever') {
-        return {
-            repeats: true,
-            activeFromTimestampMs: null,
-            activeUntilTimestampMs: null
-        };
-    }
-
-    if (schedule.repeatType === 'date' && schedule.repeatDate) {
-        const endDate = new Date(schedule.repeatDate);
-        endDate.setHours(23, 59, 59, 999);
-        return {
-            repeats: true,
-            activeFromTimestampMs: createdAt.getTime(),
-            activeUntilTimestampMs: endDate.getTime()
-        };
-    }
-
-    const occurrences = resolveOneShotSegmentOccurrences(schedule, seg);
-    const firstOccurrence = occurrences[0];
-
-    return {
-        repeats: false,
-        activeFromTimestampMs: firstOccurrence ? firstOccurrence.start.getTime() : null,
-        activeUntilTimestampMs: firstOccurrence ? firstOccurrence.end.getTime() : null
-    };
-}
-
-function getSingleOccurrenceSegmentDates(schedule, segment) {
-    const [firstOccurrence] = resolveOneShotSegmentOccurrences(schedule, segment);
-    if (!firstOccurrence) return null;
-
-    return {
-        start: new Date(firstOccurrence.start),
-        end: new Date(firstOccurrence.end)
-    };
-}
-
-async function syncSchedulesToHelper() {
-    if (state.isIOS) {
-        try {
-            const flatEntries = [];
-            for (const schedule of state.appData.schedules || []) {
-                if (!schedule.segments || schedule.segments.length === 0) continue;
-                const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-                const domains = blocklist?.websites || [];
-                const iosPayload = getBlocklistIOSPayload(blocklist);
-                const blocklistEmoji = blocklist?.emoji ?? null;
-                const blocklistName = blocklist?.name ?? null;
-                const bc = blocklist?.color;
-                const blocklistColorHex = typeof bc === 'string' && bc.length > 0 ? bc : null;
-                if (isNonRepeatingSchedule(schedule)) {
-                    const occurrences = resolveOneShotOccurrences(schedule);
-                    occurrences.forEach((occurrence, occurrenceIdx) => {
-                        flatEntries.push({
-                            id: `${schedule.id}-${occurrence.segmentIndex}-${occurrenceIdx}`,
-                            startHour: occurrence.start.getHours(),
-                            startMinute: occurrence.start.getMinutes(),
-                            endHour: occurrence.end.getHours(),
-                            endMinute: occurrence.end.getMinutes(),
-                            days: [],
-                            domains,
-                            appTokenData: iosPayload.appTokenData,
-                            categoryTokenData: iosPayload.categoryTokenData,
-                            repeats: false,
-                            activeFromTimestampMs: occurrence.start.getTime(),
-                            activeUntilTimestampMs: occurrence.end.getTime(),
-                            isPaused: !!schedule.isPaused,
-                            pauseEndTimestampMs: schedule.pauseEndTime || null,
-                            blocklistEmoji,
-                            blocklistName,
-                            blocklistColorHex
-                        });
-                    });
-                    continue;
-                }
-                for (let segIdx = 0; segIdx < schedule.segments.length; segIdx++) {
-                    const seg = schedule.segments[segIdx];
-                    const window = getIOSScheduleEntryWindow(schedule, seg);
-                    flatEntries.push({
-                        id: `${schedule.id}-${segIdx}`,
-                        startHour: seg.startHour,
-                        startMinute: seg.startMinute,
-                        endHour: seg.endHour,
-                        endMinute: seg.endMinute,
-                        days: seg.days ? [...seg.days] : [],
-                        domains,
-                        appTokenData: iosPayload.appTokenData,
-                        categoryTokenData: iosPayload.categoryTokenData,
-                        repeats: window.repeats,
-                        activeFromTimestampMs: window.activeFromTimestampMs,
-                        activeUntilTimestampMs: window.activeUntilTimestampMs,
-                        isPaused: !!schedule.isPaused,
-                        pauseEndTimestampMs: schedule.pauseEndTime || null,
-                        blocklistEmoji,
-                        blocklistName,
-                        blocklistColorHex
-                    });
-                }
-            }
-            console.log('[syncSchedulesToHelper] iOS: Sending', flatEntries.length, 'segment entries to plugin');
-            const result = await tauriAPI.setSchedulesPlugin(flatEntries);
-            if (!result.success) {
-                console.warn('[syncSchedulesToHelper] iOS plugin failed:', result.error);
-                if (!hasShownIOSScheduleSyncError) {
-                    hasShownIOSScheduleSyncError = true;
-                    await message(`iOS schedule sync failed: ${result.error || 'unknown plugin error'}`, {
-                        title: 'Schedule Sync Failed',
-                        kind: 'error'
-                    });
-                }
-            }
-        } catch (e) {
-            console.warn('[syncSchedulesToHelper] iOS error:', e);
-            if (!hasShownIOSScheduleSyncError) {
-                hasShownIOSScheduleSyncError = true;
-                const errorText = e?.message || String(e);
-                await message(`iOS schedule sync threw an error: ${errorText}`, {
-                    title: 'Schedule Sync Error',
-                    kind: 'error'
-                });
-            }
-        }
-        return;
-    }
-    if (state.isAndroid) {
-        try {
-            const flatEntries = [];
-            const now = Date.now();
-            for (const schedule of state.appData.schedules || []) {
-                if (!schedule.segments || schedule.segments.length === 0) continue;
-                const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-                const blockedApps = blocklist?.apps || [];
-                const blockedWebsites = blocklist?.websites || [];
-                const difficulty = blocklist?.overrideDifficulty;
-                const frictionWordCount = (difficulty && difficulty.type !== 'custom' && difficulty.count) ? difficulty.count : 15;
-                // Paused entries stay in the payload: Kotlin stores them
-                // disabled and arms a WorkManager re-enable at the expiry,
-                // so blocking resumes on time even if this app process is
-                // dead by then (mirrors iOS's one-off DeviceActivity).
-                // No pauseEndTime (legacy-disabled schedules imported by
-                // migrateAndroidNativeSchedules) = paused indefinitely.
-                const isPaused = !!(schedule.isPaused && (!schedule.pauseEndTime || schedule.pauseEndTime > now));
-
-                // One-shot (non-repeating) schedules become entries with an
-                // absolute [activeFrom, activeUntil) window, same as iOS.
-                // Kotlin checks the window instead of time-of-day + days;
-                // runExpiryOnce removes them from state.appData once past, and the
-                // next sync deletes the Kotlin entity.
-                if (isNonRepeatingSchedule(schedule)) {
-                    const occurrences = resolveOneShotOccurrences(schedule);
-                    occurrences.forEach((occurrence, occurrenceIdx) => {
-                        if (occurrence.end.getTime() <= now) return;
-                        flatEntries.push({
-                            id: `${schedule.id}-${occurrence.segmentIndex}-${occurrenceIdx}`,
-                            name: blocklist?.name || 'Schedule',
-                            enabled: true,
-                            type: 'DAILY',
-                            startHour: occurrence.start.getHours(),
-                            startMinute: occurrence.start.getMinutes(),
-                            endHour: occurrence.end.getHours(),
-                            endMinute: occurrence.end.getMinutes(),
-                            days: [],
-                            blockedApps,
-                            blockedWebsites,
-                            frictionWordCount,
-                            isPaused,
-                            pauseEndTimestampMs: (isPaused && schedule.pauseEndTime) ? schedule.pauseEndTime : null,
-                            activeFromTimestampMs: occurrence.start.getTime(),
-                            activeUntilTimestampMs: occurrence.end.getTime(),
-                        });
-                    });
-                    continue;
-                }
-
-                for (let segIdx = 0; segIdx < schedule.segments.length; segIdx++) {
-                    const seg = schedule.segments[segIdx];
-                    flatEntries.push({
-                        id: `${schedule.id}-${segIdx}`,
-                        name: blocklist?.name || 'Schedule',
-                        enabled: true,
-                        type: (seg.days && seg.days.length > 0) ? 'WEEKLY' : 'DAILY',
-                        startHour: seg.startHour,
-                        startMinute: seg.startMinute,
-                        endHour: seg.endHour,
-                        endMinute: seg.endMinute,
-                        days: androidDayNamesFromMon0(seg.days),
-                        blockedApps,
-                        blockedWebsites,
-                        frictionWordCount,
-                        isPaused,
-                        pauseEndTimestampMs: (isPaused && schedule.pauseEndTime) ? schedule.pauseEndTime : null,
-                    });
-                }
-            }
-
-            // Instant ("start block now") blocks map to MANUAL Kotlin
-            // schedules — set_schedules only creates/updates the Schedule
-            // entity; proceedWithBlock() separately calls
-            // androidStartManualBlock to actually start the session (and
-            // arm the auto-stop timer for non-always-on blocks).
-            for (const block of state.appData.activeBlocks || []) {
-                if (block.endTime <= now) continue;
-                const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
-                if (!blocklist) continue;
-                const difficulty = blocklist.overrideDifficulty;
-                const frictionWordCount = (difficulty && difficulty.type !== 'custom' && difficulty.count) ? difficulty.count : 15;
-                const isPaused = !!(block.isPaused && (!block.pauseEndTime || block.pauseEndTime > now));
-                flatEntries.push({
-                    id: block.id,
-                    name: blocklist.name || 'Block',
-                    enabled: true,
-                    type: 'MANUAL',
-                    days: [],
-                    blockedApps: blocklist.apps || [],
-                    blockedWebsites: blocklist.websites || [],
-                    frictionWordCount,
-                    isPaused,
-                    pauseEndTimestampMs: (isPaused && block.pauseEndTime) ? block.pauseEndTime : null,
-                });
-            }
-
-            console.log('[syncSchedulesToHelper] Android: Sending', flatEntries.length, 'segment entries to plugin');
-            const result = await tauriAPI.androidSetSchedules(flatEntries);
-            if (!result.success) {
-                console.warn('[syncSchedulesToHelper] Android plugin failed:', result.error);
-            }
-        } catch (e) {
-            console.warn('[syncSchedulesToHelper] Android error:', e);
-        }
-        return;
-    }
-    try {
-        const status = await tauriAPI.checkHelperStatus();
-        if (!status.running || !status.version_ok) {
-            console.log('[syncSchedulesToHelper] Helper not available, skipping');
-            return;
-        }
-
-        // Build schedule payloads with pre-resolved domains and apps
-        const helperSchedules = (state.appData.schedules || []).map(schedule => {
-            const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-            const helperSegments = isNonRepeatingSchedule(schedule)
-                ? resolveOneShotOccurrences(schedule).map(occurrence => ({
-                    startHour: occurrence.start.getHours(),
-                    startMinute: occurrence.start.getMinutes(),
-                    endHour: occurrence.end.getHours(),
-                    endMinute: occurrence.end.getMinutes(),
-                    days: [],
-                    activeFromTimestampMs: occurrence.start.getTime(),
-                    activeUntilTimestampMs: occurrence.end.getTime()
-                }))
-                : (schedule.segments || []).map(seg => ({
-                    startHour: seg.startHour,
-                    startMinute: seg.startMinute,
-                    endHour: seg.endHour,
-                    endMinute: seg.endMinute,
-                    days: [...seg.days]
-                }));
-            return {
-                id: schedule.id,
-                domains: blocklist?.websites || [],
-                apps: blocklist?.apps || [],
-                isPaused: !!schedule.isPaused,
-                pauseEndTime: schedule.pauseEndTime || null,
-                segments: helperSegments
-            };
-        });
-
-        console.log('[syncSchedulesToHelper] Sending', helperSchedules.length, 'schedules to helper');
-        const result = await tauriAPI.setSchedulesViaHelper(helperSchedules);
-        if (!result.success) {
-            console.warn('[syncSchedulesToHelper] Failed:', result.error);
-        }
-    } catch (e) {
-        console.warn('[syncSchedulesToHelper] Error:', e);
-    }
-}
-
-async function syncActiveBlocksToHelper() {
-    if (state.isIOS || state.isAndroid) return;
-    try {
-        const status = await tauriAPI.checkHelperStatus();
-        if (!status.running || !status.version_ok) return;
-        const now = Date.now();
-        console.log('[syncActiveBlocksToHelper] Total activeBlocks:', state.appData.activeBlocks.length,
-            'blocks:', state.appData.activeBlocks.map(b => ({
-                id: b.id, blocklistId: b.blocklistId, startTime: b.startTime, endTime: b.endTime,
-                isPaused: b.isPaused, isAlwaysOn: b.isAlwaysOn,
-                startOk: b.startTime <= now, endOk: b.endTime > now, pauseOk: !b.isPaused
-            })));
-        const activeBlocks = state.appData.activeBlocks.filter(block => block.startTime <= now && block.endTime > now);
-        console.log('[syncActiveBlocksToHelper] Filtered activeBlocks:', activeBlocks.length);
-
-        // Build the blocks array for the atomic set-blocks command.
-        // Paused blocks are included so the helper can auto-resume them when the pause expires,
-        // even if the frontend isn't running.
-        const helperBlocks = activeBlocks.map(block => {
-            const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
-            return {
-                domains: blocklist?.websites || [],
-                endTime: block.endTime,
-                blocklistId: block.blocklistId,
-                isPaused: !!block.isPaused,
-                pauseEndTime: block.pauseEndTime || null
-            };
-        });
-        
-        console.log('[syncActiveBlocksToHelper] Sending', helperBlocks.length, 'blocks to helper');
-        // Atomically replace all blocks in the helper daemon (no clear→re-add race)
-        await tauriAPI.setBlocksViaHelper(helperBlocks);
-    } catch (e) {
-        console.warn('[syncActiveBlocksToHelper] Error:', e);
-    }
-}
-
-function isOneOffBlockEnforced(block, now = Date.now()) {
-    return !!(block && block.startTime <= now && block.endTime > now && !block.isPaused);
-}
-
-export function isOneOffBlockStillActive(block, now = Date.now()) {
-    return !!(block && block.endTime > now);
-}
-
-// No pauseEndTime = paused indefinitely (legacy-disabled schedules imported
-// by migrateAndroidNativeSchedules); stays paused until the user resumes it.
-function isSchedulePausedNow(schedule, now = Date.now()) {
-    return !!(schedule && schedule.isPaused && (!schedule.pauseEndTime || schedule.pauseEndTime > now));
-}
-
-export function hasAnyEnforcedBlocks(now = Date.now(), nowDate = new Date(now)) {
-    const hasActiveOneOff = state.appData.activeBlocks.some(block => isOneOffBlockEnforced(block, now));
-    if (hasActiveOneOff) return true;
-    return !!state.appData.schedules?.some(schedule => isScheduleSegmentActiveNow(schedule, nowDate));
-}
-
-function scheduleHasFutureRecurringOccurrence(schedule, nowDate = new Date()) {
-    if (!schedule || !Array.isArray(schedule.segments) || schedule.segments.length === 0) return false;
-
-    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1;
-
-    return schedule.segments.some(seg => {
-        const segmentDays = (Array.isArray(seg.days) && seg.days.length > 0) ? seg.days : [currentDay];
-        return segmentDays.some(segmentDay => {
-            let daysUntil = segmentDay - currentDay;
-            if (daysUntil < 0) daysUntil += 7;
-
-            const candidateStart = new Date(nowDate);
-            candidateStart.setDate(candidateStart.getDate() + daysUntil);
-            candidateStart.setHours(seg.startHour, seg.startMinute, 0, 0);
-
-            const candidateEnd = new Date(candidateStart);
-            candidateEnd.setHours(seg.endHour, seg.endMinute, 0, 0);
-            if (candidateEnd <= candidateStart) {
-                candidateEnd.setDate(candidateEnd.getDate() + 1);
-            }
-
-            if (candidateEnd <= nowDate) {
-                candidateStart.setDate(candidateStart.getDate() + 7);
-                candidateEnd.setDate(candidateEnd.getDate() + 7);
-            }
-
-            if (schedule.repeatType === 'date' && schedule.repeatDate) {
-                const repeatEnd = new Date(schedule.repeatDate);
-                repeatEnd.setHours(23, 59, 59, 999);
-                return candidateStart <= repeatEnd && candidateEnd > nowDate;
-            }
-
-            return candidateEnd > nowDate;
-        });
-    });
-}
-
-function scheduleHasFutureSingleOccurrence(schedule, nowDate = new Date()) {
-    if (!schedule || !Array.isArray(schedule.segments) || schedule.segments.length === 0) return false;
-    return resolveOneShotOccurrences(schedule).some(occurrence => occurrence.end > nowDate);
-}
-
-export function scheduleCanStillBecomeActive(schedule, nowDate = new Date()) {
-    if (!schedule || !Array.isArray(schedule.segments) || schedule.segments.length === 0) return false;
-    if (schedule.repeatType === 'forever' || (schedule.repeatType === 'date' && schedule.repeatDate)) {
-        return scheduleHasFutureRecurringOccurrence(schedule, nowDate);
-    }
-    return scheduleHasFutureSingleOccurrence(schedule, nowDate);
-}
-
-function getTitleBarScheduleSearchFloorMs(schedule, nowMs = Date.now()) {
-    if (!schedule) return nowMs;
-    if (schedule.isPaused && schedule.pauseEndTime > nowMs) {
-        return Math.max(nowMs, schedule.pauseEndTime);
-    }
-    return nowMs;
-}
-
-function dayIndexMonday0FromDate(dt) {
-    const d = dt.getDay();
-    return d === 0 ? 6 : d - 1;
-}
-
-function getRepeatScheduleLastDayInclusiveMs(schedule) {
-    if (schedule.repeatType === 'date' && schedule.repeatDate) {
-        const endDate = new Date(schedule.repeatDate);
-        endDate.setHours(23, 59, 59, 999);
-        return endDate.getTime();
-    }
-    return null;
-}
-
-function computeNextOneShotOccurrenceMs(schedule, floorMs) {
-    let best = null;
-    for (const occ of resolveOneShotOccurrences(schedule)) {
-        const s = occ.start.getTime();
-        const e = occ.end.getTime();
-        if (e <= floorMs) continue;
-        if (s > floorMs) {
-            if (best === null || s < best) best = s;
-        }
-    }
-    return best;
-}
-
-function computeNextRepeatingOccurrenceMs(schedule, floorMs) {
-    if (!schedule.segments || schedule.segments.length === 0) return null;
-    const lastMs = getRepeatScheduleLastDayInclusiveMs(schedule);
-    const floorDate = new Date(floorMs);
-
-    let best = null;
-    const y0 = floorDate.getFullYear();
-    const m0 = floorDate.getMonth();
-    const d0 = floorDate.getDate();
-
-    for (let i = 0; i < 370; i++) {
-        const calMidnight = new Date(y0, m0, d0 + i, 0, 0, 0, 0);
-        if (lastMs !== null && calMidnight.getTime() > lastMs) break;
-
-        const dayIx = dayIndexMonday0FromDate(calMidnight);
-
-        for (const seg of schedule.segments) {
-            const segmentDays = Array.isArray(seg.days) && seg.days.length > 0 ? seg.days : null;
-            if (!segmentDays || !segmentDays.includes(dayIx)) continue;
-
-            const startMins = seg.startHour * 60 + seg.startMinute;
-            const endMins = seg.endHour * 60 + seg.endMinute;
-
-            if (startMins === endMins) {
-                const candMs = calMidnight.getTime();
-                if (candMs > floorMs && (lastMs === null || candMs <= lastMs)) {
-                    if (best === null || candMs < best) best = candMs;
-                }
-                continue;
-            }
-
-            const cand = new Date(calMidnight);
-            cand.setHours(seg.startHour, seg.startMinute, 0, 0);
-            const candMs = cand.getTime();
-            if (candMs > floorMs && (lastMs === null || candMs <= lastMs)) {
-                if (best === null || candMs < best) best = candMs;
-            }
-        }
-    }
-
-    return best;
-}
-
-/**
- * Among schedules that can still run, earliest segment start strictly after pause/search floor.
- */
-function pickEarliestUpcomingScheduledBlock(nowMs = Date.now()) {
-    let best = null;
-    for (const schedule of state.appData.schedules || []) {
-        if (!schedule.segments || schedule.segments.length === 0) continue;
-        if (!scheduleCanStillBecomeActive(schedule, new Date(nowMs))) continue;
-        // Indefinitely paused (no pauseEndTime): no upcoming start to show.
-        if (schedule.isPaused && !schedule.pauseEndTime) continue;
-
-        const floorMs = getTitleBarScheduleSearchFloorMs(schedule, nowMs);
-        let nextMs = null;
-
-        if (isNonRepeatingSchedule(schedule)) {
-            nextMs = computeNextOneShotOccurrenceMs(schedule, floorMs);
-        } else {
-            nextMs = computeNextRepeatingOccurrenceMs(schedule, floorMs);
-        }
-
-        if (nextMs == null) continue;
-
-        const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-        if (!blocklist) continue;
-
-        if (best === null || nextMs < best.startMs) {
-            best = { startMs: nextMs, blocklist, schedule };
-        }
-    }
-    return best;
-}
-
-function formatTitleBarScheduleStartWhen(date, nowMs = Date.now()) {
-    const n = new Date(nowMs);
-    const dMid = new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime();
-    const targetMid = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-    const dd = Math.round((targetMid - dMid) / 86400000);
-    const timeStr = formatTime(date);
-    if (dd === 0) return `${tSettings('scheduleStartsToday')} ${timeStr}`;
-    if (dd === 1) return `${tSettings('scheduleStartsTomorrow')} ${timeStr}`;
-    return `${formatDateForDisplay(date)} · ${timeStr}`;
-}
-
-export function hasAnyBlockingStateToClear(now = Date.now(), nowDate = new Date(now)) {
-    const hasOneOffState = state.appData.activeBlocks.some(block => isOneOffBlockStillActive(block, now));
-    if (hasOneOffState) return true;
-    return !!state.appData.schedules?.some(schedule => scheduleCanStillBecomeActive(schedule, nowDate));
-}
-
-export async function refreshDesktopHelperStatus() {
-    if (state.isIOS || state.isAndroid) {
-        return { installed: false, running: false, version: null, version_ok: false, helperReady: false };
-    }
-    try {
-        const status = await tauriAPI.checkHelperStatus();
-        const helperReady = !!(status.running && status.version_ok);
-        const nextStatus = { ...status, helperReady };
-        state.helperAvailable = helperReady;
-        lastDesktopHelperStatus = nextStatus;
-        lastDesktopHelperStatusAt = Date.now();
-        return nextStatus;
-    } catch (err) {
-        console.error('Error checking helper status:', err);
-        state.helperAvailable = false;
-        lastDesktopHelperStatus = {
-            installed: false,
-            running: false,
-            version: null,
-            version_ok: false,
-            helperReady: false,
-            error: err
-        };
-        lastDesktopHelperStatusAt = Date.now();
-        return lastDesktopHelperStatus;
-    }
-}
-
-function getCachedDesktopHelperStatus(maxAgeMs = HELPER_STATUS_CACHE_TTL_MS) {
-    if (!lastDesktopHelperStatus) return null;
-    if ((Date.now() - lastDesktopHelperStatusAt) > maxAgeMs) return null;
-    return lastDesktopHelperStatus;
-}
 
 
 let scheduleRepeatDate = null; // Date object when repeatType is 'date'
-let hasShownIOSScheduleSyncError = false;
 const CURRENT_EULA_REVISION = 1;
 let forceShowEulaThisSession = false;
 
@@ -942,7 +309,7 @@ function setupNowBlockingChipScroll() {
     }, true);
 }
 
-function syncNowBlockingChipsScrollability() {
+export function syncNowBlockingChipsScrollability() {
     const chipsEl = document.getElementById('now-blocking-chips');
     const row = document.getElementById('now-blocking-row');
     if (!chipsEl || !row || row.classList.contains('hidden')) return;
@@ -986,7 +353,7 @@ function getAcceptedEulaRevision() {
     return null;
 }
 
-function normalizeLoadedEulaState() {
+export function normalizeLoadedEulaState() {
     if (!state.appData.settings) {
         state.appData.settings = {};
     }
@@ -6314,7 +5681,7 @@ function openAndroidFrictionGateModal(event) {
 }
 
 async function initializeIOSBlockingState() {
-    // Sync lastBlockedDomains from active (non-paused) blocks so pause/resume works after restart
+    // Sync state.lastBlockedDomains from active (non-paused) blocks so pause/resume works after restart
     const now = Date.now();
     const activeDomains = new Set();
     state.appData.activeBlocks
@@ -6323,12 +5690,12 @@ async function initializeIOSBlockingState() {
             const bl = state.appData.blocklists.find(bl => bl.id === b.blocklistId);
             if (bl && bl.websites) bl.websites.forEach(d => activeDomains.add(d));
         });
-    lastBlockedDomains = activeDomains;
+    state.lastBlockedDomains = activeDomains;
     // Re-register DeviceActivity schedules so background activation survives app restarts.
     await syncSchedulesToHelper();
 }
 
-function updateOnboardingVisibility() {
+export function updateOnboardingVisibility() {
     if (activeExclusiveOnboardingScreenId()) {
         return;
     }
@@ -6449,85 +5816,6 @@ function setupMobileExternalLinkOpens() {
 }
 
 // Load data from main process
-async function loadData() {
-    state.appData = await tauriAPI.loadData();
-    let shouldSave = false;
-    if (!state.appData || !state.appData.blocklists) {
-        state.appData = {
-            blocklists: [],
-            activeBlocks: [],
-            schedules: [],
-            settings: {}
-        };
-    }
-    // Ensure schedules array exists for older data
-    if (!state.appData.schedules) {
-        state.appData.schedules = [];
-    }
-    // A pre-fix bug could insert a duplicate schedule for the same blocklist when
-    // saving edits (both the start-flow and edit-flow proceed handlers fired). If
-    // that left two entries, keep the one with the most segments and drop the rest.
-    if (state.appData.schedules.length > 1) {
-        const byBlocklist = new Map();
-        for (const s of state.appData.schedules) {
-            const existing = byBlocklist.get(s.blocklistId);
-            const segCount = Array.isArray(s.segments) ? s.segments.length : 0;
-            const existingCount = existing && Array.isArray(existing.segments) ? existing.segments.length : -1;
-            if (!existing || segCount > existingCount) {
-                byBlocklist.set(s.blocklistId, s);
-            }
-        }
-        if (byBlocklist.size < state.appData.schedules.length) {
-            state.appData.schedules = [...byBlocklist.values()];
-            shouldSave = true;
-        }
-    }
-    // Ensure settings exists
-    if (!state.appData.settings) {
-        state.appData.settings = {};
-    }
-    if (normalizeLoadedEulaState()) {
-        shouldSave = true;
-    }
-    state.appData.blocklists = (state.appData.blocklists || []).map(normalizeBlocklist);
-    if (migrateBlocklistStartOverlaysToGlobal()) {
-        shouldSave = true;
-    }
-    if (migrateLegacyScheduleStartOverlays()) {
-        shouldSave = true;
-    }
-
-
-    // Create default blocklist on first launch (no blocklists yet)
-    if (state.appData.blocklists.length === 0) {
-        state.appData.blocklists.push({
-            id: generateId(),
-            name: 'Distractions',
-            mode: 'blocklist',
-            // First colour in the palette (matches the openBlocklistModal default).
-            color: '#B8D1DE',
-            emoji: '📱',
-            websites: ['instagram.com', 'youtube.com', 'reddit.com'],
-            apps: [],
-            iosScreenTimeSelection: null,
-            overrideDifficulty: {
-                type: 'random-words',
-                count: (state.isIOS) ? 25 : 50
-            }
-        });
-        shouldSave = true;
-    }
-
-    if (shouldSave) {
-        await saveData();
-    }
-}
-
-// Save data to main process
-export async function saveData() {
-    await tauriAPI.saveData(state.appData);
-}
-
 /// Run expiry once (e.g. on app load) so in-memory state matches Screen Time / helper.
 /// Clears expired blocks and pause state, then syncs to plugin/helper.
 async function runExpiryOnce() {
@@ -6799,7 +6087,7 @@ function detectPlatform() {
 }
 
 // Update window height to fit content
-function updateWindowHeight() {
+export function updateWindowHeight() {
     // Use requestAnimationFrame to ensure layout is complete
     requestAnimationFrame(() => {
         const appContainer = document.querySelector('.app-container');
@@ -8605,7 +7893,7 @@ function setupOverrideModalListeners() {
                 openResumeConfirmation(state.selectedBlocklistId, 'block', activeBlock.id);
             } else {
                 // Pause
-                pauseScheduleData = null;
+                state.pauseScheduleData = null;
                 openPauseModal(activeBlock.id);
             }
             return;
@@ -8619,7 +7907,7 @@ function setupOverrideModalListeners() {
                 openResumeConfirmation(state.selectedBlocklistId, 'schedule', null);
                 return;
             }
-            pauseScheduleData = {
+            state.pauseScheduleData = {
                 blocklistId: state.selectedBlocklistId,
                 isActiveNow: isScheduleSegmentActiveNow(schedule)
             };
@@ -8760,7 +8048,7 @@ function setupOverrideModalListeners() {
 
                 if (state.isIOS) {
                     await tauriAPI.screentimeClearBlock();
-                    lastBlockedDomains = new Set();
+                    state.lastBlockedDomains = new Set();
                     await updateHostsFile();
                     await syncSchedulesToHelper();
                 } else if (state.isAndroid) {
@@ -8809,7 +8097,7 @@ function setupOverrideModalListeners() {
                     );
 
                     // Rebuild UI to show all segments as editable if we're viewing this blocklist
-                    if (state.selectedBlocklistId === scheduleToStop.blocklistId && isScheduleMode) {
+                    if (state.selectedBlocklistId === scheduleToStop.blocklistId && state.isScheduleMode) {
                         rebuildScheduleSegments();
                         disableScheduleControls(false);
                     }
@@ -8821,7 +8109,7 @@ function setupOverrideModalListeners() {
                 // immediately; updateHostsFile and syncSchedulesToHelper will then re-apply correct state.
                 if (state.isIOS) {
                     await tauriAPI.screentimeClearBlock();
-                    lastBlockedDomains = new Set();
+                    state.lastBlockedDomains = new Set();
                 }
 
                 await saveData();
@@ -8956,7 +8244,7 @@ export function setAlwaysOnMode(alwaysOn) {
 
 // Switch between instant and schedule modes
 function setScheduleMode(isSchedule) {
-    isScheduleMode = isSchedule;
+    state.isScheduleMode = isSchedule;
 
     // Persist this tab choice per blocklist so it restores when switching back
     if (state.selectedBlocklistId && state.appData.settings) {
@@ -9248,7 +8536,7 @@ function parseLocalDateKey(dateKey) {
 }
 
 // Format date for display (e.g., "3 Feb 2026")
-function formatDateForDisplay(date) {
+export function formatDateForDisplay(date) {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const day = date.getDate();
     const month = months[date.getMonth()];
@@ -9256,7 +8544,7 @@ function formatDateForDisplay(date) {
     return `${day} ${month} ${year}`;
 }
 
-function isScheduleSegmentActiveNow(schedule, nowDate = new Date()) {
+export function isScheduleSegmentActiveNow(schedule, nowDate = new Date()) {
     if (!schedule || !schedule.segments || schedule.segments.length === 0) return false;
     const nowMs = nowDate.getTime();
     if (isSchedulePausedNow(schedule, nowMs)) return false;
@@ -9295,7 +8583,7 @@ function areSegmentsEqual(a, b) {
 }
 
 // Update schedule button enabled state
-function updateScheduleButtonState() {
+export function updateScheduleButtonState() {
     const startScheduleBtn = document.getElementById('start-schedule-btn');
     if (!startScheduleBtn) return;
 
@@ -10301,7 +9589,7 @@ function rememberLastScheduleStartOverlayId(overlayId) {
     else delete state.appData.settings.lastScheduleStartOverlayId;
 }
 
-function migrateBlocklistStartOverlaysToGlobal() {
+export function migrateBlocklistStartOverlaysToGlobal() {
     let changed = false;
     ensureGlobalStartOverlays();
     const knownIds = new Set(state.appData.startOverlays.map((preset) => preset.id));
@@ -10370,7 +9658,7 @@ function resolveScheduleStartOverlay(schedule) {
     return null;
 }
 
-function migrateLegacyScheduleStartOverlays() {
+export function migrateLegacyScheduleStartOverlays() {
     let changed = false;
     for (const schedule of state.appData.schedules || []) {
         if (schedule.startOverlayId || !schedule.startOverlay?.custom) continue;
@@ -11983,7 +11271,7 @@ const START_CONFIRM_ICON_APP = `<svg class="start-confirm-blocking-icon" width="
 const START_FOCUS_SPACE_PLAY_ICON = `<svg class="start-block-btn-play-icon start-block-btn-leading" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`;
 const STOP_ACTION_SQUARE_ICON = `<svg class="start-block-btn-stop-icon start-block-btn-leading hidden" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect></svg>`;
 
-function setStartBlockBtnLeadingIcon(btn, mode) {
+export function setStartBlockBtnLeadingIcon(btn, mode) {
     if (!btn || (btn.id !== 'start-block-btn' && btn.id !== 'start-schedule-btn')) return;
     const playIcon = btn.querySelector('.start-block-btn-play-icon');
     const appIcon = btn.querySelector('.start-block-btn-app-icon');
@@ -12380,7 +11668,7 @@ function closeScheduleConfirmModal() {
 
 // Open override modal for stopping a schedule. Schedules now stop wholesale, identically
 // to one-off blocks (no per-instance skip).
-function openScheduleOverrideModal(schedule) {
+export function openScheduleOverrideModal(schedule) {
     window.overrideScheduleId = schedule.id || schedule.blocklistId;
 
     const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
@@ -12398,7 +11686,7 @@ function openScheduleOverrideModal(schedule) {
 // (so the schedule editor on the left switches to it) and open the blocklist edit dialog.
 // The override flow is still reachable from the running-block actions; clicking a calendar
 // block now goes straight to editing.
-function openScheduledBlockEdit(schedule) {
+export function openScheduledBlockEdit(schedule) {
     const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
     if (!blocklist) return;
 
@@ -12617,7 +11905,7 @@ export function handleTimeChange() {
     renderScheduleAlwaysOnRow();
 
     // Handle schedule mode separately
-    if (isScheduleMode) {
+    if (state.isScheduleMode) {
         renderSchedulePreview();
 
         // Save pending schedule segments for this blocklist
@@ -12779,10 +12067,10 @@ export function handleTimeChange() {
 
 // Re-draw in-flight Now/Schedule preview bars after renderWeekBlocks() clears day tracks
 // (e.g. window focus, blocklist colour change, or updateWeekCalendar rebuild).
-function refreshCalendarPreviews() {
+export function refreshCalendarPreviews() {
     if (!state.selectedBlocklistId) return;
 
-    if (isScheduleMode) {
+    if (state.isScheduleMode) {
         renderSchedulePreview();
         return;
     }
@@ -13139,7 +12427,7 @@ function buildPreviewBlockElement({ blocklist, segmentIndex, dayIndex, leftPct, 
         <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
     `;
 
-    if (!isContinuation && isScheduleMode) {
+    if (!isContinuation && state.isScheduleMode) {
         const track = document.querySelector(`.day-track[data-day-index="${dayIndex}"]`);
         if (track) attachPreviewBlockDragHandlers(previewEl, segmentIndex, track);
     }
@@ -13417,7 +12705,7 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
 }
 
 /** Start-a-block heading + Now/Schedule tabs — only meaningful once a blocklist is chosen. */
-function syncSchedulerChromeVisibility() {
+export function syncSchedulerChromeVisibility() {
     const gridTopRow = document.querySelector('.grid-top-row');
     const hasLists = (state.appData.blocklists?.length || 0) > 0;
     const show = hasLists && !!state.selectedBlocklistId;
@@ -13438,7 +12726,7 @@ export function handleBlocklistSelect(e) {
     // Before switching, save pending changes for the current blocklist
     if (state.selectedBlocklistId) {
         // Save pending schedule segments if in schedule mode
-        if (isScheduleMode) {
+        if (state.isScheduleMode) {
             const existingSchedule = state.appData.schedules?.find(s => s.blocklistId === state.selectedBlocklistId);
             if (!state.appData.settings) state.appData.settings = {};
             if (!state.appData.settings.pendingScheduleSegments) state.appData.settings.pendingScheduleSegments = {};
@@ -13519,7 +12807,7 @@ export function handleBlocklistSelect(e) {
         if (passwordHint) passwordHint.classList.remove('hidden');
 
         // Show the appropriate button based on mode
-        if (isScheduleMode) {
+        if (state.isScheduleMode) {
             if (startBlockBtn) startBlockBtn.classList.add('hidden');
             if (startScheduleBtn) {
                 startScheduleBtn.classList.remove('hidden');
@@ -13622,7 +12910,7 @@ function deselectBlocklist() {
     if (!state.selectedBlocklistId) return;
     state.userExplicitlyDeselected = true;
     const currentBlocklistId = state.selectedBlocklistId;
-    if (isScheduleMode) {
+    if (state.isScheduleMode) {
         const existingSchedule = state.appData.schedules?.find(s => s.blocklistId === currentBlocklistId);
         if (!state.appData.settings) state.appData.settings = {};
         if (!state.appData.settings.pendingScheduleSegments) state.appData.settings.pendingScheduleSegments = {};
@@ -13838,11 +13126,11 @@ async function proceedWithBlock() {
         try {
             // Apply union of all active blocks + active schedule segments (not just this blocklist).
             state.appData.activeBlocks.push(block);
-            activatedBlockIds.add(block.id);
+            state.activatedBlockIds.add(block.id);
             const updateResult = await updateHostsFile();
             if (!updateResult.success) {
                 state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
-                activatedBlockIds.delete(block.id);
+                state.activatedBlockIds.delete(block.id);
                 result = { success: false, error: updateResult.error || 'Failed to update blocking' };
             } else {
                 result = { success: true };
@@ -13868,7 +13156,7 @@ async function proceedWithBlock() {
             }
         } catch (err) {
             state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
-            activatedBlockIds.delete(block.id);
+            state.activatedBlockIds.delete(block.id);
             result = { success: false, error: err.toString() };
         }
     } else if (state.isAndroid) {
@@ -13898,7 +13186,7 @@ async function proceedWithBlock() {
         // native-messaging host see it immediately (state.helperAvailable only
         // gates legacy helper-daemon wiring, not v2 extension blocking).
         state.appData.activeBlocks.push(block);
-        activatedBlockIds.add(block.id);
+        state.activatedBlockIds.add(block.id);
 
         if (state.helperAvailable) {
             const status = await tauriAPI.checkHelperStatus();
@@ -13918,7 +13206,7 @@ async function proceedWithBlock() {
     if (!result.success) {
         if (!state.isIOS) {
             state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
-            activatedBlockIds.delete(block.id);
+            state.activatedBlockIds.delete(block.id);
         }
         // Re-enable button
         startBtn.disabled = false;
@@ -13991,7 +13279,7 @@ function getActionLabelHTML(fullText) {
     return `<span class="btn-label-action">${safe(action)}</span><span class="btn-label-context">${safe(context)}</span>`;
 }
 
-function setBtnActionLabel(el, fullText, { simple = false } = {}) {
+export function setBtnActionLabel(el, fullText, { simple = false } = {}) {
     if (!el) return;
     if (simple) {
         el.textContent = String(fullText ?? '').trimEnd();
@@ -14026,7 +13314,7 @@ function measureStopBtnExpandedWidth(btn) {
     return width;
 }
 
-function syncStopBtnLabelFit(btn) {
+export function syncStopBtnLabelFit(btn) {
     if (!btn) return;
     btn.classList.remove('stop-meta-collapsed');
     syncStartBtnBlocklistMetaLead(btn);
@@ -14072,7 +13360,7 @@ export function syncAllStopBtnLabelFits() {
 }
 
 // Update emoji and name on stop buttons only — enter/start labels stand alone.
-function setStartBtnBlocklistInfo(btn, blocklist) {
+export function setStartBtnBlocklistInfo(btn, blocklist) {
     if (!btn) return;
     const btnEmoji = btn.querySelector('.btn-emoji');
     const btnName = btn.querySelector('.btn-name');
@@ -14091,152 +13379,6 @@ function setStartBtnBlocklistInfo(btn, blocklist) {
 
 // Update hosts file based on active blocks
 // silent = true means don't prompt for password (used for cleanup)
-async function updateHostsFile(silent = false) {
-    const allDomains = new Set();
-    const now = Date.now();
-
-    // Only block domains for blocks that are currently active and not paused
-    state.appData.activeBlocks
-        .filter(block => block.startTime <= now && block.endTime > now && !block.isPaused)
-        .forEach(block => {
-            const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
-            if (blocklist && blocklist.websites) {
-                blocklist.websites.forEach(domain => allDomains.add(domain));
-            }
-        });
-
-    // Also check scheduled blocks - add domains if a schedule segment is currently active
-    const nowDate = new Date();
-
-    if (state.appData.schedules) {
-        state.appData.schedules.forEach(schedule => {
-            if (!schedule.segments) return;
-
-            // Skip paused schedules
-            if (isSchedulePausedNow(schedule)) return;
-
-            if (isScheduleSegmentActiveNow(schedule, nowDate)) {
-                const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-                if (blocklist && blocklist.websites) {
-                    blocklist.websites.forEach(domain => allDomains.add(domain));
-                }
-            }
-        });
-    }
-
-    // Filter out protected domains (localhost etc. must never be blocked)
-    const domainsArray = Array.from(allDomains)
-        .filter(d => !isProtectedDomain(d))
-        .sort();
-    const lastDomainsArray = Array.from(lastBlockedDomains).sort();
-    const domainsChanged = JSON.stringify(domainsArray) !== JSON.stringify(lastDomainsArray);
-
-    // iOS: Use Screen Time API instead of helper daemon / hosts file
-    // Only clear when there are no active blocks; when there are active blocks, always apply
-    // (even when domainsArray is empty — app-only blocklists must still shield apps).
-    if (state.isIOS) {
-        try {
-            const manualPayload = collectActiveIOSManualBlockPayload(now);
-            const hasActiveBlocks = state.appData.activeBlocks.some(
-                block => block.startTime <= now && block.endTime > now && !block.isPaused
-            );
-            const hasActiveScheduleSegments = (state.appData.schedules || []).some(schedule => {
-                if (!schedule || !schedule.segments || schedule.segments.length === 0) return false;
-                if (isSchedulePausedNow(schedule, now)) return false;
-                if (schedule.repeatType === 'date' && schedule.repeatDate) {
-                    const endDate = new Date(schedule.repeatDate);
-                    endDate.setHours(23, 59, 59, 999);
-                    if (nowDate > endDate) return false;
-                }
-                return isScheduleSegmentActiveNow(schedule, nowDate);
-            });
-            if (!hasActiveBlocks) {
-                if (hasActiveScheduleSegments) {
-                    // Schedule enforcement on iOS is owned by the DeviceActivityMonitor extension.
-                    // Avoid clearing stores here or we can wipe an active scheduled block.
-                    console.log('[updateHostsFile] iOS: no manual blocks but schedule segment is active; keeping schedule enforcement');
-                    lastBlockedDomains = new Set();
-                    return { success: true };
-                }
-                console.log('[updateHostsFile] iOS: no active blocks, clearing Screen Time');
-                await tauriAPI.screentimeClearBlock();
-                lastBlockedDomains = new Set();
-                return { success: true };
-            }
-            if (manualPayload.domains.length === 0) {
-                console.log('[updateHostsFile] iOS: active blocks with no domains (app-only), applying app shield');
-            } else {
-                console.log('[updateHostsFile] iOS: starting Screen Time block for', manualPayload.domains);
-            }
-            await tauriAPI.screentimeStartBlock(manualPayload);
-            lastBlockedDomains = new Set(manualPayload.domains);
-            return { success: true };
-        } catch (err) {
-            console.error('[updateHostsFile] iOS Screen Time error:', err);
-            return { success: false, error: err.toString() };
-        }
-    }
-
-    // Android: blocking is entirely owned by Kotlin (BlockerService +
-    // Schedules' active sessions), driven by syncSchedulesToHelper /
-    // androidStartManualBlock / androidStopManualBlock. There's no
-    // hosts-file or helper-daemon concept here — those commands don't
-    // exist on Android at all (see all_commands() in lib.rs).
-    if (state.isAndroid) {
-        return { success: true };
-    }
-
-    if (!domainsChanged) {
-        return { success: true, unchanged: true };
-    }
-
-    // Desktop v2+: websites are blocked via the extension/native host (Windows)
-    // or Automation (macOS) — not hosts-file edits. save_data already ran;
-    // the native host re-pushes when redd-block-data.json changes.
-    if (!state.isIOS) {
-        lastBlockedDomains = allDomains;
-        await updateBlockedApps();
-        return { success: true };
-    }
-
-    // Try to use helper daemon first (legacy path; iOS-only below)
-    try {
-        console.log('[updateHostsFile] Checking helper status...');
-        const status = await tauriAPI.checkHelperStatus();
-        console.log('[updateHostsFile] Helper status:', status);
-
-        if (status.running && status.version_ok) {
-            console.log('[updateHostsFile] Helper running with correct version, using helper to update blocks');
-            state.helperAvailable = true;
-            await syncActiveBlocksToHelper();
-            await syncSchedulesToHelper();
-            lastBlockedDomains = allDomains;
-            await updateBlockedApps();
-            return { success: true };
-        } else {
-            console.log('[updateHostsFile] Helper NOT running, falling back');
-        }
-    } catch (e) {
-        console.warn('Helper not available, falling back to direct method:', e);
-    }
-
-    // For silent cleanup without the helper, defer instead of triggering an elevation prompt.
-    if (silent && allDomains.size < lastBlockedDomains.size) {
-        return { success: true, deferred: true };
-    }
-
-    // Fallback to direct hosts file modification (macOS)
-    console.log('[updateHostsFile] Calling fallback block-websites');
-    const result = await tauriAPI.blockWebsites(domainsArray);
-
-    if (result && result.success) {
-        lastBlockedDomains = allDomains;
-        // Update blocked apps based on active blocks and schedules
-        await updateBlockedApps();
-    }
-
-    return result || { success: true };
-}
 
 // Update blocked apps sent to the in-process app watcher (desktop only).
 // Computes the effective union of apps from active one-off blocks AND active schedule
@@ -14335,7 +13477,7 @@ function applyModalBlocklistTint(hexColor) {
 }
 
 // Open blocklist modal
-function openBlocklistModal(blocklist = null) {
+export function openBlocklistModal(blocklist = null) {
     editingBlocklistId = blocklist?.id || null;
     blocklistModalPreviewSnapshot = null;
 
@@ -14658,7 +13800,7 @@ function formatBlocklistModalSummary(blocklist) {
 }
 
 // Open override modal
-function openOverrideModal(blockId) {
+export function openOverrideModal(blockId) {
     delete window.overrideScheduleId;
     overrideBlockId = blockId;
     const block = state.appData.activeBlocks.find(b => b.id === blockId);
@@ -14723,7 +13865,7 @@ function initializeOverrideModalChallenge(difficulty, progressColor = null) {
 // ── Pause/Resume Block ──
 
 // Update the pause button's icon and text based on whether the block/schedule is paused
-function updatePauseButtonAppearance(isPaused) {
+export function updatePauseButtonAppearance(isPaused) {
     const pauseBtn = document.getElementById('pause-block-btn');
     if (!pauseBtn) return;
 
@@ -14861,7 +14003,7 @@ async function proceedWithResume() {
 
 // ── Pause Block Modal ──
 
-function openPauseModal(blockId) {
+export function openPauseModal(blockId) {
     pauseBlockId = blockId;
 
     let block, blocklist;
@@ -14870,12 +14012,12 @@ function openPauseModal(blockId) {
         // One-off block pause
         block = state.appData.activeBlocks.find(b => b.id === blockId);
         blocklist = state.appData.blocklists.find(bl => bl.id === block?.blocklistId);
-    } else if (pauseScheduleData) {
+    } else if (state.pauseScheduleData) {
         // Schedule pause — create a synthetic block object
-        blocklist = state.appData.blocklists.find(bl => bl.id === pauseScheduleData.blocklistId);
+        blocklist = state.appData.blocklists.find(bl => bl.id === state.pauseScheduleData.blocklistId);
         block = {
             id: null,
-            blocklistId: pauseScheduleData.blocklistId,
+            blocklistId: state.pauseScheduleData.blocklistId,
             startTime: Date.now(),
             endTime: ALWAYS_ON_END_TIME,
             isScheduleBlock: true
@@ -14884,8 +14026,8 @@ function openPauseModal(blockId) {
 
     if (!blocklist) return;
 
-    const isSchedule = !blockId && !!pauseScheduleData;
-    const isScheduleInactive = isSchedule && !pauseScheduleData.isActiveNow;
+    const isSchedule = !blockId && !!state.pauseScheduleData;
+    const isScheduleInactive = isSchedule && !state.pauseScheduleData.isActiveNow;
 
     populatePauseConfirmModalContent(blocklist, {
         block,
@@ -14985,7 +14127,7 @@ export function syncPauseDurationRowLayout() {
 function closePauseModal() {
     document.getElementById('pause-modal').classList.add('hidden');
     pauseBlockId = null;
-    pauseScheduleData = null;
+    state.pauseScheduleData = null;
     pauseChallengeText = '';
     pauseWordChallengeState = null;
     setPauseWordChallengeMode(false);
@@ -15159,7 +14301,7 @@ function selectPauseRestartTimeOption(e) {
 }
 
 async function proceedWithPause() {
-    if (!pauseBlockId && !pauseScheduleData) return;
+    if (!pauseBlockId && !state.pauseScheduleData) return;
 
     if (pauseWordChallengeState) {
         const typedWord = document.getElementById('pause-challenge-word-input').value.trim();
@@ -15203,9 +14345,9 @@ async function proceedWithPause() {
         return;
     }
 
-    if (pauseScheduleData) {
+    if (state.pauseScheduleData) {
         // Schedule pause — set pause state on the schedule itself
-        const schedule = state.appData.schedules?.find(s => s.blocklistId === pauseScheduleData.blocklistId);
+        const schedule = state.appData.schedules?.find(s => s.blocklistId === state.pauseScheduleData.blocklistId);
         if (schedule) {
             schedule.isPaused = true;
             schedule.pauseEndTime = Date.now() + pauseDurationMs;
@@ -15224,7 +14366,7 @@ async function proceedWithPause() {
     await saveData();
     console.log('[pause-resume] Proceeding with pause sync', {
         pauseBlockId,
-        scheduleBlocklistId: pauseScheduleData?.blocklistId || null
+        scheduleBlocklistId: state.pauseScheduleData?.blocklistId || null
     });
     await syncActiveBlocksToHelper();
     await syncSchedulesToHelper();
@@ -15235,8 +14377,8 @@ async function proceedWithPause() {
 
     // iOS: register one-off DeviceActivity so pause expiry re-evaluates background enforcement.
     if (state.isIOS) {
-        if (pauseScheduleData) {
-            const schedule = state.appData.schedules?.find(s => s.blocklistId === pauseScheduleData.blocklistId);
+        if (state.pauseScheduleData) {
+            const schedule = state.appData.schedules?.find(s => s.blocklistId === state.pauseScheduleData.blocklistId);
             if (schedule?.pauseEndTime) {
                 try {
                     const res = await tauriAPI.screentimeRegisterOneOffActivity(
@@ -15963,1103 +15105,9 @@ function undoDelete() {
 }
 
 // Main render function
-export function render() {
-    updateOnboardingVisibility();
-
-    renderNowBlockingRow();
-    updateWeekCalendar();
-    renderBlocklistSelector();
-
-    // Auto-select when the choice is unambiguous, but respect a user
-    // deselect so they can return to the empty "Select a blocklist"
-    // state if they want.
-    //   - Exactly one blocklist exists → default-select it.
-    //   - Otherwise, if nothing is selected, fall back to selecting
-    //     the lone non-active blocklist if there's exactly one.
-    if (state.appData.blocklists.length === 1) {
-        autoSelectSoleBlocklist();
-    } else if (!state.selectedBlocklistId && !state.userExplicitlyDeselected) {
-        const activeIds = state.appData.activeBlocks.map(b => b.blocklistId);
-        const availableBlocklists = state.appData.blocklists.filter(bl => !activeIds.includes(bl.id));
-        if (availableBlocklists.length === 1) {
-            const dropdown = document.getElementById('blocklist-select');
-            dropdown.value = availableBlocklists[0].id;
-            handleBlocklistSelect({ target: dropdown });
-        }
-    }
-
-    renderBlocklists();
-    syncSelectedControlState();
-
-    // Hide "Select a blocklist" prompt if there are no blocklists
-    const selectionPrompt = document.getElementById('selection-prompt');
-    if (selectionPrompt) {
-        if (state.appData.blocklists.length === 0) {
-            selectionPrompt.classList.add('hidden');
-        } else if (!state.selectedBlocklistId) {
-            // Only show prompt if there are blocklists but none selected
-            selectionPrompt.classList.remove('hidden');
-        }
-    }
-
-    syncSchedulerChromeVisibility();
-
-    scheduleSelectionPromptLayout();
-
-    // Adjust window height to fit content
-    updateWindowHeight();
-}
-
-function syncSelectedControlState() {
-    if (!state.selectedBlocklistId) {
-        updateOverrideAllButtonVisibility();
-        updateCleanHostsBtnState();
-        return;
-    }
-    if (isScheduleMode) {
-        updateScheduleButtonState();
-        updateOverrideAllButtonVisibility();
-        updateCleanHostsBtnState();
-        return;
-    }
-    const startBlockBtn = document.getElementById('start-block-btn');
-    if (!startBlockBtn) {
-        updateOverrideAllButtonVisibility();
-        updateCleanHostsBtnState();
-        return;
-    }
-    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
-    const now = Date.now();
-    const activeBlock = state.appData.activeBlocks.find(b => b.blocklistId === state.selectedBlocklistId && b.startTime <= now && b.endTime > now);
-    const btnLabel = startBlockBtn.querySelector('.btn-label');
-    const pauseBtn = document.getElementById('pause-block-btn');
-    const alwaysOnMsg = document.getElementById('always-on-message');
-    delete startBlockBtn.dataset.activeBlockId;
-    startBlockBtn.classList.remove('stop-block');
-    if (activeBlock) {
-        startBlockBtn.classList.add('stop-block');
-        setBtnActionLabel(btnLabel, tSettings('stopBlock'));
-        setStartBtnBlocklistInfo(startBlockBtn, blocklist);
-        startBlockBtn.dataset.activeBlockId = activeBlock.id;
-        setStartBlockBtnLeadingIcon(startBlockBtn, 'stop');
-        if (pauseBtn) {
-            pauseBtn.classList.remove('hidden');
-            updatePauseButtonAppearance(!!activeBlock.isPaused);
-        }
-        disableTimeControls(true);
-        if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
-    } else {
-                setBtnActionLabel(btnLabel, tSettings('startBlockButton'), { simple: true });
-                setStartBtnBlocklistInfo(startBlockBtn, blocklist);
-        setStartBlockBtnLeadingIcon(startBlockBtn, 'enter');
-        if (pauseBtn) pauseBtn.classList.add('hidden');
-        disableTimeControls(false);
-        if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !state.isAlwaysOnMode);
-    }
-    startBlockBtn.disabled = !state.selectedBlocklistId;
-    syncStopBtnLabelFit(startBlockBtn);
-    updateOverrideAllButtonVisibility();
-    updateCleanHostsBtnState();
-}
-
-// Render the generic weekly schedule: fixed Mon..Sun rows with a horizontal time axis.
-// The view is dateless — every row represents a weekday, and today's row is highlighted.
-function updateWeekCalendar() {
-    const dayRows = document.getElementById('day-rows');
-    const hourMarkers = document.getElementById('hour-markers');
-
-    if (!dayRows || !hourMarkers) return;
-
-    // Hour markers across the timeline (every 3 hours: 00, 03, 06, 09, 12, 15, 18, 21).
-    hourMarkers.innerHTML = '';
-    for (let h = 0; h <= 21; h += 3) {
-        const marker = document.createElement('div');
-        marker.className = 'hour-marker';
-        marker.style.left = `${(h / 24) * 100}%`;
-        marker.textContent = String(h).padStart(2, '0');
-        hourMarkers.appendChild(marker);
-    }
-
-    dayRows.innerHTML = '';
-    // Day names in our internal order: 0=Mon, 1=Tue, ... 6=Sun.
-    const dayNamesMon0 = weekdayAbbrevMon0List();
-    const todayJsDay = new Date().getDay(); // 0=Sun..6=Sat
-    const todayDayIndex = todayJsDay === 0 ? 6 : todayJsDay - 1;
-
-    for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
-        const isToday = dayIndex === todayDayIndex;
-        const isWeekend = dayIndex === 5 || dayIndex === 6; // Sat, Sun
-
-        const row = document.createElement('div');
-        row.className = 'day-row';
-        if (isToday) row.classList.add('today');
-        if (isWeekend) row.classList.add('weekend');
-        row.dataset.dayIndex = dayIndex;
-
-        const label = document.createElement('div');
-        label.className = 'day-label';
-
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'day-name';
-        nameSpan.textContent = dayNamesMon0[dayIndex];
-        label.appendChild(nameSpan);
-
-        if (isToday) {
-            const todaySpan = document.createElement('span');
-            todaySpan.className = 'day-date';
-            todaySpan.textContent = tSettings('today');
-            label.appendChild(todaySpan);
-        }
-
-        const track = document.createElement('div');
-        track.className = 'day-track';
-        if (isScheduleMode) track.classList.add('schedule-mode');
-        track.dataset.dayIndex = dayIndex;
-
-        if (isToday) {
-            const now = new Date();
-            const nowMinutes = now.getHours() * 60 + now.getMinutes();
-            const nowIndicator = document.createElement('div');
-            nowIndicator.className = 'now-indicator';
-            nowIndicator.id = 'now-indicator';
-            nowIndicator.style.left = `${(nowMinutes / 1440) * 100}%`;
-            track.appendChild(nowIndicator);
-        }
-
-        row.append(label, track);
-        dayRows.appendChild(row);
-    }
-
-    renderWeekBlocks();
-}
-
-// Convert a time interval (clamped to a single day) into horizontal positioning for the
-// row-based timeline (left%/width% of the day track) and also keep top/height as legacy
-// values for any callers still using them.
-function getCalendarSegmentLayout(segmentStartMs, segmentEndMs, dayStartMs, dayEndMs) {
-    const clampedStartMs = Math.max(segmentStartMs, dayStartMs);
-    const clampedEndMs = Math.min(segmentEndMs, dayEndMs);
-    const segmentStartDate = new Date(clampedStartMs);
-    const segmentEndDate = new Date(clampedEndMs);
-    const startMinutes = segmentStartDate.getHours() * 60 + segmentStartDate.getMinutes();
-    const reachesDayEnd = segmentEndMs >= dayEndMs;
-    const endMinutes = reachesDayEnd
-        ? 24 * 60
-        : segmentEndDate.getHours() * 60 + segmentEndDate.getMinutes();
-
-    return {
-        leftPercent: (startMinutes / 1440) * 100,
-        widthPercent: Math.max(0.5, ((endMinutes - startMinutes) / 1440) * 100),
-        topPosition: (startMinutes / 60) * 40,
-        height: Math.max(20, ((endMinutes - startMinutes) / 60) * 40),
-        startMinutes,
-        endMinutes,
-        segmentStartDate,
-        segmentEndDate
-    };
-}
-
-// Render active manual blocks on the weekly calendar by projecting their concrete
-// timestamps onto the matching weekday(s). Overnight blocks render two halves on
-// consecutive weekdays. Fully-past blocks are not drawn.
-function renderWeekBlocks() {
-    const noBlocksMsg = document.getElementById('no-blocks-message');
-    const now = Date.now();
-
-    // Clear existing blocks from all day tracks (preserve the now-indicator on today).
-    document.querySelectorAll('.day-track').forEach(track => {
-        const nowIndicator = track.querySelector('#now-indicator');
-        track.innerHTML = '';
-        if (nowIndicator) track.appendChild(nowIndicator);
-    });
-
-    // Always-on active blocks are represented in the "Always on" pill row instead of
-    // being drawn as bars across the timeline.
-    const visibleBlocks = state.appData.activeBlocks.filter(block =>
-        !isBlockAlwaysOn(block) && block.endTime > now
-    );
-
-    const hasSchedules = state.appData.schedules && state.appData.schedules.length > 0;
-    const hasAlwaysOnBlocks = state.appData.activeBlocks.some(b => isBlockAlwaysOn(b));
-
-    // Hide the "No active blocks" overlay — empty calendar is self-explanatory.
-    noBlocksMsg?.classList.add('hidden');
-
-    visibleBlocks.forEach(block => {
-        const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
-        if (!blocklist) return;
-
-        // The eye chip above the schedule is authoritative — hidden means hidden,
-        // even if the blocklist is currently selected.
-        if (blocklist.alwaysShowInSchedule === false) {
-            return;
-        }
-
-        const isRunning = block.startTime <= now;
-        renderManualBlockOnWeekdays(block, blocklist, isRunning);
-    });
-
-    renderScheduledCalendarBlocks();
-    layoutOverlappingBlocks();
-    renderScheduleAlwaysOnRow();
-    renderScheduleVisibilityChips();
-    refreshCalendarPreviews();
-}
-
-// Build a calendar block element for a manual one-off block on a specific weekday slice.
-function buildManualBlockElement(block, blocklist, leftPct, widthPct, segmentStartDate, segmentEndDate, isRunning) {
-    const blockEl = document.createElement('div');
-    blockEl.className = 'calendar-block';
-    if (isRunning) blockEl.classList.add('running');
-    blockEl.dataset.blockId = block.id;
-    blockEl.style.left = `${leftPct}%`;
-    blockEl.style.width = `${widthPct}%`;
-
-    if (blocklist.color) {
-        blockEl.style.background = blocklist.color;
-        blockEl.style.color = getContrastTextColor(blocklist.color);
-    }
-
-    // Show "until HH:MM" for currently-running blocks; otherwise show the block's range.
-    const timeLabel = isRunning
-        ? `until ${formatTime(segmentEndDate)}`
-        : `${formatTime(segmentStartDate)} - ${formatTime(segmentEndDate)}`;
-
-    blockEl.innerHTML = `
-        <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
-        <span class="block-label">${escapeHtml(blocklist.name)}</span>
-        <span class="block-time">${timeLabel}</span>
-    `;
-
-    blockEl.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openOverrideModal(block.id);
-    });
-
-    return blockEl;
-}
-
-// Render a manual block onto the weekly grid by computing the weekday(s) it spans.
-// Multi-day blocks are split per weekday; today's slice is clamped to start at "now" so
-// running blocks visually begin at the now-indicator.
-function renderManualBlockOnWeekdays(block, blocklist, isRunning) {
-    const startDate = new Date(block.startTime);
-    const endDate = new Date(block.endTime);
-    const now = Date.now();
-
-    const startDay = new Date(startDate);
-    startDay.setHours(0, 0, 0, 0);
-    const endDay = new Date(endDate);
-    endDay.setHours(0, 0, 0, 0);
-
-    let cursor = new Date(startDay);
-    while (cursor.getTime() <= endDay.getTime()) {
-        const sliceDayStartMs = cursor.getTime();
-        const sliceDayEndMs = sliceDayStartMs + 24 * 60 * 60 * 1000 - 1;
-
-        let sliceStartMs = Math.max(block.startTime, sliceDayStartMs);
-        const sliceEndMs = Math.min(block.endTime, sliceDayEndMs);
-
-        // For the currently-running slice, clamp the visible start to "now" so the bar
-        // doesn't draw over time that has already elapsed.
-        if (isRunning && now > sliceStartMs && now < sliceEndMs) {
-            sliceStartMs = now;
-        }
-
-        // Skip past slices entirely.
-        if (sliceEndMs <= now) {
-            cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
-            continue;
-        }
-
-        const sliceDate = new Date(sliceStartMs);
-        const jsDay = sliceDate.getDay();
-        const dayIndex = jsDay === 0 ? 6 : jsDay - 1;
-        const track = document.querySelector(`.day-track[data-day-index="${dayIndex}"]`);
-        if (track) {
-            const layout = getCalendarSegmentLayout(sliceStartMs, sliceEndMs, sliceDayStartMs, sliceDayEndMs);
-            const blockEl = buildManualBlockElement(
-                block, blocklist,
-                layout.leftPercent, layout.widthPercent,
-                layout.segmentStartDate, layout.segmentEndDate,
-                isRunning && sliceStartMs <= now && now < sliceEndMs
-            );
-            track.appendChild(blockEl);
-        }
-
-        cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
-    }
-}
-
-
-// Compute when the schedule's currently-active segment ends, returning a Date.
-// Returns null if no segment is active right now. Handles repeating, overnight, and
-// non-repeating schedules. Used by the "BLOCKING NOW" row to show "until HH:MM".
-function getScheduleCurrentSegmentEnd(schedule, nowDate = new Date()) {
-    if (!isScheduleSegmentActiveNow(schedule, nowDate)) return null;
-
-    if (isNonRepeatingSchedule(schedule)) {
-        const nowMs = nowDate.getTime();
-        const occurrence = resolveOneShotOccurrences(schedule).find(occ =>
-            nowMs >= occ.start.getTime() && nowMs < occ.end.getTime()
-        );
-        return occurrence ? new Date(occurrence.end) : null;
-    }
-
-    const currentDay = nowDate.getDay() === 0 ? 6 : nowDate.getDay() - 1; // Mon=0
-    const currentMins = nowDate.getHours() * 60 + nowDate.getMinutes();
-    const yesterdayDay = currentDay === 0 ? 6 : currentDay - 1;
-
-    for (const seg of schedule.segments) {
-        const startMins = seg.startHour * 60 + seg.startMinute;
-        const endMins = seg.endHour * 60 + seg.endMinute;
-        const days = Array.isArray(seg.days) ? seg.days : [];
-
-        // 24/7 segment: use end-of-day for the "until" label so we have something concrete.
-        if (startMins === endMins && days.includes(currentDay)) {
-            const end = new Date(nowDate);
-            end.setHours(23, 59, 0, 0);
-            return end;
-        }
-        // Same-day window matching now.
-        if (endMins > startMins && days.includes(currentDay) && currentMins >= startMins && currentMins < endMins) {
-            const end = new Date(nowDate);
-            end.setHours(seg.endHour, seg.endMinute, 0, 0);
-            return end;
-        }
-        // Overnight head: started yesterday-evening side, but it's stored on `currentDay`.
-        if (endMins < startMins && days.includes(currentDay) && currentMins >= startMins) {
-            const end = new Date(nowDate);
-            end.setDate(end.getDate() + 1);
-            end.setHours(seg.endHour, seg.endMinute, 0, 0);
-            return end;
-        }
-        // Overnight tail: today is the morning side of yesterday's segment.
-        if (endMins < startMins && days.includes(yesterdayDay) && currentMins < endMins) {
-            const end = new Date(nowDate);
-            end.setHours(seg.endHour, seg.endMinute, 0, 0);
-            return end;
-        }
-    }
-    return null;
-}
-
-// Build the list of items to show in the "BLOCKING NOW" row: every one-off block that's
-// currently running (and not paused) plus every schedule whose segment is active now.
-function collectNowBlockingEntries(now = Date.now()) {
-    const nowDate = new Date(now);
-    const entries = [];
-
-    for (const block of state.appData.activeBlocks || []) {
-        if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
-        const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
-        if (!blocklist) continue;
-        entries.push({
-            kind: 'block',
-            id: block.id,
-            blocklistId: block.blocklistId,
-            blocklist,
-            until: isBlockAlwaysOn(block) ? null : new Date(block.endTime),
-            isAlwaysOn: isBlockAlwaysOn(block)
-        });
-    }
-
-    for (const schedule of state.appData.schedules || []) {
-        if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
-        const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-        if (!blocklist) continue;
-        // A schedule and a one-off for the same blocklist could both be active; keep both
-        // (they're independent rules) so the user can act on whichever they intend.
-        entries.push({
-            kind: 'schedule',
-            id: schedule.id || schedule.blocklistId,
-            blocklistId: schedule.blocklistId,
-            blocklist,
-            schedule,
-            until: getScheduleCurrentSegmentEnd(schedule, nowDate),
-            isAlwaysOn: false
-        });
-    }
-
-    // Sort to match the visual order of the "My Blocklists" section, which iterates
-    // `state.appData.blocklists` in array order. Entries whose blocklist isn't found in that
-    // array (shouldn't happen, but be safe) sort to the end. Within a single blocklist,
-    // one-off blocks come before schedules so explicit user-started actions read first.
-    const order = new Map(state.appData.blocklists.map((bl, i) => [bl.id, i]));
-    const kindRank = { block: 0, schedule: 1 };
-    entries.sort((a, b) => {
-        const ai = order.has(a.blocklistId) ? order.get(a.blocklistId) : Number.MAX_SAFE_INTEGER;
-        const bi = order.has(b.blocklistId) ? order.get(b.blocklistId) : Number.MAX_SAFE_INTEGER;
-        if (ai !== bi) return ai - bi;
-        return (kindRank[a.kind] ?? 9) - (kindRank[b.kind] ?? 9);
-    });
-
-    return entries;
-}
-
-// Close any currently-open chip menu popover. Called from outside-click handlers and
-// before opening a new menu (so only one is ever visible).
-export function closeNowBlockingChipMenus() {
-    document.querySelectorAll('.now-blocking-chip-menu').forEach(el => el.remove());
-    document.querySelectorAll('.now-blocking-chip-menu-btn[aria-expanded="true"]').forEach(btn => {
-        btn.setAttribute('aria-expanded', 'false');
-    });
-}
-
-// Open a small Edit / Pause / Stop popover anchored to `triggerBtn` for the given entry.
-function openNowBlockingChipMenu(triggerBtn, entry) {
-    closeNowBlockingChipMenus();
-
-    const menu = document.createElement('div');
-    menu.className = 'now-blocking-chip-menu';
-    menu.setAttribute('role', 'menu');
-
-    // square = Stop focus space button (matches the Lucide icon on the main action button).
-    const editIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>';
-    const pauseIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
-    const stopIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>';
-
-    const items = [
-        { label: tSettings('nowBlockingMenuEdit'), icon: editIcon, action: () => handleNowBlockingEdit(entry) },
-        { label: tSettings('nowBlockingMenuPause'), icon: pauseIcon, action: () => handleNowBlockingPause(entry) },
-        { label: tSettings('nowBlockingMenuStop'), icon: stopIcon, action: () => handleNowBlockingStop(entry), danger: true }
-    ];
-
-    items.forEach(item => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'now-blocking-chip-menu-item' + (item.danger ? ' danger' : '');
-        btn.setAttribute('role', 'menuitem');
-        btn.innerHTML = `${item.icon}<span>${escapeHtml(item.label)}</span>`;
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            closeNowBlockingChipMenus();
-            item.action();
-        });
-        menu.appendChild(btn);
-    });
-
-    document.body.appendChild(menu);
-
-    // Position the menu just below the trigger, keeping it on-screen horizontally.
-    const rect = triggerBtn.getBoundingClientRect();
-    const menuRect = menu.getBoundingClientRect();
-    let left = rect.right - menuRect.width;
-    if (left < 8) left = 8;
-    const maxLeft = window.innerWidth - menuRect.width - 8;
-    if (left > maxLeft) left = maxLeft;
-    menu.style.left = `${left + window.scrollX}px`;
-    menu.style.top = `${rect.bottom + window.scrollY + 4}px`;
-
-    triggerBtn.setAttribute('aria-expanded', 'true');
-
-    // Outside-click closes the menu. Escape is handled by dismissTopmostEscapeLayer()
-    // (chip menu is checked first). Delay so the opening click doesn't close immediately.
-    setTimeout(() => {
-        const onDocClick = (e) => {
-            if (!menu.contains(e.target) && e.target !== triggerBtn) {
-                closeNowBlockingChipMenus();
-                document.removeEventListener('click', onDocClick, true);
-            }
-        };
-        document.addEventListener('click', onDocClick, true);
-    }, 0);
-}
-
-// Edit action: select the chip's blocklist and open the blocklist edit dialog.
-function handleNowBlockingEdit(entry) {
-    const blocklist = entry.blocklist;
-    if (!blocklist) return;
-    const dropdown = document.getElementById('blocklist-select');
-    if (dropdown) {
-        dropdown.value = blocklist.id;
-        handleBlocklistSelect({ target: dropdown });
-    } else {
-        state.selectedBlocklistId = blocklist.id;
-    }
-    openBlocklistModal(blocklist);
-}
-
-// Pause action: open the pause modal for the corresponding block or schedule.
-function handleNowBlockingPause(entry) {
-    if (entry.kind === 'block') {
-        pauseScheduleData = null;
-        openPauseModal(entry.id);
-        return;
-    }
-    if (entry.kind === 'schedule') {
-        pauseScheduleData = {
-            blocklistId: entry.blocklistId,
-            isActiveNow: true
-        };
-        openPauseModal(null);
-    }
-}
-
-// Stop action: open the override modal so the user has to type the challenge to stop.
-function handleNowBlockingStop(entry) {
-    if (entry.kind === 'block') {
-        openOverrideModal(entry.id);
-        return;
-    }
-    if (entry.kind === 'schedule' && entry.schedule) {
-        openScheduleOverrideModal(entry.schedule);
-    }
-}
-
-function buildNowBlockingIdleMessage(nowMs = Date.now()) {
-    const upcoming = pickEarliestUpcomingScheduledBlock(nowMs);
-    if (!upcoming) {
-        return tSettings('titleBarNoActiveBlocks');
-    }
-    const whenPhrase = formatTitleBarScheduleStartWhen(new Date(upcoming.startMs), nowMs);
-    const emojiRaw = upcoming.blocklist.emoji != null ? String(upcoming.blocklist.emoji).trim() : '';
-    const emoji = emojiRaw || '🚫';
-    return tSettings('titleBarNextScheduleStarts')
-        .replace('{emoji}', emoji)
-        .replace('{name}', upcoming.blocklist.name || '')
-        .replace('{when}', whenPhrase);
-}
-
-/** True when the idle title-bar row already shows `idleMessage` with the expected DOM shape. */
-function isNowBlockingIdleDisplayCurrent(row, chipsEl, idleMessage) {
-    if (!row?.classList.contains('idle')) return false;
-    const existingIdle = document.getElementById('now-blocking-idle-msg');
-    if (!existingIdle || existingIdle.parentElement !== chipsEl) return false;
-    if (chipsEl.childElementCount !== 1) return false;
-    if (existingIdle.textContent !== idleMessage) return false;
-    if (row.getAttribute('aria-labelledby') !== 'now-blocking-idle-msg') return false;
-    return true;
-}
-
-function buildNowBlockingUntilText(entry, nowMs = Date.now()) {
-    if (entry.isAlwaysOn) {
-        return tSettings('nowBlockingAlways');
-    }
-    if (!entry.until) return '';
-    const remainMs = entry.until - nowMs;
-    if (remainMs <= 0) return '';
-    const totalMins = Math.ceil(remainMs / 60000);
-    return formatBlockTimeRemainingShort(totalMins);
-}
-
-/** True when active chips already match `entries` in order, shape, and static labels. */
-function isNowBlockingActiveChipsCurrent(row, chipsEl, entries) {
-    if (row.classList.contains('idle')) return false;
-    if (row.getAttribute('aria-labelledby') !== 'now-blocking-label-text') return false;
-    const manyActive = entries.length > 2;
-    if (row.classList.contains('many-active-chips') !== manyActive) return false;
-    const chips = chipsEl.querySelectorAll('.now-blocking-chip');
-    if (chips.length !== entries.length) return false;
-
-    for (let i = 0; i < entries.length; i++) {
-        const entry = entries[i];
-        const chip = chips[i];
-        if (chip.dataset.kind !== entry.kind || chip.dataset.id !== String(entry.id)) {
-            return false;
-        }
-        const emojiEl = chip.querySelector('.now-blocking-chip-emoji');
-        const nameEl = chip.querySelector('.now-blocking-chip-name');
-        const menuBtn = chip.querySelector('.now-blocking-chip-menu-btn');
-        if (!emojiEl || !nameEl || !menuBtn) return false;
-        const emoji = entry.blocklist.emoji || '🚫';
-        const name = entry.blocklist.name || '';
-        if (emojiEl.textContent !== emoji || nameEl.textContent !== name) return false;
-    }
-    return true;
-}
-
-/** Patch countdown copy on existing chips — skips DOM rebuild and menu listener churn. */
-function updateNowBlockingActiveChipTexts(chipsEl, entries, nowMs = Date.now()) {
-    const chips = chipsEl.querySelectorAll('.now-blocking-chip');
-    const manyActive = entries.length > 2;
-    chips.forEach((chip, i) => {
-        const entry = entries[i];
-        const untilText = buildNowBlockingUntilText(entry, nowMs);
-        let untilEl = chip.querySelector('.now-blocking-chip-until');
-        if (untilText) {
-            if (!untilEl) {
-                untilEl = document.createElement('span');
-                untilEl.className = 'now-blocking-chip-until';
-                const menuBtn = chip.querySelector('.now-blocking-chip-menu-btn');
-                chip.insertBefore(untilEl, menuBtn);
-            }
-            if (untilEl.textContent !== untilText) {
-                untilEl.textContent = untilText;
-            }
-        } else if (untilEl) {
-            untilEl.remove();
-        }
-
-        if (manyActive) {
-            const name = entry.blocklist.name || '';
-            const emoji = entry.blocklist.emoji || '🚫';
-            const namePart = String(name || '').trim() || emoji;
-            const labelBits = untilText ? [namePart, untilText] : [namePart];
-            const nextLabel = labelBits.join('. ');
-            if (chip.getAttribute('aria-label') !== nextLabel) {
-                chip.setAttribute('aria-label', nextLabel);
-            }
-        } else {
-            chip.removeAttribute('aria-label');
-        }
-    });
-}
-
-const NOW_BLOCKING_CHIP_MENU_ICON = '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>';
-
-function appendNowBlockingChip(chipsEl, entry, entries, nowMs) {
-    const chip = document.createElement('div');
-    chip.className = 'now-blocking-chip';
-    chip.dataset.kind = entry.kind;
-    chip.dataset.id = String(entry.id);
-
-    const emoji = entry.blocklist.emoji || '🚫';
-    const name = entry.blocklist.name || '';
-    const untilText = buildNowBlockingUntilText(entry, nowMs);
-
-    chip.innerHTML = `
-        <span class="now-blocking-chip-emoji">${escapeHtml(emoji)}</span>
-        <span class="now-blocking-chip-name">${escapeHtml(name)}</span>
-        ${untilText ? `<span class="now-blocking-chip-until">${escapeHtml(untilText)}</span>` : ''}
-    `;
-
-    if (entries.length > 2) {
-        const namePart = String(name || '').trim() || emoji;
-        const labelBits = untilText ? [namePart, untilText] : [namePart];
-        chip.setAttribute('aria-label', labelBits.join('. '));
-    }
-
-    const menuBtn = document.createElement('button');
-    menuBtn.type = 'button';
-    menuBtn.className = 'now-blocking-chip-menu-btn';
-    menuBtn.setAttribute('aria-haspopup', 'menu');
-    menuBtn.setAttribute('aria-expanded', 'false');
-    menuBtn.setAttribute('aria-label', tSettings('nowBlockingMenuAria'));
-    menuBtn.title = tSettings('nowBlockingMenuAria');
-    menuBtn.innerHTML = NOW_BLOCKING_CHIP_MENU_ICON;
-    menuBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const isOpen = menuBtn.getAttribute('aria-expanded') === 'true';
-        if (isOpen) {
-            closeNowBlockingChipMenus();
-        } else {
-            openNowBlockingChipMenu(menuBtn, entry);
-        }
-    });
-    chip.appendChild(menuBtn);
-
-    chipsEl.appendChild(chip);
-}
-
-// Render the title-bar status row: active chips — or idle copy showing the next scheduled start when applicable.
-function renderNowBlockingRow(nowMs = Date.now()) {
-    const row = document.getElementById('now-blocking-row');
-    const chipsEl = document.getElementById('now-blocking-chips');
-    if (!row || !chipsEl) return;
-
-    row.classList.remove('hidden');
-
-    const entries = collectNowBlockingEntries(nowMs);
-
-    if (entries.length === 0) {
-        const idleMessage = buildNowBlockingIdleMessage(nowMs);
-        // Idle copy is day-granular ("today", "tomorrow", or a date) — not a per-second
-        // countdown — so skip clearing/rebuilding the row when nothing changed.
-        if (isNowBlockingIdleDisplayCurrent(row, chipsEl, idleMessage)) {
-            return;
-        }
-
-        closeNowBlockingChipMenus();
-        row.classList.add('idle');
-        row.classList.remove('many-active-chips');
-        row.setAttribute('aria-labelledby', 'now-blocking-idle-msg');
-
-        chipsEl.innerHTML = '';
-        const idleSpan = document.createElement('span');
-        idleSpan.id = 'now-blocking-idle-msg';
-        idleSpan.className = 'now-blocking-idle-msg';
-        idleSpan.setAttribute('data-tauri-drag-region', '');
-        idleSpan.textContent = idleMessage;
-
-        chipsEl.appendChild(idleSpan);
-        requestAnimationFrame(() => syncNowBlockingChipsScrollability());
-        return;
-    }
-
-    row.classList.remove('idle');
-    row.classList.toggle('many-active-chips', entries.length > 2);
-    row.setAttribute('aria-labelledby', 'now-blocking-label-text');
-
-    // Countdown text is minute-granular — patch existing chips when structure is unchanged.
-    if (isNowBlockingActiveChipsCurrent(row, chipsEl, entries)) {
-        updateNowBlockingActiveChipTexts(chipsEl, entries, nowMs);
-        return;
-    }
-
-    closeNowBlockingChipMenus();
-    chipsEl.innerHTML = '';
-    entries.forEach((entry) => appendNowBlockingChip(chipsEl, entry, entries, nowMs));
-    requestAnimationFrame(() => syncNowBlockingChipsScrollability());
-}
-
-
-/// Render the "Always on (not shown in timeline): <chip> <chip>" row above the calendar.
-/// Always-on active blocks aren't drawn as bars in the timeline because they would cover
-/// every day in full; this row makes their existence clear instead.
-function renderScheduleAlwaysOnRow() {
-    const row = document.getElementById('schedule-always-on-row');
-    const chips = document.getElementById('schedule-always-on-chips');
-    if (!row || !chips) return;
-
-    const alwaysOnBlocks = (state.appData.activeBlocks || []).filter(b => isBlockAlwaysOn(b));
-
-    // When the user has the "always" tab selected and picked a blocklist that isn't already
-    // running, show a faded preview chip alongside the real ones. This replaces the timeline
-    // preview bar that always-on mode used to draw across every day.
-    let previewBlocklist = null;
-    if (state.isAlwaysOnMode && !isScheduleMode && state.selectedBlocklistId) {
-        const candidate = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
-        const now = Date.now();
-        const alreadyActive = (state.appData.activeBlocks || []).some(b =>
-            b.blocklistId === state.selectedBlocklistId && b.startTime <= now && b.endTime > now
-        );
-        if (candidate && !alreadyActive) {
-            previewBlocklist = candidate;
-        }
-    }
-
-    if (alwaysOnBlocks.length === 0 && !previewBlocklist) {
-        row.classList.add('hidden');
-        chips.innerHTML = '';
-        return;
-    }
-
-    chips.innerHTML = '';
-
-    alwaysOnBlocks.forEach(block => {
-        const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
-        if (!blocklist) return;
-
-        const chip = document.createElement('button');
-        chip.type = 'button';
-        chip.className = 'always-on-chip';
-        chip.dataset.blockId = block.id;
-        chip.title = blocklist.name;
-
-        const emoji = blocklist.emoji
-            ? `<span class="always-on-chip-emoji">${escapeHtml(blocklist.emoji)}</span>`
-            : '';
-
-        chip.innerHTML = `${emoji}<span class="always-on-chip-name">${escapeHtml(blocklist.name)}</span>`;
-
-        // Clicking the chip opens the override modal so the user can stop the always-on block.
-        chip.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openOverrideModal(block.id);
-        });
-
-        chips.appendChild(chip);
-    });
-
-    if (previewBlocklist) {
-        const chip = document.createElement('div');
-        chip.className = 'always-on-chip preview';
-        chip.title = previewBlocklist.name;
-
-        const emoji = previewBlocklist.emoji
-            ? `<span class="always-on-chip-emoji">${escapeHtml(previewBlocklist.emoji)}</span>`
-            : '';
-
-        chip.innerHTML = `${emoji}<span class="always-on-chip-name">${escapeHtml(previewBlocklist.name)}</span>`;
-        chips.appendChild(chip);
-    }
-
-    row.classList.remove('hidden');
-}
-
-/// Render a row of eye/eye-slash chips under the Schedule header — one per blocklist that
-/// currently contributes anything to the calendar (has an active/future manual block or a
-/// defined schedule). Clicking a chip toggles blocklist.alwaysShowInSchedule.
-function renderScheduleVisibilityChips() {
-    const container = document.getElementById('schedule-visibility-chips');
-    if (!container) return;
-
-    const now = Date.now();
-    const scheduledIds = new Set((state.appData.schedules || []).map(s => s.blocklistId));
-    // Always-on blocks aren't drawn in the timeline (they're surfaced by the "Always on"
-    // row above instead), so don't add a visibility chip for them either.
-    const manualIds = new Set(
-        (state.appData.activeBlocks || [])
-            .filter(b => b.endTime > now && !isBlockAlwaysOn(b))
-            .map(b => b.blocklistId)
-    );
-    const relevantIds = new Set([...scheduledIds, ...manualIds]);
-
-    const blocklists = (state.appData.blocklists || []).filter(bl => relevantIds.has(bl.id));
-
-    if (blocklists.length === 0) {
-        container.classList.add('hidden');
-        container.innerHTML = '';
-        return;
-    }
-
-    container.classList.remove('hidden');
-    container.innerHTML = '';
-
-    const eyeOpenSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
-    const eyeClosedSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
-
-    for (const bl of blocklists) {
-        const visible = bl.alwaysShowInSchedule !== false;
-        const chip = document.createElement('button');
-        chip.type = 'button';
-        chip.className = 'schedule-visibility-chip';
-        chip.setAttribute('aria-pressed', visible ? 'true' : 'false');
-        chip.dataset.blocklistId = bl.id;
-        chip.title = visible ? 'Hide from schedule' : 'Show in schedule';
-        chip.innerHTML = `
-            ${visible ? eyeOpenSvg : eyeClosedSvg}
-            <span class="schedule-visibility-chip-name">${bl.emoji ? escapeHtml(bl.emoji) + ' ' : ''}${escapeHtml(bl.name || '')}</span>
-        `;
-        chip.addEventListener('click', async () => {
-            const blocklist = state.appData.blocklists.find(b => b.id === bl.id);
-            if (!blocklist) return;
-            blocklist.alwaysShowInSchedule = !(blocklist.alwaysShowInSchedule !== false);
-            await saveData();
-            renderWeekBlocks();
-            // renderWeekBlocks wipes all day tracks; re-add any in-flight preview block(s).
-            handleTimeChange();
-        });
-        container.appendChild(chip);
-    }
-}
-
-// Layout overlapping blocks within a day row.
-//
-// In the row-based layout, blocks already use left%/width% to position by time, so blocks
-// that overlap in time would visually overlap horizontally. We resolve this by stacking
-// overlapping blocks vertically *within* the row: the row is divided into N horizontal
-// lanes (where N is the maximum overlap depth), each block sits in one lane.
-function layoutOverlappingBlocks() {
-    document.querySelectorAll('.day-track').forEach(track => {
-        const blocks = Array.from(track.querySelectorAll('.calendar-block'));
-        // Reset any previous lane styling so single-block rows render at full height.
-        blocks.forEach(b => {
-            b.style.top = '';
-            b.style.bottom = '';
-            b.style.height = '';
-        });
-        if (blocks.length <= 1) return;
-
-        // Compute time-extents (in % of day width) from current left/width styles.
-        const blockData = blocks.map(block => {
-            const left = parseFloat(block.style.left) || 0;
-            const width = parseFloat(block.style.width) || 0;
-            const groupId = block.dataset.scheduleId || block.dataset.blockId || block.dataset.previewGroupId || null;
-            return {
-                element: block,
-                left,
-                right: left + width,
-                groupId,
-                lane: 0,
-                totalLanes: 1
-            };
-        });
-
-        // Sort by left edge so we assign lanes greedily from earliest start.
-        blockData.sort((a, b) => a.left - b.left || a.right - b.right);
-
-        const groupLanes = new Map();
-
-        for (let i = 0; i < blockData.length; i++) {
-            const current = blockData[i];
-
-            if (current.groupId && groupLanes.has(current.groupId)) {
-                current.lane = groupLanes.get(current.groupId);
-                continue;
-            }
-
-            const overlappingGroups = new Set();
-            for (let j = 0; j < blockData.length; j++) {
-                if (i === j) continue;
-                const other = blockData[j];
-                if (!(current.right <= other.left || current.left >= other.right)) {
-                    if (other.groupId !== current.groupId) {
-                        overlappingGroups.add(other.groupId);
-                    }
-                }
-            }
-
-            const usedLanes = new Set();
-            overlappingGroups.forEach(gid => {
-                if (groupLanes.has(gid)) usedLanes.add(groupLanes.get(gid));
-            });
-
-            let lane = 1;
-            while (usedLanes.has(lane)) lane++;
-            current.lane = lane;
-            if (current.groupId) groupLanes.set(current.groupId, lane);
-        }
-
-        for (let i = 0; i < blockData.length; i++) {
-            const current = blockData[i];
-            let maxLane = current.lane;
-            for (let j = 0; j < blockData.length; j++) {
-                if (i === j) continue;
-                const other = blockData[j];
-                if (!(current.right <= other.left || current.left >= other.right)) {
-                    maxLane = Math.max(maxLane, other.lane);
-                }
-            }
-            current.totalLanes = maxLane;
-        }
-
-        blockData.forEach(data => {
-            if (data.totalLanes > 1) {
-                const lanePercent = 100 / data.totalLanes;
-                const topPercent = (data.lane - 1) * lanePercent;
-                data.element.style.top = `calc(${topPercent}% + 2px)`;
-                data.element.style.height = `calc(${lanePercent}% - 4px)`;
-                data.element.style.bottom = 'auto';
-            }
-        });
-    });
-}
-
-// Render saved schedules onto the weekly calendar by weekday. Each segment lays out on
-// every weekday listed in its `days` array; overnight segments split into a tail on the
-// next weekday (wrapping Sun → Mon). One-shot non-repeating schedules render onto the
-// weekday of each resolved occurrence.
-function renderScheduledCalendarBlocks() {
-    if (!state.appData.schedules || state.appData.schedules.length === 0) return;
-
-    const now = new Date();
-
-    state.appData.schedules.forEach(schedule => {
-        const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-        if (!blocklist) return;
-
-        // The eye chip above the schedule is authoritative — hidden means hidden,
-        // even if the blocklist is currently selected.
-        if (blocklist.alwaysShowInSchedule === false) {
-            return;
-        }
-
-        // Date-limited schedules drop off the calendar once their end date has passed.
-        if (schedule.repeatType === 'date' && schedule.repeatDate) {
-            const endDate = new Date(schedule.repeatDate);
-            if (now > endDate) return;
-        }
-
-        if (isNonRepeatingSchedule(schedule)) {
-            // One-shot occurrences carry an explicit dayIndex (Mon=0..Sun=6). Render on
-            // that weekday using the segment's clock-times.
-            const occurrences = resolveOneShotOccurrences(schedule);
-            occurrences.forEach(occurrence => {
-                if (occurrence.end.getTime() <= now.getTime()) return; // already finished
-                const segment = schedule.segments[occurrence.segmentIndex];
-                if (!segment) return;
-                renderScheduleSegmentOnWeekday(schedule, segment, occurrence.segmentIndex, occurrence.dayIndex, blocklist);
-            });
-            return;
-        }
-
-        schedule.segments.forEach((segment, segmentIdx) => {
-            const segmentDays = segment.days || [];
-            segmentDays.forEach(dayIndex => {
-                renderScheduleSegmentOnWeekday(schedule, segment, segmentIdx, dayIndex, blocklist);
-            });
-        });
-    });
-}
-
-// Render a single schedule segment onto the day-track for a specific weekday.
-// Overnight segments split: head from start..24:00 on this weekday, tail from 00:00..end
-// on the next weekday (wrapping Sun → Mon).
-function renderScheduleSegmentOnWeekday(schedule, segment, segmentIdx, dayIndex, blocklist) {
-    const track = document.querySelector(`.day-track[data-day-index="${dayIndex}"]`);
-    if (!track) return;
-
-    const startMinutes = segment.startHour * 60 + segment.startMinute;
-    const endMinutes = segment.endHour * 60 + segment.endMinute;
-    const isOvernight = endMinutes <= startMinutes;
-
-    const startTimeStr = `${String(segment.startHour).padStart(2, '0')}:${String(segment.startMinute).padStart(2, '0')}`;
-    const endTimeStr = `${String(segment.endHour).padStart(2, '0')}:${String(segment.endMinute).padStart(2, '0')}`;
-
-    const buildBlock = (leftPct, widthPct, hostDayIndex, isContinuation) => {
-        const el = document.createElement('div');
-        el.className = `calendar-block scheduled${isContinuation ? ' overnight-continuation' : ''}`;
-        el.dataset.scheduleId = schedule.id;
-        el.dataset.segmentIndex = segmentIdx;
-        el.dataset.day = hostDayIndex;
-        el.style.left = `${leftPct}%`;
-        el.style.width = `${widthPct}%`;
-
-        if (blocklist.color) {
-            el.style.background = blocklist.color;
-            el.style.opacity = '0.7';
-            el.style.color = getContrastTextColor(blocklist.color);
-        }
-
-        el.innerHTML = `
-            <span class="block-emoji">${blocklist.emoji || '🚫'}</span>
-            <span class="block-label">${escapeHtml(blocklist.name)}</span>
-            <span class="block-time">${startTimeStr} - ${endTimeStr}</span>
-        `;
-
-        el.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openScheduledBlockEdit(schedule);
-        });
-
-        return el;
-    };
-
-    if (isOvernight) {
-        const left1 = (startMinutes / 1440) * 100;
-        const width1 = Math.max(0.5, ((1440 - startMinutes) / 1440) * 100);
-        track.appendChild(buildBlock(left1, width1, dayIndex, false));
-
-        const nextDayIndex = (dayIndex + 1) % 7;
-        const nextTrack = document.querySelector(`.day-track[data-day-index="${nextDayIndex}"]`);
-        if (nextTrack) {
-            const width2 = Math.max(0.5, (endMinutes / 1440) * 100);
-            nextTrack.appendChild(buildBlock(0, width2, nextDayIndex, true));
-        }
-    } else {
-        const left = (startMinutes / 1440) * 100;
-        const width = Math.max(0.5, ((endMinutes - startMinutes) / 1440) * 100);
-        track.appendChild(buildBlock(left, width, dayIndex, false));
-    }
-}
-
-// Render blocklist selector dropdown
-function renderBlocklistSelector() {
-    const select = document.getElementById('blocklist-select');
-    const currentValue = select.value;
-    const activeIds = state.appData.activeBlocks.map(b => b.blocklistId);
-
-    const newHTML = `
-    <option value="">${tSettings('selectionPromptOption')}</option>
-    ${state.appData.blocklists.map(bl => {
-        const isActive = activeIds.includes(bl.id);
-        const activeLabel = isActive ? tSettings('runningSuffix') : '';
-        return `<option value="${bl.id}">${escapeHtml(bl.name)}${activeLabel}</option>`;
-    }).join('')}
-  `;
-
-    // Only update if changed to prevent closing dropdown
-    // Normalize logic to ignore potential minor diffs if logic is sound, but direct string compare is fine
-    if (select.innerHTML !== newHTML) {
-        select.innerHTML = newHTML;
-        select.value = currentValue;
-    }
-}
 
 // Render blocklists
-function renderBlocklists() {
+export function renderBlocklists() {
     const container = document.getElementById('blocklists-container');
 
     if (state.appData.blocklists.length === 0) {
@@ -17438,7 +15486,7 @@ function renderBlocklists() {
 /// stay sticky). Pass `force: true` to clear that flag — used when the
 /// user just *created* a new blocklist, which is a strong "I want to
 /// use this" signal.
-function autoSelectSoleBlocklist({ force = false } = {}) {
+export function autoSelectSoleBlocklist({ force = false } = {}) {
     if (state.appData.blocklists.length !== 1) return;
     if (state.selectedBlocklistId) return;
     if (force) state.userExplicitlyDeselected = false;
@@ -17490,280 +15538,13 @@ function saveBlocklistOrderFromDOM() {
 }
 
 // Start interval to update remaining time
-function startTickInterval() {
-    // Track which blocks have been activated (to avoid repeated password prompts)
-    // Initialize activatedBlockIds with already-active blocks at startup
-    activatedBlockIds = new Set(
-        state.appData.activeBlocks
-            .filter(b => b.startTime <= Date.now())
-            .map(b => b.id)
-    );
-
-    // Initialize app blocking immediately at startup
-    // This ensures any active blocks or schedules are enforced right away
-    updateBlockedApps();
-    startTickInterval._lastScheduleStateSignature = getScheduleStateSignature();
-
-    startTickInterval._tickFn = async () => {
-        const now = Date.now();
-        let shouldSyncControls = false;
-
-        // Check for future blocks that have now become active
-        const newlyActiveBlocks = state.appData.activeBlocks.filter(
-            block => block.startTime <= now && !activatedBlockIds.has(block.id)
-        );
-
-        if (newlyActiveBlocks.length > 0) {
-            // Mark as activated
-            newlyActiveBlocks.forEach(b => activatedBlockIds.add(b.id));
-            // Update hosts to apply the blocking rules
-            await updateHostsFile();
-            render();
-            shouldSyncControls = true;
-        }
-
-        // Check for paused blocks that should resume
-        const resumedBlocks = state.appData.activeBlocks.filter(
-            block => block.isPaused && block.pauseEndTime && block.pauseEndTime <= now
-        );
-
-        if (resumedBlocks.length > 0) {
-            // Clear pause state
-            resumedBlocks.forEach(block => {
-                delete block.isPaused;
-                delete block.pauseEndTime;
-            });
-
-            await saveData();
-            await syncActiveBlocksToHelper();
-            await updateHostsFile();
-            await updateBlockedApps();
-            render();
-            shouldSyncControls = true;
-        }
-
-        // Check for paused schedules that should resume
-        if (state.appData.schedules) {
-            const resumedSchedules = state.appData.schedules.filter(
-                s => s.isPaused && s.pauseEndTime && s.pauseEndTime <= now
-            );
-
-            if (resumedSchedules.length > 0) {
-                resumedSchedules.forEach(schedule => {
-                    delete schedule.isPaused;
-                    delete schedule.pauseEndTime;
-                });
-
-                await saveData();
-                await syncSchedulesToHelper();
-                await updateHostsFile();
-                await updateBlockedApps();
-                render();
-                shouldSyncControls = true;
-            }
-        }
-
-        // Check for schedule segment transitions every 30s (schedules are minute-granular
-        // and the helper daemon handles transitions autonomously)
-        if (state.appData.schedules && state.appData.schedules.length > 0) {
-            if (!startTickInterval._scheduleTickCount) startTickInterval._scheduleTickCount = 0;
-            startTickInterval._scheduleTickCount++;
-
-            if (startTickInterval._scheduleTickCount >= 30) {
-                startTickInterval._scheduleTickCount = 0;
-                await updateHostsFile();
-                await updateBlockedApps();
-                shouldSyncControls = true;
-            }
-
-            // Check for expired non-repeating schedules and auto-stop them
-            const expiredScheduleIds = [];
-            const nowDate = new Date(now);
-
-            for (const schedule of state.appData.schedules) {
-                // Only check non-repeating schedules (repeatType === 'no' or undefined)
-                if (schedule.repeatType === 'forever') continue;
-
-                // For date-limited schedules, check if past the repeat date
-                if (schedule.repeatType === 'date' && schedule.repeatDate) {
-                    const endDate = new Date(schedule.repeatDate);
-                    endDate.setHours(23, 59, 59, 999); // End of day
-                    if (nowDate > endDate) {
-                        expiredScheduleIds.push(schedule.id);
-                        console.log('Schedule expired (past repeat date):', schedule.id);
-                    }
-                    continue;
-                }
-
-                // For non-repeating schedules (repeatType === 'no' or undefined)
-                // Calculate when each segment was supposed to occur based on createdAt
-                const createdAt = new Date(schedule.createdAt);
-                const createdDayOfWeek = createdAt.getDay() === 0 ? 6 : createdAt.getDay() - 1; // Convert to Mon=0 format
-
-                let allSegmentsExpired = true;
-
-                for (const segment of schedule.segments) {
-                    for (const segmentDay of segment.days) {
-                        // Calculate the actual date this segment occurs on
-                        // It should be the first occurrence of this day on or after createdAt
-                        let daysUntilSegment = segmentDay - createdDayOfWeek;
-                        if (daysUntilSegment < 0) daysUntilSegment += 7;
-
-                        const segmentDate = new Date(createdAt);
-                        segmentDate.setDate(segmentDate.getDate() + daysUntilSegment);
-                        segmentDate.setHours(segment.endHour, segment.endMinute, 0, 0);
-
-                        // If this segment's end time is still in the future, the schedule is not expired
-                        if (segmentDate > nowDate) {
-                            allSegmentsExpired = false;
-                            break;
-                        }
-                    }
-                    if (!allSegmentsExpired) break;
-                }
-
-                if (allSegmentsExpired) {
-                    expiredScheduleIds.push(schedule.id);
-                    console.log('Non-repeating schedule expired (all segments passed):', schedule.id);
-                }
-            }
-
-            // Remove expired schedules
-            if (expiredScheduleIds.length > 0) {
-                const previousScheduleCount = state.appData.schedules.length;
-                state.appData.schedules = state.appData.schedules.filter(s => !expiredScheduleIds.includes(s.id));
-
-                if (state.appData.schedules.length < previousScheduleCount) {
-                    console.log('Auto-stopped expired schedule(s):', expiredScheduleIds);
-                    state.activeScheduleSegmentCount = 0;
-                    await saveData();
-                    // Sync updated schedules to helper daemon
-                    await syncSchedulesToHelper();
-                    // Update blocked apps after schedule expiration
-                    await updateBlockedApps();
-                    render();
-                    shouldSyncControls = true;
-                }
-            }
-        }
-
-        // Check for expired blocks
-        const previousCount = state.appData.activeBlocks.length;
-        state.appData.activeBlocks = state.appData.activeBlocks.filter(block => block.endTime > now);
-
-        // Clean up activated set
-        activatedBlockIds = new Set(
-            [...activatedBlockIds].filter(id =>
-                state.appData.activeBlocks.some(b => b.id === id)
-            )
-        );
-
-        // Only re-render if blocks actually expired
-        if (state.appData.activeBlocks.length < previousCount) {
-            await saveData();
-            render();
-
-            // Sync blocking rules now that blocks have been removed.
-            // On iOS this clears Screen Time settings; on desktop the helper
-            // daemon handles expiry autonomously, but the call is harmless.
-            await updateHostsFile();
-            await updateBlockedApps();
-            shouldSyncControls = true;
-        }
-
-        const scheduleStateSignature = getScheduleStateSignature(now);
-        if (startTickInterval._lastScheduleStateSignature !== scheduleStateSignature) {
-            startTickInterval._lastScheduleStateSignature = scheduleStateSignature;
-            // Schedule segment transitioned (active↔inactive) — update blocking
-            // rules immediately so iOS Screen Time enforcement fires within ~1s
-            // instead of waiting up to 30s for the schedule tick counter.
-            if (state.isIOS) {
-                await syncSchedulesToHelper();
-            }
-            await updateHostsFile();
-            await updateBlockedApps();
-            render();
-            shouldSyncControls = true;
-        }
-        if (shouldSyncControls) {
-            syncSelectedControlState();
-        }
-
-        // Periodic re-render so the schedule "now" line and blocklist
-        // countdowns ("starts in Xh") don't go stale when no state has
-        // changed. Without this, after the WebView is idle for a while
-        // (e.g. system sleep) those displays remain frozen at the last
-        // render's timestamp until something else triggers render().
-        // Skip while hidden (tray / background) — kickClockNow() renders on focus.
-        if (document.visibilityState === 'visible') {
-            if (!startTickInterval._uiRefreshTickCount) startTickInterval._uiRefreshTickCount = 0;
-            startTickInterval._uiRefreshTickCount++;
-            if (startTickInterval._uiRefreshTickCount >= 60) {
-                startTickInterval._uiRefreshTickCount = 0;
-                render();
-            }
-        }
-
-        if (collectNowBlockingEntries(now).length === 0) {
-            renderNowBlockingRow(now);
-        }
-
-        // Update remaining times in UI
-        document.querySelectorAll('.entry-remaining').forEach((el, idx) => {
-            const block = state.appData.activeBlocks[idx];
-            if (block) {
-                if (block.isPaused) {
-                    const pauseRemaining = Math.max(0, Math.ceil((block.pauseEndTime - now) / 60000));
-                    el.textContent = `Paused — resumes in ${formatDuration(pauseRemaining)}`;
-                } else if (isBlockAlwaysOn(block)) {
-                    el.textContent = 'Always';
-                } else {
-                    const remaining = Math.max(0, Math.ceil((block.endTime - now) / 60000));
-                    el.textContent = `${formatDuration(remaining)} remaining`;
-                }
-            }
-        });
-
-        // Auto-update end time if user hasn't manually edited it (skip in always-on mode)
-        if (state.selectedBlocklistId && !state.userEditedEndTime && !state.isAlwaysOnMode) {
-            const newEndTime = new Date(now + state.targetDurationMinutes * 60 * 1000);
-            state.selectedEndHour = newEndTime.getHours();
-            state.selectedEndMinute = newEndTime.getMinutes();
-            updateTimeDisplay();
-            // Don't call handleTimeChange here to avoid circular updates
-        }
-    };
-    startTickInterval._intervalId = setInterval(startTickInterval._tickFn, 1000);
-}
-
-// Force an immediate re-render and restart the per-second tick. Called when
-// the window becomes visible or regains focus — macOS can pause/throttle
-// WKWebView's JS timers while the window is hidden or the system sleeps,
-// and the existing setInterval may not resume cleanly. Without this hook
-// the title-bar countdown and schedule "now" line could sit frozen on the
-// last-rendered timestamp until the process was killed.
-function kickClockNow() {
-    try { render(); } catch (e) { console.error('kickClockNow render failed', e); }
-    if (typeof startTickInterval._tickFn === 'function') {
-        if (startTickInterval._intervalId) {
-            clearInterval(startTickInterval._intervalId);
-        }
-        startTickInterval._intervalId = setInterval(startTickInterval._tickFn, 1000);
-    }
-}
-
-function getScheduleStateSignature(now = Date.now()) {
-    const nowDate = new Date(now);
-    if (!state.appData.schedules || state.appData.schedules.length === 0) return '';
-    return state.appData.schedules.map(s => `${s.id || s.blocklistId}:${isSchedulePausedNow(s, now) ? 1 : 0}:${isScheduleSegmentActiveNow(s, nowDate) ? 1 : 0}`).sort().join('|');
-}
 
 // Utility functions
-function generateId() {
+export function generateId() {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
 }
 
-function formatTime(date) {
+export function formatTime(date) {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
@@ -17789,7 +15570,7 @@ function formatMinutesAsHHMM(totalMinutes) {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-function formatDuration(minutes) {
+export function formatDuration(minutes) {
     if (minutes < 60) {
         return `${minutes} min${minutes !== 1 ? 's' : ''}`;
     }
@@ -17802,7 +15583,7 @@ function formatDuration(minutes) {
 }
 
 /** Remaining time chip, e.g. EN "1h 39m left", DA "1t 39m endnu" (`totalMins` = full minutes). */
-function formatBlockTimeRemainingShort(totalMins) {
+export function formatBlockTimeRemainingShort(totalMins) {
     const n = Math.max(0, Math.floor(totalMins));
     const hrs = Math.floor(n / 60);
     const mins = n % 60;
@@ -17935,7 +15716,7 @@ export function syncMobileScheduleDayLabelsViewportMode() {
     mobileCompactScheduleDayLabelsActive = nextCompact;
 
     const schedulePanel = document.getElementById('schedule-block-panel');
-    if (isScheduleMode && schedulePanel && !schedulePanel.classList.contains('hidden')) {
+    if (state.isScheduleMode && schedulePanel && !schedulePanel.classList.contains('hidden')) {
         rebuildScheduleSegments();
     }
 

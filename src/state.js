@@ -41,4 +41,8 @@ export const state = {
     selectedEndMinute: 30,
     targetDurationMinutes: 60, // Default 60-minute block
     userEditedEndTime: false, // Track if user manually changed end time
+    lastBlockedDomains: new Set(), // Track what's currently blocked to avoid re-prompting
+    activatedBlockIds: new Set(), // Track blocks that have already triggered host updates
+    pauseScheduleData: null, // Track schedule-specific pause data { blocklistId, segmentEndTime }
+    isScheduleMode: false, // false = instant mode, true = schedule mode
 };

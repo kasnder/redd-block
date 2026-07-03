@@ -2,7 +2,8 @@
 // Extracted verbatim from app.js.
 import { state } from './state.js';
 import { updateHelperStatusIndicator, updateCleanHostsBtnState } from './settings.js';
-import { closeAllBlocklistMenus, closeAllLanguagePickers, closeNowBlockingChipMenus, isAnyLanguagePickerOpen, resetWebsitesImportMenuPosition } from './app.js';
+import { closeAllBlocklistMenus, closeAllLanguagePickers, isAnyLanguagePickerOpen, resetWebsitesImportMenuPosition } from './app.js';
+import { closeNowBlockingChipMenus } from './render.js';
 import { closeAllPopovers } from './time-inputs.js';
 
 export const HELPER_UI_REFRESH_MS = 3000;
