@@ -18,6 +18,7 @@
   const originalUrl = params.get("u") || "";
   const blocklistId = params.get("id");
   const blocklistName = params.get("name");
+  const blockMode = params.get("mode");
   const emoji = params.get("emoji");
   const color = params.get("color");
   const source = params.get("source");
@@ -38,6 +39,11 @@
   function show(id) {
     const el = document.getElementById(id);
     if (el) el.hidden = false;
+  }
+
+  const subtitleEl = document.getElementById("subtitle");
+  if (subtitleEl && blockMode === "allowlist") {
+    subtitleEl.textContent = "This site is not on your current allowlist.";
   }
 
   // ---- Blocklist pill -------------------------------------------------

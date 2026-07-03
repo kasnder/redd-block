@@ -1018,6 +1018,7 @@ fn build_blocked_url(block_page_url: &str, original_url: &str, blocks: &[BlockIn
     let mut query = format!("u={}", pct_encode(original_url));
     if let Some(info) = block_info_for_url(original_url, blocks) {
         query.push_str(&format!("&id={}", pct_encode(&info.blocklist_id)));
+        query.push_str(&format!("&mode={}", pct_encode(&info.mode)));
         if let Some(name) = &info.name {
             query.push_str(&format!("&name={}", pct_encode(name)));
         }
@@ -1038,10 +1039,14 @@ fn build_blocked_url(block_page_url: &str, original_url: &str, blocks: &[BlockIn
     format!("{block_page_url}?{query}")
 }
 
-/// First active block whose domains match this URL. `blocks` arrives
-/// sorted ascending by `endsAt` from derive_payload, so the first match
-/// is the soonest-ending — the "when do I get this back" the user cares
-/// about. Mirrors `blockInfoForUrl` in background.js.
+/// Metadata block to attribute a blocked URL to.
+///
+/// - Blocklist-mode blocks keep current precedence: the first blocklist hit
+///   (soonest-ending because `blocks` is pre-sorted by `endsAt`) wins.
+/// - Allowlist-mode blocks attribute to the earliest-started active allowlist
+///   that does *not* include the host. For schedules this uses the current
+///   active segment's start time from `derive_payload`, so "first in time"
+///   means first enforcement start, not schedule creation order.
 fn block_info_for_url<'a>(url: &str, blocks: &'a [BlockInfo]) -> Option<&'a BlockInfo> {
     let host = hostname_of(url)?;
     // Blocklist hit takes precedence for metadata.
@@ -1051,13 +1056,22 @@ fn block_info_for_url<'a>(url: &str, blocks: &'a [BlockInfo]) -> Option<&'a Bloc
     }) {
         return Some(b);
     }
-    // Blocked by allowlist — attribute to the soonest-ending allowlist block.
+
+    // Blocked by allowlist — attribute to the earliest-started active
+    // allowlist that excludes the host. Tie-break by soonest-ending block
+    // so the choice stays deterministic when two allowlists started together.
     blocks
         .iter()
         .filter(|b| {
             native_host::blocklist_mode_is_allowlist(&b.mode) && !b.domains.is_empty()
         })
-        .find(|b| !b.domains.iter().any(|d| domain_matches(&host, d)))
+        .filter(|b| !b.domains.iter().any(|d| domain_matches(&host, d)))
+        .min_by_key(|b| {
+            (
+                b.started_at.unwrap_or(u64::MAX),
+                b.ends_at.unwrap_or(u64::MAX),
+            )
+        })
 }
 
 const PROTECTED_HOSTS: &[&str] = &[
@@ -1335,6 +1349,57 @@ mod tests {
         let built = build_blocked_url(base, original, &[]);
         assert!(is_block_page_url(&built, base));
         assert_eq!(original_url_from_block_page(&built).as_deref(), Some(original));
+    }
+
+    #[test]
+    fn allowlist_block_metadata_prefers_earliest_started_enforcement() {
+        let blocks = vec![
+            BlockInfo {
+                blocklist_id: "one-off".to_string(),
+                name: Some("One-off".to_string()),
+                emoji: None,
+                color: None,
+                mode: "allowlist".to_string(),
+                domains: vec!["apple.com".to_string()],
+                source: "activeBlock",
+                ends_at: Some(2_000),
+                started_at: Some(11_00),
+            },
+            BlockInfo {
+                blocklist_id: "schedule".to_string(),
+                name: Some("Schedule".to_string()),
+                emoji: None,
+                color: None,
+                mode: "allowlist".to_string(),
+                domains: vec!["google.com".to_string()],
+                source: "schedule",
+                ends_at: Some(1_500),
+                started_at: Some(10_00),
+            },
+        ];
+
+        let info = block_info_for_url("https://example.com", &blocks).expect("allowlist metadata");
+        assert_eq!(info.blocklist_id, "schedule");
+    }
+
+    #[test]
+    fn build_blocked_url_includes_mode_metadata() {
+        let base = "file:///Applications/ReDD%20Block.app/Contents/Resources/blocked/blocked.html";
+        let original = "https://example.com/";
+        let blocks = vec![BlockInfo {
+            blocklist_id: "allow".to_string(),
+            name: Some("Allow".to_string()),
+            emoji: None,
+            color: None,
+            mode: "allowlist".to_string(),
+            domains: vec!["github.com".to_string()],
+            source: "activeBlock",
+            ends_at: Some(999),
+            started_at: Some(100),
+        }];
+
+        let built = build_blocked_url(base, original, &blocks);
+        assert!(built.contains("mode=allowlist"));
     }
 
     #[test]
